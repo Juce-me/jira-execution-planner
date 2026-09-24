@@ -1,6 +1,15 @@
 # Project Ontology
 
-Coverage: verified entry points and relationships for Statistics (2026-09-10), ENG Board cross-sprint loading and operational measurement (2026-09-14, paged-request budget reverified 2026-09-23), selector availability and persistent workspace catalogs (2026-09-23), and ENG Story Readiness (2026-09-17). Other application areas remain unmapped.
+Coverage: verified entry points and relationships for Statistics (2026-09-10), ENG Board cross-sprint loading and operational measurement (2026-09-14, paged-request budget reverified 2026-09-23), selector availability and persistent workspace catalogs (2026-09-23), ENG Story Readiness (2026-09-17), and connection recovery (2026-09-23). Other application areas remain unmapped.
+
+## Connection Recovery
+
+Verified on: 2026-09-23.
+
+- **Connection recovery**: guarded full-document recovery after the dashboard reports a backend connection failure. UI owners: `ServerUnavailableBanner` and `ConnectionRecoveryNotice` in `frontend/src/components/`; orchestration: `useConnectionRecovery` in `frontend/src/api/useConnectionRecovery.js`; dashboard integration: `frontend/src/dashboard.jsx`; tab capsule and one-attempt-per-outage marker: `frontend/src/api/connectionRecoveryState.js`; browser coverage: `tests/ui/server_unavailable_ui.spec.js` and `tests/ui/scenario_draft_history.spec.js`. Depends on the recovery principal from `connectionRecoveryPrincipalFromConfig` (exact workspace/private view, Jira-site-scoped local principal in JSON mode, or none) and on pending-write tracking in `frontend/src/api/http.js`; produces a normal ordered document bootstrap. Verified on 2026-09-24.
+- **Connection recovery capsule**: strict 30-minute `sessionStorage` record containing principal, shell position, a Settings-discard notice flag, and optionally canonical dirty Scenario overrides. It never owns Settings values or EPM state. Canonical Scenario override normalization is in `frontend/src/scenario/scenarioDraftOverrides.js`; contract coverage is in `tests/test_connection_recovery_state.js` and `tests/test_scenario_draft_overrides.js`.
+- **Authentication recovery**: terminal global `401` boundary owned by `frontend/src/api/authRequired.js`, `frontend/src/components/AuthRequiredGate.jsx`, and the separate auth-resume capsule in `frontend/src/api/authResumeState.js`. It has precedence over connection recovery. `frontend/src/api/authFocusRefresh.js` consumes connection availability events from `frontend/src/api/authRefreshContract.js` so focus/long-absence refresh cannot race a recovery reload.
+- **Scenario recovery compute**: one fresh compute-only `POST /api/scenario` plus active-draft read after exact group/sprint restoration. `frontend/src/scenario/connectionScenarioRecovery.js` binds recovery to the stored draft scope and overlays only the captured local delta onto the fresh server baseline. It consumes the connection capsule and produces either ordinary dirty overrides or the existing `conflict_remote` presentation. It never replays Scenario save, publish, rollback, reload-from-Jira, or Jira mutations.
 
 ## Workspace identity and shared catalogs
 

@@ -250,6 +250,11 @@ async function mockConfigSettings(page, {
             userCanEditSettings,
             userCanEditEpmConfig: true,
             epm: workspaceSnapshot?.sharedConfig?.epm || epmConfig,
+            viewConfig: {
+                workspaceId: 'workspace-test',
+                viewConfigId: 'view-test',
+                view: { epm: epmConfig },
+            },
             ...(workspaceSnapshot || {}),
             });
         }
@@ -1743,10 +1748,10 @@ test('EPM save auth expiry preserves the private draft and exposes safe recovery
     ))).toBe(false);
 });
 
-test('group reload auth expiry preserves the visible group draft and blocks save shortcut', async ({ page }) => {
+test('connection recovery auth expiry preserves the visible group draft and blocks save shortcut', async ({ page }) => {
     const calls = await mockConfigSettings(page, {
         failFirstSelectedProjectsConnection: true,
-        groupsRetryAuthRequired: true,
+        configRetryAuthRequired: true,
         keepServerConnectionError: true,
     });
 

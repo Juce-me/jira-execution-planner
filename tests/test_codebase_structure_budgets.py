@@ -139,7 +139,9 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # ENG shared Sprint selector availability separates selection/readiness, adds semantic
     # listbox interaction, explicit blocked-scope scheduling and Settings save/read fencing,
     # plus cache-bypassing Project Track range synchronization on explicit Sprint commitment (+557).
-    "frontend/src/dashboard.jsx": 18078,
+    # Connection recovery keeps only orchestration wiring here; controller, notice, and
+    # Scenario restoration behavior live in extracted modules (+15 after merging main).
+    "frontend/src/dashboard.jsx": 18093,
 }
 
 

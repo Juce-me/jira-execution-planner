@@ -7674,6 +7674,19 @@ button.epic-track-indicator:focus-visible {
 .server-unavailable-banner button:hover {
   background: #fff7f0;
 }
+.server-unavailable-banner button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+.connection-recovery-notice {
+  background: #fffbea;
+  border-color: #f4cf6a;
+}
+.connection-recovery-notice-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.5rem;
+}
 @media (max-width: 760px) {
   .server-unavailable-banner {
     align-items: stretch;
@@ -7681,6 +7694,9 @@ button.epic-track-indicator:focus-visible {
   }
   .server-unavailable-banner button {
     width: 100%;
+  }
+  .connection-recovery-notice-actions {
+    flex-direction: column;
   }
   .story-subtasks-toggle {
     max-width: 100%;

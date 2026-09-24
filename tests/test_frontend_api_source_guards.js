@@ -66,6 +66,16 @@ test('the common HTTP boundary does not import the analytics singleton', () => {
     assert.ok(source.includes('globalThis?.JepAnalytics?.trackApiResult?.('));
 });
 
+test('connection recovery state stays tab-local, side-effect free, and separate from auth resume', () => {
+    const recovery = readSource(path.join(frontendSrcPath, 'api', 'connectionRecoveryState.js'));
+    const authResume = readSource(path.join(frontendSrcPath, 'api', 'authResumeState.js'));
+
+    assert.match(recovery, /sessionStorage/);
+    assert.doesNotMatch(recovery, /localStorage|\bfetch\b|addEventListener|JepAnalytics|track[A-Z]/);
+    assert.doesNotMatch(recovery, /apiToken|accessToken|refreshToken|authorization|email/);
+    assert.doesNotMatch(authResume, /configurationDraft|scenarioOverrides|localOverrides/);
+});
+
 function loadApiModule(fileName, exportNames, dependencies = {}) {
     const modulePath = path.join(frontendSrcPath, 'api', fileName);
     assert.ok(fs.existsSync(modulePath), `Expected frontend/src/api/${fileName} to exist`);
@@ -2063,9 +2073,13 @@ test('auth refresh contract module defines exactly the shared refresh constants 
     assert.ok(source.includes('AUTH_REFRESH_SHARED_STORAGE_KEY'), 'Expected AUTH_REFRESH_SHARED_STORAGE_KEY constant');
     assert.ok(source.includes('AUTH_LONG_ABSENCE_EVENT'), 'Expected AUTH_LONG_ABSENCE_EVENT constant');
     assert.ok(source.includes('AUTH_SESSION_REFRESH_EVENT'), 'Expected AUTH_SESSION_REFRESH_EVENT constant');
+    assert.ok(source.includes('CONNECTION_UNAVAILABLE_EVENT'), 'Expected connection recovery ownership event');
+    assert.ok(source.includes('CONNECTION_AVAILABLE_EVENT'), 'Expected connection recovery release event');
     assert.ok(source.includes("'jep.auth.lastRefreshAt'"), 'Expected the exact shared storage key literal');
     assert.ok(source.includes("'jep:auth-long-absence-return'"), 'Expected the exact long-absence event name literal');
     assert.ok(source.includes("'jep:auth-session-refreshed'"), 'Expected the exact auth-session refresh event name literal');
+    assert.ok(source.includes("'jep:connection-unavailable'"), 'Expected the exact connection unavailable event name literal');
+    assert.ok(source.includes("'jep:connection-available'"), 'Expected the exact connection available event name literal');
 
     ['fetch', 'addEventListener', 'localStorage'].forEach((token) => {
         assert.ok(!source.includes(token), `Expected authRefreshContract.js to stay side-effect-free (found "${token}")`);
@@ -2081,6 +2095,9 @@ test('auth focus refresh module imports the shared contract and keeps the refres
     assert.ok(source.includes("from './authRefreshContract"), 'Expected authFocusRefresh.js to import the shared contract constants');
     assert.ok(source.includes("'X-Requested-With': 'jira-execution-planner'"), 'Expected the existing auth refresh request header to be preserved');
     assert.ok(source.includes("method: 'POST'"), 'Expected the auth refresh POST method to be preserved');
+    assert.ok(source.includes('connectionUnavailable'), 'Expected connection recovery to suppress auth focus refresh');
+    assert.ok(source.includes('CONNECTION_UNAVAILABLE_EVENT'), 'Expected the unavailable ownership event listener');
+    assert.ok(source.includes('CONNECTION_AVAILABLE_EVENT'), 'Expected the available release event listener');
 
     ['location.reload', 'setInterval', 'setTimeout', 'sessionStorage', 'BroadcastChannel'].forEach((token) => {
         assert.ok(!source.includes(token), `authFocusRefresh.js must not reintroduce "${token}"`);
@@ -2093,4 +2110,16 @@ test('dashboard imports the long-absence event name from the contract module and
     assert.ok(dashboardSource.includes("from './api/authRefreshContract"), 'Expected dashboard.jsx to import from the auth refresh contract module');
     assert.ok(dashboardSource.includes('AUTH_LONG_ABSENCE_EVENT'), 'Expected dashboard.jsx to reference AUTH_LONG_ABSENCE_EVENT');
     assert.ok(!dashboardSource.includes('authFocusRefresh'), 'dashboard.jsx must not import the self-installing auth focus refresh shell');
+});
+
+test('connection Retry uses an exact config probe and hard reload instead of the loader fan-out', () => {
+    const dashboardSource = readSource(path.join(frontendSrcPath, 'dashboard.jsx'));
+    const recoverySource = readSource(path.join(frontendSrcPath, 'api', 'useConnectionRecovery.js'));
+
+    assert.ok(recoverySource.includes("fetchAppConfig(backendUrl, { cache: 'no-cache', signal: probe.signal })"));
+    assert.ok(recoverySource.includes('probe.abort(), CONNECTION_PROBE_TIMEOUT_MS'), 'Expected the Retry probe to be bounded');
+    assert.ok(recoverySource.includes('window.location.reload()'));
+    assert.ok(recoverySource.includes('writeConnectionRecoveryState'));
+    assert.ok(recoverySource.includes('markConnectionRecoveryAttempt'));
+    assert.ok(!dashboardSource.includes('const retryServerConnection = () => {'));
 });

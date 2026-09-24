@@ -2611,214 +2611,6 @@ test('selector scheduling: workspace combined save waits for config acceptance',
     }
 });
 
-test('selector scheduling: stale config read cannot cross workspace save fence', async ({ page }) => {
-    const group = (id, name) => ({
-        id,
-        name,
-        teamIds: ['team-alpha'],
-        teamLabels: { 'team-alpha': 'Alpha Team' },
-        missingInfoComponents: ['Platform'],
-        board: { columns: BOARD_COLUMNS },
-    });
-    let releaseStaleConfig;
-    const staleConfigGate = new Promise(resolve => { releaseStaleConfig = resolve; });
-    let releaseBoardSave;
-    const boardSaveGate = new Promise(resolve => { releaseBoardSave = resolve; });
-    let releasePostSaveConfig;
-    const postSaveConfigGate = new Promise(resolve => { releasePostSaveConfig = resolve; });
-    const requests = [];
-    const requestLog = [];
-    const performanceLoads = [];
-    await openBoard(page, {
-        requests,
-        requestLog,
-        performanceLoads,
-        sourceBundle: true,
-        strictBoard: true,
-        groups: [group('grp-default', 'Default'), group('grp-second', 'Second')],
-        groupsSource: 'workspace_db',
-        groupPreferences: {
-            customized: true,
-            preferenceExists: true,
-            onboardingRequired: false,
-            onboardingDone: true,
-            visibleGroupIds: ['grp-default', 'grp-second'],
-            effectiveVisibleGroupIds: ['grp-default', 'grp-second'],
-            activeGroupId: 'grp-default',
-        },
-        boardConfigSaveResponseGate: boardSaveGate,
-        configResponseGate: ({ requestIndex }) => {
-            if (requestIndex === 2) return staleConfigGate;
-            if (requestIndex === 3) return postSaveConfigGate;
-            return null;
-        },
-        strictEpicKeyForRequest: ({ requestIndex }) => requestIndex === 1
-            ? 'STRICT-CONFIG-FENCE-OLD'
-            : 'STRICT-CONFIG-FENCE-NEW',
-        homeTokenDelayMs: 1500,
-        homeTokenFailureCount: 1,
-    });
-
-    const strictRequests = () => requests.filter(path => path.includes('scope=component'));
-    const postRequests = path => requestLog.filter(entry => (
-        entry.method === 'POST' && new URL(entry.url).pathname === path
-    ));
-
-    try {
-        await expect(page.getByRole('button', { name: 'Retry connection', exact: true })).toBeVisible();
-        const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
-        await trigger.click();
-        await page.getByRole('option', { name: 'Component', exact: true }).click();
-        const oldCard = page.locator('.eng-board .ecard[data-epic-key="STRICT-CONFIG-FENCE-OLD"]');
-        await expect(oldCard).toBeVisible();
-        const ordinaryCountAtSelection = requests.filter(path => path === '/api/tasks-with-team-name').length;
-
-        await page.getByRole('button', { name: 'Manage team groups', exact: true }).click();
-        const dialog = page.getByRole('dialog').first();
-        await dialog.getByRole('button', { name: 'Admin', exact: true }).click();
-        await dialog.getByRole('tab', { name: 'Scope projects', exact: true }).click();
-        await dialog.getByRole('button', { name: 'Remove product project PLAT' }).click();
-        await dialog.getByPlaceholder('Search projects to add...').fill('DRAFT');
-        await dialog.locator('.project-result-item, .team-search-result-item').filter({ hasText: 'DRAFT' })
-            .getByRole('button', { name: 'Product' }).click();
-        await dialog.getByRole('tab', { name: 'Jira source', exact: true }).click();
-        await dialog.getByPlaceholder('Search boards...').fill('Draft');
-        await dialog.locator('.team-search-result-item').filter({ hasText: 'Draft Board' }).click();
-        await dialog.getByRole('button', { name: /^Save$/ }).click();
-
-        await expect.poll(() => postRequests('/api/projects/selected').length).toBe(1);
-        await expect.poll(() => postRequests('/api/board-config').length).toBe(1);
-        await expect(oldCard).toHaveCount(0);
-        await page.getByRole('button', { name: 'Retry connection', exact: true }).evaluate(button => button.click());
-        await expect.poll(() => requests.filter(path => path === '/api/config').length).toBe(2);
-        releaseStaleConfig();
-        releaseStaleConfig = null;
-        await waitTwoFrames(page);
-        expect(strictRequests()).toHaveLength(1);
-        await expect(oldCard).toHaveCount(0);
-
-        releaseBoardSave();
-        releaseBoardSave = null;
-        await expect.poll(() => requests.filter(path => path === '/api/config').length).toBe(3);
-        await waitTwoFrames(page);
-        expect(strictRequests()).toHaveLength(1);
-
-        releasePostSaveConfig();
-        releasePostSaveConfig = null;
-        await expect.poll(() => strictRequests().length).toBe(2);
-        await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-CONFIG-FENCE-NEW"]')).toBeVisible();
-        await expect.poll(() => performanceLoads.filter(load => load.scopeType === 'component').length).toBe(2);
-        expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(ordinaryCountAtSelection);
-        expect(postRequests('/api/projects/selected')).toHaveLength(1);
-        expect(postRequests('/api/board-config')).toHaveLength(1);
-
-        await page.getByRole('button', { name: 'Manage team groups', exact: true }).click();
-        const reopened = page.getByRole('dialog').first();
-        await reopened.getByRole('button', { name: 'Admin', exact: true }).click();
-        await reopened.getByRole('tab', { name: 'Scope projects', exact: true }).click();
-        await expect(reopened.getByRole('button', { name: 'Remove product project DRAFT' })).toBeVisible();
-        await expect(reopened.getByRole('button', { name: 'Remove product project PLAT' })).toHaveCount(0);
-        await expect(reopened.locator('.group-modal-dirty')).toHaveCount(0);
-    } finally {
-        releaseStaleConfig?.();
-        releaseBoardSave?.();
-        releasePostSaveConfig?.();
-    }
-});
-
-test('selector scheduling: stale groups read cannot cross Department save fence', async ({ page }) => {
-    let releaseStaleGroups;
-    const staleGroupsGate = new Promise(resolve => { releaseStaleGroups = resolve; });
-    let releaseGroupSave;
-    const groupSaveGate = new Promise(resolve => { releaseGroupSave = resolve; });
-    let releasePostSaveConfig;
-    const postSaveConfigGate = new Promise(resolve => { releasePostSaveConfig = resolve; });
-    const requests = [];
-    const requestLog = [];
-    const performanceLoads = [];
-    await openBoard(page, {
-        requests,
-        requestLog,
-        performanceLoads,
-        sourceBundle: true,
-        strictBoard: true,
-        groupsSource: 'workspace_db',
-        groupPreferences: {
-            customized: true,
-            preferenceExists: true,
-            onboardingRequired: false,
-            onboardingDone: true,
-            visibleGroupIds: ['grp-default'],
-            effectiveVisibleGroupIds: ['grp-default'],
-            activeGroupId: 'grp-default',
-        },
-        groupsResponseGate: ({ requestIndex }) => {
-            if (requestIndex === 2) return groupSaveGate;
-            if (requestIndex === 3) return staleGroupsGate;
-            return null;
-        },
-        configResponseGate: ({ requestIndex }) => requestIndex === 3 ? postSaveConfigGate : null,
-        strictEpicKeyForRequest: ({ requestIndex }) => requestIndex === 1
-            ? 'STRICT-GROUP-FENCE-OLD'
-            : 'STRICT-GROUP-FENCE-NEW',
-        homeTokenDelayMs: 1500,
-        homeTokenFailureCount: 1,
-    });
-
-    const strictRequests = () => requests.filter(path => path.includes('scope=component'));
-    const postRequests = path => requestLog.filter(entry => (
-        entry.method === 'POST' && new URL(entry.url).pathname === path
-    ));
-
-    try {
-        await expect(page.getByRole('button', { name: 'Retry connection', exact: true })).toBeVisible();
-        const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
-        await trigger.click();
-        await page.getByRole('option', { name: 'Component', exact: true }).click();
-        const oldCard = page.locator('.eng-board .ecard[data-epic-key="STRICT-GROUP-FENCE-OLD"]');
-        await expect(oldCard).toBeVisible();
-        const ordinaryCountAtSelection = requests.filter(path => path === '/api/tasks-with-team-name').length;
-
-        await page.getByRole('button', { name: 'Manage team groups', exact: true }).click();
-        const dialog = page.getByRole('dialog').first();
-        await dialog.getByRole('tab', { name: 'Boards', exact: true }).click();
-        await dialog.locator('.board-column-name').first().fill('Group fence backlog');
-        await dialog.getByRole('button', { name: /^Save$/ }).click();
-
-        await expect.poll(() => postRequests('/api/groups-config').length).toBe(1);
-        await page.getByRole('button', { name: 'Retry connection', exact: true }).evaluate(button => button.click());
-        await expect.poll(() => requests.filter(path => path === '/api/groups-config').length).toBe(3);
-        releaseGroupSave();
-        releaseGroupSave = null;
-        await expect.poll(() => requests.filter(path => path === '/api/config').length).toBe(3);
-        await expect(oldCard).toHaveCount(0);
-        releaseStaleGroups();
-        releaseStaleGroups = null;
-        await waitTwoFrames(page);
-        expect(strictRequests()).toHaveLength(1);
-        await expect(oldCard).toHaveCount(0);
-
-        releasePostSaveConfig();
-        releasePostSaveConfig = null;
-        await expect.poll(() => strictRequests().length).toBe(2);
-        await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-GROUP-FENCE-NEW"]')).toBeVisible();
-        await expect.poll(() => performanceLoads.filter(load => load.scopeType === 'component').length).toBe(2);
-        expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(ordinaryCountAtSelection);
-
-        await page.getByRole('button', { name: 'Manage team groups', exact: true }).click();
-        const reopened = page.getByRole('dialog').first();
-        await reopened.getByRole('tab', { name: 'Boards', exact: true }).click();
-        await expect(page.locator('.group-modal .board-column-name').first()).toHaveValue('Group fence backlog');
-        await expect(page.locator('.group-modal .group-modal-dirty')).toHaveCount(0);
-        expect(postRequests('/api/groups-config')).toHaveLength(1);
-        expect(requests.filter(path => path === '/api/groups-config')).toHaveLength(3);
-    } finally {
-        releaseGroupSave?.();
-        releaseStaleGroups?.();
-        releasePostSaveConfig?.();
-    }
-});
-
 for (const preferenceConfigRead of [
     { name: 'preference-only save preserves identical accepted generation', status: 200, authLocked: false },
     { name: 'preference-only save failure retires accepted generation', status: 503, authLocked: false },
@@ -3012,8 +2804,12 @@ test('selector scheduling: incrementally delivered retired frames cannot publish
     expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(ordinaryCountAtSelection);
 });
 
-test('selector scheduling: unchanged accepted configuration reread does not reload', async ({ page }) => {
+test('selector scheduling: Retry connection probes config once and hard reloads instead of rereading in place', async ({ page }) => {
     const requests = [];
+    let documents = 0;
+    page.on('request', request => {
+        if (request.resourceType() === 'document') documents += 1;
+    });
     await openBoard(page, {
         requests,
         sourceBundle: true,
@@ -3025,171 +2821,111 @@ test('selector scheduling: unchanged accepted configuration reread does not relo
     await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
     await page.getByRole('option', { name: 'Component', exact: true }).click();
     await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]')).toBeVisible();
-    expect(requests.filter(path => path.includes('scope=component'))).toHaveLength(1);
-    const configReads = requests.filter(path => path === '/api/config').length;
-    const groupReads = requests.filter(path => path === '/api/groups-config').length;
+    const requestsBefore = requests.length;
+    const documentsBefore = documents;
 
     await page.getByRole('button', { name: 'Retry connection', exact: true }).click();
-    await expect.poll(() => requests.filter(path => path === '/api/config').length).toBe(configReads + 1);
-    await expect.poll(() => requests.filter(path => path === '/api/groups-config').length).toBe(groupReads + 1);
-    await waitTwoFrames(page);
-    expect(requests.filter(path => path.includes('scope=component'))).toHaveLength(1);
+    await expect.poll(() => documents).toBe(documentsBefore + 1);
+    expect(requests.slice(requestsBefore)).toContain('/api/config');
+    await expect(page.getByRole('button', { name: 'Retry connection', exact: true })).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => sessionStorage.getItem('jira_dashboard_connection_recovery_attempt_v1'))).toBeNull();
 });
 
-for (const configFailure of [
-    { source: 'config', status: 503, name: 'failed config reread retires held generation', authLocked: false },
-    { source: 'groups', status: 503, name: 'failed group reread retires held generation', authLocked: false },
-    { source: 'config', status: 401, name: 'config 401 locks and retires held generation', authLocked: true },
-]) {
-    test(`selector scheduling: ${configFailure.name}`, async ({ page }) => {
-        let releaseOldBoard;
-        const oldBoardGate = new Promise(resolve => { releaseOldBoard = resolve; });
-        let releaseReread;
-        const rereadGate = new Promise(resolve => { releaseReread = resolve; });
-        const requests = [];
-        const performanceLoads = [];
-        await openBoard(page, {
-            requests,
-            performanceLoads,
-            sourceBundle: true,
-            strictBoard: true,
-            boardResponseGate: ({ requestIndex }) => requestIndex === 1 ? oldBoardGate : null,
-            strictEpicKeyForRequest: ({ requestIndex }) => requestIndex === 1 ? 'STRICT-OLD' : 'STRICT-NEW',
-            configResponseGate: ({ requestIndex }) => configFailure.source === 'config' && requestIndex === 2 ? rereadGate : null,
-            configStatus: ({ requestIndex }) => configFailure.source === 'config' && requestIndex === 2 ? configFailure.status : 200,
-            groupsResponseGate: ({ requestIndex }) => configFailure.source === 'groups' && requestIndex === 2 ? rereadGate : null,
-            groupsStatus: ({ requestIndex }) => configFailure.source === 'groups' && requestIndex === 2 ? configFailure.status : 200,
-            homeTokenDelayMs: 1500,
-            homeTokenFailureCount: 1,
-            analyticsEnabled: configFailure.authLocked,
-        });
-
-        try {
-            await expect(page.getByRole('button', { name: 'Retry connection', exact: true })).toBeVisible();
-            if (configFailure.authLocked) {
-                await expect.poll(() => page.evaluate(() => (window.dataLayer || []).some(entry => (
-                    entry?.event_name === 'page_view'
-                )))).toBe(true);
-                await page.evaluate(() => { window.dataLayer.length = 0; });
-            }
-            const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
-            await trigger.click();
-            await page.getByRole('option', { name: 'Component', exact: true }).click();
-            await expect.poll(() => requests.filter(path => path.includes('scope=component')).length).toBe(1);
-            if (configFailure.authLocked) {
-                await expect.poll(() => page.evaluate(() => (window.dataLayer || []).filter(entry => (
-                    entry?.event_name === 'filter_changed'
-                )).length)).toBe(1);
-            }
-            const ordinaryCountAtSelection = requests.filter(path => path === '/api/tasks-with-team-name').length;
-
-            await page.getByRole('button', { name: 'Retry connection', exact: true }).click();
-            const rereadPath = configFailure.source === 'config' ? '/api/config' : '/api/groups-config';
-            await expect.poll(() => requests.filter(path => path === rereadPath).length).toBe(2);
-            releaseReread();
-            releaseReread = null;
-            if (configFailure.authLocked) {
-                await expect(page.getByRole('alertdialog')).toContainText('Sign in required');
-                await page.evaluate(() => { window.dataLayer.length = 0; });
-                await expectLockedSelectorInteractionBlocked(page, trigger);
-            } else {
-                await expect(trigger).toContainText('Component');
-                await expect(page.getByRole('status', { name: 'Board scope status', exact: true }))
-                    .toContainText('Board configuration could not be loaded.');
-            }
-
-            releaseOldBoard();
-            releaseOldBoard = null;
-            await page.waitForLoadState('networkidle');
-            expect(requests.filter(path => path.includes('scope=component'))).toHaveLength(1);
-            expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(ordinaryCountAtSelection);
-            expect(performanceLoads.filter(load => load.scopeType === 'component')).toHaveLength(0);
-            if (configFailure.authLocked) {
-                expect(requests.filter(path => path === rereadPath)).toHaveLength(2);
-                expect(await page.evaluate(() => (window.dataLayer || []).filter(entry => (
-                    entry?.event_name === 'filter_changed'
-                )))).toEqual([]);
-            }
-            if (!configFailure.authLocked) {
-                await page.getByRole('button', { name: 'Refresh tasks and sprints from Jira', exact: true }).first().click();
-                await expect.poll(() => requests.filter(path => path === rereadPath).length).toBe(3);
-                await expect.poll(() => requests.filter(path => path.includes('scope=component')).length).toBe(2);
-                await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-NEW"]')).toBeVisible();
-                await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-OLD"]')).toHaveCount(0);
-            }
-        } finally {
-            releaseReread?.();
-            releaseOldBoard?.();
-        }
-    });
-}
-
-test('selector scheduling: successful Department save accepts failed group reread recovery', async ({ page }) => {
+test('selector scheduling: Retry waits for an in-flight Department save before reloading once', async ({ page }) => {
+    let releaseGroupSave;
+    const groupSaveGate = new Promise(resolve => { releaseGroupSave = resolve; });
     const requests = [];
     const requestLog = [];
-    const performanceLoads = [];
+    let documents = 0;
+    page.on('request', request => {
+        if (request.resourceType() === 'document') documents += 1;
+    });
     await openBoard(page, {
         requests,
         requestLog,
-        performanceLoads,
         sourceBundle: true,
         strictBoard: true,
-        strictEpicKeyForRequest: ({ requestIndex }) => requestIndex === 1
-            ? 'STRICT-GROUP-BEFORE'
-            : 'STRICT-GROUP-AFTER',
-        groupsStatus: ({ requestIndex }) => requestIndex === 2 ? 503 : 200,
+        groupsSource: 'workspace_db',
+        groupPreferences: {
+            customized: true,
+            preferenceExists: true,
+            onboardingRequired: false,
+            onboardingDone: true,
+            visibleGroupIds: ['grp-default'],
+            effectiveVisibleGroupIds: ['grp-default'],
+            activeGroupId: 'grp-default',
+        },
+        groupsResponseGate: ({ requestIndex }) => requestIndex === 2 ? groupSaveGate : null,
         homeTokenDelayMs: 1500,
         homeTokenFailureCount: 1,
     });
-
-    await expect(page.getByRole('button', { name: 'Retry connection', exact: true })).toBeVisible();
-    const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
-    await trigger.click();
-    await page.getByRole('option', { name: 'Component', exact: true }).click();
-    await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-GROUP-BEFORE"]')).toBeVisible();
-    expect(requests.filter(path => path.includes('scope=component'))).toHaveLength(1);
-    const ordinaryCountAtSelection = requests.filter(path => path === '/api/tasks-with-team-name').length;
-
-    await page.getByRole('button', { name: 'Retry connection', exact: true }).click();
-    await expect.poll(() => requestLog.filter(entry => (
-        entry.method === 'GET' && new URL(entry.url).pathname === '/api/groups-config'
-    )).length).toBe(2);
-    await expect(trigger).toContainText('Component');
-    await expect(page.getByRole('status', { name: 'Board scope status', exact: true }))
-        .toContainText('Board configuration could not be loaded.');
-    expect(requests.filter(path => path.includes('scope=component'))).toHaveLength(1);
-
-    await page.getByRole('button', { name: 'Manage team groups', exact: true }).click();
-    const dialog = page.getByRole('dialog').first();
-    await dialog.getByRole('tab', { name: 'Boards', exact: true }).click();
-    await dialog.locator('.board-column-name').first().fill('Recovered backlog');
-    await dialog.getByRole('button', { name: /^Save$/ }).click();
-
-    await expect.poll(() => requestLog.filter(entry => (
+    const groupSaves = () => requestLog.filter(entry => (
         entry.method === 'POST' && new URL(entry.url).pathname === '/api/groups-config'
-    )).length).toBe(1);
-    await expect.poll(() => requests.filter(path => path.includes('scope=component')).length).toBe(2);
-    await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-GROUP-AFTER"]')).toBeVisible();
-    await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-GROUP-BEFORE"]')).toHaveCount(0);
-    await waitTwoFrames(page);
+    ));
 
-    expect(requestLog.filter(entry => (
-        entry.method === 'GET' && new URL(entry.url).pathname === '/api/groups-config'
-    ))).toHaveLength(2);
-    expect(requests.filter(path => path.includes('scope=component'))).toHaveLength(2);
-    expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(ordinaryCountAtSelection);
-    await expect.poll(() => performanceLoads.filter(load => load.scopeType === 'component').length).toBe(2);
+    try {
+        await expect(page.getByRole('button', { name: 'Retry connection', exact: true })).toBeVisible();
+        await page.getByRole('button', { name: 'Manage team groups', exact: true }).click();
+        const dialog = page.getByRole('dialog').first();
+        await dialog.getByRole('tab', { name: 'Boards', exact: true }).click();
+        await dialog.locator('.board-column-name').first().fill('Pending save backlog');
+        await dialog.getByRole('button', { name: /^Save$/ }).click();
+        await expect.poll(() => groupSaves().length).toBe(1);
+        const documentsBefore = documents;
 
-    await page.getByRole('button', { name: 'Manage team groups', exact: true }).click();
-    await dialog.getByRole('button', { name: 'Departments', exact: true }).click();
-    await dialog.getByRole('tab', { name: 'Team groups', exact: true }).click();
-    await expect(dialog.getByText('Groups config error 503', { exact: true })).toHaveCount(0);
-    expect(requestLog.filter(entry => (
-        entry.method === 'GET' && new URL(entry.url).pathname === '/api/groups-config'
-    ))).toHaveLength(2);
-    expect(requests.filter(path => path.includes('scope=component'))).toHaveLength(2);
-    expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(ordinaryCountAtSelection);
+        await page.getByRole('button', { name: 'Retry connection', exact: true }).evaluate(button => button.click());
+        await expect(page.getByText('Waiting for a pending save to finish before reloading.')).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Waiting for save…', exact: true })).toBeDisabled();
+        expect(documents).toBe(documentsBefore);
+
+        releaseGroupSave();
+        releaseGroupSave = null;
+        await expect.poll(() => documents).toBe(documentsBefore + 1);
+        expect(groupSaves()).toHaveLength(1);
+    } finally {
+        releaseGroupSave?.();
+    }
 });
+
+for (const probeFailure of [
+    { status: 503, name: 'failed Retry probe keeps the Board and does not reload', authLocked: false },
+    { status: 401, name: 'Retry probe 401 locks without reloading', authLocked: true },
+]) {
+    test(`selector scheduling: ${probeFailure.name}`, async ({ page }) => {
+        const requests = [];
+        let documents = 0;
+        page.on('request', request => {
+            if (request.resourceType() === 'document') documents += 1;
+        });
+        await openBoard(page, {
+            requests,
+            sourceBundle: true,
+            strictBoard: true,
+            configStatus: ({ requestIndex }) => requestIndex === 2 ? probeFailure.status : 200,
+            homeTokenDelayMs: 1500,
+            homeTokenFailureCount: 1,
+        });
+        await expect(page.getByRole('button', { name: 'Retry connection', exact: true })).toBeVisible();
+        await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
+        await page.getByRole('option', { name: 'Component', exact: true }).click();
+        await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]')).toBeVisible();
+        const documentsBefore = documents;
+        const strictBefore = requests.filter(path => path.includes('scope=component')).length;
+
+        await page.getByRole('button', { name: 'Retry connection', exact: true }).click();
+        await expect.poll(() => requests.filter(path => path === '/api/config').length).toBe(2);
+        if (probeFailure.authLocked) {
+            await expect(page.getByRole('alertdialog')).toContainText('Sign in required');
+        } else {
+            await expect(page.getByRole('button', { name: 'Retry connection', exact: true })).toBeEnabled();
+            await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]')).toBeVisible();
+        }
+        await page.waitForLoadState('networkidle');
+        expect(documents).toBe(documentsBefore);
+        expect(requests.filter(path => path === '/api/groups-config')).toHaveLength(1);
+        expect(requests.filter(path => path.includes('scope=component'))).toHaveLength(strictBefore);
+    });
+}
 
 test('selector scheduling: revoked configuration blocks and repaired configuration loads once', async ({ page }) => {
     const requests = [];

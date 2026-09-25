@@ -433,8 +433,13 @@ export function createSprintCatalogController({
         acceptSource(source) {
             if (disposed) return state;
             const before = state;
+            const readInFlight = Boolean(activeRequest || observer?.promise);
             publish({ type: 'SOURCE', source });
-            if (state !== before) retire();
+            if (state === before) return state;
+            retire();
+            // The retired read's response is discarded by the generation fence, so re-read under
+            // the new source instead of stranding the catalog in 'unknown' with no request.
+            if (readInFlight) void initiate(false);
             return state;
         },
         invalidate(reason = '') {

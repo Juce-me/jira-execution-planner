@@ -27,7 +27,7 @@ from backend.services.story_readiness import (
     InvalidCompleteReadinessInput,
     project_story_readiness,
 )
-from backend.services.team_catalog import normalize_team_catalog
+from backend.services.team_catalog import normalize_group_team_labels, normalize_team_catalog
 from backend.services.eng_subtasks import (
     SUBTASK_FIELDS,
     SubtasksFetchError,
@@ -211,15 +211,14 @@ def _story_readiness_group_snapshot(groups, group_id, catalog):
                   if str(group.get('id') or '').strip() == group_id), None)
     if match is None:
         return None
-    labels = match.get('teamLabels') if isinstance(match.get('teamLabels'), dict) else {}
+    team_ids = [str(raw_id or '').strip() for raw_id in match.get('teamIds') or []]
+    labels, _errors = normalize_group_team_labels(match.get('teamLabels'), team_ids)
     teams = []
-    for raw_id in match.get('teamIds') or []:
-        team_id = str(raw_id or '').strip()
-        label = str(labels.get(team_id) or '').strip()
-        if not team_id or not label:
+    for team_id in team_ids:
+        if not team_id or not labels.get(team_id):
             raise _StoryReadinessConfigurationError('missing_team_label')
         entry = catalog.get(team_id) or {}
-        teams.append({'id': team_id, 'name': str(entry.get('name') or team_id), 'label': label})
+        teams.append({'id': team_id, 'name': str(entry.get('name') or team_id), 'labels': list(labels[team_id])})
     return {
         'id': group_id,
         'revision': int(groups.get('configRevision') or 0),
@@ -377,7 +376,9 @@ def _story_readiness_compute(context, requested, group_snapshot, projects, confi
 
     counters = eng_board.PagerCounters()
     project_jql = ', '.join(_story_readiness_quote(key) for key in project_keys)
-    label_jql = ', '.join(_story_readiness_quote(team['label']) for team in group_snapshot['teams'])
+    # Exact-distinct union: readiness matching is exact, so case variants stay in the JQL.
+    team_labels = dict.fromkeys(label for team in group_snapshot['teams'] for label in team['labels'])
+    label_jql = ', '.join(_story_readiness_quote(label) for label in team_labels)
     discovery_jql = (
         f'project in ({project_jql}) AND issuetype = Epic '
         f'AND status not in (Done, Killed, Incomplete, Postponed) '
@@ -551,7 +552,7 @@ def get_story_readiness():
         if group_snapshot is None:
             return _story_readiness_error('story_readiness_scope_not_found')
         team_ids = [team['id'] for team in group_snapshot['teams']]
-        team_labels = [team['label'] for team in group_snapshot['teams']]
+        team_labels = [label for team in group_snapshot['teams'] for label in team['labels']]
         if (not group_snapshot['teams']
                 or len(set(team_ids)) != len(team_ids)
                 or len(set(team_labels)) != len(team_labels)):

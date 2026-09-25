@@ -3772,15 +3772,25 @@ test('pane mode: rails reach the board bottom and keep their fill ratios', async
 });
 
 test('pane mode: a pointer click on a rail sticks the board with the opened column at its top', async ({ page }) => {
-    await openBoard(page, { width: 1440, height: 900, epicSpecs: longColumnSpecs() });
+    // Accepted in Q has no epics here: the fallback reveal scrolls to a first card, so with none it
+    // never moves the page, and only the pane-mode reveal can stick the board.
+    const acceptedId = 'col-4d5e6f70';
+    await openBoard(page, {
+        width: 1440, height: 900, epicSpecs: longColumnSpecs().filter(([, status]) => status !== 'Accepted'),
+    });
     await page.evaluate(() => window.scrollTo(0, 0));
     await settleScroll(page);
-    await col(page, READY_ID).locator('.col-strip').click();
+    await expect(col(page, acceptedId).locator('.ecard')).toHaveCount(0);
+    // A real click on the rail's visible top: locator.click() would first scroll the rail's centre
+    // into view, which moves the page to its maximum on its own.
+    const strip = await col(page, acceptedId).locator('.col-strip').boundingBox();
+    expect(strip.y + 40).toBeLessThan(900);
+    await page.mouse.click(strip.x + strip.width / 2, strip.y + 40);
     await settle(page);
     await settleScroll(page);
     const state = await paneState(page);
     expect(state.stuck).toBe(true);
-    expect(openScrollTops(state)[READY_ID]).toBe(0);
+    expect(openScrollTops(state)[acceptedId]).toBe(0);
 });
 
 test('pane mode: open columns keep their scroll position; a folded column reopens at its top', async ({ page }) => {
@@ -3812,9 +3822,15 @@ test('pane mode: focus landing below the fold of a loose column sticks the board
     await openSecondColumn(page);
     await page.evaluate(() => window.scrollTo(0, 0));
     await settleScroll(page);
+    // Stand in for focus() having scrolled the loose, overflow-hidden body, without letting the
+    // browser's own scroll-into-view move the page: only the board's focus handler may stick it.
     await page.evaluate((id) => {
-        const cards = document.querySelectorAll(`.eng-board .col[data-column-id="${id}"] .ecard .ecard-open`);
-        cards[cards.length - 1].focus();
+        const body = document.querySelector(`.eng-board .col[data-column-id="${id}"] .col-body`);
+        body.scrollTop = 200;
+        const top = body.getBoundingClientRect().top;
+        const visible = [...body.querySelectorAll('.ecard .ecard-open')]
+            .find((button) => button.getBoundingClientRect().top >= top);
+        visible.focus({ preventScroll: true });
     }, READY_ID);
     await settleScroll(page);
     const state = await paneState(page);

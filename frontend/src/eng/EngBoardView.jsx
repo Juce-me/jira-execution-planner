@@ -52,11 +52,25 @@ const REJECTED_MS = 2600;
 // Keeps a clamped drop menu clear of the viewport edge.
 const MENU_EDGE_GAP = 8;
 
+// Pane mode (docs/agents/features/2026-09-24-planned-board-column-scroll-panes.md): desktop only —
+// wider than the repo's 760px narrow breakpoint, with a hovering fine pointer so touch tablets keep
+// the page-scroll model.
+const PANE_MEDIA_QUERY = '(min-width: 761px) and (hover: hover) and (pointer: fine)';
+// One tolerance for "the board has reached the sticky line", shared by the stuck check and tests.
+const PANE_STUCK_EPSILON = 1;
+// Keeps the height gate from flapping on rounding while a viewport is resized.
+const PANE_GATE_HYSTERESIS = 8;
+
 function breachText(breach) {
     if (!breach) return '';
     return breach.dir === 'over'
         ? `${breach.by} over max ${breach.limit}`
         : `${breach.by} under min ${breach.limit}`;
+}
+
+function pageMaxScroll() {
+    const scroller = document.scrollingElement || document.documentElement;
+    return Math.max(0, scroller.scrollHeight - window.innerHeight);
 }
 
 export default function EngBoardView({
@@ -67,7 +81,7 @@ export default function EngBoardView({
     statusTransitionSubmitting = false, onSubmitStatusTransition, onFilterBarHeightChange,
     loading = false, error = null, onRetry,
     strictColumns = null, authorityPending = false, stale = false,
-    onResolvedFocusChange,
+    onResolvedFocusChange, onPaneModeChange,
 }) {
     const columns = React.useMemo(
         () => {
@@ -458,6 +472,8 @@ export default function EngBoardView({
         : drop.statuses.map((status) => ({ id: status, label: status, status })));
 
     const boardRef = React.useRef(null);
+    const rootRef = React.useRef(null);
+    const paneModeRef = React.useRef(false);
     const pendingVerticalRevealRef = React.useRef(null);
     // Only a gesture animates the scroll; mount and resize land instantly, so no test has to wait
     // on a transition that exists purely for the eye.
@@ -520,6 +536,45 @@ export default function EngBoardView({
             behavior: smooth ? 'smooth' : 'instant',
         });
     }, []);
+
+    // Both pane classes are imperative, like is-chrome-pinned: the root's className prop never
+    // changes, so a React render cannot wipe one class while the other survives.
+    const setPaneMode = React.useCallback((next) => {
+        const root = rootRef.current;
+        if (root) {
+            root.classList.toggle('is-pane-mode', next);
+            if (!next) {
+                root.classList.remove('is-pane-stuck');
+                root.style.removeProperty('--board-pane-trailing');
+            }
+        }
+        if (paneModeRef.current !== next) {
+            paneModeRef.current = next;
+            onPaneModeChange?.(next);
+        }
+    }, [onPaneModeChange]);
+
+    // The gate reads measured geometry only — never --epic-sticky-top, which still includes the
+    // compact header on the pass that first turns pane mode on.
+    const syncPaneMode = React.useCallback(() => {
+        const root = rootRef.current;
+        const board = boardRef.current;
+        if (!root || !board) {
+            setPaneMode(false);
+            return;
+        }
+        const filterBar = root.parentElement?.querySelector(':scope > .filterbar-wrap');
+        const head = board.querySelector('.col.is-focused > .col-head');
+        const card = board.querySelector('.col.is-focused .ecard');
+        const headSpace = head
+            ? head.getBoundingClientRect().height + (parseFloat(getComputedStyle(head).marginBottom) || 0)
+            : 0;
+        const railHeight = parseFloat(getComputedStyle(root).getPropertyValue('--board-strip-h')) || 0;
+        const available = window.innerHeight - (filterBar ? filterBar.getBoundingClientRect().height : 0);
+        const required = Math.max(railHeight, headSpace + (card ? card.getBoundingClientRect().height : 0))
+            - (root.classList.contains('is-pane-mode') ? PANE_GATE_HYSTERESIS : 0);
+        setPaneMode(Boolean(window.matchMedia?.(PANE_MEDIA_QUERY).matches) && available >= required);
+    }, [setPaneMode]);
 
     const clearBoardChrome = React.useCallback(() => {
         const board = boardRef.current;
@@ -590,11 +645,18 @@ export default function EngBoardView({
     }, [scheduleBoardChrome, syncHints]);
 
     React.useLayoutEffect(() => {
+        syncPaneMode();
         applyBoardLayout(smoothRef.current);
         smoothRef.current = false;
         syncHints();
         syncBoardChrome();
-    }, [applyBoardLayout, syncBoardChrome, syncHints, columns, focusedId, starredId]);
+    }, [applyBoardLayout, syncBoardChrome, syncHints, syncPaneMode, columns, focusedId, starredId]);
+
+    // Loading, error and empty states render no .board; pane mode must not outlive it, or the
+    // dashboard would keep the compact header hidden.
+    React.useLayoutEffect(() => {
+        if (!boardRef.current) setPaneMode(false);
+    });
 
     React.useLayoutEffect(() => {
         const columnId = pendingVerticalRevealRef.current;
@@ -632,33 +694,42 @@ export default function EngBoardView({
     React.useEffect(() => {
         if (typeof ResizeObserver === 'undefined') return undefined;
         const observer = new ResizeObserver(() => {
+            syncPaneMode();
             applyBoardLayout(false);
             syncHints();
             syncBoardChrome();
         });
         observer.observe(document.documentElement);
         return () => observer.disconnect();
-    }, [applyBoardLayout, syncBoardChrome, syncHints]);
+    }, [applyBoardLayout, syncBoardChrome, syncHints, syncPaneMode]);
 
     React.useEffect(() => {
         window.addEventListener('scroll', scheduleBoardChrome, { passive: true });
         window.addEventListener('resize', scheduleBoardChrome);
+        // documentElement's box is content-driven (D16/D29): once the page is taller than the
+        // viewport — the exact condition pane mode cares about — shrinking the viewport further
+        // stops changing that box at all, so the ResizeObserver above never fires again. The gate
+        // needs the viewport height itself, which only the window resize event carries.
+        window.addEventListener('resize', syncPaneMode);
         return () => {
             window.removeEventListener('scroll', scheduleBoardChrome);
             window.removeEventListener('resize', scheduleBoardChrome);
+            window.removeEventListener('resize', syncPaneMode);
             if (chromeFrameRef.current !== null) {
                 window.cancelAnimationFrame(chromeFrameRef.current);
                 chromeFrameRef.current = null;
             }
             clearBoardChrome();
         };
-    }, [clearBoardChrome, scheduleBoardChrome]);
+    }, [clearBoardChrome, scheduleBoardChrome, syncPaneMode]);
 
     // --board-scrollbar-width is published on documentElement, which outlives this component, so
     // leaving Board would otherwise strand it there for the rest of the session.
     React.useEffect(() => () => {
         document.documentElement.style.removeProperty('--board-scrollbar-width');
     }, []);
+
+    React.useEffect(() => () => setPaneMode(false), [setPaneMode]);
 
     const focusColumn = (columnId) => {
         smoothRef.current = true;
@@ -771,7 +842,7 @@ export default function EngBoardView({
                 </div>
             )}
             {filterBar}
-            <div className="eng-board" role="region" aria-label="Group board">
+            <div className="eng-board" role="region" aria-label="Group board" ref={rootRef}>
                 {firstRun && (
                     <div className="board-head">
                         <div>

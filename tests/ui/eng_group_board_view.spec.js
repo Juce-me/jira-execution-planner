@@ -1245,7 +1245,7 @@ test('selector blocked state: zero Departments action opens Department Team grou
 });
 
 test('selector compact surface: remount closes stale panel and preserves geometry and hit testing', async ({ page }) => {
-    await openBoard(page, { strictBoard: true, sourceBundle: true, width: 800, height: 420, reducedMotion: true });
+    await openBoard(page, { strictBoard: true, sourceBundle: true, ...FALLBACK_VIEWPORT, reducedMotion: true });
     const mainTrigger = page.locator('.view-selector').getByRole('button', { name: 'Select sprint', exact: true });
     const mainGeometry = await mainTrigger.evaluate(node => {
         const rect = node.getBoundingClientRect();
@@ -3521,6 +3521,15 @@ async function focusedId(page) {
     return page.evaluate(() => document.querySelector('.eng-board .col.is-focused')?.dataset.columnId || null);
 }
 
+// Pane mode (docs/agents/features/2026-09-24-planned-board-column-scroll-panes.md). A viewport
+// that fails the height gate with margin, for tests that assert the page-scroll/pinned-chrome model.
+const FALLBACK_VIEWPORT = { width: 800, height: 380 };
+const PANE_STUCK_EPSILON = 1;
+
+async function isPaneMode(page) {
+    return page.evaluate(() => Boolean(document.querySelector('.eng-board.is-pane-mode')));
+}
+
 async function boardGeometry(page) {
     return page.evaluate(() => {
         const board = document.querySelector('.eng-board .board');
@@ -4096,7 +4105,7 @@ test('star and Fold are withdrawn on a one-column board, and still render on a m
 test('the compact sticky header paints over the board, including the off-frame hint', async ({ page }) => {
     // Short viewport so the controls row scrolls away and the compact header takes over, and
     // narrow enough that the off-frame hint — the board's only positioned, z-indexed element — is on.
-    await openBoard(page, { width: 800, height: 420, reducedMotion: true });
+    await openBoard(page, { ...FALLBACK_VIEWPORT, reducedMotion: true });
     await page.mouse.wheel(0, 400);
     await page.waitForFunction(
         () => document.querySelector('.compact-sticky-header')?.classList.contains('is-visible'),
@@ -4145,8 +4154,7 @@ test('open headers and every collapsed rail pin below the live sticky stack with
     ];
 
     await openBoard(page, {
-        width: 800,
-        height: 620,
+        ...FALLBACK_VIEWPORT,
         reducedMotion: true,
         epicSpecs: longSpecs,
     });
@@ -4498,8 +4506,7 @@ test('pinned chrome stays interactive and releases each element at the board bot
     ];
 
     await openBoard(page, {
-        width: 800,
-        height: 620,
+        ...FALLBACK_VIEWPORT,
         reducedMotion: true,
         epicSpecs: longSpecs,
     });
@@ -4660,8 +4667,7 @@ test('every custom property board.css reads resolves on the live board', async (
     expect(names.length, 'expected board.css to read custom properties').toBeGreaterThan(0);
 
     await openBoard(page, {
-        width: 800,
-        height: 620,
+        ...FALLBACK_VIEWPORT,
         reducedMotion: true,
         epicSpecs: [
             ...EPIC_SPECS,
@@ -4739,6 +4745,69 @@ test('a resize never leaves the board wider than the viewport, even before anyth
         expect(measured.left, `board pinned to the viewport edge at ${width}`).toBe(0);
         expect(measured.width, `board bleeds to the viewport at ${width}`).toBe(measured.docWidth);
     }
+});
+
+test('pane mode turns on only for a wide fine-pointer viewport with enough height', async ({ page }) => {
+    await openBoard(page, { width: 1280, height: 900 });
+    expect(await isPaneMode(page)).toBe(true);
+
+    await page.setViewportSize(FALLBACK_VIEWPORT);
+    await expect(page.locator('.eng-board.is-pane-mode')).toHaveCount(0);
+
+    await page.setViewportSize({ width: 420, height: 900 });
+    await expect(page.locator('.eng-board.is-pane-mode')).toHaveCount(0);
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await expect(page.locator('.eng-board.is-pane-mode')).toHaveCount(1);
+});
+
+test('the pane-mode height gate sits at filter bar plus rail height, with hysteresis', async ({ page }) => {
+    await openBoard(page, { width: 1280, height: 900 });
+    const boundary = await page.evaluate(() => {
+        const filterBar = document.querySelector('.filterbar-wrap').getBoundingClientRect().height;
+        const rail = parseFloat(getComputedStyle(document.querySelector('.eng-board')).getPropertyValue('--board-strip-h'));
+        return Math.ceil(filterBar + rail);
+    });
+    await page.setViewportSize({ width: 1280, height: boundary });
+    await expect(page.locator('.eng-board.is-pane-mode')).toHaveCount(1);
+    await page.setViewportSize({ width: 1280, height: boundary - 5 });
+    await expect(page.locator('.eng-board.is-pane-mode'), 'hysteresis keeps pane mode').toHaveCount(1);
+    await page.setViewportSize({ width: 1280, height: boundary - 10 });
+    await expect(page.locator('.eng-board.is-pane-mode')).toHaveCount(0);
+    await page.setViewportSize({ width: 1280, height: boundary - 1 });
+    await expect(page.locator('.eng-board.is-pane-mode'), 'turning on needs the full height').toHaveCount(0);
+    await page.setViewportSize({ width: 1280, height: boundary });
+    await expect(page.locator('.eng-board.is-pane-mode')).toHaveCount(1);
+});
+
+test.describe('touch tablet', () => {
+    test.use({ isMobile: true, hasTouch: true });
+
+    test('a landscape touch tablet keeps the page-scroll model', async ({ page }) => {
+        await openBoard(page, { width: 1024, height: 768 });
+        expect(await isPaneMode(page)).toBe(false);
+    });
+});
+
+test('Board pane mode keeps the compact header hidden and Catch Up gets it back', async ({ page }) => {
+    const longSpecs = [
+        ...EPIC_SPECS,
+        ...Array.from({ length: 32 }, (_, index) => [`PLAT-IP-${index + 1}`, 'In Progress', 'Major']),
+    ];
+    await openBoard(page, { width: 1280, height: 700, reducedMotion: true, epicSpecs: longSpecs });
+    expect(await isPaneMode(page)).toBe(true);
+    await page.evaluate(() => window.scrollTo(0, document.scrollingElement.scrollHeight));
+    await waitTwoFrames(page);
+    const headerGone = await page.evaluate(() => document.querySelector('header').getBoundingClientRect().bottom <= 0);
+    expect(headerGone, 'the full header scrolled away, so the compact header would normally show').toBe(true);
+    await expect(page.locator('.compact-sticky-header.is-visible')).toHaveCount(0);
+
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Catch Up' }).click();
+    await expect(page.locator('.eng-board')).toHaveCount(0);
+    await page.setViewportSize({ width: 1280, height: 420 });
+    await page.evaluate(() => window.scrollTo(0, document.scrollingElement.scrollHeight));
+    await expect(page.locator('.compact-sticky-header.is-visible')).toHaveCount(1);
 });
 
 /* ── §12.9: focus and star are session view state and survive an unmount ────────────────────── */

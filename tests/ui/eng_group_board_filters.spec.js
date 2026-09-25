@@ -17,6 +17,9 @@ const BAR_ROW_HEIGHT = 42;
 // Captured from the pre-change shared wrapper: the fixed 42px bar plus the existing 0.85rem
 // spacer. Keeping this stable proves moving the spacer does not move the downstream sticky stack.
 const FILTERBAR_WRAP_HEIGHT = 55.6;
+// Fails the Board pane-mode height gate with margin, so the compact-header/filter-bar sticky stack
+// under test still exists (docs/agents/features/2026-09-24-planned-board-column-scroll-panes.md).
+const FALLBACK_VIEWPORT = { width: 800, height: 380 };
 
 test.beforeAll(() => {
     fs.mkdirSync(screenshotDir, { recursive: true });
@@ -480,7 +483,7 @@ test('every facet heading carries a numeric total, on both surfaces', async ({ p
 // scroll container and sticky header are new here. elementFromPoint, then a plain click — never
 // click({ force: true }), which is what masked this class of bug before.
 test('the Board filter-bar popover paints over the board and takes a plain click', async ({ page }) => {
-    await openBoard(page, { width: 1280, height: 600 });
+    await openBoard(page, FALLBACK_VIEWPORT);
     const filterbarGeometry = await measureFilterbarWrapper(page);
     expect(filterbarGeometry.topInset, `Board filter-bar geometry: ${JSON.stringify(filterbarGeometry)}`).toBeLessThanOrEqual(1);
     expect(filterbarGeometry.bottomInset, `Board filter-bar geometry: ${JSON.stringify(filterbarGeometry)}`).toBeGreaterThan(1);

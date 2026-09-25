@@ -1,6 +1,7 @@
 import base64
 import dataclasses
 import os
+import tempfile
 import threading
 import time
 import unittest
@@ -9,6 +10,9 @@ from unittest.mock import patch
 
 from backend.auth.cache_policy import build_jira_home_process_cache_key
 from backend.auth.context import ProjectAccessSnapshot
+from backend.auth.db_context import is_db_auth_context
+from backend.db import engine as db_engine
+from backend.db import models
 from backend.routes import eng_routes
 from backend.services.jira_issue_priorities import IssuePriorityServiceError
 from backend.services.jira_issue_project_track import ProjectTrackServiceError
@@ -427,7 +431,88 @@ class OAuthEngRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         self.assertEqual(response.get_json(), {"issues": [{"key": "PROD-1"}]})
-        self.assertEqual(response.headers.get("Server-Timing"), "cache;dur=1")
+        self.assertRegex(response.headers.get("Server-Timing"), r"^cache;dur=1, groups;dur=[0-9.]+$")
+
+    def _seed_db_group_row(self, database_url, team_labels):
+        db_engine.dispose_engines()
+        models.Base.metadata.create_all(db_engine.get_engine(database_url))
+        factory = db_engine.session_factory(database_url)
+        with factory() as session:
+            workspace = models.Workspace(
+                environment_key="local", name="Local", jira_site_url="https://example.atlassian.net",
+                jira_cloud_id="cloud-123", created_by="test",
+            )
+            session.add(workspace)
+            session.flush()
+            row = models.WorkspaceGroupConfig(
+                workspace_id=workspace.id, payload_version=1, config_revision=1,
+                payload={"version": 1, "defaultGroupId": "department-a", "groups": [{
+                    "id": "department-a", "name": "Department A", "teamIds": ["team-a"],
+                    "teamLabels": team_labels,
+                }]},
+            )
+            session.add(row)
+            session.commit()
+            return workspace.id, row.id, factory
+
+    def test_tasks_route_reads_saved_aliases_from_workspace_group_configs_for_cache_and_jql(self):
+        tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tmpdir.cleanup)
+        self.addCleanup(db_engine.dispose_engines)
+        database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir.name, 'groups.db')}"
+        workspace_id, row_id, factory = self._seed_db_group_row(database_url, {"team-a": "label_team_a"})
+        db_context = dataclasses.replace(
+            _local_oauth_context(), auth_connection_id="db-connection-1", workspace_id=workspace_id,
+        )
+        self.assertTrue(is_db_auth_context(db_context))
+        epic_jqls = []
+
+        def fake_search(payload, *args, **kwargs):
+            jql = payload.get("jql", "")
+            if 'type = "Epic"' in jql:
+                epic_jqls.append(jql)
+                return FakeResponse(200, {"issues": [], "isLast": True})
+            return FakeResponse(200, {"issues": [], "names": {"customfield_team": "Team[Team]"}, "isLast": True})
+
+        dashboard = {"teamGroups": {"version": 2, "defaultGroupId": "department-a", "groups": [{
+            "id": "department-a", "name": "Department A", "teamIds": ["team-a"],
+            "teamLabels": {"team-a": ["label_from_dashboard"]},
+        }]}}
+        query = ("/api/tasks-with-team-name?sprint=42&sprintName=2026Q2&project=all&purpose=alerts"
+                 "&groupId=department-a&teamIds=team-a&teamLabels=label_team_a")
+        with patch.dict(os.environ, {"DATABASE_URL": database_url}, clear=False), \
+             patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "current_request_auth_context", return_value=db_context), \
+             patch.object(jira_server, "jira_home_partitioned_process_cache_enabled", return_value=True), \
+             patch.object(jira_server, "load_dashboard_config", return_value=dashboard), \
+             patch.object(jira_server, "build_base_jql", return_value='project = "PROJ"'), \
+             patch.object(jira_server, "get_selected_projects_typed", return_value=[]), \
+             patch.object(jira_server, "get_configured_issue_types", return_value=["Story"]), \
+             patch.object(jira_server, "resolve_team_field_id", return_value="customfield_team"), \
+             patch.object(jira_server, "resolve_epic_link_field_id", return_value=None), \
+             patch.object(jira_server, "get_sprint_field_id", return_value="customfield_sprint"), \
+             patch.object(jira_server, "get_story_points_field_id", return_value="customfield_sp"), \
+             patch.object(jira_server, "fetch_epic_details_bulk", return_value={}), \
+             patch.object(jira_server, "fetch_story_counts_for_epics", return_value={}), \
+             patch.object(jira_server, "fetch_story_distribution_for_epics", return_value={}), \
+             patch.object(jira_server, "jira_search_request", side_effect=fake_search):
+            first = self.client.get(query)
+            with factory() as session:
+                row = session.get(models.WorkspaceGroupConfig, row_id)
+                row.payload = dict(row.payload, groups=[dict(row.payload["groups"][0], teamLabels={
+                    "team-a": ["label_team_a", "label_team_b"]})])
+                row.config_revision = 2
+                session.commit()
+            second = self.client.get(query)
+            third = self.client.get(query)
+
+        for response in (first, second, third):
+            self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(len(epic_jqls), 2, "identical saved aliases must hit the cache")
+        self.assertIn('labels = "label_team_a"', epic_jqls[0])
+        self.assertIn('labels in ("label_team_a", "label_team_b")', epic_jqls[1])
+        self.assertTrue(all("label_from_dashboard" not in jql for jql in epic_jqls))
+        self.assertRegex(third.headers["Server-Timing"], r"^cache;dur=1, groups;dur=[0-9.]+$")
 
     def test_tasks_with_team_name_keeps_oauth_context_for_epic_enrichment(self):
         main_thread_id = threading.get_ident()

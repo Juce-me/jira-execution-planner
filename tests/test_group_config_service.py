@@ -319,6 +319,59 @@ class TestGroupConfigService(unittest.TestCase):
             self.assertNotIn('label_b', error)
         self.assertEqual(normalized['groups'][0]['teamLabels'], {'team-a': ['label_a', 'label_b', 'label_c']})
 
+    def test_build_epic_alert_scope_clause_escapes_label_values(self):
+        clause = group_config.build_epic_alert_scope_clause(
+            ['team-a'], ['label_team_a', 'label "quoted" \\ team', 'LABEL_TEAM_A'], _normalize_team_ids,
+        )
+
+        self.assertEqual(
+            clause,
+            '("Team[Team]" = "team-a" OR labels in ("label_team_a", "label \\"quoted\\" \\\\ team"))',
+        )
+        self.assertEqual(
+            group_config.build_epic_alert_scope_clause([], ['label "a"'], _normalize_team_ids),
+            'labels = "label \\"a\\""',
+        )
+
+    def test_resolve_group_team_label_values_reads_effective_groups_config(self):
+        groups_config = {
+            'version': 2,
+            'groups': [{
+                'id': 'department-a',
+                'teamIds': ['team-a', 'team-b', 'team-c'],
+                'teamLabels': {
+                    'team-a': ['label_team_a', 'label_team_a_old'],
+                    'team-b': 'label_team_b',
+                    'team-c': ['LABEL_TEAM_A'],
+                },
+            }],
+        }
+
+        self.assertEqual(
+            group_config.resolve_group_team_label_values(
+                groups_config, 'department-a', ['team-a', 'team-b', 'team-c'], _normalize_team_ids),
+            ['label_team_a', 'label_team_a_old', 'label_team_b'],
+        )
+        self.assertEqual(
+            group_config.resolve_group_team_label_values(groups_config, 'department-a', ['team-b']),
+            ['label_team_b'],
+        )
+        # Dashboard-config shape (teamGroups wrapper) is not the effective groups config.
+        self.assertEqual(
+            group_config.resolve_group_team_label_values(
+                {'teamGroups': groups_config}, 'department-a', ['team-a'], _normalize_team_ids),
+            [],
+        )
+        self.assertEqual(group_config.resolve_group_team_label_values(groups_config, 'missing', ['team-a']), [])
+        self.assertEqual(group_config.resolve_group_team_label_values(groups_config, 'department-a', []), [])
+
+    def test_merge_team_label_values_is_sorted_and_case_insensitively_distinct(self):
+        self.assertEqual(
+            group_config.merge_team_label_values(
+                ['label_team_b', 'label_team_a'], ['LABEL_TEAM_A', ' label_team_c ', '']),
+            ['label_team_a', 'label_team_b', 'label_team_c'],
+        )
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -2,6 +2,9 @@
 
 import json
 
+from backend.services.alert_epics import quote_jql_value
+from backend.services.team_catalog import flatten_group_team_labels, normalize_group_team_labels
+
 
 def _noop(*_args, **_kwargs):
     return None
@@ -180,21 +183,29 @@ def build_epic_alert_scope_clause(scope_team_ids=None, scope_team_labels=None, n
         quoted = ', '.join(f'"{team_id}"' for team_id in team_ids)
         clauses.append(f'"Team[Team]" in ({quoted})' if len(team_ids) > 1 else f'"Team[Team]" = "{team_ids[0]}"')
     if labels:
-        quoted = ', '.join(f'"{label}"' for label in labels)
-        clauses.append(f'labels in ({quoted})' if len(labels) > 1 else f'labels = "{labels[0]}"')
+        quoted = ', '.join(quote_jql_value(label) for label in labels)
+        clauses.append(f'labels in ({quoted})' if len(labels) > 1 else f'labels = {quote_jql_value(labels[0])}')
     return f'({" OR ".join(clauses)})' if len(clauses) > 1 else (clauses[0] if clauses else '')
 
 
-def resolve_group_team_label_values(config, group_id, team_ids, normalize_team_ids_fn):
+def resolve_group_team_label_values(groups_config, group_id, team_ids, normalize_team_ids_fn=None):
+    """Flatten the saved aliases of the requested Teams from an effective groups config."""
     if not group_id or not team_ids:
         return []
-    groups = (((config or {}).get('teamGroups') or {}).get('groups') or [])
-    group = next((item for item in groups if str(item.get('id') or '').strip() == group_id), None)
+    groups = (groups_config or {}).get('groups') or []
+    group = next((item for item in groups if isinstance(item, dict) and str(item.get('id') or '').strip() == group_id), None)
     if not group:
         return []
-    team_id_set = set(normalize_team_ids_fn(team_ids))
-    return [
-        str(label or '').strip()
-        for team_id, label in (group.get('teamLabels') or {}).items()
-        if str(team_id or '').strip() in team_id_set and str(label or '').strip()
-    ]
+    mapping, _errors = normalize_group_team_labels(group.get('teamLabels'), team_ids, normalize_team_ids_fn)
+    return flatten_group_team_labels(mapping, team_ids, normalize_team_ids_fn)
+
+
+def merge_team_label_values(*sources):
+    """Sorted, case-insensitively distinct union; the first spelling of a label wins."""
+    merged = {}
+    for source in sources:
+        for label in source or []:
+            value = str(label or '').strip()
+            if value:
+                merged.setdefault(value.lower(), value)
+    return sorted(merged.values(), key=lambda value: (value.lower(), value))

@@ -5,6 +5,7 @@ import {
 import { isAuthenticationRequiredError } from '../api/authRequired.js';
 import { recordPerformanceLoad } from '../api/performanceApi.js';
 import { createGroupLoadMeasurement, laneMetrics } from './loadPerformance.js';
+import { flattenTeamLabelAliases } from '../settings/groupConfigUtils.js';
 
 export const ENG_TASK_LOAD_OUTCOME = Object.freeze({
     APPLIED: 'applied',
@@ -122,7 +123,7 @@ export function useEngSprintData({
         try {
             const sprintParam = options.sprintOverride !== undefined ? options.sprintOverride : (selectedSprint || '');
             const groupTeamIds = activeGroupTeamIds;
-            const groupTeamLabels = Array.from(new Set(groupTeamIds.map((teamId) => String(activeGroupTeamLabels?.[teamId] || '').trim()).filter(Boolean)));
+            const groupTeamLabels = groupTeamIds.length ? flattenTeamLabelAliases(activeGroupTeamLabels, groupTeamIds) : [];
             // Bypass server cache on page load or explicit refresh
             let refresh = false;
             if (pageLoadRefreshRef.current || options.forceRefresh) {

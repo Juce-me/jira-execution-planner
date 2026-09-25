@@ -107,6 +107,7 @@ from backend.services import capacity as _capacity_service
 from backend.services import sprints as _sprints_service
 from backend.services import stats_cache as _stats_cache_service
 from backend.services.alert_epics import (
+    AlertEpicScopeTooLarge,
     build_alert_epic_payloads as build_alert_epic_payloads_service,
     fetch_epics_for_alert_scope as fetch_epics_for_alert_scope_service,
     fetch_epics_by_keys_for_alert as fetch_epics_by_keys_for_alert_service,
@@ -115,6 +116,7 @@ from backend.services import update_check as _update_check_service
 from backend.services import priority_weights as _priority_weights_service
 from backend.services import team_catalog as _team_catalog_service
 from backend.services import group_config as _group_config_service
+from backend.services import shared_group_config as _shared_group_config_service
 from backend.services import group_board as _group_board_service
 from backend.services import shared_capacity_config as _shared_capacity_config_service
 from backend.services.eng_subtasks import build_embedded_subtask_summary
@@ -209,7 +211,7 @@ EXCLUDED_CAPACITY_EPIC_SUMMARY_BATCH_SIZE = int(os.getenv('EXCLUDED_CAPACITY_EPI
 SCENARIO_CACHE = {'generatedAt': None, 'data': None}
 TASKS_CACHE, SPRINTS_PROCESS_CACHE = {}, {}
 TASKS_CACHE_TTL_SECONDS = 60 * 5
-TASKS_CACHE_SCHEMA_VERSION = 'v2-empty-epic-actionable'
+TASKS_CACHE_SCHEMA_VERSION = 'v3-team-label-aliases'
 MISSING_INFO_CACHE = {}
 MISSING_INFO_CACHE_TTL_SECONDS = 60 * 5
 DEPENDENCIES_CACHE = {}
@@ -2666,6 +2668,19 @@ def apply_team_ids_to_template(team_ids):
     return JQL_QUERY_TEMPLATE.replace('{TEAM_IDS}', quoted)
 
 
+def load_request_effective_groups(context):
+    """Effective shared groups for this auth boundary, with the same loaders as Story readiness."""
+    return _shared_group_config_service.load_effective_groups(
+        context if is_db_auth_context(context) else None,
+        fallback_loader=lambda: load_dashboard_config(source='jsonfile'),
+        validate_groups_config_fn=validate_groups_config,
+        dashboard_loader=load_dashboard_config,
+        groups_file_loader=lambda: load_groups_config_file(resolve_groups_config_path()),
+        environment_loader=parse_groups_config_env,
+        default_builder=build_default_groups_config,
+    )
+
+
 def build_tasks_cache_key(sprint, group_id, project_filter, team_ids, team_labels, include_team_name, use_template, purpose='dashboard', epic_keys=None, sprint_name=''):
     epic_signature = ','.join(sorted({str(k).strip() for k in (epic_keys or []) if str(k).strip()}))
     label_signature = ','.join(sorted({str(v).strip() for v in (team_labels or []) if str(v).strip()}))
@@ -3197,12 +3212,17 @@ def fetch_tasks(include_team_name=False):
         epic_keys_filter = sorted({t.strip() for t in epic_keys_param.split(',') if t.strip()})
         use_template = bool(team_ids and JQL_QUERY_TEMPLATE)
         lightweight_ready_to_close = request_purpose == 'ready-to-close'
+        record_timing('parse_params', parse_started)
+        auth_context = current_request_auth_context()
+        groups_started = time.perf_counter()
+        saved_team_labels = (_group_config_service.resolve_group_team_label_values(load_request_effective_groups(auth_context), group_id, team_ids, normalize_team_ids)
+                             if request.args.get('groupId', '').strip() and team_ids else [])
+        team_label_values = _group_config_service.merge_team_label_values(saved_team_labels, team_label_values)
+        record_timing('groups', groups_started)
         raw_cache_key = build_tasks_cache_key(
             sprint, group_id, project_filter, team_ids, team_label_values,
             include_team_name, use_template, request_purpose, epic_keys_filter, sprint_name=sprint_name
         )
-        record_timing('parse_params', parse_started)
-        auth_context = current_request_auth_context()
         cache_generation = get_jira_issue_cache_generation()
         measurement_campaign = getattr(g, 'measurement_campaign', None)
         if project_filter in ('product', 'tech'):
@@ -3221,7 +3241,7 @@ def fetch_tasks(include_team_name=False):
             cached_response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
             cached_response.headers['Pragma'] = 'no-cache'
             cached_response.headers['Expires'] = '0'
-            cached_response.headers['Server-Timing'] = 'cache;dur=1'
+            cached_response.headers['Server-Timing'] = f"cache;dur=1, groups;dur={timings_ms['groups']}"
             if measurement_campaign is not None:
                 from backend.routes.dev_routes import publish_tagged_legacy
                 return publish_tagged_legacy(measurement_campaign, g.measurement_step, g.measurement_lane, auth_context, lambda: cached_response)
@@ -3400,8 +3420,6 @@ def fetch_tasks(include_team_name=False):
             team_field_id = next((k for k, v in names_map.items() if str(v).lower() == 'team[team]'), None)
         epic_link_field = epic_link_field_id or resolve_epic_link_field_id(headers, names_map, context=auth_context)
         epic_name_field = next((k for k, v in names_map.items() if str(v).lower() == 'epic name'), None)
-        config_team_labels = _group_config_service.resolve_group_team_label_values(load_dashboard_config() or {}, group_id, team_ids, normalize_team_ids)
-        group_team_label_values = list(dict.fromkeys([*config_team_labels, *team_label_values]))
         epic_keys = set()
         normalize_started = time.perf_counter()
         for issue in collected_issues:
@@ -3465,15 +3483,15 @@ def fetch_tasks(include_team_name=False):
                     counts = open_child_distribution.get(epic.get('key')) or {}
                     epic['openChildCount'] = int(counts.get('openStoriesOutsideSelected', 0) or 0)
             else:
-                epics_in_scope = fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, group_team_label_values, sprint_name, complete_alert_scope=(request_purpose == 'alerts'))
+                epics_in_scope = fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, team_label_values, sprint_name, complete_alert_scope=(request_purpose == 'alerts'))
         else:
             if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH:
                 epic_details = fetch_epic_details_bulk(epic_keys, headers, epic_name_field)
-                epics_in_scope = fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, group_team_label_values, sprint_name, complete_alert_scope=(request_purpose == 'alerts'))
+                epics_in_scope = fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, team_label_values, sprint_name, complete_alert_scope=(request_purpose == 'alerts'))
             else:
                 with ThreadPoolExecutor(max_workers=2) as pool:
                     future_epic_details = submit_with_performance(pool, fetch_epic_details_bulk, epic_keys, headers, epic_name_field)
-                    future_epics_in_scope = submit_with_performance(pool, fetch_epics_for_empty_alert, jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, group_team_label_values, sprint_name, request_purpose == 'alerts')
+                    future_epics_in_scope = submit_with_performance(pool, fetch_epics_for_empty_alert, jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, team_label_values, sprint_name, request_purpose == 'alerts')
                     epic_details = future_epic_details.result()
                     epics_in_scope = future_epics_in_scope.result()
         record_timing('epic_enrichment', enrich_epics_started)
@@ -3595,7 +3613,7 @@ def fetch_tasks(include_team_name=False):
             response.headers['Pragma'] = 'no-cache'
             response.headers['Expires'] = '0'
             tokens = [f'{key.replace("_", "-")};dur={timings_ms[key]}' for key in
-                      ('jira_search', 'normalize_tasks', 'epic_enrichment', 'epic_counts_distribution', 'build_response')
+                      ('groups', 'jira_search', 'normalize_tasks', 'epic_enrichment', 'epic_counts_distribution', 'build_response')
                       if key in timings_ms]
             if tokens: response.headers['Server-Timing'] = ', '.join(tokens)
             return response
@@ -3609,6 +3627,11 @@ def fetch_tasks(include_team_name=False):
             payload, status = oauth_auth_required_payload()
             return jsonify(payload), status
         return auth_error_response(error, 401)
+    except AlertEpicScopeTooLarge:
+        log_warning('Alert Epic scope exceeded its ceiling')
+        error_response = jsonify({'error': 'alert_scope_too_large', 'message': 'This Department is too large for Epic alerts.'})
+        error_response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        return error_response, 422
     except Exception as e:
         logger.exception('Failed to fetch tasks from Jira')
         error_response = jsonify({

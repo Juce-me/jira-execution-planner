@@ -383,13 +383,14 @@ class PersistentCatalogRouteTests(unittest.TestCase):
     def test_cold_runtime_saturation_returns_immediately_without_pollable_attempt(self):
         runtime = Mock()
         runtime.refresh.return_value = None
-        before = __import__('time').monotonic()
         with self._db_catalog(payload=None) as (client, _factory, _context), \
                 patch.object(jira_server, 'catalog_refresh_runtime', return_value=runtime), \
                 patch.object(jira_server.time, 'sleep', side_effect=AssertionError('cold saturation polled')), \
                 patch.object(jira_server, 'current_jira_get', side_effect=AssertionError('cold saturation called Jira')):
+            # Time only the request; DB fixture setup is not part of the route's latency contract.
+            before = __import__('time').monotonic()
             response = client.get('/api/sprints')
-        elapsed = __import__('time').monotonic() - before
+            elapsed = __import__('time').monotonic() - before
         self.assertLess(elapsed, 0.5)
         self.assertEqual(response.status_code, 503)
         self.assertEqual(set(response.get_json()), {'error', 'cache'})

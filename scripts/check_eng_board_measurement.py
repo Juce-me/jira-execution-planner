@@ -279,7 +279,7 @@ def _validate_complete(document):
                     concurrency |= metrics['maxConcurrency'] == 2
                     exercised |= metrics['maxPagesPerSearch'] >= 2 or metrics['maxBatchesPerColumn'] >= 2
                     if profile == 'candidate_all_work':
-                        representative &= metrics['terminalEpicCount'] >= 1 and metrics['unmappedEpicCount'] >= 1
+                        representative &= metrics['terminalEpicCount'] >= 1
                 else:
                     cold_metrics = prior_cold.get(profile)
                     if cold_metrics is None:

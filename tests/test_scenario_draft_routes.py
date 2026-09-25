@@ -887,8 +887,12 @@ class ScenarioDraftRouteTests(unittest.TestCase):
         draft_id = saved['activeDraft']['draftId']
         original_hash = saved['activeDraft']['scenarioSourceHash']
 
+        # Hold the loader well past any plausible route latency; released after the assertions.
+        release_planner = threading.Event()
+        self.addCleanup(release_planner.set)
+
         def slow_planner():
-            time.sleep(0.5)
+            release_planner.wait(5)
             return jsonify({
                 'config': {},
                 'filters': {},
@@ -929,10 +933,10 @@ class ScenarioDraftRouteTests(unittest.TestCase):
              patch('backend.routes.scenario_draft_routes.SCENARIO_RELOAD_TIMEOUT_SECONDS', 0.05):
             worker = threading.Thread(target=post_reload)
             worker.start()
-            worker.join(1)
+            worker.join(3)
 
         self.assertFalse(worker.is_alive())
-        self.assertLess(result['elapsed'], 0.4)
+        self.assertLess(result['elapsed'], 2.0)
         self.assertEqual(result['status'], 503)
         self.assertEqual(result['body']['error'], 'scenario_reload_timeout')
         with self.factory() as session:

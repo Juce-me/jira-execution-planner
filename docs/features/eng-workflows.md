@@ -81,11 +81,13 @@ When operational load collection is enabled, accepted Component observations are
 
 Dragging an Epic to another column requests the Jira transitions available for that Epic and changes Jira status only when the user has permission and a usable target status is loaded for the destination. A refused, unavailable, or failed transition leaves the Epic in its existing status. A Board column star is session-only and changes the focused column for the current app session.
 
+The default Board has three columns in reading order: **To Do | In Progress | Done**. **Reset to default columns** builds it from the Jira status catalog: exactly `In Progress` goes to In Progress; `Done`, `Incomplete`, and `Killed` go to Done; every other status goes to To Do. A configured Board has no Unmapped column: an Epic whose status no column holds is To Do work and renders in the first column.
+
 On desktop wider than 760px, with a hovering fine pointer and enough height below the filter bar, Board switches to pane mode: every open column and folded rail becomes a bordered pane running the full height from its title line to the screen bottom, and the compact sticky header is suppressed so the filter bar is the only sticky layer. The first downward scroll moves the page until the board reaches that sticky line; scrolling back up returns an open column to its own top first, then releases the page. While stuck, each open column scrolls independently and keeps its scroll position when the page unsticks; a folded column always reopens at the top. Field popovers (such as the person editor) close if their card scrolls out of its pane. Narrow, short, or touch viewports keep the existing page-scroll model with the pinned column chrome and compact header.
 
 Settings → Departments → Boards maps Jira statuses to columns. There you can reorder columns; change a column's name and color; set advisory Min and Max values; and choose the shared default-star column. Loading the Jira status catalog requires a configured Jira board/project scope and permission to read its statuses. Saved columns remain intact when the catalog cannot load.
 
-If a Department has no usable Board configuration, Board renders one **All epics** column and offers the configuration path. It does not mislabel unconfigured work as an Unmapped setup.
+If a Department has no usable Board configuration, Board renders one **All epics** column and offers the configuration path.
 
 ## Filters and search
 

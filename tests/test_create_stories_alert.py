@@ -922,8 +922,10 @@ class TestCreateStoriesAlertApi(unittest.TestCase):
         client = app.test_client()
 
         jira_payload = {
-            'values': ['team_alpha_label', 'team_beta_label'],
-            'isLast': True
+            'results': [
+                {'value': 'team_alpha_label', 'displayName': '<b>team_</b>alpha_label'},
+                {'value': 'team_beta_label', 'displayName': '<b>team_</b>beta_label'},
+            ]
         }
 
         with patch.object(jira_server, 'current_jira_get', return_value=_mock_response(200, jira_payload)):
@@ -933,7 +935,7 @@ class TestCreateStoriesAlertApi(unittest.TestCase):
         payload = response.get_json() or {}
         self.assertEqual(payload.get('labels'), ['team_alpha_label', 'team_beta_label'])
 
-    def test_jira_labels_endpoint_fetches_all_pages_before_filtering(self):
+    def test_jira_labels_endpoint_fetches_all_pages_before_prefix_filtering(self):
         app = jira_server.app
         app.testing = True
         client = app.test_client()
@@ -955,7 +957,7 @@ class TestCreateStoriesAlertApi(unittest.TestCase):
             'jira_server.current_jira_get',
             side_effect=[_mock_response(200, first_page), _mock_response(200, second_page)]
         ) as mock_get:
-            response = client.get('/api/jira/labels?query=team_')
+            response = client.get('/api/jira/labels?prefix=team_&refresh=1')
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         payload = response.get_json() or {}

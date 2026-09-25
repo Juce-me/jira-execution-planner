@@ -66,7 +66,7 @@ This plan's 2026-09-09 correction is authoritative where the earlier [support de
 - Components are the existing shared `groups[].missingInfoComponents`. The cross-sprint Component mode matches exact names across all server-selected projects only on the Epic's own Component field; never apply Component matching to children. No browser project/JQL/Epic-key authority and no new Component field.
 - Component requires a saved valid Board and at least one configured Component. Its membership is the exact Component-matched Epic set across sprints, with no Team-parent discovery. All work requires a saved valid Board and at least one Component or Team discovery source. Its cross-sprint Epic set is the union of the same Component-matched Epics and parent Epics of eligible work assigned to any saved Department Team. Those All work sources are additive: Team-parent discovery still runs when Components are configured, and a Team-only Department is valid. Deduplicate All work only after both applicable sources complete. Selected-sprint membership and unconfigured-Board compatibility remain owned by the existing Catch Up snapshot.
 - Resolve configured standard issue types using hierarchy level zero/non-subtask; absent config defaults Story, explicit empty selects all eligible types. Preserve Epic-Link precedence over Epic-typed parent. Do not eagerly fetch subtasks.
-- Preserve terminal identity, last-column position, `board-unmapped` immediately before terminal, 1–90-day retention (default 28), conservative recent-created terminal fallback and status transition JQL. Never use `updated` for retention. Empty terminal statuses add no retention clause.
+- Preserve terminal identity, last-column position, 1–90-day retention (default 28), conservative recent-created terminal fallback and status transition JQL. Never use `updated` for retention. Empty terminal statuses add no retention clause.
 - Board Teams controls remain visible, disabled and non-filtering in main and compact headers. Help stays in `EngBoardHelp`; preserve existing cards, focus, filters, drag/drop and field controls.
 - Epic-native facets and All work Epic export become authoritative at complete index. Child-derived Projects, SP, drag safety and work-item export remain pending until required cohorts are complete. Pending is never numeric zero. Search preserves input/focus and stays neutral until All work membership is authoritative. Selected-sprint authority follows the existing Catch Up snapshot contract.
 - Jira issue identity, status and linkage remain strict. Embedded parent details and configured optional presentation fields are enrichment: permission-reduced parent subfields, singular list-valued optional fields, legacy Sprint metadata, and Team field variants already accepted elsewhere in the app normalize to closed wire values (or absence) and must not terminate the generation. Internal projection failures log only a fixed field-level reason label, never issue keys or values.
@@ -169,7 +169,7 @@ Modify: `backend/services/eng_board_stream.py`, `frontend/src/api/engBoardApi.js
 Modify: `backend/services/eng_board.py`, `tests/test_eng_board_service.py`, `backend/services/eng_board_measurement.py`, `backend/services/group_board.py`, `backend/services/group_config.py`, `frontend/src/settings/groupBoardModel.js`, `frontend/src/settings/groupConfigUtils.js`. Update existing measurement/group-board model tests discovered by symbol in Task 0.
 
 - [x] Reopened after source review: complete composed table-driven coverage for all production profiles: Component-owned Epics, additive Team-parent discovery, `other`, same-name Components in multiple projects, saved-board project fallback, absent Board, empty terminal status, retention 1/28/90, zero-child Epic and configured non-Story child types.
-- [x] Keep All work rejected for an absent Board. With a configured Board, unknown Epic statuses use `board-unmapped`, and every emitted Epic/child cohort references a declared column. Selected-sprint absent-Board presentation remains on the Catch Up path.
+- [x] Keep All work rejected for an absent Board. With a configured Board, unknown Epic statuses use the first configured (To Do) column, and every emitted Epic/child cohort references a declared column. Selected-sprint absent-Board presentation remains on the Catch Up path.
 - [x] Make `resolve_issue_type_ids` reject missing/malformed hierarchy metadata instead of silently omitting uncertain catalog entries. Validate catalog row shape, nonblank identity/name, integer non-boolean `hierarchyLevel`, and boolean `subtask` before eligibility selection. Valid Epic/Subtask entries remain excluded, not errors. Test mixed valid Story plus malformed Bug/Task with explicit empty configured names; missing hierarchy, boolean/string hierarchy and malformed subtask must fail scope before search. Also retain absent-config Story default, explicit-empty all-eligible, multiple eligible IDs per configured name, and unmatched-name errors.
 - [x] Move/reuse core functions and extend strict paging with validated page callback and incremental global bounds. The diagnostic imports must test the same implementation.
 - [x] Preserve idempotent old Board normalization: infer terminal once as specified in support design, retain column IDs and existing assignments. Round-trip retention in backend/frontend; a dirty draft must not change live Board.
@@ -470,6 +470,13 @@ candidate measurement, push, PR, deployment or local DB migration was performed.
 This was the correct conclusion under the then-current hard-termination requirement. The later
 2026-09-08 user decision supersedes that requirement: Task 3 now depends on the revised one-request
 transport, completeness, resource-ceiling and speed gates, not a supervisor or Board control DB.
+
+### Correction — 2026-09-25
+
+The synthetic `board-unmapped` column is removed. The strict service declares only the configured
+columns, and an Epic whose status no column holds uses the first (To Do) column, which the legacy
+frontend path matches. The All work measurement gate no longer requires `unmappedEpicCount≥1`; the
+metric stays in the closed schema and now reports 0.
 
 ### Corrective continuation — 2026-09-08
 

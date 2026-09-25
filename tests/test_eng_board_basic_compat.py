@@ -137,7 +137,7 @@ class EngBoardBasicCompatibilityTests(unittest.TestCase):
         snapshot = eng_board_routes._capture_basic_snapshot(server, query, transport, b'test-secret')
         frames = [json.loads(line) for line in eng_board_routes._frame_stream(server, snapshot, transport)]
 
-        self.assertEqual(['start', 'index', 'column', 'column', 'column', 'complete'], [
+        self.assertEqual(['start', 'index', 'column', 'column', 'complete'], [
             frame['type'] for frame in frames
         ])
         self.assertEqual('success', frames[-1]['outcome'])

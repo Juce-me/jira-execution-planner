@@ -1,6 +1,6 @@
 import unittest
 
-from backend.services import group_board, group_config
+from backend.services import group_board, group_config, team_catalog
 
 
 def _normalize_team_ids(values):
@@ -46,9 +46,9 @@ class TestGroupConfigService(unittest.TestCase):
             groups_max_teams=12,
             normalize_team_ids_fn=_normalize_team_ids,
             normalize_epic_keys_fn=_normalize_epic_keys,
-            normalize_group_team_labels_fn=lambda raw, ids: {
-                key: value for key, value in raw.items() if key in ids
-            },
+            normalize_group_team_labels_fn=lambda raw, ids: (
+                {key: value for key, value in raw.items() if key in ids}, [],
+            ),
             normalize_group_board_fn=group_board.normalize_group_board,
         )
 
@@ -82,7 +82,7 @@ class TestGroupConfigService(unittest.TestCase):
             groups_max_teams=12,
             normalize_team_ids_fn=_normalize_team_ids,
             normalize_epic_keys_fn=_normalize_epic_keys,
-            normalize_group_team_labels_fn=lambda _raw, _ids: {},
+            normalize_group_team_labels_fn=lambda _raw, _ids: ({}, []),
             normalize_group_board_fn=group_board.normalize_group_board,
         )
 
@@ -115,7 +115,7 @@ class TestGroupConfigService(unittest.TestCase):
             groups_max_teams=12,
             normalize_team_ids_fn=_normalize_team_ids,
             normalize_epic_keys_fn=_normalize_epic_keys,
-            normalize_group_team_labels_fn=lambda _raw, _ids: {},
+            normalize_group_team_labels_fn=lambda _raw, _ids: ({}, []),
             normalize_group_board_fn=group_board.normalize_group_board,
         )
 
@@ -150,7 +150,7 @@ class TestGroupConfigService(unittest.TestCase):
             groups_max_teams=12,
             normalize_team_ids_fn=_normalize_team_ids,
             normalize_epic_keys_fn=_normalize_epic_keys,
-            normalize_group_team_labels_fn=lambda _raw, _ids: {},
+            normalize_group_team_labels_fn=lambda _raw, _ids: ({}, []),
             normalize_group_board_fn=group_board.normalize_group_board,
         )
 
@@ -179,7 +179,7 @@ class TestGroupConfigService(unittest.TestCase):
             groups_max_teams=12,
             normalize_team_ids_fn=_normalize_team_ids,
             normalize_epic_keys_fn=_normalize_epic_keys,
-            normalize_group_team_labels_fn=lambda _raw, _ids: {},
+            normalize_group_team_labels_fn=lambda _raw, _ids: ({}, []),
             normalize_group_board_fn=group_board.normalize_group_board,
         )
 
@@ -203,7 +203,7 @@ class TestGroupConfigService(unittest.TestCase):
             groups_max_teams=12,
             normalize_team_ids_fn=_normalize_team_ids,
             normalize_epic_keys_fn=_normalize_epic_keys,
-            normalize_group_team_labels_fn=lambda _raw, _ids: {},
+            normalize_group_team_labels_fn=lambda _raw, _ids: ({}, []),
             normalize_group_board_fn=group_board.normalize_group_board,
         )
 
@@ -225,7 +225,7 @@ class TestGroupConfigService(unittest.TestCase):
             groups_max_teams=12,
             normalize_team_ids_fn=_normalize_team_ids,
             normalize_epic_keys_fn=_normalize_epic_keys,
-            normalize_group_team_labels_fn=lambda _raw, _ids: {},
+            normalize_group_team_labels_fn=lambda _raw, _ids: ({}, []),
             normalize_group_board_fn=group_board.normalize_group_board,
         )
 
@@ -249,6 +249,75 @@ class TestGroupConfigService(unittest.TestCase):
         self.assertEqual(config['groups'][0]['adHocCapacityEpics'], [])
         self.assertNotIn('board', config['groups'][0])
         self.assertEqual(len(warnings), 1)
+
+    def test_validate_groups_config_forces_current_version_regardless_of_client_value(self):
+        kwargs = dict(
+            groups_config_version=2,
+            groups_max_teams=12,
+            normalize_team_ids_fn=_normalize_team_ids,
+            normalize_epic_keys_fn=_normalize_epic_keys,
+            normalize_group_team_labels_fn=lambda _raw, _ids: ({}, []),
+            normalize_group_board_fn=group_board.normalize_group_board,
+        )
+        payload = {
+            'groups': [{'id': 'group-1', 'name': 'Group 1', 'teamIds': ['team-a']}],
+            'defaultGroupId': 'group-1',
+        }
+
+        for client_version in (1, 2, 99, None):
+            normalized, errors, _warnings = group_config.validate_groups_config(
+                {**payload, 'version': client_version},
+                **kwargs,
+            )
+            self.assertEqual(errors, [])
+            self.assertEqual(normalized['version'], 2)
+
+    def test_validate_groups_config_normalizes_team_labels_into_arrays(self):
+        normalized, errors, _warnings = group_config.validate_groups_config(
+            {
+                'groups': [{
+                    'id': 'group-1',
+                    'name': 'Group 1',
+                    'teamIds': ['team-a'],
+                    'teamLabels': {'team-a': 'label_team_a'},
+                }],
+                'defaultGroupId': 'group-1',
+            },
+            groups_config_version=2,
+            groups_max_teams=12,
+            normalize_team_ids_fn=_normalize_team_ids,
+            normalize_epic_keys_fn=_normalize_epic_keys,
+            normalize_group_team_labels_fn=team_catalog.normalize_group_team_labels,
+            normalize_group_board_fn=group_board.normalize_group_board,
+        )
+
+        self.assertEqual(errors, [])
+        self.assertEqual(normalized['groups'][0]['teamLabels'], {'team-a': ['label_team_a']})
+
+    def test_validate_groups_config_prefixes_team_label_errors_with_group_name_and_omits_label_values(self):
+        normalized, errors, _warnings = group_config.validate_groups_config(
+            {
+                'groups': [{
+                    'id': 'group-1',
+                    'name': 'Group 1',
+                    'teamIds': ['team-a'],
+                    'teamLabels': {'team-a': ['label_a', 'label_b', 'label_c', 'label_a']},
+                }],
+                'defaultGroupId': 'group-1',
+            },
+            groups_config_version=2,
+            groups_max_teams=12,
+            normalize_team_ids_fn=_normalize_team_ids,
+            normalize_epic_keys_fn=_normalize_epic_keys,
+            normalize_group_team_labels_fn=team_catalog.normalize_group_team_labels,
+            normalize_group_board_fn=group_board.normalize_group_board,
+        )
+
+        self.assertEqual(errors, ['Group "Group 1" Team "team-a" has duplicate Jira labels.'])
+        for error in errors:
+            self.assertNotIn('label_a', error)
+            self.assertNotIn('label_b', error)
+        self.assertEqual(normalized['groups'][0]['teamLabels'], {'team-a': ['label_a', 'label_b', 'label_c']})
 
 
 if __name__ == '__main__':

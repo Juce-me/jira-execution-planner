@@ -169,6 +169,113 @@ test('formatGroupBoardSummary reports only group board configuration', async () 
     assert.equal(formatGroupBoardSummary({ columns: [{}] }, '1042'), '1 column');
 });
 
+test('normalizeGroupsConfig converts a legacy scalar team label to a single-item array', async () => {
+    const { normalizeGroupsConfig } = await import('../frontend/src/settings/groupConfigUtils.js');
+
+    const normalized = normalizeGroupsConfig({
+        version: 1,
+        groups: [{ id: 'alpha', name: 'Alpha', teamIds: ['team-a'], teamLabels: { 'team-a': 'label_team_a' } }],
+        defaultGroupId: 'alpha',
+    });
+
+    assert.deepEqual(normalized.groups[0].teamLabels, { 'team-a': ['label_team_a'] });
+});
+
+test('normalizeGroupsConfig keeps a canonical one-to-three alias array, trimmed and ordered', async () => {
+    const { normalizeGroupsConfig } = await import('../frontend/src/settings/groupConfigUtils.js');
+
+    const normalized = normalizeGroupsConfig({
+        version: 2,
+        groups: [{
+            id: 'alpha',
+            name: 'Alpha',
+            teamIds: ['team-a'],
+            teamLabels: { 'team-a': [' label_team_a ', 'label_team_a_old', '   '] },
+        }],
+        defaultGroupId: 'alpha',
+    });
+
+    assert.deepEqual(normalized.groups[0].teamLabels, { 'team-a': ['label_team_a', 'label_team_a_old'] });
+});
+
+test('normalizeGroupsConfig defaults to the current version and drops a Team with only blank aliases', async () => {
+    const { normalizeGroupsConfig, GROUPS_CONFIG_VERSION } = await import('../frontend/src/settings/groupConfigUtils.js');
+
+    assert.equal(GROUPS_CONFIG_VERSION, 2);
+    const normalized = normalizeGroupsConfig({
+        groups: [{ id: 'alpha', name: 'Alpha', teamIds: ['team-a'], teamLabels: { 'team-a': ['', '   '] } }],
+        defaultGroupId: 'alpha',
+    });
+
+    assert.equal(normalized.version, GROUPS_CONFIG_VERSION);
+    assert.deepEqual(normalized.groups[0].teamLabels, {});
+});
+
+test('normalizeTeamLabelAliases trims, dedupes case-insensitively, and does not mutate its input', async () => {
+    const { normalizeTeamLabelAliases } = await import('../frontend/src/settings/groupConfigUtils.js');
+
+    const source = ['label_team_a', ' LABEL_TEAM_A ', 'label_team_a_old', 123, null];
+    const frozenSource = Object.freeze([...source]);
+    assert.deepEqual(normalizeTeamLabelAliases(frozenSource), ['label_team_a', 'label_team_a_old']);
+    assert.deepEqual(normalizeTeamLabelAliases('label_team_a'), ['label_team_a']);
+    assert.deepEqual(normalizeTeamLabelAliases(null), []);
+});
+
+test('validateTeamLabelAliases surfaces a fourth alias without truncating', async () => {
+    const { validateTeamLabelAliases } = await import('../frontend/src/settings/groupConfigUtils.js');
+
+    const result = validateTeamLabelAliases(['label_a', 'label_b', 'label_c', 'label_d']);
+    assert.deepEqual(result.aliases, ['label_a', 'label_b', 'label_c', 'label_d']);
+    assert.equal(result.error, 'has more than 3 Jira labels.');
+});
+
+test('validateTeamLabelAliases surfaces a case-insensitive duplicate preserving first spelling', async () => {
+    const { validateTeamLabelAliases } = await import('../frontend/src/settings/groupConfigUtils.js');
+
+    const result = validateTeamLabelAliases(['label_team_a', ' LABEL_TEAM_A ']);
+    assert.deepEqual(result.aliases, ['label_team_a']);
+    assert.equal(result.error, 'has duplicate Jira labels.');
+});
+
+test('validateTeamLabelAliases surfaces a non-string entry with a label-free message', async () => {
+    const { validateTeamLabelAliases } = await import('../frontend/src/settings/groupConfigUtils.js');
+
+    const result = validateTeamLabelAliases(['label_team_a', 42]);
+    assert.deepEqual(result.aliases, ['label_team_a']);
+    assert.equal(result.error, 'has an invalid Jira label.');
+    assert.equal(result.error.includes('label_team_a'), false);
+});
+
+test('validateTeamLabelAliases accepts one-to-three aliases with no error', async () => {
+    const { validateTeamLabelAliases } = await import('../frontend/src/settings/groupConfigUtils.js');
+
+    const result = validateTeamLabelAliases(['label_a', 'label_b', 'label_c']);
+    assert.deepEqual(result.aliases, ['label_a', 'label_b', 'label_c']);
+    assert.equal(result.error, null);
+});
+
+test('flattenTeamLabelAliases unions aliases across requested Teams case-insensitively', async () => {
+    const { flattenTeamLabelAliases } = await import('../frontend/src/settings/groupConfigUtils.js');
+
+    const teamLabels = {
+        'team-a': ['label_team_a', 'LABEL_TEAM_A_OLD'],
+        'team-b': ['label_team_a_old', 'label_team_b'],
+    };
+    assert.deepEqual(
+        flattenTeamLabelAliases(teamLabels, ['team-a', 'team-b']),
+        ['label_team_a', 'LABEL_TEAM_A_OLD', 'label_team_b']
+    );
+    assert.deepEqual(flattenTeamLabelAliases(teamLabels, ['team-a']), ['label_team_a', 'LABEL_TEAM_A_OLD']);
+});
+
+test('epicMatchesTeamAliases matches case-insensitively on any alias', async () => {
+    const { epicMatchesTeamAliases } = await import('../frontend/src/settings/groupConfigUtils.js');
+
+    assert.equal(epicMatchesTeamAliases(['Label_Team_A'], ['label_team_a', 'label_team_a_old']), true);
+    assert.equal(epicMatchesTeamAliases(['other-label'], ['label_team_a']), false);
+    assert.equal(epicMatchesTeamAliases([], ['label_team_a']), false);
+});
+
 test('buildGroupsConfigWithExcludedCapacityToggle blocks Ad Hoc overlap without mutation', async () => {
     const {
         buildGroupsConfigWithExcludedCapacityToggle

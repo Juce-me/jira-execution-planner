@@ -151,6 +151,91 @@ class SharedGroupConfigServiceTests(unittest.TestCase):
         self.assertEqual(loaded['groups'][0]['adHocCapacityEpics'], [])
         self.assertEqual(loaded['groups'][0]['excludedCapacityEpics'], ['ENG-1'])
 
+    def test_read_normalizes_version_1_row_to_version_2_arrays_without_writing(self):
+        stored_payload = {
+            'version': 1,
+            'groups': [{
+                'id': 'platform',
+                'name': 'Platform',
+                'teamIds': ['team-a'],
+                'teamLabels': {'team-a': 'label_team_a'},
+            }],
+            'defaultGroupId': 'platform',
+            'configRevision': 1,
+        }
+        with self.factory() as session:
+            session.add(models.WorkspaceGroupConfig(
+                workspace_id=self.workspace_id,
+                payload_version=1,
+                payload=stored_payload,
+                config_revision=1,
+                created_by=self.user_id,
+                updated_by=self.user_id,
+            ))
+            session.commit()
+
+        loaded = service.load_shared_groups(
+            self.context,
+            fallback_loader=lambda: None,
+            validate_groups_config_fn=validate_groups_config,
+            database_url=self.database_url,
+        )
+
+        self.assertEqual(loaded['version'], 2)
+        self.assertEqual(loaded['groups'][0]['teamLabels'], {'team-a': ['label_team_a']})
+        self.assertEqual(loaded['configRevision'], 1)
+
+        with self.factory() as session:
+            row = session.query(models.WorkspaceGroupConfig).one()
+            self.assertEqual(row.payload_version, 1)
+            self.assertEqual(row.config_revision, 1)
+            self.assertEqual(row.payload, stored_payload)
+
+    def test_save_persists_version_2_with_team_label_arrays(self):
+        loaded = service.load_shared_groups(
+            self.context,
+            fallback_loader=lambda: {'teamGroups': self._groups()},
+            validate_groups_config_fn=validate_groups_config,
+            database_url=self.database_url,
+        )
+
+        saved = service.save_shared_groups(
+            self.context,
+            {
+                'version': 1,
+                'groups': [{
+                    'id': 'platform',
+                    'name': 'Platform',
+                    'teamIds': ['team-a'],
+                    'teamLabels': {'team-a': ['label_team_a', 'label_team_a_old']},
+                }],
+                'defaultGroupId': 'platform',
+            },
+            base_revision=loaded['configRevision'],
+            validate_groups_config_fn=validate_groups_config,
+            database_url=self.database_url,
+        )
+
+        self.assertEqual(saved['version'], 2)
+        self.assertEqual(saved['groups'][0]['teamLabels'], {'team-a': ['label_team_a', 'label_team_a_old']})
+
+        with self.factory() as session:
+            row = session.query(models.WorkspaceGroupConfig).one()
+            self.assertEqual(row.payload_version, 2)
+
+    def test_save_group_preferences_keeps_preference_payload_version_at_1(self):
+        service.save_group_preferences(
+            self.context,
+            {'visibleGroupIds': ['platform'], 'activeGroupId': 'platform'},
+            self._db_groups(),
+            database_url=self.database_url,
+        )
+
+        with self.factory() as session:
+            row = session.query(models.UserGroupPreference).one()
+            self.assertEqual(row.payload_version, service.GROUP_PREFERENCES_PAYLOAD_VERSION)
+            self.assertEqual(service.GROUP_PREFERENCES_PAYLOAD_VERSION, 1)
+
     def test_save_rejects_stale_base_revision(self):
         loaded = service.load_shared_groups(
             self.context,

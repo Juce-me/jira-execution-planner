@@ -97,7 +97,9 @@ def validate_groups_config(
                 f'Group "{name}" has epic keys in both excludedCapacityEpics and adHocCapacityEpics: '
                 f'{", ".join(overlapping_epics)}.'
             )
-        team_labels = normalize_group_team_labels_fn(group.get('teamLabels') or {}, team_ids)
+        team_labels, team_label_errors = normalize_group_team_labels_fn(group.get('teamLabels') or {}, team_ids)
+        for team_label_error in team_label_errors:
+            errors.append(f'Group "{name}" {team_label_error}')
         board, board_errors, board_warnings = normalize_group_board_fn(group.get('board'))
         for board_error in board_errors:
             errors.append(f'Group "{name}" {board_error}')
@@ -122,7 +124,7 @@ def validate_groups_config(
             errors.append('defaultGroupId must reference an existing group.')
 
     normalized = {
-        'version': payload.get('version') or groups_config_version,
+        'version': groups_config_version,
         'groups': normalized_groups,
         'defaultGroupId': default_group_id,
     }

@@ -236,7 +236,7 @@ _cache_lock = threading.RLock()
 SPRINTS_CACHE_FILE = 'sprints_cache.json'
 STATS_CACHE_FILE = 'stats_cache.json'
 CACHE_EXPIRY_HOURS = 24
-GROUPS_CONFIG_VERSION = 1
+GROUPS_CONFIG_VERSION = 2
 GROUPS_MAX_TEAMS = 12
 PRIORITY_WEIGHT_DEFAULTS = [
     {'priority': 'Blocker', 'weight': 0.4},

@@ -2,6 +2,108 @@ import { effectiveVisibleGroupIds, normalizeGroupPreferences, resolveVisibleActi
 import { ONBOARDING_MODULE_IDS } from '../onboarding/onboardingModules.js';
 import { normalizeStoredBoard } from './groupBoardModel.js';
 
+// Shared group payload version: bumped from 1 to 2 to carry one-to-three Jira
+// label aliases per Team (`teamLabels[teamId]` as an array) instead of one
+// scalar label. See docs/features/eng-workflows.md.
+export const GROUPS_CONFIG_VERSION = 2;
+
+// A Team's Jira label aliases: trim, drop blanks, and dedupe case-insensitively
+// while preserving order and the first-seen spelling. Accepts the legacy
+// scalar shape or the canonical array shape. Never mutates its input and
+// never reports errors; use `validateTeamLabelAliases` when bounds/duplicate/
+// type problems must be surfaced (Settings JSON import).
+export function normalizeTeamLabelAliases(rawValue) {
+    const source = Array.isArray(rawValue)
+        ? rawValue
+        : (rawValue === null || rawValue === undefined ? [] : [rawValue]);
+    const seenLower = new Set();
+    const aliases = [];
+    source.forEach((entry) => {
+        if (typeof entry !== 'string') return;
+        const value = entry.trim();
+        if (!value) return;
+        const key = value.toLowerCase();
+        if (seenLower.has(key)) return;
+        seenLower.add(key);
+        aliases.push(value);
+    });
+    return aliases;
+}
+
+// Settings JSON import validation only: same normalization as
+// `normalizeTeamLabelAliases`, but surfaces the first label-free problem
+// (invalid type, duplicate, or more than three aliases) instead of silently
+// dropping/deduping it, so the operator's import is rejected rather than
+// silently truncated.
+export function validateTeamLabelAliases(rawValue) {
+    const source = Array.isArray(rawValue)
+        ? rawValue
+        : (rawValue === null || rawValue === undefined ? [] : [rawValue]);
+    let hasInvalidEntry = false;
+    const trimmed = [];
+    source.forEach((entry) => {
+        if (typeof entry !== 'string') {
+            hasInvalidEntry = true;
+            return;
+        }
+        const value = entry.trim();
+        if (value) trimmed.push(value);
+    });
+
+    const seenLower = new Set();
+    let hasDuplicate = false;
+    const aliases = [];
+    trimmed.forEach((value) => {
+        const key = value.toLowerCase();
+        if (seenLower.has(key)) {
+            hasDuplicate = true;
+            return;
+        }
+        seenLower.add(key);
+        aliases.push(value);
+    });
+
+    let error = null;
+    if (hasInvalidEntry) error = 'has an invalid Jira label.';
+    else if (hasDuplicate) error = 'has duplicate Jira labels.';
+    else if (aliases.length > 3) error = 'has more than 3 Jira labels.';
+
+    return { aliases, error };
+}
+
+// Ordered, case-insensitively distinct union of aliases across the requested
+// Teams (all mapped Teams when `teamIds` is omitted).
+export function flattenTeamLabelAliases(teamLabels, teamIds) {
+    const map = teamLabels || {};
+    const keys = Array.isArray(teamIds) && teamIds.length ? teamIds : Object.keys(map);
+    const seenLower = new Set();
+    const flattened = [];
+    keys.forEach((teamId) => {
+        const aliases = Array.isArray(map[teamId]) ? map[teamId] : [];
+        aliases.forEach((label) => {
+            const value = String(label || '').trim();
+            if (!value) return;
+            const key = value.toLowerCase();
+            if (seenLower.has(key)) return;
+            seenLower.add(key);
+            flattened.push(value);
+        });
+    });
+    return flattened;
+}
+
+// A Team matches when any of its aliases is present in the Epic's Jira
+// labels, case-insensitively (frontend Epic classification semantics).
+export function epicMatchesTeamAliases(epicLabels, aliases) {
+    const normalizedEpicLabels = new Set(
+        (Array.isArray(epicLabels) ? epicLabels : [])
+            .map((label) => String(label || '').trim().toLowerCase())
+            .filter(Boolean)
+    );
+    return (Array.isArray(aliases) ? aliases : [])
+        .some((alias) => normalizedEpicLabels.has(String(alias || '').trim().toLowerCase()));
+}
+
 const normalizeEpicKeys = (values) => {
     const source = Array.isArray(values) ? values : (typeof values === 'string' && values.trim() ? [values] : []);
     const seen = new Set();
@@ -31,8 +133,8 @@ export function normalizeGroupsConfig(config) {
             adHocCapacityEpics: normalizeEpicKeys(group?.adHocCapacityEpics),
             teamLabels: Object.fromEntries(
                 Object.entries(group?.teamLabels || {})
-                    .map(([teamId, label]) => [String(teamId || '').trim(), String(label || '').trim()])
-                    .filter(([teamId, label]) => teamId && label)
+                    .map(([teamId, rawValue]) => [String(teamId || '').trim(), normalizeTeamLabelAliases(rawValue)])
+                    .filter(([teamId, aliases]) => teamId && aliases.length > 0)
             ),
             // Omitted rather than assigned `undefined`: Dashboard distinguishes an absent board
             // with hasOwnProperty, while an explicit empty columns array must remain present and
@@ -52,7 +154,7 @@ export function normalizeGroupsConfig(config) {
             onboardingDone: true,
         };
     return {
-        version: Number(config?.version) || 1,
+        version: Number(config?.version) || GROUPS_CONFIG_VERSION,
         groups,
         defaultGroupId: String(config?.defaultGroupId || '').trim(),
         configRevision: Number.isFinite(Number(config?.configRevision)) ? Number(config.configRevision) : null,

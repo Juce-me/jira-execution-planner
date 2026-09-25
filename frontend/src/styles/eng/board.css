@@ -281,6 +281,40 @@
             height: auto;
         }
 
+        /* A drop outcome must neither push the board off the sticky line nor sit hidden under the
+           filter bar, so in pane mode it floats at the bottom of the board, which is the viewport
+           bottom when stuck. Rail border, radius and surface; no new tokens. */
+        .eng-board.is-pane-mode .board-say.has-message {
+            position: absolute;
+            left: 50%;
+            bottom: 0.75rem;
+            transform: translateX(-50%);
+            z-index: 6;
+            margin: 0;
+            padding: 0.35rem 0.7rem;
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+
+        .eng-board.is-pane-mode {
+            position: relative;
+        }
+
+        /* The breach ring moves to the pane: on .col-body it would be clipped by the pane and
+           read as a second border nested inside it. Same values as the rail/body rule. */
+        .eng-board.is-pane-mode .col.is-breach.is-open,
+        .eng-board.is-pane-mode .col.is-breach.is-focused {
+            box-shadow: 0 0 0 1px var(--warn), 0 0 12px rgba(207, 19, 34, 0.34);
+            animation: board-breach-glow 2.2s ease-in-out infinite;
+        }
+
+        .eng-board.is-pane-mode .col.is-breach .col-body {
+            border-radius: 0;
+            box-shadow: none;
+            animation: none;
+        }
+
         /* Something is off-frame — say how much, and offer a way there. The hint is a control. */
         .eng-board .board-hint {
             position: absolute;
@@ -774,6 +808,8 @@
             .eng-board .board-hint .pip { animation: none; }
             .eng-board .col.is-breach .col-strip,
             .eng-board .col.is-breach .col-body { animation: none; }
+            .eng-board.is-pane-mode .col.is-breach.is-open,
+            .eng-board.is-pane-mode .col.is-breach.is-focused { animation: none; }
         }
 
         /* ── Epic detail panel (§6.3) — geometry lifted from the asset's

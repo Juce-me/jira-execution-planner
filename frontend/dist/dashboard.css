@@ -4695,6 +4695,31 @@ button.toggle.applied-filter.active {
   flex: 1 1 auto;
   height: auto;
 }
+.eng-board.is-pane-mode .board-say.has-message {
+  position: absolute;
+  left: 50%;
+  bottom: 0.75rem;
+  transform: translateX(-50%);
+  z-index: 6;
+  margin: 0;
+  padding: 0.35rem 0.7rem;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.eng-board.is-pane-mode {
+  position: relative;
+}
+.eng-board.is-pane-mode .col.is-breach.is-open,
+.eng-board.is-pane-mode .col.is-breach.is-focused {
+  box-shadow: 0 0 0 1px var(--warn), 0 0 12px rgba(207, 19, 34, 0.34);
+  animation: board-breach-glow 2.2s ease-in-out infinite;
+}
+.eng-board.is-pane-mode .col.is-breach .col-body {
+  border-radius: 0;
+  box-shadow: none;
+  animation: none;
+}
 .eng-board .board-hint {
   position: absolute;
   top: 0;
@@ -5099,6 +5124,10 @@ button.toggle.applied-filter.active {
   }
   .eng-board .col.is-breach .col-strip,
   .eng-board .col.is-breach .col-body {
+    animation: none;
+  }
+  .eng-board.is-pane-mode .col.is-breach.is-open,
+  .eng-board.is-pane-mode .col.is-breach.is-focused {
     animation: none;
   }
 }

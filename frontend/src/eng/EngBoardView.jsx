@@ -473,6 +473,7 @@ export default function EngBoardView({
 
     const boardRef = React.useRef(null);
     const rootRef = React.useRef(null);
+    const openColumnIdsRef = React.useRef(new Set());
     const paneModeRef = React.useRef(false);
     const pendingVerticalRevealRef = React.useRef(null);
     // Only a gesture animates the scroll; mount and resize land instantly, so no test has to wait
@@ -667,8 +668,37 @@ export default function EngBoardView({
         scheduleBoardChrome();
     }, [scheduleBoardChrome, syncHints]);
 
+    // focus() — Tab, the panel's focus return, a drop menu closing — still scrolls an
+    // overflow-hidden column body, leaving it offset with no scrollbar while the board is loose.
+    // Taking the page to the stuck position makes that body scrollable again. The check runs a
+    // frame later because focus() scrolls into view after dispatching the focus event. Focus
+    // handling only; wheel input is never intercepted.
+    const handleBoardFocus = React.useCallback((event) => {
+        const body = event.target.closest?.('.col-body');
+        if (!body) return;
+        window.requestAnimationFrame(() => {
+            const root = rootRef.current;
+            if (!root?.classList.contains('is-pane-mode') || root.classList.contains('is-pane-stuck')) return;
+            if (body.scrollTop > 0) window.scrollTo({ top: pageMaxScroll(), behavior: 'instant' });
+        });
+    }, []);
+
     React.useLayoutEffect(() => {
         syncPaneMode();
+        // Decision 8 (spec): a folded column reopens at its top. Its .col-body stays mounted through a
+        // fold and keeps its offset, so every column that was not open on the previous pass starts at 0.
+        const board = boardRef.current;
+        if (board) {
+            const open = new Set();
+            board.querySelectorAll('.col.is-open, .col.is-focused').forEach((column) => {
+                open.add(column.dataset.columnId);
+                if (!openColumnIdsRef.current.has(column.dataset.columnId)) {
+                    const body = column.querySelector('.col-body');
+                    if (body) body.scrollTop = 0;
+                }
+            });
+            openColumnIdsRef.current = open;
+        }
         applyBoardLayout(smoothRef.current);
         smoothRef.current = false;
         syncHints();
@@ -688,9 +718,21 @@ export default function EngBoardView({
 
         const board = boardRef.current;
         const column = board && Array.from(board.children).find((child) => child.dataset.columnId === columnId);
-        const card = column?.querySelector('.ecard');
-        const header = column?.querySelector('.col-head');
-        if (!card || !header || !column.classList.contains('is-focused')) return;
+        if (!column || !column.classList.contains('is-focused')) return;
+        const behavior = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth';
+
+        // Pane mode: the opened column starts at its top and the page goes to the one position
+        // where the board is stuck — maximum scroll — rather than to a card.
+        if (rootRef.current?.classList.contains('is-pane-mode')) {
+            const body = column.querySelector('.col-body');
+            if (body) body.scrollTop = 0;
+            window.scrollTo({ top: pageMaxScroll(), behavior });
+            return;
+        }
+
+        const card = column.querySelector('.ecard');
+        const header = column.querySelector('.col-head');
+        if (!card || !header) return;
 
         const stickyTop = Math.max(
             0,
@@ -701,7 +743,7 @@ export default function EngBoardView({
         const headerMarginBottom = parseFloat(getComputedStyle(header).marginBottom) || 0;
         window.scrollTo({
             top: Math.max(0, window.scrollY + cardRect.top - (stickyTop + headerRect.height + headerMarginBottom)),
-            behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
+            behavior,
         });
     }, [columns, focusedId]);
 
@@ -917,6 +959,7 @@ export default function EngBoardView({
                     className="board"
                     ref={boardRef}
                     onScroll={handleBoardScroll}
+                    onFocus={handleBoardFocus}
                     data-onboarding-target="board-overview"
                     tabIndex={-1}
                 >

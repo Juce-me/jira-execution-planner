@@ -3771,6 +3771,74 @@ test('pane mode: rails reach the board bottom and keep their fill ratios', async
     ratios.forEach(({ declared, painted }) => expect(Math.abs(declared - painted)).toBeLessThanOrEqual(0.01));
 });
 
+test('pane mode: a pointer click on a rail sticks the board with the opened column at its top', async ({ page }) => {
+    await openBoard(page, { width: 1440, height: 900, epicSpecs: longColumnSpecs() });
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await settleScroll(page);
+    await col(page, READY_ID).locator('.col-strip').click();
+    await settle(page);
+    await settleScroll(page);
+    const state = await paneState(page);
+    expect(state.stuck).toBe(true);
+    expect(openScrollTops(state)[READY_ID]).toBe(0);
+});
+
+test('pane mode: open columns keep their scroll position; a folded column reopens at its top', async ({ page }) => {
+    await openBoard(page, { width: 1440, height: 900, reducedMotion: true, epicSpecs: longColumnSpecs() });
+    await openSecondColumn(page);
+    await stickPage(page);
+    await wheelOver(page, col(page, READY_ID).locator('.col-body'), 400);
+    const scrolled = openScrollTops(await paneState(page))[READY_ID];
+    expect(scrolled).toBeGreaterThan(0);
+
+    // A rail has nothing to scroll, so an upward wheel over it moves the page and releases sticky mode.
+    await wheelOver(page, col(page, TODO_ID).locator('.col-strip'), -200);
+    const released = await paneState(page);
+    expect(released.stuck).toBe(false);
+    expect(openScrollTops(released)[READY_ID]).toBe(scrolled);
+
+    await wheelOver(page, col(page, TODO_ID).locator('.col-strip'), 400);
+    expect((await paneState(page)).stuck).toBe(true);
+    expect(openScrollTops(await paneState(page))[READY_ID]).toBe(scrolled);
+
+    await col(page, READY_ID).locator('.fold').click();
+    await settle(page);
+    await openSecondColumn(page);
+    expect(openScrollTops(await paneState(page))[READY_ID]).toBe(0);
+});
+
+test('pane mode: focus landing below the fold of a loose column sticks the board', async ({ page }) => {
+    await openBoard(page, { width: 1440, height: 900, reducedMotion: true, epicSpecs: longColumnSpecs() });
+    await openSecondColumn(page);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await settleScroll(page);
+    await page.evaluate((id) => {
+        const cards = document.querySelectorAll(`.eng-board .col[data-column-id="${id}"] .ecard .ecard-open`);
+        cards[cards.length - 1].focus();
+    }, READY_ID);
+    await settleScroll(page);
+    const state = await paneState(page);
+    expect(state.stuck).toBe(true);
+    expect(openScrollTops(state)[READY_ID]).toBeGreaterThan(0);
+});
+
+test('pane mode: a breached open column carries the unclipped breach ring on its pane', async ({ page }) => {
+    await openBoard(page, { width: 1440, height: 900 });
+    const read = await page.evaluate((id) => {
+        const column = document.querySelector(`.eng-board .col[data-column-id="${id}"]`);
+        const body = column.querySelector('.col-body');
+        return {
+            paneShadow: getComputedStyle(column).boxShadow,
+            paneAnimation: getComputedStyle(column).animationName,
+            bodyShadow: getComputedStyle(body).boxShadow,
+        };
+    }, IN_PROGRESS_ID);
+    expect(read.paneShadow).not.toBe('none');
+    expect(read.paneAnimation).toBe('board-breach-glow');
+    expect(read.bodyShadow).toBe('none');
+    await page.screenshot({ path: `${screenshotDir}/board-pane-breach.png`, fullPage: false });
+});
+
 /* ── The invariant, through every focus-affecting action ────────────────────────────────────── */
 
 test('exactly one column is focused through load, focus, fold, unstar and eight folds', async ({ page }) => {

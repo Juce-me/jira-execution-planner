@@ -118,8 +118,9 @@ The height is structural, not measured per column:
 - Rail: `.col-strip` stretches to the board height instead of the fixed 340px. The fill keeps its
   existing percentage-of-track sizing, so rail ratios are unchanged and the chart grows with the
   track. The onboarding spotlight stays capped at `--board-strip-h` (340px).
-- `.board-say` announcements are taken out of flow in pane mode so a drop or refusal announcement
-  cannot push the board off the sticky line.
+- `.board-say` announcements are taken out of flow in pane mode and float at the bottom of the
+  board (the viewport bottom when stuck) using the rail's border, radius, and surface, so a drop or
+  refusal announcement neither pushes the board off the sticky line nor hides under the filter bar.
 
 ### Sticky state
 
@@ -211,7 +212,8 @@ are re-checked against the measured gate.
   `EpicHeaderValueReadout.jsx`)
 - `frontend/dist/*` (rebuilt with `npm run build`, never hand-edited)
 - `tests/ui/eng_group_board_view.spec.js`, `tests/ui/eng_group_board_filters.spec.js`,
-  `tests/ui/eng_group_board_drag.spec.js`, `tests/ui/eng_sticky_stack_helpers.js`,
+  `tests/ui/eng_group_board_drag.spec.js`, `tests/ui/eng_group_board_card.spec.js`,
+  `tests/ui/eng_sticky_stack_helpers.js`,
   `tests/test_eng_board_styles.js`
 - `docs/README_ANALYTICS.md` ("ENG Group Board sticky column chrome" allowlist row)
 - `docs/ontology.md` (ENG Board entry)
@@ -234,7 +236,7 @@ Long fixtures with more than 30 epics in at least two open columns. Wheel tests 
 and wait out the gesture latch between phases, and poll until scroll values settle.
 
 1. Before stuck, a wheel over an open column changes `window.scrollY` and no column `scrollTop`.
-2. At maximum page scroll the board is stuck: every open `.col-head` top equals `--epic-sticky-top`,
+2. At maximum page scroll the board is stuck: every pane (`.col`) top equals `--epic-sticky-top`,
    the `.board` bottom equals `innerHeight`, and every pane bottom equals the board's content-box
    bottom (`board top + clientTop + clientHeight`), each within the shared tolerance.
 3. When stuck, a wheel over open column A changes only A's `.col-body.scrollTop`; column B's

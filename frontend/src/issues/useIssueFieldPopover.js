@@ -3,6 +3,22 @@ import * as React from 'react';
 const POPOVER_EDGE_GAP = 8;
 const POPOVER_TRIGGER_GAP = 6;
 
+// Every ancestor that clips its overflow. A trigger scrolled fully outside any of them is no longer
+// on screen, so its panel is dismissed instead of floating over whatever is there now.
+function clippingAncestors(node) {
+    const ancestors = [];
+    for (let element = node.parentElement; element && element !== document.body; element = element.parentElement) {
+        const style = getComputedStyle(element);
+        if (style.overflowX !== 'visible' || style.overflowY !== 'visible') ancestors.push(element);
+    }
+    return ancestors;
+}
+
+function isOutsideRect(rect, clipRect) {
+    return rect.bottom <= clipRect.top || rect.top >= clipRect.bottom
+        || rect.right <= clipRect.left || rect.left >= clipRect.right;
+}
+
 export default function useIssueFieldPopover({
     blockClass,
     wrapperRef = null,
@@ -34,9 +50,14 @@ export default function useIssueFieldPopover({
         const panel = panelRef.current;
         const trigger = resolveTrigger();
         if (!panel || !trigger) return undefined;
+        const clippers = clippingAncestors(trigger);
 
         const positionPanel = () => {
             const triggerRect = trigger.getBoundingClientRect();
+            if (clippers.some((clipper) => isOutsideRect(triggerRect, clipper.getBoundingClientRect()))) {
+                onDismissRef.current?.();
+                return;
+            }
             const visualViewport = useVisualViewport ? window.visualViewport : null;
             const viewportLeft = Math.max(0, Number(visualViewport?.offsetLeft) || 0);
             const viewportTop = Math.max(0, Number(visualViewport?.offsetTop) || 0);

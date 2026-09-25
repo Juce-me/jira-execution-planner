@@ -3857,6 +3857,60 @@ test('pane mode: a breached open column carries the unclipped breach ring on its
 
 /* ── The invariant, through every focus-affecting action ────────────────────────────────────── */
 
+test('pane mode leak class: nothing from a column paints over the filter bar, the top bar or outside its pane', async ({ page }) => {
+    // The reported state: wide desktop, starred In progress open beside the focused column, stuck
+    // and partially scrolled.
+    await openBoard(page, { width: 2000, height: 1060, reducedMotion: true, epicSpecs: longColumnSpecs() });
+    await openSecondColumn(page);
+    await stickPage(page);
+    await wheelOver(page, col(page, IN_PROGRESS_ID).locator('.col-body'), 500);
+    await page.screenshot({ path: `${screenshotDir}/board-pane-leak-class.png`, fullPage: false });
+
+    const leaks = await page.evaluate(() => {
+        const found = [];
+        const probe = (x, y, label) => {
+            const hit = document.elementFromPoint(x, y);
+            if (hit?.closest('.ecard')) found.push(label);
+        };
+        const filterBar = document.querySelector('.filterbar-wrap').getBoundingClientRect();
+        for (let x = 20; x < window.innerWidth; x += 40) {
+            probe(x, filterBar.top + filterBar.height / 2, `filter bar @${x}`);
+            probe(x, 2, `top edge @${x}`);
+        }
+        document.querySelectorAll('.eng-board .col.is-open, .eng-board .col.is-focused').forEach((column) => {
+            const rect = column.getBoundingClientRect();
+            probe(rect.left + rect.width / 2, rect.top - 2, `${column.dataset.columnId} above`);
+            probe(rect.left - 2, rect.top + rect.height / 2, `${column.dataset.columnId} left`);
+            probe(rect.right + 2, rect.top + rect.height / 2, `${column.dataset.columnId} right`);
+            column.querySelectorAll('.ecard').forEach((card) => {
+                const cardRect = card.getBoundingClientRect();
+                const body = column.querySelector('.col-body').getBoundingClientRect();
+                const visibleTop = Math.max(cardRect.top, body.top);
+                const visibleBottom = Math.min(cardRect.bottom, body.bottom);
+                if (visibleBottom > visibleTop && (cardRect.left < rect.left || cardRect.right > rect.right)) {
+                    found.push(`${card.dataset.epicKey} overflows its pane horizontally`);
+                }
+            });
+        });
+        return found;
+    });
+    expect(leaks).toEqual([]);
+
+    // Overlays still paint above the panes, each opened with a normal click.
+    await page.getByRole('button', { name: 'Filters' }).click();
+    const popoverOption = page.locator('.popover .pop-opt').first();
+    await expect(popoverOption).toBeVisible();
+    await popoverOption.click();
+    await page.keyboard.press('Escape');
+    await col(page, IN_PROGRESS_ID).locator('.ecard .ecard-open').first().click();
+    await expect(page.locator('.epic-panel')).toBeVisible();
+    const panelOnTop = await page.evaluate(() => {
+        const rect = document.querySelector('.epic-panel').getBoundingClientRect();
+        return Boolean(document.elementFromPoint(rect.left + rect.width / 2, rect.top + 20)?.closest('.epic-panel'));
+    });
+    expect(panelOnTop).toBe(true);
+});
+
 test('exactly one column is focused through load, focus, fold, unstar and eight folds', async ({ page }) => {
     await openBoard(page);
 

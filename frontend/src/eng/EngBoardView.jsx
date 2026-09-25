@@ -673,7 +673,21 @@ export default function EngBoardView({
     // Taking the page to the stuck position makes that body scrollable again. The check runs a
     // frame later because focus() scrolls into view after dispatching the focus event. Focus
     // handling only; wheel input is never intercepted.
+    const pointerFocusRef = React.useRef(false);
+    const handleBoardPointerDown = React.useCallback(() => {
+        pointerFocusRef.current = true;
+        const release = () => {
+            window.removeEventListener('pointerup', release);
+            window.removeEventListener('pointercancel', release);
+            window.requestAnimationFrame(() => { pointerFocusRef.current = false; });
+        };
+        window.addEventListener('pointerup', release);
+        window.addEventListener('pointercancel', release);
+    }, []);
+
     const handleBoardFocus = React.useCallback((event) => {
+        // A button takes focus on mousedown; moving the page before mouseup would drop the click.
+        if (pointerFocusRef.current) return;
         const body = event.target.closest?.('.col-body');
         if (!body) return;
         window.requestAnimationFrame(() => {
@@ -959,6 +973,7 @@ export default function EngBoardView({
                     ref={boardRef}
                     onScroll={handleBoardScroll}
                     onFocus={handleBoardFocus}
+                    onPointerDown={handleBoardPointerDown}
                     data-onboarding-target="board-overview"
                     tabIndex={-1}
                 >

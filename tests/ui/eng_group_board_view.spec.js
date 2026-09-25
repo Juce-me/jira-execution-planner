@@ -3838,6 +3838,33 @@ test('pane mode: focus landing below the fold of a loose column sticks the board
     expect(openScrollTops(state)[READY_ID]).toBeGreaterThan(0);
 });
 
+test('pane mode: a pointer click on a card in a loose, scrolled column opens it', async ({ page }) => {
+    await openBoard(page, { width: 1440, height: 900, reducedMotion: true, epicSpecs: longColumnSpecs() });
+    await openSecondColumn(page);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await settleScroll(page);
+    const target = await page.evaluate((id) => {
+        const body = document.querySelector(`.eng-board .col[data-column-id="${id}"] .col-body`);
+        body.scrollTop = 200;
+        const bodyRect = body.getBoundingClientRect();
+        const bottom = Math.min(bodyRect.bottom, window.innerHeight);
+        const button = [...body.querySelectorAll('.ecard .ecard-open')].find((candidate) => {
+            const rect = candidate.getBoundingClientRect();
+            return rect.top >= bodyRect.top && rect.bottom <= bottom;
+        });
+        const rect = button.getBoundingClientRect();
+        return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    }, READY_ID);
+    // A human press: the button takes focus on mousedown and the release comes frames later.
+    await page.mouse.move(target.x, target.y);
+    await page.mouse.down();
+    await page.waitForTimeout(120);
+    const scrollDuringPress = await page.evaluate(() => window.scrollY);
+    await page.mouse.up();
+    expect(scrollDuringPress).toBe(0);
+    await expect(page.locator('.epic-panel')).toBeVisible();
+});
+
 test('pane mode: a breached open column carries the unclipped breach ring on its pane', async ({ page }) => {
     await openBoard(page, { width: 1440, height: 900 });
     const read = await page.evaluate((id) => {

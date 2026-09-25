@@ -304,7 +304,11 @@ Implemented with changes. Approved deviations from this spec, recorded in the ex
   otherwise restore a stale offset. This is implemented as a reset in the main layout effect rather
   than only inside the pointer-only rail-reveal branch.
 - The drop announcement (`.board-say`) floats at the bottom of the board rather than at a fixed
-  offset, so it stays in view whether or not the board is stuck.
+  offset, so it stays in view while the board is stuck; while loose it sits at the board bottom
+  and the live region still announces.
+- The focus re-stick skips pointer-initiated focus: a card button takes focus on mousedown, and
+  moving the page before mouseup dropped the click. Keyboard and programmatic focus (Tab, panel
+  focus return, drop-menu close) still stick the board.
 - Onboarding preview popovers are exempted from the clipped-trigger dismissal added for card field
   popovers, so a preview does not close itself while its own tour step scrolls the page.
 - Several existing tests that assumed the page-scroll/pinned-chrome model at viewports that now

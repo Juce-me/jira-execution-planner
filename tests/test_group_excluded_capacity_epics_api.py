@@ -152,6 +152,51 @@ class TestGroupExcludedCapacityEpics(unittest.TestCase):
             self.assertNotIn('label-a', error)
         self.assertEqual(after_raw, before_raw)
 
+    def test_json_groups_config_rejects_comma_scalar_team_label_without_persisting(self):
+        force_basic_auth_mode(self, jira_server)
+        app = jira_server.app
+        app.testing = True
+        client = app.test_client()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dashboard_path = os.path.join(tmpdir, 'dashboard-config.json')
+            with open(dashboard_path, 'w', encoding='utf-8') as handle:
+                json.dump({
+                    'version': 1,
+                    'teamGroups': {
+                        'version': 1,
+                        'groups': [{
+                            'id': 'default',
+                            'name': 'Default',
+                            'teamIds': ['team-1'],
+                        }],
+                        'defaultGroupId': 'default',
+                    },
+                }, handle)
+            with patch.object(jira_server, 'resolve_dashboard_config_path', return_value=dashboard_path):
+                with open(dashboard_path, encoding='utf-8') as handle:
+                    before_raw = handle.read()
+                response = client.post('/api/groups-config', json={
+                    'version': 2,
+                    'groups': [{
+                        'id': 'default',
+                        'name': 'Default',
+                        'teamIds': ['team-1'],
+                        'teamLabels': {'team-1': 'label_team_a,label_team_a_old'},
+                    }],
+                    'defaultGroupId': 'default',
+                })
+                with open(dashboard_path, encoding='utf-8') as handle:
+                    after_raw = handle.read()
+
+        self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+        body = response.get_json()
+        self.assertNotIn('error', body)
+        errors = body.get('errors', [])
+        self.assertTrue(any('has a Jira label containing a comma' in error for error in errors))
+        for error in errors:
+            self.assertNotIn('label_team_a', error)
+        self.assertEqual(after_raw, before_raw)
+
     def test_json_groups_config_reads_version_1_scalar_labels_as_version_2_arrays(self):
         force_basic_auth_mode(self, jira_server)
         app = jira_server.app

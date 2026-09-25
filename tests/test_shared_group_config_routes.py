@@ -352,6 +352,79 @@ class SharedGroupConfigRouteTests(unittest.TestCase):
             'has duplicate Jira labels' in error for error in response.get_json().get('errors', [])
         ))
 
+    def test_post_groups_config_rejects_comma_scalar_team_label_without_persisting(self):
+        loaded = self._get_groups_config().get_json()
+        payload = {
+            'version': 2,
+            'baseRevision': loaded['configRevision'],
+            'groups': [{
+                'id': 'platform',
+                'name': 'Platform',
+                'teamIds': ['team-a'],
+                'teamLabels': {'team-a': 'label_team_a,label_team_a_old'},
+            }],
+            'defaultGroupId': 'platform',
+        }
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            response = self.client.post('/api/groups-config', json=payload, headers=self._csrf_headers())
+        after = self._get_groups_config(fallback={'version': 1}).get_json()
+
+        self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['error'], 'invalid_groups_config')
+        errors = response.get_json().get('errors', [])
+        self.assertTrue(any('has a Jira label containing a comma' in error for error in errors))
+        for error in errors:
+            self.assertNotIn('label_team_a', error)
+        self.assertEqual(after['configRevision'], loaded['configRevision'])
+        self.assertEqual(after['groups'], loaded['groups'])
+
+        valid_payload = {
+            'version': 2,
+            'baseRevision': loaded['configRevision'],
+            'groups': [{
+                'id': 'platform',
+                'name': 'Platform',
+                'teamIds': ['team-a'],
+                'teamLabels': {'team-a': ['label_team_a', 'label_team_a_old']},
+            }],
+            'defaultGroupId': 'platform',
+        }
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            saved = self.client.post('/api/groups-config', json=valid_payload, headers=self._csrf_headers())
+        self.assertEqual(saved.status_code, 200, saved.get_data(as_text=True))
+        self.assertEqual(saved.get_json()['groups'][0]['teamLabels'], {'team-a': ['label_team_a', 'label_team_a_old']})
+
+    def test_get_groups_config_still_loads_a_stored_comma_scalar_team_label(self):
+        with self._env_patch():
+            with db_engine.session_scope(self.database_url) as session:
+                session.add(models.WorkspaceGroupConfig(
+                    workspace_id=self.workspace_id,
+                    payload_version=1,
+                    payload={
+                        'version': 1,
+                        'groups': [{
+                            'id': 'platform',
+                            'name': 'Platform',
+                            'teamIds': ['team-a'],
+                            'teamLabels': {'team-a': 'label_team_a,label_team_a_old'},
+                        }],
+                        'defaultGroupId': 'platform',
+                        'configRevision': 1,
+                    },
+                    config_revision=1,
+                    created_by=self.user_id,
+                    updated_by=self.user_id,
+                ))
+
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            response = self.client.get('/api/groups-config')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        body = response.get_json()
+        self.assertEqual(body['version'], 2)
+        self.assertEqual(body['groups'][0]['teamLabels'], {'team-a': ['label_team_a,label_team_a_old']})
+        self.assertNotIn('errors', body)
+
     def test_post_groups_config_accepts_scalar_and_array_team_labels_still_requires_csrf(self):
         loaded = self._get_groups_config().get_json()
         payload = {

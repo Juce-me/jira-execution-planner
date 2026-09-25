@@ -2636,6 +2636,13 @@ def normalize_group_board(raw):
     return _group_board_service.normalize_group_board(raw)
 
 
+def find_comma_scalar_team_label_errors(payload):
+    return _group_config_service.find_comma_scalar_team_label_errors(
+        payload,
+        find_comma_scalar_team_labels_fn=_team_catalog_service.find_comma_scalar_team_labels,
+    )
+
+
 def validate_groups_config(payload, allow_empty=False):
     return _group_config_service.validate_groups_config(
         payload,

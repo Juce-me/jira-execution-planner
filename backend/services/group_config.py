@@ -21,6 +21,36 @@ def parse_groups_config_env(raw, log_warning_fn=None):
         return None
 
 
+def find_comma_scalar_team_label_errors(payload, *, find_comma_scalar_team_labels_fn):
+    """Save-only guard over the raw request payload (before normalization):
+    reject a legacy scalar Jira label containing a comma for any Team.
+
+    This targets the stale-tab regression described on
+    `find_comma_scalar_team_labels_fn` — a joined scalar such as `"a,b"`
+    that a pre-deploy browser tab would otherwise persist as if it were a
+    normal legacy label. GET, `load_shared_groups`, and import paths stay
+    lenient; only the two `POST /api/groups-config` save paths call this.
+    """
+    errors = []
+    if not isinstance(payload, dict):
+        return errors
+    groups_raw = payload.get('groups')
+    if not isinstance(groups_raw, list):
+        return errors
+    for group in groups_raw:
+        if not isinstance(group, dict):
+            continue
+        name = str(group.get('name') or group.get('id') or '').strip()
+        if not name:
+            continue
+        for team_id in find_comma_scalar_team_labels_fn(group.get('teamLabels')):
+            errors.append(
+                f'Group "{name}" Team "{team_id}" has a Jira label containing a comma. '
+                'Reload the page and save again.'
+            )
+    return errors
+
+
 def validate_groups_config(
     payload,
     *,

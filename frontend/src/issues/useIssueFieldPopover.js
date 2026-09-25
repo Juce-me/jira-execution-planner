@@ -54,7 +54,7 @@ export default function useIssueFieldPopover({
 
         const positionPanel = () => {
             const triggerRect = trigger.getBoundingClientRect();
-            if (clippers.some((clipper) => isOutsideRect(triggerRect, clipper.getBoundingClientRect()))) {
+            if (!preview && clippers.some((clipper) => isOutsideRect(triggerRect, clipper.getBoundingClientRect()))) {
                 onDismissRef.current?.();
                 return;
             }
@@ -102,7 +102,7 @@ export default function useIssueFieldPopover({
                 window.visualViewport?.removeEventListener('scroll', positionPanel);
             }
         };
-    }, [active, portalTarget, resolveTrigger, useVisualViewport, ...dependencies]);
+    }, [active, portalTarget, preview, resolveTrigger, useVisualViewport, ...dependencies]);
 
     React.useEffect(() => {
         const wrapper = wrapperRef?.current;

@@ -3864,10 +3864,15 @@ test('pane mode leak class: nothing from a column paints over the filter bar, th
     await openSecondColumn(page);
     await stickPage(page);
     await wheelOver(page, col(page, IN_PROGRESS_ID).locator('.col-body'), 500);
+    const state = await paneState(page);
+    expect(state.stuck).toBe(true);
+    expect(openScrollTops(state)[IN_PROGRESS_ID]).toBeGreaterThan(0);
     await page.screenshot({ path: `${screenshotDir}/board-pane-leak-class.png`, fullPage: false });
 
-    const leaks = await page.evaluate(() => {
+    const { found: leaks, paneCount, cardCount } = await page.evaluate(() => {
         const found = [];
+        let paneCount = 0;
+        let cardCount = 0;
         const probe = (x, y, label) => {
             const hit = document.elementFromPoint(x, y);
             if (hit?.closest('.ecard')) found.push(label);
@@ -3878,11 +3883,13 @@ test('pane mode leak class: nothing from a column paints over the filter bar, th
             probe(x, 2, `top edge @${x}`);
         }
         document.querySelectorAll('.eng-board .col.is-open, .eng-board .col.is-focused').forEach((column) => {
+            paneCount += 1;
             const rect = column.getBoundingClientRect();
             probe(rect.left + rect.width / 2, rect.top - 2, `${column.dataset.columnId} above`);
             probe(rect.left - 2, rect.top + rect.height / 2, `${column.dataset.columnId} left`);
             probe(rect.right + 2, rect.top + rect.height / 2, `${column.dataset.columnId} right`);
             column.querySelectorAll('.ecard').forEach((card) => {
+                cardCount += 1;
                 const cardRect = card.getBoundingClientRect();
                 const body = column.querySelector('.col-body').getBoundingClientRect();
                 const visibleTop = Math.max(cardRect.top, body.top);
@@ -3892,8 +3899,10 @@ test('pane mode leak class: nothing from a column paints over the filter bar, th
                 }
             });
         });
-        return found;
+        return { found, paneCount, cardCount };
     });
+    expect(paneCount).toBe(2);
+    expect(cardCount).toBeGreaterThan(0);
     expect(leaks).toEqual([]);
 
     // Overlays still paint above the panes, each opened with a normal click.

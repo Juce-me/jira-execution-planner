@@ -118,6 +118,9 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
   fan-out with a guarded document reload, preserves principal/scope-bound dirty Scenario deltas in a
   strict expiring tab capsule, reloads Settings/EPM from saved state, and keeps changed revisions in
   the existing conflict workflow without replaying mutations.
+0. `EXEC-multiple-group-labels.md`
+   - Planned cross-layer improvement for one to three distinct Jira Epic-label aliases per Team in shared Department configuration.
+   - Expected output: legacy scalar mappings normalize to bounded version-2 alias arrays (group preferences stay version 1); saved aliases are resolved from the effective shared-group source before the task cache key; alert discovery reuses main's bounded, fail-closed alert pagination unchanged; Epic discovery, the Missing Labels predicate, Story readiness, Settings, Settings/backend import/export, measurement, and the endpoint collector match any alias without duplicating a Team or adding first-screen requests, routes, or database schema. Forward-only rollout with a pre-deploy snapshot.
 
 0. `EXEC-eng-story-readiness-ghosts.md`
    - Implemented and locally verified on 2026-09-16; pending acceptance or merge. Catch Up and Planning progressively render one non-Jira `Story required` ghost per uncovered expected Team beneath the correct Epic/Initiative, with current/future urgency, exact local alert navigation, bounded Jira Epic-link analytics, and no contamination of Story/SP/capacity/selection/dependency/export/mutation contracts.

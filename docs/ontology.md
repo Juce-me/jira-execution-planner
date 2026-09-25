@@ -1,6 +1,12 @@
 # Project Ontology
 
-Coverage: verified entry points and relationships for Statistics (2026-09-10), ENG Board cross-sprint loading and operational measurement (2026-09-14, paged-request budget reverified 2026-09-23), selector availability and persistent workspace catalogs (2026-09-23), ENG Story Readiness (2026-09-17), and connection recovery (2026-09-23). Other application areas remain unmapped.
+Coverage: verified entry points and relationships for Statistics (2026-09-10), ENG Board cross-sprint loading and operational measurement (2026-09-14, paged-request budget reverified 2026-09-23), selector availability and persistent workspace catalogs (2026-09-23), ENG Story Readiness (2026-09-17), connection recovery (2026-09-23), and the Department group-label configuration contract (2026-09-24). Other application areas remain unmapped.
+
+## Department Configuration
+
+Verified on: 2026-09-24.
+
+- **Department group label mapping**: workspace-shared mapping from each configured Jira Team id to the Jira Epic label currently used to discover and classify that Team's Epics. Canonical storage is the `teamLabels` field inside `workspace_group_configs.payload` in DB/OAuth mode and the equivalent `teamGroups` JSON payload in local/basic mode; ownership contract: `backend/security/CONFIGURATION_OWNERSHIP.md`; normalization and validation: `backend/services/team_catalog.py` and `backend/services/group_config.py`; routes: `GET/POST /api/groups-config` in `backend/routes/settings_routes.py`; frontend normalization/editor: `frontend/src/settings/groupConfigUtils.js` and `frontend/src/dashboard.jsx`; contracts: `tests/test_team_catalog_service.py`, `tests/test_group_config_service.py`, `tests/test_group_config_utils.js`, and `tests/ui/shared_department_groups.spec.js`. It depends on Team membership and produces label scope consumed by Epic discovery, future-planning alerts, Story readiness, and development measurement tooling. The current implementation stores one scalar label per Team; `docs/plans/EXEC-multiple-group-labels.md` is the planned version-2 alias-array contract and is not yet implemented.
 
 ## Connection Recovery
 

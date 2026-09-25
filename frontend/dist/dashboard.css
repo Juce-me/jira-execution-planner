@@ -4653,6 +4653,48 @@ button.toggle.applied-filter.active {
   position: fixed;
   width: var(--board-chrome-width);
 }
+.eng-board.is-pane-mode {
+  margin-bottom: calc(-1 * var(--board-pane-trailing, 0px));
+}
+.eng-board.is-pane-mode .board {
+  height: calc(100dvh - var(--epic-sticky-top, 0px));
+  align-items: stretch;
+  padding-bottom: 0;
+}
+.eng-board.is-pane-mode .col {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.eng-board.is-pane-mode .col.is-open,
+.eng-board.is-pane-mode .col.is-focused {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  padding-top: 0.45rem;
+}
+.eng-board.is-pane-mode .col.is-open .col-head,
+.eng-board.is-pane-mode .col.is-focused .col-head {
+  flex: none;
+  width: auto;
+  margin-inline: 0.45rem;
+}
+.eng-board.is-pane-mode .col-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: hidden;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  padding: 4px 0.45rem 0.45rem;
+}
+.eng-board.is-pane-mode.is-pane-stuck .col-body {
+  overflow-y: auto;
+}
+.eng-board.is-pane-mode .col:not(.is-open):not(.is-focused) .col-strip {
+  flex: 1 1 auto;
+  height: auto;
+}
 .eng-board .board-hint {
   position: absolute;
   top: 0;

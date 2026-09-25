@@ -573,7 +573,18 @@ export default function EngBoardView({
         const available = window.innerHeight - (filterBar ? filterBar.getBoundingClientRect().height : 0);
         const required = Math.max(railHeight, headSpace + (card ? card.getBoundingClientRect().height : 0))
             - (root.classList.contains('is-pane-mode') ? PANE_GATE_HYSTERESIS : 0);
-        setPaneMode(Boolean(window.matchMedia?.(PANE_MEDIA_QUERY).matches) && available >= required);
+        const next = Boolean(window.matchMedia?.(PANE_MEDIA_QUERY).matches) && available >= required;
+        setPaneMode(next);
+        if (!next) return;
+
+        // Whatever the document renders below the board (today .container's bottom padding) is
+        // cancelled by a negative margin, so maximum page scroll lands the board exactly between
+        // the sticky line and the viewport bottom. Measured with the margin removed so it never
+        // compounds across passes.
+        root.style.setProperty('--board-pane-trailing', '0px');
+        const boardBottom = board.getBoundingClientRect().bottom + window.scrollY;
+        const scroller = document.scrollingElement || document.documentElement;
+        root.style.setProperty('--board-pane-trailing', `${Math.max(0, scroller.scrollHeight - boardBottom)}px`);
     }, [setPaneMode]);
 
     const clearBoardChrome = React.useCallback(() => {
@@ -596,6 +607,18 @@ export default function EngBoardView({
             0,
             parseFloat(getComputedStyle(board).getPropertyValue('--epic-sticky-top')) || 0,
         );
+        // Pane mode never pins chrome: the panes are the frame. Stuck is the board at the sticky
+        // line, or the page at maximum scroll, so fractional zoom cannot strand the columns.
+        const root = rootRef.current;
+        if (root?.classList.contains('is-pane-mode')) {
+            clearBoardChrome();
+            root.classList.toggle(
+                'is-pane-stuck',
+                frame.top <= stickyTop + PANE_STUCK_EPSILON
+                    || window.scrollY >= pageMaxScroll() - PANE_STUCK_EPSILON,
+            );
+            return;
+        }
         const shouldPin = frame.top <= stickyTop && frame.bottom > stickyTop;
         if (!shouldPin) {
             clearBoardChrome();

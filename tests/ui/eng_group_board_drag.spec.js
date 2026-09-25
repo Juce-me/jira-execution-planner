@@ -366,6 +366,9 @@ test("Chromium's own drag loop moves the epic, and does not open the panel on th
     const calls = [];
     await openBoard(page, calls);
 
+    // Stick the pane-mode page first so dragTo never scrolls the viewport-tall target mid-gesture.
+    await page.evaluate(() => window.scrollTo(0, document.scrollingElement.scrollHeight));
+    await page.waitForSelector('.eng-board.is-pane-stuck');
     await card(page, 'PLAT-1').dragTo(column(page, 'col-wrap'));
 
     await expect.poll(() => transitionCalls(calls).length).toBe(1);

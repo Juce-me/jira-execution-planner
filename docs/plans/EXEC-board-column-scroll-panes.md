@@ -8,7 +8,7 @@
 
 **Tech Stack:** React 19, esbuild, plain CSS partials, Playwright (Chromium), Node `node:test`, Python `unittest`.
 
-**Design spec (source of truth for intent):** [2026-09-24-planned-board-column-scroll-panes.md](../agents/features/2026-09-24-planned-board-column-scroll-panes.md)
+**Design spec (source of truth for intent):** [2026-09-24-executed-board-column-scroll-panes.md](../agents/features/2026-09-24-executed-board-column-scroll-panes.md)
 
 ## Global Constraints
 
@@ -98,7 +98,7 @@ Expected: three files copied (written by the baseline run; `tmp/` is gitignored)
 Add near `boardGeometry` in `tests/ui/eng_group_board_view.spec.js`:
 
 ```js
-// Pane mode (docs/agents/features/2026-09-24-planned-board-column-scroll-panes.md). A viewport
+// Pane mode (docs/agents/features/2026-09-24-executed-board-column-scroll-panes.md). A viewport
 // that fails the height gate with margin, for tests that assert the page-scroll/pinned-chrome model.
 const FALLBACK_VIEWPORT = { width: 800, height: 380 };
 const PANE_STUCK_EPSILON = 1;
@@ -185,7 +185,7 @@ Expected: FAIL — `.eng-board.is-pane-mode` never appears; compact header becom
 After `const MENU_EDGE_GAP = 8;` add:
 
 ```js
-// Pane mode (docs/agents/features/2026-09-24-planned-board-column-scroll-panes.md): desktop only —
+// Pane mode (docs/agents/features/2026-09-24-executed-board-column-scroll-panes.md): desktop only —
 // wider than the repo's 760px narrow breakpoint, with a hovering fine pointer so touch tablets keep
 // the page-scroll model.
 const PANE_MEDIA_QUERY = '(min-width: 761px) and (hover: hover) and (pointer: fine)';
@@ -1124,12 +1124,12 @@ git show --stat HEAD && git status --short
 - Modify: `docs/README_ANALYTICS.md` ("ENG Group Board sticky column chrome" row)
 - Modify: `docs/agents/features/2026-08-08-executed-sticky-board-column-chrome.md`, `docs/agents/features/2026-08-08-executed-unfolded-board-column-scroll.md`, `docs/plans/EXEC-sticky-board-column-chrome.md` (Current Accuracy)
 - Modify: `docs/plans/README.md` (index entry for this plan)
-- Rename: `docs/agents/features/2026-09-24-planned-board-column-scroll-panes.md` → `2026-09-24-executed-board-column-scroll-panes.md` with `Status: executed`, `## Outcome`, `## Current Accuracy`; update links to it
+- Rename: `docs/agents/features/2026-09-24-executed-board-column-scroll-panes.md` → `2026-09-24-executed-board-column-scroll-panes.md` with `Status: executed`, `## Outcome`, `## Current Accuracy`; update links to it
 - Modify: this plan's Execution Status
 
 - [ ] **Step 1: Before/after screenshots**
 
-"Before": `tmp/eng-group-board-view/before/` from Task 0 Step 3. "After": `board-pane-stuck-1440.png`, `board-pane-stuck-1280.png`, `board-pane-leak-class.png`, `board-pane-breach.png`, plus `board-1440.png` and `board-800.png` rewritten by the full run. Also capture one fallback shot at `FALLBACK_VIEWPORT` and one short-list board (default fixture, stuck) showing full-height panes, using the view spec's existing screenshot pattern. Wait for animations to settle (`reducedMotion: true`). Inspect each pair against spec acceptance criteria 2, 6, 7, 13, 14 and record the visible differences in Execution Status.
+"Before": `tmp/eng-group-board-view/before/` from Task 0 Step 3. "After": `board-pane-stuck-1440.png`, `board-pane-stuck-1280.png`, `board-pane-leak-class.png`, `board-pane-breach.png`, plus `board-1440.png` and `board-800.png` rewritten by the full run. The fallback-viewport shot is `board-pinned-800.png` (existing pinned-chrome model, unchanged below the gate); the short-list board (default fixture) showing full-height panes is `board-pane-breach.png`. No additional screenshot tests were added beyond those already written in Tasks 2-4. Wait for animations to settle (`reducedMotion: true`). Inspect each pair against spec acceptance criteria 2, 6, 7, 13, 14 and record the visible differences in Execution Status.
 
 - [ ] **Step 2: Update docs**
 
@@ -1165,13 +1165,17 @@ git show --stat HEAD && git status --short
 
 | Task | Status | Commit | Notes |
 | --- | --- | --- | --- |
-| 0 Baseline | not started | | |
-| 1 Gate + compact header | not started | | |
-| 2 Pane geometry | not started | | |
-| 3 Interactions | not started | | |
-| 4 Leak class | not started | | |
-| 5 Docs + verification | not started | | |
+| 0 Baseline | complete | base `07f609f2` | 253 passed / 2 pre-existing failures across the five affected specs; node style 10/10; budgets OK. |
+| 1 Gate + compact header | complete | `07f609f2..6b83315e` | Gate, `onPaneModeChange`, `compactStickyVisible` derivation. Deviation: a `window` `resize` listener also calls `syncPaneMode` (the `documentElement` `ResizeObserver` stops firing once the page is taller than the viewport). |
+| 2 Pane geometry | complete | `6b83315e..f0216383` | Board/pane height, mask, rails, `is-pane-stuck`. Deviation: `wheelOver` test helper clamps `x` to the part of the target box inside the viewport. |
+| 3 Interactions | complete | `f0216383..e58cf7ad` (`8586ee13`, `e58cf7ad`) | Rail reveal, focus re-stick, scroll-position keep/reset, breach move, drop announcement placement. Approved deviation: open-column `scrollTop` resets to 0 on reopen from any input (pointer or keyboard), because `.col-body` stays mounted through fold/reopen. |
+| 4 Leak class | complete | `e58cf7ad..0d49843e` (`72d625ba`, `0d49843e`) | Popover dismissal on clipped trigger; leak-class regression test. Follow-up commit exempts onboarding preview popovers from the clipped-trigger dismissal. |
+| 5 Docs + verification | in progress — full verification by controller | | Documentation updates in this commit; the controller runs the full Playwright/Node/Python verification matrix separately. |
 
-Moved-to-fallback tests: (filled during execution)
+Moved-to-fallback tests (assertions unchanged; each now runs at a viewport that fails the pane-mode gate):
 
-Pre-existing failures: (filled during Task 0)
+- `eng_group_board_view.spec.js`: "selector compact surface: remount closes stale panel..." (800x420 → `FALLBACK_VIEWPORT`); "the compact sticky header paints over the board, including the off-frame hint" (800x420 → `FALLBACK_VIEWPORT`); "open headers and every collapsed rail pin below the live sticky stack..." (800x620 → `FALLBACK_VIEWPORT`); "pinned chrome stays interactive and releases each element at the board bottom" (800x620 → `FALLBACK_VIEWPORT`); "every custom property board.css reads resolves on the live board" (800x620 → `FALLBACK_VIEWPORT`); "folded rails are a 340px track with the bar hanging from the top, scaled to the largest column" (default 1280x900 → `FALLBACK_VIEWPORT`); "only a pointer click on a folded rail reveals its first card below the live sticky header" (800x620 → `FALLBACK_VIEWPORT`); "non-rail Board interactions never reveal the page vertically" (800x620 → 760x620, a width-gated fallback rather than `FALLBACK_VIEWPORT`, because at `FALLBACK_VIEWPORT` height the pip is not reachable).
+- `eng_group_board_filters.spec.js`: "the Board filter-bar popover paints over the board and takes a plain click" (1280x600 → `FALLBACK_VIEWPORT`).
+- Not moved, workaround instead: "a group switch and back restores the focused column and the session star" now scrolls to top and settles before the main-bar group toggle click, since pane mode suppresses the compact header that the test previously used. The Chromium drag-loop test now sticks the page (scrolls to max, waits for `.is-pane-stuck`) before `dragTo`, since the drop target rail is now viewport-tall and `dragTo`'s own scroll-into-view moved the drag source under the pointer.
+
+Pre-existing failures (from Task 0 baseline, unrelated to this feature): `codebase_structure_smoke` — "2147 Lead Times capacity exclusions" and "2866 multiple groups main controls one row".

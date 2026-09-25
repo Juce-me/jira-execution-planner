@@ -18,7 +18,7 @@ const BAR_ROW_HEIGHT = 42;
 // spacer. Keeping this stable proves moving the spacer does not move the downstream sticky stack.
 const FILTERBAR_WRAP_HEIGHT = 55.6;
 // Fails the Board pane-mode height gate with margin, so the compact-header/filter-bar sticky stack
-// under test still exists (docs/agents/features/2026-09-24-planned-board-column-scroll-panes.md).
+// under test still exists (docs/agents/features/2026-09-24-executed-board-column-scroll-panes.md).
 const FALLBACK_VIEWPORT = { width: 800, height: 380 };
 
 test.beforeAll(() => {

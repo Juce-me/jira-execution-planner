@@ -1,4 +1,4 @@
-Status: planned
+Status: executed
 Type: feature
 
 # ENG Board Independent Column Scroll Panes
@@ -289,3 +289,29 @@ Global:
   scroll collection).
 - Mark the superseded 2026-08-08 artifacts and `EXEC-sticky-board-column-chrome.md` with a Current
   Accuracy note limiting them to fallback mode.
+
+## Outcome
+
+Implemented with changes. Approved deviations from this spec, recorded in the execution ledger:
+
+- The gate is re-evaluated from a `window` `resize` listener in addition to the existing layout
+  pass and `ResizeObserver`, because the `documentElement` `ResizeObserver` stops firing once the
+  page is taller than the viewport, so a shrinking window height would never re-evaluate the gate.
+- The `wheelOver` test helper aims the pointer at the part of the target box that is actually inside
+  the viewport, rather than its full-box center, so wheel tests exercise a visible point.
+- An open column's `scrollTop` resets to 0 on reopen regardless of input (pointer or keyboard),
+  because `.col-body` stays mounted through a fold/reopen cycle and a keyboard reopen would
+  otherwise restore a stale offset. This is implemented as a reset in the main layout effect rather
+  than only inside the pointer-only rail-reveal branch.
+- The drop announcement (`.board-say`) floats at the bottom of the board rather than at a fixed
+  offset, so it stays in view whether or not the board is stuck.
+- Onboarding preview popovers are exempted from the clipped-trigger dismissal added for card field
+  popovers, so a preview does not close itself while its own tour step scrolls the page.
+- Several existing tests that assumed the page-scroll/pinned-chrome model at viewports that now
+  pass the pane-mode gate were moved to fallback viewports (`FALLBACK_VIEWPORT` 800x380, or 760x620
+  for one width-gated case); their assertions are unchanged. See the execution plan's
+  "Moved-to-fallback tests" list for the complete set.
+
+## Current Accuracy
+
+Accurate as of 2026-09-25; the implementation and tests are the source of truth.

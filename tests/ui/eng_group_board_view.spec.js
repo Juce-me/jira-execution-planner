@@ -3521,7 +3521,7 @@ async function focusedId(page) {
     return page.evaluate(() => document.querySelector('.eng-board .col.is-focused')?.dataset.columnId || null);
 }
 
-// Pane mode (docs/agents/features/2026-09-24-planned-board-column-scroll-panes.md). A viewport
+// Pane mode (docs/agents/features/2026-09-24-executed-board-column-scroll-panes.md). A viewport
 // that fails the height gate with margin, for tests that assert the page-scroll/pinned-chrome model.
 const FALLBACK_VIEWPORT = { width: 800, height: 380 };
 const PANE_STUCK_EPSILON = 1;

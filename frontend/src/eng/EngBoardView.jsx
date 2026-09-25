@@ -52,7 +52,7 @@ const REJECTED_MS = 2600;
 // Keeps a clamped drop menu clear of the viewport edge.
 const MENU_EDGE_GAP = 8;
 
-// Pane mode (docs/agents/features/2026-09-24-planned-board-column-scroll-panes.md): desktop only —
+// Pane mode (docs/agents/features/2026-09-24-executed-board-column-scroll-panes.md): desktop only —
 // wider than the repo's 760px narrow breakpoint, with a hovering fine pointer so touch tablets keep
 // the page-scroll model.
 const PANE_MEDIA_QUERY = '(min-width: 761px) and (hover: hover) and (pointer: fine)';

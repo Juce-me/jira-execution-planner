@@ -15,6 +15,7 @@ import threading
 import time
 
 from backend.jira_client import JiraCircuitBreaker
+from backend.services.team_catalog import flatten_group_team_labels, normalize_group_team_labels
 
 
 SCHEMA_VERSION = 2
@@ -305,7 +306,8 @@ class CampaignRegistry:
             lane = str(query.get('project') or '').strip().lower()
             team_ids = ','.join(str(value).strip() for value in campaign.component_group.get('teamIds') or [] if str(value).strip())
             label_map = campaign.component_group.get('teamLabels') or {}
-            label_values = ((label_map.get(team_id) for team_id in team_ids.split(',')) if isinstance(label_map, dict) else label_map)
+            label_values = (flatten_group_team_labels(normalize_group_team_labels(label_map, team_ids.split(','))[0], team_ids.split(','))
+                            if isinstance(label_map, dict) else label_map)
             team_labels = ','.join(str(value).strip() for value in label_values if str(value).strip())
             expected = {
                 'sprint': str(campaign.sprint_id),

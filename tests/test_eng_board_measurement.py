@@ -3,8 +3,10 @@ import pathlib
 import re
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
+from backend.routes import dev_routes
 from backend.services import eng_board
 from backend.services import eng_board_measurement as core
 from backend.services import eng_board_measurement_runtime as runtime
@@ -84,6 +86,49 @@ class EngBoardMeasurementCoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             module.validate_output_path(pathlib.Path(directory) / 'diagnostic.json', repo_root=ROOT)
 
+
+    def _legacy_query(self, group, lane='product'):
+        registry = runtime.CampaignRegistry()
+        context = SimpleNamespace(workspace_id='workspace', user_id='user', auth_connection_id='connection',
+                                  browser_session_id='browser', token_version='1')
+        campaign = registry.begin(context, SimpleNamespace(), group, group, 42)
+        self.addCleanup(registry.fail_begin, campaign)
+        registry.publish_begin(campaign)
+        registry.reserve(context, campaign.campaign_id, 0)
+        descriptor = dev_routes._legacy_descriptor(campaign, runtime.STEP_TABLE[0])
+        query = {'sprint': '42', 'team': 'all', 'groupId': descriptor['groupId'],
+                 'teamIds': ','.join(descriptor['teamIds']), 'teamLabels': ','.join(descriptor['teamLabels']),
+                 'project': lane, 'purpose': 'dashboard', 'refresh': 'true'}
+        registry.validate_legacy_request(context, campaign.campaign_id, 0, query)
+        return descriptor, query
+
+    def test_legacy_descriptor_and_request_flatten_scalar_and_array_aliases_identically(self):
+        scalar = {'id': 'department-a', 'teamIds': ['team-a', 'team-b'],
+                  'teamLabels': {'team-a': 'label_team_a', 'team-b': 'label_team_b'}}
+        array = {'id': 'department-a', 'teamIds': ['team-a', 'team-b'],
+                 'teamLabels': {'team-a': ['label_team_a'], 'team-b': ['label_team_b']}}
+        self.assertEqual(self._legacy_query(scalar), self._legacy_query(array))
+        descriptor, query = self._legacy_query({
+            'id': 'department-a', 'teamIds': ['team-a'],
+            'teamLabels': {'team-a': ['label_team_a', 'label_team_a_old']},
+        })
+        self.assertEqual(descriptor['teamLabels'], ['label_team_a', 'label_team_a_old'])
+        self.assertEqual(query['teamLabels'], 'label_team_a,label_team_a_old')
+
+    def test_legacy_request_rejects_a_query_missing_an_alias(self):
+        group = {'id': 'department-a', 'teamIds': ['team-a'],
+                 'teamLabels': {'team-a': ['label_team_a', 'label_team_a_old']}}
+        registry = runtime.CampaignRegistry()
+        context = SimpleNamespace(workspace_id='workspace', user_id='user', auth_connection_id='connection',
+                                  browser_session_id='browser', token_version='1')
+        campaign = registry.begin(context, SimpleNamespace(), group, group, 42)
+        self.addCleanup(registry.fail_begin, campaign)
+        registry.publish_begin(campaign)
+        registry.reserve(context, campaign.campaign_id, 0)
+        query = {'sprint': '42', 'team': 'all', 'groupId': 'department-a', 'teamIds': 'team-a',
+                 'teamLabels': 'label_team_a', 'project': 'product', 'purpose': 'dashboard', 'refresh': 'true'}
+        with self.assertRaises(runtime.MeasurementRuntimeError):
+            registry.validate_legacy_request(context, campaign.campaign_id, 0, query)
 
 if __name__ == '__main__':
     unittest.main()

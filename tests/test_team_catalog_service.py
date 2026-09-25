@@ -68,6 +68,30 @@ class TestTeamCatalogService(unittest.TestCase):
         self.assertEqual(mapping, {'team-a': ['label_team_a']})
         self.assertEqual(errors, [])
 
+    def test_normalize_group_team_labels_accepts_legacy_numeric_scalar_as_single_alias(self):
+        mapping, errors = team_catalog.normalize_group_team_labels(
+            {'team-a': 2026},
+            ['team-a'],
+        )
+        self.assertEqual(mapping, {'team-a': ['2026']})
+        self.assertEqual(errors, [])
+
+    def test_normalize_group_team_labels_rejects_numeric_entry_inside_array(self):
+        mapping, errors = team_catalog.normalize_group_team_labels(
+            {'team-a': ['label_team_a', 2026]},
+            ['team-a'],
+        )
+        self.assertEqual(mapping, {'team-a': ['label_team_a']})
+        self.assertEqual(errors, ['Team "team-a" has an invalid Jira label.'])
+
+    def test_normalize_group_team_labels_rejects_bool_scalar(self):
+        mapping, errors = team_catalog.normalize_group_team_labels(
+            {'team-a': True},
+            ['team-a'],
+        )
+        self.assertEqual(mapping, {})
+        self.assertEqual(errors, ['Team "team-a" has an invalid Jira label.'])
+
     def test_normalize_group_team_labels_accepts_one_to_three_aliases(self):
         mapping, errors = team_catalog.normalize_group_team_labels(
             {'team-a': ['label_team_a', 'label_team_a_old', 'label_team_a_older']},

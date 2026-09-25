@@ -5310,7 +5310,7 @@ import {
                         throw new Error(teamLabelsError);
                     }
                     const normalized = normalizeGroupsConfig({
-                        version: parsed?.version || groupDraft?.version || 1,
+                        version: parsed?.version || groupDraft?.version || GROUPS_CONFIG_VERSION,
                         groups: [importedGroup],
                     });
                     if (!normalized.groups.length) {

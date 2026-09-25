@@ -7,15 +7,24 @@ import { normalizeStoredBoard } from './groupBoardModel.js';
 // scalar label. See docs/features/eng-workflows.md.
 export const GROUPS_CONFIG_VERSION = 2;
 
+// A legacy scalar (not an array) becomes its single-entry source list. A
+// numeric legacy scalar (e.g. a hand-edited groups file with a bare `2026`)
+// is coerced to its string form; non-string entries inside an array are
+// still left as-is so they get rejected below.
+function legacyScalarLabelSource(rawValue) {
+    if (Array.isArray(rawValue)) return rawValue;
+    if (rawValue === null || rawValue === undefined) return [];
+    if (typeof rawValue === 'number' && Number.isFinite(rawValue)) return [String(rawValue).trim()];
+    return [rawValue];
+}
+
 // A Team's Jira label aliases: trim, drop blanks, and dedupe case-insensitively
 // while preserving order and the first-seen spelling. Accepts the legacy
 // scalar shape or the canonical array shape. Never mutates its input and
 // never reports errors; use `validateTeamLabelAliases` when bounds/duplicate/
 // type problems must be surfaced (Settings JSON import).
 export function normalizeTeamLabelAliases(rawValue) {
-    const source = Array.isArray(rawValue)
-        ? rawValue
-        : (rawValue === null || rawValue === undefined ? [] : [rawValue]);
+    const source = legacyScalarLabelSource(rawValue);
     const seenLower = new Set();
     const aliases = [];
     source.forEach((entry) => {
@@ -36,9 +45,7 @@ export function normalizeTeamLabelAliases(rawValue) {
 // dropping/deduping it, so the operator's import is rejected rather than
 // silently truncated.
 export function validateTeamLabelAliases(rawValue) {
-    const source = Array.isArray(rawValue)
-        ? rawValue
-        : (rawValue === null || rawValue === undefined ? [] : [rawValue]);
+    const source = legacyScalarLabelSource(rawValue);
     let hasInvalidEntry = false;
     const trimmed = [];
     source.forEach((entry) => {
@@ -120,10 +127,8 @@ export function flattenTeamLabelAliases(teamLabels, teamIds) {
     const seenLower = new Set();
     const flattened = [];
     keys.forEach((teamId) => {
-        const aliases = Array.isArray(map[teamId]) ? map[teamId] : [];
-        aliases.forEach((label) => {
-            const value = String(label || '').trim();
-            if (!value) return;
+        const aliases = normalizeTeamLabelAliases(map[teamId]);
+        aliases.forEach((value) => {
             const key = value.toLowerCase();
             if (seenLower.has(key)) return;
             seenLower.add(key);

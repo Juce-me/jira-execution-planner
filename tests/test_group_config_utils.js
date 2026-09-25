@@ -221,6 +221,13 @@ test('normalizeTeamLabelAliases trims, dedupes case-insensitively, and does not 
     assert.deepEqual(normalizeTeamLabelAliases(null), []);
 });
 
+test('normalizeTeamLabelAliases coerces a legacy numeric scalar and rejects a bool scalar', async () => {
+    const { normalizeTeamLabelAliases } = await import('../frontend/src/settings/groupConfigUtils.js');
+
+    assert.deepEqual(normalizeTeamLabelAliases(2026), ['2026']);
+    assert.deepEqual(normalizeTeamLabelAliases(true), []);
+});
+
 test('validateTeamLabelAliases surfaces a fourth alias without truncating', async () => {
     const { validateTeamLabelAliases } = await import('../frontend/src/settings/groupConfigUtils.js');
 
@@ -246,6 +253,18 @@ test('validateTeamLabelAliases surfaces a non-string entry with a label-free mes
     assert.equal(result.error.includes('label_team_a'), false);
 });
 
+test('validateTeamLabelAliases accepts a legacy numeric scalar and rejects a bool scalar', async () => {
+    const { validateTeamLabelAliases } = await import('../frontend/src/settings/groupConfigUtils.js');
+
+    const numeric = validateTeamLabelAliases(2026);
+    assert.deepEqual(numeric.aliases, ['2026']);
+    assert.equal(numeric.error, null);
+
+    const bool = validateTeamLabelAliases(true);
+    assert.deepEqual(bool.aliases, []);
+    assert.equal(bool.error, 'has an invalid Jira label.');
+});
+
 test('validateTeamLabelAliases accepts one-to-three aliases with no error', async () => {
     const { validateTeamLabelAliases } = await import('../frontend/src/settings/groupConfigUtils.js');
 
@@ -266,6 +285,16 @@ test('flattenTeamLabelAliases unions aliases across requested Teams case-insensi
         ['label_team_a', 'LABEL_TEAM_A_OLD', 'label_team_b']
     );
     assert.deepEqual(flattenTeamLabelAliases(teamLabels, ['team-a']), ['label_team_a', 'LABEL_TEAM_A_OLD']);
+});
+
+test('flattenTeamLabelAliases flattens a legacy scalar map value', async () => {
+    const { flattenTeamLabelAliases } = await import('../frontend/src/settings/groupConfigUtils.js');
+
+    const teamLabels = {
+        'team-a': 2026,
+        'team-b': 'label_team_b',
+    };
+    assert.deepEqual(flattenTeamLabelAliases(teamLabels, ['team-a', 'team-b']), ['2026', 'label_team_b']);
 });
 
 test('epicMatchesTeamAliases matches case-insensitively on any alias', async () => {

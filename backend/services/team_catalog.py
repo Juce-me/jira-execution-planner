@@ -65,6 +65,13 @@ def normalize_group_team_labels(raw, team_ids, normalize_team_ids_fn=None):
             raw_entries = raw_value
         elif raw_value is None:
             raw_entries = []
+        elif isinstance(raw_value, bool):
+            raw_entries = [raw_value]
+        elif isinstance(raw_value, (int, float)):
+            # Legacy scalar shape (e.g. a hand-edited TEAM_GROUPS_JSON label
+            # that looks numeric): coerce to its string form. Non-string
+            # entries inside an array are still rejected below.
+            raw_entries = [str(raw_value).strip()]
         else:
             raw_entries = [raw_value]
 
@@ -100,6 +107,27 @@ def normalize_group_team_labels(raw, team_ids, normalize_team_ids_fn=None):
             mapping[team_id] = distinct
 
     return mapping, errors
+
+
+def find_comma_scalar_team_labels(raw_team_labels):
+    """Return the Team ids in `raw_team_labels` whose raw value is a string
+    legacy scalar containing a comma.
+
+    This is a save-time guard, not a read-side concern: a stale pre-deploy
+    browser tab normalizes a version-2 alias array with `String(...)`
+    (`["a", "b"]` becomes `"a,b"`) and would otherwise persist that joined
+    string as a valid-looking legacy scalar. Array values (canonical or
+    containing a comma-bearing entry) and non-string scalars are unaffected.
+    """
+    if not isinstance(raw_team_labels, dict):
+        return []
+    flagged = []
+    for raw_team_id, raw_value in raw_team_labels.items():
+        if isinstance(raw_value, str) and ',' in raw_value:
+            team_id = str(raw_team_id or '').strip()
+            if team_id:
+                flagged.append(team_id)
+    return flagged
 
 
 def flatten_group_team_labels(mapping, team_ids, normalize_team_ids_fn=None):

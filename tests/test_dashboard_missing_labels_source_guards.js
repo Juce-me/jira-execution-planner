@@ -27,7 +27,10 @@ test('missing-label rule passes the Team half when any alias of the resolved Tea
     assert.match(block, /if \(!epicMatchesPlanningSprintValue\(epic\)\) return false;/);
     assert.match(block, /!epicHasPlanningSprintLabel\(epic\)/);
     assert.match(block, /epicHasFuturePlanningTeamLabel\(epic, \{/);
-    assert.equal(source.includes('getFuturePlanningExpectedTeamLabel'), false);
+    // Word-boundary match: the removed singular helper name is a prefix of
+    // the still-used plural `getFuturePlanningExpectedTeamLabels`, so a
+    // plain substring check would false-positive on the plural.
+    assert.equal(/getFuturePlanningExpectedTeamLabel\b/.test(source), false);
     assert.equal(source.includes('getFuturePlanningTeamLabel'), false);
 });
 

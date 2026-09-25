@@ -12,6 +12,7 @@ const ISSUE_FIELD_EDIT_FIELDS = new Set(['assignee', 'delivery_owner', 'story_po
 const ISSUE_FIELD_EDIT_KINDS = new Set(['epic', 'story']);
 const ISSUE_FIELD_EDIT_SURFACES = new Set(['catch_up', 'planning', 'board']);
 const ISSUE_FIELD_EDIT_RESULTS = new Set(['success', 'unchanged', 'conflict', 'failure', 'unknown']);
+const BOARD_SMALL_SCREEN_REASONS = new Set(['short', 'narrow', 'touch']);
 
 export function analyticsToken(value, fallback = 'unknown') {
     return String(value || fallback).trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || fallback;
@@ -67,6 +68,22 @@ export function buildIssueFieldEditAnalyticsParams(workflowAction, {
         source_surface: sourceSurface,
         ...(workflowAction === 'result' ? { result } : {}),
     };
+}
+
+export function buildBoardSmallScreenSupportParams(reason) {
+    if (!BOARD_SMALL_SCREEN_REASONS.has(reason)) return null;
+    return {
+        feature_name: 'eng_board',
+        workflow_action: 'small_screen_support_request',
+        reason,
+        source_surface: 'board',
+    };
+}
+
+// The Board's small-screen alert button; the fixed builder drops any unknown reason.
+export function trackBoardSmallScreenSupportRequest(reason) {
+    const payload = buildBoardSmallScreenSupportParams(reason);
+    if (payload) safeTrackEvent('board_action', payload);
 }
 
 export function planningAnalyticsPayload(nextSelectedTasks, selectionTasks) {

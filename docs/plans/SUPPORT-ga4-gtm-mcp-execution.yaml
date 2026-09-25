@@ -159,6 +159,7 @@ gtm_web:
     - { name: "DLV - project_scope", data_layer_variable_name: "project_scope", version: 2, purpose: "approved event parameter" }
     - { name: "DLV - query_length_bucket", data_layer_variable_name: "query_length_bucket", version: 2, purpose: "approved event parameter" }
     - { name: "DLV - range_size_bucket", data_layer_variable_name: "range_size_bucket", version: 2, purpose: "approved event parameter" }
+    - { name: "DLV - reason", data_layer_variable_name: "reason", version: 2, purpose: "approved Board small-screen reason enum; intentionally unregistered without a named report" }
     - { name: "DLV - recoverable_state", data_layer_variable_name: "recoverable_state", version: 2, purpose: "approved event parameter" }
     - { name: "DLV - result", data_layer_variable_name: "result", version: 2, purpose: "approved event parameter" }
     - { name: "DLV - result_count_bucket", data_layer_variable_name: "result_count_bucket", version: 2, purpose: "approved event parameter" }
@@ -221,6 +222,7 @@ gtm_web:
       params:
         feature_name: "{{DLV - feature_name}}"
         field_name: "{{DLV - field_name}}"
+        reason: "{{DLV - reason}}"
         source_surface: "{{DLV - source_surface}}"
         result: "{{DLV - result}}"
         workflow_action: "{{DLV - workflow_action}}"

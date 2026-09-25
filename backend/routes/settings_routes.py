@@ -1257,6 +1257,31 @@ def get_jira_labels():
         limit = 50
         if limit_raw.isdigit():
             limit = max(1, min(int(limit_raw), 200))
+        if prefix:
+            prefix = normalize_epm_label_prefix_mask(prefix)
+
+        if query:
+            # Typed search: Jira JQL autocomplete is prefix-only and capped (~15),
+            # but avoids crawling the full site label catalog on every keystroke.
+            response = current_jira_get(
+                '/rest/api/3/jql/autocompletedata/suggestions',
+                params={'fieldName': 'labels', 'fieldValue': query},
+                timeout=15
+            )
+            if response.status_code != 200:
+                return jsonify({'error': 'Failed to fetch labels from Jira'}), response.status_code
+            results = (response.json() or {}).get('results') or []
+            labels = []
+            for item in results:
+                value = str((item or {}).get('value') or '').strip()
+                if len(value) >= 2 and value.startswith('"') and value.endswith('"'):
+                    value = value[1:-1]
+                if value:
+                    labels.append(value)
+            if prefix:
+                labels = [label for label in labels if label.lower().startswith(prefix)]
+            return jsonify({'labels': list(dict.fromkeys(labels))[:limit]})
+
         cache_enabled = _settings_process_cache_enabled()
 
         cached_labels = None
@@ -1296,10 +1321,6 @@ def get_jira_labels():
                     LABELS_CACHE['data'] = labels
                     LABELS_CACHE['timestamp'] = time.time()
 
-        if query:
-            labels = [label for label in labels if query in label.lower()]
-        if prefix:
-            prefix = normalize_epm_label_prefix_mask(prefix)
         if prefix:
             labels = [label for label in labels if label.lower().startswith(prefix)]
 

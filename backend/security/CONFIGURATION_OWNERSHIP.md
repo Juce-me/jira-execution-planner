@@ -54,6 +54,14 @@ read and save `/api/groups-config`. Concurrent saves use `configRevision` and re
 than silently overwriting another user's change. Department board layouts belong to this shared
 group payload; they are distinct from the administrator-owned Jira source board.
 
+The shared group payload's `teamLabels` field is `Record<TeamId, JiraLabel[]>`: each configured
+Team maps to zero to three ordered, case-insensitively distinct Jira Epic-label aliases (any alias
+matches the Team). The payload version for this shape is `2` (`GROUPS_PAYLOAD_VERSION` /
+`GROUPS_CONFIG_VERSION`); a stored or imported legacy scalar label normalizes to a one-item array on
+read without a write. This is a value-shape clarification only — ownership, read/write access, and
+the collaborative-save contract above are unchanged. The unrelated personal group-preference row
+(`user_group_preferences`) keeps its own `GROUP_PREFERENCES_PAYLOAD_VERSION = 1`.
+
 Stars/favorites are represented by the current user's group preferences (`visibleGroupIds` and
 `activeGroupId`). They must not update shared `defaultGroupId` or any workspace group row.
 

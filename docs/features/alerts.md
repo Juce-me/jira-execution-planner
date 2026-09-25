@@ -67,7 +67,17 @@ This includes:
 
 When a future sprint is selected, the dashboard also uses epic-level planning alerts.
 
-Team grouping for these alerts is driven by configured team-label mappings. If an epic has multiple configured team labels, it can appear under each matching team. The raw Jira Team field is used only when no configured team label matches.
+Team grouping for these alerts is driven by configured team-label mappings, and each Team may have one to three configured label aliases. An epic carrying any one of a Team's aliases matches that Team; an epic carrying two aliases for the same Team still produces exactly one match for that Team (one alert group, one Story requirement), never a duplicate. If an epic's labels match more than one Team's alias sets, it can still appear under each matching Team. The raw Jira Team field is used only when no configured team label alias matches.
+
+### Oversized Department notice
+
+Alert Epic discovery (Missing Team, Missing Labels, and empty-Epic alerts) is bounded to 2,000 unique open Epics and 101 Jira search pages per request. Widening a Team's label aliases widens that discovery scope; a Department whose Product or Tech scope now exceeds the ceiling gets a status notice at the top of the Alerts panel instead of a silently empty or partial Epic-alert list: "This Department is too large for Epic alerts: more than 2,000 open Epics match its Teams and labels in Product or Tech. Epic alerts are hidden; Story alerts are still shown. Narrow the Department's Teams or labels." Story alerts (Stories Required, Missing Story Points, Blocked, Missing Epic, Epic Ready to Close) keep loading and rendering normally; only the categories built from the oversized alert-scope discovery are affected.
+
+The notice is scoped to the current Department and sprint. It clears on a Department or sprint scope change, on an explicit **Refresh**, or on the next alert load that succeeds; it never leaks into a different scope, and a delayed response from a previous scope cannot show it in the new one. Saving new aliases by itself does not re-trigger the alert load.
+
+Terminal Epics never count toward either 2,000-Epic ceiling: alert Epic discovery excludes Killed, Done, and Incomplete Epics of any age, and Story readiness discovery additionally excludes Postponed Epics, regardless of how long ago they closed.
+
+Analytics allowlist reason: the oversized-Department notice is an automatic status derived from an existing request outcome, not a user action, so it adds no analytics event. See `docs/README_ANALYTICS.md`.
 
 ### Backlog
 
@@ -86,13 +96,13 @@ If the team is missing, unknown, or cannot be matched, the epic stops here and d
 
 ### Missing Labels
 
-Shows epics that match the selected future sprint by Jira Sprint value or either accepted sprint label but are missing both accepted sprint label forms or the configured mapped Team label. A Jira Sprint value alone does not satisfy the label requirement.
+Shows epics that match the selected future sprint by Jira Sprint value or either accepted sprint label but are missing both accepted sprint label forms and every one of the Team's configured label aliases. A Jira Sprint value alone does not satisfy the label requirement, and an epic carrying only one of a Team's several aliases still satisfies it (it does not land here).
 
 This also covers the case where the active group has no label mapping configured for that team yet.
 
 ### Stories Required
 
-Shows one requirement per expected Team on an in-scope Epic that does not have an actionable child Story in the selected active or future sprint. Expected Teams come only from exact configured Epic-label mappings. A raw Jira Team value does not create a requirement.
+Shows one requirement per expected Team on an in-scope Epic that does not have an actionable child Story in the selected active or future sprint. Expected Teams come only from an exact match against one of a Team's configured label aliases; an epic carrying two of the same Team's aliases still yields at most one requirement for that Team. A raw Jira Team value does not create a requirement.
 
 The same complete Story-readiness snapshot drives the Catch Up alert and the synthetic `Story required` rows in the Catch Up and Planning hierarchies. `Blocked`, `Done`, `Killed`, and `Incomplete` Stories do not satisfy readiness. A failed, partial, or stale snapshot never produces a requirement.
 

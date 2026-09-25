@@ -714,8 +714,9 @@ Coverage is mandatory before timing interpretation, for EVERY cold candidate sam
 - at least one candidate profile in EACH round has maxPagesPerSearch≥2 OR maxBatchesPerColumn≥2;
 - at least one cold profile in EACH round actually reaches maxConcurrency=2; otherwise concurrency
   conclusions are forbidden and this campaign is unrepresentative;
-- All-work cold profile has terminalEpicCount≥1 and unmappedEpicCount≥1 in EACH round, so history
-  retention and Unmapped shaping affect observed work. Zero-child All-work support remains a valid
+- All-work cold profile has terminalEpicCount≥1 in EACH round, so history retention affects
+  observed work. (unmappedEpicCount is no longer gated: since 2026-09-25 unknown statuses land in
+  the first column, so it always reports 0.) Zero-child All-work support remains a valid
   production behavior, but needs a synthetic test; it cannot alone satisfy workload volume.
 
 Configuration-valid but zero/trivial/non-exercised workload yields `STOP unrepresentative_scope`.

@@ -10,7 +10,6 @@ test('strict adapter keeps server columns authoritative and saved presentation b
     const model = buildStrictEngBoardViewModel({
         columns: [
             { id: 'todo', name: 'Server todo', color: '#597ef7', statusNames: ['To Do'], terminal: false },
-            { id: 'board-unmapped', name: 'Unmapped', color: '#8c8c8c', statusNames: [], terminal: false },
             { id: 'done', name: 'Server done', color: '#52c41a', statusNames: ['Done'], terminal: true },
         ],
         epicsByKey: {
@@ -25,7 +24,7 @@ test('strict adapter keeps server columns authoritative and saved presentation b
                 updated: null, parent: null, columnId: 'done',
             },
         },
-        columnEpicKeys: { todo: ['E-1'], 'board-unmapped': [], done: ['E-2'] },
+        columnEpicKeys: { todo: ['E-1'], done: ['E-2'] },
         childrenByKey: {},
         membershipAuthoritative: true,
         childrenAuthoritative: true,
@@ -39,17 +38,16 @@ test('strict adapter keeps server columns authoritative and saved presentation b
         },
     });
 
-    assert.deepEqual(model.columns.map((column) => column.id), ['todo', 'board-unmapped', 'done']);
+    assert.deepEqual(model.columns.map((column) => column.id), ['todo', 'done']);
     assert.deepEqual(model.columns.map((column) => column.epicGroups.map((group) => group.key)), [
-        ['E-1'], [], ['E-2'],
+        ['E-1'], ['E-2'],
     ]);
     assert.equal(model.columns[0].name, 'Server todo');
     assert.equal(model.columns[0].colour, '#597ef7');
     assert.deepEqual(model.columns[0].statuses, ['To Do']);
     assert.equal(model.columns[0].max, 7);
-    assert.equal(model.columns[1].isUnmapped, true);
-    assert.equal(model.columns[2].star, true);
-    assert.equal(model.columns[2].terminal, true);
+    assert.equal(model.columns[1].star, true);
+    assert.equal(model.columns[1].terminal, true);
     assert.equal(model.authoritative, true);
     assert.deepEqual(model.progressByColumn, { todo: { loadedChildren: 0, byEpic: [] } });
 });

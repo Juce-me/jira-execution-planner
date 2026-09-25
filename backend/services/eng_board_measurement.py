@@ -209,9 +209,7 @@ def representative_campaign(document):
                 return False
             exercised = exercised or (metrics.get('maxPagesPerSearch', 0) >= 2 or metrics.get('maxBatchesPerColumn', 0) >= 2)
             concurrent = concurrent or metrics.get('maxConcurrency') == 2
-            if sample.get('profile') == 'candidate_all_work' and (
-                metrics.get('terminalEpicCount', 0) < 1 or metrics.get('unmappedEpicCount', 0) < 1
-            ):
+            if sample.get('profile') == 'candidate_all_work' and metrics.get('terminalEpicCount', 0) < 1:
                 return False
         if not exercised or not concurrent:
             return False

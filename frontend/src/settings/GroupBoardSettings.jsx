@@ -963,7 +963,7 @@ export default function GroupBoardSettings(props) {
                 </label>
                 <span className="group-modal-meta">
                     Put a status in a column with <b>+ Add status</b>, or drag its chip by the grip. Every status
-                    belongs to exactly one column; anything left over is collected into an <b>Unmapped</b> column so
+                    belongs to exactly one column; anything left over is shown in the first column (To Do) so
                     no epic disappears. Min and Max only warn — they never block a transition or a save.
                 </span>
                 {/* The asset puts this in a `.group-pane-tools` strip that production has no
@@ -1050,7 +1050,7 @@ export default function GroupBoardSettings(props) {
             <div className="component-selector">
                 <label className="component-selector-label">Not in a column</label>
                 <span className="group-modal-meta">
-                    These render in <b>Unmapped</b> until you place them. Drag one onto a column, or use that
+                    These render in the first column (To Do) until you place them. Drag one onto a column, or use that
                     column&apos;s <b>+ Add status</b>. Dragging a chip back here removes it from its column.
                 </span>
                 <div
@@ -1139,8 +1139,8 @@ export default function GroupBoardSettings(props) {
                 )}
                 {leftover.length > 0 && (
                     <div className="group-modal-warning">
-                        {leftover.length} status{leftover.length === 1 ? '' : 'es'} unmapped — collected into an
-                        Unmapped column.
+                        {leftover.length} status{leftover.length === 1 ? '' : 'es'} not in a column — shown in the
+                        first column (To Do).
                     </div>
                 )}
                 {breachCount > 0 && (

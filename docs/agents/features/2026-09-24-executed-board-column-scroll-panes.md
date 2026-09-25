@@ -290,6 +290,69 @@ Global:
 - Mark the superseded 2026-08-08 artifacts and `EXEC-sticky-board-column-chrome.md` with a Current
   Accuracy note limiting them to fallback mode.
 
+## Revision 2026-09-25: Fixed-Height Page (after live review)
+
+The user reviewed the shipped pane mode on real data and changed three decisions. This section
+supersedes decisions 2, 6 and 7 and every design rule, test and acceptance criterion below that
+depends on them (sticky state, page-first hand-off, compact-header suppression, full-height rails).
+
+User-confirmed decisions (2026-09-25):
+
+9. No sticky mode. In desktop pane mode the page itself never scrolls: the full top bar (title,
+   Sprint/Teams, ENG/EPM, mode switcher, search, settings) and the ENG filter bar stay in normal
+   flow at the top, and the board fills exactly the remaining viewport height. Every open column
+   body is always independently scrollable. There is no stuck state, no page-first hand-off, and
+   no compact header (the top bar never scrolls away, so the compact-header suppression wiring is
+   removed).
+10. Collapsed rails return to their previous fixed 340px track (`--board-strip-h`); the rail fill
+    scale is unchanged. Open panes keep their bordered full-height frame.
+11. When pane mode cannot apply, Board keeps today's page-scroll model (pinned column chrome,
+    compact header) and shows one compact alert strip above the board, reusing the existing
+    `.board-data-state` strip and `secondary compact` button: text "Board needs a larger screen.",
+    button "Request small-screen support". This applies to every non-pane case: a desktop too
+    short for the top bar + filter bar + one 340px column, a viewport 760px wide or narrower, and
+    a touch/no-hover pointer.
+12. The button sends one analytics event per click through the existing `userevent` transport, then
+    is replaced by "Thanks, noted" for the rest of the Board mount. Contract: `trigger=userevent`,
+    `event_type=event`, canonical `event_name=board_action`, `feature_name=eng_board`,
+    `workflow_action=small_screen_support_request`, `reason` (`short`|`narrow`|`touch`; touch wins
+    over narrow, narrow over short), `source_surface=board`. No viewport sizes, ids, names or free
+    text. No custom-definition registration.
+
+Revised design rules:
+
+- Gate: pane mode when `(min-width: 761px) and (hover: hover) and (pointer: fine)` matches and
+  `innerHeight - boardDocumentTop >= max(--board-strip-h, focused head space + first card height)`
+  (8px hysteresis when turning off), where `boardDocumentTop` is the `.board` top in document
+  coordinates. The gate also yields the alert `reason` when it fails.
+- Geometry: `.board` height is `calc(100dvh - var(--board-pane-top))`, where `--board-pane-top`
+  is the measured `boardDocumentTop`, published by `EngBoardView` in the existing layout pass;
+  the existing trailing-space negative margin stays so the document is exactly one viewport tall
+  and maximum page scroll is 0.
+- `.col-body` in pane mode is always `overflow-y: auto` (with `scrollbar-gutter: stable`,
+  `overflow-x: hidden`). `is-pane-stuck`, its tolerance, the focus re-stick handler, the pointer
+  guard, and the rail-click page reveal in pane mode are removed; a rail click in pane mode only
+  focuses the column, which opens at `scrollTop` 0 (the open-column reset stays).
+- Kept from the first iteration: bordered open panes, breach ring on the pane, drop announcement
+  floating at the board bottom, clipped-trigger popover dismissal, open-column scroll position
+  kept while open, folded column reopens at the top.
+
+Revised acceptance criteria (replace 1-5, 8, 10, 12, 14 above):
+
+- R1. Desktop pane mode at 1440x900 and 1280x800 with long fixtures: maximum page scroll <= 1px;
+  the top bar, filter bar and every open `.col-head` stay at their initial positions after any
+  wheel; the `.board` bottom equals `innerHeight` within 1px; pane bottoms equal the board content
+  bottom.
+- R2. Wheel over open column A changes only A's `scrollTop`; B and `window.scrollY` unchanged;
+  moving to B scrolls only B; this works from the first gesture, with no page scroll first.
+- R3. Rails are 340px tall in pane mode and fallback; fill ratios unchanged.
+- R4. The compact header never appears on Board in pane mode; Catch Up still gets it.
+- R5. At a short desktop viewport, at 760px width, and with touch emulation, the alert strip shows
+  above the old page-scroll board with the right `reason`; the button sends exactly one
+  `board_action` event with the contract above and then shows "Thanks, noted"; pane mode shows no
+  alert.
+- R6. Focus into a card never scrolls the page in pane mode.
+
 ## Outcome
 
 Implemented with changes. Approved deviations from this spec, recorded in the execution ledger:

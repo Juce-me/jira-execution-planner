@@ -63,7 +63,7 @@ test('EngBoardView keeps the normal empty result when loading and error are clea
 test('strict Board never renders provisional zero as a final empty result', () => {
     const strictColumns = [{
         id: 'active', name: 'Active', colour: '#8c8c8c', star: true, statuses: ['In Progress'],
-        terminal: false, isUnmapped: false, isUnconfigured: false, epicGroups: [], epicCount: 0,
+        terminal: false, isUnconfigured: false, epicGroups: [], epicCount: 0,
         storyPoints: 0, breach: null,
     }];
     const markup = renderBoard({
@@ -92,7 +92,7 @@ test('Board view does not render its own sprint scope control', () => {
 test('strict stale snapshot is labelled while retryable refresh failure remains visible', () => {
     const strictColumns = [{
         id: 'active', name: 'Active', colour: '#8c8c8c', star: true, statuses: ['In Progress'],
-        terminal: false, isUnmapped: false, isUnconfigured: false, epicGroups: [], epicCount: 0,
+        terminal: false, isUnconfigured: false, epicGroups: [], epicCount: 0,
         storyPoints: 0, breach: null,
     }];
     const markup = renderBoard({
@@ -114,7 +114,7 @@ test('strict hard-limit states render exact cold and stale copy without false em
         tasks: [], storyPoints: 0, childrenIncomplete: true, childrenLoading: false };
     const populatedColumn = {
         id: 'active', name: 'Active', colour: '#8c8c8c', star: true, statuses: ['In Progress'],
-        terminal: false, isUnmapped: false, isUnconfigured: false, epicGroups: [group], epicCount: 1,
+        terminal: false, isUnconfigured: false, epicGroups: [group], epicCount: 1,
         storyPoints: 0, breach: null,
     };
     const coldMarkup = renderBoard({
@@ -146,7 +146,7 @@ test('strict hard-limit states render exact cold and stale copy without false em
 test('strict structural columns without epics do not masquerade as loaded partial data', () => {
     const strictColumns = [{
         id: 'active', name: 'Active', colour: '#8c8c8c', star: true, statuses: ['In Progress'],
-        terminal: false, isUnmapped: false, isUnconfigured: false, epicGroups: [], epicCount: 0,
+        terminal: false, isUnconfigured: false, epicGroups: [], epicCount: 0,
         storyPoints: 0, breach: null,
     }];
     const markup = renderBoard({

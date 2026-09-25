@@ -21,14 +21,9 @@ import {
     describeBreach,
 } from '../settings/groupBoardModel.js';
 
-// Two synthetic columns, render-time only and never stored, so their ids deliberately do not match
-// `^col-[0-9a-f]{8}$` — a stored id could never collide with them.
-//
-// They are NOT interchangeable (§6.1). "Unmapped" means *your configuration forgot these
-// statuses*, which is the wrong thing to tell someone who has not configured anything yet; a group
-// with no usable board gets the first-run column instead, and the view offers the composer.
-export const UNMAPPED_COLUMN_ID = 'board-unmapped';
-export const UNMAPPED_COLUMN_NAME = 'Unmapped';
+// One synthetic column, render-time only and never stored, so its id deliberately does not match
+// `^col-[0-9a-f]{8}$` — a stored id could never collide with it. A group with no usable board gets
+// this first-run column, and the view offers the composer (§6.1).
 export const UNCONFIGURED_COLUMN_ID = 'board-unconfigured';
 export const UNCONFIGURED_COLUMN_NAME = 'All epics';
 
@@ -127,14 +122,13 @@ function renderColumn(source, epicGroups) {
         max: source.max ?? null,
         statuses: (source.statuses || []).slice(),
         terminal: Boolean(source.terminal),
-        isUnmapped: Boolean(source.isUnmapped),
         isUnconfigured: Boolean(source.isUnconfigured),
         epicGroups: sorted,
         epicCount,
         storyPoints: sorted.reduce((total, group) => total + (Number(group.storyPoints) || 0), 0),
         // describeBreach is the composer's own rule, so the board and settings cannot disagree
         // about what a breach is. It returns null for a column with no statuses.
-        breach: (source.isUnmapped || source.isUnconfigured) ? null : describeBreach(source, epicCount),
+        breach: source.isUnconfigured ? null : describeBreach(source, epicCount),
     };
 }
 
@@ -157,7 +151,7 @@ function syntheticColumn(id, name, flag) {
 export function buildBoardColumns({ columns = [], epicGroups = [], columnEpicKeys = null } = {}) {
     // Strict Board frames already contain the server's resolved column identity for every Epic.
     // When that explicit membership is supplied it is authoritative: preserve declared column
-    // order (including empty terminal/unmapped columns) and never re-derive ownership from status.
+    // order (including empty terminal columns) and never re-derive ownership from status.
     // The null default deliberately keeps every legacy caller on the status-derived path below.
     if (columnEpicKeys !== null) {
         const groupsByKey = new Map(
@@ -168,7 +162,6 @@ export function buildBoardColumns({ columns = [], epicGroups = [], columnEpicKey
             const members = keys.map((key) => groupsByKey.get(key)).filter(Boolean);
             return renderColumn({
                 ...column,
-                isUnmapped: column.isUnmapped || column.id === UNMAPPED_COLUMN_ID,
                 isUnconfigured: column.isUnconfigured || column.id === UNCONFIGURED_COLUMN_ID,
             }, members);
         });
@@ -178,7 +171,7 @@ export function buildBoardColumns({ columns = [], epicGroups = [], columnEpicKey
     const epics = (epicGroups || []).filter((group) => group && group.epic);
 
     // Nothing usable is configured — no board at all, or a board whose every column lost its
-    // statuses. Both are the same problem with the same fix, and neither is "Unmapped" (§6.1).
+    // statuses. Both are the same problem with the same fix (§6.1).
     // Rendered even at zero epics: "this board is not set up" is more use than "nothing here".
     if (!live.length) {
         return [renderColumn(
@@ -197,23 +190,15 @@ export function buildBoardColumns({ columns = [], epicGroups = [], columnEpicKey
         });
     });
 
+    // A status no column holds is To Do work: it lands in the first column, which is To Do in the
+    // default To Do | In Progress | Done board. There is no Unmapped column.
     const bucketById = new Map(live.map((column) => [column.id, []]));
-    const unmapped = [];
-
     epics.forEach((group) => {
-        const owner = ownerByStatus.get(epicStatusName(group.epic));
-        if (owner === undefined) unmapped.push(group);
-        else bucketById.get(owner).push(group);
+        const owner = ownerByStatus.get(epicStatusName(group.epic)) ?? live[0].id;
+        bucketById.get(owner).push(group);
     });
 
-    const rendered = live.map((column) => renderColumn(column, bucketById.get(column.id)));
-    if (unmapped.length) {
-        rendered.push(renderColumn(
-            syntheticColumn(UNMAPPED_COLUMN_ID, UNMAPPED_COLUMN_NAME, 'isUnmapped'),
-            unmapped,
-        ));
-    }
-    return rendered;
+    return live.map((column) => renderColumn(column, bucketById.get(column.id)));
 }
 
 // The folded rails are the chart (D9): every bar is a fraction of this, stated once above the

@@ -697,13 +697,12 @@ export default function EngBoardView({
         if (next) focusColumn(next.id);
     };
 
-    // §6.1: a group that has never been composed is a first-run state, not an "Unmapped" one. It
-    // says so and offers the composer, because the fix is one screen away and nothing else here
+    // §6.1: a group that has never been composed is a first-run state. It says so and offers the composer, because the fix is one screen away and nothing else here
     // will help.
     const firstRun = columns.length === 1 && columns[0].isUnconfigured;
 
-    // Carried from Task 11: on a one-column board (first-run, or a board whose only column is
-    // Unmapped) both the star and Fold promise something they cannot deliver — folding the only
+    // Carried from Task 11: on a one-column board (first-run, or a board with a single configured
+    // column) both the star and Fold promise something they cannot deliver — folding the only
     // column is impossible (the focus invariant forbids it) and starring it changes nothing
     // visible. An affordance that promises nothing is the review stop D38/D46 were both written
     // about, so it is gated on there being somewhere else for focus to go, not styled away.

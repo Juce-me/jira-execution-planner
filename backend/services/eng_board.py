@@ -17,7 +17,7 @@ import threading
 from urllib.parse import urlencode
 
 from backend.epm.scope import normalize_epm_sprint_field
-from backend.services.group_board import DEFAULT_COLUMN_COLOUR, normalize_group_board
+from backend.services.group_board import normalize_group_board
 
 
 PAGE_SIZE = 100
@@ -135,15 +135,6 @@ def normalize_board(raw_board):
         {**column, 'statuses': tuple(column['statuses'])}
         for column in normalized['columns']
     ]
-    columns.insert(len(columns) - 1, {
-        'id': 'board-unmapped',
-        'name': 'Unmapped',
-        'statuses': (),
-        'colour': DEFAULT_COLUMN_COLOUR,
-        'star': False,
-        'min': None,
-        'max': None,
-    })
     return {
         'configured': True,
         'columns': tuple(columns),
@@ -911,11 +902,9 @@ def project_board(epics, children, *, project_map, columns, epic_link_field_id=N
     for column in columns:
         for status in column['statuses']:
             status_to_column.setdefault(status, column['id'])
-    unmapped_column_id = (
-        'board-unconfigured'
-        if any(column['id'] == 'board-unconfigured' for column in columns)
-        else 'board-unmapped'
-    )
+    # A status no column holds is To Do work: it lands in the first column (To Do in the default
+    # To Do | In Progress | Done board, or the single first-run column when unconfigured).
+    fallback_column_id = columns[0]['id']
     child_map = {key: [] for key in epic_by_key}
     seen_children = set()
     for row in children:
@@ -970,7 +959,7 @@ def project_board(epics, children, *, project_map, columns, epic_link_field_id=N
             'projectTrack': _shape_value('epic.project_track', _project_track, fields.get(project_track_field_id)),
             'updated': _shape_value('epic.updated', _text, fields.get('updated'), nullable=True),
             'parent': _shape_value('epic.parent', _parent, fields.get('parent')),
-            'columnId': status_to_column.get(status['name'], unmapped_column_id),
+            'columnId': status_to_column.get(status['name'], fallback_column_id),
             'children': sorted(child_map[epic_key], key=lambda item: item['key']),
         })
     projection = {'epics': result_epics}

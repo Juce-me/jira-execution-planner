@@ -141,7 +141,10 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # plus cache-bypassing Project Track range synchronization on explicit Sprint commitment (+557).
     # Connection recovery keeps only orchestration wiring here; controller, notice, and
     # Scenario restoration behavior live in extracted modules (+15 after merging main).
-    "frontend/src/dashboard.jsx": 18093,
+    # docs/plans/EXEC-multiple-group-labels.md adds the bounded multi-chip Team-label alias
+    # editor, oversized-Department alert-scope notice state, and the alias-aware
+    # missingLabelEpics/normalizedActiveGroupTeamLabels predicates (+96).
+    "frontend/src/dashboard.jsx": 18189,
 }
 
 

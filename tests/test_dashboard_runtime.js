@@ -164,6 +164,31 @@ function deferred() {
     return { promise, resolve, reject };
 }
 
+test('config source accepted during the first read re-reads instead of stranding the catalog', async () => {
+    const first = deferred();
+    const calls = [];
+    const controller = createSprintCatalogController({
+        initialState: createSprintCatalogState({ displaySnapshot: { cachedAt: 1, sprints: [{ id: 42, name: '2026Q3', state: 'active' }] } }),
+        read: (options) => {
+            calls.push(options);
+            return calls.length === 1 ? first.promise : Promise.resolve(validatedEnvelope());
+        },
+        setTimer: () => 1,
+        clearTimer: () => {},
+    });
+    const initial = controller.readCurrent();
+    controller.acceptSource(SOURCE_A);
+    first.resolve(validatedEnvelope());
+    await initial;
+    await new Promise(resolve => setImmediate(resolve));
+
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].signal.aborted, true);
+    assert.equal(controller.getState().authority, 'validated');
+    assert.equal(controller.getState().status, 'ready');
+    controller.dispose();
+});
+
 test('completion exhaustion is terminal', async () => {
     let clock = 0;
     const timers = [];

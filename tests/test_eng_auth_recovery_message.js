@@ -110,6 +110,27 @@ test('task request flattens every selected Team alias through the shared helper'
     assert.deepEqual(calls.map(call => call.teamLabels), [['label_team_a', 'label_team_a_old', 'label_team_b']]);
 });
 
+test('alert Epic load reports alert_scope_too_large per project without a local error', async () => {
+    const { api, errors } = createHarness(async (_url, options) => {
+        if (options.purpose === 'alerts' && options.project === 'product') {
+            return new Response(JSON.stringify({ error: 'alert_scope_too_large', message: 'This Department is too large for Epic alerts.' }), { status: 422 });
+        }
+        return new Response(JSON.stringify({ issues: [], epicsInScope: [] }));
+    });
+
+    assert.deepEqual(await api.loadAlertEpics(), { product: 'alert_scope_too_large', tech: 'applied' });
+    assert.deepEqual(errors, []);
+});
+
+test('alert_scope_too_large outside alert purpose stays an ordinary non-auth failure', async () => {
+    const { api } = createHarness(async () => new Response(
+        JSON.stringify({ error: 'alert_scope_too_large', message: 'This Department is too large for Epic alerts.' }),
+        { status: 422 }
+    ));
+
+    assert.equal(await api.loadProductTasks(), 'non_auth_failure');
+});
+
 test('strict Board retires every legacy sprint loader without issuing transport', async () => {
     const calls = [];
     const { api } = createHarness(async () => {

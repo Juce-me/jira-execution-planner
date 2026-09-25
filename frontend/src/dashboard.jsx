@@ -401,6 +401,7 @@ import {
             const [techEpicsInScope, setTechEpicsInScope] = useState([]);
             const [readyToCloseProductEpicsInScope, setReadyToCloseProductEpicsInScope] = useState([]);
             const [readyToCloseTechEpicsInScope, setReadyToCloseTechEpicsInScope] = useState([]);
+            const [alertScopeTooLargeKey, setAlertScopeTooLargeKey] = useState('');
             const [techLoaded, setTechLoaded] = useState(false);
             const [loading, setLoading] = useState(false);
             const [error, setError] = useState('');
@@ -7731,6 +7732,13 @@ import {
                 }, 4000);
             };
 
+            // Catch Up alert scope; an oversized-Department result only applies to the scope that produced it.
+            const catchUpAlertScopeKey = `${activeGroupId}::${activeGroupTeamIds.join('|')}::${selectedSprint}::${selectedSprintInfo?.name || ''}::${selectedSprintInfo?.state || ''}`;
+            const alertScopeTooLarge = Boolean(alertScopeTooLargeKey) && alertScopeTooLargeKey === catchUpAlertScopeKey;
+            useEffect(() => {
+                setAlertScopeTooLargeKey(key => (key && key !== catchUpAlertScopeKey ? '' : key));
+            }, [catchUpAlertScopeKey]);
+
             useEffect(() => {
                 if (selectedView !== 'eng') return;
                 if (!isCatchUpMode) return;
@@ -7742,14 +7750,19 @@ import {
                 if (lastLoadedSprintRef.current !== selectedSprint) return;
                 if (!tasksFetched) return;
                 if (productTasksLoading || techTasksLoading) return;
-                const alertLoadSignature = `${activeGroupId}::${activeGroupTeamIds.join('|')}::${selectedSprint}::${selectedSprintInfo.name}::${selectedSprintInfo.state || ''}`;
+                const alertLoadSignature = catchUpAlertScopeKey;
                 if (catchUpAlertLoadRef.current === alertLoadSignature) return;
                 catchUpAlertLoadRef.current = alertLoadSignature;
                 const forceAlertRefresh = catchUpAlertForceRefreshRef.current;
                 catchUpAlertForceRefreshRef.current = false;
                 const alertController = new AbortController(), alertCohortVersion = ++catchUpAlertVersionRef.current;
                 const shouldApplyAlertResult = () => catchUpAlertVersionRef.current === alertCohortVersion;
-                loadAlertEpics({ forceRefresh: forceAlertRefresh, shouldApplyResult: shouldApplyAlertResult, signal: alertController.signal });
+                loadAlertEpics({ forceRefresh: forceAlertRefresh, shouldApplyResult: shouldApplyAlertResult, signal: alertController.signal }).then((alertOutcomes) => {
+                    if (!shouldApplyAlertResult()) return;
+                    const outcomes = [alertOutcomes?.product, alertOutcomes?.tech];
+                    if (outcomes.includes(ENG_TASK_LOAD_OUTCOME.ALERT_SCOPE_TOO_LARGE)) setAlertScopeTooLargeKey(alertLoadSignature);
+                    else if (outcomes.every(outcome => outcome === ENG_TASK_LOAD_OUTCOME.APPLIED)) setAlertScopeTooLargeKey('');
+                });
                 fetchMissingPlanningInfo(selectedSprint, { shouldApplyResult: shouldApplyAlertResult, signal: alertController.signal });
                 loadReadyToCloseProductTasks({ forceRefresh: forceAlertRefresh, shouldApplyResult: shouldApplyAlertResult, signal: alertController.signal });
                 loadReadyToCloseTechTasks({ forceRefresh: forceAlertRefresh, shouldApplyResult: shouldApplyAlertResult, signal: alertController.signal });
@@ -13320,8 +13333,15 @@ import {
             const epicHasPlanningSprintLabel = React.useCallback((epic) => {
                 return epicHasSelectedSprintLabel(epic, selectedSprintInfo?.name || '');
             }, [selectedSprintInfo?.name]);
+            // While the Department is too large for Epic alerts, epicsInScope holds only the primary load's
+            // first page; no alert may be derived from it. Separate sources (remote Backlog, sprint Stories,
+            // ready-to-close Epics, Story readiness) are unaffected.
+            const alertEpicsInScope = React.useMemo(
+                () => (alertScopeTooLarge ? [] : epicsInScope),
+                [alertScopeTooLarge, epicsInScope]
+            );
             const planningCandidateEpics = React.useMemo(() => {
-                return epicsInScope.filter((epic) => {
+                return alertEpicsInScope.filter((epic) => {
                     if (!epic?.key) return false;
                     if (dismissedAlertSet.has(epic.key)) return false;
                     const status = normalizeStatus(epic.status?.name);
@@ -13333,7 +13353,7 @@ import {
                     })) return false;
                     return true;
                 });
-            }, [epicsInScope, dismissedAlertSet, isAllTeamsSelected, selectedTeamSet, normalizedActiveGroupTeamLabels]);
+            }, [alertEpicsInScope, dismissedAlertSet, isAllTeamsSelected, selectedTeamSet, normalizedActiveGroupTeamLabels]);
             const backlogEpics = React.useMemo(() => {
                 if (!isFutureSprintSelected) return [];
                 const seen = new Set();
@@ -13396,7 +13416,7 @@ import {
             const needsStoriesEpics = storyReadinessAlerts.epics;
             const storyReadinessEpicKeySet = storyReadinessAlerts.epicKeySet;
 
-            const emptyEpics = epicsInScope
+            const emptyEpics = alertEpicsInScope
                 .filter(epic => {
                     const status = normalizeStatus(epic.status?.name);
                     if (status === 'killed' || status === 'done' || status === 'incomplete' || status === 'in progress') return false;
@@ -13451,14 +13471,14 @@ import {
 
             const analysisEpicsSource = React.useMemo(() => {
                 const seen = new Set();
-                const merged = [...readyToCloseEpicsInScope, ...epicsInScope].filter(epic => {
+                const merged = [...readyToCloseEpicsInScope, ...alertEpicsInScope].filter(epic => {
                     if (!epic?.key) return false;
                     if (seen.has(epic.key)) return false;
                     seen.add(epic.key);
                     return true;
                 });
                 return merged;
-            }, [readyToCloseEpicsInScope, epicsInScope]);
+            }, [readyToCloseEpicsInScope, alertEpicsInScope]);
 
             const sortByPriorityThenSummary = (a, b) => {
                 const priorityA = priorityOrder[a.fields.priority?.name] || 999;
@@ -17257,6 +17277,7 @@ import {
                                             selectedView={selectedView}
                                             alertItemCount={alertItemCount}
                                             alertCounts={alertCounts}
+                                            alertScopeTooLarge={alertScopeTooLarge}
                                             showAlertsPanel={showAlertsPanel}
                                             setShowAlertsPanel={setShowAlertsPanel}
                                             collapsed={!showMissingAlert && !showBlockedAlert && !showPostponedAlert && !showBacklogAlert && !showMissingTeamAlert && !showMissingLabelsAlert && !showNeedsStoriesAlert && !showWaitingAlert && !showEmptyEpicAlert && !showDoneEpicAlert}

@@ -105,7 +105,7 @@ test('ENG alert loading is deferred until visible tasks finish and gated to Catc
     assert.match(alertLoadEffect, /if \(productTasksLoading \|\| techTasksLoading\) return;/);
     assert.match(alertLoadEffect, /const alertController = new AbortController\(\)/);
     assert.match(alertLoadEffect, /const shouldApplyAlertResult = \(\) => catchUpAlertVersionRef\.current === alertCohortVersion;/);
-    assert.match(alertLoadEffect, /loadAlertEpics\(\{ forceRefresh: forceAlertRefresh, shouldApplyResult: shouldApplyAlertResult, signal: alertController\.signal \}\);/);
+    assert.match(alertLoadEffect, /loadAlertEpics\(\{ forceRefresh: forceAlertRefresh, shouldApplyResult: shouldApplyAlertResult, signal: alertController\.signal \}\)\.then\(/);
     assert.match(alertLoadEffect, /fetchMissingPlanningInfo\(selectedSprint, \{ shouldApplyResult: shouldApplyAlertResult, signal: alertController\.signal \}\);/);
     assert.match(alertLoadEffect, /loadReadyToCloseProductTasks\(\{ forceRefresh: forceAlertRefresh, shouldApplyResult: shouldApplyAlertResult, signal: alertController\.signal \}\);/);
     assert.match(alertLoadEffect, /loadReadyToCloseTechTasks\(\{ forceRefresh: forceAlertRefresh, shouldApplyResult: shouldApplyAlertResult, signal: alertController\.signal \}\);/);
@@ -115,8 +115,9 @@ test('ENG alert loading is deferred until visible tasks finish and gated to Catc
     assert.match(alertLoadEffect, /alertController\.abort\(\)/);
     assert.match(
         dashboardSource,
-        /const alertLoadSignature = `\$\{activeGroupId\}::\$\{activeGroupTeamIds\.join\('\|'\)\}::\$\{selectedSprint\}::\$\{selectedSprintInfo\.name\}::\$\{selectedSprintInfo\.state \|\| ''\}`;/
+        /const catchUpAlertScopeKey = `\$\{activeGroupId\}::\$\{activeGroupTeamIds\.join\('\|'\)\}::\$\{selectedSprint\}::\$\{selectedSprintInfo\?\.name \|\| ''\}::\$\{selectedSprintInfo\?\.state \|\| ''\}`;/
     );
+    assert.match(alertLoadEffect, /const alertLoadSignature = catchUpAlertScopeKey;/);
     assert.match(
         dashboardSource,
         /\}, \[isCatchUpMode,[^\]]*selectedSprintInfo\?\.name,[^\]]*selectedSprintInfo\?\.state,[^\]]*catchUpAlertRefreshNonce[^\]]*\]\);/
@@ -595,4 +596,52 @@ test('story point reconciliation rearms visible dependency and alert reads witho
     assert.match(localPatch, /rearmCatchUpAlerts\(\)/);
     assert.match(localPatch, /setInvalidationHandler\(invalidateEngIssueFieldSources\)/);
     assert.doesNotMatch(localPatch, /loadMeasuredGroupTasks/);
+});
+
+test('oversized alert scope is reported per project and kept out of generic task errors', () => {
+    const sprintDataSource = fs.readFileSync(engSprintDataPath, 'utf8');
+    assert.match(sprintDataSource, /ALERT_SCOPE_TOO_LARGE: 'alert_scope_too_large'/);
+    assert.match(
+        sprintDataSource,
+        /if \(options\.shouldApplyResult\?\.\(\) === false\) return IGNORED_RESULT;\s*if \(options\.purpose === 'alerts' && err\.code === 'alert_scope_too_large'\) return ALERT_SCOPE_TOO_LARGE_RESULT;/
+    );
+    const loadAlertEpics = sprintDataSource.slice(
+        sprintDataSource.indexOf('const loadAlertEpics = async'),
+        sprintDataSource.indexOf('const loadReadyToCloseProductTasks')
+    );
+    assert.equal((loadAlertEpics.match(/setErrorOnFailure: false/g) || []).length, 2);
+    assert.match(loadAlertEpics, /return \{ product: toAlertOutcome\(results\[0\]\), tech: toAlertOutcome\(results\[1\]\) \};/);
+});
+
+test('oversized alert scope gates alert-purpose epicsInScope once and stays scope-guarded', () => {
+    const dashboardSource = fs.readFileSync(dashboardPath, 'utf8');
+    const alertLoadEffectStart = dashboardSource.indexOf('const alertLoadSignature =');
+    const alertLoadEffect = dashboardSource.slice(alertLoadEffectStart, dashboardSource.indexOf('}, [', alertLoadEffectStart));
+    assert.match(
+        alertLoadEffect,
+        /\.then\(\(alertOutcomes\) => \{\s*if \(!shouldApplyAlertResult\(\)\) return;[\s\S]*ENG_TASK_LOAD_OUTCOME\.ALERT_SCOPE_TOO_LARGE[\s\S]*setAlertScopeTooLargeKey\(alertLoadSignature\)[\s\S]*ENG_TASK_LOAD_OUTCOME\.APPLIED[\s\S]*setAlertScopeTooLargeKey\(''\)/
+    );
+    assert.match(dashboardSource, /const alertScopeTooLarge = Boolean\(alertScopeTooLargeKey\) && alertScopeTooLargeKey === catchUpAlertScopeKey;/);
+    assert.match(dashboardSource, /const alertEpicsInScope = React\.useMemo\(\s*\(\) => \(alertScopeTooLarge \? \[\] : epicsInScope\),\s*\[alertScopeTooLarge, epicsInScope\]\s*\);/);
+
+    const alertDerivation = dashboardSource.slice(
+        dashboardSource.indexOf('const alertEpicsInScope = React.useMemo('),
+        dashboardSource.indexOf('const sortByPriorityThenSummary')
+    );
+    assert.match(alertDerivation, /const planningCandidateEpics = React\.useMemo\(\(\) => \{\s*return alertEpicsInScope\.filter/);
+    assert.match(alertDerivation, /const emptyEpics = alertEpicsInScope\s*\.filter/);
+    assert.match(alertDerivation, /\[\.\.\.readyToCloseEpicsInScope, \.\.\.alertEpicsInScope\]/);
+    assert.doesNotMatch(alertDerivation.slice(alertDerivation.indexOf(');') + 2), /\bepicsInScope\b/);
+    assert.match(dashboardSource, /<EngAlertsPanel[\s\S]*alertScopeTooLarge=\{alertScopeTooLarge\}/);
+});
+
+test('oversized alert notice reuses the Story readiness notice without actions', () => {
+    const panelSource = fs.readFileSync(engAlertsPanelPath, 'utf8');
+    const noticeStart = panelSource.indexOf('const alertScopeNotice');
+    assert.notEqual(noticeStart, -1);
+    const notice = panelSource.slice(noticeStart, panelSource.indexOf(': null;', noticeStart));
+    assert.match(notice, /<div className="story-readiness-notice" role="status">/);
+    assert.ok(notice.includes("This Department is too large for Epic alerts: more than 2,000 open Epics match its Teams and labels in Product or Tech. Epic alerts are hidden; Story alerts are still shown. Narrow the Department's Teams or labels."));
+    assert.doesNotMatch(notice, /<button|onClick|Settings/);
+    assert.match(panelSource, /if \(selectedView !== 'eng' \|\| \(alertItemCount <= 0 && !alertScopeTooLarge\)\) \{/);
 });

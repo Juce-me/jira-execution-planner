@@ -12,10 +12,12 @@ export const ENG_TASK_LOAD_OUTCOME = Object.freeze({
     NON_AUTH_FAILURE: 'non_auth_failure',
     AUTH_REQUIRED: 'auth_required',
     IGNORED: 'ignored',
+    ALERT_SCOPE_TOO_LARGE: 'alert_scope_too_large',
 });
 const AUTHENTICATION_REQUIRED_RESULT = ENG_TASK_LOAD_OUTCOME.AUTH_REQUIRED;
 const NON_AUTH_FAILURE_RESULT = ENG_TASK_LOAD_OUTCOME.NON_AUTH_FAILURE;
 const IGNORED_RESULT = ENG_TASK_LOAD_OUTCOME.IGNORED;
+const ALERT_SCOPE_TOO_LARGE_RESULT = ENG_TASK_LOAD_OUTCOME.ALERT_SCOPE_TOO_LARGE;
 const ISSUE_EDIT_READ_TOKEN = Symbol('issueEditReadToken');
 import {
     PRIORITY_ORDER,
@@ -194,6 +196,7 @@ export function useEngSprintData({
             }
             if (isAuthenticationRequiredError(err)) return AUTHENTICATION_REQUIRED_RESULT;
             if (options.shouldApplyResult?.() === false) return IGNORED_RESULT;
+            if (options.purpose === 'alerts' && err.code === 'alert_scope_too_large') return ALERT_SCOPE_TOO_LARGE_RESULT;
             const handledServerConnection = onServerConnectionFailure?.(err) === true;
             if (setErrors) {
                 setError(handledServerConnection ? '' : taskLoadErrorMessage(err, backendUrl));
@@ -347,6 +350,8 @@ export function useEngSprintData({
             })
         ]);
         results.forEach(result => issueEditState?.finishRead(result?.[ISSUE_EDIT_READ_TOKEN]));
+        const toAlertOutcome = result => (typeof result === 'string' ? result : ENG_TASK_LOAD_OUTCOME.APPLIED);
+        return { product: toAlertOutcome(results[0]), tech: toAlertOutcome(results[1]) };
     };
 
     const loadReadyToCloseProductTasks = async ({ forceRefresh = false, shouldApplyResult, signal } = {}) => {

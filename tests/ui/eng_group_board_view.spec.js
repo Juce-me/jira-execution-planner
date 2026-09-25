@@ -4461,16 +4461,19 @@ test('a never-configured group gets a first-run column that says so and offers t
     await expect(page.locator('#department-settings-boards-panel')).toBeVisible();
 });
 
-test('a configured board offers no first-run state, and names its leftovers Unmapped', async ({ page }) => {
-    // One column, so nine of the ten epics have a status it does not hold.
+test('a configured board offers no first-run state, and places statuses no column holds in its first column', async ({ page }) => {
+    // One column, so nine of the ten epics have a status it does not hold. Since #202 there is no
+    // synthetic Unmapped column: that work is To Do work and renders in the first column.
     await openBoard(page, {
         board: { columns: [BOARD_COLUMNS[0]] },
     });
     await expectExactlyOneFocused(page, 'configured board with leftovers');
     await expect(page.locator('.eng-board .board-first-run')).toHaveCount(0);
     await expect(page.locator('.eng-board .board-configure')).toHaveCount(0);
-    await expect(page.locator('.eng-board .col')).toHaveCount(2);
-    await expect(page.locator('.eng-board .col').nth(1).locator('.col-strip .vert')).toHaveText('Unmapped');
+    await expect(page.locator('.eng-board .col')).toHaveCount(1);
+    await expect(col(page, BOARD_COLUMNS[0].id).locator('.col-head .ct')).toHaveText(String(EPIC_SPECS.length));
+    await expect(col(page, BOARD_COLUMNS[0].id).locator('.ecard')).toHaveCount(EPIC_SPECS.length);
+    await expect(page.locator('.eng-board')).not.toContainText('Unmapped');
 });
 
 /* ── Carried from Task 11: an affordance that promises nothing is a review stop (D38/D46) ───── */

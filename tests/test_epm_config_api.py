@@ -938,32 +938,46 @@ class TestEpmConfigApi(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         self.assertEqual(response.get_json()['labels'], ['rnd_project_alpha', 'RND_PROJECT_BETA'])
 
-    def test_jira_labels_applies_query_then_prefix_then_limit(self):
-        labels = [
-            'rnd_project_alpha',
-            'team_alpha',
-            'rnd_project_beta_alpha',
-            'rnd_project_gamma_alpha',
-        ]
+    def _label_suggestions_response(self, values, status_code=200):
+        class _Response:
+            def __init__(self):
+                self.status_code = status_code
 
-        with patch.object(jira_server, 'LABELS_CACHE', {'data': labels, 'timestamp': 9999999999}):
-            response = self.client.get('/api/jira/labels?query=alpha&prefix=rnd_project_&limit=2')
+            def json(self):
+                return {'results': [{'value': value, 'displayName': f'<b>{value}</b>'} for value in values]}
 
-        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()['labels'], ['rnd_project_alpha', 'rnd_project_beta_alpha'])
+        return _Response()
 
-    def test_jira_labels_without_prefix_keeps_existing_query_behavior(self):
-        labels = [
-            'rnd_project_alpha',
-            'team_alpha',
-            'rnd_project_beta',
-        ]
-
-        with patch.object(jira_server, 'LABELS_CACHE', {'data': labels, 'timestamp': 9999999999}):
-            response = self.client.get('/api/jira/labels?query=alpha')
+    def test_jira_labels_query_uses_jql_autocomplete_without_catalog_crawl(self):
+        with patch.object(jira_server, 'LABELS_CACHE', {'data': [], 'timestamp': 0}), \
+             patch.object(jira_server, 'current_jira_get', return_value=self._label_suggestions_response(
+                 ['team_alpha', 'team_alpha_web', '"team_and"'],
+             )) as mock_get:
+            response = self.client.get('/api/jira/labels?query=Team_A&limit=2')
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()['labels'], ['rnd_project_alpha', 'team_alpha'])
+        self.assertEqual(response.get_json()['labels'], ['team_alpha', 'team_alpha_web'])
+        mock_get.assert_called_once()
+        path = mock_get.call_args.args[0]
+        params = mock_get.call_args.kwargs['params']
+        self.assertEqual(path, '/rest/api/3/jql/autocompletedata/suggestions')
+        self.assertEqual(params, {'fieldName': 'labels', 'fieldValue': 'team_a'})
+
+    def test_jira_labels_query_strips_jql_quotes_and_applies_prefix(self):
+        with patch.object(jira_server, 'current_jira_get', return_value=self._label_suggestions_response(
+            ['"rnd_project_and"', 'rnd_project_alpha', 'rnd_other'],
+        )):
+            response = self.client.get('/api/jira/labels?query=rnd_&prefix=rnd_project_*')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['labels'], ['rnd_project_and', 'rnd_project_alpha'])
+
+    def test_jira_labels_query_reports_autocomplete_failure(self):
+        with patch.object(jira_server, 'current_jira_get', return_value=self._label_suggestions_response([], 503)):
+            response = self.client.get('/api/jira/labels?query=team')
+
+        self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['error'], 'Failed to fetch labels from Jira')
 
     def test_jira_labels_limit_cap_applies_after_prefix_filtering(self):
         labels = [f'rnd_project_{index:03d}' for index in range(250)]

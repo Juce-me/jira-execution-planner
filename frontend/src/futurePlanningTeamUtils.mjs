@@ -1,3 +1,5 @@
+import { epicMatchesTeamAliases, normalizeTeamLabelAliases } from './settings/groupConfigUtils.js';
+
 function normalizeLabel(value) {
     return String(value || '').trim().toLowerCase();
 }
@@ -17,12 +19,16 @@ function getRawEpicTeamInfo(epic) {
     return { id: teamId, name: teamName };
 }
 
+function getTeamAliases(teamLabels, teamId) {
+    return normalizeTeamLabelAliases((teamLabels || {})[teamId]);
+}
+
 function getMatchedPlanningTeamIds(epic, teamLabels) {
     const labels = getEpicLabels(epic);
     if (!labels.size) return [];
 
     return Object.entries(teamLabels || {})
-        .filter(([teamId, label]) => teamId && labels.has(normalizeLabel(label)))
+        .filter(([teamId, rawAliases]) => teamId && normalizeTeamLabelAliases(rawAliases).some((alias) => labels.has(normalizeLabel(alias))))
         .map(([teamId]) => String(teamId).trim())
         .filter(Boolean);
 }
@@ -82,26 +88,32 @@ export function getFuturePlanningEpicTeamInfos(epic, { selectedTeamSet, teamLabe
     return [rawTeam];
 }
 
-export function getFuturePlanningExpectedTeamLabel(epic, {
+export function getFuturePlanningExpectedTeamLabels(epic, {
     selectedTeamSet,
     teamLabels = {}
 } = {}) {
     const selectedTeamId = getSingleSelectedTeamId(selectedTeamSet);
     if (selectedTeamId) {
-        return String(teamLabels[selectedTeamId] || '').trim();
+        return getTeamAliases(teamLabels, selectedTeamId);
     }
 
     const rawTeam = getRawEpicTeamInfo(epic);
-    if (rawTeam.id && teamLabels[rawTeam.id]) {
-        return String(teamLabels[rawTeam.id] || '').trim();
+    const rawTeamAliases = rawTeam.id ? getTeamAliases(teamLabels, rawTeam.id) : [];
+    if (rawTeamAliases.length) {
+        return rawTeamAliases;
     }
 
     const matchedTeamIds = getMatchedPlanningTeamIds(epic, teamLabels);
     if (matchedTeamIds.length >= 1) {
-        return String(teamLabels[matchedTeamIds[0]] || '').trim();
+        return getTeamAliases(teamLabels, matchedTeamIds[0]);
     }
 
-    return '';
+    return [];
+}
+
+// The Epic carries at least one alias of its resolved future-planning Team.
+export function epicHasFuturePlanningTeamLabel(epic, options = {}) {
+    return epicMatchesTeamAliases(epic?.labels, getFuturePlanningExpectedTeamLabels(epic, options));
 }
 
 export function epicMatchesFuturePlanningTeamSelection(epic, {

@@ -152,7 +152,7 @@ import { epicHasExplicitlyEmptySprintValue, epicHasSelectedSprintLabel, epicMatc
 import { getConfigSaveRefreshTarget } from './configSaveRefreshUtils.mjs';
 import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
 import { getFuturePlanningNeedsStoriesReasonText } from './futurePlanningNeedsStories.mjs';
-import { epicMatchesFuturePlanningTeamSelection, getFuturePlanningEpicTeamInfos, getFuturePlanningExpectedTeamLabel } from './futurePlanningTeamUtils.mjs';
+import { epicHasFuturePlanningTeamLabel, epicMatchesFuturePlanningTeamSelection, getFuturePlanningEpicTeamInfos } from './futurePlanningTeamUtils.mjs';
 import {
     fetchMissingPlanningInfo as requestMissingPlanningInfo,
     fetchSprints as requestSprints,
@@ -201,6 +201,7 @@ import {
     applyLocalGroupPreferences,
     buildGroupId,
     normalizeGroupsConfig,
+    normalizeTeamLabelAliases,
     parseTeamIdList,
     resolveInitialGroupId
 } from './settings/groupConfigUtils.js';
@@ -13285,8 +13286,8 @@ import {
 
             const normalizedActiveGroupTeamLabels = React.useMemo(() => {
                 const entries = Object.entries(activeGroupTeamLabels || {})
-                    .map(([teamId, label]) => [String(teamId || '').trim(), String(label || '').trim()])
-                    .filter(([teamId, label]) => teamId && label);
+                    .map(([teamId, aliases]) => [String(teamId || '').trim(), normalizeTeamLabelAliases(aliases)])
+                    .filter(([teamId, aliases]) => teamId && aliases.length);
                 return Object.fromEntries(entries);
             }, [activeGroupTeamLabels]);
             const getFuturePlanningTeamInfos = React.useCallback((epic) => {
@@ -13298,12 +13299,6 @@ import {
                     teamNameById
                 });
             }, [selectedTeamSet, normalizedActiveGroupTeamLabels, resolveTeamName, teamNameById]);
-            const getFuturePlanningTeamLabel = React.useCallback((epic) => {
-                return getFuturePlanningExpectedTeamLabel(epic, {
-                    selectedTeamSet,
-                    teamLabels: normalizedActiveGroupTeamLabels
-                });
-            }, [selectedTeamSet, normalizedActiveGroupTeamLabels]);
             const storiesByEpicKey = React.useMemo(() => {
                 const map = new Map();
                 tasks.forEach((task) => {
@@ -13316,11 +13311,6 @@ import {
                 });
                 return map;
             }, [tasks, isAllTeamsSelected, selectedTeamSet]);
-            const epicHasLabel = React.useCallback((epic, label) => {
-                const target = String(label || '').trim().toLowerCase();
-                if (!target) return false;
-                return (epic?.labels || []).some((item) => String(item || '').trim().toLowerCase() === target);
-            }, []);
             const epicMatchesPlanningSprintValue = React.useCallback((epic) => {
                 return epicMatchesSelectedSprint(epic, {
                     selectedSprint,
@@ -13386,10 +13376,12 @@ import {
                 return planningCandidateEpics.filter((epic) => {
                     if (backlogEpicKeySet.has(epic.key) || missingTeamEpicKeySet.has(epic.key)) return false;
                     if (!epicMatchesPlanningSprintValue(epic)) return false;
-                    const teamLabel = getFuturePlanningTeamLabel(epic);
-                    return !epicHasPlanningSprintLabel(epic) || !teamLabel || !epicHasLabel(epic, teamLabel);
+                    return !epicHasPlanningSprintLabel(epic) || !epicHasFuturePlanningTeamLabel(epic, {
+                        selectedTeamSet,
+                        teamLabels: normalizedActiveGroupTeamLabels
+                    });
                 });
-            }, [isFutureSprintSelected, planningCandidateEpics, backlogEpicKeySet, missingTeamEpicKeySet, getFuturePlanningTeamLabel, epicMatchesPlanningSprintValue, epicHasPlanningSprintLabel, epicHasLabel]);
+            }, [isFutureSprintSelected, planningCandidateEpics, backlogEpicKeySet, missingTeamEpicKeySet, selectedTeamSet, normalizedActiveGroupTeamLabels, epicMatchesPlanningSprintValue, epicHasPlanningSprintLabel]);
             const missingLabelEpicKeySet = React.useMemo(
                 () => new Set(missingLabelEpics.map(epic => epic.key).filter(Boolean)),
                 [missingLabelEpics]

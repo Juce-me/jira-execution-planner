@@ -88,6 +88,7 @@ async function installFixture(page, {
     readinessGate = null,
     groupByInitiativeChoice = null,
     showAlertsPanel = true,
+    groupTeamLabels = { 'team-alpha': 'Alpha Team', 'team-beta': 'Beta Team' },
 } = {}) {
     const calls = [];
     await installDashboardShell(page);
@@ -136,7 +137,7 @@ async function installFixture(page, {
                 id: 'grp-default',
                 name: 'Default',
                 teamIds: ['team-alpha', 'team-beta'],
-                teamLabels: { 'team-alpha': 'Alpha Team', 'team-beta': 'Beta Team' },
+                teamLabels: groupTeamLabels,
             }],
             defaultGroupId: 'grp-default',
             source: 'test',
@@ -212,7 +213,9 @@ async function expectOnlyAlertCategory(page, key, sectionId) {
     }
 }
 
-for (const [description, labels, expectedSection, team] of [
+const aliasTeamLabels = { 'team-alpha': 'Alpha Team', 'team-beta': ['label_team_a', 'label_team_a_old'] };
+
+for (const [description, labels, expectedSection, team, groupTeamLabels] of [
     ['lowercase candidate', [`${sprintName}_candidate`, 'Beta Team'], 'eng-alert-needs-stories', {}],
     ['capitalized candidate', [`${sprintName}_Candidate`, 'Beta Team'], 'eng-alert-needs-stories', {}],
     ['plain selected sprint label', [sprintName, 'Beta Team'], 'eng-alert-needs-stories', {}],
@@ -220,6 +223,10 @@ for (const [description, labels, expectedSection, team] of [
     ['candidate with missing Jira Team', [`${sprintName}_candidate`, 'Beta Team'], 'eng-alert-missing-team', { teamId: '', teamName: '' }],
     ['candidate with missing mapped Team label', [`${sprintName}_candidate`], 'eng-alert-missing-labels', {}],
     ['near-match candidate suffix', [`${sprintName}_candidate_extra`, 'Beta Team'], 'eng-alert-backlog', {}],
+    ['old Team alias only', [`${sprintName}_candidate`, 'label_team_a_old'], 'eng-alert-needs-stories', {}, aliasTeamLabels],
+    ['new Team alias only', [sprintName, 'label_team_a'], 'eng-alert-needs-stories', {}, aliasTeamLabels],
+    ['both Team aliases', [`${sprintName}_candidate`, 'label_team_a', 'label_team_a_old'], 'eng-alert-needs-stories', {}, aliasTeamLabels],
+    ['neither Team alias', [`${sprintName}_candidate`, 'label_team_b'], 'eng-alert-missing-labels', {}, aliasTeamLabels],
 ]) {
     test(`future alert classifies ${description} once across alert and remote Backlog sources`, async ({ page }) => {
         const key = 'CAND-EPIC';
@@ -229,6 +236,7 @@ for (const [description, labels, expectedSection, team] of [
             alertPurposeEpics: [epic],
             backlogEpics: [epic],
             readinessEpics: [readinessEpic(key)],
+            ...(groupTeamLabels ? { groupTeamLabels } : {}),
         });
         await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
         await expect.poll(() => calls.filter(call => call.pathname === '/api/tasks-with-team-name' && call.params.purpose === 'alerts').length).toBe(2);

@@ -96,7 +96,7 @@ If the team is missing, unknown, or cannot be matched, the epic stops here and d
 
 ### Missing Labels
 
-Shows epics that match the selected future sprint by Jira Sprint value or either accepted sprint label but are missing both accepted sprint label forms and every one of the Team's configured label aliases. A Jira Sprint value alone does not satisfy the label requirement, and an epic carrying only one of a Team's several aliases still satisfies it (it does not land here).
+Shows epics that match the selected future sprint by Jira Sprint value or either accepted sprint label but are missing either the accepted sprint label forms or every one of the Team's configured label aliases. A Jira Sprint value alone does not satisfy the label requirement, and an epic carrying only one of a Team's several aliases still satisfies the Team-label half of the check (it does not land here on that basis alone).
 
 This also covers the case where the active group has no label mapping configured for that team yet.
 

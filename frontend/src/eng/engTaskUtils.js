@@ -1,3 +1,5 @@
+import { epicMatchesTeamAliases, normalizeTeamLabelAliases } from '../settings/groupConfigUtils.js';
+
 export const PRIORITY_ORDER = {
     'Blocker': 0,
     'Highest': 1,
@@ -93,16 +95,8 @@ export function filterTasksForTeamSet(tasks, activeGroupTeamIds, activeGroupTeam
 }
 
 function epicMatchesActiveGroupLabel(epic, activeGroupTeamLabels) {
-    const labels = new Set(
-        (epic?.labels || [])
-            .map(label => String(label || '').trim().toLowerCase())
-            .filter(Boolean)
-    );
-    if (!labels.size) return false;
-    return Object.values(activeGroupTeamLabels || {}).some(label => {
-        const normalized = String(label || '').trim().toLowerCase();
-        return normalized && labels.has(normalized);
-    });
+    return Object.values(activeGroupTeamLabels || {})
+        .some(aliases => epicMatchesTeamAliases(epic?.labels, normalizeTeamLabelAliases(aliases)));
 }
 
 export function filterEpicsInScopeForTeamSet(epicsInScope, activeGroupTeamIds, activeGroupTeamSet, activeGroupTeamLabels = {}) {

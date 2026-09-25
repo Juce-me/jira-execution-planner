@@ -32,6 +32,30 @@ test('epics in scope can match active group by configured team label', async () 
     );
 });
 
+test('epics in scope match any alias of a two-alias Team and keep legacy scalar mappings', async () => {
+    const { filterEpicsInScopeForTeamSet } = await import('../frontend/src/eng/engTaskUtils.js');
+
+    const activeGroupTeamIds = ['team-a', 'team-b'];
+    const activeGroupTeamSet = new Set(activeGroupTeamIds);
+    const activeGroupTeamLabels = {
+        'team-a': ['label_team_a', 'label_team_a_old'],
+        'team-b': 'label_team_b'
+    };
+    const epics = [
+        { key: 'PROJ-1', teamId: 'team-other', labels: ['LABEL_TEAM_A_OLD'] },
+        { key: 'PROJ-2', teamId: 'team-other', labels: ['label_team_a'] },
+        { key: 'PROJ-3', teamId: 'team-other', labels: ['label_team_c'] },
+        { key: 'PROJ-4', teamId: 'team-other', labels: ['label_team_b'] },
+        { key: 'PROJ-5', teamId: 'team-other', labels: [] }
+    ];
+
+    assert.deepEqual(
+        filterEpicsInScopeForTeamSet(epics, activeGroupTeamIds, activeGroupTeamSet, activeGroupTeamLabels)
+            .map(epic => epic.key),
+        ['PROJ-1', 'PROJ-2', 'PROJ-4']
+    );
+});
+
 test('ENG search expands Initiative and Epic matches to loaded descendant stories', async () => {
     const { matchesEngTaskSearch } = await import('../frontend/src/eng/engTaskUtils.js');
     const task = (key, epicKey, summary, assignee = 'Story Owner') => ({

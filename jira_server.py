@@ -3214,6 +3214,10 @@ def fetch_tasks(include_team_name=False):
         lightweight_ready_to_close = request_purpose == 'ready-to-close'
         record_timing('parse_params', parse_started)
         auth_context = current_request_auth_context()
+        if project_filter in ('product', 'tech'):
+            denied_response, denied_status = project_access_denied_response(auth_context, project_filter)
+            if denied_response is not None:
+                return denied_response, denied_status
         groups_started = time.perf_counter()
         saved_team_labels = (_group_config_service.resolve_group_team_label_values(load_request_effective_groups(auth_context), group_id, team_ids, normalize_team_ids)
                              if request.args.get('groupId', '').strip() and team_ids else [])
@@ -3225,10 +3229,6 @@ def fetch_tasks(include_team_name=False):
         )
         cache_generation = get_jira_issue_cache_generation()
         measurement_campaign = getattr(g, 'measurement_campaign', None)
-        if project_filter in ('product', 'tech'):
-            denied_response, denied_status = project_access_denied_response(auth_context, project_filter)
-            if denied_response is not None:
-                return denied_response, denied_status
         cache_enabled = jira_home_partitioned_process_cache_enabled(auth_context)
         cache_key = build_jira_home_process_cache_key(auth_context, raw_cache_key)
         cached_entry = None

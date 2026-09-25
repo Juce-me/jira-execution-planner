@@ -1112,6 +1112,33 @@ class TestTaskRouteTeamLabelAliases(unittest.TestCase):
                 self.assertEqual(response.status_code, 500)
                 self.assertEqual(jira_server.TASKS_CACHE, {})
 
+        first_page = {'issues': [{'key': 'PROJ-1', 'fields': {'labels': ['label_team_a']}}],
+                      'isLast': False, 'nextPageToken': 'page-2'}
+
+        def search(payload):
+            if payload.get('nextPageToken') == 'page-2':
+                self.search_payloads.append(dict(payload))
+                return _mock_response(503)
+            return self._search(payload)
+        self.epic_pages = {None: first_page}
+        self.search_payloads.clear()
+        jira_server.TASKS_CACHE.clear()
+        with self._route(jira_search_request=Mock(side_effect=search)):
+            response = self.client.get(self.QUERY + '&purpose=alerts')
+        self.assertEqual(response.status_code, 500)
+        self.assertNotIn('epicsInScope', response.get_json() or {})
+        self.assertEqual(len(self._epic_jqls()), 2)
+        self.assertEqual(jira_server.TASKS_CACHE, {})
+
+    def test_denied_project_request_skips_the_saved_groups_read(self):
+        denied = Mock(side_effect=lambda *_args: (jira_server.jsonify({'error': 'project_access_denied'}), 403))
+        with self._route(project_access_denied_response=denied,
+                         load_request_effective_groups=Mock(side_effect=AssertionError('groups read'))) as patches:
+            response = self.client.get(self.QUERY + '&project=product')
+        self.assertEqual(response.status_code, 403)
+        patches['load_request_effective_groups'].assert_not_called()
+        patches['jira_search_request'].assert_not_called()
+
     def test_no_label_value_in_server_logs_or_error_bodies(self):
         self.saved_aliases = ['label_team_a', 'label_team_b']
         log_mocks = {name: Mock() for name in ('log_info', 'log_warning', 'log_error', 'log_debug')}

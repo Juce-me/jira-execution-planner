@@ -355,7 +355,24 @@ Revised acceptance criteria (replace 1-5, 8, 10, 12, 14 above):
 
 ## Outcome
 
-Implemented with changes. Approved deviations from this spec, recorded in the execution ledger:
+The 2026-09-25 revision (fixed-height page) shipped and supersedes the first iteration's stuck
+model: `is-pane-stuck`, the focus re-stick and its pointer guard, the pane-mode rail-click page
+reveal, the full-height rails, and the dashboard's compact-header suppression wiring
+(`onPaneModeChange`, `boardPaneMode`) are removed. Revision notes:
+
+- The gate measures the board's document top with the small-screen alert temporarily hidden, so
+  the alert that only renders while the gate fails cannot hold the gate shut; hysteresis stays 8px.
+- A rail keeps its 340px track in pane mode with `flex: none` on `.col-strip`, because the rail's
+  `.col` now stretches to the board height.
+- `reason` is a new allowlisted analytics parameter with a value allowlist (`short`, `narrow`,
+  `touch`). Like `field_name`, it is mapped through the shared GTM `userevent` tag in
+  `docs/plans/SUPPORT-ga4-gtm-mcp-execution.yaml` and the GA4 runbook, and stays unregistered as a
+  custom dimension.
+- The panel "caps at 92vh" test returned to its original viewport and the group-switch test lost its
+  scroll-to-top workaround: both were needed only by the stuck model.
+
+First-iteration deviations (the re-stick, stuck-state announcement and drag-test items no longer
+apply):
 
 - The gate is re-evaluated from a `window` `resize` listener in addition to the existing layout
   pass and `ResizeObserver`, because the `documentElement` `ResizeObserver` stops firing once the
@@ -381,4 +398,6 @@ Implemented with changes. Approved deviations from this spec, recorded in the ex
 
 ## Current Accuracy
 
-Accurate as of 2026-09-25; the implementation and tests are the source of truth.
+Accurate as of 2026-09-25 for the fixed-height page revision; where the Design, Acceptance Criteria,
+and first-iteration Outcome sections conflict with the Revision section, the Revision section
+describes the shipped behavior. The implementation and tests are the source of truth.

@@ -3524,7 +3524,7 @@ async function focusedId(page) {
 // Pane mode (docs/agents/features/2026-09-24-executed-board-column-scroll-panes.md). A viewport
 // that fails the height gate with margin, for tests that assert the page-scroll/pinned-chrome model.
 const FALLBACK_VIEWPORT = { width: 800, height: 380 };
-const PANE_STUCK_EPSILON = 1;
+const PANE_EPSILON = 1;
 
 async function isPaneMode(page) {
     return page.evaluate(() => Boolean(document.querySelector('.eng-board.is-pane-mode')));
@@ -3593,18 +3593,19 @@ async function paneState(page) {
                 left: rect.left,
                 right: rect.right,
                 scrollTop: open ? body.scrollTop : null,
+                headTop: open ? column.querySelector('.col-head').getBoundingClientRect().top : null,
                 firstCardWidth: open ? body.querySelector('.ecard')?.getBoundingClientRect().width ?? null : null,
                 nameRect: open ? name.getBoundingClientRect().toJSON() : null,
-                stripBottom: open ? null : column.querySelector('.col-strip').getBoundingClientRect().bottom,
             };
         });
         return {
             paneMode: root.classList.contains('is-pane-mode'),
-            stuck: root.classList.contains('is-pane-stuck'),
+            alertCount: root.querySelectorAll('.board-data-state').length,
             scrollY: window.scrollY,
             maxScroll: document.scrollingElement.scrollHeight - window.innerHeight,
-            stickyTop: parseFloat(getComputedStyle(board).getPropertyValue('--epic-sticky-top')) || 0,
             innerHeight: window.innerHeight,
+            headerTop: document.querySelector('header').getBoundingClientRect().top,
+            filterBarTop: document.querySelector('.filterbar-wrap').getBoundingClientRect().top,
             boardTop: boardRect.top,
             boardBottom: boardRect.bottom,
             boardContentBottom: boardRect.top + board.clientTop + board.clientHeight,
@@ -3616,6 +3617,10 @@ async function paneState(page) {
 
 function openScrollTops(state) {
     return Object.fromEntries(state.columns.filter((c) => c.open).map((c) => [c.id, c.scrollTop]));
+}
+
+function openHeadTops(state) {
+    return Object.fromEntries(state.columns.filter((c) => c.open).map((c) => [c.id, c.headTop]));
 }
 
 // Three equal consecutive samples of the page and every open body, like settle() for scrollLeft.
@@ -3643,109 +3648,85 @@ async function wheelOver(page, locator, deltaY) {
     const box = await locator.boundingBox();
     const viewport = page.viewportSize();
     const x = (Math.max(box.x, 0) + Math.min(box.x + box.width, viewport.width)) / 2;
-    const y = Math.min(Math.max(box.y + 80, 10), viewport.height - 20);
+    const y = Math.min(Math.max(box.y + Math.min(80, box.height / 2), 10), viewport.height - 20);
     await page.mouse.move(x, y);
     await page.waitForTimeout(250);
     await page.mouse.wheel(0, deltaY);
     await settleScroll(page);
 }
 
-async function stickPage(page) {
-    await page.evaluate(() => window.scrollTo(0, document.scrollingElement.scrollHeight));
-    await settleScroll(page);
-}
-
-/* ── Pane mode: geometry, stuck state, and scroll hand-off ─────────────────────────────────── */
-
-test('pane mode: before the board sticks, a wheel over a column scrolls the page and no column', async ({ page }) => {
-    await openBoard(page, { width: 1440, height: 900, reducedMotion: true, epicSpecs: longColumnSpecs() });
-    await openSecondColumn(page);
-    await page.evaluate(() => window.scrollTo(0, 0));
-    await settleScroll(page);
-    const before = await paneState(page);
-    expect(before.paneMode).toBe(true);
-    expect(before.stuck).toBe(false);
-
-    await wheelOver(page, col(page, READY_ID).locator('.col-body'), 120);
-    const after = await paneState(page);
-    expect(after.scrollY).toBeGreaterThan(before.scrollY);
-    expect(openScrollTops(after)).toEqual(openScrollTops(before));
-});
+/* ── Pane mode: a fixed-height page with independently scrolling columns ───────────────────── */
 
 for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 800 }]) {
-    test(`pane mode at ${viewport.width}x${viewport.height}: max scroll sticks panes between the sticky line and the viewport bottom`, async ({ page }) => {
+    test(`pane mode at ${viewport.width}x${viewport.height}: the page never scrolls and the board fills the viewport`, async ({ page }) => {
         await openBoard(page, { ...viewport, reducedMotion: true, epicSpecs: longColumnSpecs() });
         await openSecondColumn(page);
-        await stickPage(page);
-        const state = await paneState(page);
-        await page.screenshot({ path: `${screenshotDir}/board-pane-stuck-${viewport.width}.png`, fullPage: false });
+        const start = await paneState(page);
+        await page.screenshot({ path: `${screenshotDir}/board-pane-${viewport.width}.png`, fullPage: false });
 
-        expect(state.stuck).toBe(true);
-        expect(state.compactVisible).toBe(false);
-        expect(Math.abs(state.boardTop - state.stickyTop)).toBeLessThanOrEqual(PANE_STUCK_EPSILON);
-        expect(Math.abs(state.boardBottom - state.innerHeight)).toBeLessThanOrEqual(PANE_STUCK_EPSILON);
-        state.columns.forEach((column) => {
-            expect(Math.abs(column.top - state.stickyTop), `${column.id} top`).toBeLessThanOrEqual(PANE_STUCK_EPSILON);
-            expect(Math.abs(column.bottom - state.boardContentBottom), `${column.id} bottom`).toBeLessThanOrEqual(PANE_STUCK_EPSILON);
+        expect(start.paneMode).toBe(true);
+        expect(start.alertCount, 'pane mode shows no small-screen alert').toBe(0);
+        expect(start.scrollY).toBe(0);
+        expect(start.maxScroll).toBeLessThanOrEqual(PANE_EPSILON);
+        expect(Math.abs(start.boardBottom - start.innerHeight)).toBeLessThanOrEqual(PANE_EPSILON);
+        start.columns.filter((column) => column.open).forEach((column) => {
+            expect(Math.abs(column.bottom - start.boardContentBottom), `${column.id} bottom`).toBeLessThanOrEqual(PANE_EPSILON);
         });
+
+        // Nothing above or inside the board moves, whatever is under the wheel.
+        for (const target of [
+            col(page, READY_ID).locator('.col-body'),
+            col(page, TODO_ID).locator('.col-strip'),
+            page.locator('.filterbar-wrap'),
+            col(page, READY_ID).locator('.col-body'),
+        ]) {
+            for (const deltaY of [600, -200, 2000]) {
+                await wheelOver(page, target, deltaY);
+                const state = await paneState(page);
+                expect(state.scrollY).toBe(0);
+                expect(state.headerTop).toBe(start.headerTop);
+                expect(state.filterBarTop).toBe(start.filterBarTop);
+                expect(openHeadTops(state)).toEqual(openHeadTops(start));
+                expect(state.compactVisible, 'the compact header never appears in pane mode').toBe(false);
+            }
+        }
     });
 }
 
-test('pane mode: when stuck, a wheel scrolls only the column under the pointer', async ({ page }) => {
+test('pane mode: a wheel scrolls only the column under the pointer, from the first gesture', async ({ page }) => {
     await openBoard(page, { width: 1440, height: 900, reducedMotion: true, epicSpecs: longColumnSpecs() });
     await openSecondColumn(page);
-    await stickPage(page);
     const start = await paneState(page);
+    expect(openScrollTops(start)).toEqual({ [IN_PROGRESS_ID]: 0, [READY_ID]: 0 });
 
     await wheelOver(page, col(page, READY_ID).locator('.col-body'), 300);
     const afterReady = await paneState(page);
     expect(openScrollTops(afterReady)[READY_ID]).toBeGreaterThan(0);
-    expect(openScrollTops(afterReady)[IN_PROGRESS_ID]).toBe(openScrollTops(start)[IN_PROGRESS_ID]);
-    expect(afterReady.scrollY).toBe(start.scrollY);
+    expect(openScrollTops(afterReady)[IN_PROGRESS_ID]).toBe(0);
+    expect(afterReady.scrollY).toBe(0);
 
     await wheelOver(page, col(page, IN_PROGRESS_ID).locator('.col-body'), 300);
     const afterProgress = await paneState(page);
     expect(openScrollTops(afterProgress)[IN_PROGRESS_ID]).toBeGreaterThan(0);
     expect(openScrollTops(afterProgress)[READY_ID]).toBe(openScrollTops(afterReady)[READY_ID]);
-    expect(afterProgress.scrollY).toBe(start.scrollY);
+    expect(afterProgress.scrollY).toBe(0);
 });
 
-test('pane mode: at a column top, a new upward gesture scrolls the page and releases sticky mode', async ({ page }) => {
+test('pane mode: titles stay inside their panes and cards keep one width while a column scrolls', async ({ page }) => {
     await openBoard(page, { width: 1440, height: 900, reducedMotion: true, epicSpecs: longColumnSpecs() });
     await openSecondColumn(page);
-    await stickPage(page);
-    const body = col(page, READY_ID).locator('.col-body');
-    await wheelOver(page, body, 300);
-    await wheelOver(page, body, -5000);
-    expect(openScrollTops(await paneState(page))[READY_ID]).toBe(0);
-
-    const stuckY = (await paneState(page)).scrollY;
-    await expect.poll(async () => {
-        await wheelOver(page, body, -120);
-        const state = await paneState(page);
-        return state.scrollY < stuckY && !state.stuck;
-    }, { timeout: 8000 }).toBe(true);
-});
-
-test('pane mode: titles stay inside their panes and cards keep one width stuck or not', async ({ page }) => {
-    await openBoard(page, { width: 1440, height: 900, reducedMotion: true, epicSpecs: longColumnSpecs() });
-    await openSecondColumn(page);
-    await page.evaluate(() => window.scrollTo(0, 0));
-    await settleScroll(page);
-    const loose = await paneState(page);
-    await stickPage(page);
+    const top = await paneState(page);
     await wheelOver(page, col(page, READY_ID).locator('.col-body'), 600);
-    const stuck = await paneState(page);
+    const scrolled = await paneState(page);
+    expect(openScrollTops(scrolled)[READY_ID]).toBeGreaterThan(0);
 
-    for (const state of [loose, stuck]) {
+    for (const state of [top, scrolled]) {
         state.columns.filter((c) => c.open).forEach((column) => {
             expect(column.nameRect.left, `${column.id} title left`).toBeGreaterThanOrEqual(column.left + 1);
             expect(column.nameRect.right, `${column.id} title right`).toBeLessThanOrEqual(column.right - 1);
+            expect(column.nameRect.top, `${column.id} title top`).toBeGreaterThanOrEqual(column.top);
         });
     }
-    stuck.columns.filter((c) => c.open).forEach((column) => {
-        expect(column.nameRect.top, `${column.id} title below the sticky line`).toBeGreaterThanOrEqual(stuck.stickyTop);
-    });
     const titleHits = await page.evaluate(() => [...document.querySelectorAll('.eng-board .col.is-open .nm, .eng-board .col.is-focused .nm')]
         .map((name) => {
             const rect = name.getBoundingClientRect();
@@ -3753,63 +3734,61 @@ test('pane mode: titles stay inside their panes and cards keep one width stuck o
         }));
     expect(titleHits.every(Boolean)).toBe(true);
     const widths = (state) => Object.fromEntries(state.columns.filter((c) => c.open).map((c) => [c.id, c.firstCardWidth]));
-    expect(widths(stuck)).toEqual(widths(loose));
+    expect(widths(scrolled)).toEqual(widths(top));
 });
 
-test('pane mode: rails reach the board bottom and keep their fill ratios', async ({ page }) => {
-    await openBoard(page, { width: 1440, height: 900, reducedMotion: true });
-    await stickPage(page);
-    const state = await paneState(page);
-    state.columns.filter((c) => !c.open).forEach((column) => {
-        expect(Math.abs(column.stripBottom - state.boardContentBottom), `${column.id} rail bottom`).toBeLessThanOrEqual(PANE_STUCK_EPSILON);
+for (const [label, viewport] of [['pane mode', { width: 1440, height: 900 }], ['fallback', FALLBACK_VIEWPORT]]) {
+    test(`${label}: rails are the fixed 340px track and keep their fill ratios`, async ({ page }) => {
+        await openBoard(page, { ...viewport, reducedMotion: true });
+        expect(await isPaneMode(page)).toBe(label === 'pane mode');
+        const rails = await page.evaluate(() => [...document.querySelectorAll('.eng-board .col:not(.is-open):not(.is-focused) .col-strip')]
+            .map((strip) => {
+                const fill = strip.querySelector('.fill');
+                return {
+                    height: strip.getBoundingClientRect().height,
+                    declared: parseFloat(fill.style.height) / 100,
+                    painted: fill.getBoundingClientRect().height / strip.clientHeight,
+                };
+            }));
+        expect(rails.length).toBeGreaterThan(0);
+        rails.forEach(({ height, declared, painted }) => {
+            expect(height).toBe(340);
+            expect(Math.abs(declared - painted)).toBeLessThanOrEqual(0.01);
+        });
     });
-    const ratios = await page.evaluate(() => [...document.querySelectorAll('.eng-board .col:not(.is-open):not(.is-focused) .col-strip')]
-        .map((strip) => {
-            const fill = strip.querySelector('.fill');
-            return { declared: parseFloat(fill.style.height) / 100, painted: fill.getBoundingClientRect().height / strip.clientHeight };
-        }));
-    ratios.forEach(({ declared, painted }) => expect(Math.abs(declared - painted)).toBeLessThanOrEqual(0.01));
-});
+}
 
-test('pane mode: a pointer click on a rail sticks the board with the opened column at its top', async ({ page }) => {
-    // Accepted in Q has no epics here: the fallback reveal scrolls to a first card, so with none it
-    // never moves the page, and only the pane-mode reveal can stick the board.
-    const acceptedId = 'col-4d5e6f70';
-    await openBoard(page, {
-        width: 1440, height: 900, epicSpecs: longColumnSpecs().filter(([, status]) => status !== 'Accepted'),
-    });
-    await page.evaluate(() => window.scrollTo(0, 0));
-    await settleScroll(page);
-    await expect(col(page, acceptedId).locator('.ecard')).toHaveCount(0);
-    // A real click on the rail's visible top: locator.click() would first scroll the rail's centre
-    // into view, which moves the page to its maximum on its own.
-    const strip = await col(page, acceptedId).locator('.col-strip').boundingBox();
-    expect(strip.y + 40).toBeLessThan(900);
+test('pane mode: a pointer click on a rail only focuses the column, which opens at its top', async ({ page }) => {
+    await openBoard(page, { width: 1440, height: 900, epicSpecs: longColumnSpecs() });
+    await openSecondColumn(page);
+    // Scroll Ready to start, fold it, then reopen it with a real click on its rail.
+    await wheelOver(page, col(page, READY_ID).locator('.col-body'), 400);
+    expect(openScrollTops(await paneState(page))[READY_ID]).toBeGreaterThan(0);
+    await col(page, READY_ID).locator('.fold').click();
+    await settle(page);
+    const strip = await col(page, READY_ID).locator('.col-strip').boundingBox();
     await page.mouse.click(strip.x + strip.width / 2, strip.y + 40);
     await settle(page);
     await settleScroll(page);
     const state = await paneState(page);
-    expect(state.stuck).toBe(true);
-    expect(openScrollTops(state)[acceptedId]).toBe(0);
+    expect(await focusedId(page)).toBe(READY_ID);
+    expect(openScrollTops(state)[READY_ID]).toBe(0);
+    expect(state.scrollY).toBe(0);
 });
 
 test('pane mode: open columns keep their scroll position; a folded column reopens at its top', async ({ page }) => {
     await openBoard(page, { width: 1440, height: 900, reducedMotion: true, epicSpecs: longColumnSpecs() });
     await openSecondColumn(page);
-    await stickPage(page);
     await wheelOver(page, col(page, READY_ID).locator('.col-body'), 400);
     const scrolled = openScrollTops(await paneState(page))[READY_ID];
     expect(scrolled).toBeGreaterThan(0);
 
-    // A rail has nothing to scroll, so an upward wheel over it moves the page and releases sticky mode.
+    // A rail has nothing to scroll, and neither has the page.
     await wheelOver(page, col(page, TODO_ID).locator('.col-strip'), -200);
-    const released = await paneState(page);
-    expect(released.stuck).toBe(false);
-    expect(openScrollTops(released)[READY_ID]).toBe(scrolled);
-
     await wheelOver(page, col(page, TODO_ID).locator('.col-strip'), 400);
-    expect((await paneState(page)).stuck).toBe(true);
-    expect(openScrollTops(await paneState(page))[READY_ID]).toBe(scrolled);
+    const afterRail = await paneState(page);
+    expect(afterRail.scrollY).toBe(0);
+    expect(openScrollTops(afterRail)[READY_ID]).toBe(scrolled);
 
     await col(page, READY_ID).locator('.fold').click();
     await settle(page);
@@ -3817,32 +3796,29 @@ test('pane mode: open columns keep their scroll position; a folded column reopen
     expect(openScrollTops(await paneState(page))[READY_ID]).toBe(0);
 });
 
-test('pane mode: focus landing below the fold of a loose column sticks the board', async ({ page }) => {
+test('pane mode: focus into a card below a column fold scrolls that column, never the page', async ({ page }) => {
     await openBoard(page, { width: 1440, height: 900, reducedMotion: true, epicSpecs: longColumnSpecs() });
     await openSecondColumn(page);
-    await page.evaluate(() => window.scrollTo(0, 0));
+    const start = await paneState(page);
+    // Programmatic focus without preventScroll: the browser scrolls whatever it must to show it.
+    await col(page, READY_ID).locator('.ecard .ecard-open').last().focus();
     await settleScroll(page);
-    // Stand in for focus() having scrolled the loose, overflow-hidden body, without letting the
-    // browser's own scroll-into-view move the page: only the board's focus handler may stick it.
-    await page.evaluate((id) => {
-        const body = document.querySelector(`.eng-board .col[data-column-id="${id}"] .col-body`);
-        body.scrollTop = 200;
-        const top = body.getBoundingClientRect().top;
-        const visible = [...body.querySelectorAll('.ecard .ecard-open')]
-            .find((button) => button.getBoundingClientRect().top >= top);
-        visible.focus({ preventScroll: true });
-    }, READY_ID);
+    const afterFocus = await paneState(page);
+    expect(openScrollTops(afterFocus)[READY_ID]).toBeGreaterThan(0);
+    expect(afterFocus.scrollY).toBe(0);
+    expect(afterFocus.headerTop).toBe(start.headerTop);
+
+    // Tab onward from there stays inside the pane too.
+    await page.keyboard.press('Tab');
     await settleScroll(page);
-    const state = await paneState(page);
-    expect(state.stuck).toBe(true);
-    expect(openScrollTops(state)[READY_ID]).toBeGreaterThan(0);
+    const afterTab = await paneState(page);
+    expect(afterTab.scrollY).toBe(0);
+    expect(afterTab.headerTop).toBe(start.headerTop);
 });
 
-test('pane mode: a pointer click on a card in a loose, scrolled column opens it', async ({ page }) => {
+test('pane mode: a pointer click on a card in a scrolled column opens it', async ({ page }) => {
     await openBoard(page, { width: 1440, height: 900, reducedMotion: true, epicSpecs: longColumnSpecs() });
     await openSecondColumn(page);
-    await page.evaluate(() => window.scrollTo(0, 0));
-    await settleScroll(page);
     const target = await page.evaluate((id) => {
         const body = document.querySelector(`.eng-board .col[data-column-id="${id}"] .col-body`);
         body.scrollTop = 200;
@@ -3882,17 +3858,95 @@ test('pane mode: a breached open column carries the unclipped breach ring on its
     await page.screenshot({ path: `${screenshotDir}/board-pane-breach.png`, fullPage: false });
 });
 
+/* ── Small-screen alert: every viewport pane mode cannot serve ─────────────────────────────── */
+
+async function smallScreenAlertState(page) {
+    return page.evaluate(() => {
+        const root = document.querySelector('.eng-board');
+        const alerts = [...root.querySelectorAll('.board-data-state')];
+        const alert = alerts[0];
+        const boardScroll = root.querySelector('.board-scroll');
+        return {
+            count: alerts.length,
+            paneMode: root.classList.contains('is-pane-mode'),
+            role: alert?.getAttribute('role') ?? null,
+            inBoardBeforeScroll: Boolean(alert && alert.parentElement === root
+                && (alert.compareDocumentPosition(boardScroll) & Node.DOCUMENT_POSITION_FOLLOWING)),
+            aboveBoard: alert ? alert.getBoundingClientRect().bottom <= boardScroll.getBoundingClientRect().top : false,
+        };
+    });
+}
+
+const boardActionEvents = (page) => page.evaluate(() => (window.dataLayer || [])
+    .filter((entry) => entry?.event_name === 'board_action')
+    .map((entry) => ({ ...entry })));
+
+async function expectSmallScreenRequestFlow(page, reason, screenshot) {
+    const alert = page.locator('.eng-board .board-data-state');
+    await expect(alert).toContainText('Board needs a larger screen.');
+    const state = await smallScreenAlertState(page);
+    expect(state).toEqual({ count: 1, paneMode: false, role: 'status', inBoardBeforeScroll: true, aboveBoard: true });
+    if (screenshot) await page.screenshot({ path: `${screenshotDir}/${screenshot}`, fullPage: false });
+
+    await expect.poll(() => page.evaluate(() => (window.dataLayer || []).some((entry) => entry?.event_name === 'page_view'))).toBe(true);
+    const button = alert.getByRole('button', { name: 'Request small-screen support' });
+    await expect(button).toHaveClass(/secondary/);
+    await expect(button).toHaveClass(/compact/);
+    await button.click();
+    await expect(alert).toContainText('Thanks, noted');
+    await expect(alert.getByRole('button')).toHaveCount(0);
+    await expect.poll(() => boardActionEvents(page)).toEqual([{
+        event: 'userevent',
+        trigger: 'userevent',
+        event_type: 'event',
+        event_name: 'board_action',
+        feature_name: 'eng_board',
+        workflow_action: 'small_screen_support_request',
+        reason,
+        source_surface: 'board',
+    }]);
+}
+
+test('a short desktop viewport keeps the page-scroll board under a small-screen alert that reports short', async ({ page }) => {
+    await openBoard(page, { ...FALLBACK_VIEWPORT, reducedMotion: true, analyticsEnabled: true });
+    await expectSmallScreenRequestFlow(page, 'short', 'board-alert-short.png');
+    // Still the old model: the page scrolls and pins the column chrome.
+    await page.evaluate(() => window.scrollTo(0, 400));
+    await expect(page.locator('.eng-board .board.is-chrome-pinned')).toHaveCount(1);
+});
+
+test('a 760px viewport shows the small-screen alert with reason narrow, above the old board', async ({ page }) => {
+    await openBoard(page, { width: 760, height: 900, reducedMotion: true, analyticsEnabled: true });
+    await expectSmallScreenRequestFlow(page, 'narrow', 'board-alert-narrow.png');
+});
+
+test('pane mode shows no small-screen alert and sends no board_action', async ({ page }) => {
+    await openBoard(page, { width: 1280, height: 900, analyticsEnabled: true });
+    expect(await isPaneMode(page)).toBe(true);
+    await expect(page.locator('.eng-board .board-data-state')).toHaveCount(0);
+    expect(await boardActionEvents(page)).toEqual([]);
+});
+
+test.describe('touch tablet', () => {
+    test.use({ isMobile: true, hasTouch: true });
+
+    test('a landscape touch tablet keeps the page-scroll model and reports touch', async ({ page }) => {
+        await openBoard(page, { width: 1024, height: 768, analyticsEnabled: true });
+        expect(await isPaneMode(page)).toBe(false);
+        await expectSmallScreenRequestFlow(page, 'touch');
+    });
+});
+
 /* ── The invariant, through every focus-affecting action ────────────────────────────────────── */
 
 test('pane mode leak class: nothing from a column paints over the filter bar, the top bar or outside its pane', async ({ page }) => {
-    // The reported state: wide desktop, starred In progress open beside the focused column, stuck
-    // and partially scrolled.
+    // The reported state: wide desktop, starred In progress open beside the focused column,
+    // partially scrolled.
     await openBoard(page, { width: 2000, height: 1060, reducedMotion: true, epicSpecs: longColumnSpecs() });
     await openSecondColumn(page);
-    await stickPage(page);
     await wheelOver(page, col(page, IN_PROGRESS_ID).locator('.col-body'), 500);
     const state = await paneState(page);
-    expect(state.stuck).toBe(true);
+    expect(state.paneMode).toBe(true);
     expect(openScrollTops(state)[IN_PROGRESS_ID]).toBeGreaterThan(0);
     await page.screenshot({ path: `${screenshotDir}/board-pane-leak-class.png`, fullPage: false });
 
@@ -5151,14 +5205,15 @@ test('pane mode turns on only for a wide fine-pointer viewport with enough heigh
 
     await page.setViewportSize({ width: 1280, height: 900 });
     await expect(page.locator('.eng-board.is-pane-mode')).toHaveCount(1);
+    await expect(page.locator('.eng-board .board-data-state')).toHaveCount(0);
 });
 
-test('the pane-mode height gate sits at filter bar plus rail height, with hysteresis', async ({ page }) => {
+test('the pane-mode height gate sits at the board top plus rail height, with hysteresis', async ({ page }) => {
     await openBoard(page, { width: 1280, height: 900 });
     const boundary = await page.evaluate(() => {
-        const filterBar = document.querySelector('.filterbar-wrap').getBoundingClientRect().height;
+        const boardTop = document.querySelector('.eng-board .board').getBoundingClientRect().top + window.scrollY;
         const rail = parseFloat(getComputedStyle(document.querySelector('.eng-board')).getPropertyValue('--board-strip-h'));
-        return Math.ceil(filterBar + rail);
+        return Math.ceil(boardTop + rail);
     });
     await page.setViewportSize({ width: 1280, height: boundary });
     await expect(page.locator('.eng-board.is-pane-mode')).toHaveCount(1);
@@ -5166,22 +5221,16 @@ test('the pane-mode height gate sits at filter bar plus rail height, with hyster
     await expect(page.locator('.eng-board.is-pane-mode'), 'hysteresis keeps pane mode').toHaveCount(1);
     await page.setViewportSize({ width: 1280, height: boundary - 10 });
     await expect(page.locator('.eng-board.is-pane-mode')).toHaveCount(0);
+    await expect(page.locator('.eng-board .board-data-state')).toHaveCount(1);
     await page.setViewportSize({ width: 1280, height: boundary - 1 });
     await expect(page.locator('.eng-board.is-pane-mode'), 'turning on needs the full height').toHaveCount(0);
+    // The alert that only renders while the gate fails must not hold the gate shut.
     await page.setViewportSize({ width: 1280, height: boundary });
     await expect(page.locator('.eng-board.is-pane-mode')).toHaveCount(1);
+    await expect(page.locator('.eng-board .board-data-state')).toHaveCount(0);
 });
 
-test.describe('touch tablet', () => {
-    test.use({ isMobile: true, hasTouch: true });
-
-    test('a landscape touch tablet keeps the page-scroll model', async ({ page }) => {
-        await openBoard(page, { width: 1024, height: 768 });
-        expect(await isPaneMode(page)).toBe(false);
-    });
-});
-
-test('Board pane mode keeps the compact header hidden and Catch Up gets it back', async ({ page }) => {
+test('Board pane mode never shows the compact header and Catch Up still gets it', async ({ page }) => {
     const longSpecs = [
         ...EPIC_SPECS,
         ...Array.from({ length: 32 }, (_, index) => [`PLAT-IP-${index + 1}`, 'In Progress', 'Major']),
@@ -5189,12 +5238,12 @@ test('Board pane mode keeps the compact header hidden and Catch Up gets it back'
     await openBoard(page, { width: 1280, height: 700, reducedMotion: true, epicSpecs: longSpecs });
     expect(await isPaneMode(page)).toBe(true);
     await page.evaluate(() => window.scrollTo(0, document.scrollingElement.scrollHeight));
+    await page.mouse.move(640, 60);
+    await page.mouse.wheel(0, 2000);
     await waitTwoFrames(page);
-    const headerGone = await page.evaluate(() => document.querySelector('header').getBoundingClientRect().bottom <= 0);
-    expect(headerGone, 'the full header scrolled away, so the compact header would normally show').toBe(true);
+    expect(await page.evaluate(() => window.scrollY)).toBe(0);
     await expect(page.locator('.compact-sticky-header.is-visible')).toHaveCount(0);
 
-    await page.evaluate(() => window.scrollTo(0, 0));
     await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Catch Up' }).click();
     await expect(page.locator('.eng-board')).toHaveCount(0);
     await page.setViewportSize({ width: 1280, height: 420 });
@@ -5245,9 +5294,6 @@ test('a group switch and back restores the focused column and the session star',
     expect(await focusedId(page)).toBe('col-708192a3');
     await expect(col(page, 'col-708192a3')).toHaveClass(/is-starred/);
 
-    // In Board pane mode the compact header is suppressed, so the group control lives only in the main bar.
-    await page.evaluate(() => window.scrollTo(0, 0));
-    await settle(page);
     const groupToggle = page.locator('.view-selector .group-dropdown-toggle');
     await groupToggle.click();
     await page.locator('.view-selector .group-dropdown-option', { hasText: 'Second' }).click();

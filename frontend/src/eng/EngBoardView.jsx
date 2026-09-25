@@ -18,6 +18,7 @@ import {
 } from './engBoardDrop.js';
 import { fetchIssueStatusCatalog } from '../api/jiraIssueApi.js';
 import { summarizeTransitionResults } from './engStatusTransitionUtils.js';
+import { trackBoardSmallScreenSupportRequest } from '../analytics/dashboardAnalytics.js';
 import EngBoardEpicCard from './EngBoardEpicCard.jsx';
 import EngBoardEpicPanel from './EngBoardEpicPanel.jsx';
 import EngBoardHelp from './EngBoardHelp.jsx';
@@ -53,11 +54,10 @@ const REJECTED_MS = 2600;
 const MENU_EDGE_GAP = 8;
 
 // Pane mode (docs/agents/features/2026-09-24-executed-board-column-scroll-panes.md): desktop only —
-// wider than the repo's 760px narrow breakpoint, with a hovering fine pointer so touch tablets keep
-// the page-scroll model.
-const PANE_MEDIA_QUERY = '(min-width: 761px) and (hover: hover) and (pointer: fine)';
-// One tolerance for "the board has reached the sticky line", shared by the stuck check and tests.
-const PANE_STUCK_EPSILON = 1;
+// a hovering fine pointer, so touch tablets keep the page-scroll model, and wider than the repo's
+// 760px narrow breakpoint. The order of the checks is the order of the alert's `reason`.
+const PANE_POINTER_QUERY = '(hover: hover) and (pointer: fine)';
+const PANE_WIDTH_QUERY = '(min-width: 761px)';
 // Keeps the height gate from flapping on rounding while a viewport is resized.
 const PANE_GATE_HYSTERESIS = 8;
 
@@ -68,11 +68,6 @@ function breachText(breach) {
         : `${breach.by} under min ${breach.limit}`;
 }
 
-function pageMaxScroll() {
-    const scroller = document.scrollingElement || document.documentElement;
-    return Math.max(0, scroller.scrollHeight - window.innerHeight);
-}
-
 export default function EngBoardView({
     board = null, epicGroups = [], view = null, onViewChange, onConfigure, renderPriorityIcon,
     engFilters, onFacetChange, jiraUrl = '', backendUrl = '', transitionsEnabled = false,
@@ -81,7 +76,7 @@ export default function EngBoardView({
     statusTransitionSubmitting = false, onSubmitStatusTransition, onFilterBarHeightChange,
     loading = false, error = null, onRetry,
     strictColumns = null, authorityPending = false, stale = false,
-    onResolvedFocusChange, onPaneModeChange,
+    onResolvedFocusChange,
 }) {
     const columns = React.useMemo(
         () => {
@@ -474,7 +469,11 @@ export default function EngBoardView({
     const boardRef = React.useRef(null);
     const rootRef = React.useRef(null);
     const openColumnIdsRef = React.useRef(new Set());
-    const paneModeRef = React.useRef(false);
+    const paneAlertRef = React.useRef(null);
+    // Why pane mode cannot apply ('touch' | 'narrow' | 'short'), or null while it applies or no
+    // board is rendered. State, not a class, because the alert strip renders from it.
+    const [paneBlockReason, setPaneBlockReason] = React.useState(null);
+    const [smallScreenRequested, setSmallScreenRequested] = React.useState(false);
     const pendingVerticalRevealRef = React.useRef(null);
     // Only a gesture animates the scroll; mount and resize land instantly, so no test has to wait
     // on a transition that exists purely for the eye.
@@ -538,25 +537,20 @@ export default function EngBoardView({
         });
     }, []);
 
-    // Both pane classes are imperative, like is-chrome-pinned: the root's className prop never
-    // changes, so a React render cannot wipe one class while the other survives.
-    const setPaneMode = React.useCallback((next) => {
+    // The pane class is imperative, like is-chrome-pinned: the root's className prop never changes,
+    // so a React render cannot wipe it.
+    const setPaneMode = React.useCallback((next, reason = null) => {
         const root = rootRef.current;
         if (root) {
             root.classList.toggle('is-pane-mode', next);
             if (!next) {
-                root.classList.remove('is-pane-stuck');
+                root.style.removeProperty('--board-pane-top');
                 root.style.removeProperty('--board-pane-trailing');
             }
         }
-        if (paneModeRef.current !== next) {
-            paneModeRef.current = next;
-            onPaneModeChange?.(next);
-        }
-    }, [onPaneModeChange]);
+        setPaneBlockReason(next ? null : reason);
+    }, []);
 
-    // The gate reads measured geometry only — never --epic-sticky-top, which still includes the
-    // compact header on the pass that first turns pane mode on.
     const syncPaneMode = React.useCallback(() => {
         const root = rootRef.current;
         const board = boardRef.current;
@@ -564,24 +558,39 @@ export default function EngBoardView({
             setPaneMode(false);
             return;
         }
-        const filterBar = root.parentElement?.querySelector(':scope > .filterbar-wrap');
+        if (!window.matchMedia?.(PANE_POINTER_QUERY).matches) {
+            setPaneMode(false, 'touch');
+            return;
+        }
+        if (!window.matchMedia(PANE_WIDTH_QUERY).matches) {
+            setPaneMode(false, 'narrow');
+            return;
+        }
+        // The board's document top, measured without the fallback alert strip so the strip that
+        // only renders while the gate fails cannot hold the gate shut.
+        const alert = paneAlertRef.current;
+        if (alert) alert.style.display = 'none';
+        const boardTop = board.getBoundingClientRect().top + window.scrollY;
+        if (alert) alert.style.removeProperty('display');
         const head = board.querySelector('.col.is-focused > .col-head');
         const card = board.querySelector('.col.is-focused .ecard');
         const headSpace = head
             ? head.getBoundingClientRect().height + (parseFloat(getComputedStyle(head).marginBottom) || 0)
             : 0;
         const railHeight = parseFloat(getComputedStyle(root).getPropertyValue('--board-strip-h')) || 0;
-        const available = window.innerHeight - (filterBar ? filterBar.getBoundingClientRect().height : 0);
         const required = Math.max(railHeight, headSpace + (card ? card.getBoundingClientRect().height : 0))
             - (root.classList.contains('is-pane-mode') ? PANE_GATE_HYSTERESIS : 0);
-        const next = Boolean(window.matchMedia?.(PANE_MEDIA_QUERY).matches) && available >= required;
-        setPaneMode(next);
-        if (!next) return;
+        if (window.innerHeight - boardTop < required) {
+            setPaneMode(false, 'short');
+            return;
+        }
+        setPaneMode(true);
 
-        // Whatever the document renders below the board (today .container's bottom padding) is
-        // cancelled by a negative margin, so maximum page scroll lands the board exactly between
-        // the sticky line and the viewport bottom. Measured with the margin removed so it never
-        // compounds across passes.
+        // The board fills the viewport below its own top, and whatever the document renders below
+        // the board (today .container's bottom padding) is cancelled by a negative margin, so the
+        // document is exactly one viewport tall and the page never scrolls. The trailing space is
+        // measured with the margin removed so it never compounds across passes.
+        root.style.setProperty('--board-pane-top', `${boardTop}px`);
         root.style.setProperty('--board-pane-trailing', '0px');
         const boardBottom = board.getBoundingClientRect().bottom + window.scrollY;
         const scroller = document.scrollingElement || document.documentElement;
@@ -608,16 +617,9 @@ export default function EngBoardView({
             0,
             parseFloat(getComputedStyle(board).getPropertyValue('--epic-sticky-top')) || 0,
         );
-        // Pane mode never pins chrome: the panes are the frame. Stuck is the board at the sticky
-        // line, or the page at maximum scroll, so fractional zoom cannot strand the columns.
-        const root = rootRef.current;
-        if (root?.classList.contains('is-pane-mode')) {
+        // Pane mode never pins chrome: the panes are the frame.
+        if (rootRef.current?.classList.contains('is-pane-mode')) {
             clearBoardChrome();
-            root.classList.toggle(
-                'is-pane-stuck',
-                frame.top <= stickyTop + PANE_STUCK_EPSILON
-                    || window.scrollY >= pageMaxScroll() - PANE_STUCK_EPSILON,
-            );
             return;
         }
         const shouldPin = frame.top <= stickyTop && frame.bottom > stickyTop;
@@ -668,35 +670,6 @@ export default function EngBoardView({
         scheduleBoardChrome();
     }, [scheduleBoardChrome, syncHints]);
 
-    // focus() — Tab, the panel's focus return, a drop menu closing — still scrolls an
-    // overflow-hidden column body, leaving it offset with no scrollbar while the board is loose.
-    // Taking the page to the stuck position makes that body scrollable again. The check runs a
-    // frame later because focus() scrolls into view after dispatching the focus event. Focus
-    // handling only; wheel input is never intercepted.
-    const pointerFocusRef = React.useRef(false);
-    const handleBoardPointerDown = React.useCallback(() => {
-        pointerFocusRef.current = true;
-        const release = () => {
-            window.removeEventListener('pointerup', release);
-            window.removeEventListener('pointercancel', release);
-            window.requestAnimationFrame(() => { pointerFocusRef.current = false; });
-        };
-        window.addEventListener('pointerup', release);
-        window.addEventListener('pointercancel', release);
-    }, []);
-
-    const handleBoardFocus = React.useCallback((event) => {
-        // A button takes focus on mousedown; moving the page before mouseup would drop the click.
-        if (pointerFocusRef.current) return;
-        const body = event.target.closest?.('.col-body');
-        if (!body) return;
-        window.requestAnimationFrame(() => {
-            const root = rootRef.current;
-            if (!root?.classList.contains('is-pane-mode') || root.classList.contains('is-pane-stuck')) return;
-            if (body.scrollTop > 0) window.scrollTo({ top: pageMaxScroll(), behavior: 'instant' });
-        });
-    }, []);
-
     React.useLayoutEffect(() => {
         syncPaneMode();
         // Decision 8 (spec): a folded column reopens at its top. Its .col-body stays mounted through a
@@ -719,8 +692,7 @@ export default function EngBoardView({
         syncBoardChrome();
     }, [applyBoardLayout, syncBoardChrome, syncHints, syncPaneMode, columns, focusedId, starredId]);
 
-    // Loading, error and empty states render no .board; pane mode must not outlive it, or the
-    // dashboard would keep the compact header hidden.
+    // The empty state renders no .board; neither the pane class nor the alert may outlive it.
     React.useLayoutEffect(() => {
         if (!boardRef.current) setPaneMode(false);
     });
@@ -732,21 +704,12 @@ export default function EngBoardView({
 
         const board = boardRef.current;
         const column = board && Array.from(board.children).find((child) => child.dataset.columnId === columnId);
-        if (!column || !column.classList.contains('is-focused')) return;
-        const behavior = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth';
-
-        // Pane mode: the opened column starts at its top and the page goes to the one position
-        // where the board is stuck — maximum scroll — rather than to a card.
-        if (rootRef.current?.classList.contains('is-pane-mode')) {
-            const body = column.querySelector('.col-body');
-            if (body) body.scrollTop = 0;
-            window.scrollTo({ top: pageMaxScroll(), behavior });
-            return;
-        }
-
-        const card = column.querySelector('.ecard');
-        const header = column.querySelector('.col-head');
-        if (!card || !header) return;
+        // Pane mode: the page never scrolls, and the main layout pass already opened the column at
+        // its top.
+        if (rootRef.current?.classList.contains('is-pane-mode')) return;
+        const card = column?.querySelector('.ecard');
+        const header = column?.querySelector('.col-head');
+        if (!card || !header || !column.classList.contains('is-focused')) return;
 
         const stickyTop = Math.max(
             0,
@@ -757,7 +720,7 @@ export default function EngBoardView({
         const headerMarginBottom = parseFloat(getComputedStyle(header).marginBottom) || 0;
         window.scrollTo({
             top: Math.max(0, window.scrollY + cardRect.top - (stickyTop + headerRect.height + headerMarginBottom)),
-            behavior,
+            behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
         });
     }, [columns, focusedId]);
 
@@ -808,7 +771,10 @@ export default function EngBoardView({
         document.documentElement.style.removeProperty('--board-scrollbar-width');
     }, []);
 
-    React.useEffect(() => () => setPaneMode(false), [setPaneMode]);
+    const requestSmallScreenSupport = () => {
+        trackBoardSmallScreenSupportRequest(paneBlockReason);
+        setSmallScreenRequested(true);
+    };
 
     const focusColumn = (columnId) => {
         smoothRef.current = true;
@@ -937,6 +903,16 @@ export default function EngBoardView({
                         )}
                     </div>
                 )}
+                {paneBlockReason && (
+                    <div className="board-data-state" role="status" ref={paneAlertRef}>
+                        <span>Board needs a larger screen.</span>
+                        {smallScreenRequested ? <span>Thanks, noted</span> : (
+                            <button type="button" className="secondary compact" onClick={requestSmallScreenSupport}>
+                                Request small-screen support
+                            </button>
+                        )}
+                    </div>
+                )}
                 <span
                     className={`board-say${announcement ? ' has-message' : ''}${announcement?.isError ? ' is-error' : ''}`}
                     role="status"
@@ -972,8 +948,6 @@ export default function EngBoardView({
                     className="board"
                     ref={boardRef}
                     onScroll={handleBoardScroll}
-                    onFocus={handleBoardFocus}
-                    onPointerDown={handleBoardPointerDown}
                     data-onboarding-target="board-overview"
                     tabIndex={-1}
                 >

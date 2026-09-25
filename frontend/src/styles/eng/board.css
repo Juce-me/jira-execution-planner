@@ -222,18 +222,19 @@
             width: var(--board-chrome-width);
         }
 
-        /* ── Pane mode (desktop; EngBoardView owns the gate): every column is a bordered pane from
-           its title line to the viewport bottom, and open columns scroll inside it only while the
-           board is stuck. The BOARD owns the height and the columns stretch inside its content
-           box, which already excludes the horizontal scrollbar — nothing is measured per column.
-           The negative margin cancels the document space below the board (measured in JS), so
-           maximum page scroll is exactly the stuck position. ── */
+        /* ── Pane mode (desktop; EngBoardView owns the gate): the page never scrolls. The board
+           fills the viewport below its measured document top (--board-pane-top), every open column
+           is a bordered pane from its title line to the board bottom, and each open column body is
+           always its own scroller. The BOARD owns the height and the open columns stretch inside
+           its content box, which already excludes the horizontal scrollbar — nothing is measured
+           per column. The negative margin cancels the document space below the board (measured in
+           JS), so the document is exactly one viewport tall. ── */
         .eng-board.is-pane-mode {
             margin-bottom: calc(-1 * var(--board-pane-trailing, 0px));
         }
 
         .eng-board.is-pane-mode .board {
-            height: calc(100dvh - var(--epic-sticky-top, 0px));
+            height: calc(100dvh - var(--board-pane-top, 0px));
             align-items: stretch;
             padding-bottom: 0;
         }
@@ -260,30 +261,26 @@
             margin-inline: 0.45rem;
         }
 
-        /* scrollbar-gutter keeps the card width identical when overflow flips to auto. The 4px top
-           and inline padding keep card focus rings clear of the scroller's clip edge. */
+        /* scrollbar-gutter keeps the card width identical whether or not a column overflows. The
+           4px top and inline padding keep card focus rings clear of the scroller's clip edge. */
         .eng-board.is-pane-mode .col-body {
             flex: 1 1 auto;
             min-height: 0;
             overflow-x: hidden;
-            overflow-y: hidden;
+            overflow-y: auto;
             scrollbar-gutter: stable;
             scrollbar-width: thin;
             padding: 4px 0.45rem 0.45rem;
         }
 
-        .eng-board.is-pane-mode.is-pane-stuck .col-body {
-            overflow-y: auto;
-        }
-
+        /* A rail keeps its fixed 340px track; the column stretches, the track does not. */
         .eng-board.is-pane-mode .col:not(.is-open):not(.is-focused) .col-strip {
-            flex: 1 1 auto;
-            height: auto;
+            flex: none;
         }
 
-        /* A drop outcome must neither push the board off the sticky line nor sit hidden under the
-           filter bar, so in pane mode it floats at the bottom of the board, which is the viewport
-           bottom when stuck. Rail border, radius and surface; no new tokens. */
+        /* A drop outcome must not push the board past the viewport bottom, so in pane mode it floats
+           at the bottom of the board, which is the viewport bottom. Rail border, radius and
+           surface; no new tokens. */
         .eng-board.is-pane-mode .board-say.has-message {
             position: absolute;
             left: 50%;

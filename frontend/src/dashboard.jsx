@@ -843,9 +843,7 @@ import {
             const groupManageButtonRef = useRef(null);
             const compactHeaderRef = useRef(null);
             const [compactHeaderOffset, setCompactHeaderOffset] = useState(0);
-            const [compactHeaderScrolledAway, setCompactHeaderScrolledAway] = useState(false);
-            const [boardPaneMode, setBoardPaneMode] = useState(false);
-            const compactStickyVisible = compactHeaderScrolledAway && !boardPaneMode;
+            const [compactStickyVisible, setCompactStickyVisible] = useState(false);
             const [planningOffset, setPlanningOffset] = useState(0);
             const [filterBarHeight, setFilterBarHeight] = useState(0);
             const [isPlanningStuck, setIsPlanningStuck] = useState(false);
@@ -13725,7 +13723,7 @@ import {
                 if (!node) return;
                 const updateVisibility = (rect) => {
                     if (!rect) return;
-                    setCompactHeaderScrolledAway(rect.bottom <= 0);
+                    setCompactStickyVisible(rect.bottom <= 0);
                 };
                 const syncFromNode = () => updateVisibility(node.getBoundingClientRect());
                 syncFromNode();
@@ -13783,7 +13781,7 @@ import {
                 setShowEpmProjectDropdown(false);
                 setShowEpmSubGoalFilterDropdown(false);
                 setShowEpmSortDropdown(false);
-            }, [compactHeaderScrolledAway, compactStickyVisible]);
+            }, [compactStickyVisible]);
 
             useEffect(() => {
                 if (!showPlanning) {
@@ -17227,7 +17225,6 @@ import {
                                 engFilters={boardFilters}
                                 onFacetChange={setEngBoardFilterSelection}
                                 onFilterBarHeightChange={handleFilterBarHeightChange}
-                                onPaneModeChange={setBoardPaneMode}
                                 jiraUrl={jiraUrl}
                                 backendUrl={BACKEND_URL}
                                 transitionsEnabled={statusTransitionEnabled

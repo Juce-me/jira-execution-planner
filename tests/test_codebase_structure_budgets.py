@@ -141,9 +141,7 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # plus cache-bypassing Project Track range synchronization on explicit Sprint commitment (+557).
     # Connection recovery keeps only orchestration wiring here; controller, notice, and
     # Scenario restoration behavior live in extracted modules (+15 after merging main).
-    # Board column scroll panes derive compactStickyVisible from the header scroll state and the
-    # Board pane-mode report, and pass one callback to EngBoardView (+1).
-    "frontend/src/dashboard.jsx": 18094,
+    "frontend/src/dashboard.jsx": 18093,
 }
 
 

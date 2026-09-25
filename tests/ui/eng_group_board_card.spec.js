@@ -466,10 +466,14 @@ test('Board person controls neither open nor drag the card wrapper', async ({ pa
 
 test('a Board person editor closes when its card scrolls out of the pane', async ({ page }) => {
     await openBoard(page);
-    await page.setViewportSize({ width: 1440, height: 520 });
-    await page.evaluate(() => window.scrollTo(0, document.scrollingElement.scrollHeight));
-    await page.waitForFunction(() => document.querySelector('.eng-board')?.classList.contains('is-pane-stuck'));
+    // Short enough that the column overflows its pane, tall enough to stay in pane mode.
+    await page.setViewportSize({ width: 1440, height: 620 });
+    await page.waitForSelector('.eng-board.is-pane-mode');
     const card = col(page, 'col-1a2b3c4d').locator('.ecard[data-epic-key="PLAT-1"]');
+    await expect.poll(() => card.evaluate((node) => {
+        const body = node.closest('.col-body');
+        return body.scrollHeight > body.clientHeight;
+    })).toBe(true);
     await card.getByRole('combobox', { name: 'Assignee: Alice Adams' }).click();
     await expect(page.locator('.issue-person-editor-menu')).toBeVisible();
     await card.evaluate((node) => { node.closest('.col-body').scrollTop = 10000; });

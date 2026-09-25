@@ -366,9 +366,6 @@ test("Chromium's own drag loop moves the epic, and does not open the panel on th
     const calls = [];
     await openBoard(page, calls);
 
-    // Stick the pane-mode page first so dragTo never scrolls the viewport-tall target mid-gesture.
-    await page.evaluate(() => window.scrollTo(0, document.scrollingElement.scrollHeight));
-    await page.waitForSelector('.eng-board.is-pane-stuck');
     await card(page, 'PLAT-1').dragTo(column(page, 'col-wrap'));
 
     await expect.poll(() => transitionCalls(calls).length).toBe(1);
@@ -786,12 +783,11 @@ test('the drop menu is not clipped by the board scroll container and is clickabl
     await expect(page.locator('.eng-board-drop-warn')).toBeVisible();
 });
 
-test('pane mode: a drop while stuck keeps the board stuck and shows the announcement in view', async ({ page }) => {
+test('pane mode: a drop leaves the page unscrolled and shows the announcement in view', async ({ page }) => {
     const calls = [];
     await openBoard(page, calls);
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.evaluate(() => window.scrollTo(0, document.scrollingElement.scrollHeight));
-    await page.waitForFunction(() => document.querySelector('.eng-board')?.classList.contains('is-pane-stuck'));
+    await page.waitForSelector('.eng-board.is-pane-mode');
 
     // Same one-status move as 'one eligible status transitions straight through...'.
     await dragCard(page, 'PLAT-1', 'col-wrap');
@@ -799,11 +795,15 @@ test('pane mode: a drop while stuck keeps the board stuck and shows the announce
     const state = await page.evaluate(() => {
         const say = document.querySelector('.eng-board .board-say').getBoundingClientRect();
         return {
-            stuck: document.querySelector('.eng-board').classList.contains('is-pane-stuck'),
+            paneMode: document.querySelector('.eng-board').classList.contains('is-pane-mode'),
+            scrollY: window.scrollY,
+            maxScroll: document.scrollingElement.scrollHeight - window.innerHeight,
             sayInView: say.top >= 0 && say.bottom <= window.innerHeight,
         };
     });
-    expect(state.stuck).toBe(true);
+    expect(state.paneMode).toBe(true);
+    expect(state.scrollY).toBe(0);
+    expect(state.maxScroll).toBeLessThanOrEqual(1);
     expect(state.sayInView).toBe(true);
 });
 

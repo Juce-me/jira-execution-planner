@@ -4657,7 +4657,7 @@ button.toggle.applied-filter.active {
   margin-bottom: calc(-1 * var(--board-pane-trailing, 0px));
 }
 .eng-board.is-pane-mode .board {
-  height: calc(100dvh - var(--epic-sticky-top, 0px));
+  height: calc(100dvh - var(--board-pane-top, 0px));
   align-items: stretch;
   padding-bottom: 0;
 }
@@ -4683,17 +4683,13 @@ button.toggle.applied-filter.active {
   flex: 1 1 auto;
   min-height: 0;
   overflow-x: hidden;
-  overflow-y: hidden;
+  overflow-y: auto;
   scrollbar-gutter: stable;
   scrollbar-width: thin;
   padding: 4px 0.45rem 0.45rem;
 }
-.eng-board.is-pane-mode.is-pane-stuck .col-body {
-  overflow-y: auto;
-}
 .eng-board.is-pane-mode .col:not(.is-open):not(.is-focused) .col-strip {
-  flex: 1 1 auto;
-  height: auto;
+  flex: none;
 }
 .eng-board.is-pane-mode .board-say.has-message {
   position: absolute;

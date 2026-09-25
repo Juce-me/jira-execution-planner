@@ -637,9 +637,8 @@ test('the panel caps at 92vh and scrolls internally', async ({ page }) => {
     // 780 rather than 700: §6.4 added the drag live region and its guidance line to the board
     // head, so the board itself no longer fits in 700px. The subject here is the PANEL's cap and
     // its internal scrolling; the last clause only needs a viewport the board fits in for the
-    // document-scroll check to be about the panel at all. 760 wide fails the Board pane-mode width
-    // gate: in pane mode the board is viewport-tall below the header, so the page always scrolls.
-    await openBoard(page, calls, { width: 760, height: 780 });
+    // document-scroll check to be about the panel at all.
+    await openBoard(page, calls, { height: 780 });
     await openPanel(page, 'PLAT-1');
 
     const box = await panel(page).evaluate((node) => ({

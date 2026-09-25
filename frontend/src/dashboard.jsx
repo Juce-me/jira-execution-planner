@@ -569,7 +569,7 @@ import {
                                 savedPrefsRef.current = { ...(loadUiPrefs() || {}), sprintCatalog: sprintCatalogCacheRef.current };
                                 saveUiPrefs(savedPrefsRef.current);
                             }
-                        } else {
+                        } else if (nextState.authority !== 'auth_locked') {
                             setSelectedSprint(null);
                         }
                         if (nextState.errorReason === 'sprint_board_required') {

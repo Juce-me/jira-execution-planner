@@ -301,3 +301,86 @@ test('buildGroupsConfigWithExcludedCapacityToggle blocks Ad Hoc overlap without 
     assert.deepEqual(result.config.groups[0].excludedCapacityEpics, ['EX-1']);
     assert.deepEqual(result.config.groups[0].adHocCapacityEpics, ['ADHOC-1']);
 });
+
+test('addTeamLabelAlias appends once in order without mutating the source map', async () => {
+    const { addTeamLabelAlias } = await import('../frontend/src/settings/groupConfigUtils.js');
+
+    const source = Object.freeze({ 'team-a': Object.freeze(['label_team_a']) });
+    const result = addTeamLabelAlias(source, 'team-a', ' label_team_a_old ');
+    assert.equal(result.status, 'added');
+    assert.deepEqual(result.teamLabels, { 'team-a': ['label_team_a', 'label_team_a_old'] });
+    assert.notEqual(result.teamLabels, source);
+    assert.deepEqual(source, { 'team-a': ['label_team_a'] });
+
+    const fromEmpty = addTeamLabelAlias(undefined, 'team-a', 'label_team_a');
+    assert.equal(fromEmpty.status, 'added');
+    assert.deepEqual(fromEmpty.teamLabels, { 'team-a': ['label_team_a'] });
+});
+
+test('addTeamLabelAlias leaves the map unchanged for duplicates, blanks, and a fourth alias', async () => {
+    const { addTeamLabelAlias, TEAM_LABEL_ALIAS_LIMIT } = await import('../frontend/src/settings/groupConfigUtils.js');
+
+    assert.equal(TEAM_LABEL_ALIAS_LIMIT, 3);
+    const source = { 'team-a': ['label_team_a'] };
+    const duplicate = addTeamLabelAlias(source, 'team-a', ' LABEL_TEAM_A ');
+    assert.equal(duplicate.status, 'duplicate');
+    assert.equal(duplicate.teamLabels, source);
+
+    const blank = addTeamLabelAlias(source, 'team-a', '   ');
+    assert.equal(blank.status, 'empty');
+    assert.equal(blank.teamLabels, source);
+
+    const full = { 'team-a': ['label_a', 'label_b', 'label_c'] };
+    const fourth = addTeamLabelAlias(full, 'team-a', 'label_d');
+    assert.equal(fourth.status, 'limit');
+    assert.equal(fourth.teamLabels, full);
+    assert.deepEqual(full, { 'team-a': ['label_a', 'label_b', 'label_c'] });
+});
+
+test('addTeamLabelAlias upgrades a legacy scalar draft value to an array', async () => {
+    const { addTeamLabelAlias } = await import('../frontend/src/settings/groupConfigUtils.js');
+
+    const result = addTeamLabelAlias({ 'team-a': 'label_team_a' }, 'team-a', 'label_team_a_old');
+    assert.deepEqual(result.teamLabels, { 'team-a': ['label_team_a', 'label_team_a_old'] });
+});
+
+test('removeTeamLabelAlias removes only that alias and drops the Team entry after the last one', async () => {
+    const { removeTeamLabelAlias } = await import('../frontend/src/settings/groupConfigUtils.js');
+
+    const source = Object.freeze({
+        'team-a': Object.freeze(['label_team_a', 'label_team_a_old']),
+        'team-b': Object.freeze(['label_team_b']),
+    });
+    const once = removeTeamLabelAlias(source, 'team-a', 'label_team_a');
+    assert.deepEqual(once, { 'team-a': ['label_team_a_old'], 'team-b': ['label_team_b'] });
+    assert.deepEqual(source['team-a'], ['label_team_a', 'label_team_a_old']);
+
+    const last = removeTeamLabelAlias(once, 'team-a', 'label_team_a_old');
+    assert.deepEqual(last, { 'team-b': ['label_team_b'] });
+    assert.equal(Object.hasOwn(last, 'team-a'), false);
+});
+
+test('validateImportedTeamLabels rejects invalid alias arrays with label-free messages', async () => {
+    const { validateImportedTeamLabels } = await import('../frontend/src/settings/groupConfigUtils.js');
+
+    assert.equal(validateImportedTeamLabels(undefined), null);
+    assert.equal(validateImportedTeamLabels({ 'team-a': 'label_team_a' }), null);
+    assert.equal(validateImportedTeamLabels({ 'team-a': ['label_team_a', 'label_team_a_old', 'label_team_a_extra'] }), null);
+
+    const cases = [
+        { 'team-a': ['label_a', 'label_b', 'label_c', 'label_d'] },
+        { 'team-a': ['label_team_a', 'LABEL_TEAM_A'] },
+        { 'team-a': ['label_team_a', 7] },
+        ['label_team_a'],
+    ];
+    cases.forEach((teamLabels) => {
+        const error = validateImportedTeamLabels(teamLabels);
+        assert.equal(typeof error, 'string');
+        assert.equal(/label_/i.test(error), false, error);
+        assert.equal(error.includes('team-a'), false, error);
+    });
+    assert.equal(
+        validateImportedTeamLabels({ 'team-a': ['label_a', 'label_b', 'label_c', 'label_d'] }),
+        'Import rejected: a Team has more than 3 Jira labels.'
+    );
+});

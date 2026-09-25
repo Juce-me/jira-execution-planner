@@ -71,6 +71,47 @@ export function validateTeamLabelAliases(rawValue) {
     return { aliases, error };
 }
 
+export const TEAM_LABEL_ALIAS_LIMIT = 3;
+
+// Settings editor add: returns a new map with `label` appended to the Team's
+// aliases, or the untouched source map with status `duplicate`, `limit`, or
+// `empty` so a stale selection never mutates the draft.
+export function addTeamLabelAlias(teamLabels, teamId, label) {
+    const source = teamLabels || {};
+    const value = String(label || '').trim();
+    if (!value) return { teamLabels: source, status: 'empty' };
+    const aliases = normalizeTeamLabelAliases(source[teamId]);
+    if (aliases.some(alias => alias.toLowerCase() === value.toLowerCase())) {
+        return { teamLabels: source, status: 'duplicate' };
+    }
+    if (aliases.length >= TEAM_LABEL_ALIAS_LIMIT) return { teamLabels: source, status: 'limit' };
+    return { teamLabels: { ...source, [teamId]: [...aliases, value] }, status: 'added' };
+}
+
+// Settings editor remove: drops only `label`; the Team's entry is removed with
+// its last alias.
+export function removeTeamLabelAlias(teamLabels, teamId, label) {
+    const next = { ...(teamLabels || {}) };
+    const remaining = normalizeTeamLabelAliases(next[teamId]).filter(alias => alias !== label);
+    if (remaining.length) next[teamId] = remaining;
+    else delete next[teamId];
+    return next;
+}
+
+// Settings JSON import gate: the first label-free problem in an imported
+// group's `teamLabels`, or null. Invalid imports are rejected, never truncated.
+export function validateImportedTeamLabels(rawTeamLabels) {
+    if (rawTeamLabels === undefined || rawTeamLabels === null) return null;
+    if (typeof rawTeamLabels !== 'object' || Array.isArray(rawTeamLabels)) {
+        return 'Import rejected: Team labels must map each Team to its Jira labels.';
+    }
+    for (const rawValue of Object.values(rawTeamLabels)) {
+        const { error } = validateTeamLabelAliases(rawValue);
+        if (error) return `Import rejected: a Team ${error}`;
+    }
+    return null;
+}
+
 // Ordered, case-insensitively distinct union of aliases across the requested
 // Teams (all mapped Teams when `teamIds` is omitted).
 export function flattenTeamLabelAliases(teamLabels, teamIds) {

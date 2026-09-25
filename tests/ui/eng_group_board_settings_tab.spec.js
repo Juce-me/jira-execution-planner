@@ -355,7 +355,7 @@ test('Export JSON downloads only the selected saved group instead of the unsaved
     expect(download.suggestedFilename()).toBe('group-southridge.json');
     const exported = JSON.parse(fs.readFileSync(await download.path(), 'utf8'));
     expect(exported).toEqual({
-        version: 1,
+        version: 2,
         group: {
             id: 'southridge',
             name: 'Southridge',

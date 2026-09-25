@@ -600,3 +600,28 @@ test('Department configuration source retains the canonical favorite control', (
     const source = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'settings', 'TeamGroupsSettings.jsx'), 'utf8');
     assert.equal(source.includes('group-star-button'), false);
 });
+
+test('duplicate draft deep-copies every Team alias array', () => {
+    const { buildFirstRunGroupDraft } = loadFirstRunGroupConfiguration();
+    const sourceGroup = {
+        id: 'source',
+        name: 'Source',
+        teamIds: ['team-a', 'team-b'],
+        teamLabels: {
+            'team-a': ['label_team_a', 'label_team_a_old'],
+            'team-b': ['label_team_b'],
+        },
+    };
+
+    const draft = buildFirstRunGroupDraft({
+        mode: 'duplicate',
+        sourceGroup,
+        existingGroups: [sourceGroup],
+    });
+
+    assert.deepEqual(draft.teamLabels, sourceGroup.teamLabels);
+    assert.notEqual(draft.teamLabels, sourceGroup.teamLabels);
+    assert.notEqual(draft.teamLabels['team-a'], sourceGroup.teamLabels['team-a']);
+    draft.teamLabels['team-a'].push('label_team_a_extra');
+    assert.deepEqual(sourceGroup.teamLabels['team-a'], ['label_team_a', 'label_team_a_old']);
+});

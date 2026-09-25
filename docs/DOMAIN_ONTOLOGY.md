@@ -37,7 +37,8 @@ field ownership to the Story: it follows `Story -> parent Epic -> Epic field`.
 ### Department
 
 A Department is the application scope that groups Teams and owns shared ENG board configuration.
-Its board columns classify Epics by Epic status. Department selection controls which configured
+Its board columns classify Epics by Epic status; an Epic status no column holds lands in the first
+(To Do) column, so there is no Unmapped column. Department selection controls which configured
 Teams and board rules are in scope; it does not own Jira issue fields.
 
 ### Team

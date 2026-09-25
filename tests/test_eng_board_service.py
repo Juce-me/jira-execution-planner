@@ -787,18 +787,18 @@ class EngBoardProjectionTests(unittest.TestCase):
             'authoritative': True,
         })
 
-    def test_unknown_status_is_unmapped_and_epic_link_precedes_parent(self):
+    def test_unknown_status_falls_back_to_first_column_and_epic_link_precedes_parent(self):
         children = [issue('P-10', parent='P-2', epic_link='P-1')]
         result = eng_board.project_board(
             self.epics, children, project_map=(('PROD', 'product'),), columns=self.columns,
             epic_link_field_id='customfield_10014',
         )
         by_key = {row['key']: row for row in result['epics']}
-        self.assertEqual('board-unmapped', by_key['P-2']['columnId'])
+        self.assertEqual('col-open', by_key['P-2']['columnId'])
         self.assertEqual(['P-10'], [row['key'] for row in by_key['P-1']['children']])
         self.assertEqual([], by_key['P-2']['children'])
 
-    def test_configured_board_declares_unmapped_before_terminal_in_stream_frames(self):
+    def test_configured_board_declares_only_configured_columns_in_stream_frames(self):
         board = eng_board.normalize_board({
             'columns': [
                 {'id': 'col-00000001', 'name': 'To do', 'statuses': ['To Do'], 'colour': '#597ef7'},
@@ -812,10 +812,8 @@ class EngBoardProjectionTests(unittest.TestCase):
         )
         epics = projection['epics']
         declared_column_ids = [column['id'] for column in board['columns']]
-        self.assertEqual(
-            ['col-00000001', 'board-unmapped', 'col-00000002'], declared_column_ids,
-        )
-        self.assertEqual('board-unmapped', epics[0]['columnId'])
+        self.assertEqual(['col-00000001', 'col-00000002'], declared_column_ids)
+        self.assertEqual('col-00000001', epics[0]['columnId'])
         self.assertIn(epics[0]['columnId'], declared_column_ids)
 
         writer = EngBoardStreamWriter()
@@ -838,7 +836,7 @@ class EngBoardProjectionTests(unittest.TestCase):
         })
         writer.write({
             'protocolVersion': 1, 'generationId': 'configured-sprint', 'sequence': 2,
-            'type': 'column', 'columnId': 'board-unmapped',
+            'type': 'column', 'columnId': 'col-00000001',
             'epics': [{key: value for key, value in epic.items() if key != 'children'} for epic in epics],
             'children': [child for epic in epics for child in epic['children']],
             'authoritative': True,

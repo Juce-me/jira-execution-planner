@@ -208,7 +208,7 @@ test('sortEpicGroupsByPriority does not mutate its input', async () => {
     assert.deepEqual(input.map((entry) => entry.key), ['B', 'A']);
 });
 
-/* ── buildBoardColumns: status -> column, unmapped, stale, counts, breach ───────────────────── */
+/* ── buildBoardColumns: status -> column, To Do fallback, stale, counts, breach ─────────────── */
 
 test('buildBoardColumns places each epic in the column holding its status', async () => {
     const { buildBoardColumns } = await loadModule();
@@ -239,13 +239,11 @@ test('buildBoardColumns preserves strict server column order and explicit member
     const { buildBoardColumns } = await loadModule();
     const serverColumns = [
         { id: 'todo', name: 'To do', colour: '#8c8c8c', statuses: ['To Do'], terminal: false },
-        { id: 'board-unmapped', name: 'Unmapped', colour: '#8c8c8c', statuses: [], terminal: false },
         { id: 'terminal', name: 'Terminal', colour: '#8c8c8c', statuses: [], terminal: true },
     ];
     const groups = [
         epicGroup('E-DONE-IN-TODO', { status: 'Done' }),
         epicGroup('E-TODO-IN-TERMINAL', { status: 'To Do' }),
-        epicGroup('E-UNMAPPED', { status: 'Escalated' }),
     ];
 
     const built = buildBoardColumns({
@@ -253,17 +251,15 @@ test('buildBoardColumns preserves strict server column order and explicit member
         epicGroups: groups,
         columnEpicKeys: {
             todo: ['E-DONE-IN-TODO'],
-            'board-unmapped': ['E-UNMAPPED'],
             terminal: ['E-TODO-IN-TERMINAL'],
         },
     });
 
-    assert.deepEqual(built.map((entry) => entry.id), ['todo', 'board-unmapped', 'terminal']);
+    assert.deepEqual(built.map((entry) => entry.id), ['todo', 'terminal']);
     assert.deepEqual(built.map((entry) => entry.epicGroups.map((group) => group.key)), [
-        ['E-DONE-IN-TODO'], ['E-UNMAPPED'], ['E-TODO-IN-TERMINAL'],
+        ['E-DONE-IN-TODO'], ['E-TODO-IN-TERMINAL'],
     ]);
-    assert.equal(built[1].isUnmapped, true);
-    assert.equal(built[2].terminal, true);
+    assert.equal(built[1].terminal, true);
 });
 
 test('buildBoardColumns reads both epic status shapes through epicStatusName', async () => {
@@ -281,9 +277,14 @@ test('buildBoardColumns reads both epic status shapes through epicStatusName', a
     assert.equal(built[0].epicCount, 2);
 });
 
-test('buildBoardColumns collects unmapped statuses into a synthetic Unmapped column, last', async () => {
-    const { buildBoardColumns, UNMAPPED_COLUMN_ID, UNMAPPED_COLUMN_NAME } = await loadModule();
-    const board = columns({ id: 'col-00000001', name: 'To do', statuses: ['To Do'] });
+// Default board reading order is To Do | In Progress | Done: a status no column holds is To Do
+// work, so it lands in the first column. There is no synthetic Unmapped column.
+test('buildBoardColumns places statuses no column holds in the first (To Do) column', async () => {
+    const { buildBoardColumns } = await loadModule();
+    const board = columns(
+        { id: 'col-00000001', name: 'To do', statuses: ['To Do'] },
+        { id: 'col-00000002', name: 'In progress', statuses: ['In Progress'] },
+    );
 
     const built = buildBoardColumns({
         columns: board,
@@ -291,27 +292,13 @@ test('buildBoardColumns collects unmapped statuses into a synthetic Unmapped col
             epicGroup('A-1', { status: 'To Do' }),
             epicGroup('A-2', { status: 'Escalated' }),
             epicGroup('A-3', { status: '' }),
+            epicGroup('A-4', { status: 'In Progress' }),
         ],
     });
 
-    assert.equal(built.length, 2);
-    const unmapped = built[built.length - 1];
-    assert.equal(unmapped.id, UNMAPPED_COLUMN_ID);
-    assert.equal(unmapped.name, UNMAPPED_COLUMN_NAME);
-    assert.equal(unmapped.isUnmapped, true);
-    assert.equal(unmapped.epicCount, 2);
-    assert.equal(unmapped.star, false);
-    assert.equal(unmapped.breach, null);
-});
-
-test('buildBoardColumns renders no Unmapped column when every epic status is mapped', async () => {
-    const { buildBoardColumns, UNMAPPED_COLUMN_ID } = await loadModule();
-    const built = buildBoardColumns({
-        columns: columns({ id: 'col-00000001', name: 'To do', statuses: ['To Do'] }),
-        epicGroups: [epicGroup('A-1', { status: 'To Do' })],
-    });
-    assert.deepEqual(built.map((entry) => entry.id), ['col-00000001']);
-    assert.ok(!built.some((entry) => entry.id === UNMAPPED_COLUMN_ID));
+    assert.deepEqual(built.map((entry) => entry.id), ['col-00000001', 'col-00000002']);
+    assert.deepEqual(built[0].epicGroups.map((entry) => entry.key).sort(), ['A-1', 'A-2', 'A-3']);
+    assert.deepEqual(built[1].epicGroups.map((entry) => entry.key), ['A-4']);
 });
 
 test('buildBoardColumns does not render a column with no statuses', async () => {
@@ -338,14 +325,13 @@ test('buildBoardColumns keeps a stale status harmless: it matches nothing and do
 });
 
 test('buildBoardColumns skips the NO_EPIC bucket, which is stories without an epic', async () => {
-    const { buildBoardColumns, UNMAPPED_COLUMN_ID } = await loadModule();
+    const { buildBoardColumns } = await loadModule();
     const built = buildBoardColumns({
         columns: columns({ id: 'col-00000001', name: 'To do', statuses: ['To Do'] }),
         epicGroups: [epicGroup('A-1', { status: 'To Do' }), epicGroup('NO_EPIC', { epic: null })],
     });
     assert.equal(built.length, 1);
     assert.equal(built[0].epicCount, 1);
-    assert.ok(!built.some((entry) => entry.id === UNMAPPED_COLUMN_ID));
 });
 
 test('buildBoardColumns sorts each column by priority, highest first', async () => {
@@ -383,17 +369,13 @@ test('buildBoardColumns reports a breach in both directions and never for a red 
     assert.equal(built[2].colour, '#ff4d4f');
 });
 
-// §6.1: a group that has never been configured is NOT the same thing as a configured board that
-// forgot a status. "Unmapped" says the latter, so a first-run board must not borrow the word.
-test('buildBoardColumns with no configured columns renders a first-run column, not Unmapped', async () => {
-    const { buildBoardColumns, UNCONFIGURED_COLUMN_ID, UNCONFIGURED_COLUMN_NAME, UNMAPPED_COLUMN_ID } = await loadModule();
+// §6.1: a group that has never been configured gets the first-run column and the composer offer.
+test('buildBoardColumns with no configured columns renders a first-run column', async () => {
+    const { buildBoardColumns, UNCONFIGURED_COLUMN_ID, UNCONFIGURED_COLUMN_NAME } = await loadModule();
     const built = buildBoardColumns({ columns: [], epicGroups: [epicGroup('A-1', { status: 'To Do' })] });
     assert.deepEqual(built.map((entry) => entry.id), [UNCONFIGURED_COLUMN_ID]);
     assert.equal(built[0].name, UNCONFIGURED_COLUMN_NAME);
-    assert.notEqual(built[0].name, 'Unmapped');
-    assert.notEqual(built[0].id, UNMAPPED_COLUMN_ID);
     assert.equal(built[0].isUnconfigured, true);
-    assert.equal(built[0].isUnmapped, false);
     assert.equal(built[0].epicCount, 1);
     assert.equal(built[0].breach, null);
 });
@@ -416,15 +398,15 @@ test('a board whose columns all have no statuses reads as unconfigured, not as a
     assert.deepEqual(built.map((entry) => entry.id), [UNCONFIGURED_COLUMN_ID]);
 });
 
-test('a configured board still calls its leftovers Unmapped, not first-run', async () => {
-    const { buildBoardColumns, UNMAPPED_COLUMN_ID, UNCONFIGURED_COLUMN_ID } = await loadModule();
+test('a configured board puts its leftovers in its first column, not first-run', async () => {
+    const { buildBoardColumns, UNCONFIGURED_COLUMN_ID } = await loadModule();
     const built = buildBoardColumns({
         columns: columns({ id: 'col-00000001', name: 'To do', statuses: ['To Do'] }),
         epicGroups: [epicGroup('A-1', { status: 'To Do' }), epicGroup('A-2', { status: 'Escalated' })],
     });
-    assert.deepEqual(built.map((entry) => entry.id), ['col-00000001', UNMAPPED_COLUMN_ID]);
-    assert.equal(built[1].isUnmapped, true);
-    assert.equal(built[1].isUnconfigured, false);
+    assert.deepEqual(built.map((entry) => entry.id), ['col-00000001']);
+    assert.equal(built[0].epicCount, 2);
+    assert.equal(built[0].isUnconfigured, false);
     assert.ok(!built.some((entry) => entry.id === UNCONFIGURED_COLUMN_ID));
 });
 

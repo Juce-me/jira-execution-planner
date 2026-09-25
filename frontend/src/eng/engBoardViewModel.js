@@ -4,7 +4,7 @@
 // in this module.
 
 import { computeEpicStatusCountProgress } from './engBoardCardModel.js';
-import { buildBoardColumns, UNMAPPED_COLUMN_ID, UNCONFIGURED_COLUMN_ID } from './engBoardColumns.js';
+import { buildBoardColumns, UNCONFIGURED_COLUMN_ID } from './engBoardColumns.js';
 
 function adaptColumn(column, savedById) {
     const saved = savedById.get(column.id) || {};
@@ -17,7 +17,6 @@ function adaptColumn(column, savedById) {
         star: Boolean(saved.star),
         min: saved.min ?? null,
         max: saved.max ?? null,
-        isUnmapped: column.id === UNMAPPED_COLUMN_ID,
         isUnconfigured: column.id === UNCONFIGURED_COLUMN_ID,
     };
 }

@@ -222,6 +222,96 @@
             width: var(--board-chrome-width);
         }
 
+        /* ── Pane mode (desktop; EngBoardView owns the gate): the page never scrolls. The board
+           fills the viewport below its measured document top (--board-pane-top), every open column
+           is a bordered pane from its title line to the board bottom, and each open column body is
+           always its own scroller. The BOARD owns the height and the open columns stretch inside
+           its content box, which already excludes the horizontal scrollbar — nothing is measured
+           per column. The negative margin cancels the document space below the board (measured in
+           JS), so the document is exactly one viewport tall. ── */
+        .eng-board.is-pane-mode {
+            margin-bottom: calc(-1 * var(--board-pane-trailing, 0px));
+        }
+
+        .eng-board.is-pane-mode .board {
+            height: calc(100dvh - var(--board-pane-top, 0px));
+            align-items: stretch;
+            padding-bottom: 0;
+        }
+
+        .eng-board.is-pane-mode .col {
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+
+        /* The rail's own border and radius, so an open pane and a folded rail read as one set. */
+        .eng-board.is-pane-mode .col.is-open,
+        .eng-board.is-pane-mode .col.is-focused {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+            padding-top: 0.45rem;
+        }
+
+        .eng-board.is-pane-mode .col.is-open .col-head,
+        .eng-board.is-pane-mode .col.is-focused .col-head {
+            flex: none;
+            width: auto;
+            margin-inline: 0.45rem;
+        }
+
+        /* scrollbar-gutter keeps the card width identical whether or not a column overflows. The
+           4px top and inline padding keep card focus rings clear of the scroller's clip edge. */
+        .eng-board.is-pane-mode .col-body {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-x: hidden;
+            overflow-y: auto;
+            scrollbar-gutter: stable;
+            scrollbar-width: thin;
+            padding: 4px 0.45rem 0.45rem;
+        }
+
+        /* A rail keeps its fixed 340px track; the column stretches, the track does not. */
+        .eng-board.is-pane-mode .col:not(.is-open):not(.is-focused) .col-strip {
+            flex: none;
+        }
+
+        /* A drop outcome must not push the board past the viewport bottom, so in pane mode it floats
+           at the bottom of the board, which is the viewport bottom. Rail border, radius and
+           surface; no new tokens. */
+        .eng-board.is-pane-mode .board-say.has-message {
+            position: absolute;
+            left: 50%;
+            bottom: 0.75rem;
+            transform: translateX(-50%);
+            z-index: 6;
+            margin: 0;
+            padding: 0.35rem 0.7rem;
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+
+        .eng-board.is-pane-mode {
+            position: relative;
+        }
+
+        /* The breach ring moves to the pane: on .col-body it would be clipped by the pane and
+           read as a second border nested inside it. Same values as the rail/body rule. */
+        .eng-board.is-pane-mode .col.is-breach.is-open,
+        .eng-board.is-pane-mode .col.is-breach.is-focused {
+            box-shadow: 0 0 0 1px var(--warn), 0 0 12px rgba(207, 19, 34, 0.34);
+            animation: board-breach-glow 2.2s ease-in-out infinite;
+        }
+
+        .eng-board.is-pane-mode .col.is-breach .col-body {
+            border-radius: 0;
+            box-shadow: none;
+            animation: none;
+        }
+
         /* Something is off-frame — say how much, and offer a way there. The hint is a control. */
         .eng-board .board-hint {
             position: absolute;
@@ -715,6 +805,8 @@
             .eng-board .board-hint .pip { animation: none; }
             .eng-board .col.is-breach .col-strip,
             .eng-board .col.is-breach .col-body { animation: none; }
+            .eng-board.is-pane-mode .col.is-breach.is-open,
+            .eng-board.is-pane-mode .col.is-breach.is-focused { animation: none; }
         }
 
         /* ── Epic detail panel (§6.3) — geometry lifted from the asset's

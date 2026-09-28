@@ -783,6 +783,30 @@ test('the drop menu is not clipped by the board scroll container and is clickabl
     await expect(page.locator('.eng-board-drop-warn')).toBeVisible();
 });
 
+test('pane mode: a drop leaves the page unscrolled and shows the announcement in view', async ({ page }) => {
+    const calls = [];
+    await openBoard(page, calls);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.waitForSelector('.eng-board.is-pane-mode');
+
+    // Same one-status move as 'one eligible status transitions straight through...'.
+    await dragCard(page, 'PLAT-1', 'col-wrap');
+    await expect(liveRegion(page)).toHaveText('PLAT-1 → Release · Doing → Wrap up');
+    const state = await page.evaluate(() => {
+        const say = document.querySelector('.eng-board .board-say').getBoundingClientRect();
+        return {
+            paneMode: document.querySelector('.eng-board').classList.contains('is-pane-mode'),
+            scrollY: window.scrollY,
+            maxScroll: document.scrollingElement.scrollHeight - window.innerHeight,
+            sayInView: say.top >= 0 && say.bottom <= window.innerHeight,
+        };
+    });
+    expect(state.paneMode).toBe(true);
+    expect(state.scrollY).toBe(0);
+    expect(state.maxScroll).toBeLessThanOrEqual(1);
+    expect(state.sayInView).toBe(true);
+});
+
 test('a card stops being draggable while the Settings modal makes the transition surface inert', async ({ page }) => {
     const calls = [];
     await openBoard(page, calls);

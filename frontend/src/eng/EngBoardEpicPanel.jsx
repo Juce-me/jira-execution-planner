@@ -78,6 +78,13 @@ export default function EngBoardEpicPanel({
     const [description, setDescription] = React.useState({ status: 'loading' });
     const descriptionRef = React.useRef(description);
     descriptionRef.current = description;
+    // React 19 re-assigns innerHTML whenever the dangerouslySetInnerHTML object changes identity, so
+    // an inline object would rebuild the description DOM on every Board render (a pane-mode resize,
+    // a hint update) and drop a table's scroll position and focus. One object per loaded payload.
+    const descriptionMarkup = React.useMemo(
+        () => (description.status === 'loaded' ? { __html: description.html } : null),
+        [description],
+    );
     const [attempt, setAttempt] = React.useState(0);
 
     const statusOrder = React.useMemo(() => buildPanelStatusOrder(columns), [columns]);
@@ -386,7 +393,7 @@ export default function EngBoardEpicPanel({
                             <div
                                 className="m-desc-body"
                                 ref={descBodyRef}
-                                dangerouslySetInnerHTML={{ __html: description.html }}
+                                dangerouslySetInnerHTML={descriptionMarkup}
                             />
                         )}
                         {description.status === 'loaded' && (overflows || expanded) && (

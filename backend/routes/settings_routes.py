@@ -1557,6 +1557,8 @@ def save_capacity_config_endpoint():
                     {key: payload.get(key) for key in ('project', 'fieldId', 'fieldName')},
                     payload.get('baseRevision'),
                     field_catalog=fields,
+                    fallback_loader=_load_dashboard_config_json,
+                    legacy_site_url=JIRA_URL or '',
                 )
             except shared_capacity_config.CapacityConfigConflict as error:
                 return jsonify({'error': 'capacity_config_conflict', 'current': error.current}), 409

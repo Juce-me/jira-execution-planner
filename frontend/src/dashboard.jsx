@@ -545,7 +545,8 @@ import {
                             throw err;
                         });
                         markConnectionBootstrapHealthy('sprints');
-                        const body = await response.json().catch(() => ({}));
+                        // An abort that lands mid-body is a timed-out read, not an empty catalog.
+                        const body = await response.json().catch(error => { if (signal?.aborted) throw error; return {}; });
                         return { httpStatus: response.status, ...body };
                     },
                     onState: nextState => {
@@ -569,7 +570,7 @@ import {
                                 savedPrefsRef.current = { ...(loadUiPrefs() || {}), sprintCatalog: sprintCatalogCacheRef.current };
                                 saveUiPrefs(savedPrefsRef.current);
                             }
-                        } else {
+                        } else if (nextState.authority !== 'auth_locked') {
                             setSelectedSprint(null);
                         }
                         if (nextState.errorReason === 'sprint_board_required') {

@@ -229,8 +229,9 @@ export default function PlanningTeamCapacityCards({
     React.useEffect(() => {
         if (activeEditor || !restoreFocusIssueRef.current) return undefined;
         const issueKey = restoreFocusIssueRef.current;
-        restoreFocusIssueRef.current = '';
         const frame = window.requestAnimationFrame(() => {
+            if (restoreFocusIssueRef.current !== issueKey) return;
+            restoreFocusIssueRef.current = '';
             pencilRefs.current.get(issueKey)?.focus();
         });
         return () => window.cancelAnimationFrame(frame);

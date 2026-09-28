@@ -24,6 +24,8 @@ const JS_WRITTEN_CUSTOM_PROPERTIES = {
     '--board-chrome-width': 'frontend/src/eng/EngBoardView.jsx',
     '--board-chrome-space': 'frontend/src/eng/EngBoardView.jsx',
     '--board-chrome-shift-y': 'frontend/src/eng/EngBoardView.jsx',
+    '--board-pane-top': 'frontend/src/eng/EngBoardView.jsx',
+    '--board-pane-trailing': 'frontend/src/eng/EngBoardView.jsx',
 };
 const INLINE_CUSTOM_PROPERTIES = new Set(Object.keys(JS_WRITTEN_CUSTOM_PROPERTIES));
 

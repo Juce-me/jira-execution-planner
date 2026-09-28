@@ -1050,7 +1050,8 @@ test('deleting every column preserves an explicit empty board and blocks Save', 
         await page.locator('.board-column .remove-btn[title="Delete column"]').first().click();
     }
     await expect(page.locator('.board-column')).toHaveCount(0);
-    expect(await boardState(page)).toEqual({ columns: [] });
+    // Stored boards always carry the default Done Epic retention since #176 (e9a1c480).
+    expect(await boardState(page)).toEqual({ columns: [], doneEpicRetentionDays: 28 });
     await expect(page.locator('#harness-save')).toBeDisabled();
     await expect(page.locator('.group-modal-validation')).toContainText('A board needs at least one column.');
 });

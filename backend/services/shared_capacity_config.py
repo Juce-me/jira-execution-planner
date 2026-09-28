@@ -11,7 +11,10 @@ from sqlalchemy.exc import IntegrityError
 from backend.config.shared_config import normalize_shared_admin_section
 from backend.db import engine as db_engine
 from backend.db import models
-from backend.services.workspace_dashboard_config import acquire_workspace_config_fence
+from backend.services.workspace_dashboard_config import (
+    acquire_workspace_config_fence,
+    load_workspace_config_in_session,
+)
 
 
 CAPACITY_SOURCE_DB = 'workspace_db'
@@ -158,7 +161,16 @@ def _revision(value):
     return revision
 
 
-def save_shared_capacity_config(context, payload, base_revision, field_catalog, database_url=None):
+def save_shared_capacity_config(
+    context,
+    payload,
+    base_revision,
+    field_catalog,
+    database_url=None,
+    *,
+    fallback_loader=None,
+    legacy_site_url='',
+):
     revision = _revision(base_revision)
     capacity = _validate_payload(payload)
     project = str(capacity.get('project') or '').strip().upper()[:64]
@@ -185,9 +197,15 @@ def save_shared_capacity_config(context, payload, base_revision, field_catalog, 
         if row is None:
             if revision != 0:
                 raise CapacityConfigConflict(_empty_config())
+            baseline = load_workspace_config_in_session(
+                session, context, fallback_loader=fallback_loader, legacy_site_url=legacy_site_url,
+            )
+            next_payload = deepcopy(baseline.payload)
+            next_payload['capacity'] = capacity
             row = models.WorkspaceDashboardConfig(
                 workspace_id=context.workspace_id,
-                payload={'capacity': capacity},
+                payload_version=int(next_payload.get('version') or 1),
+                payload=next_payload,
                 config_revision=1,
                 capacity_jira_site_url=site_url if verified_field else None,
                 capacity_jira_cloud_id=cloud_id if verified_field else None,

@@ -17,6 +17,7 @@ const EVENT_NAMES = new Set([
     'issue_priority_action',
     'issue_project_track_action',
     'issue_field_edit_action',
+    'board_action',
     'external_link_opened',
     'api_result',
     'app_error_shown'
@@ -72,6 +73,7 @@ const EVENT_PARAMS = new Set([
     'project_scope',
     'query_length_bucket',
     'range_size_bucket',
+    'reason',
     'recoverable_state',
     'result',
     'result_count_bucket',
@@ -120,6 +122,7 @@ const BUCKETS = new Set(['0', '1_5', '6_10', '11_25', '26_50', '51_100', 'over_1
 const EVENT_PARAM_VALUE_ALLOWLISTS = {
     module_id: new Set(['catch-up', 'configuration', 'planning', 'board', 'statistics']),
     scope_type: new Set(['eng', 'epm', 'board', 'all_work', 'component', 'sprint']),
+    reason: new Set(['short', 'narrow', 'touch']),
 };
 
 function assertSafeName(name) {

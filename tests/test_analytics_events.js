@@ -1242,6 +1242,55 @@ test('api_result accepts jira_issue_field_edits without raw field-edit data', as
     assert.ok(Object.keys(pushed[0]).length <= 25);
 });
 
+test('board small-screen support builder emits only the fixed bounded contract', async () => {
+    const { buildBoardSmallScreenSupportParams } = await loadDashboardAnalytics();
+
+    for (const reason of ['short', 'narrow', 'touch']) {
+        assert.deepEqual(buildBoardSmallScreenSupportParams(reason), {
+            feature_name: 'eng_board',
+            workflow_action: 'small_screen_support_request',
+            reason,
+            source_surface: 'board',
+        });
+    }
+    for (const invalid of ['wide', '760', 760, '', null, undefined, 'short screen']) {
+        assert.equal(buildBoardSmallScreenSupportParams(invalid), null);
+    }
+});
+
+test('board_action is a canonical userevent whose reason accepts only its enum', async () => {
+    const { sanitizeAnalyticsParams, validateAnalyticsPayload } = await loadEvents();
+    const params = {
+        feature_name: 'eng_board', workflow_action: 'small_screen_support_request',
+        reason: 'touch', source_surface: 'board',
+    };
+    assert.deepEqual(sanitizeAnalyticsParams(params, 'board_action'), params);
+    assert.equal(validateAnalyticsPayload({
+        event: 'userevent', trigger: 'userevent', event_type: 'event', event_name: 'board_action', ...params,
+    }).event_name, 'board_action');
+    for (const reason of ['wide', 'viewport_1280', 'short_screen']) {
+        assert.throws(() => sanitizeAnalyticsParams({ ...params, reason }, 'board_action'), /reason/);
+    }
+});
+
+test('board small-screen support request pushes one fixed userevent through the dataLayer', async () => {
+    const { initAnalytics } = await loadAnalytics();
+    const { trackBoardSmallScreenSupportRequest } = await loadDashboardAnalytics();
+    resetDom();
+    const pushed = [];
+    global.window.dataLayer = { push: entry => pushed.push(entry) };
+    await initAnalytics({ fetchContext: async () => ({ enabled: true }) });
+
+    trackBoardSmallScreenSupportRequest('narrow');
+    trackBoardSmallScreenSupportRequest('wide');
+
+    assert.deepEqual(pushed, [{
+        event: 'userevent', trigger: 'userevent', event_type: 'event', event_name: 'board_action',
+        feature_name: 'eng_board', workflow_action: 'small_screen_support_request',
+        reason: 'narrow', source_surface: 'board',
+    }]);
+});
+
 async function loadDashboardAnalyticsWithRecorder(events) {
     const sourcePath = path.join(__dirname, '..', 'frontend', 'src', 'analytics', 'dashboardAnalytics.js');
     const source = fs.readFileSync(sourcePath, 'utf8')

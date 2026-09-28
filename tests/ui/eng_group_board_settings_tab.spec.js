@@ -393,7 +393,8 @@ test('Import JSON updates only a newly created selected group and preserves sibl
     await dialog.getByRole('button', { name: 'Apply Import' }).click();
 
     await page.waitForTimeout(200);
-    expect(calls.filter(call => call.method === 'POST' && call.pathname !== '/api/auth/refresh')).toHaveLength(0);
+    // Modal-open Team hydration POSTs /api/team-catalog on the legacy backend since #196 (11c18401); Import itself writes nothing.
+    expect(calls.filter(call => call.method === 'POST' && !['/api/auth/refresh', '/api/team-catalog'].includes(call.pathname))).toHaveLength(0);
     await expect(dialog.locator('.group-pane-list .group-list-item')).toHaveCount(3);
     await expect(dialog.locator('.group-pane-list .group-list-item', { hasText: 'Northwind' })).toBeVisible();
     await expect(dialog.locator('.group-pane-list .group-list-item', { hasText: 'Southridge' })).toBeVisible();
@@ -415,7 +416,8 @@ test('Import JSON updates only a newly created selected group and preserves sibl
                 excludedCapacityEpics: [],
                 adHocCapacityEpics: [],
                 teamLabels: {},
-                board: fixture.referenceBoard(),
+                // Stored boards always carry the default Done Epic retention since #176 (e9a1c480).
+                board: { ...fixture.referenceBoard(), doneEpicRetentionDays: 28 },
             },
             {
                 id: 'southridge',
@@ -810,7 +812,8 @@ malformedImportedColumnShapes.forEach(([label, columnShape]) => {
         // validation message rather than a silent crash.
         await expect(dialog).toBeVisible();
         await expect(dialog.getByRole('button', { name: /^Save$/ })).toBeDisabled();
-        await expect(dialog.locator('.group-modal-validation')).toContainText('has no statuses');
+        // A lone column is the terminal column, which may be empty since #176 (e9a1c480).
+        await expect(dialog.locator('.group-modal-validation')).toContainText('needs a valid column id');
     });
 });
 

@@ -8170,6 +8170,12 @@ input.story-points-editor.story-points-alert-highlight {
   font-weight: 300;
   margin-bottom: 1rem;
 }
+.unconfigured-workspace-admins {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 0;
+  color: var(--text-primary);
+}
 .planning-button {
   background: transparent;
   color: var(--text-secondary);

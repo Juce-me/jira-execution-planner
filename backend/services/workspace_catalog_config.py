@@ -25,6 +25,7 @@ class EffectiveCatalogConfig:
     config_digest: str
     sprint_identity: str | None
     team_scope_error: str | None
+    missing_admin_settings: tuple[str, ...]
 
 
 def _digest(value):
@@ -264,6 +265,10 @@ def resolve_effective_catalog_config(
         else _runtime(runtime_inputs, 'sprint_field_default', 'SPRINT_FIELD_DEFAULT')
     )
     raw_jql = str(_runtime(runtime_inputs, 'jql_query', 'JQL_QUERY') or '').strip()
+    missing_admin_settings = tuple(
+        section for section, present in (('scope', bool(projects or raw_jql)), ('source', bool(board_id)))
+        if not present
+    )
     team_scope_error = None
     if not raw_jql and projects:
         if not all(re.fullmatch(r'[A-Z][A-Z0-9_]{0,63}', key) for key in projects):
@@ -298,4 +303,5 @@ def resolve_effective_catalog_config(
             if board_id else None
         ),
         team_scope_error=team_scope_error,
+        missing_admin_settings=missing_admin_settings,
     )

@@ -30,7 +30,7 @@ test('dashboard wires Board loading, error, and retry state to EngBoardView', ()
 test('required sprint refreshes queue behind active discovery while Retry clicks deduplicate', () => {
     assert.match(dashboardRuntime, /if \(forceRefresh && activeRequestKind === 'ordinary'\)/);
     assert.match(dashboardRuntime, /if \(observer\?\.promise\) observer\.promise\.then\(queued\.resolve, queued\.reject\);/);
-    assert.match(dashboard, /if \(boardAffectingAdminSave\) await loadSprints\(false\);/);
+    assert.match(dashboard, /if \(boardAffectingAdminSave && nextAdminSettingsGate\.status === 'clear'\) await loadSprints\(false\);/);
     assert.match(dashboard, /const retryEngLoad = sprintError \? \(\) => loadSprints\(true\) : fetchTasks;/);
     const refreshHandler = dashboard.slice(
         dashboard.indexOf('const refreshActiveViewFromJira'),

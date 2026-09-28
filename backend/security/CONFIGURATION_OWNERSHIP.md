@@ -17,6 +17,7 @@ write access, bootstrap precedence, and frontend edit gates must change together
 | Derived Team name directory | `workspace_team_catalogs` | `authenticated_read` | Authenticated `user_write` for names only; catalog refresh may merge discovered names | One shared name directory per workspace; names do not grant Sprint membership or mutate administrator settings |
 | Derived Sprint catalog | `workspace_sprint_catalogs` | `authenticated_read` | Authenticated Jira refresh runtime only | Shared per workspace and configured Jira source Board; complete validated empty lists are authoritative |
 | Derived per-Sprint Team membership | `workspace_sprint_team_catalogs` | `authenticated_read` | Authenticated Jira refresh runtime only | Shared per workspace and Sprint, but valid only for the persisted effective-scope digest; membership is distinct from Team names |
+| Workspace user directory and tool-admin grants | `users`, `auth_connections` (via `/api/admin/users*`) | Explicit tool admin only, regardless of `SETTINGS_ADMIN_ONLY` | `tool_admin`, explicit tool admin only | Non-admins never read other users; the only exposure is `adminContacts` (tool-admin display names) in `/api/config` while the workspace is unconfigured |
 | Debug load observations | `load_performance` | Explicit tool admin in the current workspace/environment | Authenticated `user_write`, debug-enabled only | Derived operational history, retained 30 days; workspace identity comes from auth context, never the browser payload; no configuration or issue content |
 
 ## Exact Boundaries
@@ -28,6 +29,12 @@ They do **not** contain EPM settings, department groups, group preferences, pers
 connections, credentials, or derived catalog payloads. The selected Jira source Board, projects,
 Sprint/Team fields, and base JQL remain administrator inputs; they identify derived catalogs but do
 not transfer catalog ownership into administrator configuration.
+
+In DB/OAuth mode, `resolve_effective_catalog_config` also reports `missing_admin_settings`: `scope`
+when no selected projects and no `JQL_QUERY` exist, and `source` when no numeric Jira source Board
+resolves. `/api/config` returns it as `adminSettingsMissing`; while it is non-empty the dashboard starts
+no ENG Jira work, opens Admin settings for editors, and shows non-editors the `adminContacts` display
+names (never emails or ids). Basic and JSON-file modes do not report it.
 
 In DB/OAuth mode, `resolve_effective_catalog_config` is the canonical resolver for Sprint and Team
 catalog identity. Sprint rows are keyed by `workspace_id + board_id`. Per-Sprint Team rows are keyed

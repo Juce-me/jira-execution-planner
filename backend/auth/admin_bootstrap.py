@@ -27,6 +27,18 @@ def workspace_tool_admin_count(session, workspace_id: str) -> int:
     ).scalar() or 0
 
 
+def workspace_tool_admin_display_names(session, workspace_id: str) -> list[str]:
+    rows = session.query(models.User.display_name).join(
+        models.AuthConnection,
+        models.AuthConnection.user_id == models.User.id,
+    ).filter(
+        models.AuthConnection.workspace_id == workspace_id,
+        models.User.account_type == 'admin',
+        models.User.status != 'deleted',
+    ).distinct().all()
+    return sorted({str(name).strip() for (name,) in rows if str(name or '').strip()})
+
+
 def bootstrap_first_tool_admin(
     session,
     *,

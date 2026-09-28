@@ -10,7 +10,7 @@ const ADMIN_TABS = [
     ['performance', 'Performance'],
 ];
 
-export default function AdminSettingsTabs({ activeTab, onSelect, onKeyDown, performanceAvailable = false }) {
+export default function AdminSettingsTabs({ activeTab, onSelect, onKeyDown, performanceAvailable = false, accessAvailable = true }) {
     return (
         <div
             className="group-modal-tabs epm-settings-tabs"
@@ -18,7 +18,7 @@ export default function AdminSettingsTabs({ activeTab, onSelect, onKeyDown, perf
             aria-label="Admin settings sections"
             onKeyDown={onKeyDown}
         >
-            {ADMIN_TABS.filter(([id]) => id !== 'performance' || performanceAvailable).map(([id, label]) => (
+            {ADMIN_TABS.filter(([id]) => (id !== 'performance' || performanceAvailable) && (id !== 'access' || accessAvailable)).map(([id, label]) => (
                 <button
                     className={`group-modal-tab ${activeTab === id ? 'active' : ''}`}
                     onClick={() => onSelect(id)}

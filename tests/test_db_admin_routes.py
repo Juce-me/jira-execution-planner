@@ -185,23 +185,25 @@ class DbAdminRoutesTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.get_json()['error'], 'admin_required')
 
-    def test_non_admin_can_list_and_grant_admin_when_admin_only_disabled(self):
+    def test_non_admin_cannot_list_or_grant_admin_when_admin_only_disabled(self):
         self._install_session(account_id='normal-account', connection_id=self.normal_connection_id)
 
         with self._env_patch(), \
              patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
              patch.object(jira_server, 'SETTINGS_ADMIN_ONLY', False):
             list_response = self.client.get('/api/admin/users')
+            detail_response = self.client.get(f'/api/admin/users/{self.normal_user_id}')
             grant_response = self.client.post(
                 f'/api/admin/users/{self.normal_user_id}/admin-grant',
                 headers=self._csrf_headers(),
             )
 
-        self.assertEqual(list_response.status_code, 200, list_response.get_data(as_text=True))
-        self.assertEqual(grant_response.status_code, 200, grant_response.get_data(as_text=True))
-        granted_user = grant_response.get_json()['user']
-        self.assertEqual(granted_user['externalSubject'], 'normal-account')
-        self.assertEqual(granted_user['accountType'], 'admin')
+        for response in (list_response, detail_response, grant_response):
+            self.assertEqual(response.status_code, 403, response.get_data(as_text=True))
+            self.assertEqual(response.get_json()['error'], 'admin_required')
+        with self.factory() as session:
+            user = session.get(models.User, self.normal_user_id)
+            self.assertEqual(user.account_type, 'user')
 
     def test_admin_audit_events_are_redacted(self):
         self._install_session(account_id='admin-account', connection_id=self.admin_connection_id)

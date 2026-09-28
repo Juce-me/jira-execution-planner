@@ -290,6 +290,7 @@ class ConfigJsonfileFallbackTests(unittest.TestCase):
         shared_config = db_config.pop('sharedConfig')
         shared_revision = db_config.pop('sharedConfigRevision')
         sprint_catalog_source = db_config.pop('sprintCatalogSource')
+        self.assertEqual(db_config.pop('adminSettingsMissing'), [])
         before_config = dict(before['/api/config'])
         self.assertFalse(before_config.pop('boardAllWorkAvailable'))
         self.assertTrue(db_config.pop('boardAllWorkAvailable'))

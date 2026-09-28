@@ -112,6 +112,42 @@ class SharedCapacityConfigTests(unittest.TestCase):
         self.assertEqual(payload['board'], {'boardId': '42', 'boardName': 'Planning'})
         self.assertEqual(payload['capacity']['project'], 'CAP')
 
+    def _legacy_payload(self):
+        return {
+            'version': 1,
+            'projects': {'selected': [{'key': 'PROD', 'type': 'product'}]},
+            'board': {'boardId': '42', 'boardName': 'Planning'},
+        }
+
+    def _stored_row(self):
+        factory = db_engine.session_factory(self.database_url)
+        with factory() as session:
+            row = session.query(models.WorkspaceDashboardConfig).one()
+            return dict(row.payload), row.payload_version
+
+    def test_first_save_seeds_row_from_matching_legacy_workspace_config(self):
+        save_shared_capacity_config(
+            self.one, {'project': 'CAP', 'fieldId': 'customfield_10001'}, 0,
+            field_catalog=self.fields, database_url=self.database_url,
+            fallback_loader=self._legacy_payload, legacy_site_url='https://one.example.test/',
+        )
+        payload, payload_version = self._stored_row()
+        self.assertEqual(payload['board'], {'boardId': '42', 'boardName': 'Planning'})
+        self.assertEqual(payload['projects'], {'selected': [{'key': 'PROD', 'type': 'product'}]})
+        self.assertEqual(payload['capacity']['project'], 'CAP')
+        self.assertEqual(payload['capacity']['fieldId'], 'customfield_10001')
+        self.assertEqual(payload_version, 1)
+
+    def test_first_save_without_matching_legacy_config_stores_only_capacity(self):
+        save_shared_capacity_config(
+            self.one, {'project': 'CAP', 'fieldId': 'customfield_10001'}, 0,
+            field_catalog=self.fields, database_url=self.database_url,
+            fallback_loader=self._legacy_payload, legacy_site_url='https://two.example.test',
+        )
+        payload, _ = self._stored_row()
+        self.assertEqual(set(payload), {'capacity'})
+        self.assertEqual(payload['capacity']['project'], 'CAP')
+
     def test_no_private_remnant_creates_blank_active_workspace_row(self):
         config = load_shared_capacity_config(self.one, None, self.database_url)
         self.assertEqual(config['project'], '')

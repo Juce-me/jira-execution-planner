@@ -464,6 +464,22 @@ test('Board person controls neither open nor drag the card wrapper', async ({ pa
     await expect(page.locator('.epic-panel')).toHaveCount(0);
 });
 
+test('a Board person editor closes when its card scrolls out of the pane', async ({ page }) => {
+    await openBoard(page);
+    // Short enough that the column overflows its pane, tall enough to stay in pane mode.
+    await page.setViewportSize({ width: 1440, height: 620 });
+    await page.waitForSelector('.eng-board.is-pane-mode');
+    const card = col(page, 'col-1a2b3c4d').locator('.ecard[data-epic-key="PLAT-1"]');
+    await expect.poll(() => card.evaluate((node) => {
+        const body = node.closest('.col-body');
+        return body.scrollHeight > body.clientHeight;
+    })).toBe(true);
+    await card.getByRole('combobox', { name: 'Assignee: Alice Adams' }).click();
+    await expect(page.locator('.issue-person-editor-menu')).toBeVisible();
+    await card.evaluate((node) => { node.closest('.col-body').scrollTop = 10000; });
+    await expect(page.locator('.issue-person-editor-menu')).toHaveCount(0);
+});
+
 test('Board field success propagates from card to the open panel without a task-list refetch', async ({ page }) => {
     const fieldCalls = [];
     await openBoard(page, { fieldCalls });

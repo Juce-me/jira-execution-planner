@@ -325,8 +325,11 @@ test('missing Story Points alert reveals the dashboard story and activates its i
     const story = page.locator('.task-item[data-issue-key="PROD-1"]');
     const alertLink = page.locator('#eng-alert-missing .alert-story-link').filter({ hasText: 'PROD-1' });
     await expect(alertLink).toBeVisible();
-    await page.getByRole('textbox', { name: 'Search tickets...' }).fill('hide the story');
-    await expect(story).toHaveCount(0);
+    // Search now filters alerts too (#192, adccdae7), so it cannot hide the Story while keeping its alert.
+    await page.getByRole('textbox', { name: 'Search tickets...' }).fill('PROD-1');
+    await expect(alertLink).toBeVisible();
+    await expect(story).toBeVisible();
+    await expect(story).not.toHaveClass(/task-highlight/);
 
     await alertLink.click();
     await expect(story).toBeVisible();
@@ -345,9 +348,12 @@ test('Catch Up waits for sprint metadata and sends its name with alert enrichmen
     await seedMode(page, 'catchUp');
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
 
-    await waitForCallCount(calls, call => call.pathname === '/api/tasks-with-team-name' && !call.params.purpose, 2);
+    // ENG Jira work waits for a validated Sprint catalog (#196, 11c18401), so no tasks or alerts load before it.
+    await expect.poll(() => calls.some(call => call.pathname === '/api/sprints')).toBe(true);
+    expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name')).toEqual([]);
     expect(calls.filter(isAlertCall)).toEqual([]);
     sprintGate.resolve();
+    await waitForCallCount(calls, call => call.pathname === '/api/tasks-with-team-name' && !call.params.purpose, 2);
     await waitForCallCount(calls, isAlertCall, 5);
 
     const enrichmentCalls = calls.filter(call => call.pathname === '/api/tasks-with-team-name' && call.params.purpose === 'alerts');

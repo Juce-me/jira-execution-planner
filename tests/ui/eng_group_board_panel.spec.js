@@ -529,9 +529,14 @@ test('description tables keep semantic columns and scroll only the selected tabl
     expect(headingStyle.fontSize).toBeGreaterThanOrEqual(14);
     await page.screenshot({ path: `${screenshotDir}/panel-table-desktop.png` });
 
+    await body.locator('.adf-table-scroll').first().evaluate((node) => { window.__panelDescriptionTable = node; });
     await page.setViewportSize({ width: 375, height: 812 });
     const wrappers = body.locator('.adf-table-scroll');
     await expect(wrappers).toHaveCount(2);
+    // The narrow viewport re-renders the Board (its pane-mode fallback strip); that render must not
+    // rebuild the injected description, or a scrolled/focused table resets under the reader.
+    await expect(page.locator('.eng-board .board-data-state')).toBeVisible();
+    expect(await page.evaluate(() => window.__panelDescriptionTable.isConnected)).toBe(true);
     await expect.poll(
         () => wrappers.first().evaluate((node) => node.scrollWidth - node.clientWidth),
         { message: 'the selected table owns real horizontal overflow after responsive layout settles' },

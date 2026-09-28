@@ -928,6 +928,13 @@ async function installApiMocks(page, calls, options = {}) {
                 meta: { updatedAt: '2026-09-02T09:00:00Z', sprintId: String(selectedSprintId), source: 'sprint' },
             });
             if (url.pathname === '/api/fields') return json({ fields: [] });
+            // Settings open validates Sprint Team membership via GET /api/teams since #196 (11c18401).
+            if (url.pathname === '/api/teams') return json({
+                teams: [
+                    { id: 'team-alpha', name: 'Alpha Team' },
+                    { id: 'team-beta', name: 'Beta Team' },
+                ],
+            });
         }
         if (url.pathname === '/api/board-config') return json({ boardId: '5494', boardName: 'Synthetic Board', source: 'test' });
         if (url.pathname === '/api/stats/priority-weights-config') return json({ weights: [], source: 'test' });

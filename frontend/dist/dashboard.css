@@ -4680,6 +4680,69 @@ button.toggle.applied-filter.active {
   position: fixed;
   width: var(--board-chrome-width);
 }
+.eng-board.is-pane-mode {
+  margin-bottom: calc(-1 * var(--board-pane-trailing, 0px));
+}
+.eng-board.is-pane-mode .board {
+  height: calc(100dvh - var(--board-pane-top, 0px));
+  align-items: stretch;
+  padding-bottom: 0;
+}
+.eng-board.is-pane-mode .col {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.eng-board.is-pane-mode .col.is-open,
+.eng-board.is-pane-mode .col.is-focused {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  padding-top: 0.45rem;
+}
+.eng-board.is-pane-mode .col.is-open .col-head,
+.eng-board.is-pane-mode .col.is-focused .col-head {
+  flex: none;
+  width: auto;
+  margin-inline: 0.45rem;
+}
+.eng-board.is-pane-mode .col-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  padding: 4px 0.45rem 0.45rem;
+}
+.eng-board.is-pane-mode .col:not(.is-open):not(.is-focused) .col-strip {
+  flex: none;
+}
+.eng-board.is-pane-mode .board-say.has-message {
+  position: absolute;
+  left: 50%;
+  bottom: 0.75rem;
+  transform: translateX(-50%);
+  z-index: 6;
+  margin: 0;
+  padding: 0.35rem 0.7rem;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.eng-board.is-pane-mode {
+  position: relative;
+}
+.eng-board.is-pane-mode .col.is-breach.is-open,
+.eng-board.is-pane-mode .col.is-breach.is-focused {
+  box-shadow: 0 0 0 1px var(--warn), 0 0 12px rgba(207, 19, 34, 0.34);
+  animation: board-breach-glow 2.2s ease-in-out infinite;
+}
+.eng-board.is-pane-mode .col.is-breach .col-body {
+  border-radius: 0;
+  box-shadow: none;
+  animation: none;
+}
 .eng-board .board-hint {
   position: absolute;
   top: 0;
@@ -5084,6 +5147,10 @@ button.toggle.applied-filter.active {
   }
   .eng-board .col.is-breach .col-strip,
   .eng-board .col.is-breach .col-body {
+    animation: none;
+  }
+  .eng-board.is-pane-mode .col.is-breach.is-open,
+  .eng-board.is-pane-mode .col.is-breach.is-focused {
     animation: none;
   }
 }

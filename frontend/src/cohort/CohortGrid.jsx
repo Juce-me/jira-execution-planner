@@ -22,10 +22,6 @@ function CohortGrid({ model, selectedRowKey, onSelectRow }) {
     const [scale, setScale] = React.useState(1);
     const [scaledHeight, setScaledHeight] = React.useState(null);
 
-    if (!model || !Array.isArray(model.rows) || model.rows.length === 0) {
-        return <div className="cohort-empty">No cohort records for current filters.</div>;
-    }
-
     const handleCellHover = (event, row, cell, column) => {
         if (!cell || !cell.count) {
             setTooltip(null);
@@ -72,6 +68,10 @@ function CohortGrid({ model, selectedRowKey, onSelectRow }) {
             window.removeEventListener('resize', measure);
         };
     }, [model]);
+
+    if (!model || !Array.isArray(model.rows) || model.rows.length === 0) {
+        return <div className="cohort-empty">No cohort records for current filters.</div>;
+    }
 
     const tooltipStatusCounts = tooltip?.cell?.statusCounts || {};
     const resolvedSegments = [

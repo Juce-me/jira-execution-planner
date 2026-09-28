@@ -189,3 +189,6 @@ synthetic `db:5432` leaks into migration validation; the scoped diagnostic bypas
 and completed with four failures, three from configured PostgreSQL leaking into excluded-capacity
 API tests and one caused by the diagnostic patch itself. The plan remains the active `EXEC-*`
 record pending acceptance or merge.
+
+Applies only below the Board pane-mode gate (narrow, short, or touch viewports); desktop behavior
+is superseded by [2026-09-24-executed-board-column-scroll-panes.md](2026-09-24-executed-board-column-scroll-panes.md).

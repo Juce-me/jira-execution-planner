@@ -339,7 +339,8 @@ for (const viewport of viewports) {
             await mockSettings(page, { projectError: true });
             await openEpmSettings(page);
             await page.getByRole('tab', { name: 'Projects' }).click();
-            await expect(page.getByRole('button', { name: 'Retry' })).toBeVisible();
+            // The ENG Sprint catalog Retry behind the modal also exists since #196 (11c18401); scope to the dialog.
+            await expect(page.getByRole('dialog').getByRole('button', { name: 'Retry' })).toBeVisible();
             await page.screenshot({ path: `/tmp/epm-settings-qa/${viewport.name}-projects-error.png`, fullPage: true });
         });
     });

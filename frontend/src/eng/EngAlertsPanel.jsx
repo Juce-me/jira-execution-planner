@@ -17,6 +17,7 @@ export default function EngAlertsPanel({
     selectedView,
     alertItemCount,
     alertCounts = {},
+    alertScopeTooLarge = false,
     showAlertsPanel,
     setShowAlertsPanel,
     collapsed,
@@ -102,8 +103,18 @@ export default function EngAlertsPanel({
         focusAlertSection(item.sectionId);
     }, [focusAlertSection, setShowAlertsPanel]);
 
-    if (selectedView !== 'eng' || alertItemCount <= 0) {
+    if (selectedView !== 'eng' || (alertItemCount <= 0 && !alertScopeTooLarge)) {
         return null;
+    }
+
+    const alertScopeNotice = alertScopeTooLarge ? (
+        <div className="story-readiness-notice" role="status">
+            <span>This Department is too large for Epic alerts: more than 2,000 open Epics match its Teams and labels in Product or Tech. Epic alerts are hidden; Story alerts are still shown. Narrow the Department's Teams or labels.</span>
+        </div>
+    ) : null;
+
+    if (alertItemCount <= 0) {
+        return <div className="alerts-panel-shell">{alertScopeNotice}</div>;
     }
 
     const alertSummaryActions = {
@@ -125,6 +136,7 @@ export default function EngAlertsPanel({
 
     return (
         <div className="alerts-panel-shell">
+            {alertScopeNotice}
             <div className="alerts-panel-toolbar">
                 <button
                     className="alerts-panel-toggle"

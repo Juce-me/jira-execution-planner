@@ -355,7 +355,7 @@ test('Export JSON downloads only the selected saved group instead of the unsaved
     expect(download.suggestedFilename()).toBe('group-southridge.json');
     const exported = JSON.parse(fs.readFileSync(await download.path(), 'utf8'));
     expect(exported).toEqual({
-        version: 1,
+        version: 2,
         group: {
             id: 'southridge',
             name: 'Southridge',
@@ -404,8 +404,9 @@ test('Import JSON updates only a newly created selected group and preserves sibl
     await expect(dialog).toHaveCount(0);
 
     const save = calls.find(call => call.method === 'POST' && call.pathname === '/api/groups-config');
+    // A version-1 scalar Team label in the imported JSON is saved as a version-2 alias array.
     expect(save.body).toEqual({
-        version: 1,
+        version: 2,
         baseRevision: 2,
         groups: [
             {
@@ -435,7 +436,7 @@ test('Import JSON updates only a newly created selected group and preserves sibl
                 missingInfoComponents: ['Needs refinement'],
                 excludedCapacityEpics: ['DEMO-1'],
                 adHocCapacityEpics: ['DEMO-2'],
-                teamLabels: { 'team-c': 'team-c-label' },
+                teamLabels: { 'team-c': ['team-c-label'] },
             },
         ],
         defaultGroupId: 'northwind',

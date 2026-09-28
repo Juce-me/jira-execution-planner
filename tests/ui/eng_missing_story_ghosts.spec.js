@@ -58,12 +58,12 @@ function readinessEpic(key, {
     };
 }
 
-function snapshot(epics, sprintState = 'active', selectedId = sprintId, selectedName = sprintName) {
+function snapshot(epics, sprintState = 'active', selectedId = sprintId, selectedName = sprintName, groupId = 'grp-default') {
     return {
         schemaVersion: 1,
         complete: true,
         scope: {
-            groupId: 'grp-default',
+            groupId,
             sprintId: String(selectedId),
             sprintName: selectedName,
             sprintState,
@@ -88,6 +88,10 @@ async function installFixture(page, {
     readinessGate = null,
     groupByInitiativeChoice = null,
     showAlertsPanel = true,
+    groupTeamLabels = { 'team-alpha': 'Alpha Team', 'team-beta': 'Beta Team' },
+    extraGroups = [],
+    alertScopeTooLargeGroupIds = [],
+    alertGateGroupId = null,
 } = {}) {
     const calls = [];
     await installDashboardShell(page);
@@ -136,8 +140,8 @@ async function installFixture(page, {
                 id: 'grp-default',
                 name: 'Default',
                 teamIds: ['team-alpha', 'team-beta'],
-                teamLabels: { 'team-alpha': 'Alpha Team', 'team-beta': 'Beta Team' },
-            }],
+                teamLabels: groupTeamLabels,
+            }, ...extraGroups],
             defaultGroupId: 'grp-default',
             source: 'test',
         });
@@ -150,7 +154,15 @@ async function installFixture(page, {
             const isSecondSprint = secondSprint && url.searchParams.get('sprint') === String(secondSprint.id);
             if (!purpose && primaryGates[project]) await primaryGates[project].promise;
             if (purpose) {
-                if (alertGate && !isSecondSprint) await alertGate.promise;
+                const groupId = url.searchParams.get('groupId');
+                if (alertGate && !isSecondSprint && (!alertGateGroupId || groupId === alertGateGroupId)) await alertGate.promise;
+                if (purpose === 'alerts' && project === 'product' && alertScopeTooLargeGroupIds.includes(groupId)) {
+                    return route.fulfill({
+                        status: 422,
+                        contentType: 'application/json',
+                        body: JSON.stringify({ error: 'alert_scope_too_large', message: 'This Department is too large for Epic alerts.' }),
+                    });
+                }
                 return json({ issues: [], epics: {}, epicsInScope: project === 'product' && !isSecondSprint ? alertPurposeEpics : [], names: {} });
             }
             if (isSecondSprint) return json({ issues: [], epics: {}, epicsInScope: [], names: {} });
@@ -164,7 +176,7 @@ async function installFixture(page, {
             const isSecondSprint = secondSprint && url.searchParams.get('sprint') === String(secondSprint.id);
             return json(isSecondSprint
                 ? snapshot([], secondSprint.state, secondSprint.id, secondSprint.name)
-                : snapshot(readinessEpics, sprintState));
+                : snapshot(readinessEpics, sprintState, sprintId, sprintName, url.searchParams.get('groupId') || 'grp-default'));
         }
         if (url.pathname === '/api/missing-info') return json({ issues: [], epics: [], count: 0, epicCount: 0 });
         if (url.pathname === '/api/backlog-epics') return json({ epics: url.searchParams.get('project') === 'product' && (!secondSprint || url.searchParams.get('sprint') !== String(secondSprint.id)) ? backlogEpics : [] });
@@ -212,7 +224,9 @@ async function expectOnlyAlertCategory(page, key, sectionId) {
     }
 }
 
-for (const [description, labels, expectedSection, team] of [
+const aliasTeamLabels = { 'team-alpha': 'Alpha Team', 'team-beta': ['label_team_a', 'label_team_a_old'] };
+
+for (const [description, labels, expectedSection, team, groupTeamLabels] of [
     ['lowercase candidate', [`${sprintName}_candidate`, 'Beta Team'], 'eng-alert-needs-stories', {}],
     ['capitalized candidate', [`${sprintName}_Candidate`, 'Beta Team'], 'eng-alert-needs-stories', {}],
     ['plain selected sprint label', [sprintName, 'Beta Team'], 'eng-alert-needs-stories', {}],
@@ -220,6 +234,10 @@ for (const [description, labels, expectedSection, team] of [
     ['candidate with missing Jira Team', [`${sprintName}_candidate`, 'Beta Team'], 'eng-alert-missing-team', { teamId: '', teamName: '' }],
     ['candidate with missing mapped Team label', [`${sprintName}_candidate`], 'eng-alert-missing-labels', {}],
     ['near-match candidate suffix', [`${sprintName}_candidate_extra`, 'Beta Team'], 'eng-alert-backlog', {}],
+    ['old Team alias only', [`${sprintName}_candidate`, 'label_team_a_old'], 'eng-alert-needs-stories', {}, aliasTeamLabels],
+    ['new Team alias only', [sprintName, 'label_team_a'], 'eng-alert-needs-stories', {}, aliasTeamLabels],
+    ['both Team aliases', [`${sprintName}_candidate`, 'label_team_a', 'label_team_a_old'], 'eng-alert-needs-stories', {}, aliasTeamLabels],
+    ['neither Team alias', [`${sprintName}_candidate`, 'label_team_b'], 'eng-alert-missing-labels', {}, aliasTeamLabels],
 ]) {
     test(`future alert classifies ${description} once across alert and remote Backlog sources`, async ({ page }) => {
         const key = 'CAND-EPIC';
@@ -229,6 +247,7 @@ for (const [description, labels, expectedSection, team] of [
             alertPurposeEpics: [epic],
             backlogEpics: [epic],
             readinessEpics: [readinessEpic(key)],
+            ...(groupTeamLabels ? { groupTeamLabels } : {}),
         });
         await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
         await expect.poll(() => calls.filter(call => call.pathname === '/api/tasks-with-team-name' && call.params.purpose === 'alerts').length).toBe(2);
@@ -624,4 +643,75 @@ test('Product-only filter removes Tech Stories Required alerts', async ({ page }
     await expect(section.locator('.alert-story')).toHaveCount(1);
     await expect(section).toContainText('PROD-ZERO');
     await expect(section).not.toContainText('TECH-ZERO');
+});
+
+const alertScopeNoticeText = "This Department is too large for Epic alerts: more than 2,000 open Epics match its Teams and labels in Product or Tech. Epic alerts are hidden; Story alerts are still shown. Narrow the Department's Teams or labels.";
+const secondGroup = {
+    id: 'grp-second',
+    name: 'Second',
+    teamIds: ['team-alpha', 'team-beta'],
+    teamLabels: { 'team-alpha': 'Alpha Team', 'team-beta': 'Beta Team' },
+};
+
+function alertScopeNotice(page) {
+    return page.locator('.story-readiness-notice[role="status"]', { hasText: 'This Department is too large for Epic alerts' });
+}
+
+async function switchDepartment(page, name) {
+    await page.locator('.view-selector .group-dropdown-toggle').click();
+    await page.locator('.view-selector .group-dropdown-option', { hasText: name }).click();
+}
+
+test('oversized alert scope shows one notice, hides stale in-scope Epic alerts, and keeps separate sources', async ({ page }) => {
+    const staleEpic = planningEpic('STALE-EPIC', [`${sprintName}_candidate`]);
+    const calls = await installFixture(page, {
+        sprintState: 'future',
+        productIssues: [story('MIX-1', { status: 'Postponed', sprintState: 'future' })],
+        productEpics: { 'STALE-EPIC': staleEpic },
+        backlogEpics: [planningEpic('REMOTE-BACKLOG', [`${sprintName}_candidate_extra`, 'Beta Team'])],
+        readinessEpics: [readinessEpic('READY-EPIC')],
+        extraGroups: [secondGroup],
+        alertScopeTooLargeGroupIds: ['grp-default'],
+    });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/tasks-with-team-name' && call.params.purpose === 'alerts').length).toBe(2);
+
+    await expect(alertScopeNotice(page)).toHaveCount(1);
+    await expect(alertScopeNotice(page)).toHaveText(alertScopeNoticeText);
+    await expect(page.locator('.story-readiness-notice')).toHaveCount(1);
+    await expect(alertScopeNotice(page).locator('button, a')).toHaveCount(0);
+    for (const section of ['eng-alert-backlog', 'eng-alert-missing-team', 'eng-alert-missing-labels', 'eng-alert-needs-stories', 'eng-alert-empty', 'eng-alert-followup']) {
+        await expect(page.locator(`#${section} .alert-story`).filter({ hasText: 'STALE-EPIC' })).toHaveCount(0);
+    }
+    await expect(page.locator('#eng-alert-backlog .alert-story').filter({ hasText: 'REMOTE-BACKLOG' })).toHaveCount(1);
+    await expect(page.locator('#eng-alert-needs-stories .alert-story').filter({ hasText: 'READY-EPIC' })).toHaveCount(1);
+    await expect(page.locator('#eng-alert-followup .alert-story').filter({ hasText: 'MIX-1' })).toHaveCount(1);
+    // Capture from the top of the page so the sticky header does not cover the notice.
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.screenshot({ path: 'test-results/alert-scope-too-large-notice.png', animations: 'disabled' });
+
+    await switchDepartment(page, 'Second');
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/tasks-with-team-name' && call.params.purpose === 'alerts' && call.params.groupId === 'grp-second').length).toBeGreaterThanOrEqual(2);
+    await page.waitForLoadState('networkidle');
+    await expect(alertScopeNotice(page)).toHaveCount(0);
+});
+
+test('delayed oversized alert response from the previous Department never shows in the new one', async ({ page }) => {
+    const alertGate = deferred();
+    const calls = await installFixture(page, {
+        sprintState: 'future',
+        readinessEpics: [readinessEpic('READY-EPIC')],
+        extraGroups: [secondGroup],
+        alertScopeTooLargeGroupIds: ['grp-default'],
+        alertGate,
+        alertGateGroupId: 'grp-default',
+    });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/tasks-with-team-name' && call.params.purpose === 'alerts' && call.params.groupId === 'grp-default').length).toBe(2);
+    await switchDepartment(page, 'Second');
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/tasks-with-team-name' && call.params.purpose === 'alerts' && call.params.groupId === 'grp-second').length).toBeGreaterThanOrEqual(2);
+    alertGate.resolve();
+    await page.waitForLoadState('networkidle');
+    await expect(page.locator('#eng-alert-needs-stories .alert-story').filter({ hasText: 'READY-EPIC' })).toHaveCount(1);
+    await expect(alertScopeNotice(page)).toHaveCount(0);
 });

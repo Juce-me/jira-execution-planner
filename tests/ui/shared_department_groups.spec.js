@@ -330,6 +330,8 @@ async function mockFirstRunDashboard(page, options = {}) {
                 const body = requestBody(request) || {};
                 latestGroupsConfig = {
                     ...latestGroupsConfig,
+                    // The backend validator always emits the current group payload version.
+                    version: 2,
                     groups: body.groups || groupsConfig.groups,
                     defaultGroupId: body.defaultGroupId || groupsConfig.defaultGroupId,
                     configRevision: Number(body.baseRevision || latestGroupsConfig.configRevision || 0) + 1,
@@ -450,16 +452,23 @@ async function mockFirstRunDashboard(page, options = {}) {
         if (url.pathname === '/api/missing-info') {
             return json({ issues: [], epics: [] });
         }
+        if (url.pathname === '/api/jira/labels') {
+            const query = String(url.searchParams.get('query') || '').toLowerCase();
+            return json({ labels: (options.jiraLabels || []).filter(label => label.toLowerCase().startsWith(query)) });
+        }
         if (url.pathname === '/api/epics/search') {
             return json({ epics: options.epicSearchResults || [{ key: 'PROD-ADHOC', summary: 'Synthetic ad hoc' }] });
         }
         if (url.pathname === '/api/team-catalog') {
             const teamIds = ['team-platform', 'team-growth', 'team-new', ...Array.from({ length: 12 }, (_, index) => `team-${index + 1}`)];
             return json({
-                catalog: Object.fromEntries(teamIds.map(teamId => [teamId, {
-                    id: teamId,
-                    name: teamId === 'team-new' ? 'New Team' : teamId,
-                }])),
+                catalog: {
+                    ...Object.fromEntries(teamIds.map(teamId => [teamId, {
+                        id: teamId,
+                        name: teamId === 'team-new' ? 'New Team' : teamId,
+                    }])),
+                    ...(options.extraCatalogTeams || {}),
+                },
                 meta: { updatedAt: '2026-09-02T09:00:00Z', sprintId: '42', source: 'sprint' },
             });
         }
@@ -3138,3 +3147,381 @@ test('department group editor blocks save when an epic is both excluded and Ad H
     await page.waitForTimeout(300);
     expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(0);
 });
+
+const aliasScreenshotDir = path.join(__dirname, '..', '..', 'test-results', 'multiple-group-labels');
+const aliasCatalogTeams = {
+    'team-a': { id: 'team-a', name: 'Team A' },
+    'team-b': { id: 'team-b', name: 'Team B' },
+};
+const aliasJiraLabels = ['label_team_a', 'label_team_a_old', 'label_team_a_legacy', 'label_team_a_extra', 'label_team_b'];
+
+function aliasGroupConfig(teamLabels = {}, overrides = {}) {
+    return {
+        version: 1,
+        groups: [{
+            id: 'platform',
+            name: 'Platform',
+            teamIds: ['team-a', 'team-b'],
+            missingInfoComponents: [],
+            excludedCapacityEpics: [],
+            adHocCapacityEpics: [],
+            teamLabels,
+        }, {
+            id: 'growth',
+            name: 'Growth',
+            teamIds: ['team-b'],
+            missingInfoComponents: [],
+            excludedCapacityEpics: [],
+            adHocCapacityEpics: [],
+            teamLabels: { 'team-b': ['label_team_b'] },
+        }],
+        defaultGroupId: 'platform',
+        configRevision: 2,
+        source: 'workspace_db',
+        ...overrides,
+    };
+}
+
+function aliasGroupPreferences() {
+    return defaultGroupPreferences({
+        customized: true,
+        preferenceExists: true,
+        onboardingRequired: false,
+        visibleGroupIds: ['platform', 'growth'],
+        activeGroupId: 'platform',
+        effectiveVisibleGroupIds: ['platform', 'growth'],
+    });
+}
+
+async function openAliasLabelsPane(page, options = {}) {
+    const calls = await mockFirstRunDashboard(page, {
+        groupsConfig: aliasGroupConfig(options.teamLabels),
+        preferences: aliasGroupPreferences(),
+        extraCatalogTeams: aliasCatalogTeams,
+        jiraLabels: aliasJiraLabels,
+        ...(options.mock || {}),
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.locator('.group-modal');
+    await dialog.getByRole('tab', { name: 'Group labels' }).click();
+    const pane = dialog.locator('.group-editor-pane');
+    await expect(pane.locator('.group-pane-title', { hasText: 'Team labels' })).toBeVisible();
+    await expect(pane.locator('.team-selector-label', { hasText: 'Team A' })).toBeVisible();
+    return { calls, dialog, pane };
+}
+
+async function captureAliasPane(page, pane, name) {
+    fs.mkdirSync(aliasScreenshotDir, { recursive: true });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.addStyleTag({
+        content: '*, *::before, *::after { animation: none !important; transition: none !important; caret-color: transparent !important; }',
+    });
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const screenshotPath = path.join(aliasScreenshotDir, name);
+    await pane.screenshot({ path: screenshotPath, animations: 'disabled' });
+    expect(fs.existsSync(screenshotPath), `${name} was not produced`).toBe(true);
+}
+
+function aliasRow(pane, teamName) {
+    return pane.locator('.team-label-row', {
+        has: pane.page().locator('.team-selector-label', { hasText: teamName }),
+    });
+}
+
+async function aliasChipTexts(row) {
+    return row.locator('.selected-team-chip .team-name').allTextContents();
+}
+
+async function addAliasBySearch(row, teamName, query, label) {
+    const add = row.getByRole('button', { name: `Add label for ${teamName}` });
+    if (await add.count()) await add.click();
+    const input = row.getByRole('textbox', { name: `Search Jira labels for ${teamName}` });
+    await expect(input).toBeFocused();
+    await input.fill(query);
+    const result = row.locator('.team-search-result-item', { hasText: new RegExp(`^${label}$`) });
+    await expect(result).toBeVisible();
+    await result.click();
+}
+
+async function expectAliasRowGeometry(row) {
+    const targets = [
+        row.locator('.selected-team-chip .team-name'),
+        row.locator('.team-label-add'),
+        row.locator('.team-label-count'),
+    ];
+    for (const target of targets) {
+        const count = await target.count();
+        for (let index = 0; index < count; index += 1) {
+            await expectTextBearingGeometry(target.nth(index), row);
+        }
+    }
+    const chips = row.locator('.selected-team-chip');
+    for (let index = 0; index < await chips.count(); index += 1) {
+        await expectTextBearingGeometry(chips.nth(index), row);
+    }
+}
+
+function groupsPostBodies(calls) {
+    return calls
+        .filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')
+        .map(call => call.body);
+}
+
+test('Team labels editor adds, filters, caps, and removes up to three aliases', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const { calls, dialog, pane } = await openAliasLabelsPane(page, { teamLabels: { 'team-a': 'label_team_a' } });
+    const teamA = aliasRow(pane, 'Team A');
+    const teamB = aliasRow(pane, 'Team B');
+
+    await expect(pane.locator('.group-pane-subtitle')).toHaveText(
+        'Map up to three Jira Epic labels per Team; any of them matches the Team. Use labels only this Team applies.'
+    );
+    // Legacy scalar renders as one chip, search stays hidden behind Add label, and nothing is dirty.
+    expect(await aliasChipTexts(teamA)).toEqual(['label_team_a']);
+    await expect(teamA.getByRole('textbox')).toHaveCount(0);
+    await expect(teamA.getByRole('button', { name: 'Add label for Team A' })).toBeVisible();
+    await expect(dialog.locator('.group-modal-dirty')).toHaveCount(0);
+    // Zero aliases keep the existing search as the default affordance.
+    await expect(teamB.getByRole('textbox', { name: 'Search Jira labels for Team B' })).toBeVisible();
+    await expect(teamB.getByRole('button', { name: 'Add label for Team B' })).toHaveCount(0);
+
+    // Already-selected aliases are excluded from the Jira results client-side.
+    await teamA.getByRole('button', { name: 'Add label for Team A' }).click();
+    const input = teamA.getByRole('textbox', { name: 'Search Jira labels for Team A' });
+    await expect(input).toBeFocused();
+    await input.fill('label_team_a');
+    await expect(teamA.locator('.team-search-result-item')).toHaveText(['label_team_a_old', 'label_team_a_legacy', 'label_team_a_extra']);
+    // Escape closes the results first, then the add search, returning focus to Add label.
+    await input.press('Escape');
+    await expect(teamA.locator('.team-search-results')).toHaveCount(0);
+    await input.press('Escape');
+    await expect(teamA.getByRole('textbox')).toHaveCount(0);
+    await expect(teamA.getByRole('button', { name: 'Add label for Team A' })).toBeFocused();
+
+    await addAliasBySearch(teamA, 'Team A', 'label_team_a_o', 'label_team_a_old');
+    expect(await aliasChipTexts(teamA)).toEqual(['label_team_a', 'label_team_a_old']);
+    await expect(teamA.getByRole('textbox')).toHaveCount(0);
+    await expect(teamA.getByRole('button', { name: 'Add label for Team A' })).toBeFocused();
+    await expect(dialog.locator('.group-modal-dirty')).toContainText('Unsaved changes');
+    await expectAliasRowGeometry(teamA);
+
+    // Keyboard selection adds the third alias; the add action is replaced by the count.
+    await teamA.getByRole('button', { name: 'Add label for Team A' }).press('Enter');
+    await expect(input).toBeFocused();
+    await input.fill('label_team_a');
+    await expect(teamA.locator('.team-search-result-item')).toHaveText(['label_team_a_legacy', 'label_team_a_extra']);
+    await input.press('ArrowDown');
+    await input.press('Enter');
+    expect(await aliasChipTexts(teamA)).toEqual(['label_team_a', 'label_team_a_old', 'label_team_a_extra']);
+    await expect(teamA.getByText('3 of 3 labels', { exact: true })).toBeVisible();
+    await expect(teamA.getByRole('button', { name: 'Add label for Team A' })).toHaveCount(0);
+    await expect(teamA.getByRole('textbox')).toHaveCount(0);
+    await expectAliasRowGeometry(teamA);
+
+    // Remove only the named alias; Add label returns below the limit.
+    await teamA.getByRole('button', { name: 'Remove label_team_a from Team A' }).click();
+    expect(await aliasChipTexts(teamA)).toEqual(['label_team_a_old', 'label_team_a_extra']);
+    await expect(teamA.getByText('3 of 3 labels', { exact: true })).toHaveCount(0);
+    await expect(teamA.getByRole('button', { name: 'Add label for Team A' })).toBeVisible();
+
+    // Zero-alias Team: selecting from the default search adds its first alias.
+    await teamB.getByRole('textbox', { name: 'Search Jira labels for Team B' }).fill('label_team_b');
+    await teamB.locator('.team-search-result-item', { hasText: 'label_team_b' }).click();
+    expect(await aliasChipTexts(teamB)).toEqual(['label_team_b']);
+
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    await expect.poll(() => groupsPostBodies(calls).length).toBe(1);
+    const [body] = groupsPostBodies(calls);
+    expect(body.version).toBe(2);
+    expect(body.groups.find(group => group.id === 'platform').teamLabels).toEqual({
+        'team-a': ['label_team_a_old', 'label_team_a_extra'],
+        'team-b': ['label_team_b'],
+    });
+    expect(body.groups.find(group => group.id === 'growth').teamLabels).toEqual({ 'team-b': ['label_team_b'] });
+});
+
+test('Team labels removing the last alias drops the Team entry and Team removal drops its full list', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const { calls, dialog, pane } = await openAliasLabelsPane(page, {
+        teamLabels: { 'team-a': ['label_team_a', 'label_team_a_old'], 'team-b': ['label_team_b'] },
+    });
+    const teamB = aliasRow(pane, 'Team B');
+    await teamB.getByRole('button', { name: 'Remove label_team_b from Team B' }).click();
+    await expect(teamB.getByRole('textbox', { name: 'Search Jira labels for Team B' })).toBeVisible();
+
+    await dialog.getByRole('tab', { name: 'Team groups' }).click();
+    await dialog.locator('.selected-team-chip', { hasText: 'Team A' }).getByTitle('Remove team').click();
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    await expect.poll(() => groupsPostBodies(calls).length).toBe(1);
+    const platform = groupsPostBodies(calls)[0].groups.find(group => group.id === 'platform');
+    expect(platform.teamIds).toEqual(['team-b']);
+    expect(platform.teamLabels).toEqual({});
+});
+
+test('Team labels Cancel restores the baseline aliases without a request and Department switch shows its own aliases', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const { calls, dialog, pane } = await openAliasLabelsPane(page, { teamLabels: { 'team-a': ['label_team_a'] } });
+    const teamA = aliasRow(pane, 'Team A');
+    await addAliasBySearch(teamA, 'Team A', 'label_team_a_o', 'label_team_a_old');
+    expect(await aliasChipTexts(teamA)).toEqual(['label_team_a', 'label_team_a_old']);
+
+    // Open search state in Platform does not leak into Growth's rows.
+    await teamA.getByRole('button', { name: 'Add label for Team A' }).click();
+    await teamA.getByRole('textbox', { name: 'Search Jira labels for Team A' }).fill('label_team');
+    await dialog.locator('.group-list-item', { hasText: 'Growth' }).click();
+    const growthTeamB = aliasRow(pane, 'Team B');
+    expect(await aliasChipTexts(growthTeamB)).toEqual(['label_team_b']);
+    await expect(growthTeamB.getByRole('textbox')).toHaveCount(0);
+    await expect(growthTeamB.getByRole('button', { name: 'Add label for Team B' })).toBeVisible();
+
+    const baseline = calls.length;
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await dialog.locator('.group-confirm').getByRole('button', { name: 'Discard' }).click();
+    await expect(dialog).toHaveCount(0);
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    await dialog.getByRole('tab', { name: 'Group labels' }).click();
+    await dialog.locator('.group-list-item', { hasText: 'Platform' }).click();
+    expect(await aliasChipTexts(aliasRow(pane, 'Team A'))).toEqual(['label_team_a']);
+    expect(groupsPostBodies(calls.slice(baseline))).toEqual([]);
+});
+
+test('Team labels conflict Keep mine re-posts the full local alias arrays and Discard mine reloads server arrays', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const serverCurrent = aliasGroupConfig({ 'team-a': ['label_team_a_legacy'] }, { configRevision: 5, version: 2 });
+    const { calls, dialog, pane } = await openAliasLabelsPane(page, {
+        teamLabels: { 'team-a': ['label_team_a'] },
+        mock: { groupsConfigConflicts: [serverCurrent, serverCurrent] },
+    });
+    const teamA = aliasRow(pane, 'Team A');
+    await addAliasBySearch(teamA, 'Team A', 'label_team_a_o', 'label_team_a_old');
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    const validation = dialog.locator('.group-modal-validation');
+    await expect(validation).toContainText('Team groups changed while you were editing.');
+    expect(await aliasChipTexts(teamA)).toEqual(['label_team_a', 'label_team_a_old']);
+    expect(groupsPostBodies(calls)).toHaveLength(1);
+
+    await validation.getByRole('button', { name: 'Keep mine' }).click();
+    await expect.poll(() => groupsPostBodies(calls).length).toBe(2);
+    const retry = groupsPostBodies(calls)[1];
+    expect(retry.baseRevision).toBe(5);
+    expect(retry.groups.find(group => group.id === 'platform').teamLabels).toEqual({
+        'team-a': ['label_team_a', 'label_team_a_old'],
+    });
+
+    await expect(validation.getByRole('button', { name: 'Discard mine' })).toBeVisible();
+    await validation.getByRole('button', { name: 'Discard mine' }).click();
+    expect(await aliasChipTexts(teamA)).toEqual(['label_team_a_legacy']);
+    expect(groupsPostBodies(calls)).toHaveLength(2);
+});
+
+test('Team labels save 401 locks the app without replaying and keeps the mounted alias draft', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const { calls, dialog, pane } = await openAliasLabelsPane(page, {
+        teamLabels: { 'team-a': ['label_team_a'] },
+        mock: { groupsConfigError: { status: 401, body: { error: 'auth_required', loginUrl: '/login?reason=session_expired' } } },
+    });
+    const teamA = aliasRow(pane, 'Team A');
+    await addAliasBySearch(teamA, 'Team A', 'label_team_a_o', 'label_team_a_old');
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    await expect(page.getByRole('alertdialog')).toBeVisible();
+    await expect(dialog).toHaveCount(1);
+    expect(await aliasChipTexts(teamA)).toEqual(['label_team_a', 'label_team_a_old']);
+    await page.waitForTimeout(300);
+    expect(groupsPostBodies(calls)).toHaveLength(1);
+});
+
+test('Team labels Settings JSON export writes version 2 alias arrays for the selected group', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const { dialog } = await openAliasLabelsPane(page, {
+        teamLabels: { 'team-a': 'label_team_a' },
+    });
+    await dialog.getByRole('tab', { name: 'Team groups' }).click();
+    await dialog.locator('summary', { hasText: 'Advanced' }).click();
+    const downloadPromise = page.waitForEvent('download', { timeout: 5000 });
+    await dialog.getByRole('button', { name: 'Export JSON' }).click();
+    const download = await downloadPromise;
+    const exported = JSON.parse(fs.readFileSync(await download.path(), 'utf8'));
+    expect(exported.version).toBe(2);
+    expect(exported.group.id).toBe('platform');
+    expect(exported.group.teamLabels).toEqual({ 'team-a': ['label_team_a'] });
+});
+
+test('Team labels Settings JSON import accepts scalars and arrays and rejects invalid aliases unchanged', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const { calls, dialog, pane } = await openAliasLabelsPane(page, {
+        teamLabels: { 'team-a': ['label_team_a'] },
+    });
+    await dialog.getByRole('tab', { name: 'Team groups' }).click();
+    await dialog.locator('summary', { hasText: 'Advanced' }).click();
+
+    const openImport = async () => {
+        const importButton = dialog.getByRole('button', { name: 'Import JSON' });
+        if (await importButton.count()) await importButton.click();
+        return dialog.locator('textarea');
+    };
+    const invalidImports = [
+        { 'team-a': ['label_team_a', 'label_team_a_old', 'label_team_a_legacy', 'label_team_a_extra'] },
+        { 'team-a': ['label_team_a_old', 'LABEL_TEAM_A_OLD'] },
+        { 'team-a': ['label_team_a_old', 7] },
+    ];
+    for (const teamLabels of invalidImports) {
+        const textarea = await openImport();
+        const text = JSON.stringify({
+            version: 2,
+            group: { id: 'other', name: 'Other', teamIds: ['team-a'], teamLabels },
+        });
+        await textarea.fill(text);
+        await dialog.getByRole('button', { name: 'Apply Import' }).click();
+        const warning = dialog.locator('.group-modal-warning', { hasText: 'Import rejected: a Team' });
+        await expect(warning).toBeVisible();
+        await expect(warning).not.toContainText('label_team_a');
+        await expect(textarea).toHaveValue(text);
+        await expect(dialog.locator('.group-modal-dirty')).toHaveCount(0);
+    }
+    await dialog.getByRole('tab', { name: 'Group labels' }).click();
+    expect(await aliasChipTexts(aliasRow(pane, 'Team A'))).toEqual(['label_team_a']);
+
+    // A version-1 scalar import becomes arrays in the selected group only, keeping its id and name.
+    await dialog.getByRole('tab', { name: 'Team groups' }).click();
+    const textarea = await openImport();
+    await textarea.fill(JSON.stringify({
+        version: 1,
+        group: { id: 'other', name: 'Other', teamIds: ['team-a', 'team-b'], teamLabels: { 'team-a': 'label_team_a_old', 'team-b': ['label_team_b'] } },
+    }));
+    await dialog.getByRole('button', { name: 'Apply Import' }).click();
+    await expect(dialog.locator('.group-modal-dirty')).toContainText('Unsaved changes');
+    await dialog.getByRole('tab', { name: 'Group labels' }).click();
+    expect(await aliasChipTexts(aliasRow(pane, 'Team A'))).toEqual(['label_team_a_old']);
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    await expect.poll(() => groupsPostBodies(calls).length).toBe(1);
+    const [body] = groupsPostBodies(calls);
+    const platform = body.groups.find(group => group.id === 'platform');
+    expect(platform.name).toBe('Platform');
+    expect(platform.teamLabels).toEqual({ 'team-a': ['label_team_a_old'], 'team-b': ['label_team_b'] });
+    expect(body.groups.find(group => group.id === 'growth').teamLabels).toEqual({ 'team-b': ['label_team_b'] });
+});
+
+for (const viewport of [{ name: 'desktop', width: 1280, height: 800 }, { name: 'compact', width: 390, height: 844 }]) {
+    test(`Team labels alias states keep chips, count, and Add label inside the row at ${viewport.name} width`, async ({ page }) => {
+        await page.setViewportSize({ width: viewport.width, height: viewport.height });
+        const { pane } = await openAliasLabelsPane(page, { teamLabels: { 'team-a': ['label_team_a'] } });
+        const teamA = aliasRow(pane, 'Team A');
+        await expectAliasRowGeometry(teamA);
+        await captureAliasPane(page, pane, `after-one-label-${viewport.name}.png`);
+
+        await addAliasBySearch(teamA, 'Team A', 'label_team_a_o', 'label_team_a_old');
+        await expectAliasRowGeometry(teamA);
+        await captureAliasPane(page, pane, `after-two-labels-${viewport.name}.png`);
+
+        await teamA.getByRole('button', { name: 'Add label for Team A' }).click();
+        await teamA.getByRole('textbox', { name: 'Search Jira labels for Team A' }).fill('label_team_a');
+        await expect(teamA.locator('.team-search-result-item')).toHaveText(['label_team_a_legacy', 'label_team_a_extra']);
+        await captureAliasPane(page, pane, `after-add-search-${viewport.name}.png`);
+        await teamA.locator('.team-search-result-item', { hasText: 'label_team_a_legacy' }).click();
+
+        await expect(teamA.getByText('3 of 3 labels', { exact: true })).toBeVisible();
+        await expectAliasRowGeometry(teamA);
+        await captureAliasPane(page, pane, `after-three-labels-${viewport.name}.png`);
+    });
+}

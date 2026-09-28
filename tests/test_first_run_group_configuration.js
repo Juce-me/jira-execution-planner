@@ -153,6 +153,42 @@ test('group save snapshot verification compares every shared field but accepts s
     }
 });
 
+test('a version-2 response verifies for a submitted draft built from a version-1 read', async () => {
+    const { verifyFirstRunGroupsSaveSnapshot } = loadFirstRunGroupConfiguration();
+    const { normalizeGroupsConfig } = await import('../frontend/src/settings/groupConfigUtils.js');
+    const { buildSharedGroupsPayload } = await import('../frontend/src/settings/groupVisibilityUtils.js');
+
+    // A draft normalized from a version-1 read: normalizeGroupsConfig upgrades
+    // legacy scalar team labels to arrays but keeps whatever version the read
+    // reported, mirroring a first-run session started before the server
+    // migration landed.
+    const draft = normalizeGroupsConfig({
+        version: 1,
+        configRevision: 3,
+        groups: [{
+            id: 'new-department', name: 'Growth', teamIds: ['team-a'],
+            teamLabels: { 'team-a': 'label_team_a' },
+        }],
+        defaultGroupId: '',
+    });
+
+    const submitted = buildSharedGroupsPayload(draft);
+    const response = {
+        version: 2,
+        configRevision: 4,
+        defaultGroupId: '',
+        groups: [{
+            id: 'new-department', name: 'Growth', teamIds: ['team-a'],
+            missingInfoComponents: [], excludedCapacityEpics: [], adHocCapacityEpics: [],
+            teamLabels: { 'team-a': ['label_team_a'] },
+        }],
+        source: 'workspace_db', preferences: { visibleGroupIds: [] },
+    };
+
+    assert.equal(submitted.version, 2);
+    assert.equal(verifyFirstRunGroupsSaveSnapshot(submitted, response, 'new-department').ok, true);
+});
+
 test('shouldShowFirstRunGroupSearch hides search for zero through three groups', () => {
     const { shouldShowFirstRunGroupSearch } = loadFirstRunGroupConfiguration();
     [0, 1, 2, 3].forEach(count => assert.equal(shouldShowFirstRunGroupSearch(count), false));
@@ -563,4 +599,29 @@ test('analytics contract retains contextual-module events and forbids raw onboar
 test('Department configuration source retains the canonical favorite control', () => {
     const source = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'settings', 'TeamGroupsSettings.jsx'), 'utf8');
     assert.equal(source.includes('group-star-button'), false);
+});
+
+test('duplicate draft deep-copies every Team alias array', () => {
+    const { buildFirstRunGroupDraft } = loadFirstRunGroupConfiguration();
+    const sourceGroup = {
+        id: 'source',
+        name: 'Source',
+        teamIds: ['team-a', 'team-b'],
+        teamLabels: {
+            'team-a': ['label_team_a', 'label_team_a_old'],
+            'team-b': ['label_team_b'],
+        },
+    };
+
+    const draft = buildFirstRunGroupDraft({
+        mode: 'duplicate',
+        sourceGroup,
+        existingGroups: [sourceGroup],
+    });
+
+    assert.deepEqual(draft.teamLabels, sourceGroup.teamLabels);
+    assert.notEqual(draft.teamLabels, sourceGroup.teamLabels);
+    assert.notEqual(draft.teamLabels['team-a'], sourceGroup.teamLabels['team-a']);
+    draft.teamLabels['team-a'].push('label_team_a_extra');
+    assert.deepEqual(sourceGroup.teamLabels['team-a'], ['label_team_a', 'label_team_a_old']);
 });

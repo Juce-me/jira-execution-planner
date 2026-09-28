@@ -21,6 +21,7 @@ from backend.db import engine as db_engine
 from backend.db import models
 from backend.services import eng_board_measurement as measurement
 from backend.services import shared_group_config
+from backend.services.team_catalog import flatten_group_team_labels, normalize_group_team_labels
 from backend.services.eng_board_measurement_runtime import (
     CAMPAIGNS, CAMPAIGN_TTL_SECONDS, SCHEMA_VERSION, STEP_TABLE,
     MeasurementRuntimeError, bind_diagnostic_transport, owner_key,
@@ -231,7 +232,7 @@ def _legacy_descriptor(campaign, row):
     group = campaign.component_group
     team_ids = [str(value) for value in group.get('teamIds') or []]
     labels = group.get('teamLabels') or {}
-    team_labels = [str(labels.get(team_id) or '').strip() for team_id in team_ids] if isinstance(labels, dict) else [str(value).strip() for value in labels]
+    team_labels = flatten_group_team_labels(normalize_group_team_labels(labels, team_ids)[0], team_ids) if isinstance(labels, dict) else [str(value).strip() for value in labels]
     return {'groupId': str(group.get('id') or ''), 'sprintId': campaign.sprint_id,
             'teamIds': team_ids, 'teamLabels': [value for value in team_labels if value],
             'refresh': row['cacheIntent'] == 'refresh'}

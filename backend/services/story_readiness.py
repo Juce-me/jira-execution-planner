@@ -89,12 +89,14 @@ def _normalize_input(payload):
         team = {
             "id": _text(raw.get("id"), required=True),
             "name": _text(raw.get("name"), required=True),
-            "label": _text(raw.get("label"), required=True),
+            "labels": frozenset(_string_list(raw.get("labels"), "group_team_labels")),
         }
-        if team["id"] in team_ids or team["label"] in labels:
+        if not team["labels"]:
+            raise InvalidCompleteReadinessInput("invalid_group_team_labels")
+        if team["id"] in team_ids or team["labels"] & labels:
             raise InvalidCompleteReadinessInput("duplicate_group_team")
         team_ids.add(team["id"])
-        labels.add(team["label"])
+        labels.update(team["labels"])
         teams.append(team)
     if not teams:
         raise InvalidCompleteReadinessInput("empty_group_teams")
@@ -151,7 +153,9 @@ def project_story_readiness(payload):
         epic = epics[epic_key]
         if epic["status"]["name"].strip().lower() in _TERMINAL_EPIC_STATUSES:
             continue
-        expected = [team for team in teams if team["label"] in set(epic["labels"])]
+        epic_labels = set(epic["labels"])
+        # One result per Team however many of its aliases the Epic carries.
+        expected = [team for team in teams if team["labels"] & epic_labels]
         children = children_by_epic[epic_key]
         missing = []
         for team in expected:

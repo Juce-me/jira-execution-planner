@@ -1,6 +1,10 @@
 """Helpers for ENG alert epic payloads."""
 
 
+class AlertEpicScopeTooLarge(RuntimeError):
+    """The complete alert Epic scope exceeds its unique-Epic or page ceiling."""
+
+
 def quote_jql_value(value):
     text = str(value or "").strip()
     return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
@@ -31,14 +35,14 @@ def fetch_complete_alert_epic_issues(payload, search_request):
                 seen_keys.add(issue['key'])
                 issues.append(issue)
                 if len(seen_keys) > 2000:
-                    raise RuntimeError('Alert Epic search exceeded the Epic limit')
+                    raise AlertEpicScopeTooLarge('Alert Epic search exceeded the Epic limit')
         if data['isLast']:
             return issues
         next_page_token = data.get('nextPageToken')
         if not isinstance(next_page_token, str) or not next_page_token or next_page_token in seen_tokens:
             raise RuntimeError('Alert Epic search returned an invalid continuation token')
         seen_tokens.add(next_page_token)
-    raise RuntimeError('Alert Epic search exceeded the page limit')
+    raise AlertEpicScopeTooLarge('Alert Epic search exceeded the page limit')
 
 
 def build_alert_epic_payloads(issues, team_field_id, sprint_field_id=None, *, build_team_value, extract_team_name):

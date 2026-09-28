@@ -33,7 +33,7 @@ Outside first run, commit Settings changes with the footer **Save** button. Firs
 At least one configured Team or Jira Component is required for first-run eligibility. After that, Jira work can enter the UI through three distinct shipped discovery paths:
 
 1. **Main Initiative/Epic/Story hierarchy:** a Story in the selected sprint whose Jira Team matches a configured Department Team is included, and its parent Epic is brought into the hierarchy.
-2. **Epic-only and empty-Epic discovery:** the Epic must match either its Jira Team or the Department's exact mapped team label, and it must match either its Jira Sprint value, the exact selected-sprint-name label, or that label's `_candidate` form. The suffix comparison ignores case but requires the whole label.
+2. **Epic-only and empty-Epic discovery:** the Epic must match either its Jira Team or the Department's exact mapped team label (any one of that Team's configured aliases), and it must match either its Jira Sprint value, the exact selected-sprint-name label, or that label's `_candidate` form. The suffix comparison ignores case but requires the whole label.
 3. **Future sprint ready path:** the Epic requires both the configured mapped Team label and either the exact selected-sprint-name label or its `_candidate` form. One does not replace the other.
 
 Configured Jira Components broaden Missing Information and Lead Times through configured-Team or Component matching. They also define Board's cross-sprint **Component** choice and the Component-owned half of **All work**, at the Epic boundary only. They never make Stories appear in the main Product/Tech list.
@@ -43,9 +43,19 @@ If expected work is missing, check in this order:
 1. Confirm the active Department and selected sprint.
 2. Clear search, facet filters, and the Product/Tech display filters.
 3. Verify the Jira Story Team and sprint.
-4. For Epic-only discovery, verify the Epic Team or the exact team-label mapping, then verify the Epic sprint or either accepted whole sprint label.
+4. For Epic-only discovery, verify the Epic Team or one of the exact team-label aliases, then verify the Epic sprint or either accepted whole sprint label.
 5. Save the Department configuration.
 6. Choose **Refresh** to load the Jira scope again.
+
+### Team labels (aliases)
+
+Each Team in a Department's **Group labels** tab (**Team labels** pane) may have one to three Jira Epic-label aliases instead of a single label. Any of a Team's configured aliases discovers and classifies the same Epics — this lets an old label stay in place while a new one is adopted, without losing history. Order is preserved for display and export but does not affect matching, and an Epic carrying more than one of a Team's aliases still counts as one match for that Team (one alert group, one Story requirement).
+
+The Team labels pane reads: "Map up to three Jira Epic labels per Team; any of them matches the Team. Use labels only this Team applies." That last sentence is the only guard against a broad alias — a label another Team also uses pulls that Team's Epics into this Team's alerts too; there is no automated usage checker.
+
+The Jira Team field remains the existing OR alternative to label matching; aliases widen the label side of that match, they do not replace Jira Team-field matching. Saved aliases are resolved server-side (through the same effective-groups lookup Story readiness uses) before the task-request cache key is built, so a Team's saved aliases changing takes effect on the next task request even when the browser's query string is unchanged.
+
+**Rollback note.** The shared group-configuration payload moved from version 1 (one label per Team) to version 2 (one to three label aliases per Team) as part of this change. The release is forward-only: code from before this change would read a saved alias array with `str(...)` and persist a literal value such as `"['a', 'b']"` on its next save. Before deploying, snapshot the `workspace_group_configs` rows (DB/OAuth) or the `teamGroups` section of `dashboard-config.json` (Basic mode). Rolling back means restoring that snapshot and then redeploying the previous release — never run the previous release against version-2 group data. After deploy, reload every open dashboard tab before editing Department labels, because a stale pre-deploy tab still normalizes a version-2 alias array with `String(...)` and would persist it as a joined legacy scalar on its next save.
 
 ## Planning
 

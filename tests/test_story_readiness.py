@@ -29,8 +29,8 @@ def _complete_input(**overrides):
             "id": "dept",
             "revision": 7,
             "teams": [
-                {"id": "team-a", "name": "Alpha", "label": "team_alpha"},
-                {"id": "team-b", "name": "Beta", "label": "team_beta"},
+                {"id": "team-a", "name": "Alpha", "labels": ["team_alpha"]},
+                {"id": "team-b", "name": "Beta", "labels": ["team_beta"]},
             ],
         },
         "projectAccessSnapshot": {"product": "accessible", "tech": "accessible"},
@@ -120,6 +120,76 @@ class StoryReadinessProjectionTests(unittest.TestCase):
                     project_story_readiness(payload)
 
 
+class StoryReadinessAliasProjectionTests(unittest.TestCase):
+    def _alias_input(self, epic_labels, team_a_labels=("label_team_a", "label_team_a_old")):
+        base = _complete_input()
+        group = dict(base["groupSnapshot"], teams=[
+            {"id": "team-a", "name": "Alpha", "labels": list(team_a_labels)},
+            {"id": "team-b", "name": "Beta", "labels": ["label_team_b"]},
+        ])
+        epic = dict(base["epics"][0], labels=list(epic_labels))
+        return _complete_input(groupSnapshot=group, epics=[epic])
+
+    def test_either_alias_matches_the_team(self):
+        for epic_labels in (["label_team_a"], ["label_team_a_old"]):
+            with self.subTest(epic_labels=epic_labels):
+                result = project_story_readiness(self._alias_input(epic_labels))
+                self.assertEqual(result["epics"][0]["missingTeams"], [
+                    {"id": "team-a", "name": "Alpha", "reason": "no_stories"},
+                ])
+
+    def test_both_aliases_of_one_team_yield_one_team_result(self):
+        result = project_story_readiness(self._alias_input(["label_team_a", "label_team_a_old", "label_team_b"]))
+        self.assertEqual([team["id"] for team in result["epics"][0]["missingTeams"]], ["team-a", "team-b"])
+        self.assertNotIn("labels", result["epics"][0])
+
+    def test_neither_alias_matches_exactly_and_yields_no_result(self):
+        result = project_story_readiness(self._alias_input(["LABEL_TEAM_A", "label_team_c"]))
+        self.assertEqual(result["epics"], [])
+
+    def test_alias_shared_by_two_teams_fails_closed(self):
+        with self.assertRaises(InvalidCompleteReadinessInput):
+            project_story_readiness(self._alias_input(["label_team_a"], ("label_team_a", "label_team_b")))
+
+    def test_team_without_label_array_is_rejected(self):
+        base = _complete_input()
+        for team in ({"id": "team-a", "name": "Alpha", "label": "label_team_a"},
+                     {"id": "team-a", "name": "Alpha", "labels": []},
+                     {"id": "team-a", "name": "Alpha", "labels": "label_team_a"},
+                     {"id": "team-a", "name": "Alpha", "labels": ["label_team_a", " "]}):
+            with self.subTest(team=team):
+                group = dict(base["groupSnapshot"], teams=[team])
+                with self.assertRaises(InvalidCompleteReadinessInput):
+                    project_story_readiness(_complete_input(groupSnapshot=group))
+
+
+class StoryReadinessAliasSnapshotTests(unittest.TestCase):
+    def _groups(self, team_labels):
+        return {"configRevision": 4, "groups": [{
+            "id": "dept", "teamIds": ["team-a", "team-b"], "teamLabels": team_labels,
+        }]}
+
+    def test_group_snapshot_carries_alias_arrays_and_accepts_legacy_scalars(self):
+        catalog = {"team-a": {"name": "Alpha"}, "team-b": {"name": "Beta"}}
+        snapshot = eng_routes._story_readiness_group_snapshot(self._groups({
+            "team-a": ["label_team_a", "label_team_a_old"], "team-b": "label_team_b",
+        }), "dept", catalog)
+        self.assertEqual(snapshot["teams"], [
+            {"id": "team-a", "name": "Alpha", "labels": ["label_team_a", "label_team_a_old"]},
+            {"id": "team-b", "name": "Beta", "labels": ["label_team_b"]},
+        ])
+        self.assertNotEqual(
+            eng_routes._story_readiness_digest(snapshot),
+            eng_routes._story_readiness_digest(eng_routes._story_readiness_group_snapshot(
+                self._groups({"team-a": ["label_team_a"], "team-b": ["label_team_b"]}), "dept", catalog)),
+        )
+
+    def test_group_snapshot_requires_a_label_for_every_team(self):
+        with self.assertRaises(eng_routes._StoryReadinessConfigurationError):
+            eng_routes._story_readiness_group_snapshot(
+                self._groups({"team-a": ["label_team_a"], "team-b": []}), "dept", {})
+
+
 class StoryReadinessRouteTests(unittest.TestCase):
     def setUp(self):
         jira_server.app.config["TESTING"] = True
@@ -170,6 +240,69 @@ class StoryReadinessRouteTests(unittest.TestCase):
         self.assertEqual(second.get_json(), payload)
         self.assertEqual(compute.call_count, 1)
 
+    def test_route_rejects_alias_shared_by_two_teams(self):
+        context = RequestAuthContext(
+            auth_mode="basic", user_id="local", stable_subject="local",
+            workspace_id="workspace", auth_connection_id="local-basic-connection",
+            atlassian_account_id="", cloud_id="", site_url="https://example.invalid", token_version="1",
+            account_status="active", is_admin=True,
+        )
+        groups = {"configRevision": 3, "groups": [{
+            "id": "dept", "teamIds": ["team-a", "team-b"],
+            "teamLabels": {"team-a": ["label_team_a", "label_shared"], "team-b": ["label_shared"]},
+        }]}
+        config = {"projects": {"selected": [{"key": "PROJ", "type": "product"}]}}
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "basic"), \
+             patch.object(jira_server, "current_request_auth_context", return_value=context), \
+             patch.object(jira_server, "load_dashboard_config_snapshot", return_value=SimpleNamespace(
+                 payload=config, config_revision=5)), \
+             patch.object(eng_routes, "_story_readiness_effective_groups", return_value=groups), \
+             patch.object(eng_routes, "_story_readiness_team_catalog", return_value={}), \
+             patch.object(eng_routes, "_story_readiness_compute") as compute:
+            response = self.client.get(
+                "/api/eng/story-readiness?sprint=42&sprintName=Sprint%2042&sprintState=active&groupId=dept"
+            )
+        self.assertEqual(response.status_code, 409, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "story_readiness_configuration_invalid")
+        self.assertNotIn("label_shared", response.get_data(as_text=True))
+        compute.assert_not_called()
+
+    def test_discovery_jql_contains_every_alias_escaped_and_terminal_exclusions(self):
+        eng_routes.bind_server_globals(vars(eng_routes))
+        group = {'id': 'dept', 'revision': 1, 'teams': [
+            {'id': 'team-a', 'name': 'Alpha', 'labels': ['label_team_a', 'label "team" a']},
+            {'id': 'team-b', 'name': 'Beta', 'labels': ['label_team_b']},
+        ]}
+        config = {'sprintField': {'fieldId': 'customfield_sprint'},
+                  'teamField': {'fieldId': 'customfield_team'}}
+        search_calls = []
+
+        def jira_get(path, **_kwargs):
+            if path.startswith('/rest/agile/1.0/sprint/'):
+                return _FakeResponse(200, {'id': 42, 'name': 'Sprint 42', 'state': 'active'})
+            raise AssertionError(path)
+
+        def jira_search(payload, **_kwargs):
+            search_calls.append(payload)
+            return _FakeResponse(200, {'issues': [], 'isLast': True})
+
+        transport = EngBoardRequestTransport(budget=EngBoardRequestBudget.start(25))
+        with patch.object(eng_routes, 'current_jira_get', side_effect=jira_get), \
+             patch.object(eng_routes, 'current_jira_search', side_effect=jira_search):
+            result, _timing = eng_routes._story_readiness_compute(
+                SimpleNamespace(auth_mode='basic'), ('42', 'Sprint 42', 'active'), group,
+                [{'key': 'PROJ', 'type': 'product'}], config, transport,
+            )
+
+        self.assertEqual(result['epics'], [])
+        self.assertEqual(len(search_calls), 1)
+        discovery_jql = search_calls[0]['jql']
+        self.assertIn('status not in (Done, Killed, Incomplete, Postponed)', discovery_jql)
+        self.assertIn(
+            'AND labels in ("label_team_a", "label \\"team\\" a", "label_team_b") ORDER BY key ASC',
+            discovery_jql,
+        )
+
     def test_route_rejects_malformed_scope_before_auth_or_jira(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "basic"), \
              patch.object(jira_server, "current_request_auth_context") as auth:
@@ -190,8 +323,8 @@ class StoryReadinessRouteTests(unittest.TestCase):
         group = {
             'id': 'dept', 'revision': 1,
             'teams': [
-                {'id': 'team-a', 'name': 'Alpha', 'label': 'team_alpha'},
-                {'id': 'team-b', 'name': 'Beta', 'label': 'team_beta'},
+                {'id': 'team-a', 'name': 'Alpha', 'labels': ['team_alpha']},
+                {'id': 'team-b', 'name': 'Beta', 'labels': ['team_beta']},
             ],
         }
         config = {

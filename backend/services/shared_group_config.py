@@ -14,7 +14,11 @@ from backend.db import models
 
 GROUPS_SOURCE_DB = 'workspace_db'
 GROUPS_SOURCE_JSON = 'file'
-GROUPS_PAYLOAD_VERSION = 1
+GROUPS_PAYLOAD_VERSION = 2
+# Personal group preference rows (UserGroupPreference) version independently of
+# the shared group catalog payload; multi-alias Team labels are a shared-catalog
+# shape change and must never bump preference rows.
+GROUP_PREFERENCES_PAYLOAD_VERSION = 1
 ONBOARDING_MODULE_IDS = (
     'catch-up',
     'configuration',
@@ -504,7 +508,7 @@ def _normalized_saved_preferences(payload, groups_config, completed_onboarding_m
 
 
 def _apply_group_preferences(row, preferences):
-    row.payload_version = GROUPS_PAYLOAD_VERSION
+    row.payload_version = GROUP_PREFERENCES_PAYLOAD_VERSION
     row.visible_group_ids = preferences['visibleGroupIds']
     row.active_group_id = preferences['activeGroupId']
     row.customized = True
@@ -534,7 +538,7 @@ def save_group_preferences(context, payload, groups_config, database_url=None):
             row = models.UserGroupPreference(
                 workspace_id=context.workspace_id,
                 user_id=context.user_id,
-                payload_version=GROUPS_PAYLOAD_VERSION,
+                payload_version=GROUP_PREFERENCES_PAYLOAD_VERSION,
                 visible_group_ids=preferences['visibleGroupIds'],
                 active_group_id=preferences['activeGroupId'],
                 customized=True,

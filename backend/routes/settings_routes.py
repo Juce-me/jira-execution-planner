@@ -781,8 +781,12 @@ def save_groups_config():
     if _unsupported_group_fields(payload):
         return jsonify({'error': 'unsupported_group_config_field'}), 400
 
+    comma_scalar_errors = find_comma_scalar_team_label_errors(payload)
+
     auth_context = _shared_group_db_auth_context()
     if auth_context is not None:
+        if comma_scalar_errors:
+            return jsonify({'error': 'invalid_groups_config', 'errors': comma_scalar_errors}), 400
         current = shared_group_config.load_shared_groups(
             auth_context,
             fallback_loader=lambda: load_dashboard_config(source='jsonfile'),
@@ -807,6 +811,9 @@ def save_groups_config():
             return jsonify({'error': 'invalid_groups_config', 'errors': list(error.errors)}), 400
         saved['preferences'] = shared_group_config.load_group_preferences(auth_context, saved)
         return jsonify(saved)
+
+    if comma_scalar_errors:
+        return jsonify({'errors': comma_scalar_errors}), 400
 
     normalized, errors, warnings = validate_groups_config(payload, allow_empty=True)
     if errors:

@@ -2774,6 +2774,33 @@ h1 {
 .team-search-feedback.warn {
   color: #b42318;
 }
+.team-label-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+.team-label-row > .team-selector-label {
+  flex: 0 1 13rem;
+  min-width: 0;
+}
+.team-label-aliases {
+  flex: 1 1 12rem;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.team-label-aliases .selected-teams-list {
+  align-items: center;
+}
+.team-label-aliases .selected-team-chip {
+  max-width: 100%;
+}
+.team-label-aliases .selected-team-chip .team-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .component-selector {
   margin-top: 0.8rem;
   padding-top: 0.6rem;

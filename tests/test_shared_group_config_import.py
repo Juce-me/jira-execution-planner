@@ -140,6 +140,82 @@ class SharedGroupConfigImportTests(unittest.TestCase):
         self.assertEqual(shared['groups'][0]['adHocCapacityEpics'], ['PRODUCT-ADHOC', 'PRODUCT-OTHER'])
         self.assertEqual(exported['teamGroups']['groups'][0]['adHocCapacityEpics'], ['PRODUCT-ADHOC', 'PRODUCT-OTHER'])
 
+    def test_import_seeds_version_2_arrays_from_legacy_scalar_labels_and_export_round_trips(self):
+        with open(self.dashboard_path, 'w', encoding='utf-8') as handle:
+            json.dump({
+                'version': 1,
+                'projects': {'selected': [{'key': 'PROD', 'type': 'product'}]},
+                'teamGroups': {
+                    'version': 1,
+                    'groups': [{
+                        'id': 'platform',
+                        'name': 'Platform',
+                        'teamIds': ['team-a'],
+                        'teamLabels': {'team-a': 'label_team_a'},
+                    }],
+                    'defaultGroupId': 'platform',
+                },
+            }, handle)
+
+        imported = import_dashboard_config(
+            database_url=self.database_url,
+            context=self.context,
+            source_path=self.dashboard_path,
+            actor_user_id=self.user_id,
+        )
+        shared = shared_group_config.load_shared_groups(
+            self.context,
+            fallback_loader=lambda: {},
+            validate_groups_config_fn=validate_groups_config,
+            database_url=self.database_url,
+        )
+        self.assertEqual(shared['version'], 2)
+        self.assertEqual(shared['groups'][0]['teamLabels'], {'team-a': ['label_team_a']})
+
+        export_path = os.path.join(self._tmpdir.name, 'team-labels-export.json')
+        export_view_config_json(
+            database_url=self.database_url,
+            context=self.context,
+            view_config_id=imported.view_config_id,
+            output_path=export_path,
+        )
+        with open(export_path, encoding='utf-8') as handle:
+            exported = json.load(handle)
+        self.assertEqual(exported['teamGroups']['version'], 2)
+        self.assertEqual(exported['teamGroups']['groups'][0]['teamLabels'], {'team-a': ['label_team_a']})
+
+    def test_import_rejects_too_many_team_labels_and_seeds_nothing(self):
+        with open(self.dashboard_path, 'w', encoding='utf-8') as handle:
+            json.dump({
+                'version': 1,
+                'projects': {'selected': [{'key': 'PROD', 'type': 'product'}]},
+                'teamGroups': {
+                    'version': 1,
+                    'groups': [{
+                        'id': 'platform',
+                        'name': 'Platform',
+                        'teamIds': ['team-a'],
+                        'teamLabels': {'team-a': ['label-a', 'label-b', 'label-c', 'label-d']},
+                    }],
+                    'defaultGroupId': 'platform',
+                },
+            }, handle)
+
+        with self.assertRaises(shared_group_config.InvalidSharedGroupConfig):
+            import_dashboard_config(
+                database_url=self.database_url,
+                context=self.context,
+                source_path=self.dashboard_path,
+                actor_user_id=self.user_id,
+            )
+
+        with self.factory() as session:
+            self.assertIsNone(
+                session.query(models.WorkspaceGroupConfig)
+                .filter_by(workspace_id=self.workspace_id)
+                .first()
+            )
+
     def test_import_rejects_excluded_and_ad_hoc_capacity_overlap(self):
         with open(self.dashboard_path, 'w', encoding='utf-8') as handle:
             json.dump({

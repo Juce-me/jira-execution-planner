@@ -2,6 +2,9 @@
 
 import json
 
+from backend.services.alert_epics import quote_jql_value
+from backend.services.team_catalog import flatten_group_team_labels, normalize_group_team_labels
+
 
 def _noop(*_args, **_kwargs):
     return None
@@ -16,6 +19,36 @@ def parse_groups_config_env(raw, log_warning_fn=None):
     except Exception as exc:
         log_warning_fn(f'Failed to parse TEAM_GROUPS_JSON: {exc}')
         return None
+
+
+def find_comma_scalar_team_label_errors(payload, *, find_comma_scalar_team_labels_fn):
+    """Save-only guard over the raw request payload (before normalization):
+    reject a legacy scalar Jira label containing a comma for any Team.
+
+    This targets the stale-tab regression described on
+    `find_comma_scalar_team_labels_fn` — a joined scalar such as `"a,b"`
+    that a pre-deploy browser tab would otherwise persist as if it were a
+    normal legacy label. GET, `load_shared_groups`, and import paths stay
+    lenient; only the two `POST /api/groups-config` save paths call this.
+    """
+    errors = []
+    if not isinstance(payload, dict):
+        return errors
+    groups_raw = payload.get('groups')
+    if not isinstance(groups_raw, list):
+        return errors
+    for group in groups_raw:
+        if not isinstance(group, dict):
+            continue
+        name = str(group.get('name') or group.get('id') or '').strip()
+        if not name:
+            continue
+        for team_id in find_comma_scalar_team_labels_fn(group.get('teamLabels')):
+            errors.append(
+                f'Group "{name}" Team "{team_id}" has a Jira label containing a comma. '
+                'Reload the page and save again.'
+            )
+    return errors
 
 
 def validate_groups_config(
@@ -97,7 +130,9 @@ def validate_groups_config(
                 f'Group "{name}" has epic keys in both excludedCapacityEpics and adHocCapacityEpics: '
                 f'{", ".join(overlapping_epics)}.'
             )
-        team_labels = normalize_group_team_labels_fn(group.get('teamLabels') or {}, team_ids)
+        team_labels, team_label_errors = normalize_group_team_labels_fn(group.get('teamLabels') or {}, team_ids)
+        for team_label_error in team_label_errors:
+            errors.append(f'Group "{name}" {team_label_error}')
         board, board_errors, board_warnings = normalize_group_board_fn(group.get('board'))
         for board_error in board_errors:
             errors.append(f'Group "{name}" {board_error}')
@@ -122,7 +157,7 @@ def validate_groups_config(
             errors.append('defaultGroupId must reference an existing group.')
 
     normalized = {
-        'version': payload.get('version') or groups_config_version,
+        'version': groups_config_version,
         'groups': normalized_groups,
         'defaultGroupId': default_group_id,
     }
@@ -178,21 +213,29 @@ def build_epic_alert_scope_clause(scope_team_ids=None, scope_team_labels=None, n
         quoted = ', '.join(f'"{team_id}"' for team_id in team_ids)
         clauses.append(f'"Team[Team]" in ({quoted})' if len(team_ids) > 1 else f'"Team[Team]" = "{team_ids[0]}"')
     if labels:
-        quoted = ', '.join(f'"{label}"' for label in labels)
-        clauses.append(f'labels in ({quoted})' if len(labels) > 1 else f'labels = "{labels[0]}"')
+        quoted = ', '.join(quote_jql_value(label) for label in labels)
+        clauses.append(f'labels in ({quoted})' if len(labels) > 1 else f'labels = {quote_jql_value(labels[0])}')
     return f'({" OR ".join(clauses)})' if len(clauses) > 1 else (clauses[0] if clauses else '')
 
 
-def resolve_group_team_label_values(config, group_id, team_ids, normalize_team_ids_fn):
+def resolve_group_team_label_values(groups_config, group_id, team_ids, normalize_team_ids_fn=None):
+    """Flatten the saved aliases of the requested Teams from an effective groups config."""
     if not group_id or not team_ids:
         return []
-    groups = (((config or {}).get('teamGroups') or {}).get('groups') or [])
-    group = next((item for item in groups if str(item.get('id') or '').strip() == group_id), None)
+    groups = (groups_config or {}).get('groups') or []
+    group = next((item for item in groups if isinstance(item, dict) and str(item.get('id') or '').strip() == group_id), None)
     if not group:
         return []
-    team_id_set = set(normalize_team_ids_fn(team_ids))
-    return [
-        str(label or '').strip()
-        for team_id, label in (group.get('teamLabels') or {}).items()
-        if str(team_id or '').strip() in team_id_set and str(label or '').strip()
-    ]
+    mapping, _errors = normalize_group_team_labels(group.get('teamLabels'), team_ids, normalize_team_ids_fn)
+    return flatten_group_team_labels(mapping, team_ids, normalize_team_ids_fn)
+
+
+def merge_team_label_values(*sources):
+    """Sorted, case-insensitively distinct union; the first spelling of a label wins."""
+    merged = {}
+    for source in sources:
+        for label in source or []:
+            value = str(label or '').strip()
+            if value:
+                merged.setdefault(value.lower(), value)
+    return sorted(merged.values(), key=lambda value: (value.lower(), value))

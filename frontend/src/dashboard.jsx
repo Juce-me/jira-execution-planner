@@ -152,7 +152,7 @@ import { epicHasExplicitlyEmptySprintValue, epicHasSelectedSprintLabel, epicMatc
 import { getConfigSaveRefreshTarget } from './configSaveRefreshUtils.mjs';
 import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
 import { getFuturePlanningNeedsStoriesReasonText } from './futurePlanningNeedsStories.mjs';
-import { epicMatchesFuturePlanningTeamSelection, getFuturePlanningEpicTeamInfos, getFuturePlanningExpectedTeamLabel } from './futurePlanningTeamUtils.mjs';
+import { epicHasFuturePlanningTeamLabel, epicMatchesFuturePlanningTeamSelection, getFuturePlanningEpicTeamInfos } from './futurePlanningTeamUtils.mjs';
 import {
     fetchMissingPlanningInfo as requestMissingPlanningInfo,
     fetchSprints as requestSprints,
@@ -198,11 +198,17 @@ import {
     buildPendingFirstRunGroupPreferencesDraft,
 } from './settings/firstRunGroupConfiguration.js';
 import {
+    GROUPS_CONFIG_VERSION,
+    TEAM_LABEL_ALIAS_LIMIT,
+    addTeamLabelAlias,
     applyLocalGroupPreferences,
     buildGroupId,
     normalizeGroupsConfig,
+    normalizeTeamLabelAliases,
     parseTeamIdList,
-    resolveInitialGroupId
+    removeTeamLabelAlias,
+    resolveInitialGroupId,
+    validateImportedTeamLabels
 } from './settings/groupConfigUtils.js';
 import { validatePresentGroupBoards } from './settings/groupBoardModel.js';
 import { buildTeamAvailability } from './settings/teamAvailability.js';
@@ -400,6 +406,7 @@ import {
             const [techEpicsInScope, setTechEpicsInScope] = useState([]);
             const [readyToCloseProductEpicsInScope, setReadyToCloseProductEpicsInScope] = useState([]);
             const [readyToCloseTechEpicsInScope, setReadyToCloseTechEpicsInScope] = useState([]);
+            const [alertScopeTooLargeKey, setAlertScopeTooLargeKey] = useState('');
             const [techLoaded, setTechLoaded] = useState(false);
             const [loading, setLoading] = useState(false);
             const [error, setError] = useState('');
@@ -658,6 +665,8 @@ import {
             const [labelSearchResults, setLabelSearchResults] = useState({});
             const [labelSearchLoading, setLabelSearchLoading] = useState({});
             const [labelSearchIndex, setLabelSearchIndex] = useState({});
+            const [labelAddOpen, setLabelAddOpen] = useState({});
+            const labelAddButtonRefs = useRef({});
             const labelSearchCacheRef = useRef({});
             const labelSearchRequestIdRef = useRef({});
             const labelSearchDebounceRef = useRef({});
@@ -3285,7 +3294,7 @@ import {
                     const nextName = `${source.name || 'Group'} Copy`;
                     nextId = buildGroupId(nextName, existingIds);
                     const nextGroup = {
-                        ...source,
+                        ...structuredClone(source),
                         id: nextId,
                         name: nextName
                     };
@@ -3417,20 +3426,31 @@ import {
                 }));
             };
 
-            const setTeamLabelForGroup = (groupId, teamId, label) => {
-                const nextLabel = String(label || '').trim();
+            // Returns the add status from the rendered draft so a stale duplicate or over-limit
+            // selection is reported without relying on when React runs the updater.
+            const addTeamLabelToGroup = (groupId, teamId, label) => {
+                const currentGroup = (groupDraft?.groups || []).find(group => group.id === groupId);
+                const { status } = addTeamLabelAlias(currentGroup?.teamLabels, teamId, label);
+                if (status !== 'added') return status;
                 handleGroupDraftChange(prev => ({
                     ...prev,
                     groups: (prev.groups || []).map(group => {
                         if (group.id !== groupId) return group;
-                        const nextTeamLabels = { ...(group.teamLabels || {}) };
-                        if (nextLabel) {
-                            nextTeamLabels[teamId] = nextLabel;
-                        } else {
-                            delete nextTeamLabels[teamId];
-                        }
-                        return { ...group, teamLabels: nextTeamLabels };
+                        const result = addTeamLabelAlias(group.teamLabels, teamId, label);
+                        return result.status === 'added' ? { ...group, teamLabels: result.teamLabels } : group;
                     })
+                }));
+                return status;
+            };
+
+            const removeTeamLabelFromGroup = (groupId, teamId, label) => {
+                handleGroupDraftChange(prev => ({
+                    ...prev,
+                    groups: (prev.groups || []).map(group => (
+                        group.id === groupId
+                            ? { ...group, teamLabels: removeTeamLabelAlias(group.teamLabels, teamId, label) }
+                            : group
+                    ))
                 }));
             };
 
@@ -5246,7 +5266,7 @@ import {
                         throw new Error('Save the selected group before exporting.');
                     }
                     const payload = {
-                        version: source.version || 1,
+                        version: GROUPS_CONFIG_VERSION,
                         group: selectedGroup,
                     };
                     const json = JSON.stringify(payload, null, 2);
@@ -5286,8 +5306,12 @@ import {
                     if (!importedGroup || typeof importedGroup !== 'object') {
                         throw new Error('Imported JSON must contain one group or a group matching the selected group.');
                     }
+                    const teamLabelsError = validateImportedTeamLabels(importedGroup.teamLabels);
+                    if (teamLabelsError) {
+                        throw new Error(teamLabelsError);
+                    }
                     const normalized = normalizeGroupsConfig({
-                        version: parsed?.version || groupDraft?.version || 1,
+                        version: parsed?.version || groupDraft?.version || GROUPS_CONFIG_VERSION,
                         groups: [importedGroup],
                     });
                     if (!normalized.groups.length) {
@@ -5472,20 +5496,38 @@ import {
                 }
             }, [groupManageTab]);
             const getLabelRowKey = (groupId, teamId) => `${groupId || 'group'}::${teamId || 'team'}`;
-            const getLabelSearchResults = (groupId, teamId) => {
+            // Jira autocomplete results minus the Team's already-selected aliases (client-side only).
+            const getLabelSearchResults = (groupId, teamId, selectedAliases = []) => {
                 const key = getLabelRowKey(groupId, teamId);
                 const query = String(labelSearchQuery[key] || '').trim();
                 if (query.length < 3) return [];
-                return labelSearchResults[key] || [];
+                const selected = new Set(selectedAliases.map(alias => alias.toLowerCase()));
+                return (labelSearchResults[key] || []).filter(label => !selected.has(String(label || '').trim().toLowerCase()));
             };
-            const selectTeamLabel = React.useCallback((groupId, teamId, label) => {
-                const key = getLabelRowKey(groupId, teamId);
-                setTeamLabelForGroup(groupId, teamId, label);
+            const focusLabelAddButton = (key) => {
+                window.setTimeout(() => labelAddButtonRefs.current[key]?.focus(), 0);
+            };
+            const closeTeamLabelSearch = (key) => {
                 setLabelSearchQuery(prev => ({ ...prev, [key]: '' }));
                 setLabelSearchResults(prev => ({ ...prev, [key]: [] }));
                 setLabelSearchIndex(prev => ({ ...prev, [key]: 0 }));
                 setLabelSearchOpen(prev => ({ ...prev, [key]: false }));
-            }, [setTeamLabelForGroup]);
+                setLabelAddOpen(prev => ({ ...prev, [key]: false }));
+            };
+            const selectTeamLabel = React.useCallback((groupId, teamId, label) => {
+                const key = getLabelRowKey(groupId, teamId);
+                const status = addTeamLabelToGroup(groupId, teamId, label);
+                if (status === 'duplicate') {
+                    setTeamFeedback(key, 'Already added');
+                    return;
+                }
+                if (status === 'limit') {
+                    setTeamFeedback(key, `Limit reached (${TEAM_LABEL_ALIAS_LIMIT} max)`, 'warn');
+                    return;
+                }
+                closeTeamLabelSearch(key);
+                focusLabelAddButton(key);
+            }, [addTeamLabelToGroup]);
             const handleLabelSearchKeyDown = React.useCallback((groupId, teamId, event, results) => {
                 const key = getLabelRowKey(groupId, teamId);
                 if (event.key === 'ArrowDown') {
@@ -5522,8 +5564,15 @@ import {
                     event.preventDefault();
                     event.stopPropagation();
                     setLabelSearchOpen(prev => ({ ...prev, [key]: false }));
+                    return;
                 }
-            }, [labelSearchIndex, labelSearchOpen, selectTeamLabel]);
+                if (event.key === 'Escape' && labelAddOpen[key]) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    closeTeamLabelSearch(key);
+                    focusLabelAddButton(key);
+                }
+            }, [labelSearchIndex, labelSearchOpen, labelAddOpen, selectTeamLabel]);
             const loadJiraLabels = React.useCallback(async (groupId, teamId, rawQuery) => {
                 const query = String(rawQuery || '').trim();
                 const key = getLabelRowKey(groupId, teamId);
@@ -7731,6 +7780,13 @@ import {
                 }, 4000);
             };
 
+            // Catch Up alert scope; an oversized-Department result only applies to the scope that produced it.
+            const catchUpAlertScopeKey = `${activeGroupId}::${activeGroupTeamIds.join('|')}::${selectedSprint}::${selectedSprintInfo?.name || ''}::${selectedSprintInfo?.state || ''}`;
+            const alertScopeTooLarge = Boolean(alertScopeTooLargeKey) && alertScopeTooLargeKey === catchUpAlertScopeKey;
+            useEffect(() => {
+                setAlertScopeTooLargeKey(key => (key && key !== catchUpAlertScopeKey ? '' : key));
+            }, [catchUpAlertScopeKey]);
+
             useEffect(() => {
                 if (selectedView !== 'eng') return;
                 if (!isCatchUpMode) return;
@@ -7742,14 +7798,19 @@ import {
                 if (lastLoadedSprintRef.current !== selectedSprint) return;
                 if (!tasksFetched) return;
                 if (productTasksLoading || techTasksLoading) return;
-                const alertLoadSignature = `${activeGroupId}::${activeGroupTeamIds.join('|')}::${selectedSprint}::${selectedSprintInfo.name}::${selectedSprintInfo.state || ''}`;
+                const alertLoadSignature = catchUpAlertScopeKey;
                 if (catchUpAlertLoadRef.current === alertLoadSignature) return;
                 catchUpAlertLoadRef.current = alertLoadSignature;
                 const forceAlertRefresh = catchUpAlertForceRefreshRef.current;
                 catchUpAlertForceRefreshRef.current = false;
                 const alertController = new AbortController(), alertCohortVersion = ++catchUpAlertVersionRef.current;
                 const shouldApplyAlertResult = () => catchUpAlertVersionRef.current === alertCohortVersion;
-                loadAlertEpics({ forceRefresh: forceAlertRefresh, shouldApplyResult: shouldApplyAlertResult, signal: alertController.signal });
+                loadAlertEpics({ forceRefresh: forceAlertRefresh, shouldApplyResult: shouldApplyAlertResult, signal: alertController.signal }).then((alertOutcomes) => {
+                    if (!shouldApplyAlertResult()) return;
+                    const outcomes = [alertOutcomes?.product, alertOutcomes?.tech];
+                    if (outcomes.includes(ENG_TASK_LOAD_OUTCOME.ALERT_SCOPE_TOO_LARGE)) setAlertScopeTooLargeKey(alertLoadSignature);
+                    else if (outcomes.every(outcome => outcome === ENG_TASK_LOAD_OUTCOME.APPLIED)) setAlertScopeTooLargeKey('');
+                });
                 fetchMissingPlanningInfo(selectedSprint, { shouldApplyResult: shouldApplyAlertResult, signal: alertController.signal });
                 loadReadyToCloseProductTasks({ forceRefresh: forceAlertRefresh, shouldApplyResult: shouldApplyAlertResult, signal: alertController.signal });
                 loadReadyToCloseTechTasks({ forceRefresh: forceAlertRefresh, shouldApplyResult: shouldApplyAlertResult, signal: alertController.signal });
@@ -13286,8 +13347,8 @@ import {
 
             const normalizedActiveGroupTeamLabels = React.useMemo(() => {
                 const entries = Object.entries(activeGroupTeamLabels || {})
-                    .map(([teamId, label]) => [String(teamId || '').trim(), String(label || '').trim()])
-                    .filter(([teamId, label]) => teamId && label);
+                    .map(([teamId, aliases]) => [String(teamId || '').trim(), normalizeTeamLabelAliases(aliases)])
+                    .filter(([teamId, aliases]) => teamId && aliases.length);
                 return Object.fromEntries(entries);
             }, [activeGroupTeamLabels]);
             const getFuturePlanningTeamInfos = React.useCallback((epic) => {
@@ -13299,12 +13360,6 @@ import {
                     teamNameById
                 });
             }, [selectedTeamSet, normalizedActiveGroupTeamLabels, resolveTeamName, teamNameById]);
-            const getFuturePlanningTeamLabel = React.useCallback((epic) => {
-                return getFuturePlanningExpectedTeamLabel(epic, {
-                    selectedTeamSet,
-                    teamLabels: normalizedActiveGroupTeamLabels
-                });
-            }, [selectedTeamSet, normalizedActiveGroupTeamLabels]);
             const storiesByEpicKey = React.useMemo(() => {
                 const map = new Map();
                 tasks.forEach((task) => {
@@ -13317,11 +13372,6 @@ import {
                 });
                 return map;
             }, [tasks, isAllTeamsSelected, selectedTeamSet]);
-            const epicHasLabel = React.useCallback((epic, label) => {
-                const target = String(label || '').trim().toLowerCase();
-                if (!target) return false;
-                return (epic?.labels || []).some((item) => String(item || '').trim().toLowerCase() === target);
-            }, []);
             const epicMatchesPlanningSprintValue = React.useCallback((epic) => {
                 return epicMatchesSelectedSprint(epic, {
                     selectedSprint,
@@ -13331,8 +13381,15 @@ import {
             const epicHasPlanningSprintLabel = React.useCallback((epic) => {
                 return epicHasSelectedSprintLabel(epic, selectedSprintInfo?.name || '');
             }, [selectedSprintInfo?.name]);
+            // While the Department is too large for Epic alerts, epicsInScope holds only the primary load's
+            // first page; no alert may be derived from it. Separate sources (remote Backlog, sprint Stories,
+            // ready-to-close Epics, Story readiness) are unaffected.
+            const alertEpicsInScope = React.useMemo(
+                () => (alertScopeTooLarge ? [] : epicsInScope),
+                [alertScopeTooLarge, epicsInScope]
+            );
             const planningCandidateEpics = React.useMemo(() => {
-                return epicsInScope.filter((epic) => {
+                return alertEpicsInScope.filter((epic) => {
                     if (!epic?.key) return false;
                     if (dismissedAlertSet.has(epic.key)) return false;
                     const status = normalizeStatus(epic.status?.name);
@@ -13344,7 +13401,7 @@ import {
                     })) return false;
                     return true;
                 });
-            }, [epicsInScope, dismissedAlertSet, isAllTeamsSelected, selectedTeamSet, normalizedActiveGroupTeamLabels]);
+            }, [alertEpicsInScope, dismissedAlertSet, isAllTeamsSelected, selectedTeamSet, normalizedActiveGroupTeamLabels]);
             const backlogEpics = React.useMemo(() => {
                 if (!isFutureSprintSelected) return [];
                 const seen = new Set();
@@ -13387,10 +13444,12 @@ import {
                 return planningCandidateEpics.filter((epic) => {
                     if (backlogEpicKeySet.has(epic.key) || missingTeamEpicKeySet.has(epic.key)) return false;
                     if (!epicMatchesPlanningSprintValue(epic)) return false;
-                    const teamLabel = getFuturePlanningTeamLabel(epic);
-                    return !epicHasPlanningSprintLabel(epic) || !teamLabel || !epicHasLabel(epic, teamLabel);
+                    return !epicHasPlanningSprintLabel(epic) || !epicHasFuturePlanningTeamLabel(epic, {
+                        selectedTeamSet,
+                        teamLabels: normalizedActiveGroupTeamLabels
+                    });
                 });
-            }, [isFutureSprintSelected, planningCandidateEpics, backlogEpicKeySet, missingTeamEpicKeySet, getFuturePlanningTeamLabel, epicMatchesPlanningSprintValue, epicHasPlanningSprintLabel, epicHasLabel]);
+            }, [isFutureSprintSelected, planningCandidateEpics, backlogEpicKeySet, missingTeamEpicKeySet, selectedTeamSet, normalizedActiveGroupTeamLabels, epicMatchesPlanningSprintValue, epicHasPlanningSprintLabel]);
             const missingLabelEpicKeySet = React.useMemo(
                 () => new Set(missingLabelEpics.map(epic => epic.key).filter(Boolean)),
                 [missingLabelEpics]
@@ -13405,7 +13464,7 @@ import {
             const needsStoriesEpics = storyReadinessAlerts.epics;
             const storyReadinessEpicKeySet = storyReadinessAlerts.epicKeySet;
 
-            const emptyEpics = epicsInScope
+            const emptyEpics = alertEpicsInScope
                 .filter(epic => {
                     const status = normalizeStatus(epic.status?.name);
                     if (status === 'killed' || status === 'done' || status === 'incomplete' || status === 'in progress') return false;
@@ -13460,14 +13519,14 @@ import {
 
             const analysisEpicsSource = React.useMemo(() => {
                 const seen = new Set();
-                const merged = [...readyToCloseEpicsInScope, ...epicsInScope].filter(epic => {
+                const merged = [...readyToCloseEpicsInScope, ...alertEpicsInScope].filter(epic => {
                     if (!epic?.key) return false;
                     if (seen.has(epic.key)) return false;
                     seen.add(epic.key);
                     return true;
                 });
                 return merged;
-            }, [readyToCloseEpicsInScope, epicsInScope]);
+            }, [readyToCloseEpicsInScope, alertEpicsInScope]);
 
             const sortByPriorityThenSummary = (a, b) => {
                 const priorityA = priorityOrder[a.fields.priority?.name] || 999;
@@ -17266,6 +17325,7 @@ import {
                                             selectedView={selectedView}
                                             alertItemCount={alertItemCount}
                                             alertCounts={alertCounts}
+                                            alertScopeTooLarge={alertScopeTooLarge}
                                             showAlertsPanel={showAlertsPanel}
                                             setShowAlertsPanel={setShowAlertsPanel}
                                             collapsed={!showMissingAlert && !showBlockedAlert && !showPostponedAlert && !showBacklogAlert && !showMissingTeamAlert && !showMissingLabelsAlert && !showNeedsStoriesAlert && !showWaitingAlert && !showEmptyEpicAlert && !showDoneEpicAlert}
@@ -17869,7 +17929,7 @@ import {
                                     <div className="group-pane group-list-pane">
                                         <div className="group-pane-header">
                                             <div className="group-pane-title">Groups</div>
-                                            <div className="group-pane-subtitle">Choose a team group to map one Jira label per team.</div>
+                                            <div className="group-pane-subtitle">Choose a team group to map Jira labels per team.</div>
                                         </div>
                                         <div className="group-pane-list">
                                             {(filteredGroupDrafts || []).map((group) => {
@@ -17898,7 +17958,7 @@ import {
                                     <div className="group-pane group-editor-pane">
                                         <div className="group-pane-header">
                                             <div className="group-pane-title">Team labels</div>
-                                            <div className="group-pane-subtitle">Assign the team-specific epic label used with the selected sprint label.</div>
+                                            <div className="group-pane-subtitle">Map up to three Jira Epic labels per Team; any of them matches the Team. Use labels only this Team applies.</div>
                                         </div>
                                         {!activeGroupDraft ? (
                                             <div className="group-pane-empty">Select a group to edit its team label mappings.</div>
@@ -17908,67 +17968,105 @@ import {
                                             <div className="group-pane-list">
                                                 {(activeGroupDraft.teamIds || []).map((teamId) => {
                                                     const rowKey = getLabelRowKey(activeGroupDraft.id, teamId);
-                                                    const currentLabel = activeGroupDraft?.teamLabels?.[teamId] || '';
-                                                    const results = getLabelSearchResults(activeGroupDraft.id, teamId);
+                                                    const teamName = resolveTeamName(teamId);
+                                                    const aliases = normalizeTeamLabelAliases(activeGroupDraft?.teamLabels?.[teamId]);
+                                                    const atLimit = aliases.length >= TEAM_LABEL_ALIAS_LIMIT;
+                                                    const showSearch = !atLimit && (aliases.length === 0 || Boolean(labelAddOpen[rowKey]));
+                                                    const results = getLabelSearchResults(activeGroupDraft.id, teamId, aliases);
                                                     const query = String(labelSearchQuery[rowKey] || '').trim();
                                                     const isSearching = Boolean(labelSearchLoading[rowKey]);
                                                     const activeIndex = Math.min(labelSearchIndex[rowKey] || 0, Math.max(results.length - 1, 0));
+                                                    const feedback = teamSearchFeedback[rowKey];
                                                     return (
                                                         <div key={rowKey} className="group-projects-subsection" style={{ marginTop: 0, paddingBottom: '1rem', borderBottom: '1px solid rgba(148,163,184,0.15)' }}>
-                                                            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(10rem, 13rem) minmax(0, 1fr)', alignItems: 'center', gap: '0.75rem' }}>
-                                                                <div className="team-selector-label" style={{ margin: 0 }}>{resolveTeamName(teamId)}</div>
-                                                                {currentLabel ? (
-                                                                    <div className="selected-team-chip">
-                                                                        <span className="team-name">{currentLabel}</span>
-                                                                        <button
-                                                                            className="remove-btn"
-                                                                            onClick={() => setTeamLabelForGroup(activeGroupDraft.id, teamId, '')}
-                                                                            type="button"
-                                                                            title="Remove label"
-                                                                        >
-                                                                            ×
-                                                                        </button>
-                                                                    </div>
-                                                                ) : (
-                                                                    <div className="team-search-wrapper" style={{ minWidth: 0 }}>
-                                                                        <input
-                                                                            type="text"
-                                                                            className="team-search-input"
-                                                                            placeholder="Type at least 3 characters..."
-                                                                            value={labelSearchQuery[rowKey] || ''}
-                                                                            onChange={(event) => {
-                                                                            const value = event.target.value;
-                                                                            setLabelSearchQuery(prev => ({ ...prev, [rowKey]: value }));
-                                                                            setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
-                                                                            setLabelSearchIndex(prev => ({ ...prev, [rowKey]: 0 }));
-                                                                            scheduleJiraLabelSearch(activeGroupDraft.id, teamId, value);
-                                                                        }}
-                                                                            onFocus={() => {
-                                                                                setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
-                                                                            }}
-                                                                            onBlur={() => window.setTimeout(() => setLabelSearchOpen(prev => ({ ...prev, [rowKey]: false })), 120)}
-                                                                            onKeyDown={(event) => handleLabelSearchKeyDown(activeGroupDraft.id, teamId, event, results)}
-                                                                        />
-                                                                        {labelSearchOpen[rowKey] && (
-                                                                            <div className="team-search-results" onMouseDown={(event) => event.preventDefault()}>
-                                                                                {query.length < 3 ? (
-                                                                                    <div className="team-search-result-item is-empty">Type at least 3 characters</div>
-                                                                                ) : results.length === 0 ? (
-                                                                                    <div className="team-search-result-item is-empty">{isSearching ? 'Searching labels...' : 'No labels found'}</div>
-                                                                                ) : results.map((label, index) => (
-                                                                                    <div
-                                                                                        key={`${rowKey}-${label}`}
-                                                                                        className={`team-search-result-item ${activeIndex === index ? 'active' : ''}`}
-                                                                                        onMouseEnter={() => setLabelSearchIndex(prev => ({ ...prev, [rowKey]: index }))}
-                                                                                        onClick={() => selectTeamLabel(activeGroupDraft.id, teamId, label)}
+                                                            <div className="team-label-row">
+                                                                <div className="team-selector-label" style={{ margin: 0 }}>{teamName}</div>
+                                                                <div className="team-label-aliases">
+                                                                    {aliases.length > 0 && (
+                                                                        <div className="selected-teams-list">
+                                                                            {aliases.map((alias) => (
+                                                                                <div key={`${rowKey}-chip-${alias}`} className="selected-team-chip">
+                                                                                    <span className="team-name">{alias}</span>
+                                                                                    <button
+                                                                                        className="remove-btn"
+                                                                                        onClick={() => removeTeamLabelFromGroup(activeGroupDraft.id, teamId, alias)}
+                                                                                        type="button"
+                                                                                        title="Remove label"
+                                                                                        aria-label={`Remove ${alias} from ${teamName}`}
                                                                                     >
-                                                                                        {label}
-                                                                                    </div>
-                                                                                ))}
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
-                                                                )}
+                                                                                        ×
+                                                                                    </button>
+                                                                                </div>
+                                                                            ))}
+                                                                            {atLimit ? (
+                                                                                <span className="group-modal-meta team-label-count">{`${TEAM_LABEL_ALIAS_LIMIT} of ${TEAM_LABEL_ALIAS_LIMIT} labels`}</span>
+                                                                            ) : !showSearch && (
+                                                                                <button
+                                                                                    className="secondary compact team-label-add"
+                                                                                    type="button"
+                                                                                    ref={(node) => {
+                                                                                        if (node) labelAddButtonRefs.current[rowKey] = node;
+                                                                                        else delete labelAddButtonRefs.current[rowKey];
+                                                                                    }}
+                                                                                    aria-label={`Add label for ${teamName}`}
+                                                                                    onClick={() => setLabelAddOpen(prev => ({ ...prev, [rowKey]: true }))}
+                                                                                >
+                                                                                    + Add label
+                                                                                </button>
+                                                                            )}
+                                                                        </div>
+                                                                    )}
+                                                                    {showSearch && (
+                                                                        <div className="team-search-wrapper" style={{ minWidth: 0 }}>
+                                                                            <input
+                                                                                type="text"
+                                                                                className="team-search-input"
+                                                                                placeholder="Type at least 3 characters..."
+                                                                                aria-label={`Search Jira labels for ${teamName}`}
+                                                                                autoFocus={aliases.length > 0}
+                                                                                value={labelSearchQuery[rowKey] || ''}
+                                                                                onChange={(event) => {
+                                                                                    const value = event.target.value;
+                                                                                    setLabelSearchQuery(prev => ({ ...prev, [rowKey]: value }));
+                                                                                    setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
+                                                                                    setLabelSearchIndex(prev => ({ ...prev, [rowKey]: 0 }));
+                                                                                    scheduleJiraLabelSearch(activeGroupDraft.id, teamId, value);
+                                                                                }}
+                                                                                onFocus={() => {
+                                                                                    setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
+                                                                                }}
+                                                                                onBlur={() => window.setTimeout(() => {
+                                                                                    if (aliases.length > 0) closeTeamLabelSearch(rowKey);
+                                                                                    else setLabelSearchOpen(prev => ({ ...prev, [rowKey]: false }));
+                                                                                }, 120)}
+                                                                                onKeyDown={(event) => handleLabelSearchKeyDown(activeGroupDraft.id, teamId, event, results)}
+                                                                            />
+                                                                            {labelSearchOpen[rowKey] && (
+                                                                                <div className="team-search-results" onMouseDown={(event) => event.preventDefault()}>
+                                                                                    {query.length < 3 ? (
+                                                                                        <div className="team-search-result-item is-empty">Type at least 3 characters</div>
+                                                                                    ) : results.length === 0 ? (
+                                                                                        <div className="team-search-result-item is-empty">{isSearching ? 'Searching labels...' : 'No labels found'}</div>
+                                                                                    ) : results.map((label, index) => (
+                                                                                        <div
+                                                                                            key={`${rowKey}-${label}`}
+                                                                                            className={`team-search-result-item ${activeIndex === index ? 'active' : ''}`}
+                                                                                            onMouseEnter={() => setLabelSearchIndex(prev => ({ ...prev, [rowKey]: index }))}
+                                                                                            onClick={() => selectTeamLabel(activeGroupDraft.id, teamId, label)}
+                                                                                        >
+                                                                                            {label}
+                                                                                        </div>
+                                                                                    ))}
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    )}
+                                                                    {feedback && (
+                                                                        <div className={`team-search-feedback ${feedback.tone || ''}`} role="status">
+                                                                            {feedback.message}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
                                                             </div>
                                                         </div>
                                                     );

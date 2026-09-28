@@ -5,16 +5,19 @@ import {
 import { isAuthenticationRequiredError } from '../api/authRequired.js';
 import { recordPerformanceLoad } from '../api/performanceApi.js';
 import { createGroupLoadMeasurement, laneMetrics } from './loadPerformance.js';
+import { flattenTeamLabelAliases } from '../settings/groupConfigUtils.js';
 
 export const ENG_TASK_LOAD_OUTCOME = Object.freeze({
     APPLIED: 'applied',
     NON_AUTH_FAILURE: 'non_auth_failure',
     AUTH_REQUIRED: 'auth_required',
     IGNORED: 'ignored',
+    ALERT_SCOPE_TOO_LARGE: 'alert_scope_too_large',
 });
 const AUTHENTICATION_REQUIRED_RESULT = ENG_TASK_LOAD_OUTCOME.AUTH_REQUIRED;
 const NON_AUTH_FAILURE_RESULT = ENG_TASK_LOAD_OUTCOME.NON_AUTH_FAILURE;
 const IGNORED_RESULT = ENG_TASK_LOAD_OUTCOME.IGNORED;
+const ALERT_SCOPE_TOO_LARGE_RESULT = ENG_TASK_LOAD_OUTCOME.ALERT_SCOPE_TOO_LARGE;
 const ISSUE_EDIT_READ_TOKEN = Symbol('issueEditReadToken');
 import {
     PRIORITY_ORDER,
@@ -122,7 +125,7 @@ export function useEngSprintData({
         try {
             const sprintParam = options.sprintOverride !== undefined ? options.sprintOverride : (selectedSprint || '');
             const groupTeamIds = activeGroupTeamIds;
-            const groupTeamLabels = Array.from(new Set(groupTeamIds.map((teamId) => String(activeGroupTeamLabels?.[teamId] || '').trim()).filter(Boolean)));
+            const groupTeamLabels = groupTeamIds.length ? flattenTeamLabelAliases(activeGroupTeamLabels, groupTeamIds) : [];
             // Bypass server cache on page load or explicit refresh
             let refresh = false;
             if (pageLoadRefreshRef.current || options.forceRefresh) {
@@ -193,6 +196,7 @@ export function useEngSprintData({
             }
             if (isAuthenticationRequiredError(err)) return AUTHENTICATION_REQUIRED_RESULT;
             if (options.shouldApplyResult?.() === false) return IGNORED_RESULT;
+            if (options.purpose === 'alerts' && err.code === 'alert_scope_too_large') return ALERT_SCOPE_TOO_LARGE_RESULT;
             const handledServerConnection = onServerConnectionFailure?.(err) === true;
             if (setErrors) {
                 setError(handledServerConnection ? '' : taskLoadErrorMessage(err, backendUrl));
@@ -346,6 +350,8 @@ export function useEngSprintData({
             })
         ]);
         results.forEach(result => issueEditState?.finishRead(result?.[ISSUE_EDIT_READ_TOKEN]));
+        const toAlertOutcome = result => (typeof result === 'string' ? result : ENG_TASK_LOAD_OUTCOME.APPLIED);
+        return { product: toAlertOutcome(results[0]), tech: toAlertOutcome(results[1]) };
     };
 
     const loadReadyToCloseProductTasks = async ({ forceRefresh = false, shouldApplyResult, signal } = {}) => {

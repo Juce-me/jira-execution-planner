@@ -22,6 +22,7 @@ function loadUseEngSprintData(fetchEngTasks, refreshAuthSession = async () => ({
         filterEpicsInScopeForTeamSet: (epics) => epics,
         filterTasksForTeamSet: (tasks) => tasks,
         sortTasksByPriority: (tasks) => tasks,
+        flattenTeamLabelAliases: () => [],
         ...overrides,
     };
 
@@ -41,6 +42,8 @@ function createHarness(fetchEngTasks, {
     performanceDebugEnabled = false,
     measurementDependencies = {},
     strictBoardActive = false,
+    activeGroupTeamIds,
+    activeGroupTeamLabels,
 } = {}) {
     const { useEngSprintData } = loadUseEngSprintData(fetchEngTasks, refreshAuthSession, measurementDependencies);
     const errors = [];
@@ -51,7 +54,8 @@ function createHarness(fetchEngTasks, {
         backendUrl: 'http://localhost:5050',
         selectedSprint: '2026Q1',
         activeGroupId: performanceDebugEnabled ? 'sample-group' : '',
-        activeGroupTeamIds: performanceDebugEnabled ? ['sample-team'] : [],
+        activeGroupTeamIds: activeGroupTeamIds || (performanceDebugEnabled ? ['sample-team'] : []),
+        activeGroupTeamLabels,
         performanceDebugEnabled,
         strictBoardActive,
         activeGroupTeamSet: new Set(),
@@ -84,6 +88,48 @@ function createHarness(fetchEngTasks, {
 
     return { api, errors };
 }
+
+test('task request flattens every selected Team alias through the shared helper', async () => {
+    const { flattenTeamLabelAliases } = await import('../frontend/src/settings/groupConfigUtils.js');
+    const calls = [];
+    const { api } = createHarness(async (_url, options) => {
+        calls.push(options);
+        return new Response(JSON.stringify({ issues: [] }));
+    }, {
+        activeGroupTeamIds: ['team-a', 'team-b'],
+        activeGroupTeamLabels: {
+            'team-a': ['label_team_a', 'label_team_a_old'],
+            'team-b': ['LABEL_TEAM_A', 'label_team_b'],
+            'team-c': ['label_team_c'],
+        },
+        measurementDependencies: { flattenTeamLabelAliases },
+    });
+
+    await api.fetchTasks('product');
+
+    assert.deepEqual(calls.map(call => call.teamLabels), [['label_team_a', 'label_team_a_old', 'label_team_b']]);
+});
+
+test('alert Epic load reports alert_scope_too_large per project without a local error', async () => {
+    const { api, errors } = createHarness(async (_url, options) => {
+        if (options.purpose === 'alerts' && options.project === 'product') {
+            return new Response(JSON.stringify({ error: 'alert_scope_too_large', message: 'This Department is too large for Epic alerts.' }), { status: 422 });
+        }
+        return new Response(JSON.stringify({ issues: [], epicsInScope: [] }));
+    });
+
+    assert.deepEqual(await api.loadAlertEpics(), { product: 'alert_scope_too_large', tech: 'applied' });
+    assert.deepEqual(errors, []);
+});
+
+test('alert_scope_too_large outside alert purpose stays an ordinary non-auth failure', async () => {
+    const { api } = createHarness(async () => new Response(
+        JSON.stringify({ error: 'alert_scope_too_large', message: 'This Department is too large for Epic alerts.' }),
+        { status: 422 }
+    ));
+
+    assert.equal(await api.loadProductTasks(), 'non_auth_failure');
+});
 
 test('strict Board retires every legacy sprint loader without issuing transport', async () => {
     const calls = [];

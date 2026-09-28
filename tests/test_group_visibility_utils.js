@@ -12,9 +12,10 @@ function loadGroupVisibilityUtils() {
         .replaceAll('export function ', 'function ');
     const source = fs.readFileSync(modulePath, 'utf8')
         .replace(/import .*onboardingModules\.js';\n/, '')
+        .replace(/import .*groupConfigUtils\.js';\n/, '')
         .replaceAll('export const ', 'const ')
         .replaceAll('export function ', 'function ');
-    return new Function(`${onboardingSource}\n${source}; return {
+    return new Function(`const GROUPS_CONFIG_VERSION = 2;\n${onboardingSource}\n${source}; return {
         normalizeGroupPreferences,
         effectiveVisibleGroupIds,
         visibleGroupsForControls,
@@ -37,12 +38,14 @@ function loadGroupConfigUtils() {
         .replaceAll('export function ', 'function ');
     const visibilitySource = fs.readFileSync(visibilityPath, 'utf8')
         .replace(/import .*onboardingModules\.js';\n/, '')
+        .replace(/import .*groupConfigUtils\.js';\n/, '')
         .replaceAll('export const ', 'const ')
         .replaceAll('export function ', 'function ');
     const configSource = fs.readFileSync(configPath, 'utf8')
         .replace(/import .*groupVisibilityUtils\.js';\n/, '')
         .replace(/import .*onboardingModules\.js';\n/, '')
         .replace(/import .*groupBoardModel\.js';\n/, '')
+        .replaceAll('export const ', 'const ')
         .replaceAll('export function ', 'function ');
     const boardSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'settings', 'groupBoardModel.js'), 'utf8')
         .replaceAll('export const ', 'const ')
@@ -186,11 +189,20 @@ test('buildSharedGroupsPayload includes loaded base revision', () => {
     const draft = { version: 1, configRevision: 7, groups: [{ id: 'platform' }], defaultGroupId: 'platform' };
 
     assert.deepEqual(buildSharedGroupsPayload(draft), {
-        version: 1,
+        version: 2,
         baseRevision: 7,
         groups: [{ id: 'platform' }],
         defaultGroupId: 'platform'
     });
+});
+
+test('buildSharedGroupsPayload always emits the current group payload version', () => {
+    const { buildSharedGroupsPayload } = loadGroupVisibilityUtils();
+
+    for (const draftVersion of [1, 2, 99, undefined]) {
+        const draft = { version: draftVersion, configRevision: 1, groups: [], defaultGroupId: '' };
+        assert.equal(buildSharedGroupsPayload(draft).version, 2);
+    }
 });
 
 test('group preferences payloads use visibleGroupIds and activeGroupId', () => {

@@ -52,7 +52,9 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # feature/planning-capacity-editing threads the workspace Capacity snapshot through reads,
     # scenario sizing, verified OAuth scope context, and exact Jira issue mutations (+74).
     # In-app load metrics: gated wrapper and worker observer wiring (+3).
-    "jira_server.py": 6461,
+    # improvement/multiple-group-labels final-review round: find_comma_scalar_team_label_errors
+    # wrapper for the save-only comma-scalar Team-label guard (+2).
+    "jira_server.py": 6463,
     # feature/eng-epic-sort-and-track adds the epic Sort dropdown wiring (engEpicSort state,
     # analytics handler, sorted epicGroups, EngView props) and the title-row priority chevron
     # plus Product Track indicator in renderEpicBlock.
@@ -141,7 +143,11 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # plus cache-bypassing Project Track range synchronization on explicit Sprint commitment (+557).
     # Connection recovery keeps only orchestration wiring here; controller, notice, and
     # Scenario restoration behavior live in extracted modules (+15 after merging main).
-    "frontend/src/dashboard.jsx": 18093,
+    # docs/plans/EXEC-multiple-group-labels.md adds the bounded multi-chip Team-label alias
+    # editor, oversized-Department alert-scope notice state, and the alias-aware
+    # missingLabelEpics/normalizedActiveGroupTeamLabels predicates (+96, +1 after merging
+    # main's fixed-height Board page).
+    "frontend/src/dashboard.jsx": 18190,
 }
 
 

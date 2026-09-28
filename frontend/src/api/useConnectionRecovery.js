@@ -56,6 +56,13 @@ export function useConnectionRecovery({
         window.dispatchEvent(new Event(CONNECTION_AVAILABLE_EVENT));
     }, []);
 
+    // Restoring the reload capsule ends only the previous outage; an outage reported after the reload
+    // is still active and must keep ownership so focus/visibility recovery can reload again.
+    const releaseRestoredOwnership = React.useCallback((nextStatus = 'idle') => {
+        if (unavailableRef.current) return;
+        releaseOwnership(nextStatus);
+    }, [releaseOwnership]);
+
     const clearServerConnectionError = React.useCallback(() => {
         if (!unavailableRef.current) setServerConnectionError('');
     }, [setServerConnectionError]);
@@ -225,7 +232,7 @@ export function useConnectionRecovery({
         notice,
         pendingRef,
         recover,
-        releaseOwnership,
+        releaseOwnership: releaseRestoredOwnership,
         reportServerConnectionError,
         scenarioStartedRef,
         setNotice,

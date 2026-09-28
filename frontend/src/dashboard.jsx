@@ -546,10 +546,7 @@ import {
                         });
                         markConnectionBootstrapHealthy('sprints');
                         // An abort that lands mid-body is a timed-out read, not an empty catalog.
-                        const body = await response.json().catch(error => {
-                            if (signal?.aborted) throw error;
-                            return {};
-                        });
+                        const body = await response.json().catch(error => { if (signal?.aborted) throw error; return {}; });
                         return { httpStatus: response.status, ...body };
                     },
                     onState: nextState => {

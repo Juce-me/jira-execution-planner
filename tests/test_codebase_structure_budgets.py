@@ -145,8 +145,9 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # Scenario restoration behavior live in extracted modules (+15 after merging main).
     # docs/plans/EXEC-multiple-group-labels.md adds the bounded multi-chip Team-label alias
     # editor, oversized-Department alert-scope notice state, and the alias-aware
-    # missingLabelEpics/normalizedActiveGroupTeamLabels predicates (+96).
-    "frontend/src/dashboard.jsx": 18189,
+    # missingLabelEpics/normalizedActiveGroupTeamLabels predicates (+96, +1 after merging
+    # main's fixed-height Board page).
+    "frontend/src/dashboard.jsx": 18190,
 }
 
 

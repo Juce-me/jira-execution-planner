@@ -16,6 +16,7 @@ function requestBody(request) {
 async function installSettingsFixture(page, {
     authMode = 'atlassian_oauth',
     adminUserManagementAvailable = true,
+    userIsToolAdmin = true,
     settingsAdminOnly = false,
     userCanEditSettings = true,
     userCanEditEpmConfig = true,
@@ -74,6 +75,7 @@ async function installSettingsFixture(page, {
             userCanEditSettings,
             ...(omitEpmPermission ? {} : { userCanEditEpmConfig }),
             adminUserManagementAvailable,
+            userIsToolAdmin,
             environmentConfigExists: true,
             projectsConfigured: true,
             epm: { version: 2, labelPrefix: 'rnd_project_', scope: { rootGoalKey: '', subGoalKeys: [] }, projects: {} },
@@ -156,6 +158,22 @@ test('OAuth account IDs back administrator selection and unified Save', async ({
     await expect.poll(() => calls.some(call => call.method === 'POST'
         && call.pathname === '/api/admin/users/db-user-member/admin-grant')).toBe(true);
     await expect(dialog).toBeHidden();
+});
+
+test('collaborative settings hide Access and never load the user directory for a non-admin', async ({ page }) => {
+    const calls = await installSettingsFixture(page, {
+        settingsAdminOnly: false,
+        userCanEditSettings: true,
+        userIsToolAdmin: false,
+    });
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+    await dialog.getByRole('button', { name: 'Admin', exact: true }).click();
+
+    await expect(dialog.getByRole('tab', { name: 'Scope projects' })).toBeVisible();
+    await expect(dialog.getByRole('tab', { name: 'Access' })).toHaveCount(0);
+    expect(calls.some(call => call.pathname.startsWith('/api/admin/'))).toBe(false);
 });
 
 test('Basic mode states that every user is an administrator without loading OAuth users', async ({ page }) => {

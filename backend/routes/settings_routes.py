@@ -3,6 +3,7 @@
 from flask import Blueprint
 from werkzeug.exceptions import BadRequest
 
+from backend.auth.admin_bootstrap import workspace_tool_admin_display_names
 from backend.auth.db_context import is_db_auth_context
 from backend.config.db_repository import ViewConfigNotFound
 from backend.config.repository import ConfigStorageError, config_storage_db_enabled, db_repository
@@ -708,6 +709,7 @@ def get_config():
         'userCanEditViewConfig': True,
         'userCanEditEpmConfig': True,
         'adminUserManagementAvailable': is_db_auth_context(auth_context),
+        'userIsToolAdmin': bool(auth_context.is_admin),
         'groupsConfigPath': resolve_groups_config_path(),
         'groupQueryTemplateEnabled': bool(JQL_QUERY_TEMPLATE),
         'projectsConfigured': bool(get_selected_projects()),
@@ -721,6 +723,15 @@ def get_config():
             'boardId': effective_catalog_config.board_id,
             'browserContextId': catalog_browser_context_id(auth_context),
         }
+        # An unconfigured workspace blocks ENG loading; editors fix it, everyone else
+        # sees only who to contact (display names, never the user directory).
+        missing_admin_settings = list(effective_catalog_config.missing_admin_settings)
+        payload['adminSettingsMissing'] = missing_admin_settings
+        if missing_admin_settings and not can_edit_shared_configuration:
+            with session_scope() as admin_session:
+                payload['adminContacts'] = workspace_tool_admin_display_names(
+                    admin_session, auth_context.workspace_id,
+                )
     if config_storage_db_enabled():
         payload['sharedConfig'] = shared_config
         payload['sharedConfigRevision'] = shared_config_revision

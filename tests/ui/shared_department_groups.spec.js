@@ -305,6 +305,7 @@ async function mockFirstRunDashboard(page, options = {}) {
                 userCanEditSettings: options.userCanEditSettings ?? true,
                 userCanEditEpmConfig: options.userCanEditEpmConfig ?? false,
                 adminUserManagementAvailable: options.adminUserManagementAvailable ?? false,
+                userIsToolAdmin: options.userIsToolAdmin ?? true,
                 ...(options.sharedConfig ? { sharedConfig: options.sharedConfig, sharedConfigRevision: 4 } : {}),
                 ...(options.epmConfig ? { epm: options.epmConfig } : {}),
             });

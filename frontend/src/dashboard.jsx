@@ -183,6 +183,8 @@ import {
 } from './api/configApi.js';
 import FirstRunGroupSelectionModal from './settings/FirstRunGroupSelectionModal.jsx';
 import FirstRunGroupSetupChoice from './settings/FirstRunGroupSetupChoice.jsx';
+import UnconfiguredWorkspaceNotice from './settings/UnconfiguredWorkspaceNotice.jsx';
+import { firstMissingAdminSettingsTab, resolveAdminSettingsGate, useAdminSettingsGate } from './settings/adminSettingsGate.js';
 import FirstRunGroupConfigurationGuide, {
     createFirstRunConfigurationSession,
     firstRunConfigurationSessionReducer,
@@ -687,13 +689,16 @@ import {
             const [performanceLoadRevision, setPerformanceLoadRevision] = useState(0);
             const [userCanEditEpmConfig, setUserCanEditEpmConfig] = useState(false);
             const [adminUserManagementAvailable, setAdminUserManagementAvailable] = useState(false);
+            const [userIsToolAdmin, setUserIsToolAdmin] = useState(false);
+            const adminAccessAvailable = !adminUserManagementAvailable || userIsToolAdmin; // DB user directory: tool admins only
             const [environmentConfigExists, setEnvironmentConfigExists] = useState(false);
             const adminAccess = useAdminAccessSettings({
                 backendUrl: BACKEND_URL,
-                available: adminUserManagementAvailable,
+                available: adminUserManagementAvailable && userIsToolAdmin,
                 active: showGroupManage && groupManageTab === 'access',
             });
             const canEditSharedConfiguration = !settingsAdminOnly || userCanEditSettings;
+            const [adminSettingsGate, applyAdminSettingsGateConfig, setAdminSettingsGate] = useAdminSettingsGate({ canEditSettings: canEditSharedConfiguration, openSettings: tab => openGroupManage(tab) });
             const canEditEpmConfiguration = userCanEditEpmConfig === true;
             const preferredSettingsTab = canEditSharedConfiguration && !environmentConfigExists ? 'scope' : 'teams';
             const [priorityWeightsDraft, setPriorityWeightsDraft] = useState(() => clonePriorityWeightRows(DEFAULT_PRIORITY_WEIGHT_ROWS));
@@ -939,7 +944,8 @@ import {
             const excludedCapacityEpicDropdownRef = useRef(null);
             const isStatsSourceOnlyStatsView = showStats && (statsView === 'excludedCapacity' || statsView === 'monoCrossShare' || statsView === 'projectTrack');
             const isCatchUpMode = selectedView === 'eng' && !showPlanning && !showStats && !showScenario && !showBoard;
-            const boardScopeRequested = selectedView === 'eng' && showBoard && ['component', 'all_work'].includes(boardStrictScope);
+            const boardScopeRequested = selectedView === 'eng' && showBoard && ['component', 'all_work'].includes(boardStrictScope)
+                && adminSettingsGate.status !== 'missing';
             useEffect(() => { if (selectedView !== 'eng' || !showBoard) setBoardStrictScope(''); }, [selectedView, showBoard]);
             const [projectTrackCapacitySide, setProjectTrackCapacitySide] = useState(
                 ['product', 'tech', 'both'].includes(savedPrefsRef.current.projectTrackCapacitySide) ? savedPrefsRef.current.projectTrackCapacitySide : 'product'
@@ -2134,9 +2140,10 @@ import {
             }, []);
 
             useEffect(() => {
-                if (groupsLoading || groupPreferences.onboardingRequired) return;
+                // Sprint discovery also waits for the config bootstrap: an unconfigured workspace fetches nothing.
+                if (groupsLoading || groupPreferences.onboardingRequired || adminSettingsGate.status !== 'clear') return;
                 loadSprints();
-            }, [groupsLoading, groupPreferences.onboardingRequired]);
+            }, [groupsLoading, groupPreferences.onboardingRequired, adminSettingsGate.status]);
 
             useEffect(() => {
                 let cancelled = false;
@@ -3216,7 +3223,7 @@ import {
             const handleAdminSettingsTabKeyDown = (event) => {
                 handleSettingsSubTabKeyDown(
                     event,
-                    ['scope', 'source', 'mapping', 'capacity', 'priorityWeights', 'access', ...(performanceAdminAvailable ? ['performance'] : [])],
+                    ['scope', 'source', 'mapping', 'capacity', 'priorityWeights', ...(adminAccessAvailable ? ['access'] : []), ...(performanceAdminAvailable ? ['performance'] : [])],
                     adminSettingsTab,
                     selectAdminSettingsTab,
                     'admin-settings'
@@ -3644,8 +3651,9 @@ import {
                     setBoardBootstrapStatus('loading');
                     try {
                         const config = await fetchAppConfig(BACKEND_URL);
+                        const nextAdminSettingsGate = applyAdminSettingsGateConfig(config);
                         sprintCatalogControllerRef.current.acceptSource(config.sprintCatalogSource || null);
-                        await loadSprints(false);
+                        if (nextAdminSettingsGate.status === 'clear') await loadSprints(false);
                         setBoardBootstrapStatus('ready');
                     } catch (error) {
                         if (!isAuthenticationRequiredError(error)) setBoardBootstrapStatus('error');
@@ -3881,10 +3889,11 @@ import {
                                 setAdminUserManagementAvailable(cfg.adminUserManagementAvailable === true);
                                 setBoardAllWorkAvailable(cfg.boardAllWorkAvailable);
                                 setEnvironmentConfigExists(Boolean(cfg.environmentConfigExists || cfg.projectsConfigured));
+                                const nextAdminSettingsGate = applyAdminSettingsGateConfig(cfg);
                                 sprintCatalogControllerRef.current.acceptSource(cfg.sprintCatalogSource || null);
                                 acceptedBoardConfigRef.current = true;
                                 setBoardBootstrapStatus('ready');
-                                if (boardAffectingAdminSave) await loadSprints(false);
+                                if (boardAffectingAdminSave && nextAdminSettingsGate.status === 'clear') await loadSprints(false);
                             }
                         } catch (err) {
                             if (shouldApplyBoardConfigRead()) {
@@ -6856,7 +6865,9 @@ import {
                     setUserCanEditSettings(config.userCanEditSettings === true);
                     setUserCanEditEpmConfig(config.userCanEditEpmConfig === true);
                     setAdminUserManagementAvailable(config.adminUserManagementAvailable === true);
+                    setUserIsToolAdmin(config.userIsToolAdmin === true);
                     setEnvironmentConfigExists(Boolean(config.environmentConfigExists || config.projectsConfigured));
+                    applyAdminSettingsGateConfig(config);
                     const sharedConfig = config.sharedConfig;
                     if (sharedConfig && Number.isInteger(config.sharedConfigRevision)) {
                         const selectedProjects = sharedConfig.projects?.selected || [];
@@ -6942,6 +6953,7 @@ import {
                     performanceGate.resolve(false);
                     setBoardBootstrapStatus('error');
                     if (isAuthenticationRequiredError(err)) return false;
+                    setAdminSettingsGate(gate => (gate.status === 'pending' ? resolveAdminSettingsGate(null) : gate));
                     if (!reportServerConnectionError(err, { bootstrapPart: 'config' })) {
                         console.error('Failed to load config:', err);
                     }
@@ -8412,7 +8424,7 @@ import {
 
             useEffect(() => {
                 if (!showStats || statsView !== 'cohort') return;
-                if (groupPreferences.onboardingRequired) { setCohortData(null); setCohortError(''); setCohortLoading(false); return; }
+                if (groupPreferences.onboardingRequired || adminSettingsGate.status !== 'clear') { setCohortData(null); setCohortError(''); setCohortLoading(false); return; }
                 const startQuarter = String(cohortStartQuarter || '').trim();
                 const endQuarter = String(cohortEndQuarter || '').trim();
                 if (!startQuarter || !endQuarter) {
@@ -8490,7 +8502,7 @@ import {
                         // ignore abort errors
                     }
                 };
-            }, [showStats, statsView, cohortStartQuarter, cohortEndQuarter, cohortQueryKey, cohortScopedTeamSignature, burnoutScopedTeamSignature, activeGroupMissingComponents, adHocEpicSignature, groupPreferences.onboardingRequired, issuePeopleStatsRevision]);
+            }, [showStats, statsView, cohortStartQuarter, cohortEndQuarter, cohortQueryKey, cohortScopedTeamSignature, burnoutScopedTeamSignature, activeGroupMissingComponents, adHocEpicSignature, groupPreferences.onboardingRequired, adminSettingsGate.status, issuePeopleStatsRevision]);
 
             const cohortQuarterOptions = React.useMemo(() => {
                 return buildQuarterOptions(getCurrentQuarterLabel(), 16);
@@ -8672,7 +8684,7 @@ import {
             }, [excludedCapacitySprintIds.length, excludedCapacitySprintIdsSignature, excludedCapacityScopedTeamSignature]);
             useEffect(() => {
                 if (!showStats || (statsView !== 'excludedCapacity' && statsView !== 'monoCrossShare' && statsView !== 'projectTrack')) return;
-                if (groupPreferences.onboardingRequired) { setExcludedCapacityData(null); setExcludedCapacityError(''); setExcludedCapacityLoading(false); return; }
+                if (groupPreferences.onboardingRequired || adminSettingsGate.status !== 'clear') { setExcludedCapacityData(null); setExcludedCapacityError(''); setExcludedCapacityLoading(false); return; }
                 // The capacity-mix source loads when EITHER excluded capacity OR Ad Hoc
                 // epics are configured: Ad Hoc-only groups still get the effort split.
                 if (statsView === 'excludedCapacity' && !excludedCapacityEpicOptions.length && adHocEpicSet.size === 0) {
@@ -8819,7 +8831,8 @@ import {
                 activeGroupId,
                 activeGroupTeamIds.length,
                 excludedCapacityRefreshNonce,
-                groupPreferences.onboardingRequired
+                groupPreferences.onboardingRequired,
+                adminSettingsGate.status
             ]);
             const excludedCapacityIssues = React.useMemo(() => {
                 return Array.isArray(excludedCapacityData?.issues) ? excludedCapacityData.issues : [];
@@ -12053,7 +12066,8 @@ import {
             const isLeadTimesFocusMode = showStats && statsView === 'cohort';
             // Catch Up is the all-false fallthrough of the ENG mode booleans, so Board has to opt
             // out here explicitly or the whole task list renders underneath the board.
-            const shouldRenderEngTaskList = selectedView === 'eng' && !showBoard && !isStatsSourceOnlyStatsView;
+            const engWorkspaceConfigured = adminSettingsGate.status !== 'missing';
+            const shouldRenderEngTaskList = selectedView === 'eng' && !showBoard && !isStatsSourceOnlyStatsView && engWorkspaceConfigured;
             const sprintCatalogWarning = sprintError && sprintCatalogState.validatedSnapshot
                 ? sprintError
                 : '';
@@ -14066,7 +14080,7 @@ import {
                 const canOpen = engSprintSelectorState.ordinarySelectable;
                 const displayedSprint = boardScopeControl && boardStrictScope
                     ? (boardStrictScope === 'component' ? 'Component' : 'All work')
-                    : (sprintName || (!selectedSprint && sprintsLoading ? 'Loading…' : 'Sprint'));
+                    : (sprintName || (!selectedSprint && sprintsLoading && engWorkspaceConfigured ? 'Loading…' : 'Sprint'));
                 const options = getSprintSelectorOptions(boardScopeControl);
                 const activeIndex = options.length
                     ? Math.min(Math.max(sprintActiveOptionIndex, 0), options.length - 1)
@@ -14906,7 +14920,7 @@ import {
                 rearmCatchUpAlerts();
                 loadMeasuredGroupTasks({ forceRefresh: true });
             };
-            const manualRefreshDisabled = connectionRecoveryBlocksRefresh || (selectedView === 'eng' ? (strictBoardActive ? strictBoardData.status === 'loading' || strictBoardData.scope?.type === 'uninitialized'
+            const manualRefreshDisabled = connectionRecoveryBlocksRefresh || (selectedView === 'eng' ? !engWorkspaceConfigured || (strictBoardActive ? strictBoardData.status === 'loading' || strictBoardData.scope?.type === 'uninitialized'
                 : boardScopeRequested ? ['loading', 'catalog_pending', 'unsupported'].includes(selectedScopeReadiness)
                 : loading || groupsLoading || groupPreferences.onboardingRequired)
                 : (epmProjectsLoading || epmRollupLoading));
@@ -15180,7 +15194,9 @@ import {
                         onReloadDiscard={() => recoverServerConnection({ manual: true, discardUnsaved: true })}
                     />
 
-                    {selectedView === 'eng' && !showBoard && !isCompletedSprintSelected && (
+                    {selectedView === 'eng' && !engWorkspaceConfigured && <UnconfiguredWorkspaceNotice canEditSettings={canEditSharedConfiguration} adminContacts={adminSettingsGate.contacts} onOpenSettings={() => openGroupManage(firstMissingAdminSettingsTab(adminSettingsGate.missing))} />}
+
+                    {selectedView === 'eng' && !showBoard && !isCompletedSprintSelected && engWorkspaceConfigured && (
                         <div className={`capacity-panel ${showPlanning ? 'open' : ''}`}>
                             <div className="capacity-header">
                                 <div className="capacity-title">Planned Teams Effort (Story Points)</div>
@@ -15573,7 +15589,7 @@ import {
                         </div>
                     )}
 
-                    {selectedView === 'eng' && showStats && (
+                    {selectedView === 'eng' && showStats && engWorkspaceConfigured && (
                     <div className={`stats-panel ${showStats ? 'open' : ''}`}>
                         {showStats && !canRenderStatsPanel && (
                             <div className="stats-note">Load stats for the selected sprint.</div>
@@ -16323,7 +16339,7 @@ import {
                     </div>
                     )}
 
-                    {selectedView === 'eng' && showScenario && (
+                    {selectedView === 'eng' && showScenario && engWorkspaceConfigured && (
                         <div className="scenario-fullbleed">
                             <div className="scenario-panel open">
                                 <div className="scenario-inner">
@@ -17201,7 +17217,7 @@ import {
                         </div>
                     )}
 
-                    {selectedView === 'eng' && showPlanning && (
+                    {selectedView === 'eng' && showPlanning && engWorkspaceConfigured && (
                     <div ref={planningPanelRef} className={`planning-panel ${showPlanning ? 'open' : ''}${isPlanningStuck ? ' stuck' : ''}`} data-onboarding-target="planning-overview" tabIndex={-1}>
                         {/* --- Planning Actions (top of panel) --- */}
                         <PlanningActionBar
@@ -17273,7 +17289,7 @@ import {
                         />
                     </div>
                     )}
-                    {selectedView === 'eng' && showBoard && (
+                    {selectedView === 'eng' && showBoard && engWorkspaceConfigured && (
                         boardScopeRequested && !strictBoardActive ? renderBlockedBoardScope() : (
                             <EngBoardView
                                 board={activeGroup?.board || null}
@@ -17489,6 +17505,7 @@ import {
                                 <AdminSettingsTabs
                                     activeTab={groupManageTab}
                                     performanceAvailable={performanceAdminAvailable}
+                                    accessAvailable={adminAccessAvailable}
                                     onSelect={selectAdminSettingsTab}
                                     onKeyDown={handleAdminSettingsTabKeyDown}
                                 />

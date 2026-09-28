@@ -147,7 +147,10 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # editor, oversized-Department alert-scope notice state, and the alias-aware
     # missingLabelEpics/normalizedActiveGroupTeamLabels predicates (+96, +1 after merging
     # main's fixed-height Board page).
-    "frontend/src/dashboard.jsx": 18190,
+    # Unconfigured-workspace gate: config-read wiring, ENG fetch/render gates, and the notice;
+    # gate state, admin auto-open, and the notice live in extracted settings modules; the
+    # Access tab is shown only to tool admins so it never requests the user directory (+17).
+    "frontend/src/dashboard.jsx": 18207,
 }
 
 

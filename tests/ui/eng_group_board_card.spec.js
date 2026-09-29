@@ -805,12 +805,14 @@ test('truncated epic values expose a bounded in-app readout without intercepting
     const callsBeforeReadouts = apiCalls.length;
     const titleTrigger = header.locator('.epic-link.epic-full-value-trigger');
     await expect(titleTrigger).toHaveAttribute('aria-describedby', /.+/);
+    await expect(titleTrigger).not.toHaveAttribute('title');
     await titleTrigger.hover();
     const readout = page.locator('.epic-full-value-readout:not([hidden])');
     await expect(readout).toHaveRole('tooltip');
     await expect(readout).toHaveText(LONG_EPIC_SUMMARY);
     const viewport = page.viewportSize();
     const readoutBox = await readout.boundingBox();
+    expect(readoutBox.width).toBeGreaterThan(18 * 16);
     expect(readoutBox.x).toBeGreaterThanOrEqual(7);
     expect(readoutBox.y).toBeGreaterThanOrEqual(7);
     expect(readoutBox.x + readoutBox.width).toBeLessThanOrEqual(viewport.width - 7);

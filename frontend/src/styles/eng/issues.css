@@ -771,7 +771,7 @@
             position: fixed;
             z-index: var(--modal-popup-z);
             width: max-content;
-            max-width: min(18rem, calc(100vw - 16px));
+            max-width: min(36rem, calc(100vw - 16px));
             padding: 0.35rem 0.5rem;
             border: 1px solid rgba(255, 255, 255, 0.18);
             border-radius: 8px;

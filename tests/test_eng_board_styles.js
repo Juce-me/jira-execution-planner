@@ -137,6 +137,7 @@ test('ENG epic headline source sizes artwork and keeps focus/readout visible', a
     assert.match(source, /\.epic-header\s+\.task-assignee-icon\s+svg[^}]*width:\s*21px\s*;[^}]*height:\s*21px\s*;/s);
     assert.match(source, /:is\(button,\s*input,\s*a,\s*\[tabindex\]\):focus-visible[^}]*outline:\s*2px[^}]*outline-offset:\s*-2px\s*;/s);
     assert.match(source, /\.epic-full-value-readout\s*\{[^}]*position:\s*fixed\s*;[^}]*z-index:/s);
+    assert.match(source, /\.epic-full-value-readout\s*\{[^}]*max-width:\s*min\(36rem,\s*calc\(100vw\s*-\s*16px\)\)\s*;/s);
 });
 
 test('Story requirement card is one tracked external link with bounded Jira analytics', async () => {

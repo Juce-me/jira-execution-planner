@@ -14609,7 +14609,6 @@ import {
                                                             href={jiraUrl ? `${jiraUrl}/browse/${epicGroup.key}` : '#'}
                                                             target="_blank"
                                                             rel="noopener noreferrer"
-                                                            title={epicTitle}
                                                             aria-label={epicTitle}
                                                             aria-describedby={describedBy}
                                                             {...pointerProps}

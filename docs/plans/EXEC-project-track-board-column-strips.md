@@ -2,7 +2,7 @@
 
 > **For agentic workers:** Use `superpowers:executing-plans` (or `superpowers:subagent-driven-development`) to implement this plan task by task. Follow repository publication rules; this plan does not authorize push or PR creation.
 
-**Status:** Planned, 2026-09-29 (issue #173). UI approved; implementation not started. Supersedes the 2026-09-08 "Left capacity" plan, which lived at this path's predecessor `EXEC-project-track-left-capacity.md`.
+**Status:** In progress, 2026-09-29 (issue #173). UI approved. Supersedes the 2026-09-08 "Left capacity" plan, which lived at this path's predecessor `EXEC-project-track-left-capacity.md`.
 
 **Goal:** In Project Track Team mode, add a thin strip under every track segment of the totals and By team bars that splits that track's SP by the parent Epic's current Board column, with a hover-only readout.
 
@@ -42,7 +42,7 @@ Modify:
 | `frontend/src/dashboard.jsx` | Resolve Board columns and wire the split only in Team mode |
 | `tests/test_project_track_stats.js` | Team scope and split calculations |
 | `tests/test_eng_board_columns.js` | Extracted resolver keeps Board behavior |
-| `tests/test_stacked_bar_render.js` (Create) | `renderToStaticMarkup` goldens for `StackedBar` without the strip prop, the phase `formatReadout` path, and with strips |
+| `tests/test_stacked_bar_render.js` + `tests/fixtures/stackedBarGolden.js` (Create; JSON fixtures are gitignored) | `renderToStaticMarkup` goldens for `StackedBar` without the strip prop, the phase `formatReadout` path, and with strips |
 | `tests/test_codebase_structure_budgets.py` | Raise the `dashboard.jsx` budget by the measured growth, with rationale |
 | `tests/ui/codebase_structure_smoke.spec.js` | 12-team/12-column fixture, geometry, hover, Epic-mode absence |
 | `docs/features/statistics.md` | Team-mode scope change, strips, readout |
@@ -93,7 +93,7 @@ Read/reuse without modifying: `frontend/src/settings/groupBoardModel.js`, `front
 
 ## Task 6 — Wiring
 
-- [ ] `ProjectTrackTotalsBar` and `ProjectTrackBreakdownChart` accept an optional `columnSplit` and pass `resolveSegmentStrip` only when it is present. Keep their existing props, row labels (the totals row keeps `rangeLabel`, so its readout title is the range label), links and empty text unchanged. The totals track legend follows decision D1 below.
+- [ ] `ProjectTrackTotalsBar` and `ProjectTrackBreakdownChart` accept an optional `columnSplit` and pass `resolveSegmentStrip` only when it is present. Keep their existing props, row labels (the totals row keeps `rangeLabel`, so its readout title is the range label), links and empty text unchanged. Remove the totals track legend in both modes (D1).
 - [ ] In `dashboard.jsx`, memoize `projectTrackColumnSplit = projectTrackMode === 'team' ? buildProjectTrackColumnSplit(excludedCapacityIssues, projectTrackOpts, activeGroup?.board?.columns || []) : null` next to `projectTrackBreakdown`, and pass it to both components. No new state, effect, fetch or request-list change. Measure the `dashboard.jsx` growth and raise its budget in `tests/test_codebase_structure_budgets.py` with a one-line rationale; keep the growth to the memo and two props.
 
 ## Task 7 — UI acceptance
@@ -102,9 +102,9 @@ Read/reuse without modifying: `frontend/src/settings/groupBoardModel.js`, `front
 - [ ] In `tests/ui/codebase_structure_smoke.spec.js`, reuse `installApiMocks` and `makeExcludedCapacityIssue` (add an optional `status` argument, default `'To Do'`). Use synthetic data only:
   - 12 teams with unequal totals, one long team name, decimal SP, a tiny track segment, an absent track, a No track segment, one story without an Epic, and one Killed story plus one story under a Killed Epic;
   - a group with a 12-column configured Board, one Epic status that no column lists, plus a second run with no Board config (default split).
-- [ ] Assert: each strip's left/right edges match its segment within 1px; strip height 7px; part width ratios match SP ratios; Killed SP absent from totals and rows; Done-Epic SP present in Team mode and absent in Epic mode; strips absent in Epic mode (totals, By assignee, phase); no text node containing `left` inside the Project Track cards; no legend beyond the existing totals track legend.
+- [ ] Assert: each strip's left/right edges match its segment within 1px; strip height 7px; part width ratios match SP ratios; Killed SP absent from totals and rows; Done-Epic SP present in Team mode and absent in Epic mode; strips absent in Epic mode (totals, By assignee, phase); no text node containing `left` inside the Project Track cards; no `.project-track-legend` in either mode.
 - [ ] Hover a strip: the readout title and one line per column (including a `0 SP` column), bounded inside the viewport at the right and bottom edges. Tab-focus shows the same readout. A click performs no navigation and fires no request.
-- [ ] Hovering a segment has computed `transform: none`; the main view-switch button still lifts on hover.
+- [ ] Hovering a segment has computed `transform: none`. (The main view switch is a `SegmentedControl` whose hover already sets `transform: none`, so there is no lift there to preserve.)
 - [ ] Request-count assertion: start in Epic mode and wait for the one-time phase-duration fetch; then toggle Team → Epic → Team and hover strips; assert no new API calls.
 - [ ] The Team-mode "Story points per sprint" chart includes Done-Epic SP and excludes Killed SP (it shares the Team-mode scope).
 - [ ] Capture and inspect settled screenshots at 1280px and 375px with all 12 teams visible and a strip readout open. Compare them with the approved preview.
@@ -132,7 +132,7 @@ git diff --check
 
 ## Decisions
 
-- D1 — open: the existing totals-card track legend (Committed / Flexible / No track swatches). The approved preview omits it and the user asked to drop the legend pane; `ProjectTrackSprintChart` has its own legend. Remove it in Team mode, in both modes, or keep it. Default until answered: keep it unchanged.
+- D1 — resolved 2026-09-29: remove the totals-card track legend (`ul.project-track-legend` in `ProjectTrackTotalsBar`) in both Epic and Team mode; the bars carry track names and `ProjectTrackSprintChart` keeps its own legend. Remove the now-unused legend CSS only if nothing else uses it.
 - D2 — resolved 2026-09-29: an unconfigured Department uses the composer's To Do / In Progress / Done default for the strips, even though the Board page itself shows one "All epics" column.
 - D3 — resolved: the preview's "Killed excluded" header text and its `project-track-column-strip*` class names are mockup-only; production uses `stacked-bar-strip*` classes and documents Killed exclusion in `docs/features/statistics.md`.
 
@@ -140,14 +140,21 @@ git diff --check
 
 | Task | Status | Evidence |
 | --- | --- | --- |
-| 1 | Not started | |
-| 2 | Not started | |
-| 3 | Not started | |
-| 4 | Not started | |
-| 5 | Not started | |
-| 6 | Not started | |
-| 7 | Not started | |
-| 8 | Not started | |
+| 1 | Done | Field-list assertion failed first, then `.venv/bin/python -m unittest tests.test_excluded_capacity_stats_api` OK; `jira_server.py` line count unchanged. |
+| 2 | Done | Resolver tests failed first (`resolveBoardColumnOwner is not a function`), then Board column/render/view-model tests 55 pass. |
+| 3 | Done | New tests failed first (missing export), then 18 pass in `tests/test_project_track_stats.js`; #186 test rewritten to Epic mode. |
+| 4 | Done | Goldens captured before editing; unchanged after; strip render test passes (2/2). |
+| 5 | Done | Strip CSS, readout swatch, no-lift segment hover; legend CSS removed with its only consumer (D1). |
+| 6 | Done | Memo + two props in `dashboard.jsx` (+6 lines, budget raised to 18213 with rationale); budgets test OK. |
+| 7 | Done | `npx playwright test tests/ui/codebase_structure_smoke.spec.js -g 'Project Track'`: 4 passed. Screenshots inspected: `test-results/codebase-structure-smoke/statistics-project-track-strips-{1280,readout,375}.png`. |
+| 8 | Done | Docs updated; analytics events + source guards 70 pass; named command set 196 pass; `npm run build` OK; `git diff --check` clean. Full suites: see below. |
+
+Full suites (2026-09-29, local):
+- `npm run test:frontend:unit`: 1524 pass, 0 fail.
+- `.venv/bin/python -m unittest discover -s tests`: 2006 run, 25 skipped, 1 error — `test_oauth_route_guards.test_basic_mode_does_not_apply_oauth_route_guard` cannot reach the local Postgres socket (environment, untouched code).
+- `npm run test:frontend:ui`: 930 passed, 2 skipped, 17 failed. The same specs on the unmodified branch head fail 15 identical tests (ENG Board selector config/scheduling matrix, load performance, priority menu, Planning config staging). The remaining 2 (`eng_board_measurement_runner`, Planning hoverless touch) pass when re-run alone with this change. No Project Track or Statistics-strip regression.
+
+Divergences from the plan text: the split helper returns plain objects (`rows[rowId][track][columnId]`) instead of a `Map`, for direct use in render props; strip parts come from a small exported `projectTrackStripParts` helper shared by both charts; `No Epic` appears in a track's readout only when that track has No Epic SP.
 
 ## Planning self-review
 

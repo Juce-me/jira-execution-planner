@@ -20,7 +20,7 @@ The preview copies the real stats card, track-bar and hover-readout CSS from `ma
 - **Hover/focus readout only; no click action.** Reuse the shared `StackedBar` bounded readout. For a strip it shows `Team · Track: N SP` as the title, then one line per Board column in Board order with its colour swatch and SP, including `0 SP` columns. Keyboard focus shows the same readout. Existing bar-segment readouts are unchanged.
 - **Hover styling for Project Track bars and strips:** no lift. Replace the global button hover lift on `.stacked-bar-segment` with a soft shadow and keep the segment's own colour. Keep the existing lift on main controls such as the Catch Up / Statistics / Planning view switch.
 - Epic mode (totals, per-sprint, By assignee, phase) is unchanged and has no strips.
-- The preview omits the existing totals-card track legend; whether production removes it is open decision D1 in the plan.
+- The existing totals-card track legend is removed in both Epic and Team mode (user decision 2026-09-29); the bars already carry the track names and the per-sprint chart keeps its own legend.
 
 ## Scope and calculations
 

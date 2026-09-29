@@ -1,9 +1,16 @@
 import { classifyCapacityIssue } from '../capacityClassification.mjs';
 import { storyPointsFor } from './excludedCapacityStats.js'; // exported in Step 2.0
 import { getProjectTrackRank } from '../eng/engTaskUtils.js';
+import { deriveDefaultBoardColumns, resolveBoardColumnOwner } from '../eng/engBoardColumns.js';
+import { BOARD_COLUMN_COLOURS, DEFAULT_COLUMN_COLOUR } from '../settings/groupBoardModel.js';
 
 export const NO_TRACK_LABEL = 'No track';
+export const NO_EPIC_COLUMN_ID = 'no-epic';
+const NO_EPIC_COLUMN = Object.freeze({ id: NO_EPIC_COLUMN_ID, name: 'No Epic', colour: '#e8edf7' });
+// Epic mode drops closed Epics (#186); Team mode counts every Epic in the range so capacity does
+// not shrink as Epics close, and drops only Killed work (#173).
 const CLOSED_EPIC_STATUSES = new Set(['done', 'killed', 'incomplete']);
+const DEFAULT_COLUMN_IDS = { 'To Do': 'default-to-do', 'In Progress': 'default-in-progress', Done: 'default-done' };
 
 function firstSprint(task) {
   // A story belongs to one sprint; the normalized field is [{id,name,state}]. Take the first; key on id.
@@ -29,7 +36,10 @@ function trackOf(task) {
 // subset must apply that check themselves (e.g. Task 5's time-in-phase epic set).
 export function inScope(task, opts) {
   const epicStatus = String(task?.fields?.epicStatus || '').trim().toLowerCase();
-  if (CLOSED_EPIC_STATUSES.has(epicStatus)) return false;
+  if (opts.mode === 'team') {
+    const storyStatus = String(task?.fields?.status?.name || '').trim().toLowerCase();
+    if (epicStatus === 'killed' || storyStatus === 'killed') return false;
+  } else if (CLOSED_EPIC_STATUSES.has(epicStatus)) return false;
   const sprint = firstSprint(task);
   if (!sprint) return false;
   if (opts.allowedSprintIds && !opts.allowedSprintIds.has(sprint.id)) return false;
@@ -134,7 +144,7 @@ export function buildProjectTrackBreakdownRows(tasks, rawOpts) {
     }
   } else {
     for (const task of scoped) {
-      const teamId = task?.fields?.teamId || task?.fields?.teamName || 'unknown';
+      const teamId = teamRowIdentity(task);
       // Row label is the story's real team NAME; fall back to the id only when the
       // name is absent. Group teamLabels ids are deliberately not used here.
       const label = task?.fields?.teamName || teamId;
@@ -143,4 +153,61 @@ export function buildProjectTrackBreakdownRows(tasks, rawOpts) {
   }
   const rows = Array.from(rowMap.values()).sort((a, b) => b.total - a.total);
   return { rows, tracks: orderTracks(trackSet) };
+}
+
+function teamRowIdentity(task) {
+  return task?.fields?.teamId || task?.fields?.teamName || 'unknown';
+}
+
+// Team mode strips (#173): the Department Board's columns in Board order, or the composer's
+// To Do / In Progress / Done default over the observed Epic statuses when no column holds one.
+function resolveStripColumns(boardColumns, tasks) {
+  const owner = resolveBoardColumnOwner(boardColumns);
+  if (owner) {
+    const live = boardColumns.filter((column) => (column?.statuses || []).length > 0);
+    return { owner, columns: live.map((column) => ({ id: column.id, name: column.name,
+      colour: BOARD_COLUMN_COLOURS.includes(column.colour) ? column.colour : DEFAULT_COLUMN_COLOUR })) };
+  }
+  const observed = [...new Set(tasks.map((task) => String(task?.fields?.epicStatus || '').trim()).filter(Boolean))].sort();
+  // No observed Epic status at all still needs one column for status-less Epics.
+  const defaults = deriveDefaultBoardColumns((observed.length ? observed : ['To Do']).map((name) => ({ name })))
+    .map((column) => ({ ...column, id: DEFAULT_COLUMN_IDS[column.name] }));
+  return {
+    owner: resolveBoardColumnOwner(defaults),
+    columns: defaults.map(({ id, name, colour }) => ({ id, name, colour }))
+  };
+}
+
+// Per team row and per track, Story Points by the parent Epic's Board column. Uses the same
+// scope, SP and row identity as buildProjectTrackBreakdownRows (Team mode), so every track's
+// column parts sum to that track's segment and `all` sums to the totals bar.
+export function buildProjectTrackColumnSplit(tasks, rawOpts, boardColumns) {
+  const opts = withAllowed(rawOpts);
+  const scoped = (tasks || []).filter((t) => inScope(t, opts) && storyPointsFor(t) > 0);
+  const { owner, columns } = resolveStripColumns(Array.isArray(boardColumns) ? boardColumns : [], scoped);
+  const rows = {}; const all = {}; let hasNoEpic = false;
+  const add = (bucket, track, columnId, pts) => {
+    if (!bucket[track]) bucket[track] = {};
+    bucket[track][columnId] = (bucket[track][columnId] || 0) + pts;
+  };
+  for (const task of scoped) {
+    const hasEpic = Boolean(String(task?.fields?.epicKey || '').trim());
+    const columnId = hasEpic ? owner(String(task?.fields?.epicStatus || '').trim()) : NO_EPIC_COLUMN_ID;
+    if (columnId === NO_EPIC_COLUMN_ID) hasNoEpic = true;
+    const rowId = teamRowIdentity(task);
+    if (!rows[rowId]) rows[rowId] = {};
+    const track = trackOf(task); const pts = storyPointsFor(task);
+    add(rows[rowId], track, columnId, pts);
+    add(all, track, columnId, pts);
+  }
+  return { columns: hasNoEpic ? [...columns, { ...NO_EPIC_COLUMN }] : columns, rows, all };
+}
+
+// StackedBar strip parts for one track: every Board column in order (0 SP columns included for
+// the readout), plus No Epic only when that track has some.
+export function projectTrackStripParts(split, byTrackColumns, track) {
+  const byColumn = byTrackColumns?.[track] || {};
+  return split.columns
+    .map((column) => ({ key: column.id, label: column.name, colour: column.colour, value: byColumn[column.id] || 0 }))
+    .filter((part) => part.key !== NO_EPIC_COLUMN_ID || part.value > 0);
 }

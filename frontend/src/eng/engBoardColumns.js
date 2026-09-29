@@ -145,6 +145,26 @@ function syntheticColumn(id, name, flag) {
     };
 }
 
+// The one status -> column ownership rule, mirroring backend/services/eng_board.py's
+// project_board. Shared with Statistics (Project Track strips) so both surfaces place an Epic in
+// the same column. Returns null when no column holds a status (the caller picks its fallback).
+export function resolveBoardColumnOwner(columns) {
+    const live = (columns || []).filter((column) => (column?.statuses || []).length > 0);
+    if (!live.length) return null;
+    // First column wins a status held by two. The validator makes that an error on save, but a
+    // config written before it can still contain one, and an epic must land somewhere definite
+    // rather than in whichever column happened to be iterated last.
+    const ownerByStatus = new Map();
+    live.forEach((column) => {
+        (column.statuses || []).forEach((status) => {
+            if (!ownerByStatus.has(status)) ownerByStatus.set(status, column.id);
+        });
+    });
+    // A status no column holds is To Do work: it lands in the first column, which is To Do in the
+    // default To Do | In Progress | Done board. There is no Unmapped column.
+    return (statusName) => ownerByStatus.get(statusName) ?? live[0].id;
+}
+
 // `columns` is the stored `board.columns[]`; `epicGroups` is dashboard.jsx's groupTasksByEpic
 // output. Columns with no statuses do not render (§6.1) — the validator makes that a save-time
 // error, but a config that predates the validator can still contain one.
@@ -180,22 +200,10 @@ export function buildBoardColumns({ columns = [], epicGroups = [], columnEpicKey
         )];
     }
 
-    // First column wins a status held by two. The validator makes that an error on save, but a
-    // config written before it can still contain one, and an epic must land somewhere definite
-    // rather than in whichever column happened to be iterated last.
-    const ownerByStatus = new Map();
-    live.forEach((column) => {
-        (column.statuses || []).forEach((status) => {
-            if (!ownerByStatus.has(status)) ownerByStatus.set(status, column.id);
-        });
-    });
-
-    // A status no column holds is To Do work: it lands in the first column, which is To Do in the
-    // default To Do | In Progress | Done board. There is no Unmapped column.
+    const ownerOf = resolveBoardColumnOwner(live);
     const bucketById = new Map(live.map((column) => [column.id, []]));
     epics.forEach((group) => {
-        const owner = ownerByStatus.get(epicStatusName(group.epic)) ?? live[0].id;
-        bucketById.get(owner).push(group);
+        bucketById.get(ownerOf(epicStatusName(group.epic))).push(group);
     });
 
     return live.map((column) => renderColumn(column, bucketById.get(column.id)));

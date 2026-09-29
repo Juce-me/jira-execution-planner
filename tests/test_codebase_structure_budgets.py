@@ -150,7 +150,9 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # Unconfigured-workspace gate: config-read wiring, ENG fetch/render gates, and the notice;
     # gate state, admin auto-open, and the notice live in extracted settings modules; the
     # Access tab is shown only to tool admins so it never requests the user directory (+17).
-    "frontend/src/dashboard.jsx": 18207,
+    # docs/plans/EXEC-project-track-board-column-strips.md wires the Team-mode Board-column split
+    # memo into the two Project Track charts; the model lives in stats/projectTrackStats.js (+6).
+    "frontend/src/dashboard.jsx": 18213,
 }
 
 

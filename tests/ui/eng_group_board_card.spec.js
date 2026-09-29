@@ -1308,6 +1308,52 @@ test.describe('ENG hover affordances', () => {
         expect(glyphs.size).toBeGreaterThanOrEqual(3);
     });
 
+    test('Epic and Story priority hover frames share one shape and the app radius', async ({ page }) => {
+        await openBoard(page, { width: 1280, height: 900, firstEpicTrack: 'Unidentified', firstEpicPriority: 'Major' });
+        await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Catch Up' }).click();
+        const block = page.locator('.epic-block').first();
+        const epic = block.locator('.epic-header button.task-priority-icon').first();
+        const story = block.locator('.task-item button.task-priority-icon').first();
+        const track = block.locator('.epic-header [data-project-track-transition-trigger]').first();
+        const appRadius = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--radius').trim());
+        expect(appRadius, 'the app defines one corner radius').toBe('10px');
+
+        const frameOf = async locator => {
+            await locator.scrollIntoViewIfNeeded();
+            await page.mouse.move(2, 2);
+            await locator.hover();
+            // The frame fades in over 0.16s; only the settled fill counts.
+            await expect.poll(() => locator.evaluate(node => getComputedStyle(node, '::before').backgroundColor)).toBe('rgb(248, 247, 244)');
+            return locator.evaluate(node => {
+                const frame = getComputedStyle(node, '::before');
+                const label = getComputedStyle(node, '::after');
+                const box = node.getBoundingClientRect();
+                return {
+                    width: frame.width, height: frame.height, radius: frame.borderRadius, fill: frame.backgroundColor,
+                    ring: frame.boxShadow, transform: frame.transform, position: frame.position,
+                    // Label bottom edge relative to the frame's top edge.
+                    labelAboveFrame: parseFloat(label.top) - (box.height / 2 - 12),
+                    ownFill: getComputedStyle(node).backgroundColor, ownRing: getComputedStyle(node).boxShadow,
+                };
+            });
+        };
+        const epicFrame = await frameOf(epic);
+        const storyFrame = await frameOf(story);
+        expect(epicFrame.width).toBe('24px');
+        expect(epicFrame.height).toBe('24px');
+        expect(epicFrame.radius).toBe(appRadius);
+        expect(epicFrame.transform, 'frame stays centred on the icon').toBe('matrix(1, 0, 0, 1, -12, -12)');
+        expect(storyFrame, 'Story frame matches the Epic frame').toEqual(epicFrame);
+        expect(epicFrame.ownFill, 'the button itself stays transparent').toBe('rgba(0, 0, 0, 0)');
+        expect(epicFrame.ownRing).toBe('none');
+
+        await track.scrollIntoViewIfNeeded();
+        await page.mouse.move(2, 2);
+        await track.hover();
+        await expect.poll(() => track.evaluate(node => getComputedStyle(node).backgroundColor)).toBe('rgb(248, 247, 244)');
+        expect(await track.evaluate(node => getComputedStyle(node).borderRadius), 'Project Track frame uses the same radius').toBe(appRadius);
+    });
+
     test('transparent controls stay readable on hover instead of turning dark', async ({ page }) => {
         await openBoard(page, { width: 1280, height: 900 });
         await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Catch Up' }).click();

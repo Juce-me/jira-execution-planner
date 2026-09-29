@@ -388,7 +388,7 @@
             font: inherit;
             font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
             cursor: pointer;
-            border-radius: 8px;
+            border-radius: var(--radius);
             transition: background-color 0.16s ease, box-shadow 0.16s ease, opacity 0.16s ease;
         }
 

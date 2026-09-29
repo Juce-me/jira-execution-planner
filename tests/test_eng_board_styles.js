@@ -147,6 +147,9 @@ test('hover states on transparent buttons neutralize the global dark button hove
     assert.match(source, /\.scenario-toggle:not\(\.active\):hover\s*\{[^}]*background:\s*#f7f5f0\s*;[^}]*color:\s*var\(--text-primary\)\s*;[^}]*transform:\s*none\s*;/s);
     assert.match(source, /button\.epic-track-indicator\s*\{[^}]*padding:\s*1px\s+0\s+0\s*;[^}]*letter-spacing:\s*0\s*;[^}]*font:\s*inherit\s*;\s*font-family:\s*'Apple Color Emoji'/s);
     assert.match(source, /@supports\s*\(font:\s*-apple-system-body\)\s*\{\s*button\.epic-track-indicator\s*\{\s*padding:\s*0\s+0\s+2px\s*;/s);
+    assert.match(source, /:root\s*\{[^}]*--radius:\s*10px\s*;/s);
+    assert.match(source, /button\.task-priority-icon::before\s*\{[^}]*width:\s*24px\s*;[^}]*height:\s*24px\s*;[^}]*border-radius:\s*var\(--radius\)\s*;/s);
+    assert.match(source, /button\.epic-track-indicator\s*\{[^}]*border-radius:\s*var\(--radius\)\s*;/s);
 });
 
 test('Story requirement card is one tracked external link with bounded Jira analytics', async () => {

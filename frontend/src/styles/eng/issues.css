@@ -369,27 +369,58 @@
 
         /* The interactive priority icon (ENG Catch Up / Planning) is a native <button> that
            carries the same .task-priority-icon classes and data-attrs as the passive <span>,
-           so the tooltip and 16x16 geometry are preserved. Neutralize the aggressive global
-           button rule (and its hover lift) from eng/controls.css and add a hover/focus
-           affordance mirroring the status pill. */
+           so the tooltip and icon geometry are preserved. Neutralize the aggressive global
+           button rule (and its hover lift) from eng/controls.css. The hover/focus frame is a
+           fixed-size ::before rather than the button's own box: the icon is 16px on Story cards
+           and 24px in Epic headers, and a radius on the button itself clamps to a circle on the
+           smaller one, so both surfaces share one frame instead. */
         button.task-priority-icon {
             -webkit-appearance: none;
             appearance: none;
+            position: relative;
+            isolation: isolate;
             padding: 0;
             margin: 0;
             border: 0;
             background: transparent;
             font: inherit;
             cursor: pointer;
-            border-radius: 8px;
-            transition: background-color 0.16s ease, box-shadow 0.16s ease, opacity 0.16s ease;
+            border-radius: var(--radius);
+            transition: opacity 0.16s ease;
+        }
+
+        button.task-priority-icon::before {
+            content: '';
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            z-index: -1;
+            width: 24px;
+            height: 24px;
+            transform: translate(-50%, -50%);
+            border-radius: var(--radius);
+            pointer-events: none;
+            transition: background-color 0.16s ease, box-shadow 0.16s ease;
         }
 
         button.task-priority-icon:hover,
         button.task-priority-icon:focus-visible {
             transform: none;
+            background: transparent;
+            box-shadow: none;
+        }
+
+        button.task-priority-icon:hover::before,
+        button.task-priority-icon:focus-visible::before {
             background: var(--bg-primary);
             box-shadow: 0 0 0 2px rgba(47, 128, 237, 0.22);
+        }
+
+        /* Anchor the priority label to the top of the shared frame (12px above centre, plus its
+           2px ring and the usual 0.225rem gap) so it clears the frame on the 16px Story icon as
+           it does on the 24px Epic icon. */
+        button.task-priority-icon[data-priority]:hover::after {
+            top: calc(50% - 1.1rem);
         }
 
         .task-priority-icon[data-priority] {

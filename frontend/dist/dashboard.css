@@ -16,6 +16,7 @@
   --alert-missing: #fa8c16;
   --alert-blocked: #d4380d;
   --border: #e0ddd7;
+  --radius: 10px;
   --shadow: rgba(0, 0, 0, 0.04);
   --control-height: 38px;
   --sticky-search-z: 1000;
@@ -6419,23 +6420,43 @@ button.alert-story-local-link:focus-visible {
 button.task-priority-icon {
   -webkit-appearance: none;
   appearance: none;
+  position: relative;
+  isolation: isolate;
   padding: 0;
   margin: 0;
   border: 0;
   background: transparent;
   font: inherit;
   cursor: pointer;
-  border-radius: 8px;
-  transition:
-    background-color 0.16s ease,
-    box-shadow 0.16s ease,
-    opacity 0.16s ease;
+  border-radius: var(--radius);
+  transition: opacity 0.16s ease;
+}
+button.task-priority-icon::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: -1;
+  width: 24px;
+  height: 24px;
+  transform: translate(-50%, -50%);
+  border-radius: var(--radius);
+  pointer-events: none;
+  transition: background-color 0.16s ease, box-shadow 0.16s ease;
 }
 button.task-priority-icon:hover,
 button.task-priority-icon:focus-visible {
   transform: none;
+  background: transparent;
+  box-shadow: none;
+}
+button.task-priority-icon:hover::before,
+button.task-priority-icon:focus-visible::before {
   background: var(--bg-primary);
   box-shadow: 0 0 0 2px rgba(47, 128, 237, 0.22);
+}
+button.task-priority-icon[data-priority]:hover::after {
+  top: calc(50% - 1.1rem);
 }
 .task-priority-icon[data-priority] {
   position: relative;
@@ -7647,7 +7668,7 @@ button.epic-track-indicator {
     "Noto Color Emoji",
     sans-serif;
   cursor: pointer;
-  border-radius: 8px;
+  border-radius: var(--radius);
   transition:
     background-color 0.16s ease,
     box-shadow 0.16s ease,

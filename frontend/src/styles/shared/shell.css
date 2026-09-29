@@ -16,6 +16,7 @@
             --alert-missing: #fa8c16;
             --alert-blocked: #d4380d;
             --border: #e0ddd7;
+            --radius: 10px;
             --shadow: rgba(0, 0, 0, 0.04);
             --control-height: 38px;
             --sticky-search-z: 1000;

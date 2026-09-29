@@ -16,15 +16,16 @@ const READOUT_EDGE_GUTTER = 12;
 const READOUT_POINTER_GAP = 12;
 const READOUT_MAX_WIDTH = 220;
 const READOUT_HEIGHT = 72;
+const READOUT_LINE_HEIGHT = 23;
 const READOUT_VERTICAL_INSET = 56;
 const FULL_SEGMENT_LABEL_MIN_WIDTH = 10.5;
 
-function clampReadoutPoint(x, y) {
+function clampReadoutPoint(x, y, lineCount = 0) {
     return resolveFloatingHoverPosition({
         x,
         y,
         bubbleWidth: READOUT_MAX_WIDTH,
-        bubbleHeight: READOUT_HEIGHT,
+        bubbleHeight: READOUT_HEIGHT + (lineCount * READOUT_LINE_HEIGHT),
         edgeGutter: READOUT_EDGE_GUTTER,
         pointerGap: READOUT_POINTER_GAP,
         verticalInset: READOUT_VERTICAL_INSET
@@ -32,13 +33,13 @@ function clampReadoutPoint(x, y) {
 }
 
 function readoutFromPointer(event, readout) {
-    const point = clampReadoutPoint(event.clientX, event.clientY);
+    const point = clampReadoutPoint(event.clientX, event.clientY, readout.lines?.length || 0);
     return { ...readout, ...point };
 }
 
 function readoutFromElement(event, readout) {
     const rect = event.currentTarget.getBoundingClientRect();
-    const point = clampReadoutPoint(rect.left + (rect.width / 2), rect.top);
+    const point = clampReadoutPoint(rect.left + (rect.width / 2), rect.top, readout.lines?.length || 0);
     return { ...readout, ...point };
 }
 
@@ -57,6 +58,7 @@ export default function StackedBar({
     formatReadout,          // optional: ({ rowLabel, segmentKey, value }) => string
     renderRowLabel,         // optional: (row) => ReactNode; default = plain-text row.label
     resolveSegmentLink,     // optional: ({ row, segmentKey, segment, value }) => tracked anchor props
+    resolveSegmentStrip,    // optional: ({ row, segmentKey, segment, value }) => { parts: [{ key, label, colour, value }] }
     ariaLabel,
     emptyText = 'No data in range.'
 }) {
@@ -75,6 +77,12 @@ export default function StackedBar({
                 : <>
                     <strong>{hovered.rowLabel}</strong>
                     <span>{hovered.segmentLabel}: {hovered.valueText}</span>
+                    {(hovered.lines || []).map((line) => (
+                        <span key={line.key}>
+                            <i className="stacked-bar-readout-swatch" style={{ background: line.colour }} />
+                            {line.label} {line.valueText}
+                        </span>
+                    ))}
                   </>
             }
         </div>
@@ -89,6 +97,89 @@ export default function StackedBar({
                         const denominator = row.total || 0;
                         const segmentByKey = {};
                         (row.segments || []).forEach((seg) => { segmentByKey[seg.key] = seg; });
+                        // Strips (#173) share each segment's order, omission and width; filled while
+                        // the track renders so both use one computation.
+                        const strips = [];
+                        const track = (
+                            <div className="stacked-bar-track">
+                                {order.map((key) => {
+                                    const segment = segmentByKey[key] || {};
+                                    const value = segment.value || 0;
+                                    if (value <= 0) return null;
+                                    const width = denominator > 0 ? (value / denominator) * 100 : 0;
+                                    const valueText = formatValue(value);
+                                    const segmentLabel = labelFor(key);
+                                    const showFull = width >= FULL_SEGMENT_LABEL_MIN_WIDTH;
+                                    const readoutData = { rowLabel: row.label, segmentKey: key, segmentLabel, valueText, value };
+                                    const segmentLink = resolveSegmentLink
+                                        ? resolveSegmentLink({ row, segmentKey: key, segment, value })
+                                        : null;
+                                    const SegmentControl = segmentLink?.href ? TrackedExternalLink : 'button';
+                                    const strip = resolveSegmentStrip
+                                        ? resolveSegmentStrip({ row, segmentKey: key, segment, value })
+                                        : null;
+                                    if (strip) {
+                                        const lines = (strip.parts || []).map((part) => ({
+                                            key: part.key, label: part.label, colour: part.colour, valueText: formatValue(part.value)
+                                        }));
+                                        const stripReadout = { ...readoutData, lines };
+                                        strips.push(
+                                            <div
+                                                key={key}
+                                                className="stacked-bar-strip"
+                                                role="group"
+                                                tabIndex={0}
+                                                style={{ width: `${Math.max(0, Math.min(100, width))}%` }}
+                                                aria-label={[`${row.label} ${segmentLabel}: ${valueText}`,
+                                                    ...lines.map((line) => `${line.label} ${line.valueText}`)].join(' · ')}
+                                                onMouseEnter={(event) => setHovered(readoutFromPointer(event, stripReadout))}
+                                                onMouseMove={(event) => setHovered(readoutFromPointer(event, stripReadout))}
+                                                onMouseLeave={() => setHovered(null)}
+                                                onFocus={(event) => setHovered(readoutFromElement(event, stripReadout))}
+                                                onBlur={() => setHovered(null)}
+                                            >
+                                                {(strip.parts || []).filter((part) => part.value > 0).map((part) => (
+                                                    <span
+                                                        key={part.key}
+                                                        className="stacked-bar-strip-part"
+                                                        style={{ width: `${(part.value / value) * 100}%`, background: part.colour }}
+                                                    />
+                                                ))}
+                                            </div>
+                                        );
+                                    }
+                                    return (
+                                        <SegmentControl
+                                            key={key}
+                                            {...(segmentLink?.href
+                                                ? {
+                                                    href: segmentLink.href,
+                                                    target: '_blank',
+                                                    rel: 'noopener noreferrer',
+                                                    title: segmentLink.title,
+                                                    analyticsMeta: segmentLink.analyticsMeta
+                                                  }
+                                                : { type: 'button' })}
+                                            className="stacked-bar-segment"
+                                            style={{
+                                                width: `${Math.max(0, Math.min(100, width))}%`,
+                                                '--stacked-bar-color': resolveColor ? resolveColor(key) : '#94a3b8'
+                                            }}
+                                            tabIndex={0}
+                                            onMouseEnter={(event) => setHovered(readoutFromPointer(event, readoutData))}
+                                            onMouseMove={(event) => setHovered(readoutFromPointer(event, readoutData))}
+                                            onMouseLeave={() => setHovered(null)}
+                                            onFocus={(event) => setHovered(readoutFromElement(event, readoutData))}
+                                            onBlur={() => setHovered(null)}
+                                            onClick={(event) => setHovered(readoutFromElement(event, readoutData))}
+                                            aria-label={segmentLink?.ariaLabel || `${row.label} ${segmentLabel}: ${valueText}`}
+                                        >
+                                            <span>{showFull ? `${segmentLabel} ${valueText}` : valueText}</span>
+                                        </SegmentControl>
+                                    );
+                                })}
+                            </div>
+                        );
                         return (
                             <div className="stacked-bar-row" key={row.id}>
                                 <div className="stacked-bar-meta">
@@ -97,51 +188,12 @@ export default function StackedBar({
                                         : <span className="stacked-bar-row-label">{row.label}</span>}
                                     <strong className="stacked-bar-row-total">{formatValue(row.total)}</strong>
                                 </div>
-                                <div className="stacked-bar-track">
-                                    {order.map((key) => {
-                                        const segment = segmentByKey[key] || {};
-                                        const value = segment.value || 0;
-                                        if (value <= 0) return null;
-                                        const width = denominator > 0 ? (value / denominator) * 100 : 0;
-                                        const valueText = formatValue(value);
-                                        const segmentLabel = labelFor(key);
-                                        const showFull = width >= FULL_SEGMENT_LABEL_MIN_WIDTH;
-                                        const readoutData = { rowLabel: row.label, segmentKey: key, segmentLabel, valueText, value };
-                                        const segmentLink = resolveSegmentLink
-                                            ? resolveSegmentLink({ row, segmentKey: key, segment, value })
-                                            : null;
-                                        const SegmentControl = segmentLink?.href ? TrackedExternalLink : 'button';
-                                        return (
-                                            <SegmentControl
-                                                key={key}
-                                                {...(segmentLink?.href
-                                                    ? {
-                                                        href: segmentLink.href,
-                                                        target: '_blank',
-                                                        rel: 'noopener noreferrer',
-                                                        title: segmentLink.title,
-                                                        analyticsMeta: segmentLink.analyticsMeta
-                                                      }
-                                                    : { type: 'button' })}
-                                                className="stacked-bar-segment"
-                                                style={{
-                                                    width: `${Math.max(0, Math.min(100, width))}%`,
-                                                    '--stacked-bar-color': resolveColor ? resolveColor(key) : '#94a3b8'
-                                                }}
-                                                tabIndex={0}
-                                                onMouseEnter={(event) => setHovered(readoutFromPointer(event, readoutData))}
-                                                onMouseMove={(event) => setHovered(readoutFromPointer(event, readoutData))}
-                                                onMouseLeave={() => setHovered(null)}
-                                                onFocus={(event) => setHovered(readoutFromElement(event, readoutData))}
-                                                onBlur={() => setHovered(null)}
-                                                onClick={(event) => setHovered(readoutFromElement(event, readoutData))}
-                                                aria-label={segmentLink?.ariaLabel || `${row.label} ${segmentLabel}: ${valueText}`}
-                                            >
-                                                <span>{showFull ? `${segmentLabel} ${valueText}` : valueText}</span>
-                                            </SegmentControl>
-                                        );
-                                    })}
-                                </div>
+                                {resolveSegmentStrip ? (
+                                    <div className="stacked-bar-track-stack">
+                                        {track}
+                                        <div className="stacked-bar-strips">{strips}</div>
+                                    </div>
+                                ) : track}
                             </div>
                         );
                     })}

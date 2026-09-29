@@ -76,7 +76,7 @@ This view uses the same Start Sprint and End Sprint range as Excluded Capacity a
 
 ### Project Track
 
-Shows story points by Project Track (the Jira `Project Track[Dropdown]` custom field, e.g. `Flexible`/`Committed`) for the selected sprint range. Stories with no track on their parent epic fall into a `No track` bucket. Epics in `Done`, `Killed`, or `Incomplete` are excluded from every Project Track statistic.
+Shows story points by Project Track (the Jira `Project Track[Dropdown]` custom field, e.g. `Flexible`/`Committed`) for the selected sprint range. Stories with no track on their parent epic fall into a `No track` bucket. In Epic mode, Epics in `Done`, `Killed`, or `Incomplete` are excluded from every section. In Team mode, every Epic in the range counts whatever its status, so totals do not shrink as Epics close; only Killed work is excluded (stories whose own status is `Killed` and stories under a `Killed` Epic).
 
 Filter bar (drives every section, no separate fetch):
 - **Start Sprint** / **End Sprint** — same sprint-range state as Excluded Capacity
@@ -86,12 +86,13 @@ Filter bar (drives every section, no separate fetch):
 
 A mode title (`EPIC MODE` / `TEAM MODE`) renders under the filter bar. Mode switches both the aggregation unit and the breakdown dimension:
 - **Epic mode**: SP aggregated per epic (each epic's full SP lands in its dominant sprint — the in-range sprint holding the largest share of that epic's points); breakdown is **by assignee**.
-- **Team mode**: SP aggregated per story (each story counts in its own sprint); breakdown is **by team**.
+- **Team mode**: SP aggregated per story (each story counts in its own sprint); breakdown is **by team**. The totals bar, per-sprint chart, and By team rows share the Team-mode scope above.
 
 Main parts:
-- **Totals bar**: one horizontal stacked bar of SP by track, aggregated over the whole selected sprint range, with a value label on each segment.
+- **Totals bar**: one horizontal stacked bar of SP by track, aggregated over the whole selected sprint range, with a value label on each segment. The bars carry the track names, so there is no separate track legend.
 - **Per-sprint chart**: one vertical stacked bar per sprint in range, split by track (hidden when the range is a single sprint).
 - **By assignee / By team breakdown**: one horizontal stacked bar per assignee (Epic mode) or team (Team mode), split by track, each segment value-labelled. In Epic mode, selecting an assignee's `No track` segment opens those epics in Jira.
+- **Board-column strips** (Team mode only, #173): a thin 7px strip under every track segment of the totals bar and each By team row, aligned to that segment. It splits the track's SP by the parent Epic's current column on the Department's ENG Board, in Board column order and colours, using the Board's own rule (exact Epic status match; the first column wins a status listed twice; an unlisted status lands in the first column). A Department without a configured Board uses the Board composer's default To Do / In Progress / Done columns built from the observed Epic statuses. Stories without a parent Epic form a neutral `No Epic` part. Strips have no labels and no click action: hovering or focusing one shows the team, the track total, and every Board column's SP (including `0 SP` columns).
 - **Time in Project Track phase** (Epic mode only): for each in-scope epic, days spent in each track state (`No track` → `Flexible` → `Committed`, derived from Jira changelog), each phase segment value-labelled in days, plus an aggregate summary (avg days to first track, avg days to Committed). Epic names link to Jira. If the epic set is capped server-side, a truncation notice is shown instead of silently dropping epics.
 
 ## Lead Time Definition

@@ -13,6 +13,10 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 - `FUTURE-*`: deferred scope. Do not pull these into the current implementation unless the scope is explicitly reopened.
 - Do not create new date-only docs in `docs/plans/`. Use one of the prefixes above so execution state is visible from the filename.
 
+## Current Stats Work
+
+- [Project Track Board-column strips](EXEC-project-track-board-column-strips.md): planned (issue #173); Team mode totals and By team bars get a 7px strip per track split by the parent Epic's Board column, hover-only readout, no "left" values. [Approved UI decision](SUPPORT-project-track-board-column-strips-design.md) and [approved preview](../../assets/mockups/project-track-board-column-strips.html). Supersedes the 2026-09-08 Left capacity plan. No production implementation yet.
+
 ## Epic header regression review
 
 - [Visible-height analysis](SUPPORT-epic-header-visible-height-analysis.md): historical diagnosis and validated specimen evidence; application source is now authoritative.

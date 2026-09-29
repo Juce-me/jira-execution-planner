@@ -2,11 +2,12 @@ import * as React from 'react';
 import StackedBar from './StackedBar.jsx';
 import { buildJiraIssueListLinkAnalytics } from '../analytics/externalLinks.js';
 import { buildJiraIssueSearchUrl } from '../jiraExportUtils.mjs';
-import { NO_TRACK_LABEL } from './projectTrackStats.js';
+import { NO_TRACK_LABEL, projectTrackStripParts } from './projectTrackStats.js';
 
 // Per-assignee (Epic mode) / per-team (Team mode) breakdown: one stacked bar per row,
-// each split by track, rows already sorted by total in the Task 2 helper.
-export default function ProjectTrackBreakdownChart({ data, resolveColor, jiraUrl }) {
+// each split by track, rows already sorted by total in the Task 2 helper. Team mode passes
+// `columnSplit` for the Board-column strips under each track segment (#173).
+export default function ProjectTrackBreakdownChart({ data, resolveColor, jiraUrl, columnSplit }) {
     const tracks = Array.isArray(data?.tracks) ? data.tracks : [];
     const rows = (Array.isArray(data?.rows) ? data.rows : []).map((row) => ({
         id: row.id,
@@ -41,6 +42,9 @@ export default function ProjectTrackBreakdownChart({ data, resolveColor, jiraUrl
             segmentOrder={tracks}
             resolveColor={resolveColor}
             resolveSegmentLink={resolveSegmentLink}
+            resolveSegmentStrip={columnSplit
+                ? ({ row, segmentKey }) => ({ parts: projectTrackStripParts(columnSplit, columnSplit.rows[row.id], segmentKey) })
+                : undefined}
             ariaLabel="Story points by track per row"
             emptyText="No story points in the selected sprint range."
         />

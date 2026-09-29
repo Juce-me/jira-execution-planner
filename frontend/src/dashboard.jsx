@@ -146,7 +146,7 @@ import ProjectTrackSprintChart from './stats/ProjectTrackSprintChart.jsx';
 import ProjectTrackBreakdownChart from './stats/ProjectTrackBreakdownChart.jsx';
 import ProjectTrackPhaseChart from './stats/ProjectTrackPhaseChart.jsx';
 import StatsRangeControl from './stats/StatsRangeControl.jsx';
-import { buildProjectTrackSprintSeries, summarizeProjectTrackTotals, buildProjectTrackBreakdownRows, inScopeEpicKeys as projectTrackInScopeEpicKeys } from './stats/projectTrackStats.js';
+import { buildProjectTrackSprintSeries, summarizeProjectTrackTotals, buildProjectTrackBreakdownRows, buildProjectTrackColumnSplit, inScopeEpicKeys as projectTrackInScopeEpicKeys } from './stats/projectTrackStats.js';
 import { summarizeTrackPhaseDurations } from './stats/projectTrackPhaseStats.js';
 import { epicHasExplicitlyEmptySprintValue, epicHasSelectedSprintLabel, epicMatchesSelectedSprint, filterExplicitBacklogEpics, issueMatchesSelectedSprint } from './backlogAlertSprintUtils.mjs';
 import { getConfigSaveRefreshTarget } from './configSaveRefreshUtils.mjs';
@@ -8874,6 +8874,10 @@ import {
                 () => buildProjectTrackBreakdownRows(excludedCapacityIssues, projectTrackOpts),
                 [excludedCapacityIssues, projectTrackOpts]
             );
+            const projectTrackBoardColumns = activeGroup?.board?.columns;
+            const projectTrackColumnSplit = React.useMemo(() => (projectTrackMode === 'team'
+                ? buildProjectTrackColumnSplit(excludedCapacityIssues, projectTrackOpts, projectTrackBoardColumns) : null
+            ), [projectTrackMode, excludedCapacityIssues, projectTrackOpts, projectTrackBoardColumns]);
             const projectTrackRangeLabel = React.useMemo(() => {
                 const range = excludedCapacitySprintRange;
                 if (!range.length) return '';
@@ -16067,6 +16071,7 @@ import {
                                             tracks={projectTrackSeries.tracks}
                                             resolveColor={resolveProjectTrackColor}
                                             rangeLabel={projectTrackRangeLabel}
+                                            columnSplit={projectTrackColumnSplit}
                                         />
                                     </div>
 
@@ -16089,6 +16094,7 @@ import {
                                             data={projectTrackBreakdown}
                                             resolveColor={resolveProjectTrackColor}
                                             jiraUrl={jiraUrl}
+                                            columnSplit={projectTrackColumnSplit}
                                         />
                                     </div>
 

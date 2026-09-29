@@ -157,13 +157,13 @@ function makeCompletedCohortEpic(index) {
     };
 }
 
-function makeExcludedCapacityIssue({ key, epicKey, epicSummary, teamId, teamName, points, projectKey, epicProjectTrack, epicAssignee, epicStatus }) {
+function makeExcludedCapacityIssue({ key, epicKey, epicSummary, teamId, teamName, points, projectKey, epicProjectTrack, epicAssignee, epicStatus, status = 'To Do' }) {
     return {
         id: key,
         key,
         fields: {
             summary: `${key} excluded capacity source story`,
-            status: { name: 'To Do' },
+            status: { name: status },
             priority: { name: 'Major' },
             issuetype: { name: 'Story' },
             assignee: { displayName: `${teamName} Owner` },
@@ -2367,8 +2367,8 @@ test('Project Track tab renders filter bar, mode title, totals, per-sprint and b
     await expect(totalsSegments.filter({ hasText: 'Committed 13 SP' })).toBeVisible();
     await expect(totalsSegments.filter({ hasText: 'Flexible 3 SP' })).toBeVisible();
     await expect(statsView.locator('.project-track-totals .stacked-bar-row-total')).toHaveText('16 SP');
-    await expect(statsView.locator('.project-track-legend')).toContainText('Committed');
-    await expect(statsView.locator('.project-track-legend')).toContainText('Flexible');
+    // No separate track legend: the bars carry the track names (#173).
+    await expect(statsView.locator('.project-track-legend')).toHaveCount(0);
 
     // Per-sprint chart is HIDDEN when only one sprint is selected (single-sprint fixture):
     // it would be redundant with the range totals bar above.
@@ -2501,6 +2501,208 @@ test('Project Track excludes closed epics and links No track assignee segments t
     const noTrackJql = decodeURIComponent(new URL(await noTrackLink.getAttribute('href')).searchParams.get('jql'));
     expect(noTrackJql).toBe('key in (OPEN-EPIC)');
     expect(noTrackJql).not.toContain('CLOSED-EPIC');
+    expect(apiMocks.unexpectedCalls).toEqual([]);
+});
+
+// #173: Team mode strips split each track segment by the parent Epic's Board column.
+const stripBoardColumns = Array.from({ length: 12 }, (_, index) => ({
+    id: `col-${String(index + 1).padStart(8, '0')}`,
+    name: index === 11 ? 'Done' : `Stage ${index + 1}`,
+    colour: ['#8c8c8c', '#b37feb', '#597ef7', '#13c2c2', '#52c41a', '#e8a11d', '#ff4d4f'][index % 7],
+    star: false, min: null, max: null,
+    statuses: index === 11 ? ['Done'] : [`Stage ${index + 1}`],
+}));
+
+function makeStripTeamIssues() {
+    const issues = [];
+    for (let team = 1; team <= 12; team += 1) {
+        const teamId = `team-${String(team).padStart(2, '0')}`;
+        const teamName = team === 3 ? 'Platform Reliability and Developer Experience Engineering Team' : `Team ${String(team).padStart(2, '0')}`;
+        const base = { teamId, teamName, projectKey: 'PROD', epicAssignee: 'Dana Owner' };
+        const add = (suffix, points, epicProjectTrack, epicStatus, extra = {}) => issues.push(makeExcludedCapacityIssue({
+            ...base, key: `S${team}-${suffix}`, epicKey: extra.noEpic ? null : `E${team}-${suffix}`,
+            epicSummary: `Epic ${team}-${suffix}`, points, epicProjectTrack, epicStatus, status: extra.status,
+        }));
+        add('C1', 3 + team * 1.5, 'Committed', `Stage ${(team % 11) + 1}`);
+        add('C2', 2.5, 'Committed', 'Done');
+        if (team !== 5) add('F1', team === 1 ? 0.5 : 1 + team / 4, 'Flexible', 'Stage 2');
+        if (team % 4 === 0) add('N1', 2, null, 'Stage 3');
+    }
+    const alpha = { teamId: 'team-01', teamName: 'Team 01', projectKey: 'PROD', epicAssignee: 'Dana Owner' };
+    issues.push(
+        makeExcludedCapacityIssue({ ...alpha, key: 'S1-KILLED', epicKey: 'E1-C1', epicSummary: 'Epic 1-C1', points: 50, epicProjectTrack: 'Committed', epicStatus: 'Stage 2', status: 'Killed' }),
+        makeExcludedCapacityIssue({ ...alpha, key: 'S1-KILLED-EPIC', epicKey: 'E1-K', epicSummary: 'Killed epic', points: 40, epicProjectTrack: 'Committed', epicStatus: 'Killed' }),
+        makeExcludedCapacityIssue({ ...alpha, key: 'S1-UNLISTED', epicKey: 'E1-U', epicSummary: 'Unlisted status epic', points: 1, epicProjectTrack: 'Committed', epicStatus: 'Parked' }),
+        makeExcludedCapacityIssue({ ...alpha, key: 'S1-NOEPIC', epicKey: null, epicSummary: '', points: 2, epicProjectTrack: 'Committed' }),
+    );
+    return issues;
+}
+
+async function openProjectTrackStrips(page, calls, { board = stripBoardColumns, width = 1280 } = {}) {
+    const apiMocks = await installApiMocks(page, calls, {
+        excludedCapacitySourceIssues: makeStripTeamIssues(),
+        groups: [{
+            id: 'grp-default', name: 'Default', teamIds: groupTeamIds, teamLabels: {}, excludedCapacityEpics: [],
+            ...(board ? { board: { columns: board } } : {}),
+        }],
+    });
+    await page.setViewportSize({ width, height: 900 });
+    await page.addInitScript((prefs) => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
+    }, {
+        selectedView: 'eng', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
+        activeGroupId: 'grp-default', selectedTeams: ['all'], showStats: true, statsView: 'projectTrack',
+        projectTrackMode: 'team',
+        excludedCapacityStartSprintId: String(selectedSprintId), excludedCapacityEndSprintId: String(selectedSprintId),
+    });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await waitForCallCount(calls, call => call.pathname === '/api/stats/excluded-capacity-source', 1);
+    const statsView = page.locator('.stats-view.open');
+    await expect(statsView.locator('.project-track-mode-title')).toHaveText('TEAM MODE');
+    return { apiMocks, statsView };
+}
+
+async function readStripGeometry(card) {
+    return card.locator('.stacked-bar-row').evaluateAll((rows) => rows.map((row) => {
+        const box = (el) => { const r = el.getBoundingClientRect(); return { left: r.left, right: r.right, height: r.height }; };
+        return {
+            label: row.querySelector('.stacked-bar-row-label')?.textContent || '',
+            segments: [...row.querySelectorAll('.stacked-bar-track .stacked-bar-segment')].map(box),
+            strips: [...row.querySelectorAll('.stacked-bar-strips .stacked-bar-strip')].map((strip) => ({
+                ...box(strip),
+                parts: [...strip.querySelectorAll('.stacked-bar-strip-part')].map((part) => part.getBoundingClientRect().width),
+                contentWidth: strip.clientWidth,
+            })),
+        };
+    }));
+}
+
+test('Project Track Team mode strips split each track by Board column with a hover-only readout', async ({ page }) => {
+    const calls = [];
+    const { apiMocks, statsView } = await openProjectTrackStrips(page, calls);
+    const totalsCard = statsView.locator('.project-track-totals');
+    const byTeamCard = statsView.locator('.project-track-card', { hasText: 'By team' });
+    await expect(byTeamCard.locator('.stacked-bar-row')).toHaveCount(12);
+
+    // Killed stories and stories under Killed Epics are excluded; Done Epics count in Team mode.
+    const teamOne = byTeamCard.locator('.stacked-bar-row', { hasText: 'Team 01' });
+    await expect(teamOne.locator('.stacked-bar-row-total')).toHaveText('10.5 SP');
+    await expect(statsView.locator('.project-track-legend')).toHaveCount(0);
+    await expect(statsView.locator('.project-track-card').filter({ hasText: /\bleft\b/i })).toHaveCount(0);
+
+    // Every strip matches its segment's edges, is 7px high, and its parts follow SP shares.
+    for (const card of [totalsCard, byTeamCard]) {
+        const rows = await readStripGeometry(card);
+        for (const row of rows) {
+            expect(row.strips.length, row.label).toBe(row.segments.length);
+            row.segments.forEach((segment, index) => {
+                const strip = row.strips[index];
+                expect(Math.abs(strip.left - segment.left), `${row.label} left ${index}`).toBeLessThanOrEqual(1);
+                expect(Math.abs(strip.right - segment.right), `${row.label} right ${index}`).toBeLessThanOrEqual(1);
+                expect(strip.height).toBeCloseTo(7, 0);
+                const drawn = strip.parts.reduce((sum, width) => sum + width, 0);
+                expect(Math.abs(drawn - strip.contentWidth), `${row.label} parts ${index}`).toBeLessThanOrEqual(1);
+            });
+        }
+    }
+    // Team 01 Committed = 4.5 (Stage 2) + 2.5 (Done) + 1 (Parked → first column) + 2 (No Epic) = 10 SP.
+    const teamOneCommitted = teamOne.locator('.stacked-bar-strip').first();
+    const partWidths = await teamOneCommitted.locator('.stacked-bar-strip-part').evaluateAll((parts) => parts.map((part) => part.getBoundingClientRect().width));
+    const contentWidth = await teamOneCommitted.evaluate((node) => node.clientWidth);
+    expect(partWidths.map((width) => Math.round((width / contentWidth) * 100))).toEqual([10, 45, 25, 20]);
+
+    // Hover: title, track line, then one line per Board column (0 SP included) plus No Epic.
+    await teamOneCommitted.hover();
+    const readout = page.locator('.stacked-bar-readout');
+    await expect(readout).toBeVisible();
+    await expect(readout.locator('strong')).toHaveText('Team 01');
+    const lines = await readout.locator('span').allTextContents();
+    expect(lines[0]).toBe('Committed: 10 SP');
+    expect(lines.slice(1)).toEqual([
+        'Stage 1 1 SP', 'Stage 2 4.5 SP', ...Array.from({ length: 9 }, (_, i) => `Stage ${i + 3} 0 SP`), 'Done 2.5 SP', 'No Epic 2 SP',
+    ]);
+    const readoutClip = await readout.evaluate((node) => [...node.children].every((child) => child.scrollWidth <= child.clientWidth + 1));
+    expect(readoutClip).toBeTruthy();
+
+    // A readout near the bottom-right edge stays inside the viewport.
+    const lastRowStrip = byTeamCard.locator('.stacked-bar-row').last().locator('.stacked-bar-strip').last();
+    await lastRowStrip.scrollIntoViewIfNeeded();
+    const lastBox = await lastRowStrip.boundingBox();
+    await page.mouse.move(lastBox.x + lastBox.width - 2, lastBox.y + 3);
+    const bounds = await readout.evaluate((node) => {
+        const r = node.getBoundingClientRect();
+        return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: window.innerWidth, height: window.innerHeight };
+    });
+    expect(bounds.left).toBeGreaterThanOrEqual(0);
+    expect(bounds.top).toBeGreaterThanOrEqual(0);
+    expect(bounds.right).toBeLessThanOrEqual(bounds.width);
+    expect(bounds.bottom).toBeLessThanOrEqual(bounds.height);
+
+    // Keyboard focus shows the same readout; clicking does nothing and fires no request.
+    await page.mouse.move(0, 0);
+    await teamOneCommitted.focus();
+    await expect(readout.locator('strong')).toHaveText('Team 01');
+    const callCount = calls.length;
+    const urlBefore = page.url();
+    await teamOneCommitted.click();
+    expect(page.url()).toBe(urlBefore);
+
+    // Segments keep their colour on hover and do not lift.
+    const segment = teamOne.locator('.stacked-bar-segment').first();
+    await segment.hover();
+    await expect.poll(() => segment.evaluate((node) => getComputedStyle(node).transform)).toBe('none');
+
+    await page.mouse.move(0, 0);
+    await waitForVisualSettled(page);
+    await statsView.screenshot({ path: `${screenshotDir}/statistics-project-track-strips-1280.png` });
+    await teamOneCommitted.hover();
+    await waitForVisualSettled(page);
+    await page.screenshot({ path: `${screenshotDir}/statistics-project-track-strips-readout.png` });
+
+    // Epic mode: no strips, closed Epics excluded again; switching back adds no request beyond the phase fetch.
+    const modeControl = statsView.locator('.project-track-controls').getByRole('radiogroup', { name: 'Mode' });
+    await modeControl.getByRole('radio', { name: 'Epic' }).click();
+    await expect(statsView.locator('.project-track-mode-title')).toHaveText('EPIC MODE');
+    await expect(statsView.locator('.stacked-bar-strip')).toHaveCount(0);
+    const phasePath = (call) => call.pathname !== '/api/stats/excluded-capacity-source' && call.pathname.startsWith('/api/stats/');
+    await page.waitForLoadState('networkidle');
+    const afterEpic = calls.length;
+    await modeControl.getByRole('radio', { name: 'Team' }).click();
+    await modeControl.getByRole('radio', { name: 'Epic' }).click();
+    await modeControl.getByRole('radio', { name: 'Team' }).click();
+    await expect(byTeamCard.locator('.stacked-bar-strip').first()).toBeVisible();
+    await byTeamCard.locator('.stacked-bar-strip').first().hover();
+    await page.waitForLoadState('networkidle');
+    expect(calls.slice(afterEpic)).toEqual([]);
+    expect(calls.slice(callCount, afterEpic).every(phasePath)).toBeTruthy();
+    expect(apiMocks.unexpectedCalls).toEqual([]);
+});
+
+test('Project Track strips fall back to the default board and stay aligned at 375px', async ({ page }) => {
+    const calls = [];
+    const { apiMocks, statsView } = await openProjectTrackStrips(page, calls, { board: null, width: 375 });
+    const byTeamCard = statsView.locator('.project-track-card', { hasText: 'By team' });
+    await expect(byTeamCard.locator('.stacked-bar-row')).toHaveCount(12);
+
+    const teamOneCommitted = byTeamCard.locator('.stacked-bar-row', { hasText: 'Team 01' }).locator('.stacked-bar-strip').first();
+    await teamOneCommitted.hover();
+    const lines = await page.locator('.stacked-bar-readout span').allTextContents();
+    // Stage/Parked statuses → To Do, Done → Done, plus No Epic; no In Progress status is observed.
+    expect(lines).toEqual(['Committed: 10 SP', 'To Do 5.5 SP', 'Done 2.5 SP', 'No Epic 2 SP']);
+
+    const rows = await readStripGeometry(byTeamCard);
+    for (const row of rows) {
+        row.segments.forEach((segment, index) => {
+            expect(Math.abs(row.strips[index].left - segment.left), row.label).toBeLessThanOrEqual(1);
+            expect(Math.abs(row.strips[index].right - segment.right), row.label).toBeLessThanOrEqual(1);
+        });
+    }
+    const pageOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(pageOverflow).toBeLessThanOrEqual(0);
+
+    await page.mouse.move(0, 0);
+    await waitForVisualSettled(page);
+    await statsView.screenshot({ path: `${screenshotDir}/statistics-project-track-strips-375.png` });
     expect(apiMocks.unexpectedCalls).toEqual([]);
 });
 

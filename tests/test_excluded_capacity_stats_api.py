@@ -269,6 +269,7 @@ class ExcludedCapacityStatsApiTests(unittest.TestCase):
             sprint_field,
             epic_field,
             team_field,
+            "status",
         ])
 
     def test_excluded_capacity_source_requires_sprint_ids(self):

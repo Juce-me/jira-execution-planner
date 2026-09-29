@@ -575,3 +575,27 @@ test('resolveFocusAfterFold: eight consecutive folds never yield nothing', async
         assert.ok(board.some((entry) => entry.id === focused), `fold ${step + 1} left focus on ${focused}`);
     }
 });
+
+/* ── Column ownership resolver shared with Statistics (#173) ─────────────────────────────── */
+
+test('resolveBoardColumnOwner maps exact statuses, lets the first column win, and sends unlisted to the first column', async () => {
+    const { resolveBoardColumnOwner } = await loadModule();
+    const owner = resolveBoardColumnOwner([
+        { id: 'col-empty', name: 'Empty', statuses: [] },
+        { id: 'col-a', name: 'A', statuses: ['To Do', 'Shared'] },
+        { id: 'col-b', name: 'B', statuses: ['In Progress', 'Shared'] },
+    ]);
+
+    assert.equal(owner('To Do'), 'col-a');
+    assert.equal(owner('In Progress'), 'col-b');
+    assert.equal(owner('Shared'), 'col-a');
+    assert.equal(owner('Unlisted'), 'col-a');
+    assert.equal(owner(''), 'col-a');
+});
+
+test('resolveBoardColumnOwner returns null when no column holds a status', async () => {
+    const { resolveBoardColumnOwner } = await loadModule();
+    assert.equal(resolveBoardColumnOwner([]), null);
+    assert.equal(resolveBoardColumnOwner([{ id: 'col-a', name: 'A', statuses: [] }]), null);
+    assert.equal(resolveBoardColumnOwner(null), null);
+});

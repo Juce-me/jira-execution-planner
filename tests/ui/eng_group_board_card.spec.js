@@ -1256,14 +1256,39 @@ function contrastRatio(foreground, background) {
 }
 
 test.describe('ENG hover affordances', () => {
-    test.use({ deviceScaleFactor: 3 });
+    test.use({ deviceScaleFactor: 2 });
 
-    test('Project Track hover frame is centred on every glyph', async ({ page }) => {
-        test.skip(process.platform !== 'darwin', 'Glyph ink placement is tuned to Apple Color Emoji.');
+    const openTrackHeader = async page => {
         await openBoard(page, { width: 1280, height: 900, firstEpicTrack: 'Unidentified' });
         await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Catch Up' }).click();
         await page.evaluate(() => document.fonts.ready);
-        const triggers = page.locator('[data-project-track-transition-trigger]');
+        return page.locator('[data-project-track-transition-trigger]');
+    };
+
+    test('Project Track trigger sets its emoji in an emoji font without inherited tracking', async ({ page }) => {
+        const triggers = await openTrackHeader(page);
+        expect(await triggers.count()).toBeGreaterThanOrEqual(3);
+        for (let index = 0; index < await triggers.count(); index += 1) {
+            const trigger = triggers.nth(index);
+            const style = await trigger.evaluate(node => {
+                const computed = getComputedStyle(node);
+                return { spacing: computed.letterSpacing, family: computed.fontFamily };
+            });
+            expect(['normal', '0px'], 'global button tracking is reset').toContain(style.spacing);
+            expect(style.family, 'emoji font leads the stack').toMatch(/^"?Apple Color Emoji"?,/);
+            const box = await trigger.boundingBox();
+            expect(box.width, 'frame keeps its 24px width').toBeCloseTo(24, 1);
+            expect(box.height, 'frame keeps its 24px height').toBeCloseTo(24, 1);
+        }
+    });
+
+    // Emoji ink placement is only representative in a headed browser: headless rendering puts it
+    // about 2px further left. Run with `--headed` (and `--browser=firefox` or `--browser=webkit`,
+    // the engines the app is reviewed in) at the 2x device scale factor set above.
+    test('Project Track hover frame is centred on every glyph', async ({ page }, testInfo) => {
+        test.skip(process.platform !== 'darwin', 'Glyph ink placement is tuned to Apple Color Emoji.');
+        test.skip(testInfo.project.use.headless !== false, 'Emoji ink placement is only representative headed.');
+        const triggers = await openTrackHeader(page);
         const glyphs = new Set();
         for (let index = 0; index < await triggers.count(); index += 1) {
             const trigger = triggers.nth(index);
@@ -1271,8 +1296,6 @@ test.describe('ENG hover affordances', () => {
             if (glyphs.has(glyph)) continue;
             glyphs.add(glyph);
             await trigger.scrollIntoViewIfNeeded();
-            const box = await trigger.boundingBox();
-            expect([box.width, box.height], `${glyph} frame keeps its 24px square`).toEqual([24, 24]);
             for (const state of ['rest', 'hover']) {
                 if (state === 'hover') await trigger.hover(); else await page.mouse.move(2, 2);
                 await page.waitForTimeout(300);

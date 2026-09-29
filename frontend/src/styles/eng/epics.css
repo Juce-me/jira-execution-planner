@@ -375,20 +375,30 @@
         button.epic-track-indicator {
             -webkit-appearance: none;
             appearance: none;
-            /* At the header's 14px size the emoji ink sits ~1.8px left of and ~1px above the
-               centre of its glyph box (Apple Color Emoji), which the hover frame exposes; the
-               padding re-centres it. The vertical shift is a whole 1px because layout rounds
-               fractional text offsets per row. letter-spacing is reset because the global
-               button rule's 0.1em tracking adds trailing space after the glyph. */
-            padding: 2px 0 0 3.6px;
+            /* The glyph is an emoji, so it is set in an emoji font: its line metrics then come
+               from that font rather than from whichever text font has loaded, and the ink sits
+               in the middle of the hover frame. The global button rule's 0.1em letter-spacing
+               adds trailing space after the glyph, so it is reset. The 1px top padding is the
+               half pixel the emoji ink rides above centre at 2x (Apple Color Emoji). */
+            padding: 1px 0 0;
             letter-spacing: 0;
             margin: 0;
             border: 0;
             background: transparent;
             font: inherit;
+            font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
             cursor: pointer;
             border-radius: 8px;
             transition: background-color 0.16s ease, box-shadow 0.16s ease, opacity 0.16s ease;
+        }
+
+        /* WebKit seats the emoji about 1px lower than Gecko and Blink (it derives different
+           ascent and descent for the same font), so Safari gets the half pixel back plus the
+           1px it would otherwise add. */
+        @supports (font: -apple-system-body) {
+            button.epic-track-indicator {
+                padding: 0 0 2px;
+            }
         }
 
         button.epic-track-indicator:hover,

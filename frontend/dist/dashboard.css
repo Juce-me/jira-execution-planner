@@ -7635,18 +7635,28 @@ button.toggle.initiative-toggle.active {
 button.epic-track-indicator {
   -webkit-appearance: none;
   appearance: none;
-  padding: 2px 0 0 3.6px;
+  padding: 1px 0 0;
   letter-spacing: 0;
   margin: 0;
   border: 0;
   background: transparent;
   font: inherit;
+  font-family:
+    "Apple Color Emoji",
+    "Segoe UI Emoji",
+    "Noto Color Emoji",
+    sans-serif;
   cursor: pointer;
   border-radius: 8px;
   transition:
     background-color 0.16s ease,
     box-shadow 0.16s ease,
     opacity 0.16s ease;
+}
+@supports (font: -apple-system-body) {
+  button.epic-track-indicator {
+    padding: 0 0 2px;
+  }
 }
 button.epic-track-indicator:hover,
 button.epic-track-indicator:focus-visible {

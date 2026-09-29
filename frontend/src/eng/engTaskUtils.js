@@ -225,10 +225,16 @@ export function getEngEpicSortLabel(value) {
     return match ? match.label : '';
 }
 
-// Most-urgent (lowest PRIORITY_ORDER rank) child-task priority. Returns { name, rank }.
-// A present-but-unrecognized priority name resolves to rank 998 (still outranks a no-priority
+// The Epic's own Jira priority when set, else the most-urgent (lowest PRIORITY_ORDER rank)
+// child-task priority. Returns { name, rank }. A present-but-unrecognized priority name resolves to rank 998 (still outranks a no-priority
 // epic, which is { name:null, rank:999 } and sorts last).
 export function getEpicEffectivePriority(epicGroup, priorityOrder = PRIORITY_ORDER) {
+    const ownPriority = epicGroup && epicGroup.epic && epicGroup.epic.priority;
+    const ownName = typeof ownPriority === 'string' ? ownPriority : ownPriority && ownPriority.name;
+    if (ownName) {
+        const ownRank = priorityOrder[ownName];
+        return { name: ownName, rank: (ownRank === undefined || ownRank === null) ? 998 : ownRank };
+    }
     let bestName = null;
     let bestRank = 999;
     const tasks = (epicGroup && epicGroup.tasks) || [];

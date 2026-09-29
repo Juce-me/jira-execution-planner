@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project Track Board Strips</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@300;400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* ---- Verbatim from origin/main: shared/shell.css ---- */
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg-primary:#f8f7f4;--bg-secondary:#ffffff;--text-primary:#1a1a1a;--text-secondary:#666666;--accent:#d4380d;--border:#e0ddd7;--shadow:rgba(0,0,0,0.04)}
+body{font-family:'Crimson Pro',serif;background:var(--bg-primary);color:var(--text-primary);line-height:1.6;overflow-x:hidden}
+.container{max-width:1040px;margin:0 auto;padding:0.9rem 1.5rem 3rem}
+/* ---- Verbatim: eng/controls.css global button ---- */
+button{background:var(--text-primary);color:var(--bg-primary);border:none;padding:0.875rem 2rem;font-family:'IBM Plex Mono',monospace;font-size:0.875rem;text-transform:uppercase;letter-spacing:0.1em;cursor:pointer;transition:all 0.3s;margin-right:1rem;border-radius:10px}
+button:hover{background:#2f2f2f;transform:translateY(-1px);box-shadow:0 4px 12px var(--shadow)}
+/* ---- Verbatim: stats/summary.css + stats/shell.css ---- */
+.stats-panel.open{position:relative;background:var(--bg-secondary);border:1px solid var(--border);padding:0.75rem;margin-top:1rem;margin-bottom:1rem;box-shadow:0 8px 24px rgba(26,26,26,0.08)}
+.stats-card{background:#ffffff;border:1px solid var(--border);border-radius:0.6rem;padding:0.75rem;box-shadow:0 8px 18px rgba(29,29,29,0.06)}
+.stats-card h4{margin:0 0 0.35rem;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.12em;color:var(--text-secondary);font-family:'IBM Plex Mono',monospace}
+.stats-note{font-size:0.7rem;color:var(--text-secondary);margin-top:0.4rem}
+/* ---- Verbatim: stats/project-track.css ---- */
+.project-track-mode-title{font-family:'IBM Plex Mono',monospace;font-size:0.8rem;font-weight:700;letter-spacing:0.16em;color:var(--text-primary);text-transform:uppercase;margin:0.2rem 0 0.8rem}
+.project-track-card{margin-bottom:0.85rem}
+.project-track-totals-head{display:flex;align-items:baseline;justify-content:space-between;gap:0.6rem;flex-wrap:wrap;margin-bottom:0.5rem}
+.project-track-totals-label{font-family:'IBM Plex Mono',monospace;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.12em;color:var(--text-secondary)}
+.project-track-totals-range{font-size:0.72rem;color:var(--text-secondary)}
+.stacked-bar{display:grid;gap:0.7rem}
+.stacked-bar-rows{display:grid;gap:0.7rem}
+.stacked-bar-row{display:grid;grid-template-columns:minmax(130px,200px) minmax(0,1fr);align-items:center;gap:0.8rem}
+.stacked-bar-meta{min-width:0;display:flex;align-items:baseline;justify-content:space-between;gap:0.5rem;font-size:0.85rem}
+.stacked-bar-row-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stacked-bar-row-total{color:var(--text-secondary);font-size:0.76rem;font-weight:600;white-space:nowrap}
+.stacked-bar-track{display:flex;min-width:0;height:28px;overflow:hidden;border-radius:6px;background:rgba(148,163,184,0.14)}
+.stacked-bar-segment{appearance:none;flex:0 0 auto;min-width:0;display:flex;align-items:center;justify-content:center;border:0;border-radius:0;padding:0;margin:0;color:#fff;cursor:pointer;font-size:0.74rem;font-weight:700;font-family:inherit;line-height:1;text-decoration:none;background:var(--stacked-bar-color,#94a3b8);transition:none}
+.stacked-bar-segment span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fff;padding:0 0.3rem}
+@media (max-width:760px){.stacked-bar-row{grid-template-columns:1fr;gap:0.35rem}}
+
+/* ---- Verbatim: stats/project-track.css hover readout (shared bounded portal) ---- */
+.stacked-bar-readout{position:fixed;display:grid;grid-template-columns:minmax(0,1fr);gap:0.15rem;width:max-content;max-width:min(260px,calc(100vw - 24px));padding:0.35rem 0.55rem;border:1px solid var(--border);border-radius:6px;background:var(--bg-secondary);color:var(--text-secondary);font-size:0.8rem;box-shadow:0 6px 18px var(--shadow);pointer-events:none;z-index:85}
+.stacked-bar-readout[hidden]{display:none}
+.stacked-bar-readout.is-left{transform:translate(calc(-100% - 12px),-50%)}
+.stacked-bar-readout.is-right{transform:translate(12px,-50%)}
+.stacked-bar-readout strong,.stacked-bar-readout span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stacked-bar-readout strong{color:var(--text-primary)}
+.stacked-bar-readout i{display:inline-block;width:10px;height:5px;border-radius:2px;margin-right:0.35rem;vertical-align:middle}
+
+/* ---- PROPOSED (new): hover = soft shadow, no lift, for bar segments + strips only ---- */
+.stacked-bar-segment:hover{background:var(--stacked-bar-color,#94a3b8);transform:none;box-shadow:inset 0 0 0 999px rgba(255,255,255,0.08)}
+.project-track-column-strip:hover,.project-track-column-strip:focus-visible{box-shadow:0 2px 6px rgba(26,26,26,0.18)}
+/* ---- PROPOSED (new): 7px Board-column strip aligned under each track segment ---- */
+.project-track-column-col{display:grid;gap:3px;min-width:0}
+.project-track-column-strips{display:flex;min-width:0}
+.project-track-column-strip{flex:0 0 auto;min-width:0;display:flex;height:7px;overflow:hidden;background:#e8edf7;cursor:default;outline:none}
+.project-track-column-strip:first-child{border-radius:3px 0 0 3px}
+.project-track-column-strip:last-child{border-radius:0 3px 3px 0}
+.project-track-column-strip:only-child{border-radius:3px}
+.project-track-column-strip + .project-track-column-strip{border-left:2px solid #ffffff}
+.project-track-column-strip span{display:block;height:100%;flex-shrink:0}
+
+/* ---- Mockup-only chrome (not part of the design) ---- */
+.mock-bar{display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;font-family:'IBM Plex Mono',monospace;font-size:0.68rem;color:var(--text-secondary);margin-bottom:0.6rem}
+.mock-bar button{padding:0.3rem 0.7rem;font-size:0.66rem;margin:0;border-radius:6px;background:#ece9e2;color:var(--text-primary)}
+.mock-bar button.on{background:var(--text-primary);color:var(--bg-primary)}
+.mock-bar button:hover{transform:none}
+.mock-caption{font-size:0.78rem;color:var(--text-secondary);margin-top:0.6rem}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="mock-bar">MOCKUP ONLY · Department board:
+    <button type="button" data-board="custom" class="on">Custom columns</button>
+    <button type="button" data-board="default">Default (not configured)</button>
+  </div>
+  <div class="stats-panel open">
+    <div class="project-track-mode-title">Team mode</div>
+
+    <div class="stats-card project-track-card">
+      <div class="project-track-totals-head">
+        <span class="project-track-totals-label">Story points by track</span>
+        <span class="project-track-totals-range">2026Q3 Sprint 44 – 2026Q3 Sprint 49</span>
+      </div>
+      <div class="stacked-bar"><div class="stacked-bar-rows" id="totals"></div></div>
+    </div>
+
+    <div class="stats-card project-track-card">
+      <div class="project-track-totals-head">
+        <h4 style="margin:0">By team</h4>
+        <span class="project-track-totals-range">2026Q3 Sprint 44 – 2026Q3 Sprint 49 · Killed excluded</span>
+      </div>
+      <div class="stacked-bar"><div class="stacked-bar-rows" id="rows"></div></div>
+    </div>
+  </div>
+  <p class="mock-caption">Synthetic data. Strips split each track's SP by the parent Epic's current Board column, in Board order and Board colours. Hover a strip for SP per Board column.</p>
+</div>
+<script>
+(() => {
+  const TRACKS = [['Committed', '#5b6fd8'], ['Flexible', '#e0a93b'], ['No track', '#94a3b8']];
+  const BOARDS = {
+    custom: [
+      { name: 'Backlog', colour: '#8c8c8c' },
+      { name: 'Discovery', colour: '#b37feb' },
+      { name: 'Build', colour: '#597ef7' },
+      { name: 'Review', colour: '#13c2c2' },
+      { name: 'Done', colour: '#52c41a' }
+    ],
+    default: [
+      { name: 'To Do', colour: '#8c8c8c' },
+      { name: 'In Progress', colour: '#597ef7' },
+      { name: 'Done', colour: '#52c41a' }
+    ]
+  };
+  // Synthetic SP per custom column [Backlog, Discovery, Build, Review, Done] per track.
+  const TEAMS = [
+    { name: 'Alpha Team', t: { Committed: [2, 3, 12.5, 4, 18], Flexible: [4, 2, 5, 0, 3], 'No track': [0, 0, 2, 0, 1] } },
+    { name: 'Beta Platform and Reliability Engineering', t: { Committed: [0, 1, 8, 6, 14], Flexible: [3, 0, 2, 1, 1.5], 'No track': [0, 0, 0, 0, 0] } },
+    { name: 'Gamma Team', t: { Committed: [1, 0, 6, 0, 9], Flexible: [2, 2, 1, 0, 0], 'No track': [0, 1, 3, 0, 0] } },
+    { name: 'Delta Team', t: { Committed: [0, 0, 0, 0, 21], Flexible: [0, 0, 0, 0, 4], 'No track': [0, 0, 0, 0, 0] } },
+    { name: 'Epsilon Team', t: { Committed: [5, 0, 3, 2, 2], Flexible: [0, 0, 0.5, 0, 0], 'No track': [0, 0, 0, 0, 0] } },
+    { name: 'Zeta Team', t: { Committed: [0, 0, 1, 0, 1], Flexible: [3, 1, 2, 0, 2], 'No track': [0, 0, 0, 0, 0] } }
+  ];
+  const fold = (v) => [v[0] + v[1], v[2] + v[3], v[4]]; // custom -> default board columns
+  const sum = (xs) => xs.reduce((a, b) => a + b, 0);
+  const fmt = (n) => `${Math.round(n * 10) / 10} SP`;
+  const COMPACT_PCT = 10.5; // existing StackedBar compact-label threshold
+  let boardKey = 'custom';
+
+  // Shared bounded hover readout (mirrors StackedBar's portal: pointer-positioned, flips at the edge).
+  const readout = document.createElement('div');
+  readout.className = 'stacked-bar-readout is-right';
+  readout.hidden = true;
+  document.body.appendChild(readout);
+  const place = (x, y) => {
+    const flip = x + 12 + readout.offsetWidth > window.innerWidth - 12;
+    readout.className = `stacked-bar-readout ${flip ? 'is-left' : 'is-right'}`;
+    readout.style.left = `${x}px`;
+    readout.style.top = `${Math.min(Math.max(y, readout.offsetHeight / 2 + 12), window.innerHeight - readout.offsetHeight / 2 - 12)}px`;
+  };
+  const bindReadout = (el, build) => {
+    el.addEventListener('pointerenter', (e) => { readout.innerHTML = build(); readout.hidden = false; place(e.clientX, e.clientY); });
+    el.addEventListener('pointermove', (e) => place(e.clientX, e.clientY));
+    el.addEventListener('pointerleave', () => { readout.hidden = true; });
+    el.addEventListener('focus', () => { const r = el.getBoundingClientRect(); readout.innerHTML = build(); readout.hidden = false; place(r.left + r.width / 2, r.top); });
+    el.addEventListener('blur', () => { readout.hidden = true; });
+  };
+
+  function renderRow(host, name, byTrack, board) {
+    const total = sum(TRACKS.map(([t]) => sum(byTrack[t])));
+    const row = document.createElement('div');
+    row.className = 'stacked-bar-row';
+    row.innerHTML = `<div class="stacked-bar-meta"><span class="stacked-bar-row-label">${name}</span><strong class="stacked-bar-row-total">${fmt(total)}</strong></div>`;
+    const col = document.createElement('div');
+    col.className = 'project-track-column-col';
+    const track = document.createElement('div');
+    track.className = 'stacked-bar-track';
+    const strips = document.createElement('div');
+    strips.className = 'project-track-column-strips';
+    TRACKS.forEach(([t, c]) => {
+      const values = byTrack[t];
+      const trackTotal = sum(values);
+      if (trackTotal <= 0) return;
+      const pct = trackTotal / total * 100;
+      const seg = document.createElement('button');
+      seg.type = 'button';
+      seg.className = 'stacked-bar-segment';
+      seg.style.width = `${pct}%`;
+      seg.style.setProperty('--stacked-bar-color', c);
+      seg.innerHTML = `<span>${pct < COMPACT_PCT ? fmt(trackTotal) : `${t} ${fmt(trackTotal)}`}</span>`;
+      bindReadout(seg, () => `<strong>${name}</strong><span>${t}: ${fmt(trackTotal)}</span>`);
+      track.appendChild(seg);
+
+      const strip = document.createElement('div');
+      strip.className = 'project-track-column-strip';
+      strip.tabIndex = 0;
+      strip.style.width = `${pct}%`;
+      strip.setAttribute('aria-label', `${name} · ${t}: ${fmt(trackTotal)} · ` + board.map((b, i) => `${b.name} ${fmt(values[i])}`).join(' · '));
+      board.forEach((b, i) => { if (values[i] > 0) strip.insertAdjacentHTML('beforeend', `<span style="width:${values[i] / trackTotal * 100}%;background:${b.colour}"></span>`); });
+      bindReadout(strip, () => `<strong>${name} · ${t}: ${fmt(trackTotal)}</strong>`
+        + board.map((b, i) => `<span><i style="background:${b.colour}"></i>${b.name} ${fmt(values[i])}</span>`).join(''));
+      strips.appendChild(strip);
+    });
+    col.append(track, strips);
+    row.appendChild(col);
+    host.appendChild(row);
+  }
+
+  function render() {
+    const board = BOARDS[boardKey];
+    readout.hidden = true;
+    const teams = TEAMS.map((team) => {
+      const byTrack = {};
+      TRACKS.forEach(([t]) => { byTrack[t] = boardKey === 'custom' ? team.t[t] : fold(team.t[t]); });
+      return { name: team.name, byTrack, total: sum(TRACKS.map(([t]) => sum(byTrack[t]))) };
+    }).sort((a, b) => b.total - a.total);
+    const all = {};
+    TRACKS.forEach(([t]) => { all[t] = board.map((_, i) => sum(teams.map((team) => team.byTrack[t][i]))); });
+    const totalsHost = document.getElementById('totals');
+    totalsHost.innerHTML = '';
+    renderRow(totalsHost, 'All teams', all, board);
+    const rowsHost = document.getElementById('rows');
+    rowsHost.innerHTML = '';
+    teams.forEach((team) => renderRow(rowsHost, team.name, team.byTrack, board));
+  }
+
+  document.querySelectorAll('[data-board]').forEach((btn) => btn.addEventListener('click', () => {
+    boardKey = btn.dataset.board;
+    document.querySelectorAll('[data-board]').forEach((b) => b.classList.toggle('on', b === btn));
+    render();
+  }));
+  render();
+})();
+</script>
+</body>
+</html>

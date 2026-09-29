@@ -15,7 +15,7 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 ## Current Stats Work
 
-- [Project Track Left capacity](EXEC-project-track-left-capacity.md): planned; approved existing By team bars with aligned Board-style status strips and exact selected-sprint SP left. [Fixed UI decision](SUPPORT-project-track-left-capacity-design.md) and [approved preview](../../assets/mockups/project-track-left-capacity.html). No production implementation yet.
+- [Project Track Board-column strips](EXEC-project-track-board-column-strips.md): planned (issue #173); Team mode totals and By team bars get a 7px strip per track split by the parent Epic's Board column, hover-only readout, no "left" values. [Approved UI decision](SUPPORT-project-track-board-column-strips-design.md) and [approved preview](../../assets/mockups/project-track-board-column-strips.html). Supersedes the 2026-09-08 Left capacity plan. No production implementation yet.
 
 ## Epic header regression review
 

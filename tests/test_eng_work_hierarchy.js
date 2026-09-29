@@ -143,8 +143,8 @@ test('Planning stably partitions Initiatives, Epics, and rows requirement-first 
         group('REQ-2', { priority: 'Highest', initiative: requiredInitiative }),
     ];
     const snapshot = readiness([
-        missingEpic('REQ-1', [{ id: 'team-a', name: 'A' }], { initiative: requiredInitiative }),
-        missingEpic('REQ-2', [{ id: 'team-a', name: 'A' }], { initiative: requiredInitiative }),
+        missingEpic('REQ-1', [{ id: 'team-a', name: 'A' }], { initiative: requiredInitiative, priority: 'Low' }),
+        missingEpic('REQ-2', [{ id: 'team-a', name: 'A' }], { initiative: requiredInitiative, priority: 'Highest' }),
     ]);
     const planning = buildEngWorkHierarchy({
         mode: 'planning', sprint: SPRINT, storyEpicGroups: groups, readinessSnapshot: snapshot, groupByInitiative: true, sort: 'priority',
@@ -155,7 +155,7 @@ test('Planning stably partitions Initiatives, Epics, and rows requirement-first 
     const catchUp = buildEngWorkHierarchy({
         mode: 'catch_up', sprint: SPRINT, storyEpicGroups: [groups[1]], readinessSnapshot: snapshot,
     });
-    assert.deepEqual(catchUp.epicGroups[0].rows.map(row => row.kind), ['story', 'story_requirement']);
+    assert.deepEqual(catchUp.epicGroups.find(item => item.key === 'REQ-1').rows.map(row => row.kind), ['story', 'story_requirement']);
 });
 
 test('malformed Initiative metadata degrades to ungrouped and duplicate Epic input stays canonical', async () => {

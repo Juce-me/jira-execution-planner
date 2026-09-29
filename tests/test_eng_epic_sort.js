@@ -21,6 +21,15 @@ test('effective priority is the most urgent child priority', async () => {
   assert.equal(getEpicEffectivePriority(epic('E2', 'To Do', null, [])).rank, 999);
 });
 
+test('effective priority prefers the epic\'s own priority over child priorities', async () => {
+  const { getEpicEffectivePriority } = await import(modUrl);
+  const group = epic('E3', 'To Do', null, ['Low']);
+  group.epic.priority = 'Critical';
+  assert.equal(getEpicEffectivePriority(group).name, 'Critical');
+  group.epic.priority = { name: 'Medium' };
+  assert.equal(getEpicEffectivePriority(group).name, 'Medium');
+});
+
 test('status phase rank follows the built-in workflow order', async () => {
   const { getStatusPhaseRank } = await import(modUrl);
   assert.equal(getStatusPhaseRank('To Do'), 0);

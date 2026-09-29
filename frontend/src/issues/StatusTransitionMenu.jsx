@@ -4,8 +4,9 @@ import IssueFieldOptionMenu from './IssueFieldOptionMenu.jsx';
 import { MAX_STATUS_TRANSITION_ISSUES } from '../eng/engStatusTransitionUtils.js';
 import { getIssueStatusClassName, normalizeIssueStatus } from './issueViewUtils.js';
 
-// Shared ENG status-transition control used by Catch Up (single issue) and Planning
-// (composed batch) for Epic, Story, and Subtask status pills. It is presentational:
+// Shared ENG status-transition control used by Catch Up (single issue) and Planning for
+// Epic, Story, and Subtask status pills. In Planning a Story pill applies to every selected
+// Story (the batch); Epic and Subtask pills change only their own issue. It is presentational:
 // all transition state and handlers arrive as props from the dashboard hook wiring,
 // so this file never imports the transition API or hook. It is only rendered when the
 // ENG status-transition surface is enabled; passive surfaces (EPM, Stats, Scenario,
@@ -105,11 +106,8 @@ export default function StatusTransitionMenu({
     errorCode = '',
     result = null,
     targetsCount = 0,
-    canToggleTargetSet = false,
-    isInTargetSet = false,
     onOpen,
     onClose,
-    onToggleTargetSet,
     onSubmit,
     portalTarget = null,
     previewOnly = null,
@@ -128,7 +126,9 @@ export default function StatusTransitionMenu({
         : null;
 
     const isServerTooMany = errorCode === 'too_many_issues';
-    const isPlanning = sourceSurface === 'planning';
+    // Only a Planning Story pill applies to the selected Stories; Epic and Subtask pills act on
+    // themselves, so they behave like Catch Up and never show the batch count or cap.
+    const isPlanning = sourceSurface === 'planning' && String(fallbackIssueType || '').toLowerCase() === 'story';
     // Client-side over-cap: the composed Planning batch exceeds the shared cap. Unlike a
     // server too_many_issues (options failed, so no valid statuses), the cached status
     // options are still visible but disabled so a >50 mutation can never be sent.
@@ -188,17 +188,6 @@ export default function StatusTransitionMenu({
                     blockClass="status-transition"
                     issueKey={issueKey}
                     menuLabel={submitLabel}
-                    leadingContent={canToggleTargetSet ? (
-                        <label className="status-transition-target-toggle-row">
-                            <input
-                                type="checkbox"
-                                className="status-transition-target-toggle"
-                                checked={!!isInTargetSet}
-                                onChange={() => onToggleTargetSet?.()}
-                            />
-                            <span>Include in batch</span>
-                        </label>
-                    ) : null}
                     loading={optionsLoading}
                     loadingLabel="Loading status options..."
                     error={showTooManyMessage ? TOO_MANY_ISSUES_MESSAGE : (error || '')}

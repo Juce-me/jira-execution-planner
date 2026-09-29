@@ -16,6 +16,7 @@
   --alert-missing: #fa8c16;
   --alert-blocked: #d4380d;
   --border: #e0ddd7;
+  --radius: 10px;
   --shadow: rgba(0, 0, 0, 0.04);
   --control-height: 38px;
   --sticky-search-z: 1000;
@@ -553,6 +554,9 @@ h1 {
 }
 .search-clear:hover {
   color: var(--text-primary);
+  background: #f7f5f0;
+  box-shadow: none;
+  transform: none;
 }
 .view-selector {
   display: flex;
@@ -6416,23 +6420,43 @@ button.alert-story-local-link:focus-visible {
 button.task-priority-icon {
   -webkit-appearance: none;
   appearance: none;
+  position: relative;
+  isolation: isolate;
   padding: 0;
   margin: 0;
   border: 0;
   background: transparent;
   font: inherit;
   cursor: pointer;
-  border-radius: 8px;
-  transition:
-    background-color 0.16s ease,
-    box-shadow 0.16s ease,
-    opacity 0.16s ease;
+  border-radius: var(--radius);
+  transition: opacity 0.16s ease;
+}
+button.task-priority-icon::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: -1;
+  width: 24px;
+  height: 24px;
+  transform: translate(-50%, -50%);
+  border-radius: var(--radius);
+  pointer-events: none;
+  transition: background-color 0.16s ease, box-shadow 0.16s ease;
 }
 button.task-priority-icon:hover,
 button.task-priority-icon:focus-visible {
   transform: none;
+  background: transparent;
+  box-shadow: none;
+}
+button.task-priority-icon:hover::before,
+button.task-priority-icon:focus-visible::before {
   background: var(--bg-primary);
   box-shadow: 0 0 0 2px rgba(47, 128, 237, 0.22);
+}
+button.task-priority-icon[data-priority]:hover::after {
+  top: calc(50% - 1.1rem);
 }
 .task-priority-icon[data-priority] {
   position: relative;
@@ -6777,7 +6801,7 @@ button.task-priority-icon:focus-visible {
   position: fixed;
   z-index: var(--modal-popup-z);
   width: max-content;
-  max-width: min(18rem, calc(100vw - 16px));
+  max-width: min(36rem, calc(100vw - 16px));
   padding: 0.35rem 0.5rem;
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 8px;
@@ -7632,17 +7656,28 @@ button.toggle.initiative-toggle.active {
 button.epic-track-indicator {
   -webkit-appearance: none;
   appearance: none;
-  padding: 0;
+  padding: 1px 0 0;
+  letter-spacing: 0;
   margin: 0;
   border: 0;
   background: transparent;
   font: inherit;
+  font-family:
+    "Apple Color Emoji",
+    "Segoe UI Emoji",
+    "Noto Color Emoji",
+    sans-serif;
   cursor: pointer;
-  border-radius: 8px;
+  border-radius: var(--radius);
   transition:
     background-color 0.16s ease,
     box-shadow 0.16s ease,
     opacity 0.16s ease;
+}
+@supports (font: -apple-system-body) {
+  button.epic-track-indicator {
+    padding: 0 0 2px;
+  }
 }
 button.epic-track-indicator:hover,
 button.epic-track-indicator:focus-visible {
@@ -7973,18 +8008,6 @@ button.status-pill:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.status-transition-target-toggle-row {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.72rem;
-  color: var(--text-secondary);
-  text-transform: none;
-  letter-spacing: 0;
-}
-.status-transition-target-toggle {
-  margin: 0;
 }
 .status-transition-menu-note,
 .priority-transition-menu-note,
@@ -8392,6 +8415,12 @@ input.story-points-editor.story-points-alert-highlight {
   color: var(--text-secondary);
   font-size: 0.7rem;
   padding: 0.35rem 0.6rem;
+}
+.scenario-toggle:not(.active):hover {
+  background: #f7f5f0;
+  color: var(--text-primary);
+  box-shadow: none;
+  transform: none;
 }
 .scenario-toggle.active {
   background: var(--text-primary);

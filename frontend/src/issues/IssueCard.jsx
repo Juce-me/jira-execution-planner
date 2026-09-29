@@ -40,11 +40,9 @@ export default function IssueCard({
     statusTransitionResult = null,
     statusTransitionTargetsCount = 0,
     statusTransitionPendingIssueKeys = null,
-    subtaskStatusTargetKeys = null,
     onOpenStatusTransition,
     onCloseStatusTransition,
     onSubmitStatusTransition,
-    onToggleSubtaskStatusTarget,
     priorityTransitionEnabled = false,
     priorityTransitionActiveKey = null,
     priorityTransitionOptions = null,
@@ -284,7 +282,6 @@ export default function IssueCard({
                             errorCode={statusTransitionErrorCode}
                             result={statusTransitionResult}
                             targetsCount={statusTransitionTargetsCount}
-                            canToggleTargetSet={false}
                             onOpen={onOpenStatusTransition}
                             onClose={onCloseStatusTransition}
                             onSubmit={(targetStatus) => onSubmitStatusTransition?.(targetStatus, task)}
@@ -390,13 +387,9 @@ export default function IssueCard({
                                             error={statusTransitionError}
                                             errorCode={statusTransitionErrorCode}
                                             result={statusTransitionResult}
-                                            targetsCount={statusTransitionTargetsCount}
-                                            canToggleTargetSet={statusTransitionSourceSurface === 'planning'}
-                                            isInTargetSet={!!subtaskStatusTargetKeys?.has?.(subtask.key)}
                                             onOpen={onOpenStatusTransition}
                                             onClose={onCloseStatusTransition}
-                                            onToggleTargetSet={() => onToggleSubtaskStatusTarget?.(subtask.key)}
-                                            onSubmit={(targetStatus) => onSubmitStatusTransition?.(targetStatus, subtask)}
+                                            onSubmit={(targetStatus) => onSubmitStatusTransition?.(targetStatus, subtask, { singleIssue: true })}
                                             previewOnly={onboardingPreviewSession}
                                             onPreviewLifecycleChange={onPreviewLifecycleChange}
                                         />

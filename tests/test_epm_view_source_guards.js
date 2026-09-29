@@ -1005,7 +1005,6 @@ test('EPM stays view-only: no transition imports, no status-transition props on 
         'onOpenStatusTransition',
         'onCloseStatusTransition',
         'onSubmitStatusTransition',
-        'onToggleSubtaskStatusTarget',
         "sourceSurface='epm'",
         'sourceSurface="epm"',
     ]) {

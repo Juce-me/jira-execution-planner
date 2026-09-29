@@ -140,6 +140,14 @@ test('ENG epic headline source sizes artwork and keeps focus/readout visible', a
     assert.match(source, /\.epic-full-value-readout\s*\{[^}]*max-width:\s*min\(36rem,\s*calc\(100vw\s*-\s*16px\)\)\s*;/s);
 });
 
+test('hover states on transparent buttons neutralize the global dark button hover', async () => {
+    const source = readDashboardCssSource(repoRoot);
+
+    assert.match(source, /\.search-clear:hover\s*\{[^}]*color:\s*var\(--text-primary\)\s*;[^}]*background:\s*#f7f5f0\s*;[^}]*box-shadow:\s*none\s*;[^}]*transform:\s*none\s*;/s);
+    assert.match(source, /\.scenario-toggle:not\(\.active\):hover\s*\{[^}]*background:\s*#f7f5f0\s*;[^}]*color:\s*var\(--text-primary\)\s*;[^}]*transform:\s*none\s*;/s);
+    assert.match(source, /button\.epic-track-indicator\s*\{[^}]*padding:\s*2px\s+0\s+0\s+3\.6px\s*;[^}]*letter-spacing:\s*0\s*;/s);
+});
+
 test('Story requirement card is one tracked external link with bounded Jira analytics', async () => {
     const source = fs.readFileSync(storyRequirementCardPath, 'utf8');
 

@@ -375,7 +375,13 @@
         button.epic-track-indicator {
             -webkit-appearance: none;
             appearance: none;
-            padding: 0;
+            /* At the header's 14px size the emoji ink sits ~1.8px left of and ~1px above the
+               centre of its glyph box (Apple Color Emoji), which the hover frame exposes; the
+               padding re-centres it. The vertical shift is a whole 1px because layout rounds
+               fractional text offsets per row. letter-spacing is reset because the global
+               button rule's 0.1em tracking adds trailing space after the glyph. */
+            padding: 2px 0 0 3.6px;
+            letter-spacing: 0;
             margin: 0;
             border: 0;
             background: transparent;

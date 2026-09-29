@@ -1194,3 +1194,123 @@ test('screenshot: a populated open column', async ({ page }) => {
     await openBoard(page);
     await col(page, 'col-1a2b3c4d').screenshot({ path: path.join(screenshotDir, 'board-card-column.png') });
 });
+
+// Absolute-pixel ink bounds of what a control paints inside its inset box, compared with the
+// centre of that box. Integer-aligned clips keep the result exact at the fractional positions
+// flex layout produces.
+async function paintedInkOffset(page, locator, inset = 3) {
+    const rect = await locator.evaluate(node => {
+        const box = node.getBoundingClientRect();
+        return { x: box.x, y: box.y, w: box.width, h: box.height };
+    });
+    const x0 = Math.floor(rect.x) - 2;
+    const y0 = Math.floor(rect.y) - 2;
+    const width = Math.ceil(rect.x + rect.w) + 2 - x0;
+    const height = Math.ceil(rect.y + rect.h) + 2 - y0;
+    const image = await page.screenshot({ clip: { x: x0, y: y0, width, height }, animations: 'disabled' });
+    return page.evaluate(async ({ base64, x0: originX, y0: originY, rect: box, inset: edge, width: clipWidth }) => {
+        const img = new Image();
+        img.src = `data:image/png;base64,${base64}`;
+        await img.decode();
+        const scale = img.width / clipWidth;
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const context = canvas.getContext('2d');
+        context.drawImage(img, 0, 0);
+        const data = context.getImageData(0, 0, img.width, img.height).data;
+        const pixel = (x, y) => { const o = (y * img.width + x) * 4; return [data[o], data[o + 1], data[o + 2]]; };
+        const left = Math.ceil((box.x + edge - originX) * scale);
+        const top = Math.ceil((box.y + edge - originY) * scale);
+        const right = Math.floor((box.x + box.w - edge - originX) * scale);
+        const bottom = Math.floor((box.y + box.h - edge - originY) * scale);
+        const ground = pixel(left, top);
+        let minX = Infinity; let minY = Infinity; let maxX = -1; let maxY = -1;
+        for (let y = top; y < bottom; y += 1) {
+            for (let x = left; x < right; x += 1) {
+                const p = pixel(x, y);
+                if (Math.max(...p.map((channel, i) => Math.abs(channel - ground[i]))) > 30) {
+                    minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+                    minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+                }
+            }
+        }
+        return {
+            painted: maxX >= 0,
+            dx: originX + ((minX + maxX + 1) / 2) / scale - (box.x + box.w / 2),
+            dy: originY + ((minY + maxY + 1) / 2) / scale - (box.y + box.h / 2),
+        };
+    }, { base64: image.toString('base64'), x0, y0, rect, inset, width });
+}
+
+function contrastRatio(foreground, background) {
+    const luminance = rgb => {
+        const [r, g, b] = rgb.map(value => {
+            const channel = value / 255;
+            return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+        });
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const [hi, lo] = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
+    return (hi + 0.05) / (lo + 0.05);
+}
+
+test.describe('ENG hover affordances', () => {
+    test.use({ deviceScaleFactor: 3 });
+
+    test('Project Track hover frame is centred on every glyph', async ({ page }) => {
+        test.skip(process.platform !== 'darwin', 'Glyph ink placement is tuned to Apple Color Emoji.');
+        await openBoard(page, { width: 1280, height: 900, firstEpicTrack: 'Unidentified' });
+        await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Catch Up' }).click();
+        await page.evaluate(() => document.fonts.ready);
+        const triggers = page.locator('[data-project-track-transition-trigger]');
+        const glyphs = new Set();
+        for (let index = 0; index < await triggers.count(); index += 1) {
+            const trigger = triggers.nth(index);
+            const glyph = await trigger.textContent();
+            if (glyphs.has(glyph)) continue;
+            glyphs.add(glyph);
+            await trigger.scrollIntoViewIfNeeded();
+            const box = await trigger.boundingBox();
+            expect([box.width, box.height], `${glyph} frame keeps its 24px square`).toEqual([24, 24]);
+            for (const state of ['rest', 'hover']) {
+                if (state === 'hover') await trigger.hover(); else await page.mouse.move(2, 2);
+                await page.waitForTimeout(300);
+                const ink = await paintedInkOffset(page, trigger);
+                expect(ink.painted, `${glyph} ${state} paints`).toBe(true);
+                expect(Math.abs(ink.dx), `${glyph} ${state} horizontal offset`).toBeLessThanOrEqual(0.75);
+                expect(Math.abs(ink.dy), `${glyph} ${state} vertical offset`).toBeLessThanOrEqual(0.75);
+            }
+        }
+        expect(glyphs.size).toBeGreaterThanOrEqual(3);
+    });
+
+    test('transparent controls stay readable on hover instead of turning dark', async ({ page }) => {
+        await openBoard(page, { width: 1280, height: 900 });
+        await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Catch Up' }).click();
+        const hoverContrast = locator => locator.evaluate(node => {
+            const style = getComputedStyle(node);
+            const rgba = value => (value.match(/[\d.]+/g) || []).map(Number);
+            return { background: rgba(style.backgroundColor), color: rgba(style.color), transform: style.transform, shadow: style.boxShadow };
+        });
+        const expectReadable = async (locator, label) => {
+            await locator.hover();
+            // The global button rule animates `all` for 0.3s, so only the settled colours count.
+            await expect.poll(async () => {
+                const { background, color } = await hoverContrast(locator);
+                return (background[3] ?? 1) === 1 ? contrastRatio(color.slice(0, 3), background.slice(0, 3)) : 0;
+            }, { message: `${label} hover contrast`, timeout: 2000 }).toBeGreaterThanOrEqual(4.5);
+            const settled = await hoverContrast(locator);
+            expect(settled.transform, `${label} hover does not lift`).toBe('none');
+            expect(settled.shadow, `${label} hover has no dark drop shadow`).toBe('none');
+        };
+
+        await page.locator('.search-input').first().fill('ua');
+        await expectReadable(page.getByRole('button', { name: 'Clear search' }), 'search clear');
+
+        await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Scenario' }).click();
+        const inactiveToggle = page.locator('.scenario-toggle:not(.active)').first();
+        await expect(inactiveToggle).toBeVisible();
+        await expectReadable(inactiveToggle, 'scenario toggle');
+    });
+});

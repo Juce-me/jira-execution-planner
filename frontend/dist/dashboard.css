@@ -553,6 +553,9 @@ h1 {
 }
 .search-clear:hover {
   color: var(--text-primary);
+  background: #f7f5f0;
+  box-shadow: none;
+  transform: none;
 }
 .view-selector {
   display: flex;
@@ -7632,7 +7635,8 @@ button.toggle.initiative-toggle.active {
 button.epic-track-indicator {
   -webkit-appearance: none;
   appearance: none;
-  padding: 0;
+  padding: 2px 0 0 3.6px;
+  letter-spacing: 0;
   margin: 0;
   border: 0;
   background: transparent;
@@ -8392,6 +8396,12 @@ input.story-points-editor.story-points-alert-highlight {
   color: var(--text-secondary);
   font-size: 0.7rem;
   padding: 0.35rem 0.6rem;
+}
+.scenario-toggle:not(.active):hover {
+  background: #f7f5f0;
+  color: var(--text-primary);
+  box-shadow: none;
+  transform: none;
 }
 .scenario-toggle.active {
   background: var(--text-primary);

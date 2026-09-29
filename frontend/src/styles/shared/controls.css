@@ -203,6 +203,9 @@
 
         .search-clear:hover {
             color: var(--text-primary);
+            background: #f7f5f0;
+            box-shadow: none;
+            transform: none;
         }
 
         .view-selector {

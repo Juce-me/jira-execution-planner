@@ -12572,7 +12572,6 @@ import {
             const statusTransitions = useEngStatusTransitions({
                 backendUrl: BACKEND_URL,
                 selectedStories: selectedTasksList,
-                epicGroups: boardScopeRequested ? boardEpicGroups : epicGroups,
                 storySubtasksByKey,
                 selectedSprint,
                 sourceSurface: statusTransitionSourceSurface,
@@ -12587,9 +12586,7 @@ import {
             });
             const {
                 activeSingleIssueTarget: statusTransitionActiveTarget,
-                selectedEpicStatusTargets, selectedSubtaskStatusTargets,
                 openSingleIssueStatusControl, closeSingleIssueStatusControl,
-                toggleEpicStatusTarget, toggleSubtaskStatusTarget, clearNonStoryStatusTargets,
                 transitionOptions, transitionOptionsLoading,
                 transitionError, transitionErrorCode, transitionResult,
                 pendingIssueKeys: pendingStatusIssueKeys, submitStatusTransition,
@@ -12649,33 +12646,28 @@ import {
                 ));
             }, [closePriorityControl, closeProjectTrackControl, closeSingleIssueStatusControl, onboardingPreviewDescriptorMatches, onboardingPreviewSession]);
 
-            // Planning composed target list (selected Stories + marked Epics + marked
-            // Subtasks) drives the "Apply to selected targets (N)" count and the action
-            // bar feedback. Catch Up acts on one explicit issue, so its count stays 0.
+            // Planning composed target list (the selected Stories) drives the "Apply to selected
+            // targets (N)" count and the action bar feedback. Catch Up acts on one explicit
+            // issue, so its count stays 0.
             const planningStatusTargets = React.useMemo(() => {
                 if (statusTransitionSourceSurface !== 'planning') return [];
-                return buildEngStatusTargets({
-                    selectedTasksList,
-                    selectedEpicKeys: Array.from(selectedEpicStatusTargets),
-                    selectedSubtaskKeys: Array.from(selectedSubtaskStatusTargets),
-                    epicGroups,
-                    storySubtasksByKey,
-                });
-            }, [statusTransitionSourceSurface, selectedTasksList, selectedEpicStatusTargets, selectedSubtaskStatusTargets, epicGroups, storySubtasksByKey]);
+                return buildEngStatusTargets({ selectedTasksList });
+            }, [statusTransitionSourceSurface, selectedTasksList]);
             const statusTransitionTargetsCount = planningStatusTargets.length;
 
-            // The hook clears status targets/options on sprint change but not on group
-            // change; clear them here so a group switch never carries stale targets.
+            // The hook clears status options on sprint change but not on group change; close
+            // the open menus here so a group switch never carries a stale one.
             React.useEffect(() => {
-                clearNonStoryStatusTargets();
                 closeSingleIssueStatusControl();
                 closePriorityControl();
                 closeProjectTrackControl();
-            }, [activeGroupId, clearNonStoryStatusTargets, closeSingleIssueStatusControl, closePriorityControl, closeProjectTrackControl]);
+            }, [activeGroupId, closeSingleIssueStatusControl, closePriorityControl, closeProjectTrackControl]);
 
             // The hook exposes no submitting flag; track it around the awaited submit so
             // the menu can disable its action and show an in-flight state.
-            const handleSubmitStatusTransition = React.useCallback(async (targetStatus, issue) => {
+            // `singleIssue` marks an Epic or Subtask pill: in Planning it changes only that issue,
+            // whereas a Story pill applies to the selected Stories.
+            const handleSubmitStatusTransition = React.useCallback(async (targetStatus, issue, { singleIssue = false } = {}) => {
                 if (statusTransitionSourceSurface === 'catch_up') {
                     return submitStatusTransition(targetStatus, issue?.key);
                 }
@@ -12689,7 +12681,7 @@ import {
                 try {
                     return await submitStatusTransition(
                         targetStatus,
-                        statusTransitionSourceSurface === 'board' ? issue?.key : undefined,
+                        statusTransitionSourceSurface === 'board' || singleIssue ? issue?.key : undefined,
                     );
                 } finally {
                     setStatusTransitionSubmitting(false);
@@ -14673,13 +14665,9 @@ import {
                                                                     error={transitionError}
                                                                     errorCode={transitionErrorCode}
                                                                     result={transitionResult}
-                                                                    targetsCount={statusTransitionTargetsCount}
-                                                                    canToggleTargetSet={statusTransitionSourceSurface === 'planning'}
-                                                                    isInTargetSet={selectedEpicStatusTargets.has(epicGroup.key)}
                                                                     onOpen={openSingleIssueStatusControl}
                                                                     onClose={closeSingleIssueStatusControl}
-                                                                    onToggleTargetSet={() => toggleEpicStatusTarget(epicGroup.key)}
-                                                                    onSubmit={(targetStatus) => handleSubmitStatusTransition(targetStatus, { key: epicGroup.key })}
+                                                                    onSubmit={(targetStatus) => handleSubmitStatusTransition(targetStatus, { key: epicGroup.key }, { singleIssue: true })}
                                                                     previewOnly={onboardingPreviewSession}
                                                                     onPreviewLifecycleChange={handleOnboardingPreviewLifecycleChange}
                                                                 />
@@ -14763,11 +14751,9 @@ import {
                                             statusTransitionResult={transitionResult}
                                             statusTransitionTargetsCount={statusTransitionTargetsCount}
                                             statusTransitionPendingIssueKeys={pendingStatusIssueKeys}
-                                            subtaskStatusTargetKeys={selectedSubtaskStatusTargets}
                                             onOpenStatusTransition={openSingleIssueStatusControl}
                                             onCloseStatusTransition={closeSingleIssueStatusControl}
                                             onSubmitStatusTransition={handleSubmitStatusTransition}
-                                            onToggleSubtaskStatusTarget={toggleSubtaskStatusTarget}
                                             priorityTransitionEnabled={priorityTransitionEnabled}
                                             priorityTransitionActiveKey={priorityTransitionActiveKey}
                                             priorityTransitionOptions={priorityOptions}

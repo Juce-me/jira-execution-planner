@@ -82,42 +82,6 @@ export function buildCatchUpStatusTargets(issue, fallbackIssueType = '') {
     return { key, issueType, currentStatus, summary };
 }
 
-function findEpicGroupByKey(epicGroups, key) {
-    const normalized = normalizeStatusTargetKey(key);
-    return (epicGroups || []).find((group) => normalizeStatusTargetKey(group?.key) === normalized) || null;
-}
-
-function resolveEpicStatusTargets(selectedEpicKeys, epicGroups) {
-    return (selectedEpicKeys || [])
-        .map((key) => {
-            const group = findEpicGroupByKey(epicGroups, key);
-            const epicIssue = group?.epic || null;
-            return buildCatchUpStatusTargets({
-                key: group?.key || key,
-                status: epicIssue?.status,
-                summary: epicIssue?.summary || group?.parentSummary || '',
-            }, 'Epic');
-        })
-        .filter(Boolean);
-}
-
-function findSubtaskItemByKey(storySubtasksByKey, key) {
-    const normalized = normalizeStatusTargetKey(key);
-    const byStory = storySubtasksByKey || {};
-    for (const storyKey of Object.keys(byStory)) {
-        const items = byStory[storyKey]?.items || [];
-        const found = items.find((item) => normalizeStatusTargetKey(item?.key) === normalized);
-        if (found) return found;
-    }
-    return null;
-}
-
-function resolveSubtaskStatusTargets(selectedSubtaskKeys, storySubtasksByKey) {
-    return (selectedSubtaskKeys || [])
-        .map((key) => buildCatchUpStatusTargets(findSubtaskItemByKey(storySubtasksByKey, key) || { key }, 'Subtask'))
-        .filter(Boolean);
-}
-
 // Maps subtask keys to the parent Story keys whose expanded subtask lists contain them,
 // so a successful subtask status change can refresh only the affected stories' subtasks
 // (keeping an expanded subtask row from showing a stale pill) without a full reload.
@@ -135,37 +99,21 @@ export function resolveSubtaskParentStoryKeys(subtaskKeys, storySubtasksByKey) {
     return Array.from(storyKeys);
 }
 
-// Inserts each target list in low-to-high precedence order so a later list's value wins
-// the collision. Callers pass (subtaskTargets, storyTargets, epicTargets) so a duplicate
-// key deterministically resolves to Epic > Story > Subtask.
-function dedupeStatusTargetsByPrecedence(...targetListsLowToHighPrecedence) {
+// Collapses repeated issue keys so a target is sent once; the last occurrence wins.
+function dedupeStatusTargetsByKey(targets) {
     const byKey = new Map();
-    targetListsLowToHighPrecedence.forEach((list) => {
-        (list || []).forEach((target) => {
-            if (!target?.key) return;
-            byKey.set(normalizeStatusTargetKey(target.key), target);
-        });
+    (targets || []).forEach((target) => {
+        if (!target?.key) return;
+        byKey.set(normalizeStatusTargetKey(target.key), target);
     });
     return Array.from(byKey.values());
 }
 
-// Composes the Planning batch status-target set: selected Story targets from
-// selectedTasksList, plus selected Epics and selected Subtasks resolved separately from
-// epicGroups/storySubtasksByKey. Epics/Subtasks are never mixed into selectedTasksList, so
-// they cannot affect selected story-point totals computed elsewhere from that same list.
-export function buildEngStatusTargets({
-    selectedTasksList = [],
-    selectedEpicKeys = [],
-    selectedSubtaskKeys = [],
-    epicGroups = [],
-    storySubtasksByKey = {},
-} = {}) {
-    const storyTargets = (selectedTasksList || [])
-        .map((task) => buildCatchUpStatusTargets(task, 'Story'))
-        .filter(Boolean);
-    const epicTargets = resolveEpicStatusTargets(selectedEpicKeys, epicGroups);
-    const subtaskTargets = resolveSubtaskStatusTargets(selectedSubtaskKeys, storySubtasksByKey);
-    return dedupeStatusTargetsByPrecedence(subtaskTargets, storyTargets, epicTargets);
+// Composes the Planning batch status-target set: the selected Stories from selectedTasksList.
+// Epic and Subtask status pills act on their own issue only, so they are never part of it.
+export function buildEngStatusTargets({ selectedTasksList = [] } = {}) {
+    return dedupeStatusTargetsByKey((selectedTasksList || [])
+        .map((task) => buildCatchUpStatusTargets(task, 'Story')));
 }
 
 function classifyIssueTypeToken(issueType) {

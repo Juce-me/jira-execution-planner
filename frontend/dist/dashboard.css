@@ -8009,18 +8009,6 @@ button.status-pill:focus-visible {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.status-transition-target-toggle-row {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.72rem;
-  color: var(--text-secondary);
-  text-transform: none;
-  letter-spacing: 0;
-}
-.status-transition-target-toggle {
-  margin: 0;
-}
 .status-transition-menu-note,
 .priority-transition-menu-note,
 .project-track-transition-menu-note,

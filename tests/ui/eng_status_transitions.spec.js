@@ -689,62 +689,52 @@ test('Planning action bar shows target count feedback and adds no status-change 
     await expect(page.locator('.planning-actions').getByRole('button', { name: /change status/i })).toHaveCount(0);
 });
 
-test('Planning batch status change sends all selected Story, Epic, and Subtask keys in one body', async ({ page }) => {
+test('Planning Story pill applies the status to every selected Story in one body', async ({ page }) => {
     await setPrefs(page, catchUpPrefs({ selectedSprint: futureSprintId, sprintName: futureSprintName }));
     const { calls } = await installEngStatusFixture(page);
     await page.goto(appBaseUrl);
     await openPlanning(page);
 
-    // Mark the Epic into the batch via its menu (must not toggle excluded capacity).
-    const epicTrigger = trigger(page, 'epic', 'PROD-EPIC');
-    await epicTrigger.click();
-    await menu(page, 'PROD-EPIC').locator('.status-transition-target-toggle').check();
-    await page.keyboard.press('Escape');
-    await expect(menu(page, 'PROD-EPIC')).toHaveCount(0);
-    // Planning shares IssueFieldOptionMenu: Escape from inside the menu (here from the batch
-    // checkbox) must return focus to the pill, not to <body>.
-    await expect(epicTrigger).toBeFocused();
-
-    // Expand subtasks and mark a Subtask into the batch via its menu.
-    await page.locator('.task-item[data-task-key="PROD-1"] .story-subtasks-toggle').click();
-    await trigger(page, 'subtask', 'PROD-1-A').click();
-    await menu(page, 'PROD-1-A').locator('.status-transition-target-toggle').check();
-    await page.keyboard.press('Escape');
-    await expect(menu(page, 'PROD-1-A')).toHaveCount(0);
-
-    // Composed count is now 2 stories + 1 epic + 1 subtask = 4.
     await trigger(page, 'story', 'PROD-1').click();
     const storyMenu = menu(page, 'PROD-1');
+    await expect(storyMenu.locator('[aria-label="Apply to selected targets (2)"]')).toHaveCount(1);
     await storyMenu.getByRole('menuitem', { name: 'Accepted' }).click();
 
     await expect.poll(() => transitionCalls(calls).length).toBe(1);
     const mutation = transitionCalls(calls)[0];
-    expect([...mutation.body.issueKeys].sort()).toEqual(['PROD-1', 'PROD-1-A', 'PROD-2', 'PROD-EPIC']);
+    expect([...mutation.body.issueKeys].sort()).toEqual(['PROD-1', 'PROD-2']);
     expect(mutation.body.targetStatus).toBe('Accepted');
 });
 
-test('Planning epic status target does not toggle excluded capacity', async ({ page }) => {
+test('Planning Epic pill changes only that Epic and offers no batch controls', async ({ page }) => {
     await setPrefs(page, catchUpPrefs({ selectedSprint: futureSprintId, sprintName: futureSprintName }));
     const { calls } = await installEngStatusFixture(page);
     await page.goto(appBaseUrl);
     await openPlanning(page);
 
     const epicBlock = page.locator('.task-list .epic-block', { hasText: 'PROD-EPIC' }).first();
-    await expect(epicBlock.getByRole('button', { name: /Included/ })).toBeVisible();
-
     await trigger(page, 'epic', 'PROD-EPIC').click();
-    await menu(page, 'PROD-EPIC').locator('.status-transition-target-toggle').check();
+    const epicMenu = menu(page, 'PROD-EPIC');
+    await expect(epicMenu).toBeVisible();
+    // No batch membership control, and none of the batch wording: this pill acts on itself.
+    await expect(epicMenu).not.toContainText('Include in batch');
+    await expect(epicMenu.locator('input[type="checkbox"]')).toHaveCount(0);
+    await expect(epicMenu.locator('[aria-label^="Apply to selected targets"]')).toHaveCount(0);
+    await epicMenu.getByRole('menuitem', { name: 'Done' }).click();
 
-    // Marking the Epic as a status target must not flip the excluded-capacity control
-    // or persist a group-config change.
+    await expect.poll(() => transitionCalls(calls).length).toBe(1);
+    const mutation = transitionCalls(calls)[0];
+    expect(mutation.body.issueKeys).toEqual(['PROD-EPIC']);
+    expect(mutation.body.targetStatus).toBe('Done');
+    // The selected Stories are untouched and excluded capacity is not flipped or persisted.
+    await expect(page.locator('.planning-actions .planning-status-feedback')).toContainText(/(2 status targets selected|Status updated for 1 issue)/);
     await expect(epicBlock.getByRole('button', { name: /Included/ })).toBeVisible();
     expect(calls.filter(c => c.method === 'POST' && c.pathname === '/api/groups-config')).toHaveLength(0);
-    await expect(page.locator('.planning-actions .planning-status-feedback')).toContainText('3 status targets selected');
 });
 
-test('Planning subtask status target does not change selected story points', async ({ page }) => {
+test('Planning Subtask pill changes only that Subtask and leaves selected story points alone', async ({ page }) => {
     await setPrefs(page, catchUpPrefs({ selectedSprint: futureSprintId, sprintName: futureSprintName }));
-    await installEngStatusFixture(page);
+    const { calls } = await installEngStatusFixture(page);
     await page.goto(appBaseUrl);
     await openPlanning(page);
 
@@ -753,11 +743,34 @@ test('Planning subtask status target does not change selected story points', asy
 
     await page.locator('.task-item[data-task-key="PROD-1"] .story-subtasks-toggle').click();
     await trigger(page, 'subtask', 'PROD-1-A').click();
-    await menu(page, 'PROD-1-A').locator('.status-transition-target-toggle').check();
+    const subtaskMenu = menu(page, 'PROD-1-A');
+    await expect(subtaskMenu).toBeVisible();
+    await expect(subtaskMenu).not.toContainText('Include in batch');
+    await expect(subtaskMenu.locator('input[type="checkbox"]')).toHaveCount(0);
+    await expect(subtaskMenu.locator('[aria-label^="Apply to selected targets"]')).toHaveCount(0);
+    await subtaskMenu.getByRole('menuitem', { name: 'Done' }).click();
 
-    // Subtask target membership must not affect Story selected story points.
+    await expect.poll(() => transitionCalls(calls).length).toBe(1);
+    expect(transitionCalls(calls)[0].body.issueKeys).toEqual(['PROD-1-A']);
     await expect(selectedStat).toContainText('2 · 2.0 SP');
-    await expect(page.locator('.planning-actions .planning-status-feedback')).toContainText('3 status targets selected');
+});
+
+test('Planning Epic pill stays usable when no Story is selected', async ({ page }) => {
+    await setPrefs(page, catchUpPrefs({ selectedSprint: futureSprintId, sprintName: futureSprintName }));
+    const { calls } = await installEngStatusFixture(page);
+    await page.goto(appBaseUrl);
+    await openPlanning(page);
+    await page.getByRole('button', { name: 'Clear Selected' }).click();
+    await expect(page.locator('.planning-panel.open .planning-stat-value').first()).toContainText('0 ·');
+    await expect(page.locator('.planning-actions').getByText('status targets selected')).toHaveCount(0);
+
+    // The batch needs at least one selected Story, but an Epic pill no longer depends on it.
+    await trigger(page, 'epic', 'PROD-EPIC').click();
+    const epicOption = menu(page, 'PROD-EPIC').getByRole('menuitem', { name: 'Done' });
+    await expect(epicOption).toBeEnabled();
+    await epicOption.click();
+    await expect.poll(() => transitionCalls(calls).length).toBe(1);
+    expect(transitionCalls(calls)[0].body.issueKeys).toEqual(['PROD-EPIC']);
 });
 
 test('Planning partial success shows a result summary and keeps failed targets selected', async ({ page }) => {

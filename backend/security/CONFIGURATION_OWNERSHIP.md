@@ -14,7 +14,10 @@ write access, bootstrap precedence, and frontend edit gates must change together
 | EPM scope, label prefix, issue types, and project-label mappings | Current user's default private `view_configs` payload | Current user | `user_write` | Private to the owning user; never stored in workspace administrator configuration |
 | EPM tab and selected sprint UI state | Private browser preferences; preserve existing private-view values | Current user | Current user only | Never stored in workspace administrator or shared group configuration |
 | Personal connections and tokens | User-owned auth connection/token tables | Current user | `user_write` | Private credentials; never configuration payload fields |
-| Derived team catalog | `workspace_team_catalogs` | `authenticated_read` | `user_write` | Shared workspace cache refreshed by authenticated users; cannot mutate administrator settings |
+| Derived Team name directory | `workspace_team_catalogs` | `authenticated_read` | Authenticated `user_write` for names only; catalog refresh may merge discovered names | One shared name directory per workspace; names do not grant Sprint membership or mutate administrator settings |
+| Derived Sprint catalog | `workspace_sprint_catalogs` | `authenticated_read` | Authenticated Jira refresh runtime only | Shared per workspace and configured Jira source Board; complete validated empty lists are authoritative |
+| Derived per-Sprint Team membership | `workspace_sprint_team_catalogs` | `authenticated_read` | Authenticated Jira refresh runtime only | Shared per workspace and Sprint, but valid only for the persisted effective-scope digest; membership is distinct from Team names |
+| Workspace user directory and tool-admin grants | `users`, `auth_connections` (via `/api/admin/users*`) | Explicit tool admin only, regardless of `SETTINGS_ADMIN_ONLY` | `tool_admin`, explicit tool admin only | Non-admins never read other users; the only exposure is `adminContacts` (tool-admin display names) in `/api/config` while the workspace is unconfigured |
 | Debug load observations | `load_performance` | Explicit tool admin in the current workspace/environment | Authenticated `user_write`, debug-enabled only | Derived operational history, retained 30 days; workspace identity comes from auth context, never the browser payload; no configuration or issue content |
 
 ## Exact Boundaries
@@ -23,12 +26,48 @@ Administrator settings contain workspace Jira planning inputs: selected Jira pro
 board, capacity mapping, Jira field mappings, priority weights, and dashboard issue-type
 configuration outside EPM.
 They do **not** contain EPM settings, department groups, group preferences, personal view state,
-connections, credentials, or the derived team catalog.
+connections, credentials, or derived catalog payloads. The selected Jira source Board, projects,
+Sprint/Team fields, and base JQL remain administrator inputs; they identify derived catalogs but do
+not transfer catalog ownership into administrator configuration.
+
+In DB/OAuth mode, `resolve_effective_catalog_config` also reports `missing_admin_settings`: `scope`
+when no selected projects and no `JQL_QUERY` exist, and `source` when no numeric Jira source Board
+resolves. `/api/config` returns it as `adminSettingsMissing`; while it is non-empty the dashboard starts
+no ENG Jira work, opens Admin settings for editors, and shows non-editors the `adminContacts` display
+names (never emails or ids). Basic and JSON-file modes do not report it.
+
+In DB/OAuth mode, `resolve_effective_catalog_config` is the canonical resolver for Sprint and Team
+catalog identity. Sprint rows are keyed by `workspace_id + board_id`. Per-Sprint Team rows are keyed
+by `workspace_id + sprint_id`, and their validated payload is usable only when `scope_digest` matches
+the effective Board/projects/base-JQL/Team-field scope. `workspace_team_catalogs` remains the separate
+workspace-wide name directory. A Team name from that directory or loaded Jira work never proves that
+the Team belongs to the selected Sprint.
+
+Catalog claim and publication share the workspace configuration advisory fence with administrator
+configuration updates, capacity updates, and legacy promotion. Publication re-resolves the effective
+configuration and revalidates the authenticated refresh actor, including the BrowserSession lock,
+before atomically replacing a complete payload. A complete validated empty list is therefore a real
+snapshot that clears old choices. A failed refresh keeps a matching prior validated snapshot and its
+version while recording failure metadata; it never publishes partial discovery as membership.
+
+Browser persistence is display-only until a response with matching server-produced catalog identity,
+browser context, validation timestamp, and catalog version establishes authority in the current
+document. Catalog completion reads are bound to the original attempt and identity, are bounded by the
+server attempt deadline and browser lifecycle, and cannot be combined with a forced refresh. Auth,
+Board, effective-scope, or document-generation changes retire stale completion work.
 
 Department group configuration is deliberately collaborative. A non-admin user must be able to
 read and save `/api/groups-config`. Concurrent saves use `configRevision` and return `409` rather
 than silently overwriting another user's change. Department board layouts belong to this shared
 group payload; they are distinct from the administrator-owned Jira source board.
+
+The shared group payload's `teamLabels` field is `Record<TeamId, JiraLabel[]>`: each configured
+Team maps to zero to three ordered, case-insensitively distinct Jira Epic-label aliases (any alias
+matches the Team). The payload version for this shape is `2` (`GROUPS_PAYLOAD_VERSION` /
+`GROUPS_CONFIG_VERSION`); a stored or imported legacy scalar label normalizes to a one-item array on
+read without a write. This is a value-shape clarification only — ownership, read/write access, and
+the collaborative-save contract above are unchanged. The unrelated personal group-preference row
+(`user_group_preferences`) keeps its own `GROUP_PREFERENCES_PAYLOAD_VERSION = 1`.
 
 Stars/favorites are represented by the current user's group preferences (`visibleGroupIds` and
 `activeGroupId`). They must not update shared `defaultGroupId` or any workspace group row.
@@ -49,7 +88,9 @@ only edits, no-ops, conflicts, validation failures, exhausted retries, and rollb
 
 Legacy import sends EPM only to the importing user's default private view and group definitions only to
 the shared workspace group payload. Top-level `teamCatalog` is a derived cache and is discarded during
-import; an existing `workspace_team_catalogs` row is not replaced. Misplaced EPM formerly stored in
+import; an existing `workspace_team_catalogs` row is not replaced. Sprint and per-Sprint Team catalog
+tables are populated only by their explicit migration/refresh paths, never inferred from private views
+or group configuration. Misplaced EPM formerly stored in
 `workspace_dashboard_configs` is removed into `workspace_epm_config_migration_archive`. The migration
 does not infer a private owner, and downgrade restores the archived value without overwriting newer
 administrator fields.

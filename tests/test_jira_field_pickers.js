@@ -173,3 +173,167 @@ test('makeFieldKeyDown Escape calls preventDefault and stopPropagation and close
     assert.equal(harness.calls.stopPropagation, 1);
     assert.equal(harness.getState().open, false);
 });
+
+test('accepted field reads preserve a newer draft and advance its dirty baseline', async () => {
+    const { applyAcceptedFieldConfig } = await loadModule();
+    const draft = { fieldId: 'customfield_edited', fieldName: 'Edited locally' };
+    const initialBaselines = [
+        '',
+        JSON.stringify({ fieldId: 'customfield_old', fieldName: 'Previously saved' }),
+    ];
+
+    for (const initialBaseline of initialBaselines) {
+        const baselineRef = { current: initialBaseline };
+        const setterCalls = [];
+        let baselineAccepted = 0;
+        let currentDraft = JSON.stringify({ fieldId: '', fieldName: '' });
+        const requestDraft = currentDraft;
+        let releaseRead;
+        const heldRead = new Promise(resolve => { releaseRead = resolve; });
+        const completion = heldRead.then(() => applyAcceptedFieldConfig({
+            value: { fieldId: 'customfield_server', fieldName: 'Saved on server' },
+            requestDraft,
+            currentDraft,
+            setId: value => setterCalls.push(['id', value]),
+            setName: value => setterCalls.push(['name', value]),
+            baselineRef,
+            onBaselineAccepted: () => { baselineAccepted += 1; },
+        }));
+        currentDraft = JSON.stringify(draft);
+        releaseRead();
+        const result = await completion;
+
+        assert.equal(result.draftApplied, false);
+        assert.deepEqual(setterCalls, []);
+        assert.equal(baselineRef.current, JSON.stringify({
+            fieldId: 'customfield_server',
+            fieldName: 'Saved on server',
+        }));
+        assert.equal(Boolean(baselineRef.current) && JSON.stringify(draft) !== baselineRef.current, true);
+        assert.equal(baselineAccepted, 1, 'baseline advancement must invalidate memoized dirty state');
+    }
+});
+
+test('accepted field reads update an unchanged draft and its baseline together', async () => {
+    const { applyAcceptedFieldConfig } = await loadModule();
+    const baselineRef = { current: '' };
+    const setterCalls = [];
+    const requestDraft = JSON.stringify({ fieldId: '', fieldName: '' });
+
+    const result = applyAcceptedFieldConfig({
+        value: { fieldId: 'customfield_server', fieldName: 'Saved on server' },
+        requestDraft,
+        currentDraft: requestDraft,
+        setId: value => setterCalls.push(['id', value]),
+        setName: value => setterCalls.push(['name', value]),
+        baselineRef,
+    });
+
+    assert.equal(result.draftApplied, true);
+    assert.deepEqual(setterCalls, [
+        ['id', 'customfield_server'],
+        ['name', 'Saved on server'],
+    ]);
+    assert.equal(baselineRef.current, JSON.stringify({
+        fieldId: 'customfield_server',
+        fieldName: 'Saved on server',
+    }));
+});
+
+test('fallback field reads keep edits made while the parent config request is pending', async () => {
+    const { applyAcceptedFieldConfig } = await loadModule();
+    const { createSettingsDraftReadGuard } = await import('../frontend/src/settings/settingsConfigReadState.js');
+    const initialDraft = JSON.stringify({ fieldId: '', fieldName: '' });
+    const editedDraft = JSON.stringify({
+        fieldId: 'customfield_edited',
+        fieldName: 'Edited while config loaded',
+    });
+    const currentDrafts = { sprintField: initialDraft };
+    const draftReadGuard = createSettingsDraftReadGuard(() => currentDrafts);
+    const baselineRef = { current: '' };
+    const setterCalls = [];
+    let releaseParentConfig;
+    let releaseFallbackRead;
+    let markFallbackStarted;
+    const parentConfig = new Promise(resolve => { releaseParentConfig = resolve; });
+    const fallbackRead = new Promise(resolve => { releaseFallbackRead = resolve; });
+    const fallbackStarted = new Promise(resolve => { markFallbackStarted = resolve; });
+
+    const completion = (async () => {
+        const config = await parentConfig;
+        assert.equal(config.sharedConfig, undefined, 'parent response must require section fallbacks');
+        const readOptions = draftReadGuard.fieldReadOptions('sprintField');
+        const requestDraft = readOptions.requestDraft ?? currentDrafts.sprintField;
+        const preserveDraft = readOptions.preserveDraft ?? false;
+        markFallbackStarted();
+        const value = await fallbackRead;
+        return applyAcceptedFieldConfig({
+            value,
+            requestDraft,
+            currentDraft: currentDrafts.sprintField,
+            preserveDraft,
+            setId: value => setterCalls.push(['id', value]),
+            setName: value => setterCalls.push(['name', value]),
+            baselineRef,
+        });
+    })();
+
+    currentDrafts.sprintField = editedDraft;
+    releaseParentConfig({ authMode: 'atlassian_oauth' });
+    await fallbackStarted;
+    releaseFallbackRead({ fieldId: 'customfield_server', fieldName: 'Saved on server' });
+    const result = await completion;
+
+    assert.equal(result.draftApplied, false, 'fallback must not replace the interim user edit');
+    assert.deepEqual(setterCalls, []);
+    assert.equal(currentDrafts.sprintField, editedDraft);
+    assert.equal(baselineRef.current, JSON.stringify({
+        fieldId: 'customfield_server',
+        fieldName: 'Saved on server',
+    }));
+    assert.notEqual(currentDrafts.sprintField, baselineRef.current, 'the edit remains Save-eligible');
+});
+
+test('shared bootstrap advances every field baseline while preserving only edited drafts', async () => {
+    const { applyAcceptedFieldConfigs } = await loadModule();
+    const sprintBaselineRef = { current: '' };
+    const teamBaselineRef = { current: '' };
+    const sprintDraft = JSON.stringify({ fieldId: 'customfield_edited', fieldName: 'Edited sprint' });
+    const teamDraft = JSON.stringify({ fieldId: '', fieldName: '' });
+    const setterCalls = [];
+
+    applyAcceptedFieldConfigs([
+        {
+            section: 'sprintField',
+            value: { fieldId: 'customfield_sprint', fieldName: 'Saved sprint' },
+            setId: value => setterCalls.push(['sprint-id', value]),
+            setName: value => setterCalls.push(['sprint-name', value]),
+            baselineRef: sprintBaselineRef,
+            readCurrentDraft: () => sprintDraft,
+        },
+        {
+            section: 'teamField',
+            value: { fieldId: 'customfield_team', fieldName: 'Saved team' },
+            setId: value => setterCalls.push(['team-id', value]),
+            setName: value => setterCalls.push(['team-name', value]),
+            baselineRef: teamBaselineRef,
+            readCurrentDraft: () => teamDraft,
+        },
+    ], {
+        shouldPreserveDraft: section => section === 'sprintField',
+    });
+
+    assert.equal(sprintBaselineRef.current, JSON.stringify({
+        fieldId: 'customfield_sprint',
+        fieldName: 'Saved sprint',
+    }));
+    assert.equal(teamBaselineRef.current, JSON.stringify({
+        fieldId: 'customfield_team',
+        fieldName: 'Saved team',
+    }));
+    assert.equal(sprintDraft !== sprintBaselineRef.current, true, 'edited sprint remains save-eligible');
+    assert.deepEqual(setterCalls, [
+        ['team-id', 'customfield_team'],
+        ['team-name', 'Saved team'],
+    ]);
+});

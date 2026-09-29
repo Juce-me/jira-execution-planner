@@ -47,7 +47,7 @@
             font-size: 0.7rem;
             cursor: pointer;
             box-shadow: 0 6px 16px var(--shadow);
-            z-index: 20;
+            z-index: calc(var(--sticky-search-z) + 1);
             transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
         }
 

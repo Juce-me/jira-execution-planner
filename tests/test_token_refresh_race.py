@@ -315,6 +315,7 @@ class TokenRefreshRaceTests(unittest.TestCase):
         )
 
         self.assertEqual(postgresql_session.calls, [
+            ("SELECT set_config('lock_timeout', :lock_timeout, true)", {'lock_timeout': '5000ms'}),
             ('SELECT pg_advisory_xact_lock(:lock_key)', {'lock_key': -4270788642796614953}),
             ('SELECT pg_advisory_xact_lock(:lock_key)', {'lock_key': 5873179604012975869}),
         ])
@@ -327,6 +328,56 @@ class TokenRefreshRaceTests(unittest.TestCase):
             configured_jira_url='https://example.atlassian.net',
         )
         self.assertEqual(sqlite_session.calls, [])
+
+    def test_refresh_row_lock_uses_remaining_budget_and_skips_timeout_on_sqlite(self):
+        class RecordingBudget:
+            def remaining(self, phase):
+                self.phase = phase
+                return 0.25
+
+        class RecordingSession:
+            def __init__(self, dialect_name):
+                self.bind = SimpleNamespace(dialect=SimpleNamespace(name=dialect_name))
+                self.calls = []
+                self.result = object()
+
+            def get_bind(self):
+                return self.bind
+
+            def execute(self, statement, params=None):
+                self.calls.append((str(statement), params))
+                return self
+
+            def scalars(self):
+                return self
+
+            def first(self):
+                return self.result
+
+        budget = RecordingBudget()
+        postgresql_session = RecordingSession('postgresql')
+        result = db_tokens_module._connection_for_update(
+            postgresql_session,
+            'connection-1',
+            cooperative_budget=budget,
+        )
+
+        self.assertIs(result, postgresql_session.result)
+        self.assertEqual('auth', budget.phase)
+        self.assertEqual(
+            ("SELECT set_config('lock_timeout', :lock_timeout, true)", {'lock_timeout': '250ms'}),
+            postgresql_session.calls[0],
+        )
+        self.assertIn('FOR UPDATE', postgresql_session.calls[1][0])
+
+        sqlite_session = RecordingSession('sqlite')
+        db_tokens_module._connection_for_update(
+            sqlite_session,
+            'connection-1',
+            cooperative_budget=budget,
+        )
+        self.assertEqual(1, len(sqlite_session.calls))
+        self.assertIn('FOR UPDATE', sqlite_session.calls[0][0])
 
     def test_callback_storage_locks_natural_keys_before_locked_connection_upsert(self):
         """Callback storage locks natural keys before performing its connection upsert."""

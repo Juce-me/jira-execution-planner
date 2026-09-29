@@ -177,12 +177,12 @@ test('moveColumn moves a column to the insert index and reports its new position
     assert.equal(forward.index, 1);
 
     const append = module.moveColumn(list, 0, 3);
-    assert.deepEqual(append.columns.map((column) => column.name), ['b', 'c', 'a']);
-    assert.equal(append.index, 2);
+    assert.deepEqual(append.columns.map((column) => column.name), ['b', 'a', 'c']);
+    assert.equal(append.index, 1);
 
     const backward = module.moveColumn(list, 2, 0);
-    assert.deepEqual(backward.columns.map((column) => column.name), ['c', 'a', 'b']);
-    assert.equal(backward.index, 0);
+    assert.deepEqual(backward.columns.map((column) => column.name), ['a', 'b', 'c']);
+    assert.equal(backward.index, 2);
 });
 
 test('moveColumn is a no-op when the insert index resolves to the same slot', async () => {
@@ -208,8 +208,8 @@ test('shiftColumn moves one place and clamps at both ends', async () => {
     assert.equal(right.index, 1);
 
     const left = module.shiftColumn(list, 2, -1);
-    assert.deepEqual(left.columns.map((column) => column.name), ['a', 'c', 'b']);
-    assert.equal(left.index, 1);
+    assert.deepEqual(left.columns.map((column) => column.name), ['a', 'b', 'c']);
+    assert.equal(left.index, 2);
 
     const clampedLeft = module.shiftColumn(list, 0, -1);
     assert.deepEqual(clampedLeft.columns.map((column) => column.name), ['a', 'b', 'c']);
@@ -218,6 +218,26 @@ test('shiftColumn moves one place and clamps at both ends', async () => {
     const clampedRight = module.shiftColumn(list, 2, 1);
     assert.deepEqual(clampedRight.columns.map((column) => column.name), ['a', 'b', 'c']);
     assert.equal(clampedRight.index, 2);
+});
+
+test('structural terminal identity is fixed for reorder, insert, and delete helpers', async () => {
+    const module = await loadModule();
+    const list = columns(
+        { id: 'col-aaaaaaaa', name: 'Open' },
+        { id: 'col-bbbbbbbb', name: 'Doing' },
+        { id: 'col-cccccccc', name: 'Terminal' },
+    );
+    assert.deepEqual(module.moveColumn(list, 2, 0).columns.map((column) => column.id), list.map((column) => column.id));
+    const added = { id: 'col-dddddddd', name: 'New', statuses: [] };
+    assert.deepEqual(
+        module.insertColumnBeforeTerminal(list, added).map((column) => column.id),
+        ['col-aaaaaaaa', 'col-bbbbbbbb', 'col-dddddddd', 'col-cccccccc'],
+    );
+    assert.deepEqual(module.removeNonTerminalColumn(list, 'col-cccccccc'), list);
+    assert.deepEqual(
+        module.removeNonTerminalColumn(list, 'col-bbbbbbbb').map((column) => column.id),
+        ['col-aaaaaaaa', 'col-cccccccc'],
+    );
 });
 
 test('describeColumnMove states the new position for the live region', async () => {
@@ -440,7 +460,7 @@ test('validateComposerBoard rejects malformed and duplicate column ids before no
 
 test('validateComposerBoard returns errors instead of throwing for arbitrary imported members', async () => {
     const module = await loadModule();
-    [null, 'oops', 42, true, [], { id: 'col-1a2b3c4d', name: 'A' }].forEach((member) => {
+    [null, 'oops', 42, true, []].forEach((member) => {
         let result;
         assert.doesNotThrow(() => { result = module.validateComposerBoard([member]); });
         assert.ok(result.errors.length > 0);
@@ -474,7 +494,7 @@ test('normalize then validate keeps a legacy nullish board absent but preserves 
     });
 
     assert.equal(Object.hasOwn(normalized.groups[0], 'board'), false);
-    assert.deepEqual(normalized.groups[1].board, { columns: [] });
+    assert.deepEqual(normalized.groups[1].board, { columns: [], doneEpicRetentionDays: 28 });
     assert.deepEqual(validatePresentGroupBoards([normalized.groups[0]]), []);
     assert.ok(validatePresentGroupBoards([normalized.groups[1]]).some((message) => /at least one column/i.test(message)));
 });
@@ -483,13 +503,16 @@ test('normalize then validate keeps a legacy nullish board absent but preserves 
 
 test('toStoredBoard preserves a present empty board when the final column is deleted', async () => {
     const module = await loadModule();
-    assert.deepEqual(module.toStoredBoard([]), { columns: [] });
+    assert.deepEqual(module.toStoredBoard([]), { columns: [], doneEpicRetentionDays: 28 });
 });
 
 test('toStoredBoard round-trips the reference configuration unchanged', async () => {
     const module = await loadModule();
     const fixture = await loadFixture();
-    assert.deepEqual(module.toStoredBoard(fixture.referenceBoard().columns), fixture.referenceBoard());
+    assert.deepEqual(module.toStoredBoard(fixture.referenceBoard().columns), {
+        ...fixture.referenceBoard(),
+        doneEpicRetentionDays: 28,
+    });
 });
 
 test('toStoredBoard trims names, keeps ids and cannot emit a colour outside the enum', async () => {
@@ -514,7 +537,50 @@ test('toStoredBoard emits only the seven schema fields, in the stored shape', as
     const module = await loadModule();
     const stored = module.toStoredBoard(columns({ name: 'A', statuses: ['a'] }));
     assert.deepEqual(Object.keys(stored.columns[0]).sort(), ['colour', 'id', 'max', 'min', 'name', 'star', 'statuses']);
-    assert.deepEqual(Object.keys(stored).sort(), ['columns']);
+    assert.deepEqual(Object.keys(stored).sort(), ['columns', 'doneEpicRetentionDays']);
+});
+
+test('stored board round-trips retention and legacy Done terminal order idempotently', async () => {
+    const module = await loadModule();
+    const legacy = {
+        columns: columns(
+            { id: 'col-aaaaaaaa', name: 'Done work', statuses: ['Done', 'Killed'] },
+            { id: 'col-bbbbbbbb', name: 'Later', statuses: ['Release'] },
+        ),
+    };
+    const editable = module.fromStoredBoard(legacy);
+    assert.deepEqual(editable.map((column) => column.id), ['col-bbbbbbbb', 'col-aaaaaaaa']);
+    const stored = module.toStoredBoard(editable, module.retentionDaysFromStoredBoard(legacy));
+    assert.equal(stored.doneEpicRetentionDays, 28);
+    assert.deepEqual(module.fromStoredBoard(stored), editable);
+});
+
+test('explicit retention keeps final terminal identity and validates 1 through 90', async () => {
+    const module = await loadModule();
+    const stored = {
+        columns: columns(
+            { id: 'col-aaaaaaaa', name: 'Done work', statuses: ['Done'] },
+            { id: 'col-bbbbbbbb', name: 'Terminal', statuses: [] },
+        ),
+        doneEpicRetentionDays: 90,
+    };
+    assert.deepEqual(module.fromStoredBoard(stored).map((column) => column.id), ['col-aaaaaaaa', 'col-bbbbbbbb']);
+    assert.equal(module.retentionDaysFromStoredBoard(stored), 90);
+    assert.deepEqual(module.parseRetentionDaysInput('1', 28), { value: 1, ok: true, reason: '' });
+    assert.deepEqual(module.parseRetentionDaysInput('90', 28), { value: 90, ok: true, reason: '' });
+    assert.equal(module.parseRetentionDaysInput('0', 28).ok, false);
+    assert.equal(module.parseRetentionDaysInput('91', 28).ok, false);
+});
+
+test('composer validation permits an empty terminal only and rejects malformed retention', async () => {
+    const module = await loadModule();
+    const list = columns(
+        { id: 'col-aaaaaaaa', name: 'Open', statuses: ['To Do'] },
+        { id: 'col-bbbbbbbb', name: 'Terminal', statuses: [] },
+    );
+    assert.deepEqual(module.validateComposerBoard(list, 28).errors, []);
+    assert.ok(module.validateComposerBoard([...list].reverse(), 28).errors.some((message) => /no statuses/i.test(message)));
+    assert.ok(module.validateComposerBoard(list, '28').errors.some((message) => /retention/i.test(message)));
 });
 
 test('fromStoredBoard reads a stored board into editable columns', async () => {

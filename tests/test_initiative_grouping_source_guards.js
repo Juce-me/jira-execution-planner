@@ -11,6 +11,10 @@ const engViewSource = fs.readFileSync(
     path.join(__dirname, '..', 'frontend', 'src', 'eng', 'EngView.jsx'),
     'utf8'
 );
+const hierarchySource = fs.readFileSync(
+    path.join(__dirname, '..', 'frontend', 'src', 'eng', 'engWorkHierarchy.js'),
+    'utf8'
+);
 
 test('dashboard declares groupByInitiative state', () => {
     assert.ok(
@@ -19,11 +23,13 @@ test('dashboard declares groupByInitiative state', () => {
     );
 });
 
-test('dashboard defines groupEpicsByInitiative function', () => {
+test('ENG hierarchy module owns Initiative grouping from canonical Epic metadata', () => {
     assert.ok(
-        dashboardSource.includes('groupEpicsByInitiative'),
-        'Expected groupEpicsByInitiative function in dashboard.jsx'
+        hierarchySource.includes('function groupByInitiative'),
+        'Expected engWorkHierarchy to own Initiative grouping'
     );
+    assert.match(hierarchySource, /epicGroup\.epic\?\.initiative/);
+    assert.equal(dashboardSource.includes('const groupEpicsByInitiative ='), false);
 });
 
 test('grouping reuses the shared icon-button control', () => {

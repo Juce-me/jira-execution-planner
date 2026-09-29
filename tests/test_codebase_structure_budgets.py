@@ -52,7 +52,9 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # feature/planning-capacity-editing threads the workspace Capacity snapshot through reads,
     # scenario sizing, verified OAuth scope context, and exact Jira issue mutations (+74).
     # In-app load metrics: gated wrapper and worker observer wiring (+3).
-    "jira_server.py": 6461,
+    # improvement/multiple-group-labels final-review round: find_comma_scalar_team_label_errors
+    # wrapper for the save-only comma-scalar Team-label guard (+2).
+    "jira_server.py": 6463,
     # feature/eng-epic-sort-and-track adds the epic Sort dropdown wiring (engEpicSort state,
     # analytics handler, sorted epicGroups, EngView props) and the title-row priority chevron
     # plus Product Track indicator in renderEpicBlock.
@@ -136,7 +138,19 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # stale-load protection, and persistence gating before Department editing unlocks (+74).
     # Merge resolution retains contextual onboarding wiring alongside both changes (+75).
     # In-app metrics: generation/dependency lifecycle and admin panel wiring (+27).
-    "frontend/src/dashboard.jsx": 17521,
+    # ENG shared Sprint selector availability separates selection/readiness, adds semantic
+    # listbox interaction, explicit blocked-scope scheduling and Settings save/read fencing,
+    # plus cache-bypassing Project Track range synchronization on explicit Sprint commitment (+557).
+    # Connection recovery keeps only orchestration wiring here; controller, notice, and
+    # Scenario restoration behavior live in extracted modules (+15 after merging main).
+    # docs/plans/EXEC-multiple-group-labels.md adds the bounded multi-chip Team-label alias
+    # editor, oversized-Department alert-scope notice state, and the alias-aware
+    # missingLabelEpics/normalizedActiveGroupTeamLabels predicates (+96, +1 after merging
+    # main's fixed-height Board page).
+    # Unconfigured-workspace gate: config-read wiring, ENG fetch/render gates, and the notice;
+    # gate state, admin auto-open, and the notice live in extracted settings modules; the
+    # Access tab is shown only to tool admins so it never requests the user directory (+17).
+    "frontend/src/dashboard.jsx": 18207,
 }
 
 

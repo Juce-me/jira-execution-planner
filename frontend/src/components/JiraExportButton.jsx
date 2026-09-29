@@ -5,14 +5,26 @@ import { normalizeJiraExportKeys, openJiraIssueSearch } from '../jiraExportUtils
 import IconButton from '../ui/IconButton.jsx';
 import JiraMarkIcon from '../ui/JiraMarkIcon.jsx';
 
+const DEFAULT_WORK_ITEM_LABELS = Object.freeze({
+    label: 'Open work items',
+    singular: 'work item',
+    plural: 'work items',
+});
+
 function pluralize(count, singular, plural) {
     return count === 1 ? singular : plural;
+}
+
+function exportLabel(value, fallback) {
+    return String(value || '').trim() || fallback;
 }
 
 export default function JiraExportButton({
     jiraUrl,
     epicKeys = [],
     storyKeys = [],
+    workItemKeys,
+    workItemLabels = DEFAULT_WORK_ITEM_LABELS,
     className = '',
     opener,
     sourceSurface = 'dashboard',
@@ -24,11 +36,23 @@ export default function JiraExportButton({
     const warningTimerRef = React.useRef(null);
     const normalizedEpicKeys = React.useMemo(() => normalizeJiraExportKeys(epicKeys), [epicKeys]);
     const normalizedStoryKeys = React.useMemo(() => normalizeJiraExportKeys(storyKeys), [storyKeys]);
+    const normalizedWorkItemKeys = React.useMemo(
+        () => normalizeJiraExportKeys(workItemKeys || []),
+        [workItemKeys],
+    );
+    const hasWorkItemExport = workItemKeys !== undefined;
+    const resolvedWorkItemLabels = {
+        label: exportLabel(workItemLabels?.label, DEFAULT_WORK_ITEM_LABELS.label),
+        singular: exportLabel(workItemLabels?.singular, DEFAULT_WORK_ITEM_LABELS.singular),
+        plural: exportLabel(workItemLabels?.plural, DEFAULT_WORK_ITEM_LABELS.plural),
+    };
     const keyMap = {
         epics: normalizedEpicKeys,
-        stories: normalizedStoryKeys
+        stories: normalizedStoryKeys,
+        work_items: normalizedWorkItemKeys,
     };
-    const hasAnyKeys = normalizedEpicKeys.length > 0 || normalizedStoryKeys.length > 0;
+    const hasAnyKeys = normalizedEpicKeys.length > 0
+        || (hasWorkItemExport ? normalizedWorkItemKeys.length > 0 : normalizedStoryKeys.length > 0);
     const isHidden = !String(jiraUrl || '').trim();
     const triggerTitle = hasAnyKeys ? 'Open visible issues in Jira' : 'No visible issues to open in Jira';
 
@@ -70,7 +94,7 @@ export default function JiraExportButton({
         });
         if (result.opened) {
             trackExternalLinkOpened(buildJiraIssueListLinkAnalytics({
-                issueKind: issueKind === 'epics' ? 'epic' : 'story',
+                issueKind: issueKind === 'epics' ? 'epic' : issueKind === 'work_items' ? 'mixed' : 'story',
                 issueCount: result.keyCount,
                 sourceSurface
             }));
@@ -114,7 +138,13 @@ export default function JiraExportButton({
             {isOpen && hasAnyKeys && (
                 <div className="jira-export-menu" role="menu">
                     {renderMenuItem('epics', 'Open epics', 'epic', 'epics')}
-                    {renderMenuItem('stories', 'Open stories', 'story', 'stories')}
+                    {hasWorkItemExport
+                        ? renderMenuItem(
+                            'work_items', resolvedWorkItemLabels.label,
+                            resolvedWorkItemLabels.singular,
+                            resolvedWorkItemLabels.plural,
+                        )
+                        : renderMenuItem('stories', 'Open stories', 'story', 'stories')}
                 </div>
             )}
             {warning && (

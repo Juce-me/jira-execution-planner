@@ -18,6 +18,34 @@
             min-inline-size: 0;
         }
 
+        .team-search-result-item[type="button"] {
+            display: block;
+            width: 100%;
+            min-height: 0;
+            border: 0;
+            border-bottom: 1px solid #f0f0f0;
+            border-radius: 0;
+            background: #fff;
+            color: inherit;
+            text-align: left;
+            box-shadow: none;
+            transform: none;
+        }
+
+        .team-search-result-item[type="button"]:not(:disabled):hover,
+        .team-search-result-item[type="button"]:not(:disabled):focus-visible {
+            background: #f8f9fa;
+            color: inherit;
+            box-shadow: none;
+            transform: none;
+        }
+
+        .team-search-result-item[type="button"]:disabled {
+            color: var(--text-muted);
+            cursor: not-allowed;
+            opacity: 0.65;
+        }
+
         .group-pane {
             display: flex;
             flex-direction: column;

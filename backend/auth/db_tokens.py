@@ -19,6 +19,9 @@ from backend.auth.token_crypto import decrypt_token, encrypt_token
 from backend.db import models
 
 
+POSTGRESQL_LOCK_TIMEOUT_MS = 5000
+
+
 @dataclass(frozen=True)
 class StoredOAuthConnection:
     user_id: str
@@ -51,6 +54,23 @@ def _callback_lock_key(value):
     return int.from_bytes(digest[:8], byteorder='big', signed=True)
 
 
+def _postgresql_lock_timeout_ms(cooperative_budget=None):
+    if cooperative_budget is None:
+        return POSTGRESQL_LOCK_TIMEOUT_MS
+    remaining_ms = max(1, int(float(cooperative_budget.remaining('auth')) * 1000))
+    return min(POSTGRESQL_LOCK_TIMEOUT_MS, remaining_ms)
+
+
+def _configure_postgresql_lock_timeout(session, cooperative_budget=None):
+    if session.get_bind().dialect.name != 'postgresql':
+        return
+    timeout_ms = _postgresql_lock_timeout_ms(cooperative_budget)
+    session.execute(
+        text("SELECT set_config('lock_timeout', :lock_timeout, true)"),
+        {'lock_timeout': f'{timeout_ms}ms'},
+    )
+
+
 def _lock_callback_natural_keys(
     session,
     *,
@@ -62,6 +82,7 @@ def _lock_callback_natural_keys(
     """Serialize callback natural-key upserts on PostgreSQL; SQLite is a no-op."""
     if session.get_bind().dialect.name != 'postgresql':
         return
+    _configure_postgresql_lock_timeout(session)
     account_id = str((user_profile or {}).get('account_id') or '').strip()
     cloud_id = str((resource or {}).get('id') or '').strip()
     site_url = normalize_site_url((resource or {}).get('url') or configured_jira_url)
@@ -129,6 +150,7 @@ def _upsert_workspace(session, *, environment_key, resource, configured_jira_url
 def _upsert_connection(session, *, user, workspace, resource, token_data):
     cloud_id = str((resource or {}).get('id') or '').strip()
     site_url = normalize_site_url((resource or {}).get('url') or workspace.jira_site_url)
+    _configure_postgresql_lock_timeout(session)
     statement = select(models.AuthConnection).where(
         models.AuthConnection.user_id == user.id,
         models.AuthConnection.workspace_id == workspace.id,
@@ -221,7 +243,8 @@ def _decrypt_token_row(token, *, workspace_id, connection_id, key_provider):
     )
 
 
-def _connection_for_update(session, connection_id):
+def _connection_for_update(session, connection_id, *, cooperative_budget=None):
+    _configure_postgresql_lock_timeout(session, cooperative_budget)
     return session.execute(
         select(models.AuthConnection)
         .where(models.AuthConnection.id == connection_id)
@@ -287,7 +310,11 @@ def refresh_db_oauth_token(
 ):
     if cooperative_budget is not None:
         cooperative_budget.check('auth')
-    connection = locked_connection or _connection_for_update(session, connection_id)
+    connection = locked_connection or _connection_for_update(
+        session,
+        connection_id,
+        cooperative_budget=cooperative_budget,
+    )
     if cooperative_budget is not None:
         cooperative_budget.check('auth')
     if locked_connection is not None:
@@ -389,7 +416,11 @@ def db_oauth_session_data(session, context, *, config, key_provider, http_post,
     if is_oauth_token_expired(session_data):
         if cooperative_budget is not None:
             cooperative_budget.check('auth')
-        connection = _connection_for_update(session, connection.id)
+        connection = _connection_for_update(
+            session,
+            connection.id,
+            cooperative_budget=cooperative_budget,
+        )
         if cooperative_budget is not None:
             cooperative_budget.check('auth')
         session.refresh(connection)

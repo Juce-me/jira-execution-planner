@@ -157,7 +157,7 @@ function makeCompletedCohortEpic(index) {
     };
 }
 
-function makeExcludedCapacityIssue({ key, epicKey, epicSummary, teamId, teamName, points, projectKey, epicProjectTrack, epicAssignee }) {
+function makeExcludedCapacityIssue({ key, epicKey, epicSummary, teamId, teamName, points, projectKey, epicProjectTrack, epicAssignee, epicStatus }) {
     return {
         id: key,
         key,
@@ -172,6 +172,7 @@ function makeExcludedCapacityIssue({ key, epicKey, epicSummary, teamId, teamName
             epicSummary,
             epicProjectTrack: epicProjectTrack || null,
             epicAssignee: epicAssignee ? { displayName: epicAssignee } : null,
+            epicStatus: epicStatus || null,
             parentSummary: epicSummary,
             projectKey,
             teamId,
@@ -837,6 +838,9 @@ async function installApiMocks(page, calls, options = {}) {
 
         if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
         if (url.pathname === '/api/auth/csrf') return json({ csrfToken: 'csrf-capacity-smoke' });
+        if (url.pathname === '/api/eng/story-readiness') {
+            return json({ schemaVersion: 1, complete: true, scope: {}, epics: [] });
+        }
         if (url.pathname === '/api/me/connections/home-token') {
             return json({
                 connected: true,
@@ -924,6 +928,13 @@ async function installApiMocks(page, calls, options = {}) {
                 meta: { updatedAt: '2026-09-02T09:00:00Z', sprintId: String(selectedSprintId), source: 'sprint' },
             });
             if (url.pathname === '/api/fields') return json({ fields: [] });
+            // Settings open validates Sprint Team membership via GET /api/teams since #196 (11c18401).
+            if (url.pathname === '/api/teams') return json({
+                teams: [
+                    { id: 'team-alpha', name: 'Alpha Team' },
+                    { id: 'team-beta', name: 'Beta Team' },
+                ],
+            });
         }
         if (url.pathname === '/api/board-config') return json({ boardId: '5494', boardName: 'Synthetic Board', source: 'test' });
         if (url.pathname === '/api/stats/priority-weights-config') return json({ weights: [], source: 'test' });
@@ -1079,7 +1090,7 @@ async function installApiMocks(page, calls, options = {}) {
         if (url.pathname === '/api/stats/excluded-capacity-source') {
             return json({
                 data: {
-                    issues: excludedCapacitySourceIssues,
+                    issues: options.excludedCapacitySourceIssues || excludedCapacitySourceIssues,
                     meta: {
                         warnings: [],
                         queryPages: 1,
@@ -2451,6 +2462,48 @@ test('Project Track tab renders filter bar, mode title, totals, per-sprint and b
     expect(apiMocks.unexpectedCalls).toEqual([]);
 });
 
+test('Project Track excludes closed epics and links No track assignee segments to Jira epics', async ({ page }) => {
+    const calls = [];
+    const sourceIssues = [
+        makeExcludedCapacityIssue({
+            key: 'OPEN-STORY', epicKey: 'OPEN-EPIC', epicSummary: 'Open epic', teamId: 'team-alpha',
+            teamName: 'Alpha Team', points: 3, projectKey: 'PROD', epicProjectTrack: null,
+            epicAssignee: 'Dana Owner', epicStatus: 'In Progress',
+        }),
+        ...['Done', 'Killed', 'Incomplete'].map((epicStatus, index) => makeExcludedCapacityIssue({
+            key: `CLOSED-STORY-${index + 1}`, epicKey: `CLOSED-EPIC-${index + 1}`,
+            epicSummary: `${epicStatus} epic`, teamId: 'team-alpha', teamName: 'Alpha Team',
+            points: 5 + index, projectKey: 'PROD', epicProjectTrack: null,
+            epicAssignee: 'Dana Owner', epicStatus,
+        })),
+    ];
+    const apiMocks = await installApiMocks(page, calls, {
+        excludedCapacitySourceIssues: sourceIssues,
+        useCommittedDist: true,
+    });
+    await page.addInitScript((prefs) => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
+    }, {
+        selectedView: 'eng', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
+        activeGroupId: 'grp-default', selectedTeams: ['all'], showStats: true,
+        statsView: 'projectTrack', excludedCapacityStartSprintId: String(selectedSprintId),
+        excludedCapacityEndSprintId: String(selectedSprintId),
+    });
+
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await waitForCallCount(calls, call => call.pathname === '/api/stats/excluded-capacity-source', 1);
+
+    const statsView = page.locator('.stats-view.open');
+    await expect(statsView.locator('.project-track-totals .stacked-bar-row-total')).toHaveText('3 SP');
+    const noTrackLink = statsView.getByRole('link', { name: "Open Dana Owner's no-track epics in Jira" });
+    await expect(noTrackLink).toBeVisible();
+    await expect(noTrackLink).toHaveAttribute('target', '_blank');
+    const noTrackJql = decodeURIComponent(new URL(await noTrackLink.getAttribute('href')).searchParams.get('jql'));
+    expect(noTrackJql).toBe('key in (OPEN-EPIC)');
+    expect(noTrackJql).not.toContain('CLOSED-EPIC');
+    expect(apiMocks.unexpectedCalls).toEqual([]);
+});
+
 test('Lead Times caps long epic lists with load more and keeps overflow scrollable', async ({ page }) => {
     const calls = [];
     const apiMocks = await installApiMocks(page, calls, {
@@ -2684,7 +2737,7 @@ test('open header dropdown toggles filter groups teams and sprints', async ({ pa
     };
     const exerciseOpenStates = async (dropdown, { kind, inputName, query }, closedWidth, screenshotPrefix) => {
         const toggle = dropdown.locator(`.${kind}-dropdown-toggle`);
-        const input = dropdown.getByRole('textbox', { name: inputName });
+        const input = dropdown.getByRole(kind === 'sprint' ? 'combobox' : 'textbox', { name: inputName });
         await toggle.focus();
         await page.keyboard.press('Enter');
         await expect(input).toBeFocused();
@@ -2725,9 +2778,9 @@ test('open header dropdown toggles filter groups teams and sprints', async ({ pa
     const selectedSprint = controls.locator('.sprint-dropdown.header-filter-dropdown');
     await selectedSprint.locator('.sprint-dropdown-toggle').focus();
     await page.keyboard.press('Enter');
-    await selectedSprint.getByRole('textbox', { name: 'Filter sprints' }).fill('International Platform Reliability and Migration');
+    await selectedSprint.getByRole('combobox', { name: 'Filter sprints' }).fill('International Platform Reliability and Migration');
     await selectedSprint.locator('.sprint-dropdown-option', { hasText: headerLongSprintEastName }).click();
-    await expect(selectedSprint.getByRole('textbox', { name: 'Filter sprints' })).toHaveCount(0);
+    await expect(selectedSprint.getByRole('combobox', { name: 'Filter sprints' })).toHaveCount(0);
 
     // Preserve sibling reset, selection, checkbox, and outside-click paths after the geometry contracts.
     const group = controls.locator('.group-dropdown.header-filter-dropdown');
@@ -3139,6 +3192,73 @@ test('EPM lifecycle tabs load after config with scoped rollup requests and stick
         expect(metadataCalls.length).toBeLessThanOrEqual(1);
         expect(tabRollups).toHaveLength(1);
     });
+    expect(apiMocks.unexpectedCalls).toEqual([]);
+});
+
+test('EPM Sprint selector native options keep readable stable shared styling', async ({ page }) => {
+    const calls = [];
+    const apiMocks = await installApiMocks(page, calls);
+    await page.addInitScript((prefs) => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
+    }, {
+        selectedView: 'epm',
+        epmTab: 'active',
+        epmSelectedProjectId: '',
+        selectedSprint: selectedSprintId,
+        sprintName: selectedSprintName,
+    });
+
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
+    const option = page.getByRole('option').first();
+    await expect(option).toBeVisible();
+
+    const readOptionStyle = locator => locator.evaluate(node => {
+        const style = getComputedStyle(node);
+        const rect = node.getBoundingClientRect();
+        const panelBackground = getComputedStyle(node.closest('.sprint-dropdown-panel')).backgroundColor;
+        const parseRgb = value => (value.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+        const luminance = value => {
+            const channels = parseRgb(value).map(channel => {
+                const normalized = channel / 255;
+                return normalized <= 0.03928
+                    ? normalized / 12.92
+                    : ((normalized + 0.055) / 1.055) ** 2.4;
+            });
+            return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+        };
+        const background = style.backgroundColor === 'rgba(0, 0, 0, 0)'
+            ? panelBackground
+            : style.backgroundColor;
+        const foregroundLuminance = luminance(style.color);
+        const backgroundLuminance = luminance(background);
+        const contrast = (Math.max(foregroundLuminance, backgroundLuminance) + 0.05)
+            / (Math.min(foregroundLuminance, backgroundLuminance) + 0.05);
+        return {
+            contrast,
+            marginRight: style.marginRight,
+            transform: style.transform,
+            left: rect.left,
+            top: rect.top,
+            width: rect.width,
+            height: rect.height,
+        };
+    });
+    const beforeHover = await readOptionStyle(option);
+    expect(beforeHover.contrast).toBeGreaterThanOrEqual(4.5);
+    expect(beforeHover.marginRight).toBe('0px');
+    expect(beforeHover.transform).toBe('none');
+
+    await option.hover();
+    const afterHover = await readOptionStyle(option);
+    expect(afterHover.contrast).toBeGreaterThanOrEqual(4.5);
+    expect(afterHover.marginRight).toBe('0px');
+    expect(afterHover.transform).toBe('none');
+    expect(afterHover.left).toBeCloseTo(beforeHover.left, 1);
+    expect(afterHover.top).toBeCloseTo(beforeHover.top, 1);
+    expect(afterHover.width).toBeCloseTo(beforeHover.width, 1);
+    expect(afterHover.height).toBeCloseTo(beforeHover.height, 1);
+    await page.screenshot({ path: `${screenshotDir}/epm-sprint-selector-native-options.png`, animations: 'disabled' });
     expect(apiMocks.unexpectedCalls).toEqual([]);
 });
 

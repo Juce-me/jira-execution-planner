@@ -250,6 +250,12 @@ export function resolveEngCatchUpFilters({
             if (trackView.isEmptySelection) return classification.kind === 'unset';
             return classification.kind === 'recognized' && trackView.activeOptionIds.includes(classification.id);
         },
+        admitsEpicProjectTrack: (epic) => {
+            if (trackView.isNeutral) return true;
+            const classification = classifyEpicProjectTrack(epic);
+            if (trackView.isEmptySelection) return classification.kind === 'unset';
+            return classification.kind === 'recognized' && trackView.activeOptionIds.includes(classification.id);
+        },
     };
 }
 

@@ -7,6 +7,12 @@ const CAPACITY_WORKFLOW_ACTIONS = new Set([
     'capacity_change_submit',
     'capacity_change_result',
 ]);
+const ISSUE_FIELD_EDIT_WORKFLOW_ACTIONS = new Set(['open', 'submit', 'result']);
+const ISSUE_FIELD_EDIT_FIELDS = new Set(['assignee', 'delivery_owner', 'story_points']);
+const ISSUE_FIELD_EDIT_KINDS = new Set(['epic', 'story']);
+const ISSUE_FIELD_EDIT_SURFACES = new Set(['catch_up', 'planning', 'board']);
+const ISSUE_FIELD_EDIT_RESULTS = new Set(['success', 'unchanged', 'conflict', 'failure', 'unknown']);
+const BOARD_SMALL_SCREEN_REASONS = new Set(['short', 'narrow', 'touch']);
 
 export function analyticsToken(value, fallback = 'unknown') {
     return String(value || fallback).trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || fallback;
@@ -42,6 +48,42 @@ export function buildSortChangedParams(sortScope, sortKey, params = {}) {
         source_surface: params.source_surface || 'epm',
         ...params,
     };
+}
+
+export function buildIssueFieldEditAnalyticsParams(workflowAction, {
+    fieldName, issueKind, sourceSurface, result,
+} = {}) {
+    if (!ISSUE_FIELD_EDIT_WORKFLOW_ACTIONS.has(workflowAction)
+        || !ISSUE_FIELD_EDIT_FIELDS.has(fieldName)
+        || !ISSUE_FIELD_EDIT_KINDS.has(issueKind)
+        || !ISSUE_FIELD_EDIT_SURFACES.has(sourceSurface)
+        || (workflowAction === 'result' && !ISSUE_FIELD_EDIT_RESULTS.has(result))) {
+        return null;
+    }
+    return {
+        feature_name: 'eng_issue_field_edits',
+        workflow_action: workflowAction,
+        field_name: fieldName,
+        issue_kind: issueKind,
+        source_surface: sourceSurface,
+        ...(workflowAction === 'result' ? { result } : {}),
+    };
+}
+
+export function buildBoardSmallScreenSupportParams(reason) {
+    if (!BOARD_SMALL_SCREEN_REASONS.has(reason)) return null;
+    return {
+        feature_name: 'eng_board',
+        workflow_action: 'small_screen_support_request',
+        reason,
+        source_surface: 'board',
+    };
+}
+
+// The Board's small-screen alert button; the fixed builder drops any unknown reason.
+export function trackBoardSmallScreenSupportRequest(reason) {
+    const payload = buildBoardSmallScreenSupportParams(reason);
+    if (payload) safeTrackEvent('board_action', payload);
 }
 
 export function planningAnalyticsPayload(nextSelectedTasks, selectionTasks) {
@@ -208,6 +250,11 @@ export function useDashboardAnalytics(React, {
         });
     }, [trackProductEvent]);
 
+    const trackIssueFieldEditAction = useCallback((workflowAction, params = {}) => {
+        const payload = buildIssueFieldEditAnalyticsParams(workflowAction, params);
+        if (payload) trackProductEvent('issue_field_edit_action', payload);
+    }, [trackProductEvent]);
+
     const trackSelectContent = useCallback((contentType, contentId, params = {}) => {
         trackProductEvent('select_content', {
             feature_name: 'dashboard',
@@ -277,6 +324,7 @@ export function useDashboardAnalytics(React, {
         trackEpmAction,
         trackFilterChanged,
         trackIssuePriorityAction,
+        trackIssueFieldEditAction,
         trackIssueProjectTrackAction,
         trackIssueStatusAction,
         trackPlanningCapacityAction,

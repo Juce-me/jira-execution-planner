@@ -23,6 +23,7 @@ class RequestAuthContext:
     token_version: str
     account_status: str
     is_admin: bool
+    display_name: str = ''
     project_access: tuple[ProjectAccessSnapshot, ...] = field(default_factory=tuple)
     browser_session_id: str = ''
     granted_scopes: tuple[str, ...] = field(default_factory=tuple)

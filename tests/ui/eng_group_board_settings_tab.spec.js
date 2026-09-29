@@ -108,6 +108,9 @@ async function mockConfigSettings(page, { groupsConfig = baseGroupsConfig() } = 
 
         if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
         if (url.pathname === '/api/auth/csrf') return json({ csrfToken: 'csrf-token' });
+        if (url.pathname === '/api/eng/story-readiness') {
+            return json({ schemaVersion: 1, complete: true, scope: {}, epics: [] });
+        }
         if (url.pathname === '/api/analytics/context') return json({ enabled: false });
         if (url.pathname === '/api/me/connections/home-token') return json({
             connected: true,
@@ -306,7 +309,9 @@ test('a min above its max is a schema error that blocks Save, distinct from a Mi
 });
 
 test('editing columns round-trips through POST /api/groups-config and survives a reload', async ({ page }) => {
-    const calls = await mockConfigSettings(page);
+    const groupsConfig = baseGroupsConfig();
+    groupsConfig.groups[0].board.doneEpicRetentionDays = 90;
+    const calls = await mockConfigSettings(page, { groupsConfig });
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     await page.getByRole('button', { name: 'Manage team groups' }).click();
     let dialog = page.getByRole('dialog').first();
@@ -321,6 +326,7 @@ test('editing columns round-trips through POST /api/groups-config and survives a
     const savedGroup = save.body.groups.find(g => g.id === 'northwind');
     expect(savedGroup.board).toBeTruthy();
     expect(savedGroup.board.columns.find(c => c.name === 'Backlog')).toBeTruthy();
+    expect(savedGroup.board.doneEpicRetentionDays).toBe(90);
 
     // Survives a reload: the next GET returns the same saved shape, and the composer reflects it.
     await page.reload({ waitUntil: 'domcontentloaded' });
@@ -349,7 +355,7 @@ test('Export JSON downloads only the selected saved group instead of the unsaved
     expect(download.suggestedFilename()).toBe('group-southridge.json');
     const exported = JSON.parse(fs.readFileSync(await download.path(), 'utf8'));
     expect(exported).toEqual({
-        version: 1,
+        version: 2,
         group: {
             id: 'southridge',
             name: 'Southridge',
@@ -387,7 +393,8 @@ test('Import JSON updates only a newly created selected group and preserves sibl
     await dialog.getByRole('button', { name: 'Apply Import' }).click();
 
     await page.waitForTimeout(200);
-    expect(calls.filter(call => call.method === 'POST' && call.pathname !== '/api/auth/refresh')).toHaveLength(0);
+    // Modal-open Team hydration POSTs /api/team-catalog on the legacy backend since #196 (11c18401); Import itself writes nothing.
+    expect(calls.filter(call => call.method === 'POST' && !['/api/auth/refresh', '/api/team-catalog'].includes(call.pathname))).toHaveLength(0);
     await expect(dialog.locator('.group-pane-list .group-list-item')).toHaveCount(3);
     await expect(dialog.locator('.group-pane-list .group-list-item', { hasText: 'Northwind' })).toBeVisible();
     await expect(dialog.locator('.group-pane-list .group-list-item', { hasText: 'Southridge' })).toBeVisible();
@@ -397,8 +404,9 @@ test('Import JSON updates only a newly created selected group and preserves sibl
     await expect(dialog).toHaveCount(0);
 
     const save = calls.find(call => call.method === 'POST' && call.pathname === '/api/groups-config');
+    // A version-1 scalar Team label in the imported JSON is saved as a version-2 alias array.
     expect(save.body).toEqual({
-        version: 1,
+        version: 2,
         baseRevision: 2,
         groups: [
             {
@@ -409,7 +417,8 @@ test('Import JSON updates only a newly created selected group and preserves sibl
                 excludedCapacityEpics: [],
                 adHocCapacityEpics: [],
                 teamLabels: {},
-                board: fixture.referenceBoard(),
+                // Stored boards always carry the default Done Epic retention since #176 (e9a1c480).
+                board: { ...fixture.referenceBoard(), doneEpicRetentionDays: 28 },
             },
             {
                 id: 'southridge',
@@ -427,7 +436,7 @@ test('Import JSON updates only a newly created selected group and preserves sibl
                 missingInfoComponents: ['Needs refinement'],
                 excludedCapacityEpics: ['DEMO-1'],
                 adHocCapacityEpics: ['DEMO-2'],
-                teamLabels: { 'team-c': 'team-c-label' },
+                teamLabels: { 'team-c': ['team-c-label'] },
             },
         ],
         defaultGroupId: 'northwind',
@@ -804,7 +813,8 @@ malformedImportedColumnShapes.forEach(([label, columnShape]) => {
         // validation message rather than a silent crash.
         await expect(dialog).toBeVisible();
         await expect(dialog.getByRole('button', { name: /^Save$/ })).toBeDisabled();
-        await expect(dialog.locator('.group-modal-validation')).toContainText('has no statuses');
+        // A lone column is the terminal column, which may be empty since #176 (e9a1c480).
+        await expect(dialog.locator('.group-modal-validation')).toContainText('needs a valid column id');
     });
 });
 

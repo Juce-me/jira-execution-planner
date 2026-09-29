@@ -150,6 +150,11 @@ async function installDashboardFixture(page, options = {}) {
                 environmentConfigExists: options.environmentConfigExists ?? true,
                 projectsConfigured: true,
                 epm: { ...epmConfig, ...(options.epmConfig || {}) },
+                viewConfig: {
+                    workspaceId: 'workspace-test',
+                    viewConfigId: 'view-test',
+                    view: { epm: { ...epmConfig, ...(options.epmConfig || {}) } },
+                },
             });
         }
         if (url.pathname === '/api/version') return json({ enabled: false });

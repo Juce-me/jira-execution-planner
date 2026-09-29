@@ -150,6 +150,20 @@ class SharedCapacityConfigRouteTests(unittest.TestCase):
         self.assertEqual(stale.get_json()['error'], 'capacity_config_conflict')
         self.assertEqual(stale.get_json()['current']['project'], 'CAP')
 
+    def test_db_route_first_save_keeps_matching_legacy_workspace_config(self):
+        catalog = [{'id': 'customfield_10001', 'name': 'Canonical Capacity', 'schema': {'type': 'number'}}]
+        legacy = {'version': 1, 'board': {'boardId': '42', 'boardName': 'Planning'}}
+        with self._db_env(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.object(jira_server, 'JIRA_URL', 'https://one.example.test'), \
+             patch.object(jira_server, '_load_dashboard_config_json', return_value=legacy), \
+             patch('backend.routes.settings_routes.load_current_site_field_catalog', return_value=catalog):
+            response = self.client.post('/api/capacity/config', json=self._payload(), headers=self._headers())
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        with self.factory() as session:
+            payload = session.query(models.WorkspaceDashboardConfig).one().payload
+        self.assertEqual(payload['board'], {'boardId': '42', 'boardName': 'Planning'})
+        self.assertEqual(payload['capacity']['project'], 'CAP')
+
     def test_capacity_post_requires_oauth_xrw_one_time_csrf_and_tool_admin(self):
         catalog = [{'id': 'customfield_10001', 'name': 'Capacity', 'schema': {'type': 'number'}}]
         with self._db_env(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \

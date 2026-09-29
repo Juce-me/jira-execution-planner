@@ -7,7 +7,7 @@ const ALERT_SUMMARY_CONFIG = [
     { key: 'backlog', label: 'Backlog', tone: 'following', sectionId: 'eng-alert-backlog' },
     { key: 'missingTeam', label: 'Missing team', tone: 'following', sectionId: 'eng-alert-missing-team' },
     { key: 'missingLabels', label: 'Missing labels', tone: 'following', sectionId: 'eng-alert-missing-labels' },
-    { key: 'needsStories', label: 'Needs stories', tone: 'following', sectionId: 'eng-alert-needs-stories' },
+    { key: 'needsStories', label: 'Stories required', tone: 'following', sectionId: 'eng-alert-needs-stories' },
     { key: 'waiting', label: 'Waiting', tone: 'following', sectionId: 'eng-alert-waiting' },
     { key: 'empty', label: 'Empty epic', tone: 'empty', sectionId: 'eng-alert-empty' },
     { key: 'done', label: 'Ready to close', tone: 'done', sectionId: 'eng-alert-done' },
@@ -17,6 +17,7 @@ export default function EngAlertsPanel({
     selectedView,
     alertItemCount,
     alertCounts = {},
+    alertScopeTooLarge = false,
     showAlertsPanel,
     setShowAlertsPanel,
     collapsed,
@@ -41,7 +42,10 @@ export default function EngAlertsPanel({
         getBlockedAlertStatusLabel,
         getFuturePlanningNeedsStoriesReasonText,
         handleAlertStoryClick,
+        handleStoryRequirementClick,
+        dismissStoryRequirement,
         isFutureSprintSelected,
+        storyReadinessSprintState,
         jiraUrl,
         missingAlertTeams,
         missingLabelEpicTeams,
@@ -99,8 +103,18 @@ export default function EngAlertsPanel({
         focusAlertSection(item.sectionId);
     }, [focusAlertSection, setShowAlertsPanel]);
 
-    if (selectedView !== 'eng' || alertItemCount <= 0) {
+    if (selectedView !== 'eng' || (alertItemCount <= 0 && !alertScopeTooLarge)) {
         return null;
+    }
+
+    const alertScopeNotice = alertScopeTooLarge ? (
+        <div className="story-readiness-notice" role="status">
+            <span>This Department is too large for Epic alerts: more than 2,000 open Epics match its Teams and labels in Product or Tech. Epic alerts are hidden; Story alerts are still shown. Narrow the Department's Teams or labels.</span>
+        </div>
+    ) : null;
+
+    if (alertItemCount <= 0) {
+        return <div className="alerts-panel-shell">{alertScopeNotice}</div>;
     }
 
     const alertSummaryActions = {
@@ -122,6 +136,7 @@ export default function EngAlertsPanel({
 
     return (
         <div className="alerts-panel-shell">
+            {alertScopeNotice}
             <div className="alerts-panel-toolbar">
                 <button
                     className="alerts-panel-toggle"
@@ -216,43 +231,40 @@ export default function EngAlertsPanel({
                                                                     )}
                                                                 </div>
                                                                 <div className="alert-stories">
-                                                                    {group.items.map(({ task, missingFields }) => (
-                                                                        <div key={task.key} className="alert-story">
+                                                                    {group.items.map(({ task, missingFields }) => {
+                                                                        const editStoryPoints = missingFields.includes('Story Points');
+                                                                        const navigateToStory = () => handleAlertStoryClick(task.key, editStoryPoints);
+                                                                        return <div key={task.key} className="alert-story">
                                                                             <div
                                                                                 className="alert-story-main"
                                                                                 role="button"
                                                                                 tabIndex={0}
-                                                                                onClick={() => handleAlertStoryClick(task.key)}
+                                                                                onClick={navigateToStory}
                                                                                 onKeyDown={(event) => {
                                                                                     if (event.key === 'Enter' || event.key === ' ') {
                                                                                         event.preventDefault();
-                                                                                        handleAlertStoryClick(task.key);
+                                                                                        navigateToStory();
                                                                                     }
                                                                                 }}
                                                                             >
                                                                                 <a
                                                                                     className="alert-story-link"
-                                                                                    href={jiraUrl ? `${jiraUrl}/browse/${task.key}` : '#'}
-                                                                                    target="_blank"
-                                                                                    rel="noopener noreferrer"
+                                                                                    href={`#story-${encodeURIComponent(task.key)}`}
                                                                                     onClick={(event) => {
                                                                                         event.preventDefault();
                                                                                         event.stopPropagation();
-                                                                                        handleAlertStoryClick(task.key);
+                                                                                        navigateToStory();
                                                                                     }}
                                                                                 >
                                                                                     {task.key} · {task.fields.summary}
                                                                                 </a>
                                                                             </div>
                                                                             <span className="alert-pill status">Missing: {missingFields.join(', ')}</span>
-                                                                            <a
-                                                                                className="alert-action"
-                                                                                href={jiraUrl ? `${jiraUrl}/browse/${task.key}` : '#'}
-                                                                                target="_blank"
-                                                                                rel="noopener noreferrer"
-                                                                            >
-                                                                                Fix fields →
-                                                                            </a>
+                                                                            {editStoryPoints ? (
+                                                                                <a className="alert-action" href={`#story-${encodeURIComponent(task.key)}`} onClick={(event) => { event.preventDefault(); navigateToStory(); }}>Fix fields →</a>
+                                                                            ) : (
+                                                                                <a className="alert-action" href={jiraUrl ? `${jiraUrl}/browse/${task.key}` : '#'} target="_blank" rel="noopener noreferrer">Fix fields →</a>
+                                                                            )}
                                                                             <button
                                                                                 className="task-remove alert-remove"
                                                                                 onClick={(event) => {
@@ -264,8 +276,8 @@ export default function EngAlertsPanel({
                                                                             >
                                                                                 ×
                                                                             </button>
-                                                                        </div>
-                                                                    ))}
+                                                                        </div>;
+                                                                    })}
                                                                 </div>
                                                             </div>
                                                         );
@@ -683,7 +695,7 @@ export default function EngAlertsPanel({
                                                         <span className="alert-toggle-label">{showMissingLabelsAlert ? 'Hide' : 'Show'}</span>
                                                     </button>
                                                     <div className="alert-title">🏷️ Missing Labels</div>
-                                                    <div className="alert-subtitle">These epics need both the selected sprint label and the mapped team label.</div>
+                                                    <div className="alert-subtitle">These epics need the selected sprint label or its _candidate form, plus the mapped team label.</div>
                                                     <div className="alert-chip">{missingLabelEpics.length} {missingLabelEpics.length === 1 ? 'epic' : 'epics'}</div>
                                                 </div>
                                                 <div className={`alert-card-body ${showMissingLabelsAlert ? '' : 'collapsed'}`}>
@@ -710,7 +722,7 @@ export default function EngAlertsPanel({
                                                                         <div key={epic.key} className="alert-story">
                                                                             <div className="alert-story-main" role="button" tabIndex={0} onClick={() => handleAlertStoryClick(epic.key)}>
                                                                                 <a className="alert-story-link" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer" onClick={(event) => { event.preventDefault(); event.stopPropagation(); handleAlertStoryClick(epic.key); }}>{epic.key} · {epic.summary}</a>
-                                                                                <div className="alert-story-note">Add the selected sprint label and the mapped team label on the epic.</div>
+                                                                                <div className="alert-story-note">Add the selected sprint label or its _candidate form, plus the mapped team label on the epic.</div>
                                                                             </div>
                                                                             <button className="task-remove alert-remove" onClick={(event) => { event.stopPropagation(); dismissAlertItem(epic.key); }} title="Dismiss from alerts" type="button">×</button>
                                                                         </div>
@@ -723,10 +735,10 @@ export default function EngAlertsPanel({
                                             </div>
                                         )}
 
-                                        {isFutureSprintSelected && needsStoriesEntries.length > 0 && (
-                                            <div className={`alert-card following ${showNeedsStoriesAlert ? '' : 'collapsed'}`} id="eng-alert-needs-stories" tabIndex={-1}>
+                                        {needsStoriesEntries.length > 0 && (
+                                            <div className={`alert-card ${storyReadinessSprintState === 'active' ? 'blocked' : 'following'} ${showNeedsStoriesAlert ? '' : 'collapsed'}`} id="eng-alert-needs-stories" tabIndex={-1}>
                                                 <div className="alert-card-header">
-                                                    <button className="alert-toggle" onClick={() => setShowNeedsStoriesAlert(prev => !prev)} title={showNeedsStoriesAlert ? 'Collapse needs stories panel' : 'Expand needs stories panel'}>
+                                                    <button className="alert-toggle" onClick={() => setShowNeedsStoriesAlert(prev => !prev)} title={showNeedsStoriesAlert ? 'Collapse Stories Required panel' : 'Expand Stories Required panel'}>
                                                         <span className="alert-toggle-icon" aria-hidden="true">
                                                             <svg className={`alert-toggle-chevron ${showNeedsStoriesAlert ? '' : 'collapsed'}`} viewBox="0 0 12 12">
                                                                 <path d="M2.5 4.5l3.5 3 3.5-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -734,8 +746,8 @@ export default function EngAlertsPanel({
                                                         </span>
                                                         <span className="alert-toggle-label">{showNeedsStoriesAlert ? 'Hide' : 'Show'}</span>
                                                     </button>
-                                                    <div className="alert-title">📝 Needs Stories</div>
-                                                    <div className="alert-subtitle">These epics are labeled correctly but still are not sprint-ready for the selected future sprint.</div>
+                                                    <div className="alert-title">📝 Stories Required</div>
+                                                    <div className="alert-subtitle">These labeled Epics still need an actionable Story for the selected sprint and Team.</div>
                                                     <div className="alert-chip">{needsStoriesEpics.length} {needsStoriesEpics.length === 1 ? 'epic' : 'epics'}</div>
                                                 </div>
                                                 <div className={`alert-card-body ${showNeedsStoriesAlert ? '' : 'collapsed'}`}>
@@ -760,13 +772,12 @@ export default function EngAlertsPanel({
                                                                     {group.items.map(entry => {
                                                                         const epic = entry.epic;
                                                                         return (
-                                                                        <div key={epic.key} className="alert-story">
-                                                                            <div className="alert-story-main" role="button" tabIndex={0} onClick={() => handleAlertStoryClick(epic.key)}>
-                                                                                <a className="alert-story-link" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer" onClick={(event) => { event.preventDefault(); event.stopPropagation(); handleAlertStoryClick(epic.key); }}>{epic.key} · {epic.summary}</a>
+                                                                        <div key={entry.id} className="alert-story">
+                                                                            <div className="alert-story-main">
+                                                                                <button className="alert-story-link alert-story-local-link" type="button" onClick={() => handleStoryRequirementClick(entry)}>{epic.key} · {epic.summary}</button>
                                                                                 <div className="alert-story-note">{getFuturePlanningNeedsStoriesReasonText(entry.reason)}</div>
                                                                             </div>
-                                                                            <a className="alert-action" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer">Open epic →</a>
-                                                                            <button className="task-remove alert-remove" onClick={(event) => { event.stopPropagation(); dismissAlertItem(epic.key); }} title="Dismiss from alerts" type="button">×</button>
+                                                                            <button className="task-remove alert-remove" onClick={(event) => { event.stopPropagation(); dismissStoryRequirement(entry); }} title="Dismiss this Story requirement from alerts" type="button">×</button>
                                                                         </div>
                                                                     )})}
                                                                 </div>

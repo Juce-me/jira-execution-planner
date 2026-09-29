@@ -13,7 +13,7 @@ export async function recordPerformanceLoad(backendUrl, observation) {
 
 export function fetchAdminPerformance(backendUrl, filters = {}, options = {}) {
     const query = new URLSearchParams();
-    for (const key of ['groupId', 'sprintId', 'cacheState', 'revision']) {
+    for (const key of ['groupId', 'sprintId', 'surface', 'scopeType', 'cacheState', 'revision', 'scopeCohortDigest']) {
         if (filters[key]) query.set(key, filters[key]);
     }
     return getJson(`${backendUrl}/api/admin/performance?${query}`, 'Performance history', {

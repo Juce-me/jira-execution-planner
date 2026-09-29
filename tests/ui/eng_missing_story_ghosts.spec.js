@@ -1,0 +1,717 @@
+const { test, expect } = require('@playwright/test');
+const { installDashboardShell } = require('./epm_home_token_fixture');
+
+const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
+const sprintId = 34625;
+const sprintName = '2026Q2 Sprint 42';
+
+function deferred() {
+    let resolve;
+    const promise = new Promise(next => { resolve = next; });
+    return { promise, resolve };
+}
+
+function story(key = 'MIX-1', overrides = {}) {
+    const epicKey = overrides.epicKey || 'MIX-EPIC';
+    const projectKey = overrides.projectKey || 'MIX';
+    return {
+        id: key,
+        key,
+        fields: {
+            summary: overrides.summary || 'Existing delivery story',
+            status: { name: overrides.status || 'To Do' },
+            priority: { name: 'High' },
+            issuetype: { name: 'Story' },
+            assignee: { displayName: 'Synthetic Owner' },
+            updated: '2026-05-01T00:00:00.000+0000',
+            customfield_10004: 3,
+            epicKey,
+            parentSummary: overrides.epicSummary || 'Mixed coverage epic',
+            projectKey,
+            teamId: overrides.teamId || 'team-alpha',
+            teamName: overrides.teamName || 'Alpha Team',
+            sprint: [{ id: sprintId, name: sprintName, state: overrides.sprintState || 'active' }],
+        },
+    };
+}
+
+function readinessEpic(key, {
+    summary = `${key} summary`,
+    reason = 'no_stories',
+    teamId = 'team-beta',
+    teamName = 'Beta Team',
+    initiative = null,
+    projectKey = 'MIX',
+    projectClass = 'product',
+} = {}) {
+    return {
+        key,
+        summary,
+        status: { name: 'In Progress' },
+        priority: { name: 'High' },
+        assignee: { displayName: 'Epic Owner' },
+        projectKey,
+        projectClass,
+        projectTrack: 'product',
+        initiative,
+        missingTeams: [{ id: teamId, name: teamName, reason }],
+    };
+}
+
+function snapshot(epics, sprintState = 'active', selectedId = sprintId, selectedName = sprintName, groupId = 'grp-default') {
+    return {
+        schemaVersion: 1,
+        complete: true,
+        scope: {
+            groupId,
+            sprintId: String(selectedId),
+            sprintName: selectedName,
+            sprintState,
+        },
+        epics,
+    };
+}
+
+async function installFixture(page, {
+    mode = 'catchUp',
+    sprintState = 'active',
+    productIssues = [],
+    productEpics = {},
+    techIssues = [],
+    techEpics = {},
+    readinessEpics = [],
+    alertPurposeEpics = [],
+    backlogEpics = [],
+    alertGate = null,
+    secondSprint = null,
+    primaryGates = {},
+    readinessGate = null,
+    groupByInitiativeChoice = null,
+    showAlertsPanel = true,
+    groupTeamLabels = { 'team-alpha': 'Alpha Team', 'team-beta': 'Beta Team' },
+    extraGroups = [],
+    alertScopeTooLargeGroupIds = [],
+    alertGateGroupId = null,
+} = {}) {
+    const calls = [];
+    await installDashboardShell(page);
+    await page.addInitScript((prefs) => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
+    }, {
+        selectedView: 'eng',
+        selectedSprint: sprintId,
+        sprintName,
+        activeGroupId: 'grp-default',
+        selectedTeams: ['all'],
+        showPlanning: mode === 'planning',
+        showStats: false,
+        showScenario: false,
+        showBoard: false,
+        showAlertsPanel,
+        showNeedsStoriesAlert: true,
+        groupByInitiativeChoice,
+    });
+    await page.route('**/api/**', async route => {
+        const request = route.request();
+        const url = new URL(request.url());
+        calls.push({ pathname: url.pathname, params: Object.fromEntries(url.searchParams.entries()) });
+        const json = body => route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify(body),
+        });
+        if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
+        if (url.pathname === '/api/auth/status') return json({ authMode: 'atlassian_oauth', authenticated: true, email: 'profile@example.com' });
+        if (url.pathname === '/api/me/connections/home-token') return json({ connected: false });
+        if (url.pathname === '/api/config') return json({
+            jiraUrl: 'https://jira.example',
+            authMode: 'atlassian_oauth',
+            capacityProject: '',
+            groupQueryTemplateEnabled: false,
+            settingsAdminOnly: false,
+            userCanEditSettings: true,
+            projectsConfigured: true,
+            epm: { version: 2, labelPrefix: '', scope: {}, projects: {} },
+        });
+        if (url.pathname === '/api/version') return json({ enabled: false });
+        if (url.pathname === '/api/groups-config') return json({
+            version: 1,
+            groups: [{
+                id: 'grp-default',
+                name: 'Default',
+                teamIds: ['team-alpha', 'team-beta'],
+                teamLabels: groupTeamLabels,
+            }, ...extraGroups],
+            defaultGroupId: 'grp-default',
+            source: 'test',
+        });
+        if (url.pathname === '/api/projects/selected') return json({ selected: [] });
+        if (url.pathname === '/api/sprints') return json({ sprints: [{ id: sprintId, name: sprintName, state: sprintState }, ...(secondSprint ? [secondSprint] : [])] });
+        if (url.pathname === '/api/stats/priority-weights-config') return json({ weights: [], source: 'test' });
+        if (url.pathname === '/api/tasks-with-team-name') {
+            const project = url.searchParams.get('project');
+            const purpose = url.searchParams.get('purpose');
+            const isSecondSprint = secondSprint && url.searchParams.get('sprint') === String(secondSprint.id);
+            if (!purpose && primaryGates[project]) await primaryGates[project].promise;
+            if (purpose) {
+                const groupId = url.searchParams.get('groupId');
+                if (alertGate && !isSecondSprint && (!alertGateGroupId || groupId === alertGateGroupId)) await alertGate.promise;
+                if (purpose === 'alerts' && project === 'product' && alertScopeTooLargeGroupIds.includes(groupId)) {
+                    return route.fulfill({
+                        status: 422,
+                        contentType: 'application/json',
+                        body: JSON.stringify({ error: 'alert_scope_too_large', message: 'This Department is too large for Epic alerts.' }),
+                    });
+                }
+                return json({ issues: [], epics: {}, epicsInScope: project === 'product' && !isSecondSprint ? alertPurposeEpics : [], names: {} });
+            }
+            if (isSecondSprint) return json({ issues: [], epics: {}, epicsInScope: [], names: {} });
+            if (project === 'product') {
+                return json({ issues: productIssues, epics: productEpics, epicsInScope: Object.values(productEpics), names: {} });
+            }
+            return json({ issues: techIssues, epics: techEpics, epicsInScope: Object.values(techEpics), names: {} });
+        }
+        if (url.pathname === '/api/eng/story-readiness') {
+            if (readinessGate) await readinessGate.promise;
+            const isSecondSprint = secondSprint && url.searchParams.get('sprint') === String(secondSprint.id);
+            return json(isSecondSprint
+                ? snapshot([], secondSprint.state, secondSprint.id, secondSprint.name)
+                : snapshot(readinessEpics, sprintState, sprintId, sprintName, url.searchParams.get('groupId') || 'grp-default'));
+        }
+        if (url.pathname === '/api/missing-info') return json({ issues: [], epics: [], count: 0, epicCount: 0 });
+        if (url.pathname === '/api/backlog-epics') return json({ epics: url.searchParams.get('project') === 'product' && (!secondSprint || url.searchParams.get('sprint') !== String(secondSprint.id)) ? backlogEpics : [] });
+        if (url.pathname === '/api/capacity') return json({ enabled: false, capacity: [], teams: [], totalCapacity: 0 });
+        if (url.pathname === '/api/dependencies') return json({ dependencies: {} });
+        return json({});
+    });
+    return calls;
+}
+
+async function waitForCall(calls, pathname, count = 1) {
+    await expect.poll(() => calls.filter(call => call.pathname === pathname).length).toBe(count);
+}
+
+function productEpic(key = 'MIX-EPIC', summary = 'Mixed coverage epic') {
+    return {
+        key,
+        summary,
+        status: { name: 'In Progress' },
+        priority: { name: 'High' },
+        assignee: { displayName: 'Epic Owner' },
+        projectKey: 'MIX',
+        projectClass: 'product',
+        projectTrack: 'product',
+        sprint: [{ id: sprintId, name: sprintName, state: 'active' }],
+    };
+}
+
+function planningEpic(key, labels, { teamId = 'team-beta', teamName = 'Beta Team' } = {}) {
+    return {
+        ...productEpic(key, `${key} planning epic`),
+        labels,
+        teamId,
+        teamName,
+        sprint: null,
+        fields: { customfield_10101: null },
+    };
+}
+
+async function expectOnlyAlertCategory(page, key, sectionId) {
+    const sections = ['eng-alert-backlog', 'eng-alert-missing-team', 'eng-alert-missing-labels', 'eng-alert-needs-stories'];
+    for (const section of sections) {
+        const rows = page.locator(`#${section} .alert-story`).filter({ hasText: key });
+        await expect(rows).toHaveCount(section === sectionId ? 1 : 0);
+    }
+}
+
+const aliasTeamLabels = { 'team-alpha': 'Alpha Team', 'team-beta': ['label_team_a', 'label_team_a_old'] };
+
+for (const [description, labels, expectedSection, team, groupTeamLabels] of [
+    ['lowercase candidate', [`${sprintName}_candidate`, 'Beta Team'], 'eng-alert-needs-stories', {}],
+    ['capitalized candidate', [`${sprintName}_Candidate`, 'Beta Team'], 'eng-alert-needs-stories', {}],
+    ['plain selected sprint label', [sprintName, 'Beta Team'], 'eng-alert-needs-stories', {}],
+    ['both accepted sprint labels', [sprintName, `${sprintName}_candidate`, 'Beta Team'], 'eng-alert-needs-stories', {}],
+    ['candidate with missing Jira Team', [`${sprintName}_candidate`, 'Beta Team'], 'eng-alert-missing-team', { teamId: '', teamName: '' }],
+    ['candidate with missing mapped Team label', [`${sprintName}_candidate`], 'eng-alert-missing-labels', {}],
+    ['near-match candidate suffix', [`${sprintName}_candidate_extra`, 'Beta Team'], 'eng-alert-backlog', {}],
+    ['old Team alias only', [`${sprintName}_candidate`, 'label_team_a_old'], 'eng-alert-needs-stories', {}, aliasTeamLabels],
+    ['new Team alias only', [sprintName, 'label_team_a'], 'eng-alert-needs-stories', {}, aliasTeamLabels],
+    ['both Team aliases', [`${sprintName}_candidate`, 'label_team_a', 'label_team_a_old'], 'eng-alert-needs-stories', {}, aliasTeamLabels],
+    ['neither Team alias', [`${sprintName}_candidate`, 'label_team_b'], 'eng-alert-missing-labels', {}, aliasTeamLabels],
+]) {
+    test(`future alert classifies ${description} once across alert and remote Backlog sources`, async ({ page }) => {
+        const key = 'CAND-EPIC';
+        const epic = planningEpic(key, labels, team);
+        const calls = await installFixture(page, {
+            sprintState: 'future',
+            alertPurposeEpics: [epic],
+            backlogEpics: [epic],
+            readinessEpics: [readinessEpic(key)],
+            ...(groupTeamLabels ? { groupTeamLabels } : {}),
+        });
+        await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+        await expect.poll(() => calls.filter(call => call.pathname === '/api/tasks-with-team-name' && call.params.purpose === 'alerts').length).toBe(2);
+        await expectOnlyAlertCategory(page, key, expectedSection);
+        if (description === 'candidate with missing mapped Team label') {
+            await page.locator('#eng-alert-missing-labels').screenshot({ path: 'test-results/candidate-missing-labels-after.png', animations: 'disabled' });
+        }
+    });
+}
+
+test('future alert settles to Stories Required after its Epic response arrives later than readiness', async ({ page }) => {
+    const alertGate = deferred();
+    const key = 'DELAY-EPIC';
+    const epic = planningEpic(key, [`${sprintName}_candidate`, 'Beta Team']);
+    const calls = await installFixture(page, {
+        sprintState: 'future', alertPurposeEpics: [epic], backlogEpics: [epic],
+        readinessEpics: [readinessEpic(key)], alertGate,
+    });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await waitForCall(calls, '/api/eng/story-readiness');
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/tasks-with-team-name' && call.params.purpose === 'alerts').length).toBe(2);
+    alertGate.resolve();
+    await page.waitForLoadState('networkidle');
+    await expectOnlyAlertCategory(page, key, 'eng-alert-needs-stories');
+});
+
+test('active candidate Epic contributes a Story requirement without a Missing Labels alert', async ({ page }) => {
+    const key = 'ACTIVE-CAND-EPIC';
+    await installFixture(page, {
+        sprintState: 'active',
+        alertPurposeEpics: [planningEpic(key, [`${sprintName}_candidate`, 'Beta Team'])],
+        readinessEpics: [readinessEpic(key)],
+    });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await expect(page.locator(`.story-requirement-card[data-epic-key="${key}"]`)).toHaveCount(1);
+    await expectOnlyAlertCategory(page, key, 'eng-alert-needs-stories');
+});
+
+test('late candidate alert response from prior sprint cannot enter the new sprint', async ({ page }) => {
+    const alertGate = deferred();
+    const key = 'OLD-CAND-EPIC';
+    const epic = planningEpic(key, [`${sprintName}_candidate`, 'Beta Team']);
+    const nextSprint = { id: sprintId + 1, name: '2026Q3 Sprint 43', state: 'future' };
+    const calls = await installFixture(page, {
+        sprintState: 'future', alertPurposeEpics: [epic],
+        readinessEpics: [readinessEpic(key)], alertGate, secondSprint: nextSprint,
+    });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/tasks-with-team-name' && call.params.purpose === 'alerts' && call.params.sprint === String(sprintId)).length).toBe(2);
+    const sprintToggle = page.locator('.sprint-dropdown').first().locator('.sprint-dropdown-toggle');
+    await sprintToggle.click();
+    await page.locator('.sprint-dropdown-option', { hasText: nextSprint.name }).click();
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/tasks-with-team-name' && call.params.purpose === 'alerts' && call.params.sprint === String(nextSprint.id)).length).toBe(2);
+    alertGate.resolve();
+    await page.waitForLoadState('networkidle');
+    await expect(page.locator(`.story-requirement-card[data-epic-key="${key}"]`)).toHaveCount(0);
+    for (const section of ['eng-alert-backlog', 'eng-alert-missing-team', 'eng-alert-missing-labels', 'eng-alert-needs-stories']) {
+        await expect(page.locator(`#${section} .alert-story`).filter({ hasText: key })).toHaveCount(0);
+    }
+});
+
+test('defers readiness until both primary task responses paint in Catch Up', async ({ page }) => {
+    const productGate = deferred();
+    const techGate = deferred();
+    const readinessGate = deferred();
+    const issue = story();
+    const calls = await installFixture(page, {
+        productIssues: [issue],
+        productEpics: { 'MIX-EPIC': productEpic() },
+        readinessEpics: [readinessEpic('MIX-EPIC', { reason: 'team_uncovered' })],
+        primaryGates: { product: productGate, tech: techGate },
+        readinessGate,
+    });
+
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/tasks-with-team-name' && !call.params.purpose).length).toBe(2);
+    expect(calls.some(call => call.pathname === '/api/eng/story-readiness')).toBe(false);
+
+    productGate.resolve();
+    await expect(page.getByText('Existing delivery story')).toBeVisible();
+    expect(calls.some(call => call.pathname === '/api/eng/story-readiness')).toBe(false);
+
+    techGate.resolve();
+    await waitForCall(calls, '/api/eng/story-readiness');
+    await expect(page.locator('.story-requirement-card')).toHaveCount(0);
+    readinessGate.resolve();
+    await expect(page.locator('.story-requirement-card')).toBeVisible();
+});
+
+test('Planning requests readiness without starting Catch Up alert sources', async ({ page }) => {
+    const calls = await installFixture(page, {
+        mode: 'planning',
+        readinessEpics: [readinessEpic('ZERO-EPIC')],
+    });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+
+    await expect(page.locator('.story-requirement-card')).toBeVisible();
+    await waitForCall(calls, '/api/eng/story-readiness');
+    expect(calls.filter(call => (
+        call.pathname === '/api/missing-info'
+        || call.pathname === '/api/backlog-epics'
+        || (call.pathname === '/api/tasks-with-team-name' && call.params.purpose)
+    ))).toEqual([]);
+});
+
+test('epic status pills keep the established filled status treatment', async ({ page }) => {
+    await installFixture(page, {
+        productIssues: [story()],
+        productEpics: { 'MIX-EPIC': productEpic() },
+    });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+
+    const status = page.locator('.epic-status-pill.in-progress').first();
+    await expect(status).toBeVisible();
+    await expect(status).toHaveCSS('background-color', 'rgb(105, 192, 255)');
+    await expect(status).toHaveCSS('color', 'rgb(255, 255, 255)');
+    await expect(status).toHaveCSS('border-top-width', '0px');
+    await expect(status).toHaveCSS('font-size', '9.28px');
+    await expect(status).toHaveCSS('height', '29.75px');
+    await expect(status).toHaveCSS('padding-top', '2.88px');
+    await expect(status).toHaveCSS('padding-right', '7.68px');
+    await expect(status).toHaveCSS('min-width', 'auto');
+    await expect(status).toHaveCSS('max-width', 'none');
+});
+
+test('Back to top stays above page content throughout scrolling', async ({ page }) => {
+    const productIssues = [];
+    const productEpics = {};
+    for (let index = 0; index < 24; index += 1) {
+        const epicKey = `MIX-EPIC-${index}`;
+        productIssues.push(story(`MIX-${index}`, { epicKey, epicSummary: `Mixed coverage epic ${index}` }));
+        productEpics[epicKey] = productEpic(epicKey, `Mixed coverage epic ${index}`);
+    }
+    await installFixture(page, { productIssues, productEpics, showAlertsPanel: false });
+    await page.setViewportSize({ width: 800, height: 860 });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await page.evaluate(() => window.scrollTo(0, 160));
+    await expect(page.locator('.back-to-top')).toBeVisible();
+
+    const overlaps = await page.evaluate(async () => {
+        const failures = [];
+        const maxScroll = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+        for (let scrollY = 160; scrollY <= maxScroll; scrollY += 32) {
+            window.scrollTo(0, scrollY);
+            await new Promise(resolve => requestAnimationFrame(resolve));
+            const button = document.querySelector('.back-to-top');
+            if (!button) {
+                failures.push({ scrollY, topClass: 'missing-back-to-top' });
+                break;
+            }
+            const rect = button.getBoundingClientRect();
+            const xValues = [rect.left + 4, rect.left + (rect.width / 2), rect.right - 4];
+            const yValues = [rect.top + 4, rect.top + (rect.height / 2), rect.bottom - 4];
+            for (const x of xValues) {
+                for (const y of yValues) {
+                    const top = document.elementFromPoint(x, y);
+                    if (!button.contains(top)) {
+                        failures.push({
+                            scrollY,
+                            x: Math.round(x),
+                            y: Math.round(y),
+                            topClass: top?.className || top?.tagName || null,
+                        });
+                    }
+                }
+            }
+            if (failures.length) break;
+        }
+        return failures;
+    });
+
+    expect(overlaps).toEqual([]);
+});
+
+for (const sprintState of ['active', 'future']) {
+    test(`${sprintState} requirement is an external Jira link with the matching urgency`, async ({ page }) => {
+        await installFixture(page, {
+            mode: 'planning',
+            sprintState,
+            readinessEpics: [readinessEpic('ZERO-EPIC')],
+        });
+        await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+
+        const card = page.locator('.story-requirement-card');
+        await expect(card).toHaveClass(new RegExp(`story-requirement-${sprintState}`));
+        await expect(card).toContainText('Team: Beta Team');
+        await expect(card).toContainText(`Target sprint: ${sprintName}`);
+        await expect(card).toContainText('Create in Jira.');
+        await expect(card).not.toContainText("Open the Epic in Jira to create this Team's Story.");
+        await expect(card).toContainText(sprintState === 'active' ? 'Current sprint · action needed' : 'Future sprint · plan ahead');
+        await expect(card).toHaveAttribute('href', 'https://jira.example/browse/ZERO-EPIC');
+        await expect(card).toHaveAttribute('target', '_blank');
+        await expect(card).toHaveAttribute('rel', 'noopener noreferrer');
+        await expect(card).toHaveCSS('border-top-style', 'dashed');
+    });
+}
+
+test('no-story Epics are dotted directly and inside Initiative grouping while mixed Epics are not', async ({ page }) => {
+    const initiative = { key: 'INIT-1', summary: 'Checkout initiative' };
+    await installFixture(page, {
+        mode: 'planning',
+        groupByInitiativeChoice: true,
+        productIssues: [story()],
+        productEpics: { 'MIX-EPIC': productEpic() },
+        readinessEpics: [
+            readinessEpic('DIRECT-ZERO'),
+            readinessEpic('ZERO-EPIC', { initiative }),
+            readinessEpic('ZERO-TWO', { initiative }),
+            readinessEpic('MIX-EPIC', { reason: 'team_uncovered' }),
+        ],
+    });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+
+    const nestedZero = page.locator('.initiative-body > .epic-block[data-epic-key="ZERO-EPIC"]');
+    await expect(nestedZero).toHaveClass(/epic-block-no-child-stories/);
+    await expect(nestedZero).toHaveCSS('border-top-style', 'dotted');
+    const directZero = page.locator('.epic-block[data-epic-key="DIRECT-ZERO"]');
+    await expect(directZero).toHaveClass(/epic-block-no-child-stories/);
+    await expect(directZero).toHaveCSS('border-top-style', 'dotted');
+    const directRequirement = directZero.locator('[id^="story-required"]');
+    const nestedRequirement = nestedZero.locator('[id^="story-required"]');
+    const directStatusTransition = directZero.locator('.status-transition');
+    const nestedStatusTransition = nestedZero.locator('.status-transition');
+    for (const roundedElement of [
+        directZero,
+        nestedZero,
+        directRequirement,
+        nestedRequirement,
+        directStatusTransition,
+        nestedStatusTransition,
+    ]) {
+        await expect(roundedElement).toHaveCSS('border-radius', '10px');
+    }
+    await expect(page.locator('.initiative-body .epic-block[data-epic-key="DIRECT-ZERO"]')).toHaveCount(0);
+    const mixed = page.locator('.epic-block[data-epic-key="MIX-EPIC"]');
+    await expect(mixed).not.toHaveClass(/epic-block-no-child-stories/);
+    await expect(mixed).not.toHaveCSS('border-top-style', 'dotted');
+});
+
+test('Planning puts requirement rows and requirement-bearing Epics first', async ({ page }) => {
+    await installFixture(page, {
+        mode: 'planning',
+        productIssues: [story()],
+        productEpics: { 'MIX-EPIC': productEpic() },
+        readinessEpics: [
+            readinessEpic('ZERO-EPIC'),
+            readinessEpic('MIX-EPIC', { reason: 'team_uncovered' }),
+        ],
+    });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+
+    const mixedRows = page.locator('.epic-block[data-epic-key="MIX-EPIC"] > .story-requirement-card, .epic-block[data-epic-key="MIX-EPIC"] > .task-item');
+    await expect(mixedRows).toHaveCount(2);
+    await expect(mixedRows.nth(0)).toHaveClass(/story-requirement-card/);
+    await expect(mixedRows.nth(1)).toHaveClass(/task-item/);
+    await expect(page.locator('.epic-block').first()).toContainText('Story required');
+    await expect(page.locator('.eng-empty-results')).toHaveCount(0);
+    await expect(page.getByText(/1 stories · 2 required/i)).toBeVisible();
+});
+
+test('a ghost-only hierarchy is a non-empty ENG result', async ({ page }) => {
+    await installFixture(page, {
+        mode: 'planning',
+        readinessEpics: [readinessEpic('ZERO-EPIC')],
+    });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+
+    await expect(page.locator('.story-requirement-card')).toHaveCount(1);
+    await expect(page.locator('.eng-empty-results')).toHaveCount(0);
+    await expect(page.getByText(/0 stories · 1 required/i)).toBeVisible();
+});
+
+test('keyboard activation and narrow layout preserve native link behavior and containment', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 760 });
+    await installFixture(page, { mode: 'planning', readinessEpics: [readinessEpic('ZERO-EPIC')] });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+
+    const card = page.locator('.story-requirement-card');
+    await card.evaluate(node => {
+        window.__storyRequirementActivations = 0;
+        node.addEventListener('click', event => {
+            event.preventDefault();
+            window.__storyRequirementActivations += 1;
+        });
+    });
+    await card.focus();
+    await expect(card).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect.poll(() => page.evaluate(() => window.__storyRequirementActivations)).toBe(1);
+
+    const geometry = await card.evaluate(node => {
+        const cardRect = node.getBoundingClientRect();
+        const epicRect = node.closest('.epic-block').getBoundingClientRect();
+        return {
+            cardLeft: cardRect.left,
+            cardRight: cardRect.right,
+            epicLeft: epicRect.left,
+            epicRight: epicRect.right,
+            documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        };
+    });
+    expect(geometry.cardLeft).toBeGreaterThanOrEqual(geometry.epicLeft - 1);
+    expect(geometry.cardRight).toBeLessThanOrEqual(geometry.epicRight + 1);
+    expect(geometry.documentOverflow).toBeLessThanOrEqual(1);
+});
+
+test('Stories Required reuses the existing alert row style and focuses the local ghost', async ({ page }) => {
+    await installFixture(page, {
+        productIssues: [
+            story('MIX-1'),
+            story('KILLED-1', { status: 'Killed', epicKey: 'KILLED-EPIC', epicSummary: 'Killed epic' }),
+        ],
+        productEpics: {
+            'MIX-EPIC': productEpic(),
+            'KILLED-EPIC': productEpic('KILLED-EPIC', 'Killed epic'),
+        },
+        readinessEpics: [readinessEpic('ZERO-EPIC')],
+        showAlertsPanel: true,
+    });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+
+    const searchInput = page.getByRole('textbox', { name: 'Search tickets...' });
+    const section = page.locator('#eng-alert-needs-stories');
+    await searchInput.fill('no matching alert');
+    await expect(section).toHaveCount(0);
+    await searchInput.fill('ZERO-EPIC');
+    await expect(section).toBeVisible();
+
+    const localAction = section.locator('.alert-story-local-link');
+    await expect(localAction).toHaveJSProperty('tagName', 'BUTTON');
+    await expect(section.locator('.alert-action')).toHaveCount(0);
+
+    await localAction.hover();
+    const styles = await localAction.evaluate((node) => {
+        const computed = getComputedStyle(node);
+        const note = getComputedStyle(node.nextElementSibling);
+        return {
+            backgroundColor: computed.backgroundColor,
+            boxShadow: computed.boxShadow,
+            transform: computed.transform,
+            textTransform: computed.textTransform,
+            letterSpacing: computed.letterSpacing,
+            marginRight: computed.marginRight,
+            fontFamily: computed.fontFamily,
+            noteFontFamily: note.fontFamily,
+        };
+    });
+    expect(styles).toMatchObject({
+        backgroundColor: 'rgba(0, 0, 0, 0)',
+        boxShadow: 'none',
+        transform: 'none',
+        textTransform: 'none',
+        letterSpacing: 'normal',
+        marginRight: '0px',
+    });
+    expect(styles.fontFamily).toBe(styles.noteFontFamily);
+
+    const initialUrl = page.url();
+    const ghost = page.locator('.story-requirement-card[data-epic-key="ZERO-EPIC"]');
+    await expect(ghost).toBeVisible();
+    await localAction.click();
+    await expect(ghost).toBeVisible();
+    await expect(ghost).toBeFocused();
+    await expect(ghost).toHaveClass(/story-requirement-highlight/);
+    expect(page.url()).toBe(initialUrl);
+});
+
+test('Product-only filter removes Tech Stories Required alerts', async ({ page }) => {
+    await installFixture(page, {
+        productIssues: [story('PROD-1', { epicKey: 'PROD-EPIC', projectKey: 'PROD' })],
+        productEpics: { 'PROD-EPIC': productEpic('PROD-EPIC', 'Product delivery epic') },
+        techIssues: [story('TECH-1', {
+            epicKey: 'TECH-EPIC',
+            projectKey: 'TECH',
+            teamId: 'team-beta',
+            teamName: 'Beta Team',
+        })],
+        techEpics: {
+            'TECH-EPIC': { ...productEpic('TECH-EPIC', 'Tech delivery epic'), projectKey: 'TECH', projectClass: 'tech' },
+        },
+        readinessEpics: [
+            readinessEpic('PROD-ZERO', { projectKey: 'PROD', projectClass: 'product' }),
+            readinessEpic('TECH-ZERO', { projectKey: 'TECH', projectClass: 'tech' }),
+        ],
+    });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+
+    const section = page.locator('#eng-alert-needs-stories');
+    await expect(section.locator('.alert-story')).toHaveCount(2);
+    await page.locator('.fb-trigger').click();
+    await page.locator('.popover .pop-group[data-facet="projects"] .pop-opt[data-option="tech"]').click();
+
+    await expect(section.locator('.alert-story')).toHaveCount(1);
+    await expect(section).toContainText('PROD-ZERO');
+    await expect(section).not.toContainText('TECH-ZERO');
+});
+
+const alertScopeNoticeText = "This Department is too large for Epic alerts: more than 2,000 open Epics match its Teams and labels in Product or Tech. Epic alerts are hidden; Story alerts are still shown. Narrow the Department's Teams or labels.";
+const secondGroup = {
+    id: 'grp-second',
+    name: 'Second',
+    teamIds: ['team-alpha', 'team-beta'],
+    teamLabels: { 'team-alpha': 'Alpha Team', 'team-beta': 'Beta Team' },
+};
+
+function alertScopeNotice(page) {
+    return page.locator('.story-readiness-notice[role="status"]', { hasText: 'This Department is too large for Epic alerts' });
+}
+
+async function switchDepartment(page, name) {
+    await page.locator('.view-selector .group-dropdown-toggle').click();
+    await page.locator('.view-selector .group-dropdown-option', { hasText: name }).click();
+}
+
+test('oversized alert scope shows one notice, hides stale in-scope Epic alerts, and keeps separate sources', async ({ page }) => {
+    const staleEpic = planningEpic('STALE-EPIC', [`${sprintName}_candidate`]);
+    const calls = await installFixture(page, {
+        sprintState: 'future',
+        productIssues: [story('MIX-1', { status: 'Postponed', sprintState: 'future' })],
+        productEpics: { 'STALE-EPIC': staleEpic },
+        backlogEpics: [planningEpic('REMOTE-BACKLOG', [`${sprintName}_candidate_extra`, 'Beta Team'])],
+        readinessEpics: [readinessEpic('READY-EPIC')],
+        extraGroups: [secondGroup],
+        alertScopeTooLargeGroupIds: ['grp-default'],
+    });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/tasks-with-team-name' && call.params.purpose === 'alerts').length).toBe(2);
+
+    await expect(alertScopeNotice(page)).toHaveCount(1);
+    await expect(alertScopeNotice(page)).toHaveText(alertScopeNoticeText);
+    await expect(page.locator('.story-readiness-notice')).toHaveCount(1);
+    await expect(alertScopeNotice(page).locator('button, a')).toHaveCount(0);
+    for (const section of ['eng-alert-backlog', 'eng-alert-missing-team', 'eng-alert-missing-labels', 'eng-alert-needs-stories', 'eng-alert-empty', 'eng-alert-followup']) {
+        await expect(page.locator(`#${section} .alert-story`).filter({ hasText: 'STALE-EPIC' })).toHaveCount(0);
+    }
+    await expect(page.locator('#eng-alert-backlog .alert-story').filter({ hasText: 'REMOTE-BACKLOG' })).toHaveCount(1);
+    await expect(page.locator('#eng-alert-needs-stories .alert-story').filter({ hasText: 'READY-EPIC' })).toHaveCount(1);
+    await expect(page.locator('#eng-alert-followup .alert-story').filter({ hasText: 'MIX-1' })).toHaveCount(1);
+    // Capture from the top of the page so the sticky header does not cover the notice.
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.screenshot({ path: 'test-results/alert-scope-too-large-notice.png', animations: 'disabled' });
+
+    await switchDepartment(page, 'Second');
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/tasks-with-team-name' && call.params.purpose === 'alerts' && call.params.groupId === 'grp-second').length).toBeGreaterThanOrEqual(2);
+    await page.waitForLoadState('networkidle');
+    await expect(alertScopeNotice(page)).toHaveCount(0);
+});
+
+test('delayed oversized alert response from the previous Department never shows in the new one', async ({ page }) => {
+    const alertGate = deferred();
+    const calls = await installFixture(page, {
+        sprintState: 'future',
+        readinessEpics: [readinessEpic('READY-EPIC')],
+        extraGroups: [secondGroup],
+        alertScopeTooLargeGroupIds: ['grp-default'],
+        alertGate,
+        alertGateGroupId: 'grp-default',
+    });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/tasks-with-team-name' && call.params.purpose === 'alerts' && call.params.groupId === 'grp-default').length).toBe(2);
+    await switchDepartment(page, 'Second');
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/tasks-with-team-name' && call.params.purpose === 'alerts' && call.params.groupId === 'grp-second').length).toBeGreaterThanOrEqual(2);
+    alertGate.resolve();
+    await page.waitForLoadState('networkidle');
+    await expect(page.locator('#eng-alert-needs-stories .alert-story').filter({ hasText: 'READY-EPIC' })).toHaveCount(1);
+    await expect(alertScopeNotice(page)).toHaveCount(0);
+});

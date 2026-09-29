@@ -1,4 +1,5 @@
 import { ONBOARDING_MODULE_IDS, allOnboardingModulesComplete, normalizeCompletedOnboardingModules } from '../onboarding/onboardingModules.js';
+import { GROUPS_CONFIG_VERSION } from './groupConfigUtils.js';
 
 const normalizeId = (id) => String(id || '').trim();
 
@@ -91,7 +92,7 @@ export const buildFirstRunGroupPreferencesPayload = (selectedGroupId) => {
 };
 
 export const buildSharedGroupsPayload = (groupDraft) => ({
-    version: groupDraft?.version || 1,
+    version: GROUPS_CONFIG_VERSION,
     baseRevision: groupDraft?.configRevision,
     groups: groupDraft?.groups || [],
     defaultGroupId: groupDraft?.defaultGroupId || '',

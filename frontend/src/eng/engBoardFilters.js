@@ -70,7 +70,7 @@ function hasNoProjectTrack(epic) {
 export function buildEngBoardFacetModel({ epicGroups = [], isTechTask = () => false } = {}) {
     const scopeTotal = epicGroups.length;
     const priorityCounts = {};
-    const projectCounts = { tech: 0, product: 0 };
+    const projectCounts = { tech: 0, product: 0, other: 0 };
     const trackCounts = { committed: 0, flexible: 0 };
     let untrackedCount = 0;
     let unassigned = 0;
@@ -79,9 +79,10 @@ export function buildEngBoardFacetModel({ epicGroups = [], isTechTask = () => fa
         const label = priorityAxisLabel(group.epic);
         if (label) priorityCounts[label] = (priorityCounts[label] || 0) + 1;
 
-        const { isTech, isProduct } = classifyEpicProjects(group, isTechTask);
+        const { isTech, isProduct, isOther } = classifyEpicProjects(group, isTechTask);
         if (isTech) projectCounts.tech += 1;
         if (isProduct) projectCounts.product += 1;
+        if (isOther) projectCounts.other += 1;
 
         if (!(group.epic && group.epic.assignee)) unassigned += 1;
         const id = normalizeTrackId(group.epic);
@@ -118,7 +119,11 @@ export function buildEngBoardFacetModel({ epicGroups = [], isTechTask = () => fa
                 label: 'Projects',
                 kind: 'multi',
                 neutralTotal: scopeTotal,
-                options: [{ id: 'tech', label: 'Tech' }, { id: 'product', label: 'Product' }],
+                options: [
+                    { id: 'tech', label: 'Tech' },
+                    { id: 'product', label: 'Product' },
+                    { id: 'other', label: 'Other' },
+                ],
             },
             {
                 id: 'assignee',
@@ -176,10 +181,11 @@ export function resolveEngBoardFilters({ model, selection = {} } = {}) {
         // `isTechTask` comes from `model` — see the comment there — not from this call site.
         admitsEpic: (epicGroup) => {
             if (!admits(priorityView, priorityAxisLabel(epicGroup.epic))) return false;
-            const { isTech, isProduct } = classifyEpicProjects(epicGroup, isTechTask);
+            const { isTech, isProduct, isOther } = classifyEpicProjects(epicGroup, isTechTask);
             const admitsProjects = projectsView.isNeutral
                 || (isTech && admits(projectsView, 'tech'))
-                || (isProduct && admits(projectsView, 'product'));
+                || (isProduct && admits(projectsView, 'product'))
+                || (isOther && admits(projectsView, 'other'));
             if (!admitsProjects) return false;
             const epic = epicGroup.epic;
             if (!admits(assigneeView, (epic && epic.assignee) ? ASSIGNEE_ANYONE : ASSIGNEE_UNASSIGNED)) return false;

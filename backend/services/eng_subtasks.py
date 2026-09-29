@@ -89,7 +89,9 @@ def shape_subtask_issue(issue):
         "summary": fields.get("summary") or "",
         "status": {"name": status.get("name") or ""} if status else None,
         "progressPercent": progress_percent,
-        "assignee": {"displayName": assignee.get("displayName")} if assignee else None,
+        "assignee": {
+            "accountId": assignee.get("accountId"), "displayName": assignee.get("displayName")
+        } if assignee else None,
         "updated": fields.get("updated"),
     }
 

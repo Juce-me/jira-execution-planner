@@ -14,7 +14,11 @@ from backend.db import models
 
 GROUPS_SOURCE_DB = 'workspace_db'
 GROUPS_SOURCE_JSON = 'file'
-GROUPS_PAYLOAD_VERSION = 1
+GROUPS_PAYLOAD_VERSION = 2
+# Personal group preference rows (UserGroupPreference) version independently of
+# the shared group catalog payload; multi-alias Team labels are a shared-catalog
+# shape change and must never bump preference rows.
+GROUP_PREFERENCES_PAYLOAD_VERSION = 1
 ONBOARDING_MODULE_IDS = (
     'catch-up',
     'configuration',
@@ -209,6 +213,57 @@ def load_shared_groups(context, fallback_loader, validate_groups_config_fn, data
         except IntegrityError as exc:
             raise GroupConfigConflict(current_shared_groups_config(session, context, validate_groups_config_fn)) from exc
         return _row_to_groups_config(row, validate_groups_config_fn)
+
+
+def load_effective_groups(
+        context, *, fallback_loader, validate_groups_config_fn,
+        dashboard_loader=None, groups_file_loader=None, environment_loader=None,
+        default_builder=None, database_url=None):
+    """Resolve the read-only effective group catalog for the current auth boundary.
+
+    DB/OAuth keeps the workspace-row/legacy-file migration contract. Local Basic
+    mode preserves the public groups endpoint precedence and validation behavior.
+    """
+    if context is not None and is_db_auth_context(context):
+        return load_shared_groups(
+            context,
+            fallback_loader=fallback_loader,
+            validate_groups_config_fn=validate_groups_config_fn,
+            database_url=database_url,
+        )
+
+    warnings = []
+    source = 'auto'
+    dashboard = dashboard_loader() if dashboard_loader is not None else None
+    if isinstance(dashboard, dict) and isinstance(dashboard.get('teamGroups'), dict):
+        config = dashboard['teamGroups']
+        source = 'file'
+    else:
+        config = groups_file_loader() if groups_file_loader is not None else None
+        if config:
+            source = 'file'
+        else:
+            config = environment_loader() if environment_loader is not None else None
+            if config:
+                source = 'env'
+
+    if not config:
+        config, default_warnings = default_builder()
+        warnings.extend(default_warnings or [])
+    else:
+        config, errors, validation_warnings = validate_groups_config_fn(config, allow_empty=True)
+        warnings.extend(validation_warnings or [])
+        if errors:
+            warnings.append('Invalid groups config; falling back to auto Default group.')
+            warnings.extend(errors)
+            config, default_warnings = default_builder()
+            warnings.extend(default_warnings or [])
+
+    config = dict(config or {})
+    if warnings:
+        config['warnings'] = warnings
+    config['source'] = source
+    return config
 
 
 def require_existing_shared_groups_snapshot(context, *, database_url=None, validate_groups_config_fn=None):
@@ -453,7 +508,7 @@ def _normalized_saved_preferences(payload, groups_config, completed_onboarding_m
 
 
 def _apply_group_preferences(row, preferences):
-    row.payload_version = GROUPS_PAYLOAD_VERSION
+    row.payload_version = GROUP_PREFERENCES_PAYLOAD_VERSION
     row.visible_group_ids = preferences['visibleGroupIds']
     row.active_group_id = preferences['activeGroupId']
     row.customized = True
@@ -483,7 +538,7 @@ def save_group_preferences(context, payload, groups_config, database_url=None):
             row = models.UserGroupPreference(
                 workspace_id=context.workspace_id,
                 user_id=context.user_id,
-                payload_version=GROUPS_PAYLOAD_VERSION,
+                payload_version=GROUP_PREFERENCES_PAYLOAD_VERSION,
                 visible_group_ids=preferences['visibleGroupIds'],
                 active_group_id=preferences['activeGroupId'],
                 customized=True,

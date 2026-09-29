@@ -132,6 +132,7 @@ gtm_web:
     - { name: "DLV - error_area", data_layer_variable_name: "error_area", version: 2, purpose: "approved event parameter" }
     - { name: "DLV - error_code", data_layer_variable_name: "error_code", version: 2, purpose: "approved event parameter" }
     - { name: "DLV - feature_name", data_layer_variable_name: "feature_name", version: 2, purpose: "approved event parameter" }
+    - { name: "DLV - field_name", data_layer_variable_name: "field_name", version: 2, purpose: "approved issue-field enum; intentionally unregistered without a named report" }
     - { name: "DLV - filter_type", data_layer_variable_name: "filter_type", version: 2, purpose: "approved event parameter" }
     - { name: "DLV - from_mode", data_layer_variable_name: "from_mode", version: 2, purpose: "approved event parameter" }
     - { name: "DLV - from_view", data_layer_variable_name: "from_view", version: 2, purpose: "approved event parameter" }
@@ -158,6 +159,7 @@ gtm_web:
     - { name: "DLV - project_scope", data_layer_variable_name: "project_scope", version: 2, purpose: "approved event parameter" }
     - { name: "DLV - query_length_bucket", data_layer_variable_name: "query_length_bucket", version: 2, purpose: "approved event parameter" }
     - { name: "DLV - range_size_bucket", data_layer_variable_name: "range_size_bucket", version: 2, purpose: "approved event parameter" }
+    - { name: "DLV - reason", data_layer_variable_name: "reason", version: 2, purpose: "approved Board small-screen reason enum; intentionally unregistered without a named report" }
     - { name: "DLV - recoverable_state", data_layer_variable_name: "recoverable_state", version: 2, purpose: "approved event parameter" }
     - { name: "DLV - result", data_layer_variable_name: "result", version: 2, purpose: "approved event parameter" }
     - { name: "DLV - result_count_bucket", data_layer_variable_name: "result_count_bucket", version: 2, purpose: "approved event parameter" }
@@ -219,6 +221,8 @@ gtm_web:
       trigger: "CE - userevent"
       params:
         feature_name: "{{DLV - feature_name}}"
+        field_name: "{{DLV - field_name}}"
+        reason: "{{DLV - reason}}"
         source_surface: "{{DLV - source_surface}}"
         result: "{{DLV - result}}"
         workflow_action: "{{DLV - workflow_action}}"

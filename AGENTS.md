@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Template version: 2026-08-29
+Template version: 2026-09-08
 
 Drop-in operating instructions for coding agents. Read this file before every task.
 
@@ -38,6 +38,16 @@ These rules override later guidance in this file:
 - Before editing a target file, read the instruction chain from the project root through its directory, including nested `AGENTS.md` files the runtime did not load automatically. Then read the target file and relevant callers or consumers.
 - Check the worktree and preserve unrelated changes. If required work overlaps uncertain user edits, stop and ask.
 - When approaches differ materially, explain the tradeoff and recommend one. Do not add ceremony for trivial, reversible edits.
+
+### Project ontology and navigation
+
+- Each project must maintain its own ontology separately from `AGENTS.md`: a compact map of its concepts, implementation locations, and relationships. Reuse an existing equivalent in the project's documentation layout; otherwise create `docs/ontology.md`. Inspect the destination first and preserve existing content. Build it from the actual repository on first use, starting with verified project entry points and the area being worked on; state coverage and unknowns rather than implying completeness. This is maintained project documentation, not a status-prefixed work artifact.
+- For each mapped concept, record its canonical name, brief meaning, verified aliases, implementation entry points, relevant contracts and tests, and relationships such as `depends on`, `produces`, or `consumes`. Use repository-relative links and symbol names as evidence; record ownership only when explicitly documented. Keep entries concise and link to existing documentation instead of duplicating it.
+- Before editing, consult the ontology's relevant entries, then verify them against current sources. If an entry is missing or stale, inspect the repository and correct it. Update affected entries and links when a change adds, renames, moves, or removes a mapped concept or relationship; record the verification date for entries reviewed and check that their paths and symbols resolve before finishing.
+- Map the task's domain terms to the project's canonical names using existing documentation, symbols, schemas, and tests. Search verified aliases when terminology differs; do not invent equivalences or infer responsibility from filenames alone.
+- Locate the relevant entry point, then trace the callers, dependencies, data flow, and tests needed to understand the requested change. Use targeted searches and reads; broaden the search when evidence is missing or contradicts the initial scope.
+- Verify module responsibilities, dependency direction, and ownership from implementation, contracts, and explicit repository records such as `CODEOWNERS`. Treat undocumented relationships or ownership as unknown rather than guessing.
+- Use the ontology, existing indexes, and architecture docs to locate sources, then verify relevant claims against current implementation and tests. The ontology is a navigation aid; it does not override instructions or contracts. Report material conflicts and resolve them before relying on the disputed claim.
 
 ---
 
@@ -89,6 +99,7 @@ These rules override later guidance in this file:
 - Apply only a root-file text update automatically, preserving sections 10 and 11. Get approval before moving files, replacing auxiliary instructions, changing symlinks, editing preserved sections, or resolving collisions. If either version is missing or comparison is uncertain, show the proposed change instead of applying it.
 - Use subagents only when the runtime provides them and the task divides into independent, bounded work. Keep trivial and documentation-only corrections inline, and close completed agents when the runtime supports it.
 - After two failed attempts on the same issue, stop, summarize the evidence, and ask for direction.
+- At session start, check whether documents marked GATE or gated (work blocked by an unmet prerequisite) are due for weekly review. Review documents with no recorded review date immediately; otherwise review on or after the recorded next review date, at the first active session. Gather current evidence about each gate, assess whether it can now be resolved, and update the document with findings, remaining blockers, the review date, and the next review date. Clear a gate only when evidence confirms its prerequisites are satisfied; request any required decision or authorization before proceeding. Set the next review to Monday of the following calendar week in the project's local timezone, not seven days after the review: a Tuesday review is next due the following Monday, and a Monday review is next due one week later.
 
 ---
 
@@ -177,7 +188,7 @@ Prefer single-file or single-test runs during iteration. Run the full suite befo
 - Service-account API tokens for `home_townsquare_basic` and `jira_basic` belong only in `service_integration_tokens`; never store them in normal-user `auth_tokens`.
 - Treat `team-groups.json`, `team-catalog.json`, and `sprints_cache.json` as generated local caches.
 - Never commit real Jira fixture data. Use synthetic or sanitized examples only, and never copy identifiable config-derived values into committed tests.
-- Jira API pagination uses `nextPageToken` / `isLast`, not `startAt` / `total`. Verify response shapes before coding against them.
+- Jira enhanced issue search uses `nextPageToken` / `isLast`; project search uses `startAt` / `isLast`. Verify the specific endpoint's response shape before implementing pagination.
 - Any new API plan in `docs/plans/` must use the same Jira pagination contract.
 - EPM Project rollups are label-driven; each Project has one exact Jira label. No wildcard/fallback. Metadata-only Home projects still render the Home card plus `Settings -> EPM` CTA.
 - `epm.labelPrefix` in `dashboard-config.json` is a Home tag mask such as `"rnd_project_*"` and also filters manual Jira-label autocomplete. Resolve each Home Project's exact matching tag as the Jira label; rollup JQL uses that full label, never the mask.
@@ -283,9 +294,13 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Chart legends must use native button controls, not span role=button handlers.
 - Chart hover readouts inside transformed or scrollable panels must be pointer-positioned with width/height edge bounds and covered by Playwright edge assertions before commit.
 - Chart hover readouts should size to content with a narrow max width; do not reserve a wide fixed box for short labels.
+- Apply and test ENG epic-header layout rules on both direct task-list epics and initiative-grouped epics nested under `.initiative-body`.
 - Excluded Capacity and Mono vs Cross stats must use cached progressive stats-source requests and must not load or render ENG alerts, filters, or task lists for those tabs.
 - In Mono vs Cross stats, Team Cross Share must render a per-sprint per-team graph of cross SP divided by total team story points; do not replace it with aggregate bars or text chips.
 - In dashboard filters, reuse existing dropdown classes such as `team-dropdown-*` or `sprint-dropdown-*`; do not create bespoke hover, caret, radius, or action styles for one-off dropdowns.
+- Keep ENG issue-card structure and styling shared across Catch Up, Planning, and Statistics; Planning may only append its selection checkbox.
+- Keep the ENG epic title, key, status, SP, and assignee on one desktop row with aligned visible text baselines; verify rendered text in screenshots, not only equal element heights, and never substitute stacked rows or mobile work for this requirement.
+- For corrective UI plans, validate a concrete visual specimen yourself; never turn natural glyph variation or fully expanded worst-case strings into an unpassable gate delegated to the user.
 - For EPM project board visual changes, preserve clear per-project boundaries and verify collapsed and expanded states with screenshots before committing.
 - EPM project board status pills must reuse the existing status-pill sizing, casing, and success green; do not create one-off completed badge styling.
 - In ENG Group Board epic cards, keep summaries single-line and ellipsized within a fixed card layout; never wrap long titles or let them change card height.
@@ -316,7 +331,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Filter-bar/layout "visual verification" = a screenshot AND element-level geometry assertions on the actual text-bearing elements (label `getBoundingClientRect().right` within its group and clear of the next control; `scrollWidth`/`clientWidth` clip checks). Never rely only on sibling container bounding boxes — they cannot see overflowing `nowrap` text and give false green. Look at the screenshot, don't trust the assertion alone (MRT020).
 - Use one categorical color resolver (e.g. `resolveProjectTrackColor`) as the single source of an entity's color across every chart/section; never let an entity (e.g. `No track`) fall through to a hash-assigned new color in one view while it is fixed in another.
 - For Jira status changes, make the displayed status pill/text the click target; do not add separate Change Status buttons unless explicitly requested.
-- At session start, before the first commit, check `git branch --show-current`; if the branch is auto-generated or agent-branded (e.g. `claude/*`), rename it to `feature/`|`bugfix/`|`improvement/`|`docs/` + kebab-case summary (see docs/postmortem/MRT022-agent-branded-branch-names.md).
+- At session start, before the first commit, check `git branch --show-current`; if the branch is auto-generated or agent-branded (e.g. `claude/*`), rename it to `feature/`|`bugfix/`|`improvement/`|`docs/` + kebab-case summary (see docs/postmortem/MRT022-agent-branded-branch-names.md). For feature delivery, use `feature/<issue>-<summary>` even when the initial commit contains only design and implementation plans.
 - Run `npm ci` in a fresh git worktree before `npm run build`; a build that resolves node_modules from an ancestor checkout embeds wrong relative paths in `dashboard.js.map` and fails the CI dist check.
 - `group.teamLabels` values are Jira epic labels for Future Planning epic matching and JQL `labels =` clauses, never team display names; resolve team names through the team catalog lookup (`teamNameLookup`/`resolveTeamName`) or task-derived `getTeamInfo(task).name`, and note the catalog only loads when the settings modal opens.
 - In ENG filter popovers, color the Status label itself instead of adding a separate dot; Project Track must always show Committed and Flexible even at zero, show the full admitted facet total independently of their option counts, and let both unchecked mean only untracked epics with `No Project Track` as the active filter state.
@@ -335,15 +350,34 @@ When the user corrects your approach, append a one-line rule here before ending 
 - In ENG Board, Project Track/Delivery track is an Epic property; never derive it from child issues or conflate it with the child-derived Product/Tech Projects facet.
 - In ENG, Product/Tech is a Jira-project classification inherited by issues through their Jira project; never derive it from issue type.
 - In ENG Board data loading, separate Product and Tech Jira requests are acceptable; optimize completeness, pagination, and progressive rendering before combining them.
-- ENG Board data must come from a Board-owned Epic-first pipeline with complete paginated child hydration; when Components are absent, index bounded Epics from configured Jira projects before applying selected sprint plus all saved Department Teams, and never use Catch Up data as the Board source of truth.
+- ENG Board selected-sprint mode reuses the already-loaded Catch Up snapshot and existing top Sprint selector; only its Board-active All work option uses the Board-owned Epic-first pipeline with complete paginated child hydration. Never add a Board-local sprint selector, button, or toggle.
 - In ENG Board progressive loading, render columns and Epic cards first, update visibly provisional Story counts and status distribution as pages arrive, and unlock child-derived filters and export only after every child page completes.
 - When reviewing a dirty implementation plan against origin, treat origin's recorded findings as baseline requirements and report whether the local changes close them; do not report those baseline findings as newly introduced regressions.
 - For issue #137 live diagnostics, gather contextual data through the Python existing-endpoint collector; do not require users to create a synthetic Team-fallback-only Department to make the browser campaign runnable.
 - For issue #137 contextual collector exercises, use the user-specified auth-mode environment profile; do not substitute a browser OAuth session unless the user requests it.
 - When a request combines an implementation-plan deliverable with evidence-gated execution, resolve whether the gate controls plan authorship or only execution before omitting the plan or asking to override the gate.
+- For issue #137 ENG Board All work, use one request-local load with no Board control DB or live server reprioritization; treat cancellation as bounded best-effort and gate rollout on completeness, resource ceilings, and measured speed rather than hard process termination.
+- For strict ENG Board startup, keep capability unresolved until config bootstrap, pass scalar read budgets into the shared Jira retry helper, and expose Component and All work only as Board-active options in the existing top Sprint selector; verify Catch Up → Board performs no additional selected-sprint data request.
+- ENG Board All work must union component-matched Epics with parents of department-team work across sprints, deduplicate them, and use each parent Epic's own status; team-only departments must remain selectable.
+- When a requirement can mean either extending an existing control/data owner or introducing independent UI, state, or fetching, stop before implementation and ask the user to confirm the boundary; never choose the new architecture implicitly.
 
 - Enable in-app load measurement by default when database storage is configured, preserve an explicit opt-out, and keep empty performance views free of unknown metrics and diagnostic walls of text.
+- Evaluate measurement and scope gates from existing app DB rows before requesting new collection; apply unresolved runtime and release gates only to their dependent tasks, preserving independent development work.
 - Never bypass the section 10 publication transaction gate; validate history, scope, remote head, rendered PR body, and CI as one unit before reporting success (MRT025).
 - Commit a postmortem for active work on the related task branch; do not create a separate postmortem/docs branch unless the operator explicitly requests one.
+- In ENG Story displays, render a null Jira Story Points value as `0 SP` while preserving null internally until the user saves a number.
+- In ENG Catch Up and Planning, do not add Delivery Owner to Epic metadata; Story Points editing must reuse the inline SP slot as an input with no button or popup, preserve inherited typography, and keep a 23px minimum input width.
+- Missing-Story-Points alert links must reveal and highlight the Story on the ENG dashboard and focus its inline Story Points input in edit mode instead of navigating directly to Jira.
+- Preserve sprint startup as cache-first: persist the saved sprint label for display, reuse a valid server catalog under its storage-mode ownership contract, and keep all ENG Jira work plus the Sprint selector blocked until a non-empty cached or live Jira catalog validates the selection; select the current sprint when no saved selection is valid.
+- For Jira Board Sprint pagination, accept a positive reported `maxResults` even when Jira caps it below the request; advance by received rows and verify authenticated cold startup before declaring a catalog migration ready.
+- Size every paged Jira GET by its continuation request, not its first one: `nextPageToken` scales with the JQL (measured 1.35x-1.5x of its length), so use `paged_search_bytes`, never a flat byte reserve. Batch ENG Board Component discovery under that budget, never concatenate the full Department Component catalog into one JQL, and never lengthen a query to filter rows the code already discards (MRT031).
+- When an authenticated localhost dashboard is already open, reproduce reported UI regressions and verify the fix in that browser before reporting completion.
+- Treat workspace as the shared Jira site/domain identity within the configured environment; persist Sprint catalogs, per-Sprint Team membership, and Team name directories by workspace, never by refreshing user, OAuth connection, or token version.
+- When replacing an ENG alert data source, preserve the existing alert producer as a fallback until the replacement succeeds for the same scope; never remove a working alert solely because a broader endpoint was added.
+- In ENG alert panels, new categories must reuse the existing `.alert-story` title/note/dismiss composition and visual styles; native button semantics must neutralize the global button surface, and no secondary row action may be added unless explicitly requested.
+- ENG alert navigation that promises to reveal a filtered target must clear to a truly neutral facet state, not the normal default-hidden state, and must be tested with that hidden option present in scope.
+- Team-catalog readers must unwrap the persisted `{catalog, meta}` envelope and normalize the inner `catalog`; never pass the envelope to a flat Team-map normalizer or display a Team id as its name.
+- ENG epic-header layout rules must preserve the complete shared `.task-status` presentation—geometry, typography, border, and colors; never add header-specific status-pill restyling.
+- When the user names an existing component as the visual reference, change the compared elements to match that reference; do not restyle the reference component unless explicitly requested.
 - For Project Track Left capacity, extend existing By team track bars with a thin aligned status strip under each track segment, reusing Board progress colors; use selected-sprint Story SP, exclude Killed, count Done and Incomplete as spent, and show exact SP left per track.
 - Ground Stats UI proposals in the existing header Sprint/Teams controls, chart interactions, source, and repository screenshots; do not introduce a duplicate team picker or access Firefox for this work.

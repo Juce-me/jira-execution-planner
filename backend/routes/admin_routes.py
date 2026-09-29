@@ -28,7 +28,9 @@ def _require_admin():
         context = current_request_auth_context()
     except AuthError as error:
         return auth_error_response(error, 401)
-    if SETTINGS_ADMIN_ONLY and not context.is_admin:
+    # The user directory and admin grants stay tool-admin only even when shared
+    # settings are collaborative (SETTINGS_ADMIN_ONLY=false).
+    if not context.is_admin:
         payload, status = admin_required_payload()
         return jsonify(payload), status
     g.auth_context = context

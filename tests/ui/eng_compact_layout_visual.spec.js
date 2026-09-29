@@ -299,7 +299,13 @@ async function openEngCatchUp(page, viewport, options = {}) {
         await expect(page.locator('.planning-panel.open')).toBeVisible();
     } else {
         expect(expectedSurface).toBe('catch-up');
-        await expect(page.locator('.alerts-panel-toolbar')).toBeVisible();
+        // Alerts are filtered to the visible Story set since #192 (adccdae7); fixtures without an
+        // alertable visible Story render no alerts toolbar.
+        if (options.expectNoAlerts) {
+            await expect(page.locator('.alerts-panel-toolbar')).toHaveCount(0);
+        } else {
+            await expect(page.locator('.alerts-panel-toolbar')).toBeVisible();
+        }
     }
     await expect(page.locator('.filterbar')).toBeVisible();
     if (!options.expectEmptyList) {
@@ -1008,6 +1014,7 @@ test('a status with no story in scope is absent from the facet', async ({ page }
     await openEngCatchUp(page, { width: 1440, height: 900 }, {
         productTasks: [productTasks[0]],
         techTasks: [],
+        expectNoAlerts: true,
     });
     await openFilters(page);
     const statuses = await facetGroup(page, 'status').locator('.pop-opt').evaluateAll(
@@ -1186,6 +1193,7 @@ test('killed work is hidden by default and ticking Killed brings it back', async
         sprintState: 'closed',
         productTasks: closedSprintProductTasks,
         techTasks: [],
+        expectNoAlerts: true,
     });
 
     const taskList = page.locator('.task-list:not(.epm-issue-board)');
@@ -1207,6 +1215,7 @@ test('a legacy killed statusFilter still shows every story after upgrading', asy
         productTasks: closedSprintProductTasks,
         techTasks: [],
         prefs: { statusFilter: 'killed', showKilled: false },
+        expectNoAlerts: true,
     });
 
     const taskList = page.locator('.task-list:not(.epm-issue-board)');

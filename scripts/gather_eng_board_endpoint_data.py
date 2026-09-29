@@ -117,7 +117,11 @@ def _strings(values):
 def _team_labels(group, team_ids):
     raw = group.get('teamLabels') or {}
     if isinstance(raw, dict):
-        return _strings(raw.get(team_id) for team_id in team_ids)
+        labels = []
+        for team_id in team_ids:
+            value = raw.get(team_id)
+            labels.extend(_strings(value if isinstance(value, list) else [value] if value is not None else []))
+        return list(dict.fromkeys(labels))
     return _strings(raw)
 
 

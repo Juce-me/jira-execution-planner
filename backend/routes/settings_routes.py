@@ -3,16 +3,23 @@
 from flask import Blueprint
 from werkzeug.exceptions import BadRequest
 
+from backend.auth.admin_bootstrap import workspace_tool_admin_display_names
 from backend.auth.db_context import is_db_auth_context
 from backend.config.db_repository import ViewConfigNotFound
 from backend.config.repository import ConfigStorageError, config_storage_db_enabled, db_repository
 from backend.config.shared_config import normalize_shared_admin_section
 from backend.db.engine import DatabaseConfigurationError
-from backend.services import shared_group_config
+from backend.services import eng_board, shared_group_config
 from backend.services import shared_capacity_config
 from backend.services.capacity import CapacityUpstreamUnauthorized
 from backend.services.user_view_config import UserViewConfigStorageError
-from backend.services.workspace_dashboard_config import WorkspaceConfigConflict, TeamCatalogConflict
+from backend.services.workspace_dashboard_config import (
+    TeamCatalogConflict,
+    WorkspaceConfigConflict,
+    WorkspaceConfigFenceUnavailable,
+)
+from backend.services.catalog_refresh_runtime import CatalogCompletionError
+from backend.services.workspace_catalog_cache import load_sprint_catalog
 from . import bind_server_globals
 
 
@@ -66,6 +73,13 @@ def _workspace_conflict_response(error):
             'configRevision': error.current.config_revision,
         },
     }), 409
+
+
+def _config_fence_unavailable_response():
+    return jsonify({
+        'error': 'config_storage_unavailable',
+        'message': 'Configuration storage is temporarily unavailable.',
+    }), 503
 
 
 def _onboarding_storage_error_response(_error):
@@ -347,17 +361,234 @@ def get_boards():
         return error_response, 500
 
 
+def _catalog_timestamp(value):
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc).isoformat().replace('+00:00', 'Z')
+
+
+def _catalog_cache_envelope(context, config, snapshot, *, refresh_started=False):
+    now = datetime.now(timezone.utc)
+    deadline = snapshot.attempt_deadline_at
+    if deadline is not None and deadline.tzinfo is None:
+        deadline = deadline.replace(tzinfo=timezone.utc)
+    retry_at = snapshot.retry_at
+    failure_code = snapshot.failure_code
+    refresh_status = snapshot.refresh_status
+    if refresh_status == 'pending' and deadline is not None and deadline <= now:
+        refresh_status = 'failed'
+        failure_code = 'refresh_budget_exhausted'
+        retry_at = deadline + timedelta(seconds=300)
+    next_refresh = snapshot.next_refresh_at
+    if next_refresh is not None and next_refresh.tzinfo is None:
+        next_refresh = next_refresh.replace(tzinfo=timezone.utc)
+    if refresh_status == 'failed':
+        state = 'failed'
+    elif refresh_status == 'pending' and deadline is not None and deadline > now:
+        state = 'refreshing'
+    elif snapshot.payload is None:
+        state = 'missing'
+    elif next_refresh is None or next_refresh <= now:
+        state = 'stale'
+    else:
+        state = 'fresh'
+    return {
+        'backend': 'postgresql',
+        'identity': config.sprint_identity,
+        'browserContextId': catalog_browser_context_id(context),
+        'boardId': config.board_id,
+        'scopeDigest': None,
+        'catalogVersion': snapshot.catalog_version,
+        'validatedAt': _catalog_timestamp(snapshot.validated_at),
+        'state': state,
+        'refreshStarted': bool(refresh_started),
+        'refreshFailed': refresh_status == 'failed',
+        'refreshAttemptId': snapshot.refresh_attempt_id,
+        'refreshStatus': refresh_status,
+        'refreshDeadlineAt': _catalog_timestamp(snapshot.attempt_deadline_at),
+        'failureCode': failure_code,
+        'retryAt': _catalog_timestamp(retry_at),
+    }
+
+
+def _catalog_response(payload, status, started_at, *, retry_after=False):
+    response = jsonify(payload)
+    response.status_code = status
+    response.headers['Cache-Control'] = 'no-store'
+    response.headers['Server-Timing'] = (
+        f'catalog_db;dur={round((time.perf_counter() - started_at) * 1000, 1)}'
+    )
+    if retry_after:
+        response.headers['Retry-After'] = '1'
+    return response
+
+
+def _db_sprint_response(context, config, snapshot, *, refresh_started, started_at):
+    cache = _catalog_cache_envelope(
+        context, config, snapshot, refresh_started=refresh_started,
+    )
+    if snapshot.payload is not None:
+        return _catalog_response(
+            {'sprints': snapshot.payload, 'cache': cache}, 200, started_at,
+        )
+    if cache['refreshStatus'] == 'failed':
+        return _catalog_response(
+            {'error': 'sprint_catalog_unavailable', 'cache': cache}, 502, started_at,
+        )
+    return _catalog_response(
+        {'error': 'catalog_refresh_pending', 'cache': cache}, 503, started_at,
+        retry_after=bool(cache['refreshAttemptId']),
+    )
+
+
+def _catalog_auth_required_response(started_at):
+    payload, status = oauth_auth_required_payload()
+    return _catalog_response(payload, status, started_at)
+
+
+def _get_db_sprints(auth_context, *, force_refresh, completion_attempt_id,
+                    expected_identity, started_at):
+    with session_scope() as catalog_session:
+        config = resolve_request_effective_catalog_config(catalog_session, auth_context)
+    if not config.board_id or not config.sprint_identity:
+        return _catalog_response({'error': 'sprint_board_required'}, 409, started_at)
+
+    if completion_attempt_id is not None:
+        try:
+            snapshot = read_catalog_completion(
+                auth_context, kind='sprints', attempt_id=completion_attempt_id,
+                expected_identity=expected_identity,
+                resolve_config=resolve_request_effective_catalog_config,
+            )
+        except AuthError:
+            return _catalog_auth_required_response(started_at)
+        except CatalogCompletionError as error:
+            if error.code == 'invalid_catalog_completion':
+                return _catalog_response({'error': error.code}, 400, started_at)
+            source = {
+                'backend': 'postgresql', 'identity': config.sprint_identity,
+                'boardId': config.board_id,
+                'browserContextId': catalog_browser_context_id(auth_context),
+            }
+            return _catalog_response(
+                {'error': error.code, 'sprintCatalogSource': source}, 409, started_at,
+            )
+        return _db_sprint_response(
+            auth_context, config, snapshot, refresh_started=False,
+            started_at=started_at,
+        )
+
+    try:
+        snapshot = load_sprint_catalog(auth_context, config=config)
+    except AuthError:
+        return _catalog_auth_required_response(started_at)
+    now = datetime.now(timezone.utc)
+    deadline = snapshot.attempt_deadline_at
+    if deadline is not None and deadline.tzinfo is None:
+        deadline = deadline.replace(tzinfo=timezone.utc)
+    live_attempt = snapshot.refresh_status == 'pending' and deadline is not None and deadline > now
+    retry_at = snapshot.retry_at
+    if retry_at is not None and retry_at.tzinfo is None:
+        retry_at = retry_at.replace(tzinfo=timezone.utc)
+    next_refresh = snapshot.next_refresh_at
+    if next_refresh is not None and next_refresh.tzinfo is None:
+        next_refresh = next_refresh.replace(tzinfo=timezone.utc)
+    due = snapshot.payload is not None and (next_refresh is None or next_refresh <= now)
+    should_refresh = (
+        not live_attempt
+        and (force_refresh or snapshot.payload is None or due)
+        and (force_refresh or retry_at is None or retry_at <= now)
+    )
+    refresh_started = False
+    if should_refresh:
+        background = snapshot.payload is not None
+        try:
+            claim = catalog_refresh_runtime().refresh(
+                auth_context, kind='sprints', config=config, background=background,
+                resolve_config=resolve_request_effective_catalog_config,
+            )
+        except AuthError:
+            return _catalog_auth_required_response(started_at)
+        refresh_started = claim is not None
+        try:
+            snapshot = load_sprint_catalog(auth_context, config=config)
+        except AuthError:
+            return _catalog_auth_required_response(started_at)
+        reload_deadline = snapshot.attempt_deadline_at
+        if reload_deadline is not None and reload_deadline.tzinfo is None:
+            reload_deadline = reload_deadline.replace(tzinfo=timezone.utc)
+        matching_live_attempt = bool(
+            snapshot.refresh_status == 'pending'
+            and snapshot.refresh_attempt_id
+            and reload_deadline is not None
+            and reload_deadline > datetime.now(timezone.utc)
+        )
+        if (
+            not background and claim is None and snapshot.payload is None
+            and matching_live_attempt
+        ):
+            deadline_at = time.monotonic() + 2
+            while time.monotonic() < deadline_at:
+                time.sleep(0.1)
+                snapshot = load_sprint_catalog(auth_context, config=config)
+                if snapshot.payload is not None or snapshot.refresh_status != 'pending':
+                    break
+    return _db_sprint_response(
+        auth_context, config, snapshot, refresh_started=refresh_started,
+        started_at=started_at,
+    )
+
+
 @bp.route('/api/sprints', methods=['GET'])
 def get_sprints():
-    """Fetch available sprints - uses cache if valid, otherwise fetches from Jira"""
+    """Fetch the Sprint catalog from its selected compatibility backend."""
+    started_at = time.perf_counter()
     try:
-        force_refresh = request.args.get('refresh', '').lower() == 'true'
-        cache_enabled = _settings_process_cache_enabled()
+        allowed_parameters = {'refresh', 'completionAttemptId', 'catalogIdentity'}
+        if any(key not in allowed_parameters for key in request.args):
+            return _catalog_response(
+                {'error': 'unsupported_catalog_parameter'}, 400, started_at,
+            )
+        force_value = request.args.get('refresh')
+        force_refresh = force_value == 'true'
+        completion_attempt_id = request.args.get('completionAttemptId')
+        expected_identity = request.args.get('catalogIdentity')
+        has_completion = completion_attempt_id is not None or expected_identity is not None
+        if (
+            any(len(request.args.getlist(key)) != 1 for key in request.args)
+            or force_value is not None and force_value != 'true'
+            or has_completion and (
+                force_refresh or not completion_attempt_id or not expected_identity
+            )
+        ):
+            return _catalog_response(
+                {'error': 'invalid_catalog_completion'}, 400, started_at,
+            )
+        auth_context = current_request_auth_context()
+        if config_storage_db_enabled() and is_db_auth_context(auth_context):
+            return _get_db_sprints(
+                auth_context, force_refresh=force_refresh,
+                completion_attempt_id=completion_attempt_id,
+                expected_identity=expected_identity, started_at=started_at,
+            )
+        file_cache_enabled = _settings_process_cache_enabled()
+        process_cache_enabled = jira_home_partitioned_process_cache_enabled(auth_context)
+        board_id = str(get_effective_board_id() or '').strip()
+        process_cache_key = build_jira_home_process_cache_key(auth_context, board_id)
 
         formatted_sprints = []
 
+        if process_cache_enabled and not force_refresh:
+            with _cache_lock:
+                cached_entry = SPRINTS_PROCESS_CACHE.get(process_cache_key)
+            if cached_entry and (time.time() - cached_entry.get('timestamp', 0)) < CACHE_EXPIRY_HOURS * 3600:
+                formatted_sprints = cached_entry.get('data') or []
+                log_info(f'Loaded {len(formatted_sprints)} sprints from process cache')
+
         # Check if we should use cache
-        if cache_enabled and not force_refresh and is_cache_valid():
+        if not formatted_sprints and file_cache_enabled and not force_refresh and is_cache_valid():
             cache_data = load_sprints_cache()
             if cache_data and 'sprints' in cache_data:
                 formatted_sprints = cache_data['sprints']
@@ -371,8 +602,15 @@ def get_sprints():
             formatted_sprints = fetch_sprints_from_jira()
 
             # Save to cache
-            if cache_enabled and formatted_sprints:
+            if file_cache_enabled and formatted_sprints:
                 save_sprints_cache(formatted_sprints)
+
+        if process_cache_enabled and formatted_sprints:
+            with _cache_lock:
+                SPRINTS_PROCESS_CACHE[process_cache_key] = {
+                    'timestamp': time.time(),
+                    'data': formatted_sprints,
+                }
 
         log_info(f'Total quarterly sprints: {len(formatted_sprints)}')
 
@@ -383,14 +621,19 @@ def get_sprints():
         return success_response
 
     except AuthError:
+        if config_storage_db_enabled():
+            return _catalog_auth_required_response(started_at)
         payload, status = oauth_auth_required_payload()
-        return jsonify(payload), status
-    except Exception as e:
+        return _catalog_response(payload, status, started_at)
+    except (ConfigStorageError, DatabaseConfigurationError):
+        logger.warning('Sprint catalog storage is unavailable')
+        return _catalog_response({'error': 'catalog_storage_unavailable'}, 503, started_at)
+    except Exception:
+        if config_storage_db_enabled():
+            logger.exception('Sprint catalog request failed')
+            return _catalog_response({'error': 'catalog_storage_unavailable'}, 503, started_at)
         logger.exception('Sprints endpoint error')
-        error_response = jsonify({
-            'error': 'Failed to fetch sprints from Jira',
-            'message': str(e)
-        })
+        error_response = jsonify({'error': 'Failed to fetch sprints from Jira'})
         error_response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
         return error_response, 500
 
@@ -403,8 +646,32 @@ def get_config():
     include_view_config = str(request.args.get('includeViewConfig') or '').strip().lower() in {'1', 'true', 'yes'}
     try:
         view_config = _resolve_bootstrap_view_config(auth_context) if include_view_config else None
-        shared_snapshot = load_dashboard_config_snapshot()
-        shared_config = dict(shared_snapshot.payload or {})
+        effective_catalog_config = None
+        if config_storage_db_enabled() and is_db_auth_context(auth_context):
+            with session_scope() as catalog_session:
+                effective_catalog_config = resolve_request_effective_catalog_config(
+                    catalog_session, auth_context,
+                )
+            shared_config = dict(effective_catalog_config.workspace_payload or {})
+            shared_config_revision = effective_catalog_config.config_revision
+            board_section = shared_config.get('board')
+            board_cfg = {
+                'boardId': effective_catalog_config.board_id,
+                'boardName': str(
+                    (board_section or {}).get('boardName')
+                    if isinstance(board_section, dict) else ''
+                ).strip(),
+                'source': (
+                    'config' if isinstance(board_section, dict)
+                    else 'env' if effective_catalog_config.board_id
+                    else 'default'
+                ),
+            }
+        else:
+            shared_snapshot = load_dashboard_config_snapshot()
+            shared_config = dict(shared_snapshot.payload or {})
+            shared_config_revision = shared_snapshot.config_revision
+            board_cfg = get_board_config()
         shared_config.pop('epm', None)
         if include_view_config and view_config is not None:
             epm_config = normalize_epm_config(
@@ -419,7 +686,6 @@ def get_config():
             'error': 'config_storage_unavailable',
             'message': 'EPM configuration storage is unavailable.',
         }), 503
-    board_cfg = get_board_config()
     can_edit_shared_configuration = (not SETTINGS_ADMIN_ONLY) or bool(auth_context.is_admin)
     payload = {
         'jiraUrl': auth_context.site_url,
@@ -433,19 +699,42 @@ def get_config():
         'settingsAdminOnly': bool(SETTINGS_ADMIN_ONLY),
         'performanceDebugEnabled': collection_enabled(),
         'performanceAdminAvailable': bool(auth_context.is_admin),
+        # The DB/OAuth adapter has passed the strict transport and completeness gates. Basic/JSON
+        # keeps failing closed until its deployment-specific performance evidence is collected.
+        'boardAllWorkAvailable': eng_board.strict_adapter_available(
+            auth_context.auth_mode,
+            database_backed=is_db_auth_context(auth_context) and config_storage_db_enabled(),
+        ),
         'userCanEditSettings': can_edit_shared_configuration,
         'userCanEditViewConfig': True,
         'userCanEditEpmConfig': True,
         'adminUserManagementAvailable': is_db_auth_context(auth_context),
+        'userIsToolAdmin': bool(auth_context.is_admin),
         'groupsConfigPath': resolve_groups_config_path(),
         'groupQueryTemplateEnabled': bool(JQL_QUERY_TEMPLATE),
         'projectsConfigured': bool(get_selected_projects()),
         'environmentConfigExists': _environment_dashboard_config_exists(),
         'epm': epm_config
     }
+    if effective_catalog_config is not None:
+        payload['sprintCatalogSource'] = {
+            'backend': 'postgresql',
+            'identity': effective_catalog_config.sprint_identity,
+            'boardId': effective_catalog_config.board_id,
+            'browserContextId': catalog_browser_context_id(auth_context),
+        }
+        # An unconfigured workspace blocks ENG loading; editors fix it, everyone else
+        # sees only who to contact (display names, never the user directory).
+        missing_admin_settings = list(effective_catalog_config.missing_admin_settings)
+        payload['adminSettingsMissing'] = missing_admin_settings
+        if missing_admin_settings and not can_edit_shared_configuration:
+            with session_scope() as admin_session:
+                payload['adminContacts'] = workspace_tool_admin_display_names(
+                    admin_session, auth_context.workspace_id,
+                )
     if config_storage_db_enabled():
         payload['sharedConfig'] = shared_config
-        payload['sharedConfigRevision'] = shared_snapshot.config_revision
+        payload['sharedConfigRevision'] = shared_config_revision
     if view_config is not None:
         payload['viewConfig'] = view_config
     return jsonify(payload)
@@ -475,50 +764,18 @@ def get_version():
 def get_groups_config():
     """Return the saved team groups configuration."""
     auth_context = _shared_group_db_auth_context()
+    config = shared_group_config.load_effective_groups(
+        auth_context,
+        fallback_loader=lambda: load_dashboard_config(source='jsonfile'),
+        validate_groups_config_fn=validate_groups_config,
+        dashboard_loader=load_dashboard_config,
+        groups_file_loader=lambda: load_groups_config_file(resolve_groups_config_path()),
+        environment_loader=parse_groups_config_env,
+        default_builder=build_default_groups_config,
+    )
     if auth_context is not None:
-        config = shared_group_config.load_shared_groups(
-            auth_context,
-            fallback_loader=lambda: load_dashboard_config(source='jsonfile'),
-            validate_groups_config_fn=validate_groups_config,
-        )
         config['preferences'] = shared_group_config.load_group_preferences(auth_context, config)
         return jsonify(config)
-
-    warnings = []
-    config_source = 'auto'
-
-    # Try unified dashboard config first
-    dashboard_config = load_dashboard_config()
-    if dashboard_config and 'teamGroups' in dashboard_config:
-        config = dashboard_config['teamGroups']
-        config_source = 'file'
-    else:
-        # Fall back to legacy file / env
-        config_path = resolve_groups_config_path()
-        config = load_groups_config_file(config_path)
-        if config:
-            config_source = 'file'
-        else:
-            config = parse_groups_config_env()
-            if config:
-                config_source = 'env'
-
-    if not config:
-        config, auto_warnings = build_default_groups_config()
-        warnings.extend(auto_warnings)
-    else:
-        normalized, errors, validate_warnings = validate_groups_config(config, allow_empty=True)
-        warnings.extend(validate_warnings)
-        if errors:
-            warnings.append('Invalid groups config; falling back to auto Default group.')
-            warnings.extend(errors)
-            normalized, auto_warnings = build_default_groups_config()
-            warnings.extend(auto_warnings)
-        config = normalized
-
-    if warnings:
-        config['warnings'] = warnings
-    config['source'] = config_source
     config['preferences'] = shared_group_config.normalize_group_preferences(
         {},
         config,
@@ -535,8 +792,12 @@ def save_groups_config():
     if _unsupported_group_fields(payload):
         return jsonify({'error': 'unsupported_group_config_field'}), 400
 
+    comma_scalar_errors = find_comma_scalar_team_label_errors(payload)
+
     auth_context = _shared_group_db_auth_context()
     if auth_context is not None:
+        if comma_scalar_errors:
+            return jsonify({'error': 'invalid_groups_config', 'errors': comma_scalar_errors}), 400
         current = shared_group_config.load_shared_groups(
             auth_context,
             fallback_loader=lambda: load_dashboard_config(source='jsonfile'),
@@ -561,6 +822,9 @@ def save_groups_config():
             return jsonify({'error': 'invalid_groups_config', 'errors': list(error.errors)}), 400
         saved['preferences'] = shared_group_config.load_group_preferences(auth_context, saved)
         return jsonify(saved)
+
+    if comma_scalar_errors:
+        return jsonify({'errors': comma_scalar_errors}), 400
 
     normalized, errors, warnings = validate_groups_config(payload, allow_empty=True)
     if errors:
@@ -727,6 +991,8 @@ def post_team_catalog():
             )
         except TeamCatalogConflict:
             return jsonify({'error': 'team_catalog_conflict'}), 409
+        except WorkspaceConfigFenceUnavailable:
+            return _config_fence_unavailable_response()
         return jsonify(saved)
     saved = save_team_catalog_file(incoming)
     return jsonify(saved)
@@ -1009,6 +1275,31 @@ def get_jira_labels():
         limit = 50
         if limit_raw.isdigit():
             limit = max(1, min(int(limit_raw), 200))
+        if prefix:
+            prefix = normalize_epm_label_prefix_mask(prefix)
+
+        if query:
+            # Typed search: Jira JQL autocomplete is prefix-only and capped (~15),
+            # but avoids crawling the full site label catalog on every keystroke.
+            response = current_jira_get(
+                '/rest/api/3/jql/autocompletedata/suggestions',
+                params={'fieldName': 'labels', 'fieldValue': query},
+                timeout=15
+            )
+            if response.status_code != 200:
+                return jsonify({'error': 'Failed to fetch labels from Jira'}), response.status_code
+            results = (response.json() or {}).get('results') or []
+            labels = []
+            for item in results:
+                value = str((item or {}).get('value') or '').strip()
+                if len(value) >= 2 and value.startswith('"') and value.endswith('"'):
+                    value = value[1:-1]
+                if value:
+                    labels.append(value)
+            if prefix:
+                labels = [label for label in labels if label.lower().startswith(prefix)]
+            return jsonify({'labels': list(dict.fromkeys(labels))[:limit]})
+
         cache_enabled = _settings_process_cache_enabled()
 
         cached_labels = None
@@ -1048,10 +1339,6 @@ def get_jira_labels():
                     LABELS_CACHE['data'] = labels
                     LABELS_CACHE['timestamp'] = time.time()
 
-        if query:
-            labels = [label for label in labels if query in label.lower()]
-        if prefix:
-            prefix = normalize_epm_label_prefix_mask(prefix)
         if prefix:
             labels = [label for label in labels if label.lower().startswith(prefix)]
 
@@ -1094,6 +1381,8 @@ def save_selected_projects():
         revision = _persist_shared_section('projects', {'selected': sanitized}, base_revision)
     except WorkspaceConfigConflict as error:
         return _workspace_conflict_response(error)
+    except WorkspaceConfigFenceUnavailable:
+        return _config_fence_unavailable_response()
     except Exception as e:
         return jsonify({'error': 'Failed to save project selection', 'message': str(e)}), 500
 
@@ -1152,9 +1441,12 @@ def save_board_config_endpoint():
         revision = _persist_shared_section('board', board_value, base_revision)
         with _cache_lock:
             TASKS_CACHE.clear()
+            SPRINTS_PROCESS_CACHE.clear()
         invalidate_sprints_cache()
     except WorkspaceConfigConflict as error:
         return _workspace_conflict_response(error)
+    except WorkspaceConfigFenceUnavailable:
+        return _config_fence_unavailable_response()
     except Exception as e:
         return jsonify({'error': 'Failed to save board config', 'message': str(e)}), 500
 
@@ -1283,6 +1575,8 @@ def save_capacity_config_endpoint():
                     {key: payload.get(key) for key in ('project', 'fieldId', 'fieldName')},
                     payload.get('baseRevision'),
                     field_catalog=fields,
+                    fallback_loader=_load_dashboard_config_json,
+                    legacy_site_url=JIRA_URL or '',
                 )
             except shared_capacity_config.CapacityConfigConflict as error:
                 return jsonify({'error': 'capacity_config_conflict', 'current': error.current}), 409
@@ -1329,7 +1623,7 @@ def save_capacity_config_endpoint():
             auth_payload, status = oauth_auth_required_payload()
             return jsonify(auth_payload), status
         return auth_error_response(error, 401)
-    except (ConfigStorageError, DatabaseConfigurationError):
+    except (ConfigStorageError, DatabaseConfigurationError, WorkspaceConfigFenceUnavailable):
         return jsonify({
             'error': 'config_storage_unavailable',
             'message': 'Configuration storage is temporarily unavailable.',
@@ -1410,6 +1704,8 @@ def save_stats_priority_weights_config_endpoint():
         revision = _persist_shared_section('statsPriorityWeights', normalized, base_revision)
     except WorkspaceConfigConflict as error:
         return _workspace_conflict_response(error)
+    except WorkspaceConfigFenceUnavailable:
+        return _config_fence_unavailable_response()
     except Exception as e:
         return jsonify({'error': 'Failed to save stats priority weights', 'message': str(e)}), 500
 
@@ -1483,6 +1779,8 @@ def save_issue_types_config_endpoint():
         revision = _persist_shared_section('issueTypes', sanitized, base_revision)
     except WorkspaceConfigConflict as error:
         return _workspace_conflict_response(error)
+    except WorkspaceConfigFenceUnavailable:
+        return _config_fence_unavailable_response()
     except Exception as e:
         return jsonify({'error': 'Failed to save issue types config', 'message': str(e)}), 500
 

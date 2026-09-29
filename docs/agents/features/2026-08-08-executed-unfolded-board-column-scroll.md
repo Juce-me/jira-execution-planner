@@ -94,6 +94,9 @@ Accurate. The implementation uses the files and behavior described above. Normal
 scrolling is explicit in production; the deterministic geometry regression runs with reduced motion
 and does not directly time the smooth animation branch.
 
+Applies only below the Board pane-mode gate (narrow, short, or touch viewports); desktop behavior
+is superseded by [2026-09-24-executed-board-column-scroll-panes.md](2026-09-24-executed-board-column-scroll-panes.md).
+
 ## Forbidden Regressions
 
 - Do not hard-code sticky heights or card/header offsets.

@@ -47,23 +47,38 @@ case "$*" in
     exit 0
     ;;
   *" ps --all --quiet --filter label=com.docker.compose.project=jira-planning-local")
-    [[ -n "${FAKE_PROJECT_CONTAINER:-}" ]] && printf '%s\n' 'existing-container'
+    if [[ -n "${FAKE_PROJECT_CONTAINER:-}" &&
+          ! -e "${FAKE_RESOURCE_CLEANUP_MARKER:-/nonexistent}" ]]; then
+      printf '%s\n' 'existing-container'
+    fi
     exit 0
     ;;
   *" ps --all --quiet --filter name=^/jira-planning-local"*)
-    [[ -n "${FAKE_LEGACY_CONTAINER:-}" ]] && printf '%s\n' 'legacy-container'
+    if [[ -n "${FAKE_LEGACY_CONTAINER:-}" &&
+          ! -e "${FAKE_RESOURCE_CLEANUP_MARKER:-/nonexistent}" ]]; then
+      printf '%s\n' "${FAKE_LEGACY_CONTAINER_ID:-legacy-container}"
+    fi
     exit 0
     ;;
   *" network ls --quiet --filter label=com.docker.compose.project=jira-planning-local")
-    [[ -n "${FAKE_PROJECT_NETWORK:-}" ]] && printf '%s\n' 'existing-network'
+    if [[ -n "${FAKE_PROJECT_NETWORK:-}" &&
+          ! -e "${FAKE_RESOURCE_CLEANUP_MARKER:-/nonexistent}" ]]; then
+      printf '%s\n' 'existing-network'
+    fi
     exit 0
     ;;
   *" network ls --quiet --filter name=^jira-planning-local_default$")
-    [[ "${FAKE_DEFAULT_NETWORK_STATUS:-1}" -eq 0 ]] && printf '%s\n' 'default-network'
+    if [[ "${FAKE_DEFAULT_NETWORK_STATUS:-1}" -eq 0 &&
+          ! -e "${FAKE_RESOURCE_CLEANUP_MARKER:-/nonexistent}" ]]; then
+      printf '%s\n' "${FAKE_DEFAULT_NETWORK_ID:-default-network}"
+    fi
     exit 0
     ;;
   *" ps --all --quiet --filter volume=jira-planning-local-postgres")
-    [[ -n "${FAKE_VOLUME_USER:-}" ]] && printf '%s\n' 'volume-user'
+    if [[ -n "${FAKE_VOLUME_USER:-}" &&
+          ! -e "${FAKE_RESOURCE_CLEANUP_MARKER:-/nonexistent}" ]]; then
+      printf '%s\n' "${FAKE_VOLUME_USER_ID:-volume-user}"
+    fi
     exit 0
     ;;
   *" config --quiet") exit "${FAKE_CONFIG_STATUS:-0}" ;;
@@ -85,7 +100,11 @@ case "$*" in
       : > "$FAKE_DOWN_STARTED_FILE"
     fi
     if [[ -n "${FAKE_DOWN_SLEEP:-}" ]]; then sleep "$FAKE_DOWN_SLEEP"; fi
-    exit "${FAKE_DOWN_STATUS:-0}"
+    down_status="${FAKE_DOWN_STATUS:-0}"
+    if [[ "$down_status" -eq 0 && -n "${FAKE_RESOURCE_CLEANUP_MARKER:-}" ]]; then
+      : > "$FAKE_RESOURCE_CLEANUP_MARKER"
+    fi
+    exit "$down_status"
     ;;
 esac
 printf 'unexpected docker invocation: %s\n' "$*" >&2
@@ -211,6 +230,7 @@ class LocalPostgresqlRunnerProcessTests(unittest.TestCase):
         self.child_pid_file = base / "child.pid"
         self.grandchild_pid_file = base / "grandchild.pid"
         self.down_started_file = base / "down-started"
+        self.resource_cleanup_marker = base / "resource-cleaned"
         self.env = os.environ.copy()
         self.env.pop("DOCKER_CONTEXT", None)
         self.env.update({
@@ -220,6 +240,7 @@ class LocalPostgresqlRunnerProcessTests(unittest.TestCase):
             "FAKE_LOCK_DIR": str(self.lock_dir),
             "FAKE_CHILD_PID_FILE": str(self.child_pid_file),
             "FAKE_GRANDCHILD_PID_FILE": str(self.grandchild_pid_file),
+            "FAKE_RESOURCE_CLEANUP_MARKER": str(self.resource_cleanup_marker),
             "TMPDIR": str(base),
             "DOCKER_HOST": "unix:///tmp/fake-docker.sock",
             "COMPOSE_PROJECT_NAME": "hostile-project",
@@ -237,6 +258,10 @@ class LocalPostgresqlRunnerProcessTests(unittest.TestCase):
 
     def _run(self, *arguments, **overrides):
         self.log.write_text("", encoding="utf8")
+        try:
+            self.resource_cleanup_marker.unlink()
+        except FileNotFoundError:
+            pass
         env = self.env.copy()
         env.update({key: str(value) for key, value in overrides.items()})
         process = self._start_process(
@@ -647,6 +672,26 @@ class LocalPostgresqlRunnerProcessTests(unittest.TestCase):
                 self.assertNotIn(" up --detach --wait", log)
                 self.assertNotIn(" down --timeout 10", log)
                 self._assert_lock_released()
+
+    def test_stale_exact_project_resources_are_cleaned_then_runner_starts(self):
+        result = self._run(
+            FAKE_VOLUME_EXISTS="1",
+            FAKE_PROJECT_CONTAINER="1",
+            FAKE_LEGACY_CONTAINER="1",
+            FAKE_LEGACY_CONTAINER_ID="existing-container",
+            FAKE_PROJECT_NETWORK="1",
+            FAKE_DEFAULT_NETWORK_STATUS="0",
+            FAKE_DEFAULT_NETWORK_ID="existing-network",
+            FAKE_VOLUME_USER="1",
+            FAKE_VOLUME_USER_ID="existing-container",
+        )
+        log = self._log_text()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("runner resources already exist", result.stderr)
+        self.assertLess(log.index(" down --timeout 10"), log.index(" up --detach --wait"))
+        self.assertEqual(log.count(" down --timeout 10"), 2)
+        self._assert_lock_released()
 
     def test_volume_enumeration_failure_fails_without_mutation(self):
         result = self._run(FAKE_VOLUME_LS_STATUS=1)

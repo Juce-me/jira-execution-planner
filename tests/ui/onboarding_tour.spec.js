@@ -1076,6 +1076,9 @@ async function installProductionOnboardingFixture(page, {
             return json({ authMode: 'atlassian_oauth', authenticated: true, email: 'synthetic@example.invalid' });
         }
         if (url.pathname === '/api/auth/csrf') return json({ csrfToken: 'synthetic-csrf' });
+        if (url.pathname === '/api/eng/story-readiness') {
+            return json({ schemaVersion: 1, complete: true, scope: {}, epics: [] });
+        }
         if (url.pathname === '/api/me/connections/home-token') return json({ connected: false });
         if (url.pathname === '/api/analytics/context') {
             return json({ enabled: true, gtmContainerId: 'GTM-SYNTHETIC', measurementId: 'G-SYNTHETIC', ga4UserId: 'synthetic-user' });

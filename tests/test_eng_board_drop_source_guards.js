@@ -11,9 +11,8 @@ const path = require('node:path');
 //    never dragged. Drag is the first call site whose "issue" comes from a card rather than a menu
 //    argument, so the fallthrough is fenced off at the call site, not hoped away.
 //
-// 2. §13 fences off useEngStatusTransitions.js and permits exactly ONE generalization: widen the
-//    `isCatchUp` optimistic-patch gate to `sourceSurface !== 'planning'` and rename it
-//    `isSingleIssueSurface`. A board special case in this file remains a review stop.
+// 2. The single-issue path remains serialized. Board may additionally request one strict-owner
+//    refresh after success; it must not introduce another Jira write path.
 
 function read(relativePath) {
     return fs.readFileSync(path.resolve(__dirname, '..', relativePath), 'utf8');
@@ -34,16 +33,20 @@ test('the hook ships the one permitted generalization: the rename with the widen
     assert.ok(!/isCatchUp/.test(source), 'the rename ships with the widening — no isCatchUp may remain');
 });
 
-test('the hook gates every branch the old flag gated, and no more', () => {
+test('the hook keeps single-issue presentation branches while the shared queue owns all writes', () => {
     const source = read('frontend/src/eng/useEngStatusTransitions.js');
-    // isCatchUp appeared 13 times before the rename (one definition, twelve reads). The new flag
-    // must appear exactly as often: a branch gained or lost is a behaviour change, not a rename.
-    assert.equal((source.match(/isSingleIssueSurface/g) || []).length, 13);
+    // Task 3 removes the queue-bypass branch, so the flag now owns presentation/reconciliation
+    // only; both single and batch writes use enqueueEngIssueMutations.
+    assert.equal((source.match(/isSingleIssueSurface/g) || []).length, 12);
+    assert.match(source, /await enqueueEngIssueMutations\(/);
 });
 
-test('the hook carries no board special case', () => {
+test('the Board special case refreshes after the shared serialized write', () => {
     const source = read('frontend/src/eng/useEngStatusTransitions.js');
-    assert.ok(!source.includes("'board'"), 'a board branch inside the shared hook is a review stop (§9.5)');
+    assert.match(source, /mutationCoordinator\?\.enqueue \|\| enqueueEngIssueMutation/);
+    assert.match(source, /await onTransitionSuccessRefresh\?\./);
+    assert.match(source, /mutationCoordinator\?\.complete\(\)/);
+    assert.equal((source.match(/transitionIssues\(/g) || []).length, 1, 'Board must not add a parallel Jira write');
 });
 
 test('the widened flag is a strict widening: Catch Up keeps the same branches', () => {

@@ -126,7 +126,29 @@ class DbSessionTests(unittest.TestCase):
             "postgresql+psycopg://jep:password@localhost:5432/jep_local",
             future=True,
             pool_pre_ping=True,
+            connect_args={"connect_timeout": 10},
         )
+
+    def test_postgresql_url_connect_timeout_overrides_an_unbounded_url_value(self):
+        with patch("backend.db.engine.create_engine") as create_engine:
+            db_engine.create_database_engine(
+                "postgresql+psycopg://jep@db:5432/app?connect_timeout=90",
+                environ={"DATABASE_CONNECTION_MODE": "url"},
+            )
+
+        self.assertEqual(
+            create_engine.call_args.kwargs["connect_args"],
+            {"connect_timeout": 10},
+        )
+
+    def test_non_postgresql_url_keeps_driver_connect_arguments_unchanged(self):
+        with patch("backend.db.engine.create_engine") as create_engine:
+            db_engine.create_database_engine(
+                "sqlite+pysqlite:///:memory:",
+                environ={"DATABASE_CONNECTION_MODE": "url"},
+            )
+
+        self.assertNotIn("connect_args", create_engine.call_args.kwargs)
 
     def test_test_database_url_precedence_is_unchanged_in_url_mode(self):
         env = {

@@ -3,6 +3,7 @@ import { storyPointsFor } from './excludedCapacityStats.js'; // exported in Step
 import { getProjectTrackRank } from '../eng/engTaskUtils.js';
 
 export const NO_TRACK_LABEL = 'No track';
+const CLOSED_EPIC_STATUSES = new Set(['done', 'killed', 'incomplete']);
 
 function firstSprint(task) {
   // A story belongs to one sprint; the normalized field is [{id,name,state}]. Take the first; key on id.
@@ -27,6 +28,8 @@ function trackOf(task) {
 // additionally require storyPointsFor(task) > 0; callers that want the SP-bearing
 // subset must apply that check themselves (e.g. Task 5's time-in-phase epic set).
 export function inScope(task, opts) {
+  const epicStatus = String(task?.fields?.epicStatus || '').trim().toLowerCase();
+  if (CLOSED_EPIC_STATUSES.has(epicStatus)) return false;
   const sprint = firstSprint(task);
   if (!sprint) return false;
   if (opts.allowedSprintIds && !opts.allowedSprintIds.has(sprint.id)) return false;
@@ -110,7 +113,7 @@ export function buildProjectTrackBreakdownRows(tasks, rawOpts) {
   const opts = withAllowed(rawOpts);
   const trackSet = new Set(); const rowMap = new Map();
   const ensure = (id, label) => {
-    if (!rowMap.has(id)) rowMap.set(id, { id, label, byTrack: {}, total: 0 });
+    if (!rowMap.has(id)) rowMap.set(id, { id, label, byTrack: {}, epicKeysByTrack: {}, total: 0 });
     return rowMap.get(id);
   };
   const addRow = (row, track, pts) => { row.byTrack[track] = (row.byTrack[track] || 0) + pts; row.total += pts; trackSet.add(track); };
@@ -123,7 +126,12 @@ export function buildProjectTrackBreakdownRows(tasks, rawOpts) {
         assignee: task?.fields?.epicAssignee?.displayName || 'Unassigned', total: 0 });
       byEpic.get(epicKey).total += storyPointsFor(task);
     }
-    for (const { track, assignee, total } of byEpic.values()) addRow(ensure(assignee, assignee), track, total);
+    for (const [epicKey, { track, assignee, total }] of byEpic) {
+      const row = ensure(assignee, assignee);
+      addRow(row, track, total);
+      if (!row.epicKeysByTrack[track]) row.epicKeysByTrack[track] = [];
+      row.epicKeysByTrack[track].push(epicKey);
+    }
   } else {
     for (const task of scoped) {
       const teamId = task?.fields?.teamId || task?.fields?.teamName || 'unknown';

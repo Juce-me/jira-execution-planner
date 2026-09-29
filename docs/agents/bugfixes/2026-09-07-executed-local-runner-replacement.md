@@ -63,6 +63,12 @@ Lock reclamation stays race-safe: removal only targets the fixed lock's PID file
 - [x] Fall back to the operating system's per-user temporary directory when `/tmp` is unavailable.
 - [x] Start the real runner through migrations, preflight, and Flask; then start a second real runner and prove it terminates and replaces the first.
 
+### Task 7: Recover an orphaned exact-project Compose stack
+
+- [x] Reproduce a complete runner-owned container, network, and volume attachment without a live lock owner.
+- [x] Remove only a coherent set of exact-project resources with `docker compose down`, retaining the named database volume.
+- [x] Re-scan after cleanup and keep partial, mismatched, foreign, or remaining resources on the fail-closed path.
+
 ## Acceptance Criteria
 
 - A second invocation stops a live instance of `runners/local/run.sh`, waits for its cleanup, and then starts normally.
@@ -82,7 +88,7 @@ Lock reclamation stays race-safe: removal only targets the fixed lock's PID file
 
 ## Outcome
 
-Implemented with changes. The runner now records both its own PID and its active child process-group PID, replaces a validated live runner with bounded `TERM`/`KILL` handling, and automatically reclaims empty, malformed, dead, or unrelated PID locks. The child PID metadata was added during implementation so forced replacement cannot leave the old Flask process tree behind. An unreclaimable stale lock now produces one report and exits immediately instead of suppressing the removal failure and retrying the same state. If the prior runner concurrently removes the observed directory, reclamation recognizes that postcondition as success and continues startup. A failed lock `mkdir` is no longer treated as stale contention: startup uses the system per-user temp directory when `/tmp` is unavailable and otherwise fails once with a lock-creation error.
+Implemented with changes. The runner now records both its own PID and its active child process-group PID, replaces a validated live runner with bounded `TERM`/`KILL` handling, and automatically reclaims empty, malformed, dead, or unrelated PID locks. The child PID metadata was added during implementation so forced replacement cannot leave the old Flask process tree behind. An unreclaimable stale lock now produces one report and exits immediately instead of suppressing the removal failure and retrying the same state. If the prior runner concurrently removes the observed directory, reclamation recognizes that postcondition as success and continues startup. A failed lock `mkdir` is no longer treated as stale contention: startup uses the system per-user temp directory when `/tmp` is unavailable and otherwise fails once with a lock-creation error. A later recovery change also removes a coherent orphaned exact-project Compose stack, retains its database volume, and verifies that no resources remain before startup.
 
 ## Current Accuracy
 

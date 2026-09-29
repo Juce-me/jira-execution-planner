@@ -31,6 +31,7 @@ function loadFirstRunGroupConfiguration() {
         firstRunConfigurationSessionReducer,
         FIRST_RUN_CONFIGURATION_GUIDE_STEPS,
         canAdvanceFirstRunConfigurationGuide,
+        validateFirstRunPendingGroup,
         FIRST_RUN_ADMIN_SECTION_KEYS,
         buildFirstRunSettingsSaveOutcome,
         verifyFirstRunGroupsSaveSnapshot,
@@ -150,6 +151,42 @@ test('group save snapshot verification compares every shared field but accepts s
             'new-department'
         ).ok, false);
     }
+});
+
+test('a version-2 response verifies for a submitted draft built from a version-1 read', async () => {
+    const { verifyFirstRunGroupsSaveSnapshot } = loadFirstRunGroupConfiguration();
+    const { normalizeGroupsConfig } = await import('../frontend/src/settings/groupConfigUtils.js');
+    const { buildSharedGroupsPayload } = await import('../frontend/src/settings/groupVisibilityUtils.js');
+
+    // A draft normalized from a version-1 read: normalizeGroupsConfig upgrades
+    // legacy scalar team labels to arrays but keeps whatever version the read
+    // reported, mirroring a first-run session started before the server
+    // migration landed.
+    const draft = normalizeGroupsConfig({
+        version: 1,
+        configRevision: 3,
+        groups: [{
+            id: 'new-department', name: 'Growth', teamIds: ['team-a'],
+            teamLabels: { 'team-a': 'label_team_a' },
+        }],
+        defaultGroupId: '',
+    });
+
+    const submitted = buildSharedGroupsPayload(draft);
+    const response = {
+        version: 2,
+        configRevision: 4,
+        defaultGroupId: '',
+        groups: [{
+            id: 'new-department', name: 'Growth', teamIds: ['team-a'],
+            missingInfoComponents: [], excludedCapacityEpics: [], adHocCapacityEpics: [],
+            teamLabels: { 'team-a': ['label_team_a'] },
+        }],
+        source: 'workspace_db', preferences: { visibleGroupIds: [] },
+    };
+
+    assert.equal(submitted.version, 2);
+    assert.equal(verifyFirstRunGroupsSaveSnapshot(submitted, response, 'new-department').ok, true);
 });
 
 test('shouldShowFirstRunGroupSearch hides search for zero through three groups', () => {
@@ -390,14 +427,25 @@ test('recovery states remain renderable after the guide is complete', () => {
     assert.ok(dashboard.includes("['sections_pending', 'preference_pending'].includes(firstRunConfigurationSession.status)"));
 });
 
-test('configuration guide has exact steps and validates only name and teams', () => {
-    const { FIRST_RUN_CONFIGURATION_GUIDE_STEPS, canAdvanceFirstRunConfigurationGuide } = loadFirstRunGroupConfiguration();
+test('configuration guide accepts either Team or Component scope', () => {
+    const {
+        FIRST_RUN_CONFIGURATION_GUIDE_STEPS,
+        canAdvanceFirstRunConfigurationGuide,
+        validateFirstRunPendingGroup,
+    } = loadFirstRunGroupConfiguration();
     assert.deepEqual(FIRST_RUN_CONFIGURATION_GUIDE_STEPS, ['name', 'teams', 'components', 'favorite', 'visibility']);
     assert.equal(canAdvanceFirstRunConfigurationGuide('name', { name: '  Growth  ', teamIds: [] }, []), true);
     assert.equal(canAdvanceFirstRunConfigurationGuide('name', { id: 'a', name: ' Growth ' }, [{ id: 'b', name: 'growth' }]), false);
-    assert.equal(canAdvanceFirstRunConfigurationGuide('teams', { teamIds: [] }, []), false);
+    assert.equal(canAdvanceFirstRunConfigurationGuide('teams', { teamIds: [] }, []), true);
     assert.equal(canAdvanceFirstRunConfigurationGuide('teams', { teamIds: ['team-a'] }, []), true);
+    assert.equal(canAdvanceFirstRunConfigurationGuide('teams', { teamIds: [], missingInfoComponents: ['Backend'] }, []), true);
     assert.equal(canAdvanceFirstRunConfigurationGuide('components', { missingInfoComponents: [] }, []), true);
+    assert.equal(validateFirstRunPendingGroup([
+        { id: 'component-only', name: 'Component Only', teamIds: [], missingInfoComponents: ['Backend'] },
+    ], 'component-only').ok, true);
+    assert.equal(validateFirstRunPendingGroup([
+        { id: 'empty', name: 'Empty', teamIds: [], missingInfoComponents: [] },
+    ], 'empty').ok, false);
 });
 
 test('configuration guide is a non-modal anchored coachmark with real-target focus ownership', () => {
@@ -429,7 +477,7 @@ test('Department editor exposes one canonical row favorite and ordered preferenc
     assert.ok(source.includes('aria-label="Show in Department selector, checked. Favorite Departments are always shown"'));
     assert.match(source, /type="checkbox"[\s\S]*aria-describedby=\{visibilityDescriptionIds\}/);
     assert.match(source, /firstRunConfigurationActive && isActive[\s\S]*className="group-list-star group-list-star-status"[\s\S]*data-first-run-guide-target="favorite"[\s\S]*role="status"[\s\S]*aria-label="Favorite Department, selected pending save"/);
-    assert.match(source, /<button[\s\S]*type="button"[\s\S]*className="group-list-star"[\s\S]*aria-pressed=\{isDefault\}[\s\S]*onClick=\{\(event\) => \{[\s\S]*event\.stopPropagation\(\);[\s\S]*setFavoriteGroupDraft\(group\.id\)[\s\S]*toggleDefaultGroupDraft\(group\.id\)[\s\S]*disabled=\{groupVisibilitySaving \|\| !\(group\.teamIds \|\| \[\]\)\.some/);
+    assert.match(source, /const hasGroupScope = teamCount > 0[\s\S]*missingInfoComponents[\s\S]*disabled=\{groupVisibilitySaving \|\| !hasGroupScope\}/);
     assert.equal(source.includes('className="group-star-button'), false);
     assert.equal(source.includes('Controls whether this Department appears in the dashboard Department menu.'), false);
     assert.equal(source.includes('Your favorite Department is always shown'), false);
@@ -476,7 +524,20 @@ test('dashboard owns one reducer session and ordered first-run preference handof
     assert.ok(dashboard.includes('groupsSnapshot:'));
     assert.ok(dashboard.includes('selectedGroupId: firstRunSession.pendingGroupId'));
     assert.ok(preferences.includes('saveFirstRunGroupPreferences = React.useCallback(async ({ groupsSnapshot = groupsConfig, selectedGroupId = firstRunFavoriteGroupId } = {})'));
+    assert.ok(preferences.includes('const hasGroupScope = (group) =>'));
+    assert.ok(preferences.includes("(group?.missingInfoComponents || []).some(component => String(component || '').trim())"));
+    assert.ok(preferences.includes('const remainsEligible = hasGroupScope(selectedGroup)'));
+    assert.match(preferences, /firstRunGroupsSignature[\s\S]*missingInfoComponents/);
+    assert.ok(preferences.includes('const snapshotHasScope = hasGroupScope(snapshotGroup)'));
+    assert.equal(preferences.includes('const snapshotHasTeams ='), false);
     assert.equal(preferences.includes('const [firstRunConfigurationActive'), false);
+});
+
+test('first-run Department chooser treats Team or Component scope as eligible', () => {
+    const source = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'settings', 'FirstRunGroupSelectionModal.jsx'), 'utf8');
+    assert.match(source, /const hasScope = teamCount > 0 \|\| componentCount > 0/);
+    assert.match(source, /disabled=\{saving \|\| !hasScope\}/);
+    assert.ok(source.includes('Add at least one team or component before choosing this Department'));
 });
 
 test('group save returns the normalized committed snapshot to first-run preference save', () => {
@@ -538,4 +599,29 @@ test('analytics contract retains contextual-module events and forbids raw onboar
 test('Department configuration source retains the canonical favorite control', () => {
     const source = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'settings', 'TeamGroupsSettings.jsx'), 'utf8');
     assert.equal(source.includes('group-star-button'), false);
+});
+
+test('duplicate draft deep-copies every Team alias array', () => {
+    const { buildFirstRunGroupDraft } = loadFirstRunGroupConfiguration();
+    const sourceGroup = {
+        id: 'source',
+        name: 'Source',
+        teamIds: ['team-a', 'team-b'],
+        teamLabels: {
+            'team-a': ['label_team_a', 'label_team_a_old'],
+            'team-b': ['label_team_b'],
+        },
+    };
+
+    const draft = buildFirstRunGroupDraft({
+        mode: 'duplicate',
+        sourceGroup,
+        existingGroups: [sourceGroup],
+    });
+
+    assert.deepEqual(draft.teamLabels, sourceGroup.teamLabels);
+    assert.notEqual(draft.teamLabels, sourceGroup.teamLabels);
+    assert.notEqual(draft.teamLabels['team-a'], sourceGroup.teamLabels['team-a']);
+    draft.teamLabels['team-a'].push('label_team_a_extra');
+    assert.deepEqual(sourceGroup.teamLabels['team-a'], ['label_team_a', 'label_team_a_old']);
 });

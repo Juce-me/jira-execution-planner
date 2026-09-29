@@ -4,6 +4,7 @@ import StatusPill from '../ui/StatusPill.jsx';
 import StatusTransitionMenu from '../issues/StatusTransitionMenu.jsx';
 import PriorityTransitionMenu from '../issues/PriorityTransitionMenu.jsx';
 import ProjectTrackTransitionMenu from '../issues/ProjectTrackTransitionMenu.jsx';
+import IssuePersonEditor from '../issues/IssuePersonEditor.jsx';
 import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
 import { formatSubtaskUpdatedDate } from '../issues/subtaskProgressUtils.js';
 import { epicStatusName, getProjectTrackEmoji, getProjectTrackLabel } from './engTaskUtils.js';
@@ -49,14 +50,19 @@ export default function EngBoardEpicPanel({
     priorityTransitions = null,
     projectTrackTransitions = null,
     statusTransitionSubmitting = false,
+    workItemLabel = 'stories',
+    workItemLabelSingular = 'story',
     onSubmitStatusTransition,
+    issueFieldEdits = null,
     onClose,
 }) {
     const epic = (epicGroup && epicGroup.epic) || {};
     const epicKey = (epicGroup && epicGroup.key) || epic.key || '';
     const summary = epic.summary || epicKey;
     const tasks = (epicGroup && epicGroup.tasks) || [];
-    const progress = computeEpicStoryProgress(tasks);
+    const progress = epicGroup.childProgress || computeEpicStoryProgress(tasks);
+    const incomplete = Boolean(epicGroup.childrenIncomplete);
+    const loading = Boolean(epicGroup.childrenLoading);
     const storyPoints = (((epicGroup && epicGroup.storyPoints) || 0)).toFixed(1);
     const titleId = `epic-panel-title-${epicKey}`;
 
@@ -72,6 +78,13 @@ export default function EngBoardEpicPanel({
     const [description, setDescription] = React.useState({ status: 'loading' });
     const descriptionRef = React.useRef(description);
     descriptionRef.current = description;
+    // React 19 re-assigns innerHTML whenever the dangerouslySetInnerHTML object changes identity, so
+    // an inline object would rebuild the description DOM on every Board render (a pane-mode resize,
+    // a hint update) and drop a table's scroll position and focus. One object per loaded payload.
+    const descriptionMarkup = React.useMemo(
+        () => (description.status === 'loaded' ? { __html: description.html } : null),
+        [description],
+    );
     const [attempt, setAttempt] = React.useState(0);
 
     const statusOrder = React.useMemo(() => buildPanelStatusOrder(columns), [columns]);
@@ -148,6 +161,7 @@ export default function EngBoardEpicPanel({
         ['.status-transition-menu', () => statusTransitions?.closeSingleIssueStatusControl?.()],
         ['.priority-transition-menu', () => priorityTransitions?.closePriorityControl?.()],
         ['.project-track-transition-menu', () => projectTrackTransitions?.closeProjectTrackControl?.()],
+        ['.issue-person-editor-menu', () => issueFieldEdits?.closeEditor?.()],
     ];
 
     // Escape and the Tab cycle are handled on the panel, NOT on the document, so an inner
@@ -240,6 +254,29 @@ export default function EngBoardEpicPanel({
         );
     };
 
+    const renderPersonEditor = (issue, kind, field, label, value, triggerClassName = '') => {
+        const literalKind = kind === 'Epic' || String(issue?.fields?.issuetype?.name || '').trim().toLowerCase() === 'story';
+        if (!issueFieldEdits || !literalKind) return value?.displayName || (field === 'deliveryOwner' ? 'Not set' : 'Unassigned');
+        const active = issueFieldEdits.activeEditor?.issueKey === issue.key && issueFieldEdits.activeEditor.field === field;
+        return (
+            <IssuePersonEditor
+                issueKey={issue.key} field={field} fieldLabel={label} currentValue={value}
+                isOpen={active} metadata={active ? issueFieldEdits.metadata : null}
+                suggestions={active ? issueFieldEdits.suggestions : []} query={active ? issueFieldEdits.searchQuery : ''}
+                loading={active && issueFieldEdits.status === 'loading'} searching={active && issueFieldEdits.searching}
+                submitting={active && ['queued', 'saving'].includes(issueFieldEdits.status)}
+                pending={issueFieldEdits.pendingIssueKeys?.has(issue.key)} error={active ? issueFieldEdits.errorMessage : ''}
+                statusMessage={active && issueFieldEdits.status === 'confirmed' ? 'Saved in Jira.' : active && issueFieldEdits.outcome?.status === 'observed' ? 'Current value loaded from Jira.' : ''}
+                recoveryMode={active && issueFieldEdits.status === 'conflict' ? 'reload' : active && issueFieldEdits.status === 'unknown' ? 'check_jira' : ''}
+                configurationChanged={active && issueFieldEdits.outcome?.configurationChanged === true} jiraUrl={jiraUrl}
+                onOpen={() => issueFieldEdits.openEditor({ issueKey: issue.key, field, issueKind: kind.toLowerCase(), sourceSurface: 'board' })}
+                onClose={issueFieldEdits.closeEditor} onSearch={issueFieldEdits.search} onSelect={issueFieldEdits.submit}
+                onReload={issueFieldEdits.reload} onCheckJira={issueFieldEdits.checkJira}
+                portalTarget={panelRef.current} triggerClassName={triggerClassName}
+            />
+        );
+    };
+
     return (
         <div
             className="epic-panel-backdrop"
@@ -322,8 +359,11 @@ export default function EngBoardEpicPanel({
                             <StatusPill className={getIssueStatusClassName(statusLabel)} label={statusLabel} />
                         )}
                         <span className="m-sp">
-                            {storyPoints} sp · {progress.done} of {progress.total} stories done
+                            {incomplete ? (loading ? `Loading ${workItemLabel}…` : `${workItemLabel} incomplete`)
+                                : `${storyPoints} sp · ${progress.done} of ${progress.total} ${workItemLabel} done`}
                         </span>
+                        <span className="eperson"><span className="lbl">Assignee</span><b>{renderPersonEditor({ key: epicKey }, 'Epic', 'assignee', 'Assignee', epic.assignee)}</b></span>
+                        <span className="eperson"><span className="lbl">Delivery owner</span><b>{renderPersonEditor({ key: epicKey }, 'Epic', 'deliveryOwner', 'Delivery owner', epic.deliveryOwner)}</b></span>
                     </div>
                     <h2 className="m-title" id={titleId}>{summary}</h2>
                 </div>
@@ -353,7 +393,7 @@ export default function EngBoardEpicPanel({
                             <div
                                 className="m-desc-body"
                                 ref={descBodyRef}
-                                dangerouslySetInnerHTML={{ __html: description.html }}
+                                dangerouslySetInnerHTML={descriptionMarkup}
                             />
                         )}
                         {description.status === 'loaded' && (overflows || expanded) && (
@@ -370,9 +410,10 @@ export default function EngBoardEpicPanel({
 
                     <div className="m-sec">
                         <div className="m-sec-head">
-                            <span className="m-sec-label">Stories in scope</span>
+                            <span className="m-sec-label">{workItemLabel[0].toUpperCase() + workItemLabel.slice(1)} in scope</span>
                             <span className="m-sec-label">
-                                {rows.length} {rows.length === 1 ? 'story' : 'stories'} · {storyPoints} sp
+                                {incomplete ? (loading ? 'Loading…' : 'Incomplete')
+                                    : `${rows.length} ${rows.length === 1 ? workItemLabelSingular : workItemLabel} · ${storyPoints} sp`}
                             </span>
                             <span className="spacer" />
                             <div
@@ -383,7 +424,7 @@ export default function EngBoardEpicPanel({
                                     className={`sprint-dropdown-toggle ${sortOpen ? 'open' : ''}`}
                                     role="button"
                                     tabIndex={0}
-                                    aria-label="Sort stories"
+                                    aria-label={`Sort ${workItemLabel}`}
                                     aria-expanded={sortOpen}
                                     onClick={() => setSortOpen((wasOpen) => !wasOpen)}
                                     onKeyDown={(event) => {
@@ -431,6 +472,10 @@ export default function EngBoardEpicPanel({
                             Catch Up's enter animation and `overflow: hidden`, which would clip a
                             transition menu opened on the last row. The ROW classes — the thing
                             D22 governs — are inherited unchanged. */}
+                        {incomplete && <div className="board-child-loading" role="status" aria-busy={loading}>
+                            <span>{loading ? `Loading ${workItemLabel}…` : `${workItemLabel} could not finish loading. Retry the board to complete them.`}</span>
+                            {loading && <div aria-hidden="true"><span className="board-loading-bar" /><span className="board-loading-bar" /><span className="board-loading-bar" /></div>}
+                        </div>}
                         <div className="story-subtasks-rows">
                             {rows.map((task) => (
                                 <div
@@ -448,9 +493,7 @@ export default function EngBoardEpicPanel({
                                         {task?.fields?.summary || task.key}
                                     </a>
                                     {renderStoryStatus(task)}
-                                    <span className="story-subtask-assignee">
-                                        {task?.fields?.assignee?.displayName || 'Unassigned'}
-                                    </span>
+                                    <span className="story-subtask-assignee">{renderPersonEditor(task, 'Story', 'assignee', 'Assignee', task?.fields?.assignee)}</span>
                                     {task?.fields?.updated ? (
                                         <time className="story-subtask-updated" dateTime={task.fields.updated}>
                                             {formatSubtaskUpdatedDate(task.fields.updated)}

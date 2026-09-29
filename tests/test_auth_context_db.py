@@ -163,6 +163,7 @@ class DbAuthContextTests(unittest.TestCase):
         self.assertEqual(context.auth_connection_id, connection_id)
         self.assertEqual(context.stable_subject, 'account-123')
         self.assertEqual(context.atlassian_account_id, 'account-123')
+        self.assertEqual(context.display_name, 'User Example')
         self.assertEqual(context.cloud_id, 'cloud-123')
         self.assertEqual(context.token_version, '3')
         self.assertTrue(context.is_admin)

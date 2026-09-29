@@ -36,8 +36,13 @@ function LoadDetails({ sample }) {
     return <details className="performance-sample">
         <summary>{sample.recordedAt} · {sample.groupId} · {sample.sprintId || 'No sprint'} · {seconds(sample.durationMs)} · {sample.outcome}</summary>
         <p>{sample.surface} · Revision {sample.revision || 'Unknown'} · {sample.environment || 'Unknown environment'}</p>
-        <p>First lane rendered: {seconds(sample.firstContentMs)}</p>
+        <p>{sample.surface === 'eng_board' ? 'First focused content' : 'First lane rendered'}: {seconds(sample.firstFocusedContentMs ?? sample.firstContentMs)}</p>
         <p>Requested dependency loading: {seconds(sample.dependencyDurationMs)}</p>
+        {sample.surface === 'eng_board' && <>
+            <p>Scope {sample.scopeType || 'Unknown'} · Index {seconds(sample.indexMs)} · Focused column complete {seconds(sample.focusedCompleteMs)}</p>
+            <p>{count(sample.issueCount)} work items · {count(sample.epicCount)} Epics · {count(sample.payloadBytes)} bytes · {sample.cacheState || 'unknown'} cache · {sample.completeness || 'unknown'} completeness · peak child searches {count(sample.peakChildSearches)}</p>
+            <p>Jira requests / pages / retries: {count(sample.jiraRequests)} / {count(sample.jiraPages)} / {count(sample.jiraRetries)}</p>
+        </>}
         <div className="performance-table-scroll"><table>
             <thead><tr>{['Lane', 'Time', 'Issues', 'Epics', 'Stories', 'Bytes', 'Cache', 'Completeness', 'Jira requests / pages / retries'].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
             <tbody>{(sample.lanes || []).map((lane, index) => <tr key={index}>
@@ -49,9 +54,11 @@ function LoadDetails({ sample }) {
 }
 
 export default function PerformanceSettings({ backendUrl }) {
-    const [filters, setFilters] = React.useState({ groupId: '', sprintId: '', cacheState: '', revision: '' });
+    const [filters, setFilters] = React.useState({ groupId: '', sprintId: '', surface: '', scopeType: '',
+        cacheState: '', revision: '', scopeCohortDigest: '' });
     const [data, setData] = React.useState(null);
-    const [options, setOptions] = React.useState({ groups: [], sprints: [], revisions: [] });
+    const [options, setOptions] = React.useState({ groups: [], sprints: [], surfaces: [], scopeTypes: [],
+        cacheStates: [], revisions: [], scopeCohortDigests: [] });
     const [loading, setLoading] = React.useState(true);
     const [error, setError] = React.useState('');
     const [refresh, setRefresh] = React.useState(0);
@@ -77,7 +84,10 @@ export default function PerformanceSettings({ backendUrl }) {
         <div className="stats-controls">
             {[
                 ['groupId', 'Group', options.groups], ['sprintId', 'Sprint', options.sprints],
-                ['cacheState', 'Cache', ['hit', 'miss', 'unknown']], ['revision', 'Revision', options.revisions],
+                ['surface', 'Surface', options.surfaces], ['scopeType', 'Scope', options.scopeTypes],
+                ['cacheState', 'Cache', options.cacheStates],
+                ['revision', 'Revision', options.revisions],
+                ['scopeCohortDigest', 'Configuration cohort', options.scopeCohortDigests],
             ].map(([key, label, values]) => <div className="stats-control-group" key={key}>
                 <label htmlFor={`performance-${key}`}>{label}</label><select id={`performance-${key}`} aria-label={`Performance ${label.toLowerCase()}`} value={filters[key]} onChange={event => setFilters(previous => ({ ...previous, [key]: event.target.value }))}>
                     <option value="">All</option>{(values || []).map(value => <option key={value} value={value}>{value}</option>)}
@@ -92,8 +102,10 @@ export default function PerformanceSettings({ backendUrl }) {
         {data?.truncated && <p role="status">History reached the {data.queryLimit} observation limit. Narrow the filters before comparing trends.</p>}
         {summary?.sampleCount > 0 && <>
             <p className="performance-summary">Average <strong>{seconds(summary.avgMs)}</strong> · p50 {seconds(summary.p50Ms)} · p95 <strong>{seconds(summary.p95Ms)}</strong> · {summary.eligibleCount} complete successful samples / {summary.sampleCount} observations</p>
+            {filters.surface === 'eng_board' && <p>First focused content p50 {seconds(summary.p50FirstContentMs)} · p95 {seconds(summary.p95FirstContentMs)}. Full-load duration includes requested dependency loading.</p>}
             <p>{summary.breachCount} loads above 4s · {summary.errorCount} errors · {summary.cancelledCount} cancelled · {summary.cappedCount} capped · {summary.unknownCount || 0} completeness unverified</p>
             {(data.contextual || summary.contextual) && <p role="status">Contextual timings — completeness unverified.</p>}
+            {summary.mixedCohorts && <p role="status">Choose one surface, scope, cache, revision and configuration cohort before comparing latency percentiles.</p>}
             <details className="performance-methodology"><summary>About these measurements</summary>
                 {summary.eligibleCount < 20 && <p>Fewer than 20 complete successful loads: percentiles are preliminary.</p>}
                 <p>Timing includes data collection through rendering. Failed, cancelled and capped loads are excluded from latency summaries. Unverified loads do not establish that the full-load SLO passes.</p>

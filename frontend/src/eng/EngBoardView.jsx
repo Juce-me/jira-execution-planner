@@ -18,6 +18,7 @@ import {
 } from './engBoardDrop.js';
 import { fetchIssueStatusCatalog } from '../api/jiraIssueApi.js';
 import { summarizeTransitionResults } from './engStatusTransitionUtils.js';
+import { trackBoardSmallScreenSupportRequest } from '../analytics/dashboardAnalytics.js';
 import EngBoardEpicCard from './EngBoardEpicCard.jsx';
 import EngBoardEpicPanel from './EngBoardEpicPanel.jsx';
 import EngBoardHelp from './EngBoardHelp.jsx';
@@ -52,6 +53,14 @@ const REJECTED_MS = 2600;
 // Keeps a clamped drop menu clear of the viewport edge.
 const MENU_EDGE_GAP = 8;
 
+// Pane mode (docs/agents/features/2026-09-24-executed-board-column-scroll-panes.md): desktop only —
+// a hovering fine pointer, so touch tablets keep the page-scroll model, and wider than the repo's
+// 760px narrow breakpoint. The order of the checks is the order of the alert's `reason`.
+const PANE_POINTER_QUERY = '(hover: hover) and (pointer: fine)';
+const PANE_WIDTH_QUERY = '(min-width: 761px)';
+// Keeps the height gate from flapping on rounding while a viewport is resized.
+const PANE_GATE_HYSTERESIS = 8;
+
 function breachText(breach) {
     if (!breach) return '';
     return breach.dir === 'over'
@@ -63,12 +72,31 @@ export default function EngBoardView({
     board = null, epicGroups = [], view = null, onViewChange, onConfigure, renderPriorityIcon,
     engFilters, onFacetChange, jiraUrl = '', backendUrl = '', transitionsEnabled = false,
     statusTransitions = null, priorityTransitions = null, projectTrackTransitions = null,
+    issueFieldEdits = null,
     statusTransitionSubmitting = false, onSubmitStatusTransition, onFilterBarHeightChange,
     loading = false, error = null, onRetry,
+    strictColumns = null, authorityPending = false, stale = false,
+    onResolvedFocusChange,
 }) {
     const columns = React.useMemo(
-        () => buildBoardColumns({ columns: board?.columns || [], epicGroups }),
-        [board, epicGroups],
+        () => {
+            if (!Array.isArray(strictColumns)) {
+                return buildBoardColumns({ columns: board?.columns || [], epicGroups });
+            }
+            const admitted = new Set(epicGroups.map((group) => group.key));
+            return strictColumns.map((column) => {
+                const visibleGroups = column.epicGroups.filter((group) => admitted.has(group.key));
+                return {
+                    ...column,
+                    epicGroups: visibleGroups,
+                    epicCount: visibleGroups.length,
+                    storyPoints: visibleGroups.reduce(
+                        (total, group) => total + (Number(group.storyPoints) || 0), 0,
+                    ),
+                };
+            });
+        },
+        [board, epicGroups, strictColumns],
     );
     const scaleMax = boardScaleMax(columns);
     const configStarredId = React.useMemo(
@@ -92,6 +120,9 @@ export default function EngBoardView({
         : { configStarredId, starredId: configStarredId, focusedId: null };
     const starredId = seed.starredId;
     const focusedId = resolveFocus(columns, { preferred: seed.focusedId, starredId });
+    React.useEffect(() => {
+        onResolvedFocusChange?.(focusedId);
+    }, [focusedId, onResolvedFocusChange]);
 
     // §6.3/§10.1: the epic detail panel. Only the key is held — the epic itself is re-read from
     // the live columns on every render, so a filter change, a refresh or a status transition that
@@ -118,7 +149,7 @@ export default function EngBoardView({
         // still in the document, and the live card is looked up by key as the fallback.
         const target = (opener && document.contains(opener))
             ? opener
-            : document.querySelector(`.eng-board .ecard[data-epic-key="${key}"]`);
+            : document.querySelector(`.eng-board .ecard[data-epic-key="${key}"] .ecard-open`);
         target?.focus();
     };
 
@@ -189,7 +220,7 @@ export default function EngBoardView({
     // and all three owe the drag its focus back (§10.1) — the confirmation is reachable only from
     // a pointer gesture, so there is nowhere else for focus to go.
     const focusCard = React.useCallback((epicKey) => {
-        document.querySelector(`.eng-board .ecard[data-epic-key="${epicKey}"]`)?.focus();
+        document.querySelector(`.eng-board .ecard[data-epic-key="${epicKey}"] .ecard-open`)?.focus();
     }, []);
 
     const closeDropMenu = React.useCallback(() => {
@@ -436,6 +467,13 @@ export default function EngBoardView({
         : drop.statuses.map((status) => ({ id: status, label: status, status })));
 
     const boardRef = React.useRef(null);
+    const rootRef = React.useRef(null);
+    const openColumnIdsRef = React.useRef(new Set());
+    const paneAlertRef = React.useRef(null);
+    // Why pane mode cannot apply ('touch' | 'narrow' | 'short'), or null while it applies or no
+    // board is rendered. State, not a class, because the alert strip renders from it.
+    const [paneBlockReason, setPaneBlockReason] = React.useState(null);
+    const [smallScreenRequested, setSmallScreenRequested] = React.useState(false);
     const pendingVerticalRevealRef = React.useRef(null);
     // Only a gesture animates the scroll; mount and resize land instantly, so no test has to wait
     // on a transition that exists purely for the eye.
@@ -499,6 +537,66 @@ export default function EngBoardView({
         });
     }, []);
 
+    // The pane class is imperative, like is-chrome-pinned: the root's className prop never changes,
+    // so a React render cannot wipe it.
+    const setPaneMode = React.useCallback((next, reason = null) => {
+        const root = rootRef.current;
+        if (root) {
+            root.classList.toggle('is-pane-mode', next);
+            if (!next) {
+                root.style.removeProperty('--board-pane-top');
+                root.style.removeProperty('--board-pane-trailing');
+            }
+        }
+        setPaneBlockReason(next ? null : reason);
+    }, []);
+
+    const syncPaneMode = React.useCallback(() => {
+        const root = rootRef.current;
+        const board = boardRef.current;
+        if (!root || !board) {
+            setPaneMode(false);
+            return;
+        }
+        if (!window.matchMedia?.(PANE_POINTER_QUERY).matches) {
+            setPaneMode(false, 'touch');
+            return;
+        }
+        if (!window.matchMedia(PANE_WIDTH_QUERY).matches) {
+            setPaneMode(false, 'narrow');
+            return;
+        }
+        // The board's document top, measured without the fallback alert strip so the strip that
+        // only renders while the gate fails cannot hold the gate shut.
+        const alert = paneAlertRef.current;
+        if (alert) alert.style.display = 'none';
+        const boardTop = board.getBoundingClientRect().top + window.scrollY;
+        if (alert) alert.style.removeProperty('display');
+        const head = board.querySelector('.col.is-focused > .col-head');
+        const card = board.querySelector('.col.is-focused .ecard');
+        const headSpace = head
+            ? head.getBoundingClientRect().height + (parseFloat(getComputedStyle(head).marginBottom) || 0)
+            : 0;
+        const railHeight = parseFloat(getComputedStyle(root).getPropertyValue('--board-strip-h')) || 0;
+        const required = Math.max(railHeight, headSpace + (card ? card.getBoundingClientRect().height : 0))
+            - (root.classList.contains('is-pane-mode') ? PANE_GATE_HYSTERESIS : 0);
+        if (window.innerHeight - boardTop < required) {
+            setPaneMode(false, 'short');
+            return;
+        }
+        setPaneMode(true);
+
+        // The board fills the viewport below its own top, and whatever the document renders below
+        // the board (today .container's bottom padding) is cancelled by a negative margin, so the
+        // document is exactly one viewport tall and the page never scrolls. The trailing space is
+        // measured with the margin removed so it never compounds across passes.
+        root.style.setProperty('--board-pane-top', `${boardTop}px`);
+        root.style.setProperty('--board-pane-trailing', '0px');
+        const boardBottom = board.getBoundingClientRect().bottom + window.scrollY;
+        const scroller = document.scrollingElement || document.documentElement;
+        root.style.setProperty('--board-pane-trailing', `${Math.max(0, scroller.scrollHeight - boardBottom)}px`);
+    }, [setPaneMode]);
+
     const clearBoardChrome = React.useCallback(() => {
         const board = boardRef.current;
         if (!board) return;
@@ -519,6 +617,11 @@ export default function EngBoardView({
             0,
             parseFloat(getComputedStyle(board).getPropertyValue('--epic-sticky-top')) || 0,
         );
+        // Pane mode never pins chrome: the panes are the frame.
+        if (rootRef.current?.classList.contains('is-pane-mode')) {
+            clearBoardChrome();
+            return;
+        }
         const shouldPin = frame.top <= stickyTop && frame.bottom > stickyTop;
         if (!shouldPin) {
             clearBoardChrome();
@@ -568,11 +671,31 @@ export default function EngBoardView({
     }, [scheduleBoardChrome, syncHints]);
 
     React.useLayoutEffect(() => {
+        syncPaneMode();
+        // Decision 8 (spec): a folded column reopens at its top. Its .col-body stays mounted through a
+        // fold and keeps its offset, so every column that was not open on the previous pass starts at 0.
+        const board = boardRef.current;
+        if (board) {
+            const open = new Set();
+            board.querySelectorAll('.col.is-open, .col.is-focused').forEach((column) => {
+                open.add(column.dataset.columnId);
+                if (!openColumnIdsRef.current.has(column.dataset.columnId)) {
+                    const body = column.querySelector('.col-body');
+                    if (body) body.scrollTop = 0;
+                }
+            });
+            openColumnIdsRef.current = open;
+        }
         applyBoardLayout(smoothRef.current);
         smoothRef.current = false;
         syncHints();
         syncBoardChrome();
-    }, [applyBoardLayout, syncBoardChrome, syncHints, columns, focusedId, starredId]);
+    }, [applyBoardLayout, syncBoardChrome, syncHints, syncPaneMode, columns, focusedId, starredId]);
+
+    // The empty state renders no .board; neither the pane class nor the alert may outlive it.
+    React.useLayoutEffect(() => {
+        if (!boardRef.current) setPaneMode(false);
+    });
 
     React.useLayoutEffect(() => {
         const columnId = pendingVerticalRevealRef.current;
@@ -581,6 +704,9 @@ export default function EngBoardView({
 
         const board = boardRef.current;
         const column = board && Array.from(board.children).find((child) => child.dataset.columnId === columnId);
+        // Pane mode: the page never scrolls, and the main layout pass already opened the column at
+        // its top.
+        if (rootRef.current?.classList.contains('is-pane-mode')) return;
         const card = column?.querySelector('.ecard');
         const header = column?.querySelector('.col-head');
         if (!card || !header || !column.classList.contains('is-focused')) return;
@@ -610,33 +736,45 @@ export default function EngBoardView({
     React.useEffect(() => {
         if (typeof ResizeObserver === 'undefined') return undefined;
         const observer = new ResizeObserver(() => {
+            syncPaneMode();
             applyBoardLayout(false);
             syncHints();
             syncBoardChrome();
         });
         observer.observe(document.documentElement);
         return () => observer.disconnect();
-    }, [applyBoardLayout, syncBoardChrome, syncHints]);
+    }, [applyBoardLayout, syncBoardChrome, syncHints, syncPaneMode]);
 
     React.useEffect(() => {
         window.addEventListener('scroll', scheduleBoardChrome, { passive: true });
         window.addEventListener('resize', scheduleBoardChrome);
+        // documentElement's box is content-driven (D16/D29): once the page is taller than the
+        // viewport — the exact condition pane mode cares about — shrinking the viewport further
+        // stops changing that box at all, so the ResizeObserver above never fires again. The gate
+        // needs the viewport height itself, which only the window resize event carries.
+        window.addEventListener('resize', syncPaneMode);
         return () => {
             window.removeEventListener('scroll', scheduleBoardChrome);
             window.removeEventListener('resize', scheduleBoardChrome);
+            window.removeEventListener('resize', syncPaneMode);
             if (chromeFrameRef.current !== null) {
                 window.cancelAnimationFrame(chromeFrameRef.current);
                 chromeFrameRef.current = null;
             }
             clearBoardChrome();
         };
-    }, [clearBoardChrome, scheduleBoardChrome]);
+    }, [clearBoardChrome, scheduleBoardChrome, syncPaneMode]);
 
     // --board-scrollbar-width is published on documentElement, which outlives this component, so
     // leaving Board would otherwise strand it there for the rest of the session.
     React.useEffect(() => () => {
         document.documentElement.style.removeProperty('--board-scrollbar-width');
     }, []);
+
+    const requestSmallScreenSupport = () => {
+        trackBoardSmallScreenSupportRequest(paneBlockReason);
+        setSmallScreenRequested(true);
+    };
 
     const focusColumn = (columnId) => {
         smoothRef.current = true;
@@ -675,13 +813,12 @@ export default function EngBoardView({
         if (next) focusColumn(next.id);
     };
 
-    // §6.1: a group that has never been composed is a first-run state, not an "Unmapped" one. It
-    // says so and offers the composer, because the fix is one screen away and nothing else here
+    // §6.1: a group that has never been composed is a first-run state. It says so and offers the composer, because the fix is one screen away and nothing else here
     // will help.
     const firstRun = columns.length === 1 && columns[0].isUnconfigured;
 
-    // Carried from Task 11: on a one-column board (first-run, or a board whose only column is
-    // Unmapped) both the star and Fold promise something they cannot deliver — folding the only
+    // Carried from Task 11: on a one-column board (first-run, or a board with a single configured
+    // column) both the star and Fold promise something they cannot deliver — folding the only
     // column is impossible (the focus invariant forbids it) and starring it changes nothing
     // visible. An affordance that promises nothing is the review stop D38/D46 were both written
     // about, so it is gated on there being somewhere else for focus to go, not styled away.
@@ -691,28 +828,14 @@ export default function EngBoardView({
     // nothing (D20's hide-at-zero and §7.3's last-option lock are both per-facet), but two facets
     // that each admit work can still intersect to zero epics. That is a legitimate result, not a
     // silent blank — it says so, the same way Catch Up's empty result does (§7.4).
-    const hasNoEpics = !firstRun && epicGroups.length === 0;
+    const hasNoEpics = !firstRun && epicGroups.length === 0 && !authorityPending && !loading;
 
     // State-specific returns live after every hook so loading/error changes never alter hook order.
     // Match EngView's fetch-state precedence and presentation: loading wins over an older error.
-    if (loading) {
-        return <LoadingState title="Loading tasks" message="Refreshing Jira sprint work." />;
-    }
-    if (error) {
-        return (
-            <div className="error">
-                {error}
-                <div style={{ marginTop: '1rem' }}>
-                    <button onClick={onRetry}>Retry</button>
-                </div>
-            </div>
-        );
-    }
-
-    return (
-        <>
-            {/* §7.1/D19: the Board's own facet set, over epics — a separate mount from Catch
-                Up's (EngView.jsx), sharing only the component and the chip grammar. */}
+    const hasStrictContent = Array.isArray(strictColumns) && strictColumns.length > 0;
+    const strictWorkItemLabel = Array.isArray(strictColumns) ? 'work items' : 'stories';
+    // §7.1/D19: Board owns its facet set, sharing Catch Up's chip grammar only.
+    const filterBar = (
             <EngFilterBar
                 facets={engFilters.facets}
                 selection={engFilters.selection}
@@ -726,9 +849,44 @@ export default function EngBoardView({
                 onHeightChange={onFilterBarHeightChange}
                 boardColumns={board?.columns || []}
                 renderPriorityIcon={renderPriorityIcon}
-                viewControls={<EngBoardHelp scaleMax={scaleMax} />}
+                disabled={authorityPending || (!hasStrictContent && (loading || Boolean(error)))}
+                viewControls={<EngBoardHelp scaleMax={scaleMax} workItemLabel={Array.isArray(strictColumns) ? 'work items' : 'Stories'} />}
             />
-            <div className="eng-board" role="region" aria-label="Group board">
+    );
+    if (loading && (!hasStrictContent || (authorityPending && epicGroups.length === 0))) {
+        return <>{filterBar}<LoadingState title="Loading tasks" message={Array.isArray(strictColumns)
+            ? 'Refreshing retained Jira work.' : 'Refreshing Jira sprint work.'} /></>;
+    }
+    if (error && (!hasStrictContent || (epicGroups.length === 0 && !stale))) {
+        return (
+            <>
+                {filterBar}
+                <div className="error" role="alert">
+                    {error}
+                    <div style={{ marginTop: '1rem' }}>
+                        <button onClick={onRetry}>Retry</button>
+                    </div>
+                </div>
+            </>
+        );
+    }
+
+    return (
+        <>
+            {stale && (
+                <div className="board-data-state" role="status">
+                    Showing last complete Board data. {error || ''}
+                    {error && <button type="button" className="secondary compact" onClick={onRetry}>Retry</button>}
+                </div>
+            )}
+            {!stale && error && hasStrictContent && epicGroups.length > 0 && (
+                <div className="board-data-state is-error" role="alert">
+                    <span>Loaded so far — {error}</span>
+                    {onRetry && <button type="button" className="secondary compact" onClick={onRetry}>Retry</button>}
+                </div>
+            )}
+            {filterBar}
+            <div className="eng-board" role="region" aria-label="Group board" ref={rootRef}>
                 {firstRun && (
                     <div className="board-head">
                         <div>
@@ -741,6 +899,16 @@ export default function EngBoardView({
                         {onConfigure && (
                             <button type="button" className="secondary compact board-configure" onClick={onConfigure}>
                                 Configure Group Board ↗
+                            </button>
+                        )}
+                    </div>
+                )}
+                {paneBlockReason && (
+                    <div className="board-data-state" role="status" ref={paneAlertRef}>
+                        <span>Board needs a larger screen.</span>
+                        {smallScreenRequested ? <span>Thanks, noted</span> : (
+                            <button type="button" className="secondary compact" onClick={requestSmallScreenSupport}>
+                                Request small-screen support
                             </button>
                         )}
                     </div>
@@ -849,7 +1017,9 @@ export default function EngBoardView({
                                     )}
                                     <span className="nm">{column.name}</span>
                                     <span className="ct">{column.epicCount}</span>
-                                    <span className="sp">epics · {column.storyPoints.toFixed(1)} sp</span>
+                                    <span className="sp">epics · {column.epicGroups.some(group => group.childrenIncomplete)
+                                        ? (column.epicGroups.some(group => group.childrenLoading) ? 'SP pending' : 'SP unavailable')
+                                        : `${column.storyPoints.toFixed(1)} sp`}</span>
                                     <span className="col-breach" title="Min/Max is set in Group Board settings">
                                         ⚠ {breach}
                                     </span>
@@ -869,7 +1039,7 @@ export default function EngBoardView({
                                     type="button"
                                     className="col-strip"
                                     title={stripTitle}
-                                    aria-label={`Focus ${column.name}, ${column.epicCount} epics, ${column.storyPoints.toFixed(1)} story points`}
+                                    aria-label={`Focus ${column.name}, ${column.epicCount} epics, ${column.epicGroups.some(group => group.childrenIncomplete) ? (column.epicGroups.some(group => group.childrenLoading) ? 'story points pending' : 'story points unavailable') : `${column.storyPoints.toFixed(1)} story points`}`}
                                     onClick={(event) => focusFoldedRail(event, column.id)}
                                 >
                                     <span
@@ -889,10 +1059,13 @@ export default function EngBoardView({
                                             epicGroup={epicGroup}
                                             renderPriorityIcon={renderPriorityIcon}
                                             onOpen={openPanel}
-                                            onDragStart={transitionsEnabled ? handleCardDragStart : null}
+                                            onDragStart={transitionsEnabled && !epicGroup.childrenIncomplete ? handleCardDragStart : null}
                                             onDragEnd={transitionsEnabled ? handleCardDragEnd : null}
                                             isDragging={draggingKey === epicGroup.key}
                                             isRejected={rejectedKey === epicGroup.key}
+                                            workItemLabel={strictWorkItemLabel}
+                                            issueFieldEdits={epicGroup.epic ? issueFieldEdits : null}
+                                            jiraUrl={jiraUrl}
                                         />
                                     ))}
                                 </div>
@@ -966,7 +1139,10 @@ export default function EngBoardView({
                     statusTransitions={statusTransitions}
                     priorityTransitions={priorityTransitions}
                     projectTrackTransitions={projectTrackTransitions}
+                    issueFieldEdits={issueFieldEdits}
                     statusTransitionSubmitting={statusTransitionSubmitting}
+                    workItemLabel={strictWorkItemLabel}
+                    workItemLabelSingular={Array.isArray(strictColumns) ? 'work item' : 'story'}
                     onSubmitStatusTransition={onSubmitStatusTransition}
                     onClose={closePanel}
                 />

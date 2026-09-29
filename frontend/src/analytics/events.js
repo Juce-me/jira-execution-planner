@@ -16,6 +16,8 @@ const EVENT_NAMES = new Set([
     'issue_status_action',
     'issue_priority_action',
     'issue_project_track_action',
+    'issue_field_edit_action',
+    'board_action',
     'external_link_opened',
     'api_result',
     'app_error_shown'
@@ -44,6 +46,7 @@ const EVENT_PARAMS = new Set([
     'error_area',
     'error_code',
     'feature_name',
+    'field_name',
     'filter_type',
     'from_mode',
     'from_view',
@@ -70,6 +73,7 @@ const EVENT_PARAMS = new Set([
     'project_scope',
     'query_length_bucket',
     'range_size_bucket',
+    'reason',
     'recoverable_state',
     'result',
     'result_count_bucket',
@@ -117,6 +121,8 @@ const RESERVED_PREFIX = /^(ga_|google_|firebase_|_|gtag\.)/;
 const BUCKETS = new Set(['0', '1_5', '6_10', '11_25', '26_50', '51_100', 'over_100', 'under_1s', '1_3s', '3_10s', 'over_10s', '2xx', '3xx', '4xx', '5xx']);
 const EVENT_PARAM_VALUE_ALLOWLISTS = {
     module_id: new Set(['catch-up', 'configuration', 'planning', 'board', 'statistics']),
+    scope_type: new Set(['eng', 'epm', 'board', 'all_work', 'component', 'sprint']),
+    reason: new Set(['short', 'narrow', 'touch']),
 };
 
 function assertSafeName(name) {

@@ -1,10 +1,15 @@
+const fs = require('node:fs');
+const path = require('node:path');
 const { test, expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_home_token_fixture');
 
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
+const screenshotDir = path.join(__dirname, '..', '..', 'tmp', 'eng-alert-navigation');
 const selectedSprintId = 34625;
 const selectedSprintName = '2026Q2 Sprint 42';
 const teamIds = ['team-alpha'];
+
+test.beforeAll(() => fs.mkdirSync(screenshotDir, { recursive: true }));
 
 function deferred() {
     let resolve;
@@ -118,10 +123,15 @@ async function installFixture(page, {
 
         if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
         if (url.pathname === '/api/auth/status') return json({ authMode: 'atlassian_oauth', authenticated: true, email: 'profile@example.com' });
+        if (url.pathname === '/api/issues/PROD-1/editable-fields') return json({
+            issueKey: 'PROD-1', field: 'storyPoints', editable: true, currentValue: 3,
+            baseUpdated: '2026-05-01T00:00:00.000+0000', mappingRevision: 'synthetic-story-points', me: null,
+        });
         if (url.pathname === '/api/me/connections/home-token') return json({ connected: false });
         if (url.pathname === '/api/config') {
             return json({
                 jiraUrl: 'https://jira.example',
+                authMode: 'atlassian_oauth',
                 capacityProject: '',
                 groupQueryTemplateEnabled: false,
                 settingsAdminOnly: false,
@@ -150,6 +160,19 @@ async function installFixture(page, {
             return json({ sprints: [{ id: selectedSprintId, name: selectedSprintName, state: sprintState }] });
         }
         if (url.pathname === '/api/stats/priority-weights-config') return json({ weights: [], source: 'test' });
+        if (url.pathname === '/api/eng/story-readiness') {
+            return json({
+                schemaVersion: 1,
+                complete: true,
+                scope: {
+                    groupId: 'grp-default',
+                    sprintId: String(selectedSprintId),
+                    sprintName: selectedSprintName,
+                    sprintState,
+                },
+                epics: [],
+            });
+        }
         if (url.pathname === '/api/tasks-with-team-name') {
             const project = url.searchParams.get('project');
             const purpose = url.searchParams.get('purpose') || '';
@@ -293,15 +316,44 @@ test('Catch Up paints visible tasks before starting progressive alert requests',
     await expect(page.locator('.alerts-panel-toolbar')).toBeVisible();
 });
 
+test('missing Story Points alert reveals the dashboard story and activates its inline editor', async ({ page }) => {
+    const calls = await installFixture(page);
+    await seedMode(page, 'catchUp');
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await waitForCallCount(calls, isAlertCall, 5);
+
+    const story = page.locator('.task-item[data-issue-key="PROD-1"]');
+    const alertLink = page.locator('#eng-alert-missing .alert-story-link').filter({ hasText: 'PROD-1' });
+    await expect(alertLink).toBeVisible();
+    // Search now filters alerts too (#192, adccdae7), so it cannot hide the Story while keeping its alert.
+    await page.getByRole('textbox', { name: 'Search tickets...' }).fill('PROD-1');
+    await expect(alertLink).toBeVisible();
+    await expect(story).toBeVisible();
+    await expect(story).not.toHaveClass(/task-highlight/);
+
+    await alertLink.click();
+    await expect(story).toBeVisible();
+    await expect(story).toHaveClass(/task-highlight/);
+    const pointsInput = story.getByRole('textbox', { name: 'Story Points' });
+    await expect(pointsInput).toBeFocused();
+    await expect(pointsInput).toBeEditable();
+    await expect(pointsInput).toHaveClass(/story-points-alert-highlight/);
+    await expect.poll(() => calls.some(call => call.pathname === '/api/issues/PROD-1/editable-fields' && call.params.field === 'storyPoints')).toBe(true);
+    await page.screenshot({ path: path.join(screenshotDir, 'missing-story-points-editor-focused.png') });
+});
+
 test('Catch Up waits for sprint metadata and sends its name with alert enrichment', async ({ page }) => {
     const sprintGate = deferred();
     const calls = await installFixture(page, { sprintGate });
     await seedMode(page, 'catchUp');
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
 
-    await waitForCallCount(calls, call => call.pathname === '/api/tasks-with-team-name' && !call.params.purpose, 2);
+    // ENG Jira work waits for a validated Sprint catalog (#196, 11c18401), so no tasks or alerts load before it.
+    await expect.poll(() => calls.some(call => call.pathname === '/api/sprints')).toBe(true);
+    expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name')).toEqual([]);
     expect(calls.filter(isAlertCall)).toEqual([]);
     sprintGate.resolve();
+    await waitForCallCount(calls, call => call.pathname === '/api/tasks-with-team-name' && !call.params.purpose, 2);
     await waitForCallCount(calls, isAlertCall, 5);
 
     const enrichmentCalls = calls.filter(call => call.pathname === '/api/tasks-with-team-name' && call.params.purpose === 'alerts');

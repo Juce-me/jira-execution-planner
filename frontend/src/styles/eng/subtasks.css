@@ -14,6 +14,10 @@
             animation: story-subtasks-panel-exit 0.14s ease-in forwards;
         }
 
+        .story-subtasks-panel:has(.status-transition-menu) {
+            overflow: visible;
+        }
+
         @keyframes story-subtasks-panel-enter {
             from {
                 opacity: 0;
@@ -113,12 +117,10 @@
             grid-area: pri;
         }
 
-        /* StatusTransitionMenu's `span.status-transition` wrapper carries no area of its own — the
-           base rule places the PILL, which is one level down. In the four-cell row auto-placement
-           lands the wrapper in the status cell anyway; with the priority column ahead of it, it
-           lands in `pri` instead and the pill overflows a 1.1rem cell. Named explicitly here so
-           the modifier does not depend on auto-placement luck. */
-        .story-subtask-row.has-priority > .status-transition {
+        /* StatusTransitionMenu's wrapper owns the status grid area. Keeping this selector on the
+           direct child prevents the menu's colored marker (`.task-status`) from inheriting row
+           placement and creating implicit grid columns inside each option. */
+        .story-subtask-row > .status-transition {
             grid-area: status;
         }
 
@@ -141,7 +143,8 @@
             text-underline-offset: 2px;
         }
 
-        .story-subtask-row .task-status {
+        .story-subtask-row > .task-status,
+        .story-subtask-row > .status-transition > .task-status {
             grid-area: status;
             display: inline-flex;
             align-items: center;

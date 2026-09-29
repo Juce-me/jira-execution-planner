@@ -10,6 +10,7 @@ const engViewPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'EngVie
 const engSprintDataPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'useEngSprintData.js');
 const engTaskUtilsPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'engTaskUtils.js');
 const engAlertsPanelPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'EngAlertsPanel.jsx');
+const engWorkHierarchyPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'engWorkHierarchy.js');
 const planPath = path.join(__dirname, '..', 'docs', 'plans', 'EXEC-defer-eng-alert-loading.md');
 const stylesDir = path.join(__dirname, '..', 'frontend', 'src', 'styles');
 const cssImportPattern = /@import\s+["'](.+?)["'];/;
@@ -104,7 +105,7 @@ test('ENG alert loading is deferred until visible tasks finish and gated to Catc
     assert.match(alertLoadEffect, /if \(productTasksLoading \|\| techTasksLoading\) return;/);
     assert.match(alertLoadEffect, /const alertController = new AbortController\(\)/);
     assert.match(alertLoadEffect, /const shouldApplyAlertResult = \(\) => catchUpAlertVersionRef\.current === alertCohortVersion;/);
-    assert.match(alertLoadEffect, /loadAlertEpics\(\{ forceRefresh: forceAlertRefresh, shouldApplyResult: shouldApplyAlertResult, signal: alertController\.signal \}\);/);
+    assert.match(alertLoadEffect, /loadAlertEpics\(\{ forceRefresh: forceAlertRefresh, shouldApplyResult: shouldApplyAlertResult, signal: alertController\.signal \}\)\.then\(/);
     assert.match(alertLoadEffect, /fetchMissingPlanningInfo\(selectedSprint, \{ shouldApplyResult: shouldApplyAlertResult, signal: alertController\.signal \}\);/);
     assert.match(alertLoadEffect, /loadReadyToCloseProductTasks\(\{ forceRefresh: forceAlertRefresh, shouldApplyResult: shouldApplyAlertResult, signal: alertController\.signal \}\);/);
     assert.match(alertLoadEffect, /loadReadyToCloseTechTasks\(\{ forceRefresh: forceAlertRefresh, shouldApplyResult: shouldApplyAlertResult, signal: alertController\.signal \}\);/);
@@ -114,8 +115,9 @@ test('ENG alert loading is deferred until visible tasks finish and gated to Catc
     assert.match(alertLoadEffect, /alertController\.abort\(\)/);
     assert.match(
         dashboardSource,
-        /const alertLoadSignature = `\$\{activeGroupId\}::\$\{activeGroupTeamIds\.join\('\|'\)\}::\$\{selectedSprint\}::\$\{selectedSprintInfo\.name\}::\$\{selectedSprintInfo\.state \|\| ''\}`;/
+        /const catchUpAlertScopeKey = `\$\{activeGroupId\}::\$\{activeGroupTeamIds\.join\('\|'\)\}::\$\{selectedSprint\}::\$\{selectedSprintInfo\?\.name \|\| ''\}::\$\{selectedSprintInfo\?\.state \|\| ''\}`;/
     );
+    assert.match(alertLoadEffect, /const alertLoadSignature = catchUpAlertScopeKey;/);
     assert.match(
         dashboardSource,
         /\}, \[isCatchUpMode,[^\]]*selectedSprintInfo\?\.name,[^\]]*selectedSprintInfo\?\.state,[^\]]*catchUpAlertRefreshNonce[^\]]*\]\);/
@@ -139,7 +141,7 @@ test('ENG alert loading is deferred until visible tasks finish and gated to Catc
         dashboardSource,
         /const rearmCatchUpAlerts = \(\) => \{\s*catchUpAlertLoadRef\.current = '';\s*catchUpAlertForceRefreshRef\.current = true;\s*catchUpAlertVersionRef\.current \+= 1;\s*setCatchUpAlertRefreshNonce\(value => value \+ 1\);\s*\};/
     );
-    assert.equal((dashboardSource.match(/rearmCatchUpAlerts\(\);/g) || []).length, 1);
+    assert.equal((dashboardSource.match(/rearmCatchUpAlerts\(\);/g) || []).length, 3);
     assert.equal((dashboardSource.match(/onAlertDataInvalidated: rearmCatchUpAlerts/g) || []).length, 2);
     assert.doesNotMatch(
         dashboardSource,
@@ -168,6 +170,11 @@ test('ENG alert loading is deferred until visible tasks finish and gated to Catc
         2,
         'Both ready-to-close loaders must reject stale task results before committing them'
     );
+    assert.equal(
+        (readyToCloseLoaders.match(/finally \{\s*issueEditState\?\.finishRead\(readToken\);\s*\}/g) || []).length,
+        2,
+        'Ready-to-close readers must release tokens after their final commit or stale-scope return'
+    );
 });
 
 test('primary ENG loads reject stale group scope completions', () => {
@@ -187,6 +194,11 @@ test('primary ENG loads reject stale group scope completions', () => {
     assert.match(
         sprintDataSource,
         /catch \(err\) \{[\s\S]*if \(options\.shouldApplyResult\?\.\(\) === false\) return IGNORED_RESULT;[\s\S]*finally \{[\s\S]*if \(useLoading && options\.shouldApplyResult\?\.\(\) !== false\)/
+    );
+    assert.equal(
+        (sprintDataSource.match(/issueEditState\?\.finishRead\(retainedReadToken\);/g) || []).length,
+        2,
+        'Primary readers must stay active until each caller finishes its final task commit'
     );
 });
 
@@ -214,8 +226,9 @@ test('backlog alert header chip links to the backlog epic key list in Jira', () 
     );
 });
 
-test('future planning epic alerts group by all matched team labels', () => {
+test('Story readiness alerts use the authoritative composite Team requirements', () => {
     const source = fs.readFileSync(dashboardPath, 'utf8');
+    const hierarchySource = fs.readFileSync(engWorkHierarchyPath, 'utf8');
 
     assert.match(
         source,
@@ -225,25 +238,18 @@ test('future planning epic alerts group by all matched team labels', () => {
         source,
         /const getFuturePlanningTeamInfos = React\.useCallback/
     );
-    // Each epic fans out to every matched team label (so a team missing its own
-    // sprint story is not hidden by a peer team that has one), then groups by the
-    // team carried on each entry.
+    assert.match(source, /buildStoryReadinessAlertModel\(\{/);
+    assert.match(hierarchySource, /alertTargets\.filter/);
     assert.match(
         source,
-        /teamInfos: getFuturePlanningTeamInfos\(epic\)/
-    );
-    assert.match(
-        source,
-        /const needsStoriesTeams = groupAlertsByTeam\(needsStoriesEntries, \(entry\) => entry\.team,/
+        /const needsStoriesTeams = groupAlertsByTeam\(visibleAlertCollections\.needsStoriesEntries, \(entry\) => entry\.team,/
     );
     assert.match(
         source,
         /const epicHasPlanningSprintLabel = React\.useCallback\([\s\S]*epicHasSelectedSprintLabel\(epic, selectedSprintInfo\?\.name \|\| ''\)/
     );
-    assert.match(
-        source,
-        /if \(!teamLabel \|\| !epicHasPlanningSprintLabel\(epic\) \|\| !epicHasLabel\(epic, teamLabel\)\)/
-    );
+    assert.match(source, /dismissedStoryRequirementIds/);
+    assert.match(hierarchySource, /missingLabelEpicKeys\.has\(epicKey\)/);
 });
 
 test('dashboard defines a persisted global alerts panel toggle', () => {
@@ -361,7 +367,7 @@ test('ENG alerts toolbar summary lists every alert category in panel order', () 
         'Backlog',
         'Missing team',
         'Missing labels',
-        'Needs stories',
+        'Stories required',
         'Waiting',
         'Empty epic',
         'Ready to close',
@@ -531,7 +537,7 @@ test('issue view helpers preserve status, priority, and team display behavior', 
 });
 
 test('issue status CSS keeps waiting statuses gray, progress statuses blue, and closed subtask statuses green', () => {
-    const engCss = readCssWithImports('eng.css');
+    const engCss = readCssWithImports('eng/epics.css');
     const epmCss = readCssWithImports('epm.css');
     const taskStatusRules = engCss.slice(
         engCss.indexOf('.task-status.done'),
@@ -556,4 +562,86 @@ test('issue status CSS keeps waiting statuses gray, progress statuses blue, and 
     assert.ok(waitingRule.includes('background: #8c8c8c;'));
     assert.equal(taskStatusRules.includes('background: #597ef7;'), false);
     assert.match(epmCss, /\.epm-project-board-status-pill\.task-status\.waiting,[\s\S]*\.epm-project-board-status-pill\.task-status\.pending[\s\S]*background: #8c8c8c;/);
+});
+
+test('dashboard late writers use issue edit generations in addition to scope guards', () => {
+    const dashboardSource = fs.readFileSync(dashboardPath, 'utf8');
+    assert.match(dashboardSource, /issueEditStateRef = useRef\(createEngIssueEditState\(\)\)/);
+    assert.match(dashboardSource, /issueEditState: issueEditStateRef\.current/);
+    assert.match(dashboardSource, /fetchMissingPlanningInfo[\s\S]*beginRead\(\)[\s\S]*reconcileIssues[\s\S]*finishRead/);
+    assert.match(dashboardSource, /fetchDependencies[\s\S]*beginRead\(\{ aggregate: true \}\)[\s\S]*isCurrentAggregateRead/);
+    assert.match(dashboardSource, /loadBacklog[\s\S]*beginRead\(\)[\s\S]*reconcileIssues[\s\S]*finishRead/);
+    assert.match(dashboardSource, /fetchBurnout[\s\S]*beginRead\(\{ aggregate: true \}\)[\s\S]*isCurrentAggregateRead/);
+    assert.match(dashboardSource, /fetchCohort[\s\S]*beginRead\(\{ aggregate: true \}\)[\s\S]*isCurrentAggregateRead/);
+    assert.match(dashboardSource, /loadExcludedCapacity[\s\S]*beginRead\(\{ aggregate: true \}\)[\s\S]*isCurrentAggregateRead/);
+    assert.match(dashboardSource, /groupStateRef\.current\.set\(activeGroupId, issueEditStateRef\.current\.reconcileSnapshot\(groupStateSnapshot\)\)/);
+    assert.match(dashboardSource, /applyGroupState\(issueEditStateRef\.current\.reconcileSnapshot\(cached\)\)/);
+    assert.doesNotMatch(dashboardSource, /projectTrackPhaseCacheRef\.current = \{\};/);
+});
+
+test('story point reconciliation rearms visible dependency and alert reads without task reload', () => {
+    const dashboardSource = fs.readFileSync(dashboardPath, 'utf8');
+    const dependencyEffect = dashboardSource.slice(
+        dashboardSource.indexOf('const dependencyTasks = React.useMemo'),
+        dashboardSource.indexOf('const issueByKey = React.useMemo')
+    );
+    const localPatch = dashboardSource.slice(
+        dashboardSource.indexOf('const invalidateEngIssueFieldSources'),
+        dashboardSource.indexOf('const statusTransitions = useEngStatusTransitions')
+    );
+
+    assert.match(dashboardSource, /isCurrentAggregateRead\(readToken\)\) \{ setDependencyRefreshNonce\(value => value \+ 1\); return ENG_TASK_LOAD_OUTCOME\.IGNORED; \}/);
+    assert.match(dependencyEffect, /dependencyRefreshNonce/);
+    assert.match(localPatch, /setDependencyData\(\{\}\); setDependencyLookupCache\(\{\}\); setDependencyRefreshNonce\(value => value \+ 1\)/);
+    assert.match(localPatch, /rearmCatchUpAlerts\(\)/);
+    assert.match(localPatch, /setInvalidationHandler\(invalidateEngIssueFieldSources\)/);
+    assert.doesNotMatch(localPatch, /loadMeasuredGroupTasks/);
+});
+
+test('oversized alert scope is reported per project and kept out of generic task errors', () => {
+    const sprintDataSource = fs.readFileSync(engSprintDataPath, 'utf8');
+    assert.match(sprintDataSource, /ALERT_SCOPE_TOO_LARGE: 'alert_scope_too_large'/);
+    assert.match(
+        sprintDataSource,
+        /if \(options\.shouldApplyResult\?\.\(\) === false\) return IGNORED_RESULT;\s*if \(options\.purpose === 'alerts' && err\.code === 'alert_scope_too_large'\) return ALERT_SCOPE_TOO_LARGE_RESULT;/
+    );
+    const loadAlertEpics = sprintDataSource.slice(
+        sprintDataSource.indexOf('const loadAlertEpics = async'),
+        sprintDataSource.indexOf('const loadReadyToCloseProductTasks')
+    );
+    assert.equal((loadAlertEpics.match(/setErrorOnFailure: false/g) || []).length, 2);
+    assert.match(loadAlertEpics, /return \{ product: toAlertOutcome\(results\[0\]\), tech: toAlertOutcome\(results\[1\]\) \};/);
+});
+
+test('oversized alert scope gates alert-purpose epicsInScope once and stays scope-guarded', () => {
+    const dashboardSource = fs.readFileSync(dashboardPath, 'utf8');
+    const alertLoadEffectStart = dashboardSource.indexOf('const alertLoadSignature =');
+    const alertLoadEffect = dashboardSource.slice(alertLoadEffectStart, dashboardSource.indexOf('}, [', alertLoadEffectStart));
+    assert.match(
+        alertLoadEffect,
+        /\.then\(\(alertOutcomes\) => \{\s*if \(!shouldApplyAlertResult\(\)\) return;[\s\S]*ENG_TASK_LOAD_OUTCOME\.ALERT_SCOPE_TOO_LARGE[\s\S]*setAlertScopeTooLargeKey\(alertLoadSignature\)[\s\S]*ENG_TASK_LOAD_OUTCOME\.APPLIED[\s\S]*setAlertScopeTooLargeKey\(''\)/
+    );
+    assert.match(dashboardSource, /const alertScopeTooLarge = Boolean\(alertScopeTooLargeKey\) && alertScopeTooLargeKey === catchUpAlertScopeKey;/);
+    assert.match(dashboardSource, /const alertEpicsInScope = React\.useMemo\(\s*\(\) => \(alertScopeTooLarge \? \[\] : epicsInScope\),\s*\[alertScopeTooLarge, epicsInScope\]\s*\);/);
+
+    const alertDerivation = dashboardSource.slice(
+        dashboardSource.indexOf('const alertEpicsInScope = React.useMemo('),
+        dashboardSource.indexOf('const sortByPriorityThenSummary')
+    );
+    assert.match(alertDerivation, /const planningCandidateEpics = React\.useMemo\(\(\) => \{\s*return alertEpicsInScope\.filter/);
+    assert.match(alertDerivation, /const emptyEpics = alertEpicsInScope\s*\.filter/);
+    assert.match(alertDerivation, /\[\.\.\.readyToCloseEpicsInScope, \.\.\.alertEpicsInScope\]/);
+    assert.doesNotMatch(alertDerivation.slice(alertDerivation.indexOf(');') + 2), /\bepicsInScope\b/);
+    assert.match(dashboardSource, /<EngAlertsPanel[\s\S]*alertScopeTooLarge=\{alertScopeTooLarge\}/);
+});
+
+test('oversized alert notice reuses the Story readiness notice without actions', () => {
+    const panelSource = fs.readFileSync(engAlertsPanelPath, 'utf8');
+    const noticeStart = panelSource.indexOf('const alertScopeNotice');
+    assert.notEqual(noticeStart, -1);
+    const notice = panelSource.slice(noticeStart, panelSource.indexOf(': null;', noticeStart));
+    assert.match(notice, /<div className="story-readiness-notice" role="status">/);
+    assert.ok(notice.includes("This Department is too large for Epic alerts: more than 2,000 open Epics match its Teams and labels in Product or Tech. Epic alerts are hidden; Story alerts are still shown. Narrow the Department's Teams or labels."));
+    assert.doesNotMatch(notice, /<button|onClick|Settings/);
+    assert.match(panelSource, /if \(selectedView !== 'eng' \|\| \(alertItemCount <= 0 && !alertScopeTooLarge\)\) \{/);
 });

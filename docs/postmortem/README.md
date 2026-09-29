@@ -43,6 +43,11 @@ Postmortems serve to:
 | [MRT024](./MRT024-head-stamped-schema-drift.md) | Head-Stamped Schema Drift | 2026-09-02 | High | Resolved | Alembic reported head while a preserved local PostgreSQL volume had duplicate onboarding columns and missing auth/capacity schema objects |
 | [MRT025](./MRT025-pr-publication-transaction-failures.md) | PR Publication Transaction Failures | 2026-09-08 | High | In Progress | A repeated publication failure mixed unrelated commit history into a feature PR and rendered JSON-escaped newlines literally because remote range and rendered-body gates ran too late |
 | [MRT026](./MRT026-issue-137-delivery-scope-deviation.md) | Issue 137 Delivery Scope Deviation | 2026-09-07 | High | In Progress | Recovery now includes accepted in-app measurements and a reviewed gated implementation plan; planning acceptance remains pending |
+| [MRT027](./MRT027-board-catalog-pagination.md) | Board Scope Interpretation and Loading Regressions | 2026-09-09 | High | Monitoring | Unconfirmed UX/data-source assumptions and over-strict Jira projection caused duplicate controls, redundant loading, incomplete ownership discovery, and live Board failures |
+| [MRT028](./MRT028-epic-header-instruction-drift.md) | Epic Header Regression and Instruction Drift | 2026-09-10 | High | Monitoring | A scoped local correction now implements the validated single-row visual/readout contract with painted-item and interaction checks; user acceptance and publication remain pending |
+| [MRT029](./MRT029-eng-alert-style-reinvention.md) | ENG Alert Row Reinvented Existing Styles | 2026-09-16 | High | Resolved | Stories Required reinvented the row, exposed Team UUIDs, and could not reveal targets hidden by the default Killed exclusion; style, catalog, and navigation boundaries were corrected |
+| [MRT030](./MRT030-sprint-catalog-page-limit.md) | Sprint Catalog Rejected a Jira-Capped Board Page | 2026-09-23 | High | In Progress | Strict DB/OAuth Sprint fetch required response `maxResults` to equal the request, so a valid capped page yielded `catalog_incomplete`; local red/green coverage added while live attribution remains open |
+| [MRT031](./MRT031-board-discovery-page-token-budget.md) | Board Discovery Exclusion Clause Outgrew Its Own Page Token | 2026-09-23 | High | Resolved | An Epic-key exclusion clause inflated the `all_work` discovery JQL to 4,290 chars; Jira's `nextPageToken` scales with the JQL, so page two would have been 11,744 bytes against a 7,000-byte cap and the scope terminated `scope_too_large` after three pages. Clause removed and every paged GET splitter now budgets via `paged_search_bytes` |
 
 ## Postmortem Template
 
@@ -96,8 +101,8 @@ Commits, files, documentation
 
 ## Statistics
 
-- **Total postmortems**: 25
-- **Metadata complete (Date/Severity/Status)**: 25 (MRT001-MRT025)
+- **Total postmortems**: 31
+- **Metadata complete (Date/Severity/Status)**: 31 (MRT001-MRT031)
 
 ## Common Themes
 
@@ -108,6 +113,8 @@ Commits, files, documentation
 4. **Performance**: Missing optimization guards in React hooks
 5. **Plan/Execution Boundary**: Blocked execution was incorrectly treated as permission to omit a requested plan artifact
 6. **Publication Hygiene**: Local cleanliness and successful CLI exits were mistaken for a correct remote commit range and rendered PR
+7. **Strategic Ambiguity**: A detailed plan was treated as permission to choose a new UI/state/data boundary instead of pausing for user confirmation
+8. **Existing UI Reuse**: New behavior repeatedly introduced bespoke composition or overrides instead of preserving an established component's visual contract
 
 ### Action Items Summary
 Across all postmortems, key actions needed:
@@ -157,5 +164,5 @@ For questions about postmortems or to discuss issues, contact the development te
 
 ---
 
-*Last Updated: 2026-09-08*
-*Total Postmortems: 26*
+*Last Updated: 2026-09-23*
+*Total Postmortems: 31*

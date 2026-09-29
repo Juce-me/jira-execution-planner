@@ -23,13 +23,16 @@ const API_SURFACES = new Set([
     'auth_status',
     'home_connection',
     'eng_tasks',
+    'eng_story_readiness',
     'eng_subtasks',
     'jira_team_capacity',
     'jira_issue_transitions',
     'jira_issue_priorities',
     'jira_issue_project_track',
+    'jira_issue_field_edits',
     'eng_issue_description',
     'board_config_statuses',
+    'eng_board',
     'stats_source',
     'scenario',
     'scenario_drafts',
@@ -238,10 +241,14 @@ export function trackApiResult(apiSurface, {
     cacheState = 'unknown',
     epmTab,
     projectScope,
-    subgoalScope
+    subgoalScope,
+    scopeType,
 } = {}) {
     if (!API_SURFACES.has(apiSurface)) {
         throw new Error(`unsupported api surface: ${apiSurface}`);
+    }
+    if (apiSurface === 'eng_board' && !['all_work', 'component', 'sprint'].includes(scopeType)) {
+        throw new Error(`unsupported ENG Board scope type: ${scopeType}`);
     }
     const normalizedStatus = Number(status) || 0;
     trackEvent('api_result', {
@@ -255,7 +262,8 @@ export function trackApiResult(apiSurface, {
         cache_state: cacheState || 'unknown',
         ...(epmTab ? { epm_tab: epmTab } : {}),
         ...(projectScope ? { project_scope: projectScope } : {}),
-        ...(subgoalScope ? { subgoal_scope: subgoalScope } : {})
+        ...(subgoalScope ? { subgoal_scope: subgoalScope } : {}),
+        ...(scopeType ? { scope_type: scopeType } : {})
     });
 }
 

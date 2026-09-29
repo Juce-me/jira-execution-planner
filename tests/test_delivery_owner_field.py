@@ -55,7 +55,7 @@ class FetchEpicDetailsDeliveryOwnerTests(unittest.TestCase):
                     'summary': 'Epic one',
                     'status': {'name': 'In Progress'},
                     'updated': '2026-01-05T10:00:00.000+0000',
-                    'customfield_88888': {'displayName': 'Jane Doe'},
+                    'customfield_88888': {'accountId': 'account-jane', 'displayName': 'Jane Doe'},
                 }},
             ]})
 
@@ -65,7 +65,8 @@ class FetchEpicDetailsDeliveryOwnerTests(unittest.TestCase):
             details = jira_server.fetch_epic_details_bulk(['PRODUCT-1'], {}, None)
 
         self.assertIn('customfield_88888', captured['payload']['fields'])
-        self.assertEqual(details['PRODUCT-1']['deliveryOwner'], {'displayName': 'Jane Doe'})
+        self.assertEqual(details['PRODUCT-1']['deliveryOwner'], {
+            'accountId': 'account-jane', 'displayName': 'Jane Doe'})
         self.assertEqual(details['PRODUCT-1']['updated'], '2026-01-05T10:00:00.000+0000')
 
     def test_configured_field_present_but_empty_yields_none(self):

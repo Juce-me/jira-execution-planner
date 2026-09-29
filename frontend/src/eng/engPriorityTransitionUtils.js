@@ -117,7 +117,7 @@ export function summarizePriorityTransitionResults(results) {
 // place so its icon/card color reflect the change before the task-list refresh resolves.
 // Epic priority writes have no matching entry in the Story task list (epicGroup.key is
 // never a Story's own key there), so this is a harmless no-op for Epics: the Epic header
-// icon is a derived "most urgent child Story priority" (getEpicEffectivePriority in
+// icon reads the Epic's own priority from epicDetails (getEpicEffectivePriority in
 // engTaskUtils.js), not a value this patches directly. Returns the same array reference
 // when no task matches, so a no-op call never forces an extra re-render.
 export function applyLocalPriorityUpdate(tasks, issueKey, priorityPatch) {

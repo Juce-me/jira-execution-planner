@@ -1,5 +1,8 @@
 ROUTE_SAMPLES = {
     "/api/capacity/<issue_key>": "/api/capacity/CAP-101",
+    "/api/issues/<issue_key>/editable-fields": "/api/issues/DEMO-1/editable-fields",
+    "/api/issues/<issue_key>/field": "/api/issues/DEMO-1/field",
+    "/api/issues/<issue_key>/user-options": "/api/issues/DEMO-1/user-options",
     "/api/admin/service-integrations/<service_integration_id>": "/api/admin/service-integrations/svc-1",
     "/api/admin/users/<user_id>": "/api/admin/users/user-1",
     "/api/admin/users/<user_id>/admin-grant": "/api/admin/users/user-1/admin-grant",

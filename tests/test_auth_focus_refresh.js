@@ -27,6 +27,7 @@ const AUTH_REFRESH_SHARED_STORAGE_KEY = 'jep.auth.lastRefreshAt';
 const AUTH_LONG_ABSENCE_EVENT = 'jep:auth-long-absence-return';
 const AUTH_SESSION_REFRESH_EVENT = 'jep:auth-session-refreshed';
 const AUTH_REQUIRED_EVENT = 'jep:authentication-required';
+const CONNECTION_RECOVERY_ATTEMPT_KEY = 'jira_dashboard_connection_recovery_attempt_v1';
 
 // A realistic epoch-like base timestamp. Using 0 would collide with the
 // module's zero-initialized lastAuthRefreshAt sentinel and mask throttle bugs.
@@ -75,6 +76,7 @@ function createHarness({
     initialNow = BASE_NOW,
     fetchImpl,
     storage = createFakeStorage(),
+    sessionStorage = createFakeStorage(),
 } = {}) {
     const windowListeners = {};
     const documentListeners = {};
@@ -89,6 +91,7 @@ function createHarness({
     const fakeWindow = {
         CustomEvent,
         location: fakeLocation,
+        sessionStorage,
         addEventListener(eventName, handler) {
             windowListeners[eventName] = windowListeners[eventName] || [];
             windowListeners[eventName].push(handler);
@@ -125,6 +128,7 @@ function createHarness({
         document: fakeDocument,
         location: fakeLocation,
         localStorage: storage,
+        sessionStorage,
         CustomEvent,
         fetch: (...args) => {
             fetchCalls.push({ url: args[0], options: args[1] });
@@ -186,6 +190,35 @@ test('initial visible load performs exactly one auth POST and dispatches no long
     assert.equal(harness.fetchCalls[0].url, '/api/auth/refresh');
     assert.equal(longAbsenceEvents(harness).length, 0);
     assert.equal(authSessionRefreshEvents(harness).length, 1);
+});
+
+test('a recovered document suppresses its initial auth refresh until connection ownership is released', async () => {
+    const sessionStorage = createFakeStorage({
+        [CONNECTION_RECOVERY_ATTEMPT_KEY]: JSON.stringify({
+            version: 1,
+            outageId: 'outage-1',
+            attemptedAt: BASE_NOW,
+        }),
+    });
+    const harness = createHarness({ sessionStorage });
+    await flushMicrotasks();
+    assert.equal(harness.fetchCalls.length, 0);
+    harness.fireWindowEvent('jep:connection-available');
+    harness.fireWindowEvent('focus');
+    await flushMicrotasks();
+    assert.equal(harness.fetchCalls.length, 1);
+});
+
+test('connection ownership acquired during an auth request suppresses its completion events', async () => {
+    let resolveFetch;
+    const fetchImpl = () => new Promise(resolve => { resolveFetch = resolve; });
+    const harness = createHarness({ fetchImpl });
+    await flushMicrotasks();
+    harness.fireWindowEvent('jep:connection-unavailable');
+    resolveFetch({ status: 200, ok: true, json: async () => ({}) });
+    await flushMicrotasks();
+    assert.equal(authSessionRefreshEvents(harness).length, 0);
+    assert.equal(longAbsenceEvents(harness).length, 0);
 });
 
 test('initial visible load skips the POST when another tab refreshed within the throttle window', async () => {

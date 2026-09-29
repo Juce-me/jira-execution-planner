@@ -32,7 +32,7 @@ class TestInitiativeExtraction(unittest.TestCase):
                     'summary': 'Payment Gateway v2',
                     'status': {'name': 'Done'},
                     'reporter': {'displayName': 'Alice'},
-                    'assignee': {'displayName': 'Bob'},
+                    'assignee': {'accountId': 'account-bob', 'displayName': 'Bob'},
                     'customfield_10011': None,
                     'parent': {
                         'key': 'INIT-42',
@@ -56,6 +56,7 @@ class TestInitiativeExtraction(unittest.TestCase):
         self.assertIn('PROD-100', result)
         epic = result['PROD-100']
         self.assertEqual(epic['status'], 'Done')
+        self.assertEqual(epic['assignee'], {'accountId': 'account-bob', 'displayName': 'Bob'})
         self.assertIn('initiative', epic)
         self.assertEqual(epic['initiative']['key'], 'INIT-42')
         self.assertEqual(epic['initiative']['summary'], 'Payments Initiative')
@@ -81,6 +82,33 @@ class TestInitiativeExtraction(unittest.TestCase):
 
         self.assertIn('PROD-200', result)
         self.assertNotIn('initiative', result['PROD-200'])
+
+    @patch('jira_server.get_delivery_owner_field_id', return_value='customfield_owner')
+    @patch('jira_server.get_project_track_field_id', return_value='customfield_track')
+    @patch('jira_server.jira_search_request')
+    def test_epic_delivery_owner_preserves_account_identity(
+            self, mock_search, _mock_project_track, _mock_delivery_owner):
+        mock_search.return_value = DummyResponse({
+            'issues': [{
+                'key': 'PROD-250',
+                'fields': {
+                    'summary': 'Owned Epic',
+                    'customfield_owner': {
+                        'accountId': 'account-owner',
+                        'displayName': 'Synthetic Owner',
+                    },
+                },
+            }],
+        })
+
+        result = jira_server.fetch_epic_details_bulk(
+            ['PROD-250'], {'Authorization': 'Bearer test'}, 'customfield_10011'
+        )
+
+        self.assertEqual(result['PROD-250']['deliveryOwner'], {
+            'accountId': 'account-owner',
+            'displayName': 'Synthetic Owner',
+        })
 
     @patch('jira_server.jira_search_request')
     def test_epic_with_non_initiative_parent(self, mock_search):

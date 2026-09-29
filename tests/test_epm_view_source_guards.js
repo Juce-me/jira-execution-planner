@@ -273,7 +273,7 @@ test('ENG compact layout CSS stays scoped away from EPM issue boards', () => {
     // what still needs scoping away from EPM boards is the task list itself.
     [
         '.task-list:not(.epm-issue-board) > .epic-block',
-        '.task-list:not(.epm-issue-board) > .epic-block > .epic-header',
+        '.task-list:not(.epm-issue-board) .epic-block > .epic-header',
         '.task-list:not(.epm-issue-board) > .epic-block > .task-item',
         '.task-list:not(.epm-issue-board) > .epic-block > .task-item .task-header',
         '.task-list:not(.epm-issue-board) > .epic-block > .task-item .task-headline',
@@ -397,7 +397,7 @@ test('compact sticky header keeps search available for every dashboard view', ()
     const compactHeader = getSnippetBetween(
         dashboardSource,
         'className={`compact-sticky-header ${compactStickyVisible ?',
-        "{selectedView === 'eng' && !showBoard && !isCompletedSprintSelected && ("
+        "{selectedView === 'eng' && !showBoard && !isCompletedSprintSelected && engWorkspaceConfigured && ("
     );
     assert.ok(compactHeader.includes('compact-sticky-header-search'), 'Expected compact header to render its search container');
     assert.ok(compactHeader.includes("{renderSearchControl('compact', 'compact-sticky-header-search-field')}"), 'Expected compact header search to use the shared search control');

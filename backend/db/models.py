@@ -21,6 +21,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    Uuid,
     text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -88,12 +89,26 @@ class LoadPerformance(Base):
     workspace_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     load_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     group_id: Mapped[str] = mapped_column(String(128))
-    sprint_id: Mapped[str] = mapped_column(String(128))
+    sprint_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     surface: Mapped[str] = mapped_column(String(32))
+    schema_version: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    scope_type: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     outcome: Mapped[str] = mapped_column(String(16))
     duration_ms: Mapped[float] = mapped_column(Float)
     dependency_duration_ms: Mapped[Optional[float]] = mapped_column(Float)
     first_content_ms: Mapped[Optional[float]] = mapped_column(Float)
+    focused_complete_ms: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    index_ms: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    epic_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    issue_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    payload_bytes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    jira_requests: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    jira_pages: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    jira_retries: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    completeness: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    cache_state: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    peak_child_searches: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    scope_cohort_digest: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     lanes: Mapped[list] = mapped_column(JSON)
     environment: Mapped[str] = mapped_column(String(128))
     revision: Mapped[str] = mapped_column(String(128))
@@ -259,6 +274,173 @@ class WorkspaceTeamCatalog(Base):
     updated_by: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey('users.id', ondelete='SET NULL'))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
+
+
+_CATALOG_FAILURE_CODES = (
+    'refresh_budget_exhausted',
+    'catalog_refresh_lock_timeout',
+    'oauth_refresh_timeout',
+    'jira_unavailable',
+    'catalog_incomplete',
+    'catalog_identity_changed',
+    'auth_required',
+    'catalog_runtime_unavailable',
+)
+
+
+def _positive_decimal_check(column_name: str) -> str:
+    digits_removed = column_name
+    for digit in '0123456789':
+        digits_removed = f"replace({digits_removed}, '{digit}', '')"
+    return (
+        f"{column_name} <> '' AND substr({column_name}, 1, 1) BETWEEN '1' AND '9' "
+        f"AND {digits_removed} = ''"
+    )
+
+
+def _catalog_constraints(*, table_prefix: str, identity_column: str, team: bool) -> tuple:
+    attempt_columns = [
+        'refresh_attempt_id', 'attempt_identity', 'attempt_config_digest',
+        'attempt_deadline_at',
+    ]
+    if team:
+        attempt_columns.append('attempt_scope_digest')
+    attempt_empty = ' AND '.join(f'{column} IS NULL' for column in attempt_columns)
+    attempt_present = ' AND '.join(f'{column} IS NOT NULL' for column in attempt_columns)
+    no_lease = 'refresh_lease_owner IS NULL AND refresh_lease_until IS NULL'
+    has_lease = 'refresh_lease_owner IS NOT NULL AND refresh_lease_until IS NOT NULL'
+    no_failure = 'failure_code IS NULL AND last_failure_at IS NULL AND retry_at IS NULL'
+    has_failure = 'failure_code IS NOT NULL AND last_failure_at IS NOT NULL AND retry_at IS NOT NULL'
+    failure_codes = ', '.join(f"'{code}'" for code in _CATALOG_FAILURE_CODES)
+    constraints = [
+        CheckConstraint(
+            _positive_decimal_check(identity_column),
+            name=f'ck_{table_prefix}_positive_identity',
+        ),
+        CheckConstraint(
+            "refresh_status IN ('idle', 'pending', 'completed', 'failed')",
+            name=f'ck_{table_prefix}_refresh_status',
+        ),
+        CheckConstraint(
+            f'failure_code IS NULL OR failure_code IN ({failure_codes})',
+            name=f'ck_{table_prefix}_failure_code',
+        ),
+        CheckConstraint(
+            '(validated_at IS NULL AND catalog_version IS NULL) OR '
+            '(validated_at IS NOT NULL AND catalog_version IS NOT NULL)',
+            name=f'ck_{table_prefix}_validation_version',
+        ),
+        CheckConstraint(
+            '(refresh_lease_owner IS NULL AND refresh_lease_until IS NULL) OR '
+            '(refresh_lease_owner IS NOT NULL AND refresh_lease_until IS NOT NULL)',
+            name=f'ck_{table_prefix}_lease_pair',
+        ),
+        CheckConstraint(
+            f'({attempt_empty}) OR ({attempt_present})',
+            name=f'ck_{table_prefix}_attempt_group',
+        ),
+        CheckConstraint(
+            f"(refresh_status = 'idle' AND {attempt_empty} AND {no_lease} AND {no_failure}) OR "
+            f"(refresh_status = 'pending' AND {attempt_present} AND {has_lease} AND {no_failure}) OR "
+            f"(refresh_status = 'completed' AND {attempt_present} AND {no_lease} AND {no_failure}) OR "
+            f"(refresh_status = 'failed' AND {attempt_present} AND {no_lease} AND {has_failure})",
+            name=f'ck_{table_prefix}_state_metadata',
+        ),
+    ]
+    if team:
+        constraints.append(CheckConstraint(
+            'validated_at IS NULL OR scope_digest IS NOT NULL',
+            name=f'ck_{table_prefix}_validated_scope',
+        ))
+    return tuple(constraints)
+
+
+class WorkspaceSprintCatalog(Base):
+    __tablename__ = 'workspace_sprint_catalogs'
+    __table_args__ = (
+        UniqueConstraint(
+            'workspace_id', 'board_id',
+            name='uq_workspace_sprint_catalogs_workspace_board',
+        ),
+        Index(
+            'ix_workspace_sprint_catalogs_attempt_deadline',
+            'workspace_id', 'attempt_deadline_at',
+        ),
+        Index(
+            'ix_workspace_sprint_catalogs_lease_until',
+            'workspace_id', 'refresh_lease_until',
+        ),
+        *_catalog_constraints(
+            table_prefix='workspace_sprint_catalogs', identity_column='board_id', team=False,
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey('workspaces.id', ondelete='CASCADE'), nullable=False)
+    board_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    payload_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default='1')
+    sprints: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default=text("'[]'"))
+    next_refresh_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    updated_by: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey('users.id', ondelete='SET NULL'))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, server_default=text('CURRENT_TIMESTAMP'))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow, server_default=text('CURRENT_TIMESTAMP'))
+    validated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    catalog_version: Mapped[Optional[str]] = mapped_column(Uuid(as_uuid=False))
+    refresh_attempt_id: Mapped[Optional[str]] = mapped_column(Uuid(as_uuid=False))
+    attempt_identity: Mapped[Optional[str]] = mapped_column(String(128))
+    attempt_config_digest: Mapped[Optional[str]] = mapped_column(String(128))
+    attempt_deadline_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    refresh_status: Mapped[str] = mapped_column(String(16), nullable=False, default='idle', server_default='idle')
+    failure_code: Mapped[Optional[str]] = mapped_column(String(64))
+    last_failure_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    retry_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    refresh_lease_owner: Mapped[Optional[str]] = mapped_column(Uuid(as_uuid=False))
+    refresh_lease_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+class WorkspaceSprintTeamCatalog(Base):
+    __tablename__ = 'workspace_sprint_team_catalogs'
+    __table_args__ = (
+        UniqueConstraint(
+            'workspace_id', 'sprint_id',
+            name='uq_workspace_sprint_team_catalogs_workspace_sprint',
+        ),
+        Index(
+            'ix_workspace_sprint_team_catalogs_attempt_deadline',
+            'workspace_id', 'attempt_deadline_at',
+        ),
+        Index(
+            'ix_workspace_sprint_team_catalogs_lease_until',
+            'workspace_id', 'refresh_lease_until',
+        ),
+        *_catalog_constraints(
+            table_prefix='workspace_sprint_team_catalogs', identity_column='sprint_id', team=True,
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey('workspaces.id', ondelete='CASCADE'), nullable=False)
+    sprint_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    sprint_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    scope_digest: Mapped[Optional[str]] = mapped_column(String(128))
+    payload_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default='1')
+    teams: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default=text("'[]'"))
+    updated_by: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey('users.id', ondelete='SET NULL'))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, server_default=text('CURRENT_TIMESTAMP'))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow, server_default=text('CURRENT_TIMESTAMP'))
+    validated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    catalog_version: Mapped[Optional[str]] = mapped_column(Uuid(as_uuid=False))
+    refresh_attempt_id: Mapped[Optional[str]] = mapped_column(Uuid(as_uuid=False))
+    attempt_identity: Mapped[Optional[str]] = mapped_column(String(128))
+    attempt_config_digest: Mapped[Optional[str]] = mapped_column(String(128))
+    attempt_scope_digest: Mapped[Optional[str]] = mapped_column(String(128))
+    attempt_deadline_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    refresh_status: Mapped[str] = mapped_column(String(16), nullable=False, default='idle', server_default='idle')
+    failure_code: Mapped[Optional[str]] = mapped_column(String(64))
+    last_failure_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    retry_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    refresh_lease_owner: Mapped[Optional[str]] = mapped_column(Uuid(as_uuid=False))
+    refresh_lease_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
 
 class UserGroupPreference(Base):

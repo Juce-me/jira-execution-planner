@@ -63,7 +63,18 @@ from backend.config.repository import (
     validate_config_storage_startup,
 )
 from backend.config.shared_config import normalize_shared_admin_section
-from backend.services.workspace_dashboard_config import WorkspaceConfigConflict
+from backend.services.workspace_dashboard_config import (
+    WorkspaceConfigConflict,
+    WorkspaceConfigFenceUnavailable,
+    load_workspace_team_catalog as _load_workspace_team_catalog_db,
+)
+from backend.services.workspace_catalog_config import resolve_effective_catalog_config
+from backend.services.catalog_refresh_runtime import (
+    get_catalog_refresh_runtime as _get_catalog_refresh_runtime,
+    read_catalog_completion,
+)
+from backend.services.sprint_teams import fetch_sprint_teams
+from backend.services.catalog_app_adapter import CatalogAppAdapter
 from backend.db.engine import DatabaseConfigurationError, database_storage_enabled, session_scope
 from backend.auth.jira_auth import (
     AUTH_MODE_ATLASSIAN_OAUTH,
@@ -96,13 +107,16 @@ from backend.services import capacity as _capacity_service
 from backend.services import sprints as _sprints_service
 from backend.services import stats_cache as _stats_cache_service
 from backend.services.alert_epics import (
+    AlertEpicScopeTooLarge,
     build_alert_epic_payloads as build_alert_epic_payloads_service,
+    fetch_epics_for_alert_scope as fetch_epics_for_alert_scope_service,
     fetch_epics_by_keys_for_alert as fetch_epics_by_keys_for_alert_service,
 )
 from backend.services import update_check as _update_check_service
 from backend.services import priority_weights as _priority_weights_service
 from backend.services import team_catalog as _team_catalog_service
 from backend.services import group_config as _group_config_service
+from backend.services import shared_group_config as _shared_group_config_service
 from backend.services import group_board as _group_board_service
 from backend.services import shared_capacity_config as _shared_capacity_config_service
 from backend.services.eng_subtasks import build_embedded_subtask_summary
@@ -195,9 +209,9 @@ EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE_TTL_SECONDS = int(os.getenv('EXCLUDED_CAPAC
 EXCLUDED_CAPACITY_EPIC_SUMMARY_BATCH_SIZE = int(os.getenv('EXCLUDED_CAPACITY_EPIC_SUMMARY_BATCH_SIZE', '100'))
 
 SCENARIO_CACHE = {'generatedAt': None, 'data': None}
-TASKS_CACHE = {}
+TASKS_CACHE, SPRINTS_PROCESS_CACHE = {}, {}
 TASKS_CACHE_TTL_SECONDS = 60 * 5
-TASKS_CACHE_SCHEMA_VERSION = 'v2-empty-epic-actionable'
+TASKS_CACHE_SCHEMA_VERSION = 'v3-team-label-aliases'
 MISSING_INFO_CACHE = {}
 MISSING_INFO_CACHE_TTL_SECONDS = 60 * 5
 DEPENDENCIES_CACHE = {}
@@ -206,6 +220,7 @@ UPDATE_CHECK_CACHE = {'ts': 0, 'data': None}
 EPIC_COHORT_CACHE = {}
 EXCLUDED_CAPACITY_STATS_SOURCE_CACHE = {}
 EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE = {}
+JIRA_ISSUE_CACHE_GENERATION = 0
 EPM_PROJECTS_CACHE = {}
 EPM_ISSUES_CACHE = {}
 EPM_ROLLUP_CACHE = {}
@@ -217,15 +232,13 @@ EPM_ISSUES_CACHE_TTL_SECONDS = 300
 EPM_ROLLUP_CACHE_TTL_SECONDS = 300
 EPM_ROLLUP_QUERY_MAX_RESULTS = 2000
 _epm_cache_lock = threading.Lock()
-
 # Single lock for all global caches — kept simple since these are not hot paths.
 _cache_lock = threading.RLock()
-
 # Cache settings
 SPRINTS_CACHE_FILE = 'sprints_cache.json'
 STATS_CACHE_FILE = 'stats_cache.json'
 CACHE_EXPIRY_HOURS = 24
-GROUPS_CONFIG_VERSION = 1
+GROUPS_CONFIG_VERSION = 2
 GROUPS_MAX_TEAMS = 12
 PRIORITY_WEIGHT_DEFAULTS = [
     {'priority': 'Blocker', 'weight': 0.4},
@@ -610,7 +623,7 @@ def current_request_auth_context():
             site_url=site_url,
             token_version=str(session_data.get('stored_at', '1')),
             account_status=session_data.get('account_status', ''),
-            is_admin=is_pre_db_tool_admin_account(account_id),
+            is_admin=is_pre_db_tool_admin_account(account_id), display_name=session_data.get('display_name', ''),
             granted_scopes=tuple(session_data.get('scope', '').split()) if session_data.get('scope_provenance') == 'provider' else (),
             granted_scopes_verified=session_data.get('scope_provenance') == 'provider',
         )
@@ -630,7 +643,8 @@ def current_request_auth_context():
 
 
 def oauth_auth_required_payload():
-    save_oauth_session({})
+    if not database_storage_enabled():
+        save_oauth_session({})
     return {
         'error': 'auth_required',
         'message': 'Your Jira sign-in expired. Sign in again to continue.',
@@ -1363,8 +1377,8 @@ def extract_team_name(value):
                 return value.get(key)
         return value.get('id')
     return str(value)
-
-
+def shape_jira_person(value):
+    return {'accountId': value.get('accountId'), 'displayName': value.get('displayName')} if isinstance(value, dict) else None
 def extract_team_ids(value):
     """Extract Team[Team] ids from Jira Team field values."""
     if value is None:
@@ -1618,7 +1632,7 @@ def add_sprint_label_alternative_to_jql(jql, sprint_label):
     label = str(sprint_label or '').strip()
     if not label:
         return jql
-    label_clause = f'labels = "{_escape_jql_literal(label)}"'
+    label_clause = f'labels in ("{_escape_jql_literal(label)}", "{_escape_jql_literal(label + "_candidate")}")'
     sprint_clause = r'(?P<prefix>^|\s+AND\s+)(?P<clause>Sprint\s*=\s*(?:"[^"]+"|\'[^\']+\'|[^\s)]+))'
     replacement = lambda match: f'{match.group("prefix")}({match.group("clause")} OR {label_clause})'
     updated, count = re.subn(sprint_clause, replacement, jql, count=1, flags=re.IGNORECASE)
@@ -1772,48 +1786,6 @@ def save_dashboard_config(config, *, source='auto'):
     if source == 'db' or config_storage_db_enabled():
         raise ConfigStorageError('full workspace dashboard replacement is forbidden in DB mode')
     return _save_dashboard_config_json(config)
-
-
-def resolve_team_catalog_path():
-    return _config_store.resolve_team_catalog_path(TEAM_CATALOG_PATH)
-
-
-def load_team_catalog():
-    return _config_store.load_team_catalog(
-        resolve_team_catalog_path(),
-        normalize_team_catalog_fn=normalize_team_catalog,
-        normalize_team_catalog_meta_fn=normalize_team_catalog_meta,
-        log_warning_fn=log_warning
-    )
-
-
-def save_team_catalog_file(catalog_data):
-    return _config_store.save_team_catalog_file(
-        catalog_data,
-        resolve_team_catalog_path(),
-        normalize_team_catalog_fn=normalize_team_catalog,
-        normalize_team_catalog_meta_fn=normalize_team_catalog_meta
-    )
-
-
-def migrate_team_catalog_from_config():
-    """One-time migration: extract teamCatalog from dashboard-config.json into team-catalog.json."""
-    catalog_path = resolve_team_catalog_path()
-    if os.path.exists(catalog_path):
-        return  # Already migrated or manually created
-    dashboard_config = load_dashboard_config(source='jsonfile')
-    if not dashboard_config:
-        return
-    team_groups = dashboard_config.get('teamGroups')
-    if not isinstance(team_groups, dict):
-        return
-    raw_catalog = team_groups.get('teamCatalog') or {}
-    raw_meta = team_groups.get('teamCatalogMeta') or {}
-    catalog = normalize_team_catalog(raw_catalog)
-    if not catalog:
-        return  # Nothing to migrate
-    save_team_catalog_file({'catalog': catalog, 'meta': raw_meta})
-    log_info('Migrated teamCatalog from dashboard-config.json to team-catalog.json')
 
 
 def resolve_scenario_overrides_path():
@@ -2006,12 +1978,11 @@ def clear_epm_caches(context=None):
 
 def invalidate_stats_cache():
     return _stats_cache_service.invalidate_stats_cache(STATS_CACHE_FILE, log_warning_fn=log_warning) if local_file_state_enabled() else False
-
-
 def clear_auth_sensitive_caches(reason='auth_context_change'):
-    global TEAM_FIELD_CACHE, PARENT_NAME_FIELD_CACHE, EPIC_LINK_FIELD_CACHE, CAPACITY_FIELD_CACHE
+    global TEAM_FIELD_CACHE, PARENT_NAME_FIELD_CACHE, EPIC_LINK_FIELD_CACHE, CAPACITY_FIELD_CACHE, JIRA_ISSUE_CACHE_GENERATION
     with _cache_lock:
-        TASKS_CACHE.clear()
+        JIRA_ISSUE_CACHE_GENERATION += 1
+        for cache in (TASKS_CACHE, SPRINTS_PROCESS_CACHE): cache.clear()
         MISSING_INFO_CACHE.clear()
         DEPENDENCIES_CACHE.clear()
         EPIC_COHORT_CACHE.clear()
@@ -2042,8 +2013,9 @@ def clear_auth_sensitive_caches(reason='auth_context_change'):
         invalidate_sprints_cache()
         invalidate_stats_cache()
     log_info(f'Cleared auth-sensitive caches reason={reason}')
-
-
+def get_jira_issue_cache_generation():
+    with _cache_lock:
+        return JIRA_ISSUE_CACHE_GENERATION
 register_service_integration_cache_invalidator(clear_auth_sensitive_caches)
 
 
@@ -2664,6 +2636,13 @@ def normalize_group_board(raw):
     return _group_board_service.normalize_group_board(raw)
 
 
+def find_comma_scalar_team_label_errors(payload):
+    return _group_config_service.find_comma_scalar_team_label_errors(
+        payload,
+        find_comma_scalar_team_labels_fn=_team_catalog_service.find_comma_scalar_team_labels,
+    )
+
+
 def validate_groups_config(payload, allow_empty=False):
     return _group_config_service.validate_groups_config(
         payload,
@@ -2696,10 +2675,23 @@ def apply_team_ids_to_template(team_ids):
     return JQL_QUERY_TEMPLATE.replace('{TEAM_IDS}', quoted)
 
 
-def build_tasks_cache_key(sprint, group_id, project_filter, team_ids, team_labels, include_team_name, use_template, purpose='dashboard', epic_keys=None):
+def load_request_effective_groups(context):
+    """Effective shared groups for this auth boundary, with the same loaders as Story readiness."""
+    return _shared_group_config_service.load_effective_groups(
+        context if is_db_auth_context(context) else None,
+        fallback_loader=lambda: load_dashboard_config(source='jsonfile'),
+        validate_groups_config_fn=validate_groups_config,
+        dashboard_loader=load_dashboard_config,
+        groups_file_loader=lambda: load_groups_config_file(resolve_groups_config_path()),
+        environment_loader=parse_groups_config_env,
+        default_builder=build_default_groups_config,
+    )
+
+
+def build_tasks_cache_key(sprint, group_id, project_filter, team_ids, team_labels, include_team_name, use_template, purpose='dashboard', epic_keys=None, sprint_name=''):
     epic_signature = ','.join(sorted({str(k).strip() for k in (epic_keys or []) if str(k).strip()}))
     label_signature = ','.join(sorted({str(v).strip() for v in (team_labels or []) if str(v).strip()}))
-    raw = f"{TASKS_CACHE_SCHEMA_VERSION}::{purpose}::{sprint}::{group_id}::{project_filter}::{','.join(team_ids)}::{label_signature}::{include_team_name}::{use_template}::{epic_signature}"
+    raw = f"{TASKS_CACHE_SCHEMA_VERSION}::{purpose}::{sprint}::{str(sprint_name or '').strip().casefold()}::{group_id}::{project_filter}::{','.join(team_ids)}::{label_signature}::{include_team_name}::{use_template}::{epic_signature}"
     digest = hashlib.sha1(raw.encode('utf-8')).hexdigest()[:12]
     return f"tasks:{digest}"
 
@@ -2734,6 +2726,19 @@ def fetch_board_sprint_ids(board_id, headers):
         auth_error_class=AuthError,
         log_warning_fn=log_warning,
     )
+
+
+_catalog_app_adapter = CatalogAppAdapter(globals())
+catalog_runtime_inputs = _catalog_app_adapter.runtime_inputs
+resolve_request_effective_catalog_config = _catalog_app_adapter.resolve_request_config
+catalog_browser_context_id = _catalog_app_adapter.browser_context_id
+resolve_team_catalog_path = _catalog_app_adapter.resolve_team_catalog_path
+load_team_catalog = _catalog_app_adapter.load_team_catalog
+save_team_catalog_file = _catalog_app_adapter.save_team_catalog_file
+migrate_team_catalog_from_config = _catalog_app_adapter.migrate_team_catalog_from_config
+fetch_board_sprints = _catalog_app_adapter.fetch_board_sprints
+fetch_catalog_sprint_teams = _catalog_app_adapter.fetch_catalog_sprint_teams
+catalog_refresh_runtime = _catalog_app_adapter.refresh_runtime
 
 
 def deduplicate_sprints_by_name(sprints, board_sprint_ids=None):
@@ -2796,13 +2801,13 @@ def fetch_epic_details_bulk(epic_keys, headers, epic_name_field):
                     'status': (fields.get('status') or {}).get('name') or '',
                     'priority': (fields.get('priority') or {}).get('name') or None,
                     'reporter': (fields.get('reporter') or {}).get('displayName'),
-                    'assignee': {'displayName': (fields.get('assignee') or {}).get('displayName')} if fields.get('assignee') else None,
+                    'assignee': shape_jira_person(fields.get('assignee')),
                     'projectTrack': (fields.get(project_track_field) or {}).get('value') if fields.get(project_track_field) else None,
                     'updated': fields.get('updated'),
                 }
                 # Omitted while unconfigured: "no field is set up" must not read as "no owner".
                 if delivery_owner_field:
-                    epic_details[key]['deliveryOwner'] = {'displayName': (fields.get(delivery_owner_field) or {}).get('displayName')} if fields.get(delivery_owner_field) else None
+                    epic_details[key]['deliveryOwner'] = shape_jira_person(fields.get(delivery_owner_field))
                 # Extract initiative from parent if present
                 parent = fields.get('parent')
                 if parent and parent.get('key'):
@@ -2872,39 +2877,21 @@ def issue_has_sprint(value):
     return True
 
 
-def fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id=None, scope_team_ids=None, scope_team_labels=None, scope_sprint_label=None):
+def fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id=None, scope_team_ids=None, scope_team_labels=None, scope_sprint_label=None, complete_alert_scope=False):
     """Fetch epics matching the current sprint/team filters so UI can flag epics with 0 stories."""
     epic_jql = derive_epic_jql(remove_team_filter_from_jql(jql), EPIC_EMPTY_TEAM_IDS)
     epic_jql = add_sprint_label_alternative_to_jql(epic_jql, scope_sprint_label)
     scope_clause = _group_config_service.build_epic_alert_scope_clause(scope_team_ids, scope_team_labels, normalize_team_ids)
     if scope_clause:
         epic_jql = add_clause_to_jql(epic_jql, scope_clause)
-    epic_field = epic_name_field or PARENT_NAME_FIELD_DEFAULT
-
-    fields_list = ['summary', 'status', 'assignee', 'labels', epic_field]
-    if team_field_id and team_field_id not in fields_list:
-        fields_list.append(team_field_id)
-    if sprint_field_id and sprint_field_id not in fields_list:
-        fields_list.append(sprint_field_id)
-
-    payload = {
-        'jql': epic_jql,
-        'maxResults': 250,
-        'fields': fields_list
-    }
-    resp = jira_search_request(payload)
-    if resp.status_code != 200:
-        log_warning(f'Epic empty-state fetch failed: status={resp.status_code}')
-        return []
-
-    data = resp.json() or {}
-    issues = data.get('issues', []) or []
-    return build_alert_epic_payloads_service(
-        issues,
-        team_field_id,
-        sprint_field_id,
+    return fetch_epics_for_alert_scope_service(
+        epic_jql, team_field_id, epic_name_field, sprint_field_id,
+        search_request=jira_search_request,
+        parent_name_field_default=PARENT_NAME_FIELD_DEFAULT,
         build_team_value=build_team_value,
         extract_team_name=extract_team_name,
+        complete_alert_scope=complete_alert_scope,
+        log_warning_fn=log_warning,
     )
 
 
@@ -2916,7 +2903,7 @@ def fetch_backlog_epics_for_alert(jql, headers, team_field_id, sprint_field_id, 
     if sprint_field_id:
         epic_jql = add_clause_to_jql(epic_jql, f'"{sprint_field_id}" is EMPTY')
 
-    epic_fields = ['summary', 'status', 'assignee', 'components']
+    epic_fields = ['summary', 'status', 'assignee', 'components', 'labels']
     if team_field_id and team_field_id not in epic_fields:
         epic_fields.append(team_field_id)
     if sprint_field_id and sprint_field_id not in epic_fields:
@@ -2946,8 +2933,9 @@ def fetch_backlog_epics_for_alert(jql, headers, team_field_id, sprint_field_id, 
             'key': issue.get('key'),
             'summary': fields.get('summary'),
             'status': {'name': status.get('name')} if status else None,
-            'assignee': {'displayName': assignee.get('displayName')} if assignee else None,
+            'assignee': shape_jira_person(assignee),
             'components': [c.get('name') for c in (fields.get('components') or []) if c.get('name')],
+            'labels': fields.get('labels') or [],
             'team': team_value,
             'teamName': team_name,
             'teamId': team_value.get('id') if isinstance(team_value, dict) else None,
@@ -3231,17 +3219,23 @@ def fetch_tasks(include_team_name=False):
         epic_keys_filter = sorted({t.strip() for t in epic_keys_param.split(',') if t.strip()})
         use_template = bool(team_ids and JQL_QUERY_TEMPLATE)
         lightweight_ready_to_close = request_purpose == 'ready-to-close'
-        raw_cache_key = build_tasks_cache_key(
-            sprint, group_id, project_filter, team_ids, team_label_values,
-            include_team_name, use_template, request_purpose, epic_keys_filter
-        )
         record_timing('parse_params', parse_started)
         auth_context = current_request_auth_context()
-        measurement_campaign = getattr(g, 'measurement_campaign', None)
         if project_filter in ('product', 'tech'):
             denied_response, denied_status = project_access_denied_response(auth_context, project_filter)
             if denied_response is not None:
                 return denied_response, denied_status
+        groups_started = time.perf_counter()
+        saved_team_labels = (_group_config_service.resolve_group_team_label_values(load_request_effective_groups(auth_context), group_id, team_ids, normalize_team_ids)
+                             if request.args.get('groupId', '').strip() and team_ids else [])
+        team_label_values = _group_config_service.merge_team_label_values(saved_team_labels, team_label_values)
+        record_timing('groups', groups_started)
+        raw_cache_key = build_tasks_cache_key(
+            sprint, group_id, project_filter, team_ids, team_label_values,
+            include_team_name, use_template, request_purpose, epic_keys_filter, sprint_name=sprint_name
+        )
+        cache_generation = get_jira_issue_cache_generation()
+        measurement_campaign = getattr(g, 'measurement_campaign', None)
         cache_enabled = jira_home_partitioned_process_cache_enabled(auth_context)
         cache_key = build_jira_home_process_cache_key(auth_context, raw_cache_key)
         cached_entry = None
@@ -3254,7 +3248,7 @@ def fetch_tasks(include_team_name=False):
             cached_response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
             cached_response.headers['Pragma'] = 'no-cache'
             cached_response.headers['Expires'] = '0'
-            cached_response.headers['Server-Timing'] = 'cache;dur=1'
+            cached_response.headers['Server-Timing'] = f"cache;dur=1, groups;dur={timings_ms['groups']}"
             if measurement_campaign is not None:
                 from backend.routes.dev_routes import publish_tagged_legacy
                 return publish_tagged_legacy(measurement_campaign, g.measurement_step, g.measurement_lane, auth_context, lambda: cached_response)
@@ -3433,8 +3427,6 @@ def fetch_tasks(include_team_name=False):
             team_field_id = next((k for k, v in names_map.items() if str(v).lower() == 'team[team]'), None)
         epic_link_field = epic_link_field_id or resolve_epic_link_field_id(headers, names_map, context=auth_context)
         epic_name_field = next((k for k, v in names_map.items() if str(v).lower() == 'epic name'), None)
-        config_team_labels = _group_config_service.resolve_group_team_label_values(load_dashboard_config() or {}, group_id, team_ids, normalize_team_ids)
-        group_team_label_values = list(dict.fromkeys([*config_team_labels, *team_label_values]))
         epic_keys = set()
         normalize_started = time.perf_counter()
         for issue in collected_issues:
@@ -3498,15 +3490,15 @@ def fetch_tasks(include_team_name=False):
                     counts = open_child_distribution.get(epic.get('key')) or {}
                     epic['openChildCount'] = int(counts.get('openStoriesOutsideSelected', 0) or 0)
             else:
-                epics_in_scope = fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, group_team_label_values, sprint_name)
+                epics_in_scope = fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, team_label_values, sprint_name, complete_alert_scope=(request_purpose == 'alerts'))
         else:
             if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH:
                 epic_details = fetch_epic_details_bulk(epic_keys, headers, epic_name_field)
-                epics_in_scope = fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, group_team_label_values, sprint_name)
+                epics_in_scope = fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, team_label_values, sprint_name, complete_alert_scope=(request_purpose == 'alerts'))
             else:
                 with ThreadPoolExecutor(max_workers=2) as pool:
                     future_epic_details = submit_with_performance(pool, fetch_epic_details_bulk, epic_keys, headers, epic_name_field)
-                    future_epics_in_scope = submit_with_performance(pool, fetch_epics_for_empty_alert, jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, group_team_label_values, sprint_name)
+                    future_epics_in_scope = submit_with_performance(pool, fetch_epics_for_empty_alert, jql, headers, team_field_id, epic_name_field, sprint_field_id, team_ids, team_label_values, sprint_name, request_purpose == 'alerts')
                     epic_details = future_epic_details.result()
                     epics_in_scope = future_epics_in_scope.result()
         record_timing('epic_enrichment', enrich_epics_started)
@@ -3580,7 +3572,7 @@ def fetch_tasks(include_team_name=False):
                         'status': {'name': status.get('name')} if status else None,
                         'priority': {'name': priority.get('name')} if priority else None,
                         'issuetype': {'name': issuetype.get('name')} if issuetype else None,
-                        'assignee': {'displayName': assignee.get('displayName')} if assignee else None,
+                        'assignee': shape_jira_person(assignee),
                         'updated': fields.get('updated'),
                         'customfield_10004': fields.get(get_story_points_field_id()),
                         'team': fields.get('team'),
@@ -3620,14 +3612,15 @@ def fetch_tasks(include_team_name=False):
             if cache_enabled:
                 cache_store_started = time.perf_counter()
                 with _cache_lock:
-                    TASKS_CACHE[cache_key] = {'timestamp': time.time(), 'data': {key: value for key, value in data.items() if key != 'debugTimingsMs'}, 'completeness': 'capped' if len(slim_issues) >= max_results else 'unknown'}
+                    if get_jira_issue_cache_generation() == cache_generation:
+                        TASKS_CACHE[cache_key] = {'timestamp': time.time(), 'data': {key: value for key, value in data.items() if key != 'debugTimingsMs'}, 'completeness': 'capped' if len(slim_issues) >= max_results else 'unknown'}
                 record_timing('cache_store', cache_store_started)
             response = jsonify(data)
             response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
             response.headers['Pragma'] = 'no-cache'
             response.headers['Expires'] = '0'
             tokens = [f'{key.replace("_", "-")};dur={timings_ms[key]}' for key in
-                      ('jira_search', 'normalize_tasks', 'epic_enrichment', 'epic_counts_distribution', 'build_response')
+                      ('groups', 'jira_search', 'normalize_tasks', 'epic_enrichment', 'epic_counts_distribution', 'build_response')
                       if key in timings_ms]
             if tokens: response.headers['Server-Timing'] = ', '.join(tokens)
             return response
@@ -3641,6 +3634,11 @@ def fetch_tasks(include_team_name=False):
             payload, status = oauth_auth_required_payload()
             return jsonify(payload), status
         return auth_error_response(error, 401)
+    except AlertEpicScopeTooLarge:
+        log_warning('Alert Epic scope exceeded its ceiling')
+        error_response = jsonify({'error': 'alert_scope_too_large', 'message': 'This Department is too large for Epic alerts.'})
+        error_response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        return error_response, 422
     except Exception as e:
         logger.exception('Failed to fetch tasks from Jira')
         error_response = jsonify({
@@ -5405,7 +5403,6 @@ def build_excluded_capacity_issue_payload(issue, team_field_id, epic_link_field_
     epic_summary = str(epic_meta.get('summary') or '').strip()
     if not epic_summary and epic_key and parent_field.get('key') == epic_key and parent_summary:
         epic_summary = str(parent_summary or '').strip()
-    epic_project_track = epic_meta.get('projectTrack') or None
     epic_assignee_meta = epic_meta.get('assignee') if isinstance(epic_meta.get('assignee'), dict) else None
 
     status = fields.get('status') or {}
@@ -5424,7 +5421,7 @@ def build_excluded_capacity_issue_payload(issue, team_field_id, epic_link_field_
             'status': {'name': status.get('name')} if status else None,
             'priority': {'name': priority.get('name')} if priority else None,
             'issuetype': {'name': issuetype.get('name')} if issuetype else None,
-            'assignee': {'displayName': assignee.get('displayName')} if assignee else None,
+            'assignee': shape_jira_person(assignee),
             'updated': fields.get('updated'),
             'customfield_10004': fields.get(story_points_field),
             'team': team_payload,
@@ -5432,8 +5429,9 @@ def build_excluded_capacity_issue_payload(issue, team_field_id, epic_link_field_
             'teamId': team_id,
             'epicKey': epic_key,
             'epicSummary': epic_summary,
-            'epicProjectTrack': epic_project_track,
-            'epicAssignee': {'displayName': epic_assignee_meta.get('displayName')} if epic_assignee_meta else None,
+            'epicProjectTrack': epic_meta.get('projectTrack') or None,
+            'epicStatus': epic_meta.get('status') or None,
+            'epicAssignee': shape_jira_person(epic_assignee_meta),
             'customfield_10101': normalized_sprints,
             'parentSummary': parent_summary,
             'projectKey': project_field.get('key', ''),
@@ -5447,9 +5445,8 @@ def excluded_capacity_epic_summary_cache_key(epic_key, context=None):
     if context is not None:
         return build_auth_cache_key(context, 'excluded-capacity-epic-summary', normalized_key)
     return ('excluded-capacity-epic-summary', 'basic', normalized_key)
-
-
 def fetch_cached_excluded_capacity_epic_summaries(epic_keys, context=None):
+    cache_generation = get_jira_issue_cache_generation()
     normalized_keys = []
     original_by_normalized = {}
     for key in epic_keys or []:
@@ -5473,10 +5470,10 @@ def fetch_cached_excluded_capacity_epic_summaries(epic_keys, context=None):
             cache_key = excluded_capacity_epic_summary_cache_key(normalized, context=context)
             entry = EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE.get(cache_key)
             if entry and now - entry.get('timestamp', 0) < EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE_TTL_SECONDS \
-                    and 'projectTrack' in entry:
+                    and 'projectTrack' in entry and 'status' in entry:
                 summaries_by_normalized[normalized] = {
                     'summary': entry.get('summary', ''), 'projectTrack': entry.get('projectTrack'),
-                    'assignee': entry.get('assignee')}
+                    'status': entry.get('status'), 'assignee': entry.get('assignee')}
             else:
                 missing_keys.append(normalized)
 
@@ -5484,7 +5481,7 @@ def fetch_cached_excluded_capacity_epic_summaries(epic_keys, context=None):
     for index in range(0, len(missing_keys), batch_size):
         batch = missing_keys[index:index + batch_size]
         fetched = {}
-        epic_records = fetch_issues_by_keys(batch, ['summary', project_track_field, 'assignee'], context=context)
+        epic_records = fetch_issues_by_keys(batch, ['summary', project_track_field, 'status', 'assignee'], context=context)
         for epic in epic_records:
             ef = epic.get('fields') or {}
             key = str(epic.get('key') or '').strip().upper()
@@ -5494,15 +5491,18 @@ def fetch_cached_excluded_capacity_epic_summaries(epic_keys, context=None):
             track = (tv or {}).get('value') if isinstance(tv, dict) else None
             assignee = ef.get('assignee') or None
             fetched[key] = {'summary': str(ef.get('summary') or '').strip(), 'projectTrack': track,
-                            'assignee': {'displayName': assignee.get('displayName')} if assignee else None}
+                            'status': (ef.get('status') or {}).get('name'), 'assignee': shape_jira_person(assignee)}
         with _cache_lock:
-            for normalized in batch:
-                meta = fetched.get(normalized, {'summary': '', 'projectTrack': None, 'assignee': None})
-                EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE[excluded_capacity_epic_summary_cache_key(normalized, context=context)] = {**meta, 'timestamp': time.time()}
-                summaries_by_normalized[normalized] = meta
+            if get_jira_issue_cache_generation() == cache_generation:
+                for normalized in batch:
+                    meta = fetched.get(normalized, {'summary': '', 'projectTrack': None, 'status': None, 'assignee': None})
+                    EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE[excluded_capacity_epic_summary_cache_key(normalized, context=context)] = {**meta, 'timestamp': time.time()}
+                    summaries_by_normalized[normalized] = meta
+            else:
+                summaries_by_normalized.update(fetched)
 
     return {original_by_normalized[normalized]: summaries_by_normalized.get(
-        normalized, {'summary': '', 'projectTrack': None, 'assignee': None})
+        normalized, {'summary': '', 'projectTrack': None, 'status': None, 'assignee': None})
         for normalized in normalized_keys}
 
 
@@ -5561,6 +5561,7 @@ def _excluded_capacity_stats_source_cache_key(context, sprint_ids, team_ids, jql
 
 
 def fetch_excluded_capacity_stats_source(sprint_ids, context=None, team_ids=None, refresh=False, timings_ms=None):
+    cache_generation = get_jira_issue_cache_generation()
     field_started = time.perf_counter()
     team_field_id = resolve_team_field_id(None, context=context)
     epic_link_field_id = resolve_epic_link_field_id(None, context=context)
@@ -5671,10 +5672,10 @@ def fetch_excluded_capacity_stats_source(sprint_ids, context=None, team_ids=None
     if cache_enabled:
         cache_store_started = time.perf_counter()
         with _cache_lock:
-            EXCLUDED_CAPACITY_STATS_SOURCE_CACHE[cache_key] = {
-                'timestamp': time.time(),
-                'data': copy.deepcopy(result)
-            }
+            if get_jira_issue_cache_generation() == cache_generation:
+                EXCLUDED_CAPACITY_STATS_SOURCE_CACHE[cache_key] = {
+                    'timestamp': time.time(), 'data': copy.deepcopy(result)
+                }
         _record_excluded_capacity_timing(timings_ms, 'cache_store', cache_store_started)
 
     return result, None
@@ -5874,8 +5875,8 @@ def get_epic_cohort_stats():
     scoped_projects = _cohort_project_scope()
     cache_key = _build_epic_cohort_cache_key(start_quarter, end_quarter, team_ids, scoped_projects, component_names, ad_hoc_epics=ad_hoc_epics)
     auth_context = current_request_auth_context()
+    cache_generation = get_jira_issue_cache_generation()
     cache_enabled = jira_home_process_cache_enabled(auth_context)
-
     now_ts = time.time()
     cached = None
     if cache_enabled:
@@ -5912,11 +5913,10 @@ def get_epic_cohort_stats():
     generated_at = datetime.now().isoformat()
     if cache_enabled:
         with _cache_lock:
-            EPIC_COHORT_CACHE[cache_key] = {
-                'ts': now_ts,
-                'generatedAt': generated_at,
-                'data': cohort_payload
-            }
+            if get_jira_issue_cache_generation() == cache_generation:
+                EPIC_COHORT_CACHE[cache_key] = {
+                    'ts': now_ts, 'generatedAt': generated_at, 'data': cohort_payload
+                }
 
     return jsonify({
         'cached': False,
@@ -6166,10 +6166,7 @@ def _save_field_config(config_key, cache_name=None):
             dashboard_config = load_dashboard_config() or {'version': 1, 'projects': {'selected': []}, 'teamGroups': {}}
             dashboard_config[config_key] = value
             save_dashboard_config(dashboard_config)
-        # Invalidate tasks cache so next fetch uses the new field
-        global TASKS_CACHE
-        TASKS_CACHE = {}
-        # Invalidate the specific resolve cache if applicable
+        clear_auth_sensitive_caches(reason='jira_field_config_change')
         if cache_name:
             g = globals()
             with _cache_lock:
@@ -6182,6 +6179,11 @@ def _save_field_config(config_key, cache_name=None):
             'currentRevision': error.current.config_revision,
             'current': {'section': config_key, 'value': current_value, 'configRevision': error.current.config_revision},
         }), 409
+    except WorkspaceConfigFenceUnavailable:
+        return jsonify({
+            'error': 'config_storage_unavailable',
+            'message': 'Configuration storage is temporarily unavailable.',
+        }), 503
     except Exception as e:
         return jsonify({'error': f'Failed to save {config_key} config', 'message': str(e)}), 500
     result = dict(value)

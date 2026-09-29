@@ -32,12 +32,14 @@ class OAuthStatsRouteTests(unittest.TestCase):
         self._env_patcher.start()
         self.client = jira_server.app.test_client()
         install_oauth_session(self.client)
+        jira_server.SPRINTS_PROCESS_CACHE.clear()
 
     def tearDown(self):
         jira_server.OAUTH_TOKEN_STORE.clear()
         jira_server.OAUTH_REFRESH_LOCKS.clear()
         jira_server.SCENARIO_CACHE.clear()
         jira_server.EPIC_COHORT_CACHE.clear()
+        jira_server.SPRINTS_PROCESS_CACHE.clear()
         self._env_patcher.stop()
 
     def test_sprints_route_is_oauth_ready(self):
@@ -56,6 +58,22 @@ class OAuthStatsRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json()["sprints"][0]["name"], "2026Q2")
         mock_get.assert_called()
         mock_save_cache.assert_not_called()
+
+    def test_sprints_route_reuses_partitioned_oauth_process_cache(self):
+        jira_response = FakeResponse(200, {
+            "values": [{"id": 42, "name": "2026Q2", "state": "active", "originBoardId": 42}],
+            "isLast": True,
+        })
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "get_effective_board_id", return_value="42"), \
+             patch.object(jira_server, "current_jira_get", return_value=jira_response) as mock_get:
+            first = self.client.get("/api/sprints")
+            second = self.client.get("/api/sprints")
+
+        self.assertEqual(first.status_code, 200, first.get_data(as_text=True))
+        self.assertEqual(second.status_code, 200, second.get_data(as_text=True))
+        self.assertEqual(second.get_json(), first.get_json())
+        self.assertEqual(mock_get.call_count, 1)
 
     def test_capacity_route_is_oauth_ready(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \

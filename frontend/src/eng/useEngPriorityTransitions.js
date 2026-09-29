@@ -1,7 +1,7 @@
 import * as React from 'react';
-import { isAuthenticationRequiredError } from '../api/authRequired.js';
+import { isAuthenticationRequiredError, readPendingAuthenticationRequired } from '../api/authRequired.js';
 import { fetchIssuePriorityOptions, updateIssuePriorities } from '../api/jiraIssueApi.js';
-import { enqueueEngIssueMutation } from './engIssueMutationQueue.js';
+import { enqueueEngIssueMutations } from './engIssueMutationQueue.js';
 import {
     buildCatchUpPriorityTargets,
     buildPriorityActionAnalyticsParams,
@@ -65,6 +65,7 @@ export function useEngPriorityTransitions({
     onApplyLocalPriority,
     onAlertDataInvalidated,
     onPrioritySuccessRefresh,
+    mutationCoordinator = null,
 }) {
     const [activePriorityTarget, setActivePriorityTarget] = React.useState(null);
     const [priorityOptions, setPriorityOptions] = React.useState(null);
@@ -79,6 +80,7 @@ export function useEngPriorityTransitions({
     const mutationScopeRef = React.useRef(mutationScopeKey);
     mutationScopeRef.current = mutationScopeKey;
     const pendingMutationKeysRef = React.useRef(new Set());
+    const queuedMutationControllersRef = React.useRef(new Set());
 
     // Active target, in-flight fetch tracking, and result/error state are scoped to one
     // sprint and Catch Up/Planning surface; the priority catalog cache itself is app-session
@@ -93,6 +95,8 @@ export function useEngPriorityTransitions({
         setPriorityError('');
         setPriorityErrorCode('');
         setPriorityResult(null);
+        queuedMutationControllersRef.current.forEach(controller => controller.abort());
+        queuedMutationControllersRef.current.clear();
         setPendingIssueKeys(new Set());
         pendingMutationKeysRef.current.clear();
     }, [selectedSprint, sourceSurface, mutationScopeKey]);
@@ -162,8 +166,8 @@ export function useEngPriorityTransitions({
         const target = activePriorityTarget && activePriorityTarget.key === key
             ? activePriorityTarget
             : { key, issueType: '', currentPriority: '', summary: '' };
-        const isCatchUp = sourceSurface === 'catch_up';
-        if (isCatchUp && pendingMutationKeysRef.current.has(key)) return null;
+        const isSingleIssueSurface = sourceSurface !== 'planning';
+        if (isSingleIssueSurface && pendingMutationKeysRef.current.has(key)) return null;
         const mutationScope = mutationScopeKey;
         const analyticsBaseParams = buildPriorityActionAnalyticsParams({
             sourceSurface,
@@ -180,7 +184,7 @@ export function useEngPriorityTransitions({
 
         const selectedPriority = (priorityOptions?.priorities || [])
             .find(option => String(option?.id || '') === targetPriorityId);
-        if (isCatchUp) {
+        if (isSingleIssueSurface) {
             pendingMutationKeysRef.current.add(key);
             if (selectedPriority) onApplyLocalPriority?.(key, selectedPriority);
             setPendingIssueKeys((prev) => new Set(prev).add(key));
@@ -188,22 +192,29 @@ export function useEngPriorityTransitions({
             setPrioritySubmitting(true);
         }
 
+        let queueController = null;
         try {
+            queueController = new AbortController();
+            queuedMutationControllersRef.current.add(queueController);
             const runMutation = () => updateIssuePriorities(backendUrl, {
                 issueKeys: [key],
                 targetPriorityId,
             });
-            const response = await (isCatchUp
-                ? enqueueEngIssueMutation(key, runMutation)
-                : runMutation());
+            const runQueuedMutation = async () => await enqueueEngIssueMutations([key], runMutation, {
+                signal: queueController.signal,
+                shouldStart: () => mutationScopeRef.current === mutationScope && !readPendingAuthenticationRequired(),
+            });
+            const response = await (sourceSurface !== 'planning' && mutationCoordinator
+                ? mutationCoordinator.enqueue(key, runQueuedMutation)
+                : runQueuedMutation());
             const summary = summarizePriorityTransitionResults(response?.results);
-            const isCurrentMutation = !isCatchUp || mutationScopeRef.current === mutationScope;
-            if (isCurrentMutation && (!isCatchUp || activePriorityTargetRef.current?.key === key)) {
+            const isCurrentMutation = !isSingleIssueSurface || mutationScopeRef.current === mutationScope;
+            if (isCurrentMutation && (!isSingleIssueSurface || activePriorityTargetRef.current?.key === key)) {
                 setPriorityResult({ ...summary, targetPriorityId });
             }
             trackIssuePriorityAction('priority_change_result', { ...analyticsBaseParams, result: summary.result });
             if (summary.succeeded > 0 && isCurrentMutation) onAlertDataInvalidated?.();
-            if (isCatchUp) {
+            if (isSingleIssueSurface) {
                 const issueResult = (response?.results || []).find(entry => entry?.key === key);
                 const succeeded = issueResult?.result === 'success' || issueResult?.result === 'already_in_priority';
                 const confirmedPriority = response?.targetPriority?.name
@@ -215,31 +226,37 @@ export function useEngPriorityTransitions({
                         succeeded && confirmedPriority ? confirmedPriority : { name: target.currentPriority || '' },
                     );
                 }
+                if (summary.succeeded > 0 && sourceSurface === 'board') {
+                    await onPrioritySuccessRefresh?.({ affectedSubtaskStoryKeys: [] });
+                }
             } else if (summary.succeeded > 0) {
                 // Apply the new priority to the in-memory issue immediately (icon/card color
                 // do not wait on the refetch below), then reuse the same refresh callback
                 // shape as status. Priority edits never affect subtasks in this slice, so
                 // affectedSubtaskStoryKeys is always empty (see the plan's Feasibility Answer).
                 onApplyLocalPriority?.(key, response?.targetPriority);
-                onPrioritySuccessRefresh?.({ affectedSubtaskStoryKeys: [] });
+                await onPrioritySuccessRefresh?.({ affectedSubtaskStoryKeys: [] });
             }
             return response;
         } catch (err) {
+            if (err?.name === 'AbortError') return null;
             if (isAuthenticationRequiredError(err)) return null;
             if (err?.code === 'priority_catalog_stale') {
                 clearPriorityOptionsCache();
             }
-            if (isCatchUp && mutationScopeRef.current === mutationScope) {
+            if (isSingleIssueSurface && mutationScopeRef.current === mutationScope) {
                 onApplyLocalPriority?.(key, { name: target.currentPriority || '' });
             }
-            if ((!isCatchUp || mutationScopeRef.current === mutationScope) && (!isCatchUp || activePriorityTargetRef.current?.key === key)) {
+            if ((!isSingleIssueSurface || mutationScopeRef.current === mutationScope) && (!isSingleIssueSurface || activePriorityTargetRef.current?.key === key)) {
                 setPriorityError(err?.message || 'Failed to change priority.');
                 setPriorityErrorCode(err?.code || '');
             }
             trackIssuePriorityAction('priority_change_result', { ...analyticsBaseParams, result: 'failure' });
             return null;
         } finally {
-            if (isCatchUp) {
+            mutationCoordinator?.complete();
+            if (queueController) queuedMutationControllersRef.current.delete(queueController);
+            if (isSingleIssueSurface) {
                 if (mutationScopeRef.current === mutationScope) {
                     pendingMutationKeysRef.current.delete(key);
                     setPendingIssueKeys((prev) => {
@@ -252,7 +269,7 @@ export function useEngPriorityTransitions({
                 setPrioritySubmitting(false);
             }
         }
-    }, [activePriorityTarget, priorityOptions, sourceSurface, mutationScopeKey, backendUrl, trackIssuePriorityAction, onApplyLocalPriority, onAlertDataInvalidated, onPrioritySuccessRefresh, onAuthRecoveryRequired]);
+    }, [activePriorityTarget, priorityOptions, sourceSurface, mutationScopeKey, backendUrl, trackIssuePriorityAction, onApplyLocalPriority, onAlertDataInvalidated, onPrioritySuccessRefresh, onAuthRecoveryRequired, mutationCoordinator]);
 
     return {
         activePriorityTarget,

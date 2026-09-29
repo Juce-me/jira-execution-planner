@@ -22,6 +22,11 @@ const EMPTY_GROUP_PREFERENCES = {
     activeGroupId: null,
 };
 
+const hasGroupScope = (group) => (
+    (group?.teamIds || []).some(teamId => String(teamId || '').trim())
+    || (group?.missingInfoComponents || []).some(component => String(component || '').trim())
+);
+
 export function useGroupVisibilityPreferences({
     backendUrl,
     groupsConfig,
@@ -49,7 +54,7 @@ export function useGroupVisibilityPreferences({
 
     const firstRunGroupsSignature = React.useMemo(() => (
         (groupsConfig.groups || []).map(group => (
-            `${group.id}:${(group.teamIds || []).map(teamId => String(teamId || '').trim()).filter(Boolean).join(',')}`
+            `${group.id}:${(group.teamIds || []).map(teamId => String(teamId || '').trim()).filter(Boolean).join(',')}:${(group.missingInfoComponents || []).map(component => String(component || '').trim()).filter(Boolean).join(',')}`
         )).join('|')
     ), [groupsConfig.groups]);
 
@@ -61,7 +66,7 @@ export function useGroupVisibilityPreferences({
         }
         setFirstRunFavoriteGroupId(previous => {
             const selectedGroup = (groupsConfig.groups || []).find(group => group.id === previous);
-            const remainsEligible = (selectedGroup?.teamIds || []).some(teamId => String(teamId || '').trim());
+            const remainsEligible = hasGroupScope(selectedGroup);
             return remainsEligible ? previous : null;
         });
     }, [groupPreferences.onboardingRequired, firstRunGroupsSignature, groupsConfig.groups]);
@@ -134,7 +139,7 @@ export function useGroupVisibilityPreferences({
         if (!useBackendPreferences) return;
         const normalizedId = String(groupId || '').trim();
         const group = (groupDraft?.groups || []).find(candidate => candidate.id === normalizedId);
-        const isEligible = (group?.teamIds || []).some(teamId => String(teamId || '').trim());
+        const isEligible = hasGroupScope(group);
         if (!normalizedId || !isEligible || favoriteGroupDraftId === normalizedId) return;
         setFavoriteGroupDraftId(normalizedId);
         setVisibleGroupDraftIds(previous => previous.includes(normalizedId) ? previous : [...previous, normalizedId]);
@@ -147,14 +152,13 @@ export function useGroupVisibilityPreferences({
         if (!favoriteGroupDraftId || !visibleGroupDraftIds.includes(favoriteGroupDraftId)) {
             return 'Choose one visible group as your favorite.';
         }
-        const hasTeams = (favorite?.teamIds || []).some(teamId => String(teamId || '').trim());
-        return hasTeams ? '' : 'Configure teams before setting this group as your favorite.';
+        return hasGroupScope(favorite) ? '' : 'Configure teams or components before setting this group as your favorite.';
     }, [favoriteGroupDraftId, groupDraft?.groups, useBackendPreferences, visibleGroupDraftIds]);
 
     const selectFirstRunFavoriteGroup = React.useCallback((groupId) => {
         const normalizedId = String(groupId || '').trim();
         const selectedGroup = (groupsConfig.groups || []).find(group => group.id === normalizedId);
-        const isEligible = (selectedGroup?.teamIds || []).some(teamId => String(teamId || '').trim());
+        const isEligible = hasGroupScope(selectedGroup);
         if (!normalizedId || !isEligible) return;
         setFirstRunFavoriteGroupId(normalizedId);
     }, [groupsConfig.groups]);
@@ -162,7 +166,7 @@ export function useGroupVisibilityPreferences({
     const saveFirstRunGroupPreferences = React.useCallback(async ({ groupsSnapshot = groupsConfig, selectedGroupId = firstRunFavoriteGroupId } = {}) => {
         if (firstRunSaveInFlightRef.current) return { ok: false, inFlight: true };
         const selectedGroup = (groupsSnapshot.groups || []).find(group => group.id === selectedGroupId);
-        const isEligible = (selectedGroup?.teamIds || []).some(teamId => String(teamId || '').trim());
+        const isEligible = hasGroupScope(selectedGroup);
         if (!selectedGroupId || !isEligible) return { ok: false, invalidSelection: true };
         firstRunSaveInFlightRef.current = true;
         setFirstRunSaving(true);
@@ -187,14 +191,14 @@ export function useGroupVisibilityPreferences({
             const snapshot = normalizeGroupPreferences(payload.groupsConfigSnapshot || {});
             const snapshotPreferences = snapshot.preferences;
             const snapshotGroup = (snapshot.groups || []).find(group => group.id === selectedGroupId);
-            const snapshotHasTeams = (snapshotGroup?.teamIds || []).some(teamId => String(teamId || '').trim());
+            const snapshotHasScope = hasGroupScope(snapshotGroup);
             const preferencesMatch = groupPreferencesSignature(nextPreferences) === groupPreferencesSignature(snapshotPreferences);
             if (
                 snapshot.source !== 'workspace_db'
                 || !preferencesMatch
                 || nextPreferences.onboardingRequired
                 || nextPreferences.activeGroupId !== selectedGroupId
-                || !snapshotHasTeams
+                || !snapshotHasScope
             ) {
                 throw new Error('Saved group scope could not be verified. Please retry.');
             }

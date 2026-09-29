@@ -17,11 +17,24 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 - [Project Track Left capacity](EXEC-project-track-left-capacity.md): planned; approved existing By team bars with aligned Board-style status strips and exact selected-sprint SP left. [Fixed UI decision](SUPPORT-project-track-left-capacity-design.md) and [approved preview](../../assets/mockups/project-track-left-capacity.html). No production implementation yet.
 
+## Epic header regression review
+
+- [Visible-height analysis](SUPPORT-epic-header-visible-height-analysis.md): historical diagnosis and validated specimen evidence; application source is now authoritative.
+- [Visible-height correction plan](EXEC-epic-header-visible-height.md): implementation complete and verification in progress from baseline `43d38b9`; scoped one-row sizing now covers direct and initiative-grouped Epic blocks, with exact grouped regression coverage, intrinsic width allocation, full-value readouts, generated bundles, analytics allowlist, and incident records present. One required Project Track async-option test remains unresolved outside this plan's allowed edit map. Pending user acceptance; not committed or published.
+
 ## Current DB Workflow
 
+- [ENG Board All work transport and throughput](EXEC-board-all-work-throughput.md): proposed. The blocking `scope_too_large` index defect is fixed and locally verified on `bugfix/board-progressive-loading`; this plan covers the structural work it exposed — moving the strict Jira pager to POST so the encoded-URL ceiling stops deciding correctness, sharding the team discovery scan, and writing down a Board caching contract before `cacheState` stops being a hardcoded `miss`. Carries the measured read-only live baseline (48 Jira pages, 14.4 s, 194 Epics, 1,821 Stories) for the reported department. Not started; no slice is accepted.
+- [Persistent Sprint and per-Sprint Team catalogs runtime repair](EXEC-persistent-sprint-team-catalogs-runtime-repair.md): the legacy cache-busters that caused strict catalog `400` responses were removed, and a locally reproduced Board-page validator defect behind a possible `502 catalog_incomplete` response was repaired. The production bundle was rebuilt and local PostgreSQL/OAuth startup passed for the first slice. Live Jira attribution, authenticated browser, two-user/cross-workspace, and cached-latency acceptance remain open before the feature can be reported as working.
+- [ENG shared Sprint selector availability](DONE-eng-board-scope-selector-availability.md): implemented, verified, accepted, and merged into `bugfix/board-progressive-loading` on 2026-09-14. The shared semantic selector separates scope intent from load authority, exposes explicit loading/setup/error states, preserves ordinary Sprint access across all five ENG modes, and makes explicit Project Track Sprint commitments perform one current source-only reload even with prewarmed range/per-Sprint caches. A current-Sprint commitment repairs a divergent range once; an already matching reselect remains a no-op. Its 22-cell two-scope authority/readiness matrix and config/stream auth-lock interaction negatives pass within the affected serial 199-test browser campaign, alongside frontend unit, build, backend safety, and full Python checks. Supersedes only the prior no-op selection requirement; Sprint catalog implementation remains separately owned. No existing authenticated local server was available, so positive authenticated cross-sprint loading remains unverified.
+- [Persistent Sprint and per-Sprint Team catalogs](EXEC-persistent-sprint-team-catalogs.md): implemented and locally verified on `bugfix/board-progressive-loading` on 2026-09-22. PostgreSQL migration/concurrency, backend, frontend unit, production build, structure budgets, startup preflight, and all mapped browser cases pass (the six-file monolithic Playwright process remains host-stall-prone, documented in the plan). Keep `EXEC-*` until authorized two-user/cross-workspace Jira acceptance, cached latency samples, zero-hit Jira-call evidence, positive authenticated API verification, and acceptance or merge are complete. Workspace sharing and the merged selector remain intact; the separate cold ENG name-warm plan stays deferred, and blocked Home-write `GATE-05` does not gate this read-only work.
+- [ENG Board scope and performance regressions #190](EXEC-eng-board-scope-performance-regressions-190.md): implemented locally with one browser-verification gap. Saved project-or-Board authority now gates cross-sprint choices, Component observations validate/persist/filter with null Sprint, production-shaped fixtures and recovery coverage pass, and the generated dashboard is rebuilt. The new dual-scope held-child departure/late-frame browser case remains unresolved after two failed setup attempts, so the plan stays in progress; no publication or authenticated live acceptance was performed, and existing gates remain explicitly excluded by the user.
+- [ENG Board progressive loading #190](EXEC-eng-board-progressive-loading-190.md): implemented and synthetically accepted locally on `bugfix/board-progressive-loading` from baseline `40bffe7`; pending authenticated live acceptance or merge, so the plan remains `EXEC-*`. The local result adds bounded candidate emission with a valid byte-limit terminal reserve, eligible Team-parent batch delivery, page-progressive Component rendering, explicit cold/compatible-refresh behavior and observational measurement. The corrected production-stream-to-dashboard campaign passed 11/11 cases across current and baseline sources, and independent spec/quality re-reviews passed. The current authenticated All work failure attribution, five-sample live timings and production proxy behavior remain unverified. No commit, push or publication has been performed; the mandatory gate sweep left `GATE-05` blocked.
+- [OAuth inline issue editing implementation](EXEC-oauth-inline-issue-editing.md): implemented and verified locally for ENG Assignee, Epic Delivery Owner, and Story Points editors; live Jira evidence still gates final acceptance.
+- [OAuth inline issue editing design](SUPPORT-oauth-inline-issue-edit-design.md): implemented reuse-first UX contract; awaiting live tenant and disposable-write evidence.
 - [In-app load performance](DONE-in-app-load-performance.md): implemented, verified and user-accepted; three local contextual sprint observations recorded.
-- [ENG Board All work implementation](EXEC-eng-board-all-work.md): planned from in-app evidence; progressive strict Board loading with transport/deadline/completeness gates. No production implementation yet.
-- [All work subagent handoff](SUPPORT-eng-board-all-work-handoff.md): published-base and worker ownership instructions; execute only within the plan gates.
+- [ENG Board All work implementation](EXEC-eng-board-all-work.md): the DB/OAuth strict Board candidate, frontend integration, preserved interactions, measurement and analytics are implemented and locally verified. The Basic/JSON adapter exists but its public strict capability remains disabled pending profile evidence. Task 7 authenticated candidate cohorts, excluded-profile coverage, PostgreSQL integration and supported-auth startup evidence still block rollout; no production readiness or publication is claimed.
+- [All work subagent handoff](SUPPORT-eng-board-all-work-handoff.md): local draft updated after the corrective slices; not cleared for distribution until its exact revision is published and verified fetchable. Execute only within the remaining plan gates.
 
 1. `SUPPORT-db-migration-claude-review-workflow.md`
    - Use first for external review or handoff.
@@ -103,6 +116,21 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
    - Scenario group scope is a shared environment-scoped PM/EPM-managed configuration reference; drafts may reference groups but must not create private group definitions or own group membership.
 
 ## Frontend Planning Workflow
+
+- [`EXEC-candidate-sprint-label.md`](EXEC-candidate-sprint-label.md): implemented and locally verified on 2026-09-23; pending acceptance or merge. The plain sprint-name label and its `_candidate` form count equally for Epic discovery and Story readiness in active/future sprints, and for Backlog/Missing Labels precedence in future sprints. Live Jira case behavior and timing remain unverified.
+- [`EXEC-connection-recovery-reload.md`](EXEC-connection-recovery-reload.md): implemented and locally verified on 2026-09-24; pending acceptance or merge. Replaces the partial Retry connection loader
+  fan-out with a guarded document reload, preserves principal/scope-bound dirty Scenario deltas in a
+  strict expiring tab capsule, reloads Settings/EPM from saved state, and keeps changed revisions in
+  the existing conflict workflow without replaying mutations.
+0. `EXEC-multiple-group-labels.md`
+   - Implemented and locally verified on 2026-09-25; pending acceptance or merge. One to three distinct Jira Epic-label aliases per Team in shared Department configuration.
+   - Outcome: legacy scalar mappings normalize to bounded version-2 alias arrays (group preferences stay version 1); saved aliases are resolved from the effective shared-group source before the task cache key; alert discovery reuses main's bounded, fail-closed alert pagination unchanged, now with an uncached `422 alert_scope_too_large` and an Alerts-panel notice when the widened alias scope exceeds the ceiling; Epic discovery, the Missing Labels predicate, Story readiness, Settings, Settings/backend import/export, measurement, and the endpoint collector match any alias without duplicating a Team or adding first-screen requests, routes, or database schema. Forward-only rollout with a pre-deploy snapshot. Live Basic-mode check: preflight passes, `/api/test` returns 200, and the added saved-groups read costs about 0.3 ms per task request; DB/OAuth-mode timing is not measured (see the plan's Outcome).
+- [`EXEC-board-column-scroll-panes.md`](EXEC-board-column-scroll-panes.md): Complete: Tasks 0-5 and the 2026-09-25 fixed-height page revision executed and verified on `feature/board-column-scroll-panes`, merged with `origin/main`; pending merge to `main`. On desktop the Board page never scrolls: the top bar and filter bar stay in place, the board fills the remaining screen height, every open column is a bordered pane that scrolls independently from the first gesture and keeps its position while open, folded columns reopen at the top, and rails keep their 340px track. Short, narrow, and touch viewports keep the existing pinned-chrome page-scroll model under a small-screen alert whose Request small-screen support button sends one `board_action` event. Design spec: [2026-09-24-executed-board-column-scroll-panes.md](../agents/features/2026-09-24-executed-board-column-scroll-panes.md), which supersedes the desktop behavior of `EXEC-sticky-board-column-chrome.md` and the two 2026-08-08 Board scroll artifacts (both now limited to the fallback viewports).
+
+0. `EXEC-eng-story-readiness-ghosts.md`
+   - Implemented and locally verified on 2026-09-16; pending acceptance or merge. Catch Up and Planning progressively render one non-Jira `Story required` ghost per uncovered expected Team beneath the correct Epic/Initiative, with current/future urgency, exact local alert navigation, bounded Jira Epic-link analytics, and no contamination of Story/SP/capacity/selection/dependency/export/mutation contracts.
+   - Local PostgreSQL was unavailable, so the real server `/api/test` smoke and live Jira cold/warm timing remain environment-bound; focused backend/frontend/browser verification is recorded in the plan outcome.
+   - Design record: `../agents/features/2026-09-16-executed-eng-story-readiness-ghosts-design.md`.
 
 0. `EXEC-defer-eng-alert-loading.md`
    - Implemented and verified locally on 2026-08-08; pending acceptance or merge. Separates first-screen Product/Tech data from alert enrichment, then starts missing-info and every other alert source only after visible data and only in Catch Up.
@@ -465,21 +493,27 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
      explicit cache states, private row-incarnation checks and consistent workload/retry/memory metrics.
    - Five rounds characterize saved Product/Tech Boards at 28-day retention with selected-sprint,
      All-work and all-saved-Team fallback candidates. Legacy calls are contextual, not equal work.
-   - Cooperative deadline schema cannot PASS: only STOP/FAIL, never production authorization.
-     Hard-bound evidence and excluded production scope profiles remain prerequisites to production.
+   - Historical diagnostic conclusion: cooperative cancellation cannot prove hard termination.
+     The active `EXEC-eng-board-all-work.md` contract now explicitly accepts that residual risk
+     and gates production on bounded known I/O, strict ceilings, completeness and measured speed.
 
 6. `SUPPORT-eng-board-optional-sprint-design.md`
    - Reviewed non-executable design for GitHub issue #137 and production handoff boundary after the
      diagnostic Tasks 0–5 implementation; authenticated Task 6 preflight is blocked by the absence
      of a saved Team-fallback-eligible Department. A separate capped Basic-mode collector sample is
      recorded as contextual evidence only and does not close any production gate.
-   - Settled behavior: Board initially inherits the selected sprint; All work is the explicit empty
-     sprint filter; `missingInfoComponents` is the Epic scope; Teams stays visible but disabled;
-     Project Track is Epic-index data; Product/Tech Projects is inherited from each child's Jira
-     project; directly-created terminal Epics use `created` for retention; Unmapped remains before
-     the structural terminal column.
-   - Production transport, refresh granularity, hard deadlines, excluded-scope coverage, completion
-     budgets and safety ceilings remain measurement-gated. The validated pure core must be reused;
+   - Settled behavior: Board renders the existing Catch Up snapshot for the ordinary sprint selected
+     in the shared top Sprint control. While Board is active, that same control presents **All work**,
+     **Component**, and ordinary sprints. Either cross-sprint choice starts one strict Board request
+     without changing the saved sprint. Component contains only exact `missingInfoComponents` matches
+     on Epics; All work unions those Epics with parents discovered from eligible Department-Team work,
+     even when Components exist. Teams stays visible but disabled; Project Track is Epic-index
+     data; Product/Tech Projects is inherited from each child's Jira project; directly-created
+     terminal Epics use `created` for retention; Unmapped remains before the structural terminal column.
+   - This support design's original hard-deadline alternatives are superseded by the active
+     execution plan's approved bounded best-effort single-request transport. Refresh granularity,
+     excluded-scope coverage, completion budgets and safety ceilings remain measurement-gated.
+     The validated pure core must be reused.
      Board request retirement, mutation generation ordering and bounded telemetry are specified.
      Follow-up review closes terminal-identity migration, delayed sprint initialization and provisional
      page-progress contracts; streaming needs an opt-in shared HTTP boundary before selection.

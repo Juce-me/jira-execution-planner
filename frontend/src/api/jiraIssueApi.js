@@ -20,6 +20,76 @@ function fetchMutationCsrfToken(backendUrl) {
     return request;
 }
 
+function normalizedConflictValue(value) {
+    if (value === null || (typeof value === 'number' && Number.isFinite(value))) return value;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+    const accountId = typeof value.accountId === 'string' ? value.accountId : '';
+    if (!accountId) return undefined;
+    return {
+        accountId,
+        ...(typeof value.displayName === 'string' && value.displayName ? { displayName: value.displayName } : {}),
+    };
+}
+
+function issueFieldError(response, data) {
+    const code = typeof data?.error === 'string' && data.error ? data.error : 'jira_issue_field_failed';
+    const error = new Error(code);
+    error.status = response.status;
+    error.code = code;
+    if (code === 'stale_issue') {
+        if (typeof data?.issueKey === 'string') error.issueKey = data.issueKey;
+        if (['assignee', 'deliveryOwner', 'storyPoints'].includes(data?.field)) error.field = data.field;
+        const currentValue = normalizedConflictValue(data?.currentValue);
+        if (currentValue !== undefined) error.currentValue = currentValue;
+        if (typeof data?.baseUpdated === 'string') error.baseUpdated = data.baseUpdated;
+        if (typeof data?.mappingRevision === 'string') error.mappingRevision = data.mappingRevision;
+    }
+    if (code === 'jira_rate_limited') {
+        const retryAfterSeconds = Number(data?.retryAfterSeconds);
+        if (Number.isFinite(retryAfterSeconds)) {
+            error.retryAfterSeconds = Math.max(1, Math.min(60, Math.ceil(retryAfterSeconds)));
+        }
+    }
+    return error;
+}
+
+async function issueFieldJsonOrError(response) {
+    if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw issueFieldError(response, data);
+    }
+    return response.json();
+}
+
+function issueFieldUrl(backendUrl, issueKey, suffix) {
+    return `${backendUrl}/api/issues/${encodeURIComponent(String(issueKey || '').trim())}/${suffix}`;
+}
+
+export function fetchEditableIssueField(backendUrl, issueKey, field, { signal } = {}) {
+    const query = new URLSearchParams({ field: String(field || '') });
+    return trackedFetch('jira_issue_field_edits', `${issueFieldUrl(backendUrl, issueKey, 'editable-fields')}?${query}`, {
+        method: 'GET', cache: 'no-cache', signal,
+        headers: { 'X-Requested-With': 'jira-execution-planner' },
+    }, { featureName: 'eng_issue_field_edits', suppressAbortResult: true })
+        .then(issueFieldJsonOrError);
+}
+
+export async function searchIssueFieldUsers(backendUrl, issueKey, payload, { signal } = {}) {
+    const { csrfToken } = await fetchMutationCsrfToken(backendUrl);
+    return trackedFetch('jira_issue_field_edits', issueFieldUrl(backendUrl, issueKey, 'user-options'), {
+        method: 'POST', cache: 'no-cache', signal, headers: headers(csrfToken || ''),
+        body: JSON.stringify(payload),
+    }, { featureName: 'eng_issue_field_edits', suppressAbortResult: true }).then(issueFieldJsonOrError);
+}
+
+export async function updateIssueField(backendUrl, issueKey, payload, { signal } = {}) {
+    const { csrfToken } = await fetchMutationCsrfToken(backendUrl);
+    return trackedFetch('jira_issue_field_edits', issueFieldUrl(backendUrl, issueKey, 'field'), {
+        method: 'POST', cache: 'no-cache', signal, headers: headers(csrfToken || ''),
+        body: JSON.stringify(payload),
+    }, { featureName: 'eng_issue_field_edits' }).then(issueFieldJsonOrError);
+}
+
 export function fetchIssueTransitionOptions(backendUrl, issueKeys, { signal } = {}) {
     return trackedFetch('jira_issue_transitions', `${backendUrl}/api/issues/transitions/options`, {
         method: 'POST',

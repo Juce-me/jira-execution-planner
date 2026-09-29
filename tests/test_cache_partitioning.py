@@ -53,6 +53,7 @@ class TestCachePartitioning(unittest.TestCase):
     def _warm_caches(self):
         jira_server.TASKS_CACHE['tasks'] = {'data': {}}
         jira_server.EPIC_COHORT_CACHE['cohort'] = {'data': {}}
+        jira_server.SPRINTS_PROCESS_CACHE['sprints'] = {'data': []}
         jira_server.EPM_PROJECTS_CACHE['projects'] = {'data': {}}
         jira_server.EPM_ISSUES_CACHE['issues'] = {'data': {}}
         jira_server.EPM_ROLLUP_CACHE['rollup'] = {'data': {}}
@@ -74,6 +75,7 @@ class TestCachePartitioning(unittest.TestCase):
     def _assert_caches_cleared(self):
         self.assertEqual(jira_server.TASKS_CACHE, {})
         self.assertEqual(jira_server.EPIC_COHORT_CACHE, {})
+        self.assertEqual(jira_server.SPRINTS_PROCESS_CACHE, {})
         self.assertEqual(jira_server.EPM_PROJECTS_CACHE, {})
         self.assertEqual(jira_server.EPM_ISSUES_CACHE, {})
         self.assertEqual(jira_server.EPM_ROLLUP_CACHE, {})

@@ -285,6 +285,9 @@ async function mockFirstRunDashboard(page, options = {}) {
         });
         if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
         if (url.pathname === '/api/auth/csrf') return json({ csrfToken: 'test-csrf' });
+        if (url.pathname === '/api/eng/story-readiness') {
+            return json({ schemaVersion: 1, complete: true, scope: {}, epics: [] });
+        }
         if (url.pathname === '/api/analytics/context') return json(options.analyticsEnabled ? {
             enabled: true,
             measurementId: 'G-SYNTHETIC',
@@ -302,6 +305,7 @@ async function mockFirstRunDashboard(page, options = {}) {
                 userCanEditSettings: options.userCanEditSettings ?? true,
                 userCanEditEpmConfig: options.userCanEditEpmConfig ?? false,
                 adminUserManagementAvailable: options.adminUserManagementAvailable ?? false,
+                userIsToolAdmin: options.userIsToolAdmin ?? true,
                 ...(options.sharedConfig ? { sharedConfig: options.sharedConfig, sharedConfigRevision: 4 } : {}),
                 ...(options.epmConfig ? { epm: options.epmConfig } : {}),
             });
@@ -327,6 +331,8 @@ async function mockFirstRunDashboard(page, options = {}) {
                 const body = requestBody(request) || {};
                 latestGroupsConfig = {
                     ...latestGroupsConfig,
+                    // The backend validator always emits the current group payload version.
+                    version: 2,
                     groups: body.groups || groupsConfig.groups,
                     defaultGroupId: body.defaultGroupId || groupsConfig.defaultGroupId,
                     configRevision: Number(body.baseRevision || latestGroupsConfig.configRevision || 0) + 1,
@@ -402,10 +408,16 @@ async function mockFirstRunDashboard(page, options = {}) {
             });
         }
         if (url.pathname === '/api/teams') {
+            if (options.teamsResponse) {
+                return json(options.teamsResponse.body, options.teamsResponse.status || 200);
+            }
             return json({ teams: options.teams || [{ id: 'team-new', name: 'New Team' }] });
         }
         if (url.pathname === '/api/fields') {
             return json({ fields: options.jiraFields || [] });
+        }
+        if (url.pathname === '/api/components') {
+            return json({ components: options.components || [{ id: 'backend', name: 'Backend' }] });
         }
         if (url.pathname === '/api/sprints') {
             const plannedResponse = (options.sprintResponsePlan || [])[sprintRequestCount];
@@ -441,16 +453,23 @@ async function mockFirstRunDashboard(page, options = {}) {
         if (url.pathname === '/api/missing-info') {
             return json({ issues: [], epics: [] });
         }
+        if (url.pathname === '/api/jira/labels') {
+            const query = String(url.searchParams.get('query') || '').toLowerCase();
+            return json({ labels: (options.jiraLabels || []).filter(label => label.toLowerCase().startsWith(query)) });
+        }
         if (url.pathname === '/api/epics/search') {
             return json({ epics: options.epicSearchResults || [{ key: 'PROD-ADHOC', summary: 'Synthetic ad hoc' }] });
         }
         if (url.pathname === '/api/team-catalog') {
             const teamIds = ['team-platform', 'team-growth', 'team-new', ...Array.from({ length: 12 }, (_, index) => `team-${index + 1}`)];
             return json({
-                catalog: Object.fromEntries(teamIds.map(teamId => [teamId, {
-                    id: teamId,
-                    name: teamId === 'team-new' ? 'New Team' : teamId,
-                }])),
+                catalog: {
+                    ...Object.fromEntries(teamIds.map(teamId => [teamId, {
+                        id: teamId,
+                        name: teamId === 'team-new' ? 'New Team' : teamId,
+                    }])),
+                    ...(options.extraCatalogTeams || {}),
+                },
                 meta: { updatedAt: '2026-09-02T09:00:00Z', sprintId: '42', source: 'sprint' },
             });
         }
@@ -516,14 +535,19 @@ async function finishFirstRunConfigurationGuideWithTeamRepair(page) {
     const dialog = page.locator('.group-modal');
     const guide = dialog.locator('.first-run-configuration-guide');
     await guide.getByRole('button', { name: 'Continue', exact: true }).click();
-    if (await guide.getByRole('button', { name: 'Continue', exact: true }).isDisabled()) {
-        const refreshTeams = dialog.getByRole('button', { name: 'Refresh teams' });
-        if (await refreshTeams.isEnabled()) await refreshTeams.click();
-        await dialog.getByPlaceholder('Search teams to add...').fill('new');
-        await dialog.locator('.team-search-result-item', { hasText: 'New Team' }).click();
+    const continueWithoutTeams = guide.getByRole('button', { name: 'Continue without teams', exact: true });
+    if (await continueWithoutTeams.count()) await continueWithoutTeams.click();
+    else await guide.getByRole('button', { name: 'Continue', exact: true }).click();
+    await expect(guide).toContainText('Choose Jira Components');
+    const continueWithoutComponents = guide.getByRole('button', { name: 'Continue without components', exact: true });
+    if (await continueWithoutComponents.count()) {
+        await dialog.getByPlaceholder('Search components...').fill('backend');
+        const result = dialog.locator('.component-search-result-item', { hasText: 'Backend' });
+        await expect(result).toBeVisible();
+        await result.click();
+        await expect(dialog.locator('.component-chip', { hasText: 'Backend' })).toBeVisible();
     }
     await guide.getByRole('button', { name: 'Continue', exact: true }).click();
-    await guide.getByRole('button', { name: 'Continue without components', exact: true }).click();
     await guide.getByRole('button', { name: 'Continue', exact: true }).click();
     await guide.getByRole('button', { name: 'Done', exact: true }).click();
 }
@@ -674,6 +698,7 @@ test('normal users can edit shared Departments without admin or EPM permission',
         settingsAdminOnly: true,
         userCanEditSettings: false,
         userCanEditEpmConfig: false,
+        teamsResponse: { status: 502, body: { error: 'team_catalog_unavailable' } },
         preferences: defaultGroupPreferences({
             customized: true,
             preferenceExists: true,
@@ -687,6 +712,7 @@ test('normal users can edit shared Departments without admin or EPM permission',
     await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
     await page.getByRole('button', { name: 'Manage team groups' }).click();
     const dialog = page.locator('.group-modal');
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/teams').length).toBe(1);
     await expect(dialog.getByRole('button', { name: 'Admin', exact: true })).toHaveCount(0);
     await expect(dialog.getByRole('button', { name: 'EPM', exact: true })).toHaveCount(0);
     await dialog.getByPlaceholder('Group name').fill('Platform Core');
@@ -925,7 +951,7 @@ test('duplicate existing Department stages one cleaned copy and preserves its so
     await expect(settings.locator('.group-list-item')).toHaveCount(2);
     await expect(settings.locator('.group-list-item:has(input[placeholder="Group name"])')).toHaveCount(1);
     await expect(settings.getByText('Teams 0/12')).toBeVisible();
-    await expect(settings.getByText('Add at least one team. Teams define which Jira work appears for this Department.')).toBeVisible();
+    await expect(settings.getByText('Add Teams for Team-scoped Jira work, or use Components below.')).toBeVisible();
     await expect(settings.getByPlaceholder('Search teams to add...')).toBeVisible();
     await expect(settings.getByText('Backend', { exact: true })).toHaveCount(0);
     const sourceRow = settings.locator('.group-list-item', { hasText: 'Source', hasNotText: 'Source Copy' });
@@ -1004,7 +1030,7 @@ test('first-run department selection blocks group-scoped task loads until prefer
     await expect(dialog).toContainText('Next: dashboard');
     await expect(page.getByRole('button', { name: 'Continue' })).toBeDisabled();
     await expect(dialog.getByRole('radio', { name: /Empty/ })).toBeDisabled();
-    await expect(page.getByText('Add at least one team before choosing this Department')).toBeVisible();
+    await expect(page.getByText('Add at least one team or component before choosing this Department')).toBeVisible();
     await dialog.getByRole('radio', { name: /Platform/ }).check();
     await expect(dialog.getByRole('radio', { name: /Platform/ })).toBeChecked();
     await page.getByLabel('Search Departments').fill('growth');
@@ -1387,11 +1413,11 @@ test('first-run Add Department keeps the guide and canonical name keyboard-safe 
     await expectGuideTargetGeometry(settingsDialog.locator('[data-first-run-guide-target="teams"]'), guide);
     await settingsDialog.getByRole('button', { name: 'Refresh teams' }).focus();
     await page.keyboard.press('Enter');
-    await settingsDialog.getByPlaceholder('Search teams to add...').fill('new');
-    await settingsDialog.locator('.team-search-result-item', { hasText: 'New Team' }).click();
-    await guide.getByRole('button', { name: 'Continue', exact: true }).click();
+    await guide.getByRole('button', { name: 'Continue without teams', exact: true }).click();
     await expectGuideTargetGeometry(settingsDialog.locator('[data-first-run-guide-target="components"]'), guide);
-    await guide.getByRole('button', { name: 'Continue without components', exact: true }).click();
+    await settingsDialog.getByPlaceholder('Search components...').fill('backend');
+    await settingsDialog.locator('.component-search-result-item', { hasText: 'Backend' }).click();
+    await guide.getByRole('button', { name: 'Continue', exact: true }).click();
     const favoriteStatus = settingsDialog.locator('[data-first-run-guide-target="favorite"]');
     await expect(favoriteStatus).toHaveCount(1);
     expect(await favoriteStatus.evaluate(node => node.closest('.group-list-item')?.classList.contains('active'))).toBe(true);
@@ -1513,12 +1539,11 @@ test('first-run no-groups configuration recovers from validation, saves a team g
 
     const guide = settingsDialog.locator('.first-run-configuration-guide');
     await guide.getByRole('button', { name: 'Continue', exact: true }).click();
-    const teamSearch = settingsDialog.getByPlaceholder('Search teams to add...');
-    await expect(teamSearch).toBeVisible();
-    await teamSearch.fill('new');
-    await settingsDialog.locator('.team-search-result-item', { hasText: 'New Team' }).click();
+    await expect(settingsDialog.getByPlaceholder('Search teams to add...')).toBeVisible();
+    await guide.getByRole('button', { name: 'Continue without teams', exact: true }).click();
+    await settingsDialog.getByPlaceholder('Search components...').fill('backend');
+    await settingsDialog.locator('.component-search-result-item', { hasText: 'Backend' }).click();
     await guide.getByRole('button', { name: 'Continue', exact: true }).click();
-    await guide.getByRole('button', { name: 'Continue without components', exact: true }).click();
     await guide.getByRole('button', { name: 'Continue', exact: true }).click();
     await guide.getByRole('button', { name: 'Done', exact: true }).click();
     await expect(settingsDialog.getByRole('button', { name: /favorite group/ })).toHaveCount(0);
@@ -1634,9 +1659,12 @@ test('first-run shared board validation keeps configuration open until corrected
     expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(0);
 
     await settingsDialog.getByRole('button', { name: '+ Add column' }).click();
+    await expect(settingsDialog.locator('.group-modal-validation')).toHaveCount(0);
+    await settingsDialog.getByRole('button', { name: '+ Add column' }).click();
     await expect(settingsDialog.locator('.group-modal-validation')).toContainText('Platform Copy: “New column” has no statuses. Add a status or delete the column.');
-    await settingsDialog.locator('.board-add-status').click();
+    await settingsDialog.locator('.board-add-status').first().click();
     await settingsDialog.locator('.board-pick').getByRole('button', { name: 'Ready not in a column', exact: true }).click();
+    await settingsDialog.getByRole('button', { name: 'Delete column New column' }).last().click();
     await expect(settingsDialog.locator('.group-modal-validation')).toHaveCount(0);
     await expect(settingsDialog.getByRole('button', { name: 'Save' })).toBeEnabled();
     await settingsDialog.getByRole('button', { name: 'Save' }).click();
@@ -1661,16 +1689,66 @@ test('first-run configuration blocks Save until Done and Cancel restores exact p
     await openFirstRunCreateDepartment(page);
     await expect(settingsDialog.getByPlaceholder('Group name')).toHaveValue('New Department');
     await settingsDialog.locator('.first-run-configuration-guide').getByRole('button', { name: 'Continue', exact: true }).click();
-    await settingsDialog.getByPlaceholder('Search teams to add...').fill('new');
-    await settingsDialog.locator('.team-search-result-item', { hasText: 'New Team' }).click();
     const guide = settingsDialog.locator('.first-run-configuration-guide');
+    await guide.getByRole('button', { name: 'Continue without teams', exact: true }).click();
+    await settingsDialog.getByPlaceholder('Search components...').fill('backend');
+    await settingsDialog.locator('.component-search-result-item', { hasText: 'Backend' }).click();
     await guide.getByRole('button', { name: 'Continue', exact: true }).click();
-    await guide.getByRole('button', { name: 'Continue without components', exact: true }).click();
     await guide.getByRole('button', { name: 'Continue', exact: true }).click();
     await guide.getByRole('button', { name: 'Done', exact: true }).click();
     await settingsDialog.getByRole('button', { name: 'Save' }).click();
     await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config').length).toBe(1);
     await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-preferences').length).toBe(1);
+    await expect(settingsDialog).toHaveCount(0);
+});
+
+test('component-only first-run saves without Team membership', async ({ page }) => {
+    const calls = await mockFirstRunDashboard(page, {
+        groupsConfig: {
+            version: 1,
+            groups: [{
+                id: 'platform',
+                name: 'Platform',
+                teamIds: ['team-platform'],
+                missingInfoComponents: ['Backend'],
+            }, {
+                id: 'component-only',
+                name: 'Components Only',
+                teamIds: [],
+                missingInfoComponents: ['Frontend'],
+            }],
+            defaultGroupId: 'platform',
+            configRevision: 2,
+            source: 'workspace_db',
+        },
+        teamsResponse: { status: 502, body: { error: 'team_catalog_unavailable' } },
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    const picker = page.getByRole('dialog', { name: 'Choose your Department' });
+    const componentOnlyOption = picker.locator('.department-first-run-option', { hasText: 'Components Only' });
+    await expect(componentOnlyOption.getByRole('radio')).toBeEnabled();
+    await expect(componentOnlyOption).toContainText('0 teams · 1 component');
+    await openFirstRunDuplicateDepartment(page, 'platform');
+    const settingsDialog = page.locator('.group-modal');
+    const guide = settingsDialog.locator('.first-run-configuration-guide');
+    await guide.getByRole('button', { name: 'Continue', exact: true }).click();
+    expect(calls.filter(call => call.pathname === '/api/teams')).toHaveLength(0);
+    await settingsDialog.locator('.selected-team-chip button.remove-btn').click();
+    await expect(settingsDialog.locator('.selected-team-chip')).toHaveCount(0);
+    await guide.getByRole('button', { name: 'Continue without teams', exact: true }).click();
+    await expect(settingsDialog.locator('.component-chip', { hasText: 'Backend' })).toBeVisible();
+    await guide.getByRole('button', { name: 'Continue', exact: true }).click();
+    await guide.getByRole('button', { name: 'Continue', exact: true }).click();
+    await guide.getByRole('button', { name: 'Done', exact: true }).click();
+    await settingsDialog.getByRole('button', { name: /^Save/ }).click();
+    await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config').length).toBe(1);
+    const groupPost = calls.find(call => call.method === 'POST' && call.pathname === '/api/groups-config');
+    const savedGroup = groupPost.body.groups.find(group => group.name === 'Platform Copy');
+    expect(savedGroup).toEqual(expect.objectContaining({ teamIds: [], missingInfoComponents: ['Backend'] }));
+    await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-preferences').length).toBe(1);
+    const preferencePost = calls.find(call => call.method === 'POST' && call.pathname === '/api/groups-preferences');
+    expect(preferencePost.body.activeGroupId).toBe(savedGroup.id);
+    expect(preferencePost.body.visibleGroupIds).toContain(savedGroup.id);
     await expect(settingsDialog).toHaveCount(0);
 });
 
@@ -1687,10 +1765,10 @@ test('first-run preference pending recovery survives Done and retries only the p
     const settingsDialog = page.locator('.group-modal');
     const guide = settingsDialog.locator('.first-run-configuration-guide');
     await guide.getByRole('button', { name: 'Continue', exact: true }).click();
-    await settingsDialog.getByPlaceholder('Search teams to add...').fill('new');
-    await settingsDialog.locator('.team-search-result-item', { hasText: 'New Team' }).click();
+    await guide.getByRole('button', { name: 'Continue without teams', exact: true }).click();
+    await settingsDialog.getByPlaceholder('Search components...').fill('backend');
+    await settingsDialog.locator('.component-search-result-item', { hasText: 'Backend' }).click();
     await guide.getByRole('button', { name: 'Continue', exact: true }).click();
-    await guide.getByRole('button', { name: 'Continue without components', exact: true }).click();
     await guide.getByRole('button', { name: 'Continue', exact: true }).click();
     await guide.getByRole('button', { name: 'Done', exact: true }).click();
     await settingsDialog.getByRole('button', { name: 'Save' }).click();
@@ -2538,6 +2616,7 @@ test('personal favorite star is separate from shared default and temporary group
             { id: 'default', name: 'Default', teamIds: ['team-default'] },
             { id: 'platform', name: 'Platform', teamIds: ['team-platform'] },
             { id: 'growth', name: 'Growth', teamIds: ['team-growth'] },
+            { id: 'components', name: 'Components', teamIds: [], missingInfoComponents: ['Backend'] },
             { id: 'empty', name: 'Empty', teamIds: [] },
         ],
         defaultGroupId: 'default',
@@ -2551,9 +2630,9 @@ test('personal favorite star is separate from shared default and temporary group
             customized: true,
             preferenceExists: true,
             onboardingRequired: false,
-            visibleGroupIds: ['platform', 'growth', 'empty'],
+            visibleGroupIds: ['platform', 'growth', 'components', 'empty'],
             activeGroupId: 'platform',
-            effectiveVisibleGroupIds: ['platform', 'growth', 'empty'],
+            effectiveVisibleGroupIds: ['platform', 'growth', 'components', 'empty'],
         }),
     });
 
@@ -2565,6 +2644,7 @@ test('personal favorite star is separate from shared default and temporary group
         { name: 'Default', pressed: false, disabled: false },
         { name: 'Platform', pressed: true, disabled: false },
         { name: 'Growth', pressed: false, disabled: false },
+        { name: 'Components', pressed: false, disabled: false },
         { name: 'Empty', pressed: false, disabled: true },
     ];
     const rows = dialog.locator('.group-list-item');
@@ -2625,16 +2705,16 @@ test('personal favorite star is separate from shared default and temporary group
         transform: 'none',
     });
 
-    const growthStar = rows.nth(2)
-        .getByRole('button', { name: 'Set Growth as your favorite Department' });
-    await growthStar.click();
+    const componentStar = rows.nth(3)
+        .getByRole('button', { name: 'Set Components as your favorite Department' });
+    await componentStar.click();
     await expect(dialog.locator('.group-list-item.active .group-list-name-input')).toHaveValue('Platform');
     await expect(dialog.locator('.group-editor-name')).toHaveCount(0);
-    await expect(rows.nth(2).getByRole('button', { name: 'Growth is your favorite Department' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(rows.nth(3).getByRole('button', { name: 'Components is your favorite Department' })).toHaveAttribute('aria-pressed', 'true');
     await captureSettledDepartmentScreenshot(page, 'department-row-favorite-ordinary.png');
 
-    await rows.nth(2).click();
-    await expect(dialog.locator('.group-list-item.active .group-list-star')).toHaveAccessibleName('Growth is your favorite Department');
+    await rows.nth(3).click();
+    await expect(dialog.locator('.group-list-item.active .group-list-star')).toHaveAccessibleName('Components is your favorite Department');
     await expect(dialog.getByRole('checkbox', { name: 'Show in Department selector' })).toBeDisabled();
     await expect(dialog.locator('.group-visible-helper')).toHaveCount(1);
     await expect(dialog.locator('.group-visible-favorite-helper')).toHaveText('Favorite Departments are always shown.');
@@ -2658,20 +2738,20 @@ test('personal favorite star is separate from shared default and temporary group
     const preferencePosts = calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-preferences');
     expect(preferencePosts).toHaveLength(1);
     expect(preferencePosts[0].body).toEqual({
-        visibleGroupIds: ['platform', 'growth', 'empty'],
-        activeGroupId: 'growth',
+        visibleGroupIds: ['platform', 'growth', 'components', 'empty'],
+        activeGroupId: 'components',
     });
     expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(0);
 
     const groupControl = page.getByRole('button', { name: /Select group/ }).first();
     await groupControl.click();
-    await expect(page.locator('.group-dropdown-option', { hasText: 'Growth' }).locator('[title="My favorite group"]')).toBeVisible();
+    await expect(page.locator('.group-dropdown-option', { hasText: 'Components' }).locator('[title="My favorite group"]')).toBeVisible();
     await page.locator('.group-dropdown-option', { hasText: 'Platform' }).click();
     expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-preferences')).toHaveLength(1);
 
     await page.getByRole('button', { name: 'Manage team groups' }).click();
-    await expect(dialog.locator('.group-list-item', { hasText: 'Growth' }).locator('.group-list-star'))
-        .toHaveAccessibleName('Growth is your favorite Department');
+    await expect(dialog.locator('.group-list-item', { hasText: 'Components' }).locator('.group-list-star'))
+        .toHaveAccessibleName('Components is your favorite Department');
 });
 
 test('first team selection after hydration survives page reload', async ({ page }) => {
@@ -2860,7 +2940,7 @@ test('first-run sprint failure retries sprint discovery and clears the actionabl
     await dialog.getByRole('radio', { name: /Platform/ }).check();
     await page.getByRole('button', { name: 'Continue' }).click();
 
-    const message = 'Failed to load sprints from Jira. Retry, or confirm you can access the configured board.';
+    const message = 'Sprint catalog is unavailable. Retry.';
     await expect(page.getByText(message)).toBeVisible();
     expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name')).toHaveLength(0);
     await page.getByRole('button', { name: 'Retry' }).click();
@@ -2887,7 +2967,7 @@ test('sprint Retry ignores a second click while recovery is already in flight', 
     await expect(dialog).toBeVisible();
     await dialog.getByRole('radio', { name: /Platform/ }).check();
     await page.getByRole('button', { name: 'Continue' }).click();
-    const message = 'Failed to load sprints from Jira. Retry, or confirm you can access the configured board.';
+    const message = 'Sprint catalog is unavailable. Retry.';
     const retry = page.getByRole('button', { name: 'Retry' });
     await expect(page.getByText(message)).toBeVisible();
 
@@ -3068,3 +3148,381 @@ test('department group editor blocks save when an epic is both excluded and Ad H
     await page.waitForTimeout(300);
     expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(0);
 });
+
+const aliasScreenshotDir = path.join(__dirname, '..', '..', 'test-results', 'multiple-group-labels');
+const aliasCatalogTeams = {
+    'team-a': { id: 'team-a', name: 'Team A' },
+    'team-b': { id: 'team-b', name: 'Team B' },
+};
+const aliasJiraLabels = ['label_team_a', 'label_team_a_old', 'label_team_a_legacy', 'label_team_a_extra', 'label_team_b'];
+
+function aliasGroupConfig(teamLabels = {}, overrides = {}) {
+    return {
+        version: 1,
+        groups: [{
+            id: 'platform',
+            name: 'Platform',
+            teamIds: ['team-a', 'team-b'],
+            missingInfoComponents: [],
+            excludedCapacityEpics: [],
+            adHocCapacityEpics: [],
+            teamLabels,
+        }, {
+            id: 'growth',
+            name: 'Growth',
+            teamIds: ['team-b'],
+            missingInfoComponents: [],
+            excludedCapacityEpics: [],
+            adHocCapacityEpics: [],
+            teamLabels: { 'team-b': ['label_team_b'] },
+        }],
+        defaultGroupId: 'platform',
+        configRevision: 2,
+        source: 'workspace_db',
+        ...overrides,
+    };
+}
+
+function aliasGroupPreferences() {
+    return defaultGroupPreferences({
+        customized: true,
+        preferenceExists: true,
+        onboardingRequired: false,
+        visibleGroupIds: ['platform', 'growth'],
+        activeGroupId: 'platform',
+        effectiveVisibleGroupIds: ['platform', 'growth'],
+    });
+}
+
+async function openAliasLabelsPane(page, options = {}) {
+    const calls = await mockFirstRunDashboard(page, {
+        groupsConfig: aliasGroupConfig(options.teamLabels),
+        preferences: aliasGroupPreferences(),
+        extraCatalogTeams: aliasCatalogTeams,
+        jiraLabels: aliasJiraLabels,
+        ...(options.mock || {}),
+    });
+    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.locator('.group-modal');
+    await dialog.getByRole('tab', { name: 'Group labels' }).click();
+    const pane = dialog.locator('.group-editor-pane');
+    await expect(pane.locator('.group-pane-title', { hasText: 'Team labels' })).toBeVisible();
+    await expect(pane.locator('.team-selector-label', { hasText: 'Team A' })).toBeVisible();
+    return { calls, dialog, pane };
+}
+
+async function captureAliasPane(page, pane, name) {
+    fs.mkdirSync(aliasScreenshotDir, { recursive: true });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.addStyleTag({
+        content: '*, *::before, *::after { animation: none !important; transition: none !important; caret-color: transparent !important; }',
+    });
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const screenshotPath = path.join(aliasScreenshotDir, name);
+    await pane.screenshot({ path: screenshotPath, animations: 'disabled' });
+    expect(fs.existsSync(screenshotPath), `${name} was not produced`).toBe(true);
+}
+
+function aliasRow(pane, teamName) {
+    return pane.locator('.team-label-row', {
+        has: pane.page().locator('.team-selector-label', { hasText: teamName }),
+    });
+}
+
+async function aliasChipTexts(row) {
+    return row.locator('.selected-team-chip .team-name').allTextContents();
+}
+
+async function addAliasBySearch(row, teamName, query, label) {
+    const add = row.getByRole('button', { name: `Add label for ${teamName}` });
+    if (await add.count()) await add.click();
+    const input = row.getByRole('textbox', { name: `Search Jira labels for ${teamName}` });
+    await expect(input).toBeFocused();
+    await input.fill(query);
+    const result = row.locator('.team-search-result-item', { hasText: new RegExp(`^${label}$`) });
+    await expect(result).toBeVisible();
+    await result.click();
+}
+
+async function expectAliasRowGeometry(row) {
+    const targets = [
+        row.locator('.selected-team-chip .team-name'),
+        row.locator('.team-label-add'),
+        row.locator('.team-label-count'),
+    ];
+    for (const target of targets) {
+        const count = await target.count();
+        for (let index = 0; index < count; index += 1) {
+            await expectTextBearingGeometry(target.nth(index), row);
+        }
+    }
+    const chips = row.locator('.selected-team-chip');
+    for (let index = 0; index < await chips.count(); index += 1) {
+        await expectTextBearingGeometry(chips.nth(index), row);
+    }
+}
+
+function groupsPostBodies(calls) {
+    return calls
+        .filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')
+        .map(call => call.body);
+}
+
+test('Team labels editor adds, filters, caps, and removes up to three aliases', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const { calls, dialog, pane } = await openAliasLabelsPane(page, { teamLabels: { 'team-a': 'label_team_a' } });
+    const teamA = aliasRow(pane, 'Team A');
+    const teamB = aliasRow(pane, 'Team B');
+
+    await expect(pane.locator('.group-pane-subtitle')).toHaveText(
+        'Map up to three Jira Epic labels per Team; any of them matches the Team. Use labels only this Team applies.'
+    );
+    // Legacy scalar renders as one chip, search stays hidden behind Add label, and nothing is dirty.
+    expect(await aliasChipTexts(teamA)).toEqual(['label_team_a']);
+    await expect(teamA.getByRole('textbox')).toHaveCount(0);
+    await expect(teamA.getByRole('button', { name: 'Add label for Team A' })).toBeVisible();
+    await expect(dialog.locator('.group-modal-dirty')).toHaveCount(0);
+    // Zero aliases keep the existing search as the default affordance.
+    await expect(teamB.getByRole('textbox', { name: 'Search Jira labels for Team B' })).toBeVisible();
+    await expect(teamB.getByRole('button', { name: 'Add label for Team B' })).toHaveCount(0);
+
+    // Already-selected aliases are excluded from the Jira results client-side.
+    await teamA.getByRole('button', { name: 'Add label for Team A' }).click();
+    const input = teamA.getByRole('textbox', { name: 'Search Jira labels for Team A' });
+    await expect(input).toBeFocused();
+    await input.fill('label_team_a');
+    await expect(teamA.locator('.team-search-result-item')).toHaveText(['label_team_a_old', 'label_team_a_legacy', 'label_team_a_extra']);
+    // Escape closes the results first, then the add search, returning focus to Add label.
+    await input.press('Escape');
+    await expect(teamA.locator('.team-search-results')).toHaveCount(0);
+    await input.press('Escape');
+    await expect(teamA.getByRole('textbox')).toHaveCount(0);
+    await expect(teamA.getByRole('button', { name: 'Add label for Team A' })).toBeFocused();
+
+    await addAliasBySearch(teamA, 'Team A', 'label_team_a_o', 'label_team_a_old');
+    expect(await aliasChipTexts(teamA)).toEqual(['label_team_a', 'label_team_a_old']);
+    await expect(teamA.getByRole('textbox')).toHaveCount(0);
+    await expect(teamA.getByRole('button', { name: 'Add label for Team A' })).toBeFocused();
+    await expect(dialog.locator('.group-modal-dirty')).toContainText('Unsaved changes');
+    await expectAliasRowGeometry(teamA);
+
+    // Keyboard selection adds the third alias; the add action is replaced by the count.
+    await teamA.getByRole('button', { name: 'Add label for Team A' }).press('Enter');
+    await expect(input).toBeFocused();
+    await input.fill('label_team_a');
+    await expect(teamA.locator('.team-search-result-item')).toHaveText(['label_team_a_legacy', 'label_team_a_extra']);
+    await input.press('ArrowDown');
+    await input.press('Enter');
+    expect(await aliasChipTexts(teamA)).toEqual(['label_team_a', 'label_team_a_old', 'label_team_a_extra']);
+    await expect(teamA.getByText('3 of 3 labels', { exact: true })).toBeVisible();
+    await expect(teamA.getByRole('button', { name: 'Add label for Team A' })).toHaveCount(0);
+    await expect(teamA.getByRole('textbox')).toHaveCount(0);
+    await expectAliasRowGeometry(teamA);
+
+    // Remove only the named alias; Add label returns below the limit.
+    await teamA.getByRole('button', { name: 'Remove label_team_a from Team A' }).click();
+    expect(await aliasChipTexts(teamA)).toEqual(['label_team_a_old', 'label_team_a_extra']);
+    await expect(teamA.getByText('3 of 3 labels', { exact: true })).toHaveCount(0);
+    await expect(teamA.getByRole('button', { name: 'Add label for Team A' })).toBeVisible();
+
+    // Zero-alias Team: selecting from the default search adds its first alias.
+    await teamB.getByRole('textbox', { name: 'Search Jira labels for Team B' }).fill('label_team_b');
+    await teamB.locator('.team-search-result-item', { hasText: 'label_team_b' }).click();
+    expect(await aliasChipTexts(teamB)).toEqual(['label_team_b']);
+
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    await expect.poll(() => groupsPostBodies(calls).length).toBe(1);
+    const [body] = groupsPostBodies(calls);
+    expect(body.version).toBe(2);
+    expect(body.groups.find(group => group.id === 'platform').teamLabels).toEqual({
+        'team-a': ['label_team_a_old', 'label_team_a_extra'],
+        'team-b': ['label_team_b'],
+    });
+    expect(body.groups.find(group => group.id === 'growth').teamLabels).toEqual({ 'team-b': ['label_team_b'] });
+});
+
+test('Team labels removing the last alias drops the Team entry and Team removal drops its full list', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const { calls, dialog, pane } = await openAliasLabelsPane(page, {
+        teamLabels: { 'team-a': ['label_team_a', 'label_team_a_old'], 'team-b': ['label_team_b'] },
+    });
+    const teamB = aliasRow(pane, 'Team B');
+    await teamB.getByRole('button', { name: 'Remove label_team_b from Team B' }).click();
+    await expect(teamB.getByRole('textbox', { name: 'Search Jira labels for Team B' })).toBeVisible();
+
+    await dialog.getByRole('tab', { name: 'Team groups' }).click();
+    await dialog.locator('.selected-team-chip', { hasText: 'Team A' }).getByTitle('Remove team').click();
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    await expect.poll(() => groupsPostBodies(calls).length).toBe(1);
+    const platform = groupsPostBodies(calls)[0].groups.find(group => group.id === 'platform');
+    expect(platform.teamIds).toEqual(['team-b']);
+    expect(platform.teamLabels).toEqual({});
+});
+
+test('Team labels Cancel restores the baseline aliases without a request and Department switch shows its own aliases', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const { calls, dialog, pane } = await openAliasLabelsPane(page, { teamLabels: { 'team-a': ['label_team_a'] } });
+    const teamA = aliasRow(pane, 'Team A');
+    await addAliasBySearch(teamA, 'Team A', 'label_team_a_o', 'label_team_a_old');
+    expect(await aliasChipTexts(teamA)).toEqual(['label_team_a', 'label_team_a_old']);
+
+    // Open search state in Platform does not leak into Growth's rows.
+    await teamA.getByRole('button', { name: 'Add label for Team A' }).click();
+    await teamA.getByRole('textbox', { name: 'Search Jira labels for Team A' }).fill('label_team');
+    await dialog.locator('.group-list-item', { hasText: 'Growth' }).click();
+    const growthTeamB = aliasRow(pane, 'Team B');
+    expect(await aliasChipTexts(growthTeamB)).toEqual(['label_team_b']);
+    await expect(growthTeamB.getByRole('textbox')).toHaveCount(0);
+    await expect(growthTeamB.getByRole('button', { name: 'Add label for Team B' })).toBeVisible();
+
+    const baseline = calls.length;
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await dialog.locator('.group-confirm').getByRole('button', { name: 'Discard' }).click();
+    await expect(dialog).toHaveCount(0);
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    await dialog.getByRole('tab', { name: 'Group labels' }).click();
+    await dialog.locator('.group-list-item', { hasText: 'Platform' }).click();
+    expect(await aliasChipTexts(aliasRow(pane, 'Team A'))).toEqual(['label_team_a']);
+    expect(groupsPostBodies(calls.slice(baseline))).toEqual([]);
+});
+
+test('Team labels conflict Keep mine re-posts the full local alias arrays and Discard mine reloads server arrays', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const serverCurrent = aliasGroupConfig({ 'team-a': ['label_team_a_legacy'] }, { configRevision: 5, version: 2 });
+    const { calls, dialog, pane } = await openAliasLabelsPane(page, {
+        teamLabels: { 'team-a': ['label_team_a'] },
+        mock: { groupsConfigConflicts: [serverCurrent, serverCurrent] },
+    });
+    const teamA = aliasRow(pane, 'Team A');
+    await addAliasBySearch(teamA, 'Team A', 'label_team_a_o', 'label_team_a_old');
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    const validation = dialog.locator('.group-modal-validation');
+    await expect(validation).toContainText('Team groups changed while you were editing.');
+    expect(await aliasChipTexts(teamA)).toEqual(['label_team_a', 'label_team_a_old']);
+    expect(groupsPostBodies(calls)).toHaveLength(1);
+
+    await validation.getByRole('button', { name: 'Keep mine' }).click();
+    await expect.poll(() => groupsPostBodies(calls).length).toBe(2);
+    const retry = groupsPostBodies(calls)[1];
+    expect(retry.baseRevision).toBe(5);
+    expect(retry.groups.find(group => group.id === 'platform').teamLabels).toEqual({
+        'team-a': ['label_team_a', 'label_team_a_old'],
+    });
+
+    await expect(validation.getByRole('button', { name: 'Discard mine' })).toBeVisible();
+    await validation.getByRole('button', { name: 'Discard mine' }).click();
+    expect(await aliasChipTexts(teamA)).toEqual(['label_team_a_legacy']);
+    expect(groupsPostBodies(calls)).toHaveLength(2);
+});
+
+test('Team labels save 401 locks the app without replaying and keeps the mounted alias draft', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const { calls, dialog, pane } = await openAliasLabelsPane(page, {
+        teamLabels: { 'team-a': ['label_team_a'] },
+        mock: { groupsConfigError: { status: 401, body: { error: 'auth_required', loginUrl: '/login?reason=session_expired' } } },
+    });
+    const teamA = aliasRow(pane, 'Team A');
+    await addAliasBySearch(teamA, 'Team A', 'label_team_a_o', 'label_team_a_old');
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    await expect(page.getByRole('alertdialog')).toBeVisible();
+    await expect(dialog).toHaveCount(1);
+    expect(await aliasChipTexts(teamA)).toEqual(['label_team_a', 'label_team_a_old']);
+    await page.waitForTimeout(300);
+    expect(groupsPostBodies(calls)).toHaveLength(1);
+});
+
+test('Team labels Settings JSON export writes version 2 alias arrays for the selected group', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const { dialog } = await openAliasLabelsPane(page, {
+        teamLabels: { 'team-a': 'label_team_a' },
+    });
+    await dialog.getByRole('tab', { name: 'Team groups' }).click();
+    await dialog.locator('summary', { hasText: 'Advanced' }).click();
+    const downloadPromise = page.waitForEvent('download', { timeout: 5000 });
+    await dialog.getByRole('button', { name: 'Export JSON' }).click();
+    const download = await downloadPromise;
+    const exported = JSON.parse(fs.readFileSync(await download.path(), 'utf8'));
+    expect(exported.version).toBe(2);
+    expect(exported.group.id).toBe('platform');
+    expect(exported.group.teamLabels).toEqual({ 'team-a': ['label_team_a'] });
+});
+
+test('Team labels Settings JSON import accepts scalars and arrays and rejects invalid aliases unchanged', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const { calls, dialog, pane } = await openAliasLabelsPane(page, {
+        teamLabels: { 'team-a': ['label_team_a'] },
+    });
+    await dialog.getByRole('tab', { name: 'Team groups' }).click();
+    await dialog.locator('summary', { hasText: 'Advanced' }).click();
+
+    const openImport = async () => {
+        const importButton = dialog.getByRole('button', { name: 'Import JSON' });
+        if (await importButton.count()) await importButton.click();
+        return dialog.locator('textarea');
+    };
+    const invalidImports = [
+        { 'team-a': ['label_team_a', 'label_team_a_old', 'label_team_a_legacy', 'label_team_a_extra'] },
+        { 'team-a': ['label_team_a_old', 'LABEL_TEAM_A_OLD'] },
+        { 'team-a': ['label_team_a_old', 7] },
+    ];
+    for (const teamLabels of invalidImports) {
+        const textarea = await openImport();
+        const text = JSON.stringify({
+            version: 2,
+            group: { id: 'other', name: 'Other', teamIds: ['team-a'], teamLabels },
+        });
+        await textarea.fill(text);
+        await dialog.getByRole('button', { name: 'Apply Import' }).click();
+        const warning = dialog.locator('.group-modal-warning', { hasText: 'Import rejected: a Team' });
+        await expect(warning).toBeVisible();
+        await expect(warning).not.toContainText('label_team_a');
+        await expect(textarea).toHaveValue(text);
+        await expect(dialog.locator('.group-modal-dirty')).toHaveCount(0);
+    }
+    await dialog.getByRole('tab', { name: 'Group labels' }).click();
+    expect(await aliasChipTexts(aliasRow(pane, 'Team A'))).toEqual(['label_team_a']);
+
+    // A version-1 scalar import becomes arrays in the selected group only, keeping its id and name.
+    await dialog.getByRole('tab', { name: 'Team groups' }).click();
+    const textarea = await openImport();
+    await textarea.fill(JSON.stringify({
+        version: 1,
+        group: { id: 'other', name: 'Other', teamIds: ['team-a', 'team-b'], teamLabels: { 'team-a': 'label_team_a_old', 'team-b': ['label_team_b'] } },
+    }));
+    await dialog.getByRole('button', { name: 'Apply Import' }).click();
+    await expect(dialog.locator('.group-modal-dirty')).toContainText('Unsaved changes');
+    await dialog.getByRole('tab', { name: 'Group labels' }).click();
+    expect(await aliasChipTexts(aliasRow(pane, 'Team A'))).toEqual(['label_team_a_old']);
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    await expect.poll(() => groupsPostBodies(calls).length).toBe(1);
+    const [body] = groupsPostBodies(calls);
+    const platform = body.groups.find(group => group.id === 'platform');
+    expect(platform.name).toBe('Platform');
+    expect(platform.teamLabels).toEqual({ 'team-a': ['label_team_a_old'], 'team-b': ['label_team_b'] });
+    expect(body.groups.find(group => group.id === 'growth').teamLabels).toEqual({ 'team-b': ['label_team_b'] });
+});
+
+for (const viewport of [{ name: 'desktop', width: 1280, height: 800 }, { name: 'compact', width: 390, height: 844 }]) {
+    test(`Team labels alias states keep chips, count, and Add label inside the row at ${viewport.name} width`, async ({ page }) => {
+        await page.setViewportSize({ width: viewport.width, height: viewport.height });
+        const { pane } = await openAliasLabelsPane(page, { teamLabels: { 'team-a': ['label_team_a'] } });
+        const teamA = aliasRow(pane, 'Team A');
+        await expectAliasRowGeometry(teamA);
+        await captureAliasPane(page, pane, `after-one-label-${viewport.name}.png`);
+
+        await addAliasBySearch(teamA, 'Team A', 'label_team_a_o', 'label_team_a_old');
+        await expectAliasRowGeometry(teamA);
+        await captureAliasPane(page, pane, `after-two-labels-${viewport.name}.png`);
+
+        await teamA.getByRole('button', { name: 'Add label for Team A' }).click();
+        await teamA.getByRole('textbox', { name: 'Search Jira labels for Team A' }).fill('label_team_a');
+        await expect(teamA.locator('.team-search-result-item')).toHaveText(['label_team_a_legacy', 'label_team_a_extra']);
+        await captureAliasPane(page, pane, `after-add-search-${viewport.name}.png`);
+        await teamA.locator('.team-search-result-item', { hasText: 'label_team_a_legacy' }).click();
+
+        await expect(teamA.getByText('3 of 3 labels', { exact: true })).toBeVisible();
+        await expectAliasRowGeometry(teamA);
+        await captureAliasPane(page, pane, `after-three-labels-${viewport.name}.png`);
+    });
+}

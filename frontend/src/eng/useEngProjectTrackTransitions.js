@@ -1,7 +1,7 @@
 import * as React from 'react';
-import { isAuthenticationRequiredError } from '../api/authRequired.js';
+import { isAuthenticationRequiredError, readPendingAuthenticationRequired } from '../api/authRequired.js';
 import { fetchIssueProjectTrackOptions, updateIssueProjectTrack } from '../api/jiraIssueApi.js';
-import { enqueueEngIssueMutation } from './engIssueMutationQueue.js';
+import { enqueueEngIssueMutations } from './engIssueMutationQueue.js';
 import { buildProjectTrackActionAnalyticsParams } from './engProjectTrackTransitionUtils.js';
 
 // React state for the ENG Catch Up/Planning Epic-header Project Track change control: active
@@ -19,6 +19,8 @@ export function useEngProjectTrackTransitions({
     trackIssueProjectTrackAction,
     onAuthRecoveryRequired,
     onApplyLocalProjectTrack,
+    onProjectTrackSuccessRefresh,
+    mutationCoordinator = null,
 }) {
     const [activeProjectTrackTarget, setActiveProjectTrackTarget] = React.useState(null);
     const [projectTrackOptions, setProjectTrackOptions] = React.useState(null);
@@ -33,6 +35,7 @@ export function useEngProjectTrackTransitions({
     const mutationScopeRef = React.useRef(mutationScopeKey);
     mutationScopeRef.current = mutationScopeKey;
     const pendingMutationKeysRef = React.useRef(new Set());
+    const queuedMutationControllersRef = React.useRef(new Set());
 
     // Active target, in-flight fetch tracking, and result/error state are scoped to one
     // sprint and Catch Up/Planning surface. In-flight writes keep their own scope token so a
@@ -46,6 +49,8 @@ export function useEngProjectTrackTransitions({
         setProjectTrackError('');
         setProjectTrackErrorCode('');
         setProjectTrackResult(null);
+        queuedMutationControllersRef.current.forEach(controller => controller.abort());
+        queuedMutationControllersRef.current.clear();
         setPendingIssueKeys(new Set());
         pendingMutationKeysRef.current.clear();
     }, [selectedSprint, sourceSurface, mutationScopeKey]);
@@ -104,8 +109,8 @@ export function useEngProjectTrackTransitions({
         const key = String(epicKey || '').trim();
         if (!target || !key) return null;
 
-        const isCatchUp = sourceSurface === 'catch_up';
-        if (isCatchUp && pendingMutationKeysRef.current.has(key)) return null;
+        const isSingleIssueSurface = sourceSurface !== 'planning';
+        if (isSingleIssueSurface && pendingMutationKeysRef.current.has(key)) return null;
 
         const priorTrack = activeProjectTrackTarget && activeProjectTrackTarget.key === key
             ? activeProjectTrackTarget.currentTrack
@@ -117,7 +122,7 @@ export function useEngProjectTrackTransitions({
         setProjectTrackError('');
         setProjectTrackErrorCode('');
 
-        if (isCatchUp) {
+        if (isSingleIssueSurface) {
             pendingMutationKeysRef.current.add(key);
             onApplyLocalProjectTrack?.(key, target);
             setPendingIssueKeys((prev) => new Set(prev).add(key));
@@ -125,19 +130,29 @@ export function useEngProjectTrackTransitions({
             setProjectTrackSubmitting(true);
         }
 
+        let queueController = null;
         try {
+            queueController = new AbortController();
+            queuedMutationControllersRef.current.add(queueController);
             const runMutation = () => updateIssueProjectTrack(backendUrl, { issueKey: key, targetTrack: target });
-            const response = await (isCatchUp ? enqueueEngIssueMutation(key, runMutation) : runMutation());
-            const isCurrentMutation = !isCatchUp || mutationScopeRef.current === mutationScope;
-            if (isCurrentMutation && (!isCatchUp || activeProjectTrackTargetRef.current?.key === key)) {
+            const runQueuedMutation = async () => await enqueueEngIssueMutations([key], runMutation, {
+                signal: queueController.signal,
+                shouldStart: () => mutationScopeRef.current === mutationScope && !readPendingAuthenticationRequired(),
+            });
+            const response = await (sourceSurface !== 'planning' && mutationCoordinator
+                ? mutationCoordinator.enqueue(key, runQueuedMutation)
+                : runQueuedMutation());
+            const isCurrentMutation = !isSingleIssueSurface || mutationScopeRef.current === mutationScope;
+            if (isCurrentMutation && (!isSingleIssueSurface || activeProjectTrackTargetRef.current?.key === key)) {
                 setProjectTrackResult(response?.result || 'success');
             }
             trackIssueProjectTrackAction('project_track_change_result', { ...analyticsBaseParams, result: 'success' });
-            if (isCatchUp) {
+            if (isSingleIssueSurface) {
                 if (isCurrentMutation) {
                     // Server canonical value: 'already_in_track' responses carry only fromTrack.
                     onApplyLocalProjectTrack?.(key, response?.toTrack ?? response?.fromTrack);
                 }
+                if (sourceSurface === 'board') await onProjectTrackSuccessRefresh?.();
             } else if (mutationScopeRef.current === mutationScope) {
                 // Planning has no task-list refresh, so this is the only path that keeps the
                 // header emoji, track-based sort, and menu currentTrack in sync after a write.
@@ -145,18 +160,21 @@ export function useEngProjectTrackTransitions({
             }
             return response;
         } catch (err) {
+            if (err?.name === 'AbortError') return null;
             if (isAuthenticationRequiredError(err)) return null;
-            if (isCatchUp && mutationScopeRef.current === mutationScope) {
+            if (isSingleIssueSurface && mutationScopeRef.current === mutationScope) {
                 onApplyLocalProjectTrack?.(key, priorTrack);
             }
-            if ((!isCatchUp || mutationScopeRef.current === mutationScope) && (!isCatchUp || activeProjectTrackTargetRef.current?.key === key)) {
+            if ((!isSingleIssueSurface || mutationScopeRef.current === mutationScope) && (!isSingleIssueSurface || activeProjectTrackTargetRef.current?.key === key)) {
                 setProjectTrackError(err?.message || 'Failed to change Project Track.');
                 setProjectTrackErrorCode(err?.code || '');
             }
             trackIssueProjectTrackAction('project_track_change_result', { ...analyticsBaseParams, result: 'failure' });
             return null;
         } finally {
-            if (isCatchUp) {
+            mutationCoordinator?.complete();
+            if (queueController) queuedMutationControllersRef.current.delete(queueController);
+            if (isSingleIssueSurface) {
                 if (mutationScopeRef.current === mutationScope) {
                     pendingMutationKeysRef.current.delete(key);
                     setPendingIssueKeys((prev) => {
@@ -169,7 +187,7 @@ export function useEngProjectTrackTransitions({
                 setProjectTrackSubmitting(false);
             }
         }
-    }, [activeProjectTrackTarget, sourceSurface, mutationScopeKey, backendUrl, trackIssueProjectTrackAction, onApplyLocalProjectTrack, onAuthRecoveryRequired]);
+    }, [activeProjectTrackTarget, sourceSurface, mutationScopeKey, backendUrl, trackIssueProjectTrackAction, onApplyLocalProjectTrack, onProjectTrackSuccessRefresh, onAuthRecoveryRequired, mutationCoordinator]);
 
     return {
         activeProjectTrackTarget,

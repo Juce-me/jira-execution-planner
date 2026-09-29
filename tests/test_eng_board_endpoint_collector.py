@@ -57,6 +57,32 @@ class EngBoardEndpointCollectorTests(unittest.TestCase):
                        'secret-component', 'SECRET-1', 'product-selected-1'):
             self.assertNotIn(secret, serialized)
 
+    def test_scalar_and_array_team_labels_produce_the_same_flat_parameter(self):
+        collector = load_collector()
+
+        def collect(team_labels):
+            calls = []
+
+            def get_json(path, params=None):
+                calls.append(dict(params or {}))
+                if path == '/api/groups-config':
+                    return ({'groups': [{'id': 'department-a', 'teamIds': ['team-a', 'team-b'],
+                                         'teamLabels': team_labels}]}, {}, 1.0)
+                return ({'issues': [], 'epics': {}, 'epicsInScope': [], 'total': 0}, {}, 1.0)
+
+            result = collector.collect_endpoint_metrics(get_json, sprint_id=42)
+            return result, [call.get('teamLabels') for call in calls[1:]]
+
+        scalar_result, scalar_params = collect({'team-a': 'label_team_a', 'team-b': 'label_team_b'})
+        array_result, array_params = collect({'team-a': ['label_team_a'], 'team-b': ['label_team_b']})
+        self.assertEqual(scalar_params, array_params)
+        self.assertEqual(set(scalar_params), {'label_team_a,label_team_b'})
+        _two_result, two_params = collect({'team-a': ['label_team_a', 'label_team_a_old']})
+        self.assertEqual(set(two_params), {'label_team_a,label_team_a_old'})
+        for result in (scalar_result, array_result, _two_result):
+            serialized = collector.json.dumps(result, sort_keys=True)
+            self.assertNotIn('label_team', serialized)
+
     def test_rejects_non_loopback_urls_and_repository_paths(self):
         collector = load_collector()
         for value in ('https://localhost:5050', 'http://example.com:5050',

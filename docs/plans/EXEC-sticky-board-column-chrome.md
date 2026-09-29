@@ -5,6 +5,9 @@
 > non-green environment-scoped Python diagnostic. Keep this `EXEC-*` plan pending acceptance or
 > merge.
 
+> Applies only below the Board pane-mode gate (narrow, short, or touch viewports); desktop behavior
+> is superseded by [2026-09-24-executed-board-column-scroll-panes.md](../agents/features/2026-09-24-executed-board-column-scroll-panes.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Keep every collapsed Group Board rail and every open-column header visible beneath the existing sticky dashboard controls while the user scrolls through a long board, and correct the shared Catch Up/Board filter-bar wrapper's top-heavy spacing.

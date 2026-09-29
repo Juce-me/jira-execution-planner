@@ -82,6 +82,7 @@ def _assert_bootstrap_returns_resolved_view_with_source_metadata():
                 config_revision=3,
                 payload={
                     'version': 1,
+                    'board': {'boardId': '17', 'boardName': 'Shared Board'},
                     'capacity': {'project': 'CAP', 'fieldId': 'customfield_10001', 'fieldName': 'Capacity'},
                     'epm': {
                         'version': 2,
@@ -115,7 +116,11 @@ def _assert_bootstrap_returns_resolved_view_with_source_metadata():
             'DATABASE_URL': database_url,
         }, clear=False), \
              patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-             patch.object(jira_server, 'get_board_config', return_value={}), \
+             patch.object(
+                 jira_server,
+                 'get_board_config',
+                 side_effect=AssertionError('DB bootstrap must not perform a second board read'),
+             ), \
              patch.object(jira_server, 'get_effective_capacity_project', return_value=''), \
              patch.object(jira_server, 'resolve_groups_config_path', return_value='team-groups.json'), \
              patch.object(jira_server, 'get_selected_projects', return_value=['PROD']):
@@ -126,6 +131,13 @@ def _assert_bootstrap_returns_resolved_view_with_source_metadata():
         assert body['epm']['projects']['private-1']['label'] == 'private_label'
         assert body['sharedConfigRevision'] == 3
         assert 'epm' not in body['sharedConfig']
+        assert body['sprintCatalogSource']['backend'] == 'postgresql'
+        assert body['sprintCatalogSource']['identity'].startswith('sc1:')
+        assert body['sprintCatalogSource']['boardId'] == '17'
+        assert body['sprintCatalogSource']['browserContextId'].startswith('bc1:')
+        assert body['boardId'] == '17'
+        assert body['boardName'] == 'Shared Board'
+        assert body['boardConfigSource'] == 'config'
         assert body['capacityProject'] == ''
         assert body['capacityConfigRequiresResolution'] is True
         assert body['capacityMutationEnabled'] is False

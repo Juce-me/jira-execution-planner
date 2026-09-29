@@ -165,14 +165,10 @@ export default function PlanningTeamCapacityCards({
     editorRef.current = editor;
 
     const activeEditor = editor?.scopeSignature === scopeSignature ? editor : null;
-    const sortedTeams = React.useMemo(() => [...entries].sort((left, right) => {
-        if (capacityEnabled) {
-            const leftDelta = left.storyPoints - (left.teamCapacity || 0);
-            const rightDelta = right.storyPoints - (right.teamCapacity || 0);
-            if (rightDelta !== leftDelta) return rightDelta - leftDelta;
-        }
-        return right.storyPoints - left.storyPoints;
-    }), [entries, capacityEnabled]);
+    const sortedTeams = React.useMemo(() => [...entries].sort((left, right) => (
+        String(left.name || '').localeCompare(String(right.name || ''))
+        || String(left.id || '').localeCompare(String(right.id || ''))
+    )), [entries]);
 
     const getSubmitBlockedReason = React.useCallback((candidate) => {
         if (!candidate || candidate.scopeSignature !== latestScopeRef.current) {
@@ -233,8 +229,9 @@ export default function PlanningTeamCapacityCards({
     React.useEffect(() => {
         if (activeEditor || !restoreFocusIssueRef.current) return undefined;
         const issueKey = restoreFocusIssueRef.current;
-        restoreFocusIssueRef.current = '';
         const frame = window.requestAnimationFrame(() => {
+            if (restoreFocusIssueRef.current !== issueKey) return;
+            restoreFocusIssueRef.current = '';
             pencilRefs.current.get(issueKey)?.focus();
         });
         return () => window.cancelAnimationFrame(frame);

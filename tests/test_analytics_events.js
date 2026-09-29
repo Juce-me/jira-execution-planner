@@ -595,6 +595,40 @@ test('api_result accepts jira_team_capacity with the existing bucketed API contr
     }]);
 });
 
+test('eng_board terminal api_result accepts only bounded scope and omits high-cardinality input', async () => {
+    const { initAnalytics, trackApiResult } = await loadAnalytics();
+    resetDom();
+    const pushed = [];
+    global.window.dataLayer = { push: entry => pushed.push(entry) };
+    await initAnalytics({
+        fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
+    });
+
+    trackApiResult('eng_board', {
+        featureName: 'eng_board', method: 'GET', status: 200, durationMs: 725,
+        cacheState: 'miss', scopeType: 'all_work',
+        departmentId: 'department-secret', generationId: 'generation-secret',
+        issueKeys: ['SECRET-1'], jql: 'project = SECRET',
+    });
+    assert.deepEqual(pushed, [{
+        event: 'userevent', trigger: 'userevent', event_type: 'event',
+        event_name: 'api_result', feature_name: 'eng_board', api_surface: 'eng_board',
+        method: 'GET', status_bucket: '2xx', result: 'success',
+        duration_bucket: 'under_1s', duration_ms: 725, cache_state: 'miss',
+        scope_type: 'all_work',
+    }]);
+    trackApiResult('eng_board', {
+        featureName: 'eng_board', method: 'GET', status: 200, scopeType: 'component',
+    });
+    assert.equal(pushed[1].scope_type, 'component');
+    assert.throws(
+        () => trackApiResult('eng_board', {
+            featureName: 'eng_board', status: 200, scopeType: 'department-secret',
+        }),
+        /unsupported ENG Board scope type/,
+    );
+});
+
 test('issue_priority_action pushes the eng priority transition contract through the dataLayer', async () => {
     const { initAnalytics, trackEvent } = await loadAnalytics();
     resetDom();
@@ -880,12 +914,29 @@ test('external link metadata builders use explicit safe metadata without hrefs',
     assert.deepEqual(
         buildJiraBrowseLinkAnalytics({
             issueKind: 'epic',
-            sourceSurface: 'epm',
+            sourceSurface: 'catch_up',
         }),
         {
             linkType: 'jira_issue_browse',
             issueKind: 'epic',
-            sourceSurface: 'epm',
+            sourceSurface: 'catch_up',
+            result: 'success',
+        }
+    );
+    assert.deepEqual(
+        buildJiraBrowseLinkAnalytics({
+            issueKind: 'epic',
+            sourceSurface: 'planning',
+            epicKey: 'SENSITIVE-123',
+            teamName: 'Sensitive Team',
+            sprintName: 'Sprint 42',
+            href: 'https://jira.example/browse/SENSITIVE-123',
+            reason: 'no_stories',
+        }),
+        {
+            linkType: 'jira_issue_browse',
+            issueKind: 'epic',
+            sourceSurface: 'planning',
             result: 'success',
         }
     );
@@ -984,6 +1035,39 @@ test('api result helper emits eng_subtasks surface for story subtask loads', asy
     });
 });
 
+test('api result helper emits only bounded Story readiness success and failure metadata', async () => {
+    const { initAnalytics, trackApiResult } = await loadAnalytics();
+    resetDom();
+    const pushed = [];
+    global.window.dataLayer = { push: entry => pushed.push(entry) };
+
+    await initAnalytics({
+        fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
+    });
+    trackApiResult('eng_story_readiness', {
+        featureName: 'eng', method: 'GET', status: 200, durationMs: 1250, cacheState: 'hit',
+        groupId: 'private-group', sprintName: 'Private Sprint', epicKey: 'PRIVATE-1',
+        jiraUrl: 'https://private.invalid', jql: 'project = PRIVATE', reason: 'no_stories',
+    });
+    trackApiResult('eng_story_readiness', {
+        featureName: 'eng', method: 'GET', status: 502, durationMs: 400, cacheState: 'miss',
+        teamName: 'Private Team', labels: ['private-label'],
+    });
+
+    assert.deepEqual(pushed, [
+        {
+            event: 'userevent', trigger: 'userevent', event_type: 'event', event_name: 'api_result',
+            feature_name: 'eng', api_surface: 'eng_story_readiness', method: 'GET',
+            status_bucket: '2xx', result: 'success', duration_bucket: '1_3s', duration_ms: 1250, cache_state: 'hit',
+        },
+        {
+            event: 'userevent', trigger: 'userevent', event_type: 'event', event_name: 'api_result',
+            feature_name: 'eng', api_surface: 'eng_story_readiness', method: 'GET',
+            status_bucket: '5xx', result: 'failure', duration_bucket: 'under_1s', duration_ms: 400, cache_state: 'miss',
+        },
+    ]);
+});
+
 test('api result helper emits eng_issue_description and board_config_statuses surfaces', async () => {
     const { initAnalytics, trackApiResult } = await loadAnalytics();
     resetDom();
@@ -1080,6 +1164,133 @@ async function loadDashboardAnalytics() {
     return import('../frontend/src/analytics/dashboardAnalytics.js');
 }
 
+test('issue field edit analytics builder emits only the fixed bounded contract', async () => {
+    const { buildIssueFieldEditAnalyticsParams } = await loadDashboardAnalytics();
+
+    assert.deepEqual(
+        buildIssueFieldEditAnalyticsParams('open', {
+            fieldName: 'assignee', issueKind: 'story', sourceSurface: 'catch_up',
+            query: 'Ada', accountId: 'secret-account', issueKey: 'DEMO-1',
+        }),
+        {
+            feature_name: 'eng_issue_field_edits', workflow_action: 'open',
+            field_name: 'assignee', issue_kind: 'story', source_surface: 'catch_up',
+        },
+    );
+    assert.deepEqual(
+        buildIssueFieldEditAnalyticsParams('result', {
+            fieldName: 'delivery_owner', issueKind: 'epic', sourceSurface: 'board', result: 'unknown',
+            displayName: 'Private Name', email: 'private@example.test', fieldId: 'customfield_123',
+            storyPoints: 8, error: 'raw Jira error',
+        }),
+        {
+            feature_name: 'eng_issue_field_edits', workflow_action: 'result',
+            field_name: 'delivery_owner', issue_kind: 'epic', source_surface: 'board', result: 'unknown',
+        },
+    );
+    assert.equal(Object.keys(buildIssueFieldEditAnalyticsParams('submit', {
+        fieldName: 'story_points', issueKind: 'story', sourceSurface: 'planning', result: 'failure',
+    })).length, 5);
+
+    for (const invalid of [
+        ['cancel', { fieldName: 'assignee', issueKind: 'story', sourceSurface: 'catch_up' }],
+        ['open', { fieldName: 'raw_field', issueKind: 'story', sourceSurface: 'catch_up' }],
+        ['open', { fieldName: 'assignee', issueKind: 'subtask', sourceSurface: 'catch_up' }],
+        ['open', { fieldName: 'assignee', issueKind: 'story', sourceSurface: 'scenario' }],
+        ['result', { fieldName: 'assignee', issueKind: 'story', sourceSurface: 'board', result: 'partial' }],
+        ['result', { fieldName: 'assignee', issueKind: 'story', sourceSurface: 'board' }],
+    ]) {
+        assert.equal(buildIssueFieldEditAnalyticsParams(invalid[0], invalid[1]), null);
+    }
+});
+
+test('issue field edit action is a canonical userevent with an allowlisted field_name', async () => {
+    const { sanitizeAnalyticsParams, validateAnalyticsPayload } = await loadEvents();
+    const clean = sanitizeAnalyticsParams({
+        feature_name: 'eng_issue_field_edits', workflow_action: 'result',
+        field_name: 'story_points', issue_kind: 'story', source_surface: 'planning', result: 'unchanged',
+    }, 'issue_field_edit_action');
+    assert.deepEqual(clean, {
+        feature_name: 'eng_issue_field_edits', workflow_action: 'result',
+        field_name: 'story_points', issue_kind: 'story', source_surface: 'planning', result: 'unchanged',
+    });
+    assert.equal(validateAnalyticsPayload({
+        event: 'userevent', trigger: 'userevent', event_type: 'event',
+        event_name: 'issue_field_edit_action', ...clean,
+    }).event_name, 'issue_field_edit_action');
+});
+
+test('api_result accepts jira_issue_field_edits without raw field-edit data', async () => {
+    const { initAnalytics, trackApiResult } = await loadAnalytics();
+    resetDom();
+    const pushed = [];
+    global.window.dataLayer = { push: entry => pushed.push(entry) };
+    await initAnalytics({ fetchContext: async () => ({ enabled: true }) });
+
+    trackApiResult('jira_issue_field_edits', {
+        featureName: 'eng_issue_field_edits', method: 'POST', status: 409, durationMs: 420,
+        query: 'Private Person', accountId: 'secret', issueKey: 'DEMO-1',
+        fieldId: 'customfield_123', storyPoints: 8, error: 'raw Jira error',
+    });
+
+    assert.deepEqual(pushed[0], {
+        event: 'userevent', trigger: 'userevent', event_type: 'event', event_name: 'api_result',
+        feature_name: 'eng_issue_field_edits', api_surface: 'jira_issue_field_edits', method: 'POST',
+        status_bucket: '4xx', result: 'failure', duration_bucket: 'under_1s', duration_ms: 420,
+        cache_state: 'unknown',
+    });
+    assert.ok(Object.keys(pushed[0]).length <= 25);
+});
+
+test('board small-screen support builder emits only the fixed bounded contract', async () => {
+    const { buildBoardSmallScreenSupportParams } = await loadDashboardAnalytics();
+
+    for (const reason of ['short', 'narrow', 'touch']) {
+        assert.deepEqual(buildBoardSmallScreenSupportParams(reason), {
+            feature_name: 'eng_board',
+            workflow_action: 'small_screen_support_request',
+            reason,
+            source_surface: 'board',
+        });
+    }
+    for (const invalid of ['wide', '760', 760, '', null, undefined, 'short screen']) {
+        assert.equal(buildBoardSmallScreenSupportParams(invalid), null);
+    }
+});
+
+test('board_action is a canonical userevent whose reason accepts only its enum', async () => {
+    const { sanitizeAnalyticsParams, validateAnalyticsPayload } = await loadEvents();
+    const params = {
+        feature_name: 'eng_board', workflow_action: 'small_screen_support_request',
+        reason: 'touch', source_surface: 'board',
+    };
+    assert.deepEqual(sanitizeAnalyticsParams(params, 'board_action'), params);
+    assert.equal(validateAnalyticsPayload({
+        event: 'userevent', trigger: 'userevent', event_type: 'event', event_name: 'board_action', ...params,
+    }).event_name, 'board_action');
+    for (const reason of ['wide', 'viewport_1280', 'short_screen']) {
+        assert.throws(() => sanitizeAnalyticsParams({ ...params, reason }, 'board_action'), /reason/);
+    }
+});
+
+test('board small-screen support request pushes one fixed userevent through the dataLayer', async () => {
+    const { initAnalytics } = await loadAnalytics();
+    const { trackBoardSmallScreenSupportRequest } = await loadDashboardAnalytics();
+    resetDom();
+    const pushed = [];
+    global.window.dataLayer = { push: entry => pushed.push(entry) };
+    await initAnalytics({ fetchContext: async () => ({ enabled: true }) });
+
+    trackBoardSmallScreenSupportRequest('narrow');
+    trackBoardSmallScreenSupportRequest('wide');
+
+    assert.deepEqual(pushed, [{
+        event: 'userevent', trigger: 'userevent', event_type: 'event', event_name: 'board_action',
+        feature_name: 'eng_board', workflow_action: 'small_screen_support_request',
+        reason: 'narrow', source_surface: 'board',
+    }]);
+});
+
 async function loadDashboardAnalyticsWithRecorder(events) {
     const sourcePath = path.join(__dirname, '..', 'frontend', 'src', 'analytics', 'dashboardAnalytics.js');
     const source = fs.readFileSync(sourcePath, 'utf8')
@@ -1124,6 +1335,39 @@ test('planning capacity workflow helper emits only fixed allowlisted payloads', 
         { eventName: 'planning_action', payload: { feature_name: 'planning_capacity_edit', workflow_action: 'capacity_change_result', source_surface: 'planning', result: 'failure' } },
         { eventName: 'planning_action', payload: { feature_name: 'planning_capacity_edit', workflow_action: 'capacity_change_result', source_surface: 'planning', result: 'conflict' } },
         { eventName: 'planning_action', payload: { feature_name: 'planning_capacity_edit', workflow_action: 'capacity_change_result', source_surface: 'planning' } },
+    ]);
+});
+
+test('issue field edit workflow helper drops invalid enums and raw incidental state', async () => {
+    const events = [];
+    const { trackIssueFieldEditAction } = await loadDashboardAnalyticsWithRecorder(events);
+
+    trackIssueFieldEditAction('open', {
+        fieldName: 'assignee', issueKind: 'story', sourceSurface: 'catch_up', query: 'Ada', issueKey: 'DEMO-1',
+    });
+    trackIssueFieldEditAction('submit', {
+        fieldName: 'story_points', issueKind: 'story', sourceSurface: 'planning', result: 'failure', storyPoints: 8,
+    });
+    trackIssueFieldEditAction('result', {
+        fieldName: 'delivery_owner', issueKind: 'epic', sourceSurface: 'board', result: 'conflict',
+        accountId: 'secret', displayName: 'Private Name', email: 'private@example.test', fieldId: 'customfield_123', error: 'raw',
+    });
+    trackIssueFieldEditAction('cancel', { fieldName: 'assignee', issueKind: 'story', sourceSurface: 'catch_up' });
+    trackIssueFieldEditAction('result', { fieldName: 'assignee', issueKind: 'story', sourceSurface: 'board', result: 'partial' });
+
+    assert.deepEqual(events, [
+        { eventName: 'issue_field_edit_action', payload: {
+            feature_name: 'eng_issue_field_edits', workflow_action: 'open', field_name: 'assignee',
+            issue_kind: 'story', source_surface: 'catch_up',
+        } },
+        { eventName: 'issue_field_edit_action', payload: {
+            feature_name: 'eng_issue_field_edits', workflow_action: 'submit', field_name: 'story_points',
+            issue_kind: 'story', source_surface: 'planning',
+        } },
+        { eventName: 'issue_field_edit_action', payload: {
+            feature_name: 'eng_issue_field_edits', workflow_action: 'result', field_name: 'delivery_owner',
+            issue_kind: 'epic', source_surface: 'board', result: 'conflict',
+        } },
     ]);
 });
 

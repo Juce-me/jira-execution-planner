@@ -22,6 +22,7 @@ function loadUseEngSprintData(fetchEngTasks, refreshAuthSession = async () => ({
         filterEpicsInScopeForTeamSet: (epics) => epics,
         filterTasksForTeamSet: (tasks) => tasks,
         sortTasksByPriority: (tasks) => tasks,
+        flattenTeamLabelAliases: () => [],
         ...overrides,
     };
 
@@ -40,6 +41,9 @@ function createHarness(fetchEngTasks, {
     loadedTechTasks = [],
     performanceDebugEnabled = false,
     measurementDependencies = {},
+    strictBoardActive = false,
+    activeGroupTeamIds,
+    activeGroupTeamLabels,
 } = {}) {
     const { useEngSprintData } = loadUseEngSprintData(fetchEngTasks, refreshAuthSession, measurementDependencies);
     const errors = [];
@@ -50,8 +54,10 @@ function createHarness(fetchEngTasks, {
         backendUrl: 'http://localhost:5050',
         selectedSprint: '2026Q1',
         activeGroupId: performanceDebugEnabled ? 'sample-group' : '',
-        activeGroupTeamIds: performanceDebugEnabled ? ['sample-team'] : [],
+        activeGroupTeamIds: activeGroupTeamIds || (performanceDebugEnabled ? ['sample-team'] : []),
+        activeGroupTeamLabels,
         performanceDebugEnabled,
+        strictBoardActive,
         activeGroupTeamSet: new Set(),
         pageLoadRefreshRef: { current: false },
         sprintLoadRef,
@@ -82,6 +88,79 @@ function createHarness(fetchEngTasks, {
 
     return { api, errors };
 }
+
+test('task request flattens every selected Team alias through the shared helper', async () => {
+    const { flattenTeamLabelAliases } = await import('../frontend/src/settings/groupConfigUtils.js');
+    const calls = [];
+    const { api } = createHarness(async (_url, options) => {
+        calls.push(options);
+        return new Response(JSON.stringify({ issues: [] }));
+    }, {
+        activeGroupTeamIds: ['team-a', 'team-b'],
+        activeGroupTeamLabels: {
+            'team-a': ['label_team_a', 'label_team_a_old'],
+            'team-b': ['LABEL_TEAM_A', 'label_team_b'],
+            'team-c': ['label_team_c'],
+        },
+        measurementDependencies: { flattenTeamLabelAliases },
+    });
+
+    await api.fetchTasks('product');
+
+    assert.deepEqual(calls.map(call => call.teamLabels), [['label_team_a', 'label_team_a_old', 'label_team_b']]);
+});
+
+test('alert Epic load reports alert_scope_too_large per project without a local error', async () => {
+    const { api, errors } = createHarness(async (_url, options) => {
+        if (options.purpose === 'alerts' && options.project === 'product') {
+            return new Response(JSON.stringify({ error: 'alert_scope_too_large', message: 'This Department is too large for Epic alerts.' }), { status: 422 });
+        }
+        return new Response(JSON.stringify({ issues: [], epicsInScope: [] }));
+    });
+
+    assert.deepEqual(await api.loadAlertEpics(), { product: 'alert_scope_too_large', tech: 'applied' });
+    assert.deepEqual(errors, []);
+});
+
+test('alert_scope_too_large outside alert purpose stays an ordinary non-auth failure', async () => {
+    const { api } = createHarness(async () => new Response(
+        JSON.stringify({ error: 'alert_scope_too_large', message: 'This Department is too large for Epic alerts.' }),
+        { status: 422 }
+    ));
+
+    assert.equal(await api.loadProductTasks(), 'non_auth_failure');
+});
+
+test('strict Board retires every legacy sprint loader without issuing transport', async () => {
+    const calls = [];
+    const { api } = createHarness(async () => {
+        calls.push('tasks');
+        throw new Error('legacy task transport must stay retired');
+    }, {
+        strictBoardActive: true,
+        measurementDependencies: {
+            requestBacklogEpics: async () => {
+                calls.push('backlog');
+                return { epics: [] };
+            },
+            createGroupLoadMeasurement: () => ({
+                enabled: false, contentReady() {}, dependencies() {}, finish() {}, cancel() {},
+            }),
+            laneMetrics: () => ({}),
+            recordPerformanceLoad: async () => {},
+        },
+    });
+
+    const group = api.loadGroupTasks();
+    await Promise.all([group.product, group.tech]);
+    await api.fetchTasks('product');
+    await api.fetchBacklogEpics('product');
+    await api.loadAlertEpics();
+    await api.loadReadyToCloseProductTasks();
+    await api.loadReadyToCloseTechTasks();
+
+    assert.deepEqual(calls, []);
+});
 
 test('ENG typed auth errors preserve feature state without redirect or local error', async () => {
     const redirects = [];
@@ -219,8 +298,10 @@ test('ENG task stale auth errors show reconnect text after refresh cannot recove
 
 test('ENG loaders use an auth sentinel before replacing task and sprint state', () => {
     assert.ok(hookSource.includes("AUTH_REQUIRED: 'auth_required'"));
-    assert.ok(hookSource.includes('if (data === AUTHENTICATION_REQUIRED_RESULT) return ENG_TASK_LOAD_OUTCOME.AUTH_REQUIRED;'));
-    assert.ok(hookSource.indexOf('if (data === AUTHENTICATION_REQUIRED_RESULT) return ENG_TASK_LOAD_OUTCOME.AUTH_REQUIRED;') < hookSource.indexOf('setProductTasks(data);'));
+    const authGuard = 'if (data === AUTHENTICATION_REQUIRED_RESULT) return ENG_TASK_LOAD_OUTCOME.AUTH_REQUIRED;';
+    assert.ok(hookSource.includes(authGuard));
+    assert.ok(hookSource.indexOf(authGuard) < hookSource.indexOf('setProductTasks(reconciled);'));
+    assert.ok(hookSource.lastIndexOf(authGuard) < hookSource.indexOf('setTechTasks(reconciled);'));
 });
 
 test('ENG product loader preserves task and sprint markers on typed auth', async () => {

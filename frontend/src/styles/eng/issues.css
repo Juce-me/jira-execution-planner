@@ -130,7 +130,7 @@
         .task-remove {
             position: absolute;
             top: 0.45rem;
-            right: 0.45rem;
+            right: 0;
             width: 1.5rem;
             height: 1.5rem;
             border: 1px solid var(--border);
@@ -532,23 +532,262 @@
         .task-list:not(.epm-issue-board) > .epic-block {
             padding: 0.55rem;
             margin-bottom: 0.8rem;
-            border-radius: 8px;
+            border-radius: 10px;
         }
 
-        .task-list:not(.epm-issue-board) > .epic-block > .epic-header {
+        .task-list:not(.epm-issue-board) .epic-block {
+            border-radius: 10px;
+        }
+
+        .task-list:not(.epm-issue-board) .epic-block > .epic-header {
             padding: 0.32rem 0;
             margin-bottom: 0.5rem;
+            flex-direction: row;
+            align-items: baseline;
             gap: 0.65rem;
-            align-items: flex-start;
         }
 
-        .task-list:not(.epm-issue-board) > .epic-block > .epic-header .epic-title-row {
+        .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-title-row {
             gap: 0.45rem;
+            align-items: baseline;
         }
 
-        .task-list:not(.epm-issue-board) > .epic-block > .epic-header .epic-meta {
+        .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-meta {
             gap: 0.45rem 0.65rem;
-            padding-top: 0.05rem;
+            align-items: baseline;
+            align-self: baseline;
+            max-width: none;
+            min-width: 0;
+            flex-wrap: nowrap;
+            padding-top: 0;
+            font-size: 0.7rem;
+            line-height: 1.2;
+        }
+
+        .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-meta .epic-story-points,
+        .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-meta .epic-assignee input.issue-person-editor-trigger {
+            display: inline-flex;
+            align-items: center;
+            height: 1.5rem;
+            box-sizing: border-box;
+            white-space: nowrap;
+        }
+
+        .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-assignee {
+            font-size: 0.7rem;
+            line-height: 1.2;
+            align-items: baseline;
+        }
+
+        .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-assignee input.issue-person-editor-trigger {
+            line-height: 1.5rem;
+        }
+
+        @media (min-width: 761px) {
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header {
+                align-items: center;
+                gap: 12px;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-title {
+                flex: 1 1 0;
+                min-width: min-content;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-title-row {
+                align-items: center;
+                gap: 6px;
+                min-width: min-content;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-link {
+                display: grid;
+                grid-template-columns: minmax(110px, 1fr) max-content;
+                align-items: baseline;
+                gap: 8px;
+                min-width: min-content;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-name {
+                min-width: 110px;
+                font-family: 'Crimson Pro', Georgia, serif;
+                font-size: 16px;
+                font-weight: 600;
+                line-height: 24px;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-key {
+                position: static;
+                font-family: 'IBM Plex Mono', Arial, sans-serif;
+                font-size: 14px;
+                font-weight: 400;
+                line-height: 24px;
+                letter-spacing: 0;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-meta {
+                position: static;
+                flex: 0 1 auto;
+                align-items: center;
+                align-self: center;
+                justify-content: flex-end;
+                gap: 10px;
+                min-width: 0;
+                max-width: none;
+                padding-top: 0;
+                font-family: 'IBM Plex Mono', Arial, sans-serif;
+                font-size: 14px;
+                font-weight: 400;
+                line-height: 24px;
+                letter-spacing: 0;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-icon,
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .task-priority-icon,
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-track-indicator {
+                display: inline-flex;
+                flex: 0 0 24px;
+                align-items: center;
+                justify-content: center;
+                width: 24px;
+                height: 24px;
+                line-height: 24px;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-icon svg {
+                width: 16px;
+                height: 16px;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .task-priority-icon svg {
+                width: 18px;
+                height: 18px;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-track-indicator {
+                font-size: 14px;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-meta .epic-story-points,
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-meta .epic-assignee input.issue-person-editor-trigger {
+                height: 24px;
+                font-family: 'IBM Plex Mono', Arial, sans-serif;
+                font-size: 14px;
+                box-sizing: border-box;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-status-readout-target,
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .status-transition {
+                flex: 0 1 auto;
+                min-width: 0;
+                overflow: visible;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-status-value {
+                display: block;
+                flex: 0 1 auto;
+                min-width: 0;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-story-points {
+                flex: 0 0 auto;
+                line-height: 24px;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-assignee {
+                flex: 0 1 auto;
+                align-items: center;
+                gap: 6px;
+                min-width: 126px;
+                max-width: none;
+                font-family: 'IBM Plex Mono', Arial, sans-serif;
+                font-size: 14px;
+                font-weight: 400;
+                line-height: 24px;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-assignee > span:last-child,
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-assignee-value {
+                min-width: 0;
+                overflow: hidden;
+                color: #885900;
+                font-weight: 500;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .issue-person-editor {
+                min-width: 0;
+                max-width: 100%;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-assignee input.issue-person-editor-trigger {
+                max-width: 100%;
+                color: #885900;
+                font-weight: 500;
+                line-height: 24px;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .task-assignee-icon {
+                flex: 0 0 20px;
+                width: 20px;
+                height: 24px;
+                color: #666;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .task-assignee-icon svg {
+                width: 21px;
+                height: 21px;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-stat-toggle {
+                flex: 0 0 auto;
+                height: 24px;
+                margin-left: 0;
+                padding: 0 6px;
+                gap: 4px;
+                font-family: 'IBM Plex Mono', Arial, sans-serif;
+                font-size: 14px;
+                font-weight: 500;
+                line-height: 22px;
+                letter-spacing: 0;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-stat-toggle svg {
+                width: 18px;
+                height: 18px;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header :is(button, input, a, [tabindex]):focus-visible {
+                outline: 2px solid #174f82;
+                outline-offset: -2px;
+            }
+        }
+
+        .epic-full-value-readout {
+            position: fixed;
+            z-index: var(--modal-popup-z);
+            width: max-content;
+            max-width: min(18rem, calc(100vw - 16px));
+            padding: 0.35rem 0.5rem;
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            border-radius: 8px;
+            background: #1f2937;
+            color: #fff;
+            box-shadow: 0 8px 22px rgba(15, 23, 42, 0.22);
+            font-family: 'IBM Plex Mono', Arial, sans-serif;
+            font-size: 12px;
+            font-weight: 400;
+            line-height: 1.4;
+            letter-spacing: 0;
+            text-align: left;
+            text-transform: none;
+            overflow-wrap: anywhere;
+            white-space: normal;
+            pointer-events: auto;
         }
 
         .task-list:not(.epm-issue-board) > .epic-block > .task-item {
@@ -580,16 +819,163 @@
             gap: 0.48rem;
         }
 
+        .task-list:not(.epm-issue-board) .epic-block.epic-block-no-child-stories {
+            border-style: dotted;
+        }
+
+        .task-list:not(.epm-issue-board) .epic-block > .story-requirement-card {
+            --story-requirement-tone: #8a5a00;
+            --story-requirement-border: #d8a83f;
+            --story-requirement-surface: #fffaf0;
+            display: block;
+            width: 100%;
+            margin-bottom: 0.55rem;
+            padding: 0.72rem 0.95rem;
+            border: 1px dashed var(--story-requirement-border);
+            border-left: 3px dashed var(--story-requirement-tone);
+            border-radius: 10px;
+            outline: none;
+            background: var(--story-requirement-surface);
+            color: inherit;
+            text-decoration: none;
+            scroll-margin-block: calc(var(--epic-sticky-top, 0px) + 1rem);
+        }
+
+        .task-list:not(.epm-issue-board) .epic-block > .story-requirement-card.story-requirement-active {
+            --story-requirement-tone: #a61b13;
+            --story-requirement-border: #dc756a;
+            --story-requirement-surface: #fff5f3;
+        }
+
+        .task-list:not(.epm-issue-board) .epic-block > .story-requirement-card:hover {
+            color: inherit;
+            box-shadow: 0 5px 14px rgba(26, 26, 26, 0.08);
+        }
+
+        .task-list:not(.epm-issue-board) .epic-block > .story-requirement-card:focus-visible {
+            outline: 3px solid #174f82;
+            outline-offset: 3px;
+        }
+
+        .task-list:not(.epm-issue-board) .story-requirement-card .story-requirement-primary {
+            display: flex;
+            align-items: center;
+            gap: 0.55rem;
+            min-width: 0;
+        }
+
+        .task-list:not(.epm-issue-board) .story-requirement-card .story-requirement-icon {
+            display: inline-grid;
+            place-items: center;
+            width: 22px;
+            height: 22px;
+            flex: 0 0 22px;
+            color: var(--story-requirement-tone);
+        }
+
+        .task-list:not(.epm-issue-board) .story-requirement-card .story-requirement-icon svg {
+            width: 18px;
+            height: 18px;
+        }
+
+        .task-list:not(.epm-issue-board) .story-requirement-card .story-requirement-title-line {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 1rem;
+            min-width: 0;
+            flex: 1 1 auto;
+        }
+
+        .task-list:not(.epm-issue-board) .story-requirement-card .story-requirement-title {
+            flex: 1 1 auto;
+            font-size: 0.98rem;
+            font-weight: 600;
+            line-height: 1.23;
+        }
+
+        .task-list:not(.epm-issue-board) .story-requirement-card .story-requirement-instruction {
+            margin-left: auto;
+            color: #615b53;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.62rem;
+            line-height: 1.4;
+        }
+
+        .task-list:not(.epm-issue-board) .story-requirement-card .story-requirement-meta {
+            display: flex;
+            align-items: center;
+            gap: 0.42rem;
+            flex-wrap: wrap;
+            margin-top: 0.45rem;
+            padding-left: 1.72rem;
+            color: var(--story-requirement-tone);
+        }
+
+        .task-list:not(.epm-issue-board) .story-requirement-card .story-requirement-pill {
+            display: inline-flex;
+            align-items: center;
+            min-height: 24px;
+            padding: 0.18rem 0.45rem;
+            border: 1px solid currentColor;
+            border-radius: 7px;
+            background: rgba(255, 255, 255, 0.64);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.62rem;
+            line-height: 1.2;
+            white-space: nowrap;
+        }
+
+        .task-list:not(.epm-issue-board) .story-requirement-card .story-requirement-urgency {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.62rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        .task-list:not(.epm-issue-board) .story-requirement-card.story-requirement-highlight {
+            animation: story-requirement-highlight 1.6s ease-in-out;
+        }
+
+        @keyframes story-requirement-highlight {
+            0%, 100% { box-shadow: none; }
+            25%, 65% { box-shadow: 0 0 0 4px rgba(23, 79, 130, 0.24); }
+        }
+
         @media (max-width: 760px) {
-            .task-list:not(.epm-issue-board) > .epic-block > .epic-header {
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header {
                 flex-direction: column;
                 align-items: stretch;
             }
 
-            .task-list:not(.epm-issue-board) > .epic-block > .epic-header .epic-meta {
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-meta {
+                align-self: stretch;
                 max-width: none;
                 min-width: 0;
+                flex-wrap: wrap;
                 justify-content: flex-start;
             }
 
+            .task-list:not(.epm-issue-board) .story-requirement-card .story-requirement-title-line {
+                align-items: flex-start;
+                flex-direction: column;
+                gap: 0.2rem;
+            }
+
+            .task-list:not(.epm-issue-board) .story-requirement-card .story-requirement-instruction {
+                width: 100%;
+                margin-left: 0;
+            }
+
+            .task-list:not(.epm-issue-board) .story-requirement-card .story-requirement-meta {
+                padding-left: 0;
+            }
+
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .task-list:not(.epm-issue-board) .story-requirement-card.story-requirement-highlight {
+                animation-duration: 0.01ms;
+            }
         }

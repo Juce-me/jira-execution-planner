@@ -10,6 +10,13 @@
             margin-bottom: 1rem;
         }
 
+        .unconfigured-workspace-admins {
+            list-style: none;
+            padding: 0;
+            margin: 0.5rem 0 0;
+            color: var(--text-primary);
+        }
+
         /* Planning Styles */
         .planning-button {
             background: transparent;

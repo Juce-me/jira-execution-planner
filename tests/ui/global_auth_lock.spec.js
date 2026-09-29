@@ -967,6 +967,7 @@ test('blocked storage getters preserve the gate and use sanitized same-tab recov
     let configCalls = 0;
     let analyticsCalls = 0;
     let armAuth401 = false;
+    let configFulfilled = 0;
     const blockNextStorageReads = () => page.evaluate(() => {
         const values = {};
         for (const property of ['localStorage', 'sessionStorage']) {
@@ -991,7 +992,8 @@ test('blocked storage getters preserve the gate and use sanitized same-tab recov
     await page.route('**/api/config**', async route => {
         configCalls += 1;
         if (authenticated) await blockNextStorageReads();
-        return json(route, { ...configPayload(), authMode: 'basic' });
+        await json(route, { ...configPayload(), authMode: 'basic' });
+        configFulfilled += 1;
     });
     await page.route('**/api/analytics/context', route => {
         analyticsCalls += 1;
@@ -1042,6 +1044,8 @@ test('blocked storage getters preserve the gate and use sanitized same-tab recov
     authenticated = true;
     await page.goto(appBaseUrl, { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('button', { name: 'Manage team groups' })).toBeVisible();
+    // The ENG header renders before /api/config resolves since #196 (11c18401); wait for the config route to finish.
+    await expect.poll(() => configFulfilled).toBe(2);
     expect(configCalls).toBe(2);
     expect(documents.filter(pathname => pathname === '/')).toHaveLength(2);
     expect(pageErrors).toEqual([]);

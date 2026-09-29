@@ -287,7 +287,7 @@ function card(page, key) {
 const panel = (page) => page.locator('.epic-panel');
 
 async function openPanel(page, key) {
-    await card(page, key).click();
+    await card(page, key).locator('.ecard-open').click();
     await expect(panel(page)).toBeVisible();
 }
 
@@ -306,17 +306,19 @@ async function rowTemplates(locator) {
 
 /* ── Opening and dismissing (§6.3, §10.1) ───────────────────────────────────────────────────── */
 
-test('the epic card is a button that opens the panel on click and on Enter', async ({ page }) => {
+test('the epic card keeps drag on a noninteractive wrapper and panel opening on a native button', async ({ page }) => {
     const calls = [];
     await openBoard(page, calls);
 
-    await expect(card(page, 'PLAT-1')).toHaveJSProperty('tagName', 'BUTTON');
+    await expect(card(page, 'PLAT-1')).toHaveJSProperty('tagName', 'DIV');
+    await expect(card(page, 'PLAT-1').locator('.ecard-open')).toHaveJSProperty('tagName', 'BUTTON');
+    expect(await card(page, 'PLAT-1').evaluate(node => node.querySelector('.ecard-open')?.contains(node.querySelector('.erow3')))).toBe(false);
     await openPanel(page, 'PLAT-1');
     await expect(panel(page).locator('.m-title')).toHaveText('PLAT-1 epic summary');
     await page.keyboard.press('Escape');
     await expect(panel(page)).toHaveCount(0);
 
-    await card(page, 'PLAT-1').focus();
+    await card(page, 'PLAT-1').locator('.ecard-open').focus();
     await page.keyboard.press('Enter');
     await expect(panel(page)).toBeVisible();
 });
@@ -332,7 +334,7 @@ test('the panel dismisses on an outside click and on Escape, returning focus to 
     await openPanel(page, 'PLAT-2');
     await page.keyboard.press('Escape');
     await expect(panel(page)).toHaveCount(0);
-    await expect(card(page, 'PLAT-2')).toBeFocused();
+    await expect(card(page, 'PLAT-2').locator('.ecard-open')).toBeFocused();
 });
 
 test('focus moves into the panel on open and is trapped while it is open', async ({ page }) => {
@@ -388,7 +390,7 @@ test('Escape inside an open transition menu closes the menu, not the panel', asy
 
     await page.keyboard.press('Escape');
     await expect(panel(page)).toHaveCount(0);
-    await expect(card(page, 'PLAT-1')).toBeFocused();
+    await expect(card(page, 'PLAT-1').locator('.ecard-open')).toBeFocused();
 });
 
 test('normal Board panel menus keep first-option focus, trigger restoration, capture dismissal, and portal behavior', async ({ page }) => {
@@ -527,9 +529,14 @@ test('description tables keep semantic columns and scroll only the selected tabl
     expect(headingStyle.fontSize).toBeGreaterThanOrEqual(14);
     await page.screenshot({ path: `${screenshotDir}/panel-table-desktop.png` });
 
+    await body.locator('.adf-table-scroll').first().evaluate((node) => { window.__panelDescriptionTable = node; });
     await page.setViewportSize({ width: 375, height: 812 });
     const wrappers = body.locator('.adf-table-scroll');
     await expect(wrappers).toHaveCount(2);
+    // The narrow viewport re-renders the Board (its pane-mode fallback strip); that render must not
+    // rebuild the injected description, or a scrolled/focused table resets under the reader.
+    await expect(page.locator('.eng-board .board-data-state')).toBeVisible();
+    expect(await page.evaluate(() => window.__panelDescriptionTable.isConnected)).toBe(true);
     await expect.poll(
         () => wrappers.first().evaluate((node) => node.scrollWidth - node.clientWidth),
         { message: 'the selected table owns real horizontal overflow after responsive layout settles' },

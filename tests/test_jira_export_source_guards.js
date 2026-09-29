@@ -18,6 +18,14 @@ test('Jira export control is an icon menu instead of a split text button', () =>
     assert.ok(!componentSource.includes('Open in Jira'), 'Did not expect visible text inside the trigger');
 });
 
+test('optional Board work-item export replaces Stories without changing legacy defaults', () => {
+    assert.match(componentSource, /workItemKeys/);
+    assert.match(componentSource, /workItemLabels/);
+    assert.match(componentSource, /issueKind:\s*issueKind === 'epics' \? 'epic' : issueKind === 'work_items' \? 'mixed' : 'story'/);
+    assert.match(componentSource, /renderMenuItem\(\s*'work_items', resolvedWorkItemLabels\.label/);
+    assert.match(componentSource, /hasWorkItemExport[\s\S]*?renderMenuItem\('stories', 'Open stories'/);
+});
+
 test('Jira export control is mounted once in the shared dashboard header', () => {
     assert.equal((dashboardSource.match(/<JiraExportButton/g) || []).length, 1);
     assert.ok(dashboardSource.includes('activeJiraExportEpicKeys'), 'Expected shared header export epic keys');

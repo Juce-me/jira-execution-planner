@@ -138,11 +138,30 @@ class WorkspaceDashboardConfigServiceTests(unittest.TestCase):
 
     def test_team_catalog_is_separate_from_admin_revision(self):
         update_workspace_config_section(self.admin_a, 'board', {'boardId': '7'}, 0, database_url=self.database_url)
-        save_workspace_team_catalog(self.admin_a, {'catalog': {'a': {'id': 'a'}}, 'meta': {}}, database_url=self.database_url)
-        save_workspace_team_catalog(self.admin_b, {'catalog': {'b': {'id': 'b'}}, 'meta': {}}, merge=True, database_url=self.database_url)
+        save_workspace_team_catalog(self.admin_a, {'catalog': {'a': {'id': 'a', 'name': 'Alpha'}}, 'meta': {}}, database_url=self.database_url)
+        save_workspace_team_catalog(self.admin_b, {'catalog': {'b': {'id': 'b', 'name': 'Beta'}}, 'meta': {}}, merge=True, database_url=self.database_url)
         catalog = load_workspace_team_catalog(self.admin_a, database_url=self.database_url)
         self.assertEqual(set(catalog['catalog']), {'a', 'b'})
         self.assertEqual(load_workspace_config(self.admin_a, database_url=self.database_url).config_revision, 1)
+
+    def test_directory_merge_ignores_blank_and_id_only_names_and_preserves_meta(self):
+        save_workspace_team_catalog(self.admin_a, {
+            'catalog': {'a': {'id': 'a', 'name': 'Alpha'}},
+            'meta': {'source': 'first', 'unrelated': 'keep'},
+        }, database_url=self.database_url)
+        save_workspace_team_catalog(self.admin_b, {
+            'catalog': {
+                'a': {'id': 'a', 'name': '   '},
+                'b': {'id': 'b'},
+                'c': {'id': 'c', 'name': '  Charlie  '},
+            },
+            'meta': {'source': 'second'},
+        }, merge=True, database_url=self.database_url)
+        catalog = load_workspace_team_catalog(self.admin_a, database_url=self.database_url)
+        self.assertEqual(catalog['catalog']['a']['name'], 'Alpha')
+        self.assertNotIn('b', catalog['catalog'])
+        self.assertEqual(catalog['catalog']['c']['name'], 'Charlie')
+        self.assertEqual(catalog['meta'], {'source': 'second', 'unrelated': 'keep'})
 
 
 if __name__ == '__main__':

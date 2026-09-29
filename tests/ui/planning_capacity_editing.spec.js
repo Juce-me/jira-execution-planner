@@ -460,6 +460,18 @@ async function captureCapacityScreenshot(page, testInfo, name, options = {}) {
     await page.screenshot({ path: path.join(capacityArtifactDir, `${name}.png`), fullPage: Boolean(options.fullPage) });
 }
 
+test('planning team capacity cards stay alphabetical when selected story points change', async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openPlanning(page, { teamCount: 7 });
+    const teamLabels = page.locator('.planning-team-capacity-cards .team-stat-label');
+    const alphabeticalOrder = ['Alpha', 'Beta', 'Delta', 'Epsilon', 'Eta', 'Gamma', 'Zeta'];
+
+    await expect(teamLabels).toHaveText(alphabeticalOrder);
+    await page.locator('.task-item', { hasText: 'PLAN-ALPHA' }).locator('input.task-checkbox').uncheck();
+    await expect(teamLabels).toHaveText(alphabeticalOrder);
+    await captureCapacityScreenshot(page, testInfo, 'capacity-cards-alphabetical');
+});
+
 test('capacity hover reveals safe Jira and edit controls without changing the idle cards', async ({ page }) => {
     await page.setViewportSize({ width: 1028, height: 720 });
     const fixture = await openPlanning(page);

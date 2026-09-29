@@ -214,6 +214,9 @@ async function installApiMocks(page, calls) {
             epicsInScope.forEach((epic) => { epics[epic.key] = epic; });
             return json(route, { issues: stories, epics, epicsInScope, names: {} });
         }
+        if (url.pathname === '/api/eng/story-readiness') {
+            return json(route, { schemaVersion: 1, complete: true, scope: {}, epics: [] });
+        }
         if (url.pathname === '/api/missing-info') return json(route, { issues: [], epics: [], count: 0, epicCount: 0 });
         if (url.pathname === '/api/backlog-epics') return json(route, { epics: [] });
         if (url.pathname === '/api/capacity') return json(route, { enabled: false, capacity: [], teams: [], totalCapacity: 0 });

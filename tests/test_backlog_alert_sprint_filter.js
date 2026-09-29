@@ -107,6 +107,30 @@ test('future sprint readiness requires the exact selected sprint label', () => {
     });
 });
 
+test('plain and candidate labels admit empty-sprint Epics without treating suffixes as Jira sprints', async () => {
+    const { epicHasSelectedSprintLabel, epicMatchesSelectedSprint, filterExplicitBacklogEpics, issueMatchesSelectedSprint } =
+        await import('../frontend/src/backlogAlertSprintUtils.mjs');
+    for (const label of ['2026Q4', ' 2026Q4_candidate ', '2026Q4_Candidate', '2026Q4_CANDIDATE']) {
+        const epic = { key: label, labels: ['team_alpha_label', label], sprint: null };
+        assert.equal(epicHasSelectedSprintLabel(epic, ' 2026Q4 '), true, label);
+        assert.equal(epicMatchesSelectedSprint(epic, { selectedSprint: '123', selectedSprintName: '2026Q4' }), true, label);
+        assert.deepEqual(filterExplicitBacklogEpics([epic], { selectedSprint: '123', selectedSprintName: '2026Q4' }), [], label);
+        assert.equal(issueMatchesSelectedSprint(epic, { selectedSprint: '123', selectedSprintName: '2026Q4' }), false, label);
+    }
+});
+
+test('candidate sprint labels require the complete selected name and exact suffix', async () => {
+    const { epicHasSelectedSprintLabel, filterExplicitBacklogEpics } = await import('../frontend/src/backlogAlertSprintUtils.mjs');
+    const options = { selectedSprint: '123', selectedSprintName: '2026Q4' };
+    for (const label of ['2026Q4_candidate_extra', '2026Q5_candidate', 'prefix_2026Q4_candidate', '2026Q4_candidates']) {
+        const epic = { key: label, labels: [label], sprint: null };
+        assert.equal(epicHasSelectedSprintLabel(epic, options.selectedSprintName), false, label);
+        assert.deepEqual(filterExplicitBacklogEpics([epic], options), [epic], label);
+    }
+    assert.equal(epicHasSelectedSprintLabel({ labels: ['2026Q4_candidate'] }, ''), false);
+    assert.equal(epicHasSelectedSprintLabel({ labels: ['2026Q4_candidate'] }, '2026Q5'), false);
+});
+
 test('selected sprint matching accepts raw Jira sprint strings on child stories', () => {
     return import('../frontend/src/backlogAlertSprintUtils.mjs').then(({
         issueMatchesSelectedSprint

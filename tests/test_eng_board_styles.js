@@ -137,6 +137,19 @@ test('ENG epic headline source sizes artwork and keeps focus/readout visible', a
     assert.match(source, /\.epic-header\s+\.task-assignee-icon\s+svg[^}]*width:\s*21px\s*;[^}]*height:\s*21px\s*;/s);
     assert.match(source, /:is\(button,\s*input,\s*a,\s*\[tabindex\]\):focus-visible[^}]*outline:\s*2px[^}]*outline-offset:\s*-2px\s*;/s);
     assert.match(source, /\.epic-full-value-readout\s*\{[^}]*position:\s*fixed\s*;[^}]*z-index:/s);
+    assert.match(source, /\.epic-full-value-readout\s*\{[^}]*max-width:\s*min\(36rem,\s*calc\(100vw\s*-\s*16px\)\)\s*;/s);
+});
+
+test('hover states on transparent buttons neutralize the global dark button hover', async () => {
+    const source = readDashboardCssSource(repoRoot);
+
+    assert.match(source, /\.search-clear:hover\s*\{[^}]*color:\s*var\(--text-primary\)\s*;[^}]*background:\s*#f7f5f0\s*;[^}]*box-shadow:\s*none\s*;[^}]*transform:\s*none\s*;/s);
+    assert.match(source, /\.scenario-toggle:not\(\.active\):hover\s*\{[^}]*background:\s*#f7f5f0\s*;[^}]*color:\s*var\(--text-primary\)\s*;[^}]*transform:\s*none\s*;/s);
+    assert.match(source, /button\.epic-track-indicator\s*\{[^}]*padding:\s*1px\s+0\s+0\s*;[^}]*letter-spacing:\s*0\s*;[^}]*font:\s*inherit\s*;\s*font-family:\s*'Apple Color Emoji'/s);
+    assert.match(source, /@supports\s*\(font:\s*-apple-system-body\)\s*\{\s*button\.epic-track-indicator\s*\{\s*padding:\s*0\s+0\s+2px\s*;/s);
+    assert.match(source, /:root\s*\{[^}]*--radius:\s*10px\s*;/s);
+    assert.match(source, /button\.task-priority-icon::before\s*\{[^}]*width:\s*24px\s*;[^}]*height:\s*24px\s*;[^}]*border-radius:\s*var\(--radius\)\s*;/s);
+    assert.match(source, /button\.epic-track-indicator\s*\{[^}]*border-radius:\s*var\(--radius\)\s*;/s);
 });
 
 test('Story requirement card is one tracked external link with bounded Jira analytics', async () => {

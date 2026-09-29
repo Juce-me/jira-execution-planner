@@ -498,7 +498,8 @@ test('ENG long epic and story summaries stay contained and expose full names', a
 
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
     await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
-    await expect(page.locator('.epic-link')).toHaveAttribute('title', longEpicSummary);
+    await expect(page.locator('.epic-link')).not.toHaveAttribute('title');
+    await expect(page.locator('.epic-link')).toHaveAttribute('aria-label', longEpicSummary);
     await expect(page.locator('.task-title a')).toHaveAttribute('title', longStorySummary);
 
     const metrics = await collectLongTitleMetrics(page);

@@ -805,12 +805,14 @@ test('truncated epic values expose a bounded in-app readout without intercepting
     const callsBeforeReadouts = apiCalls.length;
     const titleTrigger = header.locator('.epic-link.epic-full-value-trigger');
     await expect(titleTrigger).toHaveAttribute('aria-describedby', /.+/);
+    await expect(titleTrigger).not.toHaveAttribute('title');
     await titleTrigger.hover();
     const readout = page.locator('.epic-full-value-readout:not([hidden])');
     await expect(readout).toHaveRole('tooltip');
     await expect(readout).toHaveText(LONG_EPIC_SUMMARY);
     const viewport = page.viewportSize();
     const readoutBox = await readout.boundingBox();
+    expect(readoutBox.width).toBeGreaterThan(18 * 16);
     expect(readoutBox.x).toBeGreaterThanOrEqual(7);
     expect(readoutBox.y).toBeGreaterThanOrEqual(7);
     expect(readoutBox.x + readoutBox.width).toBeLessThanOrEqual(viewport.width - 7);
@@ -1191,4 +1193,193 @@ test('a very long epic summary ellipsizes in one fixed-height card row', async (
 test('screenshot: a populated open column', async ({ page }) => {
     await openBoard(page);
     await col(page, 'col-1a2b3c4d').screenshot({ path: path.join(screenshotDir, 'board-card-column.png') });
+});
+
+// Absolute-pixel ink bounds of what a control paints inside its inset box, compared with the
+// centre of that box. Integer-aligned clips keep the result exact at the fractional positions
+// flex layout produces.
+async function paintedInkOffset(page, locator, inset = 3) {
+    const rect = await locator.evaluate(node => {
+        const box = node.getBoundingClientRect();
+        return { x: box.x, y: box.y, w: box.width, h: box.height };
+    });
+    const x0 = Math.floor(rect.x) - 2;
+    const y0 = Math.floor(rect.y) - 2;
+    const width = Math.ceil(rect.x + rect.w) + 2 - x0;
+    const height = Math.ceil(rect.y + rect.h) + 2 - y0;
+    const image = await page.screenshot({ clip: { x: x0, y: y0, width, height }, animations: 'disabled' });
+    return page.evaluate(async ({ base64, x0: originX, y0: originY, rect: box, inset: edge, width: clipWidth }) => {
+        const img = new Image();
+        img.src = `data:image/png;base64,${base64}`;
+        await img.decode();
+        const scale = img.width / clipWidth;
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const context = canvas.getContext('2d');
+        context.drawImage(img, 0, 0);
+        const data = context.getImageData(0, 0, img.width, img.height).data;
+        const pixel = (x, y) => { const o = (y * img.width + x) * 4; return [data[o], data[o + 1], data[o + 2]]; };
+        const left = Math.ceil((box.x + edge - originX) * scale);
+        const top = Math.ceil((box.y + edge - originY) * scale);
+        const right = Math.floor((box.x + box.w - edge - originX) * scale);
+        const bottom = Math.floor((box.y + box.h - edge - originY) * scale);
+        const ground = pixel(left, top);
+        let minX = Infinity; let minY = Infinity; let maxX = -1; let maxY = -1;
+        for (let y = top; y < bottom; y += 1) {
+            for (let x = left; x < right; x += 1) {
+                const p = pixel(x, y);
+                if (Math.max(...p.map((channel, i) => Math.abs(channel - ground[i]))) > 30) {
+                    minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+                    minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+                }
+            }
+        }
+        return {
+            painted: maxX >= 0,
+            dx: originX + ((minX + maxX + 1) / 2) / scale - (box.x + box.w / 2),
+            dy: originY + ((minY + maxY + 1) / 2) / scale - (box.y + box.h / 2),
+        };
+    }, { base64: image.toString('base64'), x0, y0, rect, inset, width });
+}
+
+function contrastRatio(foreground, background) {
+    const luminance = rgb => {
+        const [r, g, b] = rgb.map(value => {
+            const channel = value / 255;
+            return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+        });
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const [hi, lo] = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
+    return (hi + 0.05) / (lo + 0.05);
+}
+
+test.describe('ENG hover affordances', () => {
+    test.use({ deviceScaleFactor: 2 });
+
+    const openTrackHeader = async page => {
+        await openBoard(page, { width: 1280, height: 900, firstEpicTrack: 'Unidentified' });
+        await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Catch Up' }).click();
+        await page.evaluate(() => document.fonts.ready);
+        return page.locator('[data-project-track-transition-trigger]');
+    };
+
+    test('Project Track trigger sets its emoji in an emoji font without inherited tracking', async ({ page }) => {
+        const triggers = await openTrackHeader(page);
+        expect(await triggers.count()).toBeGreaterThanOrEqual(3);
+        for (let index = 0; index < await triggers.count(); index += 1) {
+            const trigger = triggers.nth(index);
+            const style = await trigger.evaluate(node => {
+                const computed = getComputedStyle(node);
+                return { spacing: computed.letterSpacing, family: computed.fontFamily };
+            });
+            expect(['normal', '0px'], 'global button tracking is reset').toContain(style.spacing);
+            expect(style.family, 'emoji font leads the stack').toMatch(/^"?Apple Color Emoji"?,/);
+            const box = await trigger.boundingBox();
+            expect(box.width, 'frame keeps its 24px width').toBeCloseTo(24, 1);
+            expect(box.height, 'frame keeps its 24px height').toBeCloseTo(24, 1);
+        }
+    });
+
+    // Emoji ink placement is only representative in a headed browser: headless rendering puts it
+    // about 2px further left. Run with `--headed` (and `--browser=firefox` or `--browser=webkit`,
+    // the engines the app is reviewed in) at the 2x device scale factor set above.
+    test('Project Track hover frame is centred on every glyph', async ({ page }, testInfo) => {
+        test.skip(process.platform !== 'darwin', 'Glyph ink placement is tuned to Apple Color Emoji.');
+        test.skip(testInfo.project.use.headless !== false, 'Emoji ink placement is only representative headed.');
+        const triggers = await openTrackHeader(page);
+        const glyphs = new Set();
+        for (let index = 0; index < await triggers.count(); index += 1) {
+            const trigger = triggers.nth(index);
+            const glyph = await trigger.textContent();
+            if (glyphs.has(glyph)) continue;
+            glyphs.add(glyph);
+            await trigger.scrollIntoViewIfNeeded();
+            for (const state of ['rest', 'hover']) {
+                if (state === 'hover') await trigger.hover(); else await page.mouse.move(2, 2);
+                await page.waitForTimeout(300);
+                const ink = await paintedInkOffset(page, trigger);
+                expect(ink.painted, `${glyph} ${state} paints`).toBe(true);
+                expect(Math.abs(ink.dx), `${glyph} ${state} horizontal offset`).toBeLessThanOrEqual(0.75);
+                expect(Math.abs(ink.dy), `${glyph} ${state} vertical offset`).toBeLessThanOrEqual(0.75);
+            }
+        }
+        expect(glyphs.size).toBeGreaterThanOrEqual(3);
+    });
+
+    test('Epic and Story priority hover frames share one shape and the app radius', async ({ page }) => {
+        await openBoard(page, { width: 1280, height: 900, firstEpicTrack: 'Unidentified', firstEpicPriority: 'Major' });
+        await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Catch Up' }).click();
+        const block = page.locator('.epic-block').first();
+        const epic = block.locator('.epic-header button.task-priority-icon').first();
+        const story = block.locator('.task-item button.task-priority-icon').first();
+        const track = block.locator('.epic-header [data-project-track-transition-trigger]').first();
+        const appRadius = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--radius').trim());
+        expect(appRadius, 'the app defines one corner radius').toBe('10px');
+
+        const frameOf = async locator => {
+            await locator.scrollIntoViewIfNeeded();
+            await page.mouse.move(2, 2);
+            await locator.hover();
+            // The frame fades in over 0.16s; only the settled fill counts.
+            await expect.poll(() => locator.evaluate(node => getComputedStyle(node, '::before').backgroundColor)).toBe('rgb(248, 247, 244)');
+            return locator.evaluate(node => {
+                const frame = getComputedStyle(node, '::before');
+                const label = getComputedStyle(node, '::after');
+                const box = node.getBoundingClientRect();
+                return {
+                    width: frame.width, height: frame.height, radius: frame.borderRadius, fill: frame.backgroundColor,
+                    ring: frame.boxShadow, transform: frame.transform, position: frame.position,
+                    // Label bottom edge relative to the frame's top edge.
+                    labelAboveFrame: parseFloat(label.top) - (box.height / 2 - 12),
+                    ownFill: getComputedStyle(node).backgroundColor, ownRing: getComputedStyle(node).boxShadow,
+                };
+            });
+        };
+        const epicFrame = await frameOf(epic);
+        const storyFrame = await frameOf(story);
+        expect(epicFrame.width).toBe('24px');
+        expect(epicFrame.height).toBe('24px');
+        expect(epicFrame.radius).toBe(appRadius);
+        expect(epicFrame.transform, 'frame stays centred on the icon').toBe('matrix(1, 0, 0, 1, -12, -12)');
+        expect(storyFrame, 'Story frame matches the Epic frame').toEqual(epicFrame);
+        expect(epicFrame.ownFill, 'the button itself stays transparent').toBe('rgba(0, 0, 0, 0)');
+        expect(epicFrame.ownRing).toBe('none');
+
+        await track.scrollIntoViewIfNeeded();
+        await page.mouse.move(2, 2);
+        await track.hover();
+        await expect.poll(() => track.evaluate(node => getComputedStyle(node).backgroundColor)).toBe('rgb(248, 247, 244)');
+        expect(await track.evaluate(node => getComputedStyle(node).borderRadius), 'Project Track frame uses the same radius').toBe(appRadius);
+    });
+
+    test('transparent controls stay readable on hover instead of turning dark', async ({ page }) => {
+        await openBoard(page, { width: 1280, height: 900 });
+        await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Catch Up' }).click();
+        const hoverContrast = locator => locator.evaluate(node => {
+            const style = getComputedStyle(node);
+            const rgba = value => (value.match(/[\d.]+/g) || []).map(Number);
+            return { background: rgba(style.backgroundColor), color: rgba(style.color), transform: style.transform, shadow: style.boxShadow };
+        });
+        const expectReadable = async (locator, label) => {
+            await locator.hover();
+            // The global button rule animates `all` for 0.3s, so only the settled colours count.
+            await expect.poll(async () => {
+                const { background, color } = await hoverContrast(locator);
+                return (background[3] ?? 1) === 1 ? contrastRatio(color.slice(0, 3), background.slice(0, 3)) : 0;
+            }, { message: `${label} hover contrast`, timeout: 2000 }).toBeGreaterThanOrEqual(4.5);
+            const settled = await hoverContrast(locator);
+            expect(settled.transform, `${label} hover does not lift`).toBe('none');
+            expect(settled.shadow, `${label} hover has no dark drop shadow`).toBe('none');
+        };
+
+        await page.locator('.search-input').first().fill('ua');
+        await expectReadable(page.getByRole('button', { name: 'Clear search' }), 'search clear');
+
+        await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Scenario' }).click();
+        const inactiveToggle = page.locator('.scenario-toggle:not(.active)').first();
+        await expect(inactiveToggle).toBeVisible();
+        await expectReadable(inactiveToggle, 'scenario toggle');
+    });
 });

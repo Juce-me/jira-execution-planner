@@ -505,6 +505,19 @@ const waitTwoFrames = page => page.evaluate(() => new Promise(resolve => (
     requestAnimationFrame(() => requestAnimationFrame(resolve))
 )));
 
+// The first /api/config read gates all ENG Jira work: while it is pending nothing loads and the
+// Sprint selector stays unavailable. `paths` returns the request pathnames seen so far.
+async function expectConfigBootstrapHoldsJiraWork(page, paths) {
+    await expect.poll(() => paths().includes('/api/config')).toBe(true);
+    await waitTwoFrames(page);
+    expect(paths().filter(pathname => (
+        pathname === '/api/sprints' || pathname === '/api/tasks-with-team-name'
+            || pathname.startsWith('/api/eng/board') || pathname.startsWith('/api/stats/')
+    ))).toEqual([]);
+    await expect(page.getByRole('button', { name: 'Select sprint', exact: true }).first())
+        .toHaveAttribute('aria-disabled', 'true');
+}
+
 const SPRINT_SOURCE_A = {
     backend: 'postgresql',
     identity: 'sc1:synthetic-board-a',
@@ -1014,6 +1027,8 @@ for (const modeName of ['Catch Up', 'Planning', 'Board', 'Statistics', 'Scenario
                         }));
                     }, { initialPrefs });
                     await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+                    await expectConfigBootstrapHoldsJiraWork(page, () => requests);
+                    releaseConfig();
                 } else {
                     await openBoard(page, {
                         strictBoard: true,
@@ -1402,8 +1417,8 @@ const boardAuthorityReadinessProfiles = [
     {
         name: 'configuration pending',
         configPending: true,
-        component: { reason: 'Loading Board configuration…', readyAfterRelease: true },
-        all_work: { reason: 'Loading Board configuration…', readyAfterRelease: true },
+        component: { ready: true },
+        all_work: { ready: true },
     },
     {
         name: 'configuration error',
@@ -1466,6 +1481,9 @@ for (const profile of boardAuthorityReadinessProfiles) {
                         }));
                     }, { selectedSprintId, selectedSprintName });
                     await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+                    await expectConfigBootstrapHoldsJiraWork(page, () => requestLog.map(({ url }) => new URL(url).pathname));
+                    releaseConfig();
+                    releaseConfig = null;
                     await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
                 } else {
                     await openBoard(page, {
@@ -1510,21 +1528,6 @@ for (const profile of boardAuthorityReadinessProfiles) {
                 expect(ordinaryRequests()).toHaveLength(ordinaryCountBeforeSelection);
                 await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]')).toHaveCount(0);
                 await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toHaveCount(0);
-
-                if (expectation.readyAfterRelease) {
-                    releaseConfig();
-                    releaseConfig = null;
-                    await expect.poll(() => boardRequests().length).toBe(1);
-                    const strictRequest = new URL(boardRequests()[0].url);
-                    expect(strictRequest.searchParams.get('scope')).toBe(scopeProfile.scope);
-                    expect(strictRequest.searchParams.has('sprintId')).toBe(false);
-                    const card = page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]');
-                    await expect(card).toBeVisible();
-                    await expect(card).toContainText(/1 work item/i);
-                    await waitTwoFrames(page);
-                    expect(boardRequests()).toHaveLength(1);
-                    expect(ordinaryRequests()).toHaveLength(ordinaryCountBeforeSelection);
-                }
             } finally {
                 releaseConfig?.();
             }
@@ -2235,7 +2238,7 @@ test('saved Sprint Board authority stays guarded until a held sprint catalog is 
     }
 });
 
-test('completed sprint catalog does not authorize strict scopes before delayed saved config arrives', async ({ page }) => {
+test('delayed saved config holds the sprint catalog and every strict scope until it arrives', async ({ page }) => {
     let releaseConfig;
     const configResponseGate = new Promise(resolve => { releaseConfig = resolve; });
     const requests = [];
@@ -2249,25 +2252,21 @@ test('completed sprint catalog does not authorize strict scopes before delayed s
 
     try {
         await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+        await expectConfigBootstrapHoldsJiraWork(page, () => requests);
+
+        releaseConfig();
+        releaseConfig = null;
         await expect.poll(() => requests.filter(path => path === '/api/sprints').length).toBe(1);
         const sprintControl = page.getByRole('button', { name: 'Select sprint' }).first();
+        await expect(sprintControl).toHaveAttribute('aria-disabled', 'false');
         await sprintControl.click();
         const panel = page.locator('.sprint-dropdown-panel');
         const allWorkOption = panel.getByRole('option', { name: 'All work', exact: true });
         const componentOption = panel.getByRole('option', { name: 'Component', exact: true });
-        await expect(page.locator(`#${await allWorkOption.getAttribute('aria-describedby')}`)).toHaveText('Loading configuration');
-        await expect(page.locator(`#${await componentOption.getAttribute('aria-describedby')}`)).toHaveText('Loading configuration');
+        await expect(page.locator(`#${await allWorkOption.getAttribute('aria-describedby')}`)).toHaveText('Ready');
+        await expect(page.locator(`#${await componentOption.getAttribute('aria-describedby')}`)).toHaveText('Ready');
         await componentOption.click();
         await expect(sprintControl).toContainText('Component');
-        const boardScopeStatus = page.getByRole('status', { name: 'Board scope status', exact: true });
-        await expect(boardScopeStatus).toContainText(
-            'Loading Board configuration…'
-        );
-        await expect(boardScopeStatus.locator('[role="status"]')).toHaveCount(0);
-        expect(requests.filter(path => path.startsWith('/api/eng/board?'))).toHaveLength(0);
-
-        releaseConfig();
-        releaseConfig = null;
         await expect.poll(() => requests.filter(path => path.includes('scope=component')).length).toBe(1);
         await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]')).toBeVisible();
     } finally {
@@ -2275,7 +2274,7 @@ test('completed sprint catalog does not authorize strict scopes before delayed s
     }
 });
 
-test('selector scheduling: held capability permits ordinary load', async ({ page }) => {
+test('selector scheduling: ordinary load starts once the config bootstrap arrives, without a strict Board request', async ({ page }) => {
     let releaseConfig;
     const configResponseGate = new Promise(resolve => { releaseConfig = resolve; });
     const requests = [];
@@ -2289,6 +2288,10 @@ test('selector scheduling: held capability permits ordinary load', async ({ page
 
     try {
         await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+        await expectConfigBootstrapHoldsJiraWork(page, () => requests);
+
+        releaseConfig();
+        releaseConfig = null;
         await expect.poll(() => requests.filter(path => path === '/api/tasks-with-team-name').length).toBe(2);
         await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
         expect(requests.filter(path => path.startsWith('/api/eng/board?'))).toHaveLength(0);
@@ -2313,16 +2316,16 @@ test('selector scheduling: blocked scope never falls back', async ({ page }) => 
 
     try {
         await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
-        await expect.poll(() => requests.filter(path => path === '/api/sprints').length).toBe(1);
-        const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
-        await trigger.click();
-        await page.getByRole('option', { name: 'Component', exact: true }).click();
-        await expect(page.getByRole('status', { name: 'Board scope status', exact: true }))
-            .toContainText('Loading Board configuration…');
-        const ordinaryCountAtSelection = requests.filter(path => path === '/api/tasks-with-team-name').length;
+        await expectConfigBootstrapHoldsJiraWork(page, () => requests);
 
         releaseConfig();
         releaseConfig = null;
+        await expect.poll(() => requests.filter(path => path === '/api/sprints').length).toBe(1);
+        const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+        await expect(trigger).toHaveAttribute('aria-disabled', 'false');
+        await trigger.click();
+        await page.getByRole('option', { name: 'Component', exact: true }).click();
+        const ordinaryCountAtSelection = requests.filter(path => path === '/api/tasks-with-team-name').length;
         await expect(page.getByRole('status', { name: 'Board scope status', exact: true })).toContainText(
             'Select Jira projects or a Jira source Board before loading this scope.'
         );
@@ -2350,14 +2353,17 @@ test('selector scheduling: capability failure preserves intent', async ({ page }
 
     try {
         await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+        await expectConfigBootstrapHoldsJiraWork(page, () => requests);
+
+        // A failed config read clears the gate, so the ordinary catalog still loads.
+        releaseConfig();
+        releaseConfig = null;
         await expect.poll(() => requests.filter(path => path === '/api/sprints').length).toBe(1);
         const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+        await expect(trigger).toHaveAttribute('aria-disabled', 'false');
         await trigger.click();
         await page.getByRole('option', { name: 'All work', exact: true }).click();
         const ordinaryCountAtSelection = requests.filter(path => path === '/api/tasks-with-team-name').length;
-
-        releaseConfig();
-        releaseConfig = null;
         await expect(trigger).toContainText('All work');
         await expect(page.getByRole('status', { name: 'Board scope status', exact: true }))
             .toContainText('Board configuration could not be loaded.');

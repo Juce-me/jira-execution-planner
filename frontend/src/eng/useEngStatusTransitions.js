@@ -58,15 +58,14 @@ export function clearTransitionOptionsCache() {
     transitionOptionsCache.clear();
 }
 
-// React state for ENG Catch Up single-issue status changes and Planning selected
-// Epic/Subtask status targets, option loading, mutation submission, auth recovery, and
-// result state. Planning Story selection keeps using the caller's existing selection map
-// (passed in as `selectedStories`, the already-selected Story task list); this hook never
-// reads or writes that map so Epics/Subtasks can never corrupt Planning capacity math.
+// React state for ENG single-issue status changes (Catch Up, Board, and Planning Epic and
+// Subtask pills), the Planning Story batch, option loading, mutation submission, auth
+// recovery, and result state. Planning Story selection keeps using the caller's existing
+// selection map (passed in as `selectedStories`, the already-selected Story task list); this
+// hook never reads or writes that map.
 export function useEngStatusTransitions({
     backendUrl,
     selectedStories,
-    epicGroups,
     storySubtasksByKey,
     selectedSprint,
     sourceSurface,
@@ -78,8 +77,6 @@ export function useEngStatusTransitions({
     onTransitionSuccessRefresh,
     mutationCoordinator = null,
 }) {
-    const [selectedEpicStatusTargets, setSelectedEpicStatusTargets] = React.useState(() => new Set());
-    const [selectedSubtaskStatusTargets, setSelectedSubtaskStatusTargets] = React.useState(() => new Set());
     const [activeSingleIssueTarget, setActiveSingleIssueTarget] = React.useState(null);
     const [transitionOptions, setTransitionOptions] = React.useState(null);
     const [transitionOptionsLoading, setTransitionOptionsLoading] = React.useState(false);
@@ -99,16 +96,9 @@ export function useEngStatusTransitions({
         optionsRequestRef.current = EMPTY_OPTIONS_REQUEST;
     }, []);
 
-    const clearNonStoryStatusTargets = React.useCallback(() => {
-        setSelectedEpicStatusTargets(new Set());
-        setSelectedSubtaskStatusTargets(new Set());
-    }, []);
-
-    // Selected status targets and any open menu/options/result are scoped to one sprint and
-    // Catch Up/Planning surface. In-flight writes keep their own scope token so a late
+    // Any open menu/options/result is scoped to one sprint and Catch Up/Planning surface. In-flight writes keep their own scope token so a late
     // response cannot patch a newly selected sprint or group.
     React.useEffect(() => {
-        clearNonStoryStatusTargets();
         setActiveSingleIssueTarget(null);
         activeSingleIssueTargetRef.current = null;
         abortInFlightOptionsRequest();
@@ -124,35 +114,7 @@ export function useEngStatusTransitions({
         queuedMutationControllersRef.current.clear();
         setPendingIssueKeys(new Set());
         pendingMutationKeysRef.current.clear();
-    }, [selectedSprint, sourceSurface, mutationScopeKey, clearNonStoryStatusTargets, abortInFlightOptionsRequest]);
-
-    const toggleEpicStatusTarget = React.useCallback((epicKey) => {
-        const key = String(epicKey || '').trim();
-        if (!key) return;
-        setSelectedEpicStatusTargets((prev) => {
-            const next = new Set(prev);
-            if (next.has(key)) {
-                next.delete(key);
-            } else {
-                next.add(key);
-            }
-            return next;
-        });
-    }, []);
-
-    const toggleSubtaskStatusTarget = React.useCallback((subtaskKey) => {
-        const key = String(subtaskKey || '').trim();
-        if (!key) return;
-        setSelectedSubtaskStatusTargets((prev) => {
-            const next = new Set(prev);
-            if (next.has(key)) {
-                next.delete(key);
-            } else {
-                next.add(key);
-            }
-            return next;
-        });
-    }, []);
+    }, [selectedSprint, sourceSurface, mutationScopeKey, abortInFlightOptionsRequest]);
 
     // Fetches available transitions for the given targets — an array of full
     // {key, issueType, currentStatus} targets from the target builders (the only shape
@@ -245,8 +207,8 @@ export function useEngStatusTransitions({
     }, [abortInFlightOptionsRequest]);
 
     // Catch Up passes one explicit target key and never reads/mutates Planning selection
-    // state. Planning ignores any passed key and builds the composed target set from
-    // selected Stories + selected Epics + selected Subtasks.
+    // state. Planning's Story pills pass no key and build the composed target set from the
+    // selected Stories; its Epic and Subtask pills pass their own key and change only that issue.
     const submitStatusTransition = React.useCallback(async (targetStatus, explicitTargetKey) => {
         const status = String(targetStatus || '').trim();
         if (!status) return null;
@@ -254,8 +216,8 @@ export function useEngStatusTransitions({
         const explicitKey = String(explicitTargetKey || '').trim();
         let targets;
         // Catch Up always acts on one explicit key. Planning defaults to the composed
-        // target set, but also honors an explicit single key for its "Apply to this
-        // issue only" recovery action (Step 6.4), regardless of surface.
+        // Story set, but honors an explicit single key (Epic and Subtask pills), regardless
+        // of surface.
         if (sourceSurface === 'catch_up' || explicitKey) {
             if (!explicitKey) return null;
             targets = [
@@ -264,13 +226,7 @@ export function useEngStatusTransitions({
                     : { key: explicitKey, issueType: '', currentStatus: '', summary: '' }
             ];
         } else {
-            targets = buildEngStatusTargets({
-                selectedTasksList: selectedStories,
-                selectedEpicKeys: Array.from(selectedEpicStatusTargets),
-                selectedSubtaskKeys: Array.from(selectedSubtaskStatusTargets),
-                epicGroups,
-                storySubtasksByKey,
-            });
+            targets = buildEngStatusTargets({ selectedTasksList: selectedStories });
             // Client-side cap guard (defense-in-depth; the menu also disables the batch
             // submit past the cap). Surface the same recoverable code the backend returns
             // and send no mutation request.
@@ -426,9 +382,6 @@ export function useEngStatusTransitions({
         sourceSurface,
         activeSingleIssueTarget,
         selectedStories,
-        selectedEpicStatusTargets,
-        selectedSubtaskStatusTargets,
-        epicGroups,
         storySubtasksByKey,
         mutationScopeKey,
         trackIssueStatusAction,
@@ -442,14 +395,9 @@ export function useEngStatusTransitions({
 
     return {
         sourceSurface,
-        selectedEpicStatusTargets,
-        selectedSubtaskStatusTargets,
         activeSingleIssueTarget,
         openSingleIssueStatusControl,
         closeSingleIssueStatusControl,
-        toggleEpicStatusTarget,
-        toggleSubtaskStatusTarget,
-        clearNonStoryStatusTargets,
         transitionOptions,
         transitionOptionsLoading,
         transitionError,

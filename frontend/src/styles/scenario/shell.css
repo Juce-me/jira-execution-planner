@@ -126,6 +126,13 @@
             padding: 0.35rem 0.6rem;
         }
 
+        .scenario-toggle:not(.active):hover {
+            background: #f7f5f0;
+            color: var(--text-primary);
+            box-shadow: none;
+            transform: none;
+        }
+
         .scenario-toggle.active {
             background: var(--text-primary);
             color: var(--bg-primary);

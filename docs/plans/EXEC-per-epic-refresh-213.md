@@ -1,6 +1,6 @@
 # Per-Epic Refresh With Glare Implementation Plan (Issue #213)
 
-> **Status:** Proposed on 2026-09-30 from baseline `main` at `3622ba22`; reviewed on 2026-09-30 by five subagents (two of them executed the plan's code) and revised; not started. Approved design: `docs/agents/features/2026-09-29-planned-per-epic-refresh-with-glare.md` (read it first; this plan implements it and does not restate its rationale).
+> **Status:** Proposed on 2026-09-30 from baseline `main` at `3622ba22`; reviewed on 2026-09-30 by five subagents (two of them executed the plan's code) and revised; in progress (Task 0 baseline recorded 2026-09-30). Approved design: `docs/agents/features/2026-09-29-planned-per-epic-refresh-with-glare.md` (read it first; this plan implements it and does not restate its rationale).
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -46,10 +46,10 @@ Every task's requirements include this section. Values are copied from the appro
 
 | Suite | Command | Recorded result |
 |---|---|---|
-| Python | `make test` | count and time recorded at T0 |
-| Security | `make test-security` | recorded at T0 |
-| Node unit | `fnm exec --using 20 npm run test:frontend:unit` | recorded at T0 |
-| Playwright, every spec, one at a time | Task 0 step 5 loop, output kept in `tmp/baseline-ui.txt` | per-spec pass, fail and skip counts; known failures from issue #210: `eng_priority_transitions`, `planning_selection_defaults`, two `load_performance` |
+| Python | `make test` | 2006 tests, OK (skipped=25), 122 s (Python 3.14, recorded 2026-09-30) |
+| Security | `make test-security` | 81 tests, OK, 1.3 s |
+| Node unit | `fnm exec --using 20 npm run test:frontend:unit` | 1524 pass, 0 fail, 0 skipped |
+| Playwright, every spec, one at a time | Task 0 step 5 loop, output kept in `tmp/baseline-ui.txt` | all 52 specs ran; the failures match issue #210 exactly (`eng_priority_transitions` 1 failed, 8 passed; `planning_selection_defaults` 1 failed, 22 passed; `load_performance` 2 failed, 7 passed); every other spec passed (skips: `eng_group_board_card` 1, `epm_settings_visual_states` 2); `frontend/dist` clean before and after. Base is `3622ba22` plus the four plan commits; `main` has since gained #212 (repairs these UI specs) and #215 |
 
 ## Endpoint Contract Matrix
 
@@ -131,14 +131,14 @@ git log --oneline -3
 ```
 Expected: issue 213 `OPEN`; branch `feature/213-per-epic-refresh`; the plan commit below `main`'s head. Do not rename or recommit.
 
-- [ ] **Step 2: Gate sweep (AGENTS.md session start for plan execution)**
+- [x] **Step 2: Gate sweep (AGENTS.md session start for plan execution)**
 
 ```bash
 rg --files docs/plans | rg '/GATE-'
 ```
 Open each file printed (only `GATE-05-*` exists; it concerns Home/Townsquare writes and is unrelated). Update its `Checked on` date and `Last result` field as its Startup Check requires, keep `Status` as `Blocked` unless its command prints the documented `PASS`, and never paste token material.
 
-- [ ] **Step 3: Environment**
+- [x] **Step 3: Environment**
 
 ```bash
 python3 --version
@@ -151,14 +151,14 @@ fnm exec --using 20 npm ci
 ```
 Expected: Python 3.10 or newer linked to OpenSSL 1.1.1 or newer (not LibreSSL); Node `v20.x`. Record the preflight result (it can fail in a worktree that has no local `.env`; note the reason, do not fix the environment).
 
-- [ ] **Step 4: A clean build leaves dist unchanged**
+- [x] **Step 4: A clean build leaves dist unchanged**
 
 ```bash
 fnm exec --using 20 npm run build && git diff --exit-code frontend/dist
 ```
 Expected: exit 0. If it differs, stop and ask the user.
 
-- [ ] **Step 4b: Consult the ontology (AGENTS.md section 1)**
+- [x] **Step 4b: Consult the ontology (AGENTS.md section 1)**
 
 Read the `ENG inline issue edits and alert invalidation` and `ENG Story Readiness` sections of `docs/ontology.md` (the first was added on 2026-09-30 and records the current inline-edit to alert-reload connection, which the first draft of this plan missed). Verify every cited path and symbol still resolves:
 
@@ -167,7 +167,7 @@ for sym in rearmCatchUpAlerts catchUpAlertVersionRef applyLocalEngIssueField inv
 ```
 Note any drift in this plan's Outcome; correct the ontology entry before any task relies on it. Subagent prompts for Tasks 6a, 6b, 8, 11, 12, 13b quote these entries.
 
-- [ ] **Step 5: Record the baseline, every spec**
+- [x] **Step 5: Record the baseline, every spec**
 
 ```bash
 mkdir -p tmp

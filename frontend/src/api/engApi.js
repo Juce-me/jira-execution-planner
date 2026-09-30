@@ -46,7 +46,7 @@ export const fetchSprints = (backendUrl, {
     });
 };
 
-export const fetchEngTasks = (backendUrl, { project, sprint, sprintName = '', groupId, teamIds = [], teamLabels = [], refresh = false, purpose = '', epicKeys = [], signal, debugTimings = false } = {}) => {
+export const fetchEngTasks = (backendUrl, { project, sprint, sprintName = '', groupId, teamIds = [], teamLabels = [], refresh = false, purpose = '', epicKeys = [], signal, debugTimings = false, apiSurface = 'eng_tasks', featureName = 'eng' } = {}) => {
     const params = new URLSearchParams({
         t: Date.now().toString(),
         sprint,
@@ -77,15 +77,20 @@ export const fetchEngTasks = (backendUrl, { project, sprint, sprintName = '', gr
             params.set('epicKeys', uniqueEpicKeys.join(','));
         }
     }
-    return trackedFetch('eng_tasks', `${backendUrl}/api/tasks-with-team-name?${params.toString()}`, {
+    return trackedFetch(apiSurface, `${backendUrl}/api/tasks-with-team-name?${params.toString()}`, {
         method: 'GET',
         headers: {
             'Content-Type': 'application/json',
         },
         cache: 'no-cache',
         signal
-    }, { featureName: 'eng' });
+    }, { featureName });
 };
+
+export const fetchEpicRefresh = (backendUrl, { project, sprint, sprintName = '', groupId, teamIds = [], teamLabels = [], epicKey, signal } = {}) => fetchEngTasks(backendUrl, {
+    project, sprint, sprintName, groupId, teamIds, teamLabels, refresh: true, purpose: 'epic-refresh', epicKeys: [epicKey], signal,
+    apiSurface: 'epic_refresh', featureName: 'epic_refresh',
+});
 
 export const fetchStoryReadiness = async (backendUrl, {
     sprint,

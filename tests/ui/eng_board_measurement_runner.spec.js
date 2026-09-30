@@ -2,14 +2,17 @@ const { test, expect } = require('@playwright/test');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
+const { python, pythonMissingReason } = require('./python_interpreter');
 
 const root = path.resolve(__dirname, '../..');
 const port = 5067;
 const baseUrl = `http://127.0.0.1:${port}`;
 let server;
 
+test.skip(Boolean(pythonMissingReason), pythonMissingReason);
+
 test.beforeAll(async () => {
-  server = spawn(path.join(root, '.venv/bin/python'), ['-c',
+  server = spawn(python, ['-c',
     `import jira_server; jira_server.app.run(host='127.0.0.1', port=${port}, debug=False, use_reloader=False)`], {
     cwd: root,
     env: {...process.env, APP_ENVIRONMENT_KEY:'local', ALLOW_DEV_DIAGNOSTIC_ENDPOINTS:'true',

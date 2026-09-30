@@ -2,12 +2,15 @@ const { test, expect } = require('@playwright/test');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
 const esbuild = require('esbuild');
+const { python, pythonMissingReason } = require('./python_interpreter');
 
 const root = path.resolve(__dirname, '../..');
 let port;
 let baseUrl;
 let server;
 let clientBundle;
+
+test.skip(Boolean(pythonMissingReason), pythonMissingReason);
 
 function prototypeSource(serverPort) { return String.raw`
 import time
@@ -120,7 +123,7 @@ test.beforeAll(async () => {
         globalName: 'EngBoardStreamClient',
         platform: 'browser',
     }).outputFiles[0].text;
-    server = spawn(path.join(root, '.venv/bin/python'), ['-u', '-c', prototypeSource(port)], {
+    server = spawn(python, ['-u', '-c', prototypeSource(port)], {
         cwd: root,
         env: { ...process.env, DATABASE_URL: '', TEST_DATABASE_URL: '' },
         stdio: 'inherit',

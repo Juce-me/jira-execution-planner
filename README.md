@@ -250,7 +250,7 @@ npm run watch
 
 CI will fail if `frontend/dist` is out of sync. We precompile JSX so production does not transform JSX in the browser.
 
-Run the local CI-style verification path before preparing a PR:
+Run the local verification path before preparing a PR. It runs the CI checks plus the Playwright `tests/ui` suite (about 8 minutes), which has no CI job by design:
 
 ```bash
 make verify

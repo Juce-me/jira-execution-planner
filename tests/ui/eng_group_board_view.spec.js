@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
-const { installDashboardShell } = require('./epm_home_token_fixture');
+const { expectConfigBootstrapHoldsJiraWork, installDashboardShell } = require('./epm_home_token_fixture');
 
 // The Board view itself (§6.1, §6.1.2): columns, folded rails as the chart, focus and star,
 // off-frame hints, breach glow, and the invariant that exactly one column is focused and open at
@@ -504,19 +504,6 @@ async function expectLockedSelectorInteractionBlocked(page, trigger) {
 const waitTwoFrames = page => page.evaluate(() => new Promise(resolve => (
     requestAnimationFrame(() => requestAnimationFrame(resolve))
 )));
-
-// The first /api/config read gates all ENG Jira work: while it is pending nothing loads and the
-// Sprint selector stays unavailable. `paths` returns the request pathnames seen so far.
-async function expectConfigBootstrapHoldsJiraWork(page, paths) {
-    await expect.poll(() => paths().includes('/api/config')).toBe(true);
-    await waitTwoFrames(page);
-    expect(paths().filter(pathname => (
-        pathname === '/api/sprints' || pathname === '/api/tasks-with-team-name'
-            || pathname.startsWith('/api/eng/board') || pathname.startsWith('/api/stats/')
-    ))).toEqual([]);
-    await expect(page.getByRole('button', { name: 'Select sprint', exact: true }).first())
-        .toHaveAttribute('aria-disabled', 'true');
-}
 
 const SPRINT_SOURCE_A = {
     backend: 'postgresql',

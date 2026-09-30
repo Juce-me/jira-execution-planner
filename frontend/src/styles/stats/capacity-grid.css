@@ -142,6 +142,10 @@
         .capacity-team {
             font-family: 'IBM Plex Mono', monospace;
             color: var(--text-primary);
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
 

@@ -926,13 +926,19 @@ test('select all remains scoped when switching future planning sprints', async (
     });
 });
 
-test('planning epic excluded-capacity toggle updates shared group config', async ({ page }) => {
+test('planning epic excluded-capacity toggle updates shared group config', async ({ page }, testInfo) => {
     const fixture = await installPlanningFixture(page);
     await page.goto(appBaseUrl);
     await openFuturePlanning(page);
 
     const epicBlock = page.locator('.task-list .epic-block', { hasText: 'PLAN-EPIC' }).first();
-    await epicBlock.getByRole('button', { name: /Included/ }).click();
+    const included = epicBlock.getByRole('button', { name: /Included/ });
+    await included.hover();
+    await expect(included).toHaveCSS('transform', 'none');
+    await expect(included).toHaveCSS('box-shadow', 'rgba(47, 128, 237, 0.35) 0px 0px 0px 2px');
+    await expect(included).toHaveCSS('font-size', '10px');
+    await epicBlock.locator('.epic-header').screenshot({ path: testInfo.outputPath('included-hover.png') });
+    await included.click();
     await expect(epicBlock.getByRole('button', { name: /Excluded/ })).toBeVisible();
 
     const saveCalls = fixture.calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config');

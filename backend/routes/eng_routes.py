@@ -17,7 +17,7 @@ from backend.auth.db_context import is_db_auth_context
 from backend.auth.jira_auth import AuthError
 from backend.auth.project_access import project_access_denied_response, project_access_status
 from backend.epm.home import adf_to_html
-from backend.services import eng_board, shared_group_config
+from backend.services import eng_board, epic_refresh, shared_group_config
 from backend.services.eng_board_stream import (
     EngBoardRequestBudget,
     EngBoardRequestDeadline,
@@ -1515,15 +1515,46 @@ def get_missing_info():
         return jsonify({'error': 'Failed to compute missing-info', 'message': str(e)}), 500
 
 
+_EPIC_REFRESH_LIMITER = epic_refresh.EpicRefreshLimiter()
+
+
+def _epic_refresh_guard():
+    """400 for malformed epicKeys or scoped-purpose requests; 429 when refreshed too often."""
+    error = epic_refresh.epic_keys_error(request.args)
+    if error:
+        return jsonify(error), 400
+    purpose = str(request.args.get('purpose') or '').strip().lower()
+    if purpose in epic_refresh.EPIC_SCOPED_PURPOSES:
+        try:
+            context = current_request_auth_context()
+        except AuthError as auth_error:
+            return _eng_auth_error_response(auth_error)
+        scope = f"{getattr(context, 'workspace_id', '')}:{getattr(context, 'user_id', '') or 'local'}"
+        lane = str(request.args.get('project') or '').strip().lower()
+        bucket = epic_refresh.limiter_bucket(purpose, lane, epic_refresh.single_epic_key(request.args))
+        wait = _EPIC_REFRESH_LIMITER.retry_after(scope, bucket)
+        if wait:
+            response = jsonify({'error': 'epic_refresh_rate_limited', 'retryAfterSeconds': wait})
+            response.headers['Retry-After'] = str(wait)
+            return response, 429
+    return None
+
+
 @bp.route('/api/tasks', methods=['GET'])
 def get_tasks():
     """Fetch tasks from Jira API."""
+    guarded = _epic_refresh_guard()
+    if guarded:
+        return guarded
     return fetch_tasks(include_team_name=False)
 
 
 @bp.route('/api/tasks-with-team-name', methods=['GET'])
 def get_tasks_with_team_name():
     """Fetch tasks with team name derived from Jira Team field."""
+    guarded = _epic_refresh_guard()
+    if guarded:
+        return guarded
     return fetch_tasks(include_team_name=True)
 
 

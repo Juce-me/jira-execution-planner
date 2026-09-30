@@ -120,6 +120,7 @@ from backend.services import shared_group_config as _shared_group_config_service
 from backend.services import group_board as _group_board_service
 from backend.services import shared_capacity_config as _shared_capacity_config_service
 from backend.services.eng_subtasks import build_embedded_subtask_summary
+from backend.services.epic_refresh import EPIC_REFRESH_PURPOSE, evict_scope_entries, response_meta as epic_refresh_meta
 from backend.epm import projects as epm_projects
 from backend.security.policy import (
     is_oauth_ready_api_path as policy_is_oauth_ready_api_path,
@@ -3219,6 +3220,7 @@ def fetch_tasks(include_team_name=False):
         epic_keys_filter = sorted({t.strip() for t in epic_keys_param.split(',') if t.strip()})
         use_template = bool(team_ids and JQL_QUERY_TEMPLATE)
         lightweight_ready_to_close = request_purpose == 'ready-to-close'
+        is_epic_refresh = request_purpose == EPIC_REFRESH_PURPOSE
         record_timing('parse_params', parse_started)
         auth_context = current_request_auth_context()
         if project_filter in ('product', 'tech'):
@@ -3242,7 +3244,7 @@ def fetch_tasks(include_team_name=False):
         if cache_enabled:
             with _cache_lock:
                 cached_entry = TASKS_CACHE.get(cache_key)
-        if cache_enabled and not force_refresh and cached_entry and (time.time() - cached_entry.get('timestamp', 0)) < TASKS_CACHE_TTL_SECONDS:
+        if cache_enabled and not force_refresh and not is_epic_refresh and cached_entry and (time.time() - cached_entry.get('timestamp', 0)) < TASKS_CACHE_TTL_SECONDS:
             mark_task_cache_hit(cached_entry.get('completeness', 'unknown'))
             cached_response = jsonify(cached_entry.get('data') or {})
             cached_response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
@@ -3459,7 +3461,10 @@ def fetch_tasks(include_team_name=False):
         record_timing('normalize_tasks', normalize_started)
 
         enrich_epics_started = time.perf_counter()
-        if lightweight_ready_to_close:
+        if is_epic_refresh:
+            epic_details = fetch_epic_details_bulk(epic_keys_filter, headers, epic_name_field)
+            epics_in_scope = []
+        elif lightweight_ready_to_close:
             epic_details = {}
             if epic_keys_filter:
                 epics_in_scope = fetch_epics_by_keys_for_alert_service(
@@ -3593,6 +3598,8 @@ def fetch_tasks(include_team_name=False):
 
         data['issues'] = slim_issues
         data['epics'] = epic_details
+        if is_epic_refresh:
+            data.update(epic_refresh_meta(len(slim_issues), max_results, epic_keys_filter, epic_details))
         data['epicsInScope'] = epics_in_scope
         data['teamFieldId'] = team_field_id
         if include_debug_timings:
@@ -3609,12 +3616,16 @@ def fetch_tasks(include_team_name=False):
             f'timings_ms={timings_ms}'
         )
         def publish_result():
-            if cache_enabled:
+            if cache_enabled and not is_epic_refresh:
                 cache_store_started = time.perf_counter()
                 with _cache_lock:
                     if get_jira_issue_cache_generation() == cache_generation:
                         TASKS_CACHE[cache_key] = {'timestamp': time.time(), 'data': {key: value for key, value in data.items() if key != 'debugTimingsMs'}, 'completeness': 'capped' if len(slim_issues) >= max_results else 'unknown'}
                 record_timing('cache_store', cache_store_started)
+            if cache_enabled and is_epic_refresh:
+                evict_scope_entries(TASKS_CACHE, _cache_lock, lambda purpose: build_jira_home_process_cache_key(
+                    auth_context, build_tasks_cache_key(sprint, group_id, project_filter, team_ids, team_label_values,
+                                                        include_team_name, use_template, purpose, None, sprint_name=sprint_name)))
             response = jsonify(data)
             response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
             response.headers['Pragma'] = 'no-cache'

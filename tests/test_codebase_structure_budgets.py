@@ -54,7 +54,8 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # In-app load metrics: gated wrapper and worker observer wiring (+3).
     # improvement/multiple-group-labels final-review round: find_comma_scalar_team_label_errors
     # wrapper for the save-only comma-scalar Team-label guard (+2).
-    "jira_server.py": 6463,
+    # feature/213-per-epic-refresh: epic-refresh purpose branch, cache skip and eviction (+11).
+    "jira_server.py": 6474,
     # feature/eng-epic-sort-and-track adds the epic Sort dropdown wiring (engEpicSort state,
     # analytics handler, sorted epicGroups, EngView props) and the title-row priority chevron
     # plus Product Track indicator in renderEpicBlock.

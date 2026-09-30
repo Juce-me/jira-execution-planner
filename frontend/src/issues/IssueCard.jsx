@@ -9,7 +9,7 @@ import IssuePersonEditor from './IssuePersonEditor.jsx';
 import StoryPointsEditor from './StoryPointsEditor.jsx';
 
 export const IssueCardContext = React.createContext({});
-const REMOVE_FADE_MS = 240;
+export const REMOVE_FADE_MS = 240;
 const SUBTASK_PANEL_EXIT_MS = 140;
 
 export default function IssueCard({
@@ -24,6 +24,7 @@ export default function IssueCard({
     isSelected = false,
     onToggleSelection,
     onRemove,
+    isLeaving = false,
     shouldRenderIssueDependencies = false,
     dependencyContext = {},
     subtaskState = null,
@@ -198,7 +199,7 @@ export default function IssueCard({
 
     return (
         <div
-            className={`task-item priority-${task.fields.priority?.name.toLowerCase()} ${isDone ? 'status-done' : ''} ${isKilled ? 'status-killed' : ''} ${isIncomplete ? 'status-incomplete' : ''} ${showPlanning ? 'is-planning-selectable' : ''} ${showPlanning && isSelected ? 'is-planning-selected' : ''} ${dependencyModel.isFocusActive && !dependencyModel.isRelated ? 'is-dimmed' : ''} ${dependencyModel.isFocused ? 'is-focused' : ''} ${dependencyModel.isUpstream ? 'is-upstream' : ''} ${dependencyModel.isDownstream ? 'is-downstream' : ''} ${isRemoveFading ? 'is-removing' : ''}`}
+            className={`task-item priority-${task.fields.priority?.name.toLowerCase()} ${isDone ? 'status-done' : ''} ${isKilled ? 'status-killed' : ''} ${isIncomplete ? 'status-incomplete' : ''} ${showPlanning ? 'is-planning-selectable' : ''} ${showPlanning && isSelected ? 'is-planning-selected' : ''} ${dependencyModel.isFocusActive && !dependencyModel.isRelated ? 'is-dimmed' : ''} ${dependencyModel.isFocused ? 'is-focused' : ''} ${dependencyModel.isUpstream ? 'is-upstream' : ''} ${dependencyModel.isDownstream ? 'is-downstream' : ''} ${isRemoveFading || isLeaving ? 'is-removing' : ''}`}
             data-task-key={task.key}
             data-task-id={task.id || task.key}
             data-issue-key={task.key}
@@ -209,7 +210,7 @@ export default function IssueCard({
                     <button
                         className="task-remove"
                         onClick={handleRemove}
-                        disabled={isRemoveFading}
+                        disabled={isRemoveFading || isLeaving}
                         title="Remove task from view"
                         type="button"
                     >

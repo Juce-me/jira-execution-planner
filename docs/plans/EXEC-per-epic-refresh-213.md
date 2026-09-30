@@ -51,6 +51,16 @@ Every task's requirements include this section. Values are copied from the appro
 | Node unit | `fnm exec --using 20 npm run test:frontend:unit` | 1524 pass, 0 fail, 0 skipped |
 | Playwright, every spec, one at a time | Task 0 step 5 loop, output kept in `tmp/baseline-ui.txt` | all 52 specs ran; the failures match issue #210 exactly (`eng_priority_transitions` 1 failed, 8 passed; `planning_selection_defaults` 1 failed, 22 passed; `load_performance` 2 failed, 7 passed); every other spec passed (skips: `eng_group_board_card` 1, `epm_settings_visual_states` 2); `frontend/dist` clean before and after. Base is `3622ba22` plus the four plan commits; `main` has since gained #212 (repairs these UI specs) and #215 |
 
+## Execution Status (updated by the orchestrator after each wave)
+
+| Task | Status | Commit | Notes |
+|---|---|---|---|
+| T0 | done | `8ca112e4` | baseline recorded above |
+| T1 | done | `d0678a26` | `jira_server.py` 6463 to 6474, budget ratcheted; step 11 breaker isolation not implemented, decision pending with the user (fallback sentence for Outcome: "breaker isolation deferred; the server minimum interval and the client in-flight cap stand in") |
+| T2 | done | `4aff8c42` | divergence: `patchEpicScopeEntries` takes `assignee` whenever the fetched epic carries the key (`'assignee' in fetchedEpic`), not `?? entry.assignee`; an unassigned epic (`assignee: null`) would otherwise keep a stale assignee in `*EpicsInScope` |
+| T3 | done | `b8c3c7af` | divergences: button selectors are `.epic-header button.epic-refresh-button` (beats the global `button:hover`); reduced-motion tint is a held tint (`epic-refresh-tint` 1200 ms, peak held about 960 ms), not a fade pulse; `.task-item.is-dimmed[data-glare]::before` is hidden in CSS |
+| T4 | done | `b60a5b28` | |
+
 ## Endpoint Contract Matrix
 
 All routes are per-user `authenticated_read` (or the existing POST) with the signed-in user's OAuth context; Basic mode is local-only. Workspace boundary: the limiter scope is `workspace_id:user_id`; caches stay partitioned through `build_jira_home_process_cache_key` (workspace, connection, `token_version`, project access); no cross-user entry is ever read.

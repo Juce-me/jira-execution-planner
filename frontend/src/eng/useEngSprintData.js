@@ -1,6 +1,7 @@
 import {
     fetchBacklogEpics as requestBacklogEpics,
     fetchEngTasks,
+    fetchEpicRefresh,
 } from '../api/engApi.js';
 import { isAuthenticationRequiredError } from '../api/authRequired.js';
 import { recordPerformanceLoad } from '../api/performanceApi.js';
@@ -13,12 +14,15 @@ export const ENG_TASK_LOAD_OUTCOME = Object.freeze({
     AUTH_REQUIRED: 'auth_required',
     IGNORED: 'ignored',
     ALERT_SCOPE_TOO_LARGE: 'alert_scope_too_large',
+    LANE_DENIED: 'lane_denied',
+    RATE_LIMITED: 'rate_limited',
 });
 const AUTHENTICATION_REQUIRED_RESULT = ENG_TASK_LOAD_OUTCOME.AUTH_REQUIRED;
 const NON_AUTH_FAILURE_RESULT = ENG_TASK_LOAD_OUTCOME.NON_AUTH_FAILURE;
 const IGNORED_RESULT = ENG_TASK_LOAD_OUTCOME.IGNORED;
 const ALERT_SCOPE_TOO_LARGE_RESULT = ENG_TASK_LOAD_OUTCOME.ALERT_SCOPE_TOO_LARGE;
 const ISSUE_EDIT_READ_TOKEN = Symbol('issueEditReadToken');
+const EPIC_REFRESH_META = Symbol('epicRefreshMeta');
 import {
     PRIORITY_ORDER,
     filterEpicsByTaskEpicKeys,
@@ -132,19 +136,30 @@ export function useEngSprintData({
                 refresh = true;
                 pageLoadRefreshRef.current = false;
             }
-            const requestTasks = () => fetchEngTasks(backendUrl, {
-                project,
-                sprint: sprintParam,
-                sprintName: selectedSprintName || '',
-                groupId: activeGroupId,
-                teamIds: groupTeamIds,
-                teamLabels: groupTeamLabels,
-                refresh,
-                purpose: options.purpose,
-                epicKeys: options.epicKeys,
-                signal: requestSignal,
-                debugTimings: measured,
-            });
+            const requestTasks = options.epicRefresh
+                ? () => fetchEpicRefresh(backendUrl, {
+                    project,
+                    sprint: sprintParam,
+                    sprintName: selectedSprintName || '',
+                    groupId: activeGroupId,
+                    teamIds: groupTeamIds,
+                    teamLabels: groupTeamLabels,
+                    epicKey: options.epicKeys[0],
+                    signal: requestSignal,
+                })
+                : () => fetchEngTasks(backendUrl, {
+                    project,
+                    sprint: sprintParam,
+                    sprintName: selectedSprintName || '',
+                    groupId: activeGroupId,
+                    teamIds: groupTeamIds,
+                    teamLabels: groupTeamLabels,
+                    refresh,
+                    purpose: options.purpose,
+                    epicKeys: options.epicKeys,
+                    signal: requestSignal,
+                    debugTimings: measured,
+                });
             const response = await requestTasks();
 
             console.log('Response status:', response.status);
@@ -187,6 +202,15 @@ export function useEngSprintData({
                 options.epicsInScopeSetter(filteredEpicsInScope);
             }
             if (readToken) Object.defineProperty(filteredTasks, ISSUE_EDIT_READ_TOKEN, { value: readToken });
+            if (options.epicRefresh) {
+                Object.defineProperty(filteredTasks, EPIC_REFRESH_META, {
+                    value: {
+                        epics: Object.fromEntries(reconciledEpicEntries.map(epic => [epic.key, epic])),
+                        capped: data.capped === true,
+                        epicKeysMissing: Array.isArray(data.epicKeysMissing) ? data.epicKeysMissing : [],
+                    },
+                });
+            }
             tokenRetained = true;
             return filteredTasks;
         } catch (err) {
@@ -197,7 +221,9 @@ export function useEngSprintData({
             if (isAuthenticationRequiredError(err)) return AUTHENTICATION_REQUIRED_RESULT;
             if (options.shouldApplyResult?.() === false) return IGNORED_RESULT;
             if (options.purpose === 'alerts' && err.code === 'alert_scope_too_large') return ALERT_SCOPE_TOO_LARGE_RESULT;
-            const handledServerConnection = onServerConnectionFailure?.(err) === true;
+            if (options.epicRefresh && err.code === 'missing_project_access') return ENG_TASK_LOAD_OUTCOME.LANE_DENIED;
+            if (options.epicRefresh && err.code === 'epic_refresh_rate_limited') return ENG_TASK_LOAD_OUTCOME.RATE_LIMITED;
+            const handledServerConnection = !(options.epicRefresh && err.status) && onServerConnectionFailure?.(err) === true;
             if (setErrors) {
                 setError(handledServerConnection ? '' : taskLoadErrorMessage(err, backendUrl));
             }
@@ -479,8 +505,39 @@ export function useEngSprintData({
             cancel: () => { measurement.cancel(); resolveDependencies?.('ignored'); } };
     };
 
+    // Per-epic refresh (issue #213): both lanes, no loading flag, results handed back for one atomic apply.
+    const loadEpicRefresh = async ({ epicKey, shouldApplyResult, signal } = {}) => {
+        if (strictBoardActive) return { product: { status: 'ignored' }, tech: { status: 'ignored' } };
+        const fetchLane = async project => {
+            const data = await fetchTasks(project, {
+                epicRefresh: true,
+                epicKeys: [epicKey],
+                updateEpics: false,
+                useLoading: false,
+                setErrorOnFailure: false,
+                forceRefresh: true,
+                shouldApplyResult,
+                signal,
+            });
+            const readToken = data?.[ISSUE_EDIT_READ_TOKEN];
+            try {
+                if (Array.isArray(data)) return { status: 'ok', items: data, meta: data[EPIC_REFRESH_META] };
+                if (data === ENG_TASK_LOAD_OUTCOME.LANE_DENIED) return { status: 'denied' };
+                if (data === ENG_TASK_LOAD_OUTCOME.RATE_LIMITED) return { status: 'rate_limited' };
+                if (data === ENG_TASK_LOAD_OUTCOME.AUTH_REQUIRED) return { status: 'auth_required' };
+                if (data === ENG_TASK_LOAD_OUTCOME.IGNORED) return { status: 'ignored' };
+                return { status: 'failed' };
+            } finally {
+                issueEditState?.finishRead(readToken);
+            }
+        };
+        const [product, tech] = await Promise.all([fetchLane('product'), fetchLane('tech')]);
+        return { product, tech };
+    };
+
     return {
         loadGroupTasks,
+        loadEpicRefresh,
         fetchTasks,
         fetchBacklogEpics,
         loadProductTasks,

@@ -99,12 +99,12 @@ function makeStory(
     };
 }
 
-function makeEpic(sprintId, sprintName) {
+function makeEpic(sprintId, sprintName, priority = 'High') {
     return {
         key: 'PROD-EPIC',
         summary: 'Synthetic product epic',
         status: { name: 'In Progress' },
-        priority: { name: 'High' },
+        priority: priority ? { name: priority } : null,
         assignee: { displayName: 'Alpha Lead' },
         teamId: 'team-alpha',
         teamName: 'Alpha Team',
@@ -160,6 +160,7 @@ async function installEngPriorityFixture(page, {
     priorityDelayMs = 0,
     priorityWrite = priorityWriteResponse,
     omitSelectedTeamAfterPriority = false,
+    epicPriority = 'High',
 } = {}) {
     const calls = [];
     const priorityState = { inFlight: 0, maxInFlight: 0, successfulWrite: false };
@@ -230,7 +231,7 @@ async function installEngPriorityFixture(page, {
                 ])
                 : [];
             const issues = (stories && project === 'product' && !purpose) ? stories : defaultIssues;
-            const epic = makeEpic(activeSprintId, activeSprintName);
+            const epic = makeEpic(activeSprintId, activeSprintName, epicPriority);
             return json(route, {
                 issues,
                 epics: { [epic.key]: epic },
@@ -422,17 +423,48 @@ test('Catch Up rolls back a failed optimistic priority change without refetching
     expect(taskListRequests(calls)).toHaveLength(initialTaskRequests);
 });
 
-test('epic header priority menu omits the epic OWN priority, not the derived child priority', async ({ page }) => {
-    // The header icon shows a DERIVED priority (most-urgent child = Medium here), but the menu
-    // edits the epic's OWN priority field (High in the fixture). It must omit the OWN value as
-    // "current" and keep the derived value selectable, mirroring how the epic status menu edits
-    // the epic's own status. Submit still POSTs the epic key.
+test('epic header shows the epic OWN priority and its menu omits it while the child-derived value stays selectable', async ({ page }) => {
+    // The header icon prefers the Epic's OWN priority (High in the fixture) over the most
+    // urgent child Story priority (Medium). The menu edits that same own field, so it omits the
+    // own value as "current". Submit still POSTs the epic key.
     await setPrefs(page, catchUpPrefs());
     const { calls } = await installEngPriorityFixture(page);
     await page.goto(appBaseUrl);
     await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
 
-    // Trigger icon keeps rendering the derived (child) priority: Medium, not the epic's own High.
+    // Trigger icon renders the Epic's own High, not the child-derived Medium.
+    const epicTrigger = priorityTrigger(page, 'epic', 'PROD-EPIC');
+    await expect(epicTrigger).toHaveCount(1);
+    await expect(epicTrigger).toHaveAttribute('data-priority', 'High');
+
+    await epicTrigger.click();
+    const menu = priorityMenu(page, 'PROD-EPIC');
+    await expect(menu).toBeVisible();
+
+    // Omitted-as-current is the epic's OWN priority (High); the child-derived value (Medium)
+    // stays selectable. Options are the epic's OWN scheme (this fixture's epic scheme omits
+    // Major), proving the per-issue editmeta filter composes with the own-priority omit.
+    const labels = await menu.locator('.priority-transition-option-label').allTextContents();
+    expect(labels).toEqual(['Highest', 'Medium', 'Low']);
+    expect(labels).not.toContain('High');
+    expect(labels).not.toContain('Major');
+
+    // Choosing another value is a real change; the mutation targets the epic key.
+    await menu.getByRole('menuitem', { name: 'Medium' }).click();
+    await expect.poll(() => priorityWriteCalls(calls).length).toBe(1);
+    const mutation = priorityWriteCalls(calls)[0];
+    expect(mutation.body.issueKeys).toEqual(['PROD-EPIC']);
+    expect(mutation.body.targetPriorityId).toBe('3');
+});
+
+test('epic header falls back to the child-derived priority when the epic has none and its menu omits nothing', async ({ page }) => {
+    // With no own priority the header shows the most urgent child Story priority (Medium), but
+    // that value is not the field the menu edits, so no option is omitted as "current".
+    await setPrefs(page, catchUpPrefs());
+    const { calls } = await installEngPriorityFixture(page, { epicPriority: null });
+    await page.goto(appBaseUrl);
+    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+
     const epicTrigger = priorityTrigger(page, 'epic', 'PROD-EPIC');
     await expect(epicTrigger).toHaveCount(1);
     await expect(epicTrigger).toHaveAttribute('data-priority', 'Medium');
@@ -441,15 +473,11 @@ test('epic header priority menu omits the epic OWN priority, not the derived chi
     const menu = priorityMenu(page, 'PROD-EPIC');
     await expect(menu).toBeVisible();
 
-    // Omitted-as-current is the epic's OWN priority (High); the derived value (Medium) stays.
-    // Options are the epic's OWN scheme (this fixture's epic scheme omits Major), proving the
-    // per-issue editmeta filter composes with the own-priority omit (filter first, omit next).
+    // The epic's OWN scheme, unfiltered: Medium is still listed because it is derived, not own.
     const labels = await menu.locator('.priority-transition-option-label').allTextContents();
-    expect(labels).toEqual(['Highest', 'Medium', 'Low']);
-    expect(labels).not.toContain('High');
-    expect(labels).not.toContain('Major');
+    expect(labels).toEqual(['Highest', 'High', 'Medium', 'Low']);
 
-    // Choosing the derived value is a real change; the mutation targets the epic key.
+    // Choosing the displayed derived value is a real change for an epic with no priority set.
     await menu.getByRole('menuitem', { name: 'Medium' }).click();
     await expect.poll(() => priorityWriteCalls(calls).length).toBe(1);
     const mutation = priorityWriteCalls(calls)[0];

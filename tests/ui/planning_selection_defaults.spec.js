@@ -1,7 +1,7 @@
 const path = require('node:path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
-const { installDashboardShell } = require('./epm_home_token_fixture');
+const { expectConfigBootstrapHoldsJiraWork, installDashboardShell } = require('./epm_home_token_fixture');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
@@ -674,12 +674,13 @@ test('a new typed auth interruption retains the staged Planning capsule', async 
     expect(stagedKeys).toEqual(['PLAN-2']);
 });
 
-test('late authenticated config staging resumes shell and exact-scope Planning after ordinary loads settle', async ({ page }) => {
+test('late authenticated config staging holds Jira work, then resumes shell and exact-scope Planning on release', async ({ page }) => {
     await seedPlanningAuthResume(page, { seedUiPrefs: true });
     const fixture = await installPlanningFixture(page, { delayConfig: true });
     await page.goto(appBaseUrl);
 
-    await expect.poll(() => fixture.getFutureProductTaskAttempts()).toBeGreaterThan(0);
+    await expectConfigBootstrapHoldsJiraWork(page, () => fixture.calls.map(call => call.pathname));
+    expect(fixture.getFutureProductTaskAttempts()).toBe(0);
     fixture.releaseConfig();
 
     await expect(page.locator('.planning-panel.open')).toBeVisible();

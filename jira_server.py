@@ -120,7 +120,7 @@ from backend.services import shared_group_config as _shared_group_config_service
 from backend.services import group_board as _group_board_service
 from backend.services import shared_capacity_config as _shared_capacity_config_service
 from backend.services.eng_subtasks import build_embedded_subtask_summary
-from backend.services.epic_refresh import EPIC_REFRESH_PURPOSE, evict_scope_entries, response_meta as epic_refresh_meta
+from backend.services.epic_refresh import EPIC_REFRESH_PURPOSE, epic_refresh_call, epic_refresh_transport, evict_scope_entries, response_meta as epic_refresh_meta
 from backend.epm import projects as epm_projects
 from backend.security.policy import (
     is_oauth_ready_api_path as policy_is_oauth_ready_api_path,
@@ -716,7 +716,7 @@ def current_jira_get(path, *, params=None, timeout=30, context=None, diagnostic_
         if diagnostic_transport is not None:
             kind = 'search' if str(path).endswith('/search/jql') else 'catalog'
             return _jira_client.resilient_jira_get(url, session=HTTP_SESSION, diagnostic_kind=kind, **diagnostic_transport.resilient_kwargs(), **kwargs)
-        return resilient_jira_get(url, session=HTTP_SESSION, breaker=JIRA_SEARCH_CIRCUIT_BREAKER, **kwargs)
+        return resilient_jira_get(url, session=HTTP_SESSION, **{'breaker': JIRA_SEARCH_CIRCUIT_BREAKER, **epic_refresh_transport()}, **kwargs)
 
     return jira_get(
         current_auth_config(),
@@ -3376,7 +3376,7 @@ def fetch_tasks(include_team_name=False):
                 if next_page_token:
                     payload['nextPageToken'] = next_page_token
 
-                response = jira_search_request(payload)
+                response = epic_refresh_call(is_epic_refresh, jira_search_request, payload)
                 log_debug(f'Jira search page response status={response.status_code}')
 
                 if response.status_code != 200:
@@ -3462,7 +3462,7 @@ def fetch_tasks(include_team_name=False):
 
         enrich_epics_started = time.perf_counter()
         if is_epic_refresh:
-            epic_details = fetch_epic_details_bulk(epic_keys_filter, headers, epic_name_field)
+            epic_details = epic_refresh_call(True, fetch_epic_details_bulk, epic_keys_filter, headers, epic_name_field)
             epics_in_scope = []
         elif lightweight_ready_to_close:
             epic_details = {}

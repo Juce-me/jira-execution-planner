@@ -2,10 +2,14 @@
 
 Kept out of jira_server.py, which sits at its structure budget.
 """
+import os
 import re
 import threading
 import time
 from collections import OrderedDict
+from contextvars import ContextVar
+
+from backend.jira_client import JiraCircuitBreaker
 
 EPIC_REFRESH_PURPOSE = 'epic-refresh'
 EPIC_ALERTS_PURPOSE = 'epic-alerts'
@@ -13,6 +17,15 @@ EPIC_SCOPED_PURPOSES = (EPIC_REFRESH_PURPOSE, EPIC_ALERTS_PURPOSE)
 # ASCII only: \d and str.isdigit() accept other Unicode digits. \Z rejects a trailing newline.
 ISSUE_KEY_RE = re.compile(r'^[A-Z][A-Z0-9_]+-[0-9]+\Z')
 _SPRINT_RE = re.compile(r'[0-9]+')
+
+# Own breaker and a short retry budget: a burst of 429s from per-epic clicks must not open the
+# dashboard-wide JIRA_SEARCH_CIRCUIT_BREAKER. Same env-driven thresholds as that breaker.
+EPIC_REFRESH_CIRCUIT_BREAKER = JiraCircuitBreaker(
+    failure_threshold=int(os.getenv('JIRA_CIRCUIT_FAILURE_THRESHOLD', '5')),
+    open_seconds=float(os.getenv('JIRA_CIRCUIT_OPEN_SECONDS', '30')),
+)
+EPIC_REFRESH_MAX_ATTEMPTS = 2
+EPIC_REFRESH_TRANSPORT = ContextVar('epic_refresh_transport', default=None)
 
 
 def parse_epic_keys(raw):
@@ -95,3 +108,19 @@ def evict_scope_entries(cache, lock, key_for_purpose, purposes=('dashboard', 'al
     with lock:
         for purpose in purposes:
             cache.pop(key_for_purpose(purpose), None)
+
+
+def epic_refresh_call(active, fn, *args, **kwargs):
+    """Run `fn` with the epic-refresh breaker and attempt budget bound when `active`, always unbinding."""
+    if not active:
+        return fn(*args, **kwargs)
+    token = EPIC_REFRESH_TRANSPORT.set({'breaker': EPIC_REFRESH_CIRCUIT_BREAKER, 'max_attempts': EPIC_REFRESH_MAX_ATTEMPTS})
+    try:
+        return fn(*args, **kwargs)
+    finally:
+        EPIC_REFRESH_TRANSPORT.reset(token)
+
+
+def epic_refresh_transport():
+    """Breaker and attempt overrides for resilient_jira_get; empty unless inside epic_refresh_call."""
+    return EPIC_REFRESH_TRANSPORT.get() or {}

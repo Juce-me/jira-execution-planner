@@ -84,7 +84,8 @@ function loadApiModule(fileName, exportNames, dependencies = {}) {
         .replace(/import\s+\{[^}]+\}\s+from\s+'\.\/authApi\.js';\n?/, '')
         .replaceAll('export async function ', 'async function ')
         .replaceAll('export const ', 'const ')
-        .replaceAll('export function ', 'function ');
+        .replaceAll('export function ', 'function ')
+        .replaceAll('export class ', 'class ');
     const mergedDependencies = {
         apiFetch: (url, options) => fetch(url, options),
         trackedFetch: (_apiSurface, url, options) => fetch(url, options),
@@ -1197,7 +1198,7 @@ test('dashboard Sprint authority subscribes global auth and guards manual work e
 
 test('dashboard Sprint authority reconciles slow config and fences every Board-affecting save attempt', () => {
     const dashboard = readSource(path.join(frontendSrcPath, 'dashboard.jsx'));
-    assert.match(dashboard, /shouldReconcileSprintCatalogSource\([\s\S]*fetchAppConfig\(BACKEND_URL\)[\s\S]*catalog_identity_changed/);
+    assert.match(dashboard, /shouldReconcileSprintCatalogSource\([\s\S]*fetchBootstrapConfig\(BACKEND_URL\)[\s\S]*catalog_identity_changed/);
     const saveStart = dashboard.indexOf('const saveGroupsConfig = async');
     const firstEarlyReturn = dashboard.indexOf('if (!groupDraft)', saveStart);
     const invalidation = dashboard.indexOf("sprintCatalogControllerRef.current.invalidate('settings-save')", saveStart);

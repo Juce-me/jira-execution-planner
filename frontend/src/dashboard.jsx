@@ -163,6 +163,7 @@ import { fetchCapacity as requestCapacity, updateCapacity } from './api/capacity
 import { resolveBackendUrl } from './api/backendUrl.js';
 import {
     fetchAppConfig,
+    fetchBootstrapConfig,
     fetchVersionInfo,
     testJiraConnection,
     fetchGroupsConfig as requestGroupsConfig,
@@ -6790,7 +6791,7 @@ import {
                 setSharedConfigReady(false);
                 setBoardBootstrapStatus('loading');
                 try {
-                    let config = await fetchAppConfig(BACKEND_URL);
+                    let config = await fetchBootstrapConfig(BACKEND_URL);
                     if (!shouldApplyResult()) return false;
                     const currentSprintCatalogState = sprintCatalogControllerRef.current.getState();
                     if (shouldReconcileSprintCatalogSource(
@@ -6799,7 +6800,7 @@ import {
                         config.sprintCatalogSource || null,
                     )) {
                         try {
-                            config = await fetchAppConfig(BACKEND_URL);
+                            config = await fetchBootstrapConfig(BACKEND_URL);
                         } catch (error) {
                             sprintCatalogControllerRef.current.invalidate('catalog_identity_changed');
                             throw error;

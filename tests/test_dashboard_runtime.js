@@ -13,6 +13,7 @@ vm.runInContext(source, vm.createContext(sandbox));
 const {
     createSprintCatalogController,
     createSprintCatalogState,
+    isBackendConnectionFailure,
     loadCachedSprintCatalog,
     reduceSprintCatalog,
     shouldReconcileSprintCatalogSource,
@@ -346,4 +347,16 @@ test('display cache validation key changes only for accepted validation', () => 
     assert.equal(sprintCatalogValidationKey(snapshot), sprintCatalogValidationKey({ ...snapshot, sprints: [{ id: 1, name: 'ignored' }] }));
     assert.notEqual(sprintCatalogValidationKey({ sprints: [{ id: 1, name: 'Legacy' }] }), '');
     assert.equal(sprintCatalogValidationKey(null), '');
+});
+
+test('isBackendConnectionFailure classifies the config bootstrap timeout but not other aborts', () => {
+    const timeout = new Error('Config did not respond');
+    timeout.name = 'ConfigBootstrapTimeoutError';
+    assert.equal(isBackendConnectionFailure(timeout), true);
+    const supersededRead = new Error('The operation was aborted.');
+    supersededRead.name = 'AbortError';
+    assert.equal(isBackendConnectionFailure(supersededRead), false);
+    assert.equal(isBackendConnectionFailure(new TypeError('Failed to fetch')), true);
+    assert.equal(isBackendConnectionFailure(new Error('Config error 503')), false);
+    assert.equal(isBackendConnectionFailure(null), false);
 });

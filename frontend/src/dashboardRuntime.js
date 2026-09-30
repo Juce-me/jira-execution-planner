@@ -468,6 +468,7 @@ export function isActiveHomeTokenConnection(connection) {
 
 export function isBackendConnectionFailure(error) {
     if (!error || error.name === 'AbortError') return false;
+    if (error.name === 'ConfigBootstrapTimeoutError') return true;
     const message = String(error.message || error || '').toLowerCase();
     return message.includes('failed to fetch') ||
         message.includes('load failed') ||

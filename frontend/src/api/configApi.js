@@ -44,6 +44,31 @@ export const fetchAppConfig = (backendUrl, options = {}) =>
         analytics: { apiSurface: 'config_bootstrap', featureName: 'config' },
     }).then(normalizeAppConfig);
 
+// The startup config read gates all sprint discovery and ENG Jira work, so a hung response must end
+// as a retryable connection failure instead of an endless loading state.
+export const CONFIG_BOOTSTRAP_TIMEOUT_MS = 15_000;
+
+export class ConfigBootstrapTimeoutError extends Error {
+    constructor() {
+        super('The server did not answer the startup configuration request in time.');
+        this.name = 'ConfigBootstrapTimeoutError';
+    }
+}
+
+export const fetchBootstrapConfig = (backendUrl) => {
+    const controller = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+    }, CONFIG_BOOTSTRAP_TIMEOUT_MS);
+    return fetchAppConfig(backendUrl, { signal: controller.signal })
+        .catch(error => {
+            throw timedOut && error?.name === 'AbortError' ? new ConfigBootstrapTimeoutError() : error;
+        })
+        .finally(() => clearTimeout(timer));
+};
+
 export const fetchVersionInfo = (backendUrl) =>
     getJson(`${backendUrl}/api/version`, 'Version', { cache: 'no-cache' });
 

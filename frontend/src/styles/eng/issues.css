@@ -776,20 +776,20 @@
 
             .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-stat-toggle {
                 flex: 0 0 auto;
-                height: 24px;
+                height: auto;
                 margin-left: 0;
-                padding: 0 6px;
+                padding: 2px 6px;
                 gap: 4px;
                 font-family: 'IBM Plex Mono', Arial, sans-serif;
-                font-size: 14px;
+                font-size: 10px;
                 font-weight: 500;
-                line-height: 22px;
+                line-height: 14px;
                 letter-spacing: 0;
             }
 
             .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-stat-toggle svg {
-                width: 18px;
-                height: 18px;
+                width: 12px;
+                height: 12px;
             }
 
             .task-list:not(.epm-issue-board) .epic-block > .epic-header :is(button, input, a, [tabindex]):focus-visible {

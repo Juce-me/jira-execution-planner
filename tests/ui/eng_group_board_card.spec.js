@@ -748,7 +748,8 @@ test('Planning includes its capacity control in the same fitted epic headline', 
     expect(metrics.topSpread).toBeLessThanOrEqual(8);
     const togglePaint = await paintedBounds(toggle);
     expect(togglePaint.count).toBeGreaterThan(10);
-    expect(await toggle.evaluate(node => node.getBoundingClientRect().height)).toBe(24);
+    await expect(toggle).toHaveCSS('font-size', '10px');
+    expect(await toggle.evaluate(node => node.getBoundingClientRect().height)).toBeLessThan(24);
 });
 
 test('Planning renders an excluded capacity control disabled by the shared-settings gate', async ({ page }) => {

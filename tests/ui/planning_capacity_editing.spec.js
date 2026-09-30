@@ -1505,6 +1505,67 @@ test('a long synthetic capacity team label truncates only within its label slot'
     expect(labelGeometry.whiteSpace).toBe('nowrap');
 });
 
+test('a long team name in the Planned Teams Effort table is ellipsized and revealed in the shared readout', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const fixture = await openPlanning(page, { teamCount: 6, longTeamLabel: true });
+    const fullName = fixture.state.teamNames.at(-1);
+    const table = page.locator('.capacity-panel.open .capacity-grid');
+    const longCell = table.locator('.capacity-team', { hasText: fullName });
+    const shortCell = table.locator('.capacity-team', { hasText: 'Alpha' });
+    await expect(longCell).toHaveCount(1);
+    await expect(shortCell).toHaveCount(1);
+    await page.evaluate(() => document.fonts.ready);
+
+    const measure = node => {
+        const style = getComputedStyle(node);
+        const next = node.nextElementSibling.getBoundingClientRect();
+        const box = node.getBoundingClientRect();
+        return {
+            scrollWidth: node.scrollWidth,
+            clientWidth: node.clientWidth,
+            height: box.height,
+            right: box.right,
+            nextLeft: next.left,
+            textOverflow: style.textOverflow,
+            whiteSpace: style.whiteSpace,
+        };
+    };
+    const longGeometry = await longCell.evaluate(measure);
+    const shortGeometry = await shortCell.evaluate(measure);
+    expect(longGeometry.whiteSpace).toBe('nowrap');
+    expect(longGeometry.textOverflow).toBe('ellipsis');
+    expect(longGeometry.scrollWidth).toBeGreaterThan(longGeometry.clientWidth);
+    expect(longGeometry.height).toBeLessThanOrEqual(shortGeometry.height + 1);
+    expect(longGeometry.right).toBeLessThanOrEqual(longGeometry.nextLeft + 1);
+    expect(shortGeometry.scrollWidth).toBeLessThanOrEqual(shortGeometry.clientWidth);
+
+    await expect(longCell).not.toHaveAttribute('title');
+    await expect(longCell).toHaveAttribute('aria-describedby', /.+/);
+    await expect(shortCell).not.toHaveAttribute('aria-describedby');
+    await expect(shortCell).not.toHaveAttribute('tabindex');
+
+    const readout = page.locator('.epic-full-value-readout:not([hidden])');
+    await shortCell.hover();
+    await expect(readout).toHaveCount(0);
+    await longCell.hover();
+    await expect(readout).toHaveRole('tooltip');
+    await expect(readout).toHaveText(fullName);
+    const viewport = page.viewportSize();
+    const readoutBox = await readout.boundingBox();
+    expect(readoutBox.x).toBeGreaterThanOrEqual(7);
+    expect(readoutBox.y).toBeGreaterThanOrEqual(7);
+    expect(readoutBox.x + readoutBox.width).toBeLessThanOrEqual(viewport.width - 7);
+    expect(readoutBox.y + readoutBox.height).toBeLessThanOrEqual(viewport.height - 7);
+    await page.keyboard.press('Escape');
+    await expect(readout).toHaveCount(0);
+
+    await page.mouse.move(1, 1);
+    await longCell.focus();
+    await expect(readout).toHaveText(fullName);
+    await page.keyboard.press('Escape');
+    await expect(readout).toHaveCount(0);
+});
+
 for (const teamCount of [1, 6, 7]) {
     test(`capacity cards keep labels and action rails inside ${teamCount}-team grid cells`, async ({ page }, testInfo) => {
         await page.setViewportSize({ width: 1440, height: 900 });

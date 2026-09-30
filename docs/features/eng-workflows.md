@@ -65,7 +65,7 @@ When capacity is enabled, the app reads capacity from the Jira project and field
 - Those selection controls recalculate selected count, selected SP, the per-team allocation, and the Product/Tech split. They do not change Jira Status.
 - A Story or Epic's displayed Status pill is a different control. Choosing a transition there performs a permission-gated Jira workflow transition and reports success or failure. In Planning, a Story's pill applies the transition to every selected Story in one request (up to 50); an Epic's or Subtask's pill changes only that issue.
 
-The top bar compares the selected task count and SP with **Planning** capacity and **Team Cap**. Its over/under state shows whether selected SP is above or below the capacity signal. The breakdowns are labelled **Selected SP by Team** and **Selected SP by Project**. The capacity table is **Planned Teams Effort (Story Points)** and uses Product, Tech, and Total columns with **To Do / Pending**, **Postponed**, and **Accepted** values.
+The top bar compares the selected task count and SP with **Planning** capacity and **Team Cap**. Its over/under state shows whether selected SP is above or below the capacity signal. The breakdowns are labelled **Selected SP by Team** and **Selected SP by Project**. The capacity table is **Planned Teams Effort (Story Points)** and uses Product, Tech, and Total columns with **To Do / Pending**, **Postponed**, and **Accepted** values. A Team name too long for its column is shown on one line with an ellipsis; hovering or keyboard-focusing it shows the full name in the same readout used for truncated Epic header values.
 
 ## Board (Kanban)
 

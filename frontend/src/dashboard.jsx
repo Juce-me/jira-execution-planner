@@ -15213,7 +15213,11 @@ import {
                                     </div>
                                     {displayedTeamCapacityEntries.map((info) => (
                                         <div key={info.id} className="capacity-row capacity-divider">
-                                            <div className="capacity-cell capacity-team">{info.name}</div>
+                                            <EpicHeaderValueReadout value={info.name}>
+                                                {({ discoveryProps }) => (
+                                                    <div {...discoveryProps} className="capacity-cell capacity-team epic-full-value-trigger">{info.name}</div>
+                                                )}
+                                            </EpicHeaderValueReadout>
                                             <div className="capacity-cell metric product-col">
                                                 <div className="postponed-cell">
                                                     <span className={getMetricClass(info.product.todoPending, 'todo', info.product.accepted)}>

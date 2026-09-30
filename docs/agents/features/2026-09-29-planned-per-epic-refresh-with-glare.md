@@ -20,6 +20,7 @@ Decided with the requester:
 - Accepted limitation: a story moved out of this epic shows up in its new epic only after that epic, or a department-wide Refresh, is refreshed.
 - Per-epic refresh does not run the empty-epic scan; `jira_server.py` and its tests are in scope.
 - Future-sprint Planning auto-selects newly arrived stories (the existing default-all behavior).
+- Inline status and priority edits must not reload the whole department either (requested 2026-09-30): a priority change re-checks no alerts, a status change re-checks only its epic's alerts (section 3.6b, Task 13b). Assignee and Story Points inline edits and the server-side cache wipe are left as they are for now.
 - Degraded-state dot, idle cutoff and feed decisions from the automatic-update designs no longer apply.
 
 Open decisions are in section 7.
@@ -133,6 +134,12 @@ Slice C: `epicKeys` on `/api/missing-info` (AND `issueKey in` into the epic quer
 All alert merges check `catchUpAlertVersionRef` captured at click and are discarded if a department reload started; a wholesale reload is authoritative.
 Worst case for a status or membership change is roughly 25+N searches (N is the readiness child-batch count) and several seconds; a click with no displayed change, or only assignee, summary, priority, `updated` or Story Points changes, needs no alert calls. Counts come from reading the code, not measuring.
 
+### 3.6b Inline status and priority edits
+
+Verified 2026-09-30: after a successful inline status or priority change (story or epic, single or bulk), `useEngStatusTransitions` and `useEngPriorityTransitions` call `onAlertDataInvalidated`, wired to `rearmCatchUpAlerts` (`dashboard.jsx`). That reloads the alerts for both lanes with the complete epic scan, plus missing-info, ready-to-close and backlog for the whole department, and blanks the Stories Required ghost rows. Assignee and Story Points edits do the same through `invalidateEngIssueFieldSources`. No alert rule depends on priority, so a priority reload is pure waste.
+
+Change (Task 13b): the two hooks pass the succeeded keys; priority triggers no alert request; status re-checks only the edited story's epic (or the epic itself) through the same epic-scoped calls as the refresh, selected by `alertCallsForEdit`, and waits for an in-flight alert cohort to settle so a stale cohort result is corrected, not clobbered. Catch Up only. The source guard's `onAlertDataInvalidated: rearmCatchUpAlerts` count goes from 2 to 0 in that task; `docs/features/alerts.md` line 12 is updated. Not changed: assignee and Story Points edits, Project Track, the global Refresh, and the server-side `clear_jira_issue_status_caches` process-wide wipe after status, priority and Project Track changes (a follow-up candidate: targeted eviction).
+
 ### 3.7 Glare
 
 - Trigger: cards (and the epic header) whose displayed fields changed and that are mounted and inside the viewport below the sticky stack (exclude the area under `epicStickyTop` and the Planning panel); at most 8 per refresh. Never for the user's own edits, the global Refresh or the initial load. Cards the user edited in the last 10 s do not glint.
@@ -175,9 +182,10 @@ Execution is by subagents in the current tree (the repo forbids secondary worktr
 | 3, parallel | alerts A (frontend); B backend (`epic_keys` on `fetch_epics_for_empty_alert`, `epic-alerts` purpose, tests, second ratchet); C backend (`eng_routes.py`, `story_readiness.py`, tests) | as named | 10-14 days |
 | 4, sequential | B frontend then C frontend (`useEngSprintData.js`, `useStoryReadiness.js`, `engApi.js`, `dashboard.jsx`) | as named | 8-11 days |
 | 5 | Planning enablement: capacity signature guard, selection-effect tests, Planning header geometry | `dashboard.jsx` M, specs | 3-5 days |
+| 5b | Inline status and priority edits re-check only their epic (Task 13b) | `dashboard.jsx` M, the two transition hooks M, alert helpers, guard test, spec | 4-6 days |
 | Final | docs (`docs/ontology.md`, `README.md`, `docs/features/eng-workflows.md`, `docs/features/alerts.md`, `docs/README_ANALYTICS.md`), one `frontend/dist` build and commit, whole-branch review, publication transaction | docs, dist | 3-4 days |
 
-Total roughly 40-57 working days (8-11 weeks) for one engineer (estimates re-checked after the plan review). With subagents running disjoint tasks in parallel the calendar time shrinks, but review and Playwright cycles dominate. Each wave is releasable on its own: core refresh (waves 1-2), then A, B, C, then Planning. These are my estimates, not measured.
+Total roughly 44-63 working days (9-12 weeks) for one engineer (estimates re-checked after the plan review). With subagents running disjoint tasks in parallel the calendar time shrinks, but review and Playwright cycles dominate. Each wave is releasable on its own: core refresh (waves 1-2), then A, B, C, then Planning. These are my estimates, not measured.
 
 ## 6. Contract
 
@@ -185,7 +193,7 @@ Forbidden regressions:
 - No change to the global Refresh button, browser reload, initial-load requests, auth behavior or the 401 terminal lock.
 - No whole-screen loading state and no `loading`, `productTasksLoading` or `techTasksLoading` flip from a per-epic refresh.
 - No department-wide request after a click: every request after a click carries `epicKeys=<key>` (or is on an explicit allowlist, such as the epic's own dependency keys).
-- No `rearmCatchUpAlerts` call from the refresh, and the exact-count source guard still passes.
+- No `rearmCatchUpAlerts` call from the refresh; the source guard's `rearmCatchUpAlerts();` count stays 3, and its `onAlertDataInvalidated: rearmCatchUpAlerts` count goes from 2 to 0 only in Task 13b.
 - No layout change in the epic header on hover, no change to its one-row desktop layout or the shared `.task-status` presentation, no change to sticky layering; the assignee, Story Points, status and Jira-link targets stay clickable.
 - No resurrected removed cards; no overwritten pending or just-confirmed edits; no removal inferred from a capped, denied or failed lane.
 - No background requests; nothing persisted.

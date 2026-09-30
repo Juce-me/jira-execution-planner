@@ -22,7 +22,7 @@ Every task's requirements include this section. Values are copied from the appro
 - No whole-screen loading state; no flip of `loading`, `productTasksLoading` or `techTasksLoading`. A refresh that fails with an HTTP response (any `err.status`) never calls the global connection-failure handler; only a real network outage does (R1).
 - No wipes: values are replaced in place. A card that enters uses `task-appear` then glints; a card that leaves stays rendered until the dissolve finishes (exactly `is-removing`, `task-remove-dissolve`, 0.24 s) and is then dropped (R1).
 - Glare (specimen variant A): amber edge, 1800 ms, peak opacity 0.5 (`--glare-peak`, 0.8 on killed and incomplete cards), ring 1.5 px, beam width 22, sweep down the page (`delay = 0.4 ms per px below the sticky stack`); under reduced motion a static border tint for at least 900 ms, for the card ring **and** the header sweep (R1). Skipped on `is-dimmed` cards. Cap 8 cards, mounted and in viewport only, never for the user's own edits (last 10 s), the global Refresh or the initial load. Mechanism: the `data-glare` attribute (React owns `className`), a `::before` ring on `.task-item` (`::after` is taken), no `overflow:hidden`.
-- No `rearmCatchUpAlerts`, `loadGroupTasks` or `applyLocalEngIssueField` in any refresh code path. `tests/test_dashboard_alert_source_guards.js` pins the exact count of `rearmCatchUpAlerts` call sites and regexes that slice the dependencies effect and the alert cohort statements; it must stay green without edits to the guard.
+- No `rearmCatchUpAlerts`, `loadGroupTasks` or `applyLocalEngIssueField` in any refresh code path. `tests/test_dashboard_alert_source_guards.js` pins the exact count of `rearmCatchUpAlerts` call sites and regexes that slice the dependencies effect and the alert cohort statements; it must stay green without edits to the guard, with one exception: Task 13b deliberately lowers the `onAlertDataInvalidated: rearmCatchUpAlerts` count from 2 to 0 in the same commit as the code change (the `rearmCatchUpAlerts();` count stays 3).
 - Failure copy is fixed text; never show `details`, `jql_used` or `err.message`.
 - Every request after a click carries `epicKeys=<that key>` (or is on the explicit allowlist: `POST /api/dependencies` with that epic's story keys, and subtask reloads for that epic's open panels).
 - Credential policy: Jira reads use only the signed-in user's OAuth context (local Basic identity only in local mode); no Jira writes, no service-account or API-token credentials, no Home/Townsquare calls in any refresh path; negative tests patch the named write and credential symbols to raise (R1).
@@ -38,7 +38,7 @@ Every task's requirements include this section. Values are copied from the appro
 - The session already runs in a worktree; do not create another (repo rule). Parallel tasks in the same wave run in this one tree on **disjoint files** (see the Touch Matrix) and only one task builds `frontend/dist` at a time.
 - Subagents do **not** commit. After a task's spec-compliance review and code-quality review both pass and the orchestrator has re-run the task's verification itself, the orchestrator stages only that task's files and commits, then reads `git show --stat HEAD` and `git status` (Gate A) before the next commit.
 - Every subagent prompt includes: the task text; the Global Constraints; the named "Read first" ranges; the exact files it may touch; the verification commands; the instruction to read the AGENTS.md chain (root `AGENTS.md`, `docs/AGENTS.md`, `docs/plans/AGENTS.md`) and the relevant `docs/ontology.md` entries before editing; the postmortems to honor (MRT009 sticky layering, MRT016 causal order and named files, MRT019 no removals from partial fetches, MRT020 and MRT021 control reuse and explicit constraints, MRT023 alert gating, MRT025 publication, MRT028 header constraints, MRT029 alert reuse, MRT031 GET size); and "no attribution trailers, no push".
-- Waves: T0 inline; Wave 1 = T1, T2, T3, T4 in parallel; Wave 2 = T5, T6a, T6b, T7 sequentially; Wave 3 = T8 in parallel with T9, then T10 after T9; Wave 4 = T11 then T12; Wave 5 = T13; Final = T14. A failing review sends the task back to a fresh subagent with the reviewer's findings.
+- Waves: T0 inline; Wave 1 = T1, T2, T3, T4 in parallel; Wave 2 = T5, T6a, T6b, T7 sequentially; Wave 3 = T8 in parallel with T9, then T10 after T9; Wave 4 = T11 then T12; Wave 5 = T13 then T13b; Final = T14. A failing review sends the task back to a fresh subagent with the reviewer's findings.
 - After two failed attempts on the same task, stop and ask the user (AGENTS.md).
 - Line numbers in "Read first" are approximate (tree at `3622ba22`); locate by symbol. Prefer the symbol.
 
@@ -87,7 +87,7 @@ Frontend pure modules:
 - `frontend/src/eng/epicRefreshController.js` (Task 5): `EPIC_REFRESH`, `EPIC_REFRESH_RESULT`, `createEpicRefreshController(deps) -> { refresh(epicKey) }` where `deps.apply(update)` returns a promise of `{ hiddenCount }` and `update = { epicKey, changedKeys, silentKeys, addedKeys, removedKeys, changedFieldsByKey, fetchedStories, mergeInputs, epicDetailsPatch, epicChanged, epicSilent }`.
 - `frontend/src/eng/epicRefreshAlerts.js` (Tasks 8, 11, 12): `recomputeMissingPlanningInfo`, `shouldHideReadinessGhost`, `mergeEpicScopeEntries`, `mergeReadinessEpic`, `alertCallsFor`.
 
-Frontend components and hooks: `frontend/src/ui/LoadingMark.jsx` (default export `LoadingMark({ size='xs', className='' })`), `frontend/src/ui/EpicRefreshButton.jsx` (default export `EpicRefreshButton({ epicKey, epicName, state, onRefresh, errorLabel })`), `frontend/src/issues/IssueCard.jsx` (exports `REMOVE_FADE_MS`; new prop `isLeaving`), `frontend/src/eng/useEpicRefresh.js` (returns `{ epicStates, leavingKeys, announcement, announcementId, refreshEpic }`).
+Frontend components and hooks: `frontend/src/ui/LoadingMark.jsx` (default export `LoadingMark({ size='xs', className='' })`), `frontend/src/ui/EpicRefreshButton.jsx` (default export `EpicRefreshButton({ epicKey, epicName, state, onRefresh, errorLabel })`), `frontend/src/issues/IssueCard.jsx` (exports `REMOVE_FADE_MS`; new prop `isLeaving`), `frontend/src/eng/useEpicRefresh.js` (returns `{ epicStates, leavingKeys, announcement, announcementId, refreshEpic, recheckEpicAlerts, recheckAlertsForEdit }`; Tasks 11 and 12 add `recheckEpicAlerts(epicKey, calls)`, Task 13b adds `recheckAlertsForEdit({ keys, field })`).
 
 Loader (Task 5): `useEngSprintData` returns `loadEpicRefresh({ epicKey, shouldApplyResult, signal }) -> Promise<{ product: Lane, tech: Lane }>` with `Lane = { status: 'ok'|'denied'|'failed'|'rate_limited'|'auth_required'|'ignored', items?: issue[], meta?: { epics, capped, epicKeysMissing } }`. `ENG_TASK_LOAD_OUTCOME` gains `LANE_DENIED: 'lane_denied'` and `RATE_LIMITED: 'rate_limited'`.
 
@@ -96,15 +96,15 @@ Analytics (Task 4): event `epic_refresh_action`; `buildEpicRefreshAnalyticsParam
 ## File Map
 
 Create: `backend/services/epic_refresh.py`, `tests/test_epic_refresh_service.py`, `tests/test_epic_refresh_purpose.py`, `frontend/src/eng/epicRefreshPatch.js`, `frontend/src/eng/epicRefreshGlare.js`, `frontend/src/eng/epicRefreshController.js`, `frontend/src/eng/epicRefreshAlerts.js`, `frontend/src/eng/useEpicRefresh.js`, `frontend/src/ui/LoadingMark.jsx`, `frontend/src/ui/EpicRefreshButton.jsx`, `tests/test_epic_refresh_patch.js`, `tests/test_epic_refresh_glare.js`, `tests/test_epic_refresh_controller.js`, `tests/test_epic_refresh_alerts.js`, `tests/test_epic_refresh_source_guards.js`, `tests/ui/eng_epic_refresh.spec.js`.
-Modify: `jira_server.py`, `backend/routes/eng_routes.py`, `tests/test_codebase_structure_budgets.py` (orchestrator only), `frontend/src/eng/useEngSprintData.js`, `frontend/src/eng/useStoryReadiness.js` (Task 12), `frontend/src/eng/engWorkHierarchy.js` (Tasks 8 and 12, ghost rows), `frontend/src/issues/useStorySubtasks.js`, `frontend/src/api/engApi.js`, `frontend/src/issues/IssueCard.jsx`, `frontend/src/dashboard.jsx`, `frontend/src/styles/eng/{epics,issues,loading}.css`, `frontend/src/analytics/{events,analytics,dashboardAnalytics}.js`, `tests/test_analytics_events.js`, `tests/test_analytics_source_guards.js`, `tests/test_story_subtasks.js`, `tests/test_create_stories_alert.py`, `tests/test_oauth_eng_routes.py`, `tests/test_story_readiness.py`, `tests/test_oauth_cache_isolation.py`, `tests/test_story_readiness_api.js`, `docs/README_ANALYTICS.md`, `docs/plans/SUPPORT-ga4-user-configuration.md`, `docs/plans/SUPPORT-ga4-gtm-mcp-execution.yaml`, `docs/plans/GATE-05-*.md` (date and result fields only, Task 0), `docs/ontology.md`, `docs/features/eng-workflows.md`, `docs/features/alerts.md`, `README.md`, `docs/plans/README.md`, the design artifact (rename at the end), this plan.
+Modify: `jira_server.py`, `backend/routes/eng_routes.py`, `tests/test_codebase_structure_budgets.py` (orchestrator only), `frontend/src/eng/useEngSprintData.js`, `frontend/src/eng/useStoryReadiness.js` (Task 12), `frontend/src/eng/engWorkHierarchy.js` (Tasks 8 and 12, ghost rows), `frontend/src/issues/useStorySubtasks.js`, `frontend/src/api/engApi.js`, `frontend/src/issues/IssueCard.jsx`, `frontend/src/dashboard.jsx`, `frontend/src/styles/eng/{epics,issues,loading}.css`, `frontend/src/analytics/{events,analytics,dashboardAnalytics}.js`, `tests/test_analytics_events.js`, `tests/test_analytics_source_guards.js`, `tests/test_story_subtasks.js`, `tests/test_create_stories_alert.py`, `tests/test_oauth_eng_routes.py`, `tests/test_story_readiness.py`, `tests/test_oauth_cache_isolation.py`, `tests/test_story_readiness_api.js`, `tests/test_dashboard_alert_source_guards.js` (Task 13b, deliberate count change), `frontend/src/eng/useEngStatusTransitions.js` and `frontend/src/eng/useEngPriorityTransitions.js` (Task 13b, pass the affected keys), `docs/README_ANALYTICS.md`, `docs/plans/SUPPORT-ga4-user-configuration.md`, `docs/plans/SUPPORT-ga4-gtm-mcp-execution.yaml`, `docs/plans/GATE-05-*.md` (date and result fields only, Task 0), `docs/ontology.md`, `docs/features/eng-workflows.md`, `docs/features/alerts.md`, `README.md`, `docs/plans/README.md`, the design artifact (rename at the end), this plan.
 Generate only with `npm run build` (Task 14): `frontend/dist/dashboard.js`, `frontend/dist/dashboard.js.map`, `frontend/dist/dashboard.css`.
 
 ## Touch Matrix (hot files; same-wave overlaps are forbidden)
 
 | File | Tasks, in order |
 |---|---|
-| `frontend/src/dashboard.jsx` | T6a, T6b, T8, T11, T12, T13 (never two in one wave) |
-| `frontend/src/eng/useEpicRefresh.js` | T5, T6b, T8, T11, T12 |
+| `frontend/src/dashboard.jsx` | T6a, T6b, T8, T11, T12, T13, T13b (never two in one wave) |
+| `frontend/src/eng/useEpicRefresh.js` | T5, T6b, T8, T11, T12, T13b |
 | `frontend/src/api/engApi.js` | T4, T6b, T11, T12 |
 | `frontend/src/eng/useEngSprintData.js` | T5, T11, T12 |
 | `frontend/src/styles/eng/epics.css` | T3, T6a |
@@ -2506,7 +2506,7 @@ make test-security 2>&1 | tail -4
 
 - [ ] **Step 1: Failing tests** in `tests/test_epic_refresh_alerts.js`: a pure `mergeEpicScopeEntries({ held, incoming, epicKey })` that replaces or deletes the epic-shaped entry for `epicKey` by key (status `{name}`), keeping other epics and the array identity when nothing changes; and `alertCallsFor(update, { isFutureSprint, isCatchUp })` returning the epic-scoped calls per the design's trigger matrix: Story Points only or assignee, summary, priority, `updated` only gives none; a story status change gives `readyToClose` and `epicAlerts`; a story added, removed or moved sprint gives every epic-level call; a story team change gives `missingInfo` and `readiness`; an epic status, assignee or `epicSilent` change gives `epicAlerts`; a future sprint always includes `epicAlerts`; Planning (`isCatchUp` false) gives none.
 - [ ] **Step 2: Implement** both in `epicRefreshAlerts.js`; add `fetchEpicAlertBundle` and `fetchEpicReadyToClose` to `engApi.js` (both use `trackedFetch('epic_refresh', ...)`, `purpose=epic-alerts` and `purpose=ready-to-close&epicKeys=<key>&sprint=`, with the epic's project lane); add per-epic loaders in `useEngSprintData.js` that return data without applying it (read token finished on every path).
-- [ ] **Step 3: Wire** the calls after a successful `apply` in `useEpicRefresh.js` `afterApply`, only when `alertCallsFor` says so. **Call both lanes** (the owning lane cannot be determined for a zero-story epic or an epic with children in both lanes) and merge each lane's result into that lane's `*EpicsInScope` and `readyToClose*EpicsInScope` / `readyToClose*Tasks` by upsert or delete. Capture `getAlertVersion()` at click and discard alert results if it changed.
+- [ ] **Step 3: Wire** the calls after a successful `apply` in `useEpicRefresh.js` `afterApply`, only when `alertCallsFor` says so. Implement them as one function `recheckEpicAlerts(epicKey, calls)` inside the hook (both lanes, per-lane merge, `getAlertVersion()` discard) that `afterApply` invokes and that the hook also returns, because Task 13b reuses it for inline edits. **Call both lanes** (the owning lane cannot be determined for a zero-story epic or an epic with children in both lanes) and merge each lane's result into that lane's `*EpicsInScope` and `readyToClose*EpicsInScope` / `readyToClose*Tasks` by upsert or delete. Capture `getAlertVersion()` at click and discard alert results if it changed.
 - [ ] **Step 4: Playwright:** a status change makes exactly the ready-to-close and epic-alerts calls for that epic only (both lanes); no other alert call; a refresh with no displayed change makes none; a department reload mid-refresh discards the alert result; an epic that leaves scope disappears from the Empty Epic alert; a future-sprint label-only epic stays; a failed epic-alerts call keeps the existing alerts and raises no banner.
 - [ ] **Step 5: Verify**
 
@@ -2527,7 +2527,7 @@ wc -l frontend/src/dashboard.jsx
 **Read first:** `useStoryReadiness.js` (whole file: state machine, `refreshRevision`, `snapshot:null` while loading), `engApi.js` `fetchStoryReadiness`, `tests/test_story_readiness_api.js`, the ghost-row rendering in `engWorkHierarchy.js` (~237-283).
 
 - [ ] **Step 1: Failing tests:** `mergeReadinessEpic({ snapshot, epicPayload, epicKey })` (upsert and delete by epic key in `snapshot.epics[]`, preserving other epics and identity when equal; stale readiness assignee, track or initiative never shadows cleared `epicDetails` fields); merges for the missing-info and backlog lists keyed by `fields.epicKey` and epic key; `alertCallsFor` extended: `missingInfo` when a story is added, removed or moved sprint, or its **team** changes (**not** for a Story Points change alone: that case is handled client-side in Task 8); `backlog` only in a future sprint; `readiness` on a status, membership or team change.
-- [ ] **Step 2: Implement:** a separate `fetchEpicReadiness` in `engApi.js` (the department request is untouched), `fetchEpicMissingInfo`, `fetchEpicBacklog`; add `mergeEpic(epicKey, payload)` to `useStoryReadiness` that updates the snapshot **without** the `snapshot:null` blanking; wire the conditional calls in `afterApply` after the Task 11 calls.
+- [ ] **Step 2: Implement:** a separate `fetchEpicReadiness` in `engApi.js` (the department request is untouched), `fetchEpicMissingInfo`, `fetchEpicBacklog`; add `mergeEpic(epicKey, payload)` to `useStoryReadiness` that updates the snapshot **without** the `snapshot:null` blanking; add the missing-info, backlog and readiness calls to the same `recheckEpicAlerts(epicKey, calls)` runner so `afterApply` and Task 13b both get them.
 - [ ] **Step 3: Playwright:** after a membership change, the Stories Required ghost for that epic updates with no department-wide readiness request and no blanking of other epics' ghosts; missing-info and backlog calls are epic-scoped and only when the matrix says so; a failed per-epic readiness call leaves the existing ghosts and raises no banner.
 - [ ] **Step 4: Verify**
 
@@ -2561,11 +2561,65 @@ Expected: new tests pass; `planning_selection_defaults` shows only its known bas
 
 ---
 
+## Task 13b: Inline status and priority edits re-check only their epic
+
+Added 2026-09-30 at the requester's request ("do not refresh all the data when the priority or status of an epic or story changes in the UI"). Not covered by the first plan review; review it like any other task.
+
+**Files:**
+- Modify: `frontend/src/dashboard.jsx` (the two `onAlertDataInvalidated: rearmCatchUpAlerts` sites), `frontend/src/eng/useEngStatusTransitions.js`, `frontend/src/eng/useEngPriorityTransitions.js`, `frontend/src/eng/epicRefreshAlerts.js`, `frontend/src/eng/useEpicRefresh.js`, `tests/test_dashboard_alert_source_guards.js`, `tests/test_epic_refresh_alerts.js`, `tests/ui/eng_epic_refresh.spec.js`
+
+**Interfaces:**
+- Consumes: Tasks 8, 11 and 12 (`alertCallsFor`, `recheckEpicAlerts(epicKey, calls)`, the epic-scoped loaders and merges).
+- Produces: `alertCallsForEdit({ field, isFutureSprint, isCatchUp })` and `recheckAlertsForEdit({ keys, field })` (returned by `useEpicRefresh`).
+
+**Read first:** `dashboard.jsx` `rearmCatchUpAlerts` (~1141), `invalidateEngIssueFieldSources` and `applyLocalEngIssueField` (~12553-12570), the status and priority hook wiring (~12575-12615: `onAlertDataInvalidated: rearmCatchUpAlerts` at two sites), `useEngStatusTransitions.js` (~349, where `succeededKeys` is in scope: `if (isCurrentMutation) onAlertDataInvalidated?.();`), `useEngPriorityTransitions.js` (~216: `if (summary.succeeded > 0 && isCurrentMutation) onAlertDataInvalidated?.();`; read `summarizePriorityTransitionResults` for how success is marked), `tests/test_dashboard_alert_source_guards.js:144-145`, `docs/features/alerts.md` (lines 11-12), postmortem MRT023.
+
+**What happens today (verified 2026-09-30):** after a successful status change or priority change (story or epic, single or bulk) the hooks call `onAlertDataInvalidated`, which is `rearmCatchUpAlerts`: it reloads the alerts for **both lanes with the complete epic scan**, missing-info, ready-to-close and backlog for the whole department, and blanks the Stories Required ghost rows through the readiness `refreshRevision`. Assignee and Story Points edits do the same through `rearmCatchUpAlerts()` inside `invalidateEngIssueFieldSources`. No alert rule depends on priority (priority only filters the visible Story set on the client), so a priority reload is pure waste.
+
+**Behavior:**
+- Priority change (story or epic): no alert request at all.
+- Status change (story or epic): no `rearmCatchUpAlerts`. The local patch (`applyLocalEngIssueField`) already updates the client-derived alerts; the server-backed alerts for **that story's epic only** (the epic itself when an epic changed) are re-checked through the Task 11 and 12 epic-scoped calls, selected by `alertCallsForEdit`.
+- If an alert cohort is in flight (`alertCohortRef.current !== null`) when the edit succeeds, run the scoped re-check after the cohort settles, so a stale cohort result is corrected instead of clobbering the re-check.
+- Catch Up only: Planning issues no alert requests (MRT023 mode-negative).
+- Left as they are on purpose (listed as follow-ups in the Outcome): assignee and Story Points inline edits (their `rearmCatchUpAlerts()` calls), Project Track (no rearm today), the global Refresh, and the server-side `clear_jira_issue_status_caches` call that wipes the process-wide caches after every status, priority and Project Track change.
+
+- [ ] **Step 1: Failing tests**
+  - In `tests/test_epic_refresh_alerts.js`: `alertCallsForEdit({ field: 'priority', ... })` returns `[]`; `field: 'status'` returns `['readyToClose', 'epicAlerts', 'readiness']` and adds `'backlog'` in a future sprint; any other field returns `[]`; `isCatchUp: false` returns `[]`.
+  - In `tests/test_dashboard_alert_source_guards.js`: the `rearmCatchUpAlerts();` count stays 3 (assignee, Story Points, global Refresh); the `onAlertDataInvalidated: rearmCatchUpAlerts` count goes from 2 to 0 and `recheckAlertsForEdit` appears at both hook wirings; the dependencies-effect and cohort regex slices are byte-identical.
+  - Playwright (extend the spec): a story status change issues **no** request with `purpose=alerts`, no `/api/missing-info` or `/api/backlog-epics` without `epicKeys`, and no `/api/eng/story-readiness` without `epicKeys`; it issues only epic-scoped calls carrying that story's epic key; a priority change on a story and on an epic issues **zero** alert requests and does not blank the Stories Required ghost rows; an epic status change re-checks that epic only; a status change while an alert cohort is in flight re-checks after the cohort settles; in Planning a status change issues zero alert requests; a bulk status change on stories of two epics re-checks both epics once each.
+
+```bash
+fnm exec --using 20 node --test tests/test_epic_refresh_alerts.js tests/test_dashboard_alert_source_guards.js
+```
+  Expected: FAIL.
+
+- [ ] **Step 2: Implement**
+  - `epicRefreshAlerts.js`: add `alertCallsForEdit` (pure, following the tests).
+  - `useEngStatusTransitions.js` and `useEngPriorityTransitions.js`: call `onAlertDataInvalidated?.({ keys })` with the succeeded keys (`succeededKeys` in the status hook; the keys whose result succeeded in the priority hook). Keep the call inside the existing `isCurrentMutation` conditions; change nothing else in the hooks. Run `rg -n onAlertDataInvalidated tests` and update only the assertions that pin the call arguments (they currently expect no arguments).
+  - `useEpicRefresh.js`: add `recheckAlertsForEdit({ keys, field })`: map each key to its epic (the story's `fields.epicKey` from the held lists, or the key itself when it is an epic in `epicDetails`), de-duplicate epics, defer behind the alert cohort when one is in flight, then call `recheckEpicAlerts(epicKey, alertCallsForEdit({ field, isFutureSprint, isCatchUp }))` for each; return immediately for priority.
+  - `dashboard.jsx`: replace the two `onAlertDataInvalidated: rearmCatchUpAlerts,` lines with `onAlertDataInvalidated: ({ keys } = {}) => epicRefresh.recheckAlertsForEdit({ keys, field: 'status' }),` and `field: 'priority'` respectively. The status and priority hooks are declared before the `epicRefresh` hook call (which sits after the `longAbsenceRefreshRef` effect); the arrow functions only run after a mutation completes, long after render, so `epicRefresh` is initialized by then and no ref is needed. Confirm with the spec (a read before initialization would throw a `ReferenceError`).
+  - Update `tests/test_dashboard_alert_source_guards.js` exactly as in Step 1 and nothing else.
+
+- [ ] **Step 3: Verify**
+
+```bash
+fnm exec --using 20 node --test tests/test_epic_refresh_alerts.js tests/test_dashboard_alert_source_guards.js tests/test_epic_refresh_source_guards.js tests/test_eng_status_transition_utils.js
+fnm exec --using 20 npm run test:frontend:unit 2>&1 | tail -8
+fnm exec --using 20 npm run build && fnm exec --using 20 npx playwright test tests/ui/eng_epic_refresh.spec.js tests/ui/eng_status_transitions.spec.js tests/ui/eng_priority_transitions.spec.js tests/ui/eng_alert_loading_order.spec.js tests/ui/eng_alerts_panel_summary.spec.js tests/ui/eng_missing_story_ghosts.spec.js --workers=1 --reporter=line
+git checkout -- frontend/dist && git status --short frontend/dist
+wc -l frontend/src/dashboard.jsx
+```
+  Expected: pass; `eng_priority_transitions` shows only its known baseline failure (#210). Report the `dashboard.jsx` line count for the orchestrator's ratchet.
+
+- [ ] **Step 4: Report for commit.** Files: the eight listed. Message: `Re-check only the edited epic after inline status and priority edits`.
+
+---
+
 ## Task 14: Docs, final verification, dist and publication prep (orchestrator, inline)
 
 **Files:** Modify `docs/ontology.md`, `README.md`, `docs/features/eng-workflows.md`, `docs/features/alerts.md`, `docs/README_ANALYTICS.md` (confirm Task 4), `docs/plans/README.md`, this plan, the design artifact; generate `frontend/dist/*`.
 
-- [ ] **Step 1: Docs.** Consult `docs/ontology.md` first, then add an `Epic refresh` entry (concept, canonical name, aliases `per-epic refresh`, entry points `epicRefreshController.js`, `epicRefreshPatch.js`, `epicRefreshAlerts.js`, `useEpicRefresh.js`, `EpicRefreshButton.jsx`, `purpose=epic-refresh` and `purpose=epic-alerts` in `fetch_tasks`, relations to the Catch Up hierarchy, Alert Epic candidate and Story-readiness snapshot, verification date 2026-09-30) and check every path and symbol resolves with `rg`. Update `docs/features/alerts.md` (the statement near line 12 that task refreshes invalidate alert cohorts gets the per-epic exception), `docs/features/eng-workflows.md` (refresh semantics, the moved-story limitation, the button), and `README.md` near the refresh description (~355). Re-read each section against the shipped behavior. Record the placement decision and the `hasTouch` hover-emulation note in the design artifact.
+- [ ] **Step 1: Docs.** Consult `docs/ontology.md` first, then add an `Epic refresh` entry (concept, canonical name, aliases `per-epic refresh`, entry points `epicRefreshController.js`, `epicRefreshPatch.js`, `epicRefreshAlerts.js`, `useEpicRefresh.js`, `EpicRefreshButton.jsx`, `purpose=epic-refresh` and `purpose=epic-alerts` in `fetch_tasks`, relations to the Catch Up hierarchy, Alert Epic candidate and Story-readiness snapshot, verification date 2026-09-30) and check every path and symbol resolves with `rg`. Update `docs/features/alerts.md` (the statement near line 12 that task refreshes and status or priority changes invalidate any pending alert cohort becomes: a refresh and a status change re-check only that epic's alerts, a priority change re-checks none; Task 13b), `docs/features/eng-workflows.md` (refresh semantics, the moved-story limitation, the button), and `README.md` near the refresh description (~355). Re-read each section against the shipped behavior. Record the placement decision and the `hasTouch` hover-emulation note in the design artifact.
 - [ ] **Step 2: Build and commit dist once, then verify at that head**
 
 ```bash
@@ -2607,7 +2661,7 @@ Compare with the Baseline table: no new failures (only the issue #210 failures m
 - Endpoint matrix (3.2) and state machine: the matrices above; Tasks 1, 9, 10.
 - Backend (3.3): Task 1 (validation, meta, cache skip and evict with tests that catch removal of either, limiter per lane and purpose, inline, budget, breaker checkpoint).
 - Frontend data flow (3.4), diff and merge (3.5): Tasks 2, 5, 6b (functional updaters, per lane, capped, snapshot incl. the epic header, protected, removed-by-user, moved story, re-sort, anchor, focus move, copies patched).
-- Alerts (3.6): Tasks 8 through 12.
+- Alerts (3.6): Tasks 8 through 12; inline status and priority edits no longer reload the department (3.6b): Task 13b.
 - Glare (3.7): Task 3 (CSS, helper, `data-glare`, header sweep incl. reduced motion, killed and incomplete peak, `isLeaving`), Task 5 (selection, delay, dimmed skip), Task 7 (frozen-frame screenshot).
 - Persistence and ordering (3.8): no storage anywhere (source guard in Task 5); anchoring asserted in Task 7 test 24.
 - Analytics (3.9): Task 4.

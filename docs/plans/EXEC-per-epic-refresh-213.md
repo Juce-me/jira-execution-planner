@@ -118,7 +118,7 @@ Generate only with `npm run build` (Task 14): `frontend/dist/dashboard.js`, `fro
 
 ## Task 0: Setup and baseline (inline, no reviewer pair)
 
-**Files:** Modify `docs/plans/README.md` (already indexed), `docs/plans/GATE-05-*.md` (date and result fields only), this plan (baseline table). No source changes.
+**Files:** Modify `docs/plans/README.md` (already indexed), `docs/plans/GATE-05-*.md` (date and result fields only), `docs/ontology.md` (only if Step 4b finds drift), this plan (baseline table). No source changes.
 
 - [x] **Step 1: Issue, branch, design and plan commit (already done)**
 
@@ -157,6 +157,15 @@ Expected: Python 3.10 or newer linked to OpenSSL 1.1.1 or newer (not LibreSSL); 
 fnm exec --using 20 npm run build && git diff --exit-code frontend/dist
 ```
 Expected: exit 0. If it differs, stop and ask the user.
+
+- [ ] **Step 4b: Consult the ontology (AGENTS.md section 1)**
+
+Read the `ENG inline issue edits and alert invalidation` and `ENG Story Readiness` sections of `docs/ontology.md` (the first was added on 2026-09-30 and records the current inline-edit to alert-reload connection, which the first draft of this plan missed). Verify every cited path and symbol still resolves:
+
+```bash
+for sym in rearmCatchUpAlerts catchUpAlertVersionRef applyLocalEngIssueField invalidateEngIssueFieldSources onAlertDataInvalidated patchEngIssueList clear_jira_issue_status_caches; do printf "%-34s" $sym; rg -l -F "$sym" frontend/src backend | tr '\n' ' '; echo; done
+```
+Note any drift in this plan's Outcome; correct the ontology entry before any task relies on it. Subagent prompts for Tasks 6a, 6b, 8, 11, 12, 13b quote these entries.
 
 - [ ] **Step 5: Record the baseline, every spec**
 
@@ -2566,7 +2575,7 @@ Expected: new tests pass; `planning_selection_defaults` shows only its known bas
 Added 2026-09-30 at the requester's request ("do not refresh all the data when the priority or status of an epic or story changes in the UI"). Not covered by the first plan review; review it like any other task.
 
 **Files:**
-- Modify: `frontend/src/dashboard.jsx` (the two `onAlertDataInvalidated: rearmCatchUpAlerts` sites), `frontend/src/eng/useEngStatusTransitions.js`, `frontend/src/eng/useEngPriorityTransitions.js`, `frontend/src/eng/epicRefreshAlerts.js`, `frontend/src/eng/useEpicRefresh.js`, `tests/test_dashboard_alert_source_guards.js`, `tests/test_epic_refresh_alerts.js`, `tests/ui/eng_epic_refresh.spec.js`
+- Modify: `frontend/src/dashboard.jsx` (the two `onAlertDataInvalidated: rearmCatchUpAlerts` sites), `frontend/src/eng/useEngStatusTransitions.js`, `frontend/src/eng/useEngPriorityTransitions.js`, `frontend/src/eng/epicRefreshAlerts.js`, `frontend/src/eng/useEpicRefresh.js`, `tests/test_dashboard_alert_source_guards.js`, `tests/test_epic_refresh_alerts.js`, `tests/ui/eng_epic_refresh.spec.js`, `docs/ontology.md`
 
 **Interfaces:**
 - Consumes: Tasks 8, 11 and 12 (`alertCallsFor`, `recheckEpicAlerts(epicKey, calls)`, the epic-scoped loaders and merges).
@@ -2611,7 +2620,11 @@ wc -l frontend/src/dashboard.jsx
 ```
   Expected: pass; `eng_priority_transitions` shows only its known baseline failure (#210). Report the `dashboard.jsx` line count for the orchestrator's ratchet.
 
-- [ ] **Step 4: Report for commit.** Files: the eight listed. Message: `Re-check only the edited epic after inline status and priority edits`.
+- [ ] **Step 4: Update the ontology (same commit)**
+
+In the `ENG inline issue edits and alert invalidation` section of `docs/ontology.md`: change the **Alert cohort reload** entry's verified triggers (status and priority changes no longer rearm; assignee and Story Points edits and the global Refresh still do), add the new relationship **Inline issue edit -> scoped alert re-check** (`recheckAlertsForEdit` and `alertCallsForEdit`, Catch Up only, deferred behind an in-flight cohort, priority re-checks none), refresh the verification date, and confirm every path and symbol resolves with `rg`.
+
+- [ ] **Step 5: Report for commit.** Files: the nine listed. Message: `Re-check only the edited epic after inline status and priority edits`.
 
 ---
 
@@ -2619,7 +2632,7 @@ wc -l frontend/src/dashboard.jsx
 
 **Files:** Modify `docs/ontology.md`, `README.md`, `docs/features/eng-workflows.md`, `docs/features/alerts.md`, `docs/README_ANALYTICS.md` (confirm Task 4), `docs/plans/README.md`, this plan, the design artifact; generate `frontend/dist/*`.
 
-- [ ] **Step 1: Docs.** Consult `docs/ontology.md` first, then add an `Epic refresh` entry (concept, canonical name, aliases `per-epic refresh`, entry points `epicRefreshController.js`, `epicRefreshPatch.js`, `epicRefreshAlerts.js`, `useEpicRefresh.js`, `EpicRefreshButton.jsx`, `purpose=epic-refresh` and `purpose=epic-alerts` in `fetch_tasks`, relations to the Catch Up hierarchy, Alert Epic candidate and Story-readiness snapshot, verification date 2026-09-30) and check every path and symbol resolves with `rg`. Update `docs/features/alerts.md` (the statement near line 12 that task refreshes and status or priority changes invalidate any pending alert cohort becomes: a refresh and a status change re-check only that epic's alerts, a priority change re-checks none; Task 13b), `docs/features/eng-workflows.md` (refresh semantics, the moved-story limitation, the button), and `README.md` near the refresh description (~355). Re-read each section against the shipped behavior. Record the placement decision and the `hasTouch` hover-emulation note in the design artifact.
+- [ ] **Step 1: Docs.** Consult `docs/ontology.md` first (including the `ENG inline issue edits and alert invalidation` entries from Task 0 and Task 13b, which must now describe the shipped behavior), then add an `Epic refresh` entry (concept, canonical name, aliases `per-epic refresh`, entry points `epicRefreshController.js`, `epicRefreshPatch.js`, `epicRefreshAlerts.js`, `useEpicRefresh.js`, `EpicRefreshButton.jsx`, `purpose=epic-refresh` and `purpose=epic-alerts` in `fetch_tasks`, relations to the Catch Up hierarchy, Alert Epic candidate and Story-readiness snapshot, verification date 2026-09-30) and check every path and symbol resolves with `rg`. Update `docs/features/alerts.md` (the statement near line 12 that task refreshes and status or priority changes invalidate any pending alert cohort becomes: a refresh and a status change re-check only that epic's alerts, a priority change re-checks none; Task 13b), `docs/features/eng-workflows.md` (refresh semantics, the moved-story limitation, the button), and `README.md` near the refresh description (~355). Re-read each section against the shipped behavior. Record the placement decision and the `hasTouch` hover-emulation note in the design artifact.
 - [ ] **Step 2: Build and commit dist once, then verify at that head**
 
 ```bash

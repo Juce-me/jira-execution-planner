@@ -153,7 +153,11 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # Access tab is shown only to tool admins so it never requests the user directory (+17).
     # docs/plans/EXEC-project-track-board-column-strips.md wires the Team-mode Board-column split
     # memo into the two Project Track charts; the model lives in stats/projectTrackStats.js (+6).
-    "frontend/src/dashboard.jsx": 18213,
+    # feature/213-per-epic-refresh Task 6a mounts the per-epic refresh in Catch Up: imports (+2),
+    # refs (+1), loadEpicRefresh destructure (+1), load-epoch bump (+1), recent-edit record (+1),
+    # useEpicRefresh call (+23), EpicRefreshButton mount (+3), isLeaving (+1), status region (+1).
+    # The controller, merge rules and hook live in frontend/src/eng/ (+34).
+    "frontend/src/dashboard.jsx": 18232,
 }
 
 

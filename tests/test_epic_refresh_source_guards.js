@@ -60,6 +60,23 @@ test('the epic-refresh request goes through the API module with its own surface'
     assert.deepEqual(leaks.map((file) => path.relative(frontendSrcPath, file)), []);
 });
 
+test('the dashboard mounts the per-epic refresh in Catch Up without touching the alert re-arm paths', () => {
+    const source = read('dashboard.jsx');
+    for (const token of ['useEpicRefresh(', 'EpicRefreshButton', 'isLeaving={', 'loadEpochRef', 'alertCohortRef', 'data-epic-refresh-status']) {
+        assert.ok(source.includes(token), `dashboard.jsx must contain ${token}`);
+    }
+    assert.equal((source.match(/rearmCatchUpAlerts\(\);/g) || []).length, 3);
+    assert.equal((source.match(/onAlertDataInvalidated: rearmCatchUpAlerts/g) || []).length, 2);
+    assert.match(source, /const loadMeasuredGroupTasks = \(options = \{\}\) => \{\s*loadEpochRef\.current \+= 1;/);
+    assert.match(source, /const applyLocalEngIssueField = React\.useCallback\(\(issueKey, fieldName, fieldValue\) => \{\s*recentEditKeysRef\.current\.set\(issueKey, Date\.now\(\)\);/);
+    const hookCall = source.indexOf('const epicRefresh = useEpicRefresh(');
+    assert.ok(hookCall > source.indexOf('window.addEventListener(AUTH_LONG_ABSENCE_EVENT'), 'the hook call must follow the long-absence effect so every input is declared');
+    assert.ok(hookCall > source.indexOf('const manualRefreshDisabled ='));
+    assert.match(source, /\{isCatchUpMode && epicGroup\.key !== 'NO_EPIC' && \(\s*<EpicRefreshButton/, 'the button mounts in Catch Up only');
+    assert.equal((source.match(/data-epic-refresh-status/g) || []).length, 1, 'one status region');
+    assert.equal(source.includes('aria-live="polite" data-epic-refresh-status'), false);
+});
+
 test('EPM surfaces carry no epic-refresh or glare hooks', () => {
     const files = [
         ...listSourceFiles(path.join(frontendSrcPath, 'epm')),

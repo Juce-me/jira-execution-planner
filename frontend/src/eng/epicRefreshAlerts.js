@@ -65,7 +65,58 @@ export function replaceEpicStories({ held, incoming, epicKey, emptyConfirmed = t
     return [...held.filter(entry => !mine(entry)), ...after];
 }
 
-// Alert calls vocabulary, in the order they run. Task 11 executes `readyToClose` and `epicAlerts`; the rest belongs to Task 12.
+// Keyed merge of the held Missing Info issues for one epic (`fields.epicKey`): replace in place, append new ones. The endpoint swallows a
+// failed Story search and still answers 200, so an absent issue is kept (partial data, MRT019); the epic's issues are deleted only when the
+// epic itself left the endpoint's scope (`epicInScope: false`, its epic search answers an error on failure).
+export function mergeEpicMissingIssues({ held, incoming, epicKey, epicInScope = true }) {
+    const key = text(epicKey);
+    const mine = entry => text(entry?.fields?.epicKey) === key;
+    if (!epicInScope) return held.some(mine) ? held.filter(entry => !mine(entry)) : held;
+    const fresh = new Map((incoming || []).filter(mine).map(entry => [entry.key, entry]));
+    if (!fresh.size) return held;
+    let changed = false;
+    const next = held.map(entry => {
+        const replacement = mine(entry) ? fresh.get(entry.key) : undefined;
+        if (!replacement) return entry;
+        fresh.delete(entry.key);
+        if (sameJson(entry, replacement)) return entry;
+        changed = true;
+        return replacement;
+    });
+    if (fresh.size) { changed = true; next.push(...fresh.values()); }
+    return changed ? next : held;
+}
+
+// Readiness fields the epic details also carry. When the refreshed details cleared one, the held readiness copy must not shadow it
+// (`mergeEpic` in engWorkHierarchy.js falls back to the readiness value when the details value is empty).
+const READINESS_SHADOW_FIELDS = [['assignee', null], ['projectTrack', ''], ['initiative', null]];
+const hasValue = (field, value) => (field === 'initiative' ? Boolean(text(value?.key)) : value !== null && value !== undefined && value !== '');
+
+// Keyed merge of one epic into the Stories Required snapshot (`snapshot.epics[]`): upsert or delete by key from the per-epic payload, keep
+// every other epic and the snapshot identity when nothing changes. A missing payload (failed or skipped call) never deletes. `epicDetails`
+// (the refreshed epic) clears readiness assignee, track and initiative values the details no longer carry.
+export function mergeReadinessEpic({ snapshot, epicPayload, epicKey, epicDetails }) {
+    if (!snapshot || !Array.isArray(snapshot.epics)) return snapshot;
+    const key = text(epicKey);
+    const at = snapshot.epics.findIndex(epic => text(epic?.key) === key);
+    let epics = snapshot.epics;
+    if (Array.isArray(epicPayload?.epics)) {
+        const fresh = epicPayload.epics.find(epic => text(epic?.key) === key);
+        if (!fresh) epics = at < 0 ? epics : epics.filter((_, index) => index !== at);
+        else if (at < 0) epics = [...epics, fresh];
+        else if (!sameJson(epics[at], fresh)) epics = epics.map((epic, index) => (index === at ? fresh : epic));
+    }
+    const now = epics.findIndex(epic => text(epic?.key) === key);
+    if (epicDetails && now >= 0) {
+        // Epic details are replaced as whole objects and omit `initiative` when there is none (design 3.5), so an absent key means cleared.
+        const cleared = READINESS_SHADOW_FIELDS.filter(([field]) => (field === 'initiative' || field in epicDetails) && !hasValue(field, epicDetails[field]) && hasValue(field, epics[now][field]));
+        const moved = hasValue('initiative', epicDetails.initiative) && text(epicDetails.initiative.key) !== text(epics[now].initiative?.key);
+        if (cleared.length || moved) epics = epics.map((epic, index) => (index === now ? { ...epic, ...Object.fromEntries(cleared), ...(moved ? { initiative: epicDetails.initiative } : {}) } : epic));
+    }
+    return epics === snapshot.epics ? snapshot : { ...snapshot, epics };
+}
+
+// Alert calls vocabulary, in the order they run: `readyToClose` and `epicAlerts` (Task 11), `missingInfo`, `backlog` and `readiness` (Task 12).
 const ALERT_CALL_ORDER = ['readyToClose', 'epicAlerts', 'missingInfo', 'backlog', 'readiness'];
 
 // Which epic-scoped alert calls a refresh update needs (design section 3.6). `update` is the controller's update object, optionally with
@@ -82,7 +133,7 @@ export function alertCallsFor(update, { isFutureSprint = false, isCatchUp = fals
         || update.epicChanged === true || update.epicSilent === true;
     const calls = new Set();
     if (membership) ['readyToClose', 'epicAlerts', 'missingInfo', 'readiness'].forEach(call => calls.add(call));
-    if (storyFields.has('status')) ['readyToClose', 'epicAlerts'].forEach(call => calls.add(call));
+    if (storyFields.has('status')) ['readyToClose', 'epicAlerts', 'readiness'].forEach(call => calls.add(call));
     if (storyFields.has('teamId')) ['missingInfo', 'readiness'].forEach(call => calls.add(call));
     if (epicTrigger) calls.add('epicAlerts');
     if (isFutureSprint && anyChange) calls.add('epicAlerts');

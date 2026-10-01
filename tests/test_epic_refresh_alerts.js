@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { alertCallsFor, mergeEpicScopeEntries, replaceEpicStories, recomputeMissingPlanningInfo, shouldHideReadinessGhost } from '../frontend/src/eng/epicRefreshAlerts.js';
+import { alertCallsFor, mergeEpicMissingIssues, mergeEpicScopeEntries, mergeReadinessEpic, replaceEpicStories, recomputeMissingPlanningInfo, shouldHideReadinessGhost } from '../frontend/src/eng/epicRefreshAlerts.js';
 
 const story = (key, fields = {}) => ({ key, fields: { summary: key, status: { name: 'To Do' }, priority: { name: 'Medium' }, issuetype: { name: 'Story' }, epicKey: 'EPIC-1', teamId: 't1', customfield_10004: 3, customfield_10101: [{ id: 7 }], updated: '1', ...fields } });
 const entry = (key, missingFields, fields = {}) => ({ key, fields: { ...story(key).fields, missingFields, ...fields } });
@@ -168,8 +168,8 @@ test('alertCallsFor: Story Points, assignee, summary, priority and updated-only 
     assert.deepEqual(alertCallsFor(update(), catchUp), []);
 });
 
-test('alertCallsFor: a story status change re-checks Ready to Close and the epic alert object', () => {
-    assert.deepEqual(alertCallsFor(update(changedStory('status')), catchUp), ['readyToClose', 'epicAlerts']);
+test('alertCallsFor: a story status change re-checks Ready to Close, the epic alert object and Stories Required', () => {
+    assert.deepEqual(alertCallsFor(update(changedStory('status')), catchUp), ['readyToClose', 'epicAlerts', 'readiness']);
 });
 
 test('alertCallsFor: a story added, removed or moved to another sprint re-checks every epic-level alert', () => {
@@ -202,4 +202,112 @@ test('alertCallsFor: Planning never re-checks alerts', () => {
     const planning = { isFutureSprint: false, isCatchUp: false };
     assert.deepEqual(alertCallsFor(update({ addedKeys: ['S-2'], ...changedStory('status') }), planning), []);
     assert.deepEqual(alertCallsFor(update({ epicSilent: true }), { isFutureSprint: true, isCatchUp: false }), []);
+});
+
+// ---- Task 12: missing-info, backlog and Stories Required for one epic ----
+
+const readinessEpic = (key, extra = {}) => ({ key, summary: key, status: { name: 'To Do' }, assignee: { displayName: 'Ann' }, projectTrack: 'Committed', initiative: { key: 'INI-1', summary: 'Init' }, projectClass: 'product', missingTeams: [{ id: 't1', name: 'T1', reason: 'no_stories' }], ...extra });
+const snapshotOf = (...epics) => ({ schemaVersion: 1, complete: true, scope: { groupId: 'g1', sprintId: '42' }, epics });
+const payloadOf = (...epics) => ({ schemaVersion: 1, complete: true, scope: { groupId: 'g1', sprintId: '42' }, epics });
+
+test('mergeReadinessEpic replaces the epic entry in place and keeps the other epics and the scope', () => {
+    const snapshot = snapshotOf(readinessEpic('E-1'), readinessEpic('E-2'));
+    const out = mergeReadinessEpic({ snapshot, epicPayload: payloadOf(readinessEpic('E-1', { missingTeams: [{ id: 't2', name: 'T2', reason: 'team_uncovered' }] })), epicKey: 'E-1' });
+    assert.deepEqual(out.epics.map(epic => epic.key), ['E-1', 'E-2']);
+    assert.equal(out.epics[0].missingTeams[0].id, 't2');
+    assert.equal(out.epics[1], snapshot.epics[1]);
+    assert.equal(out.scope, snapshot.scope);
+});
+
+test('mergeReadinessEpic appends an epic the snapshot did not hold and deletes one the payload no longer lists', () => {
+    const snapshot = snapshotOf(readinessEpic('E-2'));
+    const appended = mergeReadinessEpic({ snapshot, epicPayload: payloadOf(readinessEpic('E-1')), epicKey: 'E-1' });
+    assert.deepEqual(appended.epics.map(epic => epic.key), ['E-2', 'E-1']);
+    const deleted = mergeReadinessEpic({ snapshot: appended, epicPayload: payloadOf(), epicKey: 'E-1' });
+    assert.deepEqual(deleted.epics.map(epic => epic.key), ['E-2']);
+});
+
+test('mergeReadinessEpic ignores entries of other epics in the payload and keeps the snapshot identity when equal', () => {
+    const snapshot = snapshotOf(readinessEpic('E-1'), readinessEpic('E-2'));
+    assert.equal(mergeReadinessEpic({ snapshot, epicPayload: payloadOf(readinessEpic('E-1')), epicKey: 'E-1' }), snapshot);
+    assert.equal(mergeReadinessEpic({ snapshot, epicPayload: payloadOf(readinessEpic('E-1'), readinessEpic('E-9')), epicKey: 'E-1' }), snapshot);
+    assert.equal(mergeReadinessEpic({ snapshot, epicPayload: payloadOf(readinessEpic('E-2', { summary: 'other' })), epicKey: 'E-1' }).epics.length, 1);
+});
+
+test('mergeReadinessEpic with no payload keeps the entry (a failed or skipped call never deletes)', () => {
+    const snapshot = snapshotOf(readinessEpic('E-1'));
+    assert.equal(mergeReadinessEpic({ snapshot, epicPayload: null, epicKey: 'E-1' }), snapshot);
+    assert.equal(mergeReadinessEpic({ snapshot, epicPayload: undefined, epicKey: 'E-1' }), snapshot);
+});
+
+test('mergeReadinessEpic: stale readiness assignee, track and initiative never shadow cleared epic details', () => {
+    const snapshot = snapshotOf(readinessEpic('E-1'), readinessEpic('E-2'));
+    const out = mergeReadinessEpic({ snapshot, epicPayload: null, epicKey: 'E-1', epicDetails: { key: 'E-1', summary: 'E-1', assignee: null, projectTrack: null, initiative: null } });
+    assert.equal(out.epics[0].assignee, null);
+    assert.equal(out.epics[0].projectTrack, '');
+    assert.equal(out.epics[0].initiative, null);
+    assert.equal(out.epics[0].missingTeams, snapshot.epics[0].missingTeams);
+    assert.equal(out.epics[1], snapshot.epics[1]);
+});
+
+test('mergeReadinessEpic: refreshed details that omit the initiative key clear the held initiative (fetch_epic_details_bulk omits it when none)', () => {
+    const snapshot = snapshotOf(readinessEpic('E-1'));
+    const out = mergeReadinessEpic({ snapshot, epicPayload: null, epicKey: 'E-1', epicDetails: { key: 'E-1', summary: 'E-1', assignee: { displayName: 'Ann' }, projectTrack: 'Committed' } });
+    assert.equal(out.epics[0].initiative, null);
+    assert.equal(out.epics[0].assignee, snapshot.epics[0].assignee);
+});
+
+test('mergeReadinessEpic: missing epic details change nothing, even for an absent initiative (failed refresh, MRT019)', () => {
+    const snapshot = snapshotOf(readinessEpic('E-1'));
+    assert.equal(mergeReadinessEpic({ snapshot, epicPayload: null, epicKey: 'E-1', epicDetails: undefined }), snapshot);
+    assert.equal(mergeReadinessEpic({ snapshot, epicPayload: null, epicKey: 'E-1', epicDetails: null }), snapshot);
+});
+
+test('mergeReadinessEpic: epic details with an initiative replace a different held initiative, an equal one keeps identity, an explicit null clears', () => {
+    const snapshot = snapshotOf(readinessEpic('E-1'));
+    const replaced = mergeReadinessEpic({ snapshot, epicPayload: null, epicKey: 'E-1', epicDetails: { key: 'E-1', initiative: { key: 'INI-2', summary: 'New' } } });
+    assert.deepEqual(replaced.epics[0].initiative, { key: 'INI-2', summary: 'New' });
+    assert.equal(mergeReadinessEpic({ snapshot, epicPayload: null, epicKey: 'E-1', epicDetails: { key: 'E-1', initiative: { key: 'INI-1', summary: 'Init' } } }), snapshot);
+    assert.equal(mergeReadinessEpic({ snapshot, epicPayload: null, epicKey: 'E-1', epicDetails: { key: 'E-1', initiative: null } }).epics[0].initiative, null);
+});
+
+test('mergeReadinessEpic: non-empty or absent epic details leave the readiness entry alone and keep identity', () => {
+    const snapshot = snapshotOf(readinessEpic('E-1'));
+    assert.equal(mergeReadinessEpic({ snapshot, epicPayload: null, epicKey: 'E-1', epicDetails: { key: 'E-1', assignee: { displayName: 'Bob' }, projectTrack: 'Flexible', initiative: { key: 'INI-1', summary: 'Init' } } }), snapshot);
+    assert.equal(mergeReadinessEpic({ snapshot, epicPayload: null, epicKey: 'E-1', epicDetails: { key: 'E-1', summary: 'x', initiative: { key: 'INI-1', summary: 'Init' } } }), snapshot);
+    assert.equal(mergeReadinessEpic({ snapshot, epicPayload: null, epicKey: 'E-9', epicDetails: { assignee: null } }), snapshot);
+});
+
+test('mergeReadinessEpic: a fresh payload entry is also cleared where the epic details are cleared', () => {
+    const snapshot = snapshotOf(readinessEpic('E-1'));
+    const out = mergeReadinessEpic({ snapshot, epicPayload: payloadOf(readinessEpic('E-1')), epicKey: 'E-1', epicDetails: { assignee: null } });
+    assert.equal(out.epics[0].assignee, null);
+    assert.equal(out.epics[0].projectTrack, 'Committed');
+});
+
+test('mergeReadinessEpic never throws on a missing snapshot', () => {
+    assert.equal(mergeReadinessEpic({ snapshot: null, epicPayload: payloadOf(readinessEpic('E-1')), epicKey: 'E-1' }), null);
+});
+
+test('mergeEpicMissingIssues upserts the epic issues by key and keeps other epics and unchanged identity', () => {
+    const held = [entry('S-1', ['Team'], { teamId: null }), entry('S-9', ['Team'], { epicKey: 'EPIC-2', teamId: null })];
+    const same = mergeEpicMissingIssues({ held, incoming: [entry('S-1', ['Team'], { teamId: null })], epicKey: 'EPIC-1' });
+    assert.equal(same, held);
+    const next = mergeEpicMissingIssues({ held, incoming: [entry('S-1', ['Team', 'Story Points'], { teamId: null, customfield_10004: null }), entry('S-2', ['Sprint'], { customfield_10101: [] })], epicKey: 'EPIC-1' });
+    assert.deepEqual(next.map(item => item.key), ['S-1', 'S-9', 'S-2']);
+    assert.deepEqual(next[0].fields.missingFields, ['Team', 'Story Points']);
+    assert.equal(next[1], held[1]);
+});
+
+test('mergeEpicMissingIssues ignores incoming entries of another epic', () => {
+    const held = [entry('S-1', ['Team'], { teamId: null })];
+    assert.equal(mergeEpicMissingIssues({ held, incoming: [entry('S-9', ['Team'], { epicKey: 'EPIC-2', teamId: null })], epicKey: 'EPIC-1' }), held);
+});
+
+test('mergeEpicMissingIssues: an absent issue is kept (partial data, MRT019) unless the epic left the scope', () => {
+    const held = [entry('S-1', ['Team'], { teamId: null }), entry('S-9', ['Team'], { epicKey: 'EPIC-2', teamId: null })];
+    assert.equal(mergeEpicMissingIssues({ held, incoming: [], epicKey: 'EPIC-1' }), held);
+    const gone = mergeEpicMissingIssues({ held, incoming: [], epicKey: 'EPIC-1', epicInScope: false });
+    assert.deepEqual(gone.map(item => item.key), ['S-9']);
+    assert.equal(mergeEpicMissingIssues({ held: [held[1]], incoming: [], epicKey: 'EPIC-1', epicInScope: false }).length, 1);
 });

@@ -2,6 +2,8 @@ import {
     fetchBacklogEpics as requestBacklogEpics,
     fetchEngTasks,
     fetchEpicAlertBundle,
+    fetchEpicBacklog as requestEpicBacklog,
+    fetchEpicMissingInfo as requestEpicMissingInfo,
     fetchEpicReadyToClose,
     fetchEpicRefresh,
 } from '../api/engApi.js';
@@ -78,6 +80,7 @@ export function useEngSprintData({
     activeGroupTeamIds,
     activeGroupTeamSet,
     activeGroupTeamLabels,
+    activeGroupMissingInfoComponents = [],
     pageLoadRefreshRef,
     sprintLoadRef,
     lastLoadedSprintRef,
@@ -535,15 +538,59 @@ export function useEngSprintData({
         }
     };
 
+    // Missing Info (one department-wide request) and Backlog (one per lane) for one epic. Same shape as the lanes above; an HTTP failure
+    // is `failed`, a real auth lock is `auth_required`, and neither reaches the global connection-failure handler.
+    const fetchEpicSideLane = async (load) => {
+        const controller = registerSprintFetch();
+        const readToken = issueEditState?.beginRead();
+        const reconcile = list => issueEditState?.reconcileIssues(list, readToken) || list;
+        try {
+            return await load(controller.signal, reconcile);
+        } catch (error) {
+            if (isAuthenticationRequiredError(error)) return { status: 'auth_required' };
+            return { status: error?.name === 'AbortError' ? 'ignored' : 'failed' };
+        } finally {
+            issueEditState?.finishRead(readToken);
+            cleanupSprintFetch(controller);
+        }
+    };
+    const fetchEpicMissingInfoLane = ({ epicKey, signal }) => {
+        if (!selectedSprint || (activeGroupId && activeGroupTeamIds.length === 0)) return { status: 'ignored' };
+        return fetchEpicSideLane(async (laneSignal, reconcile) => {
+            const response = await requestEpicMissingInfo(backendUrl, {
+                sprintId: selectedSprint, teamIds: activeGroupTeamIds, components: activeGroupMissingInfoComponents, epicKey,
+                signal: signal ? AbortSignal.any([laneSignal, signal]) : laneSignal,
+            });
+            if (!response.ok) return { status: 'failed' };
+            const data = await response.json();
+            return { status: 'ok', issues: reconcile(data.issues || []), epics: reconcile(data.epics || []) };
+        });
+    };
+    const fetchEpicBacklogLane = (project, { epicKey, signal }) => {
+        if (!isFutureSprintSelected || (activeGroupId && activeGroupTeamIds.length === 0)) return { status: 'ignored' };
+        return fetchEpicSideLane(async (laneSignal, reconcile) => {
+            const payload = await requestEpicBacklog(backendUrl, {
+                project, teamIds: activeGroupTeamIds, epicKey, signal: signal ? AbortSignal.any([laneSignal, signal]) : laneSignal,
+            });
+            return { status: 'ok', epics: reconcile(Array.isArray(payload?.epics) ? payload.epics : []) };
+        });
+    };
+
     // Scope-based alerts for one epic (issue #213): both lanes per requested call, results handed back unapplied.
-    // Returns { product: { epicAlerts?: Lane, readyToClose?: Lane }, tech: { ... } }; Lane has `epicsInScope` (and `items` for readyToClose).
+    // Returns { product: { epicAlerts?, readyToClose?, backlog?: Lane }, tech: { ... }, missingInfo?: { status, issues?, epics? } };
+    // Lane has `epicsInScope` (and `items` for readyToClose, `epics` for backlog).
     const loadEpicAlerts = async ({ epicKey, calls = [], signal } = {}) => {
         const requests = { epicAlerts: fetchEpicAlertBundle, readyToClose: fetchEpicReadyToClose };
         const lanes = { product: {}, tech: {} };
         if (strictBoardActive) return lanes;
-        await Promise.all(Object.keys(requests).filter(call => calls.includes(call)).flatMap(call => ['product', 'tech'].map(async project => {
-            lanes[project][call] = await fetchAlertLane(project, { epicKey, signal, epicRequest: requests[call] });
-        })));
+        const wants = call => calls.includes(call);
+        await Promise.all([
+            ...Object.keys(requests).filter(wants).flatMap(call => ['product', 'tech'].map(async project => {
+                lanes[project][call] = await fetchAlertLane(project, { epicKey, signal, epicRequest: requests[call] });
+            })),
+            ...(wants('backlog') ? ['product', 'tech'].map(async project => { lanes[project].backlog = await fetchEpicBacklogLane(project, { epicKey, signal }); }) : []),
+            ...(wants('missingInfo') ? [(async () => { lanes.missingInfo = await fetchEpicMissingInfoLane({ epicKey, signal }); })()] : []),
+        ]);
         return lanes;
     };
 

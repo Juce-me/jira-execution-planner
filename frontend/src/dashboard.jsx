@@ -7169,7 +7169,7 @@ import {
                 selectedSprintName: selectedSprintInfo?.name || '',
                 activeGroupId,
                 activeGroupTeamIds,
-                activeGroupTeamSet, activeGroupTeamLabels,
+                activeGroupTeamSet, activeGroupTeamLabels, activeGroupMissingInfoComponents: activeGroup?.missingInfoComponents || [],
                 pageLoadRefreshRef,
                 sprintLoadRef,
                 lastLoadedSprintRef,
@@ -14986,7 +14986,7 @@ import {
                 getState: () => ({ productTasks, techTasks, loadedProductTasks, loadedTechTasks, epicDetails, readyToCloseProductTasks, readyToCloseTechTasks,
                     productEpicsInScope, techEpicsInScope, readyToCloseProductEpicsInScope, readyToCloseTechEpicsInScope }),
                 setters: { setProductTasks, setTechTasks, setLoadedProductTasks, setLoadedTechTasks, setEpicDetails, setReadyToCloseProductTasks, setReadyToCloseTechTasks,
-                    setProductEpicsInScope, setTechEpicsInScope, setReadyToCloseProductEpicsInScope, setReadyToCloseTechEpicsInScope, setMissingPlanningInfoTasks },
+                    setProductEpicsInScope, setTechEpicsInScope, setReadyToCloseProductEpicsInScope, setReadyToCloseTechEpicsInScope, setMissingPlanningInfoTasks, setMissingInfoEpics, setBacklogProductEpics, setBacklogTechEpics },
                 readGuards: (epicKey) => ({
                     blocked: loading || productTasksLoading || techTasksLoading || manualRefreshDisabled || !tasksFetched
                         || String(lastLoadedSprintRef.current ?? '') !== String(selectedSprint ?? '')
@@ -15007,7 +15007,7 @@ import {
                     void refreshEpicDependencies(keys);
                     invalidateStorySubtasks([...update.changedKeys, ...update.addedKeys, ...update.silentKeys]);
                 },
-                getAlertVersion: () => catchUpAlertVersionRef.current, loadEpicAlerts, isFutureSprint: isFutureSprintSelected, track: trackEpicRefreshAction, sourceSurface: isCatchUpMode ? 'catch_up' : 'planning',
+                getAlertVersion: () => catchUpAlertVersionRef.current, loadEpicAlerts, loadEpicReadiness: storyReadiness.loadEpic, mergeReadinessEpic: storyReadiness.mergeEpic, isFutureSprint: isFutureSprintSelected, track: trackEpicRefreshAction, sourceSurface: isCatchUpMode ? 'catch_up' : 'planning',
             });
 
             // Group Board composer props (Boards tab, GroupBoardsTab.jsx). The Save gate validates

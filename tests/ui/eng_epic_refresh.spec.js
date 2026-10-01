@@ -1835,7 +1835,7 @@ test('29. a refreshed story that reached a terminal status drops its Missing Inf
     await expect(missingRows(page).filter({ hasText: 'E1-S04' })).toHaveCount(0);
     await expect(missingRows(page)).toHaveCount(2);
     // Task 11: a status change now re-checks Ready to Close and the epic alert object for this epic (tests 34+); nothing else.
-    expect(otherAlertCalls(ctx.calls.slice(since), 'EPIC-1')).toEqual([]);
+    expect(otherAlertCalls(ctx.calls.slice(since), 'EPIC-1', ['/api/eng/story-readiness'])).toEqual([]);
 });
 
 test('30. an alert the user dismissed stays dismissed after a refresh', async ({ page }) => {
@@ -1893,8 +1893,8 @@ test('32. a Stories Required ghost disappears when the refresh adds an actionabl
     await expect(taskCard(page, 'E3-S02')).toHaveCount(1);
     await expectRefreshSettled(page, 'EPIC-3');
     await expect(ghost).toHaveCount(0);
-    // Task 11: a membership change re-checks Ready to Close and the epic alert object for this epic (Task 12 will add Missing Info and readiness).
-    expect(otherAlertCalls(ctx.calls.slice(since), 'EPIC-3')).toEqual([]);
+    // A membership change re-checks Ready to Close, the epic alert object, Missing Info and readiness for this epic only (no Backlog: active sprint).
+    expect(otherAlertCalls(ctx.calls.slice(since), 'EPIC-3', ['/api/missing-info', '/api/eng/story-readiness'])).toEqual([]);
 });
 
 for (const mode of ['catch_up', 'planning']) {
@@ -1927,8 +1927,11 @@ const epicAlertCalls = calls => taskRequests(calls, 'epic-alerts');
 const epicReadyToCloseCalls = (calls, epicKey) => taskRequests(calls, 'ready-to-close').filter(call => call.params.epicKeys === epicKey);
 const describeCalls = calls => calls.map(call => `${call.method} ${call.pathname}${call.search.replace(/[?&]t=\d+/, '')}`);
 const lanesOf = calls => calls.map(call => call.params.project).sort();
-// Every alert-related request after `since` that is not one of Task 11's two epic-scoped calls for `epicKey`.
-const otherAlertCalls = (calls, epicKey) => alertRequests(calls).filter(call => !(['epic-alerts', 'ready-to-close'].includes(call.params.purpose) && call.params.epicKeys === epicKey));
+// Every alert-related request after `since` that is not an epic-scoped call for `epicKey`: Task 11's epic-alerts and ready-to-close pair, plus
+// the endpoints named in `alsoAllowed` (Task 12: '/api/missing-info', '/api/backlog-epics', '/api/eng/story-readiness'). A request without
+// the epic key is never allowed, so a department-wide request of any kind is always reported.
+const otherAlertCalls = (calls, epicKey, alsoAllowed = []) => alertRequests(calls)
+    .filter(call => !(call.params.epicKeys === epicKey && (['epic-alerts', 'ready-to-close'].includes(call.params.purpose) || alsoAllowed.includes(call.pathname))));
 const emptyEpicRows = page => page.locator('#eng-alert-empty .alert-story');
 const readyToCloseAlert = page => page.locator('#eng-alert-done');
 
@@ -1964,7 +1967,7 @@ function serveReadyToClose(ctx) {
     });
 }
 
-test('34. a story status change makes exactly the epic-alerts and ready-to-close calls for that epic, in both lanes', async ({ page }) => {
+test('34. a story status change makes exactly the epic-alerts, ready-to-close and one readiness call for that epic, in both lanes', async ({ page }) => {
     const ctx = await mockDashboard(page);
     await openCatchUp(page, ctx);
     setStory(ctx, 'E1-S02', { status: { name: 'In Progress' } });
@@ -1980,7 +1983,9 @@ test('34. a story status change makes exactly the epic-alerts and ready-to-close
     expect(lanesOf(epicReadyToCloseCalls(after, 'EPIC-1'))).toEqual(['product', 'tech']);
     epicAlertCalls(after).forEach(call => expect(call.params.epicKeys).toBe('EPIC-1'));
     epicReadyToCloseCalls(after, 'EPIC-1').forEach(call => expect(call.params.sprint).toBe(''));
-    expect(describeCalls(otherAlertCalls(after, 'EPIC-1'))).toEqual([]);
+    // A status change also re-checks Stories Required for this epic (Task 12), but neither Missing Info nor Backlog.
+    expect(describeCalls(otherAlertCalls(after, 'EPIC-1', ['/api/eng/story-readiness']))).toEqual([]);
+    expect(epicReadinessCalls(after)).toHaveLength(1);
     assertScopedCalls(ctx.calls, since, 'EPIC-1', storyKeysOf(ctx.scenario, 'EPIC-1'));
     await expect(globalErrorSurfaces(page)).toHaveCount(0);
 });
@@ -2198,6 +2203,388 @@ test('44. an ok empty epic-alerts answer (epic out of scope) removes the held Re
     await expect(readyToCloseEntryRows(page)).toHaveCount(0);
     await expect.poll(() => heldCopyCount(page)).toBe(0);
     await expectRefreshSettled(page, 'EPIC-3');
+});
+
+// ---- tests 45-57 (Task 12: Missing Info, Backlog and Stories Required for one epic) ----
+
+const readinessCalls = calls => calls.filter(call => call.pathname === '/api/eng/story-readiness');
+const epicReadinessCalls = calls => readinessCalls(calls).filter(call => call.params.epicKeys);
+const backlogCalls = calls => calls.filter(call => call.pathname === '/api/backlog-epics');
+const ghostCards = (page, epicKey) => page.locator(`.story-requirement-card[data-epic-key="${epicKey}"]`);
+const BETA_MISSING = { id: 'team-beta', name: 'Beta Team', reason: 'team_uncovered' };
+
+// EPIC-2 and EPIC-3 hold only non-actionable stories, so the client rule keeps the Stories Required ghost of each. `ctx.ghosts` is what the
+// server says per epic: the department request (no epicKeys) serves them all, the per-epic request serves just the one asked for.
+async function openWithGhosts(page, { prefs, prepare } = {}) {
+    const ctx = await mockDashboard(page);
+    prepare?.(ctx);
+    ['E2-S01', 'E2-S02', 'E3-S01'].forEach(key => setStory(ctx, key, { status: { name: 'Blocked' } }));
+    ctx.ghosts = {
+        'EPIC-2': readinessEpicFor('EPIC-2', 'team-alpha', 'Alpha Team', 'selected_stories_not_actionable'),
+        'EPIC-3': readinessEpicFor('EPIC-3', 'team-alpha', 'Alpha Team', 'selected_stories_not_actionable'),
+    };
+    ctx.respond(call => call.pathname === '/api/eng/story-readiness', ({ json, call }) => {
+        const keys = call.params.epicKeys ? [call.params.epicKeys] : Object.keys(ctx.ghosts);
+        return json(readinessSnapshotFor(keys.map(key => ctx.ghosts[key]).filter(Boolean)));
+    });
+    await openCatchUp(page, ctx, { prefs });
+    await expect(ghostCards(page, 'EPIC-2')).toHaveCount(1);
+    await expect(ghostCards(page, 'EPIC-3')).toHaveCount(1);
+    return ctx;
+}
+
+// Adds a Blocked story to EPIC-3 on the "server": a membership change that keeps the client rule from hiding the ghost.
+const addBlockedEpic3Story = ctx => ctx.scenario.stories.push(buildStory('E3-S02', 'EPIC-3', { status: 'Blocked', points: 2 }));
+
+// Records whether the ghost of `epicKey` was ever absent from the DOM while the observer ran.
+async function watchGhostBlink(page, epicKey) {
+    await page.evaluate((key) => {
+        window.__ghostBlink = false;
+        const selector = `.story-requirement-card[data-epic-key="${key}"]`;
+        new MutationObserver(() => { if (!document.querySelector(selector)) window.__ghostBlink = true; })
+            .observe(document.body, { childList: true, subtree: true, attributes: true });
+    }, epicKey);
+}
+
+test('45. a membership change updates only that epic\'s Stories Required ghost, with scoped requests and no blanking of other epics', async ({ page }) => {
+    const ctx = await openWithGhosts(page);
+    addBlockedEpic3Story(ctx);
+    ctx.ghosts['EPIC-3'] = { ...ctx.ghosts['EPIC-3'], missingTeams: [...ctx.ghosts['EPIC-3'].missingTeams, BETA_MISSING] };
+    const gate = deferred();
+    ctx.respond(call => call.pathname === '/api/eng/story-readiness' && call.params.epicKeys, async () => { await gate.promise; });
+    await watchGhostBlink(page, 'EPIC-2');
+    const since = ctx.calls.length;
+    await clickRefresh(page, 'EPIC-3');
+    await expect.poll(() => epicReadinessCalls(ctx.calls.slice(since)).length).toBe(1);
+    await expectRefreshSettled(page, 'EPIC-3');
+    // The per-epic call is in flight: every ghost is still shown, nothing was blanked.
+    await expect(ghostCards(page, 'EPIC-2')).toHaveCount(1);
+    await expect(ghostCards(page, 'EPIC-3')).toHaveCount(1);
+    gate.resolve();
+    await expect(ghostCards(page, 'EPIC-3')).toHaveCount(2);
+    await expect(ghostCards(page, 'EPIC-2')).toHaveCount(1);
+    await page.waitForTimeout(600);
+
+    const after = ctx.calls.slice(since);
+    expect(readinessCalls(after).map(call => call.params.epicKeys), 'no department-wide readiness request').toEqual(['EPIC-3']);
+    expect(await page.evaluate(() => window.__ghostBlink), 'the other epic\'s ghost never blinked').toBe(false);
+    const missing = missingInfoCalls(after);
+    expect(missing).toHaveLength(1);
+    expect(missing[0].params).toMatchObject({ epicKeys: 'EPIC-3', refresh: 'true', sprint: String(SPRINT_ID) });
+    expect(backlogCalls(after), 'the sprint is active: no Backlog call').toEqual([]);
+    expect(describeCalls(otherAlertCalls(after, 'EPIC-3', ['/api/missing-info', '/api/eng/story-readiness']))).toEqual([]);
+    assertScopedCalls(ctx.calls, since, 'EPIC-3', storyKeysOf(ctx.scenario, 'EPIC-3'));
+});
+
+test('46. a per-epic readiness answer without the epic removes only that epic\'s ghost', async ({ page }) => {
+    const ctx = await openWithGhosts(page);
+    addBlockedEpic3Story(ctx);
+    delete ctx.ghosts['EPIC-3'];
+    await watchGhostBlink(page, 'EPIC-2');
+    await clickRefresh(page, 'EPIC-3');
+    await expect(ghostCards(page, 'EPIC-3')).toHaveCount(0);
+    await expect(ghostCards(page, 'EPIC-2')).toHaveCount(1);
+    expect(await page.evaluate(() => window.__ghostBlink)).toBe(false);
+});
+
+for (const failing of [500, 403, 429]) {
+    test(`47. a per-epic readiness call that fails with ${failing} leaves the ghosts untouched, raises no banner and is not retried`, async ({ page }) => {
+        const ctx = await openWithGhosts(page);
+        addBlockedEpic3Story(ctx);
+        delete ctx.ghosts['EPIC-3']; // a successful answer would remove the ghost: only the failure keeps it
+        ctx.respond(call => call.pathname === '/api/eng/story-readiness' && call.params.epicKeys, ({ status }) => status(failing, { error: 'story_readiness_unavailable', ...LEAK_CANARIES }));
+        const since = ctx.calls.length;
+        await clickRefresh(page, 'EPIC-3');
+        await expect.poll(() => epicReadinessCalls(ctx.calls.slice(since)).length).toBe(1);
+        await expectRefreshSettled(page, 'EPIC-3');
+        await expect(taskCard(page, 'E3-S02')).toHaveCount(1);
+        await page.waitForTimeout(700);
+        await expect(ghostCards(page, 'EPIC-3')).toHaveCount(1);
+        await expect(ghostCards(page, 'EPIC-2')).toHaveCount(1);
+        await expect(globalErrorSurfaces(page)).toHaveCount(0);
+        await expect(refreshButton(page, 'EPIC-3')).not.toHaveAttribute('data-state', 'error');
+        await expect(statusRegion(page)).not.toHaveText('Epic refresh failed');
+        await expectNoLeak(page);
+        expect(epicReadinessCalls(ctx.calls.slice(since)), 'a failed call is not retried').toHaveLength(1);
+    });
+}
+
+test('48. a story status change re-checks readiness but not Missing Info or Backlog; a team change re-checks Missing Info and readiness only', async ({ page }) => {
+    test.setTimeout(60000);
+    // The group holds a second team, so a story that changes team stays in the group (a team outside it would leave the epic's lists).
+    const ctx = await openWithGhosts(page, { prepare: (mock) => mock.respond('/api/groups-config', ({ json }) => json({
+        ...groupsConfigPayload, groups: [{ ...groupsConfigPayload.groups[0], teamIds: ['team-alpha', 'team-beta'] }],
+    })) });
+    setStory(ctx, 'E3-S01', { status: { name: 'Incomplete' } });
+    let since = ctx.calls.length;
+    await clickRefresh(page, 'EPIC-3');
+    await expect.poll(() => epicReadinessCalls(ctx.calls.slice(since)).length).toBe(1);
+    await expect.poll(() => epicAlertCalls(ctx.calls.slice(since)).length).toBe(2);
+    await expectRefreshSettled(page, 'EPIC-3');
+    await page.waitForTimeout(600);
+    expect(missingInfoCalls(ctx.calls.slice(since)), 'a status change needs no Missing Info call').toEqual([]);
+    expect(backlogCalls(ctx.calls.slice(since))).toEqual([]);
+
+    // Team: only Missing Info and readiness, not the epic-alerts / ready-to-close pair.
+    setStory(ctx, 'E3-S01', { teamId: 'team-beta', teamName: 'Beta Team' });
+    await parkPointer(page);
+    await page.waitForTimeout(10500); // the per-epic refresh cooldown
+    since = ctx.calls.length;
+    await clickRefresh(page, 'EPIC-3');
+    await expect.poll(() => epicReadinessCalls(ctx.calls.slice(since)).length).toBe(1);
+    await expect.poll(() => missingInfoCalls(ctx.calls.slice(since)).length).toBe(1);
+    await expectRefreshSettled(page, 'EPIC-3');
+    await page.waitForTimeout(600);
+    expect(epicAlertCalls(ctx.calls.slice(since))).toEqual([]);
+    expect(epicReadyToCloseCalls(ctx.calls.slice(since), 'EPIC-3')).toEqual([]);
+    expect(backlogCalls(ctx.calls.slice(since))).toEqual([]);
+    assertScopedCalls(ctx.calls, since, 'EPIC-3', storyKeysOf(ctx.scenario, 'EPIC-3'));
+});
+
+test('49. stale readiness assignee never shadows an epic assignee the refresh cleared', async ({ page }) => {
+    const ctx = await openWithGhosts(page);
+    const assignee = epicHeader(page, 'EPIC-3').locator('.epic-assignee .issue-person-editor-trigger');
+    await expect(assignee).toHaveValue('Cormac Lead');
+    ctx.scenario.epics['EPIC-3'].assignee = null; // cleared in Jira; the held ghost payload still says 'Epic Lead'
+    await clickRefresh(page, 'EPIC-3');
+    await expectRefreshSettled(page, 'EPIC-3');
+    await page.waitForTimeout(600);
+    await expect(assignee).not.toHaveValue('Cormac Lead');
+    await expect(assignee).not.toHaveValue('Epic Lead');
+    await expect(ghostCards(page, 'EPIC-3')).toHaveCount(1);
+});
+
+test('50. a department reload while the readiness call is in flight discards its result', async ({ page }) => {
+    const ctx = await openWithGhosts(page);
+    addBlockedEpic3Story(ctx);
+    const gate = deferred();
+    ctx.respond(call => call.pathname === '/api/eng/story-readiness' && call.params.epicKeys, async ({ json }) => { await gate.promise; return json(readinessSnapshotFor([])); });
+    await clickRefresh(page, 'EPIC-3');
+    await expect.poll(() => epicReadinessCalls(ctx.calls).length).toBe(1);
+    await expectRefreshSettled(page, 'EPIC-3');
+
+    const sinceGlobal = ctx.calls.length;
+    await globalRefreshButton(page).click();
+    await expect.poll(() => readinessCalls(ctx.calls.slice(sinceGlobal)).filter(call => !call.params.epicKeys).length).toBeGreaterThan(0);
+    await expect(ghostCards(page, 'EPIC-3')).toHaveCount(1);
+    gate.resolve();
+    await page.waitForTimeout(700); // the late answer would remove the ghost here
+    await expect(ghostCards(page, 'EPIC-3')).toHaveCount(1);
+});
+
+// The server's Missing Info answer per epic: `ctx.missing` maps a story key to the names it reports; `ctx.missingEpics` lists the epics in scope.
+async function openWithEpicAwareMissingInfo(page) {
+    const ctx = await mockDashboard(page);
+    ctx.missing = { 'E1-S02': ['Story Points'], 'E1-S04': ['Story Points'], 'E1-S05': ['Story Points'], 'E3-S01': ['Story Points'] };
+    ['E1-S02', 'E1-S04', 'E1-S05', 'E3-S01'].forEach(key => setStory(ctx, key, { customfield_10004: null }));
+    ctx.missingEpics = { 'EPIC-1': true, 'EPIC-3': true };
+    ctx.respond('/api/missing-info', ({ json, call }) => {
+        const epicKey = call.params.epicKeys;
+        const issues = Object.entries(ctx.missing)
+            .map(([key, names]) => missingInfoEntry(ctx.scenario.stories.find(story => story.key === key), names))
+            .filter(row => !epicKey || row.fields.epicKey === epicKey);
+        const epics = Object.keys(ctx.missingEpics).filter(key => ctx.missingEpics[key] && (!epicKey || key === epicKey))
+            .map(key => ({ key, summary: ctx.scenario.epics[key].summary, status: ctx.scenario.epics[key].status }));
+        return json({ issues, epics, count: issues.length, epicCount: epics.length });
+    });
+    await openCatchUp(page, ctx);
+    await expect(missingRows(page)).toHaveCount(4);
+    return ctx;
+}
+
+// The Missing Info alert also lists stories the client finds incomplete in the visible lists, so a row cannot tell the server-held entries
+// (`missingPlanningInfoTasks`) apart from the client-derived ones. Like `heldCopyCount`, this reads the mounted app's hook state: it returns
+// the keys of the held Missing Info entries (the only state array whose items carry `fields.missingFields`).
+const heldMissingKeys = page => page.evaluate(() => {
+    const host = document.getElementById('root');
+    const containerKey = Object.keys(host).find(name => name.startsWith('__reactContainer$'));
+    const seen = new Set();
+    const stack = [host[containerKey]];
+    const keys = new Set();
+    while (stack.length) {
+        const fiber = stack.pop();
+        if (!fiber || seen.has(fiber)) continue;
+        seen.add(fiber);
+        for (let hook = fiber.memoizedState; hook && typeof hook === 'object' && 'next' in hook; hook = hook.next) {
+            const state = hook.memoizedState;
+            if (Array.isArray(state) && state.length && state.every(item => Array.isArray(item?.fields?.missingFields))) state.forEach(item => keys.add(item.key));
+        }
+        stack.push(fiber.child, fiber.sibling);
+    }
+    return [...keys].sort();
+});
+const HELD_BEFORE = ['E1-S02', 'E1-S04', 'E1-S05', 'E3-S01'];
+
+test('51. a story added to the epic appears in Missing Info from an epic-scoped call; other epics\' entries stay', async ({ page }) => {
+    const ctx = await openWithEpicAwareMissingInfo(page);
+    expect(await heldMissingKeys(page)).toEqual(HELD_BEFORE);
+    ctx.scenario.stories.push(buildStory('E1-S13', 'EPIC-1', { points: null }));
+    ctx.missing['E1-S13'] = ['Story Points'];
+    const since = ctx.calls.length;
+    await clickRefresh(page, 'EPIC-1');
+    await expect.poll(() => heldMissingKeys(page)).toEqual([...HELD_BEFORE, 'E1-S13'].sort());
+    await expectRefreshSettled(page, 'EPIC-1');
+    await expect(missingRows(page).filter({ hasText: 'E1-S13' }).locator('.alert-pill.status')).toHaveText('Missing: Story Points');
+    const calls = missingInfoCalls(ctx.calls.slice(since));
+    expect(calls).toHaveLength(1);
+    expect(calls[0].params).toMatchObject({ epicKeys: 'EPIC-1', refresh: 'true', sprint: String(SPRINT_ID) });
+    expect(describeCalls(otherAlertCalls(ctx.calls.slice(since), 'EPIC-1', ['/api/missing-info', '/api/eng/story-readiness']))).toEqual([]);
+    assertScopedCalls(ctx.calls, since, 'EPIC-1', storyKeysOf(ctx.scenario, 'EPIC-1'));
+});
+
+test('52. an epic-scoped Missing Info answer that omits held issues keeps them (partial data), a failed call keeps them too', async ({ page }) => {
+    const ctx = await openWithEpicAwareMissingInfo(page);
+    ctx.scenario.stories.push(buildStory('E1-S13', 'EPIC-1', { points: 2 }));
+    ctx.missing = {}; // the server says nothing is missing any more, but the epic is still in scope
+    let since = ctx.calls.length;
+    await clickRefresh(page, 'EPIC-1');
+    await expect.poll(() => missingInfoCalls(ctx.calls.slice(since)).length).toBe(1);
+    await expectRefreshSettled(page, 'EPIC-1');
+    await page.waitForTimeout(600);
+    expect(await heldMissingKeys(page)).toEqual(HELD_BEFORE);
+
+    // A failed call: the same.
+    ctx.scenario.stories.push(buildStory('E3-S02', 'EPIC-3', { points: 2 }));
+    ctx.respond('/api/missing-info', ({ status, call }) => (call.params.epicKeys ? status(500, { error: 'internal_error', ...LEAK_CANARIES }) : undefined));
+    since = ctx.calls.length;
+    await clickRefresh(page, 'EPIC-3');
+    await expect.poll(() => missingInfoCalls(ctx.calls.slice(since)).length).toBe(1);
+    await expectRefreshSettled(page, 'EPIC-3');
+    await page.waitForTimeout(600);
+    expect(await heldMissingKeys(page)).toEqual(HELD_BEFORE);
+    await expect(globalErrorSurfaces(page)).toHaveCount(0);
+    await expect(statusRegion(page)).not.toHaveText('Epic refresh failed');
+    await expectNoLeak(page);
+    expect(missingInfoCalls(ctx.calls.slice(since)), 'a failed call is not retried').toHaveLength(1);
+});
+
+test('53. an epic that left the Missing Info scope loses its issues; other epics\' issues stay', async ({ page }) => {
+    const ctx = await openWithEpicAwareMissingInfo(page);
+    ctx.scenario.stories.push(buildStory('E1-S13', 'EPIC-1', { points: 2 }));
+    ctx.missing = { 'E3-S01': ['Story Points'] };
+    ctx.missingEpics = { 'EPIC-3': true }; // EPIC-1 is no longer in scope: the epic search of the scoped call answers nothing
+    await clickRefresh(page, 'EPIC-1');
+    await expect.poll(() => heldMissingKeys(page)).toEqual(['E3-S01']);
+});
+
+test('54. a department reload while the Missing Info call is in flight discards its result', async ({ page }) => {
+    const ctx = await openWithEpicAwareMissingInfo(page);
+    ctx.scenario.stories.push(buildStory('E1-S13', 'EPIC-1', { points: null }));
+    ctx.missing['E1-S13'] = ['Story Points'];
+    const gate = deferred();
+    const release = ctx.respond(call => call.pathname === '/api/missing-info' && call.params.epicKeys, async () => { await gate.promise; });
+    await clickRefresh(page, 'EPIC-1');
+    await expect.poll(() => missingInfoCalls(ctx.calls).filter(call => call.params.epicKeys).length).toBe(1);
+    await expectRefreshSettled(page, 'EPIC-1');
+    // The department reload below does not know about E1-S13 (the server answer is rewound), so a late merge would add its entry.
+    delete ctx.missing['E1-S13'];
+    const sinceGlobal = ctx.calls.length;
+    await globalRefreshButton(page).click();
+    await expect.poll(() => missingInfoCalls(ctx.calls.slice(sinceGlobal)).filter(call => !call.params.epicKeys).length).toBeGreaterThan(0);
+    await expect.poll(() => heldMissingKeys(page)).toEqual(HELD_BEFORE);
+    ctx.missing['E1-S13'] = ['Story Points'];
+    gate.resolve();
+    release();
+    await page.waitForTimeout(700);
+    expect(await heldMissingKeys(page)).toEqual(HELD_BEFORE);
+});
+
+// ---- Backlog (future sprint only) ----
+
+// Future sprint with a remote Backlog entry for EPIC-1 (the epic has no sprint value) served by an epic-aware /api/backlog-epics.
+async function openFutureSprintWithBacklogEntry(page) {
+    const ctx = await mockDashboard(page);
+    ctx.backlog = { 'EPIC-1': { key: 'EPIC-1', summary: 'EPIC-1 backlog entry', status: { name: 'To Do' }, assignee: { displayName: 'Epic Lead' }, components: ['C'], labels: [], teamId: 'team-alpha', teamName: 'Alpha Team', fields: { customfield_10101: [] }, cleanupStoryCount: 2 } };
+    ctx.respond('/api/sprints', ({ json }) => json({ sprints: [
+        { id: SPRINT_ID, name: SPRINT_NAME, state: 'active', startDate: '2026-05-01' },
+        { id: FUTURE_SPRINT_ID, name: FUTURE_SPRINT_NAME, state: 'future', startDate: '2026-08-01' },
+    ] }));
+    ctx.respond('/api/backlog-epics', ({ json, call }) => json({ epics: Object.values(ctx.backlog).filter(epic => !call.params.epicKeys || epic.key === call.params.epicKeys) }));
+    ctx.epicInScope = true;
+    ctx.respond(call => call.params.purpose === 'epic-alerts', ({ json, call }) => json({
+        epicsInScope: ctx.epicInScope && call.params.project === 'product' && call.params.epicKeys === 'EPIC-1' ? [{ ...ctx.scenario.epics['EPIC-1'], totalStories: 12 }] : [],
+    }));
+    await openCatchUp(page, ctx, { prefs: { selectedSprint: FUTURE_SPRINT_ID, sprintName: FUTURE_SPRINT_NAME } });
+    await expect(backlogRows(page)).toHaveCount(1);
+    await expect(backlogRows(page).first()).toContainText('EPIC-1 backlog entry');
+    return ctx;
+}
+
+test('55. in a future sprint a membership change issues one epic-scoped Backlog call per lane and the entry is replaced in place', async ({ page }) => {
+    const ctx = await openFutureSprintWithBacklogEntry(page);
+    ctx.scenario.stories.push(buildStory('E1-S13', 'EPIC-1', { points: 2 }));
+    ctx.backlog['EPIC-1'] = { ...ctx.backlog['EPIC-1'], summary: 'EPIC-1 backlog entry refreshed' };
+    const since = ctx.calls.length;
+    await clickRefresh(page, 'EPIC-1');
+    await expect(backlogRows(page).first()).toContainText('EPIC-1 backlog entry refreshed');
+    await expectRefreshSettled(page, 'EPIC-1');
+    await page.waitForTimeout(600);
+    await expect(backlogRows(page)).toHaveCount(1);
+    const calls = backlogCalls(ctx.calls.slice(since));
+    expect(calls.map(call => call.params.project).sort()).toEqual(['product', 'tech']);
+    calls.forEach(call => expect(call.params.epicKeys).toBe('EPIC-1'));
+    expect(describeCalls(otherAlertCalls(ctx.calls.slice(since), 'EPIC-1', ['/api/missing-info', '/api/eng/story-readiness', '/api/backlog-epics']))).toEqual([]);
+    assertScopedCalls(ctx.calls, since, 'EPIC-1', storyKeysOf(ctx.scenario, 'EPIC-1'));
+});
+
+test('56. an empty Backlog answer keeps the entry unless the epic-alerts call proves the epic left scope; a failed call keeps it', async ({ page }) => {
+    test.setTimeout(90000);
+    const ctx = await openFutureSprintWithBacklogEntry(page);
+    ctx.scenario.stories.push(buildStory('E1-S13', 'EPIC-1', { points: 2 }));
+    ctx.backlog = {}; // the endpoint answers 200 with nothing (also what it does when its own epic search fails)
+    let since = ctx.calls.length;
+    await clickRefresh(page, 'EPIC-1');
+    await expect.poll(() => backlogCalls(ctx.calls.slice(since)).length).toBe(2);
+    await expectRefreshSettled(page, 'EPIC-1');
+    await page.waitForTimeout(700);
+    await expect(backlogRows(page)).toHaveCount(1);
+
+    // A failed Backlog call keeps the entry as well.
+    ctx.scenario.stories.push(buildStory('E1-S14', 'EPIC-1', { points: 2 }));
+    const failBacklog = ctx.respond('/api/backlog-epics', ({ status, call }) => (call.params.epicKeys ? status(500, { error: 'internal_error', ...LEAK_CANARIES }) : undefined));
+    await page.waitForTimeout(10500); // the per-epic refresh cooldown
+    since = ctx.calls.length;
+    await clickRefresh(page, 'EPIC-1');
+    await expect.poll(() => backlogCalls(ctx.calls.slice(since)).length).toBe(2);
+    await expectRefreshSettled(page, 'EPIC-1');
+    await page.waitForTimeout(700);
+    await expect(backlogRows(page)).toHaveCount(1);
+    await expect(globalErrorSurfaces(page)).toHaveCount(0);
+    await expectNoLeak(page);
+
+    // The epic left scope (a successful empty epic-alerts answer): the entry goes.
+    failBacklog();
+    ctx.epicInScope = false;
+    ctx.scenario.stories.push(buildStory('E1-S15', 'EPIC-1', { points: 2 }));
+    await page.waitForTimeout(10500);
+    await clickRefresh(page, 'EPIC-1');
+    await expect(backlogRows(page)).toHaveCount(0);
+});
+
+test('57. in an active sprint a membership change issues no Backlog call', async ({ page }) => {
+    const ctx = await mockDashboard(page);
+    await openCatchUp(page, ctx);
+    ctx.scenario.stories.push(buildStory('E1-S13', 'EPIC-1', { points: 2 }));
+    const since = ctx.calls.length;
+    await clickRefresh(page, 'EPIC-1');
+    await expect.poll(() => missingInfoCalls(ctx.calls.slice(since)).length).toBe(1);
+    await expectRefreshSettled(page, 'EPIC-1');
+    await page.waitForTimeout(600);
+    expect(backlogCalls(ctx.calls.slice(since))).toEqual([]);
+});
+
+test('58. a held readiness initiative never shadows the omitted initiative key of refreshed epic details', async ({ page }) => {
+    const ctx = await openWithGhosts(page);
+    ctx.ghosts['EPIC-2'] = { ...ctx.ghosts['EPIC-2'], initiative: { key: 'INIT-1', summary: 'Synthetic initiative' } };
+    await page.reload({ waitUntil: 'networkidle' });
+    await expect(ghostCards(page, 'EPIC-2')).toHaveCount(1);
+    await expect(page.locator('.initiative-body > .epic-block[data-epic-key="EPIC-2"]')).toHaveCount(1);
+    delete ctx.scenario.epics['EPIC-2'].initiative; // the server omits the key when the epic has no Initiative parent
+    ctx.respond(call => call.pathname === '/api/eng/story-readiness' && call.params.epicKeys, ({ status }) => status(500, { error: 'story_readiness_unavailable' }));
+    await clickRefresh(page, 'EPIC-2');
+    await expectRefreshSettled(page, 'EPIC-2');
+    await expect(page.locator('.initiative-body > .epic-block[data-epic-key="EPIC-2"]')).toHaveCount(0);
+    await expect(epicBlock(page, 'EPIC-2')).toBeVisible();
 });
 
 // ---- test 26 (load_performance run) is a command, see the report ----

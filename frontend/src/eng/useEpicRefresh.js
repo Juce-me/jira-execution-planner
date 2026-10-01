@@ -3,7 +3,7 @@ import { flushSync } from 'react-dom';
 import { REMOVE_FADE_MS } from '../issues/IssueCard.jsx';
 import { sortTasksByPriority } from './engTaskUtils.js';
 import { createEpicRefreshController } from './epicRefreshController.js';
-import { alertCallsFor, mergeEpicScopeEntries, recomputeMissingPlanningInfo, replaceEpicStories } from './epicRefreshAlerts.js';
+import { alertCallsFor, mergeEpicMissingIssues, mergeEpicScopeEntries, recomputeMissingPlanningInfo, replaceEpicStories } from './epicRefreshAlerts.js';
 import { glareDelayMs, playGlare, selectGlareKeys } from './epicRefreshGlare.js';
 import { diffEpic, mergeEpicStories, patchEpicScopeEntries, patchStoryCopies } from './epicRefreshPatch.js';
 
@@ -11,6 +11,7 @@ const EPIC_SCOPE_LISTS = ['productEpicsInScope', 'techEpicsInScope', 'readyToClo
 const STORY_COPY_LISTS = ['readyToCloseProductTasks', 'readyToCloseTechTasks'];
 const FRAME_TIMEOUT_MS = 250;
 const ALERT_LANES = [['product', 'Product'], ['tech', 'Tech']];
+const ALERT_CALLS = ['readyToClose', 'epicAlerts', 'missingInfo', 'backlog', 'readiness'];
 
 const setterName = listName => `set${listName[0].toUpperCase()}${listName.slice(1)}`;
 const headerSelector = epicKey => `[data-epic-key="${epicKey}"] .epic-header`;
@@ -60,39 +61,51 @@ export function useEpicRefresh(inputs) {
         timersRef.current.clear();
     }, []);
 
-    // Epic-scoped alert calls for one epic (Task 11; Task 13b reuses it for inline edits). `calls` are names from `alertCallsFor`; the
-    // ones this runner knows are `readyToClose` and `epicAlerts`. Both lanes are called and each lane is merged on its own: a lane
-    // that fails leaves its entries untouched and shows nothing. Results are dropped if a department reload or a re-armed alert cohort
-    // started meanwhile (a wholesale reload is authoritative). `alertVersion` defaults to the version at this call.
+    // Epic-scoped alert calls for one epic (Tasks 11 and 12; Task 13b reuses it for inline edits). `calls` are names from `alertCallsFor`;
+    // unknown names are ignored. Every call is merged on its own: a call or lane that fails (or answers `denied`, `rate_limited`, ...)
+    // leaves the held entries untouched and shows nothing. Results are dropped if a department reload or a re-armed alert cohort started
+    // meanwhile (a wholesale reload is authoritative). `alertVersion` defaults to the version at this call.
     const recheckEpicAlerts = React.useCallback(async (epicKey, calls, { alertVersion } = {}) => {
-        const wanted = (calls || []).filter(call => call === 'readyToClose' || call === 'epicAlerts');
+        const wanted = (calls || []).filter(call => ALERT_CALLS.includes(call));
         const started = latest.current;
-        if (!wanted.length || !started.loadEpicAlerts) return;
+        const laneCalls = started.loadEpicAlerts ? wanted.filter(call => call !== 'readiness') : [];
+        const wantsReadiness = wanted.includes('readiness') && Boolean(started.loadEpicReadiness);
+        if (!laneCalls.length && !wantsReadiness) return;
         const version = alertVersion !== undefined ? alertVersion : started.getAlertVersion?.();
         const guards = started.readGuards(epicKey);
-        let lanes;
-        try {
-            lanes = await started.loadEpicAlerts({ epicKey, calls: wanted });
-        } catch (error) {
-            return;
-        }
-        const { setters, getAlertVersion, readGuards, getProtectedKeys } = latest.current;
+        const [lanes, readiness] = await Promise.all([
+            laneCalls.length ? started.loadEpicAlerts({ epicKey, calls: laneCalls }).catch(() => null) : null,
+            wantsReadiness ? started.loadEpicReadiness(epicKey).catch(() => null) : null,
+        ]);
+        const { setters, getAlertVersion, readGuards, getProtectedKeys, mergeReadinessEpic, getState } = latest.current;
         const now = readGuards(epicKey);
         if (getAlertVersion?.() !== version || now.epoch !== guards.epoch || now.version !== guards.version || now.scopeKey !== guards.scopeKey) return;
         // The epic's own header entry is kept as held while the user is editing it.
         const editing = getProtectedKeys(epicKey).has(epicKey);
         ALERT_LANES.forEach(([lane, title]) => {
-            const { epicAlerts, readyToClose } = lanes?.[lane] || {};
+            const { epicAlerts, readyToClose, backlog } = lanes?.[lane] || {};
+            // The alert object's successful empty answer is the only proof the epic left scope: the other endpoints answer an empty list
+            // with 200 when their own epic search fails, and an empty answer must not delete from partial data (MRT019).
+            const outOfScope = epicAlerts?.status === 'ok' && epicAlerts.epicsInScope.length === 0;
             if (epicAlerts?.status === 'ok' && !editing) {
                 setters[`set${title}EpicsInScope`](prev => mergeEpicScopeEntries({ held: prev, incoming: epicAlerts.epicsInScope, epicKey }));
             }
             if (readyToClose?.status === 'ok') {
-                // That endpoint answers an empty list when its epic search fails, so only the alert object's successful empty answer deletes.
-                const outOfScope = epicAlerts?.status === 'ok' && epicAlerts.epicsInScope.length === 0;
                 setters[`setReadyToClose${title}Tasks`](prev => replaceEpicStories({ held: prev, incoming: readyToClose.items, epicKey, emptyConfirmed: outOfScope }));
                 if (!editing) setters[`setReadyToClose${title}EpicsInScope`](prev => mergeEpicScopeEntries({ held: prev, incoming: readyToClose.epicsInScope, epicKey, deleteWhenAbsent: outOfScope }));
             }
+            if (backlog?.status === 'ok' && !editing) {
+                setters[`setBacklog${title}Epics`](prev => mergeEpicScopeEntries({ held: prev, incoming: backlog.epics, epicKey, deleteWhenAbsent: outOfScope }));
+            }
         });
+        const missingInfo = lanes?.missingInfo;
+        if (missingInfo?.status === 'ok') {
+            // The endpoint's epic search answers an error on failure, so an answer without the epic means it left the Missing Info scope.
+            const epicInScope = missingInfo.epics.some(epic => String(epic?.key ?? '') === String(epicKey));
+            setters.setMissingInfoEpics(prev => mergeEpicScopeEntries({ held: prev, incoming: missingInfo.epics, epicKey }));
+            setters.setMissingPlanningInfoTasks(prev => mergeEpicMissingIssues({ held: prev, incoming: missingInfo.issues, epicKey, epicInScope }));
+        }
+        if (readiness?.status === 'ok') mergeReadinessEpic?.(epicKey, readiness.payload, { epicDetails: getState().epicDetails?.[epicKey] });
     }, []);
 
     if (!controllerRef.current) {
@@ -130,6 +143,8 @@ export function useEpicRefresh(inputs) {
             const { setters } = latest.current;
             const fetchedEpic = update.epicDetailsPatch?.[update.epicKey];
             if (update.epicDetailsPatch) setters.setEpicDetails(prev => ({ ...prev, ...update.epicDetailsPatch }));
+            // Stale readiness assignee, track or initiative must not shadow what the refreshed epic details cleared.
+            if (fetchedEpic) latest.current.mergeReadinessEpic?.(update.epicKey, null, { epicDetails: fetchedEpic });
             if (fetchedEpic) EPIC_SCOPE_LISTS.forEach(name => setters[setterName(name)](prev => patchEpicScopeEntries(prev, update.epicKey, fetchedEpic)));
             const fetchedByKey = new Map(update.fetchedStories.map(issue => [issue.key, issue]));
             STORY_COPY_LISTS.forEach(name => setters[setterName(name)](prev => patchStoryCopies(prev, fetchedByKey)));

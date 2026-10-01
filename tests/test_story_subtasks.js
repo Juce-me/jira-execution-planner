@@ -149,3 +149,49 @@ test('dashboard wires story subtask hook without owning endpoint literals', () =
     assert.ok(source.includes('onToggleSubtasks={toggleStorySubtasks}'));
     assert.ok(source.includes('onRetrySubtasks={retryStorySubtasks}'));
 });
+
+function loadInvalidationHelper() {
+    const source = readSource(hookPath);
+    const start = source.indexOf('export function dropStorySubtaskEntries');
+    assert.ok(start > -1, 'Expected useStorySubtasks.js to export dropStorySubtaskEntries');
+    const end = source.indexOf('\n}\n', start);
+    const body = source.slice(start, end + 3).replace('export function ', 'function ');
+    return new Function(`${body}; return dropStorySubtaskEntries;`)();
+}
+
+test('invalidateStorySubtasks drops cached entries for the keys and reloads the expanded ones', () => {
+    const dropStorySubtaskEntries = loadInvalidationHelper();
+    const state = {
+        'SYN-1': { expanded: true, loaded: true, items: [{ key: 'SYN-1-a' }], summary: { total: 1 } },
+        'SYN-2': { expanded: false, loaded: true, items: [{ key: 'SYN-2-a' }], summary: { total: 1 } },
+        'SYN-3': { expanded: true, loaded: true, items: [], summary: { total: 0 } },
+    };
+    const { next, reloadKeys } = dropStorySubtaskEntries(state, ['SYN-1', 'SYN-2']);
+    assert.deepEqual(reloadKeys, ['SYN-1']);
+    assert.equal('SYN-2' in next, false, 'collapsed entries are dropped');
+    assert.equal(next['SYN-1'].loaded, false, 'expanded entries are marked stale until the reload lands');
+    assert.equal(next['SYN-1'].expanded, true);
+    assert.equal(next['SYN-3'], state['SYN-3'], 'untouched keys keep the same entry');
+});
+
+test('invalidateStorySubtasks is a no-op for unknown keys', () => {
+    const dropStorySubtaskEntries = loadInvalidationHelper();
+    const state = { 'SYN-1': { expanded: true, loaded: true, items: [], summary: null } };
+    const { next, reloadKeys } = dropStorySubtaskEntries(state, ['SYN-9']);
+    assert.equal(next, state, 'state identity is preserved so no re-render is scheduled');
+    assert.deepEqual(reloadKeys, []);
+});
+
+test('story subtask hook exposes invalidateStorySubtasks and reloads through the existing loader', () => {
+    const hookSource = readSource(hookPath);
+    assert.match(hookSource, /invalidateStorySubtasks,\n\s*\};/, 'hook must return invalidateStorySubtasks');
+    const start = hookSource.indexOf('const invalidateStorySubtasks = React.useCallback(');
+    assert.ok(start > -1, 'Expected invalidateStorySubtasks to be a useCallback in the hook');
+    const end = hookSource.indexOf('[loadStorySubtasks]);', start);
+    assert.ok(end > -1, 'invalidateStorySubtasks must depend on loadStorySubtasks');
+    const body = hookSource.slice(start, end);
+    assert.ok(body.includes('dropStorySubtaskEntries('), 'invalidation must go through dropStorySubtaskEntries');
+    assert.match(body, /reloadKeys\.forEach\(/, 'only the expanded keys returned by the helper are reloaded');
+    assert.match(body, /loadStorySubtasks\(\{ key \}, \{ forceRefresh: true \}\)/, 'reload must reuse loadStorySubtasks');
+    assert.equal(/fetchStorySubtasks\(/.test(body), false, 'invalidation must not fetch subtasks directly');
+});

@@ -346,7 +346,7 @@ export function useEngStatusTransitions({
                     }
                 }
                 const affectedSubtaskStoryKeys = resolveSubtaskParentStoryKeys(succeededKeys, storySubtasksByKey);
-                if (isCurrentMutation) onAlertDataInvalidated?.();
+                if (isCurrentMutation) onAlertDataInvalidated?.({ keys: (response?.results || []).filter((entry) => entry?.result === 'success').map((entry) => entry?.key).filter(Boolean) });
                 if (!isSingleIssueSurface || sourceSurface === 'board') {
                     await onTransitionSuccessRefresh?.({ affectedSubtaskStoryKeys });
                 }

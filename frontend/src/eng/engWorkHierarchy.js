@@ -1,5 +1,6 @@
 import { matchesEngEpicSearch, sortEpicGroups } from './engTaskUtils.js';
 import { buildStoryRequirementId } from './alertEpicNavigation.js';
+import { shouldHideReadinessGhost } from './epicRefreshAlerts.js';
 
 const SUPPORTED_SPRINT_STATES = new Set(['active', 'future']);
 
@@ -271,6 +272,8 @@ export function buildEngWorkHierarchy({
                     continue;
                 }
                 seenTeams.add(teamId);
+                // A per-epic refresh may have added an actionable Story the held snapshot does not know about yet.
+                if (shouldHideReadinessGhost({ epicKey, teamId, stories: existing?.tasks })) continue;
                 if (teamIds && !teamIds.has(teamId)) continue;
                 const requirement = requirementFrom(epic, team, scope);
                 requirements.push(requirement);

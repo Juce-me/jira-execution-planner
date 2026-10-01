@@ -57,6 +57,17 @@ The Jira Team field remains the existing OR alternative to label matching; alias
 
 **Rollback note.** The shared group-configuration payload moved from version 1 (one label per Team) to version 2 (one to three label aliases per Team) as part of this change. The release is forward-only: code from before this change would read a saved alias array with `str(...)` and persist a literal value such as `"['a', 'b']"` on its next save. Before deploying, snapshot the `workspace_group_configs` rows (DB/OAuth) or the `teamGroups` section of `dashboard-config.json` (Basic mode). Rolling back means restoring that snapshot and then redeploying the previous release — never run the previous release against version-2 group data. After deploy, reload every open dashboard tab before editing Department labels, because a stale pre-deploy tab still normalizes a version-2 alias array with `String(...)` and would persist it as a joined legacy scalar on its next save.
 
+## Refresh one Epic
+
+In Catch Up and Planning, hover (or keyboard-focus) an Epic header to reveal a small refresh button in its upper-right corner. On touch devices it is always visible. Choosing it reloads only that Epic's Stories for the selected Sprint, plus the Epic's own header details, from Jira under your own sign-in. There is no whole-screen loading state; values change in place, changed cards play a subtle amber glare (at most eight cards in view), a Story that left the Epic dissolves, and a new Story fades in. A status line announces the result ("3 stories updated", "Epic is up to date", or a failure).
+
+- **Catch Up** also re-checks that Epic's alerts only. Story Points, assignee, summary and priority changes are handled on the client; a status change or a Story added, removed or moved between Sprints re-checks the server-backed alerts (Ready to Close, Empty Epic, Missing Team, Missing Labels, Missing Info, Backlog, Stories Required) for that Epic. Nothing about other Epics is reloaded.
+- **Planning** refreshes the cards without any alert request; the capacity cards are kept as they were and re-read only when you change the Sprint, group, mode or selected Teams, or use the global Refresh. A Story that left the Epic is dropped from the selection exactly as a normal reload would.
+- The button is ignored while a department load is running, while the Epic is already refreshing, for 10 seconds after a refresh, while two Epics are refreshing, and while that Epic has an open menu or inline editor. Your own pending edits are never overwritten.
+- Changes hidden by the active filters are announced ("N changes hidden by filters") and do not glint. A Story you removed from the list stays removed.
+- Limits: a Story moved out of this Epic appears in its new Epic only after that Epic, or the global Refresh, is refreshed. An Epic with 250 or more Stories in the Sprint never loses cards from a refresh. A refresh never writes to Jira.
+- Inline status and priority edits follow the same rule: in Catch Up a status change re-checks only its Epic's alerts and a priority change re-checks none; the global Refresh and the assignee and Story Points edits still reload the whole alert set.
+
 ## Planning
 
 When capacity is enabled, the app reads capacity from the Jira project and field configured in Settings → Admin → Capacity. Planning is a calculator over the currently visible Stories:

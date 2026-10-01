@@ -23,6 +23,7 @@ const API_SURFACES = new Set([
     'auth_status',
     'home_connection',
     'eng_tasks',
+    'epic_refresh',
     'eng_story_readiness',
     'eng_subtasks',
     'jira_team_capacity',

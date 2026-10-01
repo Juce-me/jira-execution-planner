@@ -12,6 +12,7 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 - ✅ **Project Filtering** - Separate Tech and Product tasks
 - ✅ **Clean, Minimalist UI** - Beautiful typography with smooth animations
 - ✅ **Auto-refresh** - Reload button for tasks and sprints
+- ✅ **Per-Epic refresh** - Hover an Epic header in Catch Up or Planning to refresh just that Epic's Stories, header and alerts from Jira; changed cards glint and nothing else reloads
 - ✅ **Secure Credentials** - Local secrets stay outside git; DB/OAuth user tokens are encrypted in database storage
 - ✅ **Team-aware filtering** - Multi-team JQL plus UI dropdown to slice per team and see team name on each story
 - ✅ **Team groups** - Define workspace-shared department groups (1-12 teams), choose a shared default, and let each user choose which groups appear in dashboard controls
@@ -353,6 +354,7 @@ Blocked until deployment reference:
    - Makes secure READ-ONLY API requests to Jira
    - Caches sprint list for 24 hours, task data for 5 minutes (reduces API load)
    - Refresh button bypasses all server caches for immediate Jira updates
+   - The per-Epic refresh button reloads one Epic (its Stories, header and, in Catch Up, its alerts) without touching the rest of the page
    - Returns filtered data to frontend
 
 2. **Frontend** (`jira-dashboard.html`):

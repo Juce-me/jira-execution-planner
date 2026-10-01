@@ -1229,6 +1229,66 @@ class TestCreateStoriesAlertApi(unittest.TestCase):
         payload = response.get_json() or {}
         self.assertEqual(payload.get('epics'), backlog_epics)
 
+    def test_backlog_epics_epic_keys_scope_both_searches(self):
+        app = jira_server.app
+        app.testing = True
+        client = app.test_client()
+        epic_payload = {
+            'issues': [{
+                'key': 'EPIC-42',
+                'fields': {
+                    'summary': 'Backlog epic',
+                    'status': {'name': 'To Do'},
+                    'assignee': {'displayName': 'Alice'},
+                    'components': [{'name': 'BidSwitch'}],
+                    'customfield_team': {'id': 'team-a', 'name': 'Example Team Alpha'},
+                    'customfield_sprint': None
+                }
+            }]
+        }
+        child_payload = {'issues': []}
+
+        with patch.object(
+            jira_server,
+            'jira_search_request',
+            side_effect=[_mock_response(200, epic_payload), _mock_response(200, child_payload)]
+        ) as mock_search, \
+             patch.object(jira_server, 'resolve_team_field_id', return_value='customfield_team'), \
+             patch.object(jira_server, 'resolve_epic_link_field_id', return_value='customfield_epic_link'), \
+             patch.object(jira_server, 'get_sprint_field_id', return_value='customfield_sprint'):
+            response = client.get('/api/backlog-epics?project=product&epicKeys=EPIC-42')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual([epic['key'] for epic in response.get_json()['epics']], ['EPIC-42'])
+        epic_jql = mock_search.call_args_list[0].args[0]['jql']
+        children_jql = mock_search.call_args_list[1].args[0]['jql']
+        self.assertIn('issueKey in ("EPIC-42")', epic_jql)
+        self.assertIn('EPIC-42', children_jql)
+        self.assertNotIn('EPIC-43', children_jql)
+
+    def test_backlog_epics_without_epic_keys_adds_no_issue_key_clause(self):
+        app = jira_server.app
+        app.testing = True
+        client = app.test_client()
+        with patch.object(jira_server, 'fetch_backlog_epics_for_alert', return_value=[]) as mock_fetch, \
+             patch.object(jira_server, 'resolve_team_field_id', return_value='customfield_team'), \
+             patch.object(jira_server, 'resolve_epic_link_field_id', return_value='customfield_epic_link'), \
+             patch.object(jira_server, 'get_sprint_field_id', return_value='customfield_sprint'):
+            response = client.get('/api/backlog-epics?project=product')
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertNotIn('issueKey', mock_fetch.call_args.args[0])
+
+    def test_backlog_epics_rejects_bad_or_multiple_epic_keys(self):
+        app = jira_server.app
+        app.testing = True
+        client = app.test_client()
+        for value in ('not-a-key', 'EPIC-1,EPIC-2', 'EPIC-1)%20OR%20(a=b'):
+            with patch.object(jira_server, 'fetch_backlog_epics_for_alert') as mock_fetch:
+                response = client.get(f'/api/backlog-epics?project=product&epicKeys={value}')
+            self.assertEqual(response.status_code, 400, value)
+            self.assertEqual(response.get_json()['error'], 'invalid_epic_keys')
+            mock_fetch.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()

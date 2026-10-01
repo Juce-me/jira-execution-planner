@@ -111,6 +111,7 @@ from backend.services.alert_epics import (
     build_alert_epic_payloads as build_alert_epic_payloads_service,
     fetch_epics_for_alert_scope as fetch_epics_for_alert_scope_service,
     fetch_epics_by_keys_for_alert as fetch_epics_by_keys_for_alert_service,
+    quote_jql_value,
 )
 from backend.services import update_check as _update_check_service
 from backend.services import priority_weights as _priority_weights_service
@@ -120,6 +121,7 @@ from backend.services import shared_group_config as _shared_group_config_service
 from backend.services import group_board as _group_board_service
 from backend.services import shared_capacity_config as _shared_capacity_config_service
 from backend.services.eng_subtasks import build_embedded_subtask_summary
+from backend.services.epic_refresh import EPIC_ALERTS_PURPOSE, EPIC_REFRESH_PURPOSE, apply_epic_enrichment, fetch_epic_alert_bundle, epic_refresh_call, epic_refresh_transport, evict_scope_entries, response_meta as epic_refresh_meta
 from backend.epm import projects as epm_projects
 from backend.security.policy import (
     is_oauth_ready_api_path as policy_is_oauth_ready_api_path,
@@ -715,7 +717,7 @@ def current_jira_get(path, *, params=None, timeout=30, context=None, diagnostic_
         if diagnostic_transport is not None:
             kind = 'search' if str(path).endswith('/search/jql') else 'catalog'
             return _jira_client.resilient_jira_get(url, session=HTTP_SESSION, diagnostic_kind=kind, **diagnostic_transport.resilient_kwargs(), **kwargs)
-        return resilient_jira_get(url, session=HTTP_SESSION, breaker=JIRA_SEARCH_CIRCUIT_BREAKER, **kwargs)
+        return resilient_jira_get(url, session=HTTP_SESSION, **{'breaker': JIRA_SEARCH_CIRCUIT_BREAKER, **epic_refresh_transport()}, **kwargs)
 
     return jira_get(
         current_auth_config(),
@@ -2877,13 +2879,15 @@ def issue_has_sprint(value):
     return True
 
 
-def fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id=None, scope_team_ids=None, scope_team_labels=None, scope_sprint_label=None, complete_alert_scope=False):
+def fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sprint_field_id=None, scope_team_ids=None, scope_team_labels=None, scope_sprint_label=None, complete_alert_scope=False, epic_keys=None):
     """Fetch epics matching the current sprint/team filters so UI can flag epics with 0 stories."""
     epic_jql = derive_epic_jql(remove_team_filter_from_jql(jql), EPIC_EMPTY_TEAM_IDS)
     epic_jql = add_sprint_label_alternative_to_jql(epic_jql, scope_sprint_label)
     scope_clause = _group_config_service.build_epic_alert_scope_clause(scope_team_ids, scope_team_labels, normalize_team_ids)
     if scope_clause:
         epic_jql = add_clause_to_jql(epic_jql, scope_clause)
+    if epic_keys:
+        epic_jql = add_clause_to_jql(epic_jql, f'issueKey in ({", ".join(quote_jql_value(key) for key in epic_keys)})')
     return fetch_epics_for_alert_scope_service(
         epic_jql, team_field_id, epic_name_field, sprint_field_id,
         search_request=jira_search_request,
@@ -2982,12 +2986,14 @@ def fetch_backlog_epics_for_alert(jql, headers, team_field_id, sprint_field_id, 
     return epics
 
 
-def fetch_story_counts_for_epics(epic_keys, headers, epic_link_field):
+def fetch_story_counts_for_epics(epic_keys, headers, epic_link_field, failures=None):
     """Return total Story counts for each epic key.
 
     Prefer counting via the Epic Link field (company-managed Jira). If that yields zero for an epic,
     fall back to counting via `parent` (team-managed projects / some Jira configs).
+    A non-200 page appends its status to `failures` (when given) so callers can refuse the partial counts.
     """
+    failures = [] if failures is None else failures
     epic_keys = [k for k in (epic_keys or []) if k]
     if not epic_keys:
         return {}
@@ -3007,6 +3013,7 @@ def fetch_story_counts_for_epics(epic_keys, headers, epic_link_field):
                 payload['nextPageToken'] = next_page_token
             resp = jira_search_request(payload)
             if resp.status_code != 200:
+                failures.append(resp.status_code)
                 return local_counts
 
             data = resp.json() or {}
@@ -3048,13 +3055,15 @@ def fetch_story_counts_for_epics(epic_keys, headers, epic_link_field):
     return counts
 
 
-def fetch_story_distribution_for_epics(epic_keys, headers, epic_link_field, selected_sprint, team_field_id=None):
+def fetch_story_distribution_for_epics(epic_keys, headers, epic_link_field, selected_sprint, team_field_id=None, failures=None):
     """Return selected/future not-completed story counts for each epic key.
 
     selectedActionableByTeam breaks the selected-sprint open count down by the
     story's Team[Team] id so the Needs Stories alert can tell which labeled teams
     are still missing a sprint story even when other teams already created one.
+    A non-200 page appends its status to `failures` (when given) so callers can refuse the partial counts.
     """
+    failures = [] if failures is None else failures
     epic_keys = [k for k in (epic_keys or []) if k]
     if not epic_keys:
         return {}
@@ -3092,6 +3101,7 @@ def fetch_story_distribution_for_epics(epic_keys, headers, epic_link_field, sele
                     payload['nextPageToken'] = next_page_token
                 resp = jira_search_request(payload)
                 if resp.status_code != 200:
+                    failures.append(resp.status_code)
                     return
                 data = resp.json() or {}
                 issues = data.get('issues', []) or []
@@ -3136,6 +3146,7 @@ def fetch_story_distribution_for_epics(epic_keys, headers, epic_link_field, sele
                     payload['nextPageToken'] = next_page_token
                 resp = jira_search_request(payload)
                 if resp.status_code != 200:
+                    failures.append(resp.status_code)
                     return
                 data = resp.json() or {}
                 issues = data.get('issues', []) or []
@@ -3219,6 +3230,7 @@ def fetch_tasks(include_team_name=False):
         epic_keys_filter = sorted({t.strip() for t in epic_keys_param.split(',') if t.strip()})
         use_template = bool(team_ids and JQL_QUERY_TEMPLATE)
         lightweight_ready_to_close = request_purpose == 'ready-to-close'
+        is_epic_refresh = request_purpose == EPIC_REFRESH_PURPOSE
         record_timing('parse_params', parse_started)
         auth_context = current_request_auth_context()
         if project_filter in ('product', 'tech'):
@@ -3242,7 +3254,7 @@ def fetch_tasks(include_team_name=False):
         if cache_enabled:
             with _cache_lock:
                 cached_entry = TASKS_CACHE.get(cache_key)
-        if cache_enabled and not force_refresh and cached_entry and (time.time() - cached_entry.get('timestamp', 0)) < TASKS_CACHE_TTL_SECONDS:
+        if cache_enabled and not force_refresh and not is_epic_refresh and cached_entry and (time.time() - cached_entry.get('timestamp', 0)) < TASKS_CACHE_TTL_SECONDS:
             mark_task_cache_hit(cached_entry.get('completeness', 'unknown'))
             cached_response = jsonify(cached_entry.get('data') or {})
             cached_response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
@@ -3323,6 +3335,15 @@ def fetch_tasks(include_team_name=False):
 
         sprint_field_id = get_sprint_field_id()
 
+        if request_purpose == EPIC_ALERTS_PURPOSE:  # one epic's alert object; never cached, no story fetch
+            bundle = epic_refresh_call(True, fetch_epic_alert_bundle, fetch_epics_for_empty_alert, fetch_story_counts_for_epics,
+                                       fetch_story_distribution_for_epics, epic_key=epic_keys_filter[0], jql=jql, headers=headers,
+                                       team_field_id=team_field_id, epic_link_field_id=epic_link_field_id, sprint_field_id=sprint_field_id,
+                                       sprint=sprint, team_ids=team_ids, team_label_values=team_label_values, sprint_name=sprint_name)
+            bundle_response = jsonify(bundle)
+            bundle_response.headers.update({'Cache-Control': 'no-cache, no-store, must-revalidate', 'Pragma': 'no-cache'})
+            return bundle_response
+
         # Prepare request parameters for search endpoint
         if lightweight_ready_to_close:
             fields_list = [
@@ -3374,7 +3395,7 @@ def fetch_tasks(include_team_name=False):
                 if next_page_token:
                     payload['nextPageToken'] = next_page_token
 
-                response = jira_search_request(payload)
+                response = epic_refresh_call(is_epic_refresh, jira_search_request, payload)
                 log_debug(f'Jira search page response status={response.status_code}')
 
                 if response.status_code != 200:
@@ -3459,7 +3480,10 @@ def fetch_tasks(include_team_name=False):
         record_timing('normalize_tasks', normalize_started)
 
         enrich_epics_started = time.perf_counter()
-        if lightweight_ready_to_close:
+        if is_epic_refresh:
+            epic_details = epic_refresh_call(True, fetch_epic_details_bulk, epic_keys_filter, headers, epic_name_field)
+            epics_in_scope = []
+        elif lightweight_ready_to_close:
             epic_details = {}
             if epic_keys_filter:
                 epics_in_scope = fetch_epics_by_keys_for_alert_service(
@@ -3527,21 +3551,7 @@ def fetch_tasks(include_team_name=False):
                     epic_story_counts = future_epic_story_counts.result() if future_epic_story_counts else None
                     epic_story_distribution = future_epic_story_distribution.result()
             record_timing('epic_counts_distribution', enrich_counts_started)
-            for epic in epics_in_scope:
-                key = epic.get('key')
-                epic['totalStories'] = epic_story_counts.get(key) if (epic_story_counts and key) else None
-                if key and epic_story_distribution.get(key):
-                    epic['selectedStories'] = epic_story_distribution[key].get('selectedStories', 0)
-                    epic['selectedActionableStories'] = epic_story_distribution[key].get('selectedActionableStories', 0)
-                    epic['futureOpenStories'] = epic_story_distribution[key].get('futureOpenStories', 0)
-                    epic['openStoriesOutsideSelected'] = epic_story_distribution[key].get('openStoriesOutsideSelected', 0)
-                    epic['selectedActionableByTeam'] = epic_story_distribution[key].get('selectedActionableByTeam', {})
-                else:
-                    epic['selectedStories'] = 0
-                    epic['selectedActionableStories'] = 0
-                    epic['futureOpenStories'] = 0
-                    epic['openStoriesOutsideSelected'] = 0
-                    epic['selectedActionableByTeam'] = {}
+            apply_epic_enrichment(epics_in_scope, epic_story_counts, epic_story_distribution)
         slim_build_started = time.perf_counter()
         slim_issues = []
         for issue in collected_issues:
@@ -3593,6 +3603,8 @@ def fetch_tasks(include_team_name=False):
 
         data['issues'] = slim_issues
         data['epics'] = epic_details
+        if is_epic_refresh:
+            data.update(epic_refresh_meta(len(slim_issues), max_results, epic_keys_filter, epic_details))
         data['epicsInScope'] = epics_in_scope
         data['teamFieldId'] = team_field_id
         if include_debug_timings:
@@ -3609,12 +3621,16 @@ def fetch_tasks(include_team_name=False):
             f'timings_ms={timings_ms}'
         )
         def publish_result():
-            if cache_enabled:
+            if cache_enabled and not is_epic_refresh:
                 cache_store_started = time.perf_counter()
                 with _cache_lock:
                     if get_jira_issue_cache_generation() == cache_generation:
                         TASKS_CACHE[cache_key] = {'timestamp': time.time(), 'data': {key: value for key, value in data.items() if key != 'debugTimingsMs'}, 'completeness': 'capped' if len(slim_issues) >= max_results else 'unknown'}
                 record_timing('cache_store', cache_store_started)
+            if cache_enabled and is_epic_refresh:
+                evict_scope_entries(TASKS_CACHE, _cache_lock, lambda purpose: build_jira_home_process_cache_key(
+                    auth_context, build_tasks_cache_key(sprint, group_id, project_filter, team_ids, team_label_values,
+                                                        include_team_name, use_template, purpose, None, sprint_name=sprint_name)))
             response = jsonify(data)
             response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
             response.headers['Pragma'] = 'no-cache'

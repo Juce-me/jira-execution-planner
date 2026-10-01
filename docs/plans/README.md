@@ -21,6 +21,10 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 - [Project Track Board-column strips](EXEC-project-track-board-column-strips.md): planned (issue #173); Team mode totals and By team bars get a 7px strip per track split by the parent Epic's Board column, hover-only readout, no "left" values. [Approved UI decision](SUPPORT-project-track-board-column-strips-design.md) and [approved preview](../../assets/mockups/project-track-board-column-strips.html). Supersedes the 2026-09-08 Left capacity plan. No production implementation yet.
 
+## Per-epic refresh (issue #213)
+
+- [Per-epic refresh with glare](EXEC-per-epic-refresh-213.md): implemented on `feature/213-per-epic-refresh` (issue #213), awaiting review and merge; an epic-header refresh button that patches one epic in place, re-checks that epic's alerts only, and plays a subtle glare on changed cards. Design: `docs/agents/features/2026-09-29-executed-per-epic-refresh-with-glare.md`.
+
 ## Epic header regression review
 
 - [Visible-height analysis](SUPPORT-epic-header-visible-height-analysis.md): historical diagnosis and validated specimen evidence; application source is now authoritative.

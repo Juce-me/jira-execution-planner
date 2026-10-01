@@ -1,5 +1,6 @@
 import * as React from 'react';
-import { fetchStoryReadiness } from '../api/engApi.js';
+import { fetchEpicReadiness, fetchStoryReadiness } from '../api/engApi.js';
+import { mergeReadinessEpic, patchReadinessEpicField } from './epicRefreshAlerts.js';
 
 const SUPPORTED_SPRINT_STATES = new Set(['active', 'future']);
 
@@ -86,6 +87,7 @@ export function useStoryReadiness({
     configRevision = '',
     refreshRevision = 0,
     requestStoryReadiness = fetchStoryReadiness,
+    requestEpicReadiness = fetchEpicReadiness,
 } = {}) {
     const scope = React.useMemo(() => normalizedScope({ groupId, sprintId, sprintName, sprintState }), [
         groupId, sprintId, sprintName, sprintState,
@@ -95,6 +97,8 @@ export function useStoryReadiness({
     const [state, setState] = React.useState(idleState);
     const [retryRevision, setRetryRevision] = React.useState(0);
     const completedRefreshRevisionRef = React.useRef(0);
+    const scopeRef = React.useRef(scope);
+    scopeRef.current = scope;
 
     React.useEffect(() => {
         if (!shouldLoad) {
@@ -155,5 +159,45 @@ export function useStoryReadiness({
         if (state.canRetry) setRetryRevision(value => value + 1);
     }, [state.canRetry]);
 
-    return { ...state, scope, scopeKey, retry };
+    // Per-epic refresh (issue #213): upsert or delete one epic in the held snapshot. Unlike the department load it never blanks the
+    // snapshot, so the other epics' ghosts stay put; it is a no-op unless the department snapshot is READY for the same scope.
+    const mergeEpic = React.useCallback((epicKey, payload, { epicDetails } = {}) => {
+        if (payload && !storyReadinessScopeMatches(payload, scopeRef.current)) return;
+        setState((prev) => {
+            if (prev.status !== STORY_READINESS_STATUS.READY || !prev.snapshot) return prev;
+            const snapshot = mergeReadinessEpic({ snapshot: prev.snapshot, epicPayload: payload, epicKey, epicDetails });
+            return snapshot === prev.snapshot ? prev : { ...prev, snapshot };
+        });
+    }, []);
+
+    // Local field patch of one epic in the held snapshot (an inline edit of a Stories Required epic that has no sprint stories). Makes no
+    // request, never blanks the snapshot and never changes the status; a no-op for an unknown epic or a snapshot that is not READY.
+    const patchEpic = React.useCallback((epicKey, field, value) => {
+        setState((prev) => {
+            if (prev.status !== STORY_READINESS_STATUS.READY || !prev.snapshot) return prev;
+            const snapshot = patchReadinessEpicField(prev.snapshot, epicKey, field, value);
+            return snapshot === prev.snapshot ? prev : { ...prev, snapshot };
+        });
+    }, []);
+
+    // One epic's readiness for the current scope: { status: 'ok', payload } or a status that changes nothing (failures are silent).
+    const loadEpic = React.useCallback(async (epicKey, { signal } = {}) => {
+        const requested = scopeRef.current;
+        if (!shouldLoad || !storyReadinessScopeKey(requested)) return { status: 'ignored' };
+        try {
+            const payload = await requestEpicReadiness(backendUrl, {
+                sprint: requested.sprintId,
+                sprintName: requested.sprintName,
+                sprintState: requested.sprintState,
+                groupId: requested.groupId,
+                epicKey,
+                signal,
+            });
+            return storyReadinessScopeMatches(payload, requested) ? { status: 'ok', payload } : { status: 'failed' };
+        } catch (error) {
+            return { status: error?.name === 'AbortError' ? 'ignored' : 'failed' };
+        }
+    }, [shouldLoad, backendUrl, requestEpicReadiness]);
+
+    return { ...state, scope, scopeKey, retry, mergeEpic, patchEpic, loadEpic };
 }

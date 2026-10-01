@@ -25,6 +25,56 @@
             border-radius: 10px;
         }
 
+        /* Per-epic refresh glare (issue #213). ::after is taken by the red overlay and .task-highlight. */
+        .task-item[data-glare]::before {
+            content: '';
+            position: absolute;
+            inset: 0 0 0 -3px;
+            border-radius: inherit;
+            padding: 2px;
+            pointer-events: none;
+            filter: drop-shadow(0 0 5px rgba(232, 163, 61, 0.85));
+            background: linear-gradient(115deg,
+                transparent calc(50% - 30%),
+                rgba(232, 163, 61, 0.55) calc(50% - 12%),
+                rgba(232, 163, 61, 1) 50%,
+                rgba(232, 163, 61, 0.55) calc(50% + 12%),
+                transparent calc(50% + 30%));
+            background-size: 300% 100%;
+            background-position: 100% 0;
+            -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+            -webkit-mask-composite: xor;
+            mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+            animation: epic-refresh-glint 1800ms cubic-bezier(0.3, 0.1, 0.2, 1) var(--glare-delay, 0ms) 1 both;
+        }
+
+        @keyframes epic-refresh-glint {
+            0% { background-position: 100% 0; opacity: 0; }
+            12% { opacity: var(--glare-peak, 1); }
+            88% { opacity: var(--glare-peak, 1); }
+            100% { background-position: 0% 0; opacity: 0; }
+        }
+
+        @keyframes epic-refresh-tint {
+            0% { opacity: 0; }
+            5% { opacity: calc(var(--glare-peak, 1) * 1.2); }
+            85% { opacity: calc(var(--glare-peak, 1) * 1.2); }
+            100% { opacity: 0; }
+        }
+
+        /* The ring runs at full strength on every card (killed and incomplete cards are dimmer, so none is dialled down); dimmed cards get no glare. */
+        .task-item.is-dimmed[data-glare]::before {
+            display: none;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .task-item[data-glare]::before {
+                background: rgba(232, 163, 61, 1);
+                background-size: auto;
+                animation: epic-refresh-tint 1200ms ease-out 1 both;
+            }
+        }
+
         .task-item:hover {
             border-left-color: var(--accent);
             box-shadow: inset 3px 0 0 var(--accent), -6px 0 18px var(--shadow);

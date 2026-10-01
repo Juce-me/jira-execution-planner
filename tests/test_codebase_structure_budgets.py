@@ -54,7 +54,11 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # In-app load metrics: gated wrapper and worker observer wiring (+3).
     # improvement/multiple-group-labels final-review round: find_comma_scalar_team_label_errors
     # wrapper for the save-only comma-scalar Team-label guard (+2).
-    "jira_server.py": 6463,
+    # feature/213-per-epic-refresh: epic-refresh purpose branch, cache skip and eviction (+11).
+    # feature/213-per-epic-refresh Task 9: epic-alerts purpose: epic_keys clause, failures list
+    # handling, import, the epic-alerts branch and the per-epic enrichment block moved to
+    # backend/services/epic_refresh.py (+24 added, -19 removed lines; net +5 over the line above).
+    "jira_server.py": 6479,
     # feature/eng-epic-sort-and-track adds the epic Sort dropdown wiring (engEpicSort state,
     # analytics handler, sorted epicGroups, EngView props) and the title-row priority chevron
     # plus Product Track indicator in renderEpicBlock.
@@ -152,7 +156,30 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # Access tab is shown only to tool admins so it never requests the user directory (+17).
     # docs/plans/EXEC-project-track-board-column-strips.md wires the Team-mode Board-column split
     # memo into the two Project Track charts; the model lives in stats/projectTrackStats.js (+6).
-    "frontend/src/dashboard.jsx": 18213,
+    # feature/213-per-epic-refresh Task 6a mounts the per-epic refresh in Catch Up: imports (+2),
+    # refs (+1), loadEpicRefresh destructure (+1), load-epoch bump (+1), recent-edit record (+1),
+    # useEpicRefresh call (+23), EpicRefreshButton mount (+3), isLeaving (+1), status region (+1).
+    # The controller, merge rules and hook live in frontend/src/eng/ (+34).
+    # feature/213-per-epic-refresh Task 6b guards the dependency, alert-cohort and subtask
+    # effects for the per-epic refresh: merge import (+1), invalidateStorySubtasks destructure
+    # (+1), one-shot dependency skip in fetchDependencies (+1) and its disarm effect (+1),
+    # refreshEpicDependencies and markDependencySignature (+23), alert cohort token (+9),
+    # loadEpicRefresh wrapper that arms the skip before the merge commits (+16), and the
+    # clearAggregateSources/afterApply wiring (+9, +52 in total). The skip's signature-and-epoch
+    # check lives in frontend/src/eng/epicRefreshDependencySkip.js so a discarded refresh cannot
+    # swallow a later department fetch (+3).
+    # feature/213-per-epic-refresh Task 13 enables the refresh in Planning: the isEpicRefreshMode
+    # gate (+1) and the capacity scope pin that keeps a refresh from refiring /api/capacity (+4).
+    # feature/213-per-epic-refresh Task 13b re-checks only the edited epic after inline status and
+    # priority edits: alert cohort settle listener helpers (+2), the invalidateAlertsAfterEdit
+    # picker with its comment (+5) and a hook-call line split (+1); the scheduler, resolver and
+    # call selection live in frontend/src/eng/ (+8). Review fixes: an all-already-in-status edit
+    # skips the invalidation (+1) and the epic priority edit patches the readiness snapshot
+    # locally for readiness-only epics (+1).
+    # Merge of origin/main into feature/213-per-epic-refresh: main alone is 18203 lines (its budget
+    # was 18213); this branch adds 104 over main's actual count (34 + 52 + 3 + 5 + 8 + 2, itemized
+    # above), so the merged file is 18307 and main's 10 lines of slack are consumed.
+    "frontend/src/dashboard.jsx": 18307,
 }
 
 

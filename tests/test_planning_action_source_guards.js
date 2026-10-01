@@ -430,8 +430,8 @@ test('ENG status transition hook refreshes only after at least one issue succeed
     // re-fetch (Fix wave 1); it still fires only inside the succeeded > 0 block. The window
     // widened past 1000 chars to also cover the tuple/per-key transitionOptionsCache
     // invalidation (Step 3.4 + degenerate-signature fix) that now runs earlier in the same
-    // guard block.
-    const guardBody = hookSource.slice(guardIndex, guardIndex + 3000);
+    // guard block. Widened again (3000 -> 3200) for the keys argument of the alert invalidation call (Task 13b).
+    const guardBody = hookSource.slice(guardIndex, guardIndex + 3200);
     assert.match(guardBody, /onTransitionSuccessRefresh\?\.\(\{ affectedSubtaskStoryKeys \}\)/);
     // Planning and Board invoke the supplied refresh callback after a successful write. The Board
     // integration callback selects the strict owner or legacy loader according to capability.
@@ -448,9 +448,9 @@ test('ENG status and priority hooks invalidate alert data after successful mutat
     const prioritySuccess = prioritySource.slice(prioritySuccessStart, prioritySource.indexOf('return response;', prioritySuccessStart));
 
     assert.match(statusSource, /onAlertDataInvalidated,/);
-    assert.match(statusSuccess, /if \(isCurrentMutation\) onAlertDataInvalidated\?\.\(\);/);
+    assert.match(statusSuccess, /if \(isCurrentMutation\) onAlertDataInvalidated\?\.\(\{ keys: \(response\?\.results \|\| \[\]\)\.filter\(\(entry\) => entry\?\.result === 'success'\)\.map\(\(entry\) => entry\?\.key\)\.filter\(Boolean\) \}\);/, 'already_in_status keys are not passed to the alert invalidation');
     assert.match(prioritySource, /onAlertDataInvalidated,/);
-    assert.match(prioritySuccess, /if \(summary\.succeeded > 0 && isCurrentMutation\) onAlertDataInvalidated\?\.\(\);/);
+    assert.match(prioritySuccess, /if \(summary\.succeeded > 0 && isCurrentMutation\) onAlertDataInvalidated\?\.\(\{ keys: \(response\?\.results \|\| \[\]\)\.filter\(entry => entry\?\.result === 'success'\)\.map\(entry => entry\?\.key\)\.filter\(Boolean\) \}\);/, 'already_in_priority keys are not passed to the alert invalidation');
     assert.doesNotMatch(statusSuccess, /if \(!isSingleIssueSurface\) \{\s*onAlertDataInvalidated/);
     assert.doesNotMatch(prioritySuccess, /else if \(summary\.succeeded > 0\) \{[\s\S]*onAlertDataInvalidated/);
 });

@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { installDashboardFixture, installDashboardShell } = require('./epm_home_token_fixture');
+const { expectConfigBootstrapHoldsJiraWork, installDashboardFixture, installDashboardShell } = require('./epm_home_token_fixture');
 
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 
@@ -207,6 +207,44 @@ test('a Retry probe that never answers times out, keeps the page, and allows ano
         hangConfig = false;
         await page.getByRole('button', { name: 'Retry connection' }).click();
         await expect.poll(() => state.documents).toBe(documentsBefore + 1);
+    } finally {
+        await Promise.all(hungRoutes.map(route => route.abort().catch(() => {})));
+    }
+});
+
+test('a startup config read that never answers times out into the banner, and Retry reloads once', async ({ page }) => {
+    await page.clock.install();
+    const paths = [];
+    let documents = 0;
+    let holdConfig = true;
+    const hungRoutes = [];
+    page.on('request', request => {
+        if (request.resourceType() === 'document') documents += 1;
+        else if (new URL(request.url()).pathname.startsWith('/api/')) paths.push(new URL(request.url()).pathname);
+    });
+    await installDashboardFixture(page, { authMode: 'basic' });
+    await page.route('**/api/config?**', route => {
+        if (!holdConfig) return route.fallback();
+        hungRoutes.push(route);
+        return undefined;
+    });
+    try {
+        await page.goto(appBaseUrl, { waitUntil: 'domcontentloaded' });
+        await expectConfigBootstrapHoldsJiraWork(page, () => paths);
+        await expect(page.getByRole('alert').filter({ hasText: 'Server is not responding' })).toHaveCount(0);
+
+        await page.clock.fastForward(15_000);
+        await expect(page.getByRole('alert')).toContainText('Server is not responding');
+        await expect(page.getByRole('button', { name: 'Retry connection' })).toBeVisible();
+
+        holdConfig = false;
+        const documentsBefore = documents;
+        const sprintReadsBefore = paths.filter(pathname => pathname === '/api/sprints').length;
+        await page.getByRole('button', { name: 'Retry connection' }).click();
+        await expect.poll(() => documents).toBe(documentsBefore + 1);
+        await expect.poll(() => paths.filter(pathname => pathname === '/api/sprints').length).toBe(sprintReadsBefore + 1);
+        await expect(page.getByRole('alert').filter({ hasText: 'Server is not responding' })).toHaveCount(0);
+        expect(documents).toBe(documentsBefore + 1);
     } finally {
         await Promise.all(hungRoutes.map(route => route.abort().catch(() => {})));
     }

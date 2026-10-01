@@ -153,6 +153,7 @@ When none apply, the move is mechanical: verify what you can locally, make the s
 - Test (all): `python3 -m unittest discover -s tests`
 - Test (single file): `python3 -m unittest tests.test_planning`
 - Test (single case): `python3 -m unittest tests.test_planning.PlanningSchedulerTests.test_dependency_ordering`
+- Test (UI, local only): `npx playwright test tests/ui --browser=chromium --workers=4` (about 8 minutes). Specs that start Flask use `.venv/bin/python`; set `JEP_TEST_PYTHON` in a git worktree without a `.venv`. The Project Track glyph guard runs only with `--headed`; run it with `--browser=firefox` and `--browser=webkit` when touching emoji or form-control geometry.
 - Run locally: `.venv/bin/python jira_server.py`
 - Quick API check: `curl http://localhost:5050/api/test`
 - EPM scope: configure `rootGoalKey` and `subGoalKey` in `Settings -> EPM`; the Atlassian site cloudId is detected from Jira /_edge/tenant_info
@@ -205,7 +206,8 @@ Prefer single-file or single-test runs during iteration. Run the full suite befo
 - Before editing, confirm the current branch and sync it when network access is available.
 - Keep commits atomic and honest. Do not claim measured improvements you did not verify.
 - For UI changes, include screenshots in the PR notes.
-- Before push, run the full test suite, review `git log --oneline -5`, and wait for explicit user confirmation.
+- Before push, run the full test suite and the full Chromium `tests/ui` run, review `git log --oneline -5`, and wait for explicit user confirmation.
+- `tests/ui` has no CI job, by decision: it takes about 8 minutes, parts of it are only meaningful headed in Firefox and WebKit on macOS, and a headless Chromium job would miss them. The local run above is the gate; do not add a CI job for it without a new decision.
 - Treat commit, push, and PR creation as one blocking publication transaction. Before the first publication mutation:
   1. Fetch the intended base and record the exact base and head SHAs.
   2. Run `git status --short`, `git log --oneline origin/<base>..HEAD`, and `git diff --name-status origin/<base>...HEAD`.

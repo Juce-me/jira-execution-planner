@@ -5,9 +5,9 @@ const { execFileSync } = require('node:child_process');
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');
 const { installEngBoardDashboardFixture, selectedSprintId, selectedSprintName } = require('./eng_board_dashboard_fixture');
+const { python, pythonMissingReason } = require('./python_interpreter');
 
 const repoRoot = path.join(__dirname, '..', '..');
-const python = path.join(repoRoot, '.venv', 'bin', 'python');
 const baselineRevision = '40bffe730159ebadb1904b0188981c853fdf85ed';
 const baselineRoot = path.join(repoRoot, 'tmp', 'board-190', 'baseline-source');
 const activeCampaignChildren = new Set();
@@ -527,6 +527,8 @@ function materializeBaseline() {
         fs.writeFileSync(destination, execFileSync('git', ['show', `${baselineRevision}:${relative}`], { cwd: repoRoot }));
     }
 }
+
+test.skip(Boolean(pythonMissingReason), pythonMissingReason);
 
 test.beforeAll(() => materializeBaseline());
 

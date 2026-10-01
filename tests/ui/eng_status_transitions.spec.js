@@ -791,6 +791,10 @@ test('Planning partial success shows a result summary and keeps failed targets s
 });
 
 test('Planning over-cap batch disables apply, shows a recoverable message, and sends no mutation', async ({ page }) => {
+    // With 51 Stories the first Story's status trigger sits at y~733, below the default 720px fold
+    // and under the open Planning panel and epic header once scrolled; WebKit and Firefox scroll
+    // it beneath that sticky stack (Chromium happens not to). A taller viewport needs no scroll.
+    await page.setViewportSize({ width: 1280, height: 1000 });
     await setPrefs(page, catchUpPrefs({ selectedSprint: futureSprintId, sprintName: futureSprintName }));
     // 51 selected Stories drives the composed target count past the cap of 50, exercising
     // the real client-side guard (not a faked options 400 the server can never return here).

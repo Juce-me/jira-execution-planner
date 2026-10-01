@@ -1,7 +1,7 @@
 const path = require('node:path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
-const { installDashboardShell } = require('./epm_home_token_fixture');
+const { expectConfigBootstrapHoldsJiraWork, installDashboardShell } = require('./epm_home_token_fixture');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
@@ -674,12 +674,13 @@ test('a new typed auth interruption retains the staged Planning capsule', async 
     expect(stagedKeys).toEqual(['PLAN-2']);
 });
 
-test('late authenticated config staging resumes shell and exact-scope Planning after ordinary loads settle', async ({ page }) => {
+test('late authenticated config staging holds Jira work, then resumes shell and exact-scope Planning on release', async ({ page }) => {
     await seedPlanningAuthResume(page, { seedUiPrefs: true });
     const fixture = await installPlanningFixture(page, { delayConfig: true });
     await page.goto(appBaseUrl);
 
-    await expect.poll(() => fixture.getFutureProductTaskAttempts()).toBeGreaterThan(0);
+    await expectConfigBootstrapHoldsJiraWork(page, () => fixture.calls.map(call => call.pathname));
+    expect(fixture.getFutureProductTaskAttempts()).toBe(0);
     fixture.releaseConfig();
 
     await expect(page.locator('.planning-panel.open')).toBeVisible();
@@ -925,13 +926,19 @@ test('select all remains scoped when switching future planning sprints', async (
     });
 });
 
-test('planning epic excluded-capacity toggle updates shared group config', async ({ page }) => {
+test('planning epic excluded-capacity toggle updates shared group config', async ({ page }, testInfo) => {
     const fixture = await installPlanningFixture(page);
     await page.goto(appBaseUrl);
     await openFuturePlanning(page);
 
     const epicBlock = page.locator('.task-list .epic-block', { hasText: 'PLAN-EPIC' }).first();
-    await epicBlock.getByRole('button', { name: /Included/ }).click();
+    const included = epicBlock.getByRole('button', { name: /Included/ });
+    await included.hover();
+    await expect(included).toHaveCSS('transform', 'none');
+    await expect(included).toHaveCSS('box-shadow', 'rgba(47, 128, 237, 0.35) 0px 0px 0px 2px');
+    await expect(included).toHaveCSS('font-size', '10px');
+    await epicBlock.locator('.epic-header').screenshot({ path: testInfo.outputPath('included-hover.png') });
+    await included.click();
     await expect(epicBlock.getByRole('button', { name: /Excluded/ })).toBeVisible();
 
     const saveCalls = fixture.calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config');

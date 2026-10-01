@@ -167,6 +167,7 @@ import { fetchCapacity as requestCapacity, updateCapacity } from './api/capacity
 import { resolveBackendUrl } from './api/backendUrl.js';
 import {
     fetchAppConfig,
+    fetchBootstrapConfig,
     fetchVersionInfo,
     testJiraConnection,
     fetchGroupsConfig as requestGroupsConfig,
@@ -6798,7 +6799,7 @@ import {
                 setSharedConfigReady(false);
                 setBoardBootstrapStatus('loading');
                 try {
-                    let config = await fetchAppConfig(BACKEND_URL);
+                    let config = await fetchBootstrapConfig(BACKEND_URL);
                     if (!shouldApplyResult()) return false;
                     const currentSprintCatalogState = sprintCatalogControllerRef.current.getState();
                     if (shouldReconcileSprintCatalogSource(
@@ -6807,7 +6808,7 @@ import {
                         config.sprintCatalogSource || null,
                     )) {
                         try {
-                            config = await fetchAppConfig(BACKEND_URL);
+                            config = await fetchBootstrapConfig(BACKEND_URL);
                         } catch (error) {
                             sprintCatalogControllerRef.current.invalidate('catalog_identity_changed');
                             throw error;
@@ -15316,7 +15317,11 @@ import {
                                     </div>
                                     {displayedTeamCapacityEntries.map((info) => (
                                         <div key={info.id} className="capacity-row capacity-divider">
-                                            <div className="capacity-cell capacity-team">{info.name}</div>
+                                            <EpicHeaderValueReadout value={info.name}>
+                                                {({ discoveryProps }) => (
+                                                    <div {...discoveryProps} className="capacity-cell capacity-team epic-full-value-trigger">{info.name}</div>
+                                                )}
+                                            </EpicHeaderValueReadout>
                                             <div className="capacity-cell metric product-col">
                                                 <div className="postponed-cell">
                                                     <span className={getMetricClass(info.product.todoPending, 'todo', info.product.accepted)}>

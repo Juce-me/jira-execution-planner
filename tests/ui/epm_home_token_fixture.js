@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { expect } = require('@playwright/test');
 
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const dashboardHtml = fs.readFileSync(path.join(__dirname, '..', '..', 'jira-dashboard.html'), 'utf8');
@@ -296,6 +297,21 @@ function epmMetadataCalls(calls) {
     ));
 }
 
+// The first /api/config read gates all ENG Jira work: while it is pending nothing loads and the
+// Sprint selector stays unavailable. `paths` returns the request pathnames seen so far.
+async function expectConfigBootstrapHoldsJiraWork(page, paths) {
+    await expect.poll(() => paths().includes('/api/config')).toBe(true);
+    await page.evaluate(() => new Promise(resolve => (
+        requestAnimationFrame(() => requestAnimationFrame(resolve))
+    )));
+    expect(paths().filter(pathname => (
+        pathname === '/api/sprints' || pathname === '/api/tasks-with-team-name'
+            || pathname.startsWith('/api/eng/board') || pathname.startsWith('/api/stats/')
+    ))).toEqual([]);
+    await expect(page.getByRole('button', { name: 'Select sprint', exact: true }).first())
+        .toHaveAttribute('aria-disabled', 'true');
+}
+
 async function openConnectionsSettings(page) {
     await page.getByRole('button', { name: /manage team groups/i }).click();
     const dialog = page.getByRole('dialog').first();
@@ -309,6 +325,7 @@ module.exports = {
     activeHomeTokenConnection,
     disconnectedHomeTokenConnection,
     epmMetadataCalls,
+    expectConfigBootstrapHoldsJiraWork,
     installDashboardFixture,
     installDashboardShell,
     openConnectionsSettings,

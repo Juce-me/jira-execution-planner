@@ -176,7 +176,9 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # call selection live in frontend/src/eng/ (+8). Review fixes: an all-already-in-status edit
     # skips the invalidation (+1) and the epic priority edit patches the readiness snapshot
     # locally for readiness-only epics (+1).
-    "frontend/src/dashboard.jsx": 18302,
+    # Merge of origin/main into feature/213-per-epic-refresh: main's own +5 lines from #215, #216
+    # and #218 (main alone is 18203 against its 18213 budget).
+    "frontend/src/dashboard.jsx": 18307,
 }
 
 

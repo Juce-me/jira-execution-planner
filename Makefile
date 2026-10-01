@@ -23,7 +23,7 @@ test-frontend-unit:
 test-frontend-ui:
 	npm run test:frontend:ui
 
-verify: build test test-security test-frontend-unit verify-dist-clean
+verify: build test test-security test-frontend-unit test-frontend-ui verify-dist-clean
 
 verify-dist-clean:
 	@if [ -n "$$(git status --porcelain -- frontend/dist)" ]; then \

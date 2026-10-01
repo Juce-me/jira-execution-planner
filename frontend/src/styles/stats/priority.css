@@ -51,14 +51,26 @@
             border: 1px solid var(--border);
             padding: 0.25rem 0.45rem;
             background: #fff;
+            border-radius: 8px;
             cursor: pointer;
-            transition: all 0.15s ease;
+            transition: box-shadow 0.15s ease, filter 0.15s ease;
         }
 
         .epic-stat-toggle.active {
             background: #111;
             color: #fff;
             border-color: #111;
+        }
+
+        .epic-stat-toggle:hover {
+            background: #fff;
+            transform: none;
+            filter: brightness(0.94);
+            box-shadow: 0 0 0 2px rgba(47, 128, 237, 0.35);
+        }
+
+        .epic-stat-toggle.active:hover {
+            background: #111;
         }
 
         .epic-stat-toggle svg {

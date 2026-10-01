@@ -2,7 +2,7 @@ const { test, expect } = require('@playwright/test');
 const { buildSync } = require('esbuild');
 const fs = require('node:fs');
 const path = require('node:path');
-const { installDashboardFixture } = require('./epm_home_token_fixture');
+const { expectConfigBootstrapHoldsJiraWork, installDashboardFixture } = require('./epm_home_token_fixture');
 
 const root = path.resolve(__dirname, '../..');
 const origin = 'http://performance.test';
@@ -27,6 +27,7 @@ test.beforeAll(() => {
 
 async function openMeasuredDashboard(page, { admin = true, delayedConfig = false, debugEnabled = true } = {}) {
     const fixture = await installDashboardFixture(page);
+    const paths = [];
     const samples = [];
     const taskCalls = [];
     const dependencyCalls = [];
@@ -72,21 +73,26 @@ async function openMeasuredDashboard(page, { admin = true, delayedConfig = false
         samples.push(route.request().postDataJSON());
         await route.fulfill({ json: { saved: true } });
     });
+    page.on('request', request => paths.push(new URL(request.url()).pathname));
     await page.goto(fixture.appBaseUrl);
-    return { samples, taskCalls, dependencyCalls, releaseDependencies, releaseConfig };
+    return { paths, samples, taskCalls, dependencyCalls, releaseDependencies, releaseConfig };
 }
 
 for (const debugEnabled of [true, false]) {
-    test(`slow config does not block data load and ${debugEnabled ? 'enables' : 'discards'} pending observation`, async ({ page }) => {
+    test(`slow config holds every load until it arrives, then ${debugEnabled ? 'records' : 'discards'} the measured load`, async ({ page }) => {
         const state = await openMeasuredDashboard(page, { delayedConfig: true, debugEnabled });
-        await expect.poll(() => state.dependencyCalls.length).toBe(1);
-        expect(state.taskCalls.filter(call => !call.purpose)).toHaveLength(2);
-        state.releaseDependencies();
-        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        await expectConfigBootstrapHoldsJiraWork(page, () => state.paths);
+        expect(state.taskCalls).toHaveLength(0);
+        expect(state.dependencyCalls).toHaveLength(0);
         expect(state.samples).toHaveLength(0);
+
         const configResponse = page.waitForResponse(response => response.url().includes('/api/config?'));
         state.releaseConfig();
         await configResponse;
+        await expect.poll(() => state.dependencyCalls.length).toBe(1);
+        expect(state.taskCalls.filter(call => !call.purpose)).toHaveLength(2);
+        expect(state.samples).toHaveLength(0);
+        state.releaseDependencies();
         if (debugEnabled) {
             await expect.poll(() => state.samples.length).toBe(1);
             expect(state.samples[0].lanes).toHaveLength(2);

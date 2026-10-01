@@ -6775,22 +6775,22 @@ button.task-priority-icon[data-priority]:hover::after {
   }
   .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-stat-toggle {
     flex: 0 0 auto;
-    height: 24px;
+    height: auto;
     margin-left: 0;
-    padding: 0 6px;
+    padding: 2px 6px;
     gap: 4px;
     font-family:
       "IBM Plex Mono",
       Arial,
       sans-serif;
-    font-size: 14px;
+    font-size: 10px;
     font-weight: 500;
-    line-height: 22px;
+    line-height: 14px;
     letter-spacing: 0;
   }
   .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-stat-toggle svg {
-    width: 18px;
-    height: 18px;
+    width: 12px;
+    height: 12px;
   }
   .task-list:not(.epm-issue-board) .epic-block > .epic-header :is(button, input, a, [tabindex]):focus-visible {
     outline: 2px solid #174f82;
@@ -7015,7 +7015,12 @@ button.task-priority-icon[data-priority]:hover::after {
   transition:
     background-color 0.15s ease,
     border-color 0.15s ease,
-    color 0.15s ease;
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.dependency-count:hover {
+  transform: none;
+  box-shadow: 0 0 0 2px rgba(47, 128, 237, 0.35);
 }
 .dependency-count.active {
   background: #111;
@@ -10562,13 +10567,23 @@ input.story-points-editor.story-points-alert-highlight {
   border: 1px solid var(--border);
   padding: 0.25rem 0.45rem;
   background: #fff;
+  border-radius: 8px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: box-shadow 0.15s ease, filter 0.15s ease;
 }
 .epic-stat-toggle.active {
   background: #111;
   color: #fff;
   border-color: #111;
+}
+.epic-stat-toggle:hover {
+  background: #fff;
+  transform: none;
+  filter: brightness(0.94);
+  box-shadow: 0 0 0 2px rgba(47, 128, 237, 0.35);
+}
+.epic-stat-toggle.active:hover {
+  background: #111;
 }
 .epic-stat-toggle svg {
   width: 0.75rem;
@@ -10796,6 +10811,10 @@ input.story-points-editor.story-points-alert-highlight {
 .capacity-team {
   font-family: "IBM Plex Mono", monospace;
   color: var(--text-primary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .capacity-total {
   font-weight: 500;

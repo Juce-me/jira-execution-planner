@@ -97,7 +97,7 @@ export function useEpicRefresh(inputs) {
             STORY_COPY_LISTS.forEach(name => setters[setterName(name)](prev => patchStoryCopies(prev, fetchedByKey)));
         };
 
-        const scheduleLeaving = (removedKeys, epicKey) => {
+        const scheduleLeaving = (removedKeys, epicKey, focusedAtApply = false) => {
             if (!removedKeys.length) return;
             const removed = new Set(removedKeys);
             setLeaving(new Set([...leavingRef.current, ...removed]));
@@ -106,7 +106,11 @@ export function useEpicRefresh(inputs) {
                 const { setters } = latest.current;
                 const header = document.querySelector(headerSelector(epicKey));
                 const headerIndex = allHeaders().indexOf(header);
-                const hadFocus = header?.closest('[data-epic-key]')?.contains(document.activeElement) === true;
+                const block = header?.closest('[data-epic-key]');
+                const active = document.activeElement;
+                // is-removing disables the leaving card's remove button, so the browser may already have moved focus to body;
+                // body counts as the same focus when it was inside the block at apply time (focus moved elsewhere is not stolen).
+                const hadFocus = block?.contains(active) === true || (focusedAtApply && (!active || active === document.body));
                 const drop = prev => prev.filter(task => !removed.has(task.key));
                 // Dropping the last story unmounts the epic block here, not in apply, so the focus rescue runs after this commit.
                 flushSync(() => {
@@ -122,7 +126,10 @@ export function useEpicRefresh(inputs) {
         const apply = async update => {
             const { epicKey } = update;
             const header = document.querySelector(headerSelector(epicKey));
-            const oldTop = header?.getBoundingClientRect().top;
+            // The sticky header's own rect is clamped at its sticky offset; the block container is not sticky, so its top is the true anchor.
+            const block = header?.closest('[data-epic-key]');
+            const oldTop = block?.getBoundingClientRect().top;
+            const focusedInBlock = Boolean(block) && block.contains(document.activeElement);
             const headerIndex = allHeaders().indexOf(header);
             const button = header?.querySelector('.epic-refresh-button');
             const hadFocus = Boolean(button) && document.activeElement === button;
@@ -133,13 +140,14 @@ export function useEpicRefresh(inputs) {
                 applyCopies(update);
             });
             // The updaters have run by now; leaving cards get is-removing in the same task, before paint.
-            flushSync(() => scheduleLeaving([...keptForDissolve], epicKey));
+            flushSync(() => scheduleLeaving([...keptForDissolve], epicKey, focusedInBlock));
             latest.current.clearAggregateSources();
             await twoFrames();
 
             const newHeader = document.querySelector(headerSelector(epicKey));
-            if (newHeader && oldTop !== undefined) {
-                const delta = newHeader.getBoundingClientRect().top - oldTop;
+            const newBlock = newHeader?.closest('[data-epic-key]');
+            if (newBlock && oldTop !== undefined) {
+                const delta = newBlock.getBoundingClientRect().top - oldTop;
                 if (Math.abs(delta) > 1) window.scrollBy(0, delta);
             }
 

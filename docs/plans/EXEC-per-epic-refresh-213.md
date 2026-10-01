@@ -65,6 +65,9 @@ Every task's requirements include this section. Values are copied from the appro
 | T6b | done | `da156974` | split in two parts after two stalled attempts (subtask hook; dashboard wiring); `dashboard.jsx` to 18287. Divergence: the one-shot dependency skip is armed in a `loadEpicRefresh` wrapper, not in `afterApply`, because the merge's `flushSync` flushes the dependencies effect first; the skip is tagged with the load epoch (`epicRefreshDependencySkip.js`) so a discarded refresh cannot swallow a later department fetch |
 | hook fix | done | `3d3199e5` | found by the Playwright spec: focus on a leaving card's x button, and the scroll anchor now uses the non-sticky epic block top |
 | T7 | done | `866f7e55` | `tests/ui/eng_epic_refresh.spec.js`, 51 cases pass (also `--repeat-each=2`); neighbour specs match the Task 0 baseline (only the known #210 failures) |
+| T8 | done | `e7b88b6a` | alert update runs inside the hook's `apply` (before `afterApply`), so `dashboard.jsx` stays at 18287; ghost filter acts at requirement creation in `engWorkHierarchy.js` (Catch Up and Planning) |
+| T9 | done | `3faf5212` | `jira_server.py` 6474 to 6479; one `epic-alerts` call costs 5 searches (1 scope, 1 counts, 3 distribution) on the epic-refresh breaker; real `failures.append` sites are mutation-tested |
+| T10 | done | `b454c3c5` | `epicKeys` on missing-info (cache key extended only when present, new `refresh`), backlog-epics and story-readiness (own in-flight key, never the department snapshot); `/api/dependencies` accepts body `refresh` and rejects malformed keys with 400 |
 
 ## Endpoint Contract Matrix
 

@@ -5,6 +5,23 @@ import { applyLocalSubtaskFieldUpdate } from '../eng/engIssueLocalUpdates.js';
 
 const EMPTY_SUMMARY = { total: 0, done: 0, inProgress: 0, waiting: 0, percentComplete: 0, statusCounts: {} };
 
+export function dropStorySubtaskEntries(state, keys) {
+    const reloadKeys = [];
+    let next = state;
+    (keys || []).forEach((key) => {
+        const entry = next[key];
+        if (!entry) return;
+        if (next === state) next = { ...state };
+        if (entry.expanded) {
+            reloadKeys.push(key);
+            next[key] = { ...entry, loaded: false };
+        } else {
+            delete next[key];
+        }
+    });
+    return { next, reloadKeys };
+}
+
 export function useStorySubtasks({ backendUrl, selectedSprint, onAuthRecoveryRequired } = {}) {
     const [storySubtasksByKey, setStorySubtasksByKey] = React.useState({});
     const storySubtasksByKeyRef = React.useRef(storySubtasksByKey);
@@ -139,11 +156,21 @@ export function useStorySubtasks({ backendUrl, selectedSprint, onAuthRecoveryReq
         setStorySubtasksByKey(prev => applyLocalSubtaskFieldUpdate(prev, issueKey, fieldName, fieldValue));
     }, []);
 
+    const invalidateStorySubtasks = React.useCallback((keys) => {
+        const { next, reloadKeys } = dropStorySubtaskEntries(storySubtasksByKeyRef.current, keys);
+        if (next === storySubtasksByKeyRef.current) return;
+        setStorySubtasksByKey(prev => dropStorySubtaskEntries(prev, keys).next);
+        reloadKeys.forEach((key) => {
+            void loadStorySubtasks({ key }, { forceRefresh: true });
+        });
+    }, [loadStorySubtasks]);
+
     return {
         storySubtasksByKey,
         clearStorySubtasks,
         toggleStorySubtasks,
         retryStorySubtasks,
         applyLocalSubtaskField,
+        invalidateStorySubtasks,
     };
 }

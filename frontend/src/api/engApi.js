@@ -169,13 +169,13 @@ export const fetchExcludedCapacityStatsSource = (backendUrl, { sprintIds = [], t
     });
 };
 
-export const fetchDependencies = (backendUrl, keys, { signal } = {}) =>
+export const fetchDependencies = (backendUrl, keys, { signal, refresh = false } = {}) =>
     apiFetch(`${backendUrl}/api/dependencies`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             'X-Requested-With': 'jira-execution-planner',
         },
-        body: JSON.stringify({ keys }),
+        body: JSON.stringify(refresh ? { keys, refresh: true } : { keys }),
         signal
     });

@@ -157,7 +157,15 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # refs (+1), loadEpicRefresh destructure (+1), load-epoch bump (+1), recent-edit record (+1),
     # useEpicRefresh call (+23), EpicRefreshButton mount (+3), isLeaving (+1), status region (+1).
     # The controller, merge rules and hook live in frontend/src/eng/ (+34).
-    "frontend/src/dashboard.jsx": 18232,
+    # feature/213-per-epic-refresh Task 6b guards the dependency, alert-cohort and subtask
+    # effects for the per-epic refresh: merge import (+1), invalidateStorySubtasks destructure
+    # (+1), one-shot dependency skip in fetchDependencies (+1) and its disarm effect (+1),
+    # refreshEpicDependencies and markDependencySignature (+23), alert cohort token (+9),
+    # loadEpicRefresh wrapper that arms the skip before the merge commits (+16), and the
+    # clearAggregateSources/afterApply wiring (+9, +52 in total). The skip's signature-and-epoch
+    # check lives in frontend/src/eng/epicRefreshDependencySkip.js so a discarded refresh cannot
+    # swallow a later department fetch (+3).
+    "frontend/src/dashboard.jsx": 18287,
 }
 
 

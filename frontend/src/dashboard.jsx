@@ -43,6 +43,8 @@ import { resolveEngSprintSelectorState } from './eng/engSprintSelectorState.js';
 import EpicHeaderValueReadout from './eng/EpicHeaderValueReadout.jsx';
 import EpicRefreshButton from './ui/EpicRefreshButton.jsx';
 import { useEpicRefresh } from './eng/useEpicRefresh.js';
+import { mergeEpicStories } from './eng/epicRefreshPatch.js';
+import { createDependencySkip } from './eng/epicRefreshDependencySkip.js';
 import PlanningActionBar from './eng/PlanningActionBar.jsx';
 import PlanningCapacityBar from './eng/PlanningCapacityBar.jsx';
 import PlanningProjectSplitBar from './eng/PlanningProjectSplitBar.jsx';
@@ -1139,7 +1141,7 @@ import {
             const catchUpAlertLoadRef = useRef('');
             const catchUpAlertForceRefreshRef = useRef(false);
             const catchUpAlertVersionRef = useRef(0);
-            const loadEpochRef = useRef(0); const alertCohortRef = useRef(null); const recentEditKeysRef = useRef(new Map());
+            const loadEpochRef = useRef(0); const alertCohortRef = useRef(null); const dependencySkipRef = useRef(createDependencySkip()); const recentEditKeysRef = useRef(new Map());
             const groupLoadVersionRef = useRef(0);
             const rearmCatchUpAlerts = () => { catchUpAlertLoadRef.current = ''; catchUpAlertForceRefreshRef.current = true; catchUpAlertVersionRef.current += 1; setCatchUpAlertRefreshNonce(value => value + 1); };
             const storyRequirementScopeRef = useRef('');
@@ -7231,6 +7233,7 @@ import {
                 toggleStorySubtasks,
                 retryStorySubtasks,
                 applyLocalSubtaskField,
+                invalidateStorySubtasks,
             } = useStorySubtasks({
                 backendUrl: BACKEND_URL,
                 selectedSprint,
@@ -7242,6 +7245,7 @@ import {
                     setDependencyData({});
                     return;
                 }
+                if (dependencySkipRef.current.consume(keys.join('|'), loadEpochRef.current)) return ENG_TASK_LOAD_OUTCOME.APPLIED;
                 const controller = registerSprintFetch(), readToken = issueEditStateRef.current.beginRead({ aggregate: true });
                 try {
                     const response = await requestDependencies(BACKEND_URL, keys, { signal: controller.signal });
@@ -7261,6 +7265,27 @@ import {
                 } finally {
                     issueEditStateRef.current.finishRead(readToken); cleanupSprintFetch(controller);
                 }
+            };
+
+            // Per-epic refresh: re-read only this epic's stories and replace just those keys; never bumps the department-wide refetch nonce.
+            const refreshEpicDependencies = async (keys) => {
+                if ((!showDependencies && !showBlockedAlert) || !keys.length) return;
+                const controller = registerSprintFetch(), readToken = issueEditStateRef.current.beginRead({ aggregate: true });
+                try {
+                    const response = await requestDependencies(BACKEND_URL, keys, { signal: controller.signal, refresh: true });
+                    if (!response.ok) return;
+                    const data = await response.json();
+                    if (!issueEditStateRef.current.isCurrentAggregateRead(readToken)) return;
+                    const fetched = data.dependencies || {};
+                    setDependencyData(prev => keys.reduce((next, key) => (key in fetched ? { ...next, [key]: fetched[key] } : next), prev));
+                } catch (err) {
+                    if (err.name !== 'AbortError') console.error('Epic dependencies refresh error:', err);
+                } finally {
+                    issueEditStateRef.current.finishRead(readToken); cleanupSprintFetch(controller);
+                }
+            };
+            const markDependencySignature = (next, epoch) => {
+                if ((showDependencies || showBlockedAlert) && next !== dependencyKeySignature) dependencySkipRef.current.arm(next, epoch);
             };
 
             const fetchScenarioCsrfToken = () =>
@@ -7822,16 +7847,18 @@ import {
                 catchUpAlertForceRefreshRef.current = false;
                 const alertController = new AbortController(), alertCohortVersion = ++catchUpAlertVersionRef.current;
                 const shouldApplyAlertResult = () => catchUpAlertVersionRef.current === alertCohortVersion;
-                loadAlertEpics({ forceRefresh: forceAlertRefresh, shouldApplyResult: shouldApplyAlertResult, signal: alertController.signal }).then((alertOutcomes) => {
+                const alertCohortToken = {};
+                alertCohortRef.current = alertCohortToken;
+                const alertEpicsLoad = loadAlertEpics({ forceRefresh: forceAlertRefresh, shouldApplyResult: shouldApplyAlertResult, signal: alertController.signal }).then((alertOutcomes) => {
                     if (!shouldApplyAlertResult()) return;
                     const outcomes = [alertOutcomes?.product, alertOutcomes?.tech];
                     if (outcomes.includes(ENG_TASK_LOAD_OUTCOME.ALERT_SCOPE_TOO_LARGE)) setAlertScopeTooLargeKey(alertLoadSignature);
                     else if (outcomes.every(outcome => outcome === ENG_TASK_LOAD_OUTCOME.APPLIED)) setAlertScopeTooLargeKey('');
                 });
-                fetchMissingPlanningInfo(selectedSprint, { shouldApplyResult: shouldApplyAlertResult, signal: alertController.signal });
-                loadReadyToCloseProductTasks({ forceRefresh: forceAlertRefresh, shouldApplyResult: shouldApplyAlertResult, signal: alertController.signal });
-                loadReadyToCloseTechTasks({ forceRefresh: forceAlertRefresh, shouldApplyResult: shouldApplyAlertResult, signal: alertController.signal });
-                let cancelled = false;
+                const missingInfoLoad = fetchMissingPlanningInfo(selectedSprint, { shouldApplyResult: shouldApplyAlertResult, signal: alertController.signal });
+                const readyToCloseProductLoad = loadReadyToCloseProductTasks({ forceRefresh: forceAlertRefresh, shouldApplyResult: shouldApplyAlertResult, signal: alertController.signal });
+                const readyToCloseTechLoad = loadReadyToCloseTechTasks({ forceRefresh: forceAlertRefresh, shouldApplyResult: shouldApplyAlertResult, signal: alertController.signal });
+                let cancelled = false, backlogLoad = Promise.resolve();
                 if (!isFutureSprintSelected) {
                     setBacklogProductEpics([]);
                     setBacklogTechEpics([]);
@@ -7856,9 +7883,11 @@ import {
                             setBacklogTechEpics([]);
                         } finally { issueEditStateRef.current.finishRead(readToken); }
                     };
-                    loadBacklog();
+                    backlogLoad = loadBacklog();
                 }
-                return () => { cancelled = true; alertController.abort(); if (catchUpAlertVersionRef.current === alertCohortVersion) { catchUpAlertVersionRef.current += 1; if (catchUpAlertLoadRef.current === alertLoadSignature) catchUpAlertLoadRef.current = ''; } };
+                Promise.allSettled([alertEpicsLoad, missingInfoLoad, readyToCloseProductLoad, readyToCloseTechLoad, backlogLoad])
+                    .finally(() => { if (alertCohortRef.current === alertCohortToken) alertCohortRef.current = null; });
+                return () => { cancelled = true; alertController.abort(); if (alertCohortRef.current === alertCohortToken) alertCohortRef.current = null; if (catchUpAlertVersionRef.current === alertCohortVersion) { catchUpAlertVersionRef.current += 1; if (catchUpAlertLoadRef.current === alertLoadSignature) catchUpAlertLoadRef.current = ''; } };
             }, [isCatchUpMode, activeGroupId, activeGroupTeamIds.join('|'), selectedSprint, selectedSprintInfo?.name, selectedSprintInfo?.state, groupsLoading, groupPreferences.onboardingRequired, tasksFetched, productTasksLoading, techTasksLoading, isFutureSprintSelected, configRefreshNonce, catchUpAlertRefreshNonce]);
 
             useEffect(() => {
@@ -12234,6 +12263,7 @@ import {
                 const started = performance.now();
                 void fetchDependencies(keys).then(outcome => measuredLoad?.dependenciesFinished(outcome, performance.now() - started));
             }, [selectedView, boardScopeRequested, showDependencies, showBlockedAlert, dependencyKeySignature, selectedSprint, tasksFetched, productTasksLoading, techTasksLoading, epmRollupLoading, performanceLoadRevision, dependencyRefreshNonce]);
+            useEffect(() => { dependencySkipRef.current.disarm(); }, [dependencyKeySignature]);
 
             useEffect(() => {
                 if (!showDependencies) {
@@ -14933,8 +14963,26 @@ import {
             }, []);
             const epicInteractionActiveFor = (epicKey) => statusTransitionActiveKey === epicKey || priorityTransitionActiveKey === epicKey
                 || projectTrackTransitionActiveKey === epicKey || issueFieldEdits.activeEditor?.issueKey === epicKey;
+            // The merge's flushSync commit runs the dependencies effect before afterApply, so the one-shot skip is armed here, from the
+            // signature the merge is about to produce; a mismatch only means the normal department refetch runs.
+            // The skip is bound to the department load epoch the held lists came from, so a department load that lands first rejects it.
+            const loadEpicRefreshWithDependencySkip = async (args) => {
+                const armEpoch = loadEpochRef.current;
+                const lanes = await loadEpicRefresh(args);
+                const nextKeys = new Set();
+                [['product', loadedProductTasks], ['tech', loadedTechTasks]].forEach(([lane, held]) => {
+                    const result = lanes?.[lane];
+                    const merged = result?.status === 'ok' ? mergeEpicStories({
+                        held, fetched: result.items || [], epicKey: args.epicKey, capped: result.meta?.capped === true,
+                        detailsMissing: (result.meta?.epicKeysMissing || []).includes(args.epicKey),
+                    }).items : held;
+                    merged.forEach(task => nextKeys.add(task.key));
+                });
+                markDependencySignature([...nextKeys].filter(Boolean).sort().join('|'), armEpoch);
+                return lanes;
+            };
             const epicRefresh = useEpicRefresh({
-                loadEpicRefresh,
+                loadEpicRefresh: loadEpicRefreshWithDependencySkip,
                 getState: () => ({ productTasks, techTasks, loadedProductTasks, loadedTechTasks, epicDetails, readyToCloseProductTasks, readyToCloseTechTasks,
                     productEpicsInScope, techEpicsInScope, readyToCloseProductEpicsInScope, readyToCloseTechEpicsInScope }),
                 setters: { setProductTasks, setTechTasks, setLoadedProductTasks, setLoadedTechTasks, setEpicDetails, setReadyToCloseProductTasks, setReadyToCloseTechTasks,
@@ -14950,8 +14998,15 @@ import {
                 getRecentEditKeys: () => new Set([...recentEditKeysRef.current].filter(([, at]) => Date.now() - at < 10000).map(([key]) => key)),
                 getViewport: () => ({ top: epicStickyTop + (document.querySelector('.epic-block .epic-header')?.offsetHeight || 0), bottom: window.innerHeight }),
                 priorityOrder,
-                clearAggregateSources: () => {}, // Task 6b
-                afterApply: () => {}, // Task 6b and the alert slices
+                clearAggregateSources: () => {
+                    burnoutCacheRef.current = {}; cohortCacheRef.current = {}; excludedCapacityCacheRef.current = {};
+                    setBurnoutData(null); setCohortData(null); setExcludedCapacityData(null);
+                },
+                afterApply: (update) => {
+                    const keys = [...loadedProductTasks, ...loadedTechTasks].filter(task => String(task.fields?.epicKey ?? '') === String(update.epicKey)).map(task => task.key);
+                    void refreshEpicDependencies(keys);
+                    invalidateStorySubtasks([...update.changedKeys, ...update.addedKeys, ...update.silentKeys]);
+                },
                 getAlertVersion: () => catchUpAlertVersionRef.current, track: trackEpicRefreshAction, sourceSurface: isCatchUpMode ? 'catch_up' : 'planning',
             });
 

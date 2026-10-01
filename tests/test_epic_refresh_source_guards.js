@@ -77,6 +77,38 @@ test('the dashboard mounts the per-epic refresh in Catch Up without touching the
     assert.equal(source.includes('aria-live="polite" data-epic-refresh-status'), false);
 });
 
+test('the epic refresh guards dependencies, subtasks and the alert cohort without touching the dependencies effect', () => {
+    const source = read('dashboard.jsx');
+    for (const token of ['dependencySkipRef', 'refreshEpicDependencies', 'markDependencySignature', 'invalidateStorySubtasks', 'Promise.allSettled([alertEpicsLoad']) {
+        assert.ok(source.includes(token), `dashboard.jsx must contain ${token}`);
+    }
+    const start = source.indexOf('if (!showDependencies && !showBlockedAlert) {');
+    const slice = source.slice(start, source.indexOf('}, [', start));
+    for (const token of ['dependencySkipRef', 'refreshEpicDependencies', 'markDependencySignature', 'alertCohortRef']) {
+        assert.equal(slice.includes(token), false, `the dependencies effect body must not reference ${token}`);
+    }
+    const digest = require('node:crypto').createHash('sha256').update(slice).digest('hex');
+    assert.equal(digest, 'b4454164077752fb961b04fb041ea2565133683226ecd26c9e64028eca9d036f', 'the dependencies effect body must stay byte-identical');
+    assert.ok(source.includes('useEffect(() => { dependencySkipRef.current.disarm(); }, [dependencyKeySignature]);'));
+    assert.ok(source.includes("import { createDependencySkip } from './eng/epicRefreshDependencySkip.js';"));
+    assert.ok(source.includes('const dependencySkipRef = useRef(createDependencySkip());'));
+    assert.ok(source.includes("if (dependencySkipRef.current.consume(keys.join('|'), loadEpochRef.current)) return ENG_TASK_LOAD_OUTCOME.APPLIED;"), 'fetchDependencies consumes the skip against the current department load epoch');
+    assert.ok(source.includes('const armEpoch = loadEpochRef.current;') && source.includes(".join('|'), armEpoch);"), 'the wrapper arms the skip with the epoch captured before the loader runs');
+    assert.ok(source.includes('dependencySkipRef.current.arm(next, epoch)'));
+    assert.equal(source.split('if (alertCohortRef.current === alertCohortToken) alertCohortRef.current = null;').length - 1, 2, 'the settle handler and the effect cleanup both token-check before clearing');
+    assert.ok(source.includes('alertCohortRef.current = alertCohortToken;'));
+    assert.ok(source.includes('const readyToCloseProductLoad = loadReadyToCloseProductTasks(') && source.includes('backlogLoad = loadBacklog();'));
+    assert.match(source, /const loadEpicRefreshWithDependencySkip = async \(args\) => \{[\s\S]*markDependencySignature\(.*\);\s*return lanes;/, 'the skip is armed before the merge commit, not in afterApply');
+    const afterApply = source.slice(source.indexOf('afterApply: (update) => {'), source.indexOf('getAlertVersion:'));
+    assert.ok(afterApply.includes('refreshEpicDependencies(') && afterApply.includes('invalidateStorySubtasks('));
+    const refreshBody = source.slice(source.indexOf('const refreshEpicDependencies'), source.indexOf('const markDependencySignature'));
+    for (const token of ['setDependencyRefreshNonce', 'setDependencyLookupCache', 'rearmCatchUpAlerts', 'loadGroupTasks']) {
+        assert.equal(refreshBody.includes(token), false, `refreshEpicDependencies must not use ${token}`);
+    }
+    assert.ok(refreshBody.includes('refresh: true') && refreshBody.includes('isCurrentAggregateRead'));
+    assert.ok(read('api', 'engApi.js').includes('JSON.stringify(refresh ? { keys, refresh: true } : { keys })'), 'existing callers keep the plain { keys } body');
+});
+
 test('EPM surfaces carry no epic-refresh or glare hooks', () => {
     const files = [
         ...listSourceFiles(path.join(frontendSrcPath, 'epm')),

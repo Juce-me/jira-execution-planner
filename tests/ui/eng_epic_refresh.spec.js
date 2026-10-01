@@ -271,7 +271,7 @@ function taskPayload(params, scenario) {
             epicKeysMissing: [],
         };
     }
-    if (params.purpose === 'alerts' || params.purpose === 'ready-to-close' || lane === 'tech') {
+    if (params.purpose === 'alerts' || params.purpose === 'ready-to-close' || params.purpose === 'epic-alerts' || lane === 'tech') {
         return { issues: [], epics: {}, epicsInScope: [], names: {} };
     }
     const epics = Object.values(scenario.epics);
@@ -1834,7 +1834,8 @@ test('29. a refreshed story that reached a terminal status drops its Missing Inf
     await expectRefreshSettled(page, 'EPIC-1');
     await expect(missingRows(page).filter({ hasText: 'E1-S04' })).toHaveCount(0);
     await expect(missingRows(page)).toHaveCount(2);
-    expect(alertRequests(ctx.calls.slice(since))).toEqual([]);
+    // Task 11: a status change now re-checks Ready to Close and the epic alert object for this epic (tests 34+); nothing else.
+    expect(otherAlertCalls(ctx.calls.slice(since), 'EPIC-1')).toEqual([]);
 });
 
 test('30. an alert the user dismissed stays dismissed after a refresh', async ({ page }) => {
@@ -1892,7 +1893,8 @@ test('32. a Stories Required ghost disappears when the refresh adds an actionabl
     await expect(taskCard(page, 'E3-S02')).toHaveCount(1);
     await expectRefreshSettled(page, 'EPIC-3');
     await expect(ghost).toHaveCount(0);
-    expect(alertRequests(ctx.calls.slice(since))).toEqual([]);
+    // Task 11: a membership change re-checks Ready to Close and the epic alert object for this epic (Task 12 will add Missing Info and readiness).
+    expect(otherAlertCalls(ctx.calls.slice(since), 'EPIC-3')).toEqual([]);
 });
 
 for (const mode of ['catch_up', 'planning']) {
@@ -1917,5 +1919,285 @@ function readinessEpicFor(key, teamId, teamName, reason) {
 function readinessSnapshotFor(epics) {
     return { schemaVersion: 1, complete: true, scope: { groupId: GROUP_ID, sprintId: String(SPRINT_ID), sprintName: SPRINT_NAME, sprintState: 'active' }, epics };
 }
+
+// ---- tests 34-40 (Task 11: scope-based alerts for one epic) ----
+
+const taskRequests = (calls, purpose) => calls.filter(call => call.pathname === '/api/tasks-with-team-name' && call.params.purpose === purpose);
+const epicAlertCalls = calls => taskRequests(calls, 'epic-alerts');
+const epicReadyToCloseCalls = (calls, epicKey) => taskRequests(calls, 'ready-to-close').filter(call => call.params.epicKeys === epicKey);
+const describeCalls = calls => calls.map(call => `${call.method} ${call.pathname}${call.search.replace(/[?&]t=\d+/, '')}`);
+const lanesOf = calls => calls.map(call => call.params.project).sort();
+// Every alert-related request after `since` that is not one of Task 11's two epic-scoped calls for `epicKey`.
+const otherAlertCalls = (calls, epicKey) => alertRequests(calls).filter(call => !(['epic-alerts', 'ready-to-close'].includes(call.params.purpose) && call.params.epicKeys === epicKey));
+const emptyEpicRows = page => page.locator('#eng-alert-empty .alert-story');
+const readyToCloseAlert = page => page.locator('#eng-alert-done');
+
+// EPIC-3 has one Blocked story (not actionable) and the department scope says it has zero stories: an Empty Epic alert.
+// `ctx.scope` is what the department alert load serves; `ctx.epicScope` is what the epic-scoped call serves (they may differ on purpose).
+async function openWithEmptyEpicAlert(page) {
+    const ctx = await mockDashboard(page);
+    setStory(ctx, 'E3-S01', { status: { name: 'Blocked' } });
+    const emptyEpic = { ...ctx.scenario.epics['EPIC-3'], status: { name: 'To Do' }, totalStories: 0, selectedStories: 0, futureOpenStories: 0 };
+    ctx.scope = { 'EPIC-3': emptyEpic };
+    ctx.epicScope = { 'EPIC-3': emptyEpic };
+    ctx.respond(call => call.params.purpose === 'alerts' && call.params.project === 'product', ({ json }) => json({ issues: [], epics: {}, epicsInScope: Object.values(ctx.scope), names: {} }));
+    ctx.respond(call => call.params.purpose === 'epic-alerts', ({ json, call }) => json({
+        epicsInScope: call.params.project === 'product' && ctx.epicScope[call.params.epicKeys] ? [ctx.epicScope[call.params.epicKeys]] : [],
+    }));
+    await openCatchUp(page, ctx);
+    await expect(emptyEpicRows(page)).toHaveCount(1);
+    await expect(emptyEpicRows(page).first()).toContainText('EPIC-3');
+    return ctx;
+}
+
+// Department ready-to-close and epic-scoped ready-to-close share this answer: the epics in `ctx.openChildren` with their open child count.
+function serveReadyToClose(ctx) {
+    ctx.respond(call => call.params.purpose === 'ready-to-close' && call.params.project === 'product', ({ json, call }) => {
+        const keys = String(call.params.epicKeys || '').split(',');
+        const known = keys.filter(key => ctx.openChildren[key] !== undefined);
+        json({
+            issues: ctx.scenario.stories.filter(story => known.includes(story.fields.epicKey)),
+            epics: {},
+            epicsInScope: known.map(key => ({ ...ctx.scenario.epics[key], openChildCount: ctx.openChildren[key] })),
+            names: {},
+        });
+    });
+}
+
+test('34. a story status change makes exactly the epic-alerts and ready-to-close calls for that epic, in both lanes', async ({ page }) => {
+    const ctx = await mockDashboard(page);
+    await openCatchUp(page, ctx);
+    setStory(ctx, 'E1-S02', { status: { name: 'In Progress' } });
+    const since = ctx.calls.length;
+    await clickRefresh(page, 'EPIC-1');
+    await expect.poll(() => epicAlertCalls(ctx.calls.slice(since)).length).toBe(2);
+    await expectRefreshSettled(page, 'EPIC-1');
+    await expect.poll(() => epicReadyToCloseCalls(ctx.calls.slice(since), 'EPIC-1').length).toBe(2);
+    await page.waitForTimeout(600); // a late extra alert request would show up here
+
+    const after = ctx.calls.slice(since);
+    expect(lanesOf(epicAlertCalls(after))).toEqual(['product', 'tech']);
+    expect(lanesOf(epicReadyToCloseCalls(after, 'EPIC-1'))).toEqual(['product', 'tech']);
+    epicAlertCalls(after).forEach(call => expect(call.params.epicKeys).toBe('EPIC-1'));
+    epicReadyToCloseCalls(after, 'EPIC-1').forEach(call => expect(call.params.sprint).toBe(''));
+    expect(describeCalls(otherAlertCalls(after, 'EPIC-1'))).toEqual([]);
+    assertScopedCalls(ctx.calls, since, 'EPIC-1', storyKeysOf(ctx.scenario, 'EPIC-1'));
+    await expect(globalErrorSurfaces(page)).toHaveCount(0);
+});
+
+test('34b. Epic Ready to Close appears once the refresh closes the last open story and the ready-to-close answer says so', async ({ page }) => {
+    const ctx = await mockDashboard(page);
+    ctx.openChildren = { 'EPIC-3': 1 };
+    serveReadyToClose(ctx);
+    await openCatchUp(page, ctx);
+    await expect(readyToCloseAlert(page)).toHaveCount(0);
+
+    setStory(ctx, 'E3-S01', { status: { name: 'Done' } });
+    ctx.openChildren['EPIC-3'] = 0;
+    await clickRefresh(page, 'EPIC-3');
+    await expect(readyToCloseAlert(page)).toHaveCount(1);
+    await expect(readyToCloseAlert(page)).toContainText('EPIC-3');
+});
+
+test('35a. a refresh that changes nothing makes no alert call', async ({ page }) => {
+    const ctx = await mockDashboard(page);
+    await openCatchUp(page, ctx);
+    const since = ctx.calls.length;
+    await clickRefresh(page, 'EPIC-1');
+    await expect.poll(() => epicRefreshCalls(ctx.calls.slice(since)).length).toBe(2);
+    await expectRefreshSettled(page, 'EPIC-1');
+    await page.waitForTimeout(600);
+    expect(describeCalls(alertRequests(ctx.calls.slice(since)))).toEqual([]);
+});
+
+test('35b. Story Points, assignee and summary changes alone make no alert call', async ({ page }) => {
+    const ctx = await mockDashboard(page);
+    await openCatchUp(page, ctx);
+    setStory(ctx, 'E1-S02', { customfield_10004: 8, summary: 'E1-S02 retitled', assignee: { displayName: 'Another Owner' } });
+    const since = ctx.calls.length;
+    await clickRefresh(page, 'EPIC-1');
+    await expect.poll(() => epicRefreshCalls(ctx.calls.slice(since)).length).toBe(2);
+    await expect(taskCard(page, 'E1-S02')).toContainText('E1-S02 retitled');
+    await expectRefreshSettled(page, 'EPIC-1');
+    await page.waitForTimeout(600);
+    expect(describeCalls(alertRequests(ctx.calls.slice(since)))).toEqual([]);
+});
+
+test('36. a department reload while the alert calls are in flight discards their result', async ({ page }) => {
+    const ctx = await openWithEmptyEpicAlert(page);
+    ctx.epicScope = {}; // the epic-scoped answer says the epic left scope; the department reload below still says it is empty
+    const gate = deferred();
+    ctx.respond(call => call.params.purpose === 'epic-alerts', async ({ json }) => { await gate.promise; return json({ epicsInScope: [] }); });
+    setStory(ctx, 'E3-S01', { status: { name: 'Incomplete' } });
+    await clickRefresh(page, 'EPIC-3');
+    await expect.poll(() => epicAlertCalls(ctx.calls).length).toBe(2);
+    await expectRefreshSettled(page, 'EPIC-3');
+
+    const sinceGlobal = ctx.calls.length;
+    await globalRefreshButton(page).click();
+    await expect.poll(() => taskRequests(ctx.calls.slice(sinceGlobal), 'alerts').length).toBe(2);
+    await expect(emptyEpicRows(page)).toHaveCount(1);
+    gate.resolve();
+    await page.waitForTimeout(700); // the late answer would remove the row here
+    await expect(emptyEpicRows(page)).toHaveCount(1);
+});
+
+test('37. an epic that leaves scope disappears from the Empty Epic alert', async ({ page }) => {
+    const ctx = await openWithEmptyEpicAlert(page);
+    delete ctx.epicScope['EPIC-3'];
+    setStory(ctx, 'E3-S01', { status: { name: 'Incomplete' } });
+    const since = ctx.calls.length;
+    await clickRefresh(page, 'EPIC-3');
+    await expect.poll(() => epicAlertCalls(ctx.calls.slice(since)).length).toBe(2);
+    await expect(emptyEpicRows(page)).toHaveCount(0);
+    await expectRefreshSettled(page, 'EPIC-3');
+});
+
+test('38. an epic that is still in scope keeps its place in the Empty Epic alert and takes its refreshed fields', async ({ page }) => {
+    const ctx = await openWithEmptyEpicAlert(page);
+    ctx.epicScope['EPIC-3'] = { ...ctx.epicScope['EPIC-3'], summary: 'EPIC-3 renamed by the server' };
+    setStory(ctx, 'E3-S01', { status: { name: 'Incomplete' } });
+    await clickRefresh(page, 'EPIC-3');
+    await expect(emptyEpicRows(page).first()).toContainText('EPIC-3 renamed by the server');
+    await expect(emptyEpicRows(page)).toHaveCount(1);
+});
+
+test('39. a failed epic-alerts call keeps the existing alerts and raises no banner', async ({ page }) => {
+    const ctx = await openWithEmptyEpicAlert(page);
+    ctx.respond(call => call.params.purpose === 'epic-alerts', ({ status }) => status(500, { error: 'internal_error', ...LEAK_CANARIES }));
+    ctx.respond(call => call.params.purpose === 'ready-to-close' && call.params.project === 'tech', ({ status }) => status(403, { error: 'missing_project_access', ...LEAK_CANARIES }));
+    setStory(ctx, 'E3-S01', { status: { name: 'Incomplete' } });
+    const since = ctx.calls.length;
+    await clickRefresh(page, 'EPIC-3');
+    await expect.poll(() => epicAlertCalls(ctx.calls.slice(since)).length).toBe(2);
+    await expectRefreshSettled(page, 'EPIC-3');
+    await page.waitForTimeout(600);
+    await expect(emptyEpicRows(page)).toHaveCount(1);
+    await expect(globalErrorSurfaces(page)).toHaveCount(0);
+    await expect(refreshButton(page, 'EPIC-3')).not.toHaveAttribute('data-state', 'error');
+    await expect(statusRegion(page)).not.toHaveText('Epic refresh failed');
+    await expectNoLeak(page);
+    expect(epicAlertCalls(ctx.calls.slice(since)), 'a failed alert call is not retried').toHaveLength(2);
+});
+
+test('40. a lane whose alert call fails leaves its entries alone while the other lane is still merged', async ({ page }) => {
+    const ctx = await openWithEmptyEpicAlert(page);
+    // The tech lane fails; the product lane (which holds the epic) answers with a renamed epic and that is merged on its own.
+    ctx.epicScope['EPIC-3'] = { ...ctx.epicScope['EPIC-3'], summary: 'EPIC-3 renamed while tech failed' };
+    ctx.respond(call => call.params.purpose === 'epic-alerts' && call.params.project === 'tech', ({ status }) => status(500, { error: 'internal_error' }));
+    setStory(ctx, 'E3-S01', { status: { name: 'Incomplete' } });
+    await clickRefresh(page, 'EPIC-3');
+    await expect(emptyEpicRows(page).first()).toContainText('EPIC-3 renamed while tech failed');
+    await expect(globalErrorSurfaces(page)).toHaveCount(0);
+    await expect(refreshButton(page, 'EPIC-3')).not.toHaveAttribute('data-state', 'error');
+});
+
+// A future sprint: the department scope also holds EPIC-9, an epic that is in scope only by its label (no story in this sprint) and has no team.
+const FUTURE_SPRINT_ID = 3002;
+const FUTURE_SPRINT_NAME = '2026Q3 Sprint 43';
+const backlogRows = page => page.locator('#eng-alert-backlog .alert-story');
+
+async function openFutureSprintWithLabelOnlyEpic(page) {
+    const ctx = await mockDashboard(page);
+    const labelOnly = { key: 'EPIC-9', summary: 'EPIC-9 label only epic', status: { name: 'To Do' }, assignee: null, teamId: '', teamName: '', labels: ['alpha_label'], sprint: [], totalStories: 0 };
+    ctx.scope = { 'EPIC-9': labelOnly };
+    ctx.respond('/api/sprints', ({ json }) => json({ sprints: [
+        { id: SPRINT_ID, name: SPRINT_NAME, state: 'active', startDate: '2026-05-01' },
+        { id: FUTURE_SPRINT_ID, name: FUTURE_SPRINT_NAME, state: 'future', startDate: '2026-08-01' },
+    ] }));
+    ctx.respond(call => call.params.purpose === 'alerts' && call.params.project === 'product', ({ json }) => json({ issues: [], epics: {}, epicsInScope: Object.values(ctx.scope), names: {} }));
+    // The epic-scoped call for EPIC-1 answers with EPIC-1 itself (it is in scope by its label too); EPIC-9 is never asked about.
+    ctx.respond(call => call.params.purpose === 'epic-alerts', ({ json, call }) => json({
+        epicsInScope: call.params.project === 'product' && call.params.epicKeys === 'EPIC-1' ? [{ ...ctx.scenario.epics['EPIC-1'], totalStories: 12 }] : [],
+    }));
+    await openCatchUp(page, ctx, { prefs: { selectedSprint: FUTURE_SPRINT_ID, sprintName: FUTURE_SPRINT_NAME } });
+    return ctx;
+}
+
+test('42. in a future sprint a label-only epic keeps its alert, and even a Story Points change re-checks the epic alert object', async ({ page }) => {
+    const ctx = await openFutureSprintWithLabelOnlyEpic(page);
+    await expect(backlogRows(page)).toHaveCount(1);
+    await expect(backlogRows(page).first()).toContainText('EPIC-9');
+    setStory(ctx, 'E1-S02', { customfield_10004: 8 });
+    const since = ctx.calls.length;
+    await clickRefresh(page, 'EPIC-1');
+    await expect.poll(() => epicAlertCalls(ctx.calls.slice(since)).length).toBe(2);
+    await expectRefreshSettled(page, 'EPIC-1');
+    await page.waitForTimeout(600);
+    expect(lanesOf(epicAlertCalls(ctx.calls.slice(since)))).toEqual(['product', 'tech']);
+    expect(epicReadyToCloseCalls(ctx.calls.slice(since), 'EPIC-1'), 'Story Points alone does not re-check Ready to Close').toEqual([]);
+    await expect(backlogRows(page)).toHaveCount(1);
+    await expect(backlogRows(page).first()).toContainText('EPIC-9');
+});
+
+// ---- review fix: removal from partial data (MRT019), Ready to Close entry of one epic ----
+
+// EPIC-3 holds a Ready to Close entry in the product lane: the epic entry (visible as the Ready to Close alert) and a story copy
+// (`readyToCloseProductTasks`). The story copies have no visible surface: their only consumer, the Waiting for Stories alert, is
+// unreachable today because `analysisWaitingEpics` passes the story array as the options argument of `epicMatchesSelectedSprint`
+// (pre-existing, dashboard.jsx). So the copies are counted in the React state of the mounted app. The copy uses a synthetic key,
+// so only the ready-to-close answer can create or remove it.
+const readyToCloseEntryRows = page => readyToCloseAlert(page).locator('.alert-story');
+const heldCopyCount = page => page.evaluate(() => {
+    const host = document.getElementById('root');
+    const containerKey = Object.keys(host).find(name => name.startsWith('__reactContainer$'));
+    const seen = new Set();
+    const stack = [host[containerKey]];
+    let count = 0;
+    while (stack.length) {
+        const fiber = stack.pop();
+        if (!fiber || seen.has(fiber)) continue;
+        seen.add(fiber);
+        for (let hook = fiber.memoizedState; hook && typeof hook === 'object' && 'next' in hook; hook = hook.next) {
+            if (Array.isArray(hook.memoizedState)) count += hook.memoizedState.filter(item => item?.key === 'E3-HELD').length;
+        }
+        stack.push(fiber.child, fiber.sibling);
+    }
+    return count;
+});
+
+async function openWithHeldReadyToCloseEntry(page) {
+    const ctx = await mockDashboard(page);
+    const heldCopy = buildStory('E3-HELD', 'EPIC-3', { status: 'Done', projectKey: 'PROD' });
+    ctx.swallowed = false;
+    ctx.respond(call => call.params.purpose === 'ready-to-close' && call.params.project === 'product', ({ json }) => json(ctx.swallowed
+        ? { issues: [], epics: {}, epicsInScope: [], names: {} }
+        : { issues: [heldCopy], epics: {}, epicsInScope: [{ ...ctx.scenario.epics['EPIC-3'], openChildCount: 0 }], names: {} }));
+    await openCatchUp(page, ctx);
+    await expect(readyToCloseEntryRows(page)).toHaveCount(1);
+    await expect(readyToCloseAlert(page)).toContainText('EPIC-3');
+    await expect.poll(() => heldCopyCount(page)).toBe(1);
+    return ctx;
+}
+
+test('43. a swallowed ready-to-close failure (200, empty issues and epics) with a failed epic-alerts call keeps the held Ready to Close entry and its stories', async ({ page }) => {
+    const ctx = await openWithHeldReadyToCloseEntry(page);
+    ctx.swallowed = true;
+    ctx.respond(call => call.params.purpose === 'epic-alerts', ({ status }) => status(500, { error: 'internal_error', ...LEAK_CANARIES }));
+    setStory(ctx, 'E3-S01', { status: { name: 'In Progress' } });
+    const since = ctx.calls.length;
+    await clickRefresh(page, 'EPIC-3');
+    await expect.poll(() => epicReadyToCloseCalls(ctx.calls.slice(since), 'EPIC-3').length).toBe(2);
+    await expect.poll(() => epicAlertCalls(ctx.calls.slice(since)).length).toBe(2);
+    await expectRefreshSettled(page, 'EPIC-3');
+    await page.waitForTimeout(700); // the lane merges land after the calls settle
+    await expect(readyToCloseEntryRows(page)).toHaveCount(1);
+    await expect(readyToCloseAlert(page)).toContainText('EPIC-3');
+    expect(await heldCopyCount(page)).toBe(1);
+    await expect(globalErrorSurfaces(page)).toHaveCount(0);
+});
+
+test('44. an ok empty epic-alerts answer (epic out of scope) removes the held Ready to Close entry and its stories', async ({ page }) => {
+    const ctx = await openWithHeldReadyToCloseEntry(page);
+    ctx.swallowed = true;
+    ctx.respond(call => call.params.purpose === 'epic-alerts', ({ json }) => json({ epicsInScope: [] }));
+    setStory(ctx, 'E3-S01', { status: { name: 'In Progress' } });
+    const since = ctx.calls.length;
+    await clickRefresh(page, 'EPIC-3');
+    await expect.poll(() => epicReadyToCloseCalls(ctx.calls.slice(since), 'EPIC-3').length).toBe(2);
+    await expect(readyToCloseEntryRows(page)).toHaveCount(0);
+    await expect.poll(() => heldCopyCount(page)).toBe(0);
+    await expectRefreshSettled(page, 'EPIC-3');
+});
 
 // ---- test 26 (load_performance run) is a command, see the report ----

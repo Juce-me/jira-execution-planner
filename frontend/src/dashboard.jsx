@@ -7161,7 +7161,7 @@ import {
                 loadAlertEpics,
                 loadReadyToCloseProductTasks,
                 loadReadyToCloseTechTasks,
-                loadEpicRefresh,
+                loadEpicRefresh, loadEpicAlerts,
             } = useEngSprintData({
                 backendUrl: BACKEND_URL,
                 performanceGate, issueEditState: issueEditStateRef.current,
@@ -15007,7 +15007,7 @@ import {
                     void refreshEpicDependencies(keys);
                     invalidateStorySubtasks([...update.changedKeys, ...update.addedKeys, ...update.silentKeys]);
                 },
-                getAlertVersion: () => catchUpAlertVersionRef.current, track: trackEpicRefreshAction, sourceSurface: isCatchUpMode ? 'catch_up' : 'planning',
+                getAlertVersion: () => catchUpAlertVersionRef.current, loadEpicAlerts, isFutureSprint: isFutureSprintSelected, track: trackEpicRefreshAction, sourceSurface: isCatchUpMode ? 'catch_up' : 'planning',
             });
 
             // Group Board composer props (Boards tab, GroupBoardsTab.jsx). The Save gate validates

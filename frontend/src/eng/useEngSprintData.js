@@ -1,6 +1,8 @@
 import {
     fetchBacklogEpics as requestBacklogEpics,
     fetchEngTasks,
+    fetchEpicAlertBundle,
+    fetchEpicReadyToClose,
     fetchEpicRefresh,
 } from '../api/engApi.js';
 import { isAuthenticationRequiredError } from '../api/authRequired.js';
@@ -137,7 +139,7 @@ export function useEngSprintData({
                 pageLoadRefreshRef.current = false;
             }
             const requestTasks = options.epicRefresh
-                ? () => fetchEpicRefresh(backendUrl, {
+                ? () => (options.epicRequest || fetchEpicRefresh)(backendUrl, {
                     project,
                     sprint: sprintParam,
                     sprintName: selectedSprintName || '',
@@ -505,6 +507,46 @@ export function useEngSprintData({
             cancel: () => { measurement.cancel(); resolveDependencies?.('ignored'); } };
     };
 
+    // One lane of one epic-scoped alert request. The scope list is captured by a setter of our own: the department loader applies it
+    // wholesale, which would wipe the other epics. HTTP failures never reach the global connection-failure handler (`epicRefresh`).
+    const fetchAlertLane = async (project, { epicKey, signal, epicRequest }) => {
+        let epicsInScope = [];
+        const data = await fetchTasks(project, {
+            epicRefresh: true,
+            epicRequest,
+            epicsInScopeSetter: list => { epicsInScope = list; },
+            epicKeys: [epicKey],
+            updateEpics: false,
+            useLoading: false,
+            setErrorOnFailure: false,
+            forceRefresh: true,
+            signal,
+        });
+        const readToken = data?.[ISSUE_EDIT_READ_TOKEN];
+        try {
+            if (Array.isArray(data)) return { status: 'ok', items: data, epicsInScope };
+            if (data === ENG_TASK_LOAD_OUTCOME.LANE_DENIED) return { status: 'denied' };
+            if (data === ENG_TASK_LOAD_OUTCOME.RATE_LIMITED) return { status: 'rate_limited' };
+            if (data === ENG_TASK_LOAD_OUTCOME.AUTH_REQUIRED) return { status: 'auth_required' };
+            if (data === ENG_TASK_LOAD_OUTCOME.IGNORED) return { status: 'ignored' };
+            return { status: 'failed' };
+        } finally {
+            issueEditState?.finishRead(readToken);
+        }
+    };
+
+    // Scope-based alerts for one epic (issue #213): both lanes per requested call, results handed back unapplied.
+    // Returns { product: { epicAlerts?: Lane, readyToClose?: Lane }, tech: { ... } }; Lane has `epicsInScope` (and `items` for readyToClose).
+    const loadEpicAlerts = async ({ epicKey, calls = [], signal } = {}) => {
+        const requests = { epicAlerts: fetchEpicAlertBundle, readyToClose: fetchEpicReadyToClose };
+        const lanes = { product: {}, tech: {} };
+        if (strictBoardActive) return lanes;
+        await Promise.all(Object.keys(requests).filter(call => calls.includes(call)).flatMap(call => ['product', 'tech'].map(async project => {
+            lanes[project][call] = await fetchAlertLane(project, { epicKey, signal, epicRequest: requests[call] });
+        })));
+        return lanes;
+    };
+
     // Per-epic refresh (issue #213): both lanes, no loading flag, results handed back for one atomic apply.
     const loadEpicRefresh = async ({ epicKey, shouldApplyResult, signal } = {}) => {
         if (strictBoardActive) return { product: { status: 'ignored' }, tech: { status: 'ignored' } };
@@ -538,6 +580,7 @@ export function useEngSprintData({
     return {
         loadGroupTasks,
         loadEpicRefresh,
+        loadEpicAlerts,
         fetchTasks,
         fetchBacklogEpics,
         loadProductTasks,

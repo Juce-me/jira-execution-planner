@@ -3,13 +3,14 @@ import { flushSync } from 'react-dom';
 import { REMOVE_FADE_MS } from '../issues/IssueCard.jsx';
 import { sortTasksByPriority } from './engTaskUtils.js';
 import { createEpicRefreshController } from './epicRefreshController.js';
-import { recomputeMissingPlanningInfo } from './epicRefreshAlerts.js';
+import { alertCallsFor, mergeEpicScopeEntries, recomputeMissingPlanningInfo, replaceEpicStories } from './epicRefreshAlerts.js';
 import { glareDelayMs, playGlare, selectGlareKeys } from './epicRefreshGlare.js';
-import { mergeEpicStories, patchEpicScopeEntries, patchStoryCopies } from './epicRefreshPatch.js';
+import { diffEpic, mergeEpicStories, patchEpicScopeEntries, patchStoryCopies } from './epicRefreshPatch.js';
 
 const EPIC_SCOPE_LISTS = ['productEpicsInScope', 'techEpicsInScope', 'readyToCloseProductEpicsInScope', 'readyToCloseTechEpicsInScope'];
 const STORY_COPY_LISTS = ['readyToCloseProductTasks', 'readyToCloseTechTasks'];
 const FRAME_TIMEOUT_MS = 250;
+const ALERT_LANES = [['product', 'Product'], ['tech', 'Tech']];
 
 const setterName = listName => `set${listName[0].toUpperCase()}${listName.slice(1)}`;
 const headerSelector = epicKey => `[data-epic-key="${epicKey}"] .epic-header`;
@@ -57,6 +58,41 @@ export function useEpicRefresh(inputs) {
     React.useEffect(() => () => {
         timersRef.current.forEach(timer => window.clearTimeout(timer));
         timersRef.current.clear();
+    }, []);
+
+    // Epic-scoped alert calls for one epic (Task 11; Task 13b reuses it for inline edits). `calls` are names from `alertCallsFor`; the
+    // ones this runner knows are `readyToClose` and `epicAlerts`. Both lanes are called and each lane is merged on its own: a lane
+    // that fails leaves its entries untouched and shows nothing. Results are dropped if a department reload or a re-armed alert cohort
+    // started meanwhile (a wholesale reload is authoritative). `alertVersion` defaults to the version at this call.
+    const recheckEpicAlerts = React.useCallback(async (epicKey, calls, { alertVersion } = {}) => {
+        const wanted = (calls || []).filter(call => call === 'readyToClose' || call === 'epicAlerts');
+        const started = latest.current;
+        if (!wanted.length || !started.loadEpicAlerts) return;
+        const version = alertVersion !== undefined ? alertVersion : started.getAlertVersion?.();
+        const guards = started.readGuards(epicKey);
+        let lanes;
+        try {
+            lanes = await started.loadEpicAlerts({ epicKey, calls: wanted });
+        } catch (error) {
+            return;
+        }
+        const { setters, getAlertVersion, readGuards, getProtectedKeys } = latest.current;
+        const now = readGuards(epicKey);
+        if (getAlertVersion?.() !== version || now.epoch !== guards.epoch || now.version !== guards.version || now.scopeKey !== guards.scopeKey) return;
+        // The epic's own header entry is kept as held while the user is editing it.
+        const editing = getProtectedKeys(epicKey).has(epicKey);
+        ALERT_LANES.forEach(([lane, title]) => {
+            const { epicAlerts, readyToClose } = lanes?.[lane] || {};
+            if (epicAlerts?.status === 'ok' && !editing) {
+                setters[`set${title}EpicsInScope`](prev => mergeEpicScopeEntries({ held: prev, incoming: epicAlerts.epicsInScope, epicKey }));
+            }
+            if (readyToClose?.status === 'ok') {
+                // That endpoint answers an empty list when its epic search fails, so only the alert object's successful empty answer deletes.
+                const outOfScope = epicAlerts?.status === 'ok' && epicAlerts.epicsInScope.length === 0;
+                setters[`setReadyToClose${title}Tasks`](prev => replaceEpicStories({ held: prev, incoming: readyToClose.items, epicKey, emptyConfirmed: outOfScope }));
+                if (!editing) setters[`setReadyToClose${title}EpicsInScope`](prev => mergeEpicScopeEntries({ held: prev, incoming: readyToClose.epicsInScope, epicKey, deleteWhenAbsent: outOfScope }));
+            }
+        });
     }, []);
 
     if (!controllerRef.current) {
@@ -136,6 +172,8 @@ export function useEpicRefresh(inputs) {
             const button = header?.querySelector('.epic-refresh-button');
             const hadFocus = Boolean(button) && document.activeElement === button;
 
+            const fetchedEpic = update.epicDetailsPatch?.[epicKey];
+            const epicChangedFields = fetchedEpic ? diffEpic(latest.current.getState().epicDetails?.[epicKey], fetchedEpic).changedFields : [];
             const keptForDissolve = new Set();
             flushSync(() => {
                 update.mergeInputs.forEach(input => applyMerge(input, epicKey, keptForDissolve));
@@ -176,6 +214,9 @@ export function useEpicRefresh(inputs) {
                 setters.setMissingPlanningInfoTasks?.(prev => recomputeMissingPlanningInfo({ held: prev, refreshedStories: update.fetchedStories, epicKey }));
             }
             latest.current.afterApply?.(update);
+            // Scope-based alerts follow in the background: the epic is not kept busy for them, and a failure shows nothing.
+            const calls = alertCallsFor({ ...update, epicChangedFields }, { isFutureSprint: latest.current.isFutureSprint === true, isCatchUp: sourceSurface === 'catch_up' });
+            if (calls.length) void recheckEpicAlerts(epicKey, calls, { alertVersion: alertVersionAtClick.current.get(epicKey) });
             return { hiddenCount };
         };
 
@@ -217,5 +258,5 @@ export function useEpicRefresh(inputs) {
     }
 
     const refreshEpic = React.useCallback(epicKey => controllerRef.current.refresh(epicKey), []);
-    return { epicStates, leavingKeys, announcement, announcementId, refreshEpic };
+    return { epicStates, leavingKeys, announcement, announcementId, refreshEpic, recheckEpicAlerts };
 }

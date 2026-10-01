@@ -92,6 +92,18 @@ export const fetchEpicRefresh = (backendUrl, { project, sprint, sprintName = '',
     apiSurface: 'epic_refresh', featureName: 'epic_refresh',
 });
 
+// One epic's alert object: `{ epicsInScope: [epic] or [] }`, no issues.
+export const fetchEpicAlertBundle = (backendUrl, { project, sprint, sprintName = '', groupId, teamIds = [], teamLabels = [], epicKey, signal } = {}) => fetchEngTasks(backendUrl, {
+    project, sprint, sprintName, groupId, teamIds, teamLabels, refresh: true, purpose: 'epic-alerts', epicKeys: [epicKey], signal,
+    apiSurface: 'epic_refresh', featureName: 'epic_refresh',
+});
+
+// Ready to Close for one epic across all sprints (the sprint parameter stays empty, as in the department request).
+export const fetchEpicReadyToClose = (backendUrl, { project, sprintName = '', groupId, teamIds = [], teamLabels = [], epicKey, signal } = {}) => fetchEngTasks(backendUrl, {
+    project, sprint: '', sprintName, groupId, teamIds, teamLabels, refresh: true, purpose: 'ready-to-close', epicKeys: [epicKey], signal,
+    apiSurface: 'epic_refresh', featureName: 'epic_refresh',
+});
+
 export const fetchStoryReadiness = async (backendUrl, {
     sprint,
     sprintName,

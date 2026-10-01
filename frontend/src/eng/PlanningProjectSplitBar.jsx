@@ -4,6 +4,7 @@ export default function PlanningProjectSplitBar({
     selectedProjectEntries,
     excludedProjectStats,
     adHocProductSP = 0,
+    compact = false,
 }) {
     const projectTotal = selectedProjectEntries.reduce((sum, e) => sum + e.storyPoints, 0);
     const productEntry = selectedProjectEntries.find(e => e.id === 'PRODUCT');
@@ -25,11 +26,11 @@ export default function PlanningProjectSplitBar({
 
     return (
         <>
-            <div className="planning-stats compact" style={{ marginTop: '0.35rem' }}>
+            {!compact && <div className="planning-stats compact" style={{ marginTop: '0.35rem' }}>
                 <div className="planning-stat">
                     <span className="planning-stat-label" data-tooltip="Planning capacity split: 70% Product / 30% Tech (tech-heavy teams may aim for 10% / 90%). Selected effort excludes excluded epics.">Selected SP by Project:</span>
                 </div>
-            </div>
+            </div>}
             {projectTotal === 0 && excludedTotal === 0 ? (
                 <div className="planning-stat" style={{ marginTop: '0.3rem' }}>
                     <span className="planning-stat-value">No tasks selected</span>
@@ -43,7 +44,7 @@ export default function PlanningProjectSplitBar({
                             style={{ width: `${productPct}%`, borderRadius: techPct > 0 ? '6px 0 0 6px' : '6px' }}
                             data-tooltip={`Product: ${productSP.toFixed(1)} SP (${productPct.toFixed(0)}% of selected).${hasAdHoc ? ` Incl. Ad Hoc: ${adHocSP.toFixed(1)} SP.` : ''}${excludedProduct > 0 ? ` Excluded: ${excludedProduct.toFixed(1)} SP.` : ''}`}
                         >
-                            {productPct > 15 && (
+                            {!compact && productPct > 15 && (
                                 <span className="capacity-bar-fill-label">Product {productPct.toFixed(0)}% · {productSP.toFixed(1)} SP{hasAdHoc && productPct > 30 ? ` · Ad Hoc ${adHocSP.toFixed(1)}` : ''}</span>
                             )}
                         </div>
@@ -62,15 +63,16 @@ export default function PlanningProjectSplitBar({
                             style={{ left: `${productPct}%`, width: `${techPct}%` }}
                             data-tooltip={`Tech: ${techSP.toFixed(1)} SP (${techPct.toFixed(0)}% of selected).${excludedTech > 0 ? ` Excluded: ${excludedTech.toFixed(1)} SP.` : ''}`}
                         >
-                            {techPct > 15 && (
+                            {!compact && techPct > 15 && (
                                 <span className="capacity-bar-fill-label">Tech {techPct.toFixed(0)}% · {techSP.toFixed(1)} SP</span>
                             )}
                         </div>
                         )}
+                        {compact && <span className="capacity-bar-fill-label planning-compact-readout">Product {productSP.toFixed(1)} · Tech {techSP.toFixed(1)} SP</span>}
                         {/* 70% target marker */}
-                        <div className="capacity-bar-marker" style={{ left: `${targetPct}%` }}>
+                        <div className="capacity-bar-marker" style={{ left: `${targetPct}%` }} data-tooltip="Product / Tech target: 70% / 30%">
                             <div className="capacity-bar-marker-line dashed" />
-                            <div className="capacity-bar-marker-label">Target<br/>{targetPct}% / {100 - targetPct}%</div>
+                            {!compact && <div className="capacity-bar-marker-label">Target<br/>{targetPct}% / {100 - targetPct}%</div>}
                         </div>
                     </div>
                 </div>

@@ -1,9 +1,6 @@
 import * as React from 'react';
 import EmptyState from '../ui/EmptyState.jsx';
-import IconButton from '../ui/IconButton.jsx';
 import LoadingState from '../ui/LoadingState.jsx';
-import EngFilterBar from './EngFilterBar.jsx';
-import { ENG_EPIC_SORT_OPTIONS, getEngEpicSortLabel } from './engTaskUtils.js';
 
 export default function EngView({
     selectedView,
@@ -15,11 +12,6 @@ export default function EngView({
     onRetry,
     alertCelebrationPieces = [],
     alertsPanel,
-    engFilters,
-    onFacetChange,
-    hasInitiativeData,
-    groupByInitiative,
-    setGroupByInitiative,
     InitiativeIcon,
     visibleTasksForList = [],
     hierarchyCounts = null,
@@ -32,13 +24,8 @@ export default function EngView({
     epicGroups = [],
     renderEpicBlock,
     jiraUrl,
-    onClearFacets,
     onClearFilters,
-    engEpicSort,
-    setEngEpicSort,
-    onFilterBarHeightChange,
-    boardColumns = [],
-    renderPriorityIcon,
+    planningTable = null,
 }) {
     if (selectedView !== 'eng') {
         return null;
@@ -46,34 +33,12 @@ export default function EngView({
     const visibleRowCount = Number.isFinite(hierarchyCounts?.visibleRows)
         ? hierarchyCounts.visibleRows
         : visibleTasksForList.length;
-    const realStoryCount = Number.isFinite(hierarchyCounts?.realStories)
-        ? hierarchyCounts.realStories
-        : visibleTasksForList.length;
-    const requirementCount = Number(hierarchyCounts?.requirements) || 0;
     const hasNoVisibleTasks = visibleRowCount === 0;
     const readinessNeedsAttention = !['idle', 'loading', 'ready'].includes(readinessStatus);
-
-    const [showSortDropdown, setShowSortDropdown] = React.useState(false);
-    const sortDropdownRef = React.useRef(null);
-    React.useEffect(() => {
-        if (!showSortDropdown) return undefined;
-        const onDocClick = (e) => {
-            if (sortDropdownRef.current && !sortDropdownRef.current.contains(e.target)) {
-                setShowSortDropdown(false);
-            }
-        };
-        document.addEventListener('mousedown', onDocClick);
-        return () => document.removeEventListener('mousedown', onDocClick);
-    }, [showSortDropdown]);
 
     if (sprintCatalogLoading) {
         return <LoadingState title="Loading sprints" message="Resolving sprint values from Jira." />;
     }
-
-    const selectEngEpicSort = (value) => {
-        setEngEpicSort(value);   // dashboard handler also fires the sort_changed analytics event
-        setShowSortDropdown(false);
-    };
 
     return (
         <>
@@ -137,79 +102,8 @@ export default function EngView({
                             )}
                         </div>
                     )}
-                    <EngFilterBar
-                        facets={engFilters.facets}
-                        selection={engFilters.selection}
-                        counts={engFilters.counts}
-                        scopeTotal={engFilters.scopeTotal}
-                        subject={engFilters.subject}
-                        readoutCount={realStoryCount}
-                        readoutUnit={requirementCount > 0 ? `stories · ${requirementCount} required` : engFilters.readoutUnit}
-                        onChange={onFacetChange}
-                        onClearAll={onClearFacets}
-                        onHeightChange={onFilterBarHeightChange}
-                        boardColumns={boardColumns}
-                        renderPriorityIcon={renderPriorityIcon}
-                        viewControls={(
-                            <>
-                                <div className="sprint-dropdown sprint-dropdown-compact eng-epic-sort-dropdown" ref={sortDropdownRef}>
-                                    <div
-                                        className={`sprint-dropdown-toggle ${showSortDropdown ? 'open' : ''}`}
-                                        role="button"
-                                        tabIndex={0}
-                                        aria-label="Sort epics"
-                                        aria-expanded={showSortDropdown}
-                                        onClick={() => setShowSortDropdown(v => !v)}
-                                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setShowSortDropdown(v => !v); } }}
-                                    >
-                                        <span className="cap">Sort</span>
-                                        <span>{getEngEpicSortLabel(engEpicSort)}</span>
-                                        <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><path d="M6 9L1 4h10z" /></svg>
-                                    </div>
-                                    {showSortDropdown && (
-                                        <div className="sprint-dropdown-panel">
-                                            <div className="sprint-dropdown-list">
-                                                {ENG_EPIC_SORT_OPTIONS.map(option => (
-                                                    <div
-                                                        key={option.value}
-                                                        className={`sprint-dropdown-option ${engEpicSort === option.value ? 'selected' : ''}`}
-                                                        role="button"
-                                                        tabIndex={0}
-                                                        onClick={() => selectEngEpicSort(option.value)}
-                                                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectEngEpicSort(option.value); } }}
-                                                    >
-                                                        {option.label}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                                {hasInitiativeData && (
-                                    <span className="initiative-grouping-control">
-                                        <IconButton
-                                            className="fb-trigger fb-trigger-icon"
-                                            onClick={() => setGroupByInitiative(!groupByInitiative)}
-                                            aria-label="Group by Initiative"
-                                            aria-pressed={groupByInitiative}
-                                            aria-describedby="initiative-grouping-tooltip"
-                                        >
-                                            <InitiativeIcon size={14} title={null} />
-                                        </IconButton>
-                                        <span
-                                            id="initiative-grouping-tooltip"
-                                            className="initiative-grouping-tooltip"
-                                            role="tooltip"
-                                        >
-                                            {`Group by Initiative — ${groupByInitiative ? 'On' : 'Off'}`}
-                                        </span>
-                                    </span>
-                                )}
-                            </>
-                        )}
-                    />
 
-                    {hasNoVisibleTasks ? (
+                    {planningTable || (hasNoVisibleTasks ? (
                         <EmptyState title="No tasks found" className="eng-empty-results">
                             <p>There are no tasks matching the current criteria</p>
                         </EmptyState>
@@ -258,7 +152,7 @@ export default function EngView({
                                 epicGroups.map(epicGroup => renderEpicBlock(epicGroup))
                             )}
                         </div>
-                    )}
+                    ))}
 
                     <div style={{marginTop: '3rem', textAlign: 'center'}}>
                         <button onClick={hasNoVisibleTasks && onClearFilters ? onClearFilters : onRetry}>

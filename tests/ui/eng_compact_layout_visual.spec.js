@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const { test, expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_home_token_fixture');
-const { collectStickySnapshots } = require('./eng_sticky_stack_helpers');
+const { collectStickySnapshots, snapshotStickyStack } = require('./eng_sticky_stack_helpers');
 
 const screenshotDir = 'test-results/eng-compact-layout-qa';
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
@@ -276,6 +276,7 @@ async function openEngCatchUp(page, viewport, options = {}) {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
         selectedView: 'eng',
+        planningLayout: 'list',
         selectedSprint: selectedSprintId,
         sprintName: selectedSprintName,
         activeGroupId: 'grp-default',
@@ -590,6 +591,10 @@ test('the filter bar takes at most two rows below 720px', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 600 });
     await waitForVisualSettled(page);
     const narrowSnapshots = await collectStickySnapshots(page, waitForVisualSettled);
+    // Filters now precede alerts; target the real Epic instead of assuming it pins at a fixed page offset.
+    await page.locator('.epic-header').first().evaluate(node => window.scrollTo(0, window.scrollY + node.getBoundingClientRect().top));
+    await waitForVisualSettled(page);
+    narrowSnapshots.push(await snapshotStickyStack(page));
     const narrowPinned = narrowSnapshots.find(result => result.compactVisible && result.filterbarPinned && result.pinnedEpic);
     expect(narrowPinned, 'expected a narrow two-row pinned epic witness').toBeTruthy();
     expect(narrowPinned.filterbarWrap.height).toBeGreaterThan(narrowPinned.filterbar.height);
@@ -626,7 +631,7 @@ test('Catch Up exposes the compact, filter-bar, and pinned-epic sticky stack', a
     await page.screenshot({ path: `${screenshotDir}/catch-up-sticky-stack.png`, fullPage: false });
 });
 
-test('Planning orders compact, planning, filter bar, and pinned epic without overlap', async ({ page }) => {
+test('Planning orders compact, filter bar, planning, and pinned epic without overlap', async ({ page }) => {
     await openEngCatchUp(page, { width: 1440, height: 600 }, {
         expectedSurface: 'planning',
         prefs: { showPlanning: true },
@@ -639,10 +644,10 @@ test('Planning orders compact, planning, filter bar, and pinned epic without ove
     ));
     expect(witnesses.length, 'expected a pinned four-layer Planning witness').toBeGreaterThan(0);
     witnesses.forEach((result) => {
-        expect(Math.abs(result.planning.top - result.compact.bottom)).toBeLessThanOrEqual(1);
-        expect(Math.abs(result.filterbarWrap.top - result.planning.bottom)).toBeLessThanOrEqual(1);
-        expect(result.filterbarWrap.bottom).toBeLessThanOrEqual(result.epic.top + 1);
-        expect(Math.abs(result.epic.top - result.filterbarWrap.bottom)).toBeLessThanOrEqual(1);
+        expect(Math.abs(result.filterbarWrap.top - result.compact.bottom)).toBeLessThanOrEqual(1);
+        expect(Math.abs(result.planning.top - result.filterbarWrap.bottom)).toBeLessThanOrEqual(1);
+        expect(result.planning.bottom).toBeLessThanOrEqual(result.epic.top + 1);
+        expect(Math.abs(result.epic.top - result.planning.bottom)).toBeLessThanOrEqual(1);
         expect(result.filterbarOwnsPoint).toBe(true);
         expect(result.epicOwnsPoint).toBe(true);
     });

@@ -265,7 +265,7 @@ test('Planning project split renders the Ad Hoc Product subsegment for configure
     const apiMocks = await installApiMocks(page, calls);
     await page.setViewportSize({ width: 1280, height: 900 });
     await setPrefs(page, {
-        selectedView: 'eng',
+        selectedView: 'eng', planningLayout: 'list',
         selectedSprint: selectedSprintId,
         sprintName: selectedSprintName,
         activeGroupId: 'grp-default',
@@ -307,7 +307,7 @@ test('Stats effort split shows a non-zero Ad Hoc bucket and Ad Hoc Share / Produ
     const apiMocks = await installApiMocks(page, calls);
     await page.setViewportSize({ width: 1440, height: 900 });
     await setPrefs(page, {
-        selectedView: 'eng',
+        selectedView: 'eng', planningLayout: 'list',
         selectedSprint: selectedSprintId,
         sprintName: selectedSprintName,
         activeGroupId: 'grp-default',
@@ -344,7 +344,7 @@ test('Stats Mono vs Cross keeps Ad Hoc stories inside Total SP and Cross Share',
     const apiMocks = await installApiMocks(page, calls);
     await page.setViewportSize({ width: 1440, height: 900 });
     await setPrefs(page, {
-        selectedView: 'eng',
+        selectedView: 'eng', planningLayout: 'list',
         selectedSprint: selectedSprintId,
         sprintName: selectedSprintName,
         activeGroupId: 'grp-default',

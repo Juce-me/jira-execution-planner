@@ -134,6 +134,7 @@ async function installPlanningFixture(page, {
     };
 
     await installDashboardShell(page);
+    await page.addInitScript(() => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({planningLayout: 'list'})));
     await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({
         status: 200,
         contentType: 'application/javascript',
@@ -187,6 +188,7 @@ async function installPlanningFixture(page, {
                         sprintName: activeSprintName,
                         activeGroupId: 'group-alpha',
                         showPlanning: false,
+                planningLayout: 'list',
                         showScenario: false,
                     },
                 },
@@ -351,6 +353,7 @@ async function seedPlanningAuthResume(page, {
                 activeGroupId: 'group-alpha',
                 selectedSprint: sprintId,
                 showPlanning: false,
+                planningLayout: 'list',
             }));
         }
         installPlanningPersistenceProbe();

@@ -10,7 +10,7 @@ const dashboardSource = fs.readFileSync(
 const engViewSource = fs.readFileSync(
     path.join(__dirname, '..', 'frontend', 'src', 'eng', 'EngView.jsx'),
     'utf8'
-);
+) + fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'eng', 'EngFilterControls.jsx'), 'utf8');
 const hierarchySource = fs.readFileSync(
     path.join(__dirname, '..', 'frontend', 'src', 'eng', 'engWorkHierarchy.js'),
     'utf8'

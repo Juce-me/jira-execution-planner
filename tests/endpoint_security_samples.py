@@ -1,4 +1,6 @@
 ROUTE_SAMPLES = {
+    "/api/eng/sprints/<sprint_id>/review": "/api/eng/sprints/17/review",
+    "/api/eng/sprints/<sprint_id>/review/values/read": "/api/eng/sprints/17/review/values/read",
     "/api/capacity/<issue_key>": "/api/capacity/CAP-101",
     "/api/issues/<issue_key>/editable-fields": "/api/issues/DEMO-1/editable-fields",
     "/api/issues/<issue_key>/field": "/api/issues/DEMO-1/field",

@@ -111,6 +111,7 @@ class JiraIssueFieldRouteTests(unittest.TestCase):
              patch.object(jira_server, "current_request_auth_context", return_value=context), \
              patch.object(jira_server, "get_story_points_field_id", return_value="customfield_98765"), \
              patch.object(jira_server, "get_delivery_owner_field_id", return_value="customfield_24680"), \
+             patch.object(jira_server, "get_team_field_id", return_value="customfield_13579"), \
              patch.object(eng_routes, "load_editable_field", side_effect=fake_load):
             response = self.client.get(
                 "/api/issues/DEMO-1/editable-fields?field=storyPoints",
@@ -122,6 +123,7 @@ class JiraIssueFieldRouteTests(unittest.TestCase):
         self.assertEqual(captured["field_ids"], {
             "assignee": "assignee", "deliveryOwner": "customfield_24680",
             "storyPoints": "customfield_98765",
+            "summary": "summary", "team": "customfield_13579",
         })
         self.assertEqual(response.headers["Cache-Control"], "no-store")
 

@@ -21,6 +21,8 @@ from backend.services.jira_issue_field_edits import (
 
 FIELD_IDS = {
     "assignee": "assignee",
+    "summary": "summary",
+    "team": "customfield_29001",
     "deliveryOwner": "customfield_24001",
     "storyPoints": "customfield_35024",
 }
@@ -123,6 +125,9 @@ def editmeta_payload(field_id, logical_field, *, operations=("set",), allowed_va
             "custom": "com.atlassian.jira.plugin.system.customfieldtypes:userpicker",
         },
         "storyPoints": {"type": "number"},
+        "summary": {"type": "string", "system": "summary"},
+        "team": {"type": "any", "custom": "com.atlassian.teams:rm-teams-custom-field-team",
+                 "configuration": {"com.atlassian.jira.plugin.system.customfieldtypes:atlassian-team": True}},
     }
     metadata = {"operations": list(operations), "schema": schemas[logical_field]}
     if allowed_values is not None:
@@ -746,3 +751,154 @@ class SourceGuardTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PlanningSummaryTeamEditTests(unittest.TestCase):
+    def test_summary_confirmed_write_is_string_and_preserves_context(self):
+        context = auth_context()
+        jira = ScriptedJira([
+            FakeResponse(payload=issue_payload("summary", "Before")),
+            FakeResponse(payload=editmeta_payload("summary", "summary")),
+            FakeResponse(204), FakeResponse(payload=issue_payload("summary", "After")),
+        ])
+        result = update_issue_field("DEMO-1", {
+            "field": "summary", "value": "After", "baseValue": "Before", "baseUpdated": "base",
+            "mappingRevision": mapping_revision(context, "summary", "summary"),
+        }, jira_request=jira.request, context=context, field_ids=FIELD_IDS, invalidate=lambda _: None)
+        self.assertEqual(result["value"], "After")
+        self.assertEqual(jira.calls[2]["json_body"], {"fields": {"summary": "After"}})
+        self.assertTrue(all(call["context"] is context for call in jira.calls))
+
+    def test_team_options_require_editmeta_eligibility(self):
+        for options in (None, [], [{"id": "team-2", "name": "Eligible"}]):
+            jira = ScriptedJira([
+                FakeResponse(payload=issue_payload(FIELD_IDS["team"], {"id": "team-1", "name": "Current"})),
+                FakeResponse(payload=editmeta_payload(FIELD_IDS["team"], "team", allowed_values=options)),
+            ])
+            result = load_editable_field("DEMO-1", "team", jira_request=jira.request,
+                                         context=auth_context(), field_ids=FIELD_IDS)
+            self.assertEqual(result["editable"], bool(options))
+            self.assertEqual(result["options"], options or [])
+
+    def test_team_write_serializes_only_id_and_checks_fresh_eligibility(self):
+        context = auth_context()
+        target = {"id": "team-2", "name": "Eligible"}
+        for eligible in (False, True):
+            jira = ScriptedJira([
+                FakeResponse(payload=issue_payload(FIELD_IDS["team"], None, issue_type="Epic")),
+                FakeResponse(payload=editmeta_payload(FIELD_IDS["team"], "team", allowed_values=[target] if eligible else [])),
+                FakeResponse(204), FakeResponse(payload=issue_payload(FIELD_IDS["team"], target, issue_type="Epic")),
+            ])
+            payload = {"field": "team", "value": {"id": "team-2"}, "baseValue": None,
+                       "baseUpdated": "base", "mappingRevision": mapping_revision(context, "team", FIELD_IDS["team"])}
+            if eligible:
+                result = update_issue_field("DEMO-1", payload, jira_request=jira.request,
+                    context=context, field_ids=FIELD_IDS, invalidate=lambda _: None)
+                self.assertEqual(result["value"], target)
+                self.assertEqual(jira.calls[2]["json_body"], {"fields": {FIELD_IDS["team"]: "team-2"}})
+            else:
+                with self.assertRaises(FieldEditServiceError) as raised:
+                    update_issue_field("DEMO-1", payload, jira_request=jira.request,
+                        context=context, field_ids=FIELD_IDS, invalidate=lambda _: None)
+                self.assertEqual(raised.exception.code, "target_unavailable")
+                self.assertFalse(any(call["method"] == "PUT" for call in jira.calls))
+
+    def test_summary_stale_value_blocks_write_and_returns_typed_conflict(self):
+        context = auth_context()
+        jira = ScriptedJira([FakeResponse(payload=issue_payload("summary", "Concurrent")),
+                             FakeResponse(payload=editmeta_payload("summary", "summary"))])
+        with self.assertRaises(FieldEditServiceError) as raised:
+            update_issue_field("DEMO-1", {"field": "summary", "value": "After", "baseValue": "Before",
+                "baseUpdated": "base", "mappingRevision": mapping_revision(context, "summary", "summary")},
+                jira_request=jira.request, context=context, field_ids=FIELD_IDS, invalidate=lambda _: None)
+        self.assertEqual(raised.exception.code, "stale_issue")
+        self.assertEqual(raised.exception.details["currentValue"], "Concurrent")
+
+    def test_team_subtasks_and_clear_rejected_without_put(self):
+        jira = ScriptedJira([FakeResponse(payload=issue_payload(FIELD_IDS["team"], None, subtask=True))])
+        result = load_editable_field("DEMO-1", "team", jira_request=jira.request,
+                                    context=auth_context(), field_ids=FIELD_IDS)
+        self.assertEqual(result["reason"], "issue_type_not_supported")
+        with self.assertRaises(FieldEditInputError):
+            update_issue_field("DEMO-1", {"field": "team", "value": None, "baseValue": None,
+                "baseUpdated": "base", "mappingRevision": "revision"}, jira_request=jira.request,
+                context=auth_context(), field_ids=FIELD_IDS, invalidate=lambda _: None)
+
+
+class CapturedOAuthFieldEditTests(unittest.TestCase):
+    def test_no_request_context_reaches_real_oauth_wrapper_without_other_credentials(self):
+        import jira_server
+        from backend.auth.jira_auth import AuthConfig
+        from unittest.mock import patch
+        context = auth_context()
+        responses = [FakeResponse(payload=issue_payload('summary', 'Before')),
+                     FakeResponse(payload=editmeta_payload('summary', 'summary')),
+                     FakeResponse(204), FakeResponse(payload=issue_payload('summary', 'After'))]
+        config = AuthConfig(auth_mode='atlassian_oauth', jira_url='https://example.test')
+        session_data = {'access_token': 'synthetic-oauth', 'expires_at': time.time() + 3600}
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.object(jira_server, 'current_auth_config', return_value=config), \
+             patch.object(jira_server, 'db_oauth_session_data_for_auth_context', return_value=session_data), \
+             patch.object(jira_server, 'oauth_session_data_for_auth_context', side_effect=AssertionError('local token store forbidden')), \
+             patch.object(jira_server._LOCAL_OAUTH_STORE, 'session_data_for_id', side_effect=AssertionError('local token store forbidden')), \
+             patch('backend.auth.home_credentials.resolve_home_credential', side_effect=AssertionError('Home credentials forbidden')), \
+             patch('backend.auth.home_credentials._active_service_token', side_effect=AssertionError('service token forbidden')), \
+             patch.object(jira_server.HTTP_SESSION, 'request', side_effect=responses) as transport, \
+             patch.object(jira_server, 'jira_request', wraps=jira_server.jira_request) as wrapper:
+            result = update_issue_field('DEMO-1', {
+                'field': 'summary', 'value': 'After', 'baseValue': 'Before', 'baseUpdated': 'base',
+                'mappingRevision': mapping_revision(context, 'summary', 'summary'),
+            }, jira_request=jira_server.current_jira_request, context=context,
+                field_ids=FIELD_IDS, invalidate=lambda _: None)
+        self.assertEqual(result['value'], 'After')
+        self.assertEqual(wrapper.call_count, 4)
+        for call in transport.call_args_list:
+            self.assertEqual(call.kwargs['headers']['Authorization'], 'Bearer synthetic-oauth')
+            self.assertTrue(call.args[1].startswith('https://api.atlassian.com/ex/jira/cloud-1/'))
+
+
+class PlanningFieldRouteCredentialDenialTests(unittest.TestCase):
+    def test_new_field_reads_and_writes_deny_local_profile_before_lookup(self):
+        import jira_server
+        from backend.routes import eng_routes
+        from unittest.mock import patch
+        for field in ('summary', 'team'):
+            for write in (False, True):
+                path = '/api/issues/DEMO-1/field' if write else f'/api/issues/DEMO-1/editable-fields?field={field}'
+                payload = {'field': field, 'value': 'synthetic'} if write else None
+                with self.subTest(field=field, write=write), \
+                     patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+                     patch.object(jira_server, 'database_storage_enabled', return_value=False), \
+                     patch.object(jira_server, 'current_request_auth_context', side_effect=AssertionError('local context forbidden')), \
+                     patch.object(jira_server, 'oauth_session_data_for_auth_context', side_effect=AssertionError('local fallback forbidden')), \
+                     patch.object(jira_server._LOCAL_OAUTH_STORE, 'session_data', side_effect=AssertionError('local cookie token forbidden')), \
+                     patch.object(jira_server._LOCAL_OAUTH_STORE, 'session_data_for_id', side_effect=AssertionError('local token forbidden')), \
+                     jira_server.app.test_request_context(path, method='POST' if write else 'GET', json=payload,
+                         headers={'X-Requested-With': 'jira-execution-planner'}):
+                    eng_routes._sync_server_globals()
+                    response, status = (eng_routes.post_issue_field('DEMO-1') if write
+                                        else eng_routes.get_editable_issue_field('DEMO-1'))
+                    self.assertEqual(status, 403)
+                    self.assertEqual(response.get_json()['error'], 'jira_oauth_required')
+
+    def test_db_profile_rejects_local_context_without_using_credential_helpers(self):
+        import jira_server
+        from backend.routes import eng_routes
+        from unittest.mock import patch
+        local = SimpleNamespace(auth_connection_id='local-oauth-connection:synthetic')
+        with patch.object(jira_server, 'database_storage_enabled', return_value=True), \
+             patch.object(jira_server, 'scenario_draft_request_auth_context', return_value=local), \
+             patch.object(jira_server, 'oauth_session_data_for_auth_context', side_effect=AssertionError('local fallback forbidden')), \
+             patch.object(jira_server._LOCAL_OAUTH_STORE, 'session_data_for_id', side_effect=AssertionError('local token forbidden')):
+            eng_routes._sync_server_globals()
+            with self.assertRaises(FieldEditServiceError) as raised:
+                eng_routes._issue_field_auth_context('summary')
+        self.assertEqual(raised.exception.status, 403)
+
+    def test_legacy_team_schema_without_atlassian_team_flag_is_not_editable(self):
+        metadata = editmeta_payload(FIELD_IDS['team'], 'team', allowed_values=[{'id':'team-1', 'name':'Team'}])
+        del metadata['fields'][FIELD_IDS['team']]['schema']['configuration']
+        jira = ScriptedJira([FakeResponse(payload=issue_payload(FIELD_IDS['team'], None)), FakeResponse(payload=metadata)])
+        result = load_editable_field('DEMO-1', 'team', jira_request=jira.request, context=auth_context(), field_ids=FIELD_IDS)
+        self.assertFalse(result['editable'])
+        self.assertEqual(result['reason'], 'field_not_editable')

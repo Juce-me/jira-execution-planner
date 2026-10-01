@@ -55,9 +55,9 @@ test('Board story export comes from stories inside filtered Board epic groups', 
 test('sticky Catch Up Clear all uses the narrow facet reset while empty state keeps the broad reset', () => {
     assert.match(dashboard, /const clearEngFacetFilters = React\.useCallback\(\(\) => resetEngFacetFilters\(/);
     const mount = dashboard.slice(dashboard.indexOf('<EngView'), dashboard.indexOf('<IssueCardContext.Provider'));
-    assert.match(mount, /onClearFacets=\{clearEngFacetFilters\}/);
+    assert.match(dashboard.slice(dashboard.indexOf('<EngFilterControls'), dashboard.indexOf('/>', dashboard.indexOf('<EngFilterControls'))), /onClearFacets=\{clearEngFacetFilters\}/);
     assert.match(mount, /onClearFilters=\{clearEngFilters\}/);
-    assert.match(engView, /onClearAll=\{onClearFacets\}/);
+    assert.match(read('frontend/src/eng/EngFilterControls.jsx'), /onClearAll=\{onClearFacets\}/);
     assert.match(engView, /hasNoVisibleTasks && onClearFilters \? onClearFilters : onRetry/);
 });
 

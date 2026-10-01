@@ -2488,7 +2488,10 @@ def get_parent_name_field_id():
 
 
 def get_team_field_config():
-    config = load_dashboard_config()
+    try:
+        config = load_dashboard_config()
+    except ConfigStorageError:
+        config = None
     if config and 'teamField' in config:
         tf = config['teamField']
         return {'fieldId': tf.get('fieldId', ''), 'fieldName': tf.get('fieldName', '')}
@@ -2775,13 +2778,14 @@ def fetch_epic_details_bulk(epic_keys, headers, epic_name_field):
     epic_field = epic_name_field or PARENT_NAME_FIELD_DEFAULT
     project_track_field = get_project_track_field_id()
     delivery_owner_field = get_delivery_owner_field_id()
+    team_field = get_team_field_id()
     keys_list = list(epic_keys)
     batch_size = 40  # keep JQL length reasonable for GET
 
     for start in range(0, len(keys_list), batch_size):
         batch_keys = keys_list[start:start + batch_size]
         jql = f'issueKey in ({",".join(batch_keys)})'
-        fields = ['summary', 'status', 'priority', 'reporter', 'assignee', 'parent', epic_field, project_track_field, 'updated']
+        fields = ['summary', 'status', 'priority', 'reporter', 'assignee', 'parent', epic_field, project_track_field, 'updated', 'project', 'components', team_field]
         # Delivery Owner is only requested once an admin has configured a field id (O11).
         payload = {'jql': jql, 'maxResults': len(batch_keys), 'fields': fields + ([delivery_owner_field] if delivery_owner_field else [])}
 
@@ -2796,6 +2800,10 @@ def fetch_epic_details_bulk(epic_keys, headers, epic_name_field):
                 fields = issue.get('fields', {}) or {}
                 key = issue.get('key')
                 epic_details[key] = {
+                    'id': str(issue.get('id') or ''),
+                    'team': fields.get(team_field),
+                    'components': [c.get('name') for c in (fields.get('components') or []) if c.get('name')],
+                    'project': fields.get('project'),
                     'key': key,
                     'summary': fields.get('summary'),
                     'status': (fields.get('status') or {}).get('name') or '',

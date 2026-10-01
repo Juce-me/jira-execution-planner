@@ -426,7 +426,7 @@ test('ENG alerts toolbar summary CSS is responsive and uses clickable chip style
 
 test('dashboard delegates ENG data loading and view rendering to ENG modules', () => {
     const source = fs.readFileSync(dashboardPath, 'utf8');
-    const engViewSource = fs.readFileSync(engViewPath, 'utf8');
+    const engViewSource = fs.readFileSync(engViewPath, 'utf8') + fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'eng', 'EngFilterControls.jsx'), 'utf8');
     const engAlertsSource = fs.readFileSync(engAlertsPanelPath, 'utf8');
     const engTaskUtilsSource = fs.readFileSync(engTaskUtilsPath, 'utf8');
 

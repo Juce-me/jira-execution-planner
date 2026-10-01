@@ -15,7 +15,7 @@ import re
 from backend.auth.jira_auth import AuthError
 
 
-LOGICAL_FIELDS = frozenset({"assignee", "deliveryOwner", "storyPoints"})
+LOGICAL_FIELDS = frozenset({"assignee", "deliveryOwner", "storyPoints", "summary", "team"})
 PEOPLE_FIELDS = frozenset({"assignee", "deliveryOwner"})
 _ISSUE_KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]+-\d+$")
 _CONTROL_CHARACTER_RE = re.compile(r"[\x00-\x1f\x7f]")
@@ -142,7 +142,41 @@ def _normalize_existing_number(raw):
     return raw
 
 
+def _normalize_team(raw):
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise FieldEditServiceError("jira_read_failed", 502)
+    team_id = str(raw.get("id") or "").strip()
+    name = str(raw.get("name") or raw.get("title") or "").strip()
+    if not team_id or not name:
+        raise FieldEditServiceError("jira_read_failed", 502)
+    return {"id": team_id, "name": name}
+
+
+def _team_options(metadata):
+    # A workspace name directory is not field-context eligibility evidence.
+    if "allowedValues" not in metadata:
+        return None
+    options = []
+    seen = set()
+    for raw in metadata["allowedValues"]:
+        if not isinstance(raw, dict) or raw.get("isVisible") is False:
+            continue
+        team = _normalize_team(raw)
+        if team and team["id"] not in seen:
+            seen.add(team["id"])
+            options.append(team)
+    return options
+
+
 def _normalize_current_value(field, raw):
+    if field == "summary":
+        if not isinstance(raw, str):
+            raise FieldEditServiceError("jira_read_failed", 502)
+        return raw
+    if field == "team":
+        return _normalize_team(raw)
     if field in PEOPLE_FIELDS:
         return _normalize_person(raw)
     return _normalize_existing_number(raw)
@@ -195,6 +229,10 @@ def _issue_supports_field(snapshot, field):
 
 
 def _expected_schema(field):
+    if field == "summary":
+        return {"type": "string", "system": "summary"}
+    if field == "team":
+        return {"type": "any", "custom": "com.atlassian.teams:rm-teams-custom-field-team"}
     if field == "assignee":
         return {"type": "user", "system": "assignee"}
     if field == "deliveryOwner":
@@ -226,13 +264,18 @@ def _load_editmeta(key, field, field_id, *, jira_request, context):
     expected = _expected_schema(field)
     if not isinstance(schema, dict) or any(schema.get(key) != value for key, value in expected.items()):
         return None
+    if field == "team":
+        configuration = schema.get("configuration")
+        if (not isinstance(configuration, dict)
+                or configuration.get("com.atlassian.jira.plugin.system.customfieldtypes:atlassian-team") is not True):
+            return None
     if "allowedValues" in metadata and not isinstance(metadata.get("allowedValues"), list):
         raise FieldEditServiceError("jira_read_failed", 502)
     return metadata
 
 
 def _metadata_payload(key, field, *, current_value, updated, revision,
-                      editable, reason, me=None):
+                      editable, reason, me=None, options=None):
     return {
         "issueKey": key,
         "field": field,
@@ -242,6 +285,7 @@ def _metadata_payload(key, field, *, current_value, updated, revision,
         "baseUpdated": updated,
         "mappingRevision": revision,
         "me": me,
+        **({"options": options or []} if field == "team" else {}),
     }
 
 
@@ -397,6 +441,14 @@ def load_editable_field(issue_key, field, *, jira_request, context, field_ids):
             )
         me = None
         exact = None
+    if logical_field == "team":
+        options = _team_options(metadata)
+        return _metadata_payload(
+            key, logical_field, current_value=snapshot["value"],
+            updated=snapshot["updated"], revision=revision,
+            editable=bool(options), reason=None if options else "team_options_unavailable",
+            options=options or [],
+        )
     if logical_field in PEOPLE_FIELDS:
         if me is None:
             me = _load_context_person(context, jira_request=jira_request)
@@ -535,6 +587,14 @@ def _validate_number_baseline(value):
     return value
 
 
+def _validate_team_value(value, *, allow_null=False):
+    if value is None and allow_null:
+        return None
+    if not isinstance(value, dict) or set(value) != {"id"}:
+        raise FieldEditInputError("invalid_value")
+    return {"id": _validate_account_id(value.get("id"))}
+
+
 def _validate_mutation_payload(payload):
     if not isinstance(payload, dict):
         raise FieldEditInputError("invalid_json")
@@ -550,6 +610,15 @@ def _validate_mutation_payload(payload):
     if field in PEOPLE_FIELDS:
         target = _validate_person_value(payload.get("value"), allow_null=False)
         baseline = _validate_person_value(payload.get("baseValue"), allow_null=True)
+    elif field == "summary":
+        target = payload.get("value")
+        baseline = payload.get("baseValue")
+        if (not isinstance(target, str) or not target.strip() or len(target) > 255
+                or _CONTROL_CHARACTER_RE.search(target) or not isinstance(baseline, str)):
+            raise FieldEditInputError("invalid_value")
+    elif field == "team":
+        target = _validate_team_value(payload.get("value"))
+        baseline = _validate_team_value(payload.get("baseValue"), allow_null=True)
     else:
         target = validate_story_points(payload.get("value"))
         baseline = _validate_number_baseline(payload.get("baseValue"))
@@ -557,6 +626,10 @@ def _validate_mutation_payload(payload):
 
 
 def _comparable_value(field, value):
+    if field == "summary":
+        return value
+    if field == "team":
+        return None if value is None else value.get("id")
     if field in PEOPLE_FIELDS:
         return None if value is None else value.get("accountId")
     if value is None:
@@ -640,6 +713,10 @@ def update_issue_field(issue_key, payload, *, jira_request, context, field_ids, 
         allowed_ids = _allowed_account_ids(metadata)
         if exact is None or (allowed_ids is not None and account_id not in allowed_ids):
             raise FieldEditServiceError("target_unavailable", 409)
+    if field == "team":
+        options = _team_options(metadata)
+        if not options or target["id"] not in {option["id"] for option in options}:
+            raise FieldEditServiceError("target_unavailable", 409)
     if _comparable_value(field, snapshot["value"]) == _comparable_value(field, target):
         return {
             "issueKey": key,
@@ -650,7 +727,7 @@ def update_issue_field(issue_key, payload, *, jira_request, context, field_ids, 
         }
     write_value = (
         {"accountId": target["accountId"]}
-        if field in PEOPLE_FIELDS else target
+        if field in PEOPLE_FIELDS else target["id"] if field == "team" else target
     )
     try:
         response = jira_request(

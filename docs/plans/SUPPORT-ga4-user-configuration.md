@@ -3,6 +3,7 @@
 **Status:** Drafted on 2026-05-26 for GA4 web stream Measurement ID `G-6QERX19WB0`. Use this runbook alongside `docs/plans/DONE-ga4-instrumentation.md`.
 
 **Revision notes:**
+- 2026-10-01: Planning Sprint review reuses existing action, sort, field-edit, link and API events. Summary/Team edits use `feature_name=planning_review` on Planning; no new triggers, parameter keys or custom definitions are required.
 - 2026-09-25: Added the ENG Board small-screen support request (`board_action`). `reason` (`short`\|`narrow`\|`touch`) is mapped through the existing `userevent` tag and remains intentionally unregistered without a named report.
 - 2026-09-09: Added the bounded ENG inline issue-field edit event and API reliability verification. `field_name` is mapped through the existing `userevent` tag and remains intentionally unregistered without a named report.
 - 2026-05-28: Re-verified the GA4/GTM configuration instructions against current Google docs and the latest `google-analytics-implementation-planner` MCP guidance. Added the custom MCP boundary, API-backed automation rules, and the dry-run desired-state spec at `docs/plans/SUPPORT-ga4-gtm-mcp-execution.yaml`.
@@ -417,6 +418,7 @@ Representative events to verify:
 | Edit Scenario timeline | `scenario_action` | `workflow_action`, `override_count_bucket`, `result` | issue key, draft ID, assignee |
 | Load EPM rollup | `epm_action` | `epm_tab`, `project_scope`, `project_count_bucket` | project name, label, Home ID |
 | Edit an ENG issue field | `issue_field_edit_action` | `feature_name=eng_issue_field_edits`, `workflow_action=open|submit|result`, `field_name=assignee|delivery_owner|story_points`, `issue_kind=epic|story`, `source_surface=catch_up|planning|board`, result enum only for `result` | query text, names, emails, account IDs, issue keys, field IDs, Story Point values, raw errors |
+| Use Planning Sprint review | `planning_action`, `sort_changed`, `issue_field_edit_action`, `api_result` | `feature_name=planning_review`, `source_surface=planning`; bounded actions, built-in sort category or `custom`, `field_name=summary|team`, `api_surface=planning_review` for review requests | cell values, custom column labels/IDs, summaries, issue/Team/person identities, URLs, JQL |
 | Request Board small-screen support | `board_action` | `feature_name=eng_board`, `workflow_action=small_screen_support_request`, `reason=short\|narrow\|touch`, `source_surface=board` | viewport sizes, group/column ids or names, free text |
 | API completes | `api_result` | `feature_name`, `api_surface`, `status_bucket`, `duration_bucket`; for EPM APIs use `feature_name=epm` and also include `epm_tab`, `project_scope`, `subgoal_scope` when known | URL query, response body, Jira error text |
 | Reach 90% scroll depth | `scroll` | GA4-managed Enhanced Measurement event | app-owned custom params |
@@ -438,6 +440,8 @@ npx playwright test tests/ui/ga4_tag_and_events.spec.js
 For validation, use GTM Preview/Tag Assistant plus GA4 DebugView with `GA4_DEBUG_MODE=true` in a non-production or controlled environment. `debug_mode` is a transport flag only; do not create a custom dimension for it. Turn debug mode off by omitting the flag after validation, not by sending `debug_mode:false`.
 
 For ENG inline issue editing, verify one `issue_field_edit_action` per `open`, explicit `submit`, and terminal `result`, plus `api_result` with `api_surface=jira_issue_field_edits`. Confirm open/submit omit `result`, result uses only the documented result enum, and all three surfaces map through the single `CE - userevent` trigger. Do not register `field_name` as a custom dimension without a named report; use Preview/DebugView for this validation.
+
+For Planning Sprint review, verify explicit layout, column, save and recovery actions against the allowlist in `docs/README_ANALYTICS.md`. Typing, rendering, automatic totals and passive conflict display emit no separate events. Confirm summary/Team edits use only bounded field names, review API results use `api_surface=planning_review`, and all hits reuse `CE - userevent` without additional custom definitions.
 
 For the ENG Board small-screen alert, verify exactly one `board_action` per click of Request small-screen support, with only the four documented params and a `reason` enum, mapped through the single `CE - userevent` trigger. Do not register `reason` as a custom dimension without a named report.
 

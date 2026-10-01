@@ -74,6 +74,19 @@ function idleState() {
     return { status: STORY_READINESS_STATUS.IDLE, snapshot: null, error: null, canRetry: false };
 }
 
+export function applyStoryReadinessIssueField(snapshot, issueKey, field, value) {
+    if (!snapshot || !Array.isArray(snapshot.epics)) return snapshot;
+    const key = String(issueKey || '').trim().toUpperCase();
+    if (!key || !['summary', 'team', 'assignee'].includes(field)) return snapshot;
+    let changed = false;
+    const epics = snapshot.epics.map(epic => {
+        if (String(epic.key || '').trim().toUpperCase() !== key) return epic;
+        changed = true;
+        return { ...epic, [field]: value };
+    });
+    return changed ? { ...snapshot, epics } : snapshot;
+}
+
 export function useStoryReadiness({
     backendUrl,
     enabled = false,
@@ -155,5 +168,12 @@ export function useStoryReadiness({
         if (state.canRetry) setRetryRevision(value => value + 1);
     }, [state.canRetry]);
 
-    return { ...state, scope, scopeKey, retry };
+    const applyIssueField = React.useCallback((issueKey, field, value) => {
+        setState(current => {
+            const snapshot = applyStoryReadinessIssueField(current.snapshot, issueKey, field, value);
+            return snapshot === current.snapshot ? current : { ...current, snapshot };
+        });
+    }, []);
+
+    return { ...state, scope, scopeKey, retry, applyIssueField };
 }

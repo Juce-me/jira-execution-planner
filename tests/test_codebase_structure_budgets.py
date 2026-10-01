@@ -54,7 +54,9 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # In-app load metrics: gated wrapper and worker observer wiring (+3).
     # improvement/multiple-group-labels final-review round: find_comma_scalar_team_label_errors
     # wrapper for the save-only comma-scalar Team-label guard (+2).
-    "jira_server.py": 6463,
+    # Issue #217 preserves immutable Epic ID, own Team and project metadata (+7),
+    # and carries Components through the existing bulk metadata read (+1).
+    "jira_server.py": 6471,
     # feature/eng-epic-sort-and-track adds the epic Sort dropdown wiring (engEpicSort state,
     # analytics handler, sorted epicGroups, EngView props) and the title-row priority chevron
     # plus Product Track indicator in renderEpicBlock.
@@ -152,7 +154,9 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # Access tab is shown only to tool admins so it never requests the user directory (+17).
     # docs/plans/EXEC-project-track-board-column-strips.md wires the Team-mode Board-column split
     # memo into the two Project Track charts; the model lives in stats/projectTrackStats.js (+6).
-    "frontend/src/dashboard.jsx": 18213,
+    # Issue #217 adds Planning table orchestration, scope guard and shared editor wiring;
+    # explicit Capacity/Project Track columns reuse existing controllers (+5).
+    "frontend/src/dashboard.jsx": 18321,
 }
 
 

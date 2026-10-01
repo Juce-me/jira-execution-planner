@@ -653,3 +653,69 @@ test('same-issue field submit waits behind a status reservation in the shared mu
     await Promise.all([statusWrite, fieldWrite]);
     assert.deepEqual(events, ['status-start', 'status-end', 'field-start']);
 });
+
+test('Planning summary and Team serialize typed values and reconcile confirmed fields', async () => {
+    const { createEngIssueFieldEditController } = await loadController();
+    for (const [field, currentValue, desired, expected] of [
+        ['summary', 'Before', 'After', 'After'],
+        ['team', { id: 'team-1', name: 'Before' }, { id: 'team-2', name: 'After' }, { id: 'team-2' }],
+    ]) {
+        let payload;
+        const confirmations = [];
+        const controller = createEngIssueFieldEditController({
+            fetchEditableField: async () => metadata({ field, currentValue, options: [{ id: 'team-2', name: 'After' }] }),
+            updateField: async (_url, _key, body) => { payload = body; return { value: desired, result: 'success' }; },
+            enqueueMutation: (_keys, run) => run(),
+            onConfirm: value => confirmations.push(value),
+        });
+        await controller.openEditor({ issueKey: 'DEMO-1', field, issueKind: 'story', sourceSurface: 'planning' });
+        await controller.submit(desired);
+        assert.deepEqual(payload.value, expected);
+        assert.deepEqual(payload.baseValue, field === 'team' ? { id: 'team-1' } : 'Before');
+        assert.deepEqual(confirmations[0].value, desired);
+        assert.equal(controller.getState().status, 'confirmed');
+    }
+});
+
+test('confirmed Team updates actual Team scope metadata in every loaded snapshot', async () => {
+    const { patchEngLoadedState } = await import('../frontend/src/eng/engIssueEditState.js');
+    const issue = { id: '1', key: 'DEMO-1', fields: { team: { id: 'old', name: 'Old' }, teamId: 'old', teamName: 'Old' } };
+    const { state, groups } = patchEngLoadedState({ productTasks: [issue] }, new Map([['group-1', { productTasks: [issue] }]]),
+        'DEMO-1', 'team', { id: 'new', name: 'New' });
+    for (const snapshot of [state, groups.get('group-1')]) {
+        assert.equal(snapshot.productTasks[0].fields.teamId, 'new');
+        assert.equal(snapshot.productTasks[0].fields.teamName, 'New');
+        assert.deepEqual(snapshot.productTasks[0].fields.team, { id: 'new', name: 'New' });
+        assert.equal(snapshot.productTasks[0].id, '1');
+    }
+});
+
+test('ordinary summary and Team reads preserve endpoint projections while confirmed edits fence stale reads', async () => {
+    const { createEngIssueEditState } = await import('../frontend/src/eng/engIssueEditState.js');
+    const state = createEngIssueEditState();
+    const older = state.beginRead();
+    const newer = state.beginRead();
+    state.reconcileIssues([{key:'DEMO-1',summary:'Delivery epic',team:{id:'own-team'}}], newer);
+    const projected = {key:'DEMO-1',summary:'Ready epic',team:{id:'projected-team'}};
+    assert.deepEqual(state.reconcileIssues([projected], older), [projected]);
+    state.confirmMutation(state.beginMutation('DEMO-1','summary','map-1'), 'Confirmed summary');
+    state.confirmMutation(state.beginMutation('DEMO-1','team','map-1'), {id:'confirmed-team',name:'Confirmed Team'});
+    const reconciled = state.reconcileIssues([projected], older)[0];
+    assert.equal(reconciled.summary, 'Confirmed summary');
+    assert.equal(reconciled.team.id, 'confirmed-team');
+});
+
+
+test('readiness-only Epic summary and own Team reconcile without changing child requirements', async () => {
+    const { applyStoryReadinessIssueField } = await import('../frontend/src/eng/useStoryReadiness.js');
+    const snapshot = { complete: true, epics: [{ id: '1', key: 'DEMO-1', summary: 'Before',
+        missingTeams: [{ id: 'child-team', name: 'Child Team' }], team: null }] };
+    const changed = applyStoryReadinessIssueField(snapshot, 'DEMO-1', 'summary', 'After');
+    const teamChanged = applyStoryReadinessIssueField(changed, 'DEMO-1', 'team', { id: 'own-team', name: 'Own Team' });
+    assert.equal(teamChanged.epics[0].summary, 'After');
+    assert.equal(teamChanged.epics[0].id, '1');
+    assert.equal(teamChanged.complete, true);
+    assert.deepEqual(teamChanged.epics[0].missingTeams, snapshot.epics[0].missingTeams);
+    assert.equal(teamChanged.epics[0].team.id, 'own-team');
+    assert.equal(applyStoryReadinessIssueField(snapshot, 'DEMO-2', 'team', null), snapshot);
+});

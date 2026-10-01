@@ -9,3 +9,5 @@
 @import "./eng/epics.css";
 @import "./eng/loading.css";
 @import "./eng/status-transitions.css";
+
+@import "./eng/planning-review-table.css";

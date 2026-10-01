@@ -1417,3 +1417,16 @@ test('sort_changed rejects raw hyphenated sort keys that bypass analyticsToken',
         /unsafe analytics value/
     );
 });
+
+test('Planning review analytics excludes every custom column and issue value', async () => {
+    const { buildPlanningReviewAnalyticsParams, buildIssueFieldEditAnalyticsParams } = await loadDashboardAnalytics();
+    const params = buildPlanningReviewAnalyticsParams('column_add', { columnId: 'private-id', label: 'Private review label', value: '50', issueKey: 'DEMO-1' });
+    assert.deepEqual(params, { feature_name: 'planning_review', source_surface: 'planning', workflow_action: 'column_add' });
+    assert.equal(buildPlanningReviewAnalyticsParams('Private label'), null);
+    for(const action of ['panel_expanded','panel_collapsed','review_options_opened']) assert.deepEqual(buildPlanningReviewAnalyticsParams(action,{teamName:'Private team'}), {feature_name:'planning_review',source_surface:'planning',workflow_action:action});
+    assert.deepEqual(buildPlanningReviewAnalyticsParams('save_result', { result: 'conflict' }), { feature_name: 'planning_review', source_surface: 'planning', workflow_action: 'save_result', result: 'conflict' });
+    for (const fieldName of ['summary', 'team']) {
+        assert.equal(buildIssueFieldEditAnalyticsParams('open', { fieldName, issueKind: 'story', sourceSurface: 'catch_up' }), null);
+        assert.equal(buildIssueFieldEditAnalyticsParams('open', { fieldName, issueKind: 'epic', sourceSurface: 'planning' }).feature_name, 'planning_review');
+    }
+});

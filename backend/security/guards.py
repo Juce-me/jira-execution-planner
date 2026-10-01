@@ -260,6 +260,17 @@ def register_security_guards(flask_app):
             return _not_found()
 
         policy_class = policy.policy_class
+        # Planning summary/Team capabilities must reject legacy profiles before
+        # the compatibility OAuth guard can resolve a local token store.
+        if url_rule in {'/api/issues/<issue_key>/editable-fields', '/api/issues/<issue_key>/field'}:
+            payload = request.get_json(silent=True) if request.method != 'GET' and request.is_json else None
+            field = request.args.get('field') if request.method == 'GET' else payload.get('field') if isinstance(payload, dict) else None
+            if field in {'summary', 'team'}:
+                if not database_storage_enabled() or not _is_oauth_mode(server):
+                    return _json_response({'error': 'jira_oauth_required'}, 403)
+                strict_response = _require_strict_db_oauth_session(server)
+                if strict_response is not None:
+                    return strict_response
         if policy_class == "public_page":
             return None
         if policy_class == "auth_flow":

@@ -158,6 +158,7 @@ async function installPlanningRecoveryPage(page, label, shared) {
     shared.pages[label] = state;
     await installFreshDashboard(page);
     await page.addInitScript(() => {
+        localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({planningLayout:'list'}));
         const nativeFetch = window.fetch.bind(window);
         window.fetch = (input, options = {}) => {
             const requestUrl = input instanceof Request ? input.url : String(input);

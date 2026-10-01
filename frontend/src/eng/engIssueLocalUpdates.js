@@ -36,9 +36,13 @@ export function applyLocalIssueFieldUpdate(issues, issueKey, fieldName, fieldVal
         if (normalizedIssueKey(issue?.key) !== key) return issue;
         changed = true;
         if (issue?.fields && typeof issue.fields === 'object') {
-            return { ...issue, fields: { ...issue.fields, [field]: fieldValue } };
+            return { ...issue, fields: { ...issue.fields, [field]: fieldValue,
+                ...(field === 'team' ? { teamName: fieldValue?.name || null, teamId: fieldValue?.id || null } : {}),
+            } };
         }
-        return { ...issue, [field]: fieldValue };
+        return { ...issue, [field]: fieldValue,
+            ...(field === 'team' ? { teamId: fieldValue?.id || null, teamName: fieldValue?.name || null } : {}),
+        };
     });
     return changed ? next : issues;
 }
@@ -52,7 +56,9 @@ export function applyLocalEpicDetailsFieldUpdate(epicDetails, issueKey, fieldNam
     if (!storedKey || !epicDetails[storedKey]) return epicDetails;
     return {
         ...epicDetails,
-        [storedKey]: { ...epicDetails[storedKey], [field]: fieldValue },
+        [storedKey]: { ...epicDetails[storedKey], [field]: fieldValue,
+            ...(field === 'team' ? { teamId: fieldValue?.id || null, teamName: fieldValue?.name || null } : {}),
+        },
     };
 }
 

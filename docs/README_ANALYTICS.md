@@ -101,7 +101,7 @@ Every app-owned `userevent` requires `feature_name`. Every app-owned pageview re
 | `issue_status_action` | `workflow_action` (`status_options_open`\|`status_change_submit`\|`status_change_result`), `source_surface` (`catch_up`\|`planning`\|`board`), `status_bucket`, `selected_count_bucket`, `selected_sp_bucket`, `issue_type_mix` (`stories`\|`epics`\|`subtasks`\|`mixed`), `result` (`success`\|`partial`\|`failure`) | ENG Catch Up single-issue status change; ENG Planning batch status change for the selected Stories, and single-issue Epic and Subtask status changes in Planning; ENG Board epic-detail-panel epic and story status change, and an ENG Board card dragged to another column (§6.4) | `frontend/src/eng/useEngStatusTransitions.js`, `frontend/src/analytics/dashboardAnalytics.js` | browser | ENG status-change adoption and reliability |
 | `issue_priority_action` | `workflow_action` (`priority_options_open`\|`priority_change_submit`\|`priority_change_result`), `source_surface` (`catch_up`\|`planning`\|`board`), `selected_count_bucket`, `issue_type_mix` (`stories`\|`epics`\|`subtasks`\|`mixed`), `priority_bucket` (`highest`\|`high`\|`medium`\|`low`\|`lowest`\|`other`), `result` (`success`\|`partial`\|`failure`) | ENG Catch Up/Planning Story card and Epic header priority change; ENG Board epic-detail-panel epic and story priority change | `frontend/src/eng/useEngPriorityTransitions.js`, `frontend/src/analytics/dashboardAnalytics.js` | browser | ENG priority-change adoption and reliability |
 | `issue_project_track_action` | `workflow_action` (`project_track_options_open`\|`project_track_change_submit`\|`project_track_change_result`), `source_surface` (`catch_up`\|`planning`\|`board`), `selected_count_bucket`, `issue_type_mix` (`epics`), `value_state` (`flexible`\|`committed`, only after a target is selected), `result` (`success`\|`failure`, result event only) | ENG Catch Up/Planning Epic header Project Track change; ENG Board epic-detail-panel Project Track change | `frontend/src/eng/useEngProjectTrackTransitions.js`, `frontend/src/analytics/dashboardAnalytics.js` | browser | ENG Project Track change adoption and reliability |
-| `issue_field_edit_action` | `feature_name=eng_issue_field_edits`, `workflow_action` (`open`\|`submit`\|`result`), `field_name` (`assignee`\|`delivery_owner`\|`story_points`), existing `issue_kind` (`epic`\|`story`), `source_surface` (`catch_up`\|`planning`\|`board`); `result` (`success`\|`unchanged`\|`conflict`\|`failure`\|`unknown`) only for `workflow_action=result` | Opening, submitting, or receiving the final outcome of an ENG inline issue-field edit | `frontend/src/eng/useEngIssueFieldEdits.js`, `frontend/src/analytics/dashboardAnalytics.js` | browser | ENG inline-edit adoption and reliability |
+| `issue_field_edit_action` | `feature_name=eng_issue_field_edits` (or `planning_review` for Summary/Team), `workflow_action` (`open`\|`submit`\|`result`), `field_name` (`assignee`\|`delivery_owner`\|`story_points`\|`summary`\|`team`), existing `issue_kind` (`epic`\|`story`), `source_surface` (`catch_up`\|`planning`\|`board`; Summary/Team use Planning only); `result` (`success`\|`unchanged`\|`conflict`\|`failure`\|`unknown`) only for `workflow_action=result` | Opening, submitting, or receiving the final outcome of an ENG inline issue-field edit | `frontend/src/eng/useEngIssueFieldEdits.js`, `frontend/src/analytics/dashboardAnalytics.js` | browser | ENG inline-edit adoption and reliability |
 | `board_action` | `feature_name=eng_board`, `workflow_action=small_screen_support_request`, `reason` (`short`\|`narrow`\|`touch`; touch wins over narrow, narrow over short), `source_surface=board` | One click of Request small-screen support on the ENG Board alert shown when desktop pane mode cannot apply; the button is then replaced by a thank-you note for the rest of the Board mount. Never carries viewport sizes, ids, names, or free text; `reason` is mapped through the shared GTM tag and intentionally unregistered as a custom dimension | `frontend/src/eng/EngBoardView.jsx`, `frontend/src/analytics/dashboardAnalytics.js` | browser | Demand for small-screen Board support |
 | `api_result` | `feature_name`, `api_surface`, `method`, `status_bucket`, `result`, `duration_bucket`, `cache_state`; for EPM APIs use `feature_name=epm` and also include `epm_tab`, `project_scope`, `subgoal_scope` when known; `api_surface=eng_board` uses `feature_name=eng_board`, bounded `scope_type=all_work|component|sprint`, and one terminal numeric duration only, never Department/sprint/generation IDs, names, Jira keys, JQL, raw errors, per-frame events, or superseded/auth-locked generations; `api_surface=jira_issue_transitions` sends only `feature_name=eng_status_transitions` plus the standard `method`/`status_bucket`/`result`/`duration_bucket`/`cache_state` reliability params, never issue keys, transition ids, or Jira error text; `api_surface=jira_issue_priorities` sends only `feature_name=eng_priority_changes` plus the same standard reliability params, never issue keys, priority ids, or Jira error text; `api_surface=jira_issue_project_track` sends only `feature_name=eng_project_track_changes` plus the same standard reliability params, never issue keys, field ids, or Jira error text; `api_surface=jira_issue_field_edits` sends only `feature_name=eng_issue_field_edits` plus the same standard reliability params, never query text, names, emails, account IDs, issue keys, field IDs, Story Point values, or raw errors; `api_surface=eng_issue_description` sends only `feature_name=eng_epic_description` plus the same standard reliability params, never issue keys, description HTML, or Jira error text; `api_surface=board_config_statuses` sends only `feature_name=group_board_composer` plus the same standard reliability params, never board ids, status ids, or Jira error text | Browser-observed allowlisted API response completes | `frontend/src/api/*` | browser | API reliability |
 | `app_error_shown` | `error_area`, `error_code`, `recoverable_state`, `source_surface` | User-visible server/auth/config unavailable state appears; the global auth lock emits once per mounted-document lock episode only when analytics was already initialized and enabled, using a context-free fixed payload that omits `ga4_user_id` and `debug_mode` | `frontend/src/dashboard.jsx`, `frontend/src/components/AuthRequiredGate.jsx` | browser | Reliability and recovery |
@@ -282,3 +282,38 @@ CI or focused source-guard tests must fail when:
 - GTM container: `GTM-NZJW2CFN`, configured by `GTM_CONTAINER_ID`
 - Measurement Protocol secret: none in v1
 - GA4 deletion workflow: out of scope for this implementation
+
+## Planning Sprint review
+
+The Planning table uses the existing `trigger=userevent`, `event_type=event`, and
+canonical `planning_action`, `sort_changed`, `issue_field_edit_action`,
+`external_link_opened`, and `api_result` events. The transport remains gated by
+`GA4_ENABLED`; no GTM triggers or GA4 custom dimensions are added.
+
+Review actions use `feature_name=planning_review` and `source_surface=planning`.
+`workflow_action` is an allowlisted string for layout/mode changes, column
+creation/management, explicit refresh, save, discard and conflict recovery.
+Explicit Show/Hide Planning panel clicks emit `planning_action` with fixed
+`workflow_action=panel_expanded|panel_collapsed`, `feature_name=planning_review`,
+and `source_surface=planning`. No Team names, graph values or capacity values
+are included; `review_options_opened` records opening the compact toolbar options.
+Automatic compaction for every Team scope and the default Table presentation are passive
+and emit no event.
+The existing `pageview`/`userevent` GTM triggers and GA4 transport gate are unchanged.
+Dragging a column or using its keyboard movement emits `columns_reordered`
+through `planning_action`; it includes only the row-mode category. Optional
+visibility changes are intermediate configuration covered by `save_review`
+and do not emit another event.
+Save outcomes use the typed `result` enum `success|failure|conflict|unknown`.
+`sort_changed` uses `sort_scope=planning_review` and a built-in column category or
+`custom`, never a custom column ID. Summary and Team edits use the existing
+open/submit/result contract on Planning only, with `field_name=summary|team`.
+API reliability uses `api_surface=planning_review`; Jira links retain the tracked
+external-link contract. Tests: `test_analytics_events.js`,
+`test_analytics_source_guards.js` and review API/controller tests.
+
+No-event allowlist: typing, rendering (including explicit metadata columns and
+pinned totals, uncreated Story placeholders, compact column widths, numeric/text alignment, first-scroll sticky positioning, shared second-row control placement and Capacity hover/focus colors), automatic totals, scope-cache reuse and
+passive conflict display are derived or intermediate state. They produce no
+separate events. Never transmit cell values, column labels/IDs, issue identities,
+summaries, person information, URLs or JQL in app-owned analytics.

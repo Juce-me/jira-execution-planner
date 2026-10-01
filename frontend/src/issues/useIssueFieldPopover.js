@@ -52,7 +52,9 @@ export default function useIssueFieldPopover({
         if (!panel || !trigger) return undefined;
         const clippers = clippingAncestors(trigger);
 
-        const positionPanel = () => {
+        const positionPanel = event => {
+            // Internal scrolling does not move the anchor; remeasuring would clamp scrollTop.
+            if (event?.type === 'scroll' && event.target instanceof Node && panel.contains(event.target)) return;
             const triggerRect = trigger.getBoundingClientRect();
             if (!preview && clippers.some((clipper) => isOutsideRect(triggerRect, clipper.getBoundingClientRect()))) {
                 onDismissRef.current?.();

@@ -121,7 +121,7 @@ test('issue field edit analytics stays typed, private, and mapped through the tw
     assert.equal((jiraApi.match(/trackedFetch\('jira_issue_field_edits'/g) || []).length, 3);
     for (const token of [
         "new Set(['open', 'submit', 'result'])",
-        "new Set(['assignee', 'delivery_owner', 'story_points'])",
+        "new Set(['assignee', 'delivery_owner', 'story_points', 'summary', 'team'])",
         "new Set(['epic', 'story'])",
         "new Set(['catch_up', 'planning', 'board'])",
         "new Set(['success', 'unchanged', 'conflict', 'failure', 'unknown'])",

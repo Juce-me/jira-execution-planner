@@ -15,7 +15,7 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 ## Dashboard decomposition
 
-- [Scenario Planner and Settings state extraction](EXEC-dashboard-scenario-settings-state-extraction.md): proposed (2026-10-01); 13 sequential PRs move the Scenario and Settings state, effects, and JSX out of `App()` in `frontend/src/dashboard.jsx` into hooks and container components, lowering the line budget in every PR; open decisions (dead declarations, ST6 go/no-go, merge cadence) must be answered before PR0. Replaces the Scenario and settings rows of `FUTURE-codebase-operability-improvements.md`.
+- [Scenario Planner and Settings state extraction](EXEC-dashboard-scenario-settings-state-extraction.md): proposed, revision 2 (2026-10-01); 11 sequential PRs (two operator-gated) move the Scenario and Settings state, effects, and JSX out of `App()` in `frontend/src/dashboard.jsx` into hooks and container components, lowering the line budget in every PR; dead-code deletion is approved and execution is commit-gated with operator validation after each commit. Not executable until a second independent review passes. Replaces the Scenario and settings rows of `FUTURE-codebase-operability-improvements.md`.
 
 ## Current Stats Work
 

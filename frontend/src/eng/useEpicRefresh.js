@@ -46,6 +46,7 @@ function announcementFor(outcome) {
 // Inputs (all read through a ref, so closures may change every render):
 //   getState() -> { productTasks, techTasks, loadedProductTasks, loadedTechTasks, epicDetails, readyToCloseProductTasks, readyToCloseTechTasks,
 //       missingPlanningInfoTasks, ...epic scope lists }   `missingPlanningInfoTasks` is read by the edit re-check's key-to-epic resolver
+//   active (optional, default true) false outside Catch Up and Planning clears the announcement
 //   loadEpicRefresh, loadEpicAlerts, loadEpicReadiness, mergeReadinessEpic, readGuards(epicKey), getAlertVersion(), isFutureSprint, sourceSurface
 //   getSubtaskParentStoryKeys(keys) -> parent story keys of subtask keys (optional; `resolveSubtaskParentStoryKeys(keys, storySubtasksByKey)`)
 //   alertCohortInFlight() -> boolean   true while the department alert cohort loads (optional; absent means never in flight)
@@ -68,6 +69,11 @@ export function useEpicRefresh(inputs) {
     const [leavingKeys, setLeavingKeys] = React.useState(() => new Set());
     const [announcement, setAnnouncement] = React.useState('');
     const [announcementId, setAnnouncementId] = React.useState(0);
+    const announceCountRef = React.useRef(0);
+    // The status region stays mounted (a re-inserted live region is often skipped by screen readers), so every announcement must change its
+    // text: alternate a trailing non-breaking space so identical consecutive messages still re-announce.
+    const epicRefreshActive = inputs.active !== false;
+    React.useEffect(() => { if (!epicRefreshActive) setAnnouncement(''); }, [epicRefreshActive]);
 
     React.useEffect(() => () => {
         timersRef.current.forEach(timer => window.clearTimeout(timer));
@@ -308,8 +314,9 @@ export function useEpicRefresh(inputs) {
             apply,
             setEpicState,
             announce: outcome => {
-                setAnnouncement(announcementFor(outcome));
-                setAnnouncementId(id => id + 1);
+                announceCountRef.current += 1;
+                setAnnouncement(announcementFor(outcome) + (announceCountRef.current % 2 ? '' : '\u00a0'));
+                setAnnouncementId(announceCountRef.current);
             },
             track: outcome => latest.current.track({
                 result: outcome.result === 'hidden' ? 'changed' : outcome.result,

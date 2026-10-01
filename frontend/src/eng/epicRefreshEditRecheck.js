@@ -56,7 +56,7 @@ export const EPIC_RECHECK_RETRY_MS = 8000;
 //   cohort: { inFlight(), subscribeSettle(cb: ({ aborted }) => void) -> unsubscribe }   jobs with `awaitCohort` wait for it to settle;
 //       a cohort that was aborted restarts and reads post-edit data, so the waiting jobs are dropped
 // `request` resolves { ran, dropped?, rateLimited? } when its job's first run ends or the job is dropped. `cancel()` drops every pending
-// job and timer (scope switch, unmount); the scheduler is reusable afterwards.
+// job and timer (the hook calls it on unmount only; a scope switch is caught by `isStale` when a job starts); the scheduler is reusable afterwards.
 export function createEpicRecheckScheduler({
     run, isStale = () => false, cohort = null, setTimer = (fn, ms) => setTimeout(fn, ms), clearTimer = id => clearTimeout(id),
     defaultRetryMs = EPIC_RECHECK_RETRY_MS,

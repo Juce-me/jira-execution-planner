@@ -15023,7 +15023,7 @@ import {
                     invalidateStorySubtasks([...update.changedKeys, ...update.addedKeys, ...update.silentKeys]);
                 },
                 getAlertVersion: () => catchUpAlertVersionRef.current, getSubtaskParentStoryKeys: keys => resolveSubtaskParentStoryKeys(keys, storySubtasksByKey),
-                alertCohortInFlight: () => alertCohortRef.current !== null, subscribeAlertCohortSettle, loadEpicAlerts, loadEpicReadiness: storyReadiness.loadEpic, mergeReadinessEpic: storyReadiness.mergeEpic, isFutureSprint: isFutureSprintSelected, track: trackEpicRefreshAction, sourceSurface: isCatchUpMode ? 'catch_up' : 'planning', capacityScopeHoldRef,
+                alertCohortInFlight: () => alertCohortRef.current !== null, subscribeAlertCohortSettle, loadEpicAlerts, loadEpicReadiness: storyReadiness.loadEpic, mergeReadinessEpic: storyReadiness.mergeEpic, isFutureSprint: isFutureSprintSelected, track: trackEpicRefreshAction, sourceSurface: isCatchUpMode ? 'catch_up' : 'planning', active: isEpicRefreshMode, capacityScopeHoldRef,
             });
 
             // Group Board composer props (Boards tab, GroupBoardsTab.jsx). The Save gate validates
@@ -17425,7 +17425,7 @@ import {
                                     Back to top
                                 </button>
                             )}
-                            {shouldRenderEngTaskList && <div className="epic-refresh-status" role="status" data-epic-refresh-status key={epicRefresh.announcementId}>{epicRefresh.announcement}</div>}
+                            {isEpicRefreshMode && <div className="epic-refresh-status" role="status" data-epic-refresh-status>{epicRefresh.announcement}</div>}
 
                             {shouldRenderEngTaskList && (
                                 <EngView

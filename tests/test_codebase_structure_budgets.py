@@ -55,9 +55,9 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # improvement/multiple-group-labels final-review round: find_comma_scalar_team_label_errors
     # wrapper for the save-only comma-scalar Team-label guard (+2).
     # feature/213-per-epic-refresh: epic-refresh purpose branch, cache skip and eviction (+11).
-    # feature/213-per-epic-refresh Task 9: epic-alerts purpose: epic_keys clause (+2), failures
-    # list handling (+7), import (+1), epic-alerts branch (+9), per-epic enrichment moved to
-    # backend/services/epic_refresh.py (-18); net +5 over the line above.
+    # feature/213-per-epic-refresh Task 9: epic-alerts purpose: epic_keys clause, failures list
+    # handling, import, the epic-alerts branch and the per-epic enrichment block moved to
+    # backend/services/epic_refresh.py (+24 added, -19 removed lines; net +5 over the line above).
     "jira_server.py": 6479,
     # feature/eng-epic-sort-and-track adds the epic Sort dropdown wiring (engEpicSort state,
     # analytics handler, sorted epicGroups, EngView props) and the title-row priority chevron
@@ -176,8 +176,9 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # call selection live in frontend/src/eng/ (+8). Review fixes: an all-already-in-status edit
     # skips the invalidation (+1) and the epic priority edit patches the readiness snapshot
     # locally for readiness-only epics (+1).
-    # Merge of origin/main into feature/213-per-epic-refresh: main's own +5 lines from #215, #216
-    # and #218 (main alone is 18203 against its 18213 budget).
+    # Merge of origin/main into feature/213-per-epic-refresh: main alone is 18203 lines (its budget
+    # was 18213); this branch adds 104 over main's actual count (34 + 52 + 3 + 5 + 8 + 2, itemized
+    # above), so the merged file is 18307 and main's 10 lines of slack are consumed.
     "frontend/src/dashboard.jsx": 18307,
 }
 

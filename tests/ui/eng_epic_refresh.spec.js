@@ -423,6 +423,8 @@ async function headerGeometry(header) {
         };
         const button = node.querySelector('.epic-refresh-button');
         const buttonRect = button.getBoundingClientRect();
+        // The button sits exactly in the header's top-right corner (no overhang, so the header's scrollWidth contract holds); on a
+        // plain epic card that is about 13px from the card's top and right edges (12px padding plus the 1px border).
         const headerRect = node.getBoundingClientRect();
         return {
             title: [...node.querySelectorAll('.epic-title-row > *')].map(rectOf),
@@ -430,7 +432,8 @@ async function headerGeometry(header) {
             header: rectOf(node),
             overflow: node.scrollWidth - node.clientWidth,
             buttonInside: buttonRect.left >= headerRect.left && buttonRect.right <= headerRect.right
-                && buttonRect.top >= headerRect.top && buttonRect.bottom <= headerRect.bottom,
+                && buttonRect.top >= headerRect.top && buttonRect.bottom <= headerRect.bottom
+                && Math.abs(buttonRect.right - headerRect.right) <= 1 && Math.abs(buttonRect.top - headerRect.top) <= 1,
         };
     });
 }
@@ -457,21 +460,30 @@ for (const width of [1280, 1024, 390]) {
             expect(shown.meta, `${epicKey} meta children`).toEqual(hidden.meta);
             expect(shown.header, `${epicKey} header box`).toEqual(hidden.header);
             expect(shown.overflow, `${epicKey} header overflow`).toBeLessThanOrEqual(1);
-            expect(shown.buttonInside, `${epicKey} button inside header`).toBe(true);
+            expect(shown.buttonInside, `${epicKey} button inside the header, in its top-right corner`).toBe(true);
         }
         if (width === 390) {
-            // The 760px-and-below padding rule is scoped to headers that own a refresh button.
+            // The 760px-and-below padding rule is scoped to headers that own a refresh button AND the Planning stat toggle:
+            // Catch Up keeps the full epic name width (eng_compact_layout_visual), EPM-shaped headers are untouched.
             const paddings = await page.evaluate(() => {
-                const withButton = document.querySelector('.epic-header:has(> .epic-refresh-button) .epic-title-row');
-                const probe = document.createElement('div');
-                probe.className = 'epic-header';
-                probe.innerHTML = '<div class="epic-title-row">EPM-shaped header</div>';
-                document.body.appendChild(probe);
-                const without = getComputedStyle(probe.querySelector('.epic-title-row')).paddingRight;
-                probe.remove();
-                return { withButton: getComputedStyle(withButton).paddingRight, without };
+                const catchUp = document.querySelector('.epic-header:has(> .epic-refresh-button) .epic-title-row');
+                const probe = (html) => {
+                    const node = document.createElement('div');
+                    node.className = 'epic-header';
+                    node.innerHTML = html;
+                    document.body.appendChild(node);
+                    const value = getComputedStyle(node.querySelector('.epic-title-row')).paddingRight;
+                    node.remove();
+                    return value;
+                };
+                return {
+                    catchUp: getComputedStyle(catchUp).paddingRight,
+                    epmShaped: probe('<div class="epic-title-row">EPM-shaped header</div>'),
+                    planningShaped: probe('<div class="epic-title-row"><button class="epic-stat-toggle"></button></div><button class="epic-refresh-button"></button>'),
+                    toggleWithoutButton: probe('<div class="epic-title-row"><button class="epic-stat-toggle"></button></div>'),
+                };
             });
-            expect(paddings).toEqual({ withButton: '32px', without: '0px' });
+            expect(paddings).toEqual({ catchUp: '0px', epmShaped: '0px', planningShaped: '32px', toggleWithoutButton: '0px' });
         }
     });
 }
@@ -528,12 +540,9 @@ for (const width of [1280, 1024, 390]) {
                 expect(overflow, `${epicKey} ${name} scrollWidth - clientWidth`).toBeLessThanOrEqual(1);
             }
             if (width === 390) {
-                expect(report.titleRowPaddingRight, `${epicKey} title row reserves the button column`).toBe('32px');
-                // Neither the title text nor any title-row item (priority, track, stat toggle) reaches the button.
-                expect(report.titleTextRight, `${epicKey} title text right edge clear of the button`).toBeLessThanOrEqual(report.buttonLeft + 0.5);
-                for (const child of report.children) {
-                    expect(child.right, `${epicKey} title-row item ${child.name} clear of the button`).toBeLessThanOrEqual(Math.min(report.buttonLeft, report.titleRowContentRight) + 0.5);
-                }
+                // Catch Up has no stat toggle to protect, so it keeps the full epic name width (the accepted overlay may cover the
+                // end of the title while the button is shown; recorded above, not asserted).
+                expect(report.titleRowPaddingRight, `${epicKey} Catch Up title row keeps its full width`).toBe('0px');
             }
         }
     });
@@ -1342,10 +1351,29 @@ test('18a. announcements: one story updated, up to date, and identical messages 
 
     await clickRefresh(page, 'EPIC-2');
     await expect(statusRegion(page)).toHaveText('Epic is up to date');
-    await page.evaluate(() => { document.querySelector('[data-epic-refresh-status]').__first = true; });
+    await page.evaluate(() => {
+        const node = document.querySelector('[data-epic-refresh-status]');
+        node.__first = true;
+        window.__statusTexts = [];
+        window.__statusBefore = node.textContent;
+        window.__statusObserver = new MutationObserver(() => window.__statusTexts.push(node.textContent));
+        window.__statusObserver.observe(node, { childList: true, characterData: true, subtree: true });
+    });
     await clickRefresh(page, 'EPIC-3');
-    // Same text again: the node is replaced (keyed by announcement id) so assistive tech announces it again.
-    await expect.poll(() => page.evaluate(() => document.querySelector('[data-epic-refresh-status]').__first === true)).toBe(false);
+    // Same message again: the node stays mounted (a re-inserted live region is skipped by screen readers) and its text content changes.
+    await expect.poll(() => page.evaluate(() => window.__statusTexts.length)).toBeGreaterThan(0);
+    const repeat = await page.evaluate(() => ({
+        sameNode: document.querySelector('[data-epic-refresh-status]').__first === true,
+        texts: window.__statusTexts,
+        before: window.__statusBefore,
+        current: document.querySelector('[data-epic-refresh-status]').textContent,
+    }));
+    expect(repeat.sameNode).toBe(true);
+    // The two identical announcements differ only by the alternating trailing non-breaking space, so the live region's text changes.
+    expect(repeat.before.trim()).toBe('Epic is up to date');
+    expect(repeat.current.trim()).toBe('Epic is up to date');
+    expect(repeat.current).not.toBe(repeat.before);
+    await page.evaluate(() => window.__statusObserver.disconnect());
     await expect(statusRegion(page)).toHaveText('Epic is up to date');
     await expect(statusRegion(page)).toHaveCount(1);
 });
@@ -2822,7 +2850,7 @@ for (const width of [1280, 1024, 390]) {
             expect(relative(shown).meta, `${epicKey} meta children`).toEqual(relative(hidden).meta);
             expect(relative(shown).header, `${epicKey} header box (left, width, height)`).toEqual(relative(hidden).header);
             expect(shown.overflow, `${epicKey} header overflow`).toBeLessThanOrEqual(1);
-            expect(shown.buttonInside, `${epicKey} button inside header`).toBe(true);
+            expect(shown.buttonInside, `${epicKey} button inside the header, in its top-right corner`).toBe(true);
         }
     });
 

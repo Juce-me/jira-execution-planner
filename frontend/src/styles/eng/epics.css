@@ -40,8 +40,8 @@
         /* `button.` keeps these above the global button, button:hover and button.secondary:hover rules. */
         .epic-header button.epic-refresh-button {
             position: absolute;
-            top: 4px;
-            right: 6px;
+            top: 0;
+            right: 0;
             z-index: 1;
             margin: 0;
             padding: 0;
@@ -93,8 +93,9 @@
             }
         }
 
+        /* Only headers that carry the Planning stat toggle reserve the button column; Catch Up keeps the full epic name width. */
         @media (max-width: 760px) {
-            .epic-header:has(> .epic-refresh-button) .epic-title-row {
+            .epic-header:has(> .epic-refresh-button):has(.epic-stat-toggle) .epic-title-row {
                 padding-right: 32px;
             }
         }

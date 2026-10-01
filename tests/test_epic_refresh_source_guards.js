@@ -19,10 +19,15 @@ test('per-epic refresh code never re-arms alerts, reloads the group, or flips lo
         'rearmCatchUpAlerts', 'loadGroupTasks', 'applyLocalEngIssueField', 'localStorage',
         'setLoading(', 'setProductTasksLoading', 'setTechTasksLoading', 'startTransition',
     ];
-    for (const file of ['useEpicRefresh.js', 'epicRefreshController.js', 'epicRefreshPatch.js']) {
-        const source = read('eng', file);
-        for (const token of forbidden) {
-            assert.equal(source.includes(token), false, `${file} must not contain ${token}`);
+    const files = [
+        ['eng', 'useEpicRefresh.js'], ['eng', 'epicRefreshController.js'], ['eng', 'epicRefreshPatch.js'],
+        ['eng', 'epicRefreshAlerts.js'], ['eng', 'epicRefreshEditRecheck.js'], ['eng', 'epicRefreshGlare.js'],
+        ['eng', 'epicRefreshDependencySkip.js'], ['ui', 'EpicRefreshButton.jsx'],
+    ];
+    for (const segments of files) {
+        const source = read(...segments);
+        for (const token of [...forbidden, '/api/']) {
+            assert.equal(source.includes(token), false, `${segments.join('/')} must not contain ${token}`);
         }
     }
 });
@@ -80,6 +85,8 @@ test('the dashboard mounts the per-epic refresh in Catch Up without touching the
     assert.match(source, /\{isEpicRefreshMode && epicGroup\.key !== 'NO_EPIC' && \(\s*<EpicRefreshButton/, 'the button mounts in Catch Up and Planning only');
     assert.equal((source.match(/data-epic-refresh-status/g) || []).length, 1, 'one status region');
     assert.equal(source.includes('aria-live="polite" data-epic-refresh-status'), false);
+    assert.equal(source.includes('data-epic-refresh-status key='), false, 'the live region stays mounted; a keyed remount is skipped by screen readers');
+    assert.ok(source.includes('{isEpicRefreshMode && <div className="epic-refresh-status" role="status" data-epic-refresh-status>'), 'the status region renders in Catch Up and Planning only');
 });
 
 test('the epic refresh guards dependencies, subtasks and the alert cohort without touching the dependencies effect', () => {

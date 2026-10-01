@@ -7439,8 +7439,8 @@ a.dependency-missing-item:hover {
 }
 .epic-header button.epic-refresh-button {
   position: absolute;
-  top: 4px;
-  right: 6px;
+  top: 0;
+  right: 0;
   z-index: 1;
   margin: 0;
   padding: 0;
@@ -7486,7 +7486,7 @@ a.dependency-missing-item:hover {
   }
 }
 @media (max-width: 760px) {
-  .epic-header:has(> .epic-refresh-button) .epic-title-row {
+  .epic-header:has(> .epic-refresh-button):has(.epic-stat-toggle) .epic-title-row {
     padding-right: 32px;
   }
 }

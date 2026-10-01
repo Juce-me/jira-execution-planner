@@ -105,6 +105,7 @@ async function installPlanningFixture(page, {
     scopeTeamIds = groupTeamIds,
     capacityProject = '',
     planningLayout = 'list',
+    longTable = false,
 } = {}) {
     const calls = [];
     let futureProductTaskAttempts = 0;
@@ -251,7 +252,7 @@ async function installPlanningFixture(page, {
             const issues = project === 'product' && !purpose
                 ? (String(sprint) === String(secondFutureSprintId)
                     ? secondFutureStories
-                    : String(sprint) === String(completedSprintId) ? completedStories : futureStories)
+                    : String(sprint) === String(completedSprintId) ? completedStories : longTable ? Array.from({length:60},(_,i)=>makeStory(`PLAN-${i+1}`,'To Do')) : futureStories)
                 : [];
             const epic = String(sprint) === String(secondFutureSprintId)
                 ? makeEpic(secondFutureSprintId, secondFutureSprintName, 'PLAN-EPIC-2')
@@ -424,26 +425,23 @@ for (const authMode of ['basic', 'atlassian_oauth']) test(`table status chips re
     await points.click();
     await expect(points).not.toHaveAttribute('readonly','');
     await points.fill('3');
-    const savePoints=table.getByRole('button',{name:'Save Story Points for PLAN-1',exact:true});
-    expect(await savePoints.evaluate(node=>node.getBoundingClientRect().height)).toBeLessThan(30);
-    await page.mouse.move(0,0);
-    await expect(savePoints).toHaveCSS('background-color','rgb(248, 250, 252)');
+    await expect(table.getByRole('button',{name:/^(Save|Cancel) Story Points/})).toHaveCount(0);
     await page.screenshot({path:'tmp/217-ui/planning-review-story-points-editor.png',fullPage:true});
-    await table.getByRole('button',{name:'Save Story Points for PLAN-1',exact:true}).click();
+    await points.press('Enter');
     await expect.poll(()=>saved?.value).toBe(3);
     await expect(points).toHaveValue('3');
     await points.click();await points.fill('5');
-    await table.getByRole('button',{name:'Cancel Story Points for PLAN-1',exact:true}).click();
+    await points.press('Escape');
     await expect(points).toHaveValue('3');
     expect(saved.value).toBe(3);
-    for(const name of ['Epic','Assignee','Project Track']) await expect(table.getByRole('columnheader',{name,exact:true})).toBeVisible();
-    for(const name of ['Component','Project','Capacity']) await expect(table.getByRole('columnheader',{name,exact:true})).toHaveCount(0);
+    for(const name of ['Epic','Assignee']) await expect(table.getByRole('columnheader',{name,exact:true})).toBeVisible();
+    for(const name of ['Component','Project','Capacity','Project Track']) await expect(table.getByRole('columnheader',{name,exact:true})).toHaveCount(0);
     await expect(table.getByRole('columnheader',{name:'Fields',exact:true})).toHaveCount(0);
-    await expect(table.locator('tbody .planning-review-epic').first()).toContainText('PLAN-EPIC');
+    await expect(table.locator('tbody .planning-review-epic').first().getByRole('link',{name:'Future planning epic',exact:true})).toHaveAttribute('href',/\/browse\/PLAN-EPIC$/);
     await expect(table.locator('tfoot .planning-review-selection')).toBeInViewport();
 });
 
-for (const authMode of ['basic','atlassian_oauth']) for(const width of [390,1280]) test(`complete summaries use the cell width and wrap in ${authMode} at ${width}px`, async ({page})=>{
+for (const authMode of ['basic','atlassian_oauth']) for(const width of [390,1280]) test(`summaries truncate and reveal the full text without losing editing in ${authMode} at ${width}px`, async ({page})=>{
     const summary='[D] Adding new fields in logs and updating the migration implementation for the next sprint review';
     await page.setViewportSize({width,height:900});
     await installPlanningFixture(page,{authMode,summary});
@@ -453,19 +451,16 @@ for (const authMode of ['basic','atlassian_oauth']) for(const width of [390,1280
     const cell=page.locator('tbody .planning-review-summary').first();
     if(authMode==='atlassian_oauth') await expect(cell.getByRole('button',{name:'Edit summary for PLAN-EPIC',exact:true})).toHaveText(summary);
     else await expect(cell).toHaveText(summary);
-    const textBounds=await cell.evaluate(cell=>{
-        const target=cell.querySelector('button')||cell;const r=document.createRange();r.selectNodeContents(target);
-        const text=r.getBoundingClientRect(),box=cell.getBoundingClientRect(),style=getComputedStyle(target);
-        return {height:text.height,lineHeight:parseFloat(style.lineHeight),textLeft:text.left,textRight:text.right,cellLeft:box.left,cellRight:box.right,overflow:target.scrollWidth>target.clientWidth+1};
-    });
-    expect(textBounds.height).toBeGreaterThan(textBounds.lineHeight);
-    expect(textBounds.textLeft).toBeGreaterThanOrEqual(textBounds.cellLeft);
-    expect(textBounds.textRight).toBeLessThanOrEqual(textBounds.cellRight);
-    expect(textBounds.overflow).toBe(false);
+    const value=cell.locator('.planning-review-truncated-value');
+    const target=authMode==='atlassian_oauth'?cell.locator('.issue-summary-editor-trigger'):value;
+    expect(await target.evaluate(node=>({clipped:node.scrollWidth>node.clientWidth+1,ellipsis:getComputedStyle(node).textOverflow,whiteSpace:getComputedStyle(node).whiteSpace}))).toEqual({clipped:true,ellipsis:'ellipsis',whiteSpace:'nowrap'});
+    await target.hover();const readout=page.getByRole('tooltip').filter({hasText:summary});await expect(readout).toBeVisible();
+    expect(await readout.evaluate(node=>{const r=node.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&node.contains(document.elementFromPoint(r.left+5,r.top+5));})).toBe(true);
+    await target.focus();await expect(readout).toBeVisible();await target.press('Escape');await expect(readout).toHaveCount(0);
     if(authMode==='atlassian_oauth'){
         const trigger=cell.getByRole('button',{name:'Edit summary for PLAN-EPIC',exact:true});
         await trigger.focus();await trigger.press('Enter');
-        const editor=page.getByRole('textbox',{name:'Summary for PLAN-EPIC',exact:true});await expect(editor).toHaveValue(summary);await editor.press('Escape');await expect(trigger).toBeFocused();
+        const editor=page.getByRole('textbox',{name:'Summary for PLAN-EPIC',exact:true});await expect(editor).toHaveValue(summary);await expect(readout).toHaveCount(0);await editor.press('Escape');await expect(trigger).toBeFocused();
     }
     await page.screenshot({path:`tmp/217-ui/planning-review-summary-${authMode}-${width}.png`,fullPage:true});
 });
@@ -525,7 +520,7 @@ test('table shows readiness-only Epics and placeholders when no Jira Stories exi
     await page.getByRole('radio',{name:'Stories',exact:true}).click();
     const placeholder=table.locator('tbody tr').filter({hasText:'Story awaiting creation for Alpha Team'});
     await expect(placeholder).toHaveCount(1);await expect(placeholder).toContainText('Awaiting creation');await expect(placeholder.getByRole('checkbox')).toBeDisabled();
-    await expect(placeholder.getByRole('link',{name:'PLAN-EMPTY',exact:true})).toHaveCount(1);await expect(table.locator('tfoot .planning-review-storyPoints')).toHaveText('0');
+    await expect(placeholder.getByRole('link',{name:'Epic awaiting Stories',exact:true})).toHaveCount(1);await expect(table.locator('tfoot .planning-review-storyPoints')).toHaveText('0');
 });
 
 async function installUncreatedReadiness(page) {
@@ -559,10 +554,30 @@ for(const scopeTeamIds of [['team-alpha'],['team-alpha','team-beta']]) test(`Tab
     const row=await panel.boundingBox();expect(row.height).toBeLessThan(64);
     await expect(panel.locator('.capacity-bar-graph')).toHaveCount(1);
     for(const readout of await panel.locator('.planning-compact-readout').all()) expect(await readout.evaluate(node=>node.scrollWidth<=node.clientWidth+1)).toBe(true);
+    for(const selector of ['.capacity-bar-fill','.project-bar-fill.product']) {
+        const fill=panel.locator(selector).first();await fill.hover();
+        await page.screenshot({path:`tmp/217-ui/bar-hover-${scopeTeamIds.length}-${selector.includes('product')?'project':'capacity'}.png`});
+        const label=fill.locator('..').locator('.planning-compact-readout');
+        expect(await label.evaluate(node=>{
+            // Include the normally pointer-transparent label in paint-order hit testing.
+            node.style.pointerEvents='auto';
+            const r=node.getBoundingClientRect();
+            const top=document.elementFromPoint(r.left+4,r.top+r.height/2);
+            node.style.pointerEvents='';
+            return top===node;
+        })).toBe(true);
+        expect(await fill.evaluate(node=>getComputedStyle(node,'::after').content)).not.toBe('none');
+    }
     const geometry=await panel.locator('.planning-panel-capacity-graph,.planning-panel-project-graph').evaluateAll(nodes=>nodes.map(node=>node.getBoundingClientRect().y));expect(Math.abs(geometry[0]-geometry[1])).toBeLessThan(8);
     const beforeCalls=fixture.calls.filter(call=>['/api/tasks-with-team-name','/api/eng/story-readiness','/api/dependencies'].includes(call.pathname)).length;
     await panel.getByRole('button',{name:'Show panel',exact:true}).click();await expect(panel.getByRole('button',{name:'Select All',exact:true})).toBeVisible();
-    await panel.getByRole('button',{name:'Hide panel',exact:true}).click();await page.getByRole('radio',{name:'Stories',exact:true}).click();
+    const collapse=panel.getByRole('button',{name:'Collapse panel',exact:true});
+    await expect(panel.locator('.planning-actions')).toContainText('Collapse panel');
+    const collapseRect=await collapse.boundingBox(),selectRect=await panel.getByRole('button',{name:'Select All',exact:true}).boundingBox();
+    expect(Math.abs(collapseRect.y-selectRect.y)).toBeLessThan(3);
+    await page.screenshot({path:`tmp/217-ui/collapse-inline-${scopeTeamIds.length}-team.png`,fullPage:false});
+
+    await panel.getByRole('button',{name:'Collapse panel',exact:true}).click();await page.getByRole('radio',{name:'Stories',exact:true}).click();
     expect(await page.locator('.planning-review-table tbody input[type=checkbox]:checked').count()).toBe(selected);
     expect(fixture.calls.filter(call=>['/api/tasks-with-team-name','/api/eng/story-readiness','/api/dependencies'].includes(call.pathname)).length).toBe(beforeCalls);
     await page.addStyleTag({content:'body{padding-bottom:1000px}'});
@@ -584,7 +599,7 @@ test('compact Table panel fits narrow screens and restores normal Planning in Sc
     expect((await panel.boundingBox()).height).toBeLessThan(130);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1)).toBe(true);
     await panel.getByRole('button',{name:'Show panel',exact:true}).click();await expect(panel.getByRole('button',{name:'Select All',exact:true})).toBeVisible();
-    await panel.getByRole('button',{name:'Hide panel',exact:true}).click();await expect(panel.getByRole('button',{name:'Show panel',exact:true})).toBeVisible();
+    await panel.getByRole('button',{name:'Collapse panel',exact:true}).click();await expect(panel.getByRole('button',{name:'Show panel',exact:true})).toBeVisible();
     await page.locator('.view-selector .eng-mode-control').getByRole('radio',{name:'Scenario',exact:true}).click();await expect(panel).toHaveCount(0);
 });
 
@@ -604,13 +619,30 @@ for (const width of [1280, 390]) test(`first Table scroll activates the sticky F
     await page.addStyleTag({content:'body{padding-bottom:1000px}'});await page.evaluate(()=>scrollTo(0,0));
     const stack=page.locator('.planning-review-sticky-stack'),filters=stack.locator('.filterbar-wrap'),panel=stack.locator('.planning-panel');
     await expect(stack).toBeVisible();const initial=await stack.boundingBox();expect(initial.y).toBeGreaterThan(0);
+    await expect(page.locator('.planning-review-region > .planning-review-toolbar')).toHaveCount(1);
+    await expect(stack.locator('.planning-review-toolbar')).toHaveCount(0);
+    const normalToolbar=await page.locator('.planning-review-toolbar').boundingBox(),tableStart=await page.locator('.planning-review-scroll').boundingBox();
+    expect(normalToolbar.y+normalToolbar.height).toBeLessThanOrEqual(tableStart.y);
+    await page.screenshot({path:`tmp/217-ui/table-toolbar-normal-${width}.png`,fullPage:false});
     const selected=await page.locator('.planning-review-table tbody input:checked').count();
-    await page.mouse.wheel(0,12);await expect(page.locator('.compact-sticky-header')).toHaveClass(/is-visible/);
+    await page.mouse.move(width-2,850);await page.mouse.wheel(0,12);await expect(page.locator('.compact-sticky-header')).toHaveClass(/is-visible/);
     await expect.poll(async()=>{const h=await page.locator('.compact-sticky-header').boundingBox(),s=await stack.boundingBox();return Math.abs(s.y-(h.y+h.height));}).toBeLessThan(2);
     const f=await filters.boundingBox(),p=await panel.boundingBox();expect(p.y).toBeGreaterThanOrEqual(f.y+f.height-1);
     await expect(panel).toHaveClass(/stuck/);expect(await page.locator('.planning-review-table tbody input:checked').count()).toBe(selected);
     await filters.locator('.fb-trigger').click();await expect(page.locator('.popover')).toBeVisible();await filters.locator('.fb-trigger').click();
+    const toolbar=page.locator('.planning-review-toolbar');
+    await page.locator('.planning-review-scroll').evaluate(node=>node.scrollIntoView({block:'start'}));
+    await expect.poll(async()=>{const t=await toolbar.boundingBox(),s=await stack.boundingBox();return Math.max(0,s.y-t.y,t.y+t.height-(s.y+s.height));}).toBeLessThan(3);
+    const t=await toolbar.boundingBox(),s=await stack.boundingBox();expect(Math.abs(t.x-s.x)).toBeLessThan(2);expect(Math.abs(t.width-s.width)).toBeLessThan(2);
+    await toolbar.getByRole('button',{name:'Columns',exact:true}).click();
+    const columns=page.getByRole('dialog',{name:'Review column management'});await expect(columns).toBeVisible();
+    expect(await columns.evaluate(node=>{const r=node.getBoundingClientRect();return node.contains(document.elementFromPoint(r.left+10,r.top+10));})).toBe(true);
+    await page.keyboard.press('Escape');
     await page.screenshot({path:`tmp/217-ui/table-sticky-filter-first-${width}.png`,fullPage:false});
+    await page.evaluate(()=>scrollTo(0,0));
+    await expect(page.locator('.planning-review-region > .planning-review-toolbar')).toHaveCount(1);
+    await expect(stack.locator('.planning-review-toolbar')).toHaveCount(0);
+    expect(await page.locator('.planning-review-table tbody input:checked').count()).toBe(selected);
     await panel.getByRole('button',{name:'Show Planning list',exact:true}).click();await expect(stack).toHaveCount(0);
     await expect(page.locator('.task-list .task-item').first()).toBeVisible();
     await page.locator('.view-selector .eng-mode-control').getByRole('radio',{name:'Catch Up',exact:true}).click();await expect(panel).toHaveCount(0);
@@ -626,4 +658,30 @@ for (const width of [1280, 390]) test(`Catch Up shares the second controls row b
     await filters.locator('.fb-trigger').click();const popup=page.locator('.popover');await expect(popup).toBeVisible();
     expect(await popup.evaluate(node=>{const r=node.getBoundingClientRect();return node.contains(document.elementFromPoint(r.left+10,r.top+10));})).toBe(true);
     await filters.locator('.fb-trigger').click();await page.screenshot({path:`tmp/217-ui/catch-up-controls-${width}.png`,fullPage:false});
+});
+
+for (const width of [1280,390]) test(`document scroll docks table headings below the measured controls at ${width}px`, async ({page}) => {
+    await page.setViewportSize({width,height:900});
+    await installPlanningFixture(page,{planningLayout:'table',longTable:true,scopeTeamIds:['team-alpha','team-beta']});
+    await openPlanning(page,{expectStories:false});
+    await page.getByRole('radio',{name:'Stories',exact:true}).click();
+    const scroll=page.locator('.planning-review-scroll'), stack=page.locator('.planning-review-sticky-stack');
+    const selected=await scroll.locator('tbody input:checked').count();
+    expect(await scroll.evaluate(node=>node.scrollHeight-node.clientHeight)).toBeLessThanOrEqual(1);
+    await scroll.evaluate(node=>scrollTo(0,scrollY+node.getBoundingClientRect().top+250));
+    const heading=page.locator('.planning-review-docked-header');await expect(heading).toBeVisible();
+    await expect.poll(async()=>{const h=await heading.boundingBox(),s=await stack.boundingBox();return Math.abs(h.y-s.y-s.height);}).toBeLessThan(2);
+    expect(await scroll.evaluate(node=>{const h=document.querySelector('.planning-review-docked-header').getBoundingClientRect(),r=node.getBoundingClientRect();return !node.querySelector('tbody').contains(document.elementFromPoint(r.left+10,h.top-8));})).toBe(true);
+    await stack.getByRole('button',{name:'Show panel',exact:true}).click();
+    await expect.poll(async()=>{const h=await heading.boundingBox(),s=await stack.boundingBox();return Math.abs(h.y-s.y-s.height);}).toBeLessThan(2);
+    await stack.getByRole('button',{name:'Collapse panel',exact:true}).click();
+    await expect.poll(async()=>{const h=await heading.boundingBox(),s=await stack.boundingBox();return Math.abs(h.y-s.y-s.height);}).toBeLessThan(2);
+    await stack.getByRole('button',{name:'Columns',exact:true}).click();
+    const popup=page.getByRole('dialog',{name:'Review column management'});await expect(popup).toBeVisible();
+    expect(await popup.evaluate(node=>{const r=node.getBoundingClientRect();return node.contains(document.elementFromPoint(r.left+10,r.top+10));})).toBe(true);
+    await page.keyboard.press('Escape');
+    await page.screenshot({path:`tmp/217-ui/single-page-dashboard-${width}.png`,fullPage:false});
+    expect(await scroll.locator('tbody input:checked').count()).toBe(selected);
+    await page.locator('.compact-sticky-header').getByRole('radio',{name:'Catch Up',exact:true}).click();
+    await expect(heading).toHaveCount(0);await expect(page.locator('.planning-review-docked-footer')).toHaveCount(0);
 });

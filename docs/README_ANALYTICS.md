@@ -313,7 +313,7 @@ external-link contract. Tests: `test_analytics_events.js`,
 `test_analytics_source_guards.js` and review API/controller tests.
 
 No-event allowlist: typing, rendering (including explicit metadata columns and
-pinned totals, uncreated Story placeholders, compact column widths, numeric/text alignment, first-scroll sticky positioning, shared second-row control placement and Capacity hover/focus colors), automatic totals, scope-cache reuse and
+pinned totals, uncreated Story placeholders, compact column widths and custom-input focus geometry, truncated-value hover/focus readouts, persistent graph-label hover readability, keyboard-only Story Points editor chrome, parent Epic summary link labels, numeric/text alignment, first-scroll sticky positioning, document-owned vertical table scrolling and synchronized docked headers/totals, shared second-row control and sticky table-toolbar placement and Capacity hover/focus colors), automatic totals, scope-cache reuse and
 passive conflict display are derived or intermediate state. They produce no
 separate events. Never transmit cell values, column labels/IDs, issue identities,
 summaries, person information, URLs or JQL in app-owned analytics.

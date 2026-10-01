@@ -1,10 +1,12 @@
 html:has(.planning-panel.open) { scrollbar-gutter: stable; }
 .planning-review-region { width: calc(100vw - 4rem); max-width: calc(100vw - 4rem); margin-left: calc((100% - (100vw - 4rem)) / 2); min-width: 0; padding-bottom: 1rem; }
 .planning-review-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin: 0.5rem 0; }
+.planning-review-toolbar-slot:empty { display: none; }
+.planning-review-toolbar-slot .planning-review-toolbar { margin-bottom: 0; padding-block: 4px; }
 .planning-review-state, .planning-review-guidance { color: var(--text-secondary, #64748b); font-size: 0.75rem; }
 .planning-review-state { align-self: flex-end; line-height: 1.5; padding-bottom: 0.34rem; }
-.planning-review-guidance { margin: 0.5rem 0; }
-.planning-review-scroll { overflow: auto; max-width: 100%; border: 1px solid var(--border-color, #e2e8f0); border-radius: 8px; background: var(--surface, #fff); }
+.planning-review-guidance { margin-block: 0.5rem; }
+.planning-review-scroll { overflow-x: auto; max-width: 100%; border: 1px solid var(--border-color, #e2e8f0); border-radius: 8px; background: var(--surface, #fff); }
 .planning-review-table { width: max-content; border-collapse: separate; border-spacing: 0; font-size: 0.75rem; color: var(--text-primary, #334155); }
 .planning-review-table th, .planning-review-table td { padding: 5px 7px; text-align: left; vertical-align: middle; border-bottom: 1px solid var(--border-color, #e2e8f0); background: var(--surface, #fff); white-space: nowrap; height: 32px; box-sizing: border-box; }
 .planning-review-table th, .planning-review-table tfoot td { background: #f8fafc; }
@@ -13,8 +15,8 @@ html:has(.planning-panel.open) { scrollbar-gutter: stable; }
 .planning-review-table .planning-review-summary { min-width: 220px; width: 300px; max-width: 360px; white-space: normal; overflow-wrap: anywhere; }
 .planning-review-table .planning-review-storyPoints { text-align: right; font-variant-numeric: tabular-nums; }
 .planning-review-table .planning-review-custom { width: 100px; min-width: 100px; max-width: 200px; }
-.planning-review-input { box-sizing: border-box; width: 86px; min-width: 0; height: 25px; padding: 2px 4px; border: 1px solid transparent; border-radius: 4px; font: inherit; color: inherit; background: transparent; }
-.planning-review-input:hover, .planning-review-input:focus { border-color: #94a3b8; background: #fff; }
+.planning-review-input { box-sizing: border-box; width: 86px; min-width: 0; height: 21px; margin: 0; vertical-align: middle; line-height: 1; box-shadow: none; transition: border-color 0.15s, background-color 0.15s; padding: 2px 4px; border: 1px solid transparent; border-radius: 4px; font: inherit; color: inherit; background: transparent; }
+.planning-review-input:hover, .planning-review-input:focus { border-color: #94a3b8; background: #fff; box-shadow: none; }
 .planning-review-input.invalid { border-color: #b91c1c; }
 .planning-review-validation { display: block; white-space: normal; max-width: 180px; color: #b91c1c; font-size: 0.7rem; }
 .planning-review-requirement { display: block; color: #64748b; font-size: 0.7rem; margin-top: 2px; }
@@ -42,9 +44,6 @@ html:has(.planning-panel.open) { scrollbar-gutter: stable; }
 .planning-review-components { max-width: 200px; white-space: normal !important; }
 
 .planning-review-storyPoints input.story-points-editor { min-width: 32px; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 4px; background: #fff; box-sizing: content-box; cursor: text; }
-.planning-review-storyPoints .story-points-editor-actions { display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; }
-.planning-review-storyPoints .story-points-editor-actions button { font: inherit; letter-spacing: normal; padding: 3px 5px; border: 1px solid #cbd5e1; border-radius: 4px; color: #334155; background: #f8fafc; box-shadow: none; transform: none; }
-.planning-review-storyPoints .story-points-editor-actions button:hover { background: #e2e8f0; color: #0f172a; }
 
 @media (min-width: 1000px) { .planning-review-table thead .planning-review-summary, .planning-review-table tfoot .planning-review-summary { z-index: 5; } }
 
@@ -55,7 +54,7 @@ html:has(.planning-panel.open) { scrollbar-gutter: stable; }
 .planning-review-capacity .epic-stat-toggle:focus-visible { outline: 2px solid #93c5fd; outline-offset: 2px; }
 
 .planning-review-summary .issue-person-editor { display: flex; width: 100%; min-width: 0; }
-.planning-review-summary button.issue-summary-editor-trigger { width: 100%; white-space: normal; overflow-wrap: anywhere; text-overflow: clip; text-align: left; line-height: 1.4; }
+.planning-review-summary button.issue-summary-editor-trigger { width: 100%; overflow: hidden; white-space: nowrap; overflow-wrap: normal; text-overflow: ellipsis; text-align: left; line-height: 1.4; }
 .planning-review-summary button.issue-summary-editor-trigger:hover { background: transparent; color: #d48806; }
 
 .planning-review-popover-anchor { display: inline-flex; }
@@ -74,6 +73,8 @@ html:has(.planning-panel.open) { scrollbar-gutter: stable; }
 .planning-review-summary textarea.issue-summary-editor-input { display: block; box-sizing: border-box; width: 100%; min-width: 0; min-height: 28px; resize: none; overflow: hidden; padding: 3px 5px; margin: 0; border: 1px solid #cbd5e1; border-radius: 4px; background: #fff; color: #334155; font: inherit; line-height: 1.4; letter-spacing: normal; }
 .planning-review-summary textarea.issue-summary-editor-input:focus { outline: 2px solid #93c5fd; outline-offset: 0; box-shadow: none; }
 
+.planning-panel-collapse { flex-shrink: 0; }
+.planning-actions > .planning-panel-collapse { margin-left: auto; }
 .planning-panel-visibility { display: flex; justify-content: flex-end; align-items: center; gap: 6px; margin-bottom: 6px; }
 .planning-panel [hidden] { display: none !important; }
 .planning-panel.open.planning-panel-compact { display: flex; align-items: center; gap: 8px; padding: 8px; }
@@ -91,7 +92,8 @@ html:has(.planning-panel.open) { scrollbar-gutter: stable; }
     .planning-panel-compact .planning-panel-graphs { flex-basis: 100%; grid-template-columns: minmax(0, 1fr); gap: 8px; }
     .planning-panel-compact .planning-panel-visibility { margin-left: auto; }
 }
-.planning-panel-compact .planning-compact-readout { position: absolute; inset: 0 8px; display: flex; align-items: center; white-space: nowrap; pointer-events: none; z-index: 1; }
+/* Hovered fills use z-index 40; the persistent readout must stay above them. */
+.planning-panel-compact .planning-compact-readout { position: absolute; inset: 0 8px; display: flex; align-items: center; white-space: nowrap; pointer-events: none; z-index: 41; }
 
 .planning-panel-project-graph .planning-compact-readout { color: #fff; text-shadow: 0 1px 2px #0006; }
 .planning-panel-compact:has(.planning-panel-capacity-status) { flex-wrap: wrap; }
@@ -113,3 +115,16 @@ html:has(.planning-panel.open) { scrollbar-gutter: stable; }
 .planning-review-table .planning-review-text { text-align: left; }
 .planning-review-numeric input { text-align: right; }
 .planning-review-text input { text-align: left; }
+
+.planning-review-truncated-value { display: block; width: 286px; max-width: 286px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.planning-review-teamsInScope .planning-review-truncated-value { width: 220px; max-width: 220px; }
+.planning-review-truncated-value:focus-visible { outline: 2px solid #93c5fd; outline-offset: 1px; }
+.planning-review-truncated-value:has(.issue-summary-editor-inline) { overflow: visible; white-space: normal; }
+@media (max-width: 600px) { .planning-review-summary .planning-review-truncated-value { width: 206px; max-width: 206px; } }
+
+/* Rows follow document scrolling. Only horizontal movement belongs to the spreadsheet. */
+.planning-review-docked-header, .planning-review-docked-footer { position: fixed; overflow: hidden; z-index: var(--sticky-epic-z, 50); background: #f8fafc; box-shadow: 0 1px 0 #cbd5e1; }
+.planning-review-docked-footer { overflow-x: auto; box-shadow: 0 -1px 0 #cbd5e1; }
+.planning-review-docked-table { table-layout: fixed; }
+.planning-review-header-docked > thead, .planning-review-footer-docked > tfoot { opacity: 0; pointer-events: none; }
+.planning-review-docked-table th, .planning-review-docked-table td { overflow: hidden; }

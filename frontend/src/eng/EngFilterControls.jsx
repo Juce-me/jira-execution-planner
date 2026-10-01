@@ -9,7 +9,7 @@ export default function EngFilterControls({ engFilters, onFacetChange, onClearFa
     onFilterBarHeightChange, boardColumns = [], renderPriorityIcon, hasInitiativeData,
     groupByInitiative, setGroupByInitiative, InitiativeIcon, engEpicSort, setEngEpicSort,
     hierarchyCounts, visibleTasksForList = [], planningTable = false, planningOverview,
-    compactHeaderRef, onActivatePlanningSticky }) {
+    compactHeaderRef, onActivatePlanningSticky, planningToolbarRef }) {
     const realStoryCount = Number.isFinite(hierarchyCounts?.realStories) ? hierarchyCounts.realStories : visibleTasksForList.length;
     const requirementCount = Number(hierarchyCounts?.requirements) || 0;
     const [showSortDropdown, setShowSortDropdown] = React.useState(false);
@@ -106,6 +106,6 @@ export default function EngFilterControls({ engFilters, onFacetChange, onClearFa
                         )}
                     />);
     return planningTable
-        ? <PlanningTableStickyStack overview={planningOverview} compactHeaderRef={compactHeaderRef} onActivate={onActivatePlanningSticky}>{filterBar}</PlanningTableStickyStack>
+        ? <PlanningTableStickyStack overview={planningOverview} toolbarRef={planningToolbarRef} compactHeaderRef={compactHeaderRef} onActivate={onActivatePlanningSticky}>{filterBar}</PlanningTableStickyStack>
         : <>{filterBar}{planningOverview}</>;
 }

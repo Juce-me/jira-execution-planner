@@ -142,7 +142,6 @@ export default function EpicHeaderValueReadout({ value, suppressed = false, meas
     const show = () => {
         cancelClose();
         if (truncated && !suppressed) {
-            setPosition(previous => ({ ...previous, placed: false }));
             setVisible(true);
         }
     };

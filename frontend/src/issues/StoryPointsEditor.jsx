@@ -23,7 +23,6 @@ export default function StoryPointsEditor({
     onReload,
     onCheckJira,
     triggerClassName = '',
-    showActions = false,
 }) {
     const inputRef = React.useRef(null);
     const submittedRef = React.useRef(false);
@@ -122,8 +121,7 @@ export default function StoryPointsEditor({
                     setDraft(event.target.value);
                     setValidationError('');
                 }}
-                onBlur={event => {
-                    if (showActions && event.relatedTarget?.closest('.story-points-editor-actions')) return;
+                onBlur={() => {
                     if (submittedRef.current) return;
                     if (isOpen) resetAndClose('outside');
                 }}
@@ -145,10 +143,6 @@ export default function StoryPointsEditor({
                 onDragStart={event => { event.preventDefault(); event.stopPropagation(); }}
             />
             <span className="story-points-editor-unit" aria-hidden="true">SP</span>
-            {showActions && isOpen && <span className="story-points-editor-actions" onBlur={event => { if (!event.currentTarget.parentElement.contains(event.relatedTarget) && !submittedRef.current) resetAndClose('outside'); }}>
-                <button type="button" aria-label={`Save Story Points for ${issueKey}`} disabled={readOnly} onPointerDown={event => event.preventDefault()} onClick={save}>Save</button>
-                <button type="button" aria-label={`Cancel Story Points for ${issueKey}`} disabled={submitting} onPointerDown={event => event.preventDefault()} onClick={() => resetAndClose('cancel')}>Cancel</button>
-            </span>}
             {feedback && (
                 <span id={`story-points-feedback-${issueKey}`} className="story-points-editor-feedback" role={validationError || error ? 'alert' : 'status'}>
                     {feedback}

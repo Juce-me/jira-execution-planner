@@ -11,8 +11,8 @@ test.beforeAll(() => {
         import { createRoot } from 'react-dom/client';
         import PlanningReviewTable, { PlanningReviewScopeDialog } from './frontend/src/eng/PlanningReviewTable.jsx';
         import { createPlanningSprintReviewController } from './frontend/src/eng/usePlanningSprintReview.js';
-        const stories = Array.from({length:window.longReview?60:3},(_,i)=>i+1).map(id => ({id:String(id),key:'DEMO-'+id,fields:{summary:'Story '+id,customfield_10004:id,teamId:'alpha',teamName:'Alpha',projectKey:'DEMO',status:{name:'To Do'},priority:{name:'High'}}}));
-        const epics=[{key:'DEMO-10',epic:{id:'10',key:'DEMO-10',summary:'Epic summary',status:{name:'To Do'},priority:{name:'High'},teamName:'Own Team'},tasks:stories.slice(0,2),requirements:[]},{key:'DEMO-20',epic:{id:'20',key:'DEMO-20',summary:'Readiness Epic'},tasks:[],requirements:[{id:'required',team:{name:'Beta'}}]}];
+        const stories = Array.from({length:window.longReview?60:3},(_,i)=>i+1).map(id => ({id:String(id),key:'DEMO-'+id,fields:{summary:'Story '+id,customfield_10004:id,teamId:'alpha',teamName:window.longNames?(id===1?'Research Long Named Alpha Engineering Team':'Research Long Named Beta Engineering Team'):'Alpha',projectKey:'DEMO',status:{name:'To Do'},priority:{name:'High'}}}));
+        const epics=[{key:'DEMO-10',epic:{id:'10',key:'DEMO-10',summary:window.longNames?'Automate detailed calculations and adjustments across multiple supported integrations':'Epic summary',status:{name:'To Do'},priority:{name:'High'},teamName:'Own Team'},tasks:stories.slice(0,2),requirements:[]},{key:'DEMO-20',epic:{id:'20',key:'DEMO-20',summary:'Readiness Epic'},tasks:[],requirements:[{id:'required',team:{name:'Beta'}}]}];
         const columns=Array.from({length:8},(_,i)=>({id:'cost'+i,rowKind:'story',label:'Cost '+i,type:'number',aggregation:'sum',archived:false,order:i}));
         let saveCount=0; let savedSchema={schemaRevision:1,columns,layouts:{},capabilities:{canRead:true,canSave:true}};
         const controller=createPlanningSprintReviewController({fetchSchema:async()=>savedSchema,readValues:async(_,__,body)=>({cells:body.issueIds.flatMap(id=>columns.map(column=>({issueId:id,rowKind:body.rowKind,columnId:column.id,value:id==='1'?'2.000':'10.000',revision:1})))}),saveReview:async(_,__,payload)=>{saveCount++; savedSchema={...savedSchema,schemaRevision:savedSchema.schemaRevision+1,columns:controller.getState().columns,layouts:controller.getState().layouts}; return {...savedSchema,cells:payload.cellChanges.map(cell=>({...cell,revision:2}))}}});
@@ -28,9 +28,9 @@ test.beforeAll(() => {
     ` }, bundle: true, write: false, format: 'iife', define: { 'process.env.NODE_ENV': '"test"' } }).outputFiles[0].text;
     css = esbuild.buildSync({ entryPoints: [path.join(root, 'frontend/src/styles/dashboard.css')], bundle: true, write: false }).outputFiles[0].text;
 });
-async function install(page, longReview = false) {
+async function install(page, longReview = false, longNames = false) {
     await page.setContent(`<style>${css} *,*::before,*::after{animation:none!important;transition:none!important}</style><div id="root"></div>`);
-    await page.evaluate(value => {window.longReview=value},longReview);
+    await page.evaluate(({longReview,longNames}) => {window.longReview=longReview;window.longNames=longNames},{longReview,longNames});
     await page.addScriptTag({ content: js });
     await expect(page.getByRole('region', { name: 'Planning Sprint review' })).toBeVisible();
     await expect(page.getByText('Loading review…')).toHaveCount(0);
@@ -114,22 +114,36 @@ test('column creation controls share a compact baseline and height', async ({pag
     await page.screenshot({path:path.join(root,'tmp/217-ui/planning-review-controls.png'),fullPage:true});
 });
 
-for (const width of [390,1280]) test(`totals remain pinned and aligned while scrolling ${width}px`, async ({page}) => {
+for (const width of [390,1280]) test(`page owns vertical scrolling with aligned docked headers and totals at ${width}px`, async ({page}) => {
     await page.setViewportSize({width,height:850});await install(page,true);
     await page.getByRole('radio',{name:'Stories',exact:true}).click();
     const scroll=page.locator('.planning-review-scroll');
-    const footer=page.locator('tfoot .planning-review-selection');
-    await expect(footer).toBeInViewport();
-    const before=await footer.boundingBox();
-    await scroll.evaluate(node=>{node.scrollTop=500;node.scrollLeft=500});
-    const after=await footer.boundingBox();
-    expect(Math.abs(before.y-after.y)).toBeLessThan(1);
-    await expect(footer).toBeInViewport();
-    const totals=page.locator('tfoot .planning-review-storyPoints');
-    await expect(totals).toHaveText('1830');
-    const alignment=await page.locator('.planning-review-storyPoints').evaluateAll(nodes=>nodes.map(n=>n.getBoundingClientRect().x));
-    expect(Math.max(...alignment)-Math.min(...alignment)).toBeLessThan(1);
-    await page.screenshot({path:path.join(root,`tmp/217-ui/planning-review-pinned-${width}.png`),fullPage:true});
+    await page.screenshot({path:path.join(root,`tmp/217-ui/planning-single-scroll-${width}.png`),fullPage:false});
+    expect(await scroll.evaluate(node=>node.scrollHeight-node.clientHeight)).toBeLessThanOrEqual(1);
+    const first=page.locator('tbody tr').first();const before=await first.boundingBox();const startY=await page.evaluate(()=>scrollY);
+    await first.hover();await page.mouse.wheel(0,500);
+    await expect.poll(()=>page.evaluate(()=>scrollY)).toBeGreaterThan(startY+100);
+    const after=await first.boundingBox();const distance=await page.evaluate(()=>scrollY)-startY;expect(before.y-after.y).toBeCloseTo(distance,0);
+    expect(await scroll.evaluate(node=>node.scrollTop)).toBe(0);
+    const header=page.locator('.planning-review-docked-header'),footer=page.locator('.planning-review-docked-footer');
+    await expect(header).toBeInViewport();await expect(footer).toBeInViewport();
+    const footerBounds=await footer.boundingBox();expect(footerBounds.y+footerBounds.height).toBeCloseTo(850,0);
+    await scroll.evaluate(node=>{node.scrollLeft=500});
+    await expect.poll(()=>header.evaluate(node=>node.scrollLeft)).toBe(await scroll.evaluate(node=>node.scrollLeft));
+    await expect.poll(()=>footer.evaluate(node=>node.scrollLeft)).toBe(await scroll.evaluate(node=>node.scrollLeft));
+    const positions=await page.locator('.planning-review-storyPoints').evaluateAll(nodes=>nodes.map(node=>node.getBoundingClientRect().x));
+    expect(Math.max(...positions)-Math.min(...positions)).toBeLessThan(1);
+    await expect(footer.locator('.planning-review-storyPoints')).toHaveText('1830');
+    const keyBefore=await header.locator('.planning-review-key').boundingBox();
+    await footer.evaluate(node=>{node.scrollLeft=800});
+    await expect.poll(()=>scroll.evaluate(node=>node.scrollLeft)).toBe(await footer.evaluate(node=>node.scrollLeft));
+    await expect.poll(()=>header.evaluate(node=>node.scrollLeft)).toBe(await footer.evaluate(node=>node.scrollLeft));
+    const keyAfter=await header.locator('.planning-review-key').boundingBox();expect(keyAfter.x).toBeCloseTo(keyBefore.x,0);
+    await header.getByRole('button',{name:'Move Cost 0 column',exact:true}).press('ArrowRight');
+    await expect.poll(()=>page.evaluate(()=>window.harness.state().layouts.story.order.indexOf('cost1')<window.harness.state().layouts.story.order.indexOf('cost0'))).toBe(true);
+    await header.getByRole('button',{name:'Cost 0',exact:true}).click();
+    await page.screenshot({path:path.join(root,`tmp/217-ui/planning-single-scroll-${width}.png`),fullPage:false});
+    await page.evaluate(()=>scrollTo(0,0));await expect(header).toHaveCount(0);
 });
 
 for(const width of [390,1280]) test(`column tools open as anchored popups without moving the table at ${width}px`,async({page})=>{
@@ -182,23 +196,23 @@ for(const width of [390,1280]) test(`column tools open as anchored popups withou
 for(const mode of ['Epics','Stories']) test(`optional metadata hidden by default and explicit visibility persists in ${mode}`,async({page})=>{
     await install(page);
     await page.getByRole('radio',{name:mode,exact:true}).click();
-    for(const name of ['Component','Project','Capacity']) await expect(page.getByRole('columnheader',{name,exact:true})).toHaveCount(0);
+    for(const name of ['Component','Project','Capacity','Project Track']) await expect(page.getByRole('columnheader',{name,exact:true})).toHaveCount(0);
     await page.getByRole('button',{name:'Columns',exact:true}).click();
     const popup=page.getByRole('dialog',{name:'Review column management',exact:true});
-    for(const name of ['Component','Project','Capacity']) {
+    for(const name of ['Component','Project','Capacity','Project Track']) {
         await expect(popup.getByRole('checkbox',{name,exact:true})).not.toBeChecked();
         await popup.getByRole('checkbox',{name,exact:true}).check();
     }
     for(const name of ['Key','Summary','Status','Priority']) await expect(popup.getByRole('checkbox',{name,exact:true})).toHaveCount(0);
     await page.keyboard.press('Escape');
-    for(const name of ['Component','Project','Capacity']) await expect(page.getByRole('columnheader',{name,exact:true})).toHaveCount(1);
+    for(const name of ['Component','Project','Capacity','Project Track']) await expect(page.getByRole('columnheader',{name,exact:true})).toHaveCount(1);
     await page.getByRole('button',{name:'Save review',exact:true}).click();await page.evaluate(()=>window.harness.reload());
-    for(const name of ['Component','Project','Capacity']) await expect(page.getByRole('columnheader',{name,exact:true})).toHaveCount(1);
+    for(const name of ['Component','Project','Capacity','Project Track']) await expect(page.getByRole('columnheader',{name,exact:true})).toHaveCount(1);
     await page.getByRole('button',{name:'Columns',exact:true}).click();
-    for(const name of ['Component','Project','Capacity']) await popup.getByRole('checkbox',{name,exact:true}).uncheck();
+    for(const name of ['Component','Project','Capacity','Project Track']) await popup.getByRole('checkbox',{name,exact:true}).uncheck();
     await page.keyboard.press('Escape');
     await page.getByRole('button',{name:'Save review',exact:true}).click();await page.evaluate(()=>window.harness.reload());
-    for(const name of ['Component','Project','Capacity']) await expect(page.getByRole('columnheader',{name,exact:true})).toHaveCount(0);
+    for(const name of ['Component','Project','Capacity','Project Track']) await expect(page.getByRole('columnheader',{name,exact:true})).toHaveCount(0);
     await page.screenshot({path:path.join(root,`tmp/217-ui/optional-columns-${mode}.png`),fullPage:true});
 });
 
@@ -224,7 +238,7 @@ test('uncreated Epic appears and its awaiting Story has a linked, noneditable pl
     await page.getByRole('radio',{name:'Stories',exact:true}).click();
     const placeholder=page.locator('tbody tr').filter({hasText:'Story awaiting creation for Beta'});
     await expect(placeholder).toHaveCount(1);await expect(placeholder).toContainText('Not created');await expect(placeholder).toContainText('Awaiting creation');
-    await expect(placeholder.getByRole('link',{name:'DEMO-20',exact:true})).toHaveAttribute('href','https://jira.example/browse/DEMO-20');
+    await expect(placeholder.getByRole('link',{name:'Readiness Epic',exact:true})).toHaveAttribute('href','https://jira.example/browse/DEMO-20');
     await expect(placeholder.getByRole('checkbox')).toBeDisabled();await expect(placeholder.getByRole('textbox')).toHaveCount(0);
     await expect(placeholder.locator('.planning-review-storyPoints')).toHaveText('—');await expect(page.locator('tfoot .planning-review-storyPoints')).toHaveText('6');
     await page.screenshot({path:path.join(root,'tmp/217-ui/uncreated-story-placeholder.png'),fullPage:true});
@@ -237,7 +251,7 @@ for (const width of [1440, 2400]) test(`column widths fit their content instead 
     await page.screenshot({path:path.join(root,`tmp/217-ui/column-widths-${width}.png`),fullPage:true});
     expect(cells.Status.width).toBeLessThanOrEqual(150);
     expect(cells.Priority.width).toBeLessThanOrEqual(110);
-    expect(cells['Project Track'].width).toBeLessThanOrEqual(135);
+    expect(cells['Project Track']).toBeUndefined();
     expect(cells['Cost 0'].width).toBeLessThanOrEqual(105);
     for(const cell of Object.values(cells)) expect(cell.scroll).toBeLessThanOrEqual(cell.client+1);
 });
@@ -283,4 +297,28 @@ test('numeric headers, values, editors and totals align right; text aligns left'
         expect(values.length).toBeGreaterThan(0);for(const value of values)expect(value).toBe(alignment);
     }
     await page.screenshot({path:path.join(root,'tmp/217-ui/table-number-alignment.png'),fullPage:true});
+});
+
+for(const width of [390,1280]) test(`Summary and Teams in scope show full clipped values on hover and focus at ${width}px`,async({page})=>{
+    await page.setViewportSize({width,height:900});await install(page,false,true);
+    for(const column of ['summary','teamsInScope']){
+        const value=page.locator(`tbody .planning-review-${column} .planning-review-truncated-value`).first();
+        await value.scrollIntoViewIfNeeded();const full=await value.textContent();
+        expect(await value.evaluate(node=>node.scrollWidth>node.clientWidth+1)).toBe(true);
+        await value.hover();const readout=page.getByRole('tooltip').filter({hasText:full});await expect(readout).toBeVisible();
+        await value.focus();await expect(readout).toBeVisible();await value.press('Escape');await expect(readout).toHaveCount(0);
+    }
+    await page.locator('tbody .planning-review-summary .planning-review-truncated-value').first().hover();
+    await page.screenshot({path:`tmp/217-ui/review-trimmed-${width}.png`,fullPage:false});
+});
+
+for(const width of [390,1280]) test(`custom number editors stay inside stable compact rows at ${width}px`,async({page})=>{
+    await page.setViewportSize({width,height:900});await install(page);await page.getByRole('radio',{name:'Stories',exact:true}).click();
+    const input=page.getByRole('textbox',{name:'Cost 0 for DEMO-1',exact:true});
+    const geometry=()=>input.evaluate(node=>{const cell=node.closest('td'),row=cell.parentElement,r=node.getBoundingClientRect(),c=cell.getBoundingClientRect();return {inputHeight:r.height,height:row.getBoundingClientRect().height,width:c.width,inside:r.left>=c.left&&r.right<=c.right,shadow:getComputedStyle(node).boxShadow};});
+    const before=await geometry();
+    await input.click();await input.fill('999999999.999');
+    const after=await geometry();expect(after.inside).toBe(true);expect(after.height).toBe(before.height);expect(after.width).toBe(before.width);
+    expect(after.inputHeight).toBeLessThanOrEqual(21);expect(after.shadow).toBe('none');
+    await page.screenshot({path:path.join(root,`tmp/217-ui/custom-input-stable-${width}.png`),fullPage:false});
 });

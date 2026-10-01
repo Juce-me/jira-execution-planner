@@ -30,11 +30,13 @@ test('hierarchy projection keeps readiness-only Epics, orphan Stories and synthe
     assert.equal(reviewSelectionState(epics[2]).disabled, true);
     const rows = buildPlanningReviewRows({ epicGroups, visibleTasks: stories, mode: 'story' });
     assert.equal(rows.filter(row => row.rowKind === 'story').length, 3);
-    assert.equal(rows[0].epic, 'DEMO-10');
+    assert.equal(rows[0].epic, 'Epic');
+    assert.equal(rows[0].epicKey, 'DEMO-10');
     assert.equal(rows[0].projectTrack, 'Product');
     assert.equal(rows.filter(row => row.rowKind === 'requirement').length, 1);
     const placeholder=rows.find(row=>row.rowKind==='requirement');
     assert.equal(placeholder.epicKey,'DEMO-20');
+    assert.equal(placeholder.epic,'DEMO-20');
     assert.equal(placeholder.synthetic,true);
     assert.match(placeholder.summary,/Story awaiting creation for Beta/);
     assert.equal(reviewSelectionState(placeholder).disabled,true);
@@ -84,9 +86,9 @@ test('shared order places custom columns among Jira columns and keeps row identi
     assert.equal(columns.some(column=>column.id==='team'),false);
 });
 
-test('Component, Project and Capacity are optional while required identity and core facts stay visible', async()=>{
+test('Component, Project, Capacity and Project Track are optional while required identity and core facts stay visible', async()=>{
     const {buildPlanningReviewColumns,DEFAULT_REVIEW_HIDDEN_COLUMNS}=await model();
-    assert.deepEqual(DEFAULT_REVIEW_HIDDEN_COLUMNS,['components','project','capacity']);
+    assert.deepEqual(DEFAULT_REVIEW_HIDDEN_COLUMNS,['components','project','capacity','projectTrack']);
     for(const mode of ['epic','story']) {
         const options={mode,admittedProjectCount:2,admittedTeamCount:2};
         const all=buildPlanningReviewColumns(options);

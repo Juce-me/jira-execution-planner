@@ -1,6 +1,6 @@
 import * as React from 'react';
 
-export default function PlanningTableStickyStack({ overview, compactHeaderRef, onActivate, children }) {
+export default function PlanningTableStickyStack({ overview, compactHeaderRef, onActivate, toolbarRef, children }) {
     const ref = React.useRef(null);
     const activateRef = React.useRef(onActivate);
     activateRef.current = onActivate;
@@ -23,5 +23,5 @@ export default function PlanningTableStickyStack({ overview, compactHeaderRef, o
         onScroll();
         return () => { window.removeEventListener('scroll', onScroll); cancelAnimationFrame(frame); };
     }, [compactHeaderRef]);
-    return <div ref={ref} className="planning-review-sticky-stack">{children}{overview}</div>;
+    return <div ref={ref} className="planning-review-sticky-stack">{children}{overview}<div ref={toolbarRef} className="planning-review-toolbar-slot" /></div>;
 }

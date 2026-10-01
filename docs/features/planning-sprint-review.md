@@ -6,33 +6,34 @@ between List and a compact spreadsheet, including when no Stories are selected.
 The layout is a private browser presentation preference. The shared header,
 Sprint/Teams controls and filters retain their list width. Every Table scope,
 including multiple Teams, starts with the sticky Planning overview reduced to
-one desktop row of capacity and Product/Tech graph bars. Hide panel returns
+one desktop row of capacity and Product/Tech graph bars. Graph labels stay readable when either fill is hovered. Collapse panel returns
 expanded details to that same graph row. Show panel restores selection
 actions and per-Team capacity details without changing selection or fetching
 new datasets. List retains the full Planning overview. On narrow screens, the
 graphs stack to keep their values readable. Capacity errors remain visible in
 the compact row. Only the spreadsheet region widens; extra columns scroll inside it.
-Summary titles use the full cell width and wrap naturally in both read-only and
-editable profiles. Clicking an editable title opens a wrapping editor inside its
+Summary titles and Teams in scope use bounded single lines with ellipsis in both
+read-only and editable profiles. Hover or keyboard focus reveals full text using
+the shared in-app readout above table/sticky layers. Clicking an editable title opens a wrapping editor inside its
 cell; Enter or leaving the cell saves through Jira, and Escape cancels. Validation
 and recovery remain inline, without a Summary popup or large Save/Cancel controls.
 Status cells reuse the shared status chips in both read-only and editable profiles.
 Column creation aligns its compact input, type selector and actions on one baseline.
 Table headings and drag handles have no inherited button margins; custom inputs
 use compact 100px columns. Longer headings or values can widen a column rather
-than clipping, and Summary retains its wrapping width.
+than clipping; Summary and Teams in scope remain bounded with full-text readouts.
 In Table view, Filters precedes the capacity graphs in a shared sticky stack below
 the compact header. The first document scroll brings that stack into its sticky
 position. The shared `EngFilterControls` module occupies the second dashboard controls row,
 before Catch Up alerts and Planning capacity content; List also uses Filters-first
 ordering.
 Numeric headings, cells, editors and totals align right; text aligns left.
-The scrollable spreadsheet keeps column headings and totals visible at its top and bottom.
-Stories expose a linked parent Epic column. Assignee and Project Track are visible
-columns, without a Fields menu. Component, Project and Capacity are optional and
+Rows scroll with the page; column headings dock below the shared controls and totals remain visible at the viewport bottom until their natural row enters view.
+Stories expose the parent Epic summary in the Epic column, linked to that Epic in Jira (falling back to the key when its summary is missing). Assignee is a visible
+column, without a Fields menu. Component, Project, Capacity and Project Track are optional and
 hidden by default; use Columns to show or hide them. Saved visibility choices
 take precedence over defaults, including an explicitly saved all-visible layout. Story Points have a visible
-input and Save/Cancel controls after opening the existing signed-in Jira editor;
+in-cell input with Enter to save and Escape to cancel in the signed-in Jira editor;
 Epic Sprint SP remains a computed total. Story Capacity and Project Track
 reflect the parent Epic; capacity changes use the existing shared Department setting.
 Capacity chips retain a pale green Included or light gray Excluded background
@@ -99,3 +100,13 @@ Migration `20261001_0017` adds the dedicated review tables; `20261001_0018`
 adds shared column layouts without changing existing definitions or values. It is not applied to
 production by this implementation. Authenticated live Team editing and release
 acceptance require separate verification with an approved disposable Jira issue.
+
+Story Points edits use only the in-cell input: Enter saves to Jira, Escape cancels, and leaving the input discards the unsaved value. No Save/Cancel buttons are shown.
+
+In normal mode, the Epics/Stories and column toolbar sits directly above the spreadsheet. When sticky mode activates on scroll, the toolbar moves below capacity in the shared controls stack, following its width. Returning to the page top restores the toolbar above the table; selection and review drafts are preserved.
+
+In expanded Table mode, Collapse panel is part of the selection control line, without a separate row above it.
+
+Custom-cell inputs use a compact fixed height and vertical alignment; focus changes their border without adding a glow or changing column/row geometry.
+
+The spreadsheet uses the page’s vertical scroll; its wrapper only scrolls horizontally. While rows are on screen, column headings dock below the measured Filters/capacity/toolbar stack and totals dock at the viewport bottom until the natural total row becomes visible. Both rows use measured column widths and synchronized horizontal positions, including horizontal scrolling from the bottom total row. Rows above the docked headings are clipped so they cannot peek beside the narrower controls. Frozen identification columns, sorting, reordering, editing and shared review drafts are preserved.

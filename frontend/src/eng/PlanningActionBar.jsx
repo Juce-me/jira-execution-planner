@@ -33,6 +33,7 @@ export default function PlanningActionBar({
     onOpenSelectedInJira,
     planningLayout = 'list',
     onTogglePlanningLayout,
+    panelControl = null,
     statusTransitionTargetsCount = 0,
     statusTransitionSubmitting = false,
     statusTransitionError = '',
@@ -141,6 +142,7 @@ export default function PlanningActionBar({
                     {statusFeedback}
                 </span>
             )}
+            {panelControl}
         </div>
     );
 }

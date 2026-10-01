@@ -6,6 +6,7 @@ import { buildJiraBrowseLinkAnalytics } from '../analytics/externalLinks.js';
 import { reviewCellKey, newReviewColumnId, DEFAULT_REVIEW_HIDDEN_COLUMNS } from './planningReviewTableModel.js';
 import SegmentedControl from '../ui/SegmentedControl.jsx';
 import StatusPill from '../ui/StatusPill.jsx';
+import EpicHeaderValueReadout from './EpicHeaderValueReadout.jsx';
 import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
 import { buildPlanningReviewRows, buildPlanningReviewColumns, reviewSelectionState, reviewValue, sortPlanningReviewRows, planningReviewTotals } from './planningReviewTableModel.js';
 
@@ -34,6 +35,14 @@ function ReviewColumnPopover({ open, onClose, label, trigger, children, error })
             {children}{error && <p className="planning-review-guidance" role="alert">{error}</p>}
         </div>, target)}
     </span>;
+}
+
+function TrimmedValue({ value, children = value }) {
+    const editable = React.isValidElement(children) && typeof children.props.onOpen === 'function';
+    return <EpicHeaderValueReadout value={value} suppressed={editable && children.props.isOpen}
+        measureSelector={editable ? '.issue-summary-editor-trigger' : ''} nativeSelector={editable ? '.issue-summary-editor-trigger' : ''}>
+        {({ discoveryProps }) => <span {...discoveryProps} tabIndex={editable ? undefined : discoveryProps.tabIndex} className="planning-review-truncated-value">{children}</span>}
+    </EpicHeaderValueReadout>;
 }
 
 function Selection({ row, selectedKeys, onToggleStory, onSelectStories }) {
@@ -73,7 +82,7 @@ export function PlanningReviewScopeDialog({ review }) {
     </div></div>;
 }
 
-export default function PlanningReviewTable({ epicGroups = [], visibleTasks = [], selectedStoryKeys = new Set(), onToggleStory, onSelectStories, jiraUrl = '', review, getTeamInfo, admittedTeamCount, admittedProjectCount, renderPriorityIcon, renderFieldEditor, onReviewAction, excludedEpicSet = new Set() }) {
+export default function PlanningReviewTable({ epicGroups = [], visibleTasks = [], selectedStoryKeys = new Set(), onToggleStory, onSelectStories, jiraUrl = '', review, getTeamInfo, admittedTeamCount, admittedProjectCount, renderPriorityIcon, renderFieldEditor, onReviewAction, toolbarHost, excludedEpicSet = new Set() }) {
     const [mode, setMode] = React.useState('epic');
     const hidden = new Set(review.layouts?.[mode]?.hidden ?? DEFAULT_REVIEW_HIDDEN_COLUMNS);
     const draggedColumn = React.useRef(null);
@@ -90,15 +99,40 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
     const stableOrder = React.useRef(null);
     const rows = React.useMemo(() => buildPlanningReviewRows({ epicGroups, visibleTasks, mode, getTeamInfo }).map(row => ({ ...row, capacity: row.synthetic ? '' : excludedEpicSet.has(String(row.rowKind === 'epic' ? row.key : row.epicKey || '').toUpperCase()) ? 'Excluded' : 'Included' })), [epicGroups, visibleTasks, mode, getTeamInfo, excludedEpicSet]);
     const scroller = React.useRef(null);
-    React.useLayoutEffect(() => {
-        const resize = () => { if (scroller.current) scroller.current.style.maxHeight = `${Math.max(64, window.innerHeight - scroller.current.getBoundingClientRect().top - 16)}px`; };
-        const observer = new ResizeObserver(resize); observer.observe(scroller.current.parentElement);
-        window.addEventListener('resize', resize); window.addEventListener('scroll', resize, { passive: true }); resize();
-        return () => { observer.disconnect(); window.removeEventListener('resize', resize); window.removeEventListener('scroll', resize); };
-    }, []);
+    const dockedHeader = React.useRef(null), dockedFooter = React.useRef(null);
+    const [dock, setDock] = React.useState(null);
     const allColumns = buildPlanningReviewColumns({ rows, mode, customColumns: review.columns, admittedTeamCount, admittedProjectCount, layout: review.layouts?.[mode] });
     const layoutColumns = buildPlanningReviewColumns({ rows, mode, customColumns: review.columns, admittedTeamCount: 2, admittedProjectCount: 2, layout: review.layouts?.[mode] });
     const columns = allColumns.filter(column => column.required || !hidden.has(column.id));
+    const columnSignature = columns.map(column => `${column.id}:${column.type}`).join(',');
+    React.useLayoutEffect(() => {
+        const node = scroller.current, table = node.querySelector('table');
+        const stack = document.querySelector('.planning-review-sticky-stack');
+        let frame;
+        const measure = () => {
+            const bounds = node.getBoundingClientRect();
+            const head = table.tHead.getBoundingClientRect(), foot = table.tFoot.getBoundingClientRect();
+            const top = Math.max(0, stack?.getBoundingClientRect().bottom || 0);
+            const widths = Array.from(table.tHead.rows[0].cells, cell => cell.getBoundingClientRect().width);
+            const header = head.top < top && foot.top > top + head.height;
+            const footer = bounds.top < window.innerHeight - foot.height && foot.bottom > window.innerHeight && bounds.bottom > top + head.height;
+            // The controls are narrower than the sheet; rows must not show beside them above the docked headings.
+            node.style.clipPath = header ? `inset(${Math.max(0, top + head.height - bounds.top)}px 0 0 0)` : '';
+            const next = { top, left: bounds.left + node.clientLeft, width: node.clientWidth, widths, header, footer };
+            setDock(previous => JSON.stringify(previous) === JSON.stringify(next) ? previous : next);
+            for (const ref of [dockedHeader, dockedFooter]) if (ref.current) ref.current.scrollLeft = node.scrollLeft;
+        };
+        const schedule = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(measure); };
+        const observer = new ResizeObserver(schedule);
+        observer.observe(table); observer.observe(node); if (stack) observer.observe(stack);
+        window.addEventListener('resize', schedule); window.addEventListener('scroll', schedule, { passive: true });
+        node.addEventListener('scroll', schedule, { passive: true }); measure();
+        return () => { observer.disconnect(); cancelAnimationFrame(frame); window.removeEventListener('resize', schedule); window.removeEventListener('scroll', schedule); node.removeEventListener('scroll', schedule); };
+    }, [columnSignature]);
+    React.useLayoutEffect(() => {
+        for (const ref of [dockedHeader, dockedFooter]) if (ref.current) ref.current.scrollLeft = scroller.current.scrollLeft;
+    }, [dock]);
+
     const sorted = sortPlanningReviewRows(rows, sort, columns, review.cells);
     if (!editing) stableOrder.current = sorted.map(row => row.id);
     const displayed = editing && stableOrder.current ? [...rows].sort((a, b) => stableOrder.current.indexOf(a.id) - stableOrder.current.indexOf(b.id)) : sorted;
@@ -137,7 +171,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
         const ids = movableIds(), index = ids.indexOf(column.id), target = ids[index + direction];
         if (target) moveColumn(column.id, target, direction > 0);
     };
-    return <section className="planning-review-region" aria-label="Planning Sprint review">
+    const toolbar = (
         <div className="planning-review-toolbar">
             <div className="stats-control-group"><SegmentedControl className="eng-mode-control" ariaLabel="Planning review rows" options={[{ value: 'epic', label: 'Epics' }, { value: 'story', label: 'Stories' }]} value={mode} onChange={changeMode} /></div>
             <ReviewColumnPopover open={addOpen} onClose={() => { setAddOpen(false); setFormError(''); }} label="Add review column" error={formError}
@@ -173,35 +207,50 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
                 </div>
             </ReviewColumnPopover>
         </div>
+    );
+    const header = (floating = false) => <thead><tr><th className="planning-review-selection planning-review-text">Select</th>{columns.map(column => <th key={column.id} aria-label={column.label} className={`planning-review-${column.id}${column.custom ? ' planning-review-custom' : ''} planning-review-${column.type === 'number' ? 'numeric' : 'text'}${dropColumn === column.id ? ' planning-review-drop' : ''}`}
+                onDragOver={event => { if (editable && draggedColumn.current && !['key', 'summary'].includes(column.id)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDropColumn(column.id); } }}
+                onDrop={event => { event.preventDefault(); const source = draggedColumn.current; moveColumn(source, column.id, event.clientX > event.currentTarget.getBoundingClientRect().left + event.currentTarget.offsetWidth / 2); draggedColumn.current = null; setDropColumn(null); }}>
+                {!['key', 'summary'].includes(column.id) && <button type="button" className="planning-review-drag" tabIndex={!floating && dock?.header ? -1 : undefined} aria-hidden={!floating && dock?.header ? true : undefined} draggable={editable} disabled={!editable} aria-label={`Move ${column.label} column`} title="Drag to move column"
+                    onDragStart={event => { draggedColumn.current = column.id; event.dataTransfer.setData('text/plain', column.id); event.dataTransfer.effectAllowed = 'move'; }} onDragEnd={() => { draggedColumn.current = null; setDropColumn(null); }}
+                    onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); reorder(column, event.key === 'ArrowLeft' ? -1 : 1); } }}>⠿</button>}<button type="button" className="planning-review-heading" tabIndex={!floating && dock?.header ? -1 : undefined} aria-hidden={!floating && dock?.header ? true : undefined} onClick={event => changeSort(column, event.shiftKey)}>{column.label}{sort.some(item => item.columnId === column.id) && <span> {sort.findIndex(item => item.columnId === column.id) + 1}{sort.find(item => item.columnId === column.id)?.direction === 'desc' ? '↓' : '↑'}</span>}</button></th>)}</tr></thead>;
+    const footer = <tfoot><tr><th className="planning-review-selection planning-review-text">Total</th>{columns.map(column => <td key={column.id} className={`planning-review-${column.id}${column.custom ? ' planning-review-custom' : ''} planning-review-${column.type === 'number' ? 'numeric' : 'text'}`}>{column.id === 'key' ? (review.dirty ? 'Draft' : '') : totals[column.id] ?? ''}</td>)}</tr></tfoot>;
+    const dockedTable = (kind, content, ref) => <div ref={ref} aria-hidden={kind === 'footer' ? true : undefined}
+        onScroll={event => { scroller.current.scrollLeft = event.currentTarget.scrollLeft; }}
+        onWheel={event => { if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) { scroller.current.scrollLeft += event.deltaX; } }} className={`planning-review-docked-${kind}`} style={{ left: dock.left, top: kind === 'header' ? dock.top : undefined, bottom: kind === 'footer' ? 0 : undefined, width: dock.width }}>
+        <table className="planning-review-table planning-review-docked-table" role="presentation" style={{ width: dock.widths.reduce((sum, width) => sum + width, 0) }}>
+            <colgroup>{dock.widths.map((width, index) => <col key={index} style={{ width }} />)}</colgroup>{content}
+        </table>
+    </div>;
+    return <section className="planning-review-region" aria-label="Planning Sprint review">
+        {toolbarHost ? createPortal(toolbar, toolbarHost) : toolbar}
         {!review.capabilities?.canSave && !review.loading && <p className="planning-review-guidance">{review.capabilities?.reason === 'database_required' ? 'Review saving requires the application database.' : review.capabilities?.reason || 'Review saving is unavailable in this deployment.'}</p>}
         {review.error && <p className="planning-review-guidance" role="alert">{review.error}</p>}
         {(review.conflict || review.unconfirmed) && <div className="planning-review-recovery"><span>Your draft stays local until you choose a recovery action.</span><button type="button" className="planning-action-button" disabled={review.loading || review.saving} onClick={() => { void review.loadCurrent(); trackedAction('load_current_review'); }}>Load current and discard draft</button><button type="button" className="planning-action-button" disabled={review.loading || review.saving} onClick={() => { void review.reapply(); trackedAction('reapply_review'); }}>Refresh and reapply draft</button></div>}
         {formError && !addOpen && !columnsOpen && <p role="alert" className="planning-review-guidance">{formError}</p>}
         <div ref={scroller} className="planning-review-scroll" tabIndex={0} aria-label="Planning review spreadsheet">
-            <table className="planning-review-table"><thead><tr><th className="planning-review-selection planning-review-text">Select</th>{columns.map(column => <th key={column.id} aria-label={column.label} className={`planning-review-${column.id}${column.custom ? ' planning-review-custom' : ''} planning-review-${column.type === 'number' ? 'numeric' : 'text'}${dropColumn === column.id ? ' planning-review-drop' : ''}`}
-                onDragOver={event => { if (editable && draggedColumn.current && !['key', 'summary'].includes(column.id)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDropColumn(column.id); } }}
-                onDrop={event => { event.preventDefault(); const source = draggedColumn.current; moveColumn(source, column.id, event.clientX > event.currentTarget.getBoundingClientRect().left + event.currentTarget.offsetWidth / 2); draggedColumn.current = null; setDropColumn(null); }}>
-                {!['key', 'summary'].includes(column.id) && <button type="button" className="planning-review-drag" draggable={editable} disabled={!editable} aria-label={`Move ${column.label} column`} title="Drag to move column"
-                    onDragStart={event => { draggedColumn.current = column.id; event.dataTransfer.setData('text/plain', column.id); event.dataTransfer.effectAllowed = 'move'; }} onDragEnd={() => { draggedColumn.current = null; setDropColumn(null); }}
-                    onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); reorder(column, event.key === 'ArrowLeft' ? -1 : 1); } }}>⠿</button>}<button type="button" className="planning-review-heading" onClick={event => changeSort(column, event.shiftKey)}>{column.label}{sort.some(item => item.columnId === column.id) && <span> {sort.findIndex(item => item.columnId === column.id) + 1}{sort.find(item => item.columnId === column.id)?.direction === 'desc' ? '↓' : '↑'}</span>}</button></th>)}</tr></thead>
+            <table className={`planning-review-table${dock?.header ? ' planning-review-header-docked' : ''}${dock?.footer ? ' planning-review-footer-docked' : ''}`}>{header()}
             <tbody>{displayed.map(row => <tr key={`${row.rowKind}:${row.id || row.key}`} className={row.synthetic ? 'planning-review-synthetic' : ''}>
                 <td className="planning-review-selection"><Selection row={row} selectedKeys={selectedStoryKeys} onToggleStory={onToggleStory} onSelectStories={onSelectStories} /></td>
                 {columns.map(column => <td key={column.id} className={`planning-review-${column.id}${column.custom ? ' planning-review-custom' : ''} planning-review-${column.type === 'number' ? 'numeric' : 'text'}`}>
                     {column.custom ? <CustomCell row={row} column={column} review={review} editing={editing === row.id} setEditing={setEditing} focusNew={newColumnId === column.id && row === displayed.find(item => !item.synthetic && item.issueId)} />
                         : column.id === 'key' ? (row.synthetic ? row.rowKind === 'requirement' ? 'Not created' : '—' : <TrackedExternalLink href={`${jiraUrl.replace(/\/+$/, '')}/browse/${encodeURIComponent(row.key)}`} target="_blank" rel="noopener noreferrer" analyticsMeta={buildJiraBrowseLinkAnalytics({ issueKind: row.rowKind, sourceSurface: 'planning' })}>{row.key}</TrackedExternalLink>)
-                        : column.id === 'summary' ? <>{field(row, 'summary', row.summary)}{row.rowKind === 'epic' && row.requirements?.length > 0 && <span className="planning-review-requirement">{row.requirements.length} uncreated {row.requirements.length === 1 ? 'Story' : 'Stories'}</span>}{row.rowKind === 'story' && !row.epicKey && <span className="planning-review-requirement">No Epic</span>}</>
+                        : column.id === 'summary' ? <><TrimmedValue value={row.summary}>{field(row, 'summary', row.summary)}</TrimmedValue>{row.rowKind === 'epic' && row.requirements?.length > 0 && <span className="planning-review-requirement">{row.requirements.length} uncreated {row.requirements.length === 1 ? 'Story' : 'Stories'}</span>}{row.rowKind === 'story' && !row.epicKey && <span className="planning-review-requirement">No Epic</span>}</>
                         : column.id === 'priority' ? field(row, 'priority', <span>{renderPriorityIcon?.(row.priority)} {row.priority || '—'}</span>)
                         : column.id === 'storyPoints' ? (row.rowKind === 'requirement' ? '—' : row.rowKind === 'story' ? field(row, 'storyPoints', row.storyPoints ?? 0) : row.storyPoints ?? 0)
+                        : column.id === 'teamsInScope' ? <TrimmedValue value={reviewValue(row, column, review.cells) || '—'} />
                         : column.id === 'team' ? field(row, 'team', row.team?.name || 'Unknown Team')
-                        : column.id === 'epic' ? (row.epicKey ? <TrackedExternalLink href={`${jiraUrl.replace(/\/+$/, '')}/browse/${encodeURIComponent(row.epicKey)}`} target="_blank" rel="noopener noreferrer" analyticsMeta={buildJiraBrowseLinkAnalytics({ issueKind: 'epic', sourceSurface: 'planning' })}>{row.epicKey}</TrackedExternalLink> : row.epic || '—')
+                        : column.id === 'epic' ? (row.epicKey ? <TrackedExternalLink href={`${jiraUrl.replace(/\/+$/, '')}/browse/${encodeURIComponent(row.epicKey)}`} target="_blank" rel="noopener noreferrer" analyticsMeta={buildJiraBrowseLinkAnalytics({ issueKind: 'epic', sourceSurface: 'planning' })}>{row.epic || row.epicKey}</TrackedExternalLink> : row.epic || '—')
                         : column.id === 'capacity' ? (row.synthetic ? '—' : field(row, 'inclusion', excludedEpicSet.has(String(row.rowKind === 'epic' ? row.key : row.epicKey || '').toUpperCase()) ? 'Excluded' : 'Included'))
                         : column.id === 'projectTrack' ? field(row, 'projectTrack', row.projectTrack || '—')
                         : column.id === 'assignee' ? (row.synthetic ? '—' : field(row, 'assignee', row.assignee || 'Unassigned'))
                         : column.id === 'status' ? (row.rowKind === 'requirement' ? 'Awaiting creation' : field(row, 'status', <StatusPill label={row.status || '—'} className={getIssueStatusClassName(row.status)} />)) : reviewValue(row, column, review.cells) || '—'}
                 </td>)}
 
-            </tr>)}</tbody><tfoot><tr><th className="planning-review-selection planning-review-text">Total</th>{columns.map(column => <td key={column.id} className={`planning-review-${column.id}${column.custom ? ' planning-review-custom' : ''} planning-review-${column.type === 'number' ? 'numeric' : 'text'}`}>{column.id === 'key' ? (review.dirty ? 'Draft' : '') : totals[column.id] ?? ''}</td>)}</tr></tfoot></table>
+            </tr>)}</tbody>{footer}</table>
         </div>
+        {dock?.header && createPortal(dockedTable('header', header(true), dockedHeader), document.body)}
+        {dock?.footer && createPortal(dockedTable('footer', footer, dockedFooter), document.body)}
         {!rows.length && <p className="planning-review-guidance">No rows in this scope.</p>}
     </section>;
 }

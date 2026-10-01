@@ -855,6 +855,7 @@ import {
             const [canUndoPlanningSelection, setCanUndoPlanningSelection] = useState(false);
             const [showPlanning, setShowPlanning] = useState(savedPrefsRef.current.showPlanning ?? false);
             const [planningLayout, setPlanningLayout] = useState(savedPrefsRef.current.planningLayout === 'list' ? 'list' : 'table');
+            const [planningToolbarHost, setPlanningToolbarHost] = useState(null);
             const [planningPanelExpanded, setPlanningPanelExpanded] = useState(null);
             const [showStats, setShowStats] = useState(savedPrefsRef.current.showStats ?? false);
             const [showScenario, setShowScenario] = useState(savedPrefsRef.current.showScenario ?? false);
@@ -14530,7 +14531,7 @@ import {
                 };
                 if (editorField === 'summary') return <IssueSummaryEditor {...common} />;
                 if (editorField === 'team') return <IssueTeamEditor {...common} />;
-                if (editorField === 'storyPoints') return <StoryPointsEditor {...common} showActions currentValue={row.issue?.fields?.customfield_10004 ?? null} onSubmit={issueFieldEdits.submit} />;
+                if (editorField === 'storyPoints') return <StoryPointsEditor {...common} currentValue={row.issue?.fields?.customfield_10004 ?? null} onSubmit={issueFieldEdits.submit} />;
                 return <IssuePersonEditor {...common} field="assignee" fieldLabel="Assignee" currentValue={row.issue?.fields?.assignee || row.issue?.assignee || null}
                     suggestions={active ? issueFieldEdits.suggestions : []} query={active ? issueFieldEdits.searchQuery : ''} searching={active && issueFieldEdits.searching}
                     onSearch={issueFieldEdits.search} jiraUrl={jiraUrl} />;
@@ -15352,7 +15353,7 @@ import {
                         )}
                     </div>
 
-                    {shouldRenderEngTaskList && !sprintsLoading && <EngFilterControls
+                    {shouldRenderEngTaskList && !sprintsLoading && <EngFilterControls planningToolbarRef={setPlanningToolbarHost}
                         engFilters={engCatchUpFilters} boardColumns={activeGroup?.board?.columns || []} renderPriorityIcon={renderPriorityIcon} onFacetChange={handleEngFacetChange} onClearFacets={clearEngFacetFilters} onFilterBarHeightChange={handleFilterBarHeightChange}
                         hasInitiativeData={hasInitiativeData} groupByInitiative={groupByInitiative} setGroupByInitiative={setGroupByInitiativeChoice} InitiativeIcon={InitiativeIcon}
                         engEpicSort={engEpicSort} setEngEpicSort={handleEngEpicSortChange} hierarchyCounts={engWorkHierarchy.counts} visibleTasksForList={visibleTasksForList}
@@ -17442,7 +17443,7 @@ import {
                             {shouldRenderEngTaskList && (
                                 <EngView
                                     selectedView={selectedView} sprintCatalogLoading={sprintsLoading} InitiativeIcon={InitiativeIcon}
-                                    planningTable={showPlanning && planningLayout === 'table' ? <PlanningReviewTable
+                                    planningTable={showPlanning && planningLayout === 'table' ? <PlanningReviewTable toolbarHost={compactStickyVisible ? planningToolbarHost : null}
                                         epicGroups={epicGroups} visibleTasks={visibleTasksForList}
                                         selectedStoryKeys={new Set(Object.keys(selectedTasks).filter(key => selectedTasks[key]))}
                                         onToggleStory={task => toggleTaskSelection(task.key)} onSelectStories={selectPlanningReviewStories}

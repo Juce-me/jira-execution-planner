@@ -63,8 +63,8 @@ export function buildPlanningReviewRows({ epicGroups = [], visibleTasks = [], mo
         const requirements = group.requirements || [];
         const realEpic = group.key && group.key !== 'NO_EPIC' && group.epic?.key && group.epic.key !== 'NO_EPIC';
         if (mode === 'story') {
-            rows.push(...children.map(task => ({ ...issueRow(task, 'story', getTeamInfo), epicKey: realEpic ? group.key : null, epic: realEpic ? group.key : 'No Epic', projectTrack: realEpic ? group.epic.projectTrack || '' : '' })));
-            rows.push(...requirements.map(requirement => ({ id: requirement.id, rowKind: 'requirement', key: '', summary: `${group.epic?.summary || group.key}: Story awaiting creation for ${requirement.team?.name || 'Unknown Team'}`, synthetic: true, requirements: [requirement], children: [], storyPoints: 0, team: requirement.team, project: group.epic?.projectKey || '', epicKey: realEpic ? group.key : null, epic: realEpic ? group.key : 'No Epic', projectTrack: group.epic?.projectTrack || '' })));
+            rows.push(...children.map(task => ({ ...issueRow(task, 'story', getTeamInfo), epicKey: realEpic ? group.key : null, epic: realEpic ? group.epic.summary || group.key : 'No Epic', projectTrack: realEpic ? group.epic.projectTrack || '' : '' })));
+            rows.push(...requirements.map(requirement => ({ id: requirement.id, rowKind: 'requirement', key: '', summary: `${group.epic?.summary || group.key}: Story awaiting creation for ${requirement.team?.name || 'Unknown Team'}`, synthetic: true, requirements: [requirement], children: [], storyPoints: 0, team: requirement.team, project: group.epic?.projectKey || '', epicKey: realEpic ? group.key : null, epic: realEpic ? group.epic.summary || group.key : 'No Epic', projectTrack: group.epic?.projectTrack || '' })));
         } else if (realEpic) {
             const row = issueRow(group.epic, 'epic', getTeamInfo);
             row.children = children;
@@ -92,7 +92,7 @@ export function reviewSelectionState(row, selectedKeys = new Set()) {
     return { checked: tasks.length > 0 && selected === tasks.length, mixed: selected > 0 && selected < tasks.length, disabled: tasks.length === 0, tasks };
 }
 
-export const DEFAULT_REVIEW_HIDDEN_COLUMNS = ['components', 'project', 'capacity'];
+export const DEFAULT_REVIEW_HIDDEN_COLUMNS = ['components', 'project', 'capacity', 'projectTrack'];
 
 export function buildPlanningReviewColumns({ rows = [], mode = 'epic', customColumns = [], hidden = new Set(), admittedTeamCount, admittedProjectCount, layout = {} } = {}) {
     const teams = new Set(rows.flatMap(row => row.rowKind === 'epic' ? row.teamsInScope || [] : [row.team?.name || 'Unknown Team']));
@@ -108,7 +108,7 @@ export function buildPlanningReviewColumns({ rows = [], mode = 'epic', customCol
     if ((admittedProjectCount ?? projects.size) > 1) columns.push({ id: 'project', label: 'Project', type: 'text', optional: true });
     if (mode === 'epic') columns.push({ id: 'team', label: 'Epic Team', type: 'text', optional: true });
     if (mode === 'story') columns.push({ id: 'epic', label: 'Epic', type: 'text', required: true });
-    columns.push({ id: 'assignee', label: 'Assignee', type: 'text', optional: true }, { id: 'components', label: 'Component', type: 'text', optional: true }, { id: 'capacity', label: 'Capacity', type: 'text', optional: true }, { id: 'projectTrack', label: 'Project Track', type: 'text', required: true });
+    columns.push({ id: 'assignee', label: 'Assignee', type: 'text', optional: true }, { id: 'components', label: 'Component', type: 'text', optional: true }, { id: 'capacity', label: 'Capacity', type: 'text', optional: true }, { id: 'projectTrack', label: 'Project Track', type: 'text', optional: true });
     columns.push(...customColumns.filter(column => column.rowKind === mode && !column.archived).sort((a, b) => a.order - b.order).map(column => ({ ...column, custom: true })));
     const order = new Map((layout.order || []).map((id, index) => [id, index]));
     const pinned = columns.filter(column => ['key', 'summary'].includes(column.id));

@@ -3,6 +3,7 @@ import { flushSync } from 'react-dom';
 import { REMOVE_FADE_MS } from '../issues/IssueCard.jsx';
 import { sortTasksByPriority } from './engTaskUtils.js';
 import { createEpicRefreshController } from './epicRefreshController.js';
+import { recomputeMissingPlanningInfo } from './epicRefreshAlerts.js';
 import { glareDelayMs, playGlare, selectGlareKeys } from './epicRefreshGlare.js';
 import { mergeEpicStories, patchEpicScopeEntries, patchStoryCopies } from './epicRefreshPatch.js';
 
@@ -47,6 +48,7 @@ export function useEpicRefresh(inputs) {
     const leavingRef = React.useRef(new Set());
     const timersRef = React.useRef(new Set());
     const controllerRef = React.useRef(null);
+    const alertVersionAtClick = React.useRef(new Map());
     const [epicStates, setEpicStates] = React.useState({});
     const [leavingKeys, setLeavingKeys] = React.useState(() => new Set());
     const [announcement, setAnnouncement] = React.useState('');
@@ -168,6 +170,11 @@ export function useEpicRefresh(inputs) {
             if (update.epicChanged) playGlare(newHeader);
 
             if (!newHeader && hadFocus) rescueFocus(headerIndex);
+            // Catch Up only: the held Missing Info entries follow the refreshed stories with no request; a newer alert cohort wins.
+            const { setters, sourceSurface, getAlertVersion } = latest.current;
+            if (sourceSurface === 'catch_up' && getAlertVersion?.() === alertVersionAtClick.current.get(epicKey)) {
+                setters.setMissingPlanningInfoTasks?.(prev => recomputeMissingPlanningInfo({ held: prev, refreshedStories: update.fetchedStories, epicKey }));
+            }
             latest.current.afterApply?.(update);
             return { hiddenCount };
         };
@@ -182,7 +189,10 @@ export function useEpicRefresh(inputs) {
         });
 
         controllerRef.current = createEpicRefreshController({
-            loadEpicRefresh: args => latest.current.loadEpicRefresh(args),
+            loadEpicRefresh: args => {
+                alertVersionAtClick.current.set(args.epicKey, latest.current.getAlertVersion?.());
+                return latest.current.loadEpicRefresh(args);
+            },
             readGuards: epicKey => latest.current.readGuards(epicKey),
             readHeld: epicKey => {
                 const state = readState();

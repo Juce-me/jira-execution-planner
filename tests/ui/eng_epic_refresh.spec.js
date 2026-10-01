@@ -1771,4 +1771,151 @@ test('27. a refresh that adds a story skips the department-wide dependencies fet
     ['E1-S13', 'E2-S01', 'E3-S01'].forEach(key => expect(wide.body.keys, `the global fetch covers ${key}`).toContain(key));
 });
 
+// ---- tests 28-33 (Task 8: client-derived alerts follow the refresh) ----
+
+// A /api/missing-info entry as the endpoint emits it (nested fields.missingFields).
+function missingInfoEntry(story, missingFields) {
+    const { id, key, fields } = story;
+    return { id, key, fields: { ...fields, customfield_10004: fields.customfield_10004, customfield_10101: fields.sprint, missingFields } };
+}
+
+// Serves /api/missing-info from the live scenario so the held entries reflect the server's state at load.
+function serveMissingInfo(ctx, build) {
+    ctx.respond('/api/missing-info', ({ json }) => json({ issues: build(ctx.scenario), epics: [], count: 0, epicCount: 0 }));
+}
+
+const missingRows = page => page.locator('#eng-alert-missing .alert-story');
+const missingInfoCalls = calls => calls.filter(call => call.pathname === '/api/missing-info');
+
+const alertRequestPaths = new Set(['/api/missing-info', '/api/backlog-epics', '/api/eng/story-readiness']);
+const alertRequests = calls => calls.filter(call => alertRequestPaths.has(call.pathname)
+    || (call.pathname === '/api/tasks-with-team-name' && call.params.purpose && call.params.purpose !== 'epic-refresh'));
+const setStory = (ctx, key, fields) => Object.assign(ctx.scenario.stories.find(story => story.key === key).fields, fields);
+const entryNamesFor = { 'E1-S02': ['Story Points'], 'E1-S04': ['Story Points'], 'E1-S05': ['Story Points'] };
+
+// Three EPIC-1 stories start with empty Story Points; the held /api/missing-info entries mirror what the server said at load.
+async function openWithMissingInfo(page) {
+    const ctx = await mockDashboard(page);
+    Object.keys(entryNamesFor).forEach(key => setStory(ctx, key, { customfield_10004: null }));
+    serveMissingInfo(ctx, scenario => Object.keys(entryNamesFor).map(key => missingInfoEntry(scenario.stories.find(story => story.key === key), entryNamesFor[key])));
+    await openCatchUp(page, ctx);
+    await expect(missingRows(page)).toHaveCount(3);
+    return ctx;
+}
+
+test('28. Story Points from empty to a value removes that story\'s Missing Info entry with no alert request', async ({ page }) => {
+    const ctx = await openWithMissingInfo(page);
+    setStory(ctx, 'E1-S02', { customfield_10004: 3 });
+    setStory(ctx, 'E1-S05', { customfield_10004: 0 }); // still not estimated: the endpoint treats 0 as missing
+    const since = ctx.calls.length;
+    await clickRefresh(page, 'EPIC-1');
+    await expect.poll(() => epicRefreshCalls(ctx.calls.slice(since)).length).toBe(2);
+    await expectRefreshSettled(page, 'EPIC-1');
+
+    await expect(missingRows(page)).toHaveCount(2);
+    await expect(missingRows(page).filter({ hasText: 'E1-S02' })).toHaveCount(0);
+    for (const key of ['E1-S04', 'E1-S05']) {
+        const row = missingRows(page).filter({ hasText: key });
+        await expect(row).toHaveCount(1);
+        await expect(row.locator('.alert-pill.status')).toHaveText('Missing: Story Points');
+    }
+    await expect(missingRows(page).locator('.alert-pill.status').filter({ hasText: 'Assignee' })).toHaveCount(0);
+    await page.waitForTimeout(600); // a late alert request would show up here
+    expect(alertRequests(ctx.calls.slice(since)).map(call => `${call.method} ${call.pathname}${call.search}`)).toEqual([]);
+    assertScopedCalls(ctx.calls, since, 'EPIC-1', storyKeysOf(ctx.scenario, 'EPIC-1'));
+});
+
+test('29. a refreshed story that reached a terminal status drops its Missing Info entry', async ({ page }) => {
+    const ctx = await openWithMissingInfo(page);
+    setStory(ctx, 'E1-S04', { status: { name: 'Done' } }); // still has no Story Points: only the terminal status removes it
+    const since = ctx.calls.length;
+    await clickRefresh(page, 'EPIC-1');
+    await expect.poll(() => epicRefreshCalls(ctx.calls.slice(since)).length).toBe(2);
+    await expectRefreshSettled(page, 'EPIC-1');
+    await expect(missingRows(page).filter({ hasText: 'E1-S04' })).toHaveCount(0);
+    await expect(missingRows(page)).toHaveCount(2);
+    expect(alertRequests(ctx.calls.slice(since))).toEqual([]);
+});
+
+test('30. an alert the user dismissed stays dismissed after a refresh', async ({ page }) => {
+    const ctx = await openWithMissingInfo(page);
+    await missingRows(page).filter({ hasText: 'E1-S04' }).locator('.alert-remove').click();
+    await expect(missingRows(page)).toHaveCount(2);
+    setStory(ctx, 'E1-S02', { customfield_10004: 3 });
+    setStory(ctx, 'E1-S05', { summary: 'E1-S05 retitled by the server' }); // a changed entry the refresh rewrites in place
+    const since = ctx.calls.length;
+    await clickRefresh(page, 'EPIC-1');
+    await expect.poll(() => epicRefreshCalls(ctx.calls.slice(since)).length).toBe(2);
+    await expectRefreshSettled(page, 'EPIC-1');
+    await expect(taskCard(page, 'E1-S05')).toContainText('E1-S05 retitled by the server');
+    await expect(missingRows(page)).toHaveCount(1);
+    await expect(missingRows(page).first()).toContainText('E1-S05 · E1-S05 retitled by the server');
+    await expect(missingRows(page).filter({ hasText: 'E1-S04' })).toHaveCount(0);
+});
+
+test('31. an alert cohort started during the refresh owns the result, the per-epic alert update is discarded', async ({ page }) => {
+    const ctx = await openWithMissingInfo(page);
+    const epicGate = deferred();
+    ctx.respond(call => call.params.purpose === 'epic-refresh', async () => { await epicGate.promise; });
+    setStory(ctx, 'E1-S02', { customfield_10004: 3 });
+    await clickRefresh(page, 'EPIC-1');
+    await expect.poll(() => epicRefreshCalls(ctx.calls).length).toBe(2);
+    await expect(refreshButton(page, 'EPIC-1')).toHaveAttribute('aria-busy', 'true');
+
+    // A confirmed status change re-arms the alert cohort (version bump); its /api/missing-info answer is held back.
+    const cohortGate = deferred();
+    const sinceEdit = ctx.calls.length;
+    ctx.respond('/api/missing-info', async () => { await cohortGate.promise; });
+    await confirmStatusChange(page, ctx, { kind: 'story', key: 'E1-S03', target: 'In Progress' });
+    await expect.poll(() => missingInfoCalls(ctx.calls.slice(sinceEdit)).length).toBeGreaterThan(0);
+    epicGate.resolve();
+    await expect(taskCard(page, 'E1-S02')).toBeAttached();
+    await expectRefreshSettled(page, 'EPIC-1');
+    await page.waitForTimeout(500);
+    // Without the version check the refresh would already have removed the E1-S02 entry; the cohort has not answered yet.
+    await expect(page.locator('#eng-alert-missing .alert-story').filter({ hasText: 'E1-S02' })).toHaveCount(1);
+    cohortGate.resolve();
+});
+
+test('32. a Stories Required ghost disappears when the refresh adds an actionable story for that team', async ({ page }) => {
+    const ctx = await mockDashboard(page);
+    setStory(ctx, 'E3-S01', { status: { name: 'Blocked' } });
+    ctx.respond('/api/eng/story-readiness', ({ json }) => json(readinessSnapshotFor([readinessEpicFor('EPIC-3', 'team-alpha', 'Alpha Team', 'selected_stories_not_actionable')])));
+    await openCatchUp(page, ctx);
+    const ghost = page.locator('.story-requirement-card[data-epic-key="EPIC-3"]');
+    await expect(ghost).toHaveCount(1);
+
+    ctx.scenario.stories.push(buildStory('E3-S02', 'EPIC-3', { points: 2 }));
+    const since = ctx.calls.length;
+    await clickRefresh(page, 'EPIC-3');
+    await expect.poll(() => epicRefreshCalls(ctx.calls.slice(since)).length).toBe(2);
+    await expect(taskCard(page, 'E3-S02')).toHaveCount(1);
+    await expectRefreshSettled(page, 'EPIC-3');
+    await expect(ghost).toHaveCount(0);
+    expect(alertRequests(ctx.calls.slice(since))).toEqual([]);
+});
+
+for (const mode of ['catch_up', 'planning']) {
+    test(`33. ${mode}: a ghost is hidden by an actionable held story and kept for a blocked one`, async ({ page }) => {
+        const ctx = await mockDashboard(page);
+        setStory(ctx, 'E3-S01', { status: { name: 'Blocked' } });
+        ctx.respond('/api/eng/story-readiness', ({ json }) => json(readinessSnapshotFor([
+            readinessEpicFor('EPIC-3', 'team-alpha', 'Alpha Team', 'selected_stories_not_actionable'),
+            readinessEpicFor('EPIC-2', 'team-alpha', 'Alpha Team', 'selected_stories_not_actionable'),
+        ])));
+        await openCatchUp(page, ctx, { prefs: { showPlanning: mode === 'planning' } });
+        await expect(page.locator('.story-requirement-card[data-epic-key="EPIC-3"]')).toHaveCount(1);
+        await expect(page.locator('.story-requirement-card[data-epic-key="EPIC-2"]')).toHaveCount(0); // EPIC-2 holds actionable stories
+    });
+}
+
+function readinessEpicFor(key, teamId, teamName, reason) {
+    return { key, summary: `${key} synthetic epic`, status: { name: 'In Progress' }, priority: { name: 'Major' }, assignee: { displayName: 'Epic Lead' },
+        projectKey: 'PROD', projectClass: 'product', projectTrack: 'product', initiative: null, missingTeams: [{ id: teamId, name: teamName, reason }] };
+}
+
+function readinessSnapshotFor(epics) {
+    return { schemaVersion: 1, complete: true, scope: { groupId: GROUP_ID, sprintId: String(SPRINT_ID), sprintName: SPRINT_NAME, sprintState: 'active' }, epics };
+}
+
 // ---- test 26 (load_performance run) is a command, see the report ----

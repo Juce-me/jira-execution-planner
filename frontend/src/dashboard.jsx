@@ -13592,7 +13592,7 @@ import {
                         return true;
                     });
                     // Waiting for Stories must only surface epics that belong to the currently selected sprint.
-                    if (!epicMatchesSelectedSprint(epic, selectedSprintEpicStories)) return false;
+                    if (!epicOrStoriesMatchSelectedSprint(epic, selectedSprintEpicStories)) return false;
                     const epicStories = readyToCloseTasks.filter(task => {
                         if (!task.fields?.epicKey) return false;
                         if (task.fields.epicKey !== epic.key) return false;

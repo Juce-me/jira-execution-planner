@@ -124,3 +124,47 @@ def epic_refresh_call(active, fn, *args, **kwargs):
 def epic_refresh_transport():
     """Breaker and attempt overrides for resilient_jira_get; empty unless inside epic_refresh_call."""
     return EPIC_REFRESH_TRANSPORT.get() or {}
+
+
+class EpicAlertBundleError(RuntimeError):
+    """A counts or distribution search failed; zero counts would read as 'no stories', so fail the request."""
+
+
+def apply_epic_enrichment(epics, counts, distribution):
+    """Attach story counts and sprint distribution to each epic in place."""
+    for epic in epics:
+        key = epic.get('key')
+        epic['totalStories'] = counts.get(key) if (counts and key) else None
+        if key and distribution.get(key):
+            epic['selectedStories'] = distribution[key].get('selectedStories', 0)
+            epic['selectedActionableStories'] = distribution[key].get('selectedActionableStories', 0)
+            epic['futureOpenStories'] = distribution[key].get('futureOpenStories', 0)
+            epic['openStoriesOutsideSelected'] = distribution[key].get('openStoriesOutsideSelected', 0)
+            epic['selectedActionableByTeam'] = distribution[key].get('selectedActionableByTeam', {})
+        else:
+            epic['selectedStories'] = 0
+            epic['selectedActionableStories'] = 0
+            epic['futureOpenStories'] = 0
+            epic['openStoriesOutsideSelected'] = 0
+            epic['selectedActionableByTeam'] = {}
+
+
+def fetch_epic_alert_bundle(fetch_epics, fetch_counts, fetch_distribution, *, epic_key, jql, headers, team_field_id,
+                            epic_link_field_id, sprint_field_id, sprint, team_ids, team_label_values, sprint_name):
+    """Scope-aware alert object for one epic: `{'epicsInScope': [enriched]}`, empty only when out of scope.
+
+    The scope search is complete (it raises on a failed page); a failed counts or distribution search raises
+    EpicAlertBundleError instead of reporting zero stories. About five searches per call.
+    """
+    epics = fetch_epics(jql, headers, team_field_id, None, sprint_field_id, team_ids, team_label_values, sprint_name,
+                        complete_alert_scope=True, epic_keys=[epic_key])
+    epics = [epic for epic in epics if epic.get('key') == epic_key]
+    if not epics:
+        return {'epicsInScope': []}
+    failures = []
+    counts = fetch_counts([epic_key], headers, epic_link_field_id, failures=failures) if epic_link_field_id else None
+    distribution = fetch_distribution([epic_key], headers, epic_link_field_id, sprint, team_field_id=team_field_id, failures=failures)
+    if failures:
+        raise EpicAlertBundleError(f'Epic alert counts failed: status={failures[0]}')
+    apply_epic_enrichment(epics, counts, distribution)
+    return {'epicsInScope': epics}

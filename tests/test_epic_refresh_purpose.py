@@ -216,6 +216,211 @@ class EpicRefreshPurposeTests(unittest.TestCase):
         boom.assert_not_called()
 
 
+EPIC_ALERTS_QUERY = ('purpose=epic-alerts&project=product&sprint=123&sprintName=2026Q3&teamIds=team-a'
+                     '&teamLabels=team_alpha&epicKeys=EPIC-1')
+
+
+def _alert_epic(key='EPIC-1', sprint=True):
+    return {'key': key, 'summary': 'Epic', 'status': {'name': 'In Progress'}, 'labels': ['team_alpha'],
+            'fields': {'customfield_10101': [{'id': 123}] if sprint else []}}
+
+
+def _distribution(**overrides):
+    base = {'selectedStories': 2, 'selectedActionableStories': 1, 'futureOpenStories': 3,
+            'openStoriesOutsideSelected': 4, 'selectedActionableByTeam': {'team-a': 1}}
+    base.update(overrides)
+    return {'EPIC-1': base}
+
+
+@unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
+class EpicAlertsPurposeTests(unittest.TestCase):
+    def setUp(self):
+        from backend.routes import eng_routes
+        from backend.services import epic_refresh
+        force_basic_auth_mode(self, jira_server)
+        jira_server.app.testing = True
+        self.client = jira_server.app.test_client()
+        jira_server.TASKS_CACHE.clear()
+        self.eng_routes = eng_routes
+        self.epic_refresh = epic_refresh
+        eng_routes._EPIC_REFRESH_LIMITER = epic_refresh.EpicRefreshLimiter(min_interval_seconds=0)
+
+    def _get(self, query, patches):
+        with ExitStack() as stack:
+            for target, value in (
+                ('build_base_jql', 'project = TEST'), ('get_selected_projects_typed', []),
+                ('get_configured_issue_types', ['Story']), ('resolve_team_field_id', 'customfield_team'),
+                ('resolve_epic_link_field_id', 'customfield_epic_link'), ('get_sprint_field_id', 'customfield_sprint'),
+            ):
+                stack.enter_context(patch.object(jira_server, target, return_value=value))
+            mocks = {name: stack.enter_context(patch.object(jira_server, name, mock)) for name, mock in patches.items()}
+            response = self.client.get('/api/tasks-with-team-name?' + query)
+        return response, mocks
+
+    def _bundle(self, epics=None, counts=None, distribution=None, query=EPIC_ALERTS_QUERY):
+        return self._get(query, {
+            'fetch_epics_for_empty_alert': Mock(return_value=[_alert_epic()] if epics is None else epics),
+            'fetch_story_counts_for_epics': Mock(return_value={'EPIC-1': 7} if counts is None else counts),
+            'fetch_story_distribution_for_epics': Mock(return_value=_distribution() if distribution is None else distribution),
+            'jira_search_request': Mock(side_effect=AssertionError('the story search must not run')),
+        })
+
+    def test_epic_search_jql_is_scoped_complete_and_ends_with_the_epic_key(self):
+        epic_page = _mock_response(200, {'issues': [{'key': 'EPIC-1', 'fields': {
+            'summary': 'Epic', 'status': {'name': 'In Progress'}, 'labels': ['team_alpha']}}], 'isLast': True})
+        search = Mock(return_value=epic_page)
+        response, _m = self._get(EPIC_ALERTS_QUERY, {
+            'jira_search_request': search,
+            'fetch_story_counts_for_epics': Mock(return_value={'EPIC-1': 1}),
+            'fetch_story_distribution_for_epics': Mock(return_value=_distribution()),
+        })
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        payload = search.call_args_list[0].args[0]
+        self.assertEqual(payload['maxResults'], 100)  # complete_alert_scope=True
+        jql = payload['jql']
+        self.assertIn('labels in ("2026Q3", "2026Q3_candidate")', jql)
+        self.assertIn('"Team[Team]" = "team-a" OR labels = "team_alpha"', jql)
+        self.assertTrue(jql.endswith('AND issueKey in ("EPIC-1")'), jql)
+        self.assertEqual([epic['key'] for epic in response.get_json()['epicsInScope']], ['EPIC-1'])
+
+    def test_a_failed_scope_search_is_a_500_never_an_empty_scope(self):
+        search = Mock(return_value=_mock_response(503, {}))
+        response, _m = self._get(EPIC_ALERTS_QUERY, {
+            'jira_search_request': search,
+            'fetch_story_counts_for_epics': Mock(return_value={}),
+            'fetch_story_distribution_for_epics': Mock(return_value={}),
+        })
+        self.assertEqual(response.status_code, 500)
+        self.assertNotIn('epicsInScope', response.get_json())
+
+    def test_bundle_returns_only_the_enriched_scope_for_the_one_epic(self):
+        response, mocks = self._bundle()
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        body = response.get_json()
+        self.assertEqual(list(body), ['epicsInScope'])
+        for name in ('fetch_story_counts_for_epics', 'fetch_story_distribution_for_epics'):
+            self.assertEqual(mocks[name].call_args.args[0], ['EPIC-1'])
+        epic = body['epicsInScope'][0]
+        self.assertEqual((epic['totalStories'], epic['selectedStories'], epic['selectedActionableStories']), (7, 2, 1))
+        self.assertEqual((epic['futureOpenStories'], epic['openStoriesOutsideSelected']), (3, 4))
+        self.assertEqual(epic['selectedActionableByTeam'], {'team-a': 1})
+        # The /api/ after_request hook narrows Cache-Control to plain no-store; either way it is not cacheable.
+        self.assertIn('no-store', response.headers['Cache-Control'])
+        self.assertEqual(response.headers['Pragma'], 'no-cache')
+
+    def test_an_epic_outside_the_scope_returns_an_empty_scope(self):
+        response, mocks = self._bundle(epics=[])
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), {'epicsInScope': []})
+        mocks['fetch_story_counts_for_epics'].assert_not_called()
+
+    def test_a_future_sprint_epic_in_scope_only_by_label_is_returned(self):
+        response, _m = self._bundle(epics=[_alert_epic(sprint=False)])
+        self.assertEqual([epic['key'] for epic in response.get_json()['epicsInScope']], ['EPIC-1'])
+
+    def test_a_counts_or_distribution_failure_is_an_error_never_zero_counts(self):
+        def failing(*_args, failures=None, **_kwargs):
+            failures.append(503)
+            return {'EPIC-1': 0}
+        for name in ('fetch_story_counts_for_epics', 'fetch_story_distribution_for_epics'):
+            patches = {
+                'fetch_epics_for_empty_alert': Mock(return_value=[_alert_epic()]),
+                'fetch_story_counts_for_epics': Mock(return_value={'EPIC-1': 7}),
+                'fetch_story_distribution_for_epics': Mock(return_value=_distribution()),
+            }
+            patches[name] = Mock(side_effect=failing)
+            response, _m = self._get(EPIC_ALERTS_QUERY, patches)
+            self.assertIn(response.status_code, (500, 502), name)
+            self.assertNotIn('epicsInScope', response.get_json(), name)
+
+    def _run_real_fetcher(self, fetcher, *args, **kwargs):
+        search = Mock(return_value=_mock_response(503, {}))
+        with patch.object(jira_server, 'jira_search_request', search):
+            result = getattr(jira_server, fetcher)(*args, **kwargs)
+        return result, search
+
+    def test_real_counts_fetcher_records_a_non_200_page_in_failures(self):
+        failures = []
+        counts, search = self._run_real_fetcher(
+            'fetch_story_counts_for_epics', ['EPIC-1'], {}, 'customfield_epic_link', failures=failures)
+        self.assertEqual(failures, [503])
+        self.assertEqual(search.call_count, 1)
+        self.assertEqual(counts, {'EPIC-1': 0})
+        # Without the argument the historical zero-count fallback is unchanged and nothing raises.
+        counts, _search = self._run_real_fetcher(
+            'fetch_story_counts_for_epics', ['EPIC-1'], {}, 'customfield_epic_link')
+        self.assertEqual(counts, {'EPIC-1': 0})
+
+    def test_real_distribution_fetcher_records_every_failed_page_with_a_selected_sprint(self):
+        failures = []
+        distribution, search = self._run_real_fetcher(
+            'fetch_story_distribution_for_epics', ['EPIC-1'], {}, 'customfield_epic_link', '123', failures=failures)
+        # selected-sprint, future-sprint and outside-selected queries each fail once
+        self.assertEqual(failures, [503, 503, 503])
+        self.assertEqual(search.call_count, 3)
+        self.assertEqual(distribution['EPIC-1']['selectedStories'], 0)
+        distribution, _search = self._run_real_fetcher(
+            'fetch_story_distribution_for_epics', ['EPIC-1'], {}, 'customfield_epic_link', '123')
+        self.assertEqual(distribution, _distribution(
+            selectedStories=0, selectedActionableStories=0, futureOpenStories=0,
+            openStoriesOutsideSelected=0, selectedActionableByTeam={}))
+
+    def test_real_distribution_fetcher_records_the_bucket_page_failures_without_a_selected_sprint(self):
+        failures = []
+        distribution, search = self._run_real_fetcher(
+            'fetch_story_distribution_for_epics', ['EPIC-1'], {}, 'customfield_epic_link', '', failures=failures)
+        # no selected-sprint query: only the future and outside-selected bucket queries run
+        self.assertEqual(failures, [503, 503])
+        self.assertEqual(search.call_count, 2)
+        distribution_without, _search = self._run_real_fetcher(
+            'fetch_story_distribution_for_epics', ['EPIC-1'], {}, 'customfield_epic_link', '')
+        self.assertEqual(distribution_without, distribution)
+
+    def test_alerts_follow_a_refresh_of_the_same_epic_and_lane_without_a_rate_limit(self):
+        self.eng_routes._EPIC_REFRESH_LIMITER = self.epic_refresh.EpicRefreshLimiter(min_interval_seconds=8)
+        refresh_query = 'purpose=epic-refresh&project=product&sprint=123&epicKeys=EPIC-1'
+        first, _m = self._get(refresh_query, {
+            'jira_search_request': Mock(side_effect=[_page([_issue('S-1')])]),
+            'fetch_epic_details_bulk': Mock(return_value={'EPIC-1': {'key': 'EPIC-1'}}),
+        })
+        alerts, _m = self._bundle()
+        again, _m = self._bundle()
+        self.assertEqual((first.status_code, alerts.status_code, again.status_code), (200, 200, 429))
+
+    def test_missing_epic_keys_is_a_400_and_nothing_is_cached(self):
+        response, mocks = self._bundle(query='purpose=epic-alerts&project=product&sprint=123')
+        self.assertEqual(response.status_code, 400)
+        mocks['fetch_epics_for_empty_alert'].assert_not_called()
+        ok, _m = self._bundle()
+        self.assertEqual(ok.status_code, 200)
+        self.assertEqual(dict(jira_server.TASKS_CACHE), {})
+
+    def test_a_call_costs_five_searches_on_the_dedicated_breaker(self):
+        seen = []
+
+        def search(payload):
+            seen.append(self.epic_refresh.epic_refresh_transport().get('breaker'))
+            if str(payload['jql']).endswith('issueKey in ("EPIC-1")'):
+                return _mock_response(200, {'issues': [{'key': 'EPIC-1', 'fields': {'summary': 'Epic'}}], 'isLast': True})
+            return _mock_response(200, {'issues': [], 'isLast': True})
+        response, _m = self._get(EPIC_ALERTS_QUERY, {'jira_search_request': Mock(side_effect=search)})
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        # 1 scope + 1 counts + 3 distribution (selected, future, outside selected)
+        self.assertEqual(seen, [self.epic_refresh.EPIC_REFRESH_CIRCUIT_BREAKER] * 5)
+        self.assertEqual(response.get_json()['epicsInScope'][0]['totalStories'], 0)
+        self.assertIsNone(self.epic_refresh.EPIC_REFRESH_TRANSPORT.get())
+
+    def test_the_alerts_purpose_still_runs_the_complete_scan_for_the_whole_scope(self):
+        response, mocks = self._get('purpose=alerts&project=product&sprint=123&sprintName=2026Q3&teamIds=team-a', {
+            'fetch_epics_for_empty_alert': Mock(return_value=[]),
+            'jira_search_request': Mock(return_value=_page([])),
+        })
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertIs(mocks['fetch_epics_for_empty_alert'].call_args.kwargs.get('complete_alert_scope')
+                      or mocks['fetch_epics_for_empty_alert'].call_args.args[-1], True)
+        self.assertNotIn('epic_keys', mocks['fetch_epics_for_empty_alert'].call_args.kwargs)
+
+
 OAUTH_QUERY = 'purpose=epic-refresh&project=product&sprint=123&epicKeys=EPIC-1'
 
 
@@ -316,6 +521,39 @@ class EpicRefreshOAuthTests(unittest.TestCase):
         self.assertEqual(response.status_code, 401, response.get_data(as_text=True))
         self.assertEqual(response.get_json()['error'], 'auth_required')
         http_get.assert_not_called()
+
+    def test_unauthenticated_oauth_epic_alerts_request_returns_the_auth_required_payload(self):
+        client = jira_server.app.test_client()  # no OAuth session installed
+        http_get = Mock()
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.object(jira_server, 'resilient_jira_get', http_get), \
+             patch.object(jira_server, 'jira_search_request', Mock()) as search:
+            response = client.get('/api/tasks-with-team-name?' + EPIC_ALERTS_QUERY)
+        self.assertEqual(response.status_code, 401, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['error'], 'auth_required')
+        http_get.assert_not_called()
+        search.assert_not_called()
+
+    def test_epic_alerts_for_a_lane_the_user_may_not_access_is_a_403_without_a_jira_search(self):
+        from backend.auth.context import ProjectAccessSnapshot
+        from tests.test_db_project_access import auth_context
+        context = auth_context(project_access=[
+            ProjectAccessSnapshot(project_key='PROD', project_type='product', status='inaccessible'),
+            ProjectAccessSnapshot(project_key='TECH', project_type='tech', status='accessible'),
+        ])
+        http_get = Mock()
+        search = Mock()
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.object(jira_server, 'current_request_auth_context', return_value=context), \
+             patch.object(jira_server, 'resilient_jira_get', http_get), \
+             patch.object(jira_server, 'jira_search_request', search):
+            response = self.client.get('/api/tasks-with-team-name?' + EPIC_ALERTS_QUERY)
+        self.assertEqual(response.status_code, 403, response.get_data(as_text=True))
+        body = response.get_json()
+        self.assertEqual(body['error'], 'missing_project_access')
+        self.assertEqual(body['projectType'], 'product')
+        http_get.assert_not_called()
+        search.assert_not_called()
 
     def test_oauth_refresh_uses_only_the_per_user_context(self):
         forbidden = AssertionError('a service-account or write credential path was touched')

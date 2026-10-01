@@ -16,7 +16,7 @@ Decided with the requester:
 - Alerts: all alert types for the refreshed epic only, in three slices A, B, C.
 - No whole-screen loading state, counter or timer. Progress is a small EPM burst mark (the `LoadingState` mark) replacing the refresh arrows while the request runs.
 - No wipes. Changed values are replaced in place. A card that enters fades in (existing `task-appear`) and glints; a card that leaves dissolves (existing `is-removing`, 240 ms) before it is dropped.
-- Glare look (specimen variant A): amber edge, 1.8 s, intensity 0.5, ring 1.5 px, beam width 22, sweep down the page on; under reduced motion a static border tint. Numeric reference: `tmp/glare-specimen.html` (gitignored; the values are copied here).
+- Glare look (specimen variant A, strengthened 2026-10-01): amber edge, 1.8 s, sweep down the page on; under reduced motion a static border tint. The approved specimen numbers (intensity 0.5, ring 1.5 px, beam width 22) rendered almost invisibly on the real card (about 8 more amber pixels at the peak than at rest, because the real card has no shadow like the specimen), so the shipped look is intensity 1, ring 2 px, beam width 30 with a soft amber glow (`drop-shadow`). Numeric reference: `tmp/glare-specimen.html` (gitignored; the values are copied here).
 - Accepted limitation: a story moved out of this epic shows up in its new epic only after that epic, or a department-wide Refresh, is refreshed.
 - Per-epic refresh does not run the empty-epic scan; `jira_server.py` and its tests are in scope.
 - Future-sprint Planning auto-selects newly arrived stories (the existing default-all behavior).

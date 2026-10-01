@@ -3487,3 +3487,102 @@ test('92. a status edit whose results are all already in that status issues no a
     await expect(ghostCards(page, 'EPIC-2')).toHaveCount(1);
     await expect(ghostCards(page, 'EPIC-3')).toHaveCount(1);
 });
+
+// ---- visual-quality guards (reported by the requester after manual use) ----
+
+// Decodes a PNG buffer in the page and hands the pixel data to `analyse` (source string of a function of ImageData).
+async function analysePng(page, png, analyse) {
+    const dataUrl = 'data:image/png;base64,' + png.toString('base64');
+    return page.evaluate(async ({ url, source }) => {
+        const img = new Image();
+        img.src = url;
+        await img.decode();
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const context = canvas.getContext('2d');
+        context.drawImage(img, 0, 0);
+        // eslint-disable-next-line no-new-func
+        return new Function('imageData', `return (${source})(imageData);`)(context.getImageData(0, 0, img.width, img.height));
+    }, { url: dataUrl, source: analyse.toString() });
+}
+
+test.describe('refresh icon centering', () => {
+    test.use({ viewport: { width: 1400, height: 1000 }, deviceScaleFactor: 4 });
+
+    test('3d. the refresh glyph is painted at the centre of its button (within half a pixel)', async ({ page }) => {
+        const ctx = await mockDashboard(page);
+        await openCatchUp(page, ctx);
+        const button = await revealRefreshButton(page, 'EPIC-1');
+        await page.mouse.move(5, 5);
+        await page.addStyleTag({ content: '.epic-header button.epic-refresh-button { opacity: 1 !important; transition: none !important; }' });
+        const png = await button.screenshot();
+        const result = await analysePng(page, png, ({ data, width, height }) => {
+            const bgIndex = (6 * width + 6) * 4;
+            const bg = [data[bgIndex], data[bgIndex + 1], data[bgIndex + 2]];
+            let minX = width; let maxX = -1; let minY = height; let maxY = -1;
+            const margin = Math.round(width * 0.14);
+            for (let y = margin; y < height - margin; y++) {
+                for (let x = margin; x < width - margin; x++) {
+                    const i = (y * width + x) * 4;
+                    const diff = Math.abs(data[i] - bg[0]) + Math.abs(data[i + 1] - bg[1]) + Math.abs(data[i + 2] - bg[2]);
+                    if (diff > 150) { minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y); }
+                }
+            }
+            return { inkCenter: [(minX + maxX) / 2, (minY + maxY) / 2], boxCenter: [(width - 1) / 2, (height - 1) / 2], found: maxX >= 0 };
+        });
+        expect(result.found, 'the glyph ink was found').toBe(true);
+        const dx = (result.inkCenter[0] - result.boxCenter[0]) / 4;
+        const dy = (result.inkCenter[1] - result.boxCenter[1]) / 4;
+        test.info().annotations.push({ type: 'ink offset (css px)', description: JSON.stringify({ dx, dy }) });
+        expect(Math.abs(dx), 'horizontal ink offset in CSS px').toBeLessThanOrEqual(0.5);
+        expect(Math.abs(dy), 'vertical ink offset in CSS px').toBeLessThanOrEqual(0.5);
+    });
+});
+
+test.describe('glare is perceptible', () => {
+    test.use({ viewport: { width: 1400, height: 1300 }, deviceScaleFactor: 2 });
+
+    test('9c. at its strongest the glare paints a clearly visible amber stroke along the card border', async ({ page }) => {
+        const ctx = await mockDashboard(page);
+        await openCatchUp(page, ctx);
+        retitleEpicStories(ctx.scenario, 'EPIC-1');
+        // Keep the attribute in place while the animation is scrubbed, so the frame is measured, not raced.
+        await page.evaluate(() => {
+            const original = Element.prototype.removeAttribute;
+            Element.prototype.removeAttribute = function (name) {
+                if (name === 'data-glare' && window.__holdGlare) return undefined;
+                return original.call(this, name);
+            };
+            window.__holdGlare = true;
+        });
+        await installGlareFreezer(page);
+        await clickRefresh(page, 'EPIC-1');
+        await expect.poll(() => frozenGlare(page)).not.toBeNull();
+        const { cards } = await frozenGlare(page);
+        const card = page.locator(`.task-item[data-task-key="${cards[0]}"]`);
+        const box = await card.boundingBox();
+        const clip = { x: box.x - 8, y: box.y - 8, width: Math.min(box.width + 16, 1000), height: box.height + 16 };
+        const amberAt = async (ms) => {
+            await page.evaluate((time) => document.getAnimations().forEach((animation) => {
+                if (animation.animationName !== 'epic-refresh-glint') return;
+                animation.pause();
+                animation.currentTime = time;
+            }), ms);
+            return analysePng(page, await page.screenshot({ clip }), ({ data }) => {
+                let amber = 0;
+                for (let i = 0; i < data.length; i += 4) {
+                    // Strongly saturated amber (the glare colour), well away from the cream page and the text colours.
+                    if (data[i] > 215 && data[i + 1] > 130 && data[i + 1] < 200 && data[i + 2] < 110) amber += 1;
+                }
+                return amber;
+            });
+        };
+        const peak = Math.max(await amberAt(400), await amberAt(800));
+        const rest = await amberAt(1799);
+        test.info().annotations.push({ type: 'amber pixels', description: JSON.stringify({ peak, rest }) });
+        // A 2px stroke along a ~1000px card edge at 2x is thousands of amber pixels; the old 1.5px/0.5-opacity ring painted almost none.
+        expect(peak, 'amber pixels at the strongest moment').toBeGreaterThan(1500);
+        expect(peak, 'the glare fades back to (almost) nothing').toBeGreaterThan(rest * 3);
+    });
+});

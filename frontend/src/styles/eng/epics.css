@@ -23,7 +23,8 @@
             bottom: -1px;
             height: 2px;
             pointer-events: none;
-            background: linear-gradient(90deg, transparent calc(50% - 22%), rgba(232, 163, 61, 1) 50%, transparent calc(50% + 22%));
+            filter: drop-shadow(0 0 4px rgba(232, 163, 61, 0.8));
+            background: linear-gradient(90deg, transparent calc(50% - 30%), rgba(232, 163, 61, 1) 50%, transparent calc(50% + 30%));
             background-size: 300% 100%;
             background-position: 100% 0;
             animation: epic-refresh-glint 1800ms cubic-bezier(0.3, 0.1, 0.2, 1) var(--glare-delay, 0ms) 1 both;

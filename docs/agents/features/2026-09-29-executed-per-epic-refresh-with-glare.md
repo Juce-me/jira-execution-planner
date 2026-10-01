@@ -1,9 +1,9 @@
-Status: planned
+Status: executed
 Type: feature
 
 # Per-epic refresh with glare
 
-Date: 2026-09-30. Base: `main` at 3622ba22 (after #211). No code changes yet.
+Date: 2026-09-30. Base: `main` at 3622ba22 (after #211). Executed on branch `feature/213-per-epic-refresh` on 2026-09-30 and 2026-10-01; see Outcome and Current Accuracy at the end.
 Review: a six-lens adversarial review (backend and Jira, frontend state and races, UI and accessibility, security and policy, domain semantics, delivery) ran on 2026-09-30 and is folded in below. Line numbers are approximate and from the synced tree; prefer the symbol names.
 
 ## 1. Goal and decisions
@@ -225,3 +225,23 @@ Follow-up candidate, not in scope: re-homing stories that moved out of the epic 
 ## 8. Automatic live updates: evaluated and deferred
 
 Evaluated 2026-09-29 and set aside: per-user polling of a change detector, a shared server-side change feed, Jira dynamic webhooks (OAuth 3LO), a Forge app with product events, an admin webhook. Reasons: changes land under people who are planning in busy periods; Atlassian load and the points-based quota; 5-8 weeks of work; gates (public webhook path, OAuth app-owner rule, re-consent for `manage:jira-webhook`, SSE thread capacity with `--threads 8`, single-process in-memory feed). Kept facts: OAuth 3LO apps can register dynamic webhooks via `POST /rest/api/3/webhook` (30-day expiry, 5 per app per user per tenant, JQL filter cannot match sprint or team, delivery needs the app owner to be the registering user for non-public apps, at-least-once and unordered, typically 30 s and up to 15 minutes, public HTTPS receiver); since 2026-03-02 a points-based hourly quota applies to OAuth 3LO, Connect and Forge apps while Basic API-token traffic stays under burst limits only (published pools 65,000 to a 500,000 per-tenant cap); search is eventually consistent and `reconcileIssues` gives read-after-write. The diff, merge and glare pieces here are reusable if automatic updates return.
+
+## Outcome
+
+Implemented with changes. The implementation, its tests and `docs/features/eng-workflows.md`, `docs/features/alerts.md` and `docs/ontology.md` are now the source of truth; this document records the intent and the reasoning.
+
+What shipped as designed: the manual per-Epic refresh button (top-right overlay, hover and focus reveal, always visible on touch), the `purpose=epic-refresh` and `purpose=epic-alerts` server branches with validation, a per-user limiter and cache skip with scope eviction, the pure diff and merge rules, in-place patching with `is-removing` dissolve and `task-appear`, the amber glare (cap 8, reduced-motion tint), the status announcement region, the `epic_refresh_action` analytics event on its own `epic_refresh` API surface, and the three alert slices A, B and C, enabled in Catch Up first and in Planning last.
+
+Differences from the design, each recorded in `docs/plans/EXEC-per-epic-refresh-213.md`:
+- **Circuit breaker (section 3.3).** The design assumed the shared retry helper honors `Retry-After`; it does not on the normal path. Epic-refresh searches now use a dedicated breaker with a two-attempt budget and the helper's 0.5 to 3 s exponential backoff (decision: implemented, not deferred). Measured Jira searches from the Python tests: 2 per lane for `epic-refresh` (one Story page, one Epic details search; 4 per click) and 5 per lane for `epic-alerts` (one scope, one counts, three distribution).
+- **Dependency refetch (3.4 step 7).** The one-shot skip is armed in a wrapper around the loader, tagged with the load epoch (`epicRefreshDependencySkip.js`), because the merge's `flushSync` flushes the dependencies effect before `afterApply`.
+- **Planning capacity (section 4).** The two-frame hold of the capacity scope signature became a pin that lasts until the user changes the capacity scope or a department load bumps the epoch, so a refresh issues zero `/api/capacity` requests; the cost is a stale capacity card for a Team that newly rises above zero Story Points (flagged for the requester).
+- **Partial server answers (3.6).** `ready-to-close`, `missing-info` and `backlog-epics` answer 200 with empty data when their own searches fail, so Ready to Close and Backlog entries are deleted only when the same lane's `epic-alerts` call succeeds with an empty list; a Backlog entry for an Epic that stays in scope but stops being a Backlog epic stays until the next full load.
+- **Inline status and priority edits (3.6b, Task 13b).** Decision by the requester after a plan review: in Catch Up a status edit re-checks only its Epic (coalesced per Epic, deferred behind an in-flight alert cohort, one retry on 429), a priority edit re-checks none and patches a Stories Required Epic's priority in the held snapshot locally, and an edit whose results were all already in the target state reloads nothing; outside Catch Up the request-free "mark the cohort stale" invalidation is kept.
+- **Focus and anchor.** Browser tests found two defects the design did not anticipate, now fixed: focus on a leaving card's remove button, and the scroll anchor under-correcting when an Epic moves up past a tall one (the sticky header's rect is clamped; the non-sticky block top is measured).
+- A pre-existing, unrelated defect was found and handed off separately: the Waiting for Stories alert calls `epicMatchesSelectedSprint` with an array instead of an options object (`dashboard.jsx`, also on `main`).
+
+## Current Accuracy
+
+Partially accurate: the goals, decisions (section 1), contract (section 6) and the placement decision (3.1, including the `hasTouch` hover-emulation note in section 6) still describe the shipped behavior. Sections 3.3 (breaker), 3.4 step 7 (dependencies), 3.6b (inline edits) and the Planning capacity risk in section 4 are superseded by the differences above. Section 5 (waves and effort) is a historical estimate.
+

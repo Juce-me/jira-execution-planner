@@ -1,6 +1,6 @@
 # Per-Epic Refresh With Glare Implementation Plan (Issue #213)
 
-> **Status:** Proposed on 2026-09-30 from baseline `main` at `3622ba22`; reviewed on 2026-09-30 by five subagents (two of them executed the plan's code) and revised; in progress (Task 0 baseline recorded 2026-09-30). Approved design: `docs/agents/features/2026-09-29-planned-per-epic-refresh-with-glare.md` (read it first; this plan implements it and does not restate its rationale).
+> **Status:** Proposed on 2026-09-30 from baseline `main` at `3622ba22`; reviewed on 2026-09-30 by five subagents (two of them executed the plan's code) and revised; in progress (Task 0 baseline recorded 2026-09-30). Approved design: `docs/agents/features/2026-09-29-executed-per-epic-refresh-with-glare.md` (read it first; this plan implements it and does not restate its rationale).
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

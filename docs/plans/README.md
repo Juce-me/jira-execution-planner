@@ -19,7 +19,7 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 ## Per-epic refresh (issue #213)
 
-- [Per-epic refresh with glare](EXEC-per-epic-refresh-213.md): proposed (issue #213); an epic-header refresh button that patches one epic in place, re-checks that epic's alerts only, and plays a subtle glare on changed cards. Design: `docs/agents/features/2026-09-29-planned-per-epic-refresh-with-glare.md`. Not started.
+- [Per-epic refresh with glare](EXEC-per-epic-refresh-213.md): proposed (issue #213); an epic-header refresh button that patches one epic in place, re-checks that epic's alerts only, and plays a subtle glare on changed cards. Design: `docs/agents/features/2026-09-29-executed-per-epic-refresh-with-glare.md`. Not started.
 
 ## Epic header regression review
 

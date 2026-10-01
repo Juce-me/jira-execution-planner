@@ -56,10 +56,15 @@ Every task's requirements include this section. Values are copied from the appro
 | Task | Status | Commit | Notes |
 |---|---|---|---|
 | T0 | done | `8ca112e4` | baseline recorded above |
-| T1 | done | `d0678a26` | `jira_server.py` 6463 to 6474, budget ratcheted; step 11 breaker isolation not implemented, decision pending with the user (fallback sentence for Outcome: "breaker isolation deferred; the server minimum interval and the client in-flight cap stand in") |
+| T1 | done | `d0678a26`, `bb18e35d` | `jira_server.py` 6463 to 6474, budget ratcheted. Step 11 resolved by the user as "implement now": epic-refresh searches use their own circuit breaker and 2 attempts (`bb18e35d`, net +0 lines in `jira_server.py`). Finding: `resilient_jira_get` does not honor `Retry-After` on the non-diagnostic path (the design assumed it did); epic-refresh backs off 0.5 s to 3 s exponentially and the server minimum interval still applies |
 | T2 | done | `4aff8c42` | divergence: `patchEpicScopeEntries` takes `assignee` whenever the fetched epic carries the key (`'assignee' in fetchedEpic`), not `?? entry.assignee`; an unassigned epic (`assignee: null`) would otherwise keep a stale assignee in `*EpicsInScope` |
 | T3 | done | `b8c3c7af` | divergences: button selectors are `.epic-header button.epic-refresh-button` (beats the global `button:hover`); reduced-motion tint is a held tint (`epic-refresh-tint` 1200 ms, peak held about 960 ms), not a fade pulse; `.task-item.is-dimmed[data-glare]::before` is hidden in CSS |
 | T4 | done | `b60a5b28` | |
+| T5 | done | `cd5b99b8` | review fix: focus rescue also runs after the dissolve drop; drop timers come from the updater's own merge result |
+| T6a | done | `676b8b9f` | `dashboard.jsx` 18213 to 18232 (itemized in the budgets file); status region is a sibling before `<EngView>` (the alerts panel is a Catch-Up-only EngView prop) |
+| T6b | done | `da156974` | split in two parts after two stalled attempts (subtask hook; dashboard wiring); `dashboard.jsx` to 18287. Divergence: the one-shot dependency skip is armed in a `loadEpicRefresh` wrapper, not in `afterApply`, because the merge's `flushSync` flushes the dependencies effect first; the skip is tagged with the load epoch (`epicRefreshDependencySkip.js`) so a discarded refresh cannot swallow a later department fetch |
+| hook fix | done | `3d3199e5` | found by the Playwright spec: focus on a leaving card's x button, and the scroll anchor now uses the non-sticky epic block top |
+| T7 | done | `866f7e55` | `tests/ui/eng_epic_refresh.spec.js`, 51 cases pass (also `--repeat-each=2`); neighbour specs match the Task 0 baseline (only the known #210 failures) |
 
 ## Endpoint Contract Matrix
 

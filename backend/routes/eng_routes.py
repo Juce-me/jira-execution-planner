@@ -228,10 +228,11 @@ def _story_readiness_group_snapshot(groups, group_id, catalog):
 
 def _story_readiness_cache_key(
         context, requested, group_snapshot, projects, config_snapshot, config, catalog,
-        issue_generation):
+        issue_generation, epic_keys=()):
     project_types = sorted({project['type'] for project in projects})
     return _story_readiness_digest({
         'auth': build_jira_home_process_cache_key(context, 'story-readiness'),
+        **({'epicKeys': list(epic_keys)} if epic_keys else {}),
         'group': group_snapshot,
         'sprint': list(requested),
         'configRevision': int(getattr(config_snapshot, 'config_revision', 0) or 0),
@@ -358,7 +359,7 @@ def _story_readiness_project_track(value):
     return str(value or '').strip() if isinstance(value, str) else ''
 
 
-def _story_readiness_compute(context, requested, group_snapshot, projects, config, transport):
+def _story_readiness_compute(context, requested, group_snapshot, projects, config, transport, epic_keys=()):
     started = time.monotonic()
     board = (config.get('board') or {}) if isinstance(config, dict) else {}
     _story_readiness_validate_sprint(context, transport, requested, str(board.get('boardId') or '').strip())
@@ -379,12 +380,16 @@ def _story_readiness_compute(context, requested, group_snapshot, projects, confi
     # Exact-distinct union: readiness matching is exact, so case variants stay in the JQL.
     team_labels = dict.fromkeys(label for team in group_snapshot['teams'] for label in team['labels'])
     label_jql = ', '.join(_story_readiness_quote(label) for label in team_labels)
+    key_clause = (
+        ' AND key in (' + ', '.join(_story_readiness_quote(key) for key in epic_keys) + ')'
+        if epic_keys else ''
+    )
     discovery_jql = (
         f'project in ({project_jql}) AND issuetype = Epic '
         f'AND status not in (Done, Killed, Incomplete, Postponed) '
         f'AND ({sprint_field} = {sprint_id} OR labels in '
         f'({_story_readiness_quote(sprint_name)}, {_story_readiness_quote(sprint_name + "_candidate")})) '
-        f'AND labels in ({label_jql}) ORDER BY key ASC'
+        f'AND labels in ({label_jql}){key_clause} ORDER BY key ASC'
     )
     discovery_started = time.monotonic()
     candidates = _story_readiness_search(
@@ -522,6 +527,9 @@ def get_story_readiness():
         refresh = _story_readiness_bool(request.args.get('refresh', 'false'))
         if not sprint_id or not sprint_id.isdigit() or not sprint_name or not group_id or sprint_state not in {'active', 'future'}:
             raise ValueError('invalid_scope')
+        if epic_refresh.epic_keys_error(request.args, single=True):
+            raise ValueError('invalid_scope')
+        epic_keys = tuple(epic_refresh.parse_epic_keys(request.args.get('epicKeys', '')))
     except ValueError:
         return _story_readiness_error('invalid_story_readiness_scope')
 
@@ -561,7 +569,7 @@ def get_story_readiness():
         requested = (sprint_id, sprint_name, sprint_state)
         cache_key = _story_readiness_cache_key(
             context, requested, group_snapshot, projects, config_snapshot, config,
-            catalog, issue_generation,
+            catalog, issue_generation, epic_keys,
         )
     except AuthError as exc:
         return _eng_auth_error_response(exc)
@@ -569,7 +577,8 @@ def get_story_readiness():
         return _story_readiness_error('story_readiness_configuration_invalid')
 
     now = time.monotonic()
-    if not refresh:
+    # A per-epic result is never the department snapshot: skip the LRU read and write.
+    if not refresh and not epic_keys:
         with _STORY_READINESS_LOCK:
             cached = _STORY_READINESS_CACHE.get(cache_key)
             if cached and now - cached['storedAt'] < _STORY_READINESS_CACHE_TTL_SECONDS:
@@ -584,7 +593,7 @@ def get_story_readiness():
         if future is None:
             future = _STORY_READINESS_EXECUTOR.submit(
                 _story_readiness_compute, context, requested,
-                group_snapshot, projects, config, transport,
+                group_snapshot, projects, config, transport, epic_keys,
             )
             _STORY_READINESS_INFLIGHT[cache_key] = future
             def retire(completed, *, expected_key=cache_key):
@@ -609,7 +618,7 @@ def get_story_readiness():
             raise RuntimeError('stale_scope') from exc
         if fresh_group is None or _story_readiness_cache_key(
                 context, requested, fresh_group, fresh_projects, fresh_config_snapshot,
-                fresh_config, fresh_catalog, issue_generation) != cache_key:
+                fresh_config, fresh_catalog, issue_generation, epic_keys) != cache_key:
             raise RuntimeError('stale_scope')
     except AuthError as exc:
         return _eng_auth_error_response(exc)
@@ -633,13 +642,14 @@ def get_story_readiness():
             if _STORY_READINESS_INFLIGHT.get(cache_key) is future and future.done():
                 _STORY_READINESS_INFLIGHT.pop(cache_key, None)
 
-    with _STORY_READINESS_LOCK:
-        _STORY_READINESS_CACHE[cache_key] = {
-            'payload': payload, 'timing': timing, 'storedAt': time.monotonic(),
-        }
-        _STORY_READINESS_CACHE.move_to_end(cache_key)
-        while len(_STORY_READINESS_CACHE) > _STORY_READINESS_CACHE_MAX_ENTRIES:
-            _STORY_READINESS_CACHE.popitem(last=False)
+    if not epic_keys:
+        with _STORY_READINESS_LOCK:
+            _STORY_READINESS_CACHE[cache_key] = {
+                'payload': payload, 'timing': timing, 'storedAt': time.monotonic(),
+            }
+            _STORY_READINESS_CACHE.move_to_end(cache_key)
+            while len(_STORY_READINESS_CACHE) > _STORY_READINESS_CACHE_MAX_ENTRIES:
+                _STORY_READINESS_CACHE.popitem(last=False)
     return _story_readiness_response(payload, cache_result='miss', timing=timing)
 
 
@@ -834,6 +844,9 @@ def get_dependencies():
         keys = sorted({str(key).strip() for key in (payload.get('keys') or []) if str(key).strip()})
         if not keys:
             return jsonify({'dependencies': {}})
+        if any(not epic_refresh.ISSUE_KEY_RE.match(key) for key in keys):
+            return jsonify({'error': 'invalid_keys', 'message': 'Issue keys must look like PROJ-123.'}), 400
+        force_refresh = payload.get('refresh') is True
 
         started_at = time.perf_counter()
         auth_context = current_request_auth_context()
@@ -841,7 +854,7 @@ def get_dependencies():
         cache_enabled = jira_home_partitioned_process_cache_enabled(auth_context)
         cache_key = build_jira_home_process_cache_key(auth_context, 'dependencies', ','.join(keys))
         cached_entry = None
-        if cache_enabled:
+        if cache_enabled and not force_refresh:
             with _cache_lock:
                 cached_entry = DEPENDENCIES_CACHE.get(cache_key)
         if cache_enabled and cached_entry and (time.time() - cached_entry.get('timestamp', 0)) < DEPENDENCIES_CACHE_TTL_SECONDS:
@@ -1290,6 +1303,11 @@ def get_missing_info():
         components_param = [c.strip() for c in request.args.get('components', '').split(',') if c.strip()]
         if not sprint:
             return jsonify({'error': 'Missing required query param: sprint'}), 400
+        keys_error = epic_refresh.epic_keys_error(request.args, single=True)
+        if keys_error:
+            return jsonify(keys_error), 400
+        scoped_epic_key = epic_refresh.single_epic_key(request.args)
+        force_refresh = request.args.get('refresh', '').strip().lower() in ('1', 'true', 'yes')
 
         auth_context = current_request_auth_context()
         cache_generation = get_jira_issue_cache_generation()
@@ -1302,9 +1320,10 @@ def get_missing_info():
             sprint,
             ','.join(effective_team_ids),
             ','.join(sorted(effective_components)),
+            *((scoped_epic_key,) if scoped_epic_key else ()),
         )
         cached_entry = None
-        if cache_enabled:
+        if cache_enabled and not force_refresh:
             with _cache_lock:
                 cached_entry = MISSING_INFO_CACHE.get(cache_key)
         if cache_enabled and cached_entry and (time.time() - cached_entry.get('timestamp', 0)) < MISSING_INFO_CACHE_TTL_SECONDS:
@@ -1327,6 +1346,8 @@ def get_missing_info():
             epic_jql = add_clause_to_jql(epic_jql, scope_clause)
         epic_jql = add_clause_to_jql(epic_jql, 'status not in ("Killed","Done","Incomplete")')
         epic_jql = add_clause_to_jql(epic_jql, f'project in ("{JIRA_PRODUCT_PROJECT}","{JIRA_TECH_PROJECT}")')
+        if scoped_epic_key:
+            epic_jql = add_clause_to_jql(epic_jql, f'issueKey in ("{scoped_epic_key}")')
 
         epic_fields = ['summary', 'status', 'assignee', 'parent', 'components']
         if team_field_id:
@@ -2102,6 +2123,10 @@ def get_all_teams_list():
 def get_backlog_epics():
     """Fetch backlog epics for future-planning alerts."""
     try:
+        keys_error = epic_refresh.epic_keys_error(request.args, single=True)
+        if keys_error:
+            return jsonify(keys_error), 400
+        epic_key = epic_refresh.single_epic_key(request.args)
         project_filter = request.args.get('project', '').strip().lower()
         team_ids_param = request.args.get('teamIds', '').strip()
         team_ids = normalize_team_ids([t.strip() for t in team_ids_param.split(',') if t.strip()])
@@ -2137,6 +2162,9 @@ def get_backlog_epics():
             else:
                 quoted_types = ', '.join(f'"{issue_type}"' for issue_type in issue_types)
                 jql = add_clause_to_jql(jql, f'type in ({quoted_types})')
+
+        if epic_key:
+            jql = add_clause_to_jql(jql, f'issueKey in ("{epic_key}")')
 
         auth_context = current_request_auth_context()
         team_field_id = resolve_team_field_id(None, context=auth_context)

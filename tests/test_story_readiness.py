@@ -1,4 +1,5 @@
 import unittest
+from contextlib import ExitStack
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -301,6 +302,142 @@ class StoryReadinessRouteTests(unittest.TestCase):
         self.assertIn(
             'AND labels in ("label_team_a", "label \\"team\\" a", "label_team_b") ORDER BY key ASC',
             discovery_jql,
+        )
+
+    _SCOPE = "sprint=42&sprintName=Sprint%2042&sprintState=active&groupId=dept"
+
+    def _route_stack(self, compute):
+        context = RequestAuthContext(
+            auth_mode="basic", user_id="local", stable_subject="local",
+            workspace_id="workspace", auth_connection_id="local-basic-connection",
+            atlassian_account_id="", cloud_id="", site_url="https://example.invalid", token_version="1",
+            account_status="active", is_admin=True,
+        )
+        groups = {"configRevision": 3, "groups": [{
+            "id": "dept", "teamIds": ["team-a"], "teamLabels": {"team-a": "team_alpha"}}]}
+        config = {"projects": {"selected": [{"key": "PROD", "type": "product"}]}}
+        stack = ExitStack()
+        stack.enter_context(patch.object(jira_server, "JIRA_AUTH_MODE", "basic"))
+        stack.enter_context(patch.object(jira_server, "current_request_auth_context", return_value=context))
+        stack.enter_context(patch.object(jira_server, "load_dashboard_config_snapshot", return_value=SimpleNamespace(
+            payload=config, config_revision=5)))
+        stack.enter_context(patch.object(eng_routes, "_story_readiness_effective_groups", return_value=groups))
+        stack.enter_context(patch.object(eng_routes, "_story_readiness_team_catalog", return_value={
+            "team-a": {"id": "team-a", "name": "Alpha"}}))
+        stack.enter_context(patch.object(jira_server, "get_jira_issue_cache_generation", return_value=9))
+        stack.enter_context(patch.object(eng_routes, "_story_readiness_compute", side_effect=compute))
+        return stack
+
+    @staticmethod
+    def _payload(epics):
+        return {
+            "schemaVersion": 1,
+            "scope": {"groupId": "dept", "groupRevision": 3, "sprintId": "42",
+                      "sprintName": "Sprint 42", "sprintState": "active"},
+            "complete": True,
+            "epics": epics,
+        }
+
+    def test_epic_keys_route_is_served_skips_the_snapshot_cache_and_keeps_its_own_inflight_key(self):
+        seen = []
+
+        def compute(_context, requested, _group, _projects, _config, _transport, *extra):
+            with eng_routes._STORY_READINESS_LOCK:
+                inflight = set(eng_routes._STORY_READINESS_INFLIGHT)
+            seen.append({"requested": requested, "extra": extra, "inflight": inflight})
+            keys = extra[0] if extra else ()
+            return self._payload([{"key": key} for key in keys] or [{"key": "PROD-1"}, {"key": "PROD-2"}]), "total;dur=1.0"
+
+        with self._route_stack(compute):
+            first = self.client.get(f"/api/eng/story-readiness?{self._SCOPE}&epicKeys=PROD-5")
+            with eng_routes._STORY_READINESS_LOCK:
+                cached_after_epic = len(eng_routes._STORY_READINESS_CACHE)
+            second = self.client.get(f"/api/eng/story-readiness?{self._SCOPE}&epicKeys=PROD-5")
+            department = self.client.get(f"/api/eng/story-readiness?{self._SCOPE}")
+            with eng_routes._STORY_READINESS_LOCK:
+                cached_after_department = len(eng_routes._STORY_READINESS_CACHE)
+
+        self.assertEqual(first.status_code, 200, first.get_data(as_text=True))
+        self.assertEqual(first.get_json()["epics"], [{"key": "PROD-5"}])
+        self.assertEqual(cached_after_epic, 0, "a per-epic result must never enter the snapshot LRU")
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(second.headers["X-Story-Readiness-Cache"], "miss")
+        self.assertEqual(len(seen), 3, "the per-epic call neither reads nor writes the cache")
+        self.assertEqual(department.get_json()["epics"], [{"key": "PROD-1"}, {"key": "PROD-2"}])
+        self.assertEqual(cached_after_department, 1)
+        self.assertEqual(seen[0]["requested"], ("42", "Sprint 42", "active"))
+        self.assertEqual(seen[0]["extra"], (("PROD-5",),))
+        self.assertEqual(seen[2]["extra"], ((),))
+        self.assertEqual(len(seen[0]["inflight"]), 1)
+        self.assertEqual(len(seen[2]["inflight"]), 1)
+        self.assertNotEqual(seen[0]["inflight"], seen[2]["inflight"])
+
+    def test_department_call_after_an_epic_call_is_not_served_the_epic_payload(self):
+        def compute(_context, _requested, _group, _projects, _config, _transport, *extra):
+            keys = extra[0] if extra else ()
+            return self._payload([{"key": key} for key in keys] or [{"key": "PROD-1"}]), "total;dur=1.0"
+
+        with self._route_stack(compute):
+            self.client.get(f"/api/eng/story-readiness?{self._SCOPE}&epicKeys=PROD-5")
+            department = self.client.get(f"/api/eng/story-readiness?{self._SCOPE}")
+
+        self.assertEqual(department.headers["X-Story-Readiness-Cache"], "miss")
+        self.assertEqual(department.get_json()["epics"], [{"key": "PROD-1"}])
+
+    def test_epic_keys_bad_or_multiple_value_is_rejected_before_auth_or_jira(self):
+        for value in ("not-a-key", "PROD-1,PROD-2", "PROD-1)%20OR%20(x"):
+            with patch.object(jira_server, "JIRA_AUTH_MODE", "basic"), \
+                 patch.object(jira_server, "current_request_auth_context") as auth, \
+                 patch.object(eng_routes, "_story_readiness_compute") as compute:
+                response = self.client.get(f"/api/eng/story-readiness?{self._SCOPE}&epicKeys={value}")
+            self.assertEqual(response.status_code, 400, value)
+            self.assertEqual(response.get_json()["error"], "invalid_story_readiness_scope")
+            auth.assert_not_called()
+            compute.assert_not_called()
+
+    def test_cache_key_gains_epic_keys_only_when_present(self):
+        context = SimpleNamespace(auth_mode="basic")
+        args = (context, ("42", "Sprint 42", "active"), {"id": "dept"}, [{"key": "PROD", "type": "product"}],
+                SimpleNamespace(config_revision=1), {}, {}, 1)
+        with patch.object(eng_routes, "project_access_status", return_value="accessible"), \
+             patch.object(eng_routes, "build_jira_home_process_cache_key", return_value="auth"):
+            plain = eng_routes._story_readiness_cache_key(*args)
+            empty = eng_routes._story_readiness_cache_key(*args, ())
+            scoped = eng_routes._story_readiness_cache_key(*args, ("PROD-5",))
+            other = eng_routes._story_readiness_cache_key(*args, ("PROD-6",))
+        self.assertEqual(plain, empty)
+        self.assertEqual(len({plain, scoped, other}), 3)
+
+    def test_discovery_jql_splices_key_clause_before_order_by_only_when_keys_present(self):
+        eng_routes.bind_server_globals(vars(eng_routes))
+        group = {'id': 'dept', 'revision': 1, 'teams': [{'id': 'team-a', 'name': 'Alpha', 'labels': ['label_a']}]}
+        config = {'sprintField': {'fieldId': 'customfield_sprint'},
+                  'teamField': {'fieldId': 'customfield_team'}}
+        search_calls = []
+
+        def jira_get(path, **_kwargs):
+            if path.startswith('/rest/agile/1.0/sprint/'):
+                return _FakeResponse(200, {'id': 42, 'name': 'Sprint 42', 'state': 'active'})
+            raise AssertionError(path)
+
+        def jira_search(payload, **_kwargs):
+            search_calls.append(payload['jql'])
+            return _FakeResponse(200, {'issues': [], 'isLast': True})
+
+        for extra in ((), (('PROD-5',),)):
+            transport = EngBoardRequestTransport(budget=EngBoardRequestBudget.start(25))
+            with patch.object(eng_routes, 'current_jira_get', side_effect=jira_get), \
+                 patch.object(eng_routes, 'current_jira_search', side_effect=jira_search):
+                eng_routes._story_readiness_compute(
+                    SimpleNamespace(auth_mode='basic'), ('42', 'Sprint 42', 'active'), group,
+                    [{'key': 'PROD', 'type': 'product'}], config, transport, *extra,
+                )
+
+        self.assertTrue(search_calls[0].endswith('AND labels in ("label_a") ORDER BY key ASC'))
+        self.assertNotIn('key in', search_calls[0])
+        self.assertTrue(
+            search_calls[1].endswith('AND labels in ("label_a") AND key in ("PROD-5") ORDER BY key ASC'),
+            search_calls[1],
         )
 
     def test_route_rejects_malformed_scope_before_auth_or_jira(self):

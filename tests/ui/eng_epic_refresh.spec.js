@@ -318,15 +318,21 @@ async function parkPointer(page) {
 
 // Moves the real pointer over the header. Locator.hover() would scroll a sticky-stacked header into
 // "view" first, which changes the scroll position the tests assert on.
-async function hoverHeader(page, epicKey) {
-    // Off-screen (or under the sticky stack, ~150 px): bring it to 40% of the viewport first.
-    const scrolled = await epicHeader(page, epicKey).evaluate((node) => {
-        const top = node.getBoundingClientRect().top;
-        if (top >= 170 && top <= window.innerHeight - 80) return false;
-        window.scrollBy(0, top - window.innerHeight * 0.4);
-        return true;
-    });
-    if (scrolled) {
+async function hoverHeader(page, epicKey, { atButton = false } = {}) {
+    // Off-screen (or under the sticky stack, ~150 px): bring it to 40% of the viewport first. The loop re-measures because the page
+    // re-anchors after a programmatic scroll and the Planning stack (panel + filter bar, 260-470 px) is only measurable once it is stuck.
+    const attempts = await page.locator('.planning-panel.open').count() ? 4 : 1; // Catch Up keeps its single scroll
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+        const scrolled = await epicHeader(page, epicKey).evaluate((node) => {
+            const top = node.getBoundingClientRect().top;
+            const stack = document.querySelector('.planning-panel.open')
+                ? Math.max(...['.planning-panel.open', '.filterbar-wrap'].map(selector => document.querySelector(selector)?.getBoundingClientRect().bottom || 0)) + 20
+                : 170;
+            if (top >= stack && top <= window.innerHeight - 80) return false;
+            window.scrollBy(0, top - Math.min(window.innerHeight * 0.6, Math.max(window.innerHeight * 0.4, stack + 60)));
+            return true;
+        });
+        if (!scrolled) break;
         // The page re-anchors itself once after a programmatic scroll (compact header): wait until it settles.
         await expect.poll(async () => {
             const first = await page.evaluate(() => window.scrollY);
@@ -335,7 +341,8 @@ async function hoverHeader(page, epicKey) {
         }).toBe(true);
     }
     const box = await epicHeader(page, epicKey).boundingBox();
-    await page.mouse.move(box.x + box.width * 0.4, box.y + box.height / 2);
+    // `atButton` parks the pointer on the refresh button's corner: nothing else in the header (e.g. the Planning stat toggle) reacts to it.
+    await page.mouse.move(atButton ? box.x + box.width - 18 : box.x + box.width * 0.4, atButton ? box.y + 16 : box.y + box.height / 2);
 }
 
 // Hovers the header (the button is pointer-events:none at rest) and returns the now-visible button.
@@ -2587,4 +2594,419 @@ test('58. a held readiness initiative never shadows the omitted initiative key o
     await expect(epicBlock(page, 'EPIC-2')).toBeVisible();
 });
 
+// ---- tests 59-69 (Task 13: Planning enablement) ----
+
+const PLANNING_STATE_KEY = 'jira_dashboard_planning_state_v1';
+const PLANNING_SCOPE_KEY = `planning::${SPRINT_ID}::${GROUP_ID}`;
+const capacityRequests = calls => calls.filter(call => call.pathname === '/api/capacity');
+const teamCard = (page, name) => page.locator('.planning-team-capacity-cards .team-stat-card', { has: page.locator('.team-stat-label', { hasText: name }) });
+const persistedPlanning = page => page.evaluate(([key, scope]) => JSON.parse(window.localStorage.getItem(key) || '{}')[scope] || null, [PLANNING_STATE_KEY, PLANNING_SCOPE_KEY]);
+const manualSelection = ctx => ({ selectedTaskKeys: ctx.scenario.stories.map(story => story.key), selectedTeams: ['all'], selectionMode: 'manual' });
+const teamFields = team => (team === 'beta' ? { teamId: 'team-beta', teamName: 'Beta Team' } : { teamId: 'team-alpha', teamName: 'Alpha Team' });
+const selectedSummary = page => page.locator('.capacity-bar-fill-label', { hasText: ' tasks · ' });
+
+// Planning with capacity enabled and two group teams. E3-S01 is the only story of Beta Team (unless `prepare` moves it), so a refresh of EPIC-3
+// can move a team's Story Points across zero. `stored` is a function (ctx) => the persisted Planning state; without it the app seeds its own.
+async function openPlanning(page, { width, height, future = false, stored = null, prepare } = {}) {
+    const ctx = await mockDashboard(page);
+    ctx.capacityPayload = {
+        enabled: true, mutationEnabled: false, sprint: SPRINT_NAME,
+        capacities: { 'Alpha Team': 5.5, 'Beta Team': 3 },
+        entries: [{ teamName: 'Alpha Team', issueKey: 'CAP-101', capacity: 5.5 }, { teamName: 'Beta Team', issueKey: 'CAP-102', capacity: 3 }],
+    };
+    ctx.respond(call => call.pathname === '/api/config', ({ json }) => json({
+        jiraUrl: 'https://jira.example', capacityProject: 'CAP', authMode: 'atlassian_oauth', projectsConfigured: true, userCanEditSettings: true, environmentConfigExists: true,
+    }));
+    ctx.respond(call => call.pathname === '/api/groups-config', ({ json }) => json({
+        ...groupsConfigPayload, groups: [{ ...groupsConfigPayload.groups[0], teamIds: ['team-alpha', 'team-beta'] }],
+    }));
+    ctx.respond(call => call.pathname === '/api/capacity', ({ json }) => json(ctx.capacityPayload));
+    if (future) ctx.respond(call => call.pathname === '/api/sprints', ({ json }) => json({ sprints: [{ id: SPRINT_ID, name: SPRINT_NAME, state: 'future', startDate: '2026-08-01' }] }));
+    setStory(ctx, 'E3-S01', teamFields('beta'));
+    prepare?.(ctx);
+    if (stored) {
+        await page.addInitScript(([key, scope, value]) => window.localStorage.setItem(key, JSON.stringify({ [scope]: value })), [PLANNING_STATE_KEY, PLANNING_SCOPE_KEY, stored(ctx)]);
+    }
+    await openCatchUp(page, ctx, { width, height, prefs: { showPlanning: true } });
+    await expect(page.locator('.planning-panel.open')).toBeVisible();
+    await expect(teamCard(page, 'Alpha Team')).toHaveCount(1);
+    return ctx;
+}
+
+// Flags any moment the Alpha capacity card exists without its capacity value (a blanked card).
+async function watchAlphaCapacityBlank(page) {
+    await page.evaluate(() => {
+        window.__capacityBlank = false;
+        const check = () => {
+            const card = [...document.querySelectorAll('.planning-team-capacity-cards .team-stat-card')]
+                .find(node => node.querySelector('.team-stat-label')?.textContent.includes('Alpha Team'));
+            const label = card?.querySelector('.microbar')?.getAttribute('aria-label') || '';
+            if (card && !/against 5\.5 capacity/.test(label)) window.__capacityBlank = true;
+        };
+        new MutationObserver(check).observe(document.body, { childList: true, subtree: true, attributes: true });
+    });
+}
+
+test('59. Planning mounts the refresh button on every epic header, hidden at rest and revealed on hover', async ({ page }) => {
+    const ctx = await openPlanning(page);
+    await expect(page.locator('.epic-refresh-button')).toHaveCount(3);
+    await parkPointer(page);
+    for (const epicKey of Object.keys(ctx.scenario.epics)) {
+        await expect(epicHeader(page, epicKey).locator('.epic-stat-toggle')).toHaveCount(1);
+        await expect(refreshButton(page, epicKey)).toHaveCount(1);
+        expect(await refreshButton(page, epicKey).evaluate(node => getComputedStyle(node).position)).toBe('absolute');
+        await expect.poll(() => refreshButton(page, epicKey).evaluate(node => getComputedStyle(node).opacity)).toBe('0');
+        await revealRefreshButton(page, epicKey);
+    }
+});
+
+for (const direction of [
+    { name: 'a team drops to zero Story Points', from: 'beta', to: 'alpha', cardsBefore: 2, cardsAfter: 1 },
+    { name: 'a team rises from zero Story Points', from: 'alpha', to: 'beta', cardsBefore: 1, cardsAfter: 2 },
+]) {
+    test(`60. a Planning refresh where ${direction.name} issues no alert and no capacity request and keeps the capacity cards`, async ({ page }) => {
+        const ctx = await openPlanning(page, { prepare: mock => setStory(mock, 'E3-S01', teamFields(direction.from)), stored: manualSelection });
+        await expect(page.locator('.planning-team-capacity-cards .team-stat-card')).toHaveCount(direction.cardsBefore);
+        await expect(teamCard(page, 'Alpha Team').locator('.microbar')).toHaveAttribute('aria-label', /against 5\.5 capacity/);
+        await watchAlphaCapacityBlank(page);
+        setStory(ctx, 'E3-S01', { ...teamFields(direction.to), updated: '2026-05-09T00:00:00.000+0000' });
+        const since = ctx.calls.length;
+        await clickRefresh(page, 'EPIC-3');
+        await expect.poll(() => epicRefreshCalls(ctx.calls.slice(since)).length).toBe(2);
+        await expectRefreshSettled(page, 'EPIC-3');
+        // The displayed team set really changed (so the capacity signature would change without the hold).
+        await expect(page.locator('.planning-team-capacity-cards .team-stat-card')).toHaveCount(direction.cardsAfter);
+        await page.waitForTimeout(1200); // past the dissolve drop and any effect that would refire /api/capacity
+        const after = ctx.calls.slice(since);
+        expect(describeCalls(capacityRequests(after)), 'no /api/capacity request').toEqual([]);
+        expect(describeCalls(alertRequests(after)), 'no alert request of any kind in Planning').toEqual([]);
+        assertScopedCalls(ctx.calls, since, 'EPIC-3', storyKeysOf(ctx.scenario, 'EPIC-3'));
+        await expect(teamCard(page, 'Alpha Team').locator('.microbar')).toHaveAttribute('aria-label', /against 5\.5 capacity/);
+        expect(await page.evaluate(() => window.__capacityBlank), 'the Alpha capacity card never lost its value').toBe(false);
+        await expect(page.locator('.team-capacity-read-status')).toHaveCount(0);
+    });
+}
+
+test('61. after a held refresh a user scope change (team selection) recomputes the capacity scope and reads capacity once', async ({ page }) => {
+    const ctx = await openPlanning(page, { stored: manualSelection });
+    setStory(ctx, 'E3-S01', { ...teamFields('alpha'), updated: '2026-05-09T00:00:00.000+0000' });
+    await clickRefresh(page, 'EPIC-3');
+    await expectRefreshSettled(page, 'EPIC-3');
+    await expect(page.locator('.planning-team-capacity-cards .team-stat-card')).toHaveCount(1);
+    await page.waitForTimeout(800);
+    const since = ctx.calls.length;
+    // The control surface in the page header is the one that opens the dropdown when the page is back at the top.
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+    await page.getByRole('button', { name: 'Filter teams' }).first().click();
+    await page.locator('.team-dropdown-option', { hasText: 'Alpha Team' }).first().click();
+    await page.mouse.click(8, 8);
+    await expect.poll(() => capacityRequests(ctx.calls.slice(since)).length).toBe(1);
+    await page.waitForTimeout(600);
+    expect(capacityRequests(ctx.calls.slice(since))).toHaveLength(1);
+    await expect(teamCard(page, 'Alpha Team').locator('.microbar')).toHaveAttribute('aria-label', /against 5\.5 capacity/);
+});
+
+test('62. future sprint, default-all mode: a story that arrives with the refresh is selected and persisted', async ({ page }) => {
+    const ctx = await openPlanning(page, { future: true });
+    await expect.poll(async () => (await persistedPlanning(page))?.selectedTaskKeys?.length).toBe(15);
+    expect((await persistedPlanning(page)).selectionMode).toBe('default_all');
+    ctx.scenario.stories.push(buildStory('E3-S02', 'EPIC-3', { points: 2, updated: '2026-05-09T00:00:00.000+0000' }));
+    const since = ctx.calls.length;
+    await clickRefresh(page, 'EPIC-3');
+    await expect(taskCard(page, 'E3-S02')).toHaveCount(1);
+    await expectRefreshSettled(page, 'EPIC-3');
+    await expect(taskCard(page, 'E3-S02').locator('.task-checkbox')).toBeChecked();
+    await expect.poll(async () => (await persistedPlanning(page))?.selectedTaskKeys?.includes('E3-S02')).toBe(true);
+    const state = await persistedPlanning(page);
+    expect(state.selectionMode).toBe('default_all');
+    expect(state.selectedTaskKeys).toHaveLength(16);
+    await page.waitForTimeout(800);
+    expect(describeCalls(alertRequests(ctx.calls.slice(since)))).toEqual([]);
+    expect(describeCalls(capacityRequests(ctx.calls.slice(since)))).toEqual([]);
+});
+
+test('63. manual selection: a removed story is pruned and persisted as a normal reload would, an arrived story stays unselected', async ({ page }) => {
+    const ctx = await openPlanning(page, { stored: manualSelection });
+    await expect(taskCard(page, 'E1-S12').locator('.task-checkbox')).toBeChecked();
+    const original = manualSelection(ctx);
+    ctx.scenario.stories = ctx.scenario.stories.filter(story => story.key !== 'E1-S12');
+    ctx.scenario.stories.push(buildStory('E1-S13', 'EPIC-1', { points: 2, updated: '2026-05-09T00:00:00.000+0000' }));
+    await clickRefresh(page, 'EPIC-1');
+    await expect(taskCard(page, 'E1-S12')).toHaveCount(0);
+    await expect(taskCard(page, 'E1-S13')).toHaveCount(1);
+    await expectRefreshSettled(page, 'EPIC-1');
+    await expect(taskCard(page, 'E1-S13').locator('.task-checkbox')).not.toBeChecked();
+    await expect(taskCard(page, 'E1-S11').locator('.task-checkbox')).toBeChecked();
+    await expect.poll(async () => (await persistedPlanning(page))?.selectedTaskKeys?.includes('E1-S12')).toBe(false);
+    const afterRefresh = await persistedPlanning(page);
+    expect(afterRefresh.selectionMode).toBe('manual');
+    expect(afterRefresh.selectedTaskKeys).not.toContain('E1-S13');
+    expect(afterRefresh.selectedTaskKeys).toHaveLength(14);
+
+    // A normal reload from the state stored before the refresh (all 15 keys) must persist exactly the same selection.
+    await page.evaluate(([key, scope, value]) => window.localStorage.setItem(key, JSON.stringify({ [scope]: value })), [PLANNING_STATE_KEY, PLANNING_SCOPE_KEY, original]);
+    await page.reload({ waitUntil: 'networkidle' });
+    await expect(taskCard(page, 'E1-S13')).toHaveCount(1);
+    await expect.poll(async () => (await persistedPlanning(page))?.selectedTaskKeys?.includes('E1-S12')).toBe(false);
+    expect((await persistedPlanning(page)).selectedTaskKeys).toEqual(afterRefresh.selectedTaskKeys);
+});
+
+test('64. a story that moves between epics is counted once in the capacity bar and again after its new epic is refreshed', async ({ page }) => {
+    const ctx = await openPlanning(page, { stored: manualSelection });
+    const points = key => Number(ctx.scenario.stories.find(story => story.key === key).fields.customfield_10004);
+    const total = ctx.scenario.stories.reduce((sum, story) => sum + Number(story.fields.customfield_10004), 0);
+    await expect(selectedSummary(page)).toHaveText(`15 tasks · ${total.toFixed(1)} SP`);
+    // E2-S01 moves into EPIC-1 (still held under EPIC-2 on screen), E1-S02 moves to EPIC-3.
+    Object.assign(ctx.scenario.stories.find(story => story.key === 'E2-S01').fields, { epicKey: 'EPIC-1', parentSummary: 'EPIC-1 synthetic epic', updated: '2026-05-09T00:00:00.000+0000' });
+    Object.assign(ctx.scenario.stories.find(story => story.key === 'E1-S02').fields, { epicKey: 'EPIC-3', parentSummary: 'EPIC-3 synthetic epic', updated: '2026-05-09T00:00:00.000+0000' });
+    await clickRefresh(page, 'EPIC-1');
+    await expect(taskCard(page, 'E1-S02')).toHaveCount(0);
+    await expectRefreshSettled(page, 'EPIC-1');
+    await expect(taskCard(page, 'E2-S01')).toHaveCount(1);
+    await expect(selectedSummary(page)).toHaveText(`14 tasks · ${(total - points('E1-S02')).toFixed(1)} SP`);
+    await clickRefresh(page, 'EPIC-3');
+    await expect(taskCard(page, 'E1-S02')).toHaveCount(1);
+    await expectRefreshSettled(page, 'EPIC-3');
+    await page.waitForTimeout(600);
+    // The returning story is selected again (its key is still in the live selection), and every story is counted exactly once: 15 tasks, the original SP.
+    await expect(selectedSummary(page)).toHaveText(`15 tasks · ${total.toFixed(1)} SP`);
+    await expect(page.locator('.task-item[data-task-key="E1-S02"], .task-item[data-task-key="E2-S01"]')).toHaveCount(2);
+});
+
+test('65. a Planning refresh of a Blocked-only epic hides its Stories Required ghost by the client rule with no readiness request', async ({ page }) => {
+    const ctx = await openPlanning(page, {
+        stored: manualSelection,
+        prepare: (mock) => {
+            setStory(mock, 'E3-S01', { ...teamFields('alpha'), status: { name: 'Blocked' } });
+            mock.respond('/api/eng/story-readiness', ({ json }) => json(readinessSnapshotFor([readinessEpicFor('EPIC-3', 'team-alpha', 'Alpha Team', 'selected_stories_not_actionable')])));
+        },
+    });
+    const ghost = ghostCards(page, 'EPIC-3');
+    await expect(ghost).toHaveCount(1);
+    ctx.scenario.stories.push(buildStory('E3-S02', 'EPIC-3', { points: 2, updated: '2026-05-09T00:00:00.000+0000' }));
+    const since = ctx.calls.length;
+    await clickRefresh(page, 'EPIC-3');
+    await expect(taskCard(page, 'E3-S02')).toHaveCount(1);
+    await expectRefreshSettled(page, 'EPIC-3');
+    await expect(ghost).toHaveCount(0);
+    await page.waitForTimeout(700);
+    expect(describeCalls(alertRequests(ctx.calls.slice(since)))).toEqual([]);
+});
+
+// Header geometry and layering of Task 7, repeated in Planning (the header there also holds the Included/Excluded stat toggle).
+for (const width of [1280, 1024, 390]) {
+    test(`66. Planning: header geometry is identical with the button shown and hidden at ${width}px`, async ({ page }) => {
+        await openPlanning(page, { width, height: width === 390 ? 844 : 1000 });
+        await expect(page.locator('.initiative-body > .epic-block[data-epic-key="EPIC-2"]')).toHaveCount(1);
+        for (const epicKey of ['EPIC-1', 'EPIC-2']) {
+            const header = epicHeader(page, epicKey);
+            // Bring the header clear of the Planning sticky stack first, so both measurements share one scroll position.
+            await hoverHeader(page, epicKey);
+            await parkPointer(page);
+            await expect.poll(() => refreshButton(page, epicKey).evaluate(node => getComputedStyle(node).opacity)).toBe('0');
+            const hidden = await headerGeometry(header);
+            // The pointer goes to the button's corner, not onto the stat toggle: its own hover lift is not a layout change of the button.
+            await hoverHeader(page, epicKey, { atButton: true });
+            await expect.poll(() => refreshButton(page, epicKey).evaluate(node => getComputedStyle(node).opacity)).toBe('1');
+            const shown = await headerGeometry(header);
+            // The Planning sticky stack re-anchors the page by a few px between the two hovers: compare every rect relative to the header's own box.
+            const relative = geometry => ({
+                title: geometry.title.map(rect => [rect[0] - geometry.header[0], rect[1] - geometry.header[1], rect[2], rect[3]]),
+                meta: geometry.meta.map(rect => [rect[0] - geometry.header[0], rect[1] - geometry.header[1], rect[2], rect[3]]),
+                header: [geometry.header[0], geometry.header[2], geometry.header[3]],
+            });
+            expect(hidden.title.length, `${epicKey} title row has children (incl. the stat toggle)`).toBeGreaterThan(1);
+            expect(relative(shown).title, `${epicKey} title row children`).toEqual(relative(hidden).title);
+            expect(relative(shown).meta, `${epicKey} meta children`).toEqual(relative(hidden).meta);
+            expect(relative(shown).header, `${epicKey} header box (left, width, height)`).toEqual(relative(hidden).header);
+            expect(shown.overflow, `${epicKey} header overflow`).toBeLessThanOrEqual(1);
+            expect(shown.buttonInside, `${epicKey} button inside header`).toBe(true);
+        }
+    });
+
+    test(`67. Planning: the stat toggle and title text stay clear of the button, nothing clips at ${width}px`, async ({ page }) => {
+        await openPlanning(page, { width, height: width === 390 ? 844 : 1000 });
+        for (const epicKey of ['EPIC-1', 'EPIC-2']) {
+            await revealRefreshButton(page, epicKey);
+            const header = epicHeader(page, epicKey);
+            const report = await titleVersusButton(header);
+            for (const [name, overflow] of Object.entries(report.clip)) {
+                if (overflow === null) continue;
+                expect(overflow, `${epicKey} ${name} scrollWidth - clientWidth`).toBeLessThanOrEqual(1);
+            }
+            // The stat toggle is a text-bearing element: its centre must hit it (not the button), its text must not clip, and at 390 px its painted text
+            // must end before the button's left edge.
+            const toggle = await header.locator('.epic-stat-toggle').evaluate((node) => {
+                const range = document.createRange();
+                range.selectNodeContents(node);
+                const box = node.getBoundingClientRect();
+                const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+                const buttonRect = node.closest('.epic-header').querySelector('.epic-refresh-button').getBoundingClientRect();
+                return {
+                    text: node.textContent.trim(),
+                    centreHitsToggle: Boolean(hit) && (hit === node || node.contains(hit)),
+                    hit: hit ? `${hit.tagName}.${hit.className}` : null,
+                    clip: node.scrollWidth - node.clientWidth,
+                    paintedRight: Math.min(range.getBoundingClientRect().right, box.right),
+                    buttonLeft: buttonRect.left,
+                    boxIntersectsButton: box.left < buttonRect.right && box.right > buttonRect.left && box.top < buttonRect.bottom && box.bottom > buttonRect.top,
+                };
+            });
+            expect(toggle.text, `${epicKey} stat toggle text`).toMatch(/Included|Excluded/);
+            expect(toggle.centreHitsToggle, `${epicKey} stat toggle centre hit ${toggle.hit}`).toBe(true);
+            expect(toggle.clip, `${epicKey} stat toggle clip`).toBeLessThanOrEqual(1);
+            if (width === 390) {
+                expect(report.titleRowPaddingRight, `${epicKey} title row reserves the button column`).toBe('32px');
+                expect(toggle.boxIntersectsButton, `${epicKey} stat toggle box clear of the button`).toBe(false);
+                expect(toggle.paintedRight, `${epicKey} stat toggle text right edge clear of the button`).toBeLessThanOrEqual(toggle.buttonLeft + 0.5);
+                expect(report.titleTextRight, `${epicKey} title text clear of the button`).toBeLessThanOrEqual(report.buttonLeft + 0.5);
+                for (const child of report.children) {
+                    expect(child.right, `${epicKey} title-row item ${child.name} clear of the button`).toBeLessThanOrEqual(Math.min(report.buttonLeft, report.titleRowContentRight) + 0.5);
+                }
+            }
+        }
+    });
+}
+
+for (const width of [1280, 1024, 800, 600]) {
+    test(`68. Planning: assignee, Story Points and status stay clickable under the button at ${width}px`, async ({ page }) => {
+        await openPlanning(page, { width, height: 1000 });
+        for (const epicKey of ['EPIC-1', 'EPIC-2']) {
+            await revealRefreshButton(page, epicKey);
+            const report = await clickabilityReport(epicHeader(page, epicKey));
+            for (const [name, entry] of Object.entries(report)) {
+                expect(entry.centreHitsTarget, `${epicKey} ${name} centre hit ${entry.hit}`).toBe(true);
+            }
+        }
+    });
+}
+
+for (const width of [1400, 1024, 390]) {
+    test(`69. Planning: an open status menu layers above the button, and the open Planning panel stays above a stuck header and its button at ${width}px`, async ({ page }) => {
+        await openPlanning(page, { width, height: width === 390 ? 844 : 1000 });
+        await revealRefreshButton(page, 'EPIC-1');
+        await epicHeader(page, 'EPIC-1').locator('[data-status-transition-trigger]').click();
+        const menu = page.locator('.status-transition-menu[data-issue-key="EPIC-1"]');
+        await expect(menu).toBeVisible();
+        await expect(menu.locator('.status-transition-option').first()).toBeVisible();
+        const menuReport = await menu.evaluate((menuNode) => {
+            const buttonNode = document.querySelector('.epic-refresh-button[data-epic-refresh="EPIC-1"]');
+            const menuRect = menuNode.getBoundingClientRect();
+            const buttonRect = buttonNode.getBoundingClientRect();
+            const headerRect = buttonNode.closest('.epic-header').getBoundingClientRect();
+            const saved = buttonNode.getAttribute('style');
+            // Force the overlap: park the button under the menu's centre; the menu must win while open and the button when it is hidden.
+            Object.assign(buttonNode.style, {
+                left: `${menuRect.left + menuRect.width / 2 - headerRect.left - buttonRect.width / 2}px`, right: 'auto',
+                top: `${menuRect.top + menuRect.height / 2 - headerRect.top - buttonRect.height / 2}px`,
+            });
+            const centreX = menuRect.left + menuRect.width / 2;
+            const centreY = menuRect.top + menuRect.height / 2;
+            menuNode.style.visibility = 'hidden';
+            const withoutMenu = document.elementFromPoint(centreX, centreY);
+            menuNode.style.visibility = '';
+            const withMenu = document.elementFromPoint(centreX, centreY);
+            if (saved === null) buttonNode.removeAttribute('style'); else buttonNode.setAttribute('style', saved);
+            return {
+                buttonWinsWithoutMenu: Boolean(withoutMenu) && buttonNode.contains(withoutMenu),
+                menuWinsWithMenu: Boolean(withMenu) && menuNode.contains(withMenu),
+                menuZ: Number(getComputedStyle(menuNode).zIndex), buttonZ: Number(getComputedStyle(buttonNode).zIndex),
+            };
+        });
+        expect(menuReport.buttonWinsWithoutMenu && menuReport.menuWinsWithMenu, JSON.stringify(menuReport)).toBe(true);
+        expect(menuReport.menuZ).toBeGreaterThan(menuReport.buttonZ);
+        await page.keyboard.press('Escape');
+        await expect(menu).toHaveCount(0);
+
+        // Sticky order (MRT009): with the open Planning panel and a stuck EPIC-1 header, the header sits below the panel and the button never paints above it.
+        await page.evaluate(() => window.scrollTo(0, 700));
+        await expect.poll(async () => {
+            const first = await page.evaluate(() => window.scrollY);
+            await page.waitForTimeout(200);
+            return first === await page.evaluate(() => window.scrollY);
+        }).toBe(true);
+        const box = await epicHeader(page, 'EPIC-1').boundingBox();
+        await page.mouse.move(box.x + box.width * 0.4, box.y + box.height / 2);
+        await expect.poll(() => refreshButton(page, 'EPIC-1').evaluate(node => getComputedStyle(node).opacity)).toBe('1');
+        const sticky = await page.evaluate(() => {
+            const panel = document.querySelector('.planning-panel.open');
+            const headerNode = document.querySelector('.epic-block[data-epic-key="EPIC-1"] .epic-header');
+            const buttonNode = headerNode.querySelector('.epic-refresh-button');
+            const panelRect = panel.getBoundingClientRect();
+            const headerRect = headerNode.getBoundingClientRect();
+            const buttonRect = buttonNode.getBoundingClientRect();
+            // Force the button up into the panel's rect: the panel must win the hit test there.
+            const saved = buttonNode.getAttribute('style');
+            Object.assign(buttonNode.style, { top: `${panelRect.bottom - 40 - headerRect.top}px`, right: '6px' });
+            const forcedRect = buttonNode.getBoundingClientRect();
+            const hit = document.elementFromPoint(forcedRect.left + forcedRect.width / 2, forcedRect.top + forcedRect.height / 2);
+            if (saved === null) buttonNode.removeAttribute('style'); else buttonNode.setAttribute('style', saved);
+            return {
+                panelBottom: panelRect.bottom, headerTop: headerRect.top, buttonTop: buttonRect.top,
+                panelZ: Number(getComputedStyle(panel).zIndex), headerZ: Number(getComputedStyle(headerNode).zIndex),
+                forcedHitInsidePanel: Boolean(hit) && panel.contains(hit), forcedHit: hit ? `${hit.tagName}.${hit.className}` : null,
+            };
+        });
+        expect(sticky.headerTop, 'stuck header sits at or below the panel bottom').toBeGreaterThanOrEqual(sticky.panelBottom - 1);
+        expect(sticky.buttonTop, 'button inside the stuck header').toBeGreaterThanOrEqual(sticky.panelBottom - 1);
+        expect(sticky.panelZ, `panel z ${sticky.panelZ} above header z ${sticky.headerZ}`).toBeGreaterThan(sticky.headerZ);
+        expect(sticky.forcedHitInsidePanel, `forced overlap: the panel wins over the button (hit ${sticky.forcedHit})`).toBe(true);
+    });
+}
+
 // ---- test 26 (load_performance run) is a command, see the report ----
+
+// ---- tests 70-71 (Task 13 review fixes: the capacity pin) ----
+
+const capacityTeams = calls => capacityRequests(calls).map(call => call.params.teams);
+
+test('70. a team selection made inside the hold window recomputes the capacity scope and reads capacity once for the new scope', async ({ page }) => {
+    const ctx = await openPlanning(page, { stored: manualSelection });
+    setStory(ctx, 'E3-S01', { ...teamFields('alpha'), updated: '2026-05-09T00:00:00.000+0000' });
+    const held = holdEpicResponse(ctx, 'EPIC-3');
+    const since = ctx.calls.length;
+    // The dropdown is opened first and the refresh is triggered without pointer events, so nothing closes the dropdown before the selection.
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+    await page.getByRole('button', { name: 'Filter teams' }).first().click();
+    await expect(page.locator('.team-dropdown-option', { hasText: 'Alpha Team' }).first()).toBeVisible();
+    await refreshButton(page, 'EPIC-3').evaluate(node => node.click());
+    await held.seen;
+    // The hold lasts two animation frames, too narrow for Playwright's own clicks: the first frame the refresh requests after its merge runs the
+    // team selection in the page, so the scope changes while the hold is set.
+    await page.evaluate(() => {
+        const native = window.requestAnimationFrame.bind(window);
+        window.requestAnimationFrame = (callback) => {
+            if (!window.__scopeChange && document.querySelector('.epic-refresh-button[aria-busy="true"]')) {
+                window.__scopeChange = 'started';
+                try {
+                    [...document.querySelectorAll('.team-dropdown-option')].find(node => node.textContent.includes('Alpha Team')).click();
+                    window.__scopeChange = 'done';
+                } catch (error) { window.__scopeChange = `failed: ${error.message}`; }
+            }
+            return native(callback);
+        };
+    });
+    held.release();
+    await expectRefreshSettled(page, 'EPIC-3');
+    expect(await page.evaluate(() => window.__scopeChange), 'the team selection ran inside the hold window').toBe('done');
+    await expect.poll(() => capacityRequests(ctx.calls.slice(since)).length).toBe(1);
+    await page.waitForTimeout(1200);
+    expect(capacityTeams(ctx.calls.slice(since)), 'exactly one capacity read, for the new scope').toEqual(['Alpha Team']);
+    await expect(teamCard(page, 'Alpha Team').locator('.microbar')).toHaveAttribute('aria-label', /against 5\.5 capacity/);
+});
+
+// Mutation result: this case does not isolate the loadEpochRef term of the pin key. The Refresh also bumps capacityRefreshNonce and the read always
+// names the displayed teams, so it passes with the term removed. It guards that the pin never blocks the department Refresh's capacity reread.
+test('71. after a held refresh the global Refresh rereads capacity for the displayed teams', async ({ page }) => {    const ctx = await openPlanning(page, { stored: manualSelection });
+    setStory(ctx, 'E3-S01', { ...teamFields('alpha'), updated: '2026-05-09T00:00:00.000+0000' });
+    await clickRefresh(page, 'EPIC-3');
+    await expectRefreshSettled(page, 'EPIC-3');
+    await expect(page.locator('.planning-team-capacity-cards .team-stat-card')).toHaveCount(1);
+    await page.waitForTimeout(1000);
+    const since = ctx.calls.length;
+    await globalRefreshButton(page).click();
+    // The reread names the displayed team set only: with the pin still in place it would repeat the pre-refresh set.
+    await expect.poll(() => capacityTeams(ctx.calls.slice(since)).at(-1), { timeout: 15000 }).toBe('Alpha Team');    await expect(teamCard(page, 'Alpha Team').locator('.microbar')).toHaveAttribute('aria-label', /against 5\.5 capacity/);
+});

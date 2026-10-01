@@ -165,7 +165,7 @@ A user-visible action needs an analytics decision. Proposal, reusing existing pa
 - Partial lane failure and denied lanes leave those cards untouched.
 - Header geometry and layering have strict existing tests and past regressions; new assertions are listed in section 6.
 - A refreshed epic can disappear (its last story left) or move; focus and anchoring rules in 3.5 and 3.8.
-- Planning: capacity cards may flicker (capacity signature re-fetch) and the selection effect prunes and persists; Planning is enabled last, behind its own tests.
+- Planning: the selection effect prunes and persists; Planning is enabled last, behind its own tests. The capacity cards do not blank or refetch: the brief's 2-frame hold became a pin of the capacity scope signature that lasts until the user changes the capacity scope (sprint, group, Planning mode, selected teams) or a department load bumps the load epoch. Consequence: after a per-epic refresh in Planning, a team that newly rises above zero Story Points shows no capacity value until the next scope change or department Refresh, a team that drops to zero loses its card with no refetch, and the same applies to a later inline Story Points edit that crosses zero. Alternative considered and not taken: one silent capacity reread after the refresh settles when the displayed team set differs (keeps old cards, no blanking, but breaks the "zero `/api/capacity` requests" acceptance test). Flagged for the requester's decision.
 - Hidden Planning capacity changes are silent (no alert panel there).
 - Line budgets: `jira_server.py` and `dashboard.jsx` ratchets are certain (itemized comments).
 - The baseline suite is not green (issue #210); regressions are judged against a recorded baseline.

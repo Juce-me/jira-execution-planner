@@ -190,14 +190,21 @@ export function useEpicRefresh(inputs) {
             const fetchedEpic = update.epicDetailsPatch?.[epicKey];
             const epicChangedFields = fetchedEpic ? diffEpic(latest.current.getState().epicDetails?.[epicKey], fetchedEpic).changedFields : [];
             const keptForDissolve = new Set();
-            flushSync(() => {
-                update.mergeInputs.forEach(input => applyMerge(input, epicKey, keptForDissolve));
-                applyCopies(update);
-            });
-            // The updaters have run by now; leaving cards get is-removing in the same task, before paint.
-            flushSync(() => scheduleLeaving([...keptForDissolve], epicKey, focusedInBlock));
-            latest.current.clearAggregateSources();
-            await twoFrames();
+            // Planning's capacity scope signature keeps its previous value while the merge renders (a team crossing zero SP must not reread capacity).
+            const { capacityScopeHoldRef } = latest.current;
+            if (capacityScopeHoldRef) capacityScopeHoldRef.current = true;
+            try {
+                flushSync(() => {
+                    update.mergeInputs.forEach(input => applyMerge(input, epicKey, keptForDissolve));
+                    applyCopies(update);
+                });
+                // The updaters have run by now; leaving cards get is-removing in the same task, before paint.
+                flushSync(() => scheduleLeaving([...keptForDissolve], epicKey, focusedInBlock));
+                latest.current.clearAggregateSources();
+                await twoFrames();
+            } finally {
+                if (capacityScopeHoldRef) capacityScopeHoldRef.current = false;
+            }
 
             const newHeader = document.querySelector(headerSelector(epicKey));
             const newBlock = newHeader?.closest('[data-epic-key]');

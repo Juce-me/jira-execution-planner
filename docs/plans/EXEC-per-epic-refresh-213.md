@@ -70,6 +70,7 @@ Every task's requirements include this section. Values are copied from the appro
 | T10 | done | `b454c3c5` | `epicKeys` on missing-info (cache key extended only when present, new `refresh`), backlog-epics and story-readiness (own in-flight key, never the department snapshot); `/api/dependencies` accepts body `refresh` and rejects malformed keys with 400 |
 | T11 | done | `559f6cb5` | `recheckEpicAlerts(epicKey, calls, { alertVersion })` runs both lanes through capturing setters; Ready to Close entries and story copies are deleted only when the same lane's `epic-alerts` call succeeded with an empty list (MRT019; the server answers 200 with empty data when its epic search fails) |
 | T12 | done | `afd893eb` | `fetchEpicReadiness`/`fetchEpicMissingInfo`/`fetchEpicBacklog`; `useStoryReadiness.mergeEpic` never blanks the snapshot; an absent `initiative` key in refreshed epic details counts as cleared. Known limitation: a Backlog entry is deleted only on an ok-empty `epic-alerts` answer, so an epic that stays in scope but stops being a backlog epic keeps its Backlog alert until the next full load (the server cannot signal a failed search). Planning Stories Required ghosts are corrected only by the client rule and the cleared-field patch; Task 13 decides whether Planning needs the per-epic readiness call |
+| T13 | done (uncommitted) | none yet | Planning enabled. The 2-frame capacity hold became a pin that lasts until the capacity scope changes or a department load bumps the load epoch; a team crossing zero Story Points shows no capacity value (rise) or loses its card (drop) until then. Flagged for the requester's decision, see the Task 13 Outcome |
 
 ## Endpoint Contract Matrix
 
@@ -2587,6 +2588,8 @@ wc -l frontend/src/dashboard.jsx
 ```
 Expected: new tests pass; `planning_selection_defaults` shows only its known baseline failure (#210).
 - [ ] **Step 4: Report for commit.** Message: `Enable per-epic refresh in Planning with capacity and selection guards`.
+
+**Outcome (2026-10-01; accepted limitation, flagged for the requester's decision).** The brief's 2-frame hold could not meet the "zero `/api/capacity` requests" test, because the signature recomputes the moment the hold clears. It became a PIN: while the hold is set in Planning the previous capacity scope signature is pinned, and the pin lasts until the user changes the capacity scope (sprint, group, Planning mode, selected teams) or a department load bumps the load epoch. Consequences: after a per-epic refresh in Planning, a team that newly rises above zero Story Points shows no capacity value until the next scope change or department Refresh; a team that drops to zero loses its card with no refetch; the same applies to a later inline Story Points edit that crosses zero. Alternative considered and not taken: one silent capacity reread after the refresh settles when the displayed team set differs (keeps the old cards, no blanking, but breaks the "zero `/api/capacity` requests" acceptance test). A scope change inside the hold window recomputes the signature normally (test 70). Test 71 covers the department Refresh after a pin; it does not isolate the load-epoch term of the pin key (the Refresh also bumps the capacity refresh nonce and the read names the displayed teams), so removing that term did not fail it.
 
 ---
 

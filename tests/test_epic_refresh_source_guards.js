@@ -72,7 +72,7 @@ test('the dashboard mounts the per-epic refresh in Catch Up without touching the
     const hookCall = source.indexOf('const epicRefresh = useEpicRefresh(');
     assert.ok(hookCall > source.indexOf('window.addEventListener(AUTH_LONG_ABSENCE_EVENT'), 'the hook call must follow the long-absence effect so every input is declared');
     assert.ok(hookCall > source.indexOf('const manualRefreshDisabled ='));
-    assert.match(source, /\{isCatchUpMode && epicGroup\.key !== 'NO_EPIC' && \(\s*<EpicRefreshButton/, 'the button mounts in Catch Up only');
+    assert.match(source, /\{isEpicRefreshMode && epicGroup\.key !== 'NO_EPIC' && \(\s*<EpicRefreshButton/, 'the button mounts in Catch Up and Planning only');
     assert.equal((source.match(/data-epic-refresh-status/g) || []).length, 1, 'one status region');
     assert.equal(source.includes('aria-live="polite" data-epic-refresh-status'), false);
 });
@@ -107,6 +107,24 @@ test('the epic refresh guards dependencies, subtasks and the alert cohort withou
     }
     assert.ok(refreshBody.includes('refresh: true') && refreshBody.includes('isCurrentAggregateRead'));
     assert.ok(read('api', 'engApi.js').includes('JSON.stringify(refresh ? { keys, refresh: true } : { keys })'), 'existing callers keep the plain { keys } body');
+});
+
+test('Planning enablement: one mode gate, the Planning surface, and the capacity scope hold', () => {
+    const source = read('dashboard.jsx');
+    assert.match(source, /const isEpicRefreshMode = selectedView === 'eng' && !showStats && !showScenario && !showBoard;/, 'Catch Up and Planning, never Stats, Scenario or Board');
+    const guards = source.slice(source.indexOf('readGuards: (epicKey) => ({'), source.indexOf('getProtectedKeys:'));
+    assert.ok(guards.includes('!isEpicRefreshMode') && !guards.includes('!isCatchUpMode'), 'the click guard allows Planning');
+    assert.ok(source.includes("sourceSurface: isCatchUpMode ? 'catch_up' : 'planning'"), 'the analytics surface follows the mode');
+    assert.ok(source.includes('capacityScopeHoldRef,'), 'the hook receives the hold ref');
+    // The signature is pinned while the hold is set and released only by a user scope change or a department reload.
+    assert.match(source, /if \(showPlanning && capacityScopeHoldRef\.current && activeCapacityScopeRef\.current && !capacityScopePinRef\.current\) capacityScopePinRef\.current = \{ key: capacityScopeKey, signature: activeCapacityScopeRef\.current \};/);
+    assert.match(source, /const capacityScopeSignature = capacityScopePinRef\.current \? capacityScopePinRef\.current\.signature : buildCapacityScopeSignature\(/);
+    assert.ok(/const capacityScopeKey = \[[^\]]*loadEpochRef\.current[^\]]*isAllTeamsSelected[^\]]*selectedTeamSet/.test(source), 'the pin key covers the sprint, group, team scope and the department load epoch');
+    const hook = read('eng', 'useEpicRefresh.js');
+    const apply = hook.slice(hook.indexOf('const apply = async update'), hook.indexOf('const setEpicState'));
+    assert.ok(apply.indexOf('capacityScopeHoldRef.current = true') > -1 && apply.indexOf('capacityScopeHoldRef.current = true') < apply.indexOf('flushSync(() => {'), 'the hold is set before the merge');
+    assert.match(apply, /await twoFrames\(\);\s*\} finally \{\s*if \(capacityScopeHoldRef\) capacityScopeHoldRef\.current = false;/, 'the hold is cleared two frames after the merge, on every path');
+    assert.equal(hook.includes('alertCallsFor({ ...update, epicChangedFields }, { isFutureSprint: latest.current.isFutureSprint === true, isCatchUp: sourceSurface === \'catch_up\' })'), true, 'Planning issues no alert request');
 });
 
 test('EPM surfaces carry no epic-refresh or glare hooks', () => {

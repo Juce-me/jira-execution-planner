@@ -168,7 +168,9 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # clearAggregateSources/afterApply wiring (+9, +52 in total). The skip's signature-and-epoch
     # check lives in frontend/src/eng/epicRefreshDependencySkip.js so a discarded refresh cannot
     # swallow a later department fetch (+3).
-    "frontend/src/dashboard.jsx": 18287,
+    # feature/213-per-epic-refresh Task 13 enables the refresh in Planning: the isEpicRefreshMode
+    # gate (+1) and the capacity scope pin that keeps a refresh from refiring /api/capacity (+4).
+    "frontend/src/dashboard.jsx": 18292,
 }
 
 

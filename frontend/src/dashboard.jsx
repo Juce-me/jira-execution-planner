@@ -948,6 +948,7 @@ import {
             const excludedCapacityEpicDropdownRef = useRef(null);
             const isStatsSourceOnlyStatsView = showStats && (statsView === 'excludedCapacity' || statsView === 'monoCrossShare' || statsView === 'projectTrack');
             const isCatchUpMode = selectedView === 'eng' && !showPlanning && !showStats && !showScenario && !showBoard;
+            const isEpicRefreshMode = selectedView === 'eng' && !showStats && !showScenario && !showBoard;
             const boardScopeRequested = selectedView === 'eng' && showBoard && ['component', 'all_work'].includes(boardStrictScope)
                 && adminSettingsGate.status !== 'missing';
             useEffect(() => { if (selectedView !== 'eng' || !showBoard) setBoardStrictScope(''); }, [selectedView, showBoard]);
@@ -997,7 +998,7 @@ import {
             const [capacityRefreshNonce, setCapacityRefreshNonce] = useState(0);
             const capacityReadGenerationRef = useRef(0);
             const capacityReadAbortRef = useRef(null);
-            const activeCapacityScopeRef = useRef('');
+            const activeCapacityScopeRef = useRef(''), capacityScopeHoldRef = useRef(false), capacityScopePinRef = useRef(null), capacityScopeKeyRef = useRef(null);
             const [scenarioLoading, setScenarioLoading] = useState(false);
             const [scenarioError, setScenarioError] = useState('');
             const [scenarioData, setScenarioData] = useState(null);
@@ -12819,7 +12820,11 @@ import {
                     .map(([, teamName]) => teamName);
             }, [showPlanning, capacityEnabled, displayedTeamOptions]);
 
-            const capacityScopeSignature = buildCapacityScopeSignature(
+            // A per-epic refresh (#213) pins the previous signature until the scope changes or a department load bumps loadEpochRef (read during render on purpose: loads set state, so a render follows); the trade-off is that a team crossing zero Story Points is not reread until then.
+            const capacityScopeKey = [selectedSprintInfo?.name, activeGroupId, showPlanning, capacityEnabled, loadEpochRef.current, isAllTeamsSelected, [...selectedTeamSet].sort().join(',')].join('|');
+            if (capacityScopeKeyRef.current !== capacityScopeKey) { capacityScopeKeyRef.current = capacityScopeKey; capacityScopePinRef.current = null; activeCapacityScopeRef.current = ''; }
+            if (showPlanning && capacityScopeHoldRef.current && activeCapacityScopeRef.current && !capacityScopePinRef.current) capacityScopePinRef.current = { key: capacityScopeKey, signature: activeCapacityScopeRef.current };
+            const capacityScopeSignature = capacityScopePinRef.current ? capacityScopePinRef.current.signature : buildCapacityScopeSignature(
                 selectedSprintInfo?.name || '',
                 capacityTeamNames,
             );
@@ -14746,7 +14751,7 @@ import {
 	                                            </span>
 	                                        )}
 	                                    </div>
-                                    {isCatchUpMode && epicGroup.key !== 'NO_EPIC' && (
+                                    {isEpicRefreshMode && epicGroup.key !== 'NO_EPIC' && (
                                         <EpicRefreshButton epicKey={epicGroup.key} epicName={epicTitle} state={epicRefresh.epicStates[epicGroup.key] || 'idle'} onRefresh={epicRefresh.refreshEpic} />
                                     )}
 	                                </div>
@@ -14990,7 +14995,7 @@ import {
                 readGuards: (epicKey) => ({
                     blocked: loading || productTasksLoading || techTasksLoading || manualRefreshDisabled || !tasksFetched
                         || String(lastLoadedSprintRef.current ?? '') !== String(selectedSprint ?? '')
-                        || alertCohortRef.current !== null || boardScopeRequested || !isCatchUpMode || epicInteractionActiveFor(epicKey),
+                        || alertCohortRef.current !== null || boardScopeRequested || !isEpicRefreshMode || epicInteractionActiveFor(epicKey),
                     reason: '', epoch: loadEpochRef.current, version: groupLoadVersionRef.current, scopeKey: `${activeGroupId}|${selectedSprint}`,
                 }),
                 getProtectedKeys: () => new Set([...pendingStatusIssueKeys, ...pendingPriorityIssueKeys, ...pendingProjectTrackIssueKeys, ...issueFieldEdits.pendingIssueKeys,
@@ -15007,7 +15012,7 @@ import {
                     void refreshEpicDependencies(keys);
                     invalidateStorySubtasks([...update.changedKeys, ...update.addedKeys, ...update.silentKeys]);
                 },
-                getAlertVersion: () => catchUpAlertVersionRef.current, loadEpicAlerts, loadEpicReadiness: storyReadiness.loadEpic, mergeReadinessEpic: storyReadiness.mergeEpic, isFutureSprint: isFutureSprintSelected, track: trackEpicRefreshAction, sourceSurface: isCatchUpMode ? 'catch_up' : 'planning',
+                getAlertVersion: () => catchUpAlertVersionRef.current, loadEpicAlerts, loadEpicReadiness: storyReadiness.loadEpic, mergeReadinessEpic: storyReadiness.mergeEpic, isFutureSprint: isFutureSprintSelected, track: trackEpicRefreshAction, sourceSurface: isCatchUpMode ? 'catch_up' : 'planning', capacityScopeHoldRef,
             });
 
             // Group Board composer props (Boards tab, GroupBoardsTab.jsx). The Save gate validates

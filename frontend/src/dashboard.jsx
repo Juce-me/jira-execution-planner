@@ -62,7 +62,7 @@ import { createEngIssueEditState, patchEngIssueList, patchEngLoadedState } from 
 import { navigateToAlertStory } from './eng/alertStoryNavigation.js';
 import { navigateToStoryRequirement } from './eng/alertEpicNavigation.js';
 import { useEngAlertFilters } from './eng/useEngAlertFilters.js';
-import { isStatusTransitionSurfaceEnabled, buildEngStatusTargets } from './eng/engStatusTransitionUtils.js';
+import { isStatusTransitionSurfaceEnabled, buildEngStatusTargets, resolveSubtaskParentStoryKeys } from './eng/engStatusTransitionUtils.js';
 import { deriveActiveEngMode, useEngModeState } from './eng/engModeState.js';
 import StatusTransitionMenu from './issues/StatusTransitionMenu.jsx';
 import PriorityTransitionMenu from './issues/PriorityTransitionMenu.jsx';
@@ -1145,6 +1145,8 @@ import {
             const loadEpochRef = useRef(0); const alertCohortRef = useRef(null); const dependencySkipRef = useRef(createDependencySkip()); const recentEditKeysRef = useRef(new Map());
             const groupLoadVersionRef = useRef(0);
             const rearmCatchUpAlerts = () => { catchUpAlertLoadRef.current = ''; catchUpAlertForceRefreshRef.current = true; catchUpAlertVersionRef.current += 1; setCatchUpAlertRefreshNonce(value => value + 1); };
+            const alertCohortListenersRef = useRef(new Set()); const notifyAlertCohortSettle = outcome => [...alertCohortListenersRef.current].forEach(listener => listener(outcome));
+            const subscribeAlertCohortSettle = listener => { alertCohortListenersRef.current.add(listener); return () => { alertCohortListenersRef.current.delete(listener); }; };
             const storyRequirementScopeRef = useRef('');
             const epmSettingsProjectsRequestIdRef = useRef(0);
             const epmSettingsProjectsCacheRef = useRef(new Map());
@@ -7887,8 +7889,8 @@ import {
                     backlogLoad = loadBacklog();
                 }
                 Promise.allSettled([alertEpicsLoad, missingInfoLoad, readyToCloseProductLoad, readyToCloseTechLoad, backlogLoad])
-                    .finally(() => { if (alertCohortRef.current === alertCohortToken) alertCohortRef.current = null; });
-                return () => { cancelled = true; alertController.abort(); if (alertCohortRef.current === alertCohortToken) alertCohortRef.current = null; if (catchUpAlertVersionRef.current === alertCohortVersion) { catchUpAlertVersionRef.current += 1; if (catchUpAlertLoadRef.current === alertLoadSignature) catchUpAlertLoadRef.current = ''; } };
+                    .finally(() => { if (alertCohortRef.current === alertCohortToken) alertCohortRef.current = null; notifyAlertCohortSettle({ aborted: false }); });
+                return () => { cancelled = true; alertController.abort(); if (alertCohortRef.current === alertCohortToken) alertCohortRef.current = null; notifyAlertCohortSettle({ aborted: true }); if (catchUpAlertVersionRef.current === alertCohortVersion) { catchUpAlertVersionRef.current += 1; if (catchUpAlertLoadRef.current === alertLoadSignature) catchUpAlertLoadRef.current = ''; } };
             }, [isCatchUpMode, activeGroupId, activeGroupTeamIds.join('|'), selectedSprint, selectedSprintInfo?.name, selectedSprintInfo?.state, groupsLoading, groupPreferences.onboardingRequired, tasksFetched, productTasksLoading, techTasksLoading, isFutureSprintSelected, configRefreshNonce, catchUpAlertRefreshNonce]);
 
             useEffect(() => {
@@ -12593,6 +12595,12 @@ import {
                     excludedCapacityCacheRef.current = {}; setExcludedCapacityData(null); setDependencyData({}); setDependencyLookupCache({}); setDependencyRefreshNonce(value => value + 1); setExcludedCapacityRefreshNonce(value => value + 1); rearmCatchUpAlerts();
                 }
             };
+            // Status and priority edits: Catch Up re-checks only the edited epic (priority re-checks none); anything the scoped path cannot
+            // handle (other modes, unresolved or NO_EPIC keys) takes the request-free department invalidation; no succeeded key changes nothing.
+            const invalidateAlertsAfterEdit = ({ keys, field }) => {
+                if (!keys?.length) return;
+                if (!epicRefresh.recheckAlertsForEdit({ keys, field }).handled) rearmCatchUpAlerts();
+            };
             issueEditStateRef.current.setInvalidationHandler(invalidateEngIssueFieldSources);
             const applyLocalEngIssueField = React.useCallback((issueKey, fieldName, fieldValue) => {
                 recentEditKeysRef.current.set(issueKey, Date.now());
@@ -12623,7 +12631,7 @@ import {
                 onApplyLocalStatus: (issueKey, statusName) => {
                     applyLocalEngIssueField(issueKey, 'status', { name: statusName });
                 },
-                onAlertDataInvalidated: rearmCatchUpAlerts,
+                onAlertDataInvalidated: ({ keys } = {}) => invalidateAlertsAfterEdit({ keys, field: 'status' }),
             });
             const {
                 activeSingleIssueTarget: statusTransitionActiveTarget,
@@ -12646,8 +12654,9 @@ import {
                 onAuthRecoveryRequired: () => trackAppError('auth', 'session_recovery', 'reauth'),
                 onApplyLocalPriority: (issueKey, priorityPatch) => {
                     applyLocalEngIssueField(issueKey, 'priority', priorityPatch);
+                    storyReadiness.patchEpic(issueKey, 'priority', priorityPatch); // readiness-only epics: no-op for any other key
                 },
-                onAlertDataInvalidated: rearmCatchUpAlerts,
+                onAlertDataInvalidated: ({ keys } = {}) => invalidateAlertsAfterEdit({ keys, field: 'priority' }),
             });
             const {
                 activePriorityTarget, openPriorityControl, closePriorityControl,
@@ -14988,7 +14997,7 @@ import {
             };
             const epicRefresh = useEpicRefresh({
                 loadEpicRefresh: loadEpicRefreshWithDependencySkip,
-                getState: () => ({ productTasks, techTasks, loadedProductTasks, loadedTechTasks, epicDetails, readyToCloseProductTasks, readyToCloseTechTasks,
+                getState: () => ({ productTasks, techTasks, loadedProductTasks, loadedTechTasks, epicDetails, readyToCloseProductTasks, readyToCloseTechTasks, missingPlanningInfoTasks,
                     productEpicsInScope, techEpicsInScope, readyToCloseProductEpicsInScope, readyToCloseTechEpicsInScope }),
                 setters: { setProductTasks, setTechTasks, setLoadedProductTasks, setLoadedTechTasks, setEpicDetails, setReadyToCloseProductTasks, setReadyToCloseTechTasks,
                     setProductEpicsInScope, setTechEpicsInScope, setReadyToCloseProductEpicsInScope, setReadyToCloseTechEpicsInScope, setMissingPlanningInfoTasks, setMissingInfoEpics, setBacklogProductEpics, setBacklogTechEpics },
@@ -15012,7 +15021,8 @@ import {
                     void refreshEpicDependencies(keys);
                     invalidateStorySubtasks([...update.changedKeys, ...update.addedKeys, ...update.silentKeys]);
                 },
-                getAlertVersion: () => catchUpAlertVersionRef.current, loadEpicAlerts, loadEpicReadiness: storyReadiness.loadEpic, mergeReadinessEpic: storyReadiness.mergeEpic, isFutureSprint: isFutureSprintSelected, track: trackEpicRefreshAction, sourceSurface: isCatchUpMode ? 'catch_up' : 'planning', capacityScopeHoldRef,
+                getAlertVersion: () => catchUpAlertVersionRef.current, getSubtaskParentStoryKeys: keys => resolveSubtaskParentStoryKeys(keys, storySubtasksByKey),
+                alertCohortInFlight: () => alertCohortRef.current !== null, subscribeAlertCohortSettle, loadEpicAlerts, loadEpicReadiness: storyReadiness.loadEpic, mergeReadinessEpic: storyReadiness.mergeEpic, isFutureSprint: isFutureSprintSelected, track: trackEpicRefreshAction, sourceSurface: isCatchUpMode ? 'catch_up' : 'planning', capacityScopeHoldRef,
             });
 
             // Group Board composer props (Boards tab, GroupBoardsTab.jsx). The Save gate validates

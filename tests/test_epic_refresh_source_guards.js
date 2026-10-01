@@ -65,8 +65,13 @@ test('the dashboard mounts the per-epic refresh in Catch Up without touching the
     for (const token of ['useEpicRefresh(', 'EpicRefreshButton', 'isLeaving={', 'loadEpochRef', 'alertCohortRef', 'data-epic-refresh-status']) {
         assert.ok(source.includes(token), `dashboard.jsx must contain ${token}`);
     }
-    assert.equal((source.match(/rearmCatchUpAlerts\(\);/g) || []).length, 3);
-    assert.equal((source.match(/onAlertDataInvalidated: rearmCatchUpAlerts/g) || []).length, 2);
+    // Task 13b: assignee, Story Points, the global Refresh and the request-free fallback of invalidateAlertsAfterEdit.
+    assert.equal((source.match(/rearmCatchUpAlerts\(\);/g) || []).length, 4);
+    assert.equal((source.match(/onAlertDataInvalidated: rearmCatchUpAlerts/g) || []).length, 0);
+    assert.equal((source.match(/invalidateAlertsAfterEdit\(\{ keys, field: '(?:status|priority)' \}\)/g) || []).length, 2, 'both transition hooks go through the one edit-invalidation function');
+    for (const token of ['getSubtaskParentStoryKeys: keys => resolveSubtaskParentStoryKeys(keys, storySubtasksByKey)', 'alertCohortInFlight: () => alertCohortRef.current !== null', 'subscribeAlertCohortSettle, loadEpicAlerts', 'missingPlanningInfoTasks,\n']) {
+        assert.ok(source.includes(token), `the hook call must pass ${token}`);
+    }
     assert.match(source, /const loadMeasuredGroupTasks = \(options = \{\}\) => \{\s*loadEpochRef\.current \+= 1;/);
     assert.match(source, /const applyLocalEngIssueField = React\.useCallback\(\(issueKey, fieldName, fieldValue\) => \{\s*recentEditKeysRef\.current\.set\(issueKey, Date\.now\(\)\);/);
     const hookCall = source.indexOf('const epicRefresh = useEpicRefresh(');

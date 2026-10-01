@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { fetchEpicReadiness, fetchStoryReadiness } from '../api/engApi.js';
-import { mergeReadinessEpic } from './epicRefreshAlerts.js';
+import { mergeReadinessEpic, patchReadinessEpicField } from './epicRefreshAlerts.js';
 
 const SUPPORTED_SPRINT_STATES = new Set(['active', 'future']);
 
@@ -170,6 +170,16 @@ export function useStoryReadiness({
         });
     }, []);
 
+    // Local field patch of one epic in the held snapshot (an inline edit of a Stories Required epic that has no sprint stories). Makes no
+    // request, never blanks the snapshot and never changes the status; a no-op for an unknown epic or a snapshot that is not READY.
+    const patchEpic = React.useCallback((epicKey, field, value) => {
+        setState((prev) => {
+            if (prev.status !== STORY_READINESS_STATUS.READY || !prev.snapshot) return prev;
+            const snapshot = patchReadinessEpicField(prev.snapshot, epicKey, field, value);
+            return snapshot === prev.snapshot ? prev : { ...prev, snapshot };
+        });
+    }, []);
+
     // One epic's readiness for the current scope: { status: 'ok', payload } or a status that changes nothing (failures are silent).
     const loadEpic = React.useCallback(async (epicKey, { signal } = {}) => {
         const requested = scopeRef.current;
@@ -189,5 +199,5 @@ export function useStoryReadiness({
         }
     }, [shouldLoad, backendUrl, requestEpicReadiness]);
 
-    return { ...state, scope, scopeKey, retry, mergeEpic, loadEpic };
+    return { ...state, scope, scopeKey, retry, mergeEpic, patchEpic, loadEpic };
 }

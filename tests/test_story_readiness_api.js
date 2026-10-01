@@ -125,7 +125,7 @@ test('story readiness lifecycle helpers reject stale scopes and classify only tr
     const transformed = source
         .replace("import * as React from 'react';\n", '')
         .replace("import { fetchEpicReadiness, fetchStoryReadiness } from '../api/engApi.js';\n", 'const fetchEpicReadiness = null; const fetchStoryReadiness = null;\n')
-        .replace("import { mergeReadinessEpic } from './epicRefreshAlerts.js';\n", 'const mergeReadinessEpic = null;\n')
+        .replace("import { mergeReadinessEpic, patchReadinessEpicField } from './epicRefreshAlerts.js';\n", 'const mergeReadinessEpic = null; const patchReadinessEpicField = null;\n')
         .replaceAll('export const ', 'const ')
         .replaceAll('export function ', 'function ');
     const helpers = new Function(`${transformed}; return { storyReadinessScopeKey, storyReadinessScopeMatches, classifyStoryReadinessError, STORY_READINESS_STATUS };`)();
@@ -214,7 +214,18 @@ test('story readiness hook merges one epic into the held snapshot without blanki
     assert.doesNotMatch(merge, /snapshot: null/);
     assert.match(merge, /STORY_READINESS_STATUS\.READY/);
     assert.match(merge, /storyReadinessScopeMatches\(/);
-    assert.match(source, /return \{ \.\.\.state, scope, scopeKey, retry, mergeEpic, loadEpic \}/);
+    assert.match(source, /return \{ \.\.\.state, scope, scopeKey, retry, mergeEpic, patchEpic, loadEpic \}/);
+});
+
+test('story readiness hook patches one epic field locally without a request, a blank snapshot or a status change', () => {
+    const source = fs.readFileSync(hookPath, 'utf8');
+    assert.match(source, /patchReadinessEpicField/);
+    assert.match(source, /const patchEpic = React\.useCallback/);
+    const patch = source.slice(source.indexOf('const patchEpic = React.useCallback'), source.indexOf('const loadEpic = React.useCallback'));
+    assert.doesNotMatch(patch, /snapshot: null/);
+    assert.doesNotMatch(patch, /requestEpicReadiness|requestStoryReadiness|status: STORY_READINESS_STATUS/);
+    assert.match(patch, /prev\.status !== STORY_READINESS_STATUS\.READY \|\| !prev\.snapshot\) return prev/);
+    assert.match(patch, /snapshot === prev\.snapshot \? prev : \{ \.\.\.prev, snapshot \}/);
 });
 
 test('story readiness hook sends no per-epic request unless the department load condition holds', () => {

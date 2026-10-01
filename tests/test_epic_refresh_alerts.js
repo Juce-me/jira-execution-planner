@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { alertCallsFor, mergeEpicMissingIssues, mergeEpicScopeEntries, mergeReadinessEpic, replaceEpicStories, recomputeMissingPlanningInfo, shouldHideReadinessGhost } from '../frontend/src/eng/epicRefreshAlerts.js';
+import { alertCallsFor, alertCallsForEdit, mergeEpicMissingIssues, mergeEpicScopeEntries, mergeReadinessEpic, patchReadinessEpicField, replaceEpicStories, recomputeMissingPlanningInfo, shouldHideReadinessGhost } from '../frontend/src/eng/epicRefreshAlerts.js';
 
 const story = (key, fields = {}) => ({ key, fields: { summary: key, status: { name: 'To Do' }, priority: { name: 'Medium' }, issuetype: { name: 'Story' }, epicKey: 'EPIC-1', teamId: 't1', customfield_10004: 3, customfield_10101: [{ id: 7 }], updated: '1', ...fields } });
 const entry = (key, missingFields, fields = {}) => ({ key, fields: { ...story(key).fields, missingFields, ...fields } });
@@ -219,6 +219,27 @@ test('mergeReadinessEpic replaces the epic entry in place and keeps the other ep
     assert.equal(out.scope, snapshot.scope);
 });
 
+test('patchReadinessEpicField sets one field on the matching epic and keeps every other epic, the scope and the snapshot shape', () => {
+    const snapshot = snapshotOf(readinessEpic('E-1', { priority: { name: 'Major' } }), readinessEpic('E-2', { priority: { name: 'Major' } }));
+    const out = patchReadinessEpicField(snapshot, 'e-1', 'priority', { id: '2', name: 'High' });
+    assert.deepEqual(out.epics[0].priority, { id: '2', name: 'High' });
+    assert.equal(out.epics[0].summary, 'E-1');
+    assert.equal(out.epics[1], snapshot.epics[1]);
+    assert.equal(out.scope, snapshot.scope);
+    assert.deepEqual(snapshot.epics[0].priority, { name: 'Major' });
+});
+
+test('patchReadinessEpicField keeps the snapshot identity for an unknown epic, an unchanged value, or a snapshot without epics', () => {
+    const snapshot = snapshotOf(readinessEpic('E-1', { priority: { name: 'Major' } }));
+    assert.equal(patchReadinessEpicField(snapshot, 'E-9', 'priority', { name: 'High' }), snapshot);
+    assert.equal(patchReadinessEpicField(snapshot, 'E-1', 'priority', { name: 'Major' }), snapshot);
+    assert.equal(patchReadinessEpicField(snapshot, '', 'priority', { name: 'High' }), snapshot);
+    assert.equal(patchReadinessEpicField(snapshot, 'E-1', '', { name: 'High' }), snapshot);
+    assert.equal(patchReadinessEpicField(null, 'E-1', 'priority', { name: 'High' }), null);
+    const bare = { schemaVersion: 1 };
+    assert.equal(patchReadinessEpicField(bare, 'E-1', 'priority', { name: 'High' }), bare);
+});
+
 test('mergeReadinessEpic appends an epic the snapshot did not hold and deletes one the payload no longer lists', () => {
     const snapshot = snapshotOf(readinessEpic('E-2'));
     const appended = mergeReadinessEpic({ snapshot, epicPayload: payloadOf(readinessEpic('E-1')), epicKey: 'E-1' });
@@ -310,4 +331,26 @@ test('mergeEpicMissingIssues: an absent issue is kept (partial data, MRT019) unl
     const gone = mergeEpicMissingIssues({ held, incoming: [], epicKey: 'EPIC-1', epicInScope: false });
     assert.deepEqual(gone.map(item => item.key), ['S-9']);
     assert.equal(mergeEpicMissingIssues({ held: [held[1]], incoming: [], epicKey: 'EPIC-1', epicInScope: false }).length, 1);
+});
+
+test('alertCallsForEdit: a priority edit and any unknown field re-check nothing', () => {
+    for (const field of ['priority', 'assignee', 'storyPoints', 'summary', '', undefined, null]) {
+        assert.deepEqual(alertCallsForEdit({ field, isFutureSprint: false, isCatchUp: true }), [], String(field));
+        assert.deepEqual(alertCallsForEdit({ field, isFutureSprint: true, isCatchUp: true }), [], String(field));
+    }
+    assert.deepEqual(alertCallsForEdit(), []);
+});
+
+test('alertCallsForEdit: a status edit re-checks Ready to Close, the epic alert object and Stories Required, in the vocabulary order', () => {
+    assert.deepEqual(alertCallsForEdit({ field: 'status', isFutureSprint: false, isCatchUp: true }), ['readyToClose', 'epicAlerts', 'readiness']);
+});
+
+test('alertCallsForEdit: a status edit in a future sprint adds the Backlog call in the vocabulary order', () => {
+    assert.deepEqual(alertCallsForEdit({ field: 'status', isFutureSprint: true, isCatchUp: true }), ['readyToClose', 'epicAlerts', 'backlog', 'readiness']);
+});
+
+test('alertCallsForEdit: outside Catch Up nothing is re-checked', () => {
+    assert.deepEqual(alertCallsForEdit({ field: 'status', isFutureSprint: false, isCatchUp: false }), []);
+    assert.deepEqual(alertCallsForEdit({ field: 'status', isFutureSprint: true, isCatchUp: false }), []);
+    assert.deepEqual(alertCallsForEdit({ field: 'status', isFutureSprint: true }), []);
 });

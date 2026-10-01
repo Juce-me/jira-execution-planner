@@ -1870,11 +1870,12 @@ test('31. an alert cohort started during the refresh owns the result, the per-ep
     await expect.poll(() => epicRefreshCalls(ctx.calls).length).toBe(2);
     await expect(refreshButton(page, 'EPIC-1')).toHaveAttribute('aria-busy', 'true');
 
-    // A confirmed status change re-arms the alert cohort (version bump); its /api/missing-info answer is held back.
+    // A confirmed Story Points edit re-arms the alert cohort (version bump); its /api/missing-info answer is held back.
+    // (A status edit no longer does in Catch Up: it re-checks only its epic, see tests 80-90.)
     const cohortGate = deferred();
     const sinceEdit = ctx.calls.length;
     ctx.respond('/api/missing-info', async () => { await cohortGate.promise; });
-    await confirmStatusChange(page, ctx, { kind: 'story', key: 'E1-S03', target: 'In Progress' });
+    await editStoryPoints(page, ctx, { key: 'E1-S03', current: 1, value: 4 });
     await expect.poll(() => missingInfoCalls(ctx.calls.slice(sinceEdit)).length).toBeGreaterThan(0);
     epicGate.resolve();
     await expect(taskCard(page, 'E1-S02')).toBeAttached();
@@ -3009,4 +3010,452 @@ test('71. after a held refresh the global Refresh rereads capacity for the displ
     await globalRefreshButton(page).click();
     // The reread names the displayed team set only: with the pin still in place it would repeat the pre-refresh set.
     await expect.poll(() => capacityTeams(ctx.calls.slice(since)).at(-1), { timeout: 15000 }).toBe('Alpha Team');    await expect(teamCard(page, 'Alpha Team').locator('.microbar')).toHaveAttribute('aria-label', /against 5\.5 capacity/);
+});
+
+// ======================================================================================================================================
+// Task 13b: inline status and priority edits re-check only their own epic (Catch Up); outside Catch Up they take the request-free
+// invalidation. Tests 80-91 append here and reuse the helpers above.
+// ======================================================================================================================================
+
+const transitionWrites = calls => calls.filter(call => call.method === 'POST' && call.pathname === '/api/issues/transitions');
+const priorityWrites = calls => calls.filter(call => call.method === 'POST' && call.pathname === '/api/issues/priorities');
+const priorityTrigger = (page, kind, key) => page.locator(`[data-priority-transition-trigger][data-issue-kind="${kind}"][data-issue-key="${key}"]`);
+const priorityMenu = (page, key) => page.locator(`.priority-transition-menu[data-issue-key="${key}"]`);
+const priorityOption = (page, key, target) => priorityMenu(page, key).getByRole('menuitem', { name: new RegExp(`^${target}\\s`) }); // 'High' must not match 'Highest'
+const departmentAlertCalls = calls => taskRequests(calls, 'alerts');
+const modeRadio = (page, name) => page.locator('.view-selector .eng-mode-control').getByRole('radio', { name });
+const PRIORITY_OPTIONS = [
+    { id: '1', name: 'Highest', statusColor: '#CD1317', iconUrl: 'https://jira.example/p1.svg', rank: 10 },
+    { id: '2', name: 'High', statusColor: '#E9494A', iconUrl: 'https://jira.example/p2.svg', rank: 20 },
+    { id: '4', name: 'Major', statusColor: '#F5CD47', iconUrl: 'https://jira.example/p4.svg', rank: 40 },
+    { id: '5', name: 'Low', statusColor: '#2D8738', iconUrl: 'https://jira.example/p5.svg', rank: 50 },
+];
+
+// Status targets the menu offers for stories and epics; every write is counted by the route handler (`transitionWrites`).
+function serveStatusTargets(ctx, names = ['In Progress', 'Incomplete', 'Done', 'Blocked']) {
+    ctx.respond('/api/issues/transitions/options', ({ call, json }) => json({
+        issues: (call.body?.issueKeys || []).map(key => ({ key, issueType: key.startsWith('EPIC') ? 'Epic' : 'Story', currentStatus: 'To Do', transitions: [] })),
+        targetStatuses: names.map(name => ({ name, availableCount: (call.body?.issueKeys || []).length, blockedCount: 0 })),
+    }));
+}
+
+// Priority options and writes; `ctx.priorityResult = 'failed'` makes every write answer with zero successes.
+function servePriority(ctx) {
+    ctx.respond(call => call.pathname === '/api/issues/priorities/options', ({ json }) => json({ priorities: PRIORITY_OPTIONS, source: 'jira', cached: false }));
+    ctx.respond(call => call.method === 'POST' && call.pathname === '/api/issues/priorities', ({ call, json }) => {
+        const keys = call.body?.issueKeys || [];
+        const target = PRIORITY_OPTIONS.find(option => option.id === String(call.body?.targetPriorityId));
+        const ok = ctx.priorityResult !== 'failed';
+        return json({
+            requested: keys.length, succeeded: ok ? keys.length : 0, failed: ok ? 0 : keys.length,
+            targetPriority: { id: target?.id || '', name: target?.name || '' },
+            results: keys.map(key => ({ key, result: ok ? 'success' : 'failed', fromPriority: 'Major', toPriority: target?.name || '' })),
+        });
+    });
+}
+
+async function changePriority(page, ctx, { kind, key, target }) {
+    const since = ctx.calls.length;
+    await priorityTrigger(page, kind, key).click();
+    await priorityOption(page, key, target).click();
+    await expect.poll(() => priorityWrites(ctx.calls.slice(since)).length).toBe(1);
+    await expect(priorityMenu(page, key).locator('.priority-transition-menu-result')).toContainText('Updated 1 issue');
+    await page.mouse.click(2, page.viewportSize().height - 2);
+    await expect(priorityMenu(page, key)).toHaveCount(0);
+}
+
+// The listed epics are empty in the department scope while their stories are Blocked, so the Empty Epic alert lists them.
+// `ctx.scope` is what the department load serves, `ctx.epicScope` what an epic-scoped call serves, `ctx.editCount` counts the status writes.
+// `holdCohort` (async) delays the department product answer; `open: false` leaves the page for the caller.
+async function openWithEmptyEpics(page, { epics = ['EPIC-3'], prepare, holdCohort = null, open = true } = {}) {
+    const ctx = await mockDashboard(page);
+    serveStatusTargets(ctx);
+    ctx.editCount = 0;
+    ctx.respond(call => call.method === 'POST' && call.pathname === '/api/issues/transitions', ({ call, json }) => {
+        ctx.editCount += 1;
+        const keys = call.body?.issueKeys || [];
+        return json({
+            requested: keys.length, succeeded: keys.length, failed: 0, targetStatus: call.body?.targetStatus || '',
+            results: keys.map(key => ({ key, result: 'success', fromStatus: 'Blocked', toStatus: call.body?.targetStatus || '' })),
+        });
+    });
+    prepare?.(ctx);
+    ctx.scenario.stories.filter(story => epics.includes(story.fields.epicKey)).forEach(story => { story.fields.status = { name: 'Blocked' }; });
+    const emptyEpic = key => ({ ...ctx.scenario.epics[key], status: { name: 'To Do' }, totalStories: 0, selectedStories: 0, futureOpenStories: 0 });
+    ctx.scope = Object.fromEntries(epics.map(key => [key, emptyEpic(key)]));
+    ctx.epicScope = Object.fromEntries(epics.map(key => [key, emptyEpic(key)]));
+    ctx.respond(call => call.params.purpose === 'alerts' && call.params.project === 'product', async ({ json }) => {
+        await holdCohort?.();
+        return json({ issues: [], epics: {}, epicsInScope: Object.values(ctx.scope), names: {} });
+    });
+    ctx.respond(call => call.params.purpose === 'epic-alerts', ({ json, call }) => json({
+        epicsInScope: call.params.project === 'product' && ctx.epicScope[call.params.epicKeys] ? [ctx.epicScope[call.params.epicKeys]] : [],
+    }));
+    if (open) {
+        await openCatchUp(page, ctx);
+        await expect(emptyEpicRows(page)).toHaveCount(epics.length);
+    }
+    return ctx;
+}
+
+test('80a. a Catch Up story status change makes only epic-scoped alert calls for that story\'s epic and writes once', async ({ page }) => {
+    const ctx = await mockDashboard(page);
+    serveStatusTargets(ctx);
+    await openCatchUp(page, ctx);
+    const since = ctx.calls.length;
+    await confirmStatusChange(page, ctx, { kind: 'story', key: 'E1-S02', target: 'In Progress' });
+    await expect.poll(() => epicAlertCalls(ctx.calls.slice(since)).length).toBe(2);
+    await expect.poll(() => epicReadinessCalls(ctx.calls.slice(since)).length).toBe(1);
+    await page.waitForTimeout(900); // a late department request would show up here
+
+    const after = ctx.calls.slice(since);
+    expect(departmentAlertCalls(after), 'no purpose=alerts department request').toEqual([]);
+    expect(describeCalls(otherAlertCalls(after, 'EPIC-1', ['/api/eng/story-readiness'])), 'nothing without this epic key: no missing-info, backlog, readiness, ready-to-close').toEqual([]);
+    expect(after.filter(call => call.pathname === '/api/tasks-with-team-name' && !call.params.purpose), 'no department task reload').toEqual([]);
+    expect(lanesOf(epicAlertCalls(after))).toEqual(['product', 'tech']);
+    epicAlertCalls(after).forEach(call => expect(call.params.epicKeys).toBe('EPIC-1'));
+    expect(lanesOf(epicReadyToCloseCalls(after, 'EPIC-1'))).toEqual(['product', 'tech']);
+    expect(readinessCalls(after).map(call => call.params.epicKeys)).toEqual(['EPIC-1']);
+    expect(missingInfoCalls(after)).toEqual([]);
+    expect(backlogCalls(after)).toEqual([]);
+    expect(transitionWrites(after), 'the re-check never writes again: exactly the edit\'s own POST').toHaveLength(1);
+    expect(priorityWrites(after)).toEqual([]);
+    await expect(globalErrorSurfaces(page)).toHaveCount(0);
+});
+
+test('80b. the epic-scoped answer is applied to that epic only; another epic\'s alert row keeps its DOM node', async ({ page }) => {
+    const gate = deferred();
+    const ctx = await openWithEmptyEpics(page, { epics: ['EPIC-2', 'EPIC-3'] });
+    await emptyEpicRows(page).filter({ hasText: 'EPIC-2' }).evaluate((node) => { node.__kept = true; });
+    ctx.respond(call => call.params.purpose === 'epic-alerts' && call.params.epicKeys === 'EPIC-3', async ({ json }) => { await gate.promise; return json({ epicsInScope: [] }); }); // after the edit the server says EPIC-3 left the Empty Epic scope
+    const since = ctx.calls.length;
+    await confirmStatusChange(page, ctx, { kind: 'story', key: 'E3-S01', target: 'Incomplete' });
+    await expect.poll(() => epicAlertCalls(ctx.calls.slice(since)).length).toBe(2);
+    await expect(emptyEpicRows(page), 'the held answer has not changed the alert yet').toHaveCount(2);
+    gate.resolve();
+    await expect(emptyEpicRows(page)).toHaveCount(1);
+    await expect(emptyEpicRows(page).first()).toContainText('EPIC-2');
+    expect(await emptyEpicRows(page).first().evaluate(node => node.__kept === true), 'the untouched epic\'s row was not re-created').toBe(true);
+    expect(epicAlertCalls(ctx.calls.slice(since)).every(call => call.params.epicKeys === 'EPIC-3')).toBe(true);
+    expect(departmentAlertCalls(ctx.calls.slice(since))).toEqual([]);
+});
+
+test('80c. an epic header status change re-checks that epic only', async ({ page }) => {
+    const ctx = await mockDashboard(page);
+    serveStatusTargets(ctx);
+    await openCatchUp(page, ctx);
+    const since = ctx.calls.length;
+    await confirmStatusChange(page, ctx, { kind: 'epic', key: 'EPIC-2', target: 'Blocked' });
+    await expect.poll(() => epicAlertCalls(ctx.calls.slice(since)).length).toBe(2);
+    await expect.poll(() => epicReadinessCalls(ctx.calls.slice(since)).length).toBe(1);
+    await page.waitForTimeout(900);
+
+    const after = ctx.calls.slice(since);
+    epicAlertCalls(after).forEach(call => expect(call.params.epicKeys).toBe('EPIC-2'));
+    expect(describeCalls(otherAlertCalls(after, 'EPIC-2', ['/api/eng/story-readiness']))).toEqual([]);
+    expect(departmentAlertCalls(after)).toEqual([]);
+    expect(transitionWrites(after)).toHaveLength(1);
+});
+
+test('81. a priority change on a story and on an epic issues zero alert requests and does not blank the Stories Required ghosts', async ({ page }) => {
+    const ctx = await openWithGhosts(page, { prepare: (mock) => { servePriority(mock); mock.scenario.epics['EPIC-3'].priority = { name: 'Major' }; } });
+    await watchGhostBlink(page, 'EPIC-2');
+    await watchGhostBlink(page, 'EPIC-3');
+    const since = ctx.calls.length;
+    await changePriority(page, ctx, { kind: 'story', key: 'E2-S01', target: 'High' });
+    await changePriority(page, ctx, { kind: 'epic', key: 'EPIC-3', target: 'High' });
+    await page.waitForTimeout(900);
+
+    const after = ctx.calls.slice(since);
+    expect(describeCalls(alertRequests(after)), 'no alert request of any kind').toEqual([]);
+    expect(priorityWrites(after), 'exactly the two edits\' own POSTs').toHaveLength(2);
+    expect(transitionWrites(after)).toEqual([]);
+    await expect(priorityTrigger(page, 'story', 'E2-S01')).toHaveAttribute('data-priority', 'High');
+    await expect(ghostCards(page, 'EPIC-2')).toHaveCount(1);
+    await expect(ghostCards(page, 'EPIC-3')).toHaveCount(1);
+    expect(await page.evaluate(() => window.__ghostBlink), 'no ghost was ever blanked').toBe(false);
+});
+
+test('82. a status change while the alert cohort is in flight re-checks after the cohort settles and the final state is the post-edit state', async ({ page }) => {
+    const cohortGate = deferred();
+    const cohortSeen = deferred();
+    const ctx = await openWithEmptyEpics(page, { open: false, holdCohort: async () => { cohortSeen.resolve(); await cohortGate.promise; } });
+    ctx.epicScope = {}; // post-edit truth: EPIC-3 is out of the Empty Epic scope; the (older) cohort answer still lists it
+    await page.addInitScript((value) => { window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(value)); }, catchUpPrefs());
+    await page.goto(appBaseUrl, { waitUntil: 'domcontentloaded' });
+    for (const epicKey of Object.keys(ctx.scenario.epics)) await expect(epicBlock(page, epicKey)).toBeVisible();
+    await cohortSeen.promise;
+    await expect(taskCard(page, 'E3-S01')).toBeAttached();
+
+    const since = ctx.calls.length;
+    await confirmStatusChange(page, ctx, { kind: 'story', key: 'E3-S01', target: 'Incomplete' });
+    await page.waitForTimeout(800);
+    expect(epicAlertCalls(ctx.calls.slice(since)), 'the re-check waits for the cohort').toEqual([]);
+
+    cohortGate.resolve(); // the cohort answer lands first (EPIC-3 listed), then the re-check removes it
+    await expect.poll(() => epicAlertCalls(ctx.calls.slice(since)).length).toBe(2);
+    await expect(emptyEpicRows(page)).toHaveCount(0);
+    await page.waitForTimeout(700);
+    await expect(emptyEpicRows(page), 'a late cohort answer did not bring the stale row back').toHaveCount(0);
+    epicAlertCalls(ctx.calls.slice(since)).forEach(call => expect(call.params.epicKey || call.params.epicKeys).toBe('EPIC-3'));
+});
+
+test('83. a re-check dropped because the cohort was cancelled leaves no stale alerts: leaving and re-entering Catch Up reloads the cohort', async ({ page }) => {
+    let hold = null;
+    const ctx = await openWithEmptyEpics(page, { holdCohort: async () => { if (hold) { hold.seen.resolve(); await hold.gate.promise; } } });
+    hold = { gate: deferred(), seen: deferred() };
+    await globalRefreshButton(page).click(); // starts a new cohort and holds it
+    await hold.seen.promise;
+
+    const since = ctx.calls.length;
+    await confirmStatusChange(page, ctx, { kind: 'story', key: 'E3-S01', target: 'Incomplete' });
+    ctx.scope = {}; // the server now reflects the edit in the department scope
+    ctx.epicScope = {};
+    await modeRadio(page, 'Planning').click(); // the cohort effect is cleaned up: the pending re-check is dropped
+    await expect(page.locator('.planning-panel.open')).toBeVisible();
+    hold.gate.resolve();
+    await page.waitForTimeout(800);
+    expect(epicAlertCalls(ctx.calls.slice(since)), 'the dropped re-check issued nothing').toEqual([]);
+
+    const sinceReturn = ctx.calls.length;
+    hold = null;
+    await modeRadio(page, 'Catch Up').click();
+    await expect.poll(() => departmentAlertCalls(ctx.calls.slice(sinceReturn)).length).toBe(2);
+    await expect(emptyEpicRows(page)).toHaveCount(0);
+    expect(epicAlertCalls(ctx.calls.slice(since)), 'still no epic-scoped call: the department reload replaced it').toEqual([]);
+});
+
+for (const field of ['status', 'priority']) {
+    test(`84-${field}. a Planning ${field} edit issues no scoped loader call and no department alert request, and Catch Up reloads its cohort with a forced refresh on return`, async ({ page }) => {
+        const ctx = await mockDashboard(page);
+        serveStatusTargets(ctx);
+        servePriority(ctx);
+        await openCatchUp(page, ctx);
+        const forced = calls => departmentAlertCalls(calls).filter(call => call.params.refresh === 'true');
+
+        // Baseline: a round trip without an edit reloads the cohort but does not force the refresh.
+        await modeRadio(page, 'Planning').click();
+        await expect(page.locator('.planning-panel.open')).toBeVisible();
+        const sinceBaseline = ctx.calls.length;
+        await modeRadio(page, 'Catch Up').click();
+        await expect.poll(() => departmentAlertCalls(ctx.calls.slice(sinceBaseline)).length).toBe(2);
+        expect(forced(ctx.calls.slice(sinceBaseline))).toEqual([]);
+
+        await modeRadio(page, 'Planning').click();
+        await expect(page.locator('.planning-panel.open')).toBeVisible();
+        const since = ctx.calls.length;
+        if (field === 'status') {
+            await page.getByRole('button', { name: 'Select All' }).click(); // a Planning Story pill applies to the selected Stories (a bulk edit across epics)
+            await statusTrigger(page, 'story', 'E1-S02').click();
+            await statusMenu(page, 'E1-S02').getByRole('menuitem', { name: 'In Progress' }).click();
+            await expect.poll(() => transitionWrites(ctx.calls.slice(since)).length).toBe(1);
+        } else {
+            await priorityTrigger(page, 'story', 'E1-S02').click();
+            await priorityOption(page, 'E1-S02', 'High').click();
+            await expect.poll(() => priorityWrites(ctx.calls.slice(since)).length).toBe(1);
+        }
+        await page.waitForTimeout(1200);
+        const inPlanning = ctx.calls.slice(since);
+        expect(epicAlertCalls(inPlanning), 'no epic-scoped alert call in Planning').toEqual([]);
+        expect(inPlanning.filter(call => alertRequests([call]).length && call.params.epicKeys), 'no epic-scoped loader call of any kind in Planning').toEqual([]);
+        expect(departmentAlertCalls(inPlanning), 'no department alert request while in Planning').toEqual([]);
+        expect(missingInfoCalls(inPlanning)).toEqual([]);
+        expect(backlogCalls(inPlanning)).toEqual([]);
+
+        const sinceReturn = ctx.calls.length;
+        await modeRadio(page, 'Catch Up').click();
+        await expect.poll(() => departmentAlertCalls(ctx.calls.slice(sinceReturn)).length).toBe(2);
+        expect(forced(ctx.calls.slice(sinceReturn)), 'the edit invalidated the cohort: both lanes reload with the forced refresh').toHaveLength(2);
+        expect(epicAlertCalls(ctx.calls.slice(since))).toEqual([]);
+    });
+}
+
+test('85. a failed status or priority edit issues no alert request and no invalidation', async ({ page }) => {
+    const ctx = await mockDashboard(page);
+    serveStatusTargets(ctx);
+    servePriority(ctx);
+    ctx.priorityResult = 'failed';
+    ctx.respond(call => call.method === 'POST' && call.pathname === '/api/issues/transitions', ({ call, json }) => json({
+        requested: 1, succeeded: 0, failed: 1, targetStatus: call.body?.targetStatus || '',
+        results: (call.body?.issueKeys || []).map(key => ({ key, result: 'failed', error: 'transition_unavailable' })),
+    }));
+    await openCatchUp(page, ctx);
+    const since = ctx.calls.length;
+    await statusTrigger(page, 'story', 'E1-S02').click();
+    await statusMenu(page, 'E1-S02').getByRole('menuitem', { name: 'In Progress' }).click();
+    await expect.poll(() => transitionWrites(ctx.calls.slice(since)).length).toBe(1);
+    await page.mouse.click(2, page.viewportSize().height - 2);
+    await priorityTrigger(page, 'story', 'E1-S03').click();
+    await priorityOption(page, 'E1-S03', 'High').click();
+    await expect.poll(() => priorityWrites(ctx.calls.slice(since)).length).toBe(1);
+    await page.waitForTimeout(1200);
+    expect(describeCalls(alertRequests(ctx.calls.slice(since))), 'no loader call and no department reload').toEqual([]);
+    expect(ctx.calls.slice(since).filter(call => call.pathname === '/api/tasks-with-team-name')).toEqual([]);
+});
+
+// Edits one story's Story Points through the inline editor; the field routes are stubbed and the POST is awaited.
+async function editStoryPoints(page, ctx, { key, current, value }) {
+    ctx.respond(call => call.pathname === `/api/issues/${key}/editable-fields`, ({ json }) => json({
+        issueKey: key, field: 'storyPoints', editable: true, currentValue: current, baseUpdated: '2026-05-01T00:00:00.000+0000', mappingRevision: 'map-1', me: null,
+    }));
+    ctx.respond(call => call.method === 'POST' && call.pathname === `/api/issues/${key}/field`, ({ call, json }) => json({ result: 'success', value: call.body?.value, mappingRevision: 'map-1' }));
+    const since = ctx.calls.length;
+    const input = taskCard(page, key).getByRole('textbox', { name: 'Story Points' });
+    await input.focus();
+    await expect(input).toBeEditable();
+    await input.fill(String(value));
+    await input.press('Enter');
+    await expect.poll(() => ctx.calls.slice(since).filter(call => call.method === 'POST' && call.pathname === `/api/issues/${key}/field`).length).toBe(1);
+}
+
+test('86. a Story Points edit still reloads the whole alert cohort (assignee and Story Points keep the department rearm)', async ({ page }) => {
+    const ctx = await mockDashboard(page);
+    await openCatchUp(page, ctx);
+    const since = ctx.calls.length;
+    await editStoryPoints(page, ctx, { key: 'E1-S02', current: 3, value: 5 });
+    await expect.poll(() => departmentAlertCalls(ctx.calls.slice(since)).length).toBe(2);
+    expect(epicAlertCalls(ctx.calls.slice(since)), 'the department reload is not an epic-scoped call').toEqual([]);
+});
+
+test('87. a 401 inside the re-check uses the existing sign-in lock and is never retried', async ({ page }) => {
+    const ctx = await mockDashboard(page);
+    serveStatusTargets(ctx);
+    await openCatchUp(page, ctx);
+    ctx.respond(call => call.params.purpose === 'epic-alerts', ({ status }) => status(401, { error: 'auth_required', loginUrl: '/login?reason=session_expired', ...LEAK_CANARIES }));
+    const since = ctx.calls.length;
+    await statusTrigger(page, 'story', 'E1-S02').click();
+    await statusMenu(page, 'E1-S02').getByRole('menuitem', { name: 'In Progress' }).click();
+    await expect(page.getByRole('alertdialog')).toContainText('Sign in required');
+    await expect(page.getByRole('alertdialog')).toHaveCount(1);
+    await expect(page.locator('.error, .server-unavailable-banner')).toHaveCount(0);
+    await page.waitForTimeout(1200);
+    expect(epicAlertCalls(ctx.calls.slice(since)).length, 'one answer per lane, no retry after the 401').toBeLessThanOrEqual(2);
+    expect(transitionWrites(ctx.calls.slice(since))).toHaveLength(1);
+    await expect(taskCard(page, 'E1-S12')).toBeAttached();
+    await expectNoLeak(page);
+});
+
+test('88. two status edits on one epic one second apart end with the second edit\'s alert state and one trailing re-check', async ({ page }) => {
+    const gate = deferred();
+    const ctx = await openWithEmptyEpics(page, { prepare: (mock) => { mock.scenario.stories.push(buildStory('E3-S02', 'EPIC-3')); } });
+    const answers = [];
+    ctx.respond(call => call.params.purpose === 'epic-alerts' && call.params.project === 'product', async ({ json }) => {
+        const state = ctx.editCount; // the server state at request time
+        answers.push(state);
+        if (answers.length === 1) await gate.promise; // the first re-check is still in flight when the second edit lands
+        return json({ epicsInScope: [{ ...ctx.epicScope['EPIC-3'], summary: `EPIC-3 after ${state} edits` }] });
+    });
+    const since = ctx.calls.length;
+    await confirmStatusChange(page, ctx, { kind: 'story', key: 'E3-S01', target: 'Incomplete' });
+    await expect.poll(() => answers.length).toBe(1);
+    await page.waitForTimeout(1000);
+    await confirmStatusChange(page, ctx, { kind: 'story', key: 'E3-S02', target: 'Incomplete' });
+    await page.waitForTimeout(500);
+    expect(answers, 'the second edit waits for the in-flight re-check').toEqual([1]);
+    gate.resolve();
+    await expect.poll(() => answers.length).toBe(2);
+    await expect(emptyEpicRows(page).first()).toContainText('EPIC-3 after 2 edits');
+    await page.waitForTimeout(800);
+    expect(answers, 'one in flight plus one trailing re-check, nothing more').toEqual([1, 2]);
+    await expect(emptyEpicRows(page).first()).toContainText('EPIC-3 after 2 edits');
+    expect(departmentAlertCalls(ctx.calls.slice(since))).toEqual([]);
+});
+
+test.describe('429 on epic-alerts', () => {
+    test.setTimeout(90000);
+
+    test('89a. a rate-limited re-check is retried once after the window and then applied', async ({ page }) => {
+        const ctx = await openWithEmptyEpics(page);
+        const productCalls = [];
+        ctx.respond(call => call.params.purpose === 'epic-alerts' && call.params.project === 'product', ({ json, status }) => {
+            productCalls.push(Date.now());
+            if (productCalls.length === 1) return status(429, { error: 'epic_refresh_rate_limited', ...LEAK_CANARIES });
+            return json({ epicsInScope: [{ ...ctx.epicScope['EPIC-3'], summary: 'EPIC-3 after the retry' }] });
+        });
+        await confirmStatusChange(page, ctx, { kind: 'story', key: 'E3-S01', target: 'Incomplete' });
+        await expect.poll(() => productCalls.length).toBe(1);
+        await page.waitForTimeout(3000);
+        expect(productCalls, 'the retry waits for the window').toHaveLength(1);
+        await expect.poll(() => productCalls.length, { timeout: 15000 }).toBe(2);
+        expect(productCalls[1] - productCalls[0]).toBeGreaterThanOrEqual(7500);
+        await expect(emptyEpicRows(page).first()).toContainText('EPIC-3 after the retry');
+        await expectNoLeak(page);
+    });
+
+    test('89b. a second 429 gives up: exactly one retry, the held alerts stay and no banner appears', async ({ page }) => {
+        const ctx = await openWithEmptyEpics(page);
+        const productCalls = [];
+        ctx.respond(call => call.params.purpose === 'epic-alerts' && call.params.project === 'product', ({ status }) => {
+            productCalls.push(Date.now());
+            return status(429, { error: 'epic_refresh_rate_limited', ...LEAK_CANARIES });
+        });
+        await confirmStatusChange(page, ctx, { kind: 'story', key: 'E3-S01', target: 'Incomplete' });
+        await expect.poll(() => productCalls.length, { timeout: 20000 }).toBe(2);
+        await page.waitForTimeout(10000);
+        expect(productCalls, 'no third attempt').toHaveLength(2);
+        await expect(emptyEpicRows(page)).toHaveCount(1);
+        await expect(globalErrorSurfaces(page)).toHaveCount(0);
+        await expectNoLeak(page);
+    });
+});
+
+test('90. a status change confirmed while a per-epic refresh is in flight keeps its status and ends with the post-edit alert state', async ({ page }) => {
+    const ctx = await openWithEmptyEpics(page);
+    ctx.respond(call => call.params.purpose === 'epic-alerts' && call.params.project === 'product', ({ json }) => json({
+        epicsInScope: [{ ...ctx.epicScope['EPIC-3'], summary: `EPIC-3 after ${ctx.editCount} edits` }],
+    }));
+    const held = holdEpicResponse(ctx, 'EPIC-3');
+    await clickRefresh(page, 'EPIC-3');
+    await held.seen;
+    await expect(refreshButton(page, 'EPIC-3')).toHaveAttribute('aria-busy', 'true');
+    await confirmStatusChange(page, ctx, { kind: 'story', key: 'E3-S01', target: 'Incomplete' });
+    held.release();
+    await expectRefreshSettled(page, 'EPIC-3');
+    await page.waitForTimeout(900);
+    await expect(statusTrigger(page, 'story', 'E3-S01')).toHaveText('Incomplete');
+    await expect(emptyEpicRows(page).first()).toContainText('EPIC-3 after 1 edits');
+    expect(transitionWrites(ctx.calls)).toHaveLength(1);
+});
+
+// A readiness-only epic (Stories Required ghost, no sprint stories, not in epicDetails) carries its priority in the readiness snapshot. The
+// priority edit patches that snapshot locally (no request, no blanking), so the header follows the edit with zero extra requests.
+test('91. a readiness-only epic shows the new priority after a Catch Up priority edit without any request', async ({ page }) => {
+    const ctx = await openWithGhosts(page, { prepare: (mock) => servePriority(mock) });
+    ctx.ghosts['EPIC-9'] = readinessEpicFor('EPIC-9', 'team-alpha', 'Alpha Team', 'selected_stories_not_actionable');
+    await globalRefreshButton(page).click();
+    await expect(ghostCards(page, 'EPIC-9')).toHaveCount(1);
+    await expect(priorityTrigger(page, 'epic', 'EPIC-9')).toHaveAttribute('data-priority', 'Major');
+    await watchGhostBlink(page, 'EPIC-9');
+    const since = ctx.calls.length;
+    await changePriority(page, ctx, { kind: 'epic', key: 'EPIC-9', target: 'High' });
+    await expect(priorityTrigger(page, 'epic', 'EPIC-9')).toHaveAttribute('data-priority', 'High');
+    await page.waitForTimeout(900);
+    const after = ctx.calls.slice(since);
+    expect(describeCalls(alertRequests(after)), 'the snapshot is patched locally: no alert or readiness request').toEqual([]);
+    expect(priorityWrites(after), 'exactly the edit\'s own POST').toHaveLength(1);
+    expect(await page.evaluate(() => window.__ghostBlink), 'the ghost was never blanked').toBe(false);
+    await expect(priorityTrigger(page, 'epic', 'EPIC-9')).toHaveAttribute('data-priority', 'High');
+});
+
+test('92. a status edit whose results are all already in that status issues no alert request and does not blank the ghosts', async ({ page }) => {
+    const ctx = await openWithGhosts(page, { prepare: (mock) => serveStatusTargets(mock) });
+    ctx.respond(call => call.method === 'POST' && call.pathname === '/api/issues/transitions', ({ call, json }) => json({
+        requested: 1, succeeded: 0, failed: 0, targetStatus: call.body?.targetStatus || '',
+        results: (call.body?.issueKeys || []).map(key => ({ key, result: 'already_in_status', fromStatus: 'Blocked', toStatus: call.body?.targetStatus || '' })),
+    }));
+    // Incomplete is not actionable, so the local status patch keeps EPIC-2's ghost and any blink would come from a reload.
+    await watchGhostBlink(page, 'EPIC-2');
+    await watchGhostBlink(page, 'EPIC-3');
+    const since = ctx.calls.length;
+    await statusTrigger(page, 'story', 'E2-S01').click();
+    await statusMenu(page, 'E2-S01').getByRole('menuitem', { name: 'Incomplete' }).click();
+    await expect.poll(() => transitionWrites(ctx.calls.slice(since)).length).toBe(1);
+    await page.mouse.click(2, page.viewportSize().height - 2);
+    await page.waitForTimeout(1200);
+    const after = ctx.calls.slice(since);
+    expect(describeCalls(alertRequests(after)), 'nothing changed in Jira: no scoped re-check and no department reload').toEqual([]);
+    expect(after.filter(call => call.pathname === '/api/tasks-with-team-name'), 'no task reload').toEqual([]);
+    expect(await page.evaluate(() => window.__ghostBlink), 'no ghost was ever blanked').toBe(false);
+    await expect(ghostCards(page, 'EPIC-2')).toHaveCount(1);
+    await expect(ghostCards(page, 'EPIC-3')).toHaveCount(1);
 });

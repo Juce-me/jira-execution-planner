@@ -170,7 +170,13 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # swallow a later department fetch (+3).
     # feature/213-per-epic-refresh Task 13 enables the refresh in Planning: the isEpicRefreshMode
     # gate (+1) and the capacity scope pin that keeps a refresh from refiring /api/capacity (+4).
-    "frontend/src/dashboard.jsx": 18292,
+    # feature/213-per-epic-refresh Task 13b re-checks only the edited epic after inline status and
+    # priority edits: alert cohort settle listener helpers (+2), the invalidateAlertsAfterEdit
+    # picker with its comment (+5) and a hook-call line split (+1); the scheduler, resolver and
+    # call selection live in frontend/src/eng/ (+8). Review fixes: an all-already-in-status edit
+    # skips the invalidation (+1) and the epic priority edit patches the readiness snapshot
+    # locally for readiness-only epics (+1).
+    "frontend/src/dashboard.jsx": 18302,
 }
 
 

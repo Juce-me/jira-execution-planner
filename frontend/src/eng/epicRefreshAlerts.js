@@ -116,6 +116,17 @@ export function mergeReadinessEpic({ snapshot, epicPayload, epicKey, epicDetails
     return epics === snapshot.epics ? snapshot : { ...snapshot, epics };
 }
 
+// Local field patch of one epic in the Stories Required snapshot (an inline edit of a readiness-only epic, which `epicDetails` does not hold).
+// Keeps the snapshot identity for an unknown epic key or an unchanged value; every other epic keeps its identity.
+export function patchReadinessEpicField(snapshot, epicKey, field, value) {
+    const key = text(epicKey).toUpperCase();
+    const name = text(field);
+    if (!key || !name || !snapshot || !Array.isArray(snapshot.epics)) return snapshot;
+    const at = snapshot.epics.findIndex(epic => text(epic?.key).toUpperCase() === key);
+    if (at < 0 || sameJson(snapshot.epics[at][name], value)) return snapshot;
+    return { ...snapshot, epics: snapshot.epics.map((epic, index) => (index === at ? { ...epic, [name]: value } : epic)) };
+}
+
 // Alert calls vocabulary, in the order they run: `readyToClose` and `epicAlerts` (Task 11), `missingInfo`, `backlog` and `readiness` (Task 12).
 const ALERT_CALL_ORDER = ['readyToClose', 'epicAlerts', 'missingInfo', 'backlog', 'readiness'];
 
@@ -138,6 +149,15 @@ export function alertCallsFor(update, { isFutureSprint = false, isCatchUp = fals
     if (epicTrigger) calls.add('epicAlerts');
     if (isFutureSprint && anyChange) calls.add('epicAlerts');
     if (isFutureSprint && (membership || epicTrigger)) calls.add('backlog');
+    return ALERT_CALL_ORDER.filter(call => calls.has(call));
+}
+
+// Which epic-scoped alert calls an inline edit needs (Task 13b), in the `ALERT_CALL_ORDER` order. Only a status edit in Catch Up re-checks:
+// priority feeds no alert rule, Missing Info does not follow a status change (same as `alertCallsFor`), and an unknown field asks for nothing.
+export function alertCallsForEdit({ field, isFutureSprint = false, isCatchUp = false } = {}) {
+    if (!isCatchUp || field !== 'status') return [];
+    const calls = new Set(['readyToClose', 'epicAlerts', 'readiness']);
+    if (isFutureSprint) calls.add('backlog');
     return ALERT_CALL_ORDER.filter(call => calls.has(call));
 }
 

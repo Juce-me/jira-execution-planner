@@ -3,7 +3,8 @@ import { flushSync } from 'react-dom';
 import { REMOVE_FADE_MS } from '../issues/IssueCard.jsx';
 import { sortTasksByPriority } from './engTaskUtils.js';
 import { createEpicRefreshController } from './epicRefreshController.js';
-import { alertCallsFor, mergeEpicMissingIssues, mergeEpicScopeEntries, recomputeMissingPlanningInfo, replaceEpicStories } from './epicRefreshAlerts.js';
+import { alertCallsFor, alertCallsForEdit, mergeEpicMissingIssues, mergeEpicScopeEntries, recomputeMissingPlanningInfo, replaceEpicStories } from './epicRefreshAlerts.js';
+import { createEpicRecheckScheduler, resolveEditEpicKeys } from './epicRefreshEditRecheck.js';
 import { glareDelayMs, playGlare, selectGlareKeys } from './epicRefreshGlare.js';
 import { diffEpic, mergeEpicStories, patchEpicScopeEntries, patchStoryCopies } from './epicRefreshPatch.js';
 
@@ -42,6 +43,17 @@ function announcementFor(outcome) {
     return 'Epic is up to date';
 }
 
+// Inputs (all read through a ref, so closures may change every render):
+//   getState() -> { productTasks, techTasks, loadedProductTasks, loadedTechTasks, epicDetails, readyToCloseProductTasks, readyToCloseTechTasks,
+//       missingPlanningInfoTasks, ...epic scope lists }   `missingPlanningInfoTasks` is read by the edit re-check's key-to-epic resolver
+//   loadEpicRefresh, loadEpicAlerts, loadEpicReadiness, mergeReadinessEpic, readGuards(epicKey), getAlertVersion(), isFutureSprint, sourceSurface
+//   getSubtaskParentStoryKeys(keys) -> parent story keys of subtask keys (optional; `resolveSubtaskParentStoryKeys(keys, storySubtasksByKey)`)
+//   alertCohortInFlight() -> boolean   true while the department alert cohort loads (optional; absent means never in flight)
+//   subscribeAlertCohortSettle(cb) -> unsubscribe   `cb({ aborted })` runs when the cohort ends: `aborted: false` after it finished (its
+//       result is applied), `aborted: true` when it was cancelled and will restart on post-edit data (optional)
+// `recheckAlertsForEdit({ keys, field })` -> { handled, unresolved }: Catch Up only. `handled: true` means the scoped re-check is scheduled
+// (status) or nothing is needed (priority); `handled: false` means the caller must use its own invalidation (not Catch Up, an unknown
+// field, no keys, or `unresolved` keys no held source maps to an epic; nothing is scheduled then).
 export function useEpicRefresh(inputs) {
     const latest = React.useRef(inputs);
     latest.current = inputs;
@@ -51,6 +63,7 @@ export function useEpicRefresh(inputs) {
     const timersRef = React.useRef(new Set());
     const controllerRef = React.useRef(null);
     const alertVersionAtClick = React.useRef(new Map());
+    const schedulerRef = React.useRef(null);
     const [epicStates, setEpicStates] = React.useState({});
     const [leavingKeys, setLeavingKeys] = React.useState(() => new Set());
     const [announcement, setAnnouncement] = React.useState('');
@@ -59,6 +72,7 @@ export function useEpicRefresh(inputs) {
     React.useEffect(() => () => {
         timersRef.current.forEach(timer => window.clearTimeout(timer));
         timersRef.current.clear();
+        schedulerRef.current?.cancel();
     }, []);
 
     // Epic-scoped alert calls for one epic (Tasks 11 and 12; Task 13b reuses it for inline edits). `calls` are names from `alertCallsFor`;
@@ -70,7 +84,7 @@ export function useEpicRefresh(inputs) {
         const started = latest.current;
         const laneCalls = started.loadEpicAlerts ? wanted.filter(call => call !== 'readiness') : [];
         const wantsReadiness = wanted.includes('readiness') && Boolean(started.loadEpicReadiness);
-        if (!laneCalls.length && !wantsReadiness) return;
+        if (!laneCalls.length && !wantsReadiness) return {};
         const version = alertVersion !== undefined ? alertVersion : started.getAlertVersion?.();
         const guards = started.readGuards(epicKey);
         const [lanes, readiness] = await Promise.all([
@@ -79,7 +93,7 @@ export function useEpicRefresh(inputs) {
         ]);
         const { setters, getAlertVersion, readGuards, getProtectedKeys, mergeReadinessEpic, getState } = latest.current;
         const now = readGuards(epicKey);
-        if (getAlertVersion?.() !== version || now.epoch !== guards.epoch || now.version !== guards.version || now.scopeKey !== guards.scopeKey) return;
+        if (getAlertVersion?.() !== version || now.epoch !== guards.epoch || now.version !== guards.version || now.scopeKey !== guards.scopeKey) return { discarded: true };
         // The epic's own header entry is kept as held while the user is editing it.
         const editing = getProtectedKeys(epicKey).has(epicKey);
         ALERT_LANES.forEach(([lane, title]) => {
@@ -106,7 +120,33 @@ export function useEpicRefresh(inputs) {
             setters.setMissingPlanningInfoTasks(prev => mergeEpicMissingIssues({ held: prev, incoming: missingInfo.issues, epicKey, epicInScope }));
         }
         if (readiness?.status === 'ok') mergeReadinessEpic?.(epicKey, readiness.payload, { epicDetails: getState().epicDetails?.[epicKey] });
+        // The epic alert object is the only call with a per-epic limiter; the scheduler retries a limited answer once.
+        const limited = ALERT_LANES.map(([lane]) => lanes?.[lane]?.epicAlerts).filter(result => result?.status === 'rate_limited');
+        if (!limited.length) return {};
+        const waits = limited.map(result => Number(result.retryAfterSeconds)).filter(seconds => Number.isFinite(seconds) && seconds > 0);
+        return { rateLimited: true, ...(waits.length ? { retryAfterSeconds: Math.max(...waits) } : {}) };
     }, []);
+
+    // Every epic-scoped alert re-check (the refresh follow-up and the inline-edit re-check) goes through one per-epic scheduler: one run in
+    // flight plus one trailing run per epic, so the 8 s per-epic limiter is not hit by our own requests. A job is dropped when a department
+    // reload, a re-armed cohort or a scope switch happened since it was requested.
+    if (!schedulerRef.current) {
+        schedulerRef.current = createEpicRecheckScheduler({
+            run: (epicKey, { calls, ctx }) => recheckEpicAlerts(epicKey, calls, { alertVersion: ctx.alertVersion }),
+            isStale: (epicKey, ctx) => {
+                const { getAlertVersion, readGuards } = latest.current;
+                if (ctx.alertVersion !== undefined && getAlertVersion?.() !== ctx.alertVersion) return true;
+                if (!ctx.guards) return false;
+                const now = readGuards(epicKey);
+                return now.epoch !== ctx.guards.epoch || now.version !== ctx.guards.version || now.scopeKey !== ctx.guards.scopeKey;
+            },
+            cohort: {
+                inFlight: () => Boolean(latest.current.subscribeAlertCohortSettle) && latest.current.alertCohortInFlight?.() === true,
+                subscribeSettle: callback => latest.current.subscribeAlertCohortSettle(callback),
+            },
+        });
+    }
+    const captureRecheckContext = epicKey => ({ alertVersion: latest.current.getAlertVersion?.(), guards: latest.current.readGuards(epicKey) });
 
     if (!controllerRef.current) {
         const readState = () => ({ ...latest.current.getState(), ...overlay.current });
@@ -238,7 +278,7 @@ export function useEpicRefresh(inputs) {
             latest.current.afterApply?.(update);
             // Scope-based alerts follow in the background: the epic is not kept busy for them, and a failure shows nothing.
             const calls = alertCallsFor({ ...update, epicChangedFields }, { isFutureSprint: latest.current.isFutureSprint === true, isCatchUp: sourceSurface === 'catch_up' });
-            if (calls.length) void recheckEpicAlerts(epicKey, calls, { alertVersion: alertVersionAtClick.current.get(epicKey) });
+            if (calls.length) void schedulerRef.current.request(epicKey, { calls, ctx: { alertVersion: alertVersionAtClick.current.get(epicKey), guards: latest.current.readGuards(epicKey) } });
             return { hiddenCount };
         };
 
@@ -280,5 +320,22 @@ export function useEpicRefresh(inputs) {
     }
 
     const refreshEpic = React.useCallback(epicKey => controllerRef.current.refresh(epicKey), []);
-    return { epicStates, leavingKeys, announcement, announcementId, refreshEpic, recheckEpicAlerts };
+    // Inline status and priority edits (Task 13b). Context (alert version and the epic's guards) is captured now, at edit success time, and
+    // checked again when the job starts; with an alert cohort in flight the job waits for it, so a stale cohort result never lands after it.
+    const recheckAlertsForEdit = React.useCallback(({ keys, field } = {}) => {
+        const input = latest.current;
+        const isCatchUp = input.sourceSurface === 'catch_up';
+        if (!isCatchUp) return { handled: false, unresolved: [] };
+        if (field === 'priority') return { handled: true, unresolved: [] };
+        const calls = alertCallsForEdit({ field, isFutureSprint: input.isFutureSprint === true, isCatchUp });
+        if (!calls.length) return { handled: false, unresolved: [] };
+        const state = input.getState();
+        const { epicKeys, unresolved } = resolveEditEpicKeys({
+            keys, lists: state, epicDetails: state.epicDetails, parentStoryKeysFor: input.getSubtaskParentStoryKeys,
+        });
+        if (unresolved.length || !epicKeys.length) return { handled: false, unresolved };
+        epicKeys.forEach(epicKey => { void schedulerRef.current.request(epicKey, { calls, ctx: captureRecheckContext(epicKey), awaitCohort: true }); });
+        return { handled: true, unresolved: [] };
+    }, []);
+    return { epicStates, leavingKeys, announcement, announcementId, refreshEpic, recheckEpicAlerts, recheckAlertsForEdit };
 }

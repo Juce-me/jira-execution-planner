@@ -22,7 +22,7 @@ test.beforeAll(() => {
             const [selected,setSelected]=React.useState(new Set());
             const [visible,setVisible]=React.useState(true);
             React.useEffect(()=>{controller.setScope({sprintId:'100',contextKey:'actor',active:true,rows:[...stories.map(task=>({issueId:task.id,rowKind:'story'})),...epics.map(group=>({issueId:group.epic.id,rowKind:'epic'}))]});},[]);
-            return <div className="container"><div id="reference">Header reference</div><button id="layout" onClick={()=>setVisible(!visible)}>Layout</button>{visible&&<PlanningReviewTable epicGroups={epics} visibleTasks={stories} selectedStoryKeys={selected} onToggleStory={task=>setSelected(previous=>{const next=new Set(previous);if(next.has(task.key))next.delete(task.key);else next.add(task.key);return next})} onSelectStories={(tasks,on)=>setSelected(previous=>{const next=new Set(previous);tasks.forEach(task=>on?next.add(task.key):next.delete(task.key));return next})} jiraUrl="https://jira.example" review={{...state,...controller}} onReviewAction={action=>window.reviewActions.push(action)} admittedTeamCount={2} admittedProjectCount={2} renderFieldEditor={({row,field,value})=>field==='team'||field==='inclusion'?<button className={field==='inclusion'?'epic-stat-toggle '+(row.key==='DEMO-2'?'':'active'):'planning-action-button'} aria-label={field+' for '+row.key}>{field==='inclusion'?(row.key==='DEMO-2'?'Excluded':'Included'):row.team?.name||'Unknown Team'}</button>:value}/>}<PlanningReviewScopeDialog review={{...state,...controller}}/></div>
+            return <div className="container"><div id="reference">Header reference</div><button id="layout" onClick={()=>setVisible(!visible)}>Layout</button>{visible&&<PlanningReviewTable epicGroups={epics} visibleTasks={stories} selectedStoryKeys={selected} onToggleStory={task=>setSelected(previous=>{const next=new Set(previous);if(next.has(task.key))next.delete(task.key);else next.add(task.key);return next})} onSelectStories={(tasks,on)=>setSelected(previous=>{const next=new Set(previous);tasks.forEach(task=>on?next.add(task.key):next.delete(task.key));return next})} jiraUrl="https://jira.example" review={{...state,...controller}} onReviewAction={action=>window.reviewActions.push(action)} admittedTeamCount={2} admittedProjectCount={2} renderFieldEditor={({row,field,value})=>field==='assignee'?<input className="issue-person-editor-trigger" aria-label={'assignee for '+row.key} defaultValue={String(value)} />:field==='team'||field==='inclusion'?<button className={field==='inclusion'?'epic-stat-toggle '+(row.key==='DEMO-2'?'':'active'):'planning-action-button'} aria-label={field+' for '+row.key}>{field==='inclusion'?(row.key==='DEMO-2'?'Excluded':'Included'):row.team?.name||'Unknown Team'}</button>:value}/>}<PlanningReviewScopeDialog review={{...state,...controller}}/></div>
         }
         createRoot(document.getElementById('root')).render(<App/>);
     ` }, bundle: true, write: false, format: 'iife', define: { 'process.env.NODE_ENV': '"test"' } }).outputFiles[0].text;
@@ -108,7 +108,7 @@ test('390px creation fits, frozen keys and last-column reachability at desktop a
     await expect(page.getByRole('textbox', { name: 'Cost 7 for DEMO-1', exact: true })).toBeInViewport();
     await page.getByRole('button', { name: 'Cost 7', exact: true }).hover();
     // Read the settled hover state: WebKit applies :hover a frame after the pointer arrives.
-    await expect.poll(() => page.getByRole('button', { name: 'Cost 7', exact: true }).evaluate(node => ({ background:getComputedStyle(node).backgroundColor,color:getComputedStyle(node).color,transform:getComputedStyle(node).transform,shadow:getComputedStyle(node).boxShadow }))).toEqual({ background:'rgb(226, 232, 240)', color:'rgb(15, 23, 42)', transform:'none', shadow:'none' });
+    await expect.poll(() => page.getByRole('button', { name: 'Cost 7', exact: true }).evaluate(node => ({ background:getComputedStyle(node).backgroundColor,color:getComputedStyle(node).color,transform:getComputedStyle(node).transform,shadow:getComputedStyle(node).boxShadow }))).toEqual({ background:'rgb(224, 221, 215)', color:'rgb(15, 23, 42)', transform:'none', shadow:'none' });   // the shared --border token
     await page.screenshot({ path: path.join(root, 'tmp/217-ui/planning-review-desktop.png'), fullPage: true });
     // Browser zoom reduces the CSS layout viewport; a body CSS transform does not.
     await page.setViewportSize({ width: Math.round(1280 / 1.5), height: Math.round(900 / 1.5) });
@@ -446,7 +446,7 @@ for(const mode of ['Epics','Stories']) test(`optional metadata hidden by default
 test('Capacity hover and keyboard focus retain readable light Included and Excluded chips',async({page})=>{
     await install(page);await page.getByRole('radio',{name:'Stories',exact:true}).click();
     await showHiddenColumn(page,'Capacity');
-    for(const [key,background,color] of [['DEMO-1','rgb(220, 252, 231)','rgb(22, 101, 52)'],['DEMO-2','rgb(226, 232, 240)','rgb(51, 65, 85)']]){
+    for(const [key,background,color] of [['DEMO-1','rgb(220, 252, 231)','rgb(22, 101, 52)'],['DEMO-2','rgb(224, 221, 215)','rgb(51, 65, 85)']]){
         const control=page.getByRole('button',{name:'inclusion for '+key,exact:true});
         await control.hover();await expect(control).toHaveCSS('background-color',background);await expect(control).toHaveCSS('color',color);
         await expect(control).toHaveCSS('transform','none');await expect(control).toHaveCSS('box-shadow','none');await expect(control).toHaveCSS('filter','none');
@@ -980,7 +980,9 @@ async function moveToBoundary(page, boundary, dx) {
 
 for (const mode of ['Epics', 'Stories']) test(`a boundary + appears within 5px of every valid boundary in ${mode} mode, covers the edge on both sides and hides at 10px`, async ({ page }) => {
     await page.setViewportSize({ width: 2400, height: 900 }); await install(page); await page.getByRole('radio', { name: mode, exact: true }).click();
-    const boundaries = await liveBoundaries(page);
+    // Fonts differ by engine: where the table is wider than the scroller, edges beyond its right side are off screen and not offered.
+    const scrollerRight = await page.locator('.planning-review-scroll').evaluate(node => node.getBoundingClientRect().right);
+    const boundaries = (await liveBoundaries(page)).filter(item => item.right <= scrollerRight);
     expect(boundaries.length).toBeGreaterThan(6);
     expect(boundaries[0].id).toBe('summary');
     for (const boundary of boundaries) {
@@ -1224,4 +1226,63 @@ test('Accepted hides from its header menu, persists through the shared layout sa
     await showHiddenColumn(page, 'Accepted');
     const order = await headings(page);
     expect(order[order.indexOf('Story Points') + 1]).toBe('Accepted');
+});
+
+
+// Visual coherence (C4): neutral ink for editable triggers, shared tokens for surfaces.
+const rgbOf = value => (value.match(/[\d.]+/g) || []).map(Number);
+test('editable triggers rest in neutral ink at weight 400 and turn amber on hover and focus', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 }); await install(page); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    const trigger = page.getByRole('textbox', { name: 'assignee for DEMO-1', exact: true });
+    const read = () => trigger.evaluate(node => { const s = getComputedStyle(node); return { color: s.color, weight: s.fontWeight }; });
+    await page.mouse.move(0, 0);
+    expect(await read()).toEqual({ color: 'rgb(26, 26, 26)', weight: '400' });
+    await page.locator('.planning-review-scroll').screenshot({ path: path.join(root, 'tmp/217-ui/c4-table-ink-1440.png') });
+    await trigger.hover();
+    await expect.poll(async () => (await read()).color).toBe('rgb(212, 136, 6)');
+    await page.mouse.move(0, 0);
+    await trigger.focus();
+    await expect.poll(async () => (await read()).color).toBe('rgb(212, 136, 6)');
+    expect((await read()).weight).toBe('400');
+});
+
+test('review table surfaces and borders use the shared tokens, not slate literals or undefined variables', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 }); await install(page); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    const tokens = await page.evaluate(() => { const root = getComputedStyle(document.documentElement); const probe = document.createElement('div'); document.body.append(probe); const resolve = name => { probe.style.color = `var(${name})`; return getComputedStyle(probe).color; }; const out = { bgPrimary: resolve('--bg-primary'), bgSecondary: resolve('--bg-secondary'), border: resolve('--border'), textSecondary: resolve('--text-secondary'), textPrimary: resolve('--text-primary') }; probe.remove(); return out; });
+    const styles = await page.evaluate(() => {
+        const css = (selector, prop) => getComputedStyle(document.querySelector(selector))[prop];
+        return {
+            headBg: css('table.planning-review-table thead th.planning-review-status', 'backgroundColor'),
+            footBg: css('table.planning-review-table tfoot td.planning-review-status', 'backgroundColor'),
+            cellBg: css('table.planning-review-table tbody td.planning-review-status', 'backgroundColor'),
+            cellBorder: css('table.planning-review-table tbody td.planning-review-status', 'borderBottomColor'),
+            scrollBorder: css('.planning-review-scroll', 'borderTopColor'),
+            scrollBg: css('.planning-review-scroll', 'backgroundColor'),
+            synthetic: css('tbody tr.planning-review-synthetic td.planning-review-summary', 'backgroundColor'),
+            syntheticInk: css('tbody tr.planning-review-synthetic td.planning-review-summary', 'color'),
+            keyEdge: css('table.planning-review-table tbody td.planning-review-key', 'boxShadow'),
+        };
+    });
+    expect(styles.headBg).toBe(tokens.bgPrimary); expect(styles.footBg).toBe(tokens.bgPrimary);
+    expect(styles.cellBg).toBe(tokens.bgSecondary); expect(styles.scrollBg).toBe(tokens.bgSecondary);
+    expect(styles.cellBorder).toBe(tokens.border); expect(styles.scrollBorder).toBe(tokens.border);
+    await page.getByRole('radio', { name: 'Epics', exact: true }).click();
+    const synthetic = await page.evaluate(() => { const row = document.querySelector('tbody tr.planning-review-synthetic'); if (!row) return null; const cell = row.querySelector('td.planning-review-summary'); const s = getComputedStyle(cell); return { bg: s.backgroundColor, ink: s.color }; });
+    if (synthetic) { expect(synthetic.bg).toBe(tokens.bgPrimary); expect(synthetic.ink).toBe(tokens.textSecondary); }
+    expect(styles.keyEdge).toContain(tokens.border);
+    // The popover uses the same tokens.
+    await page.getByRole('button', { name: 'Priority column options', exact: true }).click();
+    const popover = await page.getByRole('dialog', { name: 'Priority column options', exact: true }).evaluate(node => { const s = getComputedStyle(node); return { bg: s.backgroundColor, border: s.borderTopColor, ink: s.color }; });
+    expect(popover).toEqual({ bg: tokens.bgSecondary, border: tokens.border, ink: tokens.textPrimary });
+});
+
+test('heading hover keeps a readable fill from the shared border token', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 }); await install(page); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    const heading = page.locator('.planning-review-heading', { hasText: /^Status/ });
+    await heading.hover();
+    const read = () => heading.evaluate(node => { const s = getComputedStyle(node); const probe = document.createElement('div'); document.body.append(probe); probe.style.color = 'var(--border)'; const border = getComputedStyle(probe).color; probe.remove(); return { bg: s.backgroundColor, border, color: s.color, transform: s.transform, shadow: s.boxShadow }; });
+    await expect.poll(async () => { const r = await read(); return r.bg === r.border; }).toBe(true);
+    const settled = await read();
+    expect(contrastRatio(rgbOf(settled.color).slice(0, 3), rgbOf(settled.bg).slice(0, 3))).toBeGreaterThanOrEqual(4.5);
+    expect(settled.transform).toBe('none'); expect(settled.shadow).toBe('none');
 });

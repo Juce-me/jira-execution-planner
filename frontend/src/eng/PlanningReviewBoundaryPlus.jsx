@@ -27,7 +27,7 @@ export default function PlanningReviewBoundaryPlus({ getLive, suspended, onOpen,
             if (!pointer || !live?.row) { hide(); return; }
             const rowRect = live.row.getBoundingClientRect();
             const overOverlay = overlayRef.current?.contains(pointer.target);
-            if (!overOverlay && (pointer.clientY < rowRect.top || pointer.clientY > rowRect.bottom || pointer.clientX < live.left || pointer.clientX > live.right)) { hide(); return; }
+            if (!overOverlay && (pointer.clientY < rowRect.top || pointer.clientY > rowRect.bottom || pointer.clientX < live.left || pointer.clientX > live.right + STAY)) { hide(); return; }   // the last column's + reaches past the scroller's edge
             if (pointer.target.closest?.('.planning-review-popover')) { hide(); return; }
             // Columns scrolled under the frozen cells (select, Key, and Summary on wide screens) have no visible edge to offer.
             const cells = Array.from(live.row.cells);

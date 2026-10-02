@@ -8240,7 +8240,7 @@ html:has(.planning-panel.open) {
 }
 .planning-review-guidance,
 .planning-review-state-note {
-  color: var(--text-secondary, #64748b);
+  color: var(--text-secondary);
   font-size: 0.75rem;
 }
 .planning-review-guidance {
@@ -8255,9 +8255,9 @@ html:has(.planning-panel.open) {
 .planning-review-scroll {
   overflow-x: auto;
   max-width: 100%;
-  border: 1px solid var(--border-color, #e2e8f0);
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--surface, #fff);
+  background: var(--bg-secondary);
 }
 .planning-review-table {
   width: max-content;
@@ -8271,15 +8271,15 @@ html:has(.planning-panel.open) {
   padding: 5px 7px;
   text-align: left;
   vertical-align: middle;
-  border-bottom: 1px solid var(--border-color, #e2e8f0);
-  background: var(--surface, #fff);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
   white-space: nowrap;
   height: 32px;
   box-sizing: border-box;
 }
 .planning-review-table th,
 .planning-review-table tfoot td {
-  background: #f8fafc;
+  background: var(--bg-primary);
 }
 .planning-review-table .planning-review-selection {
   position: sticky;
@@ -8298,7 +8298,7 @@ html:has(.planning-panel.open) {
   width: 96px;
   min-width: 96px;
   max-width: 96px;
-  box-shadow: 1px 0 0 #e2e8f0;
+  box-shadow: 1px 0 0 var(--border);
 }
 .planning-review-table .planning-review-summary {
   min-width: 220px;
@@ -8335,7 +8335,7 @@ html:has(.planning-panel.open) {
 }
 .planning-review-input:hover,
 .planning-review-input:focus {
-  border-color: #94a3b8;
+  border-color: var(--text-secondary);
   background: #fff;
   box-shadow: none;
 }
@@ -8351,13 +8351,13 @@ html:has(.planning-panel.open) {
 }
 .planning-review-requirement {
   display: block;
-  color: #64748b;
+  color: var(--text-secondary);
   font-size: 0.7rem;
   margin-top: 2px;
 }
 .planning-review-synthetic td {
-  background: #f8fafc;
-  color: #64748b;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
 }
 .planning-review-table tbody tr.planning-review-zero-sp td {
   background: #fff1f0;
@@ -8377,7 +8377,7 @@ html:has(.planning-panel.open) {
 }
 .planning-review-heading:hover,
 .planning-review-text-button:hover {
-  background: #e2e8f0;
+  background: var(--border);
   color: #0f172a;
   transform: none;
   box-shadow: none;
@@ -8388,9 +8388,9 @@ html:has(.planning-panel.open) {
   gap: 0.5rem;
   align-items: center;
   padding: 0.75rem;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: #f8fafc;
+  background: var(--bg-primary);
   margin: 0.5rem 0;
   max-width: 100%;
   box-sizing: border-box;
@@ -8427,7 +8427,7 @@ html:has(.planning-panel.open) {
     position: sticky;
     left: 142px;
     z-index: 2;
-    box-shadow: 1px 0 0 #e2e8f0;
+    box-shadow: 1px 0 0 var(--border);
   }
 }
 @media (max-width: 600px) {
@@ -8451,9 +8451,9 @@ html:has(.planning-panel.open) {
   position: sticky;
   bottom: 0;
   z-index: 4;
-  background: #f8fafc;
-  border-top: 1px solid #cbd5e1;
-  box-shadow: 0 -1px 0 #e2e8f0;
+  background: var(--bg-primary);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -1px 0 var(--border);
 }
 .planning-review-table thead .planning-review-selection,
 .planning-review-table thead .planning-review-key,
@@ -8467,7 +8467,7 @@ html:has(.planning-panel.open) {
 }
 .planning-review-storyPoints input.story-points-editor {
   min-width: 32px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--border);
   border-radius: 4px;
   padding: 2px 4px;
   background: #fff;
@@ -8486,10 +8486,10 @@ html:has(.planning-panel.open) {
   font: inherit;
   letter-spacing: normal;
   line-height: 1.4;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--border);
   border-radius: 4px;
   background: #f1f5f9;
-  color: #64748b;
+  color: var(--text-secondary);
   box-shadow: none;
   transform: none;
 }
@@ -8500,7 +8500,7 @@ html:has(.planning-panel.open) {
 }
 .planning-review-capacity .epic-stat-toggle:hover,
 .planning-review-capacity .epic-stat-toggle:focus-visible {
-  background: #e2e8f0;
+  background: var(--border);
   color: #334155;
   filter: none;
   box-shadow: none;
@@ -8531,7 +8531,6 @@ html:has(.planning-panel.open) {
 }
 .planning-review-summary button.issue-summary-editor-trigger:hover {
   background: transparent;
-  color: #d48806;
 }
 .planning-review-popover-anchor {
   display: inline-flex;
@@ -8543,10 +8542,10 @@ html:has(.planning-panel.open) {
   width: 300px;
   max-width: calc(100vw - 16px);
   padding: 0.75rem;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: #fff;
-  color: #334155;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
   font-size: 0.75rem;
   box-shadow: 0 8px 24px #0f172a26;
   overflow-y: auto;
@@ -8662,7 +8661,7 @@ html:has(.planning-panel.open) {
   right: 0;
   bottom: 25%;
   width: 1px;
-  background: #e2e8f0;
+  background: var(--border);
 }
 .planning-review-sr-only {
   position: absolute;
@@ -8687,7 +8686,7 @@ html:has(.planning-panel.open) {
   margin: 0;
   opacity: 0;
   background: transparent;
-  color: #94a3b8;
+  color: var(--text-secondary);
   border: 0;
   padding: 0;
   font: inherit;
@@ -8699,7 +8698,7 @@ html:has(.planning-panel.open) {
 .planning-review-drag:hover,
 .planning-review-drag:focus-visible {
   background: transparent;
-  color: #334155;
+  color: var(--text-primary);
   transform: none;
   box-shadow: none;
 }
@@ -8840,7 +8839,7 @@ html:has(.planning-panel.open) {
   overflow: hidden;
   padding: 3px 5px;
   margin: 0;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--border);
   border-radius: 4px;
   background: #fff;
   color: #334155;
@@ -9040,12 +9039,12 @@ html:has(.planning-panel.open) {
   position: fixed;
   overflow: hidden;
   z-index: var(--sticky-epic-z, 50);
-  background: #f8fafc;
-  box-shadow: 0 1px 0 #cbd5e1;
+  background: var(--bg-primary);
+  box-shadow: 0 1px 0 var(--border);
 }
 .planning-review-docked-footer {
   overflow-x: auto;
-  box-shadow: 0 -1px 0 #cbd5e1;
+  box-shadow: 0 -1px 0 var(--border);
 }
 .planning-review-docked-table {
   table-layout: fixed;
@@ -9058,6 +9057,17 @@ html:has(.planning-panel.open) {
 .planning-review-docked-table th,
 .planning-review-docked-table td {
   overflow: hidden;
+}
+.planning-review-table input.issue-person-editor-trigger,
+.planning-review-table button.issue-person-editor-trigger {
+  color: var(--text-primary);
+  font-weight: 400;
+}
+.planning-review-table input.issue-person-editor-trigger:hover,
+.planning-review-table button.issue-person-editor-trigger:hover,
+.planning-review-table input.issue-person-editor-trigger:focus-visible,
+.planning-review-table button.issue-person-editor-trigger:focus-visible {
+  color: #d48806;
 }
 
 /* frontend/src/styles/eng.css */

@@ -72,6 +72,12 @@ expanding neither refetches nor changes selection. The choice is a private brows
 the default. Planning List shows the full panel exactly as before. The accepted numbers it
 shows are also available in the table through the Accepted column.
 
+The table's surfaces, borders and secondary text use the shared design tokens (`--bg-primary`,
+`--bg-secondary`, `--border`, `--text-primary`, `--text-secondary`) rather than slate literals, so it
+reads like the rest of ENG. Editable Summary, Team and Assignee triggers rest in neutral ink at
+weight 400 and turn amber on hover and focus; the red zero-point tint, the green Included chip and
+the blue drop and insertion cues keep their own colours.
+
 Epics show scoped child Story Points and contributing Teams. Story mode includes
 orphans and awaiting-creation placeholders, one per uncovered Team. Readiness-only
 Epics remain in the Epic table, marked with a "N Story awaited" chip beside the title

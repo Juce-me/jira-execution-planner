@@ -498,6 +498,11 @@ for(const width of [390,1280]) test(`Summary edits inside its cell with Enter, b
     const cell=page.locator('tbody .planning-review-summary').first();
     const trigger=cell.getByRole('button',{name:'Edit summary for PLAN-EPIC',exact:true});
     const editor=cell.getByRole('textbox',{name:'Summary for PLAN-EPIC',exact:true});
+    // The editable Summary rests in neutral ink at weight 400 and turns amber on hover.
+    await page.mouse.move(0,0);
+    expect(await trigger.evaluate(node=>({color:getComputedStyle(node).color,weight:getComputedStyle(node).fontWeight}))).toEqual({color:'rgb(26, 26, 26)',weight:'400'});
+    await trigger.hover();await expect.poll(()=>trigger.evaluate(node=>getComputedStyle(node).color)).toBe('rgb(212, 136, 6)');
+    expect(await trigger.evaluate(node=>getComputedStyle(node).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
     await trigger.click();await expect(editor).toBeEditable();
     await expect(page.getByRole('button',{name:'Save summary',exact:true})).toHaveCount(0);
     const bounds=await editor.boundingBox(),cellBounds=await cell.boundingBox();

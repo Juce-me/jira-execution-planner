@@ -18,12 +18,12 @@ test('activation fetches only once and retained hidden-row drafts survive view/s
     await c.setScope({ ...scope(), active: false });
     assert.equal(schemas, 0);
     await c.setScope(scope());
-    c.setCell(row(1), column, '0.125');
+    c.setCell(row(1), column, '0.5');
     await c.setScope({ ...scope([]), active: false });
     await c.setScope(scope());
     assert.equal(reads, 1); assert.equal(schemas, 1);
     assert.equal(c.getState().dirty, true);
-    assert.equal(Object.values(c.getState().drafts)[0].value, '0.125');
+    assert.equal(Object.values(c.getState().drafts)[0].value, '0.5');
     assert.equal(await c.save(), true); assert.equal(c.getState().dirty, false);
 });
 

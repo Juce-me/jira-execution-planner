@@ -99,12 +99,13 @@ def normalize_value(value, column):
         if not isinstance(value, str) or len(value) > 500:
             raise ReviewError()
         return value
-    if not isinstance(value, str) or len(value) > 32 or re.fullmatch(r'-?\d+(?:\.\d{1,3})?', value) is None:
+    if not isinstance(value, str) or len(value) > 32 or re.fullmatch(r'-?\d+(?:\.\d)?', value) is None:
         raise ReviewError()
     try:
         number = Decimal(value)
         if abs(number) > Decimal('999999999.999'):
             raise ReviewError()
+        # Input allows one decimal place; the canonical stored form keeps three so earlier values stay readable.
         return format(number.quantize(Decimal('0.001')) if number else Decimal('0.000'), 'f')
     except InvalidOperation:
         raise ReviewError() from None

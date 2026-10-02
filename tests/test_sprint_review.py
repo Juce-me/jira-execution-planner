@@ -58,7 +58,7 @@ class ReviewFixture:
     def add(self):
         return self.save(schemas=[{'action': 'add', 'column': self.column}], base=0)
 
-    def cell(self, value='1.123', base=0, issue='101', column=None, kind='story'):
+    def cell(self, value='1.1', base=0, issue='101', column=None, kind='story'):
         return {'issueId': issue, 'rowKind': kind, 'columnId': column or self.column['id'], 'value': value, 'baseRevision': base}
 
 
@@ -122,7 +122,7 @@ class SprintReviewTests(ReviewFixture, unittest.TestCase):
         with self.assertRaises(review.ReviewError) as raised:
             self.save([self.cell('8', base=0, issue='101'), self.cell('9', issue='103')])
         self.assertEqual(raised.exception.status, 409)
-        self.assertEqual(raised.exception.details['cellConflicts'][0]['value'], '1.123')
+        self.assertEqual(raised.exception.details['cellConflicts'][0]['value'], '1.100')
         saved = review.read_values(self.context, '17', {'issueIds': ['101', '102', '103'], 'rowKind': 'story'}, self.url, self.search)
         self.assertEqual(len(saved['cells']), 2)
 
@@ -138,9 +138,9 @@ class SprintReviewTests(ReviewFixture, unittest.TestCase):
 
     def test_decimal_exact_null_zero_limits_and_text(self):
         self.add()
-        for value, expected in [('0', '0.000'), ('-0.000', '0.000'), ('999999999.999', '999999999.999'), (None, None)]:
+        for value, expected in [('0', '0.000'), ('-0.0', '0.000'), ('12', '12.000'), ('12.5', '12.500'), ('999999999.9', '999999999.900'), ('-999999999.9', '-999999999.900'), (None, None)]:
             self.assertEqual(review.normalize_value(value, self.column), expected)
-        for value in [1.1, True, '', '1.0001', 'NaN', '1e2', '1000000000', '-1000000000']:
+        for value in [1.1, True, '', '1.25', '1.001', '12.000', '999999999.99', '999999999.999', 'NaN', '1e2', '1000000000', '-1000000000']:
             with self.subTest(value=value), self.assertRaises(review.ReviewError):
                 review.normalize_value(value, self.column)
         text = {**self.column, 'type': 'text'}
@@ -154,7 +154,7 @@ class SprintReviewTests(ReviewFixture, unittest.TestCase):
         self.save(schemas=[{'action': 'aggregation', 'columnId': self.column['id'], 'aggregation': 'none'},
                            {'action': 'reorder', 'rowKind': 'story', 'columnIds': [self.column['id']]},
                            {'action': 'archive', 'columnId': self.column['id'], 'archived': True}])
-        self.assertEqual(review.read_values(self.context, '17', {'issueIds': ['101'], 'rowKind': 'story'}, self.url, self.search)['cells'][0]['value'], '1.123')
+        self.assertEqual(review.read_values(self.context, '17', {'issueIds': ['101'], 'rowKind': 'story'}, self.url, self.search)['cells'][0]['value'], '1.100')
         with self.assertRaises(review.ReviewError):
             self.save([self.cell(base=1)], base=2)
         changes = [{'action': 'add', 'column': {**self.column, 'id': str(uuid.uuid4())}} for _ in range(31)]

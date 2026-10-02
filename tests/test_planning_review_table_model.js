@@ -14,6 +14,17 @@ test('exact three decimal arithmetic preserves zero/null and validates lexical m
     assert.equal(validateReviewValue({ type: 'text' }, 'a'.repeat(501)).valid, false);
 });
 
+test('review numbers accept at most one decimal place and display without trailing zeros', async () => {
+    const { validateReviewValue, formatReviewDisplay, parseReviewNumber } = await model();
+    const number = { type: 'number' };
+    for (const input of ['', '0', '12', '12.5', '-3.2', '999999999.9', '-999999999.9']) assert.equal(validateReviewValue(number, input).valid, true, input);
+    for (const input of ['1.25', '0.001', '12.000', '999999999.99', '1000000000', '1e3', '.5', '2.']) assert.equal(validateReviewValue(number, input).valid, false, input);
+    assert.match(validateReviewValue(number, '1.25').error, /999999999\.9 with at most one decimal place/);
+    // Stored values written earlier may carry three decimals: they still parse exactly for totals and sorting.
+    assert.equal(parseReviewNumber('0.001').valid, true);
+    for (const [stored, shown] of [['12.000', '12'], ['55000.000', '55000'], ['12.500', '12.5'], ['-0.000', '0'], ['0.001', '0.001'], ['999999999.900', '999999999.9'], [null, ''], ['', ''], ['not a number', 'not a number']]) assert.equal(formatReviewDisplay(stored), shown, String(stored));
+});
+
 test('hierarchy projection keeps readiness-only Epics, orphan Stories and synthetic requirements', async () => {
     const { buildPlanningReviewRows, reviewSelectionState } = await model();
     const stories = [story('1', 'DEMO-1', 0.1), story('2', 'DEMO-2', 0.2), story('3', 'DEMO-3', 3)];

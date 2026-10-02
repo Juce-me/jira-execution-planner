@@ -12,10 +12,11 @@ export function newReviewColumnId() {
 export const REVIEW_NUMBER_LIMIT = 999999999999n;
 export const reviewCellKey = (rowKind, issueId, columnId) => JSON.stringify([rowKind, String(issueId), columnId]);
 
-export function parseReviewNumber(input) {
+// Stored values keep the three-decimal canonical form, so reading accepts three; new input allows one.
+export function parseReviewNumber(input, maxDecimals = 3) {
     const text = String(input ?? '').trim();
     if (!text) return { valid: true, value: null, scaled: null };
-    if (!/^-?\d+(?:\.\d{1,3})?$/.test(text)) return { valid: false, value: null, scaled: null };
+    if (!new RegExp(`^-?\\d+(?:\\.\\d{1,${maxDecimals}})?$`).test(text)) return { valid: false, value: null, scaled: null };
     const negative = text.startsWith('-');
     const [whole, fraction = ''] = text.replace(/^-/, '').split('.');
     const scaled = (BigInt(whole) * 1000n + BigInt(fraction.padEnd(3, '0'))) * (negative ? -1n : 1n);
@@ -30,10 +31,17 @@ export function formatReviewScaled(scaled) {
     return `${negative ? '-' : ''}${value / 1000n}${fraction ? `.${fraction}` : ''}`;
 }
 
+// Shows a stored number without trailing zeros: 12.000 -> 12, 12.500 -> 12.5.
+export function formatReviewDisplay(value) {
+    if (value == null || value === '') return '';
+    const parsed = parseReviewNumber(value);
+    return parsed.valid ? parsed.value : String(value);
+}
+
 export function validateReviewValue(column, input) {
     if (column.type === 'number') {
-        const parsed = parseReviewNumber(input);
-        return { valid: parsed.valid, value: parsed.value, error: parsed.valid ? '' : 'Use a number up to 999999999.999 with at most three decimal places.' };
+        const parsed = parseReviewNumber(input, 1);
+        return { valid: parsed.valid, value: parsed.value, error: parsed.valid ? '' : 'Use a number up to 999999999.9 with at most one decimal place.' };
     }
     const value = String(input ?? '');
     return { valid: Array.from(value).length <= 500, value: value || null, error: Array.from(value).length > 500 ? 'Text is limited to 500 characters.' : '' };

@@ -47,7 +47,7 @@ placeholders and the No Epic group row are never tinted.
 Rows scroll with the page; column headings dock below the shared controls and totals remain visible at the viewport bottom until their natural row enters view.
 Stories expose the parent Epic summary in the Epic column, linked to that Epic in Jira (falling back to the key when its summary is missing). Assignee is a visible
 column, without a Fields menu. Component, Project, Capacity and Project Track are optional and
-hidden by default; use Columns to show or hide them. Saved visibility choices
+hidden by default; use Show hidden in the Add popover to show them. Saved visibility choices
 take precedence over defaults, including an explicitly saved all-visible layout. Story Points have a visible
 in-cell input with Enter to save and Escape to cancel in the signed-in Jira editor;
 Epic Sprint SP remains a computed total. Story Capacity and Project Track
@@ -68,24 +68,23 @@ Synthetic rows cannot edit Jira or store custom values. Team and Project columns
 appear for multiple admitted Teams/projects. List sort/group controls keep their
 stored choices and do not change table ordering.
 
-The single-row toolbar contains Epics/Stories, + Column and Columns, with matching
-heights and typography. Use + Column to create a Number or Text column and Columns
-to show or hide columns and manage review columns. Discard and Save appear at the
-right end only while the review has local changes (Discard asks for an inline
+The single-row toolbar holds the Epics/Stories switch and, at its right end, Discard and
+Save, which appear only while the review has local changes (Discard asks for an inline
 confirmation); a muted Loading… note shows there while the review loads. There is
 no options menu or usage help: the app-header Refresh also reloads the shared
 review (drafts are preserved; it leaves a review that is already loading or
-saving alone), and a third click on a sorted heading clears the sort. Both popups are 300px, anchored above the table without shifting the page
-layout. Opening one focuses the panel (+ Column focuses its name field); Escape or
-an outside click dismisses it; the popups stay within the viewport.
-+ Column has a name field, the shared Number | Text segmented control and Add
-column; Enter adds, Escape cancels. Columns uses the Filters popover grammar: its
-subject names the active row mode (Columns · Epics or Stories); Jira fields lists
-the optional Jira columns as one-line toggles; Review columns · shared lists custom
-columns as the same toggle plus a Σ total toggle (numbers only), an inline rename
-(Enter or leaving the field saves, Escape cancels and keeps the popup open) and an
-archive action behind an inline confirmation. Archived columns stay listed, muted,
-and cannot be restored from the UI.
+saving alone), and a third click on a sorted heading clears the sort.
+Column work happens in the table header. The corner + in the pinned select header cell
+(accessible name + Add column, a disabled control without a saving-capable profile)
+opens the 300px Add popover, anchored to the table without shifting the page layout and
+inside the viewport. Its subject names the active row mode (Add column · Epics or
+Stories); the name field takes focus, with the shared Number | Text segmented control
+and Add column beside it (Enter adds, Escape cancels) and the note that the column is
+shared with everyone reviewing the Sprint. A new column is appended after the last
+movable column. Below, Show hidden lists the hidden optional Jira columns and hidden
+review columns as one-line rows in the Filters popover grammar; a row shows its column
+again and the popover stays open. Archived review columns are not listed and cannot be
+restored from the UI. Escape or an outside click dismisses either popup.
 The chevron opens a column menu anchored to the header cell (also from the docked
 header; an open menu closes when the header docks or undocks). Move left and Move right
 step the column past its nearest visible neighbour like dragging does and stay open;
@@ -97,7 +96,8 @@ line explains that Shift-click on a heading sorts by several columns.
 Drag column handles to place Jira and custom columns in any order after the pinned
 Key and Summary columns. Arrow keys on a focused handle move it past the nearest
 visible neighbour, stepping over hidden columns; the headers are the only place to
-reorder. Columns controls optional visibility.
+reorder. Hide column in a column's menu and Show hidden in the Add popover control
+optional visibility.
 Order and visibility are shared per workspace + Sprint, separately for Epics and
 Stories, and remain drafts until Save review. Reload/Refresh loads the saved view;
 concurrent layout saves use the same schema revision conflict protection. Save
@@ -143,7 +143,7 @@ acceptance require separate verification with an approved disposable Jira issue.
 
 Story Points edits use only the in-cell input: Enter saves to Jira, Escape cancels, and leaving the input discards the unsaved value. No Save/Cancel buttons are shown.
 
-In normal mode, the Epics/Stories and column toolbar sits directly above the spreadsheet. When sticky mode activates on scroll, the toolbar moves below capacity in the shared controls stack, following its width. Returning to the page top restores the toolbar above the table; selection and review drafts are preserved.
+In normal mode, the Epics/Stories toolbar sits directly above the spreadsheet. When sticky mode activates on scroll, the toolbar moves below capacity in the shared controls stack, following its width. Returning to the page top restores the toolbar above the table; selection and review drafts are preserved.
 
 In expanded Table mode, Collapse panel is part of the selection control line, without a separate row above it.
 

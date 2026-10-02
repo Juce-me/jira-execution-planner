@@ -3,13 +3,12 @@ import { createPortal } from 'react-dom';
 import useIssueFieldPopover from '../issues/useIssueFieldPopover.js';
 import TrackedExternalLink from '../components/TrackedExternalLink.jsx';
 import { buildJiraBrowseLinkAnalytics } from '../analytics/externalLinks.js';
-import { reviewCellKey, newReviewColumnId, formatReviewDisplay, DEFAULT_REVIEW_HIDDEN_COLUMNS } from './planningReviewTableModel.js';
+import { reviewCellKey, newReviewColumnId, formatReviewDisplay, insertColumnId, DEFAULT_REVIEW_HIDDEN_COLUMNS } from './planningReviewTableModel.js';
 import SegmentedControl from '../ui/SegmentedControl.jsx';
 import IconButton from '../ui/IconButton.jsx';
 import StatusPill from '../ui/StatusPill.jsx';
 import EpicHeaderValueReadout from './EpicHeaderValueReadout.jsx';
 import PlanningReviewColumnMenu from './PlanningReviewColumnMenu.jsx';
-import PlanningReviewColumnsMenu from './PlanningReviewColumnsMenu.jsx';
 import PlanningReviewStateCluster from './PlanningReviewStateCluster.jsx';
 import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
 import { buildPlanningReviewRows, buildPlanningReviewColumns, hasZeroStoryPoints, reviewSelectionState, reviewValue, sortPlanningReviewRows, planningReviewTotals } from './planningReviewTableModel.js';
@@ -93,9 +92,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
     const [dropColumn, setDropColumn] = React.useState(null);
     const [sort, setSort] = React.useState([]);
     const [editing, setEditing] = React.useState(null);
-    const [addOpen, setAddOpen] = React.useState(false);
-    const [columnsOpen, setColumnsOpen] = React.useState(false);
-    const [openMenu, setOpenMenu] = React.useState(null);
+    const [openMenu, setOpenMenu] = React.useState(null);   // 'add' or a column id
     const [name, setName] = React.useState('');
     const [type, setType] = React.useState('number');
     const [formError, setFormError] = React.useState('');
@@ -162,7 +159,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
         if (next.length > 5) { setFormError('Use at most five sort criteria.'); return; }
         setSort(next); trackedAction('sort_changed', { sortKey: column.custom ? 'custom' : column.id });
     };
-    const addColumn = event => {
+    const addColumn = (event, afterId = null) => {
         event.preventDefault();
         const label = name.trim();
         if (!label || Array.from(label).length > 80) { setFormError('Enter a column name of 1–80 characters.'); return; }
@@ -170,8 +167,8 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
         const column = { id, rowKind: mode, label, type, aggregation: type === 'number' ? 'sum' : 'none', archived: false, order: review.columns.filter(item => item.rowKind === mode).length };
         if (!review.changeSchema({ action: 'add', column })) { setFormError('This row mode supports up to 30 active custom columns.'); return; }
         const nextHidden = [...hidden].filter(columnId => columnId !== id);
-        review.changeSchema({ action: 'layout', rowKind: mode, order: [...layoutColumns.filter(item => !['key', 'summary'].includes(item.id)).map(item => item.id), id], hidden: nextHidden });
-        setNewColumnId(id); setName(''); setFormError(''); setAddOpen(false); trackedAction('column_added');
+        review.changeSchema({ action: 'layout', rowKind: mode, order: insertColumnId(movableIds(), id, afterId), hidden: nextHidden });
+        setNewColumnId(id); setName(''); setFormError(''); setOpenMenu(null); trackedAction('column_added');
     };
     const updateLayout = (order, nextHidden = [...hidden]) => review.changeSchema({ action: 'layout', rowKind: mode, order, hidden: nextHidden });
     const setColumnVisible = (columnId, visible) => {
@@ -194,21 +191,6 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
     const toolbar = (
         <div className="planning-review-toolbar">
             <div className="stats-control-group"><SegmentedControl className="eng-mode-control" ariaLabel="Planning review rows" options={[{ value: 'epic', label: 'Epics' }, { value: 'story', label: 'Stories' }]} value={mode} onChange={changeMode} /></div>
-            <ReviewColumnPopover open={addOpen} onClose={() => { setAddOpen(false); setFormError(''); }} label="Add review column" error={formError}
-                trigger={<button type="button" className="planning-action-button" aria-label="+ Add column" disabled={!editable} onClick={() => { setAddOpen(!addOpen); setColumnsOpen(false); setOpenMenu(null); trackedAction('add_column_opened'); }}>+ Column</button>}>
-                <form className="planning-review-add" onSubmit={addColumn}>
-                    <input data-autofocus required maxLength={80} className="planning-review-column-name" aria-label="Column name" placeholder="Column name" value={name} onChange={event => setName(event.target.value)} />
-                    <div className="planning-review-add-row">
-                        <SegmentedControl className="eng-mode-control" ariaLabel="Column type" options={[{ value: 'number', label: 'Number' }, { value: 'text', label: 'Text' }]} value={type} onChange={setType} />
-                        <button type="submit" className="planning-action-button" disabled={!editable}>Add column</button>
-                    </div>
-                </form>
-            </ReviewColumnPopover>
-            <ReviewColumnPopover open={columnsOpen} onClose={() => { setColumnsOpen(false); setFormError(''); }} label="Review column management" error={formError}
-                trigger={<button type="button" className="planning-action-button" aria-expanded={columnsOpen} onClick={() => { setColumnsOpen(!columnsOpen); setAddOpen(false); setOpenMenu(null); trackedAction('columns_opened'); }}>Columns</button>}>
-                <PlanningReviewColumnsMenu mode={mode} columns={allColumns.filter(column => !column.required)} archivedColumns={review.columns.filter(column => column.rowKind === mode && column.archived)} hidden={hidden} editable={editable} review={review}
-                    onVisibilityChange={setColumnVisible} onError={setFormError} onArchived={() => trackedAction('column_archived')} />
-            </ReviewColumnPopover>
             <PlanningReviewStateCluster review={review} editable={editable}
                 onSave={async () => { const saved = await review.save(); trackedAction('save_review', { result: saved ? 'success' : 'failure' }); }}
                 onDiscard={() => { review.discard(); trackedAction('discard_review'); }} />
@@ -216,9 +198,35 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
     );
     const movable = column => ['key', 'summary'].includes(column.id) ? '' : ' planning-review-movable';
     const visibleMovable = columns.map(item => item.id).filter(id => !['key', 'summary'].includes(id));
-    const header = (floating = false) => <thead><tr><th className="planning-review-selection planning-review-text"><span className="planning-review-sr-only">Select</span></th>{columns.map(column => {
+    const hiddenColumns = allColumns.filter(column => !column.required && hidden.has(column.id));
+    const header = (floating = false) => {
+        // The real header and its docked clone are separate elements: only the one the user can reach owns the popovers.
         const docked = !floating && dock?.header;
         const interactive = floating || !dock?.header;
+        const corner = <ReviewColumnPopover open={openMenu === 'add' && interactive} onClose={() => { setOpenMenu(null); setFormError(''); }} label="Add review column" error={formError}
+            trigger={<IconButton size="sm" className="planning-review-column-action planning-review-corner" tabIndex={docked ? -1 : undefined} aria-hidden={docked ? true : undefined} disabled={!editable} aria-label="+ Add column"
+                onClick={() => { const open = openMenu !== 'add'; setOpenMenu(open ? 'add' : null); if (open) trackedAction('add_column_opened'); }}>
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9" /></svg>
+            </IconButton>}>
+            <div className="pop-subject">Add column · {mode === 'epic' ? 'Epics' : 'Stories'}</div>
+            <div className="pop-group">
+                <form className="planning-review-add" onSubmit={addColumn}>
+                    <input data-autofocus required maxLength={80} className="planning-review-column-name" aria-label="Column name" placeholder="Column name" value={name} onChange={event => setName(event.target.value)} />
+                    <div className="planning-review-add-row">
+                        <SegmentedControl className="eng-mode-control" ariaLabel="Column type" options={[{ value: 'number', label: 'Number' }, { value: 'text', label: 'Text' }]} value={type} onChange={setType} />
+                        <button type="submit" className="planning-action-button" disabled={!editable}>Add column</button>
+                    </div>
+                    <p className="planning-review-guidance">Shared with everyone reviewing this Sprint.</p>
+                </form>
+            </div>
+            {hiddenColumns.length > 0 && <div className="pop-group">
+                <div className="pop-head"><span className="pop-facet">Show hidden</span></div>
+                <div className="pop-list">{hiddenColumns.map(column => <button key={column.id} type="button" className="pop-opt" aria-pressed="false" disabled={!editable} onClick={() => setColumnVisible(column.id, true)}>
+                    <span className="box" aria-hidden="true" /><span className="pop-opt-content"><span className="pop-opt-label" title={column.label}>{column.label}</span></span>
+                </button>)}</div>
+            </div>}
+        </ReviewColumnPopover>;
+        return <thead><tr><th className="planning-review-selection planning-review-text" aria-label="Select">{corner}</th>{columns.map(column => {
         // The grip sits in a right-hand gutter outside the content box, so headings, values and totals share their alignment edge.
         const grip = !['key', 'summary'].includes(column.id) && <button type="button" className="planning-review-drag" tabIndex={docked ? -1 : undefined} aria-hidden={docked ? true : undefined} draggable={editable} disabled={!editable} aria-label={`Move ${column.label} column`} title="Drag to move column"
             onDragStart={event => { draggedColumn.current = column.id; event.dataTransfer.setData('text/plain', column.id); event.dataTransfer.effectAllowed = 'move'; }} onDragEnd={() => { draggedColumn.current = null; setDropColumn(null); }}
@@ -226,7 +234,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
         const index = visibleMovable.indexOf(column.id);
         const menu = index >= 0 && <ReviewColumnPopover open={openMenu === column.id && interactive} onClose={() => { setOpenMenu(null); setFormError(''); }} label={`${column.label} column options`} error={openMenu === column.id ? formError : ''}
             trigger={<IconButton size="sm" className="planning-review-column-action planning-review-colmenu" tabIndex={docked ? -1 : undefined} aria-hidden={docked ? true : undefined} disabled={!editable} aria-label={`${column.label} column options`}
-                onClick={() => { const open = openMenu !== column.id; setOpenMenu(open ? column.id : null); setAddOpen(false); setColumnsOpen(false); if (open) trackedAction('columns_opened'); }}>
+                onClick={() => { const open = openMenu !== column.id; setOpenMenu(open ? column.id : null); if (open) trackedAction('columns_opened'); }}>
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4" /></svg>
             </IconButton>}>
             <PlanningReviewColumnMenu column={column} editable={editable} review={review} canMoveLeft={index > 0} canMoveRight={index < visibleMovable.length - 1}
@@ -240,6 +248,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
             onDrop={event => { event.preventDefault(); const source = draggedColumn.current; moveColumn(source, column.id, event.clientX > event.currentTarget.getBoundingClientRect().left + event.currentTarget.offsetWidth / 2); draggedColumn.current = null; setDropColumn(null); }}>
             <span className="planning-review-head">{heading}{grip}{menu}</span></th>;
     })}</tr></thead>;
+    };
     const footer = <tfoot><tr><th className="planning-review-selection planning-review-text"><span aria-hidden="true">Σ</span><span className="planning-review-sr-only">Total</span></th>{columns.map(column => <td key={column.id} className={`planning-review-${column.id}${column.custom ? ' planning-review-custom' : ''} planning-review-${column.type === 'number' ? 'numeric' : 'text'}${movable(column)}`}>{column.id === 'key' ? '' : totals[column.id] ?? ''}</td>)}</tr></tfoot>;
     const dockedTable = (kind, content, ref) => <div ref={ref} aria-hidden={kind === 'footer' ? true : undefined}
         onScroll={event => { scroller.current.scrollLeft = event.currentTarget.scrollLeft; }}
@@ -253,7 +262,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
         {!review.capabilities?.canSave && !review.loading && <p className="planning-review-guidance">{review.capabilities?.reason === 'database_required' ? 'Review saving requires the application database.' : review.capabilities?.reason || 'Review saving is unavailable in this deployment.'}</p>}
         {review.error && <p className="planning-review-guidance" role="alert">{review.error}</p>}
         {(review.conflict || review.unconfirmed) && <div className="planning-review-recovery"><span>Your draft stays local until you choose a recovery action.</span><button type="button" className="planning-action-button" disabled={review.loading || review.saving} onClick={() => { void review.loadCurrent(); trackedAction('load_current_review'); }}>Load current and discard draft</button><button type="button" className="planning-action-button" disabled={review.loading || review.saving} onClick={() => { void review.reapply(); trackedAction('reapply_review'); }}>Refresh and reapply draft</button></div>}
-        {formError && !addOpen && !columnsOpen && !openMenu && <p role="alert" className="planning-review-guidance">{formError}</p>}
+        {formError && !openMenu && <p role="alert" className="planning-review-guidance">{formError}</p>}
         <div ref={scroller} className="planning-review-scroll" tabIndex={0} aria-label="Planning review spreadsheet">
             <table className={`planning-review-table${dock?.header ? ' planning-review-header-docked' : ''}${dock?.footer ? ' planning-review-footer-docked' : ''}`}>{header()}
             <tbody>{displayed.map(row => <tr key={`${row.rowKind}:${row.id || row.key}`} className={row.synthetic ? 'planning-review-synthetic' : hasZeroStoryPoints(row) ? 'planning-review-zero-sp' : ''}>

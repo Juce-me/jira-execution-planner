@@ -36,12 +36,16 @@ async function install(page, longReview = false, longNames = false, zeroStory = 
     await expect(page.getByText('Loading review…')).toHaveCount(0);
 }
 
-const columnsDialog = page => page.getByRole('dialog', { name: 'Review column management', exact: true });
-async function openColumns(page) {
-    await page.getByRole('button', { name: 'Columns', exact: true }).click();
-    const popup = columnsDialog(page);
-    await expect(popup).toBeVisible();
-    return popup;
+const addDialog = page => page.getByRole('dialog', { name: 'Add review column', exact: true });
+// The corner "+" opens the Add popover; its Show hidden list restores a hidden optional column.
+async function showHiddenColumn(page, label) {
+    await page.getByRole('button', { name: '+ Add column', exact: true }).click();
+    await addDialog(page).getByRole('button', { name: label, exact: true }).click();
+    await page.keyboard.press('Escape');
+}
+async function hideColumn(page, label) {
+    await page.getByRole('button', { name: `${label} column options`, exact: true }).click();
+    await page.getByRole('dialog', { name: `${label} column options`, exact: true }).getByRole('button', { name: 'Hide column', exact: true }).click();
 }
 
 test('real selection and readiness/orphan rows, explicit metadata columns and shared controls', async ({ page }) => {
@@ -57,8 +61,7 @@ test('real selection and readiness/orphan rows, explicit metadata columns and sh
     await expect(page.getByRole('columnheader', {name:'Fields',exact:true})).toHaveCount(0);
     await expect(page.getByLabel('team for DEMO-10')).toBeVisible();
     await expect(page.getByLabel('inclusion for DEMO-10')).toHaveCount(0);
-    await (await openColumns(page)).getByRole('button',{name:'Capacity',exact:true}).click();
-    await page.keyboard.press('Escape');
+    await showHiddenColumn(page,'Capacity');
     await expect(page.getByLabel('inclusion for DEMO-10')).toBeVisible();
     const control = page.getByRole('radiogroup', { name: 'Planning review rows' });
     await expect(control).toHaveClass(/eng-mode-control/);
@@ -177,36 +180,40 @@ for(const width of [390,1280]) test(`column tools open as anchored popups withou
     await page.setViewportSize({width,height:850});await install(page);
     await page.getByRole('radio',{name:'Stories',exact:true}).click();
     const table=page.locator('.planning-review-scroll');const before=await table.boundingBox();
-    const add=page.getByRole('button',{name:'+ Add column',exact:true});const columns=page.getByRole('button',{name:'Columns',exact:true});
-    await add.click();const creation=page.getByRole('dialog',{name:'Add review column',exact:true});await expect(creation).toBeVisible();
+    const add=page.getByRole('button',{name:'+ Add column',exact:true});
+    await add.click();const creation=addDialog(page);await expect(creation).toBeVisible();
     expect(Math.abs((await table.boundingBox()).y-before.y)).toBeLessThan(1);
     await expect(creation.getByLabel('Column name',{exact:true})).toBeFocused();
     await creation.getByLabel('Column name',{exact:true}).fill('Risk');
     const popup=await creation.boundingBox();expect(popup.x).toBeGreaterThanOrEqual(0);expect(popup.x+popup.width).toBeLessThanOrEqual(width);expect(popup.y+popup.height).toBeLessThanOrEqual(850);
+    expect(popup.width).toBeLessThanOrEqual(320);
+    const frontOfCreation=await creation.evaluate(node=>{const r=node.getBoundingClientRect();return node.contains(document.elementFromPoint(r.left+12,r.top+12));});expect(frontOfCreation).toBe(true);
+    await page.screenshot({path:path.join(root,`tmp/217-ui/planning-review-column-popup-${width}.png`),fullPage:true});
     await creation.getByLabel('Column name',{exact:true}).press('Escape');await expect(creation).toHaveCount(0);await expect(add).toBeFocused();
-    await add.click();await columns.click();await expect(creation).toHaveCount(0);
-    const management=page.getByRole('dialog',{name:'Review column management',exact:true});await expect(management).toBeVisible();
+    // A column menu replaces the Add popover and is anchored the same way.
+    await add.click();
+    const chevron=page.getByRole('button',{name:'Priority column options',exact:true});await chevron.scrollIntoViewIfNeeded();await chevron.click();
+    const management=page.getByRole('dialog',{name:'Priority column options',exact:true});await expect(management).toBeVisible();await expect(creation).toHaveCount(0);
     expect(Math.abs((await table.boundingBox()).y-before.y)).toBeLessThan(1);
     const front=await management.evaluate(node=>{const r=node.getBoundingClientRect();return node.contains(document.elementFromPoint(r.left+12,r.top+12));});expect(front).toBe(true);
-    await page.screenshot({path:path.join(root,`tmp/217-ui/planning-review-column-popup-${width}.png`),fullPage:true});
-    const managerBounds=await management.boundingBox();expect(managerBounds.y).toBeGreaterThanOrEqual(0);expect(managerBounds.y+managerBounds.height).toBeLessThanOrEqual(850);
+    const managerBounds=await management.boundingBox();expect(managerBounds.x).toBeGreaterThanOrEqual(0);expect(managerBounds.x+managerBounds.width).toBeLessThanOrEqual(width);
+    expect(managerBounds.y).toBeGreaterThanOrEqual(0);expect(managerBounds.y+managerBounds.height).toBeLessThanOrEqual(850);
     expect(managerBounds.width).toBeLessThanOrEqual(320);
-    await page.keyboard.press('Escape');await expect(management).toHaveCount(0);await expect(columns).toBeFocused();
+    await page.keyboard.press('Escape');await expect(management).toHaveCount(0);await expect(chevron).toBeFocused();
 });
 
  test('drag custom columns between Jira columns, keyboard reorder and shared visibility survive reload', async ({page}) => {
     await page.setViewportSize({width:2400,height:900});
     await install(page);
     await page.getByRole('radio',{name:'Stories',exact:true}).click();
-    const headers=()=>page.locator('thead th').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('aria-label')).filter(Boolean));
+    const headers=()=>page.locator('thead th').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('aria-label')).filter(label=>label&&label!=='Select'));
     await page.getByRole('button',{name:'Move Cost 0 column',exact:true}).dragTo(page.getByRole('columnheader',{name:'Status',exact:true}),{targetPosition:{x:4,y:15}});
     expect((await headers()).slice(0,4)).toEqual(['Key','Summary','Cost 0','Status']);
     expect(await page.evaluate(()=>window.harness.saveCount())).toBe(0);
     await page.getByRole('button',{name:'Move Cost 0 column',exact:true}).focus();
     await page.keyboard.press('ArrowRight');
     expect((await headers()).slice(0,4)).toEqual(['Key','Summary','Status','Cost 0']);
-    await (await openColumns(page)).getByRole('button',{name:'Assignee',exact:true}).click();
-    await page.keyboard.press('Escape');
+    await hideColumn(page,'Assignee');
     await expect(page.getByRole('columnheader',{name:'Assignee',exact:true})).toHaveCount(0);
     await page.getByRole('button',{name:'Save review',exact:true}).click();
     await page.evaluate(()=>window.harness.reload());
@@ -264,8 +271,11 @@ const alignmentAudit = () => {
 test('the select header shows no title and the total cell shows a sigma, both keeping accessible names', async ({page}) => {
     await page.setViewportSize({width:2400,height:900});await install(page);
     const select=page.locator('thead th.planning-review-selection'),total=page.locator('tfoot th.planning-review-selection');
-    await expect(select).toHaveText('Select');
-    expect(await select.evaluate(node=>({children:node.children.length,hidden:node.firstElementChild.classList.contains('planning-review-sr-only'),size:[getComputedStyle(node.firstElementChild).width,getComputedStyle(node.firstElementChild).height]}))).toEqual({children:1,hidden:true,size:['1px','1px']});
+    // Select is the cell's accessible name; the only visible mark is the corner "+" button, which has no title text of its own.
+    await expect(select).toHaveAttribute('aria-label','Select');
+    await expect(select).toHaveText('');
+    expect(await select.evaluate(node=>({children:[...node.children].map(child=>child.tagName+'.'+child.className.replace(/\s+/g,'.')),text:node.textContent.trim()}))).toEqual({children:[expect.stringMatching(/^SPAN\.planning-review-popover-anchor$/)],text:''});
+    await expect(select.getByRole('button',{name:'+ Add column',exact:true})).toBeVisible();
     await expect(total).toHaveText('ΣTotal');
     expect(await total.evaluate(node=>({visible:node.firstElementChild.textContent,hiddenFromAT:node.firstElementChild.getAttribute('aria-hidden'),overflow:node.scrollWidth>node.clientWidth}))).toEqual({visible:'Σ',hiddenFromAT:'true',overflow:false});
     // Every column heading uses one typography.
@@ -282,8 +292,8 @@ for (const mode of ['Epics', 'Stories']) test(`every ${mode} column shares one e
         await dialog.getByLabel('Column name',{exact:true}).fill(label);await dialog.getByRole('radio',{name:type,exact:true}).click();
         await dialog.getByRole('button',{name:'Add column',exact:true}).click();
     }
-    const popup=await openColumns(page);
-    for (const name of ['Project','Component','Capacity','Project Track']) { const toggle=popup.getByRole('button',{name,exact:true}); if (await toggle.count() && await toggle.getAttribute('aria-pressed')==='false') await toggle.click(); }
+    await page.getByRole('button',{name:'+ Add column',exact:true}).click();
+    for (const name of ['Project','Component','Capacity','Project Track']) { const row=addDialog(page).getByRole('button',{name,exact:true}); if (await row.count()) await row.click(); }
     await page.keyboard.press('Escape');
     if (mode === 'Epics') { await page.getByRole('textbox',{name:'Effort for DEMO-10',exact:true}).fill('12.5');await page.getByRole('textbox',{name:'Notes for DEMO-10',exact:true}).fill('hello');await page.locator('#reference').click(); }
     const columns=await page.evaluate(alignmentAudit);
@@ -317,118 +327,90 @@ test('real Epic and Story rows without points are tinted red; placeholders and g
     await page.screenshot({path:path.join(root,'tmp/217-ui/zero-sp-tint.png'),fullPage:false});
 });
 
-test('Columns popup is a compact single-line checklist in the shared popover grammar', async ({page}) => {
+test('Add column popover is a compact form in the shared popover grammar with a single-line Show hidden list', async ({page}) => {
     await page.setViewportSize({width:1280,height:850});await install(page);
     await page.getByRole('radio',{name:'Stories',exact:true}).click();
-    const popup=await openColumns(page);
-    await expect(popup).toBeFocused();
+    await page.getByRole('button',{name:'+ Add column',exact:true}).click();
+    const popup=addDialog(page);
+    await expect(popup.getByLabel('Column name',{exact:true})).toBeFocused();
     await expect(popup.locator('.pop-opt:focus-visible')).toHaveCount(0);
     expect((await popup.boundingBox()).width).toBeLessThanOrEqual(320);
-    await expect(popup.locator('.pop-subject')).toHaveText('Columns · Stories');
-    await expect(popup.locator('.pop-facet')).toHaveText(['Jira fields','Review columns · shared']);
+    await expect(popup.locator('.pop-subject')).toHaveText('Add column · Stories');
+    await expect(popup.locator('.pop-facet')).toHaveText(['Show hidden']);
+    await expect(popup.getByText('Shared with everyone reviewing this Sprint.',{exact:true})).toBeVisible();
     await expect(popup.getByRole('button',{name:/^Move /})).toHaveCount(0);
     await expect(popup.getByRole('button',{name:'Done',exact:true})).toHaveCount(0);
-    await expect(popup.getByRole('textbox')).toHaveCount(0);
-    const rows=await popup.locator('.pop-list > *').evaluateAll(nodes=>nodes.map(node=>({text:node.textContent.trim().slice(0,20),height:node.getBoundingClientRect().height})));
-    expect(rows.length).toBe(13);
-    expect(Math.max(...rows.map(row=>row.height)),JSON.stringify(rows)).toBeLessThan(32);
-    expect(Math.max(...rows.map(row=>row.height))-Math.min(...rows.map(row=>row.height)),JSON.stringify(rows)).toBeLessThan(3);
-    await page.screenshot({path:path.join(root,'tmp/217-ui/columns-popup-after.png'),fullPage:true});
+    await expect(popup.getByRole('textbox')).toHaveCount(1);
+    const hidden=await popup.locator('.pop-list > button').evaluateAll(nodes=>nodes.map(node=>({text:node.textContent.trim(),pressed:node.getAttribute('aria-pressed'),height:node.getBoundingClientRect().height})));
+    expect(hidden.map(row=>row.text),JSON.stringify(hidden)).toEqual(['Project','Component','Capacity','Project Track']);
+    expect(hidden.every(row=>row.pressed==='false')).toBe(true);
+    expect(Math.max(...hidden.map(row=>row.height)),JSON.stringify(hidden)).toBeLessThan(32);
+    expect(Math.max(...hidden.map(row=>row.height))-Math.min(...hidden.map(row=>row.height)),JSON.stringify(hidden)).toBeLessThan(3);
+    // Archived review columns are not listed and cannot be restored here.
+    await page.keyboard.press('Escape');
+    await hideColumn(page,'Cost 7');await page.getByRole('button',{name:'Cost 6 column options',exact:true}).click();
+    await page.getByRole('dialog',{name:'Cost 6 column options',exact:true}).getByRole('button',{name:'Archive column…',exact:true}).click();
+    await page.getByRole('button',{name:'Archive',exact:true}).click();
+    await page.getByRole('button',{name:'+ Add column',exact:true}).click();
+    await expect(popup.getByRole('button',{name:'Cost 7',exact:true})).toHaveCount(1);
+    await expect(popup.getByRole('button',{name:'Cost 6',exact:true})).toHaveCount(0);
+    await expect(popup.getByText('archived',{exact:false})).toHaveCount(0);
+    await page.screenshot({path:path.join(root,'tmp/217-ui/add-popover-after.png'),fullPage:true});
     await page.getByRole('radio',{name:'Epics',exact:true}).click();
     await expect(popup).toHaveCount(0);
-    await page.getByRole('button',{name:'Columns',exact:true}).click();
-    await expect(columnsDialog(page).locator('.pop-subject')).toHaveText('Columns · Epics');
+    await page.getByRole('button',{name:'+ Add column',exact:true}).click();
+    await expect(addDialog(page).locator('.pop-subject')).toHaveText('Add column · Epics');
 });
 
-test('Columns toggles show and hide Jira and review columns as a draft layout change', async ({page}) => {
+test('Show hidden restores and the header menu hides Jira and review columns as a draft layout change', async ({page}) => {
     await install(page);await page.getByRole('radio',{name:'Stories',exact:true}).click();
-    const popup=await openColumns(page);
     for(const name of ['Assignee','Cost 3']) {
-        const toggle=popup.getByRole('button',{name,exact:true});
-        await expect(toggle).toHaveAttribute('aria-pressed','true');
-        await toggle.click();
-        await expect(toggle).toHaveAttribute('aria-pressed','false');
+        await expect(page.getByRole('columnheader',{name,exact:true})).toHaveCount(1);
+        await hideColumn(page,name);
         await expect(page.getByRole('columnheader',{name,exact:true})).toHaveCount(0);
-        await toggle.click();
+        await page.getByRole('button',{name:'+ Add column',exact:true}).click();
+        await addDialog(page).getByRole('button',{name,exact:true}).click();
+        await page.keyboard.press('Escape');
         await expect(page.getByRole('columnheader',{name,exact:true})).toHaveCount(1);
     }
-    await popup.getByRole('button',{name:'Cost 3',exact:true}).click();
+    await hideColumn(page,'Cost 3');
     await expect(page.getByRole('columnheader',{name:'Cost 3',exact:true})).toHaveCount(0);
     expect(await page.evaluate(()=>({dirty:window.harness.state().dirty,saves:window.harness.saveCount()}))).toEqual({dirty:true,saves:0});
 });
 
-test('review column rename is inline: Enter and blur save, Escape cancels and keeps the popup open', async ({page}) => {
+test('review column rename is inline: Enter and blur save, Escape cancels and keeps the menu open', async ({page}) => {
     await install(page);await page.getByRole('radio',{name:'Stories',exact:true}).click();
-    const popup=await openColumns(page);
     const label=id=>page.evaluate(columnId=>window.harness.state().columns.find(column=>column.id===columnId).label,id);
-    const rename=name=>popup.getByRole('button',{name:`Rename ${name}`,exact:true});
-    const field=name=>popup.getByRole('textbox',{name:`Name for ${name}`,exact:true});
-    await rename('Cost 0').click();await expect(field('Cost 0')).toBeFocused();
-    await field('Cost 0').fill('Cost estimate');await field('Cost 0').press('Enter');
+    const open=async name=>{await page.getByRole('button',{name:`${name} column options`,exact:true}).click();const popup=page.getByRole('dialog',{name:`${name} column options`,exact:true});await popup.getByRole('button',{name:'Rename',exact:true}).click();return popup;};
+    const field=(popup,name)=>popup.getByRole('textbox',{name:`Name for ${name}`,exact:true});
+    let popup=await open('Cost 0');await expect(field(popup,'Cost 0')).toBeFocused();
+    await field(popup,'Cost 0').fill('Cost estimate');await field(popup,'Cost 0').press('Enter');
     await expect(popup.getByRole('textbox')).toHaveCount(0);
     expect(await label('cost0')).toBe('Cost estimate');
     await expect(page.getByRole('columnheader',{name:'Cost estimate',exact:true})).toBeVisible();
-    await rename('Cost 1').click();await field('Cost 1').fill('Discarded');await field('Cost 1').press('Escape');
+    expect(await page.evaluate(()=>({dirty:window.harness.state().dirty,actions:window.harness.actions()}))).toEqual({dirty:true,actions:expect.arrayContaining(['column_renamed'])});
+    await page.keyboard.press('Escape');
+    popup=await open('Cost 1');await field(popup,'Cost 1').fill('Discarded');await field(popup,'Cost 1').press('Escape');
     await expect(popup).toBeVisible();await expect(popup.getByRole('textbox')).toHaveCount(0);
     expect(await label('cost1')).toBe('Cost 1');
-    await rename('Cost 2').click();await field('Cost 2').fill('Saved on blur');await popup.locator('.pop-subject').click();
+    await page.keyboard.press('Escape');
+    popup=await open('Cost 2');await field(popup,'Cost 2').fill('Saved on blur');await popup.locator('.pop-subject').click();
     expect(await label('cost2')).toBe('Saved on blur');
-    await rename('Cost 3').click();await field('Cost 3').fill('   ');await field('Cost 3').press('Enter');
+    await page.keyboard.press('Escape');
+    popup=await open('Cost 3');await field(popup,'Cost 3').fill('   ');await field(popup,'Cost 3').press('Enter');
     await expect(popup.getByRole('alert')).toContainText('1–80');
     expect(await label('cost3')).toBe('Cost 3');
-    await rename('Cost 4').click();await field('Cost 4').fill('Saved outside');await page.locator('#reference').click();
+    await page.keyboard.press('Escape');
+    popup=await open('Cost 4');await field(popup,'Cost 4').fill('Saved outside');await page.locator('#reference').click();
     await expect(popup).toHaveCount(0);
     expect(await label('cost4')).toBe('Saved outside');
-});
-
-test('Total toggle controls the footer sum and is offered for number columns only', async ({page}) => {
-    await install(page);await page.getByRole('radio',{name:'Stories',exact:true}).click();
-    await page.getByRole('button',{name:'+ Add column',exact:true}).click();
-    const creation=page.getByRole('dialog',{name:'Add review column',exact:true});
-    await creation.getByLabel('Column name',{exact:true}).fill('Notes');await creation.getByRole('radio',{name:'Text',exact:true}).click();
-    await creation.getByRole('button',{name:'Add column',exact:true}).click();
-    const popup=await openColumns(page);
-    await expect(popup.getByRole('button',{name:'Total for Notes',exact:true})).toHaveCount(0);
-    const total=popup.getByRole('button',{name:'Total for Cost 0',exact:true});
-    await expect(total).toHaveAttribute('aria-pressed','true');
-    await expect(page.locator('tfoot .planning-review-cost0')).not.toHaveText('');
-    await total.click();
-    await expect(total).toHaveAttribute('aria-pressed','false');
-    await expect(page.locator('tfoot .planning-review-cost0')).toHaveText('');
-    await total.click();
-    await expect(page.locator('tfoot .planning-review-cost0')).not.toHaveText('');
-});
-
-test('archiving a review column needs an inline confirmation', async ({page}) => {
-    await install(page);await page.getByRole('radio',{name:'Stories',exact:true}).click();
-    const popup=await openColumns(page);
-    const archive=popup.getByRole('button',{name:'Archive Cost 7',exact:true});
-    await archive.click();
-    await expect(popup.getByText('Archive “Cost 7”?')).toBeVisible();
-    await popup.getByRole('button',{name:'Cancel',exact:true}).click();
-    await expect(archive).toBeVisible();await expect(page.getByRole('columnheader',{name:'Cost 7',exact:true})).toHaveCount(1);
-    await archive.click();await popup.getByRole('button',{name:'Archive',exact:true}).click();
-    await expect(page.getByRole('columnheader',{name:'Cost 7',exact:true})).toHaveCount(0);
-    await expect(popup.getByText('Cost 7 · archived')).toBeVisible();
-    await expect(popup.getByRole('button',{name:'Cost 7',exact:true})).toHaveCount(0);
-});
-
-test('Columns popup rows and icon actions keep a readable light hover', async ({page}) => {
-    await install(page);await page.getByRole('radio',{name:'Stories',exact:true}).click();
-    const popup=await openColumns(page);
-    const targets=[popup.getByRole('button',{name:'Assignee',exact:true}),popup.getByRole('button',{name:'Total for Cost 0',exact:true}),popup.getByRole('button',{name:'Rename Cost 0',exact:true}),popup.getByRole('button',{name:'Archive Cost 0',exact:true})];
-    for(const target of targets) {
-        await target.hover();
-        const style=await target.evaluate(node=>{const s=getComputedStyle(node);return {background:s.backgroundColor,color:s.color,transform:s.transform,shadow:s.boxShadow};});
-        expect(style,await target.getAttribute('aria-label')||'row').toEqual({background:'rgb(248, 247, 244)',color:'rgb(26, 26, 26)',transform:'none',shadow:'none'});
-    }
 });
 
 test('keyboard reorder steps over hidden optional columns instead of swapping with them', async ({page}) => {
     await page.setViewportSize({width:2400,height:900});
     await install(page);
     await page.getByRole('radio',{name:'Stories',exact:true}).click();
-    const headers=()=>page.locator('thead th').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('aria-label')).filter(Boolean));
+    const headers=()=>page.locator('thead th').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('aria-label')).filter(label=>label&&label!=='Select'));
     const before=await headers();
     expect(before.indexOf('Cost 0'),JSON.stringify(before)).toBe(before.indexOf('Assignee')+1);
     await page.getByRole('button',{name:'Move Cost 0 column',exact:true}).focus();
@@ -443,29 +425,27 @@ test('keyboard reorder steps over hidden optional columns instead of swapping wi
 for(const mode of ['Epics','Stories']) test(`optional metadata hidden by default and explicit visibility persists in ${mode}`,async({page})=>{
     await install(page);
     await page.getByRole('radio',{name:mode,exact:true}).click();
-    for(const name of ['Component','Project','Capacity','Project Track']) await expect(page.getByRole('columnheader',{name,exact:true})).toHaveCount(0);
-    const popup=await openColumns(page);
-    for(const name of ['Component','Project','Capacity','Project Track']) {
-        await expect(popup.getByRole('button',{name,exact:true})).toHaveAttribute('aria-pressed','false');
-        await popup.getByRole('button',{name,exact:true}).click();
-        await expect(popup.getByRole('button',{name,exact:true})).toHaveAttribute('aria-pressed','true');
-    }
+    const optional=['Component','Project','Capacity','Project Track'];
+    for(const name of optional) await expect(page.getByRole('columnheader',{name,exact:true})).toHaveCount(0);
+    await page.getByRole('button',{name:'+ Add column',exact:true}).click();
+    const popup=addDialog(page);
+    for(const name of optional) await expect(popup.getByRole('button',{name,exact:true})).toHaveAttribute('aria-pressed','false');
     for(const name of ['Key','Summary','Status','Priority']) await expect(popup.getByRole('button',{name,exact:true})).toHaveCount(0);
+    for(const name of optional) await popup.getByRole('button',{name,exact:true}).click();
+    await expect(popup.locator('.pop-facet')).toHaveCount(0);
     await page.keyboard.press('Escape');
-    for(const name of ['Component','Project','Capacity','Project Track']) await expect(page.getByRole('columnheader',{name,exact:true})).toHaveCount(1);
+    for(const name of optional) await expect(page.getByRole('columnheader',{name,exact:true})).toHaveCount(1);
     await page.getByRole('button',{name:'Save review',exact:true}).click();await page.evaluate(()=>window.harness.reload());
-    for(const name of ['Component','Project','Capacity','Project Track']) await expect(page.getByRole('columnheader',{name,exact:true})).toHaveCount(1);
-    await openColumns(page);
-    for(const name of ['Component','Project','Capacity','Project Track']) await popup.getByRole('button',{name,exact:true}).click();
-    await page.keyboard.press('Escape');
+    for(const name of optional) await expect(page.getByRole('columnheader',{name,exact:true})).toHaveCount(1);
+    for(const name of optional) await hideColumn(page,name);
     await page.getByRole('button',{name:'Save review',exact:true}).click();await page.evaluate(()=>window.harness.reload());
-    for(const name of ['Component','Project','Capacity','Project Track']) await expect(page.getByRole('columnheader',{name,exact:true})).toHaveCount(0);
+    for(const name of optional) await expect(page.getByRole('columnheader',{name,exact:true})).toHaveCount(0);
     await page.screenshot({path:path.join(root,`tmp/217-ui/optional-columns-${mode}.png`),fullPage:true});
 });
 
 test('Capacity hover and keyboard focus retain readable light Included and Excluded chips',async({page})=>{
     await install(page);await page.getByRole('radio',{name:'Stories',exact:true}).click();
-    await (await openColumns(page)).getByRole('button',{name:'Capacity',exact:true}).click();await page.keyboard.press('Escape');
+    await showHiddenColumn(page,'Capacity');
     for(const [key,background,color] of [['DEMO-1','rgb(220, 252, 231)','rgb(22, 101, 52)'],['DEMO-2','rgb(226, 232, 240)','rgb(51, 65, 85)']]){
         const control=page.getByRole('button',{name:'inclusion for '+key,exact:true});
         await control.hover();await expect(control).toHaveCSS('background-color',background);await expect(control).toHaveCSS('color',color);
@@ -576,28 +556,32 @@ for (const width of [1440, 2400]) test(`column widths fit their content instead 
     for(const cell of Object.values(cells)) expect(cell.scroll).toBeLessThanOrEqual(cell.client+1);
 });
 
-for(const width of [390,1440]) test(`review toolbar is compact and its popups do not shift the table at ${width}px`, async({page})=>{
+for(const width of [390,1440]) test(`review toolbar holds only the row switch and its popups do not shift the table at ${width}px`,async({page})=>{
     await page.setViewportSize({width,height:900});await install(page);
     const toolbar=page.locator('.planning-review-toolbar');
     await expect(toolbar.getByText('Rows',{exact:true})).toHaveCount(0);
     await expect(page.getByText('Drag column handles to reorder.',{exact:false})).toHaveCount(0);
     await expect(page.getByRole('button',{name:'Refresh review',exact:true})).toHaveCount(0);
     await expect(toolbar.getByRole('button',{name:'Save review',exact:true})).toHaveCount(0);
-    const controls=await toolbar.locator('.segmented-control, .planning-action-button').evaluateAll(nodes=>nodes.map(node=>{const r=node.getBoundingClientRect();return {height:r.height,y:r.y};}));
-    expect(Math.max(...controls.map(c=>c.height))-Math.min(...controls.map(c=>c.height))).toBeLessThan(1);
-    if(width>600) expect(Math.max(...controls.map(c=>c.y))-Math.min(...controls.map(c=>c.y))).toBeLessThan(1);
-    const table=page.locator('.planning-review-scroll'),before=await table.boundingBox();
     await expect(toolbar.getByRole('button',{name:'Review options',exact:true})).toHaveCount(0);
-    await toolbar.getByRole('button',{name:'Columns',exact:true}).click();
-    const popup=columnsDialog(page);await expect(popup).toBeVisible();
+    // Column work lives in the header: no toolbar "+ Column" or "Columns" buttons and no management dialog.
+    await expect(toolbar.getByRole('button',{name:'+ Column',exact:true})).toHaveCount(0);
+    await expect(toolbar.getByRole('button',{name:'Columns',exact:true})).toHaveCount(0);
+    await expect(page.getByRole('button',{name:'Columns',exact:true})).toHaveCount(0);
+    await expect(toolbar.locator('button.planning-action-button')).toHaveCount(0);
+    await expect(toolbar.getByRole('radiogroup',{name:'Planning review rows'})).toHaveClass(/eng-mode-control/);
+    const table=page.locator('.planning-review-scroll'),before=await table.boundingBox();
+    const corner=page.getByRole('button',{name:'+ Add column',exact:true});
+    await corner.hover();
+    expect(await corner.evaluate(node=>getComputedStyle(node).transform)).toBe('none');
+    await corner.click();
+    const popup=addDialog(page);await expect(popup).toBeVisible();
     expect((await table.boundingBox()).y).toBe(before.y);
     expect(await popup.evaluate(node=>{const r=node.getBoundingClientRect();return node.contains(document.elementFromPoint(r.left+10,r.top+10));})).toBe(true);
-    await page.keyboard.press('Escape');await expect(toolbar.getByRole('button',{name:'Columns',exact:true})).toBeFocused();
-    await toolbar.getByRole('button',{name:'+ Add column',exact:true}).hover();
-    expect(await toolbar.getByRole('button',{name:'+ Add column',exact:true}).evaluate(node=>getComputedStyle(node).transform)).toBe('none');
+    await page.keyboard.press('Escape');await expect(corner).toBeFocused();
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
     await page.screenshot({path:path.join(root,`tmp/217-ui/simple-toolbar-${width}.png`),fullPage:true});
-    await toolbar.getByRole('button',{name:'+ Add column',exact:true}).click();
+    await corner.click();
     await page.getByLabel('Column name',{exact:true}).fill('Draft field');
     await page.getByRole('button',{name:'Add column',exact:true}).click();
     await expect(toolbar.getByRole('button',{name:'Save review',exact:true})).toBeEnabled();
@@ -663,14 +647,10 @@ for(const width of [390,1280]) test(`custom number editors stay inside stable co
 
 
 // Header lane: the grip and the column menu chevron live in the cell's right padding and show on hover or focus.
-const headings = page => page.locator('thead th').evaluateAll(nodes => nodes.map(node => node.getAttribute('aria-label')));
+const headings = page => page.locator('thead th').evaluateAll(nodes => nodes.map(node => node.getAttribute('aria-label')).filter(label => label !== 'Select'));
 const columnMenuButton = (page, label) => page.getByRole('button', { name: `${label} column options`, exact: true });
 const columnMenu = (page, label) => page.getByRole('dialog', { name: `${label} column options`, exact: true });
 const menuItems = popup => popup.locator('button.pop-opt .pop-opt-label').allTextContents();
-async function showOptionalColumn(page, label) {
-    await (await openColumns(page)).getByRole('button', { name: label, exact: true }).click();
-    await page.keyboard.press('Escape');
-}
 function contrastRatio(foreground, background) {
     const luminance = rgb => { const [r, g, b] = rgb.map(value => { const channel = value / 255; return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
     const [hi, lo] = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
@@ -705,7 +685,7 @@ test('column menu items follow the column kind and opening it is reported', asyn
     expect(await menuItems(popup)).toEqual(['Move left', 'Move right']);
     await expect(popup).toContainText('Shift-click a heading to sort by several columns.');
     await page.keyboard.press('Escape'); await expect(popup).toHaveCount(0);
-    await showOptionalColumn(page, 'Component');
+    await showHiddenColumn(page, 'Component');
     await columnMenuButton(page, 'Component').click();
     expect(await menuItems(columnMenu(page, 'Component'))).toEqual(['Move left', 'Move right', 'Hide column']);
     expect(await page.evaluate(() => window.harness.actions())).toContain('columns_opened');
@@ -734,7 +714,7 @@ test('Move left and Move right reorder like dragging and stay disabled at the en
 
 test('Hide column hides an optional column, marks the draft and reports it', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 }); await install(page); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
-    await showOptionalColumn(page, 'Component');
+    await showHiddenColumn(page, 'Component');
     await expect(page.getByRole('columnheader', { name: 'Component', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Save review', exact: true }).click(); expect(await page.evaluate(() => window.harness.state().dirty)).toBe(false);
     await columnMenuButton(page, 'Component').click();
@@ -819,11 +799,21 @@ test.describe('touch', () => {
         await popup.getByRole('button', { name: 'Move right', exact: true }).tap();
         expect((await headings(page)).indexOf('Priority')).toBe(before + 1);
     });
+    test('the corner + opens the Add popover by tap and Show hidden restores a column by tap', async ({ page }) => {
+        await install(page); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+        await page.getByRole('button', { name: '+ Add column', exact: true }).tap();
+        const popup = addDialog(page);
+        await expect(popup).toBeVisible();
+        const box = await popup.boundingBox();
+        expect(box.x).toBeGreaterThanOrEqual(0); expect(box.x + box.width).toBeLessThanOrEqual(390);
+        await popup.getByRole('button', { name: 'Capacity', exact: true }).tap();
+        await expect(page.getByRole('columnheader', { name: 'Capacity', exact: true })).toHaveCount(1);
+    });
 });
 
 for (const mode of ['Epics', 'Stories']) test(`grip and chevron sit side by side in the cell's padding lane, clear of every heading, in ${mode} mode`, async ({ page }) => {
     await page.setViewportSize({ width: 2400, height: 900 }); await install(page); await page.getByRole('radio', { name: mode, exact: true }).click();
-    await showOptionalColumn(page, 'Capacity');
+    await showHiddenColumn(page, 'Capacity');
     const lanes = await page.locator('thead th.planning-review-movable').evaluateAll(cells => cells.map(th => {
         const box = th.getBoundingClientRect(), style = getComputedStyle(th), label = th.querySelector('.planning-review-heading');
         const range = document.createRange(); range.selectNodeContents(label); const text = range.getBoundingClientRect();
@@ -865,36 +855,6 @@ test('review column menus list Rename, Show total (numbers only), moves, Hide an
     await addTextColumn(page, 'Notes');
     await columnMenuButton(page, 'Notes').click();
     expect(await menuItems(columnMenu(page, 'Notes'))).toEqual(['Rename', 'Move left', 'Move right', 'Hide column', 'Archive column…']);
-});
-
-test('Rename saves on Enter and on blur, and Escape cancels without closing the menu', async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 900 }); await install(page); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
-    await columnMenuButton(page, 'Cost 0').click();
-    let popup = columnMenu(page, 'Cost 0');
-    await popup.getByRole('button', { name: 'Rename', exact: true }).click();
-    let field = popup.getByRole('textbox', { name: 'Name for Cost 0', exact: true });
-    await expect(field).toBeFocused();
-    await field.fill('Discarded'); await field.press('Escape');
-    await expect(popup).toBeVisible(); await expect(page.getByRole('columnheader', { name: 'Cost 0', exact: true })).toBeVisible();
-    expect(await page.evaluate(() => window.harness.state().dirty)).toBe(false);
-    await popup.getByRole('button', { name: 'Rename', exact: true }).click();
-    field = popup.getByRole('textbox', { name: 'Name for Cost 0', exact: true });
-    await field.fill('Effort'); await field.press('Enter');
-    await expect(page.getByRole('columnheader', { name: 'Effort', exact: true })).toBeVisible();
-    expect(await page.evaluate(() => window.harness.state().dirty)).toBe(true);
-    expect(await page.evaluate(() => window.harness.actions())).toContain('column_renamed');
-    popup = columnMenu(page, 'Effort');
-    await popup.getByRole('button', { name: 'Rename', exact: true }).click();
-    field = popup.getByRole('textbox', { name: 'Name for Effort', exact: true });
-    await field.fill('Blurred'); await popup.locator('.pop-subject').click();
-    await expect(page.getByRole('columnheader', { name: 'Blurred', exact: true })).toBeVisible();
-    // An empty name is rejected inside the menu (whose dialog label follows the new name).
-    popup = columnMenu(page, 'Blurred');
-    await popup.getByRole('button', { name: 'Rename', exact: true }).click();
-    field = popup.getByRole('textbox', { name: 'Name for Blurred', exact: true });
-    await field.fill('  '); await field.press('Enter');
-    await expect(popup.getByRole('alert')).toHaveText('Enter a column name of 1–80 characters.');
-    await expect(page.getByRole('columnheader', { name: 'Blurred', exact: true })).toBeVisible();
 });
 
 test('Show total toggles the footer total and reports it', async ({ page }) => {
@@ -941,4 +901,56 @@ test('every column menu row keeps a readable hover, including the locked and pre
             return { darkSurface: (background[3] ?? 1) !== 0 && background.slice(0, 3).every(channel => channel < 100), darkInk: color.slice(0, 3).every(channel => channel > 200), transform: style.transform, shadow: style.boxShadow, spacing: style.letterSpacing };
         }), { message: `row ${index}` }).toMatchObject({ darkSurface: false, darkInk: false, transform: 'none', shadow: 'none' });
     }
+});
+
+
+// Corner "+": the one place to add a column and to show hidden ones.
+test('the corner + sits in the select header cell, stays reachable at both scroll ends and keeps the header 32px', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 }); await install(page); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    const corner = page.getByRole('button', { name: '+ Add column', exact: true });
+    const cell = page.locator('thead th.planning-review-selection');
+    await expect(cell).toContainText('');
+    await expect(corner).toBeInViewport({ ratio: 1 });
+    expect((await cell.boundingBox()).height).toBe(32);
+    const scroller = page.locator('.planning-review-scroll');
+    await scroller.evaluate(node => { node.scrollLeft = node.scrollWidth; });
+    await expect(corner).toBeInViewport({ ratio: 1 });
+    const [box, host] = [await corner.boundingBox(), await cell.boundingBox()];
+    expect([box.width, box.height]).toEqual([24, 24]);
+    expect(box.x).toBeGreaterThanOrEqual(host.x); expect(box.x + box.width).toBeLessThanOrEqual(host.x + host.width);
+    expect(Math.abs(box.y + box.height / 2 - (host.y + host.height / 2))).toBeLessThan(1);
+});
+
+test('the Add popover holds the form, the shared note and Show hidden, and adding at the corner appends', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 }); await install(page); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await page.getByRole('button', { name: '+ Add column', exact: true }).click();
+    const popup = addDialog(page);
+    await expect(popup.getByLabel('Column name', { exact: true })).toBeFocused();
+    const type = popup.getByRole('radiogroup', { name: 'Column type', exact: true });
+    await expect(type).toHaveClass(/eng-mode-control/);
+    await expect(popup.getByRole('button', { name: 'Add column', exact: true })).toBeVisible();
+    await expect(popup.getByText('Shared with everyone reviewing this Sprint.', { exact: true })).toBeVisible();
+    await popup.getByRole('button', { name: 'Capacity', exact: true }).click();
+    await expect(page.getByRole('columnheader', { name: 'Capacity', exact: true })).toBeVisible();
+    await expect(popup.getByRole('button', { name: 'Capacity', exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => window.harness.state().layouts.story.hidden)).not.toContain('capacity');
+    expect(await page.evaluate(() => window.harness.actions())).toEqual(expect.arrayContaining(['add_column_opened', 'column_visibility_changed']));
+    await popup.getByLabel('Column name', { exact: true }).fill('Risk');
+    await popup.getByRole('button', { name: 'Add column', exact: true }).click();
+    await expect(popup).toHaveCount(0);
+    expect((await headings(page)).at(-1)).toBe('Risk');
+    expect(await page.evaluate(() => window.harness.actions())).toContain('column_added');
+});
+
+test('the corner + keeps a readable hover', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 }); await install(page);
+    const corner = page.getByRole('button', { name: '+ Add column', exact: true });
+    await corner.hover();
+    const read = () => corner.evaluate(node => {
+        const parse = value => (value.match(/[\d.]+/g) || []).map(Number);
+        const style = getComputedStyle(node), background = parse(style.backgroundColor), color = parse(style.color);
+        return { dark: (background[3] ?? 1) !== 0 && background.slice(0, 3).every(channel => channel < 100), light: color.slice(0, 3).every(channel => channel > 200), transform: style.transform, shadow: style.boxShadow, spacing: style.letterSpacing };
+    });
+    await expect.poll(read).toMatchObject({ dark: false, light: false, transform: 'none', shadow: 'none' });
+    expect(['normal', '0px']).toContain((await read()).spacing);
 });

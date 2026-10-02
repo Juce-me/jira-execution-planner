@@ -317,6 +317,9 @@ test('Planning switch preserves selection, header geometry and loaded datasets',
     expect(fixture.calls.filter(call => ['/api/tasks-with-team-name','/api/eng/story-readiness','/api/dependencies','/api/eng/board'].includes(call.pathname)).length).toBe(loads);
     await page.getByRole('radio',{name:'Stories',exact:true}).click();
     expect(await page.locator('.planning-review-table tbody input[type=checkbox]:checked').count()).toBe(selected);
+    // Without a saving-capable profile the column controls are present but disabled, as the old + Column button was.
+    await expect(page.getByRole('button',{name:'+ Add column',exact:true})).toBeDisabled();
+    await expect(page.getByRole('button',{name:'Status column options',exact:true})).toBeDisabled();
     await page.screenshot({ path:'tmp/217-ui/planning-review-table-after.png',fullPage:true });
     await page.getByRole('button',{name:'Show panel',exact:true}).click();
     await page.getByRole('button',{name:'Clear Selected',exact:true}).click();
@@ -505,7 +508,7 @@ for(const width of [390,1280]) test(`Summary edits inside its cell with Enter, b
     await expect(trigger).toHaveText('Edited in the cell');await expect(trigger).toBeFocused();expect(saved).toHaveLength(1);
     await trigger.click();await expect(editor).toBeEditable();await editor.fill('');await editor.press('Enter');
     await expect(cell.getByRole('alert')).toContainText('1–255');expect(saved).toHaveLength(1);
-    await editor.fill('Saved on blur');await page.getByRole('button',{name:'Columns',exact:true}).click();
+    await editor.fill('Saved on blur');await page.locator('thead th.planning-review-selection').click({position:{x:2,y:2}});
     await expect(trigger).toHaveText('Saved on blur');expect(saved).toEqual(['Edited in the cell','Saved on blur']);
 });
 
@@ -628,9 +631,15 @@ test('compact Table panel fits narrow screens and restores normal Planning in Sc
     await expect(page.getByRole('button',{name:'Show Planning table',exact:true})).toBeVisible();
 });
 
+// Column menus and the Add popover are editing controls: give the review a saving-capable profile.
+async function allowReviewSaving(page) {
+    await page.route('**/api/eng/sprints/*/review', route => json(route, { schemaVersion:1,sprintId:String(futureSprintId),schemaRevision:0,columns:[],capabilities:{canRead:true,canSave:true} }));
+    await page.route('**/api/eng/sprints/*/review/values/read', route => json(route, {cells:[],unavailableIssueIds:[]}));
+}
+
 for (const width of [1280, 390]) test(`first Table scroll activates the sticky Filters then capacity stack without losing state at ${width}px`,async({page})=>{
     await page.setViewportSize({width,height:900});
-    await installPlanningFixture(page,{planningLayout:null,scopeTeamIds:['team-alpha','team-beta']});await openPlanning(page,{expectStories:false});
+    await installPlanningFixture(page,{planningLayout:null,scopeTeamIds:['team-alpha','team-beta']});await allowReviewSaving(page);await openPlanning(page,{expectStories:false});
     await page.addStyleTag({content:'body{padding-bottom:1000px}'});await page.evaluate(()=>scrollTo(0,0));
     const stack=page.locator('.planning-review-sticky-stack'),filters=stack.locator('.filterbar-wrap'),panel=stack.locator('.planning-panel');
     await expect(stack).toBeVisible();const initial=await stack.boundingBox();expect(initial.y).toBeGreaterThan(0);
@@ -649,9 +658,13 @@ for (const width of [1280, 390]) test(`first Table scroll activates the sticky F
     await page.locator('.planning-review-scroll').evaluate(node=>node.scrollIntoView({block:'start'}));
     await expect.poll(async()=>{const t=await toolbar.boundingBox(),s=await stack.boundingBox();return Math.max(0,s.y-t.y,t.y+t.height-(s.y+s.height));}).toBeLessThan(3);
     const t=await toolbar.boundingBox(),s=await stack.boundingBox();expect(Math.abs(t.x-s.x)).toBeLessThan(2);expect(Math.abs(t.width-s.width)).toBeLessThan(2);
-    await toolbar.getByRole('button',{name:'Columns',exact:true}).click();
-    const columns=page.getByRole('dialog',{name:'Review column management'});await expect(columns).toBeVisible();
+    await page.getByRole('button',{name:'+ Add column',exact:true}).click();
+    const columns=page.getByRole('dialog',{name:'Add review column'});await expect(columns).toBeVisible();
     expect(await columns.evaluate(node=>{const r=node.getBoundingClientRect();return node.contains(document.elementFromPoint(r.left+10,r.top+10));})).toBe(true);
+    await page.keyboard.press('Escape');
+    const menuButton=page.getByRole('button',{name:'Status column options',exact:true});await menuButton.scrollIntoViewIfNeeded();await menuButton.click();
+    const menu=page.getByRole('dialog',{name:'Status column options'});await expect(menu).toBeVisible();
+    expect(await menu.evaluate(node=>{const r=node.getBoundingClientRect();return node.contains(document.elementFromPoint(r.left+10,r.top+10));})).toBe(true);
     await page.keyboard.press('Escape');
     await page.screenshot({path:`tmp/217-ui/table-sticky-filter-first-${width}.png`,fullPage:false});
     await page.evaluate(()=>scrollTo(0,0));
@@ -677,7 +690,7 @@ for (const width of [1280, 390]) test(`Catch Up shares the second controls row b
 
 for (const width of [1280,390]) test(`document scroll docks table headings below the measured controls at ${width}px`, async ({page}) => {
     await page.setViewportSize({width,height:900});
-    await installPlanningFixture(page,{planningLayout:'table',longTable:true,scopeTeamIds:['team-alpha','team-beta']});
+    await installPlanningFixture(page,{planningLayout:'table',longTable:true,scopeTeamIds:['team-alpha','team-beta']});await allowReviewSaving(page);
     await openPlanning(page,{expectStories:false});
     await page.getByRole('radio',{name:'Stories',exact:true}).click();
     const scroll=page.locator('.planning-review-scroll'), stack=page.locator('.planning-review-sticky-stack');
@@ -691,9 +704,14 @@ for (const width of [1280,390]) test(`document scroll docks table headings below
     await expect.poll(async()=>{const h=await heading.boundingBox(),s=await stack.boundingBox();return Math.abs(h.y-s.y-s.height);}).toBeLessThan(2);
     await stack.getByRole('button',{name:'Collapse panel',exact:true}).click();
     await expect.poll(async()=>{const h=await heading.boundingBox(),s=await stack.boundingBox();return Math.abs(h.y-s.y-s.height);}).toBeLessThan(2);
-    await stack.getByRole('button',{name:'Columns',exact:true}).click();
-    const popup=page.getByRole('dialog',{name:'Review column management'});await expect(popup).toBeVisible();
+    // The real header is hidden from assistive technology while docked, so these roles resolve to the docked copy.
+    await page.getByRole('button',{name:'+ Add column',exact:true}).click();
+    const popup=page.getByRole('dialog',{name:'Add review column'});await expect(popup).toBeVisible();
     expect(await popup.evaluate(node=>{const r=node.getBoundingClientRect();return node.contains(document.elementFromPoint(r.left+10,r.top+10));})).toBe(true);
+    await page.keyboard.press('Escape');
+    const menuButton=heading.getByRole('button',{name:'Status column options',exact:true});await menuButton.scrollIntoViewIfNeeded();await menuButton.click();
+    const menu=page.getByRole('dialog',{name:'Status column options'});await expect(menu).toBeVisible();
+    expect(await menu.evaluate(node=>{const r=node.getBoundingClientRect();return node.contains(document.elementFromPoint(r.left+10,r.top+10));})).toBe(true);
     await page.keyboard.press('Escape');
     await page.screenshot({path:`tmp/217-ui/single-page-dashboard-${width}.png`,fullPage:false});
     expect(await scroll.locator('tbody input:checked').count()).toBe(selected);

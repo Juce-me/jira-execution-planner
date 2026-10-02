@@ -8532,22 +8532,11 @@ html:has(.planning-panel.open) {
 .planning-review-popover:focus {
   outline: none;
 }
-.planning-review-columns {
-  display: grid;
-}
 .planning-review-column-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.25rem;
-}
-.planning-review-column-row > .pop-opt {
-  min-width: 0;
-}
-.planning-review-column-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
 }
 .planning-review-column-action {
   color: var(--text-secondary);
@@ -8569,10 +8558,6 @@ html:has(.planning-panel.open) {
   transform: none;
   box-shadow: none;
   letter-spacing: normal;
-}
-.planning-review-column-action[aria-pressed=true] {
-  color: var(--text-primary);
-  border-color: var(--border);
 }
 .planning-review-column-action:focus-visible {
   outline: 2px solid #93c5fd;
@@ -8600,14 +8585,6 @@ html:has(.planning-panel.open) {
 .planning-review-column-confirm .planning-action-button {
   padding: 0.2rem 0.6rem;
   border-radius: 8px;
-}
-.planning-review-column-archived {
-  padding: 0.3rem 0.35rem;
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 0.62rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-secondary);
 }
 .planning-review-add {
   display: grid;
@@ -8719,6 +8696,14 @@ html:has(.planning-panel.open) {
 .planning-review-head .planning-review-colmenu[aria-expanded=true],
 .planning-review-table th.planning-review-drop .planning-review-colmenu {
   opacity: 1;
+}
+.planning-review-corner {
+  position: absolute;
+  top: calc(50% - 12px);
+  left: calc(50% - 12px);
+  border-color: var(--border);
+  border-radius: 50%;
+  color: var(--text-primary);
 }
 @media (hover: none) {
   .planning-review-head .planning-review-colmenu,
@@ -8874,8 +8859,6 @@ html:has(.planning-panel.open) {
 .planning-review-add-row .eng-mode-control {
   margin-top: 0;
 }
-.planning-review-toolbar > .planning-action-button,
-.planning-review-toolbar > .planning-review-popover-anchor > .planning-action-button,
 .planning-review-add-row > .planning-action-button {
   height: var(--control-height);
   box-sizing: border-box;

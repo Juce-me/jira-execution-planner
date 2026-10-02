@@ -6,7 +6,7 @@ function MenuOption({ label, locked, pressed, onClick }) {
     </button>;
 }
 
-export function RenameField({ column, review, onError, onFinish, onRenamed }) {
+function RenameField({ column, review, onError, onFinish, onRenamed }) {
     const settled = React.useRef(false);
     const settle = (value, refocus) => {
         if (settled.current) return;

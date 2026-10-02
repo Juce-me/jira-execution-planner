@@ -8,12 +8,13 @@ import SegmentedControl from '../ui/SegmentedControl.jsx';
 import IconButton from '../ui/IconButton.jsx';
 import StatusPill from '../ui/StatusPill.jsx';
 import EpicHeaderValueReadout from './EpicHeaderValueReadout.jsx';
+import PlanningReviewBoundaryPlus from './PlanningReviewBoundaryPlus.jsx';
 import PlanningReviewColumnMenu from './PlanningReviewColumnMenu.jsx';
 import PlanningReviewStateCluster from './PlanningReviewStateCluster.jsx';
 import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
 import { buildPlanningReviewRows, buildPlanningReviewColumns, hasZeroStoryPoints, reviewSelectionState, reviewValue, sortPlanningReviewRows, planningReviewTotals } from './planningReviewTableModel.js';
 
-function ReviewColumnPopover({ open, onClose, label, trigger, children, error }) {
+function ReviewColumnPopover({ open, onClose, label, trigger, children, error, anchorClassName = '' }) {
     const wrapperRef = React.useRef(null);
     const target = document.body;
     const { triggerRef, panelRef, focusTrigger } = useIssueFieldPopover({
@@ -29,7 +30,7 @@ function ReviewColumnPopover({ open, onClose, label, trigger, children, error })
     React.useLayoutEffect(() => {
         if (open) (panelRef.current?.querySelector('[data-autofocus]') ?? panelRef.current)?.focus({ preventScroll: true });
     }, [open]);
-    return <span className="planning-review-popover-anchor" ref={wrapperRef}>
+    return <span className={`planning-review-popover-anchor${anchorClassName ? ` ${anchorClassName}` : ''}`} ref={wrapperRef}>
         {React.cloneElement(trigger, { ref: triggerRef, 'aria-haspopup': 'dialog', 'aria-expanded': open })}
         {open && createPortal(<div ref={panelRef} className="planning-review-popover" role="dialog" aria-label={label} tabIndex={-1}
             onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(true); } }}
@@ -93,6 +94,9 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
     const [sort, setSort] = React.useState([]);
     const [editing, setEditing] = React.useState(null);
     const [openMenu, setOpenMenu] = React.useState(null);   // 'add' or a column id
+    const [addAfter, setAddAfter] = React.useState(null);     // column the Add popover inserts after; null appends (corner)
+    const [dragging, setDragging] = React.useState(false);
+    const [hotBoundary, setHotBoundary] = React.useState(null);
     const [name, setName] = React.useState('');
     const [type, setType] = React.useState('number');
     const [formError, setFormError] = React.useState('');
@@ -159,7 +163,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
         if (next.length > 5) { setFormError('Use at most five sort criteria.'); return; }
         setSort(next); trackedAction('sort_changed', { sortKey: column.custom ? 'custom' : column.id });
     };
-    const addColumn = (event, afterId = null) => {
+    const addColumn = event => {
         event.preventDefault();
         const label = name.trim();
         if (!label || Array.from(label).length > 80) { setFormError('Enter a column name of 1–80 characters.'); return; }
@@ -167,14 +171,14 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
         const column = { id, rowKind: mode, label, type, aggregation: type === 'number' ? 'sum' : 'none', archived: false, order: review.columns.filter(item => item.rowKind === mode).length };
         if (!review.changeSchema({ action: 'add', column })) { setFormError('This row mode supports up to 30 active custom columns.'); return; }
         const nextHidden = [...hidden].filter(columnId => columnId !== id);
-        review.changeSchema({ action: 'layout', rowKind: mode, order: insertColumnId(movableIds(), id, afterId), hidden: nextHidden });
-        setNewColumnId(id); setName(''); setFormError(''); setOpenMenu(null); trackedAction('column_added');
+        review.changeSchema({ action: 'layout', rowKind: mode, order: insertColumnId(movableIds(), id, addAfter), hidden: nextHidden });
+        setNewColumnId(id); setName(''); setFormError(''); setOpenMenu(null); setAddAfter(null); trackedAction('column_added');
     };
     const updateLayout = (order, nextHidden = [...hidden]) => review.changeSchema({ action: 'layout', rowKind: mode, order, hidden: nextHidden });
-    const setColumnVisible = (columnId, visible) => {
+    const setColumnVisible = (columnId, visible, afterId = null) => {
         const next = new Set(hidden);
         if (visible) next.delete(columnId); else next.add(columnId);
-        if (updateLayout(movableIds(), [...next])) trackedAction('column_visibility_changed');
+        if (updateLayout(afterId ? insertColumnId(movableIds(), columnId, afterId) : movableIds(), [...next])) trackedAction('column_visibility_changed');
     };
     const movableIds = () => layoutColumns.filter(column => !['key', 'summary'].includes(column.id)).map(column => column.id);
     const moveColumn = (source, target, after = false) => {
@@ -199,37 +203,41 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
     const movable = column => ['key', 'summary'].includes(column.id) ? '' : ' planning-review-movable';
     const visibleMovable = columns.map(item => item.id).filter(id => !['key', 'summary'].includes(id));
     const hiddenColumns = allColumns.filter(column => !column.required && hidden.has(column.id));
+    const closeAdd = () => { setOpenMenu(null); setAddAfter(null); setFormError(''); };
+    const addContent = <>
+        <div className="pop-subject">Add column · {mode === 'epic' ? 'Epics' : 'Stories'}</div>
+        <div className="pop-group">
+            <form className="planning-review-add" onSubmit={addColumn}>
+                <input data-autofocus required maxLength={80} className="planning-review-column-name" aria-label="Column name" placeholder="Column name" value={name} onChange={event => setName(event.target.value)} />
+                <div className="planning-review-add-row">
+                    <SegmentedControl className="eng-mode-control" ariaLabel="Column type" options={[{ value: 'number', label: 'Number' }, { value: 'text', label: 'Text' }]} value={type} onChange={setType} />
+                    <button type="submit" className="planning-action-button" disabled={!editable}>Add column</button>
+                </div>
+                <p className="planning-review-guidance">Shared with everyone reviewing this Sprint.</p>
+            </form>
+        </div>
+        {hiddenColumns.length > 0 && <div className="pop-group">
+            <div className="pop-head"><span className="pop-facet">Show hidden</span></div>
+            <div className="pop-list">{hiddenColumns.map(column => <button key={column.id} type="button" className="pop-opt" aria-pressed="false" disabled={!editable} onClick={() => setColumnVisible(column.id, true, addAfter)}>
+                <span className="box" aria-hidden="true" /><span className="pop-opt-content"><span className="pop-opt-label" title={column.label}>{column.label}</span></span>
+            </button>)}</div>
+        </div>}
+    </>;
     const header = (floating = false) => {
         // The real header and its docked clone are separate elements: only the one the user can reach owns the popovers.
         const docked = !floating && dock?.header;
         const interactive = floating || !dock?.header;
-        const corner = <ReviewColumnPopover open={openMenu === 'add' && interactive} onClose={() => { setOpenMenu(null); setFormError(''); }} label="Add review column" error={formError}
+        const corner = <ReviewColumnPopover open={openMenu === 'add' && addAfter === null && interactive} onClose={closeAdd} label="Add review column" error={formError}
             trigger={<IconButton size="sm" className="planning-review-column-action planning-review-corner" tabIndex={docked ? -1 : undefined} aria-hidden={docked ? true : undefined} disabled={!editable} aria-label="+ Add column"
-                onClick={() => { const open = openMenu !== 'add'; setOpenMenu(open ? 'add' : null); if (open) trackedAction('add_column_opened'); }}>
+                onClick={() => { const open = !(openMenu === 'add' && addAfter === null); setAddAfter(null); setOpenMenu(open ? 'add' : null); if (open) trackedAction('add_column_opened'); }}>
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9" /></svg>
             </IconButton>}>
-            <div className="pop-subject">Add column · {mode === 'epic' ? 'Epics' : 'Stories'}</div>
-            <div className="pop-group">
-                <form className="planning-review-add" onSubmit={addColumn}>
-                    <input data-autofocus required maxLength={80} className="planning-review-column-name" aria-label="Column name" placeholder="Column name" value={name} onChange={event => setName(event.target.value)} />
-                    <div className="planning-review-add-row">
-                        <SegmentedControl className="eng-mode-control" ariaLabel="Column type" options={[{ value: 'number', label: 'Number' }, { value: 'text', label: 'Text' }]} value={type} onChange={setType} />
-                        <button type="submit" className="planning-action-button" disabled={!editable}>Add column</button>
-                    </div>
-                    <p className="planning-review-guidance">Shared with everyone reviewing this Sprint.</p>
-                </form>
-            </div>
-            {hiddenColumns.length > 0 && <div className="pop-group">
-                <div className="pop-head"><span className="pop-facet">Show hidden</span></div>
-                <div className="pop-list">{hiddenColumns.map(column => <button key={column.id} type="button" className="pop-opt" aria-pressed="false" disabled={!editable} onClick={() => setColumnVisible(column.id, true)}>
-                    <span className="box" aria-hidden="true" /><span className="pop-opt-content"><span className="pop-opt-label" title={column.label}>{column.label}</span></span>
-                </button>)}</div>
-            </div>}
+            {addContent}
         </ReviewColumnPopover>;
         return <thead><tr><th className="planning-review-selection planning-review-text" aria-label="Select">{corner}</th>{columns.map(column => {
         // The grip sits in a right-hand gutter outside the content box, so headings, values and totals share their alignment edge.
         const grip = !['key', 'summary'].includes(column.id) && <button type="button" className="planning-review-drag" tabIndex={docked ? -1 : undefined} aria-hidden={docked ? true : undefined} draggable={editable} disabled={!editable} aria-label={`Move ${column.label} column`} title="Drag to move column"
-            onDragStart={event => { draggedColumn.current = column.id; event.dataTransfer.setData('text/plain', column.id); event.dataTransfer.effectAllowed = 'move'; }} onDragEnd={() => { draggedColumn.current = null; setDropColumn(null); }}
+            onDragStart={event => { draggedColumn.current = column.id; setDragging(true); event.dataTransfer.setData('text/plain', column.id); event.dataTransfer.effectAllowed = 'move'; }} onDragEnd={() => { draggedColumn.current = null; setDropColumn(null); setDragging(false); }}
             onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); reorder(column, event.key === 'ArrowLeft' ? -1 : 1); } }}>⠿</button>;
         const index = visibleMovable.indexOf(column.id);
         const menu = index >= 0 && <ReviewColumnPopover open={openMenu === column.id && interactive} onClose={() => { setOpenMenu(null); setFormError(''); }} label={`${column.label} column options`} error={openMenu === column.id ? formError : ''}
@@ -241,15 +249,25 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
                 onMove={direction => reorder(column, direction)} onHide={() => { setOpenMenu(null); setColumnVisible(column.id, false); }}
                 onError={setFormError} onClose={() => { setOpenMenu(null); setFormError(''); }} onTrack={trackedAction} />
         </ReviewColumnPopover>;
+        // A boundary-opened Add popover anchors on a zero-width span at this cell's right edge, so it scrolls and clips with the cell.
+        const boundary = column.id !== 'key' && <ReviewColumnPopover open={openMenu === 'add' && addAfter === column.id && interactive} onClose={closeAdd} label="Add review column" error={formError} anchorClassName="planning-review-boundary-popover"
+            trigger={<span className="planning-review-boundary-anchor" aria-hidden="true" />}>{addContent}</ReviewColumnPopover>;
         const position = sort.findIndex(item => item.columnId === column.id);
         const heading = <button type="button" className="planning-review-heading" tabIndex={docked ? -1 : undefined} aria-hidden={docked ? true : undefined} onClick={event => changeSort(column, event.shiftKey)}>{column.label}{position >= 0 && <span> {sort.length > 1 ? position + 1 : ''}{sort[position].direction === 'desc' ? '↓' : '↑'}</span>}</button>;
-        return <th key={column.id} aria-label={column.label} className={`planning-review-${column.id}${column.custom ? ' planning-review-custom' : ''} planning-review-${column.type === 'number' ? 'numeric' : 'text'}${movable(column)}${dropColumn === column.id ? ' planning-review-drop' : ''}`}
+        return <th key={column.id} aria-label={column.label} data-column-id={column.id} className={`planning-review-${column.id}${column.custom ? ' planning-review-custom' : ''} planning-review-${column.type === 'number' ? 'numeric' : 'text'}${movable(column)}${hotBoundary === column.id ? ' planning-review-boundary-hot' : ''}${dropColumn === column.id ? ' planning-review-drop' : ''}`}
             onDragOver={event => { if (editable && draggedColumn.current && !['key', 'summary'].includes(column.id)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDropColumn(column.id); } }}
-            onDrop={event => { event.preventDefault(); const source = draggedColumn.current; moveColumn(source, column.id, event.clientX > event.currentTarget.getBoundingClientRect().left + event.currentTarget.offsetWidth / 2); draggedColumn.current = null; setDropColumn(null); }}>
-            <span className="planning-review-head">{heading}{grip}{menu}</span></th>;
+            onDrop={event => { event.preventDefault(); const source = draggedColumn.current; moveColumn(source, column.id, event.clientX > event.currentTarget.getBoundingClientRect().left + event.currentTarget.offsetWidth / 2); draggedColumn.current = null; setDropColumn(null); setDragging(false); }}>
+            <span className="planning-review-head">{heading}{grip}{menu}</span>{boundary}</th>;
     })}</tr></thead>;
     };
     const footer = <tfoot><tr><th className="planning-review-selection planning-review-text"><span aria-hidden="true">Σ</span><span className="planning-review-sr-only">Total</span></th>{columns.map(column => <td key={column.id} className={`planning-review-${column.id}${column.custom ? ' planning-review-custom' : ''} planning-review-${column.type === 'number' ? 'numeric' : 'text'}${movable(column)}`}>{column.id === 'key' ? '' : totals[column.id] ?? ''}</td>)}</tr></tfoot>;
+    // The header the user can see: the docked clone while docked, otherwise the real one. Boundaries must fall inside the scroller.
+    const liveHeader = () => {
+        const host = dock?.header && dockedHeader.current ? dockedHeader.current : scroller.current;
+        const row = host?.querySelector('thead tr');
+        const bounds = host?.getBoundingClientRect();
+        return row && bounds ? { row, left: bounds.left, right: bounds.right } : null;
+    };
     const dockedTable = (kind, content, ref) => <div ref={ref} aria-hidden={kind === 'footer' ? true : undefined}
         onScroll={event => { scroller.current.scrollLeft = event.currentTarget.scrollLeft; }}
         onWheel={event => { if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) { scroller.current.scrollLeft += event.deltaX; } }} className={`planning-review-docked-${kind}`} style={{ left: dock.left, top: kind === 'header' ? dock.top : undefined, bottom: kind === 'footer' ? 0 : undefined, width: dock.width }}>
@@ -259,6 +277,8 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
     </div>;
     return <section className="planning-review-region" aria-label="Planning Sprint review">
         {toolbarHost ? createPortal(toolbar, toolbarHost) : toolbar}
+        <PlanningReviewBoundaryPlus getLive={liveHeader} suspended={dragging || Boolean(openMenu) || !editable} onHover={setHotBoundary}
+            onOpen={afterId => { setAddAfter(afterId); setOpenMenu('add'); trackedAction('add_column_opened'); }} />
         {!review.capabilities?.canSave && !review.loading && <p className="planning-review-guidance">{review.capabilities?.reason === 'database_required' ? 'Review saving requires the application database.' : review.capabilities?.reason || 'Review saving is unavailable in this deployment.'}</p>}
         {review.error && <p className="planning-review-guidance" role="alert">{review.error}</p>}
         {(review.conflict || review.unconfirmed) && <div className="planning-review-recovery"><span>Your draft stays local until you choose a recovery action.</span><button type="button" className="planning-action-button" disabled={review.loading || review.saving} onClick={() => { void review.loadCurrent(); trackedAction('load_current_review'); }}>Load current and discard draft</button><button type="button" className="planning-action-button" disabled={review.loading || review.saving} onClick={() => { void review.reapply(); trackedAction('reapply_review'); }}>Refresh and reapply draft</button></div>}

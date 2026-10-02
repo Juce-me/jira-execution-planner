@@ -8697,6 +8697,72 @@ html:has(.planning-panel.open) {
 .planning-review-table th.planning-review-drop .planning-review-colmenu {
   opacity: 1;
 }
+.planning-review-boundary-popover {
+  position: absolute;
+  top: 0;
+  right: 1px;
+  bottom: 0;
+  width: 1px;
+  pointer-events: none;
+}
+.planning-review-boundary-anchor {
+  display: block;
+  width: 1px;
+  height: 100%;
+}
+.planning-review-boundary {
+  position: fixed;
+  z-index: calc(var(--sticky-epic-z, 50) + 5);
+  width: 0;
+  height: 32px;
+  pointer-events: none;
+}
+.planning-review-boundary[hidden] {
+  display: none;
+}
+.planning-review-boundary-line {
+  position: absolute;
+  left: -1px;
+  top: 0;
+  width: 2px;
+  height: 32px;
+  background: #3b82f6;
+}
+.planning-review-boundary-hit {
+  position: absolute;
+  left: -8px;
+  top: 4px;
+  width: 16px;
+  height: 24px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  pointer-events: auto;
+  cursor: pointer;
+  box-shadow: none;
+  transform: none;
+  letter-spacing: 0;
+}
+.planning-review-boundary-hit:hover {
+  background: transparent;
+  transform: none;
+  box-shadow: none;
+  letter-spacing: 0;
+}
+.planning-review-boundary-dot {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin: 4px 0;
+  border-radius: 50%;
+  background: #3b82f6;
+  color: #fff;
+  font: 700 12px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0;
+}
 .planning-review-corner {
   position: absolute;
   top: calc(50% - 12px);
@@ -8726,6 +8792,9 @@ html:has(.planning-panel.open) {
   .planning-review-table .planning-review-custom {
     width: 141px;
     min-width: 141px;
+  }
+  .planning-review-boundary {
+    display: none;
   }
 }
 .planning-review-summary .issue-summary-editor-inline {

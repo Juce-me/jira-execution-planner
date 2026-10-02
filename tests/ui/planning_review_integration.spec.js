@@ -454,6 +454,9 @@ for (const authMode of ['basic', 'atlassian_oauth']) test(`table status chips re
     expect(saved.value).toBe(3);
     for(const name of ['Epic','Assignee']) await expect(table.getByRole('columnheader',{name,exact:true})).toBeVisible();
     for(const name of ['Component','Project','Capacity','Project Track']) await expect(table.getByRole('columnheader',{name,exact:true})).toHaveCount(0);
+    // Header cells stay one line tall: popover anchors inside them must not add a line box.
+    const headerHeights=await page.locator('table.planning-review-table:not(.planning-review-docked-table) thead th').evaluateAll(nodes=>nodes.map(node=>node.getBoundingClientRect().height));
+    expect(Math.max(...headerHeights),JSON.stringify(headerHeights)).toBeLessThanOrEqual(34);
     await expect(table.getByRole('columnheader',{name:'Fields',exact:true})).toHaveCount(0);
     await expect(table.locator('tbody .planning-review-epic').first().getByRole('link',{name:'Future planning epic',exact:true})).toHaveAttribute('href',/\/browse\/PLAN-EPIC$/);
     await expect(table.locator('tfoot .planning-review-selection')).toBeInViewport();
@@ -508,7 +511,7 @@ for(const width of [390,1280]) test(`Summary edits inside its cell with Enter, b
     await expect(trigger).toHaveText('Edited in the cell');await expect(trigger).toBeFocused();expect(saved).toHaveLength(1);
     await trigger.click();await expect(editor).toBeEditable();await editor.fill('');await editor.press('Enter');
     await expect(cell.getByRole('alert')).toContainText('1–255');expect(saved).toHaveLength(1);
-    await editor.fill('Saved on blur');await page.locator('thead th.planning-review-selection').click({position:{x:2,y:2}});
+    await editor.fill('Saved on blur');await page.mouse.click(2,2);
     await expect(trigger).toHaveText('Saved on blur');expect(saved).toEqual(['Edited in the cell','Saved on blur']);
 });
 
@@ -658,14 +661,7 @@ for (const width of [1280, 390]) test(`first Table scroll activates the sticky F
     await page.locator('.planning-review-scroll').evaluate(node=>node.scrollIntoView({block:'start'}));
     await expect.poll(async()=>{const t=await toolbar.boundingBox(),s=await stack.boundingBox();return Math.max(0,s.y-t.y,t.y+t.height-(s.y+s.height));}).toBeLessThan(3);
     const t=await toolbar.boundingBox(),s=await stack.boundingBox();expect(Math.abs(t.x-s.x)).toBeLessThan(2);expect(Math.abs(t.width-s.width)).toBeLessThan(2);
-    await page.getByRole('button',{name:'+ Add column',exact:true}).click();
-    const columns=page.getByRole('dialog',{name:'Add review column'});await expect(columns).toBeVisible();
-    expect(await columns.evaluate(node=>{const r=node.getBoundingClientRect();return node.contains(document.elementFromPoint(r.left+10,r.top+10));})).toBe(true);
-    await page.keyboard.press('Escape');
-    const menuButton=page.getByRole('button',{name:'Status column options',exact:true});await menuButton.scrollIntoViewIfNeeded();await menuButton.click();
-    const menu=page.getByRole('dialog',{name:'Status column options'});await expect(menu).toBeVisible();
-    expect(await menu.evaluate(node=>{const r=node.getBoundingClientRect();return node.contains(document.elementFromPoint(r.left+10,r.top+10));})).toBe(true);
-    await page.keyboard.press('Escape');
+    // Popup layering over the sticky stack is asserted on the docked header in the next test, where the corner is reachable in every browser.
     await page.screenshot({path:`tmp/217-ui/table-sticky-filter-first-${width}.png`,fullPage:false});
     await page.evaluate(()=>scrollTo(0,0));
     await expect(page.locator('.planning-review-region > .planning-review-toolbar')).toHaveCount(1);

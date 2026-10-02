@@ -29,7 +29,7 @@ test.beforeAll(() => {
     css = esbuild.buildSync({ entryPoints: [path.join(root, 'frontend/src/styles/dashboard.css')], bundle: true, write: false }).outputFiles[0].text;
 });
 async function install(page, longReview = false, longNames = false, zeroStory = false) {
-    await page.setContent(`<style>${css} *,*::before,*::after{animation:none!important;transition:none!important}</style><div id="root"></div>`);
+    await page.setContent(`<meta name="viewport" content="width=device-width, initial-scale=1"><style>${css} *,*::before,*::after{animation:none!important;transition:none!important}</style><div id="root"></div>`);
     await page.evaluate(({longReview,longNames,zeroStory}) => {window.longReview=longReview;window.longNames=longNames;window.zeroStory=zeroStory},{longReview,longNames,zeroStory});
     await page.addScriptTag({ content: js });
     await expect(page.getByRole('region', { name: 'Planning Sprint review' })).toBeVisible();
@@ -785,6 +785,7 @@ test('the column menu opens from the docked header and from the last column at m
 
 test.describe('touch', () => {
     test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+    test.skip(({ browserName }) => browserName === 'firefox', 'Firefox does not support mobile emulation (isMobile)');
     test('the lane shows without hover and every menu action works by tap', async ({ page }) => {
         await install(page); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
         expect(await page.evaluate(() => matchMedia('(hover: none)').matches)).toBe(true);
@@ -808,6 +809,12 @@ test.describe('touch', () => {
         expect(box.x).toBeGreaterThanOrEqual(0); expect(box.x + box.width).toBeLessThanOrEqual(390);
         await popup.getByRole('button', { name: 'Capacity', exact: true }).tap();
         await expect(page.getByRole('columnheader', { name: 'Capacity', exact: true })).toHaveCount(1);
+    });
+    test('no boundary + is rendered under touch', async ({ page }) => {
+        await install(page); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+        expect(await page.evaluate(() => matchMedia('(hover: none)').matches)).toBe(true);
+        const boundary = await page.locator('.planning-review-boundary').evaluateAll(nodes => nodes.map(node => getComputedStyle(node).display));
+        expect(boundary).toEqual(['none']);
     });
 });
 
@@ -953,4 +960,140 @@ test('the corner + keeps a readable hover', async ({ page }) => {
     });
     await expect.poll(read).toMatchObject({ dark: false, light: false, transform: 'none', shadow: 'none' });
     expect(['normal', '0px']).toContain((await read()).spacing);
+});
+
+// Boundary "+": a pointer-only accelerator that opens the Add popover at a header boundary.
+const liveBoundaries = page => page.evaluate(() => {
+    const docked = document.querySelector('.planning-review-docked-header');
+    const row = (docked ? docked.querySelector('thead tr') : document.querySelector('table.planning-review-table thead tr'));
+    return [...row.cells].filter(cell => cell.dataset.columnId && cell.dataset.columnId !== 'key').map(cell => {
+        const rect = cell.getBoundingClientRect();
+        return { id: cell.dataset.columnId, label: cell.getAttribute('aria-label'), right: rect.right, top: rect.top, height: rect.height };
+    });
+});
+// The overlay container is zero-width, so visibility is read from its hit area.
+const overlay = page => page.locator('.planning-review-boundary-hit');
+const overlayHit = page => page.locator('.planning-review-boundary-hit');
+async function moveToBoundary(page, boundary, dx) {
+    await page.mouse.move(boundary.right + dx, boundary.top + boundary.height / 2, { steps: 2 });
+}
+
+for (const mode of ['Epics', 'Stories']) test(`a boundary + appears within 5px of every valid boundary in ${mode} mode, covers the edge on both sides and hides at 10px`, async ({ page }) => {
+    await page.setViewportSize({ width: 2400, height: 900 }); await install(page); await page.getByRole('radio', { name: mode, exact: true }).click();
+    const boundaries = await liveBoundaries(page);
+    expect(boundaries.length).toBeGreaterThan(6);
+    expect(boundaries[0].id).toBe('summary');
+    for (const boundary of boundaries) {
+        const note = JSON.stringify(boundary);
+        await page.mouse.move(boundary.right + 10, boundary.top + 16);
+        await expect(overlay(page), note).toBeHidden();
+        await moveToBoundary(page, boundary, 3);
+        await expect(overlay(page), note).toBeVisible();
+        const hit = await overlayHit(page).boundingBox();
+        expect(Math.abs(hit.width - 16), note).toBeLessThan(0.5); expect(Math.abs(hit.height - 24), note).toBeLessThan(0.5);
+        expect(Math.abs(hit.x + hit.width / 2 - boundary.right), note).toBeLessThan(1);
+        // The glyph itself sits inside the dot, which sits inside the hit area.
+        const glyph = await overlayHit(page).evaluate(node => { const dot = node.querySelector('.planning-review-boundary-dot'), range = document.createRange(); range.selectNodeContents(dot); const text = range.getBoundingClientRect(), box = dot.getBoundingClientRect(); return { text: dot.textContent, inside: text.left >= box.left - 0.5 && text.right <= box.right + 0.5 && text.top >= box.top - 2 && text.bottom <= box.bottom + 2, aria: dot.getAttribute('aria-hidden') }; });
+        expect(glyph, note).toEqual({ text: '+', inside: true, aria: 'true' });
+        for (const side of [-4, 4]) {
+            const hitTarget = await page.evaluate(({ x, y }) => !!document.elementFromPoint(x, y)?.closest('.planning-review-boundary-hit'), { x: boundary.right + side, y: boundary.top + 16 });
+            expect(hitTarget, `${note} ${side}`).toBe(true);
+        }
+        // The left cell marks itself and gives up its chevron while the + owns the edge.
+        const left = page.locator(`table.planning-review-table thead th[data-column-id="${boundary.id}"]`);
+        await expect(left, note).toHaveClass(/planning-review-boundary-hot/);
+        const chevron = left.locator('.planning-review-colmenu');
+        if (await chevron.count()) expect(await chevron.evaluate(node => getComputedStyle(node).opacity), note).toBe('0');
+        // 10px away: absent again, and the hysteresis keeps it at 8px once engaged.
+        await page.mouse.move(boundary.right + 8, boundary.top + 16);
+        await expect(overlay(page), note).toBeVisible();
+        await page.mouse.move(boundary.right + 10, boundary.top + 16);
+        await expect(overlay(page), note).toBeHidden();
+        await expect(left, note).not.toHaveClass(/planning-review-boundary-hot/);
+    }
+});
+
+test('clicking a boundary + opens the Add popover and the new column lands directly after the left neighbour', async ({ page }) => {
+    await page.setViewportSize({ width: 2400, height: 900 }); await install(page); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    const order = async () => (await headings(page)).filter(label => label !== 'Key' && label !== 'Summary');
+    const boundary = id => liveBoundaries(page).then(list => list.find(item => item.id === id));
+    // After Priority.
+    await moveToBoundary(page, await boundary('priority'), 2);
+    await overlayHit(page).click();
+    const popup = addDialog(page);
+    await expect(popup).toBeVisible(); await expect(overlay(page)).toBeHidden();
+    expect(await page.evaluate(() => window.harness.actions())).toContain('add_column_opened');
+    const popupBox = await popup.boundingBox(), edge = (await boundary('priority')).right;
+    expect(popupBox.x).toBeLessThanOrEqual(edge + 1); expect(popupBox.x + popupBox.width).toBeGreaterThan(edge);
+    await popup.getByLabel('Column name', { exact: true }).fill('Risk'); await popup.getByRole('button', { name: 'Add column', exact: true }).click();
+    const afterPriority = await order();
+    expect(afterPriority.slice(0, 4)).toEqual(['Status', 'Priority', 'Risk', 'Story Points']);
+    // After Summary: first movable column.
+    await moveToBoundary(page, await boundary('summary'), -2);
+    await overlayHit(page).click();
+    await addDialog(page).getByLabel('Column name', { exact: true }).fill('First'); await addDialog(page).getByRole('button', { name: 'Add column', exact: true }).click();
+    expect((await order()).slice(0, 3)).toEqual(['First', 'Status', 'Priority']);
+    // Show hidden from a boundary also places the restored column there.
+    await moveToBoundary(page, await boundary('status'), 2);
+    await overlayHit(page).click();
+    await addDialog(page).getByRole('button', { name: 'Capacity', exact: true }).click();
+    expect((await order()).slice(0, 4)).toEqual(['First', 'Status', 'Capacity', 'Priority']);
+    await page.keyboard.press('Escape');
+    expect(await page.evaluate(() => window.harness.state().dirty)).toBe(true);
+    // The corner still appends.
+    await page.getByRole('button', { name: '+ Add column', exact: true }).click();
+    await addDialog(page).getByLabel('Column name', { exact: true }).fill('Last'); await addDialog(page).getByRole('button', { name: 'Add column', exact: true }).click();
+    expect((await headings(page)).at(-1)).toBe('Last');
+});
+
+test('the boundary + is suspended while a popover is open, after scrolling and while a grip is dragged', async ({ page }) => {
+    await page.setViewportSize({ width: 2400, height: 900 }); await install(page); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    const target = (await liveBoundaries(page)).find(item => item.id === 'priority');
+    await moveToBoundary(page, target, 2); await expect(overlay(page)).toBeVisible();
+    // Dragging a grip: hidden for the whole drag, back after it ends.
+    const grip = page.getByRole('button', { name: 'Move Status column', exact: true });
+    const transfer = await page.evaluateHandle(() => new DataTransfer());
+    await grip.dispatchEvent('dragstart', { dataTransfer: transfer });
+    await expect(overlay(page)).toBeHidden();
+    await page.mouse.move(target.right + 2, target.top + 15); await page.mouse.move(target.right + 3, target.top + 16);
+    await expect(overlay(page)).toBeHidden();
+    await grip.dispatchEvent('dragend', { dataTransfer: transfer });
+    await page.mouse.move(target.right + 2, target.top + 15); await page.mouse.move(target.right + 3, target.top + 16);
+    await expect(overlay(page)).toBeVisible();
+    // Scrolling the table hides it until the pointer moves again.
+    await page.locator('.planning-review-scroll').evaluate(node => { node.scrollLeft += 1; node.dispatchEvent(new Event('scroll')); });
+    await expect(overlay(page)).toBeHidden();
+    // A column menu keeps it away.
+    await page.getByRole('button', { name: 'Status column options', exact: true }).click();
+    await moveToBoundary(page, target, 2); await expect(overlay(page)).toBeHidden();
+    await page.keyboard.press('Escape');
+    // Outside the header row it never shows.
+    await page.mouse.move(target.right + 1, target.top + 120); await expect(overlay(page)).toBeHidden();
+});
+
+test('the boundary + keeps a readable, flat hover', async ({ page }) => {
+    await page.setViewportSize({ width: 2400, height: 900 }); await install(page); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    const target = (await liveBoundaries(page)).find(item => item.id === 'status');
+    await moveToBoundary(page, target, 1); await expect(overlay(page)).toBeVisible();
+    const center = await overlayHit(page).boundingBox(); await page.mouse.move(center.x + 8, center.y + 12);
+    const read = () => overlayHit(page).evaluate(node => { const style = getComputedStyle(node), dot = getComputedStyle(node.querySelector('.planning-review-boundary-dot')); return { background: style.backgroundColor, transform: style.transform, shadow: style.boxShadow, spacing: style.letterSpacing, dotBackground: dot.backgroundColor, dotColor: dot.color, dotSpacing: dot.letterSpacing }; });
+    await expect.poll(read).toMatchObject({ background: 'rgba(0, 0, 0, 0)', transform: 'none', shadow: 'none', dotBackground: 'rgb(59, 130, 246)', dotColor: 'rgb(255, 255, 255)' });
+    const settled = await read(); expect(['normal', '0px']).toContain(settled.spacing); expect(['normal', '0px']).toContain(settled.dotSpacing);
+    await page.screenshot({ path: path.join(root, 'tmp/217-ui/boundary-plus-2400.png'), clip: { x: Math.max(0, target.right - 300), y: target.top - 8, width: 600, height: 60 } });
+});
+
+test('the boundary + works on the docked header', async ({ page }) => {
+    await page.setViewportSize({ width: 2400, height: 700 }); await install(page, true); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await page.evaluate(() => scrollTo(0, 400));
+    await expect(page.locator('.planning-review-docked-header')).toBeVisible();
+    const target = (await liveBoundaries(page)).find(item => item.id === 'priority');
+    await moveToBoundary(page, target, 2); await expect(overlay(page)).toBeVisible();
+    const hit = await overlayHit(page).boundingBox();
+    expect(Math.abs(hit.y + 12 - (target.top + 16))).toBeLessThan(1);
+    await overlayHit(page).click();
+    const popup = addDialog(page); await expect(popup).toBeVisible();
+    expect(await popup.evaluate(node => { const r = node.getBoundingClientRect(); return node.contains(document.elementFromPoint(r.left + 12, r.top + 12)); })).toBe(true);
+    await popup.getByLabel('Column name', { exact: true }).fill('Docked'); await popup.getByRole('button', { name: 'Add column', exact: true }).click();
+    const list = (await headings(page)).filter(label => label !== 'Key' && label !== 'Summary');
+    expect(list.slice(0, 3)).toEqual(['Status', 'Priority', 'Docked']);
 });

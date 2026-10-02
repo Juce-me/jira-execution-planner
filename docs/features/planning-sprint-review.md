@@ -85,6 +85,15 @@ movable column. Below, Show hidden lists the hidden optional Jira columns and hi
 review columns as one-line rows in the Filters popover grammar; a row shows its column
 again and the popover stays open. Archived review columns are not listed and cannot be
 restored from the UI. Escape or an outside click dismisses either popup.
+On pointer devices a boundary + follows the mouse along the header row: within 5px of the
+edge after Summary or after any movable column (and until 9px once it is showing) a
+16×24px + button on a 2px blue edge line appears, and that cell's chevron steps aside
+while it does. Clicking it opens the same Add popover anchored at that boundary; a new
+column, or one restored from Show hidden, is placed directly after the left neighbour
+(after the pinned columns for the Summary boundary). It works on the docked header. It is
+not shown on touch devices (the corner + is the touch path), while a column grip is being
+dragged, while a popup is open, after any scroll until the pointer moves again, outside the
+header row, or when the review cannot be edited.
 The chevron opens a column menu anchored to the header cell (also from the docked
 header; an open menu closes when the header docks or undocks). Move left and Move right
 step the column past its nearest visible neighbour like dragging does and stay open;

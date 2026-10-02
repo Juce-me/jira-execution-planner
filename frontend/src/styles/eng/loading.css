@@ -36,6 +36,26 @@
             height: 2.5rem;
         }
 
+        .loading-mark-xs {
+            width: 16px;
+            height: 16px;
+        }
+
+        .loading-mark-xs .loading-mark-spinner {
+            filter: none;
+        }
+
+        .loading-mark-xs .loading-mark-signature {
+            width: 5px;
+            height: 5px;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .loading-mark-xs .loading-mark-spinner {
+                animation: none;
+            }
+        }
+
         .loading-mark-spinner {
             width: 100%;
             height: 100%;

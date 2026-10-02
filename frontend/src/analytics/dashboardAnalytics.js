@@ -80,6 +80,16 @@ export function buildPlanningReviewAnalyticsParams(action, { result } = {}) {
     };
 }
 
+export function buildEpicRefreshAnalyticsParams({ result, sourceSurface, changedCount = 0 } = {}) {
+    return {
+        feature_name: 'epic_refresh',
+        workflow_action: 'refresh_result',
+        source_surface: sourceSurface,
+        result,
+        issue_count_bucket: bucketCount(changedCount),
+    };
+}
+
 export function buildBoardSmallScreenSupportParams(reason) {
     if (!BOARD_SMALL_SCREEN_REASONS.has(reason)) return null;
     return {
@@ -265,6 +275,10 @@ export function useDashboardAnalytics(React, {
         if (payload) trackProductEvent('issue_field_edit_action', payload);
     }, [trackProductEvent]);
 
+    const trackEpicRefreshAction = useCallback((params = {}) => {
+        trackProductEvent('epic_refresh_action', buildEpicRefreshAnalyticsParams(params));
+    }, [trackProductEvent]);
+
     const trackSelectContent = useCallback((contentType, contentId, params = {}) => {
         trackProductEvent('select_content', {
             feature_name: 'dashboard',
@@ -331,6 +345,7 @@ export function useDashboardAnalytics(React, {
         currentDashboardView,
         trackAppError,
         trackApiResult,
+        trackEpicRefreshAction,
         trackEpmAction,
         trackFilterChanged,
         trackIssuePriorityAction,

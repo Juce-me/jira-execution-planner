@@ -17,6 +17,7 @@ const EVENT_NAMES = new Set([
     'issue_priority_action',
     'issue_project_track_action',
     'issue_field_edit_action',
+    'epic_refresh_action',
     'board_action',
     'external_link_opened',
     'api_result',

@@ -89,6 +89,20 @@ const emptyEpic = epic('PROD', {
     storyStatusCounts: {},
 });
 
+// An Analysis epic whose selected-sprint work is all done is "waiting for stories" (the Waiting alert).
+const waitingEpic = epic('PROD', {
+    key: 'PROD-WAIT',
+    summary: 'Analysis epic waiting for stories',
+    status: { name: 'Analysis' },
+});
+const waitingEpicOutsideSprint = {
+    ...waitingEpic,
+    sprint: [{ id: 99999, name: 'Some other sprint', state: 'future' }],
+};
+const waitingStories = [
+    story('PROD-31', 'Done', 'Finished discovery story', { epicKey: 'PROD-WAIT' }),
+];
+
 async function waitForVisualSettled(page) {
     await page.evaluate(async () => {
         await new Promise(requestAnimationFrame);
@@ -107,7 +121,7 @@ async function waitForVisualSettled(page) {
     });
 }
 
-async function installAlertsFixture(page) {
+async function installAlertsFixture(page, { waitingEpicValue = null } = {}) {
     await installDashboardShell(page);
     await page.route('**/api/**', route => {
         const request = route.request();
@@ -183,10 +197,17 @@ async function installAlertsFixture(page) {
                         storyStatusCounts: isTech ? { Blocked: techTasks.length } : { 'To Do': 2, Blocked: 2 },
                     }
                     : currentEpic;
+            const waitingExtras = purpose === 'ready-to-close' && !isTech && waitingEpicValue ? [waitingEpicValue] : [];
             const issues = purpose === 'ready-to-close'
-                ? readyToCloseStories.filter(task => task.fields.epicKey === currentEpic.key)
+                ? [
+                    ...readyToCloseStories.filter(task => task.fields.epicKey === currentEpic.key),
+                    ...(waitingExtras.length ? waitingStories : []),
+                ]
                 : (isTech ? techTasks : productTasks);
-            const enrichmentEpics = purpose === 'alerts' && !isTech ? [emptyEpic] : [];
+            const enrichmentEpics = [
+                ...(purpose === 'alerts' && !isTech ? [emptyEpic] : []),
+                ...waitingExtras,
+            ];
             return json({
                 issues,
                 epics: Object.fromEntries([responseEpic, ...enrichmentEpics].map(value => [value.key, value])),
@@ -209,9 +230,9 @@ async function installAlertsFixture(page) {
     });
 }
 
-async function openEng(page, viewport, showAlertsPanel = true, prefOverrides = {}) {
+async function openEng(page, viewport, showAlertsPanel = true, prefOverrides = {}, fixtureOptions = {}) {
     await page.setViewportSize(viewport);
-    await installAlertsFixture(page);
+    await installAlertsFixture(page, fixtureOptions);
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
@@ -405,4 +426,22 @@ test('ENG Product-only filter removes Tech stories and epics from every alert co
     await expect(summary).toContainText(/1\s+Empty epic/);
     await expect(summary).toContainText(/1\s+Ready to close/);
     await expect(page.locator('#eng-alert-panels')).not.toContainText('TECH-');
+});
+
+test('ENG Waiting for Stories lists an Analysis epic in the selected sprint whose work is all done', async ({ page }) => {
+    await openEng(page, { width: 1280, height: 760 }, true, {}, { waitingEpicValue: waitingEpic });
+
+    const waiting = page.locator('#eng-alert-waiting');
+    await expect(waiting).toBeVisible();
+    await expect(waiting.locator('.alert-title')).toContainText('Waiting for Stories');
+    await expect(waiting).toContainText('PROD-WAIT');
+    await expect(page.locator('.alerts-panel-summary')).toContainText(/1\s+Waiting/);
+});
+
+test('ENG Waiting for Stories ignores an Analysis epic that belongs to another sprint', async ({ page }) => {
+    await openEng(page, { width: 1280, height: 760 }, true, {}, { waitingEpicValue: waitingEpicOutsideSprint });
+
+    await expect(page.locator('.alerts-panel-summary')).toBeVisible();
+    await expect(page.locator('#eng-alert-waiting')).toHaveCount(0);
+    await expect(page.locator('.alerts-panel-summary')).not.toContainText('Waiting');
 });

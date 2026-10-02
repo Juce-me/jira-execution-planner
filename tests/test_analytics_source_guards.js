@@ -618,3 +618,24 @@ test('trackIssueProjectTrackAction emits only the eng project track contract, ne
         );
     }
 });
+
+test('epic refresh analytics keeps per-click requests on a dedicated api surface and stays documented', () => {
+    const eventsSource = read('frontend/src/analytics/events.js');
+    const analyticsSource = read('frontend/src/analytics/analytics.js');
+    const engApi = read('frontend/src/api/engApi.js');
+    const analyticsDoc = read('docs/README_ANALYTICS.md');
+    const runbook = read('docs/plans/SUPPORT-ga4-user-configuration.md');
+    const yaml = read('docs/plans/SUPPORT-ga4-gtm-mcp-execution.yaml');
+
+    assert.ok(jsSetValues(eventsSource, 'EVENT_NAMES').has('epic_refresh_action'));
+    assert.ok(jsSetValues(analyticsSource, 'API_SURFACES').has('epic_refresh'));
+    assert.match(engApi, /apiSurface: 'epic_refresh'/);
+    assert.match(engApi, /featureName: 'epic_refresh'/);
+    assert.match(engApi, /trackedFetch\(apiSurface, /);
+    assert.match(yaml, /^\s{8}issue_count_bucket: "\{\{DLV - issue_count_bucket\}\}"$/m);
+    assert.doesNotMatch(yaml, /custom_dimensions:[\s\S]*?parameter_name: "issue_count_bucket"/);
+    assert.ok(analyticsDoc.includes('`epic_refresh_action`'));
+    assert.ok(analyticsDoc.includes('`api_surface=epic_refresh`'));
+    assert.ok(runbook.includes('epic_refresh_action'));
+    assert.match(runbook, /Do not register `issue_count_bucket` as a custom dimension[^.]*named report/i);
+});

@@ -127,6 +127,7 @@ async function installFixture(page, {
             issueKey: 'PROD-1', field: 'storyPoints', editable: true, currentValue: 3,
             baseUpdated: '2026-05-01T00:00:00.000+0000', mappingRevision: 'synthetic-story-points', me: null,
         });
+        if (request.method() === 'POST' && url.pathname === '/api/issues/PROD-1/field') return json({ result: 'success', value: requestBody?.value, mappingRevision: 'synthetic-story-points' });
         if (url.pathname === '/api/me/connections/home-token') return json({ connected: false });
         if (url.pathname === '/api/config') {
             return json({
@@ -509,7 +510,42 @@ test('leaving Catch Up during alert loading starts a replacement cohort on re-en
     await expect(page.locator('#eng-alert-missing').getByRole('button', { name: /Resumed product visible story/ })).toBeVisible();
 });
 
-test('Catch Up status mutation aborts and replaces its in-flight alert cohort without refetching visible tasks', async ({ page }) => {
+// Task 13b: a Catch Up status edit no longer rearms the department cohort. An in-flight cohort completes untouched and the edited epic's
+// server-backed alerts are re-checked once it has settled (an older cohort answer can therefore never overwrite the re-check).
+test('Catch Up status mutation keeps its in-flight alert cohort and re-checks only the edited epic after it settles', async ({ page }) => {
+    const preMutationGate = deferred();
+    const calls = await installFixture(page, {
+        alertCohorts: [
+            { gate: preMutationGate, label: 'Pre-mutation ' },
+        ],
+    });
+    await seedMode(page, 'catchUp');
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await waitForCallCount(calls, isAlertCall, 5);
+
+    const sinceEdit = calls.length;
+    const statusTrigger = page.locator('[data-status-transition-trigger][data-issue-kind="story"][data-issue-key="PROD-1"]');
+    await statusTrigger.click();
+    await page.locator('.status-transition-menu[data-issue-key="PROD-1"]')
+        .getByRole('menuitem', { name: 'In Progress' }).click();
+    await waitForCallCount(calls, call => call.pathname === '/api/issues/transitions' && call.method === 'POST', 1);
+    await page.waitForTimeout(800);
+    expect(calls.filter(isAlertCall), 'the held cohort is neither replaced nor followed by a re-check while it is in flight').toHaveLength(5);
+    expect(calls.filter(call => isAlertCall(call) && call.aborted)).toEqual([]);
+
+    preMutationGate.resolve();
+    await expect(page.locator('#eng-alert-missing').getByRole('button', { name: /Pre-mutation product visible story/ })).toBeVisible();
+    await expect.poll(() => calls.slice(sinceEdit).filter(call => call.params.epicKeys && call.params.purpose === 'ready-to-close').length).toBe(2);
+    await page.waitForTimeout(500);
+    const scoped = calls.slice(sinceEdit).filter(call => call.params.epicKeys);
+    expect(scoped.length).toBeGreaterThan(0);
+    scoped.forEach(call => expect(call.params.epicKeys).toBe('PROD-EPIC'));
+    expect(calls.slice(sinceEdit).filter(call => isAlertCall(call) && !call.params.epicKeys), 'no second department cohort').toEqual([]);
+    expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name' && !call.params.purpose)).toHaveLength(2);
+});
+
+// Story Points and assignee edits keep the department rearm (status and priority edits re-check only their epic; see the test above).
+test('Catch Up Story Points edit aborts and replaces its in-flight alert cohort without refetching visible tasks', async ({ page }) => {
     const preMutationGate = deferred();
     const calls = await installFixture(page, {
         alertCohorts: [
@@ -521,15 +557,17 @@ test('Catch Up status mutation aborts and replaces its in-flight alert cohort wi
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
     await waitForCallCount(calls, isAlertCall, 5);
 
-    const statusTrigger = page.locator('[data-status-transition-trigger][data-issue-kind="story"][data-issue-key="PROD-1"]');
-    await statusTrigger.click();
-    await page.locator('.status-transition-menu[data-issue-key="PROD-1"]')
-        .getByRole('menuitem', { name: 'In Progress' }).click();
-    await waitForCallCount(calls, call => call.pathname === '/api/issues/transitions' && call.method === 'POST', 1);
+    const pointsInput = page.locator('.task-item[data-issue-key="PROD-1"]').getByRole('textbox', { name: 'Story Points' });
+    await pointsInput.focus();
+    await expect(pointsInput).toBeEditable();
+    await pointsInput.fill('5');
+    await pointsInput.press('Enter');
+    await waitForCallCount(calls, call => call.pathname === '/api/issues/PROD-1/field' && call.method === 'POST', 1);
     await waitForCallCount(calls, call => isAlertCall(call) && call.alertCohort === 0 && call.aborted, 5);
     await waitForCallCount(calls, isAlertCall, 10);
 
     expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name' && !call.params.purpose)).toHaveLength(2);
+    expect(calls.filter(call => call.params.purpose === 'epic-alerts'), 'the department rearm makes no epic-scoped re-check').toEqual([]);
     await expect(page.locator('#eng-alert-missing').getByRole('button', { name: /Post-mutation product visible story/ })).toBeVisible();
     preMutationGate.resolve();
     await expect(page.getByText('Pre-mutation product visible story')).toHaveCount(0);

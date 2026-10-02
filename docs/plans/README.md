@@ -18,9 +18,17 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 - [Planning sprint review table #217](EXEC-planning-sprint-review-table-217.md): implemented locally; user authorized a commit on 2026-10-01, with production migrations and live Jira/database acceptance pending. [Two-state standalone visual reference](../../assets/mockups/planning-sprint-review-217.html) prepared and browser-checked on 2026-10-01. User-confirmed Planning-only toggle beside the selected-Story Jira action, shared workspace/Sprint custom columns and values, and summary/Team/assignee editing. Uses existing scope and hierarchy with conditional nonredundant columns, numeric totals, multi-column sorting, and compact columns. Only the spreadsheet region expands to the available browser width, with horizontal scrolling for additional fields; the header, capacity panel, and filters keep their existing width. Existing application database storage is confirmed; live Team capability/round-trip and authenticated persistence evidence remain open.
 - [Planning review table chrome simplification #217](EXEC-planning-review-table-chrome-217.md): active since 2026-10-02 (five read-only reviews, then the user accepted the Current-versus-Proposed mockup, gate G0); Task 0 and Slice A (dirty-only Save/Discard cluster, three-state sort, header Refresh reloads the review, neutral Key links) are next now that the parallel session's awaited-chip change is committed (`8449072f`), then Slices B and C follow. Deletes the table toolbar tier (Epics|Stories and the review cluster move into the shared filter bar; Sort and Group by Initiative leave Table view), adds hover chevron menus, a corner "+" and a boundary "+" in the header, and an Accepted column that sums selected Story Points. Keyboard-only access is parked in `docs/TODO.md`.
 
+## Dashboard decomposition
+
+- [Scenario Planner and Settings state extraction](EXEC-dashboard-scenario-settings-state-extraction.md): proposed, revision 3 (2026-10-01); 11 sequential PRs (two awaiting an operator go) move the Scenario and Settings state, effects, and JSX out of `App()` in `frontend/src/dashboard.jsx` into hooks and container components, lowering the line budget in every PR; dead-code deletion is approved and execution is commit-gated with operator validation after each commit. Three independent review rounds passed with findings folded in; awaiting operator approval. Replaces the Scenario and settings rows of `FUTURE-codebase-operability-improvements.md`.
+
 ## Current Stats Work
 
 - [Project Track Board-column strips](EXEC-project-track-board-column-strips.md): planned (issue #173); Team mode totals and By team bars get a 7px strip per track split by the parent Epic's Board column, hover-only readout, no "left" values. [Approved UI decision](SUPPORT-project-track-board-column-strips-design.md) and [approved preview](../../assets/mockups/project-track-board-column-strips.html). Supersedes the 2026-09-08 Left capacity plan. No production implementation yet.
+
+## Per-epic refresh (issue #213)
+
+- [Per-epic refresh with glare](EXEC-per-epic-refresh-213.md): implemented on `feature/213-per-epic-refresh` (issue #213), awaiting review and merge; an epic-header refresh button that patches one epic in place, re-checks that epic's alerts only, and plays a subtle glare on changed cards. Design: `docs/agents/features/2026-09-29-executed-per-epic-refresh-with-glare.md`.
 
 ## Epic header regression review
 

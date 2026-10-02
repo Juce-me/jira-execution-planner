@@ -238,6 +238,7 @@ gtm_web:
         search_scope: "{{DLV - search_scope}}"
         link_type: "{{DLV - link_type}}"
         issue_kind: "{{DLV - issue_kind}}"
+        issue_count_bucket: "{{DLV - issue_count_bucket}}"
         api_surface: "{{DLV - api_surface}}"
         method: "{{DLV - method}}"
         status_bucket: "{{DLV - status_bucket}}"

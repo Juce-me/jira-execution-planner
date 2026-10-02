@@ -67,6 +67,20 @@ class TestOauthCacheIsolation(unittest.TestCase):
     def test_oauth_mode_disables_process_caches(self):
         self.assertFalse(jira_home_process_cache_enabled(context('atlassian_oauth')))
 
+    def test_per_epic_missing_info_key_stays_in_the_user_partition_and_apart_from_full_scope(self):
+        from backend.auth.cache_policy import cache_key_in_jira_home_partition
+
+        oauth = context('atlassian_oauth')
+        other = RequestAuthContext(**{**oauth.__dict__, 'user_id': 'user-2', 'auth_connection_id': 'connection-2'})
+        full = build_jira_home_process_cache_key(oauth, 'missing-info', '2026Q2', '', '')
+        scoped = build_jira_home_process_cache_key(oauth, 'missing-info', '2026Q2', '', '', 'PROD-5')
+        other_scoped = build_jira_home_process_cache_key(other, 'missing-info', '2026Q2', '', '', 'PROD-5')
+
+        self.assertNotEqual(full, scoped)
+        self.assertTrue(cache_key_in_jira_home_partition(scoped, oauth))
+        self.assertFalse(cache_key_in_jira_home_partition(scoped, other))
+        self.assertNotEqual(scoped, other_scoped)
+
     def test_oauth_home_projects_use_user_token_partitioned_cache(self):
         auth_context = context('atlassian_oauth')
         scope_key = '{"rootGoalKey": "ROOT", "subGoalKeys": ["GOAL"]}'

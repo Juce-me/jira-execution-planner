@@ -1220,6 +1220,40 @@ test('issue field edit action is a canonical userevent with an allowlisted field
     }).event_name, 'issue_field_edit_action');
 });
 
+test('epic_refresh_action validates and carries only allowlisted params', async () => {
+    const { validateAnalyticsPayload } = await loadEvents();
+    const payload = {
+        event: 'userevent', trigger: 'userevent', event_type: 'event', event_name: 'epic_refresh_action',
+        feature_name: 'epic_refresh', workflow_action: 'refresh_result', source_surface: 'catch_up',
+        result: 'changed', issue_count_bucket: '1_5',
+    };
+    assert.doesNotThrow(() => validateAnalyticsPayload(payload));
+    assert.throws(() => validateAnalyticsPayload({ ...payload, epic_key: 'EPIC-1' }), /unsupported analytics parameter/);
+});
+
+test('buildEpicRefreshAnalyticsParams buckets counts and never includes keys', async () => {
+    const { buildEpicRefreshAnalyticsParams } = await loadDashboardAnalytics();
+    assert.deepEqual(
+        buildEpicRefreshAnalyticsParams({ result: 'changed', sourceSurface: 'planning', changedCount: 7 }),
+        { feature_name: 'epic_refresh', workflow_action: 'refresh_result', source_surface: 'planning', result: 'changed', issue_count_bucket: '6_10' },
+    );
+    assert.equal(buildEpicRefreshAnalyticsParams({ result: 'unchanged', sourceSurface: 'catch_up', changedCount: 0 }).issue_count_bucket, '0');
+});
+
+test('epic refresh workflow helper emits only the fixed bounded payload', async () => {
+    const events = [];
+    const { trackEpicRefreshAction } = await loadDashboardAnalyticsWithRecorder(events);
+
+    trackEpicRefreshAction({ result: 'changed', sourceSurface: 'catch_up', changedCount: 3, epicKey: 'EPIC-1', issueKeys: ['A-1'] });
+
+    assert.deepEqual(events, [
+        { eventName: 'epic_refresh_action', payload: {
+            feature_name: 'epic_refresh', workflow_action: 'refresh_result', source_surface: 'catch_up',
+            result: 'changed', issue_count_bucket: '3',
+        } },
+    ]);
+});
+
 test('api_result accepts jira_issue_field_edits without raw field-edit data', async () => {
     const { initAnalytics, trackApiResult } = await loadAnalytics();
     resetDom();

@@ -141,8 +141,27 @@ test('ENG alert loading is deferred until visible tasks finish and gated to Catc
         dashboardSource,
         /const rearmCatchUpAlerts = \(\) => \{\s*catchUpAlertLoadRef\.current = '';\s*catchUpAlertForceRefreshRef\.current = true;\s*catchUpAlertVersionRef\.current \+= 1;\s*setCatchUpAlertRefreshNonce\(value => value \+ 1\);\s*\};/
     );
-    assert.equal((dashboardSource.match(/rearmCatchUpAlerts\(\);/g) || []).length, 3);
-    assert.equal((dashboardSource.match(/onAlertDataInvalidated: rearmCatchUpAlerts/g) || []).length, 2);
+    // Call sites: assignee, Story Points, the global Refresh and the one request-free fallback inside invalidateAlertsAfterEdit.
+    assert.equal((dashboardSource.match(/rearmCatchUpAlerts\(\);/g) || []).length, 4);
+    // Status and priority edits no longer hand the department rearm to the hooks; one function picks the scoped re-check or the rearm.
+    assert.equal((dashboardSource.match(/onAlertDataInvalidated: rearmCatchUpAlerts/g) || []).length, 0);
+    assert.equal(dashboardSource.split("onAlertDataInvalidated: ({ keys } = {}) => invalidateAlertsAfterEdit({ keys, field: 'status' }),").length - 1, 1);
+    assert.equal(dashboardSource.split("onAlertDataInvalidated: ({ keys } = {}) => invalidateAlertsAfterEdit({ keys, field: 'priority' }),").length - 1, 1);
+    assert.match(
+        dashboardSource,
+        /const invalidateAlertsAfterEdit = \(\{ keys, field \}\) => \{\s*if \(!keys\?\.length\) return;\s*if \(!epicRefresh\.recheckAlertsForEdit\(\{ keys, field \}\)\.handled\) rearmCatchUpAlerts\(\);\s*\};/,
+        'an edit with no succeeded key does nothing; Catch Up status and priority edits take the scoped re-check; every other case invalidates the department request-free in every ENG mode'
+    );
+    // A Catch Up/Planning priority edit patches a readiness-only epic in the held Stories Required snapshot locally (no request, no reload).
+    assert.equal(dashboardSource.split("storyReadiness.patchEpic(issueKey, 'priority', priorityPatch);").length - 1, 1);
+    assert.ok(dashboardSource.indexOf("applyLocalEngIssueField(issueKey, 'priority', priorityPatch);") < dashboardSource.indexOf("storyReadiness.patchEpic(issueKey, 'priority', priorityPatch);"));
+    assert.equal((dashboardSource.match(/notifyAlertCohortSettle\(\{ aborted: false \}\)/g) || []).length, 1, 'the cohort settle handler notifies waiting re-checks');
+    assert.equal((dashboardSource.match(/notifyAlertCohortSettle\(\{ aborted: true \}\)/g) || []).length, 1, 'the cohort effect cleanup notifies after the cohort ref is cleared');
+    assert.match(
+        alertLoadEffect,
+        /alertCohortRef\.current = null; notifyAlertCohortSettle\(\{ aborted: true \}\); if \(catchUpAlertVersionRef\.current === alertCohortVersion\)/,
+        'the cleanup clears the cohort ref, notifies, and only then re-arms the load signature'
+    );
     assert.doesNotMatch(
         dashboardSource,
         /if \(isCatchUpMode\)[^\n]*(?:catchUpAlert(?:Load|ForceRefresh|Version)Ref|rearmCatchUpAlerts)/,

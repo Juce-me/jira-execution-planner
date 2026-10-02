@@ -46,7 +46,7 @@ export const fetchSprints = (backendUrl, {
     });
 };
 
-export const fetchEngTasks = (backendUrl, { project, sprint, sprintName = '', groupId, teamIds = [], teamLabels = [], refresh = false, purpose = '', epicKeys = [], signal, debugTimings = false } = {}) => {
+export const fetchEngTasks = (backendUrl, { project, sprint, sprintName = '', groupId, teamIds = [], teamLabels = [], refresh = false, purpose = '', epicKeys = [], signal, debugTimings = false, apiSurface = 'eng_tasks', featureName = 'eng' } = {}) => {
     const params = new URLSearchParams({
         t: Date.now().toString(),
         sprint,
@@ -77,15 +77,32 @@ export const fetchEngTasks = (backendUrl, { project, sprint, sprintName = '', gr
             params.set('epicKeys', uniqueEpicKeys.join(','));
         }
     }
-    return trackedFetch('eng_tasks', `${backendUrl}/api/tasks-with-team-name?${params.toString()}`, {
+    return trackedFetch(apiSurface, `${backendUrl}/api/tasks-with-team-name?${params.toString()}`, {
         method: 'GET',
         headers: {
             'Content-Type': 'application/json',
         },
         cache: 'no-cache',
         signal
-    }, { featureName: 'eng' });
+    }, { featureName });
 };
+
+export const fetchEpicRefresh = (backendUrl, { project, sprint, sprintName = '', groupId, teamIds = [], teamLabels = [], epicKey, signal } = {}) => fetchEngTasks(backendUrl, {
+    project, sprint, sprintName, groupId, teamIds, teamLabels, refresh: true, purpose: 'epic-refresh', epicKeys: [epicKey], signal,
+    apiSurface: 'epic_refresh', featureName: 'epic_refresh',
+});
+
+// One epic's alert object: `{ epicsInScope: [epic] or [] }`, no issues.
+export const fetchEpicAlertBundle = (backendUrl, { project, sprint, sprintName = '', groupId, teamIds = [], teamLabels = [], epicKey, signal } = {}) => fetchEngTasks(backendUrl, {
+    project, sprint, sprintName, groupId, teamIds, teamLabels, refresh: true, purpose: 'epic-alerts', epicKeys: [epicKey], signal,
+    apiSurface: 'epic_refresh', featureName: 'epic_refresh',
+});
+
+// Ready to Close for one epic across all sprints (the sprint parameter stays empty, as in the department request).
+export const fetchEpicReadyToClose = (backendUrl, { project, sprintName = '', groupId, teamIds = [], teamLabels = [], epicKey, signal } = {}) => fetchEngTasks(backendUrl, {
+    project, sprint: '', sprintName, groupId, teamIds, teamLabels, refresh: true, purpose: 'ready-to-close', epicKeys: [epicKey], signal,
+    apiSurface: 'epic_refresh', featureName: 'epic_refresh',
+});
 
 export const fetchStoryReadiness = async (backendUrl, {
     sprint,
@@ -114,6 +131,50 @@ export const fetchStoryReadiness = async (backendUrl, {
         { featureName: 'eng', suppressAbortResult: true },
     );
     return jsonOrStructuredError(response, 'Story readiness');
+};
+
+// One epic's Stories Required entry: `{ epics: [epic] or [] }` in the department snapshot shape. Separate from the department request.
+export const fetchEpicReadiness = async (backendUrl, { sprint, sprintName, sprintState, groupId, epicKey, signal } = {}) => {
+    const params = new URLSearchParams({
+        sprint: String(sprint ?? ''),
+        sprintName: String(sprintName ?? ''),
+        sprintState: String(sprintState ?? ''),
+        groupId: String(groupId ?? ''),
+        epicKeys: String(epicKey ?? ''),
+        refresh: 'true',
+    });
+    const response = await trackedFetch(
+        'epic_refresh',
+        `${backendUrl}/api/eng/story-readiness?${params.toString()}`,
+        { method: 'GET', headers: { 'Content-Type': 'application/json' }, cache: 'no-cache', signal },
+        { featureName: 'epic_refresh', suppressAbortResult: true },
+    );
+    return jsonOrStructuredError(response, 'Story readiness');
+};
+
+// One epic's Missing Info: `{ issues, epics }` scoped to the epic key; `refresh` skips the server cache read.
+export const fetchEpicMissingInfo = (backendUrl, { sprintId, teamIds = [], components = [], epicKey, signal } = {}) => {
+    const params = new URLSearchParams({ sprint: String(sprintId), epicKeys: String(epicKey ?? ''), refresh: 'true', t: Date.now().toString() });
+    if (teamIds.length) params.set('teamIds', teamIds.join(','));
+    if (components.length) params.set('components', components.join(','));
+    return apiFetch(`${backendUrl}/api/missing-info?${params.toString()}`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-cache',
+        signal
+    });
+};
+
+// One epic's Backlog alert entry: `{ epics: [epic] or [] }`.
+export const fetchEpicBacklog = (backendUrl, { project, teamIds = [], epicKey, signal } = {}) => {
+    const params = new URLSearchParams({ t: Date.now().toString(), project: project || 'all', epicKeys: String(epicKey ?? '') });
+    if (teamIds.length > 0) params.set('teamIds', teamIds.join(','));
+    return getJson(`${backendUrl}/api/backlog-epics?${params.toString()}`, 'Backlog epics', {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-cache',
+        signal
+    });
 };
 
 export const fetchStorySubtasks = (backendUrl, { parentKey, sprint, refresh = false, signal } = {}) => {
@@ -164,13 +225,13 @@ export const fetchExcludedCapacityStatsSource = (backendUrl, { sprintIds = [], t
     });
 };
 
-export const fetchDependencies = (backendUrl, keys, { signal } = {}) =>
+export const fetchDependencies = (backendUrl, keys, { signal, refresh = false } = {}) =>
     apiFetch(`${backendUrl}/api/dependencies`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             'X-Requested-With': 'jira-execution-planner',
         },
-        body: JSON.stringify({ keys }),
+        body: JSON.stringify(refresh ? { keys, refresh: true } : { keys }),
         signal
     });

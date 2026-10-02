@@ -606,6 +606,130 @@ class OAuthEngRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json(), {"issues": [{"key": "PROD-1"}], "epics": [], "count": 1})
         self.assertEqual(response.headers.get("Server-Timing"), "cache;dur=1")
 
+    def _missing_info_search(self, calls):
+        def fake_search(payload, *args, **kwargs):
+            jql = payload["jql"]
+            calls.append(jql)
+            if "issuetype = Epic" in jql:
+                keys = [key for key in ("PROD-5", "PROD-6") if f'"{key}"' in jql or "issueKey in" not in jql]
+                return FakeResponse(200, {
+                    "issues": [{"key": key, "fields": {"summary": key, "status": {"name": "To Do"}}} for key in keys],
+                    "isLast": True,
+                })
+            return FakeResponse(200, {"issues": [], "isLast": True})
+        return fake_search
+
+    def _missing_info_patches(self, calls):
+        return (
+            patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"),
+            patch.object(jira_server, "database_storage_enabled", return_value=False),
+            patch.object(jira_server, "resolve_team_field_id", return_value=None),
+            patch.object(jira_server, "resolve_epic_link_field_id", return_value=None),
+            patch.object(jira_server, "current_jira_search", side_effect=self._missing_info_search(calls)),
+        )
+
+    def test_missing_info_epic_keys_scopes_epic_query_and_keeps_other_scope(self):
+        calls = []
+        patches = self._missing_info_patches(calls)
+        with patches[0], patches[1], patches[2], patches[3], patches[4], \
+             patch.dict(jira_server.MISSING_INFO_CACHE, {}, clear=True):
+            response = self.client.get(
+                "/api/missing-info?sprint=2026Q2&teamIds=team-alpha&components=Comp%20A&epicKeys=PROD-5")
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        epic_jql = calls[0]
+        self.assertIn('issueKey in ("PROD-5")', epic_jql)
+        self.assertIn("Sprint = 2026Q2", epic_jql)
+        self.assertIn("issuetype = Epic", epic_jql)
+        self.assertIn("Comp A", epic_jql)
+        self.assertIn("team-alpha", epic_jql)
+        self.assertIn('status not in ("Killed","Done","Incomplete")', epic_jql)
+        self.assertIn("project in (", epic_jql)
+        self.assertEqual([epic["key"] for epic in response.get_json()["epics"]], ["PROD-5"])
+
+    def test_missing_info_without_epic_keys_has_no_issue_key_clause(self):
+        calls = []
+        patches = self._missing_info_patches(calls)
+        with patches[0], patches[1], patches[2], patches[3], patches[4], \
+             patch.dict(jira_server.MISSING_INFO_CACHE, {}, clear=True):
+            response = self.client.get("/api/missing-info?sprint=2026Q2")
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertNotIn("issueKey", calls[0])
+
+    def test_missing_info_rejects_bad_or_multiple_epic_keys(self):
+        for value in ("not-a-key", "PROD-1,PROD-2"):
+            with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+                 patch.object(jira_server, "current_jira_search", side_effect=AssertionError("must not query Jira")):
+                response = self.client.get(f"/api/missing-info?sprint=2026Q2&epicKeys={value}")
+            self.assertEqual(response.status_code, 400, value)
+            self.assertEqual(response.get_json()["error"], "invalid_epic_keys")
+
+    def test_missing_info_cache_key_gains_epic_key_only_when_present(self):
+        stored_at = time.time()
+        install_oauth_session(self.client, stored_at=stored_at)
+        auth_context = _local_oauth_context(stored_at=stored_at)
+        base = build_jira_home_process_cache_key(auth_context, "missing-info", "2026Q2", "", "")
+        scoped = build_jira_home_process_cache_key(auth_context, "missing-info", "2026Q2", "", "", "PROD-5")
+        calls = []
+        cache = jira_server.MISSING_INFO_CACHE
+        patches = self._missing_info_patches(calls)
+        with patches[0], patches[1], patches[2], patches[3], patches[4], \
+             patch.dict(cache, {}, clear=True):
+            self.client.get("/api/missing-info?sprint=2026Q2&epicKeys=PROD-5")
+            self.assertEqual(list(cache), [scoped])
+            full = self.client.get("/api/missing-info?sprint=2026Q2")
+            cached_keys = set(cache)
+
+        self.assertEqual(full.status_code, 200, full.get_data(as_text=True))
+        self.assertEqual(cached_keys, {base, scoped})
+        self.assertEqual(len(calls), 4, "the full-scope call must not be served from the per-epic entry")
+        self.assertIn("issueKey", calls[0])
+        self.assertNotIn("issueKey", calls[2])
+        self.assertEqual([epic["key"] for epic in full.get_json()["epics"]], ["PROD-5", "PROD-6"])
+
+    def test_missing_info_refresh_true_bypasses_cache_read_and_rewrites_entry(self):
+        stored_at = time.time()
+        install_oauth_session(self.client, stored_at=stored_at)
+        auth_context = _local_oauth_context(stored_at=stored_at)
+        key = build_jira_home_process_cache_key(auth_context, "missing-info", "2026Q2", "", "")
+        cache = jira_server.MISSING_INFO_CACHE
+        seeded = {key: {"timestamp": time.time(), "data": {"issues": [], "epics": [], "count": 7}}}
+        calls = []
+        patches = self._missing_info_patches(calls)
+        with patches[0], patches[1], patches[2], patches[3], patches[4], \
+             patch.dict(cache, seeded, clear=True):
+            cached = self.client.get("/api/missing-info?sprint=2026Q2")
+            self.assertEqual(cached.get_json()["count"], 7)
+            self.assertEqual(calls, [])
+            fresh = self.client.get("/api/missing-info?sprint=2026Q2&refresh=true")
+            rewritten_count = cache[key]["data"]["count"]
+
+        self.assertEqual(fresh.status_code, 200, fresh.get_data(as_text=True))
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(fresh.get_json()["count"], 0)
+        self.assertEqual(rewritten_count, 0)
+
+    def test_single_epic_alert_reads_use_no_write_or_service_credential_path(self):
+        forbidden = AssertionError("a service-account or write credential path was touched")
+        calls = []
+        patches = self._missing_info_patches(calls)
+        with patches[0], patches[1], patches[2], patches[3], patches[4], \
+             patch.dict(jira_server.MISSING_INFO_CACHE, {}, clear=True), \
+             patch("backend.auth.user_api_tokens._basic_auth_header", side_effect=forbidden), \
+             patch("backend.auth.jira_auth.jira_request", side_effect=forbidden), \
+             patch("backend.auth.jira_auth.jira_post", side_effect=forbidden), \
+             patch.object(jira_server, "current_jira_request", side_effect=forbidden), \
+             patch.object(jira_server, "build_base_jql", return_value='project = "PROD"'), \
+             patch.object(jira_server, "get_sprint_field_id", return_value="customfield_sprint"):
+            missing = self.client.get("/api/missing-info?sprint=2026Q2&epicKeys=PROD-5&refresh=true")
+            backlog = self.client.get("/api/backlog-epics?project=all&epicKeys=PROD-5")
+
+        self.assertEqual(missing.status_code, 200, missing.get_data(as_text=True))
+        self.assertEqual(backlog.status_code, 200, backlog.get_data(as_text=True))
+        self.assertIn("issueKey in", calls[0])
+        self.assertTrue(any("issueKey in" in jql and "assignee is not EMPTY" in jql for jql in calls))
+
     def test_dependencies_requires_oauth_csrf_header(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"):
             response = self.client.post("/api/dependencies", json={"keys": ["PROD-1"]})
@@ -653,6 +777,40 @@ class OAuthEngRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         self.assertEqual(response.get_json(), {"dependencies": {"PROD-1": [{"key": "TECH-2"}]}})
         self.assertEqual(response.headers.get("Server-Timing"), "cache;dur=1")
+
+    def test_dependencies_refresh_body_field_bypasses_cache_and_rewrites_entry(self):
+        stored_at = time.time()
+        install_oauth_session(self.client, stored_at=stored_at)
+        auth_context = _local_oauth_context(stored_at=stored_at)
+        cache_key = build_jira_home_process_cache_key(auth_context, "dependencies", "PROD-1")
+        seeded = {cache_key: {"timestamp": time.time(), "data": {"PROD-1": [{"key": "TECH-2"}]}}}
+        headers = {"X-Requested-With": "jira-execution-planner"}
+
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "database_storage_enabled", return_value=False), \
+             patch.dict(jira_server.DEPENDENCIES_CACHE, seeded, clear=True), \
+             patch.object(jira_server, "collect_dependencies", return_value={"PROD-1": []}) as collect:
+            cached = self.client.post("/api/dependencies", json={"keys": ["PROD-1"]}, headers=headers)
+            collect.assert_not_called()
+            fresh = self.client.post(
+                "/api/dependencies", json={"keys": ["PROD-1"], "refresh": True}, headers=headers)
+            rewritten = jira_server.DEPENDENCIES_CACHE[cache_key]["data"]
+
+        self.assertEqual(cached.get_json(), {"dependencies": {"PROD-1": [{"key": "TECH-2"}]}})
+        self.assertEqual(fresh.status_code, 200, fresh.get_data(as_text=True))
+        self.assertEqual(fresh.get_json(), {"dependencies": {"PROD-1": []}})
+        collect.assert_called_once()
+        self.assertEqual(rewritten, {"PROD-1": []})
+
+    def test_dependencies_rejects_malformed_keys_before_querying_jira(self):
+        headers = {"X-Requested-With": "jira-execution-planner"}
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "collect_dependencies", side_effect=AssertionError("must not query Jira")):
+            response = self.client.post(
+                "/api/dependencies", json={"keys": ["PROD-1", "x) OR (y"]}, headers=headers)
+
+        self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "invalid_keys")
 
     def test_dependencies_expired_oauth_returns_login_url(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \

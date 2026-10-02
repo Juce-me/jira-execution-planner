@@ -213,7 +213,7 @@ export function useEngPriorityTransitions({
                 setPriorityResult({ ...summary, targetPriorityId });
             }
             trackIssuePriorityAction('priority_change_result', { ...analyticsBaseParams, result: summary.result });
-            if (summary.succeeded > 0 && isCurrentMutation) onAlertDataInvalidated?.();
+            if (summary.succeeded > 0 && isCurrentMutation) onAlertDataInvalidated?.({ keys: (response?.results || []).filter(entry => entry?.result === 'success').map(entry => entry?.key).filter(Boolean) });
             if (isSingleIssueSurface) {
                 const issueResult = (response?.results || []).find(entry => entry?.key === key);
                 const succeeded = issueResult?.result === 'success' || issueResult?.result === 'already_in_priority';

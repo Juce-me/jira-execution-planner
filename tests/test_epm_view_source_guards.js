@@ -414,7 +414,9 @@ test('EPM rollup panel shows Jira Home project status and epic status pills', ()
 test('EPM status and label chips use the shared StatusPill primitive', () => {
     assert.ok(fs.existsSync(statusPillPath), 'Expected shared StatusPill primitive');
     assert.ok(statusPillSource.includes("['status-pill', className]"), 'Expected StatusPill to preserve a stable base class');
-    assert.ok(statusPillSource.includes('title={title || label}'), 'Expected StatusPill to default the title to the rendered label');
+    assert.ok(statusPillSource.includes('title={title}') && !statusPillSource.includes('title || label'), 'Expected StatusPill to add no tooltip that merely repeats its label');
+    assert.ok(epmRollupPanelSource.includes('className="epm-project-board-label-pill" label={project.label} title={project.label}'), 'Expected clippable EPM label pills to pass their full text as an explicit title');
+    assert.ok(epmRollupPanelSource.includes('className="epm-duplicates-project-label" label={project.label} title={project.label}'), 'Expected clippable EPM duplicate labels to pass their full text as an explicit title');
     assert.ok(epmRollupPanelSource.includes("import StatusPill from '../ui/StatusPill.jsx';"), 'Expected EpmRollupPanel to import StatusPill');
     assert.ok(epmRollupPanelSource.includes('<StatusPill') && epmRollupPanelSource.includes('className="epm-project-board-label-pill"'), 'Expected EPM project board labels to render through StatusPill');
     assert.ok(epmRollupPanelSource.includes('<StatusPill') && epmRollupPanelSource.includes('className="epm-duplicates-project-label"'), 'Expected EPM duplicate project labels to render through StatusPill');

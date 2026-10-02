@@ -25,6 +25,12 @@ test('review numbers accept at most one decimal place and display without traili
     for (const [stored, shown] of [['12.000', '12'], ['55000.000', '55000'], ['12.500', '12.5'], ['-0.000', '0'], ['0.001', '0.001'], ['999999999.900', '999999999.9'], [null, ''], ['', ''], ['not a number', 'not a number']]) assert.equal(formatReviewDisplay(stored), shown, String(stored));
 });
 
+test('only real Epic and Story rows without points count as zero SP', async () => {
+    const { hasZeroStoryPoints } = await model();
+    for (const row of [{ rowKind: 'story', storyPoints: 0 }, { rowKind: 'story', storyPoints: null }, { rowKind: 'story', storyPoints: '0.0' }, { rowKind: 'epic', storyPoints: '0' }, { rowKind: 'epic', storyPoints: '0.000' }]) assert.equal(hasZeroStoryPoints(row), true, JSON.stringify(row));
+    for (const row of [{ rowKind: 'story', storyPoints: 0.5 }, { rowKind: 'story', storyPoints: 3 }, { rowKind: 'epic', storyPoints: '2.5' }, { rowKind: 'epic', storyPoints: 'n/a' }, { rowKind: 'requirement', synthetic: true, storyPoints: 0 }, { rowKind: 'group', synthetic: true, storyPoints: '0' }]) assert.equal(hasZeroStoryPoints(row), false, JSON.stringify(row));
+});
+
 test('hierarchy projection keeps readiness-only Epics, orphan Stories and synthetic requirements', async () => {
     const { buildPlanningReviewRows, reviewSelectionState } = await model();
     const stories = [story('1', 'DEMO-1', 0.1), story('2', 'DEMO-2', 0.2), story('3', 'DEMO-3', 3)];

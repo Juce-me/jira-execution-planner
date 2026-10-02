@@ -11,7 +11,7 @@ test.beforeAll(() => {
         import { createRoot } from 'react-dom/client';
         import PlanningReviewTable, { PlanningReviewScopeDialog } from './frontend/src/eng/PlanningReviewTable.jsx';
         import { createPlanningSprintReviewController } from './frontend/src/eng/usePlanningSprintReview.js';
-        const stories = Array.from({length:window.longReview?60:3},(_,i)=>i+1).map(id => ({id:String(id),key:'DEMO-'+id,fields:{summary:'Story '+id,customfield_10004:id,teamId:'alpha',teamName:window.longNames?(id===1?'Research Long Named Alpha Engineering Team':'Research Long Named Beta Engineering Team'):'Alpha',projectKey:'DEMO',status:{name:'To Do'},priority:{name:'High'}}}));
+        const stories = Array.from({length:window.longReview?60:3},(_,i)=>i+1).map(id => ({id:String(id),key:'DEMO-'+id,fields:{summary:'Story '+id,customfield_10004:window.zeroStory&&id===3?null:id,teamId:'alpha',teamName:window.longNames?(id===1?'Research Long Named Alpha Engineering Team':'Research Long Named Beta Engineering Team'):'Alpha',projectKey:'DEMO',status:{name:'To Do'},priority:{name:'High'}}}));
         const epics=[{key:'DEMO-10',epic:{id:'10',key:'DEMO-10',summary:window.longNames?'Automate detailed calculations and adjustments across multiple supported integrations':'Epic summary',status:{name:'To Do'},priority:{name:'High'},teamName:'Own Team'},tasks:stories.slice(0,2),requirements:[]},{key:'DEMO-20',epic:{id:'20',key:'DEMO-20',summary:'Readiness Epic'},tasks:[],requirements:[{id:'required',team:{name:'Beta'}}]}];
         const columns=Array.from({length:8},(_,i)=>({id:'cost'+i,rowKind:'story',label:'Cost '+i,type:'number',aggregation:'sum',archived:false,order:i}));
         let saveCount=0; let savedSchema={schemaRevision:1,columns,layouts:{},capabilities:{canRead:true,canSave:true}};
@@ -28,9 +28,9 @@ test.beforeAll(() => {
     ` }, bundle: true, write: false, format: 'iife', define: { 'process.env.NODE_ENV': '"test"' } }).outputFiles[0].text;
     css = esbuild.buildSync({ entryPoints: [path.join(root, 'frontend/src/styles/dashboard.css')], bundle: true, write: false }).outputFiles[0].text;
 });
-async function install(page, longReview = false, longNames = false) {
+async function install(page, longReview = false, longNames = false, zeroStory = false) {
     await page.setContent(`<style>${css} *,*::before,*::after{animation:none!important;transition:none!important}</style><div id="root"></div>`);
-    await page.evaluate(({longReview,longNames}) => {window.longReview=longReview;window.longNames=longNames},{longReview,longNames});
+    await page.evaluate(({longReview,longNames,zeroStory}) => {window.longReview=longReview;window.longNames=longNames;window.zeroStory=zeroStory},{longReview,longNames,zeroStory});
     await page.addScriptTag({ content: js });
     await expect(page.getByRole('region', { name: 'Planning Sprint review' })).toBeVisible();
     await expect(page.getByText('Loading review…')).toHaveCount(0);
@@ -299,6 +299,22 @@ for (const mode of ['Epics', 'Stories']) test(`every ${mode} column shares one e
     }
     expect(columns.filter(column => column.gripSide).length).toBeGreaterThan(8);
     await page.screenshot({path:path.join(root,`tmp/217-ui/column-alignment-${mode}.png`)});
+});
+
+test('real Epic and Story rows without points are tinted red; placeholders and groups are not', async ({page}) => {
+    await install(page,false,false,true);
+    const tint='rgb(255, 241, 240)';
+    const state=()=>page.locator('tbody tr').evaluateAll(rows=>rows.map(row=>({text:row.textContent.slice(0,40),tinted:getComputedStyle(row.cells[2]).backgroundColor,cells:[...row.cells].every(cell=>getComputedStyle(cell).backgroundColor===getComputedStyle(row.cells[0]).backgroundColor),synthetic:row.classList.contains('planning-review-synthetic')})));
+    // Epics: DEMO-10 has points, the readiness Epic has none, the No Epic group is synthetic.
+    let rows=await state();
+    expect(rows.map(row=>row.tinted===tint),JSON.stringify(rows)).toEqual([false,true,false]);
+    expect(rows.every(row=>row.cells),JSON.stringify(rows)).toBe(true);
+    await page.getByRole('radio',{name:'Stories',exact:true}).click();
+    rows=await state();
+    const tinted=rows.filter(row=>row.tinted===tint);
+    expect(tinted.map(row=>row.text.includes('DEMO-3')),JSON.stringify(rows)).toEqual([true]);
+    expect(rows.filter(row=>row.synthetic).every(row=>row.tinted!==tint),JSON.stringify(rows)).toBe(true);
+    await page.screenshot({path:path.join(root,'tmp/217-ui/zero-sp-tint.png'),fullPage:false});
 });
 
 test('Columns popup is a compact single-line checklist in the shared popover grammar', async ({page}) => {

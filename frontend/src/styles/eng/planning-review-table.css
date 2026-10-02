@@ -21,6 +21,8 @@ html:has(.planning-panel.open) { scrollbar-gutter: stable; }
 .planning-review-validation { display: block; white-space: normal; max-width: 180px; color: #b91c1c; font-size: 0.7rem; }
 .planning-review-requirement { display: block; color: #64748b; font-size: 0.7rem; margin-top: 2px; }
 .planning-review-synthetic td { background: #f8fafc; color: #64748b; }
+/* Real Epics and Stories without points; the same red tint the alerts and board use. */
+.planning-review-table tbody tr.planning-review-zero-sp td { background: #fff1f0; }
 .planning-review-heading, .planning-review-text-button { background: transparent; color: inherit; border: 0; padding: 0; font: inherit; font-weight: 600; letter-spacing: normal; margin: 0; box-shadow: none; transform: none; }
 .planning-review-heading:hover, .planning-review-text-button:hover { background: #e2e8f0; color: #0f172a; transform: none; box-shadow: none; }
 .planning-review-recovery { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; padding: 0.75rem; border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc; margin: 0.5rem 0; max-width: 100%; box-sizing: border-box; }

@@ -100,6 +100,13 @@ export function reviewSelectionState(row, selectedKeys = new Set()) {
     return { checked: tasks.length > 0 && selected === tasks.length, mixed: selected > 0 && selected < tasks.length, disabled: tasks.length === 0, tasks };
 }
 
+// A real Epic or Story with no points (a null Jira value counts as 0). Placeholders and group rows never qualify.
+export function hasZeroStoryPoints(row) {
+    if (row.synthetic || !['epic', 'story'].includes(row.rowKind)) return false;
+    const parsed = parseReviewNumber(row.storyPoints);
+    return parsed.valid && (parsed.scaled ?? 0n) === 0n;
+}
+
 export const DEFAULT_REVIEW_HIDDEN_COLUMNS = ['components', 'project', 'capacity', 'projectTrack'];
 
 export function buildPlanningReviewColumns({ rows = [], mode = 'epic', customColumns = [], hidden = new Set(), admittedTeamCount, admittedProjectCount, layout = {} } = {}) {

@@ -38,6 +38,9 @@ position. The shared `EngFilterControls` module occupies the second dashboard co
 before Catch Up alerts and Planning capacity content; List also uses Filters-first
 ordering.
 Numeric headings, cells, editors and totals align right; text aligns left.
+A real Epic or Story row with 0 SP (a missing Jira value counts as 0) is tinted red
+across the whole row, with the same `#fff1f0` the alerts and board use. Awaiting-creation
+placeholders and the No Epic group row are never tinted.
 Rows scroll with the page; column headings dock below the shared controls and totals remain visible at the viewport bottom until their natural row enters view.
 Stories expose the parent Epic summary in the Epic column, linked to that Epic in Jira (falling back to the key when its summary is missing). Assignee is a visible
 column, without a Fields menu. Component, Project, Capacity and Project Track are optional and

@@ -90,7 +90,7 @@ edge after Summary or after any movable column (and until 9px once it is showing
 16×24px + button on a 2px blue edge line appears, and that cell's chevron steps aside
 while it does. Clicking it opens the same Add popover anchored at that boundary; a new
 column, or one restored from Show hidden, is placed directly after the left neighbour
-(after the pinned columns for the Summary boundary). It works on the docked header. It is
+(after the pinned columns for the Summary boundary). Edges of columns scrolled under the frozen columns are not offered; the last column's edge is, even at maximum scroll. It works on the docked header. It is
 not shown on touch devices (the corner + is the touch path), while a column grip is being
 dragged, while a popup is open, after any scroll until the pointer moves again, outside the
 header row, or when the review cannot be edited.
@@ -100,7 +100,7 @@ step the column past its nearest visible neighbour like dragging does and stay o
 optional Jira columns and review columns also offer Hide column, which closes the
 menu. Review columns add Rename (an inline field: Enter or leaving it saves, Escape
 cancels and keeps the menu open), Show total (numbers only, a pressed toggle for the
-footer Σ) and Archive column…, which asks inline first and closes the menu. A muted
+footer Σ) and Archive column…, which asks inline first and closes the menu (archiving is refused, and the reason shown under the toolbar, while the column still has unsaved cell drafts). A muted
 line explains that Shift-click on a heading sorts by several columns.
 Drag column handles to place Jira and custom columns in any order after the pinned
 Key and Summary columns. Arrow keys on a focused handle move it past the nearest

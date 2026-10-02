@@ -99,6 +99,8 @@ html:has(.planning-panel.open) { scrollbar-gutter: stable; }
 .planning-review-boundary-dot { display: grid; place-items: center; width: 16px; height: 16px; margin: 4px 0; border-radius: 50%; background: #3b82f6; color: #fff; font: 700 12px/1 'IBM Plex Mono', monospace; letter-spacing: 0; }
 /* Corner "+" in the pinned select header cell; absolute so the header row stays 32px. */
 .planning-review-corner { position: absolute; top: calc(50% - 12px); left: calc(50% - 12px); border-color: var(--border); border-radius: 50%; color: var(--text-primary); }
+/* The boundary + owns the cell edge while it shows, even when focus-within or an open menu would reveal the chevron. */
+.planning-review-table th.planning-review-boundary-hot .planning-review-colmenu { opacity: 0; pointer-events: none; }
 @media (hover: none) {
     .planning-review-head .planning-review-colmenu, .planning-review-drag { opacity: 1; }
     .planning-review-table th.planning-review-movable, .planning-review-table td.planning-review-movable { padding-right: 48px; }

@@ -34,8 +34,9 @@ export default function PlanningReviewColumnMenu({ column, editable, review, can
     const [confirming, setConfirming] = React.useState(false);
     const focusDialog = () => rootRef.current?.closest('[role="dialog"]')?.focus({ preventScroll: true });
     const archive = () => {
-        review.changeSchema({ action: 'archive', columnId: column.id, archived: true });
-        onTrack('column_archived'); onClose();
+        // The controller refuses (and explains in review.error) while the column still has draft cells.
+        if (review.changeSchema({ action: 'archive', columnId: column.id, archived: true })) onTrack('column_archived');
+        onClose();
     };
     const total = column.aggregation === 'sum';
     return <div ref={rootRef}>

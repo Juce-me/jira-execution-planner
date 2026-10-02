@@ -107,8 +107,8 @@ test('390px creation fits, frozen keys and last-column reachability at desktop a
     expect(Math.abs(before.x-after.x)).toBeLessThan(1);
     await expect(page.getByRole('textbox', { name: 'Cost 7 for DEMO-1', exact: true })).toBeInViewport();
     await page.getByRole('button', { name: 'Cost 7', exact: true }).hover();
-    const hover = await page.getByRole('button', { name: 'Cost 7', exact: true }).evaluate(node => ({ background:getComputedStyle(node).backgroundColor,color:getComputedStyle(node).color,transform:getComputedStyle(node).transform,shadow:getComputedStyle(node).boxShadow }));
-    expect(hover.background).toBe('rgb(226, 232, 240)'); expect(hover.color).toBe('rgb(15, 23, 42)'); expect(hover.transform).toBe('none'); expect(hover.shadow).toBe('none');
+    // Read the settled hover state: WebKit applies :hover a frame after the pointer arrives.
+    await expect.poll(() => page.getByRole('button', { name: 'Cost 7', exact: true }).evaluate(node => ({ background:getComputedStyle(node).backgroundColor,color:getComputedStyle(node).color,transform:getComputedStyle(node).transform,shadow:getComputedStyle(node).boxShadow }))).toEqual({ background:'rgb(226, 232, 240)', color:'rgb(15, 23, 42)', transform:'none', shadow:'none' });
     await page.screenshot({ path: path.join(root, 'tmp/217-ui/planning-review-desktop.png'), fullPage: true });
     // Browser zoom reduces the CSS layout viewport; a body CSS transform does not.
     await page.setViewportSize({ width: Math.round(1280 / 1.5), height: Math.round(900 / 1.5) });
@@ -1096,4 +1096,84 @@ test('the boundary + works on the docked header', async ({ page }) => {
     await popup.getByLabel('Column name', { exact: true }).fill('Docked'); await popup.getByRole('button', { name: 'Add column', exact: true }).click();
     const list = (await headings(page)).filter(label => label !== 'Key' && label !== 'Summary');
     expect(list.slice(0, 3)).toEqual(['Status', 'Priority', 'Docked']);
+});
+
+// Review follow-ups for the boundary + and the menus.
+test('the boundary + never appears over columns scrolled under the frozen Key and Summary columns', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 }); await install(page); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await page.locator('.planning-review-scroll').evaluate(node => { node.scrollLeft = 500; });
+    const frozen = await page.evaluate(() => {
+        const row = document.querySelector('table.planning-review-table thead tr');
+        return Math.max(...[...row.cells].filter(cell => getComputedStyle(cell).left !== 'auto').map(cell => cell.getBoundingClientRect().right));
+    });
+    const boundaries = await liveBoundaries(page);
+    const covered = boundaries.filter(item => item.right < frozen - 2), visible = boundaries.filter(item => item.right > frozen + 12 && item.right < 1260);
+    expect(covered.length, JSON.stringify({ frozen, boundaries })).toBeGreaterThan(0); expect(visible.length).toBeGreaterThan(0);
+    for (const item of covered) { await page.mouse.move(0, 0); await moveToBoundary(page, item, 1); await expect(overlay(page), JSON.stringify(item)).toBeHidden(); }
+    await page.mouse.move(0, 0); await moveToBoundary(page, visible[0], 1); await expect(overlay(page)).toBeVisible();
+});
+
+test('the boundary + is offered after the last column even at maximum scroll', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 }); await install(page); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await page.locator('.planning-review-scroll').evaluate(node => { node.scrollLeft = node.scrollWidth; });
+    const last = (await liveBoundaries(page)).at(-1);
+    await moveToBoundary(page, last, -1); await expect(overlay(page), JSON.stringify(last)).toBeVisible();
+});
+
+test('a focused cell still gives its chevron to the boundary +', async ({ page }) => {
+    await page.setViewportSize({ width: 2400, height: 900 }); await install(page); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    // Focus inside the cell (after a sort click or an Escape from its menu) keeps the lane revealed via :focus-within.
+    await page.getByRole('button', { name: 'Priority', exact: true }).focus();
+    const chevron = columnMenuButton(page, 'Priority');
+    await page.mouse.move(0, 0);
+    expect(await chevron.evaluate(node => getComputedStyle(node).opacity)).toBe('1');
+    const target = (await liveBoundaries(page)).find(item => item.id === 'priority');
+    await moveToBoundary(page, target, 2); await expect(overlay(page)).toBeVisible();
+    await expect.poll(() => chevron.evaluate(node => getComputedStyle(node).opacity)).toBe('0');
+    expect(await chevron.evaluate(node => getComputedStyle(node).pointerEvents)).toBe('none');
+});
+
+test('a drag that ends with its docked grip gone does not leave the boundary + switched off', async ({ page }) => {
+    await page.setViewportSize({ width: 2400, height: 700 }); await install(page, true); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await page.evaluate(() => scrollTo(0, 400));
+    const docked = page.locator('.planning-review-docked-header');
+    await expect(docked).toBeVisible();
+    const transfer = await page.evaluateHandle(() => new DataTransfer());
+    await docked.getByRole('button', { name: 'Move Status column', exact: true }).dispatchEvent('dragstart', { dataTransfer: transfer });
+    await page.evaluate(() => scrollTo(0, 0));
+    await expect(docked).toHaveCount(0);
+    const target = (await liveBoundaries(page)).find(item => item.id === 'priority');
+    await page.mouse.move(0, 0); await moveToBoundary(page, target, 2);
+    await expect(overlay(page)).toBeVisible();
+});
+
+test('a failed archive is not reported and leaves its explanation visible', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 }); await install(page); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Cost 0 for DEMO-1', exact: true }).fill('99');
+    await columnMenuButton(page, 'Cost 0').click();
+    const popup = columnMenu(page, 'Cost 0');
+    await popup.getByRole('button', { name: 'Archive column…', exact: true }).click();
+    await popup.getByRole('button', { name: 'Archive', exact: true }).click();
+    await expect(page.getByRole('columnheader', { name: 'Cost 0', exact: true })).toBeVisible();
+    expect(await page.evaluate(() => window.harness.state().columns.find(column => column.id === 'cost0').archived)).toBe(false);
+    expect(await page.evaluate(() => window.harness.actions())).not.toContain('column_archived');
+    await expect(page.getByRole('alert').filter({ hasText: 'Save or discard this column’s draft cells before archiving it.' })).toBeVisible();
+});
+
+test('a validation error from one menu does not outlive a header dock flip', async ({ page }) => {
+    await page.setViewportSize({ width: 2400, height: 700 }); await install(page, true); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await columnMenuButton(page, 'Cost 0').click();
+    let popup = columnMenu(page, 'Cost 0');
+    await popup.getByRole('button', { name: 'Rename', exact: true }).click();
+    const field = popup.getByRole('textbox', { name: 'Name for Cost 0', exact: true }); await field.fill('  '); await field.press('Enter');
+    await expect(popup.getByRole('alert')).toBeVisible();
+    // Scrolling across the dock threshold closes the menu without going through its own close handler.
+    await page.evaluate(() => scrollTo(0, 400));
+    await expect(page.locator('.planning-review-docked-header')).toBeVisible(); await expect(popup).toHaveCount(0);
+    const docked = page.locator('.planning-review-docked-header');
+    await docked.locator('th', { hasText: 'Cost 1' }).hover();
+    await docked.getByRole('button', { name: 'Cost 1 column options', exact: true }).click();
+    popup = columnMenu(page, 'Cost 1');
+    await expect(popup).toBeVisible(); await expect(popup.getByRole('alert')).toHaveCount(0);
+    await expect(page.getByRole('alert').filter({ hasText: 'Enter a column name' })).toHaveCount(0);
 });

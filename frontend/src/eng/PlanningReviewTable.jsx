@@ -138,7 +138,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
         for (const ref of [dockedHeader, dockedFooter]) if (ref.current) ref.current.scrollLeft = scroller.current.scrollLeft;
     }, [dock]);
     // The real header and its docked clone are different elements; a menu left open across the flip would sit on a vanished trigger.
-    React.useEffect(() => setOpenMenu(null), [dock?.header]);
+    React.useEffect(() => { setOpenMenu(null); setAddAfter(null); setFormError(''); setDragging(false); }, [dock?.header]);
 
     const sorted = sortPlanningReviewRows(rows, sort, columns, review.cells);
     if (!editing) stableOrder.current = sorted.map(row => row.id);
@@ -229,7 +229,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
         const interactive = floating || !dock?.header;
         const corner = <ReviewColumnPopover open={openMenu === 'add' && addAfter === null && interactive} onClose={closeAdd} label="Add review column" error={formError}
             trigger={<IconButton size="sm" className="planning-review-column-action planning-review-corner" tabIndex={docked ? -1 : undefined} aria-hidden={docked ? true : undefined} disabled={!editable} aria-label="+ Add column"
-                onClick={() => { const open = !(openMenu === 'add' && addAfter === null); setAddAfter(null); setOpenMenu(open ? 'add' : null); if (open) trackedAction('add_column_opened'); }}>
+                onClick={() => { const open = !(openMenu === 'add' && addAfter === null); setAddAfter(null); setOpenMenu(open ? 'add' : null); if (open) { setFormError(''); trackedAction('add_column_opened'); } }}>
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9" /></svg>
             </IconButton>}>
             {addContent}
@@ -242,7 +242,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
         const index = visibleMovable.indexOf(column.id);
         const menu = index >= 0 && <ReviewColumnPopover open={openMenu === column.id && interactive} onClose={() => { setOpenMenu(null); setFormError(''); }} label={`${column.label} column options`} error={openMenu === column.id ? formError : ''}
             trigger={<IconButton size="sm" className="planning-review-column-action planning-review-colmenu" tabIndex={docked ? -1 : undefined} aria-hidden={docked ? true : undefined} disabled={!editable} aria-label={`${column.label} column options`}
-                onClick={() => { const open = openMenu !== column.id; setOpenMenu(open ? column.id : null); if (open) trackedAction('columns_opened'); }}>
+                onClick={() => { const open = openMenu !== column.id; setOpenMenu(open ? column.id : null); if (open) { setFormError(''); trackedAction('columns_opened'); } }}>
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4" /></svg>
             </IconButton>}>
             <PlanningReviewColumnMenu column={column} editable={editable} review={review} canMoveLeft={index > 0} canMoveRight={index < visibleMovable.length - 1}
@@ -278,7 +278,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
     return <section className="planning-review-region" aria-label="Planning Sprint review">
         {toolbarHost ? createPortal(toolbar, toolbarHost) : toolbar}
         <PlanningReviewBoundaryPlus getLive={liveHeader} suspended={dragging || Boolean(openMenu) || !editable} onHover={setHotBoundary}
-            onOpen={afterId => { setAddAfter(afterId); setOpenMenu('add'); trackedAction('add_column_opened'); }} />
+            onOpen={afterId => { setAddAfter(afterId); setOpenMenu('add'); setFormError(''); trackedAction('add_column_opened'); }} />
         {!review.capabilities?.canSave && !review.loading && <p className="planning-review-guidance">{review.capabilities?.reason === 'database_required' ? 'Review saving requires the application database.' : review.capabilities?.reason || 'Review saving is unavailable in this deployment.'}</p>}
         {review.error && <p className="planning-review-guidance" role="alert">{review.error}</p>}
         {(review.conflict || review.unconfirmed) && <div className="planning-review-recovery"><span>Your draft stays local until you choose a recovery action.</span><button type="button" className="planning-action-button" disabled={review.loading || review.saving} onClick={() => { void review.loadCurrent(); trackedAction('load_current_review'); }}>Load current and discard draft</button><button type="button" className="planning-action-button" disabled={review.loading || review.saving} onClick={() => { void review.reapply(); trackedAction('reapply_review'); }}>Refresh and reapply draft</button></div>}

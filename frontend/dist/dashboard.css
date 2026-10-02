@@ -8771,6 +8771,10 @@ html:has(.planning-panel.open) {
   border-radius: 50%;
   color: var(--text-primary);
 }
+.planning-review-table th.planning-review-boundary-hot .planning-review-colmenu {
+  opacity: 0;
+  pointer-events: none;
+}
 @media (hover: none) {
   .planning-review-head .planning-review-colmenu,
   .planning-review-drag {

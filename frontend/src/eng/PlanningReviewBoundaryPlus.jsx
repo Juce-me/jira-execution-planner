@@ -6,7 +6,7 @@ const ENGAGE = 5, STAY = 9;   // px from a boundary: closer than ENGAGE shows th
 
 // One fixed, body-level "+" that follows the pointer along the live header's cell boundaries (pointer devices only).
 // `getLive()` returns { row, left, right }: the header row the user sees (the docked clone while docked) and the horizontal bounds
-// the boundaries must fall inside. Key never gets a boundary; Summary's boundary inserts directly after the pinned columns.
+// the boundaries must fall inside (frozen columns excluded). Key never gets a boundary; Summary's boundary inserts directly after the pinned columns.
 export default function PlanningReviewBoundaryPlus({ getLive, suspended, onOpen, onHover }) {
     const [target, setTarget] = React.useState(null);
     const targetRef = React.useRef(null);
@@ -29,9 +29,12 @@ export default function PlanningReviewBoundaryPlus({ getLive, suspended, onOpen,
             const overOverlay = overlayRef.current?.contains(pointer.target);
             if (!overOverlay && (pointer.clientY < rowRect.top || pointer.clientY > rowRect.bottom || pointer.clientX < live.left || pointer.clientX > live.right)) { hide(); return; }
             if (pointer.target.closest?.('.planning-review-popover')) { hide(); return; }
-            const edges = Array.from(live.row.cells).filter(cell => cell.dataset.columnId && cell.dataset.columnId !== 'key')
+            // Columns scrolled under the frozen cells (select, Key, and Summary on wide screens) have no visible edge to offer.
+            const cells = Array.from(live.row.cells);
+            const frozenRight = Math.max(live.left, ...cells.filter(cell => getComputedStyle(cell).left !== 'auto').map(cell => cell.getBoundingClientRect().right));
+            const edges = cells.filter(cell => cell.dataset.columnId && cell.dataset.columnId !== 'key')
                 .map(cell => ({ afterId: cell.dataset.columnId, x: cell.getBoundingClientRect().right }))
-                .filter(edge => edge.x >= live.left + 2 && edge.x <= live.right - 2);
+                .filter(edge => edge.x >= frozenRight - 0.5 && edge.x <= live.right);
             const afterId = nearestBoundary(edges, pointer.clientX, targetRef.current ? STAY : ENGAGE);
             if (afterId === null) { hide(); return; }
             const next = { afterId, x: edges.find(edge => edge.afterId === afterId).x, top: rowRect.top, height: rowRect.height };

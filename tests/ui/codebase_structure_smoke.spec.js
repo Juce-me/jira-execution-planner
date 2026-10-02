@@ -1203,7 +1203,7 @@ test('ENG Catch Up, Planning, and Scenario render with scoped startup and sticky
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng',
+        selectedView: 'eng', planningLayout: 'list',
         selectedSprint: selectedSprintId,
         sprintName: selectedSprintName,
         activeGroupId: 'grp-default',
@@ -1316,7 +1316,7 @@ function seedEngPrefs(page, extraPrefs = {}) {
     return page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng',
+        selectedView: 'eng', planningLayout: 'list',
         selectedSprint: selectedSprintId,
         sprintName: selectedSprintName,
         activeGroupId: 'grp-default',
@@ -1614,7 +1614,7 @@ test('Initiative and Epic search reveal loaded descendants', async ({ page }) =>
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng',
+        selectedView: 'eng', planningLayout: 'list',
         selectedSprint: selectedSprintId,
         sprintName: selectedSprintName,
         activeGroupId: 'grp-default',
@@ -1769,7 +1769,7 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng',
+        selectedView: 'eng', planningLayout: 'list',
         selectedSprint: selectedSprintId,
         sprintName: selectedSprintName,
         activeGroupId: 'grp-default',
@@ -2102,7 +2102,7 @@ test('stats sprint range End panels keep long options inside the narrow viewport
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
+        selectedView: 'eng', planningLayout: 'list', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
         activeGroupId: 'grp-default', selectedTeams: ['all'], showStats: true,
         statsView: 'excludedCapacity', excludedCapacityStartSprintId: String(selectedSprintId),
         excludedCapacityEndSprintId: String(selectedSprintId),
@@ -2162,7 +2162,7 @@ test('Lead Times capacity exclusions re-slice locally and replace the legacy inc
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
+        selectedView: 'eng', planningLayout: 'list', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
         activeGroupId: 'grp-default', selectedTeams: ['all'], showStats: true, statsView: 'cohort',
         cohortStartQuarter: '2026Q1', cohortEndQuarter: '2026Q1', cohortCapacityFilter: 'ad_hoc',
     });
@@ -2217,7 +2217,7 @@ test('Project Track tab renders filter bar, mode title, totals, per-sprint and b
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng',
+        selectedView: 'eng', planningLayout: 'list',
         selectedSprint: selectedSprintId,
         sprintName: selectedSprintName,
         activeGroupId: 'grp-default',
@@ -2484,7 +2484,7 @@ test('Project Track excludes closed epics and links No track assignee segments t
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
+        selectedView: 'eng', planningLayout: 'list', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
         activeGroupId: 'grp-default', selectedTeams: ['all'], showStats: true,
         statsView: 'projectTrack', excludedCapacityStartSprintId: String(selectedSprintId),
         excludedCapacityEndSprintId: String(selectedSprintId),
@@ -2550,7 +2550,7 @@ async function openProjectTrackStrips(page, calls, { board = stripBoardColumns, 
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
+        selectedView: 'eng', planningLayout: 'list', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
         activeGroupId: 'grp-default', selectedTeams: ['all'], showStats: true, statsView: 'projectTrack',
         projectTrackMode: 'team',
         excludedCapacityStartSprintId: String(selectedSprintId), excludedCapacityEndSprintId: String(selectedSprintId),
@@ -2719,7 +2719,7 @@ test('Lead Times caps long epic lists with load more and keeps overflow scrollab
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng',
+        selectedView: 'eng', planningLayout: 'list',
         selectedSprint: selectedSprintId,
         sprintName: selectedSprintName,
         activeGroupId: 'grp-default',
@@ -2789,7 +2789,7 @@ test('Excluded Capacity summary shows product and tech shares instead of source 
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng',
+        selectedView: 'eng', planningLayout: 'list',
         selectedSprint: selectedSprintId,
         sprintName: selectedSprintName,
         activeGroupId: 'grp-default',
@@ -3291,7 +3291,7 @@ test('team dropdown restores scoped team selection after page refresh', async ({
         window.localStorage.setItem('jira_dashboard_team_selection_state_v1', JSON.stringify(teamSelection));
     }, {
         prefs: {
-            selectedView: 'eng',
+            selectedView: 'eng', planningLayout: 'list',
             selectedSprint: selectedSprintId,
             activeGroupId: 'grp-default',
             selectedTeams: ['all'],

@@ -442,6 +442,23 @@
             border-radius: 8px;
         }
 
+        /* The same modifier for SegmentedControl, for the same 42px filter-bar row: a consumer adds
+           .segmented-control-compact beside .eng-mode-control and defines no height of its own (MRT021). */
+        .segmented-control-compact {
+            height: 30px;
+            margin: 0;
+            align-self: center;
+            padding: 2px;
+            border-radius: 8px;
+        }
+
+        .segmented-control-compact .segmented-control-button {
+            min-width: 0;
+            padding: 0 0.55rem;
+            font-size: 0.6rem;
+            border-radius: 6px;
+        }
+
         .sprint-dropdown-panel {
             position: absolute;
             top: calc(100% + 0.35rem);

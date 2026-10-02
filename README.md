@@ -23,6 +23,7 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 - ✅ **Scoped planning persistence** - Planning selections persist locally per sprint and team group, then reconcile on refresh
 - ✅ **Scoped team persistence** - Team dropdown selection persists locally per sprint and team group, then falls back to All Teams if unavailable
 - ✅ **Planning bulk actions** - Quickly include Accepted, To Do, Postponed, and Awaiting Validation stories
+- ✅ **Planning spreadsheet** - Compact Epic/Story table with shared workspace/Sprint custom review drafts; see [Planning Sprint review](docs/features/planning-sprint-review.md)
 - ✅ **Compact sticky controls** - Sticky Sprint/Group/Teams controls keep the same dropdown behavior while using a smaller compact layout
 - ✅ **Scenario planner** - [Feature guide](docs/features/scenario-planner.md)
 - ✅ **Alerts** - [Feature guide](docs/features/alerts.md)

@@ -214,7 +214,7 @@ test('story readiness hook merges one epic into the held snapshot without blanki
     assert.doesNotMatch(merge, /snapshot: null/);
     assert.match(merge, /STORY_READINESS_STATUS\.READY/);
     assert.match(merge, /storyReadinessScopeMatches\(/);
-    assert.match(source, /return \{ \.\.\.state, scope, scopeKey, retry, mergeEpic, patchEpic, loadEpic \}/);
+    assert.match(source, /return \{ \.\.\.state, scope, scopeKey, retry, applyIssueField, mergeEpic, patchEpic, loadEpic \}/);
 });
 
 test('story readiness hook patches one epic field locally without a request, a blank snapshot or a status change', () => {

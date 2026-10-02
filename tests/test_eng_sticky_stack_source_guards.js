@@ -8,7 +8,7 @@ const read = (...parts) => fs.readFileSync(path.join(repoRoot, ...parts), 'utf8'
 
 const dashboard = read('frontend', 'src', 'dashboard.jsx');
 const filterBar = read('frontend', 'src', 'eng', 'EngFilterBar.jsx');
-const engView = read('frontend', 'src', 'eng', 'EngView.jsx');
+const engControls = read('frontend', 'src', 'eng', 'EngFilterControls.jsx');
 const boardView = read('frontend', 'src', 'eng', 'EngBoardView.jsx');
 const shellCss = read('frontend', 'src', 'styles', 'shared', 'shell.css');
 const filterBarCss = read('frontend', 'src', 'styles', 'eng', 'filter-bar.css');
@@ -29,10 +29,10 @@ test('the outer filter bar reports its initial height and clears it on unmount',
     assert.match(filterBar, /return \(\) => \{[\s\S]*onHeightChange\?\.\(0\)/);
 });
 
-test('Dashboard derives the ordered C plus P plus F sticky stack', () => {
+test('Dashboard derives shared controls C plus F plus P sticky offsets', () => {
     assert.match(dashboard, /const planningStickyHeight = showPlanning \? planningOffset : 0;/);
-    assert.match(dashboard, /const filterBarStickyTop = compactStickyTop \+ planningStickyHeight;/);
-    assert.match(dashboard, /const epicStickyTop = filterBarStickyTop \+ filterBarHeight;/);
+    assert.match(dashboard, /const filterBarStickyTop = compactStickyTop;/);
+    assert.match(dashboard, /const epicStickyTop = compactStickyTop \+ planningStickyHeight \+ filterBarHeight;/);
     assert.match(dashboard, /'--filterbar-sticky-top': `\$\{filterBarStickyTop\}px`/);
     assert.match(dashboard, /const handleFilterBarHeightChange = React\.useCallback/);
 });
@@ -45,9 +45,9 @@ test('sticky epic focus uses the same C plus P plus F boundary', () => {
     assert.doesNotMatch(focusEffect[0], /\+ planningOffset/);
 });
 
-test('both Catch Up and Board wire the shared height callback', () => {
-    assert.match(engView, /onFilterBarHeightChange,/);
-    assert.match(engView, /<EngFilterBar[\s\S]*?onHeightChange=\{onFilterBarHeightChange\}/);
+test('shared Catch Up/Planning controls and Board wire the height callback', () => {
+    assert.match(engControls, /onFilterBarHeightChange,/);
+    assert.match(engControls, /<EngFilterBar[\s\S]*?onHeightChange=\{onFilterBarHeightChange\}/);
     assert.match(boardView, /onFilterBarHeightChange,/);
     assert.match(boardView, /<EngFilterBar[\s\S]*?onHeightChange=\{onFilterBarHeightChange\}/);
     const dashboardWires = dashboard.match(/onFilterBarHeightChange=\{handleFilterBarHeightChange\}/g) || [];
@@ -57,5 +57,7 @@ test('both Catch Up and Board wire the shared height callback', () => {
 test('open filter and sort overlays lift the sticky wrapper context', () => {
     assert.match(filterBarCss, /\.filterbar-wrap:has\(\.popover\)/);
     assert.match(filterBarCss, /\.filterbar-wrap:has\(\.eng-epic-sort-dropdown \.sprint-dropdown-panel\)/);
+    assert.match(filterBarCss, /\.filterbar-wrap:has\(\.initiative-grouping-control:hover\)/);
+    assert.match(filterBarCss, /\.filterbar-wrap:has\(\.initiative-grouping-control:focus-within\)/);
     assert.match(filterBarCss, /z-index:\s*calc\(var\(--sticky-control-overlay-z\) \+ 2\)/);
 });

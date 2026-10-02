@@ -71,6 +71,8 @@ function patchSnapshot(snapshot, issueKey, field, value) {
             ...next,
             dependencyData: {}, dependencyLookupCache: {}, excludedCapacityData: null,
         };
+    } else if (field === 'team') {
+        next = { ...next, dependencyData: {}, dependencyLookupCache: {}, excludedCapacityData: null };
     } else if (field === 'assignee') {
         next = {
             ...next,
@@ -141,12 +143,14 @@ export function createEngIssueEditState(options = {}) {
     };
     const reconcileIssues = (issues, token) => (Array.isArray(issues) ? issues : []).map(issue => {
         let next = issue;
-        for (const field of ['assignee', 'deliveryOwner', 'storyPoints']) {
+        for (const field of ['assignee', 'deliveryOwner', 'storyPoints', 'summary', 'team']) {
             const key = observationKey(issue?.key, field);
             const latest = observations.get(key);
             if (latest && latest.version > (token?.version || 0)) {
                 next = patchIssue(next, field, latest.value);
-            } else if (token && issue?.key) {
+            } else if (token && issue?.key && field !== 'summary' && field !== 'team') {
+                // These new fields can have endpoint-specific projections.
+                // Only confirmed edits may override another in-flight read.
                 const storageField = normalizedStorageField(field);
                 const isTaskField = issue.fields && Object.prototype.hasOwnProperty.call(issue.fields, storageField);
                 const isFlatStoryPoints = field === 'storyPoints' && !issue.fields && Object.prototype.hasOwnProperty.call(issue, 'storyPoints');

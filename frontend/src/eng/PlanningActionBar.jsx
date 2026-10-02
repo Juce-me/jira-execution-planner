@@ -1,5 +1,15 @@
 import * as React from 'react';
 
+export function PlanningLayoutToggle({ planningLayout = 'list', onTogglePlanningLayout }) {
+    return <button type="button" className="planning-action-button planning-icon-button planning-layout-toggle" onClick={onTogglePlanningLayout}
+        aria-label={planningLayout === 'table' ? 'Show Planning list' : 'Show Planning table'} aria-pressed={planningLayout === 'table'}
+        title={planningLayout === 'table' ? 'Show Planning list' : 'Show Planning table'}>
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
+            {planningLayout === 'table' ? <path d="M2 3h12M2 8h12M2 13h12" /> : <><rect x="1.5" y="2" width="13" height="12" rx="1" /><path d="M1.5 6h13M1.5 10h13M6 2v12" /></>}
+        </svg>
+    </button>;
+}
+
 export default function PlanningActionBar({
     isAcceptedIncluded,
     isTodoIncluded,
@@ -21,6 +31,9 @@ export default function PlanningActionBar({
     onUndoPlanningSelection,
     onClearSelected,
     onOpenSelectedInJira,
+    planningLayout = 'list',
+    onTogglePlanningLayout,
+    panelControl = null,
     statusTransitionTargetsCount = 0,
     statusTransitionSubmitting = false,
     statusTransitionError = '',
@@ -119,6 +132,7 @@ export default function PlanningActionBar({
                     <path d="M13 9v4a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h4v1.5H3.5v8h8V9H13z" />
                 </svg>
             </button>
+            {onTogglePlanningLayout && <PlanningLayoutToggle planningLayout={planningLayout} onTogglePlanningLayout={onTogglePlanningLayout} />}
             {statusFeedback && (
                 <span
                     className={`planning-status-feedback${statusFeedbackIsError ? ' is-error' : ''}`}
@@ -128,6 +142,7 @@ export default function PlanningActionBar({
                     {statusFeedback}
                 </span>
             )}
+            {panelControl}
         </div>
     );
 }

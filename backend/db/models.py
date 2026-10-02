@@ -822,3 +822,35 @@ def audit_event(
         event_type=event_type,
         event_metadata=redact_audit_metadata(metadata),
     )
+
+
+class WorkspaceSprintReview(Base):
+    """Shared custom-column schema, isolated from configuration and private views."""
+    __tablename__ = 'workspace_sprint_reviews'
+    __table_args__ = (
+        UniqueConstraint('workspace_id', 'sprint_id', name='uq_sprint_review_workspace_sprint'),
+        CheckConstraint('schema_revision >= 0', name='ck_sprint_review_schema_revision'),
+    )
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(String(36), ForeignKey('workspaces.id', ondelete='CASCADE'), nullable=False)
+    sprint_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    schema_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default='0')
+    columns: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default=text("'[]'"))
+    layouts: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default=text("'{}'"))
+
+
+class SprintReviewCell(Base):
+    """Immutable Jira ID and row kind identify independent Epic/Story values."""
+    __tablename__ = 'sprint_review_cells'
+    __table_args__ = (
+        UniqueConstraint('review_id', 'issue_id', 'row_kind', 'column_id', name='uq_sprint_review_cell_identity'),
+        CheckConstraint("row_kind IN ('epic', 'story')", name='ck_sprint_review_cell_row_kind'),
+        CheckConstraint('revision >= 1', name='ck_sprint_review_cell_revision'),
+    )
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=_uuid)
+    review_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), ForeignKey('workspace_sprint_reviews.id', ondelete='CASCADE'), nullable=False)
+    issue_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    row_kind: Mapped[str] = mapped_column(String(8), nullable=False)
+    column_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    value: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)

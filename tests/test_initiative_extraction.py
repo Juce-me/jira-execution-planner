@@ -27,9 +27,13 @@ class TestInitiativeExtraction(unittest.TestCase):
         """Epic whose parent is an Initiative should include initiative in details."""
         mock_search.return_value = DummyResponse({
             'issues': [{
+                'id': '20001',
                 'key': 'PROD-100',
                 'fields': {
                     'summary': 'Payment Gateway v2',
+                    jira_server.TEAM_FIELD_DEFAULT: {'id': 'team-1', 'name': 'Synthetic Team'},
+                    'project': {'id': '30001', 'key': 'PROD', 'name': 'Synthetic Project'},
+                    'components': [{'name': 'Synthetic Component'}],
                     'status': {'name': 'Done'},
                     'reporter': {'displayName': 'Alice'},
                     'assignee': {'accountId': 'account-bob', 'displayName': 'Bob'},
@@ -57,6 +61,11 @@ class TestInitiativeExtraction(unittest.TestCase):
         epic = result['PROD-100']
         self.assertEqual(epic['status'], 'Done')
         self.assertEqual(epic['assignee'], {'accountId': 'account-bob', 'displayName': 'Bob'})
+        self.assertEqual(epic['id'], '20001')
+        self.assertEqual(epic['team']['id'], 'team-1')
+        self.assertEqual(epic['project']['key'], 'PROD')
+        self.assertIn('components', mock_search.call_args.args[0]['fields'])
+        self.assertEqual(epic['components'], ['Synthetic Component'])
         self.assertIn('initiative', epic)
         self.assertEqual(epic['initiative']['key'], 'INIT-42')
         self.assertEqual(epic['initiative']['summary'], 'Payments Initiative')

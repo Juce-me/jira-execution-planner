@@ -54,11 +54,14 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # In-app load metrics: gated wrapper and worker observer wiring (+3).
     # improvement/multiple-group-labels final-review round: find_comma_scalar_team_label_errors
     # wrapper for the save-only comma-scalar Team-label guard (+2).
+    # Issue #217 preserves immutable Epic ID, own Team and project metadata (+7),
+    # and carries Components through the existing bulk metadata read (+1).
     # feature/213-per-epic-refresh: epic-refresh purpose branch, cache skip and eviction (+11).
     # feature/213-per-epic-refresh Task 9: epic-alerts purpose: epic_keys clause, failures list
     # handling, import, the epic-alerts branch and the per-epic enrichment block moved to
     # backend/services/epic_refresh.py (+24 added, -19 removed lines; net +5 over the line above).
-    "jira_server.py": 6479,
+    # Merge of origin/main into feature/217-sprint-review-table: both lines above are additive; the merged file is 6487 lines.
+    "jira_server.py": 6487,
     # feature/eng-epic-sort-and-track adds the epic Sort dropdown wiring (engEpicSort state,
     # analytics handler, sorted epicGroups, EngView props) and the title-row priority chevron
     # plus Product Track indicator in renderEpicBlock.
@@ -156,6 +159,11 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # Access tab is shown only to tool admins so it never requests the user directory (+17).
     # docs/plans/EXEC-project-track-board-column-strips.md wires the Team-mode Board-column split
     # memo into the two Project Track charts; the model lives in stats/projectTrackStats.js (+6).
+    # Issue #217 adds Planning table orchestration, scope guard and shared editor wiring;
+    # explicit Capacity/Project Track columns reuse existing controllers (+5).
+    # docs/plans/EXEC-planning-review-table-chrome-217.md: the Planned Teams Effort strip toggle
+    # (state, saved preference, collapsed class and the button header) is a one-time exception
+    # approved for this plan only (+9); the next step is the dashboard.jsx refactor, not more growth.
     # feature/213-per-epic-refresh Task 6a mounts the per-epic refresh in Catch Up: imports (+2),
     # refs (+1), loadEpicRefresh destructure (+1), load-epoch bump (+1), recent-edit record (+1),
     # useEpicRefresh call (+23), EpicRefreshButton mount (+3), isLeaving (+1), status region (+1).
@@ -179,7 +187,8 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # Merge of origin/main into feature/213-per-epic-refresh: main alone is 18203 lines (its budget
     # was 18213); this branch adds 104 over main's actual count (34 + 52 + 3 + 5 + 8 + 2, itemized
     # above), so the merged file is 18307 and main's 10 lines of slack are consumed.
-    "frontend/src/dashboard.jsx": 18307,
+    # Merge of origin/main into feature/217-sprint-review-table: main's 18307 plus this branch's Planning table lines (+9 Planned Teams Effort strip, the rest as itemized above); the merged file is 18434 lines.
+    "frontend/src/dashboard.jsx": 18434,
 }
 
 

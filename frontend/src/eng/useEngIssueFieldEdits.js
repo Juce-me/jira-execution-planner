@@ -19,6 +19,7 @@ const ERROR_MESSAGES = Object.freeze({
     field_mapping_changed: 'The Jira field configuration changed. Reload before editing.',
     field_not_editable: 'This field is no longer editable in Jira.',
     target_unavailable: 'That person is no longer available for this field.',
+    team_options_unavailable: 'Jira has not provided eligible Team choices for this issue. Edit it in Jira.',
     jira_field_rejected: 'Jira rejected this field value. Review the selection and try again.',
     jira_configuration_invalid: 'Jira rejected the configured field. Check the Jira field configuration.',
     jira_rate_limited: 'Jira is temporarily limiting requests. Try again later.',
@@ -46,7 +47,8 @@ function unknownSubmissionKey(editor) {
 }
 
 function mutationValue(field, value) {
-    if (field === 'storyPoints' || value === null) return value;
+    if (field === 'storyPoints' || field === 'summary' || value === null) return value;
+    if (field === 'team') return { id: String(value?.id || '').trim() };
     return { accountId: String(value?.accountId || '').trim() };
 }
 
@@ -142,7 +144,7 @@ export function createEngIssueFieldEditController(options = {}) {
                 rememberPeople(editor, [result?.me]);
                 publish({
                     metadata: result,
-                    suggestions: normalizeIssueUserSuggestions(result?.me, cachedPeople(editor)),
+                    suggestions: editor.field === 'team' ? (result?.options || []) : normalizeIssueUserSuggestions(result?.me, cachedPeople(editor)),
                     status: result?.editable ? 'ready' : 'rejected',
                     errorCode: result?.editable ? '' : result?.reason || 'field_not_editable',
                     errorMessage: result?.editable ? '' : issueFieldErrorMessage(result?.reason || 'field_not_editable'),
@@ -323,7 +325,8 @@ export function createEngIssueFieldEditController(options = {}) {
                 publish({
                     status: conflict ? 'conflict' : 'draft',
                     outcome: { status: conflict ? 'conflict' : 'rejected' },
-                    errorCode: code, errorMessage: issueFieldErrorMessage(code),
+                    errorCode: code, errorMessage: editor.field === 'team' && code === 'target_unavailable'
+                        ? 'That Team is no longer eligible for this issue.' : issueFieldErrorMessage(code),
                     ...(code === 'stale_issue' && Object.prototype.hasOwnProperty.call(error, 'currentValue')
                         ? { metadata: { ...metadata, currentValue: error.currentValue, baseUpdated: error.baseUpdated, mappingRevision: error.mappingRevision } }
                         : {}),

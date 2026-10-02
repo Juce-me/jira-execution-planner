@@ -198,7 +198,7 @@ Prefer single-file or single-test runs during iteration. Run the full suite befo
 - For analytics-style views, prefer one scoped fetch plus client-side regrouping/filtering. Re-fetch only when scope changes or the user explicitly refreshes.
 - If per-issue Jira enrichment is required, define strict fan-out limits before implementation.
 - If the user uses a domain term like `quarter`, map it to existing data structures before building new UI.
-- Sticky order is `planning-panel.open` above `.epic-header`. When planning is closed, `.epic-header` sticks to the top. Re-verify Catch Up, Planning, and Scenario modes after changing sticky UI.
+- Keep the shared ENG filter controls in the second controls row, before Catch Up alerts and Planning capacity content. Planning Table combines Filters and capacity in one sticky stack; the Epics/Stories switch and the dirty-only Save/Discard live in the Filters row's view-controls slot with no separate toolbar tier, and Sort and Group by Initiative are not rendered in Table view; Planning List keeps the same Filters-first ordering with measured offsets. `.epic-header` sticks below the active header/filter/panel tiers. Re-verify Catch Up, Planning, and Scenario modes after changing sticky UI.
 - In settings/config modals, preserve established selected-chip/remove/search behavior unless the user explicitly asks for a new interaction pattern.
 
 ### Git workflow
@@ -368,7 +368,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Never bypass the section 10 publication transaction gate; validate history, scope, remote head, rendered PR body, and CI as one unit before reporting success (MRT025).
 - Commit a postmortem for active work on the related task branch; do not create a separate postmortem/docs branch unless the operator explicitly requests one.
 - In ENG Story displays, render a null Jira Story Points value as `0 SP` while preserving null internally until the user saves a number.
-- In ENG Catch Up and Planning, do not add Delivery Owner to Epic metadata; Story Points editing must reuse the inline SP slot as an input with no button or popup, preserve inherited typography, and keep a 23px minimum input width.
+- In ENG Catch Up and Planning, do not add Delivery Owner to Epic metadata; Story Points editing must reuse the inline SP slot as an input with Enter to save and Escape to cancel, with no Save/Cancel buttons or popup in List or Table, preserve inherited typography, and keep a 23px minimum input width.
 - Missing-Story-Points alert links must reveal and highlight the Story on the ENG dashboard and focus its inline Story Points input in edit mode instead of navigating directly to Jira.
 - Preserve sprint startup as cache-first: persist the saved sprint label for display, reuse a valid server catalog under its storage-mode ownership contract, and keep all ENG Jira work plus the Sprint selector blocked until a non-empty cached or live Jira catalog validates the selection; select the current sprint when no saved selection is valid.
 - For Jira Board Sprint pagination, accept a positive reported `maxResults` even when Jira caps it below the request; advance by received rows and verify authenticated cold startup before declaring a catalog migration ready.
@@ -387,3 +387,36 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Ground Stats UI proposals in the existing header Sprint/Teams controls, chart interactions, source, and repository screenshots; do not introduce a duplicate team picker or access Firefox for this work.
 - Chart bar segments and strips must not inherit the global button hover lift; override `background`/`transform` and use a soft shadow instead, leaving other controls' existing hover behavior untouched.
 - Build UI mockups from verbatim repository CSS (tokens, fonts, sizes, grid columns, breakpoints) and existing DOM classes; do not approximate styling or add dark modes the app lacks.
+- Keep Planning spreadsheet columns and cell padding compact without stretching a short table; widen only the spreadsheet region and preserve the header, capacity panel, and filters at their original width.
+- Manage Planning review columns from the header: a persistent corner "+" (Add column and Show hidden), a pointer-only hover boundary "+" that inserts at that position, and a per-column chevron menu that does not repeat the column name or a usage hint; do not add toolbar "+ Column"/"Columns" buttons (`docs/plans/EXEC-planning-review-table-chrome-217.md`).
+- Planning spreadsheet statuses must use StatusPill with getIssueStatusClassName in both passive and OAuth editing profiles; verify the actual editor controls in geometry tests.
+
+- Planning spreadsheet metadata belongs in explicit columns, with parent Epic summary linked to Jira for Stories and totals pinned inside the viewport; do not hide it behind a Fields menu.
+
+- In Planning tables, truncate Summary and Teams in scope to bounded single lines with full-text hover/focus readouts; keep the in-cell Summary editor wrapping and retain requirement indicators.
+
+- Open the Planning Add column popover and column menus anchored to their header cell; opening one must not move the table or other page content.
+
+- In Planning Sprint review, share column order and optional visibility per workspace/Sprint/row kind; allow custom columns between Jira columns, keep Key/Summary pinned, save layout drafts through Save review, and default optional Component/Project/Capacity/Project Track columns to hidden unless saved visibility explicitly overrides it.
+
+- Edit Planning table Summary directly inside its cell with Enter/blur save and Escape cancel; never open a Summary popup with large Save/Cancel controls.
+
+- Keep Planning Capacity chips readable on hover and keyboard focus; override inherited dark active-button hover rules and verify real Included/Excluded classes in browser checks.
+
+- In Planning Table, retain readiness-only Epics and show one awaiting-creation placeholder per uncovered Team; Story status/priority filters must not hide these placeholders, and placeholders must never be selectable or editable.
+
+- Start the Planning Table sticky overview compact for every Team scope, including All Teams, with Show/Collapse panel for details; collapsed mode retains graph bars and capacity warnings, keeps graph labels above hovered fills, and expansion must preserve selection and mounted editors.
+
+- In Planning table headers, reset inherited global button margins on sort buttons and drag handles; keep sparse custom inputs compact and vertically centered with fixed focus geometry and no inherited focus shadow instead of padding every column to text-field width.
+
+- Default Planning to Table when no valid layout preference exists; keep Table chrome minimal: Epics/Stories in the Filters row, Save and Discard only while the review is dirty, no options menu or persistent instructional text, and the app-header Refresh also reloads the review; Planned Teams Effort is a collapsed strip in Table view, and the Accepted column (selected Story Points) carries its accepted numbers inside the table.
+
+- Clear Planning column-layout drafts only after the save response confirms their exact order and visibility; missing layout acknowledgement must preserve the draft as unconfirmed.
+
+- In Planning tables, align numeric headers, values, editors and totals right; align text columns left.
+
+- Planning tables must use document vertical scrolling and retain only horizontal table scrolling; dock headers below the measured controls stack and synchronize headers/totals with the body rather than creating a second vertical scroller.
+
+- Keyboard-only accessibility is deprioritized: park findings in `docs/TODO.md` (Deferred) instead of building them; touch support is still required, so every action must work by tap and none may require dragging.
+
+- When using live data from the running app, keep it read-only and transient: prefer numbers-only probes, never save or publish screenshots of it (delete any taken), keep only obfuscated aggregates, and let the user sign in themselves.

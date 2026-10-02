@@ -8,7 +8,7 @@ const CAPACITY_WORKFLOW_ACTIONS = new Set([
     'capacity_change_result',
 ]);
 const ISSUE_FIELD_EDIT_WORKFLOW_ACTIONS = new Set(['open', 'submit', 'result']);
-const ISSUE_FIELD_EDIT_FIELDS = new Set(['assignee', 'delivery_owner', 'story_points']);
+const ISSUE_FIELD_EDIT_FIELDS = new Set(['assignee', 'delivery_owner', 'story_points', 'summary', 'team']);
 const ISSUE_FIELD_EDIT_KINDS = new Set(['epic', 'story']);
 const ISSUE_FIELD_EDIT_SURFACES = new Set(['catch_up', 'planning', 'board']);
 const ISSUE_FIELD_EDIT_RESULTS = new Set(['success', 'unchanged', 'conflict', 'failure', 'unknown']);
@@ -57,16 +57,26 @@ export function buildIssueFieldEditAnalyticsParams(workflowAction, {
         || !ISSUE_FIELD_EDIT_FIELDS.has(fieldName)
         || !ISSUE_FIELD_EDIT_KINDS.has(issueKind)
         || !ISSUE_FIELD_EDIT_SURFACES.has(sourceSurface)
+        || (['summary', 'team'].includes(fieldName) && sourceSurface !== 'planning')
         || (workflowAction === 'result' && !ISSUE_FIELD_EDIT_RESULTS.has(result))) {
         return null;
     }
     return {
-        feature_name: 'eng_issue_field_edits',
+        feature_name: ['summary', 'team'].includes(fieldName) ? 'planning_review' : 'eng_issue_field_edits',
         workflow_action: workflowAction,
         field_name: fieldName,
         issue_kind: issueKind,
         source_surface: sourceSurface,
         ...(workflowAction === 'result' ? { result } : {}),
+    };
+}
+
+const REVIEW_ACTIONS = new Set(['panel_expanded', 'panel_collapsed', 'layout_table', 'layout_list', 'mode_epic', 'mode_story', 'column_add', 'column_rename', 'column_archive', 'column_reorder', 'column_aggregation', 'columns_open', 'column_visibility', 'save_submit', 'save_result', 'refresh', 'discard', 'load_current', 'reapply', 'scope_stay', 'row_mode_changed', 'add_column_opened', 'column_added', 'columns_opened', 'columns_reordered', 'column_archived', 'column_renamed', 'column_aggregation_changed', 'column_visibility_changed', 'save_review', 'discard_review', 'load_current_review', 'reapply_review']);
+export function buildPlanningReviewAnalyticsParams(action, { result } = {}) {
+    if (!REVIEW_ACTIONS.has(action)) return null;
+    return {
+        feature_name: 'planning_review', source_surface: 'planning', workflow_action: action,
+        ...(action === 'save_result' && ['success', 'failure', 'conflict', 'unknown'].includes(result) ? { result } : {}),
     };
 }
 

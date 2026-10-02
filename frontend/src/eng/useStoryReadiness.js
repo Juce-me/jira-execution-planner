@@ -75,6 +75,19 @@ function idleState() {
     return { status: STORY_READINESS_STATUS.IDLE, snapshot: null, error: null, canRetry: false };
 }
 
+export function applyStoryReadinessIssueField(snapshot, issueKey, field, value) {
+    if (!snapshot || !Array.isArray(snapshot.epics)) return snapshot;
+    const key = String(issueKey || '').trim().toUpperCase();
+    if (!key || !['summary', 'team', 'assignee'].includes(field)) return snapshot;
+    let changed = false;
+    const epics = snapshot.epics.map(epic => {
+        if (String(epic.key || '').trim().toUpperCase() !== key) return epic;
+        changed = true;
+        return { ...epic, [field]: value };
+    });
+    return changed ? { ...snapshot, epics } : snapshot;
+}
+
 export function useStoryReadiness({
     backendUrl,
     enabled = false,
@@ -159,6 +172,13 @@ export function useStoryReadiness({
         if (state.canRetry) setRetryRevision(value => value + 1);
     }, [state.canRetry]);
 
+    const applyIssueField = React.useCallback((issueKey, field, value) => {
+        setState(current => {
+            const snapshot = applyStoryReadinessIssueField(current.snapshot, issueKey, field, value);
+            return snapshot === current.snapshot ? current : { ...current, snapshot };
+        });
+    }, []);
+
     // Per-epic refresh (issue #213): upsert or delete one epic in the held snapshot. Unlike the department load it never blanks the
     // snapshot, so the other epics' ghosts stay put; it is a no-op unless the department snapshot is READY for the same scope.
     const mergeEpic = React.useCallback((epicKey, payload, { epicDetails } = {}) => {
@@ -199,5 +219,5 @@ export function useStoryReadiness({
         }
     }, [shouldLoad, backendUrl, requestEpicReadiness]);
 
-    return { ...state, scope, scopeKey, retry, mergeEpic, patchEpic, loadEpic };
+    return { ...state, scope, scopeKey, retry, applyIssueField, mergeEpic, patchEpic, loadEpic };
 }

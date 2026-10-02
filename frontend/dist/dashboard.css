@@ -759,6 +759,19 @@ h1 {
   font-size: 0.6rem;
   border-radius: 8px;
 }
+.segmented-control-compact {
+  height: 30px;
+  margin: 0;
+  align-self: center;
+  padding: 2px;
+  border-radius: 8px;
+}
+.segmented-control-compact .segmented-control-button {
+  min-width: 0;
+  padding: 0 0.55rem;
+  font-size: 0.6rem;
+  border-radius: 6px;
+}
 .sprint-dropdown-panel {
   position: absolute;
   top: calc(100% + 0.35rem);
@@ -4079,13 +4092,13 @@ button.toggle.applied-filter.active {
 }
 
 /* frontend/src/styles/eng/filter-bar.css */
-:where(.filterbar, .popover) button {
+:where(.filterbar, .popover, .planning-review-popover) button {
   margin-right: 0;
   color: var(--text-primary);
   background: none;
   transition: none;
 }
-:where(.filterbar, .popover) button:hover {
+:where(.filterbar, .popover, .planning-review-popover) button:hover {
   background: none;
   color: var(--text-primary);
   transform: none;
@@ -4098,7 +4111,9 @@ button.toggle.applied-filter.active {
   padding-block: 0 0.85rem;
 }
 .filterbar-wrap:has(.popover),
-.filterbar-wrap:has(.eng-epic-sort-dropdown .sprint-dropdown-panel) {
+.filterbar-wrap:has(.eng-epic-sort-dropdown .sprint-dropdown-panel),
+.filterbar-wrap:has(.initiative-grouping-control:hover),
+.filterbar-wrap:has(.initiative-grouping-control:focus-within) {
   z-index: calc(var(--sticky-control-overlay-z) + 2);
 }
 .filterbar-wrap::before {
@@ -4148,6 +4163,19 @@ button.toggle.applied-filter.active {
   min-width: 30px;
   padding-inline: 0;
   justify-content: center;
+}
+.fb-trigger-primary {
+  background: var(--text-primary);
+  color: var(--bg-primary);
+  border-color: var(--text-primary);
+}
+.fb-trigger-primary:hover {
+  background: #2f2f2f;
+  color: var(--bg-primary);
+}
+.fb-trigger-primary:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 .fb-trigger .badge {
   min-width: 15px;
@@ -8242,7 +8270,8 @@ button.status-pill:focus-visible {
   display: flex;
   justify-content: flex-end;
 }
-input.issue-person-editor-trigger {
+input.issue-person-editor-trigger,
+button.issue-person-editor-trigger {
   appearance: none;
   min-width: 0;
   max-width: 100%;
@@ -8265,7 +8294,8 @@ input.issue-person-editor-trigger {
   cursor: pointer;
   box-shadow: none;
 }
-input.issue-person-editor-trigger:hover {
+input.issue-person-editor-trigger:hover,
+button.issue-person-editor-trigger:hover {
   transform: none;
   box-shadow: none;
 }
@@ -8278,7 +8308,8 @@ input.issue-person-editor-trigger.is-pending {
   background-repeat: no-repeat;
   background-size: 100% 1px;
 }
-input.issue-person-editor-trigger:focus-visible {
+input.issue-person-editor-trigger:focus-visible,
+button.issue-person-editor-trigger:focus-visible {
   border-bottom-color: currentColor;
   box-shadow: 0 1px 0 currentColor;
 }
@@ -8352,6 +8383,865 @@ input.story-points-editor.story-points-alert-highlight {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+/* frontend/src/styles/eng/planning-review-table.css */
+@media (min-width: 601px) {
+  html:has(.planning-panel.open) {
+    scrollbar-gutter: stable;
+  }
+}
+.planning-review-region {
+  width: calc(100vw - 4rem);
+  max-width: calc(100vw - 4rem);
+  margin-left: calc((100% - (100vw - 4rem)) / 2);
+  min-width: 0;
+  padding-bottom: 1rem;
+}
+.planning-review-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+.planning-review-controls-host,
+.planning-review-controls-host .planning-review-controls {
+  display: contents;
+}
+.planning-review-guidance,
+.planning-review-state-note {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+.planning-review-guidance {
+  margin-block: 0.5rem;
+}
+.planning-review-state-cluster {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+.planning-review-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+.planning-review-table {
+  width: max-content;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.75rem;
+  color: var(--text-primary, #334155);
+}
+.planning-review-table th,
+.planning-review-table td {
+  padding: 5px 7px;
+  text-align: left;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+  white-space: nowrap;
+  height: 32px;
+  box-sizing: border-box;
+}
+.planning-review-table th,
+.planning-review-table tfoot td {
+  background: var(--bg-primary);
+}
+.planning-review-table .planning-review-selection {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  width: 46px;
+  min-width: 46px;
+  max-width: 46px;
+  padding: 5px;
+  text-align: center;
+}
+.planning-review-table .planning-review-key {
+  position: sticky;
+  left: 46px;
+  z-index: 3;
+  width: 96px;
+  min-width: 96px;
+  max-width: 96px;
+  box-shadow: 1px 0 0 var(--border);
+}
+.planning-review-table .planning-review-summary {
+  min-width: 220px;
+  width: 300px;
+  max-width: 360px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.planning-review-table .planning-review-storyPoints {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.planning-review-table .planning-review-custom {
+  width: 127px;
+  min-width: 127px;
+  max-width: 200px;
+}
+.planning-review-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 21px;
+  margin: 0;
+  vertical-align: middle;
+  line-height: 1;
+  box-shadow: none;
+  transition: border-color 0.15s, background-color 0.15s;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+}
+.planning-review-input:hover,
+.planning-review-input:focus {
+  border-color: var(--text-secondary);
+  background: #fff;
+  box-shadow: none;
+}
+.planning-review-input.invalid {
+  border-color: #b91c1c;
+}
+.planning-review-validation {
+  display: block;
+  white-space: normal;
+  max-width: 180px;
+  color: #b91c1c;
+  font-size: 0.7rem;
+}
+.planning-review-requirement {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  margin-top: 2px;
+}
+.planning-review-synthetic td {
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+}
+.planning-review-table tbody tr.planning-review-zero-sp td {
+  background: #fff1f0;
+}
+.planning-review-heading,
+.planning-review-text-button {
+  background: transparent;
+  color: inherit;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  letter-spacing: normal;
+  margin: 0;
+  box-shadow: none;
+  transform: none;
+}
+.planning-review-heading:hover,
+.planning-review-text-button:hover {
+  background: var(--border);
+  color: #0f172a;
+  transform: none;
+  box-shadow: none;
+}
+.planning-review-recovery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  margin: 0.5rem 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.planning-review-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(15, 23, 42, 0.35);
+}
+.planning-review-dialog {
+  box-sizing: border-box;
+  width: 420px;
+  max-width: 100%;
+  background: #fff;
+  color: #334155;
+  border-radius: 12px;
+  padding: 1.25rem;
+  box-shadow: 0 16px 48px #0f172a33;
+}
+.planning-review-dialog h3 {
+  margin-top: 0;
+}
+.planning-review-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+@media (min-width: 1000px) {
+  .planning-review-table .planning-review-summary {
+    position: sticky;
+    left: 142px;
+    z-index: 2;
+    box-shadow: 1px 0 0 var(--border);
+  }
+}
+@media (max-width: 600px) {
+  .planning-review-region {
+    width: calc(100vw - 2rem);
+    max-width: calc(100vw - 2rem);
+    margin-left: calc((100% - (100vw - 2rem)) / 2);
+  }
+  .planning-review-table .planning-review-summary {
+    min-width: 180px;
+    width: 220px;
+  }
+}
+.planning-review-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+}
+.planning-review-table tfoot th,
+.planning-review-table tfoot td {
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
+  background: var(--bg-primary);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -1px 0 var(--border);
+}
+.planning-review-table thead .planning-review-selection,
+.planning-review-table thead .planning-review-key,
+.planning-review-table tfoot .planning-review-selection,
+.planning-review-table tfoot .planning-review-key {
+  z-index: 6;
+}
+.planning-review-components {
+  max-width: 200px;
+  white-space: normal !important;
+}
+.planning-review-storyPoints input.story-points-editor {
+  min-width: 32px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 4px;
+  background: #fff;
+  box-sizing: content-box;
+  cursor: text;
+}
+@media (min-width: 1000px) {
+  .planning-review-table thead .planning-review-summary,
+  .planning-review-table tfoot .planning-review-summary {
+    z-index: 5;
+  }
+}
+.planning-review-capacity .epic-stat-toggle {
+  margin: 0;
+  padding: 2px 6px;
+  font: inherit;
+  letter-spacing: normal;
+  line-height: 1.4;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #f1f5f9;
+  color: var(--text-secondary);
+  box-shadow: none;
+  transform: none;
+}
+.planning-review-capacity .epic-stat-toggle.active {
+  background: #ecfdf5;
+  border-color: #86efac;
+  color: #166534;
+}
+.planning-review-capacity .epic-stat-toggle:hover,
+.planning-review-capacity .epic-stat-toggle:focus-visible {
+  background: var(--border);
+  color: #334155;
+  filter: none;
+  box-shadow: none;
+  transform: none;
+}
+.planning-review-capacity .epic-stat-toggle.active:hover,
+.planning-review-capacity .epic-stat-toggle.active:focus-visible {
+  background: #dcfce7;
+  color: #166534;
+}
+.planning-review-capacity .epic-stat-toggle:focus-visible {
+  outline: 2px solid #93c5fd;
+  outline-offset: 2px;
+}
+.planning-review-summary .issue-person-editor {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+}
+.planning-review-summary button.issue-summary-editor-trigger {
+  width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  text-overflow: ellipsis;
+  text-align: left;
+  line-height: 1.4;
+}
+.planning-review-summary button.issue-summary-editor-trigger:hover {
+  background: transparent;
+}
+.planning-review-popover-anchor {
+  display: inline-flex;
+}
+.planning-review-popover {
+  position: fixed;
+  z-index: var(--modal-popup-z, 10001);
+  box-sizing: border-box;
+  width: 300px;
+  max-width: calc(100vw - 16px);
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 0.75rem;
+  box-shadow: 0 8px 24px #0f172a26;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.planning-review-popover:focus {
+  outline: none;
+}
+.planning-review-popover .pop-opt-plain {
+  grid-template-columns: minmax(0, 1fr);
+}
+.planning-review-column-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.25rem;
+}
+.planning-review-column-action {
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  letter-spacing: normal;
+  cursor: pointer;
+  transition: none;
+}
+.planning-review-column-action svg {
+  width: 14px;
+  height: 14px;
+}
+.planning-review-column-action:hover,
+.planning-review-column-action:focus-visible {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  transform: none;
+  box-shadow: none;
+  letter-spacing: normal;
+}
+.planning-review-column-action:focus-visible {
+  outline: 2px solid #93c5fd;
+  outline-offset: 1px;
+}
+.planning-review-column-action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.planning-review-column-confirm {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.4rem;
+  padding: 0.35rem;
+  border-radius: 6px;
+  background: var(--bg-primary);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.62rem;
+  line-height: 1.4;
+}
+.planning-review-column-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+.planning-review-column-confirm .planning-action-button {
+  padding: 0.2rem 0.6rem;
+  border-radius: 8px;
+}
+.planning-review-add {
+  display: grid;
+  gap: 0.5rem;
+}
+.planning-review-add-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.planning-review-column-name {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: var(--control-height);
+  margin: 0;
+  padding: 0 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.85rem;
+  box-shadow: none;
+}
+.planning-review-column-name:focus {
+  border-color: var(--accent);
+  box-shadow: none;
+  outline: none;
+}
+.planning-review-column-rename {
+  grid-column: 1 / -1;
+  height: 24px;
+  padding: 0 0.35rem;
+  border-radius: 6px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.62rem;
+}
+.planning-review-table th.planning-review-movable,
+.planning-review-table td.planning-review-movable {
+  padding-right: 34px;
+}
+.planning-review-head {
+  position: relative;
+  display: block;
+}
+.planning-review-table thead th.planning-review-movable::after {
+  content: "";
+  position: absolute;
+  top: 25%;
+  right: 0;
+  bottom: 25%;
+  width: 1px;
+  background: var(--border);
+}
+.planning-review-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+.planning-review-drag {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 10px;
+  margin: 0;
+  opacity: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 0;
+  padding: 0;
+  font: inherit;
+  letter-spacing: normal;
+  cursor: grab;
+  box-shadow: none;
+  transform: none;
+}
+.planning-review-drag:hover,
+.planning-review-drag:focus-visible {
+  background: transparent;
+  color: var(--text-primary);
+  transform: none;
+  box-shadow: none;
+}
+.planning-review-table th.planning-review-drop {
+  box-shadow: inset 3px 0 #3b82f6;
+}
+.planning-review-head .planning-review-colmenu {
+  position: absolute;
+  top: calc(50% - 12px);
+  left: calc(100% + 10px);
+  opacity: 0;
+}
+.planning-review-table th:hover .planning-review-colmenu,
+.planning-review-table th:hover .planning-review-drag,
+.planning-review-table th:focus-within .planning-review-colmenu,
+.planning-review-table th:focus-within .planning-review-drag,
+.planning-review-head .planning-review-colmenu[aria-expanded=true],
+.planning-review-table th.planning-review-drop .planning-review-colmenu {
+  opacity: 1;
+}
+.planning-review-boundary-popover {
+  position: absolute;
+  top: 0;
+  right: 1px;
+  bottom: 0;
+  width: 1px;
+  pointer-events: none;
+}
+.planning-review-boundary-anchor {
+  display: block;
+  width: 1px;
+  height: 100%;
+}
+.planning-review-boundary {
+  position: fixed;
+  z-index: calc(var(--sticky-epic-z, 50) + 5);
+  width: 0;
+  height: 32px;
+  pointer-events: none;
+}
+.planning-review-boundary[hidden] {
+  display: none;
+}
+.planning-review-boundary-line {
+  position: absolute;
+  left: -1px;
+  top: 0;
+  width: 2px;
+  height: 32px;
+  background: #3b82f6;
+}
+.planning-review-boundary-hit {
+  position: absolute;
+  left: -8px;
+  top: 4px;
+  width: 16px;
+  height: 24px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  pointer-events: auto;
+  cursor: pointer;
+  box-shadow: none;
+  transform: none;
+  letter-spacing: 0;
+}
+.planning-review-boundary-hit:hover {
+  background: transparent;
+  transform: none;
+  box-shadow: none;
+  letter-spacing: 0;
+}
+.planning-review-boundary-dot {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin: 4px 0;
+  border-radius: 50%;
+  background: #3b82f6;
+  color: #fff;
+  font: 700 12px/1 "IBM Plex Mono", monospace;
+  letter-spacing: 0;
+}
+.planning-review-corner {
+  position: absolute;
+  top: calc(50% - 12px);
+  left: calc(50% - 12px);
+  border-color: var(--border);
+  border-radius: 50%;
+  color: var(--text-primary);
+}
+.planning-review-table th.planning-review-boundary-hot .planning-review-colmenu {
+  opacity: 0;
+  pointer-events: none;
+}
+@media (hover: none) {
+  .planning-review-head .planning-review-colmenu,
+  .planning-review-drag {
+    opacity: 1;
+  }
+  .planning-review-table th.planning-review-movable,
+  .planning-review-table td.planning-review-movable {
+    padding-right: 48px;
+  }
+  .planning-review-drag {
+    top: calc(50% - 12px);
+    bottom: auto;
+    width: 24px;
+    height: 24px;
+  }
+  .planning-review-head .planning-review-colmenu {
+    left: calc(100% + 24px);
+  }
+  .planning-review-table .planning-review-custom {
+    width: 141px;
+    min-width: 141px;
+  }
+  .planning-review-boundary {
+    display: none;
+  }
+}
+.planning-review-summary .issue-summary-editor-inline {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+}
+.planning-review-summary textarea.issue-summary-editor-input {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 28px;
+  resize: none;
+  overflow: hidden;
+  padding: 3px 5px;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #fff;
+  color: #334155;
+  font: inherit;
+  line-height: 1.4;
+  letter-spacing: normal;
+}
+.planning-review-summary textarea.issue-summary-editor-input:focus {
+  outline: 2px solid #93c5fd;
+  outline-offset: 0;
+  box-shadow: none;
+}
+.planning-panel-collapse {
+  flex-shrink: 0;
+}
+.planning-actions > .planning-panel-collapse {
+  margin-left: auto;
+}
+.planning-panel-visibility {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.planning-panel [hidden] {
+  display: none !important;
+}
+.planning-panel.open.planning-panel-compact {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+}
+.planning-panel-compact .planning-panel-visibility {
+  order: 2;
+  flex: 0 0 auto;
+  margin: 0;
+}
+.planning-panel-compact .planning-panel-graphs {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+.planning-panel-compact .planning-panel-capacity-graph,
+.planning-panel-compact .planning-panel-project-graph {
+  min-width: 0;
+}
+.planning-panel-compact .capacity-bar-graph,
+.planning-panel-compact .project-bar-graph,
+.planning-panel-compact .planning-stats {
+  margin: 0;
+  padding: 0;
+}
+.planning-panel-compact .capacity-bar-track {
+  height: 24px;
+}
+.planning-panel-compact .planning-stat-label {
+  display: none;
+}
+.planning-panel-compact .capacity-bar-fill-label {
+  font-size: 0.65rem;
+}
+.planning-panel-compact .capacity-bar-fill {
+  box-sizing: border-box;
+}
+.planning-panel-compact .capacity-bar-fill-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 600px) {
+  .planning-panel.open.planning-panel-compact {
+    flex-wrap: wrap;
+  }
+  .planning-panel-compact .planning-panel-graphs {
+    flex-basis: 100%;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+  .planning-panel-compact .planning-panel-visibility {
+    margin-left: auto;
+  }
+}
+.planning-panel-compact .planning-compact-readout {
+  position: absolute;
+  inset: 0 8px;
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 41;
+}
+.planning-panel-project-graph .planning-compact-readout {
+  color: #fff;
+  text-shadow: 0 1px 2px #0006;
+}
+.planning-panel-compact:has(.planning-panel-capacity-status) {
+  flex-wrap: wrap;
+}
+.planning-panel-capacity-status {
+  flex-basis: 100%;
+  color: #92400e;
+  font-size: 0.7rem;
+}
+.planning-review-add-row .eng-mode-control {
+  margin-top: 0;
+}
+.planning-review-add-row > .planning-action-button {
+  height: var(--control-height);
+  box-sizing: border-box;
+  border-radius: 10px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  padding: 0 0.75rem;
+  justify-content: center;
+}
+.planning-review-sticky-stack {
+  position: sticky;
+  top: var(--compact-header-offset, 0px);
+  z-index: var(--sticky-planning-z);
+  background: var(--bg-primary);
+  margin: 1rem 0;
+}
+.planning-review-sticky-stack .filterbar-wrap {
+  position: static;
+  padding-block: 0;
+}
+.planning-review-sticky-stack .planning-panel.open {
+  position: static;
+  margin: 0;
+}
+.planning-review-table .planning-review-numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.planning-review-table .planning-review-text {
+  text-align: left;
+}
+.planning-review-numeric input {
+  text-align: right;
+}
+.planning-review-text input {
+  text-align: left;
+}
+.planning-review-truncated-value {
+  display: block;
+  width: 286px;
+  max-width: 286px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.planning-review-teamsInScope .planning-review-truncated-value {
+  width: 220px;
+  max-width: 220px;
+}
+.planning-review-summary-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 286px;
+  max-width: 286px;
+}
+.planning-review-summary .planning-review-summary-line .planning-review-truncated-value {
+  flex: 0 1 auto;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+}
+.planning-review-awaiting {
+  flex: none;
+}
+.planning-review-truncated-value:focus-visible {
+  outline: 2px solid #93c5fd;
+  outline-offset: 1px;
+}
+.planning-review-truncated-value:has(.issue-summary-editor-inline) {
+  overflow: visible;
+  white-space: normal;
+}
+@media (max-width: 600px) {
+  .planning-review-summary .planning-review-truncated-value {
+    width: 206px;
+    max-width: 206px;
+  }
+  .planning-review-summary-line {
+    width: 206px;
+    max-width: 206px;
+  }
+}
+.planning-review-docked-header,
+.planning-review-docked-footer {
+  position: fixed;
+  overflow: hidden;
+  z-index: var(--sticky-epic-z, 50);
+  background: var(--bg-primary);
+  box-shadow: 0 1px 0 var(--border);
+}
+.planning-review-docked-footer {
+  overflow-x: auto;
+  box-shadow: 0 -1px 0 var(--border);
+}
+.planning-review-docked-table {
+  table-layout: fixed;
+}
+.planning-review-header-docked > thead,
+.planning-review-footer-docked > tfoot {
+  opacity: 0;
+  pointer-events: none;
+}
+.planning-review-docked-table th,
+.planning-review-docked-table td {
+  overflow: hidden;
+}
+.planning-review-table input.issue-person-editor-trigger,
+.planning-review-table button.issue-person-editor-trigger {
+  color: var(--text-primary);
+  font-weight: 400;
+}
+.planning-review-table input.issue-person-editor-trigger:hover,
+.planning-review-table button.issue-person-editor-trigger:hover,
+.planning-review-table input.issue-person-editor-trigger:focus-visible,
+.planning-review-table button.issue-person-editor-trigger:focus-visible {
+  color: #d48806;
 }
 
 /* frontend/src/styles/eng.css */
@@ -10896,6 +11786,53 @@ input.story-points-editor.story-points-alert-highlight {
   justify-content: space-between;
   gap: 1rem;
   margin-bottom: 0.5rem;
+}
+.capacity-header-toggle {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: normal;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: none;
+  transform: none;
+}
+.capacity-header-toggle:hover {
+  background: none;
+  color: inherit;
+  transform: none;
+  box-shadow: none;
+  letter-spacing: normal;
+}
+.capacity-panel.open.capacity-panel-collapsed {
+  display: flex;
+  align-items: center;
+  height: 28px;
+  max-height: 28px;
+  margin: 0.5rem 0;
+  padding: 0 0.75rem;
+  overflow: hidden;
+  box-shadow: none;
+}
+.capacity-panel.open.capacity-panel-collapsed .capacity-header {
+  flex: 1;
+  margin: 0;
+  align-items: center;
+}
+.capacity-panel.open.capacity-panel-collapsed .capacity-grid-wrapper,
+.capacity-panel.open.capacity-panel-collapsed .capacity-subtitle {
+  display: none;
+}
+.capacity-panel-caret {
+  display: inline-block;
+  margin-left: 0.35rem;
+  transition: transform 0.15s ease;
+}
+.capacity-panel.open:not(.capacity-panel-collapsed) .capacity-panel-caret {
+  transform: rotate(90deg);
 }
 .capacity-title {
   font-family: "IBM Plex Mono", monospace;

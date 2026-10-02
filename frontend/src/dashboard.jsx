@@ -35,6 +35,7 @@ import { buildDependencyFocusPayload, buildDependencyFocusWithScreenState, build
 import { formatPriorityShort, getIssueStatusClassName, getIssueTeamLabel } from './issues/issueViewUtils.js';
 import { useStorySubtasks } from './issues/useStorySubtasks.js';
 import EngView from './eng/EngView.jsx';
+import EngFilterControls from './eng/EngFilterControls.jsx';
 import EngBoardView from './eng/EngBoardView.jsx';
 import EngAlertsPanel from './eng/EngAlertsPanel.jsx';
 import StoryRequirementCard from './eng/StoryRequirementCard.jsx';
@@ -46,6 +47,10 @@ import { useEpicRefresh } from './eng/useEpicRefresh.js';
 import { mergeEpicStories } from './eng/epicRefreshPatch.js';
 import { createDependencySkip } from './eng/epicRefreshDependencySkip.js';
 import PlanningActionBar from './eng/PlanningActionBar.jsx';
+import PlanningOverviewPanel from './eng/PlanningOverviewPanel.jsx';
+import PlanningReviewTable, { PlanningReviewScopeDialog } from './eng/PlanningReviewTable.jsx';
+import { buildPlanningReviewRows, planningReviewScopeCounts } from './eng/planningReviewTableModel.js';
+import { usePlanningSprintReview } from './eng/usePlanningSprintReview.js';
 import PlanningCapacityBar from './eng/PlanningCapacityBar.jsx';
 import PlanningProjectSplitBar from './eng/PlanningProjectSplitBar.jsx';
 import PlanningTeamCapacityCards from './eng/PlanningTeamCapacityCards.jsx';
@@ -68,6 +73,9 @@ import StatusTransitionMenu from './issues/StatusTransitionMenu.jsx';
 import PriorityTransitionMenu from './issues/PriorityTransitionMenu.jsx';
 import ProjectTrackTransitionMenu from './issues/ProjectTrackTransitionMenu.jsx';
 import IssuePersonEditor from './issues/IssuePersonEditor.jsx';
+import IssueSummaryEditor from './issues/IssueSummaryEditor.jsx';
+import IssueTeamEditor from './issues/IssueTeamEditor.jsx';
+import StoryPointsEditor from './issues/StoryPointsEditor.jsx';
 import { DEFAULT_ENG_STATUS_FILTER, buildEngCatchUpFacetModel, isEngClosedWorkStatus, migrateEngCatchUpFilters, readEngCatchUpFilterState, resolveEngCatchUpFilters } from './eng/engCatchUpFilters.js';
 import { PRIORITY_ORDER, getEpicTeamInfo, getTaskTeamInfo, groupTasksByTeam, matchesEngTaskSearch, resetEngFacetFilters, resetEngFilters, getEpicEffectivePriority, getProjectTrackEmoji, getProjectTrackLabel, normalizeEngEpicSort, DEFAULT_ENG_EPIC_SORT, sortEpicGroups } from './eng/engTaskUtils.js';
 import { createPlanningSelectionHandlers, persistPlanningSelectionState, resolvePlanningAuthResume, resolvePlanningSelectionForDashboard, selectedTaskKeysFromMap, selectedTaskMapFromKeys } from './eng/planningSelectionActions.js';
@@ -276,7 +284,7 @@ import { makeFieldSearchResults, useJiraFieldPickers } from './settings/useJiraF
 import UserConnectionsSettings from './settings/UserConnectionsSettings.jsx';
 import { fetchCsrfToken, fetchHomeTokenConnection } from './api/authApi.js';
 import { AUTH_LONG_ABSENCE_EVENT } from './api/authRefreshContract.js';
-import { analyticsToken, bucketCount, exposeAnalyticsForTests, useDashboardAnalytics } from './analytics/dashboardAnalytics.js';
+import { analyticsToken, buildPlanningReviewAnalyticsParams, bucketCount, exposeAnalyticsForTests, useDashboardAnalytics } from './analytics/dashboardAnalytics.js';
 import { useEpmViewData } from './epm/useEpmViewData.js';
 import {
     DEFAULT_EPM_PROJECT_SORT,
@@ -474,7 +482,11 @@ import {
             );
             const showEpmNavigation = authMode === 'basic' || hasActiveHomeTokenConnection;
             const [sprintName, setSprintName] = useState(savedPrefsRef.current.sprintName || '');
-            const [selectedSprint, setSelectedSprint] = useState(null); // Server-validated Sprint ID
+            const selectedSprintRef = useRef(null);
+            const planningReviewGuardRef = useRef(null);
+            const planningReviewBrowserContextRef = useRef('');
+            const [selectedSprint, setSelectedSprint] = useState(null);
+            selectedSprintRef.current = selectedSprint; // Server-validated Sprint ID
             const [epmProjectSearch, setEpmProjectSearch] = useState('');
             const [epmProjectSort, setEpmProjectSort] = useState(normalizeEpmProjectSort(savedPrefsRef.current.epmProjectSort || DEFAULT_EPM_PROJECT_SORT));
             const [engEpicSort, setEngEpicSort] = useState(
@@ -565,11 +577,22 @@ import {
                     },
                     onState: nextState => {
                         setSprintCatalogState(nextState);
+                        const applyCatalogSelection = () => {
+                            const current = sprintCatalogControllerRef.current.getState();
+                            if (current.authority === 'auth_locked') return;
+                            const sprints = current.authority === 'validated' ? current.validatedSnapshot?.sprints || [] : [];
+                            const selected = sprints.find(sprint => String(sprint.id) === String(selectedSprintRef.current))
+                                || sprints.find(sprint => String(sprint.id) === String(current.selectedSprintId));
+                            setSelectedSprint(selected?.id ?? null);
+                            if (selected) setSprintName(selected.name);
+                        };
                         const snapshot = nextState.validatedSnapshot;
                         if (nextState.authority === 'validated' && snapshot) {
-                            const selected = snapshot.sprints.find(sprint => String(sprint.id) === String(nextState.selectedSprintId));
-                            setSelectedSprint(nextState.selectedSprintId);
-                            if (selected) setSprintName(selected.name);
+                            const selected = snapshot.sprints.find(sprint => String(sprint.id) === String(selectedSprintRef.current))
+                                || snapshot.sprints.find(sprint => String(sprint.id) === String(nextState.selectedSprintId));
+                            const nextId = selected?.id ?? null;
+                            if (String(selectedSprintRef.current) !== String(nextId) && planningReviewGuardRef.current) void planningReviewGuardRef.current(applyCatalogSelection);
+                            else applyCatalogSelection();
                             const validationKey = sprintCatalogValidationKey(snapshot);
                             if (validationKey && validationKey !== sprintCatalogPersistedValidationRef.current) {
                                 sprintCatalogPersistedValidationRef.current = validationKey;
@@ -585,7 +608,8 @@ import {
                                 saveUiPrefs(savedPrefsRef.current);
                             }
                         } else if (nextState.authority !== 'auth_locked') {
-                            setSelectedSprint(null);
+                            if (selectedSprintRef.current !== null && planningReviewGuardRef.current) void planningReviewGuardRef.current(applyCatalogSelection);
+                            else applyCatalogSelection();
                         }
                         if (nextState.errorReason === 'sprint_board_required') {
                             setSprintError('Choose a Jira source Board in Settings.');
@@ -834,6 +858,11 @@ import {
             const [planningSelectionMode, setPlanningSelectionMode] = useState(PLANNING_SELECTION_MODE_MANUAL);
             const [canUndoPlanningSelection, setCanUndoPlanningSelection] = useState(false);
             const [showPlanning, setShowPlanning] = useState(savedPrefsRef.current.showPlanning ?? false);
+            const [planningLayout, setPlanningLayout] = useState(savedPrefsRef.current.planningLayout === 'list' ? 'list' : 'table');
+            const [planningToolbarHost, setPlanningToolbarHost] = useState(null);
+            const [planningPanelExpanded, setPlanningPanelExpanded] = useState(null);
+            // Planned Teams Effort is a one-line strip in Planning Table view until the user expands it (List always shows the full panel).
+            const [teamsEffortExpanded, setTeamsEffortExpanded] = useState(savedPrefsRef.current.planningTeamsEffortExpanded === true);
             const [showStats, setShowStats] = useState(savedPrefsRef.current.showStats ?? false);
             const [showScenario, setShowScenario] = useState(savedPrefsRef.current.showScenario ?? false);
             const [showBoard, setShowBoard] = useState(savedPrefsRef.current.showBoard ?? false);
@@ -1221,7 +1250,7 @@ import {
             const {
                 currentDashboardView, trackAppError, trackApiResult, trackEpmAction, trackFilterChanged,
                 trackIssueStatusAction, trackIssuePriorityAction, trackIssueProjectTrackAction, trackIssueFieldEditAction, trackEpicRefreshAction, trackPlanningCapacityAction, trackPlanningSelection, trackScenarioAction, trackSearch, trackSelectContent,
-                trackSettingsAction, trackSortChanged, trackStatsAction,
+                trackSettingsAction, trackSortChanged, trackStatsAction, trackProductEvent,
             } = useDashboardAnalytics(React, { authMode, selectedView, showPlanning, showStats, showScenario, showBoard, serverConnectionError });
             const applyPreferenceGroupsSnapshot = React.useCallback((snapshot) => {
                 const normalized = normalizeGroupsConfig(snapshot);
@@ -1960,6 +1989,12 @@ import {
             };
 
             const selectOrdinarySprint = (sprint, boardScopeControl) => {
+                const commitSelection = () => applyOrdinarySprint(sprint, boardScopeControl);
+                if (String(selectedSprint) !== String(sprint.id) && planningReviewGuardRef.current) {
+                    void planningReviewGuardRef.current(commitSelection);
+                } else commitSelection();
+            };
+            const applyOrdinarySprint = (sprint, boardScopeControl) => {
                 const sameOrdinarySelection = !boardStrictScope
                     && String(selectedSprint) === String(sprint.id);
                 const projectTrackSprintId = showStats && statsView === 'projectTrack'
@@ -6659,7 +6694,7 @@ import {
                     epmTab,
                     epmSelectedProjectId,
                     epmProjectSort,
-                    engEpicSort,
+                    engEpicSort, planningLayout, planningTeamsEffortExpanded: teamsEffortExpanded,
                     selectedSprint, sprintName, sprintCatalog: sprintCatalogCacheRef.current,
                     selectedTeams,
                     activeGroupId,
@@ -6716,7 +6751,7 @@ import {
                 epmTab,
                 epmSelectedProjectId,
                 epmProjectSort,
-                engEpicSort,
+                engEpicSort, planningLayout, teamsEffortExpanded,
                 selectedSprint, sprintName,
                 selectedTeams,
                 activeGroupId,
@@ -12138,11 +12173,35 @@ import {
                 selectedSprintName: selectedSprintInfo?.name || '',
                 selectedSprintState, activeGroupId, selectedTeams, isAllTeamsSelected,
                 showTech, showProduct, searchQuery,
-                statusNeutral: engCatchUpFilters.facetViews?.[0]?.isNeutral && !burnoutTaskFilter,
-                priorityNeutral: engCatchUpFilters.facetViews?.[1]?.isNeutral && !burnoutTaskFilter,
+                statusNeutral: showPlanning && planningLayout === 'table' ? true : engCatchUpFilters.facetViews?.[0]?.isNeutral && !burnoutTaskFilter,
+                priorityNeutral: showPlanning && planningLayout === 'table' ? true : engCatchUpFilters.facetViews?.[1]?.isNeutral && !burnoutTaskFilter,
                 admitsEpicProjectTrack: engCatchUpFilters.admitsEpicProjectTrack,
                 engEpicSort, groupByInitiativeChoice,
             });
+            const planningReviewRows = React.useMemo(() => [
+                ...buildPlanningReviewRows({ epicGroups, visibleTasks: visibleTasksForList, mode: 'epic', getTeamInfo }),
+                ...buildPlanningReviewRows({ epicGroups, visibleTasks: visibleTasksForList, mode: 'story', getTeamInfo }),
+            ], [epicGroups, visibleTasksForList, getTeamInfo]);
+            const trackPlanningReviewAction = React.useCallback((action, params = {}) => {
+                if (action === 'sort_changed') {
+                    trackSortChanged('planning_review', params.sortKey === 'custom' ? 'custom' : ['key', 'summary', 'status', 'priority', 'storyPoints', 'team', 'project', 'assignee', 'epic', 'components', 'capacity', 'projectTrack'].includes(params.sortKey) ? analyticsToken(params.sortKey) : 'custom', { feature_name: 'planning_review', source_surface: 'planning' });
+                    return;
+                }
+                const payload = buildPlanningReviewAnalyticsParams(action, params);
+                if (payload) trackProductEvent('planning_action', payload);
+            }, [trackProductEvent, trackSortChanged]);
+            if (sprintCatalogState.browserContextId) planningReviewBrowserContextRef.current = sprintCatalogState.browserContextId;
+            const planningReview = usePlanningSprintReview({
+                sprintId: selectedSprint, active: selectedView === 'eng' && showPlanning && planningLayout === 'table' && engWorkspaceConfigured,
+                contextKey: `${authMode}|${jiraUrl}|${planningReviewBrowserContextRef.current}|${authResumeStagedRevision}`,
+                backendUrl: BACKEND_URL, rows: planningReviewRows, onReviewAction: trackPlanningReviewAction,
+            });
+            planningReviewGuardRef.current = planningReview.guardScopeChange;
+            const planningReviewAdmittedCounts = React.useMemo(() => planningReviewScopeCounts({
+                tasks: capacityTasks, selectedTeamIds: selectedTeamSet, allTeams: isAllTeamsSelected,
+                groupTeamIds: activeGroupTeamIds, projects: savedSelectedProjects,
+                readinessEpics: storyReadiness.snapshot?.epics || [], getTeamInfo,
+            }), [capacityTasks, selectedTeamSet, isAllTeamsSelected, activeGroupTeamIds, savedSelectedProjects, storyReadiness.snapshot, getTeamInfo]);
             // Board's own epic-level filter pipeline (§7.1, D19, O6) — sprint/group/team scope
             // only, gated by neither surface's facets (the leak Task 11 flagged).
             const strictBoardPresentation = useStrictEngBoardPresentation({ active: boardScopeRequested, owner: strictBoard, savedBoard: activeGroup?.board || null, searchQuery, showBoard, visibleTaskCount: visibleTasks.length, trackSearch, legacyFilterInput: { scopeTasks: engFilterScopeTasks, epicsInScope, epicDetails, isTechTask, searchQuery, groupTasksByEpic, selection: engBoardFilterSelection } });
@@ -12155,9 +12214,10 @@ import {
                 () => collectJiraExportKeysFromTasks(boardEpicGroupsFiltered.flatMap(group => group.tasks || []), 'stories'),
                 [boardEpicGroupsFiltered]
             );
+            const compactPlanningPanel = showPlanning && planningLayout === 'table' && !planningPanelExpanded;
             const compactStickyTop = compactStickyVisible ? compactHeaderOffset : 0;
             const planningStickyHeight = showPlanning ? planningOffset : 0;
-            const filterBarStickyTop = compactStickyTop + planningStickyHeight; const epicStickyTop = filterBarStickyTop + filterBarHeight;
+            const filterBarStickyTop = compactStickyTop; const epicStickyTop = compactStickyTop + planningStickyHeight + filterBarHeight;
             useEffect(() => {
                 const computeStickyEpicFocus = () => {
                     stickyEpicFrameRef.current = null;
@@ -12484,6 +12544,17 @@ import {
                 planningLoadedSelectionRef
             });
 
+            const selectPlanningReviewStories = (stories, selected) => {
+                const next = { ...selectedTasks };
+                const visible = new Set(visibleTasksForList.map(task => task.key));
+                stories.forEach(task => { if (visible.has(task.key)) { if (selected) next[task.key] = true; else delete next[task.key]; } });
+                if (planningLoadedSelectionRef.current?.scopeKey === planningScopeKey) setCanUndoPlanningSelection(true);
+                setPlanningSelectionMode(PLANNING_SELECTION_MODE_MANUAL);
+                persistPlanningSelectionState({ storage: window.localStorage, scopeKey: planningScopeKey, selectedTasks: next, selectionMode: PLANNING_SELECTION_MODE_MANUAL, selectedTeams, normalizeSelectedTeams });
+                setSelectedTasks(next);
+                trackPlanningSelection('select_epic_visible', next, selectionTasks);
+            };
+
             const canToggleSharedGroupExcludedCapacity = canEditSharedConfiguration && !(showGroupManage && isGroupDraftDirty);
 
             const toggleSharedGroupExcludedCapacityEpic = (epicKey) => saveSharedExcludedCapacityToggle({
@@ -12606,6 +12677,7 @@ import {
             const applyLocalEngIssueField = React.useCallback((issueKey, fieldName, fieldValue) => {
                 recentEditKeysRef.current.set(issueKey, Date.now());
                 strictBoard.applyIssueField(issueKey, fieldName, fieldValue);
+                storyReadiness.applyIssueField?.(issueKey, fieldName, fieldValue);
                 const patchList = prev => patchEngIssueList(prev, issueKey, fieldName, fieldValue);
                 [setProductTasks, setTechTasks, setLoadedProductTasks, setLoadedTechTasks, setReadyToCloseProductTasks, setReadyToCloseTechTasks,
                     setProductEpicsInScope, setTechEpicsInScope, setReadyToCloseProductEpicsInScope, setReadyToCloseTechEpicsInScope,
@@ -12614,7 +12686,7 @@ import {
                 groupStateRef.current = patchEngLoadedState({}, groupStateRef.current, issueKey, fieldName, fieldValue).groups;
                 invalidateEngIssueFieldSources({ field: fieldName });
                 applyLocalSubtaskField(issueKey, fieldName, fieldValue);
-            }, [applyLocalSubtaskField, strictBoard]);
+            }, [applyLocalSubtaskField, strictBoard, storyReadiness.applyIssueField]);
             const strictBoardMutationProps = strictEngBoardMutationProps({ active: boardScopeRequested, coordinator: strictBoard.mutationCoordinator, refresh: refreshAfterStrictBoardMutation, sourceSurface: statusTransitionSourceSurface, loadLegacy: refreshLegacyBoardTasks, retrySubtasks: retryStorySubtasks });
             const issueFieldEdits = useEngIssueFieldEdits({ backendUrl: BACKEND_URL, issueEditState: issueEditStateRef.current, getContextKey: () => `${authMode}|${jiraUrl}|${authResumeStagedRevision}`,
                 onAuthRecoveryRequired: () => trackAppError('auth', 'session_recovery', 'reauth'), onAction: (workflowAction, editor, result) => trackIssueFieldEditAction(workflowAction, { fieldName: editor.field === 'deliveryOwner' ? 'delivery_owner' : editor.field === 'storyPoints' ? 'story_points' : editor.field, issueKind: editor.issueKind, sourceSurface: editor.sourceSurface, result }), onConfirm: ({ issueKey, field, value }) => applyLocalEngIssueField(issueKey, field === 'storyPoints' ? 'customfield_10004' : field, value) });
@@ -13927,7 +13999,7 @@ import {
                     window.removeEventListener('resize', updateOffset);
                     if (ro) ro.disconnect();
                 };
-            }, [showPlanning, selectedCount, selectedSP, teamCapacityEntries.length, capacityEnabled, totalCapacityAdjusted, selectedTeamEntries.length]);
+            }, [showPlanning, selectedCount, selectedSP, teamCapacityEntries.length, capacityEnabled, totalCapacityAdjusted, selectedTeamEntries.length, planningLayout]);
 
             // Detect when planning panel is sticky (stuck to viewport top)
             useEffect(() => {
@@ -13936,13 +14008,13 @@ import {
                 if (!node) return;
                 const check = () => {
                     const rect = node.getBoundingClientRect();
-                    const stickyTop = compactStickyVisible ? compactHeaderOffset : 0;
+                    const stickyTop = (compactStickyVisible ? compactHeaderOffset : 0) + filterBarHeight;
                     setIsPlanningStuck(rect.top <= stickyTop);
                 };
                 check();
                 window.addEventListener('scroll', check, { passive: true });
                 return () => window.removeEventListener('scroll', check);
-            }, [compactHeaderOffset, compactStickyVisible, showPlanning]);
+            }, [compactHeaderOffset, compactStickyVisible, showPlanning, planningLayout, filterBarHeight]);
 
             const openSelectedInJira = () => {
                 const keys = capacityTasks
@@ -13956,7 +14028,7 @@ import {
             const containerStyle = {
                 '--compact-header-offset': `${compactStickyTop}px`,
                 '--planning-offset': `${planningStickyHeight}px`,
-                '--planning-sticky-top': `${compactStickyTop}px`,
+                '--planning-sticky-top': `${compactStickyTop + filterBarHeight}px`,
                 '--filterbar-sticky-top': `${filterBarStickyTop}px`,
                 '--epic-sticky-top': `${epicStickyTop}px`,
                 '--scenario-sticky-top': `${epicStickyTop}px`
@@ -14475,6 +14547,48 @@ import {
                 onHoverEnter: handleDependencyHoverEnter,
                 onHoverLeave: handleDependencyHoverLeave,
             };
+            const renderPlanningReviewFieldEditor = ({ row, field, value }) => {
+                if (row.synthetic || !row.key) return null;
+                const capacityEpicKey = row.rowKind === 'epic' ? row.key : row.epicKey;
+                if (field === 'inclusion' && capacityEpicKey) return <button type="button" className={`epic-stat-toggle ${excludedEpicSet.has(normalizeEpicKey(capacityEpicKey)) ? '' : 'active'}`} disabled={!canToggleSharedGroupExcludedCapacity}
+                    onClick={() => toggleSharedGroupExcludedCapacityEpic(capacityEpicKey)}>{excludedEpicSet.has(normalizeEpicKey(capacityEpicKey)) ? 'Excluded' : 'Included'}</button>;
+                if (field === 'projectTrack' && row.rowKind === 'epic' && projectTrackTransitionEnabled) return <ProjectTrackTransitionMenu epicKey={row.key} currentTrack={row.projectTrack}
+                    isOpen={projectTrackTransitionActiveKey === row.key} options={projectTrackOptions} optionsLoading={projectTrackOptionsLoading}
+                    submitting={projectTrackSubmitting || pendingProjectTrackIssueKeys.has(row.key)} error={projectTrackError} result={projectTrackResult}
+                    onOpen={openProjectTrackControl} onClose={closeProjectTrackControl} onSubmit={submitProjectTrackChange} />;
+                if (!issueFieldEditsEnabled) return null;
+                if (field === 'status') return <StatusTransitionMenu
+                    issue={{ key: row.key, status: row.status, summary: row.summary }} fallbackIssueType={row.rowKind === 'epic' ? 'Epic' : 'Story'}
+                    statusLabel={row.status} statusClassName={getIssueStatusClassName(row.status)} sourceSurface="planning" isOpen={statusTransitionActiveKey === row.key}
+                    options={transitionOptions} optionsLoading={transitionOptionsLoading} submitting={statusTransitionSubmitting || pendingStatusIssueKeys.has(row.key)}
+                    error={transitionError} errorCode={transitionErrorCode} result={transitionResult} targetsCount={row.rowKind === 'story' ? statusTransitionTargetsCount : 1}
+                    onOpen={openSingleIssueStatusControl} onClose={closeSingleIssueStatusControl} onSubmit={submitStatusTransition} />;
+                if (field === 'priority') return <PriorityTransitionMenu
+                    issue={{ key: row.key, priority: row.priority, summary: row.summary }} fallbackIssueType={row.rowKind === 'epic' ? 'Epic' : 'Story'}
+                    priorityLabel={row.priority} currentPriorityLabel={row.priority} renderPriorityIcon={renderPriorityIcon}
+                    isOpen={priorityTransitionActiveKey === row.key} options={priorityOptions} optionsLoading={priorityOptionsLoading}
+                    submitting={prioritySubmitting || pendingPriorityIssueKeys.has(row.key)} error={priorityError} result={priorityResult}
+                    onOpen={openPriorityControl} onClose={closePriorityControl} onSubmit={submitPriorityChange} />;
+                const editorField = field === 'storyPoints' ? 'storyPoints' : field;
+                if (!['summary', 'team', 'assignee', 'storyPoints'].includes(editorField) || (editorField === 'storyPoints' && row.rowKind !== 'story')) return null;
+                const active = issueFieldEdits.activeEditor?.issueKey === row.key && issueFieldEdits.activeEditor?.field === editorField;
+                const common = {
+                    issueKey: row.key, currentValue: editorField === 'team' ? row.team : value, isOpen: active, metadata: active ? issueFieldEdits.metadata : null,
+                    loading: active && issueFieldEdits.status === 'loading', submitting: active && ['queued', 'saving'].includes(issueFieldEdits.status),
+                    pending: issueFieldEdits.pendingIssueKeys.has(row.key), error: active ? issueFieldEdits.errorMessage : '',
+                    recoveryMode: active && issueFieldEdits.status === 'conflict' ? 'reload' : active && issueFieldEdits.status === 'unknown' ? 'check_jira' : '',
+                    onOpen: () => issueFieldEdits.openEditor({ issueKey: row.key, field: editorField, issueKind: row.rowKind, sourceSurface: 'planning' }),
+                    onClose: issueFieldEdits.closeEditor, onReload: issueFieldEdits.reload, onCheckJira: issueFieldEdits.checkJira,
+                    onSelect: async next => { const result = await issueFieldEdits.submit(next); if (result) issueFieldEdits.closeEditor('saved'); },
+                };
+                if (editorField === 'summary') return <IssueSummaryEditor {...common} />;
+                if (editorField === 'team') return <IssueTeamEditor {...common} />;
+                if (editorField === 'storyPoints') return <StoryPointsEditor {...common} currentValue={row.issue?.fields?.customfield_10004 ?? null} onSubmit={issueFieldEdits.submit} />;
+                return <IssuePersonEditor {...common} field="assignee" fieldLabel="Assignee" currentValue={row.issue?.fields?.assignee || row.issue?.assignee || null}
+                    suggestions={active ? issueFieldEdits.suggestions : []} query={active ? issueFieldEdits.searchQuery : ''} searching={active && issueFieldEdits.searching}
+                    onSearch={issueFieldEdits.search} jiraUrl={jiraUrl} />;
+            };
+
             const issueCardContext = {
                 jiraUrl,
                 renderPriorityIcon,
@@ -14949,6 +15063,8 @@ import {
                 }
                 if (selectedView === 'eng' && showPlanning) {
                     setCapacityRefreshNonce(previous => previous + 1);
+                    // A review that is loading or saving is already current (the old Refresh review button was disabled then too).
+                    if (planningLayout === 'table' && !planningReview.loading && !planningReview.saving) void planningReview.refresh();
                 }
                 burnoutCacheRef.current = {};
                 cohortCacheRef.current = {};
@@ -15124,8 +15240,79 @@ import {
                 );
             };
 
-            return (
+            const planningOverview = selectedView === 'eng' && showPlanning && engWorkspaceConfigured && (
+                    <PlanningOverviewPanel data-onboarding-target="planning-overview" panelRef={planningPanelRef} compact={compactPlanningPanel} isStuck={isPlanningStuck} capacityStatus={capacityDataStale ? 'Capacity stale — open panel to retry' : capacityReadError ? 'Capacity unavailable — open panel to retry' : ''} table={planningLayout === 'table'}
+                        onToggleDetails={() => { setPlanningPanelExpanded(compactPlanningPanel); trackPlanningReviewAction(compactPlanningPanel ? 'panel_expanded' : 'panel_collapsed'); }}
+                        onToggleLayout={() => { setPlanningLayout('list'); trackPlanningReviewAction('layout_list'); }}
+                        actions={<PlanningActionBar
+                            isAcceptedIncluded={isAcceptedIncluded}
+                            isTodoIncluded={isTodoIncluded}
+                            isPostponedIncluded={isPostponedIncluded}
+                            isAwaitingValidationIncluded={isAwaitingValidationIncluded}
+                            areAllVisiblePlanningTasksSelected={areAllVisiblePlanningTasksSelected}
+                            hasVisibleTasks={visibleTasks.length > 0}
+                            hasVisiblePlanningTasks={visibleTasksForList.length > 0}
+                            hasPostponedTasks={planningPostponedTasks.length > 0}
+                            hasAwaitingValidationTasks={planningAwaitingValidationTasks.length > 0}
+                            selectedCount={selectedCount}
+                            jiraUrl={jiraUrl}
+                            onToggleAccepted={() => toggleIncludeByStatus(['Accepted', 'In Progress'])}
+                            onToggleTodo={() => toggleIncludeByStatus(['To Do', 'Pending'])}
+                            onTogglePostponed={() => toggleIncludeByStatus(['Postponed'])}
+                            onToggleAwaitingValidation={() => toggleIncludeByStatus(['Awaiting Validation'])}
+                            onSelectAllVisible={selectAllVisiblePlanningTasks}
+                            canUndoPlanningSelection={canUndoPlanningSelection}
+                            onUndoPlanningSelection={undoPlanningSelectionChange}
+                            onClearSelected={clearSelectedTasks}
+                            onOpenSelectedInJira={openSelectedInJira}
+                            planningLayout={planningLayout}
+                            onTogglePlanningLayout={() => { const next = planningLayout === 'table' ? 'list' : 'table'; setPlanningLayout(next); trackPlanningReviewAction(`layout_${next}`); }}
+                            statusTransitionTargetsCount={statusTransitionTargetsCount}
+                            statusTransitionSubmitting={statusTransitionSubmitting}
+                            statusTransitionError={transitionError}
+                            statusTransitionErrorCode={transitionErrorCode}
+                            statusTransitionResult={transitionResult}
+                        />}
+                        capacity={<PlanningCapacityBar compact={compactPlanningPanel}
+                            capacityEnabled={capacityEnabled}
+                            totalCapacityAdjusted={totalCapacityAdjusted}
+                            estimatedCapacityAdjusted={estimatedCapacityAdjusted}
+                            excludedCapacityAdjusted={excludedCapacityAdjusted}
+                            selectedCount={selectedCount}
+                            selectedSP={selectedSP}
+                            capacitySummary={capacitySummary}
+                        />}
+                        teams={<PlanningTeamCapacityCards
+                            entries={selectedTeamEntries}
+                            capacityEnabled={capacityEnabled}
+                            canOpenCapacityJira={authMode === 'atlassian_oauth'}
+                            canEditCapacity={authMode === 'atlassian_oauth' && capacityMutationEnabled === true}
+                            jiraUrl={jiraUrl}
+                            sprintName={selectedSprintInfo?.name || ''}
+                            scopeSignature={capacityScopeSignature}
+                            capacityReadRevision={capacityReadRevision}
+                            capacityLoading={capacityLoading}
+                            capacityReadError={capacityReadError}
+                            capacityDataStale={capacityDataStale}
+                            futureSprintCapacityIssuesMissing={isFutureSprintSelected && effectiveCapacityState.capacityIssueCount === 0}
+                            capacityShareLabel={capacityShareLabel}
+                            updateCapacityRequest={(issueKey, payload, options) =>
+                                updateCapacity(BACKEND_URL, issueKey, payload, options)}
+                            onCapacitySaved={handleCapacitySaved}
+                            onCapacityRetry={retryCapacity}
+                            onAnalyticsAction={trackPlanningCapacityAction}
+                            resolveTeamColor={resolveTeamColor}
+                            getTeamCapacityMeta={getTeamCapacityMeta}
+                        />}
+                        projects={<PlanningProjectSplitBar compact={compactPlanningPanel}
+                            selectedProjectEntries={selectedProjectEntries}
+                            excludedProjectStats={excludedProjectStats}
+                            adHocProductSP={selectedAdHocProductSP}
+                        />}
+                    />
+            ); return (
                 <div className="container" style={containerStyle}>
+                    <PlanningReviewScopeDialog review={planningReview} />
                     <header ref={headerRef}>
                         <div className="subtitle">
                             <span className="subtitle-main">
@@ -15273,6 +15460,12 @@ import {
                         )}
                     </div>
 
+                    {shouldRenderEngTaskList && !sprintsLoading && <EngFilterControls planningToolbarRef={setPlanningToolbarHost}
+                        engFilters={engCatchUpFilters} boardColumns={activeGroup?.board?.columns || []} renderPriorityIcon={renderPriorityIcon} onFacetChange={handleEngFacetChange} onClearFacets={clearEngFacetFilters} onFilterBarHeightChange={handleFilterBarHeightChange}
+                        hasInitiativeData={hasInitiativeData} groupByInitiative={groupByInitiative} setGroupByInitiative={setGroupByInitiativeChoice} InitiativeIcon={InitiativeIcon}
+                        engEpicSort={engEpicSort} setEngEpicSort={handleEngEpicSortChange} hierarchyCounts={engWorkHierarchy.counts} visibleTasksForList={visibleTasksForList}
+                        planningTable={showPlanning && planningLayout === 'table'} planningOverview={planningOverview} compactHeaderRef={compactHeaderRef} onActivatePlanningSticky={() => setCompactStickyVisible(true)} />}
+
                     <ServerUnavailableBanner
                         message={serverConnectionError}
                         status={connectionRecoveryStatus}
@@ -15290,11 +15483,18 @@ import {
                     {selectedView === 'eng' && !engWorkspaceConfigured && <UnconfiguredWorkspaceNotice canEditSettings={canEditSharedConfiguration} adminContacts={adminSettingsGate.contacts} onOpenSettings={() => openGroupManage(firstMissingAdminSettingsTab(adminSettingsGate.missing))} />}
 
                     {selectedView === 'eng' && !showBoard && !isCompletedSprintSelected && engWorkspaceConfigured && (
-                        <div className={`capacity-panel ${showPlanning ? 'open' : ''}`}>
-                            <div className="capacity-header">
-                                <div className="capacity-title">Planned Teams Effort (Story Points)</div>
-                                <div className="capacity-subtitle">1 SP ≈ 2 days of work</div>
-                            </div>
+                        <div className={`capacity-panel ${showPlanning ? 'open' : ''}${showPlanning && planningLayout === 'table' && !teamsEffortExpanded ? ' capacity-panel-collapsed' : ''}`}>
+                            {showPlanning && planningLayout === 'table' ? (
+                                <button type="button" className="capacity-header capacity-header-toggle" aria-expanded={teamsEffortExpanded} onClick={() => setTeamsEffortExpanded(expanded => !expanded)}>
+                                    <span className="capacity-title">Planned Teams Effort (Story Points)<span className="capacity-panel-caret" aria-hidden="true">▸</span></span>
+                                    <span className="capacity-subtitle">1 SP ≈ 2 days of work</span>
+                                </button>
+                            ) : (
+                                <div className="capacity-header">
+                                    <div className="capacity-title">Planned Teams Effort (Story Points)</div>
+                                    <div className="capacity-subtitle">1 SP ≈ 2 days of work</div>
+                                </div>
+                            )}
                             <div className="capacity-grid-wrapper">
                                 <div className="capacity-grid">
                                     <div className="capacity-row capacity-group-row">
@@ -17316,78 +17516,6 @@ import {
                         </div>
                     )}
 
-                    {selectedView === 'eng' && showPlanning && engWorkspaceConfigured && (
-                    <div ref={planningPanelRef} className={`planning-panel ${showPlanning ? 'open' : ''}${isPlanningStuck ? ' stuck' : ''}`} data-onboarding-target="planning-overview" tabIndex={-1}>
-                        {/* --- Planning Actions (top of panel) --- */}
-                        <PlanningActionBar
-                            isAcceptedIncluded={isAcceptedIncluded}
-                            isTodoIncluded={isTodoIncluded}
-                            isPostponedIncluded={isPostponedIncluded}
-                            isAwaitingValidationIncluded={isAwaitingValidationIncluded}
-                            areAllVisiblePlanningTasksSelected={areAllVisiblePlanningTasksSelected}
-                            hasVisibleTasks={visibleTasks.length > 0}
-                            hasVisiblePlanningTasks={visibleTasksForList.length > 0}
-                            hasPostponedTasks={planningPostponedTasks.length > 0}
-                            hasAwaitingValidationTasks={planningAwaitingValidationTasks.length > 0}
-                            selectedCount={selectedCount}
-                            jiraUrl={jiraUrl}
-                            onToggleAccepted={() => toggleIncludeByStatus(['Accepted', 'In Progress'])}
-                            onToggleTodo={() => toggleIncludeByStatus(['To Do', 'Pending'])}
-                            onTogglePostponed={() => toggleIncludeByStatus(['Postponed'])}
-                            onToggleAwaitingValidation={() => toggleIncludeByStatus(['Awaiting Validation'])}
-                            onSelectAllVisible={selectAllVisiblePlanningTasks}
-                            canUndoPlanningSelection={canUndoPlanningSelection}
-                            onUndoPlanningSelection={undoPlanningSelectionChange}
-                            onClearSelected={clearSelectedTasks}
-                            onOpenSelectedInJira={openSelectedInJira}
-                            statusTransitionTargetsCount={statusTransitionTargetsCount}
-                            statusTransitionSubmitting={statusTransitionSubmitting}
-                            statusTransitionError={transitionError}
-                            statusTransitionErrorCode={transitionErrorCode}
-                            statusTransitionResult={transitionResult}
-                        />
-                        {/* --- Capacity Bar Graph --- */}
-                        <PlanningCapacityBar
-                            capacityEnabled={capacityEnabled}
-                            totalCapacityAdjusted={totalCapacityAdjusted}
-                            estimatedCapacityAdjusted={estimatedCapacityAdjusted}
-                            excludedCapacityAdjusted={excludedCapacityAdjusted}
-                            selectedCount={selectedCount}
-                            selectedSP={selectedSP}
-                            capacitySummary={capacitySummary}
-                        />
-
-                        <PlanningTeamCapacityCards
-                            entries={selectedTeamEntries}
-                            capacityEnabled={capacityEnabled}
-                            canOpenCapacityJira={authMode === 'atlassian_oauth'}
-                            canEditCapacity={authMode === 'atlassian_oauth' && capacityMutationEnabled === true}
-                            jiraUrl={jiraUrl}
-                            sprintName={selectedSprintInfo?.name || ''}
-                            scopeSignature={capacityScopeSignature}
-                            capacityReadRevision={capacityReadRevision}
-                            capacityLoading={capacityLoading}
-                            capacityReadError={capacityReadError}
-                            capacityDataStale={capacityDataStale}
-                            futureSprintCapacityIssuesMissing={isFutureSprintSelected && effectiveCapacityState.capacityIssueCount === 0}
-                            capacityShareLabel={capacityShareLabel}
-                            updateCapacityRequest={(issueKey, payload, options) =>
-                                updateCapacity(BACKEND_URL, issueKey, payload, options)}
-                            onCapacitySaved={handleCapacitySaved}
-                            onCapacityRetry={retryCapacity}
-                            onAnalyticsAction={trackPlanningCapacityAction}
-                            resolveTeamColor={resolveTeamColor}
-                            getTeamCapacityMeta={getTeamCapacityMeta}
-                        />
-
-                        {/* --- Project Split Bar --- */}
-                        <PlanningProjectSplitBar
-                            selectedProjectEntries={selectedProjectEntries}
-                            excludedProjectStats={excludedProjectStats}
-                            adHocProductSP={selectedAdHocProductSP}
-                        />
-                    </div>
-                    )}
                     {selectedView === 'eng' && showBoard && engWorkspaceConfigured && (
                         boardScopeRequested && !strictBoardActive ? renderBlockedBoardScope() : (
                             <EngBoardView
@@ -17429,7 +17557,15 @@ import {
 
                             {shouldRenderEngTaskList && (
                                 <EngView
-                                    selectedView={selectedView} sprintCatalogLoading={sprintsLoading}
+                                    selectedView={selectedView} sprintCatalogLoading={sprintsLoading} InitiativeIcon={InitiativeIcon}
+                                    planningTable={showPlanning && planningLayout === 'table' ? <PlanningReviewTable toolbarHost={planningToolbarHost}
+                                        epicGroups={epicGroups} visibleTasks={visibleTasksForList}
+                                        selectedStoryKeys={new Set(Object.keys(selectedTasks).filter(key => selectedTasks[key]))}
+                                        onToggleStory={task => toggleTaskSelection(task.key)} onSelectStories={selectPlanningReviewStories}
+                                        jiraUrl={jiraUrl} sprintId={selectedSprint} review={planningReview} getTeamInfo={getTeamInfo} excludedEpicSet={excludedEpicSet}
+                                        admittedTeamCount={planningReviewAdmittedCounts.teams} admittedProjectCount={planningReviewAdmittedCounts.projects}
+                                        renderPriorityIcon={renderPriorityIcon} renderFieldEditor={renderPlanningReviewFieldEditor} onReviewAction={trackPlanningReviewAction}
+                                    /> : null}
                                     productTasksLoading={productTasksLoading}
                                     techTasksLoading={techTasksLoading}
                                     loading={loading}
@@ -17504,12 +17640,6 @@ import {
                                             }}
                                         />
                                     ) : null}
-                                    engFilters={engCatchUpFilters} boardColumns={activeGroup?.board?.columns || []} renderPriorityIcon={renderPriorityIcon}
-                                    onFacetChange={handleEngFacetChange}
-                                    hasInitiativeData={hasInitiativeData}
-                                    groupByInitiative={groupByInitiative}
-                                    setGroupByInitiative={setGroupByInitiativeChoice}
-                                    InitiativeIcon={InitiativeIcon}
                                     visibleTasksForList={visibleTasksForList}
                                     hierarchyCounts={engWorkHierarchy.counts}
                                     readinessStatus={storyReadiness.status}
@@ -17521,10 +17651,7 @@ import {
                                     epicGroups={epicGroups}
                                     renderEpicBlock={renderEpicBlock}
                                     jiraUrl={jiraUrl}
-                                    onClearFacets={clearEngFacetFilters}
                                     onClearFilters={clearEngFilters}
-                                    onFilterBarHeightChange={handleFilterBarHeightChange}
-                                    engEpicSort={engEpicSort}
                                     setEngEpicSort={handleEngEpicSortChange}
                                 />
                             )}

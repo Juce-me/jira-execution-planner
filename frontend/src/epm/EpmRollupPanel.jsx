@@ -363,7 +363,7 @@ export function EpmRollupPanel({
                                     )}
                                     {projectOwner}
                                     {project?.label && (
-                                        <StatusPill className="epm-project-board-label-pill" label={project.label} />
+                                        <StatusPill className="epm-project-board-label-pill" label={project.label} title={project.label} />
                                     )}
                                 </div>
                             )}
@@ -447,7 +447,7 @@ export function EpmRollupPanel({
                                     <span className="epm-duplicates-project-chip" key={project.id || getEpmProjectDisplayName(project)}>
                                         <span className="epm-duplicates-project-name">{getEpmProjectDisplayName(project)}</span>
                                         {project.label && (
-                                            <StatusPill className="epm-duplicates-project-label" label={project.label} />
+                                            <StatusPill className="epm-duplicates-project-label" label={project.label} title={project.label} />
                                         )}
                                     </span>
                                 ))}

@@ -18,6 +18,7 @@ write access, bootstrap precedence, and frontend edit gates must change together
 | Derived Sprint catalog | `workspace_sprint_catalogs` | `authenticated_read` | Authenticated Jira refresh runtime only | Shared per workspace and configured Jira source Board; complete validated empty lists are authoritative |
 | Derived per-Sprint Team membership | `workspace_sprint_team_catalogs` | `authenticated_read` | Authenticated Jira refresh runtime only | Shared per workspace and Sprint, but valid only for the persisted effective-scope digest; membership is distinct from Team names |
 | Workspace user directory and tool-admin grants | `users`, `auth_connections` (via `/api/admin/users*`) | Explicit tool admin only, regardless of `SETTINGS_ADMIN_ONLY` | `tool_admin`, explicit tool admin only | Non-admins never read other users; the only exposure is `adminContacts` (tool-admin display names) in `/api/config` while the workspace is unconfigured |
+| ENG Sprint review definitions and custom cells | `workspace_sprint_reviews`, `sprint_review_cells` | Authenticated workspace users, cells additionally require current-user Jira issue authorization | `user_write` with requested-with and CSRF | Shared per workspace + Sprint; independent Epic/Story cells use immutable Jira IDs; Team/Department are filters, never storage keys |
 | Debug load observations | `load_performance` | Explicit tool admin in the current workspace/environment | Authenticated `user_write`, debug-enabled only | Derived operational history, retained 30 days; workspace identity comes from auth context, never the browser payload; no configuration or issue content |
 
 ## Exact Boundaries
@@ -95,6 +96,23 @@ or group configuration. Misplaced EPM formerly stored in
 does not infer a private owner, and downgrade restores the archived value without overwriting newer
 administrator fields.
 
+## ENG Sprint Reviews
+
+ENG custom review definitions and cells use dedicated review tables, separate from administrator
+configuration, Department groups, private views, and Scenario drafts. GET returns schema and
+capabilities only. Batched values reads and saves authorize every requested immutable issue ID
+through the current user's OAuth Jira REST context; workspace sharing never grants Jira access.
+Inaccessible or nonexistent issues cannot expose saved cells. No Basic, service integration, Home,
+or local token-store fallback is supported. Other profiles return saving-unavailable guidance.
+
+A workspace/Sprint parent-row transaction fence protects first-create, schema, and cell races.
+Schema changes require the current schema revision. Cell changes require only their own current
+revisions, so disjoint saves may succeed despite another user's cell changes. Conflicts roll back
+the complete transaction. Archived column definitions and values retain their immutable identity.
+Bounds are 30 active columns per row kind, 100 changed cells, 500 read issues, 256 KiB requests,
+1 MiB responses, and ten enhanced Jira search pages within a cooperative fifteen-second budget.
+No request can return partially authorized data. Browser-supplied workspace/user authority is rejected.
+
 ## HTTP Meaning
 
 - Every application API `401` means the current document requires authentication recovery. The frontend
@@ -120,3 +138,5 @@ Before merging a database, rights, or configuration change, verify all of these 
 7. Tests cover two users in one workspace, two workspaces, non-admin access, `401` versus `403`,
    concurrency, and preservation of unrelated private/shared fields.
 8. Migrations do not infer private-to-shared ownership or publish one user's configuration to others.
+
+Sprint review column order and optional visibility are shared per workspace/Sprint/row kind in `WorkspaceSprintReview.layouts`, under the same authenticated-user save rights and optimistic schema revision as custom definitions. They are not private user preferences. Key/Summary remain pinned and required columns cannot be hidden.

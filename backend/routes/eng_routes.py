@@ -465,8 +465,8 @@ def _story_readiness_compute(context, requested, group_snapshot, projects, confi
 
     enrichment_started = time.monotonic()
     epics = []
-    enrichment_fields = ['summary', 'status', 'priority', 'assignee', 'labels', 'parent',
-                         'project', track_field]
+    enrichment_fields = ['summary', 'status', 'priority', 'assignee', 'labels', 'components', 'parent',
+                         'project', track_field, team_field]
     for batch in eng_board.split_epic_batches(
             epic_keys,
             lambda keys: 'key in (' + ','.join(_story_readiness_quote(k) for k in keys) + ')',
@@ -488,6 +488,9 @@ def _story_readiness_compute(context, requested, group_snapshot, projects, confi
             if parent and parent.get('key') and parent_fields.get('summary'):
                 initiative = {'key': str(parent['key']), 'summary': str(parent_fields['summary'])}
             epics.append({
+                'id': str(row.get('id') or ''),
+                'team': fields.get(team_field),
+                'project': fields.get('project'),
                 'key': str(row.get('key') or '').strip().upper(),
                 'summary': str(fields.get('summary') or '').strip(),
                 'status': {'name': str((fields.get('status') or {}).get('name') or '').strip()},
@@ -495,6 +498,7 @@ def _story_readiness_compute(context, requested, group_snapshot, projects, confi
                              if fields.get('priority') else None),
                 'assignee': fields.get('assignee') if isinstance(fields.get('assignee'), dict) else None,
                 'labels': fields.get('labels') if isinstance(fields.get('labels'), list) else [],
+                'components': [item['name'] for item in (fields.get('components') or []) if isinstance(item, dict) and item.get('name')],
                 'projectTrack': _story_readiness_project_track(fields.get(track_field)),
                 'projectKey': project_key,
                 'projectClass': project_map.get(project_key, ''),
@@ -684,7 +688,7 @@ def _missing_write_jira_work_scope(auth_context):
     return bool(missing_oauth_scopes(oauth_session_data(), {'write:jira-work'}))
 
 
-_ISSUE_FIELD_NAMES = frozenset({'assignee', 'deliveryOwner', 'storyPoints'})
+_ISSUE_FIELD_NAMES = frozenset({'assignee', 'deliveryOwner', 'storyPoints', 'summary', 'team'})
 _ISSUE_PEOPLE_FIELDS = frozenset({'assignee', 'deliveryOwner'})
 _ISSUE_FIELD_ERROR_DETAIL_KEYS = {
     'stale_issue': frozenset({
@@ -698,6 +702,8 @@ _ISSUE_FIELD_ERROR_DETAIL_KEYS = {
 def _issue_field_ids():
     return {
         'assignee': 'assignee',
+        'summary': 'summary',
+        'team': get_team_field_id(),
         'deliveryOwner': get_delivery_owner_field_id(),
         'storyPoints': get_story_points_field_id(),
     }
@@ -712,6 +718,18 @@ def _issue_field_scopes(field, *, write=False):
     if write:
         scopes.add('write:jira-work')
     return scopes
+
+
+def _issue_field_auth_context(field):
+    if field in {'summary', 'team'}:
+        # New Planning editors must never resolve a local OAuth token store.
+        if not database_storage_enabled():
+            raise FieldEditServiceError('jira_oauth_required', 403)
+        context = scenario_draft_request_auth_context()
+        if not is_db_auth_context(context):
+            raise FieldEditServiceError('jira_oauth_required', 403)
+        return context
+    return current_request_auth_context()
 
 
 def _require_issue_field_scopes(auth_context, field, *, write=False):
@@ -752,7 +770,7 @@ def get_editable_issue_field(issue_key):
         return jsonify({'error': 'invalid_field'}), 400
     field = request.args.get('field')
     try:
-        auth_context = current_request_auth_context()
+        auth_context = _issue_field_auth_context(field)
         _require_issue_field_scopes(auth_context, field)
         result = load_editable_field(
             issue_key,
@@ -782,8 +800,8 @@ def post_issue_field_user_options(issue_key):
     if not isinstance(payload, dict):
         return jsonify({'error': 'invalid_json'}), 400
     try:
-        auth_context = current_request_auth_context()
         field = payload.get('field')
+        auth_context = _issue_field_auth_context(field)
         _require_issue_field_scopes(auth_context, field)
         result = search_field_users(
             issue_key,
@@ -813,8 +831,8 @@ def post_issue_field(issue_key):
     if not isinstance(payload, dict):
         return jsonify({'error': 'invalid_json'}), 400
     try:
-        auth_context = current_request_auth_context()
         field = payload.get('field')
+        auth_context = _issue_field_auth_context(field)
         _require_issue_field_scopes(auth_context, field, write=True)
         result = update_issue_field(
             issue_key,

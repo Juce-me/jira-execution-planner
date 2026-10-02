@@ -506,6 +506,7 @@ class StoryReadinessRouteTests(unittest.TestCase):
                     'fields': {
                         'summary': 'Checkout', 'status': {'name': 'In Progress'},
                         'priority': {'name': 'High'}, 'assignee': None,
+                        'components': [{'name': 'Synthetic Component'}],
                         'labels': ['team_alpha', 'team_beta', 'Sprint 42_Candidate'], 'parent': None,
                         'project': {'key': 'PROD'}, 'customfield_track': {'value': 'Committed'},
                     },
@@ -535,6 +536,8 @@ class StoryReadinessRouteTests(unittest.TestCase):
                     {'id': 'team-b', 'name': 'Beta', 'reason': 'team_uncovered'},
                 ])
                 self.assertEqual(result['epics'][0]['projectTrack'], 'Committed')
+                self.assertEqual(result['epics'][0]['components'], ['Synthetic Component'])
+                self.assertIn('components', search_calls[-1]['fields'])
                 self.assertEqual(len(search_calls), 4)
                 self.assertIn('discovery;dur=', timing)
 

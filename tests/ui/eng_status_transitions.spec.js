@@ -300,7 +300,7 @@ async function setPrefs(page, prefs) {
 }
 
 function catchUpPrefs(extra = {}) {
-    return { selectedView: 'eng', selectedSprint: activeSprintId, sprintName: activeSprintName, activeGroupId: 'group-alpha', showPlanning: false, showStats: false, showScenario: false, ...extra };
+    return { selectedView: 'eng', planningLayout: 'list', selectedSprint: activeSprintId, sprintName: activeSprintName, activeGroupId: 'group-alpha', showPlanning: false, showStats: false, showScenario: false, ...extra };
 }
 
 function trigger(page, kind, key) {

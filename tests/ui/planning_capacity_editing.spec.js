@@ -387,7 +387,7 @@ async function installCapacityFixture(page, options = {}) {
         }));
     }, {
         prefs: {
-            selectedView: 'eng', selectedSprint: sprintId, sprintName,
+            selectedView: 'eng', planningLayout: 'list', selectedSprint: sprintId, sprintName,
             activeGroupId: 'group-capacity', showPlanning: true, showScenario: false,
             showStats: false, showBoard: false, selectedTeams: ['all'],
             ...(options.prefs || {}),

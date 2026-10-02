@@ -116,12 +116,16 @@ def project_story_readiness(payload):
         if project_class not in _PROJECT_CLASSES:
             raise InvalidCompleteReadinessInput("invalid_project_class")
         epic = {
+            "id": _text(raw.get("id")),
+            "team": raw.get("team") if isinstance(raw.get("team"), dict) else None,
+            "project": raw.get("project") if isinstance(raw.get("project"), dict) else None,
             "key": _text(raw.get("key"), required=True),
             "summary": _text(raw.get("summary"), required=True),
             "status": _named_value(raw.get("status"), required=True),
             "priority": _named_value(raw.get("priority")),
             "assignee": raw.get("assignee") if isinstance(raw.get("assignee"), dict) else None,
             "labels": _string_list(raw.get("labels"), "epic_labels"),
+            "components": _string_list(raw.get("components", []), "epic_components"),
             "projectTrack": _text(raw.get("projectTrack")),
             "projectKey": _text(raw.get("projectKey"), required=True),
             "projectClass": project_class,

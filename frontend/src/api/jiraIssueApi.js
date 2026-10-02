@@ -21,6 +21,8 @@ function fetchMutationCsrfToken(backendUrl) {
 }
 
 function normalizedConflictValue(value) {
+    if (typeof value === 'string') return value;
+    if (value?.id && typeof value.id === 'string') return { id: value.id, name: typeof value.name === 'string' ? value.name : '' };
     if (value === null || (typeof value === 'number' && Number.isFinite(value))) return value;
     if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
     const accountId = typeof value.accountId === 'string' ? value.accountId : '';
@@ -38,7 +40,7 @@ function issueFieldError(response, data) {
     error.code = code;
     if (code === 'stale_issue') {
         if (typeof data?.issueKey === 'string') error.issueKey = data.issueKey;
-        if (['assignee', 'deliveryOwner', 'storyPoints'].includes(data?.field)) error.field = data.field;
+        if (['assignee', 'deliveryOwner', 'storyPoints', 'summary', 'team'].includes(data?.field)) error.field = data.field;
         const currentValue = normalizedConflictValue(data?.currentValue);
         if (currentValue !== undefined) error.currentValue = currentValue;
         if (typeof data?.baseUpdated === 'string') error.baseUpdated = data.baseUpdated;

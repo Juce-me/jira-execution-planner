@@ -275,7 +275,8 @@
             justify-content: flex-end;
         }
 
-        input.issue-person-editor-trigger {
+        input.issue-person-editor-trigger,
+        button.issue-person-editor-trigger {
             appearance: none;
             min-width: 0;
             max-width: 100%;
@@ -299,7 +300,8 @@
             box-shadow: none;
         }
 
-        input.issue-person-editor-trigger:hover {
+        input.issue-person-editor-trigger:hover,
+        button.issue-person-editor-trigger:hover {
             transform: none;
             box-shadow: none;
         }
@@ -315,7 +317,8 @@
             background-size: 100% 1px;
         }
 
-        input.issue-person-editor-trigger:focus-visible {
+        input.issue-person-editor-trigger:focus-visible,
+        button.issue-person-editor-trigger:focus-visible {
             border-bottom-color: currentColor;
             box-shadow: 0 1px 0 currentColor;
         }

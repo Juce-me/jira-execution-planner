@@ -8,6 +8,7 @@ export default function PlanningCapacityBar({
     selectedCount,
     selectedSP,
     capacitySummary,
+    compact = false,
 }) {
     if (capacityEnabled && totalCapacityAdjusted > 0) {
         const scale = Math.max(totalCapacityAdjusted, selectedSP) * 1.15;
@@ -36,19 +37,20 @@ export default function PlanningCapacityBar({
                     )}
                     {/* Selected fill - clip at teamCap when over so variance zone is visible */}
                     <div className={`capacity-bar-fill ${isOver ? 'over' : isUnder ? 'under' : ''}${(isOver ? teamCapPct : selectedPct) < 20 ? ' narrow' : ''}`} style={{ width: `${isOver ? teamCapPct : selectedPct}%` }} data-tooltip={`Total story points from ${selectedCount} selected tasks.`}>
-                        <span className="capacity-bar-fill-label">{selectedCount} tasks · {selectedSP.toFixed(1)} SP</span>
+                        {!compact && <span className="capacity-bar-fill-label">{selectedCount} tasks · {selectedSP.toFixed(1)} SP</span>}
                     </div>
+                    {compact && <span className="capacity-bar-fill-label planning-compact-readout">{selectedCount} tasks · {selectedSP.toFixed(1)} SP / {totalCapacityAdjusted.toFixed(1)} cap</span>}
                     {/* Planning marker */}
                     {showPlanningMarker && (
-                        <div className="capacity-bar-marker planning" style={{ left: `${planningPct}%` }} data-tooltip="Team capacity minus excluded mandatory activities (perf review, dev lead management, etc.).">
+                        <div className="capacity-bar-marker planning" style={{ left: `${planningPct}%` }} data-tooltip={compact ? `Planning capacity: ${estimatedCapacityAdjusted.toFixed(1)} SP, after excluded activities.` : 'Team capacity minus excluded mandatory activities (perf review, dev lead management, etc.).'}>
                             <div className="capacity-bar-marker-line dashed" />
-                            <div className="capacity-bar-marker-label">Planning<br/>{estimatedCapacityAdjusted.toFixed(1)}</div>
+                            {!compact && <div className="capacity-bar-marker-label">Planning<br/>{estimatedCapacityAdjusted.toFixed(1)}</div>}
                         </div>
                     )}
                     {/* Team cap marker */}
-                    <div className="capacity-bar-marker teamcap" style={{ left: `${teamCapPct}%` }} data-tooltip="Estimated total team capacity for the quarter.">
+                    <div className="capacity-bar-marker teamcap" style={{ left: `${teamCapPct}%` }} data-tooltip={compact ? `Team capacity: ${totalCapacityAdjusted.toFixed(1)} SP.` : 'Estimated total team capacity for the quarter.'}>
                         <div className="capacity-bar-marker-line" />
-                        <div className="capacity-bar-marker-label">Team Cap<br/>{totalCapacityAdjusted.toFixed(1)}</div>
+                        {!compact && <div className="capacity-bar-marker-label">Team Cap<br/>{totalCapacityAdjusted.toFixed(1)}</div>}
                     </div>
                 </div>
             </div>

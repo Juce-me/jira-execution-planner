@@ -23,13 +23,13 @@ Table headings and drag handles have no inherited button margins; custom inputs
 use compact 100px columns. Longer headings or values can widen a column rather
 than clipping; Summary and Teams in scope remain bounded with full-text readouts.
 Each heading shares one edge with its values and totals: the left edge for text
-columns, the right edge for numeric ones. The drag grip sits beside its own heading
-on the opposite side (after the label for text, before it for numeric), so it never
-pushes a heading away from the values below it; a custom column spans its field, so
-its grip sits on the outer edge. The select column has no visible title (Select stays
+columns, the right edge for numeric ones. Every draggable column has its grip on the
+right, in a small padding gutter outside the content box that headings and values
+share, so it never pushes a heading away from the values below it; a faint divider
+after each draggable heading shows which cell the grip belongs to. The select column has no visible title (Select stays
 as its accessible name) and the totals row is marked with a Σ (accessible name Total),
-so every visible heading shares one typography. A custom input fills its cell's content width, so its box never
-extends past the heading or the grip (its text keeps the field's own padding); the
+so every visible heading shares one typography. A custom input fills the content box, so its box never
+extends past the heading or under the grip (its text keeps the field's own padding); the
 Capacity chip has no extra left margin. A Playwright audit checks this for every
 column in both modes, including that no input pokes past its heading span.
 In Table view, Filters precedes the capacity graphs in a shared sticky stack below

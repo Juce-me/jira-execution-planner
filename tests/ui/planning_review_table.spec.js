@@ -245,17 +245,19 @@ const alignmentAudit = () => {
         if (th.classList.contains('planning-review-selection')) return null;
         const label = th.querySelector('.planning-review-heading'), grip = th.querySelector('.planning-review-drag');
         const range = document.createRange(); range.selectNodeContents(label);
-        const text = range.getBoundingClientRect(), box = th.getBoundingClientRect();
+        const text = range.getBoundingClientRect(), box = th.getBoundingClientRect(), thStyle = getComputedStyle(th);
+        const contentLeft = box.left + parseFloat(thStyle.paddingLeft), contentRight = box.right - parseFloat(thStyle.paddingRight);
         const side = th.classList.contains('planning-review-numeric') ? 'right' : 'left';
         const head = side === 'left' ? text.left : text.right;
         const body = edgeOf(row.cells[index], side), total = edgeOf(foot[index], side);
         const gripBox = grip?.getBoundingClientRect();
         return { column: th.getAttribute('aria-label'), custom: th.classList.contains('planning-review-custom'), side, bodyDelta: body === null ? null : body - head, totalDelta: total === null ? null : total - head,
-            gripSide: gripBox ? (gripBox.left >= text.right - 0.5 ? 'right' : gripBox.right <= text.left + 0.5 ? 'left' : 'overlap') : null,
-            gripGap: gripBox ? Math.max(gripBox.left - text.right, text.left - gripBox.right) : null,
+            gripSide: gripBox ? (gripBox.left >= text.right - 0.5 ? 'right' : 'other') : null,
+            // The grip lives in the right-hand padding gutter, outside the content box that headings and values share.
+            gripInGutter: gripBox ? gripBox.left >= contentRight - 0.5 && gripBox.right <= box.right + 0.5 : null,
             gripDy: gripBox ? gripBox.top + gripBox.height / 2 - (text.top + text.height / 2) : null,
-            // How far a custom input's box pokes past the heading span (grip to label) on either side.
-            inputOvershoot: (() => { const input = row.cells[index].querySelector('input'); if (!input) return null; const rect = input.getBoundingClientRect(), span = [Math.min(text.left, gripBox?.left ?? text.left), Math.max(text.right, gripBox?.right ?? text.right)]; return Math.max(span[0] - rect.left, rect.right - span[1], 0); })() };
+            // How far a custom input's box pokes outside the content box (never under the grip).
+            inputOvershoot: (() => { const input = row.cells[index].querySelector('input'); if (!input) return null; const rect = input.getBoundingClientRect(); return Math.max(contentLeft - rect.left, rect.right - contentRight, 0); })() };
     }).filter(Boolean);
 };
 
@@ -271,7 +273,7 @@ test('the select header shows no title and the total cell shows a sigma, both ke
     expect(typography).toHaveLength(1);
 });
 
-for (const mode of ['Epics', 'Stories']) test(`every ${mode} column shares one edge between its heading, values and totals, with the grip opposite`, async ({page}) => {
+for (const mode of ['Epics', 'Stories']) test(`every ${mode} column shares one edge between its heading, values and totals, with the grip in the right gutter`, async ({page}) => {
     await page.setViewportSize({width:2400,height:900});await install(page);
     await page.getByRole('radio',{name:mode,exact:true}).click();
     if (mode === 'Epics') for (const [label,type] of [['Effort','Number'],['Notes','Text']]) {
@@ -290,10 +292,9 @@ for (const mode of ['Epics', 'Stories']) test(`every ${mode} column shares one e
         const detail=JSON.stringify(column);
         if (column.bodyDelta !== null) expect(Math.abs(column.bodyDelta),detail).toBeLessThan(1);
         if (column.totalDelta !== null) expect(Math.abs(column.totalDelta),detail).toBeLessThan(1);
-        if (column.gripSide) expect(column.gripSide,detail).toBe(column.side === 'right' ? 'left' : 'right');
+        if (column.gripSide) expect(column.gripSide,detail).toBe('right');
+        if (column.gripInGutter !== null) expect(column.gripInGutter,detail).toBe(true);
         if (column.gripDy !== null) expect(Math.abs(column.gripDy),detail).toBeLessThan(2);
-        // A grip belongs to its own heading: it sits beside the label, not across the column (custom columns span their field).
-        if (column.gripGap !== null && !column.custom) expect(column.gripGap,detail).toBeLessThan(12);
         if (column.inputOvershoot !== null) expect(column.inputOvershoot,detail).toBeLessThan(1);
     }
     expect(columns.filter(column => column.gripSide).length).toBeGreaterThan(8);
@@ -482,7 +483,7 @@ for (const width of [1440, 2400]) test(`column widths fit their content instead 
     expect(cells.Status.width).toBeLessThanOrEqual(150);
     expect(cells.Priority.width).toBeLessThanOrEqual(110);
     expect(cells['Project Track']).toBeUndefined();
-    expect(cells['Cost 0'].width).toBeLessThanOrEqual(105);
+    expect(cells['Cost 0'].width).toBeLessThanOrEqual(112);
     for(const cell of Object.values(cells)) expect(cell.scroll).toBeLessThanOrEqual(cell.client+1);
 });
 

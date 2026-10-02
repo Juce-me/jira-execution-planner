@@ -326,6 +326,19 @@ test('Planning switch preserves selection, header geometry and loaded datasets',
     expect(await page.locator('.task-list input.task-checkbox:checked').count()).toBe(0);
 });
 
+test('the app-header Refresh also reloads the shared review', async ({ page }) => {
+    await installPlanningFixture(page);
+    let reads = 0;
+    await page.route('**/api/eng/sprints/*/review', route => { reads += 1; return json(route, { schemaVersion:1,sprintId:String(futureSprintId),schemaRevision:0,columns:[],capabilities:{canRead:true,canSave:true} }); });
+    await page.route('**/api/eng/sprints/*/review/values/read', route => json(route, {cells:[],unavailableIssueIds:[]}));
+    await openPlanning(page);
+    await page.getByRole('button',{name:'Show Planning table',exact:true}).click();
+    await expect.poll(() => reads).toBeGreaterThan(0);
+    const before = reads;
+    await page.getByRole('button',{name:'Refresh tasks and sprints from Jira',exact:true}).click();
+    await expect.poll(() => reads).toBeGreaterThan(before);
+});
+
 test('dirty noninitial Sprint review survives Jira catalog refresh and guards an explicit Sprint change', async ({ page }) => {
     await installPlanningFixture(page);
     await page.route('**/api/eng/sprints/*/review', route => json(route, { schemaVersion:1,sprintId:String(futureSprintId),schemaRevision:0,columns:[],capabilities:{canRead:true,canSave:true} }));

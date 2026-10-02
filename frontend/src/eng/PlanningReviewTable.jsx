@@ -93,7 +93,6 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
     const [editing, setEditing] = React.useState(null);
     const [addOpen, setAddOpen] = React.useState(false);
     const [columnsOpen, setColumnsOpen] = React.useState(false);
-    const [optionsOpen, setOptionsOpen] = React.useState(false);
     const [name, setName] = React.useState('');
     const [type, setType] = React.useState('number');
     const [formError, setFormError] = React.useState('');
@@ -191,7 +190,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
         <div className="planning-review-toolbar">
             <div className="stats-control-group"><SegmentedControl className="eng-mode-control" ariaLabel="Planning review rows" options={[{ value: 'epic', label: 'Epics' }, { value: 'story', label: 'Stories' }]} value={mode} onChange={changeMode} /></div>
             <ReviewColumnPopover open={addOpen} onClose={() => { setAddOpen(false); setFormError(''); }} label="Add review column" error={formError}
-                trigger={<button type="button" className="planning-action-button" aria-label="+ Add column" disabled={!editable} onClick={() => { setAddOpen(!addOpen); setColumnsOpen(false); setOptionsOpen(false); trackedAction('add_column_opened'); }}>+ Column</button>}>
+                trigger={<button type="button" className="planning-action-button" aria-label="+ Add column" disabled={!editable} onClick={() => { setAddOpen(!addOpen); setColumnsOpen(false); trackedAction('add_column_opened'); }}>+ Column</button>}>
                 <form className="planning-review-add" onSubmit={addColumn}>
                     <input data-autofocus required maxLength={80} className="planning-review-column-name" aria-label="Column name" placeholder="Column name" value={name} onChange={event => setName(event.target.value)} />
                     <div className="planning-review-add-row">
@@ -201,21 +200,13 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
                 </form>
             </ReviewColumnPopover>
             <ReviewColumnPopover open={columnsOpen} onClose={() => { setColumnsOpen(false); setFormError(''); }} label="Review column management" error={formError}
-                trigger={<button type="button" className="planning-action-button" aria-expanded={columnsOpen} onClick={() => { setColumnsOpen(!columnsOpen); setAddOpen(false); setOptionsOpen(false); trackedAction('columns_opened'); }}>Columns</button>}>
+                trigger={<button type="button" className="planning-action-button" aria-expanded={columnsOpen} onClick={() => { setColumnsOpen(!columnsOpen); setAddOpen(false); trackedAction('columns_opened'); }}>Columns</button>}>
                 <PlanningReviewColumnsMenu mode={mode} columns={allColumns.filter(column => !column.required)} archivedColumns={review.columns.filter(column => column.rowKind === mode && column.archived)} hidden={hidden} editable={editable} review={review}
                     onVisibilityChange={setColumnVisible} onError={setFormError} onArchived={() => trackedAction('column_archived')} />
             </ReviewColumnPopover>
             <PlanningReviewStateCluster review={review} editable={editable}
                 onSave={async () => { const saved = await review.save(); trackedAction('save_review', { result: saved ? 'success' : 'failure' }); }}
                 onDiscard={() => { review.discard(); trackedAction('discard_review'); }} />
-            <ReviewColumnPopover open={optionsOpen} onClose={() => setOptionsOpen(false)} label="Review options"
-                trigger={<button type="button" className="planning-action-button planning-review-options-trigger" aria-label="Review options" onClick={() => { setOptionsOpen(!optionsOpen); setAddOpen(false); setColumnsOpen(false); if (!optionsOpen) trackedAction('review_options_opened'); }}><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="3" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="13" cy="8" r="1.3"/></svg></button>}>
-                <div className="planning-review-options">
-                    <button type="button" className="planning-action-button" data-review-popover-close disabled={review.loading || review.saving} onClick={() => { void review.refresh(); trackedAction('refresh_review'); }}>Refresh review</button>
-                    {sort.length > 0 && <button type="button" className="planning-action-button" data-review-popover-close onClick={() => setSort([])}>Clear sorting</button>}
-                    <p className="planning-review-guidance">Drag handles to reorder columns. Click a heading to sort; Shift-click adds another sort. Save shares column changes and review values.</p>
-                </div>
-            </ReviewColumnPopover>
         </div>
     );
     const movable = column => ['key', 'summary'].includes(column.id) ? '' : ' planning-review-movable';

@@ -8848,23 +8848,6 @@ html:has(.planning-panel.open) {
   padding: 0 0.75rem;
   justify-content: center;
 }
-.planning-review-toolbar .planning-review-options-trigger {
-  width: var(--control-height);
-  padding: 0;
-}
-.planning-review-options {
-  display: grid;
-  gap: 8px;
-}
-.planning-review-options .planning-action-button {
-  margin: 0;
-  border-radius: 10px;
-  justify-content: flex-start;
-}
-.planning-review-options .planning-review-guidance {
-  margin: 4px 0 0;
-  line-height: 1.5;
-}
 .planning-review-sticky-stack {
   position: sticky;
   top: var(--compact-header-offset, 0px);

@@ -65,12 +65,14 @@ Synthetic rows cannot edit Jira or store custom values. Team and Project columns
 appear for multiple admitted Teams/projects. List sort/group controls keep their
 stored choices and do not change table ordering.
 
-The single-row toolbar contains Epics/Stories, + Column, Columns, Save and an
-options button, with matching heights and typography. Use + Column to create a
-Number or Text column and Columns to show or hide columns and manage review
-columns. Refresh, discard, clear sorting and short usage help live in the options
-popup; only an Unsaved indicator appears beside Save when there are local changes.
-All three open 300px anchored popups above the table without shifting the page
+The single-row toolbar contains Epics/Stories, + Column and Columns, with matching
+heights and typography. Use + Column to create a Number or Text column and Columns
+to show or hide columns and manage review columns. Discard and Save appear at the
+right end only while the review has local changes (Discard asks for an inline
+confirmation); a muted Loading… note shows there while the review loads. There is
+no options menu or usage help: the app-header Refresh also reloads the shared
+review (drafts are preserved), and a third click on a sorted heading clears the
+sort. Both popups are 300px, anchored above the table without shifting the page
 layout. Opening one focuses the panel (+ Column focuses its name field); Escape or
 an outside click dismisses it; the popups stay within the viewport.
 + Column has a name field, the shared Number | Text segmented control and Add
@@ -96,12 +98,13 @@ and Team filters. Epic and Story cells are separate and use immutable Jira IDs.
 Numbers allow at most one decimal place (up to 999999999.9) and show without trailing
 zeros (12, 12.5); totals stay exact across visible rows, and values stored earlier with
 more decimals still read and total exactly;
-blank values are distinct from zero. Shift-click headings adds up to five ordered
-sort criteria. Custom changes remain local until Save review.
+blank values are distinct from zero. Heading clicks cycle ascending, descending
+and off; Shift-click adds up to five ordered sort criteria, and the position number
+shows only with two or more criteria. Custom changes remain local until Save review.
 
 Dirty drafts survive filter, Department, mode and layout changes. Sprint changes
 require Save, Discard or Stay. Browser exit uses the browser's unsaved-change
-prompt. Refresh preserves drafts; conflicts offer deliberate Load current or
+prompt. Refresh, including the app-header Refresh, preserves drafts; conflicts offer deliberate Load current or
 Reapply. Unconfirmed writes are never automatically replayed.
 
 Shared saving requires database-backed OAuth. Other profiles retain the Jira

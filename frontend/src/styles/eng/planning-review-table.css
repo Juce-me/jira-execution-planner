@@ -119,10 +119,6 @@ html:has(.planning-panel.open) { scrollbar-gutter: stable; }
 .planning-review-toolbar .stats-control-group { margin: 0; }
 .planning-review-toolbar .eng-mode-control, .planning-review-add-row .eng-mode-control { margin-top: 0; }
 .planning-review-toolbar > .planning-action-button, .planning-review-toolbar > .planning-review-popover-anchor > .planning-action-button, .planning-review-add-row > .planning-action-button { height: var(--control-height); box-sizing: border-box; border-radius: 10px; font-family: 'IBM Plex Mono', monospace; font-size: 0.7rem; letter-spacing: 0.04em; padding: 0 0.75rem; justify-content: center; }
-.planning-review-toolbar .planning-review-options-trigger { width: var(--control-height); padding: 0; }
-.planning-review-options { display: grid; gap: 8px; }
-.planning-review-options .planning-action-button { margin: 0; border-radius: 10px; justify-content: flex-start; }
-.planning-review-options .planning-review-guidance { margin: 4px 0 0; line-height: 1.5; }
 
 .planning-review-sticky-stack { position: sticky; top: var(--compact-header-offset, 0px); z-index: var(--sticky-planning-z); background: var(--bg-primary); margin: 1rem 0; }
 .planning-review-sticky-stack .filterbar-wrap { position: static; padding-block: 0; }

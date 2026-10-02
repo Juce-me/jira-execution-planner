@@ -71,7 +71,7 @@ export function buildIssueFieldEditAnalyticsParams(workflowAction, {
     };
 }
 
-const REVIEW_ACTIONS = new Set(['review_options_opened', 'panel_expanded', 'panel_collapsed', 'layout_table', 'layout_list', 'mode_epic', 'mode_story', 'column_add', 'column_rename', 'column_archive', 'column_reorder', 'column_aggregation', 'columns_open', 'column_visibility', 'save_submit', 'save_result', 'refresh', 'discard', 'load_current', 'reapply', 'scope_stay', 'row_mode_changed', 'add_column_opened', 'column_added', 'columns_opened', 'columns_reordered', 'column_archived', 'column_renamed', 'column_aggregation_changed', 'column_visibility_changed', 'refresh_review', 'save_review', 'discard_review', 'load_current_review', 'reapply_review']);
+const REVIEW_ACTIONS = new Set(['panel_expanded', 'panel_collapsed', 'layout_table', 'layout_list', 'mode_epic', 'mode_story', 'column_add', 'column_rename', 'column_archive', 'column_reorder', 'column_aggregation', 'columns_open', 'column_visibility', 'save_submit', 'save_result', 'refresh', 'discard', 'load_current', 'reapply', 'scope_stay', 'row_mode_changed', 'add_column_opened', 'column_added', 'columns_opened', 'columns_reordered', 'column_archived', 'column_renamed', 'column_aggregation_changed', 'column_visibility_changed', 'save_review', 'discard_review', 'load_current_review', 'reapply_review']);
 export function buildPlanningReviewAnalyticsParams(action, { result } = {}) {
     if (!REVIEW_ACTIONS.has(action)) return null;
     return {

@@ -292,11 +292,11 @@ canonical `planning_action`, `sort_changed`, `issue_field_edit_action`,
 
 Review actions use `feature_name=planning_review` and `source_surface=planning`.
 `workflow_action` is an allowlisted string for layout/mode changes, column
-creation/management, explicit refresh, save, discard and conflict recovery.
+creation/management, save, discard and conflict recovery.
 Explicit Show/Hide Planning panel clicks emit `planning_action` with fixed
 `workflow_action=panel_expanded|panel_collapsed`, `feature_name=planning_review`,
 and `source_surface=planning`. No Team names, graph values or capacity values
-are included; `review_options_opened` records opening the compact toolbar options.
+are included. The compact toolbar options menu was retired together with its `review_options_opened` and `refresh_review` events; the app-header refresh also reloads the review and emits no separate review event.
 Automatic compaction for every Team scope and the default Table presentation are passive
 and emit no event.
 The existing `pageview`/`userevent` GTM triggers and GA4 transport gate are unchanged.

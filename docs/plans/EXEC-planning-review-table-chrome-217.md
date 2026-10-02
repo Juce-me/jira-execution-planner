@@ -35,7 +35,8 @@ Updated 2026-10-02. The user authorized local commits (no push) for this plan. C
 - Done: Task 0 (the orphan-Story "No Epic" second line is removed; both Planning specs pass, 62 cases; unit suite 1,568 pass).
 - Done: Task A1 (the heading click cycles ascending, descending, off; the index shows only with several criteria).
 - Done: Task A2 (Discard and Save only while the review has changes; no "Unsaved" text, no footer "Draft"; inline Discard confirmation).
-- Next: A3 and A4, then B2 to B4, C1, C3, C4.
+- Done: Task A3 (the ⋯ menu is gone; the app-header Refresh reloads the review; `review_options_opened` and `refresh_review` retired from the allowlist, docs and tests).
+- Next: A4, then B2 to B4, C1, C3, C4.
 - Rules already updated: AGENTS.md section 10 (Filters/capacity stack line) and section 11 (the two toolbar lines, plus the keyboard-backlog and live-data lines), `docs/TODO.md` (keyboard backlog), `docs/plans/README.md` (index).
 - The `GATE-05` Home-write edit in the working tree is unrelated and stays out of these commits.
 
@@ -272,7 +273,9 @@ and change the footer Key cell from `review.dirty ? 'Draft' : ''` to `''`.
 
 **Files:** Modify `PlanningReviewTable.jsx` (`optionsOpen`, the options popover, `review_options_opened` and `refresh_review` emitters), `frontend/src/dashboard.jsx` (`refreshActiveViewFromJira`), `frontend/src/analytics/dashboardAnalytics.js` (`REVIEW_ACTIONS`), `frontend/src/styles/eng/planning-review-table.css` (`.planning-review-options*`), `tests/test_analytics_events.js`, `docs/README_ANALYTICS.md`, `tests/ui/planning_review_integration.spec.js`, `tests/ui/planning_review_table.spec.js`.
 
-- [ ] **Step 1: failing integration test** (model it on "dirty noninitial Sprint review survives Jira catalog refresh…", which already uses `installPlanningFixture`, `openPlanning` and `json`).
+Status: done 2026-10-02. The failing integration test was written first and failed with the review read count staying at 1 after the header Refresh. Notes: the toolbar test now checks that the Columns popup does not shift the table (the options popup it used to check is gone) and asserts that no "Review options" button exists; the analytics unit test also asserts that the retired `review_options_opened` and `refresh_review` return no payload; the feature doc and the ontology entry were updated in the same commit (the plan's Task Z2 now only covers the final rewrite). Both Planning specs pass (66 cases), the unit suite passes (1,568). Headed Firefox and WebKit runs wait for Task Z1.
+
+- [x] **Step 1: failing integration test** (model it on "dirty noninitial Sprint review survives Jira catalog refresh…", which already uses `installPlanningFixture`, `openPlanning` and `json`).
 
 ```js
 test('the app-header Refresh also reloads the shared review', async ({ page }) => {
@@ -290,10 +293,10 @@ test('the app-header Refresh also reloads the shared review', async ({ page }) =
 ```
 
 Expected FAIL (`refreshActiveViewFromJira` never calls the review).
-- [ ] **Step 2: implement.** In `refreshActiveViewFromJira` (`dashboard.jsx`), inside `if (selectedView === 'eng' && showPlanning) { … }` add `if (planningLayout === 'table') void planningReview.refresh();` after the existing `setCapacityRefreshNonce(...)`. The feature doc already states that refresh preserves drafts.
-- [ ] **Step 3: remove the ⋯ menu.** Delete `optionsOpen`, its `ReviewColumnPopover`, the `review_options_opened` and `refresh_review` `trackedAction` calls, and the `.planning-review-options`, `.planning-review-options-trigger` CSS. "Discard" now lives in the cluster, "Clear sorting" is gone (Task A1), the help paragraph is dropped (its Shift-click hint moves into the column menu in Task B2).
-- [ ] **Step 4: analytics.** Remove `'review_options_opened'` and `'refresh_review'` from `REVIEW_ACTIONS`; in `tests/test_analytics_events.js` drop `review_options_opened` from the `for (const action of ['panel_expanded','panel_collapsed','review_options_opened'])` loop and add `assert.equal(buildPlanningReviewAnalyticsParams('review_options_opened'), null)`; edit the `docs/README_ANALYTICS.md` sentence that mentions it.
-- [ ] **Step 5:** Rewrite tests that opened ⋯ (`grep -n "Review options\|Refresh review\|Discard draft\|Clear sorting" tests/ui/*.js`). Run `npm run test:frontend:unit` and both Planning specs: PASS. Commit: `Retire the review options menu and refresh the review with the page (#217)`.
+- [x] **Step 2: implement.** In `refreshActiveViewFromJira` (`dashboard.jsx`), inside `if (selectedView === 'eng' && showPlanning) { … }` add `if (planningLayout === 'table') void planningReview.refresh();` after the existing `setCapacityRefreshNonce(...)`. The feature doc already states that refresh preserves drafts.
+- [x] **Step 3: remove the ⋯ menu.** Delete `optionsOpen`, its `ReviewColumnPopover`, the `review_options_opened` and `refresh_review` `trackedAction` calls, and the `.planning-review-options`, `.planning-review-options-trigger` CSS. "Discard" now lives in the cluster, "Clear sorting" is gone (Task A1), the help paragraph is dropped (its Shift-click hint moves into the column menu in Task B2).
+- [x] **Step 4: analytics.** Remove `'review_options_opened'` and `'refresh_review'` from `REVIEW_ACTIONS`; in `tests/test_analytics_events.js` drop `review_options_opened` from the `for (const action of ['panel_expanded','panel_collapsed','review_options_opened'])` loop and add `assert.equal(buildPlanningReviewAnalyticsParams('review_options_opened'), null)`; edit the `docs/README_ANALYTICS.md` sentence that mentions it.
+- [x] **Step 5:** Rewrite tests that opened ⋯ (`grep -n "Review options\|Refresh review\|Discard draft\|Clear sorting" tests/ui/*.js`). Run `npm run test:frontend:unit` and both Planning specs: PASS. Commit: `Retire the review options menu and refresh the review with the page (#217)`.
 
 ### Task A4: Key and Epic links use the shared ENG link class
 

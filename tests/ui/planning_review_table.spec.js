@@ -564,7 +564,7 @@ for (const width of [1440, 2400]) test(`column widths fit their content instead 
     for(const cell of Object.values(cells)) expect(cell.scroll).toBeLessThanOrEqual(cell.client+1);
 });
 
-for(const width of [390,1440]) test(`review toolbar is compact and options do not shift the table at ${width}px`, async({page})=>{
+for(const width of [390,1440]) test(`review toolbar is compact and its popups do not shift the table at ${width}px`, async({page})=>{
     await page.setViewportSize({width,height:900});await install(page);
     const toolbar=page.locator('.planning-review-toolbar');
     await expect(toolbar.getByText('Rows',{exact:true})).toHaveCount(0);
@@ -575,12 +575,12 @@ for(const width of [390,1440]) test(`review toolbar is compact and options do no
     expect(Math.max(...controls.map(c=>c.height))-Math.min(...controls.map(c=>c.height))).toBeLessThan(1);
     if(width>600) expect(Math.max(...controls.map(c=>c.y))-Math.min(...controls.map(c=>c.y))).toBeLessThan(1);
     const table=page.locator('.planning-review-scroll'),before=await table.boundingBox();
-    await toolbar.getByRole('button',{name:'Review options',exact:true}).click();
-    const popup=page.getByRole('dialog',{name:'Review options',exact:true});await expect(popup).toBeVisible();
-    await expect(popup.getByRole('button',{name:'Refresh review',exact:true})).toBeVisible();
+    await expect(toolbar.getByRole('button',{name:'Review options',exact:true})).toHaveCount(0);
+    await toolbar.getByRole('button',{name:'Columns',exact:true}).click();
+    const popup=columnsDialog(page);await expect(popup).toBeVisible();
     expect((await table.boundingBox()).y).toBe(before.y);
     expect(await popup.evaluate(node=>{const r=node.getBoundingClientRect();return node.contains(document.elementFromPoint(r.left+10,r.top+10));})).toBe(true);
-    await page.keyboard.press('Escape');await expect(toolbar.getByRole('button',{name:'Review options',exact:true})).toBeFocused();
+    await page.keyboard.press('Escape');await expect(toolbar.getByRole('button',{name:'Columns',exact:true})).toBeFocused();
     await toolbar.getByRole('button',{name:'+ Add column',exact:true}).hover();
     expect(await toolbar.getByRole('button',{name:'+ Add column',exact:true}).evaluate(node=>getComputedStyle(node).transform)).toBe('none');
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);

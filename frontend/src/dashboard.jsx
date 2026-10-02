@@ -15007,6 +15007,7 @@ import {
                 }
                 if (selectedView === 'eng' && showPlanning) {
                     setCapacityRefreshNonce(previous => previous + 1);
+                    if (planningLayout === 'table') void planningReview.refresh();
                 }
                 burnoutCacheRef.current = {};
                 cohortCacheRef.current = {};

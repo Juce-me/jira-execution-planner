@@ -78,6 +78,15 @@ class SprintReviewTests(ReviewFixture, unittest.TestCase):
         with self.assertRaises(review.ReviewError):
             self.save(schemas=[{'action': 'layout', 'rowKind': 'story', 'order': ['status'], 'hidden': ['status']}], base=revision)
 
+    def test_layout_accepts_the_accepted_column_in_order_and_hidden(self):
+        # The computed Accepted column is a built-in the table can order and hide like Assignee.
+        revision = self.add()['schemaRevision']
+        for kind in ('story', 'epic'):
+            with self.subTest(kind=kind):
+                result = self.save(schemas=[{'action': 'layout', 'rowKind': kind, 'order': ['status', 'accepted', 'storyPoints'], 'hidden': ['accepted']}], base=revision)
+                revision = result['schemaRevision']
+                self.assertEqual(result['layouts'][kind], {'order': ['status', 'accepted', 'storyPoints'], 'hidden': ['accepted']})
+
     def test_layout_shared_between_users_and_revision_conflicts(self):
         self.add()
         layout = {'action': 'layout', 'rowKind': 'story', 'order': [self.column['id'], 'status', 'storyPoints'], 'hidden': ['assignee','components','project','capacity']}

@@ -107,7 +107,35 @@ export function hasZeroStoryPoints(row) {
     return parsed.valid && (parsed.scaled ?? 0n) === 0n;
 }
 
+// Points of the rows the user has ticked: a Story counts itself; an Epic or the No Epic group counts its ticked children.
+export function selectedStoryPoints(row, selectedKeys = new Set()) {
+    if (row.rowKind === 'requirement') return null;
+    const tasks = (row.rowKind === 'story' ? [row.issue] : row.children || []).filter(task => selectedKeys.has(task.key));
+    if (!tasks.length) return null;
+    return formatReviewScaled(tasks.reduce((sum, task) => sum + (parseReviewNumber(task.fields?.customfield_10004 ?? task.fields?.storyPoints).scaled ?? 0n), 0n));
+}
+
 export const DEFAULT_REVIEW_HIDDEN_COLUMNS = ['components', 'project', 'capacity', 'projectTrack'];
+
+// New or moved column ids go after `afterId`; 'summary' means directly after the pinned columns; anything else appends.
+export function insertColumnId(order, id, afterId = null) {
+    const next = order.filter(item => item !== id);
+    let index = next.length;
+    if (afterId === 'summary') index = 0;
+    else if (afterId && next.includes(afterId)) index = next.indexOf(afterId) + 1;
+    next.splice(index, 0, id);
+    return next;
+}
+
+// `edges` are { afterId, x } header boundaries; returns the afterId of the closest edge within `threshold` px, else null.
+export function nearestBoundary(edges, x, threshold = 5) {
+    let best = null, closest = Infinity;
+    for (const edge of edges) {
+        const distance = Math.abs(edge.x - x);
+        if (distance <= threshold && distance < closest) { best = edge.afterId; closest = distance; }
+    }
+    return best;
+}
 
 export function buildPlanningReviewColumns({ rows = [], mode = 'epic', customColumns = [], hidden = new Set(), admittedTeamCount, admittedProjectCount, layout = {} } = {}) {
     const teams = new Set(rows.flatMap(row => row.rowKind === 'epic' ? row.teamsInScope || [] : [row.team?.name || 'Unknown Team']));

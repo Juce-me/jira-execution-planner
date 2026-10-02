@@ -173,8 +173,8 @@ def apply_schema(columns, changes):
 
 
 REVIEW_LAYOUT_BUILTINS = {
-    'epic': {'status', 'priority', 'storyPoints', 'team', 'teamsInScope', 'project', 'assignee', 'components', 'capacity', 'projectTrack'},
-    'story': {'status', 'priority', 'storyPoints', 'team', 'project', 'epic', 'assignee', 'components', 'capacity', 'projectTrack'},
+    'epic': {'status', 'priority', 'storyPoints', 'accepted', 'team', 'teamsInScope', 'project', 'assignee', 'components', 'capacity', 'projectTrack'},
+    'story': {'status', 'priority', 'storyPoints', 'accepted', 'team', 'project', 'epic', 'assignee', 'components', 'capacity', 'projectTrack'},
 }
 
 
@@ -187,7 +187,7 @@ def apply_layouts(layouts, columns, changes):
         kind = row_kind(change.get('rowKind'))
         custom = {c['id'] for c in columns if c['rowKind'] == kind}
         allowed = REVIEW_LAYOUT_BUILTINS[kind] | custom
-        hideable = {'assignee', 'components', 'project', 'capacity', 'projectTrack'} | custom | ({'team'} if kind == 'epic' else set())
+        hideable = {'accepted', 'assignee', 'components', 'project', 'capacity', 'projectTrack'} | custom | ({'team'} if kind == 'epic' else set())
         for field, accepted in (('order', allowed), ('hidden', hideable)):
             ids = change.get(field, [])
             if not isinstance(ids, list) or len(ids) > 254 or any(not isinstance(i, str) for i in ids) or len(ids) != len(set(ids)) or not set(ids) <= accepted:

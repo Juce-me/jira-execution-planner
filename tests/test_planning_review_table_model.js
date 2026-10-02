@@ -125,3 +125,41 @@ test('readiness-only Epics and one placeholder per uncovered Team survive an emp
     assert.equal(stories.length,2);assert.deepEqual(stories.map(row=>row.id),['alpha','beta']);assert.ok(stories.every(row=>row.synthetic && !row.issueId && row.epicKey==='DEMO-20'));
     assert.equal(planningReviewTotals(stories,[{id:'storyPoints',type:'number',aggregation:'sum'}],{}).storyPoints,'0');
 });
+
+test('insertColumnId places a column after a neighbour, right after the pinned columns, or at the end', async () => {
+    const { insertColumnId } = await model();
+    const order = ['status', 'priority', 'storyPoints'];
+    assert.deepEqual(insertColumnId(order, 'new', 'priority'), ['status', 'priority', 'new', 'storyPoints']);
+    assert.deepEqual(insertColumnId(order, 'new', 'summary'), ['new', 'status', 'priority', 'storyPoints']);
+    assert.deepEqual(insertColumnId(order, 'new'), ['status', 'priority', 'storyPoints', 'new']);
+    assert.deepEqual(insertColumnId(order, 'new', 'missing'), ['status', 'priority', 'storyPoints', 'new']);
+    assert.deepEqual(insertColumnId(['a', 'new', 'b'], 'new', 'b'), ['a', 'b', 'new']);
+    assert.deepEqual(order, ['status', 'priority', 'storyPoints'], 'the input order is not mutated');
+});
+
+test('nearestBoundary returns the column left of the closest edge within the threshold', async () => {
+    const { nearestBoundary } = await model();
+    const edges = [{ afterId: 'summary', x: 100 }, { afterId: 'status', x: 180 }, { afterId: 'priority', x: 260 }];
+    assert.equal(nearestBoundary(edges, 183), 'status');
+    assert.equal(nearestBoundary(edges, 98), 'summary');
+    assert.equal(nearestBoundary(edges, 190), null);
+    assert.equal(nearestBoundary(edges, 185), 'status');
+    assert.equal(nearestBoundary([], 50), null);
+});
+
+test('selectedStoryPoints counts only ticked Stories for Story, Epic and No Epic rows', async () => {
+    const { buildPlanningReviewRows, selectedStoryPoints } = await model();
+    const tasks = [story('1', 'DEMO-1', 1.5), story('2', 'DEMO-2', 2), story('3', 'DEMO-3', 4)];
+    const group = { key: 'DEMO-10', epic: { id: '10', key: 'DEMO-10', summary: 'Epic' }, tasks: tasks.slice(0, 2), requirements: [{ id: 'req', team: { name: 'Beta' } }] };
+    const epicRows = buildPlanningReviewRows({ epicGroups: [group], visibleTasks: tasks, mode: 'epic' });
+    const storyRows = buildPlanningReviewRows({ epicGroups: [group], visibleTasks: tasks, mode: 'story' });
+    const none = new Set(), all = new Set(['DEMO-1', 'DEMO-2', 'DEMO-3']), one = new Set(['DEMO-1']);
+    const epic = epicRows.find(row => row.key === 'DEMO-10'), orphans = epicRows.find(row => row.id === 'no-epic');
+    assert.equal(selectedStoryPoints(epic, none), null);
+    assert.equal(selectedStoryPoints(epic, all), '3.5');
+    assert.equal(selectedStoryPoints(epic, one), '1.5');
+    assert.equal(selectedStoryPoints(orphans, all), '4');
+    assert.equal(selectedStoryPoints(storyRows.find(row => row.key === 'DEMO-1'), one), '1.5');
+    assert.equal(selectedStoryPoints(storyRows.find(row => row.key === 'DEMO-2'), one), null);
+    assert.equal(selectedStoryPoints(storyRows.find(row => row.rowKind === 'requirement'), all), null);
+});

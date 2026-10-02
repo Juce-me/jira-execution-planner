@@ -3,6 +3,7 @@ from dataclasses import replace
 import json
 import os
 from pathlib import Path
+import re
 import tempfile
 import unittest
 import uuid
@@ -62,6 +63,21 @@ class ReviewFixture:
 
 
 class SprintReviewTests(ReviewFixture, unittest.TestCase):
+    def test_layout_accepts_the_default_hidden_columns_the_table_sends(self):
+        # The table posts its default hidden set with every layout draft; rejecting any of them made
+        # every column change fail to save. Read the real list so the two sides cannot drift.
+        model = (Path(__file__).resolve().parents[1] / 'frontend/src/eng/planningReviewTableModel.js').read_text()
+        defaults = re.findall(r"'([^']+)'", re.search(r'DEFAULT_REVIEW_HIDDEN_COLUMNS = \[([^\]]*)\]', model).group(1))
+        self.assertIn('projectTrack', defaults)
+        revision = self.add()['schemaRevision']
+        for kind in ('story', 'epic'):
+            with self.subTest(kind=kind):
+                result = self.save(schemas=[{'action': 'layout', 'rowKind': kind, 'order': ['status', 'priority', 'storyPoints'] + defaults, 'hidden': defaults}], base=revision)
+                revision = result['schemaRevision']
+                self.assertEqual(result['layouts'][kind]['hidden'], defaults)
+        with self.assertRaises(review.ReviewError):
+            self.save(schemas=[{'action': 'layout', 'rowKind': 'story', 'order': ['status'], 'hidden': ['status']}], base=revision)
+
     def test_layout_shared_between_users_and_revision_conflicts(self):
         self.add()
         layout = {'action': 'layout', 'rowKind': 'story', 'order': [self.column['id'], 'status', 'storyPoints'], 'hidden': ['assignee','components','project','capacity']}

@@ -646,30 +646,122 @@ for (const width of [1280, 390]) test(`first Table scroll activates the sticky F
     await page.addStyleTag({content:'body{padding-bottom:1000px}'});await page.evaluate(()=>scrollTo(0,0));
     const stack=page.locator('.planning-review-sticky-stack'),filters=stack.locator('.filterbar-wrap'),panel=stack.locator('.planning-panel');
     await expect(stack).toBeVisible();const initial=await stack.boundingBox();expect(initial.y).toBeGreaterThan(0);
-    await expect(page.locator('.planning-review-region > .planning-review-toolbar')).toHaveCount(1);
-    await expect(stack.locator('.planning-review-toolbar')).toHaveCount(0);
-    const normalToolbar=await page.locator('.planning-review-toolbar').boundingBox(),tableStart=await page.locator('.planning-review-scroll').boundingBox();
-    expect(normalToolbar.y+normalToolbar.height).toBeLessThanOrEqual(tableStart.y);
-    await page.screenshot({path:`tmp/217-ui/table-toolbar-normal-${width}.png`,fullPage:false});
+    // The Epics|Stories switch lives in the Filters row from the start: one node, one position, before and after every scroll.
+    await expect(page.locator('.planning-review-toolbar, .planning-review-toolbar-slot')).toHaveCount(0);
+    const rowSwitch=filters.getByRole('radiogroup',{name:'Planning review rows'});await expect(rowSwitch).toHaveCount(1);
+    await rowSwitch.evaluate(node=>{node.dataset.probe='row-switch';});
+    const switchLeft=(await rowSwitch.boundingBox()).x;
+    await page.screenshot({path:`tmp/217-ui/table-filters-row-normal-${width}.png`,fullPage:false});
     const selected=await page.locator('.planning-review-table tbody input:checked').count();
     await page.mouse.move(width-2,850);await page.mouse.wheel(0,12);await expect(page.locator('.compact-sticky-header')).toHaveClass(/is-visible/);
     await expect.poll(async()=>{const h=await page.locator('.compact-sticky-header').boundingBox(),s=await stack.boundingBox();return Math.abs(s.y-(h.y+h.height));}).toBeLessThan(2);
     const f=await filters.boundingBox(),p=await panel.boundingBox();expect(p.y).toBeGreaterThanOrEqual(f.y+f.height-1);
     await expect(panel).toHaveClass(/stuck/);expect(await page.locator('.planning-review-table tbody input:checked').count()).toBe(selected);
     await filters.locator('.fb-trigger').click();await expect(page.locator('.popover')).toBeVisible();await filters.locator('.fb-trigger').click();
-    const toolbar=page.locator('.planning-review-toolbar');
     await page.locator('.planning-review-scroll').evaluate(node=>node.scrollIntoView({block:'start'}));
-    await expect.poll(async()=>{const t=await toolbar.boundingBox(),s=await stack.boundingBox();return Math.max(0,s.y-t.y,t.y+t.height-(s.y+s.height));}).toBeLessThan(3);
-    const t=await toolbar.boundingBox(),s=await stack.boundingBox();expect(Math.abs(t.x-s.x)).toBeLessThan(2);expect(Math.abs(t.width-s.width)).toBeLessThan(2);
+    await expect(filters.locator('[data-probe="row-switch"]')).toHaveCount(1);
+    expect(Math.abs((await filters.locator('[data-probe="row-switch"]').boundingBox()).x-switchLeft)).toBeLessThan(1);
     // Popup layering over the sticky stack is asserted on the docked header in the next test, where the corner is reachable in every browser.
     await page.screenshot({path:`tmp/217-ui/table-sticky-filter-first-${width}.png`,fullPage:false});
     await page.evaluate(()=>scrollTo(0,0));
-    await expect(page.locator('.planning-review-region > .planning-review-toolbar')).toHaveCount(1);
-    await expect(stack.locator('.planning-review-toolbar')).toHaveCount(0);
+    await expect(filters.locator('[data-probe="row-switch"]')).toHaveCount(1);
+    expect(Math.abs((await filters.locator('[data-probe="row-switch"]').boundingBox()).x-switchLeft)).toBeLessThan(1);
     expect(await page.locator('.planning-review-table tbody input:checked').count()).toBe(selected);
     await panel.getByRole('button',{name:'Show Planning list',exact:true}).click();await expect(stack).toHaveCount(0);
     await expect(page.locator('.task-list .task-item').first()).toBeVisible();
     await page.locator('.view-selector .eng-mode-control').getByRole('radio',{name:'Catch Up',exact:true}).click();await expect(panel).toHaveCount(0);
+});
+
+for (const width of [1280, 390]) test(`Table mode has no toolbar tier: the row switch is the shared compact control in the Filters row, and Sort leaves Table view only at ${width}px`,async({page})=>{
+    await page.setViewportSize({width,height:900});
+    await installPlanningFixture(page,{planningLayout:'table',scopeTeamIds:['team-alpha','team-beta']});await allowReviewSaving(page);await openPlanning(page,{expectStories:false});
+    await expect(page.locator('.planning-review-toolbar, .planning-review-toolbar-slot')).toHaveCount(0);
+    const controls=page.locator('.filterbar-wrap .fb-view-controls');
+    const rowSwitch=controls.getByRole('radiogroup',{name:'Planning review rows'});
+    await expect(rowSwitch).toHaveCount(1);
+    await expect(rowSwitch).toHaveClass(/eng-mode-control/);await expect(rowSwitch).toHaveClass(/segmented-control-compact/);
+    const look=await rowSwitch.evaluate(node=>{const s=getComputedStyle(node),buttons=[...node.querySelectorAll('button')].map(b=>{const r=b.getBoundingClientRect();return {top:r.top,height:r.height,right:r.right,scroll:b.scrollWidth-b.clientWidth};});return {wrap:s.flexWrap,height:node.getBoundingClientRect().height,buttons};});
+    expect(look.wrap).toBe('nowrap');expect(look.height).toBeLessThanOrEqual(31);
+    expect(Math.max(...look.buttons.map(b=>b.top))-Math.min(...look.buttons.map(b=>b.top))).toBeLessThan(1);
+    for(const b of look.buttons) expect(b.scroll).toBeLessThanOrEqual(0);
+    // Sort epics is not rendered in Table view (it never did anything there); it is back in List and Catch Up.
+    await expect(page.getByRole('button',{name:'Sort epics'})).toHaveCount(0);
+    await expect(page.getByRole('button',{name:'Group by Initiative'})).toHaveCount(0);
+    await page.locator('.planning-panel').getByRole('button',{name:'Show Planning list',exact:true}).click();
+    await expect(page.getByRole('button',{name:'Sort epics'})).toHaveCount(1);
+    await expect(page.getByRole('radiogroup',{name:'Planning review rows'})).toHaveCount(0);
+    await page.locator('.view-selector .eng-mode-control').getByRole('radio',{name:'Catch Up',exact:true}).click();
+    await expect(page.getByRole('button',{name:'Sort epics'})).toHaveCount(1);
+});
+
+for (const [width,height] of [[1440,900],[1280,720]]) test(`the pinned stack with the table header docked is at most 175px at ${width}x${height}`,async({page})=>{
+    await page.setViewportSize({width,height});
+    await installPlanningFixture(page,{planningLayout:'table',longTable:true,scopeTeamIds:['team-alpha','team-beta']});await allowReviewSaving(page);await openPlanning(page,{expectStories:false});
+    await page.getByRole('radio',{name:'Stories',exact:true}).click();
+    await page.locator('.planning-review-scroll').evaluate(node=>scrollTo(0,scrollY+node.getBoundingClientRect().top+250));
+    const docked=page.locator('.planning-review-docked-header');await expect(docked).toBeVisible();
+    await expect(page.locator('.compact-sticky-header')).toHaveClass(/is-visible/);
+    await expect.poll(async()=>{const d=await docked.boundingBox();return Math.round(d.y+d.height);}).toBeLessThanOrEqual(175);
+    const parts=await page.evaluate(()=>{const box=s=>{const n=document.querySelector(s);return n?Math.round(n.getBoundingClientRect().height*10)/10:null;};return {header:box('.compact-sticky-header.is-visible'),filters:box('.planning-review-sticky-stack .filterbar-wrap'),overview:box('.planning-review-sticky-stack .planning-panel'),docked:box('.planning-review-docked-header')};});
+    const bottom=await docked.boundingBox();
+    expect(bottom.y+bottom.height,JSON.stringify(parts)).toBeLessThanOrEqual(175);
+});
+
+test('the docked header follows the sticky stack when its offset changes without any scroll or resize',async({page})=>{
+    await page.setViewportSize({width:1280,height:800});
+    await installPlanningFixture(page,{planningLayout:'table',longTable:true,scopeTeamIds:['team-alpha','team-beta']});await allowReviewSaving(page);await openPlanning(page,{expectStories:false});
+    await page.getByRole('radio',{name:'Stories',exact:true}).click();
+    await page.locator('.planning-review-scroll').evaluate(node=>scrollTo(0,scrollY+node.getBoundingClientRect().top+250));
+    const docked=page.locator('.planning-review-docked-header'),stack=page.locator('.planning-review-sticky-stack');
+    await expect(docked).toBeVisible();
+    const gap=async()=>{const d=await docked.boundingBox(),s=await stack.boundingBox();return Math.abs(d.y-(s.y+s.height));};
+    await expect.poll(gap).toBeLessThan(2);
+    // The compact header appearing (or the filter bar changing height) moves the stack by changing this variable; nothing scrolls.
+    await stack.evaluate(node=>{node.closest('.container').style.setProperty('--compact-header-offset','24px');});
+    await expect.poll(async()=>(await stack.boundingBox()).y).toBeGreaterThan(20);
+    await expect.poll(gap).toBeLessThan(2);
+});
+
+test('Discard and Save sit at the right end of the Filters row only while the review is dirty, and no popup is covered by them',async({page})=>{
+    await page.setViewportSize({width:1280,height:900});
+    await installPlanningFixture(page,{planningLayout:'table',scopeTeamIds:['team-alpha','team-beta']});await allowReviewSaving(page);await openPlanning(page,{expectStories:false});
+    const row=page.locator('.filterbar-wrap .filterbar'),controls=row.locator('.fb-view-controls');
+    await expect(controls.getByRole('button',{name:'Save review',exact:true})).toHaveCount(0);
+    await expect(controls.getByRole('button',{name:'Discard',exact:true})).toHaveCount(0);
+    await page.getByRole('button',{name:'+ Add column',exact:true}).click();
+    await page.getByLabel('Column name',{exact:true}).fill('Risk');await page.getByRole('button',{name:'Add column',exact:true}).click();
+    const save=controls.getByRole('button',{name:'Save review',exact:true}),discard=controls.getByRole('button',{name:'Discard',exact:true});
+    await expect(save).toBeVisible();await expect(discard).toBeVisible();
+    await page.locator('.filterbar-wrap').screenshot({path:'tmp/217-ui/c1-filters-row-dirty-1280.png'});
+    await expect(save).toHaveClass(/fb-trigger-primary/);await expect(discard).toHaveClass(/fb-trigger(?!-)/);
+    const geometry=await page.evaluate(()=>{const r=n=>n.getBoundingClientRect(),bar=r(document.querySelector('.filterbar')),mode=r(document.querySelector('[aria-label="Planning review rows"]')),discard=[...document.querySelectorAll('.fb-view-controls button')].find(b=>b.textContent.trim()==='Discard'),save=[...document.querySelectorAll('.fb-view-controls button')].find(b=>b.getAttribute('aria-label')==='Save review'),d=r(discard),s=r(save),filters=r(document.querySelector('.filterbar .pop-host .fb-trigger'));return {barRight:bar.right,barTop:bar.top,barBottom:bar.bottom,modeRight:mode.right,discardLeft:d.left,saveRight:s.right,saveTop:s.top,saveBottom:s.bottom,saveText:save.scrollWidth-save.clientWidth,filtersRight:filters.right,modeLeft:mode.left,height:bar.height};});
+    expect(geometry.barRight-geometry.saveRight,JSON.stringify(geometry)).toBeLessThan(14);
+    expect(geometry.discardLeft,JSON.stringify(geometry)).toBeGreaterThan(geometry.modeRight);
+    expect(geometry.modeLeft,JSON.stringify(geometry)).toBeGreaterThan(geometry.filtersRight);
+    expect(geometry.saveTop).toBeGreaterThanOrEqual(geometry.barTop);expect(geometry.saveBottom).toBeLessThanOrEqual(geometry.barBottom);
+    expect(geometry.saveText).toBeLessThanOrEqual(0);expect(geometry.height).toBeLessThanOrEqual(43);
+    // Discard (outline) and Save (the one filled action) keep readable text on hover instead of the global dark surface.
+    for(const [label,button] of [['Discard',discard],['Save',save]]){
+        await page.mouse.move(0,0);const restSpacing=await button.evaluate(node=>getComputedStyle(node).letterSpacing);
+        await button.hover();
+        const read=()=>button.evaluate(node=>{
+            const parse=v=>(v.match(/[\d.]+/g)||[]).map(Number);
+            let surface=node,bg=parse(getComputedStyle(surface).backgroundColor);
+            while((bg[3]??1)===0&&surface.parentElement){surface=surface.parentElement;bg=parse(getComputedStyle(surface).backgroundColor);}
+            const style=getComputedStyle(node),lum=rgb=>{const [r,g,b]=rgb.map(v=>{const c=v/255;return c<=0.03928?c/12.92:((c+0.055)/1.055)**2.4;});return 0.2126*r+0.7152*g+0.0722*b;};
+            const fg=parse(style.color).slice(0,3),back=bg.slice(0,3),[hi,lo]=[lum(fg),lum(back)].sort((x,y)=>y-x);
+            return {contrast:(hi+0.05)/(lo+0.05),transform:style.transform,spacing:style.letterSpacing};
+        });
+        await expect.poll(async()=>(await read()).contrast,{message:`${label} hover contrast`}).toBeGreaterThanOrEqual(4.5);
+        const settled=await read();expect(settled.transform,label).toBe('none');expect(settled.spacing,label).toBe(restSpacing);
+    }
+    // The Filters popover opens in front of the cluster.
+    await row.locator('.fb-trigger').first().click();
+    const popup=page.locator('.popover');await expect(popup).toBeVisible();
+    expect(await popup.evaluate(node=>{const r=node.getBoundingClientRect();return node.contains(document.elementFromPoint(r.left+12,r.top+12));})).toBe(true);
+    await row.locator('.fb-trigger').first().click();
+    await discard.click();await controls.getByRole('button',{name:'Discard',exact:true}).first().click();
+    await expect(save).toHaveCount(0);
 });
 
 for (const width of [1280, 390]) test(`Catch Up shares the second controls row before alerts at ${width}px`, async ({page}) => {

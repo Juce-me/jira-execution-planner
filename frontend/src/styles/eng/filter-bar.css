@@ -96,6 +96,23 @@
             justify-content: center;
         }
 
+        /* the one filled action in the bar: Save review while a Planning review has changes */
+        .fb-trigger-primary {
+            background: var(--text-primary);
+            color: var(--bg-primary);
+            border-color: var(--text-primary);
+        }
+
+        .fb-trigger-primary:hover {
+            background: #2f2f2f;
+            color: var(--bg-primary);
+        }
+
+        .fb-trigger-primary:disabled {
+            opacity: 0.5;
+            cursor: default;
+        }
+
         .fb-trigger .badge {
             min-width: 15px;
             height: 15px;

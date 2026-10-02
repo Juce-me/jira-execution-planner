@@ -759,6 +759,19 @@ h1 {
   font-size: 0.6rem;
   border-radius: 8px;
 }
+.segmented-control-compact {
+  height: 30px;
+  margin: 0;
+  align-self: center;
+  padding: 2px;
+  border-radius: 8px;
+}
+.segmented-control-compact .segmented-control-button {
+  min-width: 0;
+  padding: 0 0.55rem;
+  font-size: 0.6rem;
+  border-radius: 6px;
+}
 .sprint-dropdown-panel {
   position: absolute;
   top: calc(100% + 0.35rem);
@@ -4150,6 +4163,19 @@ button.toggle.applied-filter.active {
   min-width: 30px;
   padding-inline: 0;
   justify-content: center;
+}
+.fb-trigger-primary {
+  background: var(--text-primary);
+  color: var(--bg-primary);
+  border-color: var(--text-primary);
+}
+.fb-trigger-primary:hover {
+  background: #2f2f2f;
+  color: var(--bg-primary);
+}
+.fb-trigger-primary:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 .fb-trigger .badge {
   min-width: 15px;
@@ -8201,19 +8227,16 @@ html:has(.planning-panel.open) {
   min-width: 0;
   padding-bottom: 1rem;
 }
-.planning-review-toolbar {
+.planning-review-controls {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
   margin: 0.5rem 0;
 }
-.planning-review-toolbar-slot:empty {
-  display: none;
-}
-.planning-review-toolbar-slot .planning-review-toolbar {
-  margin-bottom: 0;
-  padding-block: 4px;
+.planning-review-controls-host,
+.planning-review-controls-host .planning-review-controls {
+  display: contents;
 }
 .planning-review-guidance,
 .planning-review-state-note {
@@ -8925,10 +8948,6 @@ html:has(.planning-panel.open) {
   color: #92400e;
   font-size: 0.7rem;
 }
-.planning-review-toolbar .stats-control-group {
-  margin: 0;
-}
-.planning-review-toolbar .eng-mode-control,
 .planning-review-add-row .eng-mode-control {
   margin-top: 0;
 }

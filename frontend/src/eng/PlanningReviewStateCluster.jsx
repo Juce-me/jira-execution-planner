@@ -13,12 +13,12 @@ export default function PlanningReviewStateCluster({ review, editable, onSave, o
         {confirming
             ? <>
                 <span className="planning-review-state-note">Discard unsaved changes?</span>
-                <button type="button" className="planning-action-button" disabled={review.saving} onClick={() => { setConfirming(false); onDiscard(); }}>Discard</button>
-                <button type="button" className="planning-action-button" onClick={() => setConfirming(false)}>Keep</button>
+                <button type="button" className="fb-trigger" disabled={review.saving} onClick={() => { setConfirming(false); onDiscard(); }}>Discard</button>
+                <button type="button" className="fb-trigger" onClick={() => setConfirming(false)}>Keep</button>
             </>
             : <>
-                <button type="button" className="planning-action-button" disabled={review.saving} onClick={() => setConfirming(true)}>Discard</button>
-                <button type="button" className="planning-action-button" aria-label="Save review" disabled={blocked} onClick={onSave}>{review.saving ? 'Saving…' : 'Save'}</button>
+                <button type="button" className="fb-trigger" disabled={review.saving} onClick={() => setConfirming(true)}>Discard</button>
+                <button type="button" className="fb-trigger fb-trigger-primary" aria-label="Save review" disabled={blocked} onClick={onSave}>{review.saving ? 'Saving…' : 'Save'}</button>
             </>}
     </span>;
 }

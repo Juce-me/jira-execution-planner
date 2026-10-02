@@ -498,7 +498,7 @@ test('Discard and Save review appear only while the review has changes', async (
     const save=page.getByRole('button',{name:'Save review',exact:true}),discard=page.getByRole('button',{name:'Discard',exact:true});
     await expect(save).toHaveCount(0);await expect(discard).toHaveCount(0);
     await expect(page.getByText('Unsaved',{exact:true})).toHaveCount(0);
-    const toolbar=page.locator('.planning-review-toolbar');
+    const toolbar=page.locator('.planning-review-controls');
     const clean=(await toolbar.boundingBox()).height;
     await page.getByRole('textbox',{name:'Cost 0 for DEMO-1',exact:true}).fill('99');
     await expect(save).toBeVisible();await expect(discard).toBeVisible();
@@ -558,7 +558,7 @@ for (const width of [1440, 2400]) test(`column widths fit their content instead 
 
 for(const width of [390,1440]) test(`review toolbar holds only the row switch and its popups do not shift the table at ${width}px`,async({page})=>{
     await page.setViewportSize({width,height:900});await install(page);
-    const toolbar=page.locator('.planning-review-toolbar');
+    const toolbar=page.locator('.planning-review-controls');
     await expect(toolbar.getByText('Rows',{exact:true})).toHaveCount(0);
     await expect(page.getByText('Drag column handles to reorder.',{exact:false})).toHaveCount(0);
     await expect(page.getByRole('button',{name:'Refresh review',exact:true})).toHaveCount(0);

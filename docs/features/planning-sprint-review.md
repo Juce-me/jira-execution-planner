@@ -65,12 +65,16 @@ through Story status/priority filters, while Department, Team, project, Project
 Track and search scope still apply. List filtering retains its existing behavior. Selection reuses Planning
 Story selection and Undo; Epic checkboxes affect visible real child Stories.
 Synthetic rows cannot edit Jira or store custom values. Team and Project columns
-appear for multiple admitted Teams/projects. List sort/group controls keep their
-stored choices and do not change table ordering.
+appear for multiple admitted Teams/projects. Sort epics and Group by Initiative are not
+rendered in Table view (they never changed table ordering); List and Catch Up keep them and
+their stored choices.
 
-The single-row toolbar holds the Epics/Stories switch and, at its right end, Discard and
-Save, which appear only while the review has local changes (Discard asks for an inline
-confirmation); a muted Loading… note shows there while the review loads. There is
+There is no table toolbar tier. The Epics/Stories switch (the shared SegmentedControl in its
+compact form, `eng-mode-control segmented-control-compact`) sits in the Filters row's
+view-controls slot, followed at the right end by Discard and Save, which appear only while
+the review has local changes (Discard asks for an inline confirmation, using the Filters
+button style; Save is the row's single filled button); a muted Loading… note shows there
+while the review loads. There is
 no options menu or usage help: the app-header Refresh also reloads the shared
 review (drafts are preserved; it leaves a review that is already loading or
 saving alone), and a third click on a sorted heading clears the sort.
@@ -152,10 +156,10 @@ acceptance require separate verification with an approved disposable Jira issue.
 
 Story Points edits use only the in-cell input: Enter saves to Jira, Escape cancels, and leaving the input discards the unsaved value. No Save/Cancel buttons are shown.
 
-In normal mode, the Epics/Stories toolbar sits directly above the spreadsheet. When sticky mode activates on scroll, the toolbar moves below capacity in the shared controls stack, following its width. Returning to the page top restores the toolbar above the table; selection and review drafts are preserved.
+The Epics/Stories switch is the same DOM node in the Filters row before, during and after sticky mode, and its position does not change when the first scroll activates the sticky stack. With the table header docked, the pinned stack (compact header, Filters, capacity overview and header) is 173.5 px; selection and review drafts are preserved. Without a Filters row to host it (local test harnesses), the controls render above the table instead.
 
 In expanded Table mode, Collapse panel is part of the selection control line, without a separate row above it.
 
 Custom-cell inputs use a compact fixed height and vertical alignment; focus changes their border without adding a glow or changing column/row geometry.
 
-The spreadsheet uses the page’s vertical scroll; its wrapper only scrolls horizontally. While rows are on screen, column headings dock below the measured Filters/capacity/toolbar stack and totals dock at the viewport bottom until the natural total row becomes visible. Both rows use measured column widths and synchronized horizontal positions, including horizontal scrolling from the bottom total row. Rows above the docked headings are clipped so they cannot peek beside the narrower controls. Frozen identification columns, sorting, reordering, editing and shared review drafts are preserved.
+The spreadsheet uses the page’s vertical scroll; its wrapper only scrolls horizontally. While rows are on screen, column headings dock below the measured Filters/capacity stack and totals dock at the viewport bottom until the natural total row becomes visible. Both rows use measured column widths and synchronized horizontal positions, including horizontal scrolling from the bottom total row. Rows above the docked headings are clipped so they cannot peek beside the narrower controls. Frozen identification columns, sorting, reordering, editing and shared review drafts are preserved.

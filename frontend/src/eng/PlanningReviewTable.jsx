@@ -130,9 +130,13 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
         const schedule = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(measure); };
         const observer = new ResizeObserver(schedule);
         observer.observe(table); observer.observe(node); if (stack) observer.observe(stack);
+        // The stack's sticky offset lives in the container's inline variables: it moves when the compact header appears or the filter bar changes height, with no scroll or resize.
+        const offsets = stack?.closest('.container');
+        const offsetObserver = offsets ? new MutationObserver(schedule) : null;
+        offsetObserver?.observe(offsets, { attributes: true, attributeFilter: ['style'] });
         window.addEventListener('resize', schedule); window.addEventListener('scroll', schedule, { passive: true });
         node.addEventListener('scroll', schedule, { passive: true }); measure();
-        return () => { observer.disconnect(); cancelAnimationFrame(frame); window.removeEventListener('resize', schedule); window.removeEventListener('scroll', schedule); node.removeEventListener('scroll', schedule); };
+        return () => { observer.disconnect(); offsetObserver?.disconnect(); cancelAnimationFrame(frame); window.removeEventListener('resize', schedule); window.removeEventListener('scroll', schedule); node.removeEventListener('scroll', schedule); };
     }, [columnSignature]);
     React.useLayoutEffect(() => {
         for (const ref of [dockedHeader, dockedFooter]) if (ref.current) ref.current.scrollLeft = scroller.current.scrollLeft;
@@ -192,9 +196,10 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
         const index = visible.indexOf(column.id), target = visible[index + direction];
         if (index >= 0 && target) moveColumn(column.id, target, direction > 0);
     };
+    // Rendered into the Filters row's view-controls slot; without a host (local harnesses) it sits above the table instead.
     const toolbar = (
-        <div className="planning-review-toolbar">
-            <div className="stats-control-group"><SegmentedControl className="eng-mode-control" ariaLabel="Planning review rows" options={[{ value: 'epic', label: 'Epics' }, { value: 'story', label: 'Stories' }]} value={mode} onChange={changeMode} /></div>
+        <div className="planning-review-controls">
+            <SegmentedControl className="eng-mode-control segmented-control-compact" ariaLabel="Planning review rows" options={[{ value: 'epic', label: 'Epics' }, { value: 'story', label: 'Stories' }]} value={mode} onChange={changeMode} />
             <PlanningReviewStateCluster review={review} editable={editable}
                 onSave={async () => { const saved = await review.save(); trackedAction('save_review', { result: saved ? 'success' : 'failure' }); }}
                 onDiscard={() => { review.discard(); trackedAction('discard_review'); }} />

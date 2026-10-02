@@ -26,7 +26,6 @@ export default function EngFilterControls({ engFilters, onFacetChange, onClearFa
     }, [showSortDropdown]);
 
     const selectEngEpicSort = (value) => {
-        if (planningTable) return;
         setEngEpicSort(value);   // dashboard handler also fires the sort_changed analytics event
         setShowSortDropdown(false);
     };
@@ -44,7 +43,7 @@ export default function EngFilterControls({ engFilters, onFacetChange, onClearFa
                         onHeightChange={onFilterBarHeightChange}
                         boardColumns={boardColumns}
                         renderPriorityIcon={renderPriorityIcon}
-                        viewControls={(
+                        viewControls={planningTable ? <span ref={planningToolbarRef} className="planning-review-controls-host" /> : (
                             <>
                                 <div className="sprint-dropdown sprint-dropdown-compact eng-epic-sort-dropdown" ref={sortDropdownRef}>
                                     <div
@@ -52,11 +51,9 @@ export default function EngFilterControls({ engFilters, onFacetChange, onClearFa
                                         role="button"
                                         tabIndex={0}
                                         aria-label="Sort epics"
-                                        aria-disabled={Boolean(planningTable)}
-                                        title={planningTable ? 'List sorting is preserved. Use table column sorting while Table is active.' : undefined}
                                         aria-expanded={showSortDropdown}
-                                        onClick={() => { if (!planningTable) setShowSortDropdown(v => !v); }}
-                                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (!planningTable) setShowSortDropdown(v => !v); } }}
+                                        onClick={() => setShowSortDropdown(v => !v)}
+                                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setShowSortDropdown(v => !v); } }}
                                     >
                                         <span className="cap">Sort</span>
                                         <span>{getEngEpicSortLabel(engEpicSort)}</span>
@@ -85,8 +82,7 @@ export default function EngFilterControls({ engFilters, onFacetChange, onClearFa
                                     <span className="initiative-grouping-control">
                                         <IconButton
                                             className="fb-trigger fb-trigger-icon"
-                                            onClick={() => { if (!planningTable) setGroupByInitiative(!groupByInitiative); }}
-                                            aria-disabled={Boolean(planningTable)}
+                                            onClick={() => setGroupByInitiative(!groupByInitiative)}
                                             aria-label="Group by Initiative"
                                             aria-pressed={groupByInitiative}
                                             aria-describedby="initiative-grouping-tooltip"
@@ -98,7 +94,7 @@ export default function EngFilterControls({ engFilters, onFacetChange, onClearFa
                                             className="initiative-grouping-tooltip"
                                             role="tooltip"
                                         >
-                                            {planningTable ? 'Initiative grouping is preserved for List. Table uses Epics or Stories.' : `Group by Initiative — ${groupByInitiative ? 'On' : 'Off'}`}
+                                            {`Group by Initiative — ${groupByInitiative ? 'On' : 'Off'}`}
                                         </span>
                                     </span>
                                 )}
@@ -106,6 +102,6 @@ export default function EngFilterControls({ engFilters, onFacetChange, onClearFa
                         )}
                     />);
     return planningTable
-        ? <PlanningTableStickyStack overview={planningOverview} toolbarRef={planningToolbarRef} compactHeaderRef={compactHeaderRef} onActivate={onActivatePlanningSticky}>{filterBar}</PlanningTableStickyStack>
+        ? <PlanningTableStickyStack overview={planningOverview} compactHeaderRef={compactHeaderRef} onActivate={onActivatePlanningSticky}>{filterBar}</PlanningTableStickyStack>
         : <>{filterBar}{planningOverview}</>;
 }

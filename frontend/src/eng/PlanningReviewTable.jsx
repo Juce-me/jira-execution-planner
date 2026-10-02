@@ -12,7 +12,7 @@ import PlanningReviewBoundaryPlus from './PlanningReviewBoundaryPlus.jsx';
 import PlanningReviewColumnMenu from './PlanningReviewColumnMenu.jsx';
 import PlanningReviewStateCluster from './PlanningReviewStateCluster.jsx';
 import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
-import { buildPlanningReviewRows, buildPlanningReviewColumns, hasZeroStoryPoints, reviewSelectionState, reviewValue, sortPlanningReviewRows, planningReviewTotals } from './planningReviewTableModel.js';
+import { buildPlanningReviewRows, buildPlanningReviewColumns, hasZeroStoryPoints, reviewSelectionState, reviewValue, selectedStoryPoints, sortPlanningReviewRows, planningReviewTotals } from './planningReviewTableModel.js';
 
 function ReviewColumnPopover({ open, onClose, label, trigger, children, error, anchorClassName = '' }) {
     const wrapperRef = React.useRef(null);
@@ -102,7 +102,9 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
     const [formError, setFormError] = React.useState('');
     const [newColumnId, setNewColumnId] = React.useState('');
     const stableOrder = React.useRef(null);
-    const rows = React.useMemo(() => buildPlanningReviewRows({ epicGroups, visibleTasks, mode, getTeamInfo }).map(row => ({ ...row, capacity: row.synthetic ? '' : excludedEpicSet.has(String(row.rowKind === 'epic' ? row.key : row.epicKey || '').toUpperCase()) ? 'Excluded' : 'Included' })), [epicGroups, visibleTasks, mode, getTeamInfo, excludedEpicSet]);
+    // The dashboard passes a fresh Set every render; key the memo on its content instead.
+    const selectionSignature = Array.from(selectedStoryKeys).sort().join('|');
+    const rows = React.useMemo(() => buildPlanningReviewRows({ epicGroups, visibleTasks, mode, getTeamInfo }).map(row => ({ ...row, accepted: selectedStoryPoints(row, selectedStoryKeys), capacity: row.synthetic ? '' : excludedEpicSet.has(String(row.rowKind === 'epic' ? row.key : row.epicKey || '').toUpperCase()) ? 'Excluded' : 'Included' })), [epicGroups, visibleTasks, mode, getTeamInfo, excludedEpicSet, selectionSignature]);
     const scroller = React.useRef(null);
     const dockedHeader = React.useRef(null), dockedFooter = React.useRef(null);
     const [dock, setDock] = React.useState(null);
@@ -297,6 +299,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
                         : column.id === 'key' ? (row.synthetic ? row.rowKind === 'requirement' ? 'Not created' : '—' : <TrackedExternalLink href={`${jiraUrl.replace(/\/+$/, '')}/browse/${encodeURIComponent(row.key)}`} className="task-key-link" target="_blank" rel="noopener noreferrer" analyticsMeta={buildJiraBrowseLinkAnalytics({ issueKind: row.rowKind, sourceSurface: 'planning' })}>{row.key}</TrackedExternalLink>)
                         : column.id === 'summary' ? summaryCell(row)
                         : column.id === 'priority' ? field(row, 'priority', <span>{renderPriorityIcon?.(row.priority)} {row.priority || '—'}</span>)
+                        : column.id === 'accepted' ? row.accepted ?? ''
                         : column.id === 'storyPoints' ? (row.rowKind === 'requirement' ? '—' : row.rowKind === 'story' ? field(row, 'storyPoints', row.storyPoints ?? 0) : row.storyPoints ?? 0)
                         : column.id === 'teamsInScope' ? <TrimmedValue value={reviewValue(row, column, review.cells) || '—'} />
                         : column.id === 'team' ? field(row, 'team', row.team?.name || 'Unknown Team')

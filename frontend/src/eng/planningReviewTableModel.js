@@ -146,6 +146,7 @@ export function buildPlanningReviewColumns({ rows = [], mode = 'epic', customCol
         { id: 'status', label: 'Status', type: 'text', required: true },
         { id: 'priority', label: 'Priority', type: 'priority', required: true },
         { id: 'storyPoints', label: mode === 'epic' ? 'Sprint SP' : 'Story Points', type: 'number', required: true, aggregation: 'sum' },
+        { id: 'accepted', label: 'Accepted', type: 'number', optional: true, aggregation: 'sum' },
     ];
     if ((admittedTeamCount ?? teams.size) > 1) columns.push({ id: mode === 'epic' ? 'teamsInScope' : 'team', label: mode === 'epic' ? 'Teams in scope' : 'Team', type: 'text', required: true });
     if ((admittedProjectCount ?? projects.size) > 1) columns.push({ id: 'project', label: 'Project', type: 'text', optional: true });

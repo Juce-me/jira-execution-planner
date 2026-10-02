@@ -1177,3 +1177,51 @@ test('a validation error from one menu does not outlive a header dock flip', asy
     await expect(popup).toBeVisible(); await expect(popup.getByRole('alert')).toHaveCount(0);
     await expect(page.getByRole('alert').filter({ hasText: 'Enter a column name' })).toHaveCount(0);
 });
+
+// Accepted: the points of the Stories the user has ticked, per row, with the sum in the footer.
+test('Accepted shows a Story\'s points only while it is ticked and totals the ticked Stories', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 }); await install(page); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await expect(page.getByRole('columnheader', { name: 'Accepted', exact: true })).toBeVisible();
+    const cell = key => page.locator('tbody tr', { has: page.getByRole('checkbox', { name: `Select ${key}`, exact: true }) }).locator('td.planning-review-accepted');
+    const total = page.locator('tfoot td.planning-review-accepted');
+    await expect(cell('DEMO-1')).toHaveText(''); await expect(total).toHaveText('0');
+    await page.getByRole('checkbox', { name: 'Select DEMO-1', exact: true }).check();
+    await expect(cell('DEMO-1')).toHaveText('1'); await expect(cell('DEMO-2')).toHaveText(''); await expect(total).toHaveText('1');
+    await page.getByRole('checkbox', { name: 'Select DEMO-2', exact: true }).check();
+    await expect(total).toHaveText('3');
+    await page.getByRole('checkbox', { name: 'Select DEMO-1', exact: true }).uncheck();
+    await expect(cell('DEMO-1')).toHaveText(''); await expect(total).toHaveText('2');
+    // Right-aligned like every number column, and the cell is never an editor.
+    expect(await cell('DEMO-2').evaluate(node => getComputedStyle(node).textAlign)).toBe('right');
+    await expect(cell('DEMO-2').locator('input, button')).toHaveCount(0);
+    // Selection is not a review edit.
+    expect(await page.evaluate(() => window.harness.state().dirty)).toBe(false);
+});
+
+test('in Epics mode an Epic\'s Accepted is the sum of its ticked Stories and the footer is the sum over rows', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 }); await install(page);
+    const epic = page.locator('tbody tr', { has: page.getByRole('checkbox', { name: 'Select DEMO-10', exact: true }) }).locator('td.planning-review-accepted');
+    const total = page.locator('tfoot td.planning-review-accepted');
+    await expect(epic).toHaveText(''); await expect(total).toHaveText('0');
+    await page.getByRole('checkbox', { name: 'Select DEMO-10', exact: true }).check();
+    await expect(epic).toHaveText('3'); await expect(total).toHaveText('3');
+    await page.getByRole('checkbox', { name: 'Select DEMO-10', exact: true }).uncheck();
+    await expect(epic).toHaveText(''); await expect(total).toHaveText('0');
+});
+
+test('Accepted hides from its header menu, persists through the shared layout save and comes back via Show hidden', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 }); await install(page); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await columnMenuButton(page, 'Accepted').click();
+    expect(await menuItems(columnMenu(page, 'Accepted'))).toEqual(['Move left', 'Move right', 'Hide column']);
+    await columnMenu(page, 'Accepted').getByRole('button', { name: 'Hide column', exact: true }).click();
+    await expect(page.getByRole('columnheader', { name: 'Accepted', exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => window.harness.state().layouts.story.hidden)).toContain('accepted');
+    await page.getByRole('button', { name: 'Save review', exact: true }).click();
+    expect(await page.evaluate(() => window.harness.saveCount())).toBe(1);
+    expect(await page.evaluate(() => window.harness.state().dirty)).toBe(false);
+    await page.evaluate(() => window.harness.reload());
+    await expect(page.getByRole('columnheader', { name: 'Accepted', exact: true })).toHaveCount(0);
+    await showHiddenColumn(page, 'Accepted');
+    const order = await headings(page);
+    expect(order[order.indexOf('Story Points') + 1]).toBe('Accepted');
+});

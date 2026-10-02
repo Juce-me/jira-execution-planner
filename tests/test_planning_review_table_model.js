@@ -63,7 +63,7 @@ test('hierarchy projection keeps readiness-only Epics, orphan Stories and synthe
 test('scope columns avoid Sprint/numeric priority and use admitted dimensions despite filters', async () => {
     const { buildPlanningReviewColumns } = await model();
     const columns = buildPlanningReviewColumns({ mode: 'epic', rows: [], admittedTeamCount: 2, admittedProjectCount: 2 });
-    assert.deepEqual(columns.map(column => column.id), ['key', 'summary', 'status', 'priority', 'storyPoints', 'teamsInScope', 'project', 'team', 'assignee', 'components', 'capacity', 'projectTrack']);
+    assert.deepEqual(columns.map(column => column.id), ['key', 'summary', 'status', 'priority', 'storyPoints', 'accepted', 'teamsInScope', 'project', 'team', 'assignee', 'components', 'capacity', 'projectTrack']);
     assert.equal(columns.find(column => column.id === 'storyPoints').label, 'Sprint SP');
     const narrow = buildPlanningReviewColumns({ mode: 'story', rows: [], admittedTeamCount: 1, admittedProjectCount: 1 });
     assert.ok(!narrow.some(column => column.id === 'team' || column.id === 'project'));
@@ -162,4 +162,18 @@ test('selectedStoryPoints counts only ticked Stories for Story, Epic and No Epic
     assert.equal(selectedStoryPoints(storyRows.find(row => row.key === 'DEMO-1'), one), '1.5');
     assert.equal(selectedStoryPoints(storyRows.find(row => row.key === 'DEMO-2'), one), null);
     assert.equal(selectedStoryPoints(storyRows.find(row => row.rowKind === 'requirement'), all), null);
+});
+
+test('the Accepted column is a visible-by-default optional number column summed in the footer, right after the points column', async () => {
+    const { buildPlanningReviewColumns, planningReviewTotals, DEFAULT_REVIEW_HIDDEN_COLUMNS } = await model();
+    for (const mode of ['epic', 'story']) {
+        const columns = buildPlanningReviewColumns({ rows: [], mode, admittedTeamCount: 2, admittedProjectCount: 2, hidden: new Set(DEFAULT_REVIEW_HIDDEN_COLUMNS) });
+        const ids = columns.map(column => column.id), accepted = columns.find(column => column.id === 'accepted');
+        assert.equal(ids[ids.indexOf('storyPoints') + 1], 'accepted', mode);
+        assert.deepEqual({ label: accepted.label, type: accepted.type, aggregation: accepted.aggregation, optional: accepted.optional, required: Boolean(accepted.required) }, { label: 'Accepted', type: 'number', aggregation: 'sum', optional: true, required: false });
+        assert.equal(DEFAULT_REVIEW_HIDDEN_COLUMNS.includes('accepted'), false);
+    }
+    const accepted = { id: 'accepted', type: 'number', aggregation: 'sum' };
+    assert.deepEqual(planningReviewTotals([{ accepted: '1.5' }, { accepted: null }, { accepted: '2' }], [accepted]), { accepted: '3.5' });
+    assert.deepEqual(planningReviewTotals([{ accepted: null }], [accepted]), { accepted: '0' });
 });

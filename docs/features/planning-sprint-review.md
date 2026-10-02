@@ -55,6 +55,15 @@ reflect the parent Epic; capacity changes use the existing shared Department set
 Capacity chips retain a pale green Included or light gray Excluded background
 on hover and keyboard focus, with a visible focus outline.
 
+Accepted is a computed number column right after the points column, visible by default
+(it is optional, so it can be hidden, moved and restored like the other Jira columns, and its
+order and visibility save with the shared layout). A Story row shows its points only while
+that Story is ticked; an Epic row (and the No Epic group) shows the sum of its ticked real
+child Stories; awaiting-creation placeholders show nothing. The footer total is the sum over
+the rows in the current mode, so it reads 0 with nothing ticked. It stands in for the accepted
+numbers of the Planned Teams Effort panel inside the table, is never editable, and selecting
+Stories does not make the review dirty.
+
 Epics show scoped child Story Points and contributing Teams. Story mode includes
 orphans and awaiting-creation placeholders, one per uncovered Team. Readiness-only
 Epics remain in the Epic table, marked with a "N Story awaited" chip beside the title

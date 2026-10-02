@@ -151,8 +151,9 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
     const changeMode = next => { if (editing) document.activeElement?.blur(); setEditing(null); setMode(next); setNewColumnId(''); trackedAction('row_mode_changed', { mode: next }); };
     const changeSort = (column, additive) => {
         const current = sort.find(item => item.columnId === column.id);
-        const criterion = { columnId: column.id, direction: current?.direction === 'asc' ? 'desc' : 'asc' };
-        const next = additive ? [...sort.filter(item => item.columnId !== column.id), criterion] : [criterion];
+        const direction = !current ? 'asc' : current.direction === 'asc' ? 'desc' : null;   // ascending, descending, off
+        const kept = additive ? sort.filter(item => item.columnId !== column.id) : [];
+        const next = direction ? [...kept, { columnId: column.id, direction }] : kept;
         if (next.length > 5) { setFormError('Use at most five sort criteria.'); return; }
         setSort(next); trackedAction('sort_changed', { sortKey: column.custom ? 'custom' : column.id });
     };
@@ -223,7 +224,8 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
         const grip = !['key', 'summary'].includes(column.id) && <button type="button" className="planning-review-drag" tabIndex={docked ? -1 : undefined} aria-hidden={docked ? true : undefined} draggable={editable} disabled={!editable} aria-label={`Move ${column.label} column`} title="Drag to move column"
             onDragStart={event => { draggedColumn.current = column.id; event.dataTransfer.setData('text/plain', column.id); event.dataTransfer.effectAllowed = 'move'; }} onDragEnd={() => { draggedColumn.current = null; setDropColumn(null); }}
             onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); reorder(column, event.key === 'ArrowLeft' ? -1 : 1); } }}>⠿</button>;
-        const heading = <button type="button" className="planning-review-heading" tabIndex={docked ? -1 : undefined} aria-hidden={docked ? true : undefined} onClick={event => changeSort(column, event.shiftKey)}>{column.label}{sort.some(item => item.columnId === column.id) && <span> {sort.findIndex(item => item.columnId === column.id) + 1}{sort.find(item => item.columnId === column.id)?.direction === 'desc' ? '↓' : '↑'}</span>}</button>;
+        const position = sort.findIndex(item => item.columnId === column.id);
+        const heading = <button type="button" className="planning-review-heading" tabIndex={docked ? -1 : undefined} aria-hidden={docked ? true : undefined} onClick={event => changeSort(column, event.shiftKey)}>{column.label}{position >= 0 && <span> {sort.length > 1 ? position + 1 : ''}{sort[position].direction === 'desc' ? '↓' : '↑'}</span>}</button>;
         return <th key={column.id} aria-label={column.label} className={`planning-review-${column.id}${column.custom ? ' planning-review-custom' : ''} planning-review-${column.type === 'number' ? 'numeric' : 'text'}${movable(column)}${dropColumn === column.id ? ' planning-review-drop' : ''}`}
             onDragOver={event => { if (editable && draggedColumn.current && !['key', 'summary'].includes(column.id)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDropColumn(column.id); } }}
             onDrop={event => { event.preventDefault(); const source = draggedColumn.current; moveColumn(source, column.id, event.clientX > event.currentTarget.getBoundingClientRect().left + event.currentTarget.offsetWidth / 2); draggedColumn.current = null; setDropColumn(null); }}>

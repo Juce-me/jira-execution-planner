@@ -503,6 +503,16 @@ test('an orphan Story keeps the normal row height and names its Epic only in the
     await expect(orphan.locator('td.planning-review-epic')).toHaveText('No Epic');
 });
 
+test('heading click cycles ascending, descending, off and the index appears only with several criteria', async ({page}) => {
+    await install(page);await page.getByRole('radio',{name:'Stories',exact:true}).click();
+    const cost0=page.getByRole('button',{name:/^Cost 0/}),cost1=page.getByRole('button',{name:/^Cost 1/});
+    await cost0.click();await expect(cost0).toHaveText('Cost 0 ↑');
+    await cost0.click();await expect(cost0).toHaveText('Cost 0 ↓');
+    await cost0.click();await expect(cost0).toHaveText('Cost 0');
+    await cost0.click();await cost1.click({modifiers:['Shift']});
+    await expect(cost0).toHaveText('Cost 0 1↑');await expect(cost1).toHaveText('Cost 1 2↑');
+});
+
 test('uncreated Epic appears and its awaiting Story has a linked, noneditable placeholder',async({page})=>{
     await install(page);
     const epic=page.locator('tbody tr').filter({has:page.getByRole('link',{name:'DEMO-20',exact:true})});

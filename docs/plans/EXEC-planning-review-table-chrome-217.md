@@ -33,7 +33,8 @@ Updated 2026-10-02. The user authorized local commits (no push) for this plan. C
 
 - Done: Task B1 (`insertColumnId`, `nearestBoundary` in `planningReviewTableModel.js` with node unit tests) and the logic half of Task C2 (`selectedStoryPoints` with its unit test, and the backend layout whitelist for `accepted` with `test_layout_accepts_the_accepted_column_in_order_and_hidden`). Checks run: `node --test tests/test_planning_review_table_model.js` 14/14; `npm run test:frontend:unit` 1,568 pass; `tests.test_sprint_review` 17 pass; `tests.test_codebase_structure_budgets` pass. The `accepted` column definition and the rows-memo wiring stay in Task C2 because they change the visible table and must land together with its UI test.
 - Done: Task 0 (the orphan-Story "No Epic" second line is removed; both Planning specs pass, 62 cases; unit suite 1,568 pass).
-- Next: Slice A, then B2 to B4, C1, C3, C4.
+- Done: Task A1 (the heading click cycles ascending, descending, off; the index shows only with several criteria).
+- Next: A2 to A4, then B2 to B4, C1, C3, C4.
 - Rules already updated: AGENTS.md section 10 (Filters/capacity stack line) and section 11 (the two toolbar lines, plus the keyboard-backlog and live-data lines), `docs/TODO.md` (keyboard backlog), `docs/plans/README.md` (index).
 - The `GATE-05` Home-write edit in the working tree is unrelated and stays out of these commits.
 
@@ -156,7 +157,9 @@ Run: `npx playwright test tests/ui/planning_review_table.spec.js -g "orphan Stor
 
 **Files:** Modify `frontend/src/eng/PlanningReviewTable.jsx` (`changeSort`, heading JSX); Test `tests/ui/planning_review_table.spec.js`.
 
-- [ ] **Step 1: failing test.**
+Status: done 2026-10-02 (failed first with "Cost 0 1↑" for a single sort; now passes; both Planning specs pass, 63 cases; no existing test depended on the old index text).
+
+- [x] **Step 1: failing test.**
 
 ```js
 test('heading click cycles ascending, descending, off and the index appears only with several criteria', async ({ page }) => {
@@ -171,7 +174,7 @@ test('heading click cycles ascending, descending, off and the index appears only
 ```
 
 Run it with `--browser=chromium`. Expected FAIL (third click currently shows "Cost 0 ↑" again).
-- [ ] **Step 2: implement.**
+- [x] **Step 2: implement.**
 
 ```js
 const changeSort = (column, additive) => {
@@ -192,7 +195,7 @@ const heading = <button …>{column.label}{position >= 0 && <span> {sort.length 
 ```
 
 (keep the existing `className`, `tabIndex`, `aria-hidden` and `onClick` props on the button).
-- [ ] **Step 3:** Run the test: PASS. Run the whole spec; fix tests that expected the old "always shows an index" text. Commit: `Let a third heading click clear the sort (#217)`.
+- [x] **Step 3:** Run the test: PASS. Run the whole spec; fix tests that expected the old "always shows an index" text. Commit: `Let a third heading click clear the sort (#217)`.
 
 ### Task A2: Review-state cluster, shown only while dirty
 

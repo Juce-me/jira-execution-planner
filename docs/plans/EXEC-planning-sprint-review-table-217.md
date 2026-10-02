@@ -348,4 +348,4 @@ Awaiting-Story Epic row (user chose option A after comparing mocks; option B, na
 
 ### Current Accuracy
 
-Accurate for the shipped behaviour; `docs/features/planning-sprint-review.md` and `docs/ontology.md` were updated to match.
+Accurate for the shipped behaviour; `docs/features/planning-sprint-review.md` and `docs/ontology.md` were updated to match. The table's toolbar, Columns popup and `+ Column` button described in its follow-ups were later replaced by header menus, a corner and boundary "+", and Filters-row controls: see [`EXEC-planning-review-table-chrome-217.md`](EXEC-planning-review-table-chrome-217.md), which is now the source of truth for that chrome.

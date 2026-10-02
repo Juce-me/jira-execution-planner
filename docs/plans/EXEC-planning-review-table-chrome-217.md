@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-Status: Active. Gate G0 passed on 2026-10-02: the user tested the mockup ("looks good like that") and chose the recommended option for every open item (D12). The awaited-chip baseline is committed (`8449072f`), so Task 0 is done and Slice A is next, then Slices B and C. Execution has started (see Execution status).
+Status: Active, implemented and accepted by the operator on 2026-10-02 (Tasks 0, A1 to A4, B1 to B4, C1 to C5 and the review fixes are committed on the branch). Task Z2 is done; Task Z3 (delivery) is in progress and the plan becomes `DONE-` only after the PR merges.
 Type: feature (UI)
 Branch: `feature/217-sprint-review-table` (continues `EXEC-planning-sprint-review-table-217.md`, whose shipped behaviour stays the source of truth for everything not changed here)
 Written: 2026-10-02 from five read-only reviews (complexity, interaction, visual QA, accessibility, page layout) on a synthetic fixture in Chromium, plus the user's decisions below.
@@ -51,7 +51,8 @@ Updated 2026-10-02. The user authorized local commits (no push) for this plan; e
 - Slice C checks (2026-10-02, at `93ac9f4a`): the full `npx playwright test tests/ui --browser=chromium --workers=4` passes 1,066 with 3 skipped and none failing (8.1 minutes); the two Planning specs pass 109 on Chromium and headed WebKit and 106 on headed Firefox (3 touch cases skipped); unit suite 1,569; structure budgets and CSS extraction OK. Not yet run for Slice C: the full Python suite (no Python file changed since the Slice B run), the live-app check, and the server start check (Task Z1).
 - Changed after operator feedback (2026-10-02, screenshot of the Sprint SP menu: "less redundant"): the column menu no longer repeats the column name as its title (it opens under that heading) and drops the Shift-click usage hint (also against the no-persistent-instructional-text rule); review columns keep a "Shared review column" title, which says something new; the empty checkbox gutter that indented every action is kept only where the menu has the Show total toggle. This overrides the Task B2 menu text (subject line and muted last line).
 - Decided: Task C5 (2026-10-02, operator: "seems good so far"): the first-scroll snap in `PlanningTableStickyStack.jsx` stays as it is; no code change. Task C5 is closed.
-- Next: Slice Z is not started: Task Z1 (the live-app check, the full Python suite on the final head and the server start check; the full `tests/ui` Chromium run already passed at `93ac9f4a`), Task Z2 (docs and rules, on acceptance) and Task Z3 (delivery).
+- Done: Task Z2 (docs and rules), on the operator's acceptance ("everything looks good", 2026-10-02). The feature doc and the analytics doc were updated task by task and re-read against the shipped design; `docs/plans/README.md` has the current entry and the older plan's Current Accuracy points here; `AGENTS.md` sections 10 and 11 now state the shipped design (the "until it lands" clauses are gone, and the column-menu line records that menus repeat neither a title nor a hint); the accepted mock is kept as `assets/mockups/planning-review-chrome-217.html`. The branch was merged with `origin/main` (two commits: per-epic refresh and a plan) before publication: conflicts in `dashboardAnalytics.js`, `useStoryReadiness.js`, `dashboard.jsx`, the structure-budget test and four docs were resolved keeping both sides, `frontend/dist` was rebuilt, and one guard in `tests/test_story_readiness_api.js` now names the merged hook's return shape; `dashboard.jsx` is 18,434 lines after the merge and its budget is set to that count.
+- Next: Slice Z is not started except Z2: Task Z1 (the live-app check, the full Python suite on the final head and the server start check; the full `tests/ui` Chromium run already passed at `93ac9f4a`), Task Z2 (docs and rules, on acceptance) and Task Z3 (delivery).
 - Rules already updated: AGENTS.md section 10 (Filters/capacity stack line) and section 11 (the two toolbar lines, plus the keyboard-backlog and live-data lines), `docs/TODO.md` (keyboard backlog), `docs/plans/README.md` (index).
 - The `GATE-05` Home-write edit in the working tree is unrelated and stays out of these commits.
 
@@ -107,7 +108,7 @@ Artifact: `tmp/planning-chrome-mock/index.html` (gitignored; synthetic data, ver
   - Neutral ink keeps the shared weight 600 and reads heavy in black; consider 400 at rest.
   - The Current replica has no scroll snap (a 100 px tick lands at 100 here, 271 in the app); the relocation itself is reproduced.
   - Resolved: H2; accept the scroll (H2 Epics table about 1513 px at 1440 px); P-B, with P-C dropped; ink weight 400.
-- [x] **Appendix A** below records the accepted CSS and DOM contract; Slices B and C take their markup and CSS from it, and the steps give the logic, class reuse and tests. When this work is committed, keep the accepted mock in the repo as `assets/mockups/planning-review-chrome-217.html` (synthetic data only), as was done for `planning-sprint-review-217.html`.
+- [x] **Appendix A** below records the accepted CSS and DOM contract; Slices B and C take their markup and CSS from it, and the steps give the logic, class reuse and tests. When this work is committed, keep the accepted mock in the repo as `assets/mockups/planning-review-chrome-217.html` (synthetic data only), as was done for `planning-sprint-review-217.html`. Done in Task Z2.
 
 ## Forbidden regressions
 
@@ -572,9 +573,9 @@ Status: measured and closed 2026-10-02; the snap is kept (see Execution status).
 
 ### Task Z2: Docs and rules (on acceptance, not before)
 
-- [ ] `docs/features/planning-sprint-review.md`: rewrite the toolbar, Columns and `+ Column` paragraphs and the sticky-toolbar paragraph to the shipped design; document the Accepted column, the dirty-only cluster and the header Refresh.
-- [ ] `docs/README_ANALYTICS.md`: apply the Analytics impact section. `docs/plans/README.md`: index entry for this plan. `docs/plans/EXEC-planning-sprint-review-table-217.md`: one line in its Current Accuracy pointing here (the file is historical; do not rewrite earlier follow-ups).
-- [ ] `AGENTS.md` section 11: replace the "visible `+ Column`" line and the toolbar-composition line, and drop the "only when sticky mode activates" clause from the Filters/capacity/toolbar placement line, with one tightened line describing the new design. Replace, do not append.
+- [x] `docs/features/planning-sprint-review.md`: rewrite the toolbar, Columns and `+ Column` paragraphs and the sticky-toolbar paragraph to the shipped design; document the Accepted column, the dirty-only cluster and the header Refresh.
+- [x] `docs/README_ANALYTICS.md`: apply the Analytics impact section. `docs/plans/README.md`: index entry for this plan. `docs/plans/EXEC-planning-sprint-review-table-217.md`: one line in its Current Accuracy pointing here (the file is historical; do not rewrite earlier follow-ups).
+- [x] `AGENTS.md` section 11: replace the "visible `+ Column`" line and the toolbar-composition line, and drop the "only when sticky mode activates" clause from the Filters/capacity/toolbar placement line, with one tightened line describing the new design. Replace, do not append.
 
 ### Task Z3: Deliver (after C4, the C5 decision, Z1 and Z2)
 

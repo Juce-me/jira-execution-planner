@@ -71,8 +71,8 @@ to show or hide columns and manage review columns. Discard and Save appear at th
 right end only while the review has local changes (Discard asks for an inline
 confirmation); a muted Loading… note shows there while the review loads. There is
 no options menu or usage help: the app-header Refresh also reloads the shared
-review (drafts are preserved), and a third click on a sorted heading clears the
-sort. Both popups are 300px, anchored above the table without shifting the page
+review (drafts are preserved; it leaves a review that is already loading or
+saving alone), and a third click on a sorted heading clears the sort. Both popups are 300px, anchored above the table without shifting the page
 layout. Opening one focuses the panel (+ Column focuses its name field); Escape or
 an outside click dismisses it; the popups stay within the viewport.
 + Column has a name field, the shared Number | Text segmented control and Add

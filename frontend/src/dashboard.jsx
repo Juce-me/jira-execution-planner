@@ -15007,7 +15007,8 @@ import {
                 }
                 if (selectedView === 'eng' && showPlanning) {
                     setCapacityRefreshNonce(previous => previous + 1);
-                    if (planningLayout === 'table') void planningReview.refresh();
+                    // A review that is loading or saving is already current (the old Refresh review button was disabled then too).
+                    if (planningLayout === 'table' && !planningReview.loading && !planningReview.saving) void planningReview.refresh();
                 }
                 burnoutCacheRef.current = {};
                 cohortCacheRef.current = {};

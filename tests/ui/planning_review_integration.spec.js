@@ -334,6 +334,8 @@ test('the app-header Refresh also reloads the shared review', async ({ page }) =
     await openPlanning(page);
     await page.getByRole('button',{name:'Show Planning table',exact:true}).click();
     await expect.poll(() => reads).toBeGreaterThan(0);
+    // A review that is still loading is already current, so the header Refresh leaves it alone; wait for it to settle first.
+    await expect(page.locator('.planning-review-state-note',{hasText:'Loading…'})).toHaveCount(0);
     const before = reads;
     await page.getByRole('button',{name:'Refresh tasks and sprints from Jira',exact:true}).click();
     await expect.poll(() => reads).toBeGreaterThan(before);

@@ -156,7 +156,10 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # memo into the two Project Track charts; the model lives in stats/projectTrackStats.js (+6).
     # Issue #217 adds Planning table orchestration, scope guard and shared editor wiring;
     # explicit Capacity/Project Track columns reuse existing controllers (+5).
-    "frontend/src/dashboard.jsx": 18321,
+    # docs/plans/EXEC-planning-review-table-chrome-217.md: the Planned Teams Effort strip toggle
+    # (state, saved preference, collapsed class and the button header) is a one-time exception
+    # approved for this plan only (+9); the next step is the dashboard.jsx refactor, not more growth.
+    "frontend/src/dashboard.jsx": 18330,
 }
 
 

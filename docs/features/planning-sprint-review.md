@@ -64,6 +64,14 @@ the rows in the current mode, so it reads 0 with nothing ticked. It stands in fo
 numbers of the Planned Teams Effort panel inside the table, is never editable, and selecting
 Stories does not make the review dirty.
 
+In Table view the Planned Teams Effort panel is a one-line strip (its title with a caret) until
+the user expands it, which keeps the table near the top of the page; its header is the toggle (a
+native button, so it works by tap), the grid stays mounted but hidden while collapsed, and
+expanding neither refetches nor changes selection. The choice is a private browser preference
+(`planningTeamsEffortExpanded` in the saved UI preferences) that survives reloads; collapsed is
+the default. Planning List shows the full panel exactly as before. The accepted numbers it
+shows are also available in the table through the Accepted column.
+
 Epics show scoped child Story Points and contributing Teams. Story mode includes
 orphans and awaiting-creation placeholders, one per uncovered Team. Readiness-only
 Epics remain in the Epic table, marked with a "N Story awaited" chip beside the title

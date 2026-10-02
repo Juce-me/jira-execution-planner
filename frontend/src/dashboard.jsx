@@ -857,6 +857,8 @@ import {
             const [planningLayout, setPlanningLayout] = useState(savedPrefsRef.current.planningLayout === 'list' ? 'list' : 'table');
             const [planningToolbarHost, setPlanningToolbarHost] = useState(null);
             const [planningPanelExpanded, setPlanningPanelExpanded] = useState(null);
+            // Planned Teams Effort is a one-line strip in Planning Table view until the user expands it (List always shows the full panel).
+            const [teamsEffortExpanded, setTeamsEffortExpanded] = useState(savedPrefsRef.current.planningTeamsEffortExpanded === true);
             const [showStats, setShowStats] = useState(savedPrefsRef.current.showStats ?? false);
             const [showScenario, setShowScenario] = useState(savedPrefsRef.current.showScenario ?? false);
             const [showBoard, setShowBoard] = useState(savedPrefsRef.current.showBoard ?? false);
@@ -6684,7 +6686,7 @@ import {
                     epmTab,
                     epmSelectedProjectId,
                     epmProjectSort,
-                    engEpicSort, planningLayout,
+                    engEpicSort, planningLayout, planningTeamsEffortExpanded: teamsEffortExpanded,
                     selectedSprint, sprintName, sprintCatalog: sprintCatalogCacheRef.current,
                     selectedTeams,
                     activeGroupId,
@@ -6741,7 +6743,7 @@ import {
                 epmTab,
                 epmSelectedProjectId,
                 epmProjectSort,
-                engEpicSort, planningLayout,
+                engEpicSort, planningLayout, teamsEffortExpanded,
                 selectedSprint, sprintName,
                 selectedTeams,
                 activeGroupId,
@@ -15378,11 +15380,18 @@ import {
                     {selectedView === 'eng' && !engWorkspaceConfigured && <UnconfiguredWorkspaceNotice canEditSettings={canEditSharedConfiguration} adminContacts={adminSettingsGate.contacts} onOpenSettings={() => openGroupManage(firstMissingAdminSettingsTab(adminSettingsGate.missing))} />}
 
                     {selectedView === 'eng' && !showBoard && !isCompletedSprintSelected && engWorkspaceConfigured && (
-                        <div className={`capacity-panel ${showPlanning ? 'open' : ''}`}>
-                            <div className="capacity-header">
-                                <div className="capacity-title">Planned Teams Effort (Story Points)</div>
-                                <div className="capacity-subtitle">1 SP ≈ 2 days of work</div>
-                            </div>
+                        <div className={`capacity-panel ${showPlanning ? 'open' : ''}${showPlanning && planningLayout === 'table' && !teamsEffortExpanded ? ' capacity-panel-collapsed' : ''}`}>
+                            {showPlanning && planningLayout === 'table' ? (
+                                <button type="button" className="capacity-header capacity-header-toggle" aria-expanded={teamsEffortExpanded} onClick={() => setTeamsEffortExpanded(expanded => !expanded)}>
+                                    <span className="capacity-title">Planned Teams Effort (Story Points)<span className="capacity-panel-caret" aria-hidden="true">▸</span></span>
+                                    <span className="capacity-subtitle">1 SP ≈ 2 days of work</span>
+                                </button>
+                            ) : (
+                                <div className="capacity-header">
+                                    <div className="capacity-title">Planned Teams Effort (Story Points)</div>
+                                    <div className="capacity-subtitle">1 SP ≈ 2 days of work</div>
+                                </div>
+                            )}
                             <div className="capacity-grid-wrapper">
                                 <div className="capacity-grid">
                                     <div className="capacity-row capacity-group-row">

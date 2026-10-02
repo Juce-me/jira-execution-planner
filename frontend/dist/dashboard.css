@@ -11603,6 +11603,53 @@ html:has(.planning-panel.open) {
   gap: 1rem;
   margin-bottom: 0.5rem;
 }
+.capacity-header-toggle {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: normal;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: none;
+  transform: none;
+}
+.capacity-header-toggle:hover {
+  background: none;
+  color: inherit;
+  transform: none;
+  box-shadow: none;
+  letter-spacing: normal;
+}
+.capacity-panel.open.capacity-panel-collapsed {
+  display: flex;
+  align-items: center;
+  height: 28px;
+  max-height: 28px;
+  margin: 0.5rem 0;
+  padding: 0 0.75rem;
+  overflow: hidden;
+  box-shadow: none;
+}
+.capacity-panel.open.capacity-panel-collapsed .capacity-header {
+  flex: 1;
+  margin: 0;
+  align-items: center;
+}
+.capacity-panel.open.capacity-panel-collapsed .capacity-grid-wrapper,
+.capacity-panel.open.capacity-panel-collapsed .capacity-subtitle {
+  display: none;
+}
+.capacity-panel-caret {
+  display: inline-block;
+  margin-left: 0.35rem;
+  transition: transform 0.15s ease;
+}
+.capacity-panel.open:not(.capacity-panel-collapsed) .capacity-panel-caret {
+  transform: rotate(90deg);
+}
 .capacity-title {
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.7rem;

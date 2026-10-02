@@ -707,6 +707,70 @@ for (const [width,height] of [[1440,900],[1280,720]]) test(`the pinned stack wit
     expect(bottom.y+bottom.height,JSON.stringify(parts)).toBeLessThanOrEqual(175);
 });
 
+// Planned Teams Effort: a 28px strip in Table view (collapsed by default), unchanged in List.
+const effortPanel = page => page.locator('.capacity-panel');
+const effortToggle = page => effortPanel(page).locator('.capacity-header');
+const firstRowTop = page => page.locator('.planning-review-table tbody tr').first().evaluate(node => node.getBoundingClientRect().top + scrollY);
+
+test('Planned Teams Effort is a collapsed strip in Table view, expands without refetching, and remembers the choice',async({page})=>{
+    await page.setViewportSize({width:1440,height:900});
+    // No saved layout: Table is the default, and the page's own saved preferences survive the reloads below.
+    const fixture=await installPlanningFixture(page,{planningLayout:null,scopeTeamIds:['team-alpha','team-beta']});await allowReviewSaving(page);await openPlanning(page,{expectStories:false});
+    const panel=effortPanel(page),toggle=effortToggle(page);
+    await expect(panel).toHaveClass(/capacity-panel-collapsed/);
+    await expect(toggle).toHaveJSProperty('tagName','BUTTON');await expect(toggle).toHaveAttribute('aria-expanded','false');
+    const strip=await panel.boundingBox();expect(strip.height).toBeLessThanOrEqual(32);
+    // Mounted but hidden while collapsed.
+    await expect(panel.locator('.capacity-grid-wrapper')).toHaveCount(1);await expect(panel.locator('.capacity-grid-wrapper')).toBeHidden();
+    const collapsedTop=await firstRowTop(page);
+    const loads=()=>fixture.calls.filter(call=>['/api/tasks-with-team-name','/api/eng/story-readiness','/api/dependencies','/api/eng/board','/api/capacity'].includes(call.pathname)).length;
+    const before=loads();
+    await toggle.click();
+    await expect(panel).not.toHaveClass(/capacity-panel-collapsed/);await expect(toggle).toHaveAttribute('aria-expanded','true');
+    await expect(panel.locator('.capacity-grid-wrapper')).toBeVisible();
+    await expect(panel.getByText('Planned Teams Effort (Story Points)')).toBeVisible();
+    expect(loads()).toBe(before);
+    const expandedTop=await firstRowTop(page);
+    expect(expandedTop-collapsedTop,JSON.stringify({collapsedTop,expandedTop})).toBeGreaterThanOrEqual(100);
+    await page.screenshot({path:'tmp/217-ui/c3-effort-expanded.png',fullPage:false});
+    await expect.poll(()=>page.evaluate(()=>JSON.parse(localStorage.getItem('jira_dashboard_ui_prefs_v1')||'{}').planningTeamsEffortExpanded)).toBe(true);
+    await page.reload();await expect(page.locator('.planning-panel.open')).toBeVisible();
+    await expect(effortPanel(page)).not.toHaveClass(/capacity-panel-collapsed/);
+    await effortToggle(page).click();await expect(effortPanel(page)).toHaveClass(/capacity-panel-collapsed/);
+    await expect.poll(()=>page.evaluate(()=>JSON.parse(localStorage.getItem('jira_dashboard_ui_prefs_v1')||'{}').planningTeamsEffortExpanded)).toBe(false);
+    await page.reload();await expect(page.locator('.planning-panel.open')).toBeVisible();
+    await expect(effortPanel(page)).toHaveClass(/capacity-panel-collapsed/);
+    await page.screenshot({path:'tmp/217-ui/c3-effort-collapsed.png',fullPage:false});
+});
+
+test('Planning List shows the Planned Teams Effort panel exactly as before',async({page})=>{
+    await page.setViewportSize({width:1440,height:900});
+    await installPlanningFixture(page,{planningLayout:'list',scopeTeamIds:['team-alpha','team-beta']});await openPlanning(page);
+    const panel=effortPanel(page);
+    await expect(panel).toHaveClass(/open/);await expect(panel).not.toHaveClass(/capacity-panel-collapsed/);
+    await expect(panel.locator('.capacity-grid-wrapper')).toBeVisible();
+    await expect(effortToggle(page)).toHaveJSProperty('tagName','DIV');
+    expect((await panel.boundingBox()).height).toBeGreaterThan(100);
+});
+
+test('the Planned Teams Effort toggle keeps a readable, flat hover',async({page})=>{
+    await page.setViewportSize({width:1440,height:900});
+    await installPlanningFixture(page,{planningLayout:'table',scopeTeamIds:['team-alpha','team-beta']});await allowReviewSaving(page);await openPlanning(page,{expectStories:false});
+    const toggle=effortToggle(page);
+    await toggle.hover();
+    const read=()=>toggle.evaluate(node=>{
+        const parse=v=>(v.match(/[\d.]+/g)||[]).map(Number);
+        let surface=node,bg=parse(getComputedStyle(surface).backgroundColor);
+        while((bg[3]??1)===0&&surface.parentElement){surface=surface.parentElement;bg=parse(getComputedStyle(surface).backgroundColor);}
+        const style=getComputedStyle(node),lum=rgb=>{const [r,g,b]=rgb.map(v=>{const c=v/255;return c<=0.03928?c/12.92:((c+0.055)/1.055)**2.4;});return 0.2126*r+0.7152*g+0.0722*b;};
+        const title=getComputedStyle(node.querySelector('.capacity-title')),fg=parse(title.color).slice(0,3),[hi,lo]=[lum(fg),lum(bg.slice(0,3))].sort((x,y)=>y-x);
+        return {contrast:(hi+0.05)/(lo+0.05),transform:style.transform,shadow:style.boxShadow,spacing:style.letterSpacing,cursor:style.cursor};
+    });
+    await expect.poll(async()=>(await read()).contrast).toBeGreaterThanOrEqual(4.5);
+    const settled=await read();expect(settled.transform).toBe('none');expect(settled.shadow).toBe('none');expect(settled.cursor).toBe('pointer');
+    expect(['normal','0px']).toContain(settled.spacing);
+});
+
 test('the docked header follows the sticky stack when its offset changes without any scroll or resize',async({page})=>{
     await page.setViewportSize({width:1280,height:800});
     await installPlanningFixture(page,{planningLayout:'table',longTable:true,scopeTeamIds:['team-alpha','team-beta']});await allowReviewSaving(page);await openPlanning(page,{expectStories:false});

@@ -285,6 +285,8 @@ function catchUpPrefs(extra = {}) {
         sprintName: SPRINT_NAME,
         activeGroupId: GROUP_ID,
         showPlanning: false,
+        // These cases exercise the per-epic refresh buttons on the epic list; Planning defaults to the Table, which has no epic headers.
+        planningLayout: 'list',
         showStats: false,
         showScenario: false,
         ...extra,

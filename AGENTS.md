@@ -198,7 +198,7 @@ Prefer single-file or single-test runs during iteration. Run the full suite befo
 - For analytics-style views, prefer one scoped fetch plus client-side regrouping/filtering. Re-fetch only when scope changes or the user explicitly refreshes.
 - If per-issue Jira enrichment is required, define strict fan-out limits before implementation.
 - If the user uses a domain term like `quarter`, map it to existing data structures before building new UI.
-- Keep the shared ENG filter controls in the second controls row, before Catch Up alerts and Planning capacity content. Planning Table combines Filters and capacity in one sticky stack; place the table toolbar immediately above the spreadsheet in normal mode and in that shared controls-width stack only when sticky mode activates; Planning List keeps the same Filters-first ordering with measured offsets. `.epic-header` sticks below the active header/filter/panel tiers. Re-verify Catch Up, Planning, and Scenario modes after changing sticky UI.
+- Keep the shared ENG filter controls in the second controls row, before Catch Up alerts and Planning capacity content. Planning Table combines Filters and capacity in one sticky stack; the Epics/Stories switch and the dirty-only Save/Discard live in the Filters row's view-controls slot with no separate toolbar tier (approved 2026-10-02, lands with `docs/plans/EXEC-planning-review-table-chrome-217.md`; until then the toolbar sits above the spreadsheet in normal mode and in the sticky stack when sticky mode activates), and Sort and Group by Initiative are not rendered in Table view; Planning List keeps the same Filters-first ordering with measured offsets. `.epic-header` sticks below the active header/filter/panel tiers. Re-verify Catch Up, Planning, and Scenario modes after changing sticky UI.
 - In settings/config modals, preserve established selected-chip/remove/search behavior unless the user explicitly asks for a new interaction pattern.
 
 ### Git workflow
@@ -388,7 +388,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Chart bar segments and strips must not inherit the global button hover lift; override `background`/`transform` and use a soft shadow instead, leaving other controls' existing hover behavior untouched.
 - Build UI mockups from verbatim repository CSS (tokens, fonts, sizes, grid columns, breakpoints) and existing DOM classes; do not approximate styling or add dark modes the app lacks.
 - Keep Planning spreadsheet columns and cell padding compact without stretching a short table; widen only the spreadsheet region and preserve the header, capacity panel, and filters at their original width.
-- Expose custom-column creation through a visible "+ Column" action in Planning; keep existing-column management in Columns.
+- Manage Planning review columns from the header: a persistent corner "+" (Add column and Show hidden), a hover boundary "+" that inserts at that position, and a per-column chevron menu; do not add toolbar "+ Column"/"Columns" buttons (approved 2026-10-02 in `docs/plans/EXEC-planning-review-table-chrome-217.md`; until it lands the toolbar buttons remain).
 - Planning spreadsheet statuses must use StatusPill with getIssueStatusClassName in both passive and OAuth editing profiles; verify the actual editor controls in geometry tests.
 
 - Planning spreadsheet metadata belongs in explicit columns, with parent Epic summary linked to Jira for Stories and totals pinned inside the viewport; do not hide it behind a Fields menu.
@@ -409,10 +409,14 @@ When the user corrects your approach, append a one-line rule here before ending 
 
 - In Planning table headers, reset inherited global button margins on sort buttons and drag handles; keep sparse custom inputs compact and vertically centered with fixed focus geometry and no inherited focus shadow instead of padding every column to text-field width.
 
-- Default Planning to Table when no valid layout preference exists; keep its toolbar to matching Epics/Stories, + Column, Columns, Save and one options control, with refresh/discard/help inside the popup rather than persistent instructional text.
+- Default Planning to Table when no valid layout preference exists; keep Table chrome minimal: Epics/Stories in the Filters row, Save and Discard only while the review is dirty, no options menu or persistent instructional text, and the app-header Refresh also reloads the review (approved 2026-10-02 in `docs/plans/EXEC-planning-review-table-chrome-217.md`; until it lands the toolbar with its options popup remains).
 
 - Clear Planning column-layout drafts only after the save response confirms their exact order and visibility; missing layout acknowledgement must preserve the draft as unconfirmed.
 
 - In Planning tables, align numeric headers, values, editors and totals right; align text columns left.
 
 - Planning tables must use document vertical scrolling and retain only horizontal table scrolling; dock headers below the measured controls stack and synchronize headers/totals with the body rather than creating a second vertical scroller.
+
+- Keyboard-only accessibility is deprioritized: park findings in `docs/TODO.md` (Deferred) instead of building them; touch support is still required, so every action must work by tap and none may require dragging.
+
+- When using live data from the running app, keep it read-only and transient: prefer numbers-only probes, never save or publish screenshots of it (delete any taken), keep only obfuscated aggregates, and let the user sign in themselves.

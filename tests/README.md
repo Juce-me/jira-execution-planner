@@ -48,6 +48,21 @@ Run specific test case:
 python3 -m unittest tests.test_planning.PlanningSchedulerTests.test_dependency_ordering
 ```
 
+## Extraction safety gate
+
+Use the pinned Node 20 runtime for the Scenario/Settings extraction gate and its synthetic controls:
+
+```bash
+fnm exec --using 20 bash scripts/extraction_lint/run.sh
+fnm exec --using 20 bash scripts/extraction_lint/negative_controls.sh
+```
+
+The gate verifies the complete pinned tool dependency set in ignored `tmp/lint`, runs ESLint and recursive hook/component interface checks, and validates the frozen owner manifest's per-file and unique aggregate budgets. Controls cover nested contracts, existing-hook conservation, manifest registration and dependency direction, physical shared-helper counting, authorized ownership transfer, and strict nested-caller diagnostics. Strict diagnostics require a caller/getter phase ledger: deferred closures are reported too, and a lint pass alone does not prove invocation timing. No production files are changed by the controls.
+
+The six core tools are `scripts/extraction_lint/eslint.config.mjs`, `check_hook_interfaces.mjs`, `check_move_conservation.mjs`, `tooling_controls.mjs`, `run.sh`, and `negative_controls.sh`; `owner_budgets.json` is the parent-maintained checkpoint inventory. Nothing is added to `package.json`.
+
+For conservation, run `fnm exec --using 20 node tmp/lint/check_move_conservation.mjs --base <revision> <complete-affected-hook-file-set>`. Existing hooks are read at both revisions; explicitly name new/deleted files with `--created-hook <file>` / `--deleted-hook <file>`. Scratch comparisons use `--base-file <dashboard>` plus `--dashboard <current-dashboard>` and `--base-hook <current-hook>=<base-hook>`. Exit 0 means effect order matches, **not** that residual edits are accepted; review every printed statement. Exit 1 means effect-order divergence; exit 2 means parse/coverage/tooling failure. Never treat either nonzero result as an empty successful comparison.
+
 ## Test Categories
 
 ### Unit Tests

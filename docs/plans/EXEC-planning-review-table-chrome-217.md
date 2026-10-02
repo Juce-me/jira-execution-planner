@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-Status: Active. Gate G0 passed on 2026-10-02: the user tested the mockup ("looks good like that") and chose the recommended option for every open item (D12). The awaited-chip baseline is committed (`8449072f`), so Task 0 and Slice A are next, then Slices B and C. Execution has started (see Execution status).
+Status: Active. Gate G0 passed on 2026-10-02: the user tested the mockup ("looks good like that") and chose the recommended option for every open item (D12). The awaited-chip baseline is committed (`8449072f`), so Task 0 is done and Slice A is next, then Slices B and C. Execution has started (see Execution status).
 Type: feature (UI)
 Branch: `feature/217-sprint-review-table` (continues `EXEC-planning-sprint-review-table-217.md`, whose shipped behaviour stays the source of truth for everything not changed here)
 Written: 2026-10-02 from five read-only reviews (complexity, interaction, visual QA, accessibility, page layout) on a synthetic fixture in Chromium, plus the user's decisions below.
@@ -29,10 +29,11 @@ Written: 2026-10-02 from five read-only reviews (complexity, interaction, visual
 
 ## Execution status
 
-Updated 2026-10-02. The user authorized local commits (no push) for this plan. Commits so far, in order: `8449072f` (the awaited-chip baseline, verified with 1,565 unit tests and 61 Chromium cases on exactly that state), this plan with the rules it supersedes, then the logic helpers and the backend whitelist.
+Updated 2026-10-02. The user authorized local commits (no push) for this plan. Commits so far, in order: `8449072f` (the awaited-chip baseline, verified with 1,565 unit tests and 61 Chromium cases on exactly that state), this plan with the rules it supersedes (`8aab64bc`), the logic helpers and the backend whitelist (`cf1681fd`), then Task 0.
 
 - Done: Task B1 (`insertColumnId`, `nearestBoundary` in `planningReviewTableModel.js` with node unit tests) and the logic half of Task C2 (`selectedStoryPoints` with its unit test, and the backend layout whitelist for `accepted` with `test_layout_accepts_the_accepted_column_in_order_and_hidden`). Checks run: `node --test tests/test_planning_review_table_model.js` 14/14; `npm run test:frontend:unit` 1,568 pass; `tests.test_sprint_review` 17 pass; `tests.test_codebase_structure_budgets` pass. The `accepted` column definition and the rows-memo wiring stay in Task C2 because they change the visible table and must land together with its UI test.
-- Next: Task 0 (remove the orphan-Story "No Epic" second line), then Slice A, then B2 to B4, C1, C3, C4.
+- Done: Task 0 (the orphan-Story "No Epic" second line is removed; both Planning specs pass, 62 cases; unit suite 1,568 pass).
+- Next: Slice A, then B2 to B4, C1, C3, C4.
 - Rules already updated: AGENTS.md section 10 (Filters/capacity stack line) and section 11 (the two toolbar lines, plus the keyboard-backlog and live-data lines), `docs/TODO.md` (keyboard backlog), `docs/plans/README.md` (index).
 - The `GATE-05` Home-write edit in the working tree is unrelated and stays out of these commits.
 
@@ -134,21 +135,22 @@ Trigger: user actions inside the Planning review table. Event: existing `plannin
 
 - [x] **Step 1: Check the baseline is committed on its own** (done 2026-10-02: `8449072f`). Run `git log --oneline -5` and `git status --short`. Expected: a commit for the awaited chip exists and `PlanningReviewTable.jsx`, its CSS and the two Planning specs are not modified. If they are still modified, stop and ask the operator; they belong to the parallel session.
 - [x] **Step 2: The user's answer** to "remove the 'No Epic' second line under orphan Stories?" is yes (2026-10-02).
-- [ ] **Step 3: failing test.**
+- [x] **Step 3: failing test** (done 2026-10-02; it failed with row heights `[40, 36.875]`, the height of the extra line).
 
 ```js
-test('an orphan Story keeps the normal row height and names its Epic only in the Epic column', async ({ page }) => {
-    await install(page); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
-    const rows = page.locator('tbody tr');
-    const orphan = rows.filter({ hasText: 'DEMO-3' }), neighbour = rows.filter({ hasText: 'DEMO-1' });
-    expect((await orphan.boundingBox()).height).toBe((await neighbour.boundingBox()).height);
+test('an orphan Story keeps the normal row height and names its Epic only in the Epic column', async ({page}) => {
+    await install(page);await page.getByRole('radio',{name:'Stories',exact:true}).click();
+    const rows=page.locator('tbody tr');
+    const orphan=rows.filter({hasText:'DEMO-3'}),neighbour=rows.filter({hasText:'DEMO-1'});
+    const heights=[(await orphan.boundingBox()).height,(await neighbour.boundingBox()).height];
+    expect(Math.abs(heights[0]-heights[1]),JSON.stringify(heights)).toBeLessThan(1.5);
     await expect(orphan.locator('td.planning-review-summary')).not.toContainText('No Epic');
     await expect(orphan.locator('td.planning-review-epic')).toHaveText('No Epic');
 });
 ```
 
-Run: `npx playwright test tests/ui/planning_review_table.spec.js -g "orphan Story keeps" --browser=chromium` — expected FAIL (extra line, taller row).
-- [ ] **Step 4: Implement.** In the `column.id === 'summary'` cell delete `{row.rowKind === 'story' && !row.epicKey && <span className="planning-review-requirement">No Epic</span>}`. Then `grep -rn "planning-review-requirement" frontend/src tests`; if nothing else uses it, delete the `.planning-review-requirement` rule. Re-run the test: PASS. Update the feature doc sentence about orphans. Commit: `Keep orphan Story rows one line tall (#217)`.
+Run: `npx playwright test tests/ui/planning_review_table.spec.js -g "orphan Story keeps" --browser=chromium` — failed before the change, passes after.
+- [x] **Step 4: Implement** (done 2026-10-02). The `column.id === 'summary'` cell is now just `summaryCell(row)`; the `No Epic` fragment is gone. The `.planning-review-requirement` rule stays because `IssueSummaryEditor.jsx` still uses it for its loading and saving lines. Both Planning specs pass (62 cases); the EXEC-217 baseline note records the follow-up. Commit: `Keep orphan Story rows one line tall (#217)`.
 
 ### Task A1: Heading click cycles ascending, descending, off
 

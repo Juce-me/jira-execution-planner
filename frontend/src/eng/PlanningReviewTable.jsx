@@ -250,7 +250,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
                 {columns.map(column => <td key={column.id} className={`planning-review-${column.id}${column.custom ? ' planning-review-custom' : ''} planning-review-${column.type === 'number' ? 'numeric' : 'text'}${movable(column)}`}>
                     {column.custom ? <CustomCell row={row} column={column} review={review} editing={editing === row.id} setEditing={setEditing} focusNew={newColumnId === column.id && row === displayed.find(item => !item.synthetic && item.issueId)} />
                         : column.id === 'key' ? (row.synthetic ? row.rowKind === 'requirement' ? 'Not created' : '—' : <TrackedExternalLink href={`${jiraUrl.replace(/\/+$/, '')}/browse/${encodeURIComponent(row.key)}`} target="_blank" rel="noopener noreferrer" analyticsMeta={buildJiraBrowseLinkAnalytics({ issueKind: row.rowKind, sourceSurface: 'planning' })}>{row.key}</TrackedExternalLink>)
-                        : column.id === 'summary' ? <>{summaryCell(row)}{row.rowKind === 'story' && !row.epicKey && <span className="planning-review-requirement">No Epic</span>}</>
+                        : column.id === 'summary' ? summaryCell(row)
                         : column.id === 'priority' ? field(row, 'priority', <span>{renderPriorityIcon?.(row.priority)} {row.priority || '—'}</span>)
                         : column.id === 'storyPoints' ? (row.rowKind === 'requirement' ? '—' : row.rowKind === 'story' ? field(row, 'storyPoints', row.storyPoints ?? 0) : row.storyPoints ?? 0)
                         : column.id === 'teamsInScope' ? <TrimmedValue value={reviewValue(row, column, review.cells) || '—'} />

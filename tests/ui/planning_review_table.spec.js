@@ -493,6 +493,16 @@ test('an Epic awaiting a Story keeps a one-line row with a chip beside its title
     await page.screenshot({path:path.join(root,'tmp/217-ui/awaiting-chip-long-title.png')});
 });
 
+test('an orphan Story keeps the normal row height and names its Epic only in the Epic column', async ({page}) => {
+    await install(page);await page.getByRole('radio',{name:'Stories',exact:true}).click();
+    const rows=page.locator('tbody tr');
+    const orphan=rows.filter({hasText:'DEMO-3'}),neighbour=rows.filter({hasText:'DEMO-1'});
+    const heights=[(await orphan.boundingBox()).height,(await neighbour.boundingBox()).height];
+    expect(Math.abs(heights[0]-heights[1]),JSON.stringify(heights)).toBeLessThan(1.5);
+    await expect(orphan.locator('td.planning-review-summary')).not.toContainText('No Epic');
+    await expect(orphan.locator('td.planning-review-epic')).toHaveText('No Epic');
+});
+
 test('uncreated Epic appears and its awaiting Story has a linked, noneditable placeholder',async({page})=>{
     await install(page);
     const epic=page.locator('tbody tr').filter({has:page.getByRole('link',{name:'DEMO-20',exact:true})});

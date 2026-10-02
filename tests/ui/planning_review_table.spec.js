@@ -12,7 +12,7 @@ test.beforeAll(() => {
         import PlanningReviewTable, { PlanningReviewScopeDialog } from './frontend/src/eng/PlanningReviewTable.jsx';
         import { createPlanningSprintReviewController } from './frontend/src/eng/usePlanningSprintReview.js';
         const stories = Array.from({length:window.longReview?60:3},(_,i)=>i+1).map(id => ({id:String(id),key:'DEMO-'+id,fields:{summary:'Story '+id,customfield_10004:window.zeroStory&&id===3?null:id,teamId:'alpha',teamName:window.longNames?(id===1?'Research Long Named Alpha Engineering Team':'Research Long Named Beta Engineering Team'):'Alpha',projectKey:'DEMO',status:{name:'To Do'},priority:{name:'High'}}}));
-        const epics=[{key:'DEMO-10',epic:{id:'10',key:'DEMO-10',summary:window.longNames?'Automate detailed calculations and adjustments across multiple supported integrations':'Epic summary',status:{name:'To Do'},priority:{name:'High'},teamName:'Own Team'},tasks:stories.slice(0,2),requirements:[]},{key:'DEMO-20',epic:{id:'20',key:'DEMO-20',summary:'Readiness Epic'},tasks:[],requirements:[{id:'required',team:{name:'Beta'}}]}];
+        const epics=[{key:'DEMO-10',epic:{id:'10',key:'DEMO-10',summary:window.longNames?'Automate detailed calculations and adjustments across multiple supported integrations':'Epic summary',status:{name:'To Do'},priority:{name:'High'},teamName:'Own Team'},tasks:stories.slice(0,2),requirements:[]},{key:'DEMO-20',epic:{id:'20',key:'DEMO-20',summary:window.longNames?'Readiness Epic with a deliberately long title that must truncate beside its chip':'Readiness Epic'},tasks:[],requirements:[{id:'required',team:{name:'Beta'}}]}];
         const columns=Array.from({length:8},(_,i)=>({id:'cost'+i,rowKind:'story',label:'Cost '+i,type:'number',aggregation:'sum',archived:false,order:i}));
         let saveCount=0; let savedSchema={schemaRevision:1,columns,layouts:{},capabilities:{canRead:true,canSave:true}};
         const controller=createPlanningSprintReviewController({fetchSchema:async()=>savedSchema,readValues:async(_,__,body)=>({cells:body.issueIds.flatMap(id=>columns.map(column=>({issueId:id,rowKind:body.rowKind,columnId:column.id,value:id==='1'?'2.000':'10.000',revision:1})))}),saveReview:async(_,__,payload)=>{saveCount++; savedSchema={...savedSchema,schemaRevision:savedSchema.schemaRevision+1,columns:controller.getState().columns,layouts:controller.getState().layouts}; return {...savedSchema,cells:payload.cellChanges.map(cell=>({...cell,revision:2}))}}});
@@ -478,10 +478,25 @@ test('Capacity hover and keyboard focus retain readable light Included and Exclu
     await page.screenshot({path:path.join(root,'tmp/217-ui/capacity-hover-readable.png'),fullPage:true});
 });
 
+test('an Epic awaiting a Story keeps a one-line row with a chip beside its title, even for a long title', async ({page}) => {
+    await page.setViewportSize({width:1500,height:900});await install(page,false,true);
+    const rows=page.locator('tbody tr');
+    const heights=await rows.evaluateAll(nodes=>nodes.slice(0,2).map(node=>node.getBoundingClientRect().height));
+    expect(Math.abs(heights[0]-heights[1]),JSON.stringify(heights)).toBeLessThan(1.5);
+    await expect(rows.nth(1).locator('.planning-review-awaiting')).toHaveText('1 Story awaited');
+    const geometry=await rows.nth(1).evaluate(row=>{
+        const cell=row.querySelector('td.planning-review-summary'),title=cell.querySelector('.planning-review-truncated-value'),chip=cell.querySelector('.planning-review-awaiting');
+        const t=title.getBoundingClientRect(),c=chip.getBoundingClientRect(),w=cell.getBoundingClientRect();
+        return {sameLine:c.top<t.bottom&&c.bottom>t.top,chipInside:c.left>=w.left&&c.right<=w.right,truncated:title.scrollWidth>title.clientWidth,secondLine:Boolean(cell.querySelector('.planning-review-requirement'))};
+    });
+    expect(geometry).toEqual({sameLine:true,chipInside:true,truncated:true,secondLine:false});
+    await page.screenshot({path:path.join(root,'tmp/217-ui/awaiting-chip-long-title.png')});
+});
+
 test('uncreated Epic appears and its awaiting Story has a linked, noneditable placeholder',async({page})=>{
     await install(page);
     const epic=page.locator('tbody tr').filter({has:page.getByRole('link',{name:'DEMO-20',exact:true})});
-    await expect(epic).toContainText('1 uncreated Story');await expect(epic.getByRole('checkbox')).toBeDisabled();
+    await expect(epic).toContainText('1 Story awaited');await expect(epic.getByRole('checkbox')).toBeDisabled();
     await page.getByRole('radio',{name:'Stories',exact:true}).click();
     const placeholder=page.locator('tbody tr').filter({hasText:'Story awaiting creation for Beta'});
     await expect(placeholder).toHaveCount(1);await expect(placeholder).toContainText('Not created');await expect(placeholder).toContainText('Awaiting creation');

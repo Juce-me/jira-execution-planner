@@ -8908,6 +8908,22 @@ html:has(.planning-panel.open) {
   width: 220px;
   max-width: 220px;
 }
+.planning-review-summary-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 286px;
+  max-width: 286px;
+}
+.planning-review-summary .planning-review-summary-line .planning-review-truncated-value {
+  flex: 0 1 auto;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+}
+.planning-review-awaiting {
+  flex: none;
+}
 .planning-review-truncated-value:focus-visible {
   outline: 2px solid #93c5fd;
   outline-offset: 1px;
@@ -8918,6 +8934,10 @@ html:has(.planning-panel.open) {
 }
 @media (max-width: 600px) {
   .planning-review-summary .planning-review-truncated-value {
+    width: 206px;
+    max-width: 206px;
+  }
+  .planning-review-summary-line {
     width: 206px;
     max-width: 206px;
   }

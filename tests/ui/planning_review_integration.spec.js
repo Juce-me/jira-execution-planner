@@ -516,7 +516,7 @@ test('table shows readiness-only Epics and placeholders when no Jira Stories exi
     await installUncreatedReadiness(page);
     await openPlanning(page,{expectStories:false});await page.getByRole('button',{name:'Show Planning table',exact:true}).click();
     const table=page.locator('.planning-review-table');
-    await expect(table.getByRole('link',{name:'PLAN-EMPTY',exact:true})).toHaveCount(1);await expect(table).toContainText('1 uncreated Story');
+    await expect(table.getByRole('link',{name:'PLAN-EMPTY',exact:true})).toHaveCount(1);await expect(table).toContainText('1 Story awaited');
     await page.getByRole('radio',{name:'Stories',exact:true}).click();
     const placeholder=table.locator('tbody tr').filter({hasText:'Story awaiting creation for Alpha Team'});
     await expect(placeholder).toHaveCount(1);await expect(placeholder).toContainText('Awaiting creation');await expect(placeholder.getByRole('checkbox')).toBeDisabled();

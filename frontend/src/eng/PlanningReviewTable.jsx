@@ -140,6 +140,13 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
     const totals = planningReviewTotals(rows, columns, review.cells);
     const editable = review.capabilities?.canSave && !review.saving;
     const trackedAction = (action, params = {}) => onReviewAction?.(action, { mode, ...params });
+    // An Epic still waiting for Stories shows a chip beside its title, so the row keeps its one-line height.
+    const summaryCell = row => {
+        const title = <TrimmedValue value={row.summary}>{field(row, 'summary', row.summary)}</TrimmedValue>;
+        const awaited = row.rowKind === 'epic' ? row.requirements?.length || 0 : 0;
+        if (!awaited) return title;
+        return <span className="planning-review-summary-line">{title}<StatusPill className={getIssueStatusClassName('Pending', 'planning-review-awaiting')} label={`${awaited} ${awaited === 1 ? 'Story' : 'Stories'} awaited`} /></span>;
+    };
     const field = (row, fieldName, fallback) => !row.synthetic && renderFieldEditor ? (renderFieldEditor({ row, field: fieldName, value: fallback }) ?? fallback) : fallback;
     const changeMode = next => { if (editing) document.activeElement?.blur(); setEditing(null); setMode(next); setNewColumnId(''); trackedAction('row_mode_changed', { mode: next }); };
     const changeSort = (column, additive) => {
@@ -243,7 +250,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
                 {columns.map(column => <td key={column.id} className={`planning-review-${column.id}${column.custom ? ' planning-review-custom' : ''} planning-review-${column.type === 'number' ? 'numeric' : 'text'}${movable(column)}`}>
                     {column.custom ? <CustomCell row={row} column={column} review={review} editing={editing === row.id} setEditing={setEditing} focusNew={newColumnId === column.id && row === displayed.find(item => !item.synthetic && item.issueId)} />
                         : column.id === 'key' ? (row.synthetic ? row.rowKind === 'requirement' ? 'Not created' : '—' : <TrackedExternalLink href={`${jiraUrl.replace(/\/+$/, '')}/browse/${encodeURIComponent(row.key)}`} target="_blank" rel="noopener noreferrer" analyticsMeta={buildJiraBrowseLinkAnalytics({ issueKind: row.rowKind, sourceSurface: 'planning' })}>{row.key}</TrackedExternalLink>)
-                        : column.id === 'summary' ? <><TrimmedValue value={row.summary}>{field(row, 'summary', row.summary)}</TrimmedValue>{row.rowKind === 'epic' && row.requirements?.length > 0 && <span className="planning-review-requirement">{row.requirements.length} uncreated {row.requirements.length === 1 ? 'Story' : 'Stories'}</span>}{row.rowKind === 'story' && !row.epicKey && <span className="planning-review-requirement">No Epic</span>}</>
+                        : column.id === 'summary' ? <>{summaryCell(row)}{row.rowKind === 'story' && !row.epicKey && <span className="planning-review-requirement">No Epic</span>}</>
                         : column.id === 'priority' ? field(row, 'priority', <span>{renderPriorityIcon?.(row.priority)} {row.priority || '—'}</span>)
                         : column.id === 'storyPoints' ? (row.rowKind === 'requirement' ? '—' : row.rowKind === 'story' ? field(row, 'storyPoints', row.storyPoints ?? 0) : row.storyPoints ?? 0)
                         : column.id === 'teamsInScope' ? <TrimmedValue value={reviewValue(row, column, review.cells) || '—'} />

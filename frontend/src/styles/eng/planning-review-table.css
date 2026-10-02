@@ -135,9 +135,13 @@ html:has(.planning-panel.open) { scrollbar-gutter: stable; }
 
 .planning-review-truncated-value { display: block; width: 286px; max-width: 286px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .planning-review-teamsInScope .planning-review-truncated-value { width: 220px; max-width: 220px; }
+/* An Epic awaiting Stories: the chip sits beside the title instead of adding a second line. */
+.planning-review-summary-line { display: flex; align-items: center; gap: 8px; width: 286px; max-width: 286px; }
+.planning-review-summary .planning-review-summary-line .planning-review-truncated-value { flex: 0 1 auto; width: auto; min-width: 0; max-width: none; }
+.planning-review-awaiting { flex: none; }
 .planning-review-truncated-value:focus-visible { outline: 2px solid #93c5fd; outline-offset: 1px; }
 .planning-review-truncated-value:has(.issue-summary-editor-inline) { overflow: visible; white-space: normal; }
-@media (max-width: 600px) { .planning-review-summary .planning-review-truncated-value { width: 206px; max-width: 206px; } }
+@media (max-width: 600px) { .planning-review-summary .planning-review-truncated-value { width: 206px; max-width: 206px; } .planning-review-summary-line { width: 206px; max-width: 206px; } }
 
 /* Rows follow document scrolling. Only horizontal movement belongs to the spreadsheet. */
 .planning-review-docked-header, .planning-review-docked-footer { position: fixed; overflow: hidden; z-index: var(--sticky-epic-z, 50); background: #f8fafc; box-shadow: 0 1px 0 #cbd5e1; }

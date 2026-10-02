@@ -54,7 +54,8 @@ on hover and keyboard focus, with a visible focus outline.
 
 Epics show scoped child Story Points and contributing Teams. Story mode includes
 orphans and awaiting-creation placeholders, one per uncovered Team. Readiness-only
-Epics remain in the Epic table, marked with their uncreated Story count. Each
+Epics remain in the Epic table, marked with a "N Story awaited" chip beside the title
+(not a second line), so the row keeps its normal height even for a long, truncated title. Each
 placeholder shows its Team and links its parent Epic; it has no Jira key or
 Story Points and cannot be selected or edited. Table placeholders remain visible
 through Story status/priority filters, while Department, Team, project, Project

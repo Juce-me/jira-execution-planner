@@ -369,7 +369,7 @@ test('catalog capability loss preserves drafts and recovery invalidates a queued
     // decision remains pending, rather than interacting through the modal.
     await page.evaluate(() => document.querySelector('[aria-label="Refresh tasks and sprints from Jira"]').click());
     await expect(page.locator('.sprint-dropdown').first().locator('.sprint-dropdown-toggle')).toHaveAttribute('aria-disabled','false');
-    await page.getByRole('button',{name:'Discard',exact:true}).click();
+    await page.getByRole('dialog',{name:'Save this Sprint review?'}).getByRole('button',{name:'Discard',exact:true}).click();
     await expect(page.locator('.sprint-dropdown').first()).toContainText('2026Q3');
     await expect(page.getByRole('region',{name:'Planning Sprint review'})).toBeVisible();
 });

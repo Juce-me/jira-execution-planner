@@ -513,6 +513,32 @@ test('heading click cycles ascending, descending, off and the index appears only
     await expect(cost0).toHaveText('Cost 0 1↑');await expect(cost1).toHaveText('Cost 1 2↑');
 });
 
+test('Discard and Save review appear only while the review has changes', async ({page}) => {
+    await install(page);await page.getByRole('radio',{name:'Stories',exact:true}).click();
+    const save=page.getByRole('button',{name:'Save review',exact:true}),discard=page.getByRole('button',{name:'Discard',exact:true});
+    await expect(save).toHaveCount(0);await expect(discard).toHaveCount(0);
+    await expect(page.getByText('Unsaved',{exact:true})).toHaveCount(0);
+    const toolbar=page.locator('.planning-review-toolbar');
+    const clean=(await toolbar.boundingBox()).height;
+    await page.getByRole('textbox',{name:'Cost 0 for DEMO-1',exact:true}).fill('99');
+    await expect(save).toBeVisible();await expect(discard).toBeVisible();
+    expect((await toolbar.boundingBox()).height).toBe(clean);
+    await discard.click();await page.getByRole('button',{name:'Keep',exact:true}).click();
+    expect(await page.evaluate(()=>window.harness.state().dirty)).toBe(true);
+    await discard.click();await discard.click();
+    expect(await page.evaluate(()=>window.harness.state().dirty)).toBe(false);
+    await expect(save).toHaveCount(0);await expect(discard).toHaveCount(0);
+});
+
+test('Save review sends one save and the review actions disappear', async ({page}) => {
+    await install(page);await page.getByRole('radio',{name:'Stories',exact:true}).click();
+    await page.getByRole('textbox',{name:'Cost 0 for DEMO-1',exact:true}).fill('99');
+    await page.getByRole('button',{name:'Save review',exact:true}).click();
+    await expect(page.getByRole('button',{name:'Save review',exact:true})).toHaveCount(0);
+    expect(await page.evaluate(()=>window.harness.saveCount())).toBe(1);
+    expect(await page.evaluate(()=>window.harness.state().dirty)).toBe(false);
+});
+
 test('uncreated Epic appears and its awaiting Story has a linked, noneditable placeholder',async({page})=>{
     await install(page);
     const epic=page.locator('tbody tr').filter({has:page.getByRole('link',{name:'DEMO-20',exact:true})});
@@ -544,6 +570,7 @@ for(const width of [390,1440]) test(`review toolbar is compact and options do no
     await expect(toolbar.getByText('Rows',{exact:true})).toHaveCount(0);
     await expect(page.getByText('Drag column handles to reorder.',{exact:false})).toHaveCount(0);
     await expect(page.getByRole('button',{name:'Refresh review',exact:true})).toHaveCount(0);
+    await expect(toolbar.getByRole('button',{name:'Save review',exact:true})).toHaveCount(0);
     const controls=await toolbar.locator('.segmented-control, .planning-action-button').evaluateAll(nodes=>nodes.map(node=>{const r=node.getBoundingClientRect();return {height:r.height,y:r.y};}));
     expect(Math.max(...controls.map(c=>c.height))-Math.min(...controls.map(c=>c.height))).toBeLessThan(1);
     if(width>600) expect(Math.max(...controls.map(c=>c.y))-Math.min(...controls.map(c=>c.y))).toBeLessThan(1);
@@ -561,11 +588,11 @@ for(const width of [390,1440]) test(`review toolbar is compact and options do no
     await toolbar.getByRole('button',{name:'+ Add column',exact:true}).click();
     await page.getByLabel('Column name',{exact:true}).fill('Draft field');
     await page.getByRole('button',{name:'Add column',exact:true}).click();
-    await expect(toolbar.getByText('Unsaved',{exact:true})).toBeVisible();
     await expect(toolbar.getByRole('button',{name:'Save review',exact:true})).toBeEnabled();
-    await toolbar.getByRole('button',{name:'Review options',exact:true}).click();
-    await popup.getByRole('button',{name:'Discard draft',exact:true}).click();
-    await expect(popup).toHaveCount(0);await expect(toolbar.getByText('Unsaved',{exact:true})).toHaveCount(0);
+    await page.screenshot({path:path.join(root,`tmp/217-ui/review-cluster-${width}.png`)});
+    await toolbar.getByRole('button',{name:'Discard',exact:true}).click();
+    await toolbar.getByRole('button',{name:'Discard',exact:true}).click();
+    await expect(toolbar.getByRole('button',{name:'Save review',exact:true})).toHaveCount(0);
     await expect(page.getByRole('columnheader',{name:'Draft field',exact:true})).toHaveCount(0);
 });
 

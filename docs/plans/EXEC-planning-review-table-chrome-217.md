@@ -34,7 +34,8 @@ Updated 2026-10-02. The user authorized local commits (no push) for this plan. C
 - Done: Task B1 (`insertColumnId`, `nearestBoundary` in `planningReviewTableModel.js` with node unit tests) and the logic half of Task C2 (`selectedStoryPoints` with its unit test, and the backend layout whitelist for `accepted` with `test_layout_accepts_the_accepted_column_in_order_and_hidden`). Checks run: `node --test tests/test_planning_review_table_model.js` 14/14; `npm run test:frontend:unit` 1,568 pass; `tests.test_sprint_review` 17 pass; `tests.test_codebase_structure_budgets` pass. The `accepted` column definition and the rows-memo wiring stay in Task C2 because they change the visible table and must land together with its UI test.
 - Done: Task 0 (the orphan-Story "No Epic" second line is removed; both Planning specs pass, 62 cases; unit suite 1,568 pass).
 - Done: Task A1 (the heading click cycles ascending, descending, off; the index shows only with several criteria).
-- Next: A2 to A4, then B2 to B4, C1, C3, C4.
+- Done: Task A2 (Discard and Save only while the review has changes; no "Unsaved" text, no footer "Draft"; inline Discard confirmation).
+- Next: A3 and A4, then B2 to B4, C1, C3, C4.
 - Rules already updated: AGENTS.md section 10 (Filters/capacity stack line) and section 11 (the two toolbar lines, plus the keyboard-backlog and live-data lines), `docs/TODO.md` (keyboard backlog), `docs/plans/README.md` (index).
 - The `GATE-05` Home-write edit in the working tree is unrelated and stays out of these commits.
 
@@ -203,7 +204,9 @@ const heading = <button …>{column.label}{position >= 0 && <span> {sort.length 
 
 **Interfaces:** Produces `PlanningReviewStateCluster({ review, editable, onSave, onDiscard })`; returns `null` unless `review.dirty || review.saving`.
 
-- [ ] **Step 1: failing test** (the rewritten Save/Unsaved/Draft tests are fixed in Step 5).
+Status: done 2026-10-02. Differences from the snippets below (the shipped `PlanningReviewStateCluster.jsx` is authoritative): the cluster also shows a muted "Loading…" note while the review loads, because the removed status text carried that cue and nothing else shows it, so it returns that note instead of `null` in that case; the confirmation text uses the shared `.planning-review-state-note` class; the ⋯ popup lost its "Discard draft" item here since the cluster now owns Discard (the rest of ⋯ goes in Task A3). The Sprint-change dialog also has a "Discard" button, so the capability-loss integration test scopes its locator to that dialog. The new tests were written after the implementation, so their failure was shown by setting the source change aside: all four tests failed on the old source and pass now. Both Planning specs pass (65 cases). Visual check (synthetic fixture): `tmp/217-ui/review-cluster-1440.png` shows Discard and Save at the right end only while dirty, and no footer "Draft".
+
+- [x] **Step 1: failing test** (the rewritten Save/Unsaved/Draft tests are fixed in Step 5).
 
 ```js
 test('Discard and Save review appear only while the review has changes', async ({ page }) => {
@@ -226,7 +229,7 @@ test('Discard and Save review appear only while the review has changes', async (
 ```
 
 Expected FAIL (Save is always present). Also add: Save once → `window.harness.saveCount() === 1` and the cluster disappears.
-- [ ] **Step 2: component.**
+- [x] **Step 2: component.**
 
 ```jsx
 import * as React from 'react';
@@ -253,7 +256,7 @@ export default function PlanningReviewStateCluster({ review, editable, onSave, o
 }
 ```
 
-- [ ] **Step 3: wire it** in `PlanningReviewTable.jsx`: replace the Save `<button>` and the `.planning-review-state` span with
+- [x] **Step 3: wire it** in `PlanningReviewTable.jsx`: replace the Save `<button>` and the `.planning-review-state` span with
 
 ```jsx
 <PlanningReviewStateCluster review={review} editable={editable}
@@ -262,8 +265,8 @@ export default function PlanningReviewStateCluster({ review, editable, onSave, o
 ```
 
 and change the footer Key cell from `review.dirty ? 'Draft' : ''` to `''`.
-- [ ] **Step 4: CSS.** Add `.planning-review-state-cluster { display: inline-flex; align-items: center; gap: 0.5rem; margin-left: auto; }` and `.planning-review-state-confirm { font-size: 0.75rem; color: var(--text-secondary, #64748b); }`. Remove the `.planning-review-state` rules (keep `.planning-review-guidance`; the two share one rule, so split it).
-- [ ] **Step 5:** Rewrite the existing tests that used the permanent Save button, "Unsaved" and the footer "Draft": `grep -n "Save review\|Unsaved\|Draft" tests/ui/*.js`. Add a helper `const saveReview = page => page.getByRole('button', { name: 'Save review', exact: true }).click();` and use it. Run both Planning specs on Chromium: PASS. Commit: `Show Save and Discard only while the review has changes (#217)`.
+- [x] **Step 4: CSS.** Add `.planning-review-state-cluster { display: inline-flex; align-items: center; gap: 0.5rem; margin-left: auto; }` and `.planning-review-state-confirm { font-size: 0.75rem; color: var(--text-secondary, #64748b); }`. Remove the `.planning-review-state` rules (keep `.planning-review-guidance`; the two share one rule, so split it).
+- [x] **Step 5:** Rewrite the existing tests that used the permanent Save button, "Unsaved" and the footer "Draft": `grep -n "Save review\|Unsaved\|Draft" tests/ui/*.js`. Add a helper `const saveReview = page => page.getByRole('button', { name: 'Save review', exact: true }).click();` and use it. Run both Planning specs on Chromium: PASS. Commit: `Show Save and Discard only while the review has changes (#217)`.
 
 ### Task A3: Remove the ⋯ menu; the app-header Refresh reloads the review; analytics clean-up
 

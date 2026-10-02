@@ -8215,18 +8215,19 @@ html:has(.planning-panel.open) {
   margin-bottom: 0;
   padding-block: 4px;
 }
-.planning-review-state,
-.planning-review-guidance {
+.planning-review-guidance,
+.planning-review-state-note {
   color: var(--text-secondary, #64748b);
   font-size: 0.75rem;
 }
-.planning-review-state {
-  align-self: flex-end;
-  line-height: 1.5;
-  padding-bottom: 0.34rem;
-}
 .planning-review-guidance {
   margin-block: 0.5rem;
+}
+.planning-review-state-cluster {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
 }
 .planning-review-scroll {
   overflow-x: auto;
@@ -8846,10 +8847,6 @@ html:has(.planning-panel.open) {
   letter-spacing: 0.04em;
   padding: 0 0.75rem;
   justify-content: center;
-}
-.planning-review-toolbar .planning-review-state {
-  align-self: center;
-  padding: 0;
 }
 .planning-review-toolbar .planning-review-options-trigger {
   width: var(--control-height);

@@ -539,6 +539,18 @@ test('Save review sends one save and the review actions disappear', async ({page
     expect(await page.evaluate(()=>window.harness.state().dirty)).toBe(false);
 });
 
+test('Key and Epic links use the ENG neutral link style instead of the browser default', async ({page}) => {
+    await install(page);
+    const style=link=>link.evaluate(node=>({link:getComputedStyle(node).color,cell:getComputedStyle(node.closest('td')).color,line:getComputedStyle(node).textDecorationLine}));
+    const key=page.getByRole('link',{name:'DEMO-10',exact:true});
+    await expect(key).toHaveClass(/task-key-link/);
+    const keyStyle=await style(key);expect(keyStyle.link).toBe(keyStyle.cell);expect(keyStyle.line).toBe('none');
+    await page.getByRole('radio',{name:'Stories',exact:true}).click();
+    const epic=page.getByRole('link',{name:'Epic summary',exact:true}).first();
+    await expect(epic).toHaveClass(/task-key-link/);
+    const epicStyle=await style(epic);expect(epicStyle.link).toBe(epicStyle.cell);expect(epicStyle.line).toBe('none');
+});
+
 test('uncreated Epic appears and its awaiting Story has a linked, noneditable placeholder',async({page})=>{
     await install(page);
     const epic=page.locator('tbody tr').filter({has:page.getByRole('link',{name:'DEMO-20',exact:true})});

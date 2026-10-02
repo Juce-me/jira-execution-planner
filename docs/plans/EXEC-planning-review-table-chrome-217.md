@@ -29,14 +29,15 @@ Written: 2026-10-02 from five read-only reviews (complexity, interaction, visual
 
 ## Execution status
 
-Updated 2026-10-02. The user authorized local commits (no push) for this plan. Commits so far, in order: `8449072f` (the awaited-chip baseline, verified with 1,565 unit tests and 61 Chromium cases on exactly that state), this plan with the rules it supersedes (`8aab64bc`), the logic helpers and the backend whitelist (`cf1681fd`), then Task 0.
+Updated 2026-10-02. The user authorized local commits (no push) for this plan; each task is its own atomic commit on `feature/217-sprint-review-table` (see `git log --oneline`). The baseline is `8449072f` (the awaited-chip change, verified with 1,565 unit tests and 61 Chromium cases on exactly that state); the plan itself is `8aab64bc`.
 
 - Done: Task B1 (`insertColumnId`, `nearestBoundary` in `planningReviewTableModel.js` with node unit tests) and the logic half of Task C2 (`selectedStoryPoints` with its unit test, and the backend layout whitelist for `accepted` with `test_layout_accepts_the_accepted_column_in_order_and_hidden`). Checks run: `node --test tests/test_planning_review_table_model.js` 14/14; `npm run test:frontend:unit` 1,568 pass; `tests.test_sprint_review` 17 pass; `tests.test_codebase_structure_budgets` pass. The `accepted` column definition and the rows-memo wiring stay in Task C2 because they change the visible table and must land together with its UI test.
 - Done: Task 0 (the orphan-Story "No Epic" second line is removed; both Planning specs pass, 62 cases; unit suite 1,568 pass).
 - Done: Task A1 (the heading click cycles ascending, descending, off; the index shows only with several criteria).
 - Done: Task A2 (Discard and Save only while the review has changes; no "Unsaved" text, no footer "Draft"; inline Discard confirmation).
 - Done: Task A3 (the ⋯ menu is gone; the app-header Refresh reloads the review; `review_options_opened` and `refresh_review` retired from the allowlist, docs and tests).
-- Next: A4, then B2 to B4, C1, C3, C4.
+- Done: Task A4 (Key and Epic links use `.task-key-link`, so they no longer show the browser's default blue and purple). Slice A is complete.
+- Next: B2 to B4, then C1, C3, C4; headed Firefox and WebKit runs and the full `tests/ui` run wait for Task Z1.
 - Rules already updated: AGENTS.md section 10 (Filters/capacity stack line) and section 11 (the two toolbar lines, plus the keyboard-backlog and live-data lines), `docs/TODO.md` (keyboard backlog), `docs/plans/README.md` (index).
 - The `GATE-05` Home-write edit in the working tree is unrelated and stays out of these commits.
 
@@ -302,7 +303,9 @@ Expected FAIL (`refreshActiveViewFromJira` never calls the review).
 
 **Files:** Modify `PlanningReviewTable.jsx` (the two `TrackedExternalLink` calls for Key and Epic); Test `tests/ui/planning_review_table.spec.js`.
 
-- [ ] **Step 1: failing test.**
+Status: done 2026-10-02. The test failed first (the Key link had no class) and passes now; it checks the Key link in Epics mode and the Epic summary link in Stories mode (both carry `task-key-link`, their colour equals the cell's colour and they have no underline). Both Planning specs pass (67 cases).
+
+- [x] **Step 1: failing test.**
 
 ```js
 test('Key and Epic links use the ENG neutral link style, not the browser default', async ({ page }) => {
@@ -315,7 +318,7 @@ test('Key and Epic links use the ENG neutral link style, not the browser default
 ```
 
 Expected FAIL (default blue, underlined).
-- [ ] **Step 2: implement.** Add `className="task-key-link"` to the Key link and to the Epic link (`.task-key-link` is `color: inherit; text-decoration: none; border-bottom: 1px solid transparent` with a hover border in `eng/issues.css`). Run the test: PASS. Commit: `Use the ENG link style for review table keys (#217)`.
+- [x] **Step 2: implement.** Add `className="task-key-link"` to the Key link and to the Epic link (`.task-key-link` is `color: inherit; text-decoration: none; border-bottom: 1px solid transparent` with a hover border in `eng/issues.css`). Run the test: PASS. Commit: `Use the ENG link style for review table keys (#217)`.
 
 ---
 

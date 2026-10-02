@@ -14,7 +14,8 @@ html:has(.planning-panel.open) { scrollbar-gutter: stable; }
 .planning-review-table .planning-review-key { position: sticky; left: 46px; z-index: 3; width: 96px; min-width: 96px; max-width: 96px; box-shadow: 1px 0 0 #e2e8f0; }
 .planning-review-table .planning-review-summary { min-width: 220px; width: 300px; max-width: 360px; white-space: normal; overflow-wrap: anywhere; }
 .planning-review-table .planning-review-storyPoints { text-align: right; font-variant-numeric: tabular-nums; }
-.planning-review-table .planning-review-custom { width: 107px; min-width: 107px; max-width: 200px; }
+/* 127px = the 107px editor column plus the 20px the lane adds, so the widest valid value still fits its field. */
+.planning-review-table .planning-review-custom { width: 127px; min-width: 127px; max-width: 200px; }
 .planning-review-input { box-sizing: border-box; width: 100%; min-width: 0; height: 21px; margin: 0; vertical-align: middle; line-height: 1; box-shadow: none; transition: border-color 0.15s, background-color 0.15s; padding: 2px 4px; border: 1px solid transparent; border-radius: 4px; font: inherit; color: inherit; background: transparent; }
 .planning-review-input:hover, .planning-review-input:focus { border-color: #94a3b8; background: #fff; box-shadow: none; }
 .planning-review-input.invalid { border-color: #b91c1c; }
@@ -76,15 +77,28 @@ html:has(.planning-panel.open) { scrollbar-gutter: stable; }
 .planning-review-column-rename { grid-column: 1 / -1; height: 24px; padding: 0 0.35rem; border-radius: 6px; font-family: 'IBM Plex Mono', monospace; font-size: 0.62rem; }
 
 
-/* The grip sits in a right-hand gutter outside the content box, so headings, values and totals share their alignment edge. */
-.planning-review-table th.planning-review-movable, .planning-review-table td.planning-review-movable { padding-right: 14px; }
+/* The 34px lane (24px chevron + 10px grip) sits in the cell's right padding, outside the content box, so headings, values and totals share their alignment edge. */
+.planning-review-table th.planning-review-movable, .planning-review-table td.planning-review-movable { padding-right: 34px; }
 .planning-review-head { position: relative; display: block; }
 /* A faint divider after each draggable heading shows which cell its grip belongs to. */
 .planning-review-table thead th.planning-review-movable::after { content: ''; position: absolute; top: 25%; right: 0; bottom: 25%; width: 1px; background: #e2e8f0; }
 .planning-review-sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
-.planning-review-drag { position: absolute; top: 0; bottom: 0; left: 100%; display: flex; align-items: center; justify-content: center; width: 10px; margin: 0 0 0 3px; background: transparent; color: #94a3b8; border: 0; padding: 0; font: inherit; letter-spacing: normal; cursor: grab; box-shadow: none; transform: none; }
+.planning-review-drag { position: absolute; top: 0; bottom: 0; left: 100%; display: flex; align-items: center; justify-content: center; width: 10px; margin: 0; opacity: 0; background: transparent; color: #94a3b8; border: 0; padding: 0; font: inherit; letter-spacing: normal; cursor: grab; box-shadow: none; transform: none; }
 .planning-review-drag:hover, .planning-review-drag:focus-visible { background: transparent; color: #334155; transform: none; box-shadow: none; }
 .planning-review-table th.planning-review-drop { box-shadow: inset 3px 0 #3b82f6; }
+/* The chevron is an IconButton inside the popover anchor, so it is positioned against .planning-review-head. */
+.planning-review-head .planning-review-colmenu { position: absolute; top: calc(50% - 12px); left: calc(100% + 10px); opacity: 0; }
+.planning-review-table th:hover .planning-review-colmenu, .planning-review-table th:hover .planning-review-drag,
+.planning-review-table th:focus-within .planning-review-colmenu, .planning-review-table th:focus-within .planning-review-drag,
+.planning-review-head .planning-review-colmenu[aria-expanded="true"],
+.planning-review-table th.planning-review-drop .planning-review-colmenu { opacity: 1; }
+@media (hover: none) {
+    .planning-review-head .planning-review-colmenu, .planning-review-drag { opacity: 1; }
+    .planning-review-table th.planning-review-movable, .planning-review-table td.planning-review-movable { padding-right: 48px; }
+    .planning-review-drag { top: calc(50% - 12px); bottom: auto; width: 24px; height: 24px; }
+    .planning-review-head .planning-review-colmenu { left: calc(100% + 24px); }
+    .planning-review-table .planning-review-custom { width: 141px; min-width: 141px; }
+}
 
 .planning-review-summary .issue-summary-editor-inline { display: flex; flex-direction: column; width: 100%; min-width: 0; }
 .planning-review-summary textarea.issue-summary-editor-input { display: block; box-sizing: border-box; width: 100%; min-width: 0; min-height: 28px; resize: none; overflow: hidden; padding: 3px 5px; margin: 0; border: 1px solid #cbd5e1; border-radius: 4px; background: #fff; color: #334155; font: inherit; line-height: 1.4; letter-spacing: normal; }

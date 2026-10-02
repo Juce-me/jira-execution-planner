@@ -23,10 +23,13 @@ Table headings and drag handles have no inherited button margins; custom inputs
 use compact 100px columns. Longer headings or values can widen a column rather
 than clipping; Summary and Teams in scope remain bounded with full-text readouts.
 Each heading shares one edge with its values and totals: the left edge for text
-columns, the right edge for numeric ones. Every draggable column has its grip on the
-right, in a small padding gutter outside the content box that headings and values
-share, so it never pushes a heading away from the values below it; a faint divider
-after each draggable heading shows which cell the grip belongs to. The select column has no visible title (Select stays
+columns, the right edge for numeric ones. Every movable column has a 34px lane on the
+right, in the cell's padding outside the content box that headings and values share,
+so it never pushes a heading away from the values below it. The lane holds the drag
+grip and a chevron that opens the column menu; both show while the pointer is over
+the header cell or focus is inside it (and always on touch devices, where the lane is
+48px), and a faint divider after each movable heading shows which cell they belong
+to. The select column has no visible title (Select stays
 as its accessible name) and the totals row is marked with a Σ (accessible name Total),
 so every visible heading shares one typography. A custom input fills the content box, so its box never
 extends past the heading or under the grip (its text keeps the field's own padding); the
@@ -83,6 +86,11 @@ columns as the same toggle plus a Σ total toggle (numbers only), an inline rena
 (Enter or leaving the field saves, Escape cancels and keeps the popup open) and an
 archive action behind an inline confirmation. Archived columns stay listed, muted,
 and cannot be restored from the UI.
+The chevron opens a column menu anchored to the header cell (also from the docked
+header; an open menu closes when the header docks or undocks). Move left and Move right
+step the column past its nearest visible neighbour like dragging does and stay open;
+optional Jira columns and review columns also offer Hide column, which closes the
+menu; a muted line explains that Shift-click on a heading sorts by several columns.
 Drag column handles to place Jira and custom columns in any order after the pinned
 Key and Summary columns. Arrow keys on a focused handle move it past the nearest
 visible neighbour, stepping over hidden columns; the headers are the only place to

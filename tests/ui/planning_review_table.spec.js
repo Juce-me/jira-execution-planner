@@ -16,13 +16,13 @@ test.beforeAll(() => {
         const columns=Array.from({length:8},(_,i)=>({id:'cost'+i,rowKind:'story',label:'Cost '+i,type:'number',aggregation:'sum',archived:false,order:i}));
         let saveCount=0; let savedSchema={schemaRevision:1,columns,layouts:{},capabilities:{canRead:true,canSave:true}};
         const controller=createPlanningSprintReviewController({fetchSchema:async()=>savedSchema,readValues:async(_,__,body)=>({cells:body.issueIds.flatMap(id=>columns.map(column=>({issueId:id,rowKind:body.rowKind,columnId:column.id,value:id==='1'?'2.000':'10.000',revision:1})))}),saveReview:async(_,__,payload)=>{saveCount++; savedSchema={...savedSchema,schemaRevision:savedSchema.schemaRevision+1,columns:controller.getState().columns,layouts:controller.getState().layouts}; return {...savedSchema,cells:payload.cellChanges.map(cell=>({...cell,revision:2}))}}});
-        window.harness={state:()=>controller.getState(),saveCount:()=>saveCount,reload:()=>controller.refresh()};
+        window.reviewActions=[]; window.harness={state:()=>controller.getState(),saveCount:()=>saveCount,reload:()=>controller.refresh(),actions:()=>window.reviewActions};
         function App(){
             const state=React.useSyncExternalStore(controller.subscribe,controller.getState,controller.getState);
             const [selected,setSelected]=React.useState(new Set());
             const [visible,setVisible]=React.useState(true);
             React.useEffect(()=>{controller.setScope({sprintId:'100',contextKey:'actor',active:true,rows:[...stories.map(task=>({issueId:task.id,rowKind:'story'})),...epics.map(group=>({issueId:group.epic.id,rowKind:'epic'}))]});},[]);
-            return <div className="container"><div id="reference">Header reference</div><button id="layout" onClick={()=>setVisible(!visible)}>Layout</button>{visible&&<PlanningReviewTable epicGroups={epics} visibleTasks={stories} selectedStoryKeys={selected} onToggleStory={task=>setSelected(previous=>{const next=new Set(previous);if(next.has(task.key))next.delete(task.key);else next.add(task.key);return next})} onSelectStories={(tasks,on)=>setSelected(previous=>{const next=new Set(previous);tasks.forEach(task=>on?next.add(task.key):next.delete(task.key));return next})} jiraUrl="https://jira.example" review={{...state,...controller}} admittedTeamCount={2} admittedProjectCount={2} renderFieldEditor={({row,field,value})=>field==='team'||field==='inclusion'?<button className={field==='inclusion'?'epic-stat-toggle '+(row.key==='DEMO-2'?'':'active'):'planning-action-button'} aria-label={field+' for '+row.key}>{field==='inclusion'?(row.key==='DEMO-2'?'Excluded':'Included'):row.team?.name||'Unknown Team'}</button>:value}/>}<PlanningReviewScopeDialog review={{...state,...controller}}/></div>
+            return <div className="container"><div id="reference">Header reference</div><button id="layout" onClick={()=>setVisible(!visible)}>Layout</button>{visible&&<PlanningReviewTable epicGroups={epics} visibleTasks={stories} selectedStoryKeys={selected} onToggleStory={task=>setSelected(previous=>{const next=new Set(previous);if(next.has(task.key))next.delete(task.key);else next.add(task.key);return next})} onSelectStories={(tasks,on)=>setSelected(previous=>{const next=new Set(previous);tasks.forEach(task=>on?next.add(task.key):next.delete(task.key));return next})} jiraUrl="https://jira.example" review={{...state,...controller}} onReviewAction={action=>window.reviewActions.push(action)} admittedTeamCount={2} admittedProjectCount={2} renderFieldEditor={({row,field,value})=>field==='team'||field==='inclusion'?<button className={field==='inclusion'?'epic-stat-toggle '+(row.key==='DEMO-2'?'':'active'):'planning-action-button'} aria-label={field+' for '+row.key}>{field==='inclusion'?(row.key==='DEMO-2'?'Excluded':'Included'):row.team?.name||'Unknown Team'}</button>:value}/>}<PlanningReviewScopeDialog review={{...state,...controller}}/></div>
         }
         createRoot(document.getElementById('root')).render(<App/>);
     ` }, bundle: true, write: false, format: 'iife', define: { 'process.env.NODE_ENV': '"test"' } }).outputFiles[0].text;
@@ -505,7 +505,7 @@ test('an orphan Story keeps the normal row height and names its Epic only in the
 
 test('heading click cycles ascending, descending, off and the index appears only with several criteria', async ({page}) => {
     await install(page);await page.getByRole('radio',{name:'Stories',exact:true}).click();
-    const cost0=page.getByRole('button',{name:/^Cost 0/}),cost1=page.getByRole('button',{name:/^Cost 1/});
+    const cost0=page.locator('.planning-review-heading',{hasText:/^Cost 0/}),cost1=page.locator('.planning-review-heading',{hasText:/^Cost 1/});
     await cost0.click();await expect(cost0).toHaveText('Cost 0 ↑');
     await cost0.click();await expect(cost0).toHaveText('Cost 0 ↓');
     await cost0.click();await expect(cost0).toHaveText('Cost 0');
@@ -572,7 +572,7 @@ for (const width of [1440, 2400]) test(`column widths fit their content instead 
     expect(cells.Status.width).toBeLessThanOrEqual(150);
     expect(cells.Priority.width).toBeLessThanOrEqual(110);
     expect(cells['Project Track']).toBeUndefined();
-    expect(cells['Cost 0'].width).toBeLessThanOrEqual(112);
+    expect(cells['Cost 0'].width).toBeLessThanOrEqual(132);   // the 112px editor column plus the 20px column-menu lane
     for(const cell of Object.values(cells)) expect(cell.scroll).toBeLessThanOrEqual(cell.client+1);
 });
 
@@ -659,4 +659,189 @@ for(const width of [390,1280]) test(`custom number editors stay inside stable co
     // The widest valid value fits its field without clipping, so no abbreviation is needed.
     expect(await input.evaluate(node=>node.scrollWidth-node.clientWidth)).toBeLessThanOrEqual(0);
     await page.screenshot({path:path.join(root,`tmp/217-ui/custom-input-stable-${width}.png`),fullPage:false});
+});
+
+
+// Header lane: the grip and the column menu chevron live in the cell's right padding and show on hover or focus.
+const headings = page => page.locator('thead th').evaluateAll(nodes => nodes.map(node => node.getAttribute('aria-label')));
+const columnMenuButton = (page, label) => page.getByRole('button', { name: `${label} column options`, exact: true });
+const columnMenu = (page, label) => page.getByRole('dialog', { name: `${label} column options`, exact: true });
+const menuItems = popup => popup.locator('button.pop-opt .pop-opt-label').allTextContents();
+async function showOptionalColumn(page, label) {
+    await (await openColumns(page)).getByRole('button', { name: label, exact: true }).click();
+    await page.keyboard.press('Escape');
+}
+function contrastRatio(foreground, background) {
+    const luminance = rgb => { const [r, g, b] = rgb.map(value => { const channel = value / 255; return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+    const [hi, lo] = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
+    return (hi + 0.05) / (lo + 0.05);
+}
+
+test('lane controls are hidden at rest and revealed by hover without changing the header or table size', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 }); await install(page); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    const cell = page.getByRole('columnheader', { name: 'Priority', exact: true });
+    const lane = cell.locator('.planning-review-colmenu, .planning-review-drag');
+    await page.mouse.move(0, 0);
+    await expect(lane).toHaveCount(2);
+    for (const node of await lane.all()) expect(await node.evaluate(element => getComputedStyle(element).opacity)).toBe('0');
+    const table = page.locator('table.planning-review-table').first();
+    const before = { width: (await table.boundingBox()).width, header: (await cell.boundingBox()).height };
+    expect(before.header).toBe(32);
+    await cell.hover();
+    for (const node of await lane.all()) await expect.poll(() => node.evaluate(element => getComputedStyle(element).opacity)).toBe('1');
+    expect({ width: (await table.boundingBox()).width, header: (await cell.boundingBox()).height }).toEqual(before);
+    await page.screenshot({ path: path.join(root, 'tmp/217-ui/column-lane-hover-1440.png'), clip: { x: 440, y: 140, width: 720, height: 60 } });
+    // Key and Summary are pinned: no lane.
+    await expect(page.getByRole('columnheader', { name: 'Summary', exact: true }).locator('.planning-review-colmenu, .planning-review-drag')).toHaveCount(0);
+    await expect(page.getByRole('columnheader', { name: 'Key', exact: true }).locator('.planning-review-colmenu, .planning-review-drag')).toHaveCount(0);
+});
+
+test('column menu items follow the column kind and opening it is reported', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 }); await install(page); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await columnMenuButton(page, 'Priority').click();
+    const popup = columnMenu(page, 'Priority');
+    await expect(popup).toBeVisible();
+    await expect(popup.locator('.pop-subject')).toHaveText('Priority');
+    expect(await menuItems(popup)).toEqual(['Move left', 'Move right']);
+    await expect(popup).toContainText('Shift-click a heading to sort by several columns.');
+    await page.keyboard.press('Escape'); await expect(popup).toHaveCount(0);
+    await showOptionalColumn(page, 'Component');
+    await columnMenuButton(page, 'Component').click();
+    expect(await menuItems(columnMenu(page, 'Component'))).toEqual(['Move left', 'Move right', 'Hide column']);
+    expect(await page.evaluate(() => window.harness.actions())).toContain('columns_opened');
+});
+
+test('Move left and Move right reorder like dragging and stay disabled at the ends', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 }); await install(page); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    const order = async () => (await headings(page)).filter(label => ['Status', 'Priority', 'Story Points'].includes(label));
+    expect(await order()).toEqual(['Status', 'Priority', 'Story Points']);
+    await columnMenuButton(page, 'Status').click();
+    const first = columnMenu(page, 'Status');
+    await expect(first.getByRole('button', { name: 'Move left', exact: true })).toBeDisabled();
+    await first.getByRole('button', { name: 'Move right', exact: true }).click();
+    expect(await order()).toEqual(['Priority', 'Status', 'Story Points']);
+    expect(await page.evaluate(() => window.harness.state().dirty)).toBe(true);
+    expect(await page.evaluate(() => window.harness.actions())).toContain('columns_reordered');
+    await expect(first).toBeVisible();
+    await first.getByRole('button', { name: 'Move left', exact: true }).click();
+    expect(await order()).toEqual(['Status', 'Priority', 'Story Points']);
+    await page.keyboard.press('Escape');
+    // The last visible movable column cannot move right.
+    const last = (await headings(page)).at(-1);
+    await columnMenuButton(page, last).click();
+    await expect(columnMenu(page, last).getByRole('button', { name: 'Move right', exact: true })).toBeDisabled();
+});
+
+test('Hide column hides an optional column, marks the draft and reports it', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 }); await install(page); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await showOptionalColumn(page, 'Component');
+    await expect(page.getByRole('columnheader', { name: 'Component', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Save review', exact: true }).click(); expect(await page.evaluate(() => window.harness.state().dirty)).toBe(false);
+    await columnMenuButton(page, 'Component').click();
+    await columnMenu(page, 'Component').getByRole('button', { name: 'Hide column', exact: true }).click();
+    await expect(columnMenu(page, 'Component')).toHaveCount(0);
+    await expect(page.getByRole('columnheader', { name: 'Component', exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => window.harness.state().layouts.story.hidden)).toContain('components');
+    expect(await page.evaluate(() => window.harness.state().dirty)).toBe(true);
+    expect(await page.evaluate(() => window.harness.actions())).toContain('column_visibility_changed');
+});
+
+test('lane icon buttons keep a readable hover instead of the global dark surface', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 }); await install(page); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    const cell = page.getByRole('columnheader', { name: 'Priority', exact: true });
+    for (const [label, locator] of [['column menu chevron', columnMenuButton(page, 'Priority')], ['column grip', page.getByRole('button', { name: 'Move Priority column', exact: true })]]) {
+        await cell.hover(); await locator.hover();
+        const read = () => locator.evaluate(node => {
+            const parse = value => (value.match(/[\d.]+/g) || []).map(Number);
+            let surface = node; let background = parse(getComputedStyle(surface).backgroundColor);
+            while ((background[3] ?? 1) === 0 && surface.parentElement) { surface = surface.parentElement; background = parse(getComputedStyle(surface).backgroundColor); }
+            const style = getComputedStyle(node);
+            return { background, color: parse(style.color), transform: style.transform, shadow: style.boxShadow, spacing: style.letterSpacing };
+        });
+        await expect.poll(async () => { const { background, color } = await read(); return (background[3] ?? 1) === 1 ? contrastRatio(color.slice(0, 3), background.slice(0, 3)) : 0; }, { message: `${label} hover contrast`, timeout: 2000 }).toBeGreaterThanOrEqual(4.5);
+        const settled = await read();
+        expect(settled.transform, `${label} does not lift`).toBe('none');
+        expect(settled.shadow, `${label} has no drop shadow`).toBe('none');
+        expect(['normal', '0px'], `${label} letter spacing`).toContain(settled.spacing);
+    }
+    // The menu rows reuse the Filters .pop-opt grammar and must not turn dark on hover either.
+    await columnMenuButton(page, 'Priority').click();
+    const option = columnMenu(page, 'Priority').getByRole('button', { name: 'Move right', exact: true });
+    await option.hover();
+    await expect.poll(() => option.evaluate(node => {
+        const parse = value => (value.match(/[\d.]+/g) || []).map(Number);
+        const style = getComputedStyle(node), background = parse(style.backgroundColor), color = parse(style.color);
+        return { dark: (background[3] ?? 1) !== 0 && background.slice(0, 3).every(channel => channel < 100), color: color.slice(0, 3).some(channel => channel < 100), transform: style.transform, shadow: style.boxShadow };
+    })).toEqual({ dark: false, color: true, transform: 'none', shadow: 'none' });
+});
+
+test('the column menu opens from the docked header and from the last column at maximum scroll', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 700 }); await install(page, true); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    const scroller = page.locator('.planning-review-scroll');
+    await scroller.evaluate(node => { node.scrollLeft = node.scrollWidth; });
+    const last = (await headings(page)).at(-1);
+    await columnMenuButton(page, last).hover(); await columnMenuButton(page, last).click();
+    const popup = columnMenu(page, last);
+    await expect(popup).toBeVisible();
+    const box = await popup.boundingBox();
+    expect(box.x).toBeGreaterThanOrEqual(0); expect(box.x + box.width).toBeLessThanOrEqual(1280);
+    await page.keyboard.press('Escape');
+    await page.evaluate(() => scrollTo(0, 400));
+    const docked = page.locator('.planning-review-docked-header');
+    await expect(docked).toBeVisible();
+    // The real copy is out of the tab order and hidden from assistive technology while its clone is shown.
+    const real = page.locator('table.planning-review-table:not(.planning-review-docked-table) thead .planning-review-colmenu').first();
+    await expect(real).toHaveAttribute('aria-hidden', 'true'); await expect(real).toHaveAttribute('tabindex', '-1');
+    const chevron = docked.getByRole('button', { name: `${last} column options`, exact: true });
+    await docked.locator('th', { hasText: last }).hover(); await chevron.click();
+    const dockedPopup = columnMenu(page, last);
+    await expect(dockedPopup).toBeVisible();
+    const front = await dockedPopup.evaluate(node => { const r = node.getBoundingClientRect(); return node.contains(document.elementFromPoint(r.left + 12, r.top + 12)); });
+    expect(front).toBe(true);
+    // Flipping the dock closes the menu instead of leaving it on a vanished trigger.
+    await page.evaluate(() => scrollTo(0, 0));
+    await expect(columnMenu(page, last)).toHaveCount(0);
+});
+
+test.describe('touch', () => {
+    test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+    test('the lane shows without hover and every menu action works by tap', async ({ page }) => {
+        await install(page); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+        expect(await page.evaluate(() => matchMedia('(hover: none)').matches)).toBe(true);
+        const chevron = columnMenuButton(page, 'Priority');
+        await chevron.scrollIntoViewIfNeeded();
+        expect(await chevron.evaluate(node => getComputedStyle(node).opacity)).toBe('1');
+        expect(await page.getByRole('button', { name: 'Move Priority column', exact: true }).evaluate(node => getComputedStyle(node).opacity)).toBe('1');
+        await chevron.tap();
+        const popup = columnMenu(page, 'Priority');
+        await expect(popup).toBeVisible();
+        const before = (await headings(page)).indexOf('Priority');
+        await popup.getByRole('button', { name: 'Move right', exact: true }).tap();
+        expect((await headings(page)).indexOf('Priority')).toBe(before + 1);
+    });
+});
+
+for (const mode of ['Epics', 'Stories']) test(`grip and chevron sit side by side in the cell's padding lane, clear of every heading, in ${mode} mode`, async ({ page }) => {
+    await page.setViewportSize({ width: 2400, height: 900 }); await install(page); await page.getByRole('radio', { name: mode, exact: true }).click();
+    await showOptionalColumn(page, 'Capacity');
+    const lanes = await page.locator('thead th.planning-review-movable').evaluateAll(cells => cells.map(th => {
+        const box = th.getBoundingClientRect(), style = getComputedStyle(th), label = th.querySelector('.planning-review-heading');
+        const range = document.createRange(); range.selectNodeContents(label); const text = range.getBoundingClientRect();
+        const grip = th.querySelector('.planning-review-drag').getBoundingClientRect(), chevron = th.querySelector('.planning-review-colmenu').getBoundingClientRect();
+        return { column: th.getAttribute('aria-label'), height: box.height, textRight: text.right, contentRight: box.right - parseFloat(style.paddingRight), lane: parseFloat(style.paddingRight),
+            gripLeft: grip.left, gripRight: grip.right, chevronLeft: chevron.left, chevronRight: chevron.right, chevronWidth: chevron.width, chevronHeight: chevron.height,
+            chevronDy: chevron.top + chevron.height / 2 - (box.top + box.height / 2), cellRight: box.right, clipped: label.scrollWidth > label.clientWidth + 1 };
+    }));
+    expect(lanes.length).toBeGreaterThan(5);
+    for (const lane of lanes) {
+        const note = JSON.stringify(lane);
+        expect(lane.lane, note).toBe(34); expect(lane.height, note).toBe(32);
+        expect(lane.textRight, note).toBeLessThanOrEqual(lane.contentRight + 0.5);
+        expect(lane.gripLeft, note).toBeGreaterThanOrEqual(lane.contentRight - 0.5);
+        expect(lane.chevronLeft, note).toBeGreaterThanOrEqual(lane.gripRight - 0.5);
+        expect(lane.chevronRight, note).toBeLessThanOrEqual(lane.cellRight + 0.5);
+        expect([lane.chevronWidth, lane.chevronHeight], note).toEqual([24, 24]);
+        expect(Math.abs(lane.chevronDy), note).toBeLessThan(1);
+        expect(lane.clipped, note).toBe(false);
+    }
 });

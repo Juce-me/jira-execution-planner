@@ -5,8 +5,10 @@ import TrackedExternalLink from '../components/TrackedExternalLink.jsx';
 import { buildJiraBrowseLinkAnalytics } from '../analytics/externalLinks.js';
 import { reviewCellKey, newReviewColumnId, formatReviewDisplay, DEFAULT_REVIEW_HIDDEN_COLUMNS } from './planningReviewTableModel.js';
 import SegmentedControl from '../ui/SegmentedControl.jsx';
+import IconButton from '../ui/IconButton.jsx';
 import StatusPill from '../ui/StatusPill.jsx';
 import EpicHeaderValueReadout from './EpicHeaderValueReadout.jsx';
+import PlanningReviewColumnMenu from './PlanningReviewColumnMenu.jsx';
 import PlanningReviewColumnsMenu from './PlanningReviewColumnsMenu.jsx';
 import PlanningReviewStateCluster from './PlanningReviewStateCluster.jsx';
 import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
@@ -93,6 +95,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
     const [editing, setEditing] = React.useState(null);
     const [addOpen, setAddOpen] = React.useState(false);
     const [columnsOpen, setColumnsOpen] = React.useState(false);
+    const [openMenu, setOpenMenu] = React.useState(null);
     const [name, setName] = React.useState('');
     const [type, setType] = React.useState('number');
     const [formError, setFormError] = React.useState('');
@@ -133,6 +136,8 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
     React.useLayoutEffect(() => {
         for (const ref of [dockedHeader, dockedFooter]) if (ref.current) ref.current.scrollLeft = scroller.current.scrollLeft;
     }, [dock]);
+    // The real header and its docked clone are different elements; a menu left open across the flip would sit on a vanished trigger.
+    React.useEffect(() => setOpenMenu(null), [dock?.header]);
 
     const sorted = sortPlanningReviewRows(rows, sort, columns, review.cells);
     if (!editing) stableOrder.current = sorted.map(row => row.id);
@@ -172,7 +177,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
     const setColumnVisible = (columnId, visible) => {
         const next = new Set(hidden);
         if (visible) next.delete(columnId); else next.add(columnId);
-        updateLayout(movableIds(), [...next]);
+        if (updateLayout(movableIds(), [...next])) trackedAction('column_visibility_changed');
     };
     const movableIds = () => layoutColumns.filter(column => !['key', 'summary'].includes(column.id)).map(column => column.id);
     const moveColumn = (source, target, after = false) => {
@@ -190,7 +195,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
         <div className="planning-review-toolbar">
             <div className="stats-control-group"><SegmentedControl className="eng-mode-control" ariaLabel="Planning review rows" options={[{ value: 'epic', label: 'Epics' }, { value: 'story', label: 'Stories' }]} value={mode} onChange={changeMode} /></div>
             <ReviewColumnPopover open={addOpen} onClose={() => { setAddOpen(false); setFormError(''); }} label="Add review column" error={formError}
-                trigger={<button type="button" className="planning-action-button" aria-label="+ Add column" disabled={!editable} onClick={() => { setAddOpen(!addOpen); setColumnsOpen(false); trackedAction('add_column_opened'); }}>+ Column</button>}>
+                trigger={<button type="button" className="planning-action-button" aria-label="+ Add column" disabled={!editable} onClick={() => { setAddOpen(!addOpen); setColumnsOpen(false); setOpenMenu(null); trackedAction('add_column_opened'); }}>+ Column</button>}>
                 <form className="planning-review-add" onSubmit={addColumn}>
                     <input data-autofocus required maxLength={80} className="planning-review-column-name" aria-label="Column name" placeholder="Column name" value={name} onChange={event => setName(event.target.value)} />
                     <div className="planning-review-add-row">
@@ -200,7 +205,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
                 </form>
             </ReviewColumnPopover>
             <ReviewColumnPopover open={columnsOpen} onClose={() => { setColumnsOpen(false); setFormError(''); }} label="Review column management" error={formError}
-                trigger={<button type="button" className="planning-action-button" aria-expanded={columnsOpen} onClick={() => { setColumnsOpen(!columnsOpen); setAddOpen(false); trackedAction('columns_opened'); }}>Columns</button>}>
+                trigger={<button type="button" className="planning-action-button" aria-expanded={columnsOpen} onClick={() => { setColumnsOpen(!columnsOpen); setAddOpen(false); setOpenMenu(null); trackedAction('columns_opened'); }}>Columns</button>}>
                 <PlanningReviewColumnsMenu mode={mode} columns={allColumns.filter(column => !column.required)} archivedColumns={review.columns.filter(column => column.rowKind === mode && column.archived)} hidden={hidden} editable={editable} review={review}
                     onVisibilityChange={setColumnVisible} onError={setFormError} onArchived={() => trackedAction('column_archived')} />
             </ReviewColumnPopover>
@@ -210,18 +215,29 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
         </div>
     );
     const movable = column => ['key', 'summary'].includes(column.id) ? '' : ' planning-review-movable';
+    const visibleMovable = columns.map(item => item.id).filter(id => !['key', 'summary'].includes(id));
     const header = (floating = false) => <thead><tr><th className="planning-review-selection planning-review-text"><span className="planning-review-sr-only">Select</span></th>{columns.map(column => {
         const docked = !floating && dock?.header;
+        const interactive = floating || !dock?.header;
         // The grip sits in a right-hand gutter outside the content box, so headings, values and totals share their alignment edge.
         const grip = !['key', 'summary'].includes(column.id) && <button type="button" className="planning-review-drag" tabIndex={docked ? -1 : undefined} aria-hidden={docked ? true : undefined} draggable={editable} disabled={!editable} aria-label={`Move ${column.label} column`} title="Drag to move column"
             onDragStart={event => { draggedColumn.current = column.id; event.dataTransfer.setData('text/plain', column.id); event.dataTransfer.effectAllowed = 'move'; }} onDragEnd={() => { draggedColumn.current = null; setDropColumn(null); }}
             onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); reorder(column, event.key === 'ArrowLeft' ? -1 : 1); } }}>⠿</button>;
+        const index = visibleMovable.indexOf(column.id);
+        const menu = index >= 0 && <ReviewColumnPopover open={openMenu === column.id && interactive} onClose={() => setOpenMenu(null)} label={`${column.label} column options`}
+            trigger={<IconButton size="sm" className="planning-review-column-action planning-review-colmenu" tabIndex={docked ? -1 : undefined} aria-hidden={docked ? true : undefined} disabled={!editable} aria-label={`${column.label} column options`}
+                onClick={() => { const open = openMenu !== column.id; setOpenMenu(open ? column.id : null); setAddOpen(false); setColumnsOpen(false); if (open) trackedAction('columns_opened'); }}>
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4" /></svg>
+            </IconButton>}>
+            <PlanningReviewColumnMenu column={column} editable={editable} canMoveLeft={index > 0} canMoveRight={index < visibleMovable.length - 1}
+                onMove={direction => reorder(column, direction)} onHide={() => { setOpenMenu(null); setColumnVisible(column.id, false); }} />
+        </ReviewColumnPopover>;
         const position = sort.findIndex(item => item.columnId === column.id);
         const heading = <button type="button" className="planning-review-heading" tabIndex={docked ? -1 : undefined} aria-hidden={docked ? true : undefined} onClick={event => changeSort(column, event.shiftKey)}>{column.label}{position >= 0 && <span> {sort.length > 1 ? position + 1 : ''}{sort[position].direction === 'desc' ? '↓' : '↑'}</span>}</button>;
         return <th key={column.id} aria-label={column.label} className={`planning-review-${column.id}${column.custom ? ' planning-review-custom' : ''} planning-review-${column.type === 'number' ? 'numeric' : 'text'}${movable(column)}${dropColumn === column.id ? ' planning-review-drop' : ''}`}
             onDragOver={event => { if (editable && draggedColumn.current && !['key', 'summary'].includes(column.id)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDropColumn(column.id); } }}
             onDrop={event => { event.preventDefault(); const source = draggedColumn.current; moveColumn(source, column.id, event.clientX > event.currentTarget.getBoundingClientRect().left + event.currentTarget.offsetWidth / 2); draggedColumn.current = null; setDropColumn(null); }}>
-            <span className="planning-review-head">{heading}{grip}</span></th>;
+            <span className="planning-review-head">{heading}{grip}{menu}</span></th>;
     })}</tr></thead>;
     const footer = <tfoot><tr><th className="planning-review-selection planning-review-text"><span aria-hidden="true">Σ</span><span className="planning-review-sr-only">Total</span></th>{columns.map(column => <td key={column.id} className={`planning-review-${column.id}${column.custom ? ' planning-review-custom' : ''} planning-review-${column.type === 'number' ? 'numeric' : 'text'}${movable(column)}`}>{column.id === 'key' ? '' : totals[column.id] ?? ''}</td>)}</tr></tfoot>;
     const dockedTable = (kind, content, ref) => <div ref={ref} aria-hidden={kind === 'footer' ? true : undefined}

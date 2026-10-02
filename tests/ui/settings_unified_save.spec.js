@@ -3,6 +3,7 @@ const path = require('path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_home_token_fixture');
+const { captureDomParity } = require('./dom_parity_helpers');
 
 const baseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const screenshotDir = path.join(__dirname, '..', '..', 'test-results', 'settings-unified-save-qa');
@@ -162,6 +163,7 @@ async function mockConfigSettings(page, {
     ],
     analyticsEnabled = false,
     userCanEditSettings = true,
+    performanceAdminAvailable = false,
 } = {}) {
     const calls = [];
     const epicsInScope = epicsFromCounts(fixture.REFERENCE_EPICS_BY_STATUS);
@@ -224,6 +226,13 @@ async function mockConfigSettings(page, {
             status: 'active',
             needsReconnect: false,
         });
+        if (performanceAdminAvailable && url.pathname === '/api/admin/performance') return json({
+            enabled: true,
+            filters: { groups: ['platform'], sprints: ['42'], surfaces: ['eng_board'], scopeTypes: ['selected_group'], cacheStates: ['warm'], revisions: ['fixture'], scopeCohortDigests: [] },
+            summary: { sampleCount: 0 },
+            trend: [],
+            samples: [],
+        });
         if (url.pathname === '/api/version') return json({ enabled: false });
         if (url.pathname === '/api/config') {
             const requestIndex = configGetCount;
@@ -249,6 +258,7 @@ async function mockConfigSettings(page, {
             settingsAdminOnly: false,
             userCanEditSettings,
             userCanEditEpmConfig: true,
+            performanceAdminAvailable,
             epm: workspaceSnapshot?.sharedConfig?.epm || epmConfig,
             viewConfig: {
                 workspaceId: 'workspace-test',
@@ -562,6 +572,7 @@ for (const catalogState of ['unknown', 'refreshing', 'error', 'validated empty']
 
 test('catalog failure leaves unrelated dirty sections saveable', async ({ page }) => {
     const calls = await mockConfigSettings(page, {
+        sourceBundle: true,
         teamsResponse: { status: 502, body: { error: 'team_catalog_unavailable' } },
     });
 
@@ -582,6 +593,7 @@ test('catalog failure leaves unrelated dirty sections saveable', async ({ page }
 
 test('team membership: empty is ready and does not refill', async ({ page }) => {
     const calls = await mockConfigSettings(page, {
+        sourceBundle: true,
         initialTeamCatalog: {
             catalog: { 'team-data': { id: 'team-data', name: 'Data Team' } },
             meta: {},
@@ -690,6 +702,7 @@ test('team membership: source lifecycle masks reopen A to B to A and ignores lat
 
 test('team membership: failed directory does not block membership', async ({ page }) => {
     const calls = await mockConfigSettings(page, {
+        sourceBundle: true,
         teamCatalogLoadResponse: { status: 503, body: { error: 'catalog_unavailable' } },
         initialTeamCatalog: { catalog: {}, meta: {} },
         teamsResponse: {
@@ -707,6 +720,7 @@ test('team membership: failed directory does not block membership', async ({ pag
 
 test('team membership: DB refresh commits without client POST', async ({ page }) => {
     const calls = await mockConfigSettings(page, {
+        sourceBundle: true,
         analyticsEnabled: true,
         teamsResponsePlan: [
             { body: dbTeamEnvelope({ teams: [{ id: 'team-platform', name: 'Platform Team' }] }) },
@@ -728,6 +742,7 @@ test('team membership: DB refresh commits without client POST', async ({ page })
 
 test('team membership: legacy refresh retains directory save', async ({ page }) => {
     const calls = await mockConfigSettings(page, {
+        sourceBundle: true,
         initialTeamCatalog: { catalog: {}, meta: {} },
         refreshedTeams: [{ id: 'team-data', name: 'Data Team' }],
     });
@@ -744,6 +759,7 @@ test('team membership: competing attempt reads are bounded', async ({ page }) =>
         refreshAttemptId: 'attempt-1',
     });
     const calls = await mockConfigSettings(page, {
+        sourceBundle: true,
         teamsResponsePlan: Array.from({ length: 6 }, () => ({ body: pending })),
     });
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
@@ -763,6 +779,7 @@ test('team membership: competing attempt reads are bounded', async ({ page }) =>
 test('team membership: manual refresh does not reuse a held ordinary read', async ({ page }) => {
     const ordinaryGate = deferred();
     const calls = await mockConfigSettings(page, {
+        sourceBundle: true,
         teamsResponsePlan: [
             {
                 gate: ordinaryGate,
@@ -789,6 +806,7 @@ test('team membership: manual refresh does not reuse a held ordinary read', asyn
 
 test('team membership: 401 locks the document', async ({ page }) => {
     const calls = await mockConfigSettings(page, {
+        sourceBundle: true,
         teamsResponse: {
             status: 401,
             body: { error: 'auth_required', loginUrl: '/login?reason=session_expired' },
@@ -805,6 +823,7 @@ test('team membership: 401 locks the document', async ({ page }) => {
 
 test('unavailable Team rejects pointer and keyboard but remains removable', async ({ page }) => {
     const calls = await mockConfigSettings(page, {
+        sourceBundle: true,
         groupsConfig: {
             ...baseGroupsConfig(),
             groups: [{ id: 'platform', name: 'Platform', teamIds: ['team-data'], board: fixture.referenceBoard() }],
@@ -853,6 +872,7 @@ test('unavailable Team rejects pointer and keyboard but remains removable', asyn
 test('catalog refresh preserves revision conflict drafts', async ({ page }) => {
     const teamsLoadGate = deferred();
     const calls = await mockConfigSettings(page, {
+        sourceBundle: true,
         conflictCurrents: [conflictingServerConfig()],
         teamsLoadGate,
     });
@@ -873,7 +893,7 @@ test('catalog refresh preserves revision conflict drafts', async ({ page }) => {
 });
 
 test('unrelated save gates remain enforced', async ({ page }) => {
-    const calls = await mockConfigSettings(page);
+    const calls = await mockConfigSettings(page, { sourceBundle: true });
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     await page.getByRole('button', { name: 'Manage team groups' }).click();
     const dialog = page.getByRole('dialog').first();
@@ -886,6 +906,7 @@ test('unrelated save gates remain enforced', async ({ page }) => {
 test('stale cache load after cancel and reopen cannot commit the retired modal result', async ({ page }) => {
     const teamCatalogLoadGate = deferred();
     const calls = await mockConfigSettings(page, {
+        sourceBundle: true,
         initialTeamCatalog: { catalog: {}, meta: {} },
         teamCatalogLoadGate,
     });
@@ -963,6 +984,7 @@ test('workspace conflict preserves later drafts and Keep mine rebases onto the s
 
     expect(workspacePosts(calls, '/api/projects/selected')[0].body.baseRevision).toBe(3);
     expect(workspacePosts(calls, '/api/board-config')[0].body.baseRevision).toBe(4);
+    await captureDomParity(page, 'settings-workspace-conflict', '[role="dialog"]');
     await banner.getByRole('button', { name: 'Keep mine' }).click();
     await expect(dialog).toHaveCount(0);
     expect(workspacePosts(calls, '/api/board-config').map(call => call.body.baseRevision)).toEqual([4, 5]);
@@ -972,6 +994,7 @@ test('Use latest replaces workspace drafts without touching a dirty private EPM 
     const latest = sharedWorkspaceSnapshot({ revision: 5, jiraUrl: 'https://second.example', boardId: '9', boardName: 'Server Board' });
     latest.sharedConfig.projects.selected = [{ key: 'DEMO', type: 'product' }];
     const calls = await mockConfigSettings(page, {
+        sourceBundle: true,
         workspaceSnapshots: [sharedWorkspaceSnapshot(), latest],
         workspaceSaveResponses: {
             '/api/projects/selected': [{ body: { selected: [{ key: 'DEMO', type: 'product' }, { key: 'EXTRA', type: 'product' }], configRevision: 4 } }],
@@ -1103,6 +1126,7 @@ for (const workspaceResult of [
         const workspaceLoadGate = deferred();
         const latest = sharedWorkspaceSnapshot({ revision: 5, jiraUrl: 'https://second.example', boardId: '9', boardName: 'Server Board' });
         const calls = await mockConfigSettings(page, {
+        sourceBundle: true,
             workspaceSnapshots: [sharedWorkspaceSnapshot(), latest],
             workspaceLoadGate,
             workspaceLoadResponse: workspaceResult.response,
@@ -1144,6 +1168,7 @@ for (const workspaceResult of [
 test('a delayed EPM load cannot overwrite a draft edited after the request starts', async ({ page }) => {
     const epmLoadGate = deferred();
     const calls = await mockConfigSettings(page, {
+        sourceBundle: true,
         epmLoadGate,
         epmLoadResponse: {
             body: {
@@ -1176,6 +1201,7 @@ test('a delayed EPM load cannot overwrite a draft edited after the request start
 test('a delayed failing EPM load cannot reset a draft edited after the request starts', async ({ page }) => {
     const epmLoadGate = deferred();
     const calls = await mockConfigSettings(page, {
+        sourceBundle: true,
         epmLoadGate,
         epmLoadResponse: {
             status: 500,
@@ -1202,7 +1228,8 @@ test('a delayed failing EPM load cannot reset a draft edited after the request s
 
 test('a delayed EPM save advances only the submitted baseline and preserves a newer draft', async ({ page }) => {
     const epmSaveGate = deferred();
-    const calls = await mockConfigSettings(page, { epmSaveGate });
+    const calls = await mockConfigSettings(page, {
+        sourceBundle: true, epmSaveGate });
 
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     await page.getByRole('button', { name: 'Manage team groups' }).click();
@@ -1230,6 +1257,7 @@ test('a delayed EPM save advances only the submitted baseline and preserves a ne
 
 test('workspace auth expiry preserves the draft, Cancel confirmation, and safe re-auth path', async ({ page }) => {
     const calls = await mockConfigSettings(page, {
+        sourceBundle: true,
         workspaceSnapshots: [sharedWorkspaceSnapshot()],
         workspaceSaveResponses: {
             '/api/board-config': [{ status: 401, body: {
@@ -1256,10 +1284,23 @@ test('workspace auth expiry preserves the draft, Cancel confirmation, and safe r
     await expect(page.locator('#root > div[aria-hidden="true"]')).toHaveCount(1);
     await expect(page.locator('.group-modal .group-modal-dirty')).toHaveCount(1);
     await expect(page.locator('#admin-settings-source-panel')).toContainText('No board selected');
+    await captureDomParity(page, 'settings-auth-expired-draft', '.group-modal');
+    await captureDomParity(page, 'settings-auth-expired-recovery', '[role="alertdialog"]');
+    if (process.env.JEP_DOM_PARITY_DIR) {
+        const draftPath = path.join(process.env.JEP_DOM_PARITY_DIR, 'settings-auth-expired-draft.html');
+        const recoveryPath = path.join(process.env.JEP_DOM_PARITY_DIR, 'settings-auth-expired-recovery.html');
+        expect(fs.existsSync(draftPath)).toBe(true);
+        expect(fs.existsSync(recoveryPath)).toBe(true);
+        expect(fs.readFileSync(draftPath, 'utf8')).toContain('No board selected');
+        expect(fs.readFileSync(draftPath, 'utf8')).toContain('group-modal-dirty');
+        expect(fs.readFileSync(recoveryPath, 'utf8')).toContain('Sign in again');
+    }
+
 });
 
 test('a 409 keeps the dirty board draft instead of overwriting it, and says so', async ({ page }) => {
-    await mockConfigSettings(page, { conflictCurrents: [conflictingServerConfig()] });
+    await mockConfigSettings(page, {
+        sourceBundle: true, conflictCurrents: [conflictingServerConfig()] });
 
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     await page.getByRole('button', { name: 'Manage team groups' }).click();
@@ -1307,7 +1348,8 @@ test('a 409 keeps the dirty board draft instead of overwriting it, and says so',
 });
 
 test('Keep mine re-POSTs the local board rebased onto the server revision', async ({ page }) => {
-    const calls = await mockConfigSettings(page, { conflictCurrents: [conflictingServerConfig()] });
+    const calls = await mockConfigSettings(page, {
+        sourceBundle: true, conflictCurrents: [conflictingServerConfig()] });
 
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     await page.getByRole('button', { name: 'Manage team groups' }).click();
@@ -1334,7 +1376,8 @@ test('Keep mine re-POSTs the local board rebased onto the server revision', asyn
 test('a second conflict rebases again rather than replaying a revision the server already rejected', async ({ page }) => {
     const second = conflictingServerConfig();
     second.configRevision = 14;
-    const calls = await mockConfigSettings(page, { conflictCurrents: [conflictingServerConfig(), second] });
+    const calls = await mockConfigSettings(page, {
+        sourceBundle: true, conflictCurrents: [conflictingServerConfig(), second] });
 
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     await page.getByRole('button', { name: 'Manage team groups' }).click();
@@ -1357,7 +1400,8 @@ test('a second conflict rebases again rather than replaying a revision the serve
 });
 
 test('a non-409 save failure keeps the existing error path, with no conflict banner', async ({ page }) => {
-    await mockConfigSettings(page, { failGroupsSaveOnce: { status: 500, body: { error: 'Server exploded' } } });
+    await mockConfigSettings(page, {
+        sourceBundle: true, failGroupsSaveOnce: { status: 500, body: { error: 'Server exploded' } } });
 
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     await page.getByRole('button', { name: 'Manage team groups' }).click();
@@ -1380,7 +1424,8 @@ test('a non-409 save failure keeps the existing error path, with no conflict ban
 });
 
 test('Discard mine applies the server config and clears the dirty state', async ({ page }) => {
-    await mockConfigSettings(page, { conflictCurrents: [conflictingServerConfig()] });
+    await mockConfigSettings(page, {
+        sourceBundle: true, conflictCurrents: [conflictingServerConfig()] });
 
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     await page.getByRole('button', { name: 'Manage team groups' }).click();
@@ -1398,10 +1443,13 @@ test('Discard mine applies the server config and clears the dirty state', async 
     await expect(saveButton).toHaveAttribute('title', 'No changes to save');
     // Deliberate choice, not a dismissal: the modal is still open on the server's board.
     await expect(dialog).toBeVisible();
+    await captureDomParity(page, 'settings-discard-mine', '[role="dialog"]');
+
 });
 
 test('the conflict banner names the sections that committed before the rejected groups POST', async ({ page }) => {
     const calls = await mockConfigSettings(page, {
+        sourceBundle: true,
         conflictCurrents: [conflictingServerConfig()],
         capacityConfig: { project: 'DEMO', fieldId: 'customfield_10050', fieldName: 'Capacity' },
     });
@@ -1436,7 +1484,8 @@ test('the conflict banner names the sections that committed before the rejected 
 // had committed through the admin-gated endpoints, which is false here: EPM is a second unsaved
 // change the banner never named.
 test('the conflict banner names EPM settings as pending instead of claiming groups were the only change', async ({ page }) => {
-    const calls = await mockConfigSettings(page, { conflictCurrents: [conflictingServerConfig()] });
+    const calls = await mockConfigSettings(page, {
+        sourceBundle: true, conflictCurrents: [conflictingServerConfig()] });
 
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     await page.getByRole('button', { name: 'Manage team groups' }).click();
@@ -1464,7 +1513,8 @@ test('the conflict banner names EPM settings as pending instead of claiming grou
 test('the conflict headline names what changed instead of a board the user never touched', async ({ page }) => {
     const groupsConfig = baseGroupsConfig();
     groupsConfig.groups[0].teamIds = ['team-platform', 'team-secondary'];
-    await mockConfigSettings(page, { groupsConfig, conflictCurrents: [conflictingServerConfig()] });
+    await mockConfigSettings(page, {
+        sourceBundle: true, groupsConfig, conflictCurrents: [conflictingServerConfig()] });
 
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     await page.getByRole('button', { name: 'Manage team groups' }).click();
@@ -1486,7 +1536,8 @@ test('the conflict headline names what changed instead of a board the user never
 test('a plain Save while a conflict is open 409s again and the banner returns with the newer revision', async ({ page }) => {
     const second = conflictingServerConfig();
     second.configRevision = 14;
-    const calls = await mockConfigSettings(page, { conflictCurrents: [conflictingServerConfig(), second] });
+    const calls = await mockConfigSettings(page, {
+        sourceBundle: true, conflictCurrents: [conflictingServerConfig(), second] });
 
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     await page.getByRole('button', { name: 'Manage team groups' }).click();
@@ -1515,6 +1566,7 @@ test('a plain Save while a conflict is open 409s again and the banner returns wi
 
 test('the unified save persists every dirty section together, group board included', async ({ page }) => {
     const calls = await mockConfigSettings(page, {
+        sourceBundle: true,
         capacityConfig: { project: 'DEMO', fieldId: 'customfield_10050', fieldName: 'Capacity' },
         priorityWeights: [{ priority: 'P1', weight: 0.5 }],
     });
@@ -1580,7 +1632,7 @@ test('the unified save persists every dirty section together, group board includ
 });
 
 test('settings save persists dirty department and EPM sections together', async ({ page }) => {
-    const calls = await mockConfigSettings(page);
+    const calls = await mockConfigSettings(page, { sourceBundle: true });
 
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     await page.getByRole('button', { name: 'Manage team groups' }).click();
@@ -1616,6 +1668,7 @@ test('unverified saved Capacity mapping is re-attested without changing the sele
     workspace.capacityMutationEnabled = false;
     workspace.sharedConfig.capacity = capacity;
     const calls = await mockConfigSettings(page, {
+        sourceBundle: true,
         workspaceSnapshots: [workspace],
         capacityConfig: { ...capacity, mutationEnabled: true, configRevision: 4 },
     });
@@ -1645,6 +1698,7 @@ test('local OAuth JSON mode loads and re-attests an existing Capacity mapping', 
         fieldName: 'Capacity',
     };
     const calls = await mockConfigSettings(page, {
+        sourceBundle: true,
         workspaceSnapshots: [{
             jiraUrl: 'https://jira.example',
             authMode: 'atlassian_oauth',
@@ -1682,6 +1736,7 @@ test('Capacity config conflict can keep the draft and retry on the server revisi
     workspace.capacityMutationEnabled = false;
     workspace.sharedConfig.capacity = capacity;
     const calls = await mockConfigSettings(page, {
+        sourceBundle: true,
         workspaceSnapshots: [workspace],
         workspaceSaveResponses: {
             '/api/capacity/config': [
@@ -1717,6 +1772,7 @@ test('Capacity config conflict can keep the draft and retry on the server revisi
 
 test('EPM save auth expiry preserves the private draft and exposes safe recovery without replay', async ({ page }) => {
     const calls = await mockConfigSettings(page, {
+        sourceBundle: true,
         epmSaveResponse: {
             status: 401,
             body: {
@@ -1750,6 +1806,7 @@ test('EPM save auth expiry preserves the private draft and exposes safe recovery
 
 test('connection recovery auth expiry preserves the visible group draft and blocks save shortcut', async ({ page }) => {
     const calls = await mockConfigSettings(page, {
+        sourceBundle: true,
         failFirstSelectedProjectsConnection: true,
         configRetryAuthRequired: true,
         keepServerConnectionError: true,
@@ -1775,6 +1832,7 @@ test('connection recovery auth expiry preserves the visible group draft and bloc
 
 test('admin_required stays in targeted settings recovery and preserves the draft', async ({ page }) => {
     const calls = await mockConfigSettings(page, {
+        sourceBundle: true,
         workspaceSaveResponses: {
             '/api/board-config': [{ status: 403, body: {
                 error: 'admin_required',
@@ -1800,6 +1858,7 @@ test('admin_required stays in targeted settings recovery and preserves the draft
 
 test('private EPM conflicts preserve the draft without opening workspace conflict actions', async ({ page }) => {
     const calls = await mockConfigSettings(page, {
+        sourceBundle: true,
         epmSaveResponse: {
             status: 409,
             body: {
@@ -1827,6 +1886,7 @@ test('private EPM conflicts preserve the draft without opening workspace conflic
 
 test('EPM settings load auth expiry preserves the bootstrapped private baseline', async ({ page }) => {
     await mockConfigSettings(page, {
+        sourceBundle: true,
         epmLoadResponse: {
             status: 401,
             body: {
@@ -1848,6 +1908,7 @@ test('EPM settings load auth expiry preserves the bootstrapped private baseline'
 
 test('connection retry auth expiry preserves the bootstrapped private EPM baseline and draft', async ({ page }) => {
     const calls = await mockConfigSettings(page, {
+        sourceBundle: true,
         configRetryAuthRequired: true,
         failFirstGroupsConnection: true,
         keepServerConnectionError: true,
@@ -1877,6 +1938,7 @@ test('the mapping pickers search the whole field catalog, not the capacity proje
     // scoped to that project's createmeta screens, so an instance-wide custom field that is
     // not on those screens could never be found — Delivery Owner among them.
     const calls = await mockConfigSettings(page, {
+        sourceBundle: true,
         capacityConfig: { project: 'CAP', fieldId: 'customfield_10409', fieldName: 'Team capacity' },
         deliveryOwnerFieldConfig: { fieldId: '', fieldName: '' },
     });
@@ -1899,7 +1961,8 @@ test('the mapping pickers search the whole field catalog, not the capacity proje
 });
 
 test('a truncated field search says so instead of silently dropping matches', async ({ page }) => {
-    await mockConfigSettings(page, { deliveryOwnerFieldConfig: { fieldId: '', fieldName: '' } });
+    await mockConfigSettings(page, {
+        sourceBundle: true, deliveryOwnerFieldConfig: { fieldId: '', fieldName: '' } });
 
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     await page.getByRole('button', { name: 'Manage team groups' }).click();
@@ -1918,7 +1981,8 @@ test('a truncated field search says so instead of silently dropping matches', as
 test('a field search past the cap names how many matches it is hiding', async ({ page }) => {
     const extraFields = [];
     for (let i = 0; i < 25; i += 1) extraFields.push({ id: `customfield_3${i}`, name: `Owner Field ${i}` });
-    await mockConfigSettings(page, { extraFields, deliveryOwnerFieldConfig: { fieldId: '', fieldName: '' } });
+    await mockConfigSettings(page, {
+        sourceBundle: true, extraFields, deliveryOwnerFieldConfig: { fieldId: '', fieldName: '' } });
 
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     await page.getByRole('button', { name: 'Manage team groups' }).click();
@@ -1953,7 +2017,7 @@ test('a field search past the cap names how many matches it is hiding', async ({
 });
 
 test('Field mapping tab renders Delivery Owner Field as a fifth entry styled like its siblings', async ({ page }) => {
-    await mockConfigSettings(page);
+    await mockConfigSettings(page, { sourceBundle: true });
 
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     await page.getByRole('button', { name: 'Manage team groups' }).click();
@@ -2007,4 +2071,53 @@ test('Field mapping tab renders Delivery Owner Field as a fifth entry styled lik
     // Wait for the tab-switch transition to settle before capturing the screenshot.
     await page.waitForTimeout(300);
     await dialog.screenshot({ path: `${screenshotDir}/field-mapping-delivery-owner.png` });
+});
+
+test('dom parity capture: every Settings tab, then an edited tab', async ({ page }) => {
+    test.skip(!process.env.JEP_DOM_PARITY_DIR, 'opt-in refactor check');
+    // Freeze Date only: legacy Team-directory writes use new Date(), while timers stay real.
+    await page.clock.setFixedTime(new Date('2026-09-02T09:00:00Z'));
+    await mockConfigSettings(page, { sourceBundle: true, performanceAdminAvailable: true });
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+    await expect(dialog).toBeVisible();
+    const slug = (text) => text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const topTabs = dialog.locator('.group-modal > .group-modal-tabs > .group-modal-tab');
+    await expect(topTabs).toHaveText(['Admin', 'Departments', 'Connections', 'EPM']);
+    const expectedSubTabs = {
+        Admin: ['Scope projects', 'Jira source', 'Field mapping', 'Capacity', 'Priority weights', 'Access', 'Performance'],
+        Departments: ['Team groups', 'Group labels', 'Boards'],
+        Connections: [],
+        EPM: ['Scope', 'Projects'],
+    };
+    const topCount = await topTabs.count();
+    for (let t = 0; t < topCount; t += 1) {
+        const top = topTabs.nth(t);
+        await expect(top).toBeEnabled();
+        const topName = (await top.textContent()).trim();
+        await top.click();
+        const subTabs = dialog.getByRole('tab');
+        await expect(subTabs).toHaveText(expectedSubTabs[topName]);
+        const subCount = await subTabs.count();
+        if (subCount === 0) {
+            await captureDomParity(page, `settings-${t}-${slug(topName)}`, '[role="dialog"]');
+            continue;
+        }
+        for (let s = 0; s < subCount; s += 1) {
+            const sub = subTabs.nth(s);
+            await expect(sub).toBeEnabled();
+            const subName = (await sub.textContent()).trim();
+            await sub.click();
+            if (subName === 'Performance') await expect(dialog.locator('.performance-settings')).toHaveAttribute('aria-busy', 'false');
+            await captureDomParity(page, `settings-${t}-${slug(topName)}-${s}-${slug(subName)}`, '[role="dialog"]');
+        }
+    }
+    // An edited tab: the dirty badge and the enabled Save button are what the ST1 isDirty hooks drive.
+    // The top-level order is Admin, Departments, Connections, EPM; the loop above left the last sub-tab selected.
+    await topTabs.filter({ hasText: 'Departments' }).click();
+    await dialog.getByRole('tab', { name: 'Team groups' }).click();
+    await dialog.getByPlaceholder('Group name').fill('Parity Group');
+    await expect(dialog.getByText('Unsaved changes')).toBeVisible();
+    await captureDomParity(page, 'settings-edited-departments', '[role="dialog"]');
 });

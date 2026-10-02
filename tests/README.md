@@ -63,6 +63,14 @@ The six core tools are `scripts/extraction_lint/eslint.config.mjs`, `check_hook_
 
 For conservation, run `fnm exec --using 20 node tmp/lint/check_move_conservation.mjs --base <revision> <complete-affected-hook-file-set>`. Existing hooks are read at both revisions; explicitly name new/deleted files with `--created-hook <file>` / `--deleted-hook <file>`. Scratch comparisons use `--base-file <dashboard>` plus `--dashboard <current-dashboard>` and `--base-hook <current-hook>=<base-hook>`. Exit 0 means effect order matches, **not** that residual edits are accepted; review every printed statement. Exit 1 means effect-order divergence; exit 2 means parse/coverage/tooling failure. Never treat either nonzero result as an empty successful comparison.
 
+Run the 13 synthetic DOM-helper controls before trusting opt-in captures:
+
+```bash
+fnm exec --using 20 npx playwright test tests/ui/dom_parity_helpers.spec.js --browser=chromium
+```
+
+`captureDomParity` in `ui/dom_parity_helpers.js` writes only when `JEP_DOM_PARITY_DIR` is set. Use two fresh ignored directories and run every instrumented spec in the extraction plan's DOM parity command, then compare nonempty matching filename lists and `diff -r`. Settings fixtures serve the source bundle; captures include every Settings subsection, a dirty Department draft, conflict/discard states, separate preserved-draft and auth-recovery roots, and first-run selection/saving/guide states. React identity normalization preserves reference relationships and live form values; invalid references or duplicate output labels fail before replacing a capture. Only the documented inactive-tab exceptions and app-owned EPM fetched-time readout are normalized.
+
 ## Test Categories
 
 ### Unit Tests

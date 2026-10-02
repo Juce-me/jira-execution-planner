@@ -3,6 +3,7 @@ const path = require('node:path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_home_token_fixture');
+const { captureDomParity } = require('./dom_parity_helpers');
 
 const baseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const screenshotDir = '/tmp/shared-department-groups-qa';
@@ -1031,6 +1032,7 @@ test('first-run department selection blocks group-scoped task loads until prefer
     await expect(page.getByRole('button', { name: 'Continue' })).toBeDisabled();
     await expect(dialog.getByRole('radio', { name: /Empty/ })).toBeDisabled();
     await expect(page.getByText('Add at least one team or component before choosing this Department')).toBeVisible();
+    await captureDomParity(page, 'first-run-selection', '[role="dialog"]');
     await dialog.getByRole('radio', { name: /Platform/ }).check();
     await expect(dialog.getByRole('radio', { name: /Platform/ })).toBeChecked();
     await page.getByLabel('Search Departments').fill('growth');
@@ -1113,6 +1115,7 @@ test('first-run saving locks every picker mutation and restores controls after f
     await expect(picker.getByRole('radio', { name: /Growth Department/ })).toBeDisabled();
     await expect(picker.getByRole('button', { name: 'Configure and use Empty Department' })).toBeDisabled();
     await expect(picker.getByRole('button', { name: 'Add Department' })).toBeDisabled();
+    await captureDomParity(page, 'first-run-saving-locked', '[role="dialog"]');
     const savingTarget = picker.getByRole('button', { name: 'Saving...' });
     await expect(savingTarget).toHaveAttribute('aria-disabled', 'true');
     await expect(savingTarget).not.toHaveAttribute('disabled', '');
@@ -1305,6 +1308,7 @@ test('first-run Add Department opens the anchored configuration guide and Cancel
     await expect(settingsDialog.getByRole('button', { name: /favorite group/ })).toHaveCount(0);
     await expect(settingsDialog.getByRole('checkbox', { name: 'Show in Department selector' })).toHaveCount(0);
     await expect(settingsDialog.getByRole('button', { name: 'Run onboarding again' })).toHaveCount(0);
+    await captureDomParity(page, 'first-run-guide', '.group-modal');
     await expect(firstRunDialog).toHaveCount(0);
     const canonicalNameInput = settingsDialog.getByPlaceholder('Group name');
     await canonicalNameInput.fill('Temporary rename');
@@ -1360,6 +1364,7 @@ test('first-run configuration guide target loss restores focus state and offers 
     await page.evaluate(() => document.querySelector('[data-first-run-guide-target="name"]')?.remove());
     await expect(guide).toContainText('no longer available');
     await expect(guide.getByRole('button', { name: 'Return' })).toBeVisible();
+    await captureDomParity(page, 'first-run-guide-target-loss', '.first-run-configuration-guide');
     await guide.getByRole('button', { name: 'Return' }).click();
     await expect(page.getByRole('dialog', { name: 'Choose your Department' })).toBeVisible();
     await expect(portalButton).toHaveAttribute('tabindex', '7');

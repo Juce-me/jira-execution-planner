@@ -1,8 +1,10 @@
 import * as React from 'react';
 
-function MenuOption({ label, locked, pressed, onClick }) {
-    return <button type="button" className={`pop-opt${locked ? ' is-locked' : ''}`} aria-disabled={locked || undefined} aria-pressed={pressed} onClick={() => { if (!locked) onClick(); }}>
-        <span className="box" aria-hidden="true" style={pressed === undefined ? { visibility: 'hidden' } : undefined} /><span className="pop-opt-content"><span className="pop-opt-label">{label}</span></span>
+// `aligned` keeps a hidden checkbox gutter so plain actions line up with a toggle row in the same menu; without a toggle there is no gutter.
+function MenuOption({ label, locked, pressed, aligned, onClick }) {
+    const gutter = pressed !== undefined || aligned;
+    return <button type="button" className={`pop-opt${locked ? ' is-locked' : ''}${gutter ? '' : ' pop-opt-plain'}`} aria-disabled={locked || undefined} aria-pressed={pressed} onClick={() => { if (!locked) onClick(); }}>
+        {gutter && <span className="box" aria-hidden="true" style={pressed === undefined ? { visibility: 'hidden' } : undefined} />}<span className="pop-opt-content"><span className="pop-opt-label">{label}</span></span>
     </button>;
 }
 
@@ -39,21 +41,22 @@ export default function PlanningReviewColumnMenu({ column, editable, review, can
         onClose();
     };
     const total = column.aggregation === 'sum';
+    const aligned = column.custom && column.type === 'number';   // only a number review column has the Show total toggle
     return <div ref={rootRef}>
-        <div className="pop-subject">{column.label}{column.custom ? ' · Shared' : ''}</div>
+        {column.custom && <div className="pop-subject">Shared review column</div>}
         {column.custom && <div className="pop-group"><div className="pop-list">
             {renaming
                 ? <div className="planning-review-column-row"><RenameField column={column} review={review} onError={onError} onRenamed={() => onTrack('column_renamed')} onFinish={refocus => { setRenaming(false); if (refocus) focusDialog(); }} /></div>
-                : <MenuOption label="Rename" locked={!editable} onClick={() => setRenaming(true)} />}
+                : <MenuOption label="Rename" aligned={aligned} locked={!editable} onClick={() => setRenaming(true)} />}
             {column.type === 'number' && <MenuOption label="Show total" pressed={total} locked={!editable}
                 onClick={() => { if (review.changeSchema({ action: 'aggregation', columnId: column.id, aggregation: total ? 'none' : 'sum' })) onTrack('column_aggregation_changed'); }} />}
         </div></div>}
         <div className="pop-group"><div className="pop-list">
-            <MenuOption label="Move left" locked={!editable || !canMoveLeft} onClick={() => onMove(-1)} />
-            <MenuOption label="Move right" locked={!editable || !canMoveRight} onClick={() => onMove(1)} />
+            <MenuOption label="Move left" aligned={aligned} locked={!editable || !canMoveLeft} onClick={() => onMove(-1)} />
+            <MenuOption label="Move right" aligned={aligned} locked={!editable || !canMoveRight} onClick={() => onMove(1)} />
         </div></div>
         {(column.optional || column.custom) && <div className="pop-group"><div className="pop-list">
-            <MenuOption label="Hide column" locked={!editable} onClick={onHide} />
+            <MenuOption label="Hide column" aligned={aligned} locked={!editable} onClick={onHide} />
             {column.custom && (confirming
                 ? <div className="planning-review-column-row planning-review-column-confirm">
                     <span>Archive “{column.label}”? It leaves this table for everyone and cannot be restored here.</span>
@@ -62,8 +65,7 @@ export default function PlanningReviewColumnMenu({ column, editable, review, can
                         <button type="button" className="planning-action-button" onClick={() => { setConfirming(false); focusDialog(); }}>Cancel</button>
                     </span>
                 </div>
-                : <MenuOption label="Archive column…" locked={!editable} onClick={() => setConfirming(true)} />)}
+                : <MenuOption label="Archive column…" aligned={aligned} locked={!editable} onClick={() => setConfirming(true)} />)}
         </div></div>}
-        <p className="planning-review-guidance">Shift-click a heading to sort by several columns.</p>
     </div>;
 }

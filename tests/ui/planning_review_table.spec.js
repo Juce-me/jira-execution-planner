@@ -681,9 +681,14 @@ test('column menu items follow the column kind and opening it is reported', asyn
     await columnMenuButton(page, 'Priority').click();
     const popup = columnMenu(page, 'Priority');
     await expect(popup).toBeVisible();
-    await expect(popup.locator('.pop-subject')).toHaveText('Priority');
+    // The menu is anchored under its own heading, so it does not repeat the column name or a usage hint; actions start at the left edge.
+    await expect(popup.locator('.pop-subject')).toHaveCount(0);
+    await expect(popup.locator('.pop-opt .box')).toHaveCount(0);
+    const inset = await popup.evaluate(node => { const label = node.querySelector('.pop-opt-label').getBoundingClientRect(); return label.left - node.getBoundingClientRect().left; });
+    expect(inset).toBeLessThan(30);
+    await page.screenshot({ path: path.join(root, 'tmp/217-ui/column-menu-jira.png'), clip: { x: 0, y: 120, width: 1000, height: 200 } });
     expect(await menuItems(popup)).toEqual(['Move left', 'Move right']);
-    await expect(popup).toContainText('Shift-click a heading to sort by several columns.');
+    await expect(popup).not.toContainText('Shift-click');
     await page.keyboard.press('Escape'); await expect(popup).toHaveCount(0);
     await showHiddenColumn(page, 'Component');
     await columnMenuButton(page, 'Component').click();
@@ -855,13 +860,17 @@ test('review column menus list Rename, Show total (numbers only), moves, Hide an
     await page.setViewportSize({ width: 1440, height: 900 }); await install(page); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
     await columnMenuButton(page, 'Cost 0').click();
     const popup = columnMenu(page, 'Cost 0');
-    await expect(popup.locator('.pop-subject')).toHaveText('Cost 0 · Shared');
+    // Review columns say what is special about them (shared with everyone) instead of repeating their name.
+    await expect(popup.locator('.pop-subject')).toHaveText('Shared review column');
+    await expect(popup.locator('.pop-opt .box')).toHaveCount(6);   // the Show total toggle keeps all six rows aligned
+    await page.screenshot({ path: path.join(root, 'tmp/217-ui/column-menu-review.png'), clip: { x: 0, y: 120, width: 1000, height: 300 } });
     expect(await menuItems(popup)).toEqual(['Rename', 'Show total', 'Move left', 'Move right', 'Hide column', 'Archive column…']);
     await expect(popup.getByRole('button', { name: 'Show total', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await page.keyboard.press('Escape');
     await addTextColumn(page, 'Notes');
     await columnMenuButton(page, 'Notes').click();
     expect(await menuItems(columnMenu(page, 'Notes'))).toEqual(['Rename', 'Move left', 'Move right', 'Hide column', 'Archive column…']);
+    await expect(columnMenu(page, 'Notes').locator('.pop-opt .box')).toHaveCount(0);
 });
 
 test('Show total toggles the footer total and reports it', async ({ page }) => {

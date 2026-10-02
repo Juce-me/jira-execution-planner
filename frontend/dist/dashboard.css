@@ -8554,6 +8554,9 @@ html:has(.planning-panel.open) {
 .planning-review-popover:focus {
   outline: none;
 }
+.planning-review-popover .pop-opt-plain {
+  grid-template-columns: minmax(0, 1fr);
+}
 .planning-review-column-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

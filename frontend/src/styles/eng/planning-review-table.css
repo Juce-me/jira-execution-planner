@@ -56,6 +56,8 @@ html:has(.planning-panel.open) { scrollbar-gutter: stable; }
 .planning-review-popover-anchor { display: inline-flex; }
 .planning-review-popover { position: fixed; z-index: var(--modal-popup-z, 10001); box-sizing: border-box; width: 300px; max-width: calc(100vw - 16px); padding: 0.75rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); font-size: 0.75rem; box-shadow: 0 8px 24px #0f172a26; overflow-y: auto; overscroll-behavior: contain; }
 .planning-review-popover:focus { outline: none; }
+/* A menu without a toggle row has no checkbox gutter, so its actions start at the popover's left edge. */
+.planning-review-popover .pop-opt-plain { grid-template-columns: minmax(0, 1fr); }
 .planning-review-column-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0.25rem; }
 .planning-review-column-action { color: var(--text-secondary); background: transparent; border: 1px solid transparent; border-radius: 6px; letter-spacing: normal; cursor: pointer; transition: none; }
 .planning-review-column-action svg { width: 14px; height: 14px; }

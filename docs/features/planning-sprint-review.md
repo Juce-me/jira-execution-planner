@@ -127,8 +127,10 @@ step the column past its nearest visible neighbour like dragging does and stay o
 optional Jira columns and review columns also offer Hide column, which closes the
 menu. Review columns add Rename (an inline field: Enter or leaving it saves, Escape
 cancels and keeps the menu open), Show total (numbers only, a pressed toggle for the
-footer Σ) and Archive column…, which asks inline first and closes the menu (archiving is refused, and the reason shown under the toolbar, while the column still has unsaved cell drafts). A muted
-line explains that Shift-click on a heading sorts by several columns.
+footer Σ) and Archive column…, which asks inline first and closes the menu (archiving is refused, and the reason shown under the toolbar, while the column still has unsaved cell drafts).
+The menu does not repeat the column name (it opens directly under that heading) or a usage hint;
+only review columns carry a small "Shared review column" title, and only a menu with a toggle
+row keeps a checkbox gutter, so plain actions start at the left edge.
 Drag column handles to place Jira and custom columns in any order after the pinned
 Key and Summary columns. Arrow keys on a focused handle move it past the nearest
 visible neighbour, stepping over hidden columns; the headers are the only place to

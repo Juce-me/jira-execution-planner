@@ -4079,13 +4079,13 @@ button.toggle.applied-filter.active {
 }
 
 /* frontend/src/styles/eng/filter-bar.css */
-:where(.filterbar, .popover) button {
+:where(.filterbar, .popover, .planning-review-popover) button {
   margin-right: 0;
   color: var(--text-primary);
   background: none;
   transition: none;
 }
-:where(.filterbar, .popover) button:hover {
+:where(.filterbar, .popover, .planning-review-popover) button:hover {
   background: none;
   color: var(--text-primary);
   transform: none;
@@ -8294,7 +8294,7 @@ html:has(.planning-panel.open) {
 }
 .planning-review-input {
   box-sizing: border-box;
-  width: 86px;
+  width: 100%;
   min-width: 0;
   height: 21px;
   margin: 0;
@@ -8355,8 +8355,6 @@ html:has(.planning-panel.open) {
   transform: none;
   box-shadow: none;
 }
-.planning-review-add,
-.planning-review-columns,
 .planning-review-recovery {
   display: flex;
   flex-wrap: wrap;
@@ -8369,50 +8367,6 @@ html:has(.planning-panel.open) {
   margin: 0.5rem 0;
   max-width: 100%;
   box-sizing: border-box;
-}
-.planning-review-add label {
-  display: grid;
-  gap: 4px;
-  font-size: 0.75rem;
-  min-width: 0;
-  flex: 0 1 auto;
-  margin: 0;
-}
-.planning-review-add {
-  align-items: flex-end;
-}
-.planning-review-add input,
-.planning-review-add select,
-.planning-review-add > button {
-  height: 30px;
-}
-.planning-review-add input,
-.planning-review-add select,
-.planning-review-column-control > input {
-  font: inherit;
-  border: 1px solid #cbd5e1;
-  padding: 5px 7px;
-  border-radius: 5px;
-  min-width: 0;
-  max-width: 100%;
-  box-sizing: border-box;
-}
-.planning-review-columns {
-  display: block;
-}
-.planning-review-column-control {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-  margin: 0.35rem 0;
-  font-size: 0.75rem;
-}
-.planning-review-visible {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  margin: 0;
 }
 .planning-review-dialog-backdrop {
   position: fixed;
@@ -8454,12 +8408,6 @@ html:has(.planning-panel.open) {
     width: calc(100vw - 2rem);
     max-width: calc(100vw - 2rem);
     margin-left: calc((100% - (100vw - 2rem)) / 2);
-  }
-  .planning-review-add label:first-child {
-    flex-basis: 100%;
-  }
-  .planning-review-add label:first-child input {
-    width: 100%;
   }
   .planning-review-table .planning-review-summary {
     min-width: 180px;
@@ -8506,6 +8454,7 @@ html:has(.planning-panel.open) {
   }
 }
 .planning-review-capacity .epic-stat-toggle {
+  margin: 0;
   padding: 2px 6px;
   font: inherit;
   letter-spacing: normal;
@@ -8564,7 +8513,7 @@ html:has(.planning-panel.open) {
   position: fixed;
   z-index: var(--modal-popup-z, 10001);
   box-sizing: border-box;
-  width: 560px;
+  width: 300px;
   max-width: calc(100vw - 16px);
   padding: 0.75rem;
   border: 1px solid #e2e8f0;
@@ -8576,23 +8525,146 @@ html:has(.planning-panel.open) {
   overflow-y: auto;
   overscroll-behavior: contain;
 }
-.planning-review-popover .planning-review-add,
-.planning-review-popover .planning-review-columns {
-  border: 0;
+.planning-review-popover:focus {
+  outline: none;
+}
+.planning-review-columns {
+  display: grid;
+}
+.planning-review-column-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.25rem;
+}
+.planning-review-column-row > .pop-opt {
+  min-width: 0;
+}
+.planning-review-column-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.planning-review-column-action {
+  color: var(--text-secondary);
   background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  letter-spacing: normal;
+  cursor: pointer;
+  transition: none;
+}
+.planning-review-column-action svg {
+  width: 14px;
+  height: 14px;
+}
+.planning-review-column-action:hover,
+.planning-review-column-action:focus-visible {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  transform: none;
+  box-shadow: none;
+  letter-spacing: normal;
+}
+.planning-review-column-action[aria-pressed=true] {
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+.planning-review-column-action:focus-visible {
+  outline: 2px solid #93c5fd;
+  outline-offset: 1px;
+}
+.planning-review-column-action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.planning-review-column-confirm {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.4rem;
+  padding: 0.35rem;
+  border-radius: 6px;
+  background: var(--bg-primary);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.62rem;
+  line-height: 1.4;
+}
+.planning-review-column-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+.planning-review-column-confirm .planning-action-button {
+  padding: 0.2rem 0.6rem;
+  border-radius: 8px;
+}
+.planning-review-column-archived {
+  padding: 0.3rem 0.35rem;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+.planning-review-add {
+  display: grid;
+  gap: 0.5rem;
+}
+.planning-review-add-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.planning-review-column-name {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: var(--control-height);
   margin: 0;
+  padding: 0 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.85rem;
+  box-shadow: none;
+}
+.planning-review-column-name:focus {
+  border-color: var(--accent);
+  box-shadow: none;
+  outline: none;
+}
+.planning-review-column-rename {
+  grid-column: 1 / -1;
+  height: 24px;
+  padding: 0 0.35rem;
+  border-radius: 6px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.62rem;
+}
+.planning-review-head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 5px;
+}
+.planning-review-numeric .planning-review-head {
+  justify-content: flex-end;
+}
+.planning-review-custom .planning-review-head {
+  justify-content: space-between;
+}
+.planning-review-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
   padding: 0;
-}
-.planning-review-popover > .planning-action-button {
-  margin-top: 0.5rem;
-}
-.planning-review-popover .planning-review-visible {
+  overflow: hidden;
+  clip: rect(0 0 0 0);
   white-space: nowrap;
-}
-.planning-review-popover .planning-review-visible input[type=checkbox] {
-  width: auto;
-  flex: 0 0 auto;
-  margin: 0;
+  border: 0;
 }
 .planning-review-drag {
   display: inline-block;
@@ -8600,7 +8672,7 @@ html:has(.planning-panel.open) {
   color: #94a3b8;
   border: 0;
   margin: 0;
-  padding: 0 5px 0 0;
+  padding: 0;
   font: inherit;
   letter-spacing: normal;
   cursor: grab;
@@ -8744,11 +8816,13 @@ html:has(.planning-panel.open) {
 .planning-review-toolbar .stats-control-group {
   margin: 0;
 }
-.planning-review-toolbar .eng-mode-control {
+.planning-review-toolbar .eng-mode-control,
+.planning-review-add-row .eng-mode-control {
   margin-top: 0;
 }
 .planning-review-toolbar > .planning-action-button,
-.planning-review-toolbar > .planning-review-popover-anchor > .planning-action-button {
+.planning-review-toolbar > .planning-review-popover-anchor > .planning-action-button,
+.planning-review-add-row > .planning-action-button {
   height: var(--control-height);
   box-sizing: border-box;
   border-radius: 10px;

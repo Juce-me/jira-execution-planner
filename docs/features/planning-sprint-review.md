@@ -22,6 +22,16 @@ Column creation aligns its compact input, type selector and actions on one basel
 Table headings and drag handles have no inherited button margins; custom inputs
 use compact 100px columns. Longer headings or values can widen a column rather
 than clipping; Summary and Teams in scope remain bounded with full-text readouts.
+Each heading shares one edge with its values and totals: the left edge for text
+columns, the right edge for numeric ones. The drag grip sits beside its own heading
+on the opposite side (after the label for text, before it for numeric), so it never
+pushes a heading away from the values below it; a custom column spans its field, so
+its grip sits on the outer edge. The select column has no visible title (Select stays
+as its accessible name) and the totals row is marked with a Σ (accessible name Total),
+so every visible heading shares one typography. A custom input fills its cell's content width, so its box never
+extends past the heading or the grip (its text keeps the field's own padding); the
+Capacity chip has no extra left margin. A Playwright audit checks this for every
+column in both modes, including that no input pokes past its heading span.
 In Table view, Filters precedes the capacity graphs in a shared sticky stack below
 the compact header. The first document scroll brings that stack into its sticky
 position. The shared `EngFilterControls` module occupies the second dashboard controls row,
@@ -52,15 +62,25 @@ appear for multiple admitted Teams/projects. List sort/group controls keep their
 stored choices and do not change table ordering.
 
 The single-row toolbar contains Epics/Stories, + Column, Columns, Save and an
-options button, with matching heights and typography. Use + Column for Number/Text
-columns and Columns to manage definitions. Refresh, discard, clear sorting and
-short usage help live in the options popup; only an Unsaved indicator appears
-beside Save when there are local changes.
-Both open anchored popups above the table without shifting the page layout.
-Escape or an outside click dismisses them; the popups stay within the viewport.
+options button, with matching heights and typography. Use + Column to create a
+Number or Text column and Columns to show or hide columns and manage review
+columns. Refresh, discard, clear sorting and short usage help live in the options
+popup; only an Unsaved indicator appears beside Save when there are local changes.
+All three open 300px anchored popups above the table without shifting the page
+layout. Opening one focuses the panel (+ Column focuses its name field); Escape or
+an outside click dismisses it; the popups stay within the viewport.
++ Column has a name field, the shared Number | Text segmented control and Add
+column; Enter adds, Escape cancels. Columns uses the Filters popover grammar: its
+subject names the active row mode (Columns · Epics or Stories); Jira fields lists
+the optional Jira columns as one-line toggles; Review columns · shared lists custom
+columns as the same toggle plus a Σ total toggle (numbers only), an inline rename
+(Enter or leaving the field saves, Escape cancels and keeps the popup open) and an
+archive action behind an inline confirmation. Archived columns stay listed, muted,
+and cannot be restored from the UI.
 Drag column handles to place Jira and custom columns in any order after the pinned
-Key and Summary columns. Arrow keys on a focused handle and the custom-column
-move buttons provide keyboard movement. Columns controls optional visibility.
+Key and Summary columns. Arrow keys on a focused handle move it past the nearest
+visible neighbour, stepping over hidden columns; the headers are the only place to
+reorder. Columns controls optional visibility.
 Order and visibility are shared per workspace + Sprint, separately for Epics and
 Stories, and remain drafts until Save review. Reload/Refresh loads the saved view;
 concurrent layout saves use the same schema revision conflict protection. Save
@@ -69,7 +89,9 @@ visibility; missing or mismatched confirmation preserves the draft and requires
 explicit refresh/reapply recovery.
 Schema and values are shared within workspace + Sprint, independent of Department
 and Team filters. Epic and Story cells are separate and use immutable Jira IDs.
-Numbers support three decimal places and exact totals across visible rows;
+Numbers allow at most one decimal place (up to 999999999.9) and show without trailing
+zeros (12, 12.5); totals stay exact across visible rows, and values stored earlier with
+more decimals still read and total exactly;
 blank values are distinct from zero. Shift-click headings adds up to five ordered
 sort criteria. Custom changes remain local until Save review.
 

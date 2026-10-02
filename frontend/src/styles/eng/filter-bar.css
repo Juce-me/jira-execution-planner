@@ -10,14 +10,14 @@
            carries a stray 16px gap. :where() holds the selector at zero specificity, so it
            beats the global rule on order alone (eng.css imports controls.css first) and still
            loses to each control's own rule below. */
-        :where(.filterbar, .popover) button {
+        :where(.filterbar, .popover, .planning-review-popover) button {
             margin-right: 0;
             color: var(--text-primary);
             background: none;
             transition: none;
         }
 
-        :where(.filterbar, .popover) button:hover {
+        :where(.filterbar, .popover, .planning-review-popover) button:hover {
             background: none;
             color: var(--text-primary);
             transform: none;

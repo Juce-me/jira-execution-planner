@@ -3,10 +3,11 @@ import { createPortal } from 'react-dom';
 import useIssueFieldPopover from '../issues/useIssueFieldPopover.js';
 import TrackedExternalLink from '../components/TrackedExternalLink.jsx';
 import { buildJiraBrowseLinkAnalytics } from '../analytics/externalLinks.js';
-import { reviewCellKey, newReviewColumnId, DEFAULT_REVIEW_HIDDEN_COLUMNS } from './planningReviewTableModel.js';
+import { reviewCellKey, newReviewColumnId, formatReviewDisplay, DEFAULT_REVIEW_HIDDEN_COLUMNS } from './planningReviewTableModel.js';
 import SegmentedControl from '../ui/SegmentedControl.jsx';
 import StatusPill from '../ui/StatusPill.jsx';
 import EpicHeaderValueReadout from './EpicHeaderValueReadout.jsx';
+import PlanningReviewColumnsMenu from './PlanningReviewColumnsMenu.jsx';
 import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
 import { buildPlanningReviewRows, buildPlanningReviewColumns, reviewSelectionState, reviewValue, sortPlanningReviewRows, planningReviewTotals } from './planningReviewTableModel.js';
 
@@ -22,14 +23,13 @@ function ReviewColumnPopover({ open, onClose, label, trigger, children, error })
         onClose();
         if (restoreFocus) focusTrigger();
     };
-    React.useEffect(() => {
-        if (!open) return;
-        const frame = requestAnimationFrame(() => panelRef.current?.querySelector('input:not(:disabled), button:not(:disabled), select:not(:disabled)')?.focus({ preventScroll: true }));
-        return () => cancelAnimationFrame(frame);
+    // Focus synchronously so Escape works the moment the panel is open.
+    React.useLayoutEffect(() => {
+        if (open) (panelRef.current?.querySelector('[data-autofocus]') ?? panelRef.current)?.focus({ preventScroll: true });
     }, [open]);
     return <span className="planning-review-popover-anchor" ref={wrapperRef}>
         {React.cloneElement(trigger, { ref: triggerRef, 'aria-haspopup': 'dialog', 'aria-expanded': open })}
-        {open && createPortal(<div ref={panelRef} className="planning-review-popover" role="dialog" aria-label={label}
+        {open && createPortal(<div ref={panelRef} className="planning-review-popover" role="dialog" aria-label={label} tabIndex={-1}
             onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(true); } }}
             onClick={event => { if (event.target.closest('[data-review-popover-close]')) close(true); }}>
             {children}{error && <p className="planning-review-guidance" role="alert">{error}</p>}
@@ -53,7 +53,8 @@ function Selection({ row, selectedKeys, onToggleStory, onSelectStories }) {
 }
 
 function CustomCell({ row, column, review, editing, setEditing, focusNew }) {
-    const value = reviewValue(row, { ...column, custom: true }, review.cells);
+    const stored = reviewValue(row, { ...column, custom: true }, review.cells);
+    const value = column.type === 'number' ? formatReviewDisplay(stored) : stored;
     const persistedInput = review.drafts?.[reviewCellKey(row.rowKind, row.issueId, column.id)]?.input;
     const [draft, setDraft] = React.useState(persistedInput ?? value ?? '');
     const [error, setError] = React.useState('');
@@ -160,6 +161,11 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
         setNewColumnId(id); setName(''); setFormError(''); setAddOpen(false); trackedAction('column_added');
     };
     const updateLayout = (order, nextHidden = [...hidden]) => review.changeSchema({ action: 'layout', rowKind: mode, order, hidden: nextHidden });
+    const setColumnVisible = (columnId, visible) => {
+        const next = new Set(hidden);
+        if (visible) next.delete(columnId); else next.add(columnId);
+        updateLayout(movableIds(), [...next]);
+    };
     const movableIds = () => layoutColumns.filter(column => !['key', 'summary'].includes(column.id)).map(column => column.id);
     const moveColumn = (source, target, after = false) => {
         const ids = movableIds();
@@ -168,8 +174,9 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
         if (updateLayout(ids)) trackedAction('columns_reordered');
     };
     const reorder = (column, direction) => {
-        const ids = movableIds(), index = ids.indexOf(column.id), target = ids[index + direction];
-        if (target) moveColumn(column.id, target, direction > 0);
+        const visible = columns.map(item => item.id).filter(id => !['key', 'summary'].includes(id));
+        const index = visible.indexOf(column.id), target = visible[index + direction];
+        if (index >= 0 && target) moveColumn(column.id, target, direction > 0);
     };
     const toolbar = (
         <div className="planning-review-toolbar">
@@ -177,23 +184,17 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
             <ReviewColumnPopover open={addOpen} onClose={() => { setAddOpen(false); setFormError(''); }} label="Add review column" error={formError}
                 trigger={<button type="button" className="planning-action-button" aria-label="+ Add column" disabled={!editable} onClick={() => { setAddOpen(!addOpen); setColumnsOpen(false); setOptionsOpen(false); trackedAction('add_column_opened'); }}>+ Column</button>}>
                 <form className="planning-review-add" onSubmit={addColumn}>
-                    <label>Column name<input autoFocus required maxLength={80} value={name} onChange={event => setName(event.target.value)} /></label>
-                    <label>Type<select value={type} onChange={event => setType(event.target.value)}><option value="number">Number</option><option value="text">Text</option></select></label>
-                    <button type="submit" className="planning-action-button" disabled={!editable}>Add column</button><button type="button" className="planning-action-button" data-review-popover-close>Cancel</button>
+                    <input data-autofocus required maxLength={80} className="planning-review-column-name" aria-label="Column name" placeholder="Column name" value={name} onChange={event => setName(event.target.value)} />
+                    <div className="planning-review-add-row">
+                        <SegmentedControl className="eng-mode-control" ariaLabel="Column type" options={[{ value: 'number', label: 'Number' }, { value: 'text', label: 'Text' }]} value={type} onChange={setType} />
+                        <button type="submit" className="planning-action-button" disabled={!editable}>Add column</button>
+                    </div>
                 </form>
             </ReviewColumnPopover>
             <ReviewColumnPopover open={columnsOpen} onClose={() => { setColumnsOpen(false); setFormError(''); }} label="Review column management" error={formError}
                 trigger={<button type="button" className="planning-action-button" aria-expanded={columnsOpen} onClick={() => { setColumnsOpen(!columnsOpen); setAddOpen(false); setOptionsOpen(false); trackedAction('columns_opened'); }}>Columns</button>}>
-                <div className="planning-review-columns">
-                    {allColumns.filter(column => !column.required).map(column => <div className="planning-review-column-control" key={column.id}>
-                        <label className="planning-review-visible"><input type="checkbox" checked={!hidden.has(column.id)} disabled={!editable} onChange={event => { const next = new Set(hidden); if (event.target.checked) next.delete(column.id); else next.add(column.id); updateLayout(movableIds(), [...next]); }} />{column.custom ? 'Visible' : column.label}</label>
-                        {column.custom && <><input aria-label={`Name for ${column.label}`} maxLength={80} defaultValue={column.label} key={`${column.id}:${column.label}`} disabled={!editable} onBlur={event => { if (event.target.value !== column.label && !review.changeSchema({ action: 'rename', columnId: column.id, label: event.target.value.trim() })) setFormError('Enter a column name of 1–80 characters.'); }} />
-                            {column.type === 'number' && <label className="planning-review-visible"><input type="checkbox" checked={column.aggregation === 'sum'} disabled={!editable} onChange={event => review.changeSchema({ action: 'aggregation', columnId: column.id, aggregation: event.target.checked ? 'sum' : 'none' })} />Total</label>}
-                            <button type="button" className="planning-action-button planning-icon-button" aria-label={`Move ${column.label} left`} disabled={!editable} onClick={() => reorder(column, -1)}>←</button><button type="button" className="planning-action-button planning-icon-button" aria-label={`Move ${column.label} right`} disabled={!editable} onClick={() => reorder(column, 1)}>→</button><button type="button" className="planning-action-button" disabled={!editable} onClick={() => { review.changeSchema({ action: 'archive', columnId: column.id, archived: true }); trackedAction('column_archived'); }}>Archive</button></>}
-                    </div>)}
-                    {review.columns.filter(column => column.rowKind === mode && column.archived).map(column => <div className="planning-review-column-control" key={column.id}><span>{column.label} (archived)</span></div>)}
-                </div>
-                <button type="button" className="planning-action-button" data-review-popover-close>Done</button>
+                <PlanningReviewColumnsMenu mode={mode} columns={allColumns.filter(column => !column.required)} archivedColumns={review.columns.filter(column => column.rowKind === mode && column.archived)} hidden={hidden} editable={editable} review={review}
+                    onVisibilityChange={setColumnVisible} onError={setFormError} onArchived={() => trackedAction('column_archived')} />
             </ReviewColumnPopover>
             <button type="button" className="planning-action-button" aria-label="Save review" disabled={!editable || !review.dirty || review.loading || review.unconfirmed || Boolean(review.conflict)} onClick={async () => { const saved = await review.save(); trackedAction('save_review', { result: saved ? 'success' : 'failure' }); }}>{review.saving ? 'Saving…' : 'Save'}</button>
             <span className="planning-review-state" role="status">{review.loading ? 'Loading…' : review.saving ? 'Saving…' : review.dirty ? 'Unsaved' : ''}</span>
@@ -208,13 +209,19 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
             </ReviewColumnPopover>
         </div>
     );
-    const header = (floating = false) => <thead><tr><th className="planning-review-selection planning-review-text">Select</th>{columns.map(column => <th key={column.id} aria-label={column.label} className={`planning-review-${column.id}${column.custom ? ' planning-review-custom' : ''} planning-review-${column.type === 'number' ? 'numeric' : 'text'}${dropColumn === column.id ? ' planning-review-drop' : ''}`}
-                onDragOver={event => { if (editable && draggedColumn.current && !['key', 'summary'].includes(column.id)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDropColumn(column.id); } }}
-                onDrop={event => { event.preventDefault(); const source = draggedColumn.current; moveColumn(source, column.id, event.clientX > event.currentTarget.getBoundingClientRect().left + event.currentTarget.offsetWidth / 2); draggedColumn.current = null; setDropColumn(null); }}>
-                {!['key', 'summary'].includes(column.id) && <button type="button" className="planning-review-drag" tabIndex={!floating && dock?.header ? -1 : undefined} aria-hidden={!floating && dock?.header ? true : undefined} draggable={editable} disabled={!editable} aria-label={`Move ${column.label} column`} title="Drag to move column"
-                    onDragStart={event => { draggedColumn.current = column.id; event.dataTransfer.setData('text/plain', column.id); event.dataTransfer.effectAllowed = 'move'; }} onDragEnd={() => { draggedColumn.current = null; setDropColumn(null); }}
-                    onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); reorder(column, event.key === 'ArrowLeft' ? -1 : 1); } }}>⠿</button>}<button type="button" className="planning-review-heading" tabIndex={!floating && dock?.header ? -1 : undefined} aria-hidden={!floating && dock?.header ? true : undefined} onClick={event => changeSort(column, event.shiftKey)}>{column.label}{sort.some(item => item.columnId === column.id) && <span> {sort.findIndex(item => item.columnId === column.id) + 1}{sort.find(item => item.columnId === column.id)?.direction === 'desc' ? '↓' : '↑'}</span>}</button></th>)}</tr></thead>;
-    const footer = <tfoot><tr><th className="planning-review-selection planning-review-text">Total</th>{columns.map(column => <td key={column.id} className={`planning-review-${column.id}${column.custom ? ' planning-review-custom' : ''} planning-review-${column.type === 'number' ? 'numeric' : 'text'}`}>{column.id === 'key' ? (review.dirty ? 'Draft' : '') : totals[column.id] ?? ''}</td>)}</tr></tfoot>;
+    const header = (floating = false) => <thead><tr><th className="planning-review-selection planning-review-text"><span className="planning-review-sr-only">Select</span></th>{columns.map(column => {
+        const docked = !floating && dock?.header;
+        // The grip sits on the edge opposite the column's alignment edge, so the label shares an edge with its values and totals.
+        const grip = !['key', 'summary'].includes(column.id) && <button type="button" className="planning-review-drag" tabIndex={docked ? -1 : undefined} aria-hidden={docked ? true : undefined} draggable={editable} disabled={!editable} aria-label={`Move ${column.label} column`} title="Drag to move column"
+            onDragStart={event => { draggedColumn.current = column.id; event.dataTransfer.setData('text/plain', column.id); event.dataTransfer.effectAllowed = 'move'; }} onDragEnd={() => { draggedColumn.current = null; setDropColumn(null); }}
+            onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); reorder(column, event.key === 'ArrowLeft' ? -1 : 1); } }}>⠿</button>;
+        const heading = <button type="button" className="planning-review-heading" tabIndex={docked ? -1 : undefined} aria-hidden={docked ? true : undefined} onClick={event => changeSort(column, event.shiftKey)}>{column.label}{sort.some(item => item.columnId === column.id) && <span> {sort.findIndex(item => item.columnId === column.id) + 1}{sort.find(item => item.columnId === column.id)?.direction === 'desc' ? '↓' : '↑'}</span>}</button>;
+        return <th key={column.id} aria-label={column.label} className={`planning-review-${column.id}${column.custom ? ' planning-review-custom' : ''} planning-review-${column.type === 'number' ? 'numeric' : 'text'}${dropColumn === column.id ? ' planning-review-drop' : ''}`}
+            onDragOver={event => { if (editable && draggedColumn.current && !['key', 'summary'].includes(column.id)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDropColumn(column.id); } }}
+            onDrop={event => { event.preventDefault(); const source = draggedColumn.current; moveColumn(source, column.id, event.clientX > event.currentTarget.getBoundingClientRect().left + event.currentTarget.offsetWidth / 2); draggedColumn.current = null; setDropColumn(null); }}>
+            <span className="planning-review-head">{column.type === 'number' ? <>{grip}{heading}</> : <>{heading}{grip}</>}</span></th>;
+    })}</tr></thead>;
+    const footer = <tfoot><tr><th className="planning-review-selection planning-review-text"><span aria-hidden="true">Σ</span><span className="planning-review-sr-only">Total</span></th>{columns.map(column => <td key={column.id} className={`planning-review-${column.id}${column.custom ? ' planning-review-custom' : ''} planning-review-${column.type === 'number' ? 'numeric' : 'text'}`}>{column.id === 'key' ? (review.dirty ? 'Draft' : '') : totals[column.id] ?? ''}</td>)}</tr></tfoot>;
     const dockedTable = (kind, content, ref) => <div ref={ref} aria-hidden={kind === 'footer' ? true : undefined}
         onScroll={event => { scroller.current.scrollLeft = event.currentTarget.scrollLeft; }}
         onWheel={event => { if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) { scroller.current.scrollLeft += event.deltaX; } }} className={`planning-review-docked-${kind}`} style={{ left: dock.left, top: kind === 'header' ? dock.top : undefined, bottom: kind === 'footer' ? 0 : undefined, width: dock.width }}>

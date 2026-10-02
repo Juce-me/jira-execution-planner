@@ -15,7 +15,7 @@ html:has(.planning-panel.open) { scrollbar-gutter: stable; }
 .planning-review-table .planning-review-summary { min-width: 220px; width: 300px; max-width: 360px; white-space: normal; overflow-wrap: anywhere; }
 .planning-review-table .planning-review-storyPoints { text-align: right; font-variant-numeric: tabular-nums; }
 .planning-review-table .planning-review-custom { width: 100px; min-width: 100px; max-width: 200px; }
-.planning-review-input { box-sizing: border-box; width: 86px; min-width: 0; height: 21px; margin: 0; vertical-align: middle; line-height: 1; box-shadow: none; transition: border-color 0.15s, background-color 0.15s; padding: 2px 4px; border: 1px solid transparent; border-radius: 4px; font: inherit; color: inherit; background: transparent; }
+.planning-review-input { box-sizing: border-box; width: 100%; min-width: 0; height: 21px; margin: 0; vertical-align: middle; line-height: 1; box-shadow: none; transition: border-color 0.15s, background-color 0.15s; padding: 2px 4px; border: 1px solid transparent; border-radius: 4px; font: inherit; color: inherit; background: transparent; }
 .planning-review-input:hover, .planning-review-input:focus { border-color: #94a3b8; background: #fff; box-shadow: none; }
 .planning-review-input.invalid { border-color: #b91c1c; }
 .planning-review-validation { display: block; white-space: normal; max-width: 180px; color: #b91c1c; font-size: 0.7rem; }
@@ -23,20 +23,13 @@ html:has(.planning-panel.open) { scrollbar-gutter: stable; }
 .planning-review-synthetic td { background: #f8fafc; color: #64748b; }
 .planning-review-heading, .planning-review-text-button { background: transparent; color: inherit; border: 0; padding: 0; font: inherit; font-weight: 600; letter-spacing: normal; margin: 0; box-shadow: none; transform: none; }
 .planning-review-heading:hover, .planning-review-text-button:hover { background: #e2e8f0; color: #0f172a; transform: none; box-shadow: none; }
-.planning-review-add, .planning-review-columns, .planning-review-recovery { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; padding: 0.75rem; border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc; margin: 0.5rem 0; max-width: 100%; box-sizing: border-box; }
-.planning-review-add label { display: grid; gap: 4px; font-size: 0.75rem; min-width: 0; flex: 0 1 auto; margin: 0; }
-.planning-review-add { align-items: flex-end; }
-.planning-review-add input, .planning-review-add select, .planning-review-add > button { height: 30px; }
-.planning-review-add input, .planning-review-add select, .planning-review-column-control > input { font: inherit; border: 1px solid #cbd5e1; padding: 5px 7px; border-radius: 5px; min-width: 0; max-width: 100%; box-sizing: border-box; }
-.planning-review-columns { display: block; }
-.planning-review-column-control { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin: 0.35rem 0; font-size: 0.75rem; }
-.planning-review-visible { display: inline-flex; align-items: center; gap: 0.35rem; margin: 0; }
+.planning-review-recovery { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; padding: 0.75rem; border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc; margin: 0.5rem 0; max-width: 100%; box-sizing: border-box; }
 .planning-review-dialog-backdrop { position: fixed; inset: 0; z-index: 10000; display: grid; place-items: center; padding: 1rem; background: rgba(15,23,42,0.35); }
 .planning-review-dialog { box-sizing: border-box; width: 420px; max-width: 100%; background: #fff; color: #334155; border-radius: 12px; padding: 1.25rem; box-shadow: 0 16px 48px #0f172a33; }
 .planning-review-dialog h3 { margin-top: 0; }
 .planning-review-dialog-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 @media (min-width: 1000px) { .planning-review-table .planning-review-summary { position: sticky; left: 142px; z-index: 2; box-shadow: 1px 0 0 #e2e8f0; } }
-@media (max-width: 600px) { .planning-review-region { width: calc(100vw - 2rem); max-width: calc(100vw - 2rem); margin-left: calc((100% - (100vw - 2rem)) / 2); } .planning-review-add label:first-child { flex-basis: 100%; } .planning-review-add label:first-child input { width: 100%; } .planning-review-table .planning-review-summary { min-width: 180px; width: 220px; } }
+@media (max-width: 600px) { .planning-review-region { width: calc(100vw - 2rem); max-width: calc(100vw - 2rem); margin-left: calc((100% - (100vw - 2rem)) / 2); } .planning-review-table .planning-review-summary { min-width: 180px; width: 220px; } }
 
 .planning-review-table thead th { position: sticky; top: 0; z-index: 4; }
 .planning-review-table tfoot th, .planning-review-table tfoot td { position: sticky; bottom: 0; z-index: 4; background: #f8fafc; border-top: 1px solid #cbd5e1; box-shadow: 0 -1px 0 #e2e8f0; }
@@ -47,7 +40,7 @@ html:has(.planning-panel.open) { scrollbar-gutter: stable; }
 
 @media (min-width: 1000px) { .planning-review-table thead .planning-review-summary, .planning-review-table tfoot .planning-review-summary { z-index: 5; } }
 
-.planning-review-capacity .epic-stat-toggle { padding: 2px 6px; font: inherit; letter-spacing: normal; line-height: 1.4; border: 1px solid #cbd5e1; border-radius: 4px; background: #f1f5f9; color: #64748b; box-shadow: none; transform: none; }
+.planning-review-capacity .epic-stat-toggle { margin: 0; padding: 2px 6px; font: inherit; letter-spacing: normal; line-height: 1.4; border: 1px solid #cbd5e1; border-radius: 4px; background: #f1f5f9; color: #64748b; box-shadow: none; transform: none; }
 .planning-review-capacity .epic-stat-toggle.active { background: #ecfdf5; border-color: #86efac; color: #166534; }
 .planning-review-capacity .epic-stat-toggle:hover, .planning-review-capacity .epic-stat-toggle:focus-visible { background: #e2e8f0; color: #334155; filter: none; box-shadow: none; transform: none; }
 .planning-review-capacity .epic-stat-toggle.active:hover, .planning-review-capacity .epic-stat-toggle.active:focus-visible { background: #dcfce7; color: #166534; }
@@ -58,14 +51,35 @@ html:has(.planning-panel.open) { scrollbar-gutter: stable; }
 .planning-review-summary button.issue-summary-editor-trigger:hover { background: transparent; color: #d48806; }
 
 .planning-review-popover-anchor { display: inline-flex; }
-.planning-review-popover { position: fixed; z-index: var(--modal-popup-z, 10001); box-sizing: border-box; width: 560px; max-width: calc(100vw - 16px); padding: 0.75rem; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; color: #334155; font-size: 0.75rem; box-shadow: 0 8px 24px #0f172a26; overflow-y: auto; overscroll-behavior: contain; }
-.planning-review-popover .planning-review-add, .planning-review-popover .planning-review-columns { border: 0; background: transparent; margin: 0; padding: 0; }
-.planning-review-popover > .planning-action-button { margin-top: 0.5rem; }
+.planning-review-popover { position: fixed; z-index: var(--modal-popup-z, 10001); box-sizing: border-box; width: 300px; max-width: calc(100vw - 16px); padding: 0.75rem; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; color: #334155; font-size: 0.75rem; box-shadow: 0 8px 24px #0f172a26; overflow-y: auto; overscroll-behavior: contain; }
+.planning-review-popover:focus { outline: none; }
+.planning-review-columns { display: grid; }
+.planning-review-column-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0.25rem; }
+.planning-review-column-row > .pop-opt { min-width: 0; }
+.planning-review-column-actions { display: inline-flex; align-items: center; gap: 2px; }
+.planning-review-column-action { color: var(--text-secondary); background: transparent; border: 1px solid transparent; border-radius: 6px; letter-spacing: normal; cursor: pointer; transition: none; }
+.planning-review-column-action svg { width: 14px; height: 14px; }
+.planning-review-column-action:hover, .planning-review-column-action:focus-visible { background: var(--bg-primary); color: var(--text-primary); transform: none; box-shadow: none; letter-spacing: normal; }
+.planning-review-column-action[aria-pressed="true"] { color: var(--text-primary); border-color: var(--border); }
+.planning-review-column-action:focus-visible { outline: 2px solid #93c5fd; outline-offset: 1px; }
+.planning-review-column-action:disabled { opacity: 0.4; cursor: not-allowed; }
+.planning-review-column-confirm { grid-template-columns: minmax(0, 1fr); gap: 0.4rem; padding: 0.35rem; border-radius: 6px; background: var(--bg-primary); font-family: 'IBM Plex Mono', monospace; font-size: 0.62rem; line-height: 1.4; }
+.planning-review-column-confirm-actions { display: flex; justify-content: flex-end; gap: 0.4rem; }
+.planning-review-column-confirm .planning-action-button { padding: 0.2rem 0.6rem; border-radius: 8px; }
+.planning-review-column-archived { padding: 0.3rem 0.35rem; font-family: 'IBM Plex Mono', monospace; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-secondary); }
+.planning-review-add { display: grid; gap: 0.5rem; }
+.planning-review-add-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.planning-review-column-name { box-sizing: border-box; width: 100%; min-width: 0; height: var(--control-height); margin: 0; padding: 0 0.6rem; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-primary); color: var(--text-primary); font-family: inherit; font-size: 0.85rem; box-shadow: none; }
+.planning-review-column-name:focus { border-color: var(--accent); box-shadow: none; outline: none; }
+.planning-review-column-rename { grid-column: 1 / -1; height: 24px; padding: 0 0.35rem; border-radius: 6px; font-family: 'IBM Plex Mono', monospace; font-size: 0.62rem; }
 
-.planning-review-popover .planning-review-visible { white-space: nowrap; }
-.planning-review-popover .planning-review-visible input[type="checkbox"] { width: auto; flex: 0 0 auto; margin: 0; }
 
-.planning-review-drag { display: inline-block; background: transparent; color: #94a3b8; border: 0; margin: 0; padding: 0 5px 0 0; font: inherit; letter-spacing: normal; cursor: grab; box-shadow: none; transform: none; }
+.planning-review-head { display: flex; align-items: center; justify-content: flex-start; gap: 5px; }
+.planning-review-numeric .planning-review-head { justify-content: flex-end; }
+/* A custom column spans its field, so its grip sits on the outer edge. */
+.planning-review-custom .planning-review-head { justify-content: space-between; }
+.planning-review-sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.planning-review-drag { display: inline-block; background: transparent; color: #94a3b8; border: 0; margin: 0; padding: 0; font: inherit; letter-spacing: normal; cursor: grab; box-shadow: none; transform: none; }
 .planning-review-drag:hover, .planning-review-drag:focus-visible { background: transparent; color: #334155; transform: none; box-shadow: none; }
 .planning-review-table th.planning-review-drop { box-shadow: inset 3px 0 #3b82f6; }
 
@@ -100,8 +114,8 @@ html:has(.planning-panel.open) { scrollbar-gutter: stable; }
 .planning-panel-capacity-status { flex-basis: 100%; color: #92400e; font-size: 0.7rem; }
 
 .planning-review-toolbar .stats-control-group { margin: 0; }
-.planning-review-toolbar .eng-mode-control { margin-top: 0; }
-.planning-review-toolbar > .planning-action-button, .planning-review-toolbar > .planning-review-popover-anchor > .planning-action-button { height: var(--control-height); box-sizing: border-box; border-radius: 10px; font-family: 'IBM Plex Mono', monospace; font-size: 0.7rem; letter-spacing: 0.04em; padding: 0 0.75rem; justify-content: center; }
+.planning-review-toolbar .eng-mode-control, .planning-review-add-row .eng-mode-control { margin-top: 0; }
+.planning-review-toolbar > .planning-action-button, .planning-review-toolbar > .planning-review-popover-anchor > .planning-action-button, .planning-review-add-row > .planning-action-button { height: var(--control-height); box-sizing: border-box; border-radius: 10px; font-family: 'IBM Plex Mono', monospace; font-size: 0.7rem; letter-spacing: 0.04em; padding: 0 0.75rem; justify-content: center; }
 .planning-review-toolbar .planning-review-state { align-self: center; padding: 0; }
 .planning-review-toolbar .planning-review-options-trigger { width: var(--control-height); padding: 0; }
 .planning-review-options { display: grid; gap: 8px; }

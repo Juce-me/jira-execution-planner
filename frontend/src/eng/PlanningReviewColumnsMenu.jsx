@@ -1,5 +1,6 @@
 import * as React from 'react';
 import IconButton from '../ui/IconButton.jsx';
+import { RenameField } from './PlanningReviewColumnMenu.jsx';
 
 const ICON_PATHS = {
     total: <path d="M12 3H4.5l4 5-4 5H12" />,
@@ -11,25 +12,6 @@ function ColumnAction({ icon, label, title = label, ...props }) {
     return <IconButton size="sm" className="planning-review-column-action" aria-label={label} title={title} {...props}>
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{ICON_PATHS[icon]}</svg>
     </IconButton>;
-}
-
-function RenameField({ column, review, onError, onFinish }) {
-    const settled = React.useRef(false);
-    const settle = (value, refocus) => {
-        if (settled.current) return;
-        settled.current = true;
-        if (value !== null && value.trim() !== column.label) {
-            const renamed = review.changeSchema({ action: 'rename', columnId: column.id, label: value.trim() });
-            onError(renamed ? '' : 'Enter a column name of 1–80 characters.');
-        }
-        onFinish(refocus);
-    };
-    return <input autoFocus className="planning-review-column-name planning-review-column-rename" aria-label={`Name for ${column.label}`} maxLength={80} defaultValue={column.label}
-        onBlur={event => settle(event.target.value, false)}
-        onKeyDown={event => {
-            if (event.key === 'Enter') { event.preventDefault(); settle(event.currentTarget.value, true); }
-            else if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); settle(null, true); }
-        }} />;
 }
 
 export default function PlanningReviewColumnsMenu({ mode, columns, archivedColumns, hidden, editable, review, onVisibilityChange, onError, onArchived }) {

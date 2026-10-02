@@ -38,7 +38,8 @@ Updated 2026-10-02. The user authorized local commits (no push) for this plan; e
 - Done: Task A3 (the ⋯ menu is gone; the app-header Refresh reloads the review; `review_options_opened` and `refresh_review` retired from the allowlist, docs and tests).
 - Done: Task A4 (Key and Epic links use `.task-key-link`, so they no longer show the browser's default blue and purple). Slice A is complete.
 - Done: Task B2a (header lane, chevron and the column menu with Move left, Move right and Hide column). RED first: seven new cases failed on the old source (no chevron); all pass now, plus a lane-geometry audit over every movable header in both modes (grip, chevron and heading text clear of each other; written after the code, shown RED by stashing the source). Both Planning specs pass (76 cases; baseline on the untouched HEAD was 67). Divergences: (1) the lane takes 20 px of each custom column's content box, so the widest valid value (`-999999999.9`) no longer fit and the existing editor-geometry guard failed; `.planning-review-custom` is now 127 px (141 px under `(hover: none)`) instead of 107, and the width-budget test allows 132 for the same reason; (2) `column_visibility_changed` is emitted inside `setColumnVisible`, so the Columns popup toggles also report it until that popup is retired; (3) the chevron is disabled when the review is not editable, like the grip, and Move/Hide rows use `aria-disabled` plus the existing `.pop-opt.is-locked` class when they cannot act; (4) Move left and Move right keep the menu open and Hide column closes it, as in the mock; (5) the heading-cycle test now selects `.planning-review-heading`, because the new `{label} column options` button also starts with the column name.
-- Next: Slice B as B2b, B3 and B4 (see "Slice B execution notes" after Task B4), then C1, C3, C4; headed Firefox and WebKit runs and the full `tests/ui` run wait for Task Z1.
+- Done: Task B2b (Rename, Show total and Archive column… in the header menu for review columns). RED first: four new cases failed on the B2a menu (missing subject suffix and rows); all pass now, plus a hover audit over all six rows of a review column's menu. `RenameField` moved into `PlanningReviewColumnMenu.jsx`; the Columns popup, which stays until B3, imports it from there and keeps its own archive confirmation. The popover's `error` prop carries the rename validation message while a menu is open (and the loose form-error line below the toolbar is suppressed then). Both Planning specs pass (81 cases).
+- Next: Slice B as B3 and B4 (see "Slice B execution notes" after Task B4), then C1, C3, C4; headed Firefox and WebKit runs and the full `tests/ui` run wait for Task Z1.
 - Rules already updated: AGENTS.md section 10 (Filters/capacity stack line) and section 11 (the two toolbar lines, plus the keyboard-backlog and live-data lines), `docs/TODO.md` (keyboard backlog), `docs/plans/README.md` (index).
 - The `GATE-05` Home-write edit in the working tree is unrelated and stays out of these commits.
 
@@ -385,7 +386,7 @@ export function nearestBoundary(edges, x, threshold = 5) {
 
 ### Task B2: Header lane (chevron, grip on hover) and the per-column menu
 
-Status: B2a done 2026-10-02 (Steps 2 and 3, and the Step 1 cases for hover reveal, Move left/right, Hide column, hover contrast, docked header and touch). B2b still owes the Rename, Show total and Archive items, their tests (Step 1 case 4, the custom-column rows of case 2) and Step 4.
+Status: done 2026-10-02 as B2a (header lane, chevron, Move and Hide) and B2b (Rename, Show total, Archive and Step 4).
 
 **Files:** Create `frontend/src/eng/PlanningReviewColumnMenu.jsx`; Modify `PlanningReviewTable.jsx` (`header(floating)`, an `openMenu` state replacing `addOpen`/`columnsOpen`/`optionsOpen` incrementally), `planning-review-table.css`, `tests/ui/planning_review_table.spec.js`.
 
@@ -398,7 +399,7 @@ Menu content by column kind (text labels only; the `.pop-subject` line is the co
 - Key and Summary: no lane, no menu.
 - A muted last line in every menu: "Shift-click a heading to sort by several columns."
 
-- [ ] **Step 1: failing tests** (name each; all on Chromium).
+- [x] **Step 1: failing tests** (name each; all on Chromium).
   1. `lane controls are hidden at rest and revealed by hover`: at rest `.planning-review-colmenu` and the grip have computed `opacity` `0`; after `hover()` on the Priority header they are `1`; header height stays 32 px and the table width is unchanged by hover.
   2. `menu items follow the column kind`: Priority → ['Move left','Move right']; Component (after showing it) adds 'Hide column'; `Cost 0` (custom number) → Rename, Show total, Move left, Move right, Hide column, Archive column….
   3. `Move left and Move right reorder like dragging`: headings order changes; `window.harness.state().dirty` true.
@@ -407,7 +408,7 @@ Menu content by column kind (text labels only; the `.pop-subject` line is the co
   6. `touch shows the lane without hover`: `test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } })` in a `describe`; chevron `opacity` is `1` at rest; tapping it opens the menu; Move right works by tap.
 - [x] **Step 2: implement the header.** In `header(floating)`, for every column except Key and Summary render, inside `.planning-review-head`: the heading button (unchanged), the grip (existing `.planning-review-drag` button, now hover-revealed), and the chevron `IconButton size="sm"` with classes `icon-button--sm planning-review-column-action planning-review-colmenu`, `aria-label={`${column.label} column options`}`, `aria-haspopup="dialog"` (the popover is the existing `role="dialog"` one; menu semantics are in the keyboard backlog), `aria-expanded={open}`. Mount the popover only from the interactive copy: `const interactive = floating || !dock?.header;` and `open={openMenu === column.id && interactive}`. Add `React.useEffect(() => setOpenMenu(null), [dock?.header]);` so a dock flip closes an open menu.
 - [x] **Step 3: CSS.** Copy Appendix A.3 (the accepted H2 lane, corner and reveal rules) and A.5 (touch) into `planning-review-table.css`. Keep the faint header divider (its colour maps to `--border`, Appendix A.7); remove the arrow-key hint from the options help (already gone with Task A3); keep the grip's drag handlers and its arrow-key reorder as they are.
-- [ ] **Step 4:** Move `RenameField` and the archive-confirm block from `PlanningReviewColumnsMenu.jsx` into the new menu file (the old file is deleted in Task B3). Run the new tests and both Planning specs: PASS. Commit: `Open column actions from the header cell (#217)`.
+- [x] **Step 4:** Move `RenameField` and the archive-confirm block from `PlanningReviewColumnsMenu.jsx` into the new menu file (the old file is deleted in Task B3). Run the new tests and both Planning specs: PASS. Commit: `Open column actions from the header cell (#217)`.
 
 ### Task B3: Corner "+" with the Add popover and "Show hidden"; delete `+ Column` and `Columns`
 

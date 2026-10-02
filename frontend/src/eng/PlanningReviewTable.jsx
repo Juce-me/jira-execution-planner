@@ -224,13 +224,14 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
             onDragStart={event => { draggedColumn.current = column.id; event.dataTransfer.setData('text/plain', column.id); event.dataTransfer.effectAllowed = 'move'; }} onDragEnd={() => { draggedColumn.current = null; setDropColumn(null); }}
             onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); reorder(column, event.key === 'ArrowLeft' ? -1 : 1); } }}>⠿</button>;
         const index = visibleMovable.indexOf(column.id);
-        const menu = index >= 0 && <ReviewColumnPopover open={openMenu === column.id && interactive} onClose={() => setOpenMenu(null)} label={`${column.label} column options`}
+        const menu = index >= 0 && <ReviewColumnPopover open={openMenu === column.id && interactive} onClose={() => { setOpenMenu(null); setFormError(''); }} label={`${column.label} column options`} error={openMenu === column.id ? formError : ''}
             trigger={<IconButton size="sm" className="planning-review-column-action planning-review-colmenu" tabIndex={docked ? -1 : undefined} aria-hidden={docked ? true : undefined} disabled={!editable} aria-label={`${column.label} column options`}
                 onClick={() => { const open = openMenu !== column.id; setOpenMenu(open ? column.id : null); setAddOpen(false); setColumnsOpen(false); if (open) trackedAction('columns_opened'); }}>
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4" /></svg>
             </IconButton>}>
-            <PlanningReviewColumnMenu column={column} editable={editable} canMoveLeft={index > 0} canMoveRight={index < visibleMovable.length - 1}
-                onMove={direction => reorder(column, direction)} onHide={() => { setOpenMenu(null); setColumnVisible(column.id, false); }} />
+            <PlanningReviewColumnMenu column={column} editable={editable} review={review} canMoveLeft={index > 0} canMoveRight={index < visibleMovable.length - 1}
+                onMove={direction => reorder(column, direction)} onHide={() => { setOpenMenu(null); setColumnVisible(column.id, false); }}
+                onError={setFormError} onClose={() => { setOpenMenu(null); setFormError(''); }} onTrack={trackedAction} />
         </ReviewColumnPopover>;
         const position = sort.findIndex(item => item.columnId === column.id);
         const heading = <button type="button" className="planning-review-heading" tabIndex={docked ? -1 : undefined} aria-hidden={docked ? true : undefined} onClick={event => changeSort(column, event.shiftKey)}>{column.label}{position >= 0 && <span> {sort.length > 1 ? position + 1 : ''}{sort[position].direction === 'desc' ? '↓' : '↑'}</span>}</button>;
@@ -252,7 +253,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
         {!review.capabilities?.canSave && !review.loading && <p className="planning-review-guidance">{review.capabilities?.reason === 'database_required' ? 'Review saving requires the application database.' : review.capabilities?.reason || 'Review saving is unavailable in this deployment.'}</p>}
         {review.error && <p className="planning-review-guidance" role="alert">{review.error}</p>}
         {(review.conflict || review.unconfirmed) && <div className="planning-review-recovery"><span>Your draft stays local until you choose a recovery action.</span><button type="button" className="planning-action-button" disabled={review.loading || review.saving} onClick={() => { void review.loadCurrent(); trackedAction('load_current_review'); }}>Load current and discard draft</button><button type="button" className="planning-action-button" disabled={review.loading || review.saving} onClick={() => { void review.reapply(); trackedAction('reapply_review'); }}>Refresh and reapply draft</button></div>}
-        {formError && !addOpen && !columnsOpen && <p role="alert" className="planning-review-guidance">{formError}</p>}
+        {formError && !addOpen && !columnsOpen && !openMenu && <p role="alert" className="planning-review-guidance">{formError}</p>}
         <div ref={scroller} className="planning-review-scroll" tabIndex={0} aria-label="Planning review spreadsheet">
             <table className={`planning-review-table${dock?.header ? ' planning-review-header-docked' : ''}${dock?.footer ? ' planning-review-footer-docked' : ''}`}>{header()}
             <tbody>{displayed.map(row => <tr key={`${row.rowKind}:${row.id || row.key}`} className={row.synthetic ? 'planning-review-synthetic' : hasZeroStoryPoints(row) ? 'planning-review-zero-sp' : ''}>

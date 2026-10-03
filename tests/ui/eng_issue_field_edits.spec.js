@@ -21,6 +21,13 @@ test.beforeAll(() => {
                 import { createRoot } from 'react-dom/client';
                 import IssuePersonEditor from './frontend/src/issues/IssuePersonEditor.jsx';
                 import StoryPointsEditor from './frontend/src/issues/StoryPointsEditor.jsx';
+                import IssueTeamEditor from './frontend/src/issues/IssueTeamEditor.jsx';
+
+                const teams = [
+                    { id: 'team-a', name: 'Alpha Team' },
+                    { id: 'team-b', name: 'Beta Team' },
+                    { id: 'team-c', name: 'Gamma Team' },
+                ];
 
                 const people = [
                     { accountId: 'self', displayName: 'Current Person', eligibility: 'eligible' },
@@ -46,15 +53,33 @@ test.beforeAll(() => {
                     const [pointsRecovery, setPointsRecovery] = React.useState('');
                     const [configurationChanged, setConfigurationChanged] = React.useState(false);
                     const [recoveryCalls, setRecoveryCalls] = React.useState([]);
+                    const [teamOpen, setTeamOpen] = React.useState(false);
+                    const [teamSubmits, setTeamSubmits] = React.useState([]);
+                    const [teamEditable, setTeamEditable] = React.useState(true);
                     const metadata = {
                         editable: personEditable,
                         currentValue: { accountId: 'owner', displayName: 'Existing Owner' },
                         me: people[0],
                         mappingRevision: 'synthetic-revision',
                     };
-                    window.__issueEditorHarness = { personSubmits, pointSubmits, recoveryCalls, setPersonOpen, setPointsOpen, setPoints, setPersonEditable, setPointsEditable, setPersonSubmitting, setPointsSubmitting, setPersonError, setPointsError, setPersonRecovery, setPointsRecovery, setConfigurationChanged };
+                    window.__issueEditorHarness = { teamSubmits, setTeamEditable, personSubmits, pointSubmits, recoveryCalls, setPersonOpen, setPointsOpen, setPoints, setPersonEditable, setPointsEditable, setPersonSubmitting, setPointsSubmitting, setPersonError, setPointsError, setPersonRecovery, setPointsRecovery, setConfigurationChanged };
                     return <main style={{ minHeight: '1200px', padding: '24px' }}>
                         <button id="outside-target" type="button">Outside target</button>
+                        <div style={{ marginTop: '24px', width: '240px' }}>
+                            <IssueTeamEditor
+                                issueKey="DEMO-3"
+                                currentValue={{ id: 'team-b', name: 'Beta Team' }}
+                                isOpen={teamOpen}
+                                metadata={teamEditable
+                                    ? { editable: true, currentValue: { id: 'team-b', name: 'Beta Team' }, options: teams, mappingRevision: 'synthetic-revision' }
+                                    : { editable: false, currentValue: { id: 'team-b', name: 'Beta Team' }, options: [], mappingRevision: 'synthetic-revision' }}
+                                error={teamEditable ? '' : 'This field is no longer editable in Jira.'}
+                                onOpen={() => setTeamOpen(true)}
+                                onClose={() => setTeamOpen(false)}
+                                onSelect={team => { setTeamSubmits(values => [...values, team.id]); setTeamOpen(false); }}
+                                useVisualViewport
+                            />
+                        </div>
                         <div style={{ position: 'fixed', right: '2px', bottom: '2px', display: 'flex', gap: '8px' }}>
                             <IssuePersonEditor
                                 issueKey="DEMO-1"
@@ -200,6 +225,73 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
         })).toBe(true);
     });
 }
+
+for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+    test(`team combobox filters, saves on Enter and cancels on Escape at ${viewport.width}x${viewport.height}`, async ({ page }) => {
+        await mountHarness(page, viewport);
+        const trigger = page.getByRole('combobox', { name: 'Team: Beta Team' });
+        await trigger.click();
+        const input = page.getByRole('combobox', { name: 'Search Team' });
+        await expect(input).toBeFocused();
+        await expect(input).toHaveValue('Beta Team');
+        // Minimal chrome: options only, no filter box and no Cancel button.
+        await expect(page.locator('.issue-person-editor-menu input')).toHaveCount(0);
+        await expect(page.locator('.issue-person-editor-menu').getByRole('button', { name: /cancel/i })).toHaveCount(0);
+        await expect(page.getByRole('option')).toHaveCount(3);
+        await expect(page.getByRole('option', { name: /Beta Team \(current\)/ })).toHaveAttribute('aria-selected', 'true');
+        const optionHeights = await page.getByRole('option').evaluateAll(nodes => nodes.map(node => Math.round(node.getBoundingClientRect().height)));
+        // Shared option rows differ only by the 1px dashed separator; a wrapped current marker would add a whole line.
+        expect(Math.max(...optionHeights) - Math.min(...optionHeights)).toBeLessThanOrEqual(1);
+        await expectInsideViewport(page.locator('.issue-person-editor-menu'), viewport);
+        const panelBox = await page.locator('.issue-person-editor-menu').boundingBox();
+        expect(panelBox.height).toBeLessThan(140);
+        await page.screenshot({ path: path.join(screenshotDir, `team-open-${viewport.width}x${viewport.height}.png`) });
+
+        await input.press('Escape');
+        await expect(page.locator('.issue-person-editor-menu')).toHaveCount(0);
+        await expect(page.getByRole('combobox', { name: 'Team: Beta Team' })).toBeFocused();
+        expect(await page.evaluate(() => window.__issueEditorHarness.teamSubmits)).toEqual([]);
+
+        await trigger.click();
+        await input.press('ArrowDown');
+        await input.press('Enter');
+        await expect.poll(() => page.evaluate(() => window.__issueEditorHarness.teamSubmits)).toEqual(['team-c']);
+
+        await trigger.click();
+        await input.press('Enter');
+        await expect(page.locator('.issue-person-editor-menu')).toHaveCount(0);
+        expect(await page.evaluate(() => window.__issueEditorHarness.teamSubmits)).toEqual(['team-c']);
+
+        await trigger.click();
+        await input.fill('alp');
+        await expect(page.getByRole('option')).toHaveCount(1);
+        await input.press('Enter');
+        await expect.poll(() => page.evaluate(() => window.__issueEditorHarness.teamSubmits)).toEqual(['team-c', 'team-a']);
+
+        await trigger.click();
+        await input.fill('zzz');
+        await expect(page.getByText('No matching Teams.')).toBeVisible();
+        await input.press('Enter');
+        await page.getByRole('button', { name: 'Outside target' }).click();
+        await expect(page.locator('.issue-person-editor-menu')).toHaveCount(0);
+        expect(await page.evaluate(() => window.__issueEditorHarness.teamSubmits)).toEqual(['team-c', 'team-a']);
+    });
+}
+
+test('team editor shows a single note and keeps Escape working when Jira does not allow editing', async ({ page }) => {
+    await mountHarness(page, { width: 1440, height: 900 });
+    await page.evaluate(() => window.__issueEditorHarness.setTeamEditable(false));
+    await page.getByRole('combobox', { name: 'Team: Beta Team' }).click();
+    const input = page.getByRole('combobox', { name: 'Search Team' });
+    await expect(input).toBeFocused();
+    await expect(input).not.toBeEditable();
+    const menu = page.locator('.issue-person-editor-menu');
+    await expect(menu.getByRole('alert')).toHaveText('This field is no longer editable in Jira.');
+    await expect(menu.locator('input, button, [role="listbox"]')).toHaveCount(0);
+    await page.screenshot({ path: path.join(screenshotDir, 'team-not-editable.png') });
+    await input.press('Escape');
+    await expect(menu).toHaveCount(0);
+});
 
 test('person editor preserves the current value until typing and keeps failed changes out of the field', async ({ page }) => {
     await mountHarness(page, { width: 1440, height: 900 });

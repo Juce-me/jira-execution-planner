@@ -10520,14 +10520,6 @@ import {
                     && (!scenarioSearchFilterEnabled || scenarioSearchMatchSet.has(key))
                 ));
             }, [scenarioSummary, scenarioExcludedIssueKeys, scenarioSearchFilterEnabled, scenarioSearchMatchSet]);
-            const scenarioBottleneckLanes = React.useMemo(() => {
-                const lanes = scenarioSummary.bottleneck_lanes || [];
-                return lanes.filter(lane => {
-                    const laneInfo = scenarioLaneInfo.get(lane);
-                    if (!laneInfo) return true;
-                    return (laneInfo.lateCount || laneInfo.unschedulableCount);
-                });
-            }, [scenarioSummary, scenarioLaneInfo]);
             const scenarioLanes = React.useMemo(() => {
                 const lanes = Array.from(scenarioLaneInfo.keys());
                 return lanes.sort((a, b) => a.localeCompare(b));
@@ -10535,14 +10527,6 @@ import {
             const scenarioIssuesByLane = React.useMemo(() => {
                 return buildLaneIssues(scenarioTimelineWithSegments, scenarioLaneMode, scenarioLaneForIssue);
             }, [scenarioTimelineWithSegments, scenarioLaneMode, scenarioEpicFocus]);
-            const scenarioHasAssignees = React.useMemo(() => {
-                if (!scenarioEffectiveIssues || scenarioEffectiveIssues.length === 0) return false;
-                return scenarioEffectiveIssues.some(issue => issue.assignee);
-            }, [scenarioEffectiveIssues]);
-            const scenarioUnschedulable = React.useMemo(() => {
-                if (!scenarioEffectiveIssues || scenarioEffectiveIssues.length === 0) return [];
-                return scenarioEffectiveIssues.filter(issue => !issue.start || !issue.end);
-            }, [scenarioEffectiveIssues]);
             const scenarioTicks = React.useMemo(() => {
                 if (!scenarioViewStart || !scenarioViewEnd) return [];
                 const ticks = [];
@@ -11140,13 +11124,6 @@ import {
                 return edges;
             }, [scenarioDependencies, scenarioLaneMeta, scenarioLaneMode, scenarioIssueByKey]);
 
-            const scenarioDeadlineLeft = React.useMemo(() => {
-                if (!scenarioViewStart || !scenarioViewEnd || !scenarioDeadline) return 0;
-                if (!scenarioLayout.width) return 0;
-                const totalMs = Math.max(1, scenarioViewEnd - scenarioViewStart);
-                const ratio = Math.max(0, Math.min(1, (scenarioDeadline - scenarioViewStart) / totalMs));
-                return scenarioLayout.labelWidth + scenarioLayout.width * ratio;
-            }, [scenarioViewStart, scenarioViewEnd, scenarioDeadline, scenarioLayout]);
 
             const scenarioTodayLeft = React.useMemo(() => {
                 if (!scenarioViewStart || !scenarioViewEnd) return null;
@@ -11197,7 +11174,6 @@ import {
                 return blocked;
             }, [scenarioDependencies]);
 
-            const scenarioIsSingleTeamFocus = !isAllTeamsSelected && selectedTeamSet.size === 1;
             const scenarioBaselineEdges = React.useMemo(() => {
                 return scenarioEdgeCandidates;
             }, [scenarioEdgeCandidates]);

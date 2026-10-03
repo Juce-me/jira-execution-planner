@@ -190,7 +190,8 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # was 18213); this branch adds 104 over main's actual count (34 + 52 + 3 + 5 + 8 + 2, itemized
     # above), so the merged file is 18307 and main's 10 lines of slack are consumed.
     # Merge of origin/main into feature/217-sprint-review-table: main's 18307 plus this branch's Planning table lines (+9 Planned Teams Effort strip, the rest as itemized above); the merged file is 18434 lines.
-    "frontend/src/dashboard.jsx": 18434,
+    # Issue #220 SC1 R5 ratchets to the validated state-container checkpoint.
+    "frontend/src/dashboard.jsx": 18307,
 }
 
 

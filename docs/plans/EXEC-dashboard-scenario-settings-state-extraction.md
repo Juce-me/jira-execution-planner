@@ -1,6 +1,6 @@
 # Dashboard Scenario And Settings State Extraction Implementation Plan
 
-> **Status:** Execution in progress, revision 5 (2026-10-02), tracked by [issue #220](https://github.com/Juce-me/jira-execution-planner/issues/220). PR-1 landed revision 3 in [PR #219](https://github.com/Juce-me/jira-execution-planner/pull/219), merge `c9ca8eff`, on 2026-10-01. A fourth readiness review reproduced gaps in nested interface checks, conservation of already-extracted hooks, ST3 effect order, and PR0 characterization/parity captures; revision 4 corrected them. Revision 5 closes six further findings: identity-safe DOM normalization, recursive render/getter timing review, the post-ST5 size milestone, dependency-aware rollback, the permission fix's unused getter, and explicit 11-section/10-snapshot parity. It also requires owner/interface/aggregate budgets, a remaining-App responsibility inventory, and a reproducible runtime-work baseline before extraction. The original source ranges and dry-run measurements remain historical evidence from `89ffe589`; PR0 must refresh them against its latest `origin/main` base. Operator decisions recorded 2026-10-02: D12 is acknowledged; G1 proceeds with the planned split verified against current repository boundaries; G2 preserves the current save sequence and requires a separate fail-closed permission fix before ST5. Execution authorized in chat on 2026-10-02; PR0 P0-1 (`4149b615`) was validated by the operator on 2026-10-02; P0-2 (`a2cc9017`) was validated by the operator on 2026-10-03; P0-3 (`d7d47c60`) was validated by the operator on 2026-10-03; P0-4 (`472e98d8`) was validated by the operator on 2026-10-03; P0-5 (`cb8791d5`) was validated by the operator on 2026-10-03. P0-6 is implemented and awaiting operator validation after the approved unpublished rebase onto fetched main `06df6615f2b762f6f8b0c93a3c4df0d5592f9c39`; the source/base refresh and old-to-new rung SHAs are recorded below. Each rung still requires operator validation and publication remains separately gated. Supersedes the "Extract Scenario Planner ownership" and "Move settings state/actions behind feature hooks" rows of `FUTURE-codebase-operability-improvements.md`.
+> **Status:** Execution in progress, revision 5 (2026-10-02), tracked by [issue #220](https://github.com/Juce-me/jira-execution-planner/issues/220). PR-1 landed revision 3 in [PR #219](https://github.com/Juce-me/jira-execution-planner/pull/219), merge `c9ca8eff`, on 2026-10-01. A fourth readiness review reproduced gaps in nested interface checks, conservation of already-extracted hooks, ST3 effect order, and PR0 characterization/parity captures; revision 4 corrected them. Revision 5 closes six further findings: identity-safe DOM normalization, recursive render/getter timing review, the post-ST5 size milestone, dependency-aware rollback, the permission fix's unused getter, and explicit 11-section/10-snapshot parity. It also requires owner/interface/aggregate budgets, a remaining-App responsibility inventory, and a reproducible runtime-work baseline before extraction. The original source ranges and dry-run measurements remain historical evidence from `89ffe589`; PR0 must refresh them against its latest `origin/main` base. Operator decisions recorded 2026-10-02: D12 is acknowledged; G1 proceeds with the planned split verified against current repository boundaries; G2 preserves the current save sequence and requires a separate fail-closed permission fix before ST5. Execution authorized in chat on 2026-10-02; PR0 P0-1 (`4149b615`) was validated by the operator on 2026-10-02; P0-2 (`a2cc9017`) was validated by the operator on 2026-10-03; P0-3 (`d7d47c60`) was validated by the operator on 2026-10-03; P0-4 (`472e98d8`) was validated by the operator on 2026-10-03; P0-5 (`cb8791d5`) was validated by the operator on 2026-10-03. P0-6 was validated by the operator, and PR0 merged in [PR #227](https://github.com/Juce-me/jira-execution-planner/pull/227) at `6086bf8cbfe78c48c3ea44acfe37d5a194c4e32d` on 2026-10-03. SC1 R1, validated by the operator, starts from that exact fetched main; SC1 R4a (`0b9a78e7`) implements its frozen checkpoint and has operator validation; R5 ratchets budgets and awaits diff-only validation; the source/base refresh and old-to-new PR0 rung SHAs are recorded below. Each rung still requires operator validation and publication remains separately gated. Supersedes the "Extract Scenario Planner ownership" and "Move settings state/actions behind feature hooks" rows of `FUTURE-codebase-operability-improvements.md`.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Execute one commit at a time under the validation protocol in section 5. Steps use checkbox (`- [ ]`) syntax.
 
@@ -1560,6 +1560,174 @@ In `App()` keep `const scenarioState = useScenarioState({ initialLaneMode: saved
 | R4a | Create the two files and `tests/test_scenario_group_state.js` (below, written first and run red against the missing module, then green), wire `dashboard.jsx`: the container call at the position of the earliest declaration (463); the 14 default entries become `...buildDefaultScenarioGroupState(savedPrefsRef.current.scenarioLaneMode)`, the 14 snapshot entries `...scenarioGroupValues`, the 14 memo deps `scenarioGroupValues`; the nine-ref reset lines (6110-6118 and 6120-6128; **not** 6119 `alertDismissedRef.current = false;` and **not** 6129 `epicRefMap.current = new Map()`, which stay) become `resetScenarioTransientRefs({ ...nine refs })` at the same position; the 14 setter lines (6189-6212) become one `applyScenarioGroupState({ ...fifteen setters }, nextState)` at the position of the first setter line, and the original line 6232 `setScenarioLoading(false);` is **deleted** because the apply function includes it. Remove the orphaned `createUndoStack` import (used only at 1065). Gate, conservation check (itemise the seam edits), dist, parity. | SM-S, with emphasis on group switch away and back, and lane mode persisting. |
 | R5 | Budget, lint ceiling, ontology, status. `test_stats_module_extraction_source_guards.js` slices the per-group seam (its markers survive; verify). | Review the diff. |
 
+**SC1 R1 outcome (2026-10-03):** Implemented on `improvement/scenario-state-container` from fetched merged PR0 main `6086bf8cbfe78c48c3ea44acfe37d5a194c4e32d`; the worktree was clean and no open PR touched `dashboard.jsx`. Issue #220 was reopened with operator authorization after PR0 wording accidentally triggered GitHub issue closure. PR0 head `e6437899` merged in #227; all four remote checks passed.
+
+Exactly five inert declarations are removed: `scenarioBottleneckLanes`, `scenarioHasAssignees`, `scenarioUnschedulable`, `scenarioDeadlineLeft`, and `scenarioIsSingleTeamFocus` (24 physical lines, 18,434 → 18,410). Each had one declaration and no other reader in frontend source/tests. Their initializers only filter/read/arithmetic over existing data. No current guard pin names any of them, so no passing guard is edited. `scenarioDraftEvents` and its setter remain under D6: `applyScenarioDraftEvent` can call the setter for a zero-number event, then return for expired presence without another state update. Its reset in `runScenario` is batched, but that does not establish every-call batching. `scenarioUndoVersion` and unrelated `isUnscheduled` declarations remain. Interfaces, effect order, closures, request counts, terminal auth recovery, Settings permissions/save order and layout are unchanged. Internal dead-code removal adds no analytics interaction/event.
+
+Fresh verification uses pinned Node 20 and the checkout interpreter. `npm run test:frontend:unit` passed 1,731 tests, zero failures/skips (13.131 s). The section-6 isolated full Python command passed 2,113 tests, 29 skips, zero failures (160.345 s). The first gate and concurrently started Python run detected stale owner *measurements*, not a behavior failure: dashboard 18,434/app-plus-owners 28,712 still described the base. Updating only those measured fields to 18,410/28,688 repaired that failure; the complete Python suite and canonical gate were rerun. Existing ceilings remain 18,434/28,712 until R5, and all 41 owner/interface caps remain unchanged. The canonical gate passes with zero errors, 115 warnings (exactly five unused-variable warnings removed), zero owner-budget problems, 16 sites/41 modules/zero enforced/34 informational findings. Its default warning ceiling is ratcheted to 115. All 70 tooling controls and both budget tests pass.
+
+The exact-base ignored archive ran the three named Scenario specs, structure smoke, server-unavailable recovery, and four instrumented parity specs: 201 passed, one intentional runtime-probe skip (3.2 min). Candidate coverage adds the 13 DOM-helper controls: 214 passed, one identical skip (3.2 min). `scenario_focus_positions.spec.js` remains an inactive local template; positive focus/Escape coverage comes from the history characterization. Fresh directories `tmp/sc1-r1-base/tmp/sc1-r1-before` and `tmp/sc1-r1-after` contain the same 34 distinct nonempty labels and byte-identical HTML (empty recursive diff). No assertion, timeout, fixture or normalizer was weakened. The required SM-S request/conflict/auth/recovery checks are exercised by the unchanged browser tests; operator visual smoke remains below.
+
+Fresh headed screenshot probes captured eight timeline labels before and after. Ordinary captures showed paint variation confined to the existing infinite `conflict-pulse` animation. Repeated captures apply the same screenshot-only animation/transition override in two ignored archive fixtures, leaving production CSS and tracked tests untouched. Baseline and candidate probes each pass (8.6 s / 9.0 s); all eight PNGs in `tmp/sc1-r1-screenshots-before-still` / `tmp/sc1-r1-screenshots-after-still` match by label, dimensions, bytes and pixels. Parent visually reviewed the Epic-focus and Team/edge presentation; no visible change is introduced. The ordinary-animation captures remain labelled evidence, not an exact-pixel claim.
+
+Additional conservation compares App plus all seven existing Scenario/Settings/EPM hook owners at both revisions: 1,698 → 1,693 statements, exactly the five deleted declarations as reviewed residuals, zero additions, identical order across 155 effects. Generated JS and its source map are rebuilt from source; no generated file is hand-edited. Home-write gate recheck finds zero of four process inputs and no approved disposable target; it stays blocked, next review 2026-10-05, independently of SC1.
+
+**Operator validation:** SM-S in full: run Scenario; expand Team lanes; switch Team → Epic → Assignee; focus an Epic then Escape; hover ordinary/right/bottom bars; Edit, drag, check override count, undo and Exit Edit; Save Draft, History and Escape; switch Default → Alternate → Default and verify prior lane/collapse state; interrupt/retry the connection with an unsaved override and confirm one restoration with no extra write. Review the next-move frozen proposal below. Stop at this R1 local commit; R4a implementation, R5 and publication remain pending.
+
+**SC1 R4a outcome (2026-10-03):** Implemented as planned after operator validation of R1 `ae35f76de75ac924c151aa7a2ff79fbbc388e017` and the frozen proposal below. Fetched main remains `6086bf8cbfe78c48c3ea44acfe37d5a194c4e32d`. The three production-source SHA-256 values exactly match that proposal: App `f94221553f3c8640b5d8c298fe5149435359d243509fa593ada1bbff55a0eba4`, state owner `8a5c29f0815a10d6985fa7ac6ab94da1b8d646a4e1817da8d0e4aeac403530fb`, helper `de3aa34ff4805e8ef1d2ce1ee395896a46713735b1d6384bef5ce7c047d227c6`. The reviewed checkpoint is installed before verification: 18,307/210/95 physical lines, 28,890 combined lines, exactly +202 scaffolding and no transfer credit; all 41 existing owner/interface ceilings are preserved. R5 still owns the structure-test and warning-ceiling ratchets; this rung's warning ceiling remains 115.
+
+The seven helper oracles were written first and failed against the missing module (0/7, `ERR_MODULE_NOT_FOUND`), then passed on the implementation. The added SSR probe establishes the ordered 86-name flat return, representative defaults and all 14 memo members; final focused oracle result is 8/8. Both synthetic mutations are killed: changing `||` fallbacks to `??` fails the falsy-snapshot assertion, and unconditional frame cancellation fails the no-pending-frame assertion (each 7/8). All 56 moved state/ref initializer bodies are conserved; the lane initializer receives the same App nullish fallback. App retains 83 readers and drops only unread returned values. There are no new effects or getter closures. The fifteen apply setters preserve their ordered fallbacks; `setScenarioLoading(false)` is consolidated into the helper in the same synchronous React effect batch. Nine transient refs preserve clear/cancel/reset order; `alertDismissedRef` and `epicRefMap` stay in App. Native frame cancellation invokes no callbacks. Global auth, draft/conflict recovery, permissions, imperative saves, analytics and layout remain unchanged; this internal ownership move adds no analytics interaction.
+
+`fnm exec --using 20 node --test tests/test_*.js` passes 1,739 tests with zero failures/skips (3.969 s). The initial full run detected exactly one moved-owner metadata source guard (1,738 pass/one fail); only its positive-anchored state slice now reads `useScenarioState.js`, preserving the scope-builder/runScenario slices and every assertion. Focused guard/oracle checks pass 26/26. The section-6 isolated full Python command passes 2,113 tests with 29 skips (142.406 s), and both structure-budget tests pass. Build and canonical extraction gate pass: zero errors, 113 warnings under the unchanged 115 ceiling, 43 modules/17 sites, zero enforced or owner-budget problems, and 34 unchanged informational findings. All 70 tooling controls pass after reanchoring the TDZ seed to the new call. The first control attempt failed from shell quoting in that synthetic seed; the stable quoted retry passes without relaxing a control. Structured strict scans cover App and both new owners, with no fatal diagnostics and zero hits for any of the 86 returned names.
+
+Conservation compares App and the complete eight existing affected hook owners plus the new state hook at both revisions: 1,696 → 1,700 statements, five removed/nine new residuals, identical order of all 155 effects. Every full residual is included in the local commit message and reviewed independently: lane initializer delegation, four old/new group functions/effect seams, hook call/destructure, scalar state initialization, memo and return. Pure helper bodies are separately covered by source review and the oracles; no residual is treated as an exemption.
+
+Fresh baseline/candidate Chromium runs of the eight Scenario/Settings/recovery/structure/parity-helper specs pass 214 tests with one intentional opt-in runtime skip each (3.0/2.9 min). All 34 distinct nonempty HTML captures match byte-for-byte between `tmp/sc1-r4-before-base/tmp/sc1-r4-before` and `tmp/sc1-r4-after`. No assertion, fixture, timeout or normalization boundary is weakened. Fresh headed screenshot probes pass at both revisions (11.8/8.9 s); all eight timeline PNG labels, dimensions, bytes and pixels match in `tmp/sc1-r4-screenshots-before-still` and `tmp/sc1-r4-screenshots-after-still`. The same screenshot-only animation/transition override settles the existing conflict pulse in two ignored archive fixtures; production CSS and tracked tests are untouched.
+
+Both normal-timer baseline probes at exact R1 SHA pass (34.0/33.0 s), with 11 labels each and no unexpected API calls. Idle timing crosses ordinary polling boundaries: baseline samples have 3/4 renders, 8/10 edge-scheduling requests, 1/2 layouts and 3/4 lane reads; both have two frame computes and zero stats work. Candidate probes must run twice after the local commit using its exact SHA, followed by independent comparison of startup/action/input hashes, raw counts and polling timestamps. The committed-revision build and runtime results are reported at the operator validation stop; they are not claimed here before execution. Evidence directories are `tmp/sc1-r4-runtime-before-{1,2}` inside the exact-base archive and fresh candidate runtime directories.
+
+Home-write gate recheck finds zero of four process inputs and no approved disposable target; it remains independently blocked, next review 2026-10-05. **Operator validation:** SM-S in full as above, especially Default → Alternate → Default retaining lane/collapse state and unsaved-override interruption/retry restoring once with no extra write. Stop after the R4a local commit and its committed-revision verification; R5 and publication remain pending.
+
+**SC1 R5 outcome (2026-10-03):** R4a `0b9a78e7b3ebf83f0811c6b1e7d59f6cae678367` was validated by the operator. Fetched main is still `6086bf8cbfe78c48c3ea44acfe37d5a194c4e32d`. This rung ratchets the structural dashboard ceiling from 18,434 to 18,307 and the default lint ceiling from 115 to 113. The canonical owner manifest already matches every measured per-file/interface/aggregate ceiling within the frozen checkpoint (43 modules, Scenario 780, Settings 9,803, unique owners 10,583, combined 28,890); it is preserved byte-for-byte. The 282 tracked frontend source/dist files are byte-identical to validated R4a, so this rung introduces no visual, behavior, request, analytics or interface change. The per-group markers in `test_stats_module_extraction_source_guards.js` survive and its assertions remain unmodified.
+
+Completed postcommit R4a evidence: the exact-head build and `make verify-dist-clean` passed with no generated diff. Both candidate normal-timer probes at `0b9a78e7` passed (33.9/33.2 s), completing the four-run campaign against R1 `ae35f76d` (34.0/33.0 s). All 11 labels, monotonic counters and raw deltas validate; the nine action-phase counter deltas match exactly across all four samples. The full API sequence is identical: 23 startup requests and 34 total, including one Scenario POST, six event polls and two presence writes, with no unexpected calls. Both candidate idle samples equal baseline sample 1; baseline sample 2 already has one extra render/layout/scroll/stacking pass and two extra edge-scheduling requests while frame computes remain two. Startup renders vary 20/21 within the candidate repeats. Normal polling remains approximately five seconds; response batching is a supported inference, not a proven callback-level explanation. Small wall-clock residuals (up to 24 ms above the two baseline action samples) introduce no extra measured action work; no performance improvement is claimed. Normalized source-input provenance is 222 baseline/224 candidate entries: only the dashboard digest changes and the two expected new owner modules are added; fixture, adapter, CSS and remaining inputs are identical. Independent review found no unexplained candidate work increase.
+
+R5 verification: `fnm exec --using 20 node --test tests/test_*.js` passes 1,739 tests (2.747 s); the section-6 isolated Python discovery passes 2,113 tests with 29 skips (126.167 s); `tests.test_codebase_structure_budgets` passes both tests (0.234 s). The canonical gate passes with zero errors, 113 warnings under the new 113 ceiling, 43 modules/17 sites, zero owner/enforced problems and the same 34 informational findings. All 70 tooling controls pass. The pinned source build succeeds and preserves the committed dist; the committed-revision rebuild/clean check follows this local metadata-only commit before the validation report. The required operator scope is **review the diff only; no additional app smoke**. Stop at this local R5 commit. R6 publication still requires a separate explicit go, fresh full suites/full Chromium and the complete exact-head publication transaction. No publication or later slice is authorized by R4a validation.
+
+**Remaining-App responsibility inventory after SC1** (verified against `0b9a78e7`; costs below are physical SC1 call-site/seam additions, not estimates of future moves or total responsibility size):
+
+| Canonical responsibility | Retained symbols and consumers | Why it remains / owner relationship | SC1 call-site/seam cost |
+| --- | --- | --- | ---: |
+| Scenario state composition | `scenarioState` and its 83-name App destructure feed the planner, group cache, connection snapshot and timeline | App calls effect-free `useScenarioState` unconditionally; state/ref ownership is extracted, per-render consumers remain until SC2/SC4 | 86 lines (call plus destructure); two module-import lines |
+| Cross-feature per-group persistence | `buildDefaultGroupState`, group snapshot, `applyGroupState`, group-cache effects consume `scenarioGroupValues` alongside ENG/Planning/Statistics values | The cache spans several features; only Scenario defaults/setters/transient resets delegate to `scenarioGroupState.js` | Five one-line seams: default spread, snapshot spread, memo dependency, reset call, apply call |
+| Scenario compute/draft/realtime orchestration | `runScenario`, `scenarioDraftIdleActionState`, draft/history/presence/lock/drag handlers and their timeline consumers | SC2 will move the approved contiguous behavior cluster; existing clear/reset/view-mode effects stay at shell crossings. Recovery waiting already belongs to `useConnectionScenarioRecovery` | 0 new seam lines; reads extracted state through the flat interface |
+| Scenario layout and presentation | `scenarioRawIssues`, `scenarioLanes`, `scenarioPositions`, `scheduleScenarioEdgeUpdate`, `.scenario-fullbleed` JSX | Computation moves under SC2/SC3 and JSX under SC4, preserving the documented split and late-assignment order | 0 new seam lines |
+| Settings bootstrap, draft/save authority and modal composition | `openGroupManage`, `loadConfig`, `loadGroupsConfig`, `saveGroupsConfig`, `saveEpmConfig`, `saveAllSettingsOnce`, `saveAllSettings`, `SettingsModal` | ST1–ST5 own later moves. Existing field/catalog/private-preference/Admin Access hooks remain separate owners; G2 preserves imperative save order and the separate permission-fix prerequisite | 0 new seam lines |
+| Shared scope, auth and ENG/Planning/Statistics/EPM shell | `savedPrefsRef`, `planningScopeKey`, `acceptedBoardConfigRef`, `engWorkspaceConfigured`, auth/recovery wiring, `EngView`, Planning components, Statistics memo consumers and `useEpmViewData` composition | Cross-feature scope and auth lifetime remain App responsibilities; already-extracted owners consume explicit inputs. This slice transfers no non-Scenario responsibility | 0 new seam lines |
+
+SC1 adds exactly 93 App scaffolding lines (86 + 2 + 5), replaces 28 snapshot/dependency lines and transfers 168 source lines with zero combined transfer credit. Owner files remain 210/95 lines. Neither new owner imports `dashboard.jsx`; imports flow from App to the state/helper modules. This inventory describes current responsibility, not undocumented team ownership; later R5 rungs must update retained consumers and costs.
+
+**SC1 R4a frozen preflight proposal (presented at the R1 validation stop).** This is a current-source dry-run budget/interface checkpoint, not execution of R4a. Exact slice base: `6086bf8cbfe78c48c3ea44acfe37d5a194c4e32d`; incoming R1 dashboard SHA-256: `c5afca1a9632725fcb5c2c7be07da8a486f1885e661fe95558cde47042d66cb2`. The two new owners and wiring remain only in ignored scratch. R4a must write its oracle tests first, observe red against the missing module, then implement and pass full checks, runtime comparison and parity before its own operator stop. Any upstream drift requires a new proposal from the refreshed base.
+
+| Next checkpoint `SC1-state-container` | Incoming measured LOC | Frozen proposed LOC ceiling |
+| --- | ---: | ---: |
+| `dashboard.jsx` | 18,410 | 18,307 |
+| `scenario/useScenarioState.js` (Create) | 0 | 210 |
+| `scenario/scenarioGroupState.js` (Create) | 0 | 95 |
+| Scenario owners | 475 | 780 |
+| Settings owners | 9,803 | 9,803 |
+| Unique owners | 10,278 | 10,583 |
+| App plus unique owners | 28,688 | 28,890 |
+
+All 41 existing per-file and interface ceilings are carried forward unchanged. Transferred source is 168 physical lines (101 state/ref declarations and 67 default/apply/reset lines); it grants **zero** combined growth credit. Net scaffolding is exactly +202: 109 state-owner lines (imports/wrapper/86-name return/14-field memo), 28 helper wrapper/key-constant lines, 93 App scaffolding lines (86 call/destructure + two imports + five seam replacements), minus 28 old snapshot/dependency lines. The helper's 28 lines comprise 16 frozen-key constant lines, four default function/return wrapper lines, three apply header/null-fallback/closing lines, two reset header/closing lines and three blank separators. No padding or unrelated deletion is credited. Current R1 ceilings remain unchanged until the planned ratchet; these proposed new caps are installed before the R4a checks, not inferred from its finished diff.
+
+Transferred declaration anchors are `scenarioCurrentUserIdentity` (current lines 475–478), the `scenarioLoading` through `scenarioEdgeRender` block (1032–1130, excluding `searchInputRef` and `let scheduleScenarioEdgeUpdate`), and `scenarioRefreshNonceRef` (1188). Preserve their 29 `useState`/27 `useRef` initializers; the state owner adds one memo. Group seam anchors remain `buildDefaultGroupState` (14 entries, 6018–6040), its snapshot (6117–6129), the memo dependencies (6335–6347), apply setters (6232–6254) and final `setScenarioLoading(false)` (6275). The nine reset refs move at 6153–6171 while `alertDismissedRef.current = false` and `epicRefMap.current = new Map()` stay in App. Re-locate these by symbol/text, not by historical line number.
+
+| New export | Outer / expanded inputs | Returns / props | Caller and phase |
+| --- | --- | --- | --- |
+| `useScenarioState` | 1 / 1 (`initialLaneMode`) | 86 / 0 | App, unconditional hook execution at the earliest declaration |
+| `buildDefaultScenarioGroupState` | 1 / 1 (`initialLaneMode`) | 14 / 0 | App's existing `buildDefaultGroupState`, deferred execution |
+| `applyScenarioGroupState` | 2 / 29 (15 setters + 14 snapshot fields) | 0 / 0 | App's existing `applyGroupState`, deferred execution |
+| `resetScenarioTransientRefs` | 1 / 9 refs | 0 / 0 | App's existing `applyGroupState`, deferred execution |
+| `SCENARIO_GROUP_STATE_KEYS` | constant, no input | exact 14 frozen keys | pure module constant, no App import required |
+
+The state hook takes only `initialLaneMode`; App passes `savedPrefsRef.current.scenarioLaneMode ?? 'team'` from an already-initialized ref. The checker reports forwarding of that scalar to `useState(initialLaneMode)`: manual complete member inventory is exactly that one scalar, reviewed against source digest `8a5c29f0815a10d6985fa7ac6ab94da1b8d646a4e1817da8d0e4aeac403530fb`. This review is carried into the next manifest with its matching digest; it is not a baseline exception. No new owner imports App, no owner has an effect, and no getter or later-captured binding is introduced. All helper call sites remain within the current deferred functions; their plain parameters require the explicit manual bag ledger below because automatic hook/container checking does not enforce pure helper contracts. The group's 14 fields appear once in the memo object and its dependencies. App keeps exactly the 83 return names it still reads, omitting only `scenarioScrollLeft`, `scenarioDraftEvents`, `scenarioUndoVersion`; the latter two cells and their setters remain inside the hook.
+
+Frozen flat state return names:
+
+```text
+scenarioCurrentUserIdentity
+setScenarioCurrentUserIdentity
+scenarioLoading
+setScenarioLoading
+scenarioError
+setScenarioError
+scenarioData
+setScenarioData
+scenarioLaneMode
+setScenarioLaneMode
+scenarioShowConflictsOnly
+setScenarioShowConflictsOnly
+scenarioTimelineRef
+scenarioLayout
+setScenarioLayout
+scenarioCollapsedLanes
+setScenarioCollapsedLanes
+scenarioCollapsedCards
+setScenarioCollapsedCards
+scenarioSummaryHidden
+setScenarioSummaryHidden
+scenarioHoverKey
+setScenarioHoverKey
+scenarioFlashKey
+setScenarioFlashKey
+scenarioScrollTop
+setScenarioScrollTop
+scenarioScrollLeft
+setScenarioScrollLeft
+scenarioViewportHeight
+setScenarioViewportHeight
+scenarioEpicFocus
+setScenarioEpicFocus
+scenarioRangeOverride
+setScenarioRangeOverride
+scenarioFocusRestoreRef
+scenarioSkipAutoCollapseRef
+scenarioTeamCollapseInitRef
+scenarioHistoryButtonRef
+scenarioHistoryPanelRef
+scenarioHistoryTitleRef
+scenarioOverrides
+setScenarioOverrides
+scenarioActiveDraftIdRef
+scenarioScopeKeyRef
+scenarioDraftMeta
+setScenarioDraftMeta
+scenarioDraftEvents
+setScenarioDraftEvents
+scenarioDraftPresence
+setScenarioDraftPresence
+scenarioDraftLocks
+setScenarioDraftLocks
+scenarioDraftRealtimeStatus
+setScenarioDraftRealtimeStatus
+scenarioDraftLastEventNumber
+setScenarioDraftLastEventNumber
+scenarioEditMode
+setScenarioEditMode
+scenarioUndoStackRef
+scenarioUndoVersion
+setScenarioUndoVersion
+scenarioDragState
+setScenarioDragState
+scenarioDragStateRef
+scenarioDragFrameRef
+scenarioDragLockRefreshRef
+scenarioRealtimeCsrfRef
+scenarioHistoryRefreshControllerRef
+scenarioHistoryActionControllerRef
+scenarioViewRangeRef
+scenarioWasDraggedRef
+scenarioEdgeUpdatePendingRef
+scenarioEdgeFrameRef
+scenarioScrollFrameRef
+scenarioResizeFrameRef
+scenarioPendingScrollRef
+scenarioTooltip
+setScenarioTooltip
+scenarioTooltipRef
+scenarioTooltipAnchorRef
+scenarioIssueRefMap
+scenarioEdgeRender
+setScenarioEdgeRender
+scenarioRefreshNonceRef
+scenarioGroupValues
+```
+
+The 14 `scenarioGroupValues` members, default return keys and snapshot input keys are exactly the `SCENARIO_GROUP_STATE_KEYS` listed in SC1 above. The apply setter bag is exactly those 14 fields' `setScenario…` names plus `setScenarioLoading`; it retains `||` fallbacks and supports a null snapshot with `snapshot || {}`. The reset bag is exactly `scenarioIssueRefMap`, `scenarioEdgeUpdatePendingRef`, `scenarioFocusRestoreRef`, `scenarioSkipAutoCollapseRef`, `scenarioTeamCollapseInitRef`, `scenarioEdgeFrameRef`, `scenarioScrollFrameRef`, `scenarioResizeFrameRef`, `scenarioPendingScrollRef`, each exposing only `.current`. Preserve the map-clear, frame-truthiness, cancellation and null-reset order. The helper source digest is `de3aa34ff4805e8ef1d2ce1ee395896a46713735b1d6384bef5ce7c047d227c6`; proposed App wiring digest is `f94221553f3c8640b5d8c298fe5149435359d243509fa593ada1bbff55a0eba4`. Proposed direct helper caller lines are 6005/6104/6166; hook call/destructure lines are 477/562. All 83 retained names have source-reader evidence in the ignored scratch ledger; no callback dependency or invocation phase is changed.
+
+Scratch tooling observes 43 modules/17 sites, zero enforced or owner-budget problems, and 34 unchanged informational findings. Full scratch frontend lint observes zero errors/fatal diagnostics and 113 warnings; the two former unread App values are returned from the state owner and omitted from App's destructure. This is a proposed warning checkpoint, not a behavioral test or a new warning exemption. Existing R1 verification still uses its actual 115 ceiling. Scratch conservation includes the new state hook and unchanged existing recovery owner; every state initializer cancels, with the remaining call/destructure/return/memo/group seams requiring explicit R4a conservation review. The pure group helper's statements also require manual source/oracle review.
+
 **Tests** (`tests/test_scenario_group_state.js`; the expectations are copied from the base code, so they also serve as the oracle; the last two cases kill the mutants that survived review: `||` changed to `??`, and an unconditional `cancelAnimationFrame`):
 
 ```js
@@ -1941,8 +2109,8 @@ Updated in each R5 commit and the separate permission-fix commit (root `AGENTS.m
 | PR | Slice | Status | `dashboard.jsx` lines after | Budget after | PR | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
 | PR-1 | Land revision 3 of the plan | Merged 2026-10-01 | n/a | 18,213 (historical) | #219, `c9ca8eff` | Revision-5 amendment remains local until authorized publication |
-| PR0 | Tooling, coverage, baselines | P0-1 through P0-5 validated; P0-6 awaiting operator validation | 18,434 (unchanged) | 18,434 | | Fresh base and refreshed parity/smoke recorded above; PR0 validation/publication pending |
-| SC1 | Scenario state container and seam | Not started | | | | |
+| PR0 | Tooling, coverage, baselines | Merged 2026-10-03 | 18,434 (unchanged) | 18,434 | #227, `6086bf8c` | Six validated rungs; all four remote CI checks passed |
+| SC1 | Scenario state container and seam | R1/R4a validated; R5 implemented, awaiting diff review | 18,307 | 18,307; lint 113 | | Frozen 210-line container/95-line helper; complete measured caps, remaining-App inventory and four-probe audit |
 | SC2 | Single Scenario hook | Not started | | | | |
 | SC3 | Split the Scenario hook (G1) | Approved strategy; not started | | | | Verify current-source boundaries after SC2 |
 | SC4 | Scenario view component | Not started | | | | |
@@ -1969,4 +2137,4 @@ Updated in each R5 commit and the separate permission-fix commit (root `AGENTS.m
 - **Review log.** Draft 1 was reviewed by four independent reviewers on 2026-10-01 and found not executable: hook cycles/order, range ownership, weak gates, inaccurate guard maps, and thin characterization. Revision 2's scratch dry runs passed SC1, SC2, ST1, ST2, and corrected ST3/ST4 ranges; tooling and cold-read review still required fixes. Revision 3 added the executable lint/conservation gate, seven seeded controls, cumulative dry runs, commit ladder, and publication protocol; its targeted third review reported no P1. PR #219 landed that revision. The 2026-10-02 fourth review reproduced three P1 findings (ST3 effect order, asymmetric conservation, dashboard-only interface coverage), three P2 findings (backward-edge fixture, empty-only conflict fixture, overwritten auth-expiry capture), and stale PR-1 status. Revision 4 corrects each and adds executable controls; earlier lint-clean dry runs do not establish behavior safety.
 - **Revision-4 verification (2026-10-02).** Three subagents verified tooling, Scenario characterization, and Settings behavior on ignored scratch copies. The six tool blocks extracted from this document pass Node syntax checks / `bash -n`. `EXTRACTION_TOOL_DIR=tmp/issue220-printed fnm exec --using 20 node tmp/issue220-printed/tooling_controls.mjs` reports 14/14 controls passing. The printed interface checker on an archive of `ffeafb0e` reports 16 destructure sites in 41 modules, 0 enforced and 34 informational problems. `fnm exec --using 20 node tmp/issue220-printed/check_move_conservation.mjs --base HEAD frontend/src/settings/useGroupVisibilityPreferences.js` compares 1,499 statements on each side with 0 residuals and identical order across 138 effects. The revised Scenario spec passes twice in Chromium, producing eight captures per run with identical file lists and no DOM diff. The Settings synthetic browser probe passes on the current source (reopened A), demonstrates the early-normalization candidate selects B, and passes with the separate normalization hook at its original position (A); none sends a shared save or raises a runtime error. The printed DOM helper passes a Chromium check of opt-in no-op behavior, distinct draft/recovery captures, retained input properties, and duplicate-label rejection without overwrite.
 - **Revision-5 verification (2026-10-02).** Three subagents checked the additional findings against source. The replacement DOM helper passes Node syntax and 13/13 synthetic Chromium controls; the Scenario spec passes twice (eight identical labels, recursive DOM diff empty). Two source-bundled runtime probes pass; identical 5s idle work and Epic-focus variation are recorded above. A Node projection probe confirms 11 admin keys and the 10-key snapshot excluding `adminAccess`; an isolated ESLint probe confirms the permission-expression-only change adds an unused-getter warning and omitting that getter removes it while preserving setters. The six printed core tools pass syntax checks and their 14 additional controls still pass. The printed strict JSON scan reports both seeded nested render and deferred uses that the default scan misses, and rejects fatal diagnostics. Committing reusable nested-caller controls and implementing owner-growth checks remain explicit PR0 requirements; these probes do not mean the printed core gate already enforces them.
-- **Remaining entry requirements.** These probes validate the revised examples; they do not complete PR0 or approve extraction. The optional full-lint scratch probe could not load `eslint-plugin-react` from the cached dependencies; it provides no warning baseline or gate-pass evidence. PR0 must refresh all ranges/budgets, implement and run the full current-base gate, the existing 21 controls plus all new growth/timing controls and 13 DOM-helper controls, freeze owner/interface budgets, commit/refresh the runtime probe, capture every required Settings/Scenario state, and run the required Python, Node, build, and full Chromium suites. D12 is acknowledged, G1 is approved against current-repository boundaries, and G2 is conditional on the separate verified permission fix and preserving the imperative save sequence. PR0 P0-1 (`4149b615`) has operator validation; P0-2 (`a2cc9017`) has operator validation; P0-3 (`d7d47c60`) and P0-4 (`472e98d8`) have operator validation; P0-5 has operator validation; P0-6 awaits operator validation, with extraction rungs unexecuted. No publication is authorized.
+- **Remaining entry requirements.** These probes validate the revised examples; they do not complete PR0 or approve extraction. The optional full-lint scratch probe could not load `eslint-plugin-react` from the cached dependencies; it provides no warning baseline or gate-pass evidence. PR0 must refresh all ranges/budgets, implement and run the full current-base gate, the existing 21 controls plus all new growth/timing controls and 13 DOM-helper controls, freeze owner/interface budgets, commit/refresh the runtime probe, capture every required Settings/Scenario state, and run the required Python, Node, build, and full Chromium suites. D12 is acknowledged, G1 is approved against current-repository boundaries, and G2 is conditional on the separate verified permission fix and preserving the imperative save sequence. PR0 P0-1 (`4149b615`) has operator validation; P0-2 (`a2cc9017`) has operator validation; P0-3 (`d7d47c60`) and P0-4 (`472e98d8`) have operator validation; P0-5 has operator validation; PR0 merged in #227 at `6086bf8c`; SC1 R1 has operator validation; R4a (`0b9a78e7`) has operator validation. R5 is implemented pending diff-only validation; later slices and SC1 publication remain unauthorized.

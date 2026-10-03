@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "baseSha": "ffeafb0ea3f37dd17a5d910595c20e1493166c5c",
-  "checkpointId": "PR0-current-base",
+  "baseSha": "ae35f76de75ac924c151aa7a2ff79fbbc388e017",
+  "checkpointId": "SC1-state-container",
   "sourceRoot": "frontend/src",
   "ownerRoots": [
     "scenario",
@@ -19,8 +19,8 @@
   },
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
-    "lineCount": 18434,
-    "lineCeiling": 18434
+    "lineCount": 18307,
+    "lineCeiling": 18307
   },
   "modules": [
     {
@@ -5607,28 +5607,728 @@
       "lineCount": 28,
       "lineCeiling": 28,
       "interfaces": []
+    },
+    {
+      "id": "scenario.scenarioGroupState",
+      "path": "frontend/src/scenario/scenarioGroupState.js",
+      "features": [
+        "scenario"
+      ],
+      "exports": [
+        "SCENARIO_GROUP_STATE_KEYS",
+        "applyScenarioGroupState",
+        "buildDefaultScenarioGroupState",
+        "resetScenarioTransientRefs"
+      ],
+      "lineCount": 95,
+      "lineCeiling": 95,
+      "interfaces": []
+    },
+    {
+      "id": "scenario.useScenarioState",
+      "path": "frontend/src/scenario/useScenarioState.js",
+      "features": [
+        "scenario"
+      ],
+      "exports": [
+        "useScenarioState"
+      ],
+      "lineCount": 210,
+      "lineCeiling": 210,
+      "interfaces": [
+        {
+          "exportName": "useScenarioState",
+          "inputNames": [
+            "initialLaneMode"
+          ],
+          "returnNames": [
+            "scenarioActiveDraftIdRef",
+            "scenarioCollapsedCards",
+            "scenarioCollapsedLanes",
+            "scenarioCurrentUserIdentity",
+            "scenarioData",
+            "scenarioDraftEvents",
+            "scenarioDraftLastEventNumber",
+            "scenarioDraftLocks",
+            "scenarioDraftMeta",
+            "scenarioDraftPresence",
+            "scenarioDraftRealtimeStatus",
+            "scenarioDragFrameRef",
+            "scenarioDragLockRefreshRef",
+            "scenarioDragState",
+            "scenarioDragStateRef",
+            "scenarioEdgeFrameRef",
+            "scenarioEdgeRender",
+            "scenarioEdgeUpdatePendingRef",
+            "scenarioEditMode",
+            "scenarioEpicFocus",
+            "scenarioError",
+            "scenarioFlashKey",
+            "scenarioFocusRestoreRef",
+            "scenarioGroupValues",
+            "scenarioHistoryActionControllerRef",
+            "scenarioHistoryButtonRef",
+            "scenarioHistoryPanelRef",
+            "scenarioHistoryRefreshControllerRef",
+            "scenarioHistoryTitleRef",
+            "scenarioHoverKey",
+            "scenarioIssueRefMap",
+            "scenarioLaneMode",
+            "scenarioLayout",
+            "scenarioLoading",
+            "scenarioOverrides",
+            "scenarioPendingScrollRef",
+            "scenarioRangeOverride",
+            "scenarioRealtimeCsrfRef",
+            "scenarioRefreshNonceRef",
+            "scenarioResizeFrameRef",
+            "scenarioScopeKeyRef",
+            "scenarioScrollFrameRef",
+            "scenarioScrollLeft",
+            "scenarioScrollTop",
+            "scenarioShowConflictsOnly",
+            "scenarioSkipAutoCollapseRef",
+            "scenarioSummaryHidden",
+            "scenarioTeamCollapseInitRef",
+            "scenarioTimelineRef",
+            "scenarioTooltip",
+            "scenarioTooltipAnchorRef",
+            "scenarioTooltipRef",
+            "scenarioUndoStackRef",
+            "scenarioUndoVersion",
+            "scenarioViewRangeRef",
+            "scenarioViewportHeight",
+            "scenarioWasDraggedRef",
+            "setScenarioCollapsedCards",
+            "setScenarioCollapsedLanes",
+            "setScenarioCurrentUserIdentity",
+            "setScenarioData",
+            "setScenarioDraftEvents",
+            "setScenarioDraftLastEventNumber",
+            "setScenarioDraftLocks",
+            "setScenarioDraftMeta",
+            "setScenarioDraftPresence",
+            "setScenarioDraftRealtimeStatus",
+            "setScenarioDragState",
+            "setScenarioEdgeRender",
+            "setScenarioEditMode",
+            "setScenarioEpicFocus",
+            "setScenarioError",
+            "setScenarioFlashKey",
+            "setScenarioHoverKey",
+            "setScenarioLaneMode",
+            "setScenarioLayout",
+            "setScenarioLoading",
+            "setScenarioOverrides",
+            "setScenarioRangeOverride",
+            "setScenarioScrollLeft",
+            "setScenarioScrollTop",
+            "setScenarioShowConflictsOnly",
+            "setScenarioSummaryHidden",
+            "setScenarioTooltip",
+            "setScenarioUndoVersion",
+            "setScenarioViewportHeight"
+          ],
+          "propNames": [],
+          "expandedInputNames": [
+            "initialLaneMode"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 1,
+          "returnCount": 86,
+          "propCount": 0,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 1,
+          "returnCeiling": 86,
+          "propCeiling": 0,
+          "unresolved": [
+            "forwarded input initialLaneMode"
+          ],
+          "inventory": {
+            "source": "frontend/src/scenario/useScenarioState.js:4",
+            "sourceDigest": "8a5c29f0815a10d6985fa7ac6ab94da1b8d646a4e1817da8d0e4aeac403530fb",
+            "reviewed": true,
+            "complete": true,
+            "memberNames": [
+              "initialLaneMode"
+            ],
+            "rationale": "Only scalar initialLaneMode is forwarded to useState(initialLaneMode); there is no dependency bag. 86 named returns include the 14-member scenarioGroupValues object."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "useScenarioState",
+              "line": 477,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [
+            {
+              "name": "scenarioState",
+              "lines": [
+                562
+              ]
+            }
+          ],
+          "getters": []
+        }
+      ]
     }
   ],
   "aggregates": {
     "scenario": {
-      "measured": 475,
-      "ceiling": 475
+      "measured": 780,
+      "ceiling": 780
     },
     "settings": {
       "measured": 9803,
       "ceiling": 9803
     },
     "uniqueOwners": {
-      "measured": 10278,
-      "ceiling": 10278
+      "measured": 10583,
+      "ceiling": 10583
     },
     "appPlusOwners": {
-      "measured": 28712,
-      "ceiling": 28712
+      "measured": 28890,
+      "ceiling": 28890
     }
   },
   "transfer": {
-    "incomingRanges": [],
-    "scaffoldingAllowance": 0
+    "incomingRanges": [
+      {
+        "id": "default-14-members",
+        "fromLine": 6018,
+        "toLine": 6041,
+        "removedPhysicalLines": 23,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "snapshot-14-members",
+        "fromLine": 6117,
+        "toLine": 6130,
+        "removedPhysicalLines": 13,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "memo-14-dependencies",
+        "fromLine": 6335,
+        "toLine": 6348,
+        "removedPhysicalLines": 13,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "apply-15-setters",
+        "fromLine": 6232,
+        "toLine": 6255,
+        "removedPhysicalLines": 23,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "delete-duplicate-loading-false",
+        "fromLine": 6275,
+        "toLine": 6276,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "reset-ref-block-1",
+        "fromLine": 6153,
+        "toLine": 6154,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 1
+      },
+      {
+        "id": "reset-ref-block-2",
+        "fromLine": 6154,
+        "toLine": 6155,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "reset-ref-block-3",
+        "fromLine": 6155,
+        "toLine": 6156,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "reset-ref-block-4",
+        "fromLine": 6156,
+        "toLine": 6157,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "reset-ref-block-5",
+        "fromLine": 6157,
+        "toLine": 6158,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "reset-ref-block-6",
+        "fromLine": 6158,
+        "toLine": 6162,
+        "removedPhysicalLines": 4,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "reset-ref-block-7",
+        "fromLine": 6163,
+        "toLine": 6167,
+        "removedPhysicalLines": 4,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "reset-ref-block-8",
+        "fromLine": 6167,
+        "toLine": 6171,
+        "removedPhysicalLines": 4,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "reset-ref-block-9",
+        "fromLine": 6171,
+        "toLine": 6172,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioCurrentUserIdentity",
+        "fromLine": 475,
+        "toLine": 479,
+        "removedPhysicalLines": 4,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioLoading",
+        "fromLine": 1032,
+        "toLine": 1033,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioError",
+        "fromLine": 1033,
+        "toLine": 1034,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioData",
+        "fromLine": 1034,
+        "toLine": 1035,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioLaneMode",
+        "fromLine": 1035,
+        "toLine": 1036,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioShowConflictsOnly",
+        "fromLine": 1036,
+        "toLine": 1037,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioTimelineRef",
+        "fromLine": 1037,
+        "toLine": 1038,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioLayout",
+        "fromLine": 1038,
+        "toLine": 1039,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioCollapsedLanes",
+        "fromLine": 1039,
+        "toLine": 1040,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioCollapsedCards",
+        "fromLine": 1040,
+        "toLine": 1041,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioSummaryHidden",
+        "fromLine": 1041,
+        "toLine": 1042,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioHoverKey",
+        "fromLine": 1042,
+        "toLine": 1043,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioFlashKey",
+        "fromLine": 1043,
+        "toLine": 1044,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioScrollTop",
+        "fromLine": 1044,
+        "toLine": 1045,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioScrollLeft",
+        "fromLine": 1046,
+        "toLine": 1047,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioViewportHeight",
+        "fromLine": 1047,
+        "toLine": 1048,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioEpicFocus",
+        "fromLine": 1048,
+        "toLine": 1049,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioRangeOverride",
+        "fromLine": 1049,
+        "toLine": 1050,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioFocusRestoreRef",
+        "fromLine": 1050,
+        "toLine": 1051,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioSkipAutoCollapseRef",
+        "fromLine": 1051,
+        "toLine": 1052,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioTeamCollapseInitRef",
+        "fromLine": 1052,
+        "toLine": 1053,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioHistoryButtonRef",
+        "fromLine": 1053,
+        "toLine": 1054,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioHistoryPanelRef",
+        "fromLine": 1054,
+        "toLine": 1055,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioHistoryTitleRef",
+        "fromLine": 1055,
+        "toLine": 1056,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioOverrides",
+        "fromLine": 1056,
+        "toLine": 1057,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioActiveDraftIdRef",
+        "fromLine": 1057,
+        "toLine": 1058,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioScopeKeyRef",
+        "fromLine": 1058,
+        "toLine": 1059,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioDraftMeta",
+        "fromLine": 1059,
+        "toLine": 1088,
+        "removedPhysicalLines": 29,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioDraftEvents",
+        "fromLine": 1088,
+        "toLine": 1089,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioDraftPresence",
+        "fromLine": 1089,
+        "toLine": 1090,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioDraftLocks",
+        "fromLine": 1090,
+        "toLine": 1091,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioDraftRealtimeStatus",
+        "fromLine": 1091,
+        "toLine": 1096,
+        "removedPhysicalLines": 5,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioDraftLastEventNumber",
+        "fromLine": 1096,
+        "toLine": 1097,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioEditMode",
+        "fromLine": 1097,
+        "toLine": 1098,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioUndoStackRef",
+        "fromLine": 1099,
+        "toLine": 1100,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioUndoVersion",
+        "fromLine": 1100,
+        "toLine": 1101,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioDragState",
+        "fromLine": 1101,
+        "toLine": 1102,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioDragStateRef",
+        "fromLine": 1102,
+        "toLine": 1103,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioDragFrameRef",
+        "fromLine": 1103,
+        "toLine": 1104,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioDragLockRefreshRef",
+        "fromLine": 1104,
+        "toLine": 1105,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioRealtimeCsrfRef",
+        "fromLine": 1105,
+        "toLine": 1106,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioHistoryRefreshControllerRef",
+        "fromLine": 1106,
+        "toLine": 1107,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioHistoryActionControllerRef",
+        "fromLine": 1107,
+        "toLine": 1108,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioViewRangeRef",
+        "fromLine": 1108,
+        "toLine": 1109,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioWasDraggedRef",
+        "fromLine": 1109,
+        "toLine": 1110,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioEdgeUpdatePendingRef",
+        "fromLine": 1110,
+        "toLine": 1111,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioEdgeFrameRef",
+        "fromLine": 1111,
+        "toLine": 1112,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioScrollFrameRef",
+        "fromLine": 1112,
+        "toLine": 1113,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioResizeFrameRef",
+        "fromLine": 1113,
+        "toLine": 1114,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioPendingScrollRef",
+        "fromLine": 1114,
+        "toLine": 1115,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioTooltip",
+        "fromLine": 1116,
+        "toLine": 1127,
+        "removedPhysicalLines": 11,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioTooltipRef",
+        "fromLine": 1127,
+        "toLine": 1128,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioTooltipAnchorRef",
+        "fromLine": 1128,
+        "toLine": 1129,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioIssueRefMap",
+        "fromLine": 1129,
+        "toLine": 1130,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioEdgeRender",
+        "fromLine": 1130,
+        "toLine": 1131,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      },
+      {
+        "id": "move-state-scenarioRefreshNonceRef",
+        "fromLine": 1188,
+        "toLine": 1189,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 0
+      }
+    ],
+    "scaffoldingAllowance": 202,
+    "netPhysicalLOC": {
+      "priorAppPlusOwners": 28688,
+      "nextAppPlusOwners": 28890,
+      "transferredSourceLines": 168,
+      "helperWrapperAndConstantLines": 28,
+      "stateWrapperReturnsMemoImportsLines": 109,
+      "appCallsDestructureImportsLines": 93,
+      "removedSnapshotAndDependencyLines": 28
+    },
+    "getters": [],
+    "rationale": "Current R1 source after 24-line approved dead deletion; App-to-owner statements receive zero combined growth credit. Existing 41 per-file/interface caps copied unchanged; exact formatting shown by frozen scratch hashes.",
+    "scaffoldingBreakdown": {
+      "state": {
+        "imports": 2,
+        "blank": 1,
+        "functionHeader": 1,
+        "newGroupMemo": 16,
+        "returnWrapperAnd86Members": 88,
+        "functionClose": 1,
+        "total": 109
+      },
+      "app": {
+        "hookCall": 1,
+        "destructure83MembersAndWrapper": 85,
+        "imports": 2,
+        "defaultSnapshotDependenciesApplyResetSeamLines": 5,
+        "total": 93
+      },
+      "helper": {
+        "explicit14keyConstant": 16,
+        "defaultFunctionAndReturnWrapper": 4,
+        "applyFunctionHeaderFallbackAndClose": 3,
+        "resetFunctionHeaderAndClose": 2,
+        "blankLines": 3,
+        "total": 28
+      },
+      "verifiedRemoved": {
+        "snapshot14Members": 14,
+        "dependencies14Members": 14,
+        "total": 28
+      },
+      "net": 202
+    }
   }
 }

@@ -1,7 +1,9 @@
+import { useScenarioState } from './scenario/useScenarioState.js';
+import { buildDefaultScenarioGroupState, applyScenarioGroupState, resetScenarioTransientRefs } from './scenario/scenarioGroupState.js';
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles/dashboard.css';
-import { parseScenarioDate, normalizeScenarioSummary, buildScenarioTooltipPayload, applyIssueOverride, pxToDate, dateToPx, dateToISODate, createUndoStack, validateDependencies, splitAtSprintBoundaries, SCENARIO_BAR_HEIGHT, SCENARIO_BAR_GAP, SCENARIO_COLLAPSED_ROWS, SCENARIO_TEAM_LEAD_ROWS } from './scenario/scenarioUtils.js';
+import { parseScenarioDate, normalizeScenarioSummary, buildScenarioTooltipPayload, applyIssueOverride, pxToDate, dateToPx, dateToISODate, validateDependencies, splitAtSprintBoundaries, SCENARIO_BAR_HEIGHT, SCENARIO_BAR_GAP, SCENARIO_COLLAPSED_ROWS, SCENARIO_TEAM_LEAD_ROWS } from './scenario/scenarioUtils.js';
 import { normalizeScenarioDraftOverrides, scenarioDraftOverridesSignature } from './scenario/scenarioDraftOverrides.js';
 import { applyScenarioConnectionRecovery, useConnectionScenarioRecovery } from './scenario/connectionScenarioRecovery.js';
 import ScenarioBar from './scenario/ScenarioBar.jsx';
@@ -472,10 +474,92 @@ import {
             const [homeTokenConnection, setHomeTokenConnection] = useState({ connected: false });
             const [homeTokenConnectionLoaded, setHomeTokenConnectionLoaded] = useState(false);
             const [authMode, setAuthMode] = useState('');
-            const [scenarioCurrentUserIdentity, setScenarioCurrentUserIdentity] = useState({
-                userId: '',
-                displayName: ''
-            });
+            const scenarioState = useScenarioState({ initialLaneMode: savedPrefsRef.current.scenarioLaneMode ?? 'team' });
+            const {
+                scenarioCurrentUserIdentity,
+                setScenarioCurrentUserIdentity,
+                scenarioLoading,
+                setScenarioLoading,
+                scenarioError,
+                setScenarioError,
+                scenarioData,
+                setScenarioData,
+                scenarioLaneMode,
+                setScenarioLaneMode,
+                scenarioShowConflictsOnly,
+                setScenarioShowConflictsOnly,
+                scenarioTimelineRef,
+                scenarioLayout,
+                setScenarioLayout,
+                scenarioCollapsedLanes,
+                setScenarioCollapsedLanes,
+                scenarioCollapsedCards,
+                setScenarioCollapsedCards,
+                scenarioSummaryHidden,
+                setScenarioSummaryHidden,
+                scenarioHoverKey,
+                setScenarioHoverKey,
+                scenarioFlashKey,
+                setScenarioFlashKey,
+                scenarioScrollTop,
+                setScenarioScrollTop,
+                setScenarioScrollLeft,
+                scenarioViewportHeight,
+                setScenarioViewportHeight,
+                scenarioEpicFocus,
+                setScenarioEpicFocus,
+                scenarioRangeOverride,
+                setScenarioRangeOverride,
+                scenarioFocusRestoreRef,
+                scenarioSkipAutoCollapseRef,
+                scenarioTeamCollapseInitRef,
+                scenarioHistoryButtonRef,
+                scenarioHistoryPanelRef,
+                scenarioHistoryTitleRef,
+                scenarioOverrides,
+                setScenarioOverrides,
+                scenarioActiveDraftIdRef,
+                scenarioScopeKeyRef,
+                scenarioDraftMeta,
+                setScenarioDraftMeta,
+                setScenarioDraftEvents,
+                scenarioDraftPresence,
+                setScenarioDraftPresence,
+                scenarioDraftLocks,
+                setScenarioDraftLocks,
+                scenarioDraftRealtimeStatus,
+                setScenarioDraftRealtimeStatus,
+                scenarioDraftLastEventNumber,
+                setScenarioDraftLastEventNumber,
+                scenarioEditMode,
+                setScenarioEditMode,
+                scenarioUndoStackRef,
+                setScenarioUndoVersion,
+                scenarioDragState,
+                setScenarioDragState,
+                scenarioDragStateRef,
+                scenarioDragFrameRef,
+                scenarioDragLockRefreshRef,
+                scenarioRealtimeCsrfRef,
+                scenarioHistoryRefreshControllerRef,
+                scenarioHistoryActionControllerRef,
+                scenarioViewRangeRef,
+                scenarioWasDraggedRef,
+                scenarioEdgeUpdatePendingRef,
+                scenarioEdgeFrameRef,
+                scenarioScrollFrameRef,
+                scenarioResizeFrameRef,
+                scenarioPendingScrollRef,
+                scenarioTooltip,
+                setScenarioTooltip,
+                scenarioTooltipRef,
+                scenarioTooltipAnchorRef,
+                scenarioIssueRefMap,
+                scenarioEdgeRender,
+                setScenarioEdgeRender,
+                scenarioRefreshNonceRef,
+                scenarioGroupValues,
+            } = scenarioState;
             const hasActiveHomeTokenConnection = React.useMemo(
                 () => isActiveHomeTokenConnection(homeTokenConnection),
                 [homeTokenConnection]
@@ -1029,105 +1113,9 @@ import {
             const capacityReadGenerationRef = useRef(0);
             const capacityReadAbortRef = useRef(null);
             const activeCapacityScopeRef = useRef(''), capacityScopeHoldRef = useRef(false), capacityScopePinRef = useRef(null), capacityScopeKeyRef = useRef(null);
-            const [scenarioLoading, setScenarioLoading] = useState(false);
-            const [scenarioError, setScenarioError] = useState('');
-            const [scenarioData, setScenarioData] = useState(null);
-            const [scenarioLaneMode, setScenarioLaneMode] = useState(savedPrefsRef.current.scenarioLaneMode ?? 'team');
-            const [scenarioShowConflictsOnly, setScenarioShowConflictsOnly] = useState(false);
-            const scenarioTimelineRef = useRef(null);
-            const [scenarioLayout, setScenarioLayout] = useState({ width: 0, height: 0 });
-            const [scenarioCollapsedLanes, setScenarioCollapsedLanes] = useState({});
-            const [scenarioCollapsedCards, setScenarioCollapsedCards] = useState({});
-            const [scenarioSummaryHidden, setScenarioSummaryHidden] = useState(true);
-            const [scenarioHoverKey, setScenarioHoverKey] = useState(null);
-            const [scenarioFlashKey, setScenarioFlashKey] = useState(null);
-            const [scenarioScrollTop, setScenarioScrollTop] = useState(0);
             const searchInputRef = useRef(null);
-            const [scenarioScrollLeft, setScenarioScrollLeft] = useState(0);
-            const [scenarioViewportHeight, setScenarioViewportHeight] = useState(0);
-            const [scenarioEpicFocus, setScenarioEpicFocus] = useState(null);
-            const [scenarioRangeOverride, setScenarioRangeOverride] = useState(null);
-            const scenarioFocusRestoreRef = useRef(null);
-            const scenarioSkipAutoCollapseRef = useRef(false);
-            const scenarioTeamCollapseInitRef = useRef(false);
-            const scenarioHistoryButtonRef = useRef(null);
-            const scenarioHistoryPanelRef = useRef(null);
-            const scenarioHistoryTitleRef = useRef(null);
-            const [scenarioOverrides, setScenarioOverrides] = useState({});
-            const scenarioActiveDraftIdRef = useRef('');
-            const scenarioScopeKeyRef = useRef('');
-            const [scenarioDraftMeta, setScenarioDraftMeta] = useState({
-                activeDraft: null,
-                versions: [],
-                loadedVersionNumber: null,
-                baseDraftRevision: null,
-                savedOverrides: {},
-                scopePayload: {},
-                scopeKey: '',
-                dirtyState: 'clean',
-                pendingScopeChange: null,
-                historyOpen: false,
-                loadingHistory: false,
-                loadingVersionNumber: null,
-                loadingActiveDraft: false,
-                saving: false,
-                rollingBackVersionNumber: null,
-                reloadingFromJira: false,
-                pendingHistoryAction: null,
-                pendingActiveDraftReload: false,
-                pendingReloadFromJira: false,
-                writebackPreviewing: false,
-                writebackChecking: false,
-                writebackPreview: null,
-                writebackBlocked: null,
-                staleDraft: null,
-                conflict: null,
-                message: '',
-                error: ''
-            });
-            const [scenarioDraftEvents, setScenarioDraftEvents] = useState([]);
-            const [scenarioDraftPresence, setScenarioDraftPresence] = useState([]);
-            const [scenarioDraftLocks, setScenarioDraftLocks] = useState([]);
-            const [scenarioDraftRealtimeStatus, setScenarioDraftRealtimeStatus] = useState({
-                mode: 'idle',
-                paused: false,
-                message: ''
-            });
-            const [scenarioDraftLastEventNumber, setScenarioDraftLastEventNumber] = useState(0);
-            const [scenarioEditMode, setScenarioEditMode] = useState(false);
 
-            const scenarioUndoStackRef = useRef(createUndoStack());
-            const [scenarioUndoVersion, setScenarioUndoVersion] = useState(0);
-            const [scenarioDragState, setScenarioDragState] = useState(null);
-            const scenarioDragStateRef = useRef(null);
-            const scenarioDragFrameRef = useRef(null);
-            const scenarioDragLockRefreshRef = useRef(null);
-            const scenarioRealtimeCsrfRef = useRef('');
-            const scenarioHistoryRefreshControllerRef = useRef(null);
-            const scenarioHistoryActionControllerRef = useRef(null);
-            const scenarioViewRangeRef = useRef({ start: null, end: null });
-            const scenarioWasDraggedRef = useRef(false);
-            const scenarioEdgeUpdatePendingRef = useRef(false);
-            const scenarioEdgeFrameRef = useRef(null);
-            const scenarioScrollFrameRef = useRef(null);
-            const scenarioResizeFrameRef = useRef(null);
-            const scenarioPendingScrollRef = useRef(null);
             let scheduleScenarioEdgeUpdate;
-            const [scenarioTooltip, setScenarioTooltip] = useState({
-                visible: false,
-                x: 0,
-                y: 0,
-                summary: '',
-                key: '',
-                sp: null,
-                note: '',
-                assignee: null,
-                team: null
-            });
-            const scenarioTooltipRef = useRef(null);
-            const scenarioTooltipAnchorRef = useRef(null);
-            const scenarioIssueRefMap = useRef(new Map());
-            const [scenarioEdgeRender, setScenarioEdgeRender] = useState({ width: 0, height: 0, paths: [] });
             const [dependencyData, setDependencyData] = useState({}), [dependencyRefreshNonce, setDependencyRefreshNonce] = useState(0);
             const [dependencyFocus, setDependencyFocus] = useState(null);
             const [dependencyHover, setDependencyHover] = useState(null);
@@ -1185,7 +1173,6 @@ import {
             const epmSubGoalsCacheRef = useRef(new Map());
             const pendingConfigRefreshRef = useRef(0);
             const configRefreshTargetRef = useRef('none');
-            const scenarioRefreshNonceRef = useRef(0);
             const abortSprintFetches = React.useCallback(() => {
                 sprintFetchControllersRef.current.forEach(controller => {
                     try {
@@ -6015,30 +6002,7 @@ import {
                         ...(savedPrefsRef.current.cohortStatusToggles || {})
                     },
                     cohortSelectedRow: null,
-                    scenarioData: null,
-                    scenarioError: '',
-                    scenarioLaneMode: savedPrefsRef.current.scenarioLaneMode ?? 'team',
-                    scenarioCollapsedLanes: {},
-                    scenarioEpicFocus: null,
-                    scenarioRangeOverride: null,
-                    scenarioScrollTop: 0,
-                    scenarioScrollLeft: 0,
-                    scenarioViewportHeight: 0,
-                    scenarioHoverKey: null,
-                    scenarioFlashKey: null,
-                    scenarioLayout: { width: 0, height: 0 },
-                    scenarioEdgeRender: { width: 0, height: 0, paths: [] },
-                    scenarioTooltip: {
-                        visible: false,
-                        x: 0,
-                        y: 0,
-                        summary: '',
-                        key: '',
-                        sp: null,
-                        note: '',
-                        assignee: null,
-                        team: null
-                    },
+                    ...buildDefaultScenarioGroupState(savedPrefsRef.current.scenarioLaneMode),
                     hideExcludedStats: savedPrefsRef.current.hideExcludedStats ?? true,
                     showMissingAlert: savedPrefsRef.current.showMissingAlert ?? true,
                     showBlockedAlert: savedPrefsRef.current.showBlockedAlert ?? true,
@@ -6114,20 +6078,7 @@ import {
                 cohortExcludeCapacity,
                 cohortStatusToggles,
                 cohortSelectedRow,
-                scenarioData,
-                scenarioError,
-                scenarioLaneMode,
-                scenarioCollapsedLanes,
-                scenarioEpicFocus,
-                scenarioRangeOverride,
-                scenarioScrollTop,
-                scenarioScrollLeft,
-                scenarioViewportHeight,
-                scenarioHoverKey,
-                scenarioFlashKey,
-                scenarioLayout,
-                scenarioEdgeRender,
-                scenarioTooltip,
+                ...scenarioGroupValues,
                 hideExcludedStats,
                 showMissingAlert,
                 showBlockedAlert,
@@ -6150,25 +6101,8 @@ import {
             const applyGroupState = (state) => {
                 const nextState = state || buildDefaultGroupState(activeGroupId);
                 restoringGroupRef.current = true;
-                scenarioIssueRefMap.current.clear();
-                scenarioEdgeUpdatePendingRef.current = false;
-                scenarioFocusRestoreRef.current = null;
-                scenarioSkipAutoCollapseRef.current = false;
-                scenarioTeamCollapseInitRef.current = false;
-                if (scenarioEdgeFrameRef.current) {
-                    window.cancelAnimationFrame(scenarioEdgeFrameRef.current);
-                    scenarioEdgeFrameRef.current = null;
-                }
+                resetScenarioTransientRefs({ scenarioIssueRefMap, scenarioEdgeUpdatePendingRef, scenarioFocusRestoreRef, scenarioSkipAutoCollapseRef, scenarioTeamCollapseInitRef, scenarioEdgeFrameRef, scenarioScrollFrameRef, scenarioResizeFrameRef, scenarioPendingScrollRef });
                 alertDismissedRef.current = false;
-                if (scenarioScrollFrameRef.current) {
-                    window.cancelAnimationFrame(scenarioScrollFrameRef.current);
-                    scenarioScrollFrameRef.current = null;
-                }
-                if (scenarioResizeFrameRef.current) {
-                    window.cancelAnimationFrame(scenarioResizeFrameRef.current);
-                    scenarioResizeFrameRef.current = null;
-                }
-                scenarioPendingScrollRef.current = null;
                 epicRefMap.current = new Map();
                 setProductTasks(nextState.productTasks || []);
                 setTechTasks(nextState.techTasks || []);
@@ -6229,30 +6163,7 @@ import {
                     ...(nextState.cohortStatusToggles || {})
                 });
                 setCohortSelectedRow(nextState.cohortSelectedRow || null);
-                setScenarioData(nextState.scenarioData || null);
-                setScenarioError(nextState.scenarioError || '');
-                setScenarioLaneMode(nextState.scenarioLaneMode || 'team');
-                setScenarioCollapsedLanes(nextState.scenarioCollapsedLanes || {});
-                setScenarioEpicFocus(nextState.scenarioEpicFocus || null);
-                setScenarioRangeOverride(nextState.scenarioRangeOverride || null);
-                setScenarioScrollTop(nextState.scenarioScrollTop || 0);
-                setScenarioScrollLeft(nextState.scenarioScrollLeft || 0);
-                setScenarioViewportHeight(nextState.scenarioViewportHeight || 0);
-                setScenarioHoverKey(nextState.scenarioHoverKey || null);
-                setScenarioFlashKey(nextState.scenarioFlashKey || null);
-                setScenarioLayout(nextState.scenarioLayout || { width: 0, height: 0 });
-                setScenarioEdgeRender(nextState.scenarioEdgeRender || { width: 0, height: 0, paths: [] });
-                setScenarioTooltip(nextState.scenarioTooltip || {
-                    visible: false,
-                    x: 0,
-                    y: 0,
-                    summary: '',
-                    key: '',
-                    sp: null,
-                    note: '',
-                    assignee: null,
-                    team: null
-                });
+                applyScenarioGroupState({ setScenarioData, setScenarioError, setScenarioLaneMode, setScenarioCollapsedLanes, setScenarioEpicFocus, setScenarioRangeOverride, setScenarioScrollTop, setScenarioScrollLeft, setScenarioViewportHeight, setScenarioHoverKey, setScenarioFlashKey, setScenarioLayout, setScenarioEdgeRender, setScenarioTooltip, setScenarioLoading }, nextState);
                 setHideExcludedStats(nextState.hideExcludedStats ?? true);
                 setShowMissingAlert(nextState.showMissingAlert ?? true);
                 setShowBlockedAlert(nextState.showBlockedAlert ?? true);
@@ -6272,7 +6183,6 @@ import {
                 setDependencyLookupCache(nextState.dependencyLookupCache || {});
                 setDependencyLookupLoading(false);
                 setLoading(false);
-                setScenarioLoading(false);
                 window.setTimeout(() => {
                     restoringGroupRef.current = false;
                 }, 0);
@@ -6332,20 +6242,7 @@ import {
                 cohortExcludeCapacity,
                 cohortStatusToggles,
                 cohortSelectedRow,
-                scenarioData,
-                scenarioError,
-                scenarioLaneMode,
-                scenarioCollapsedLanes,
-                scenarioEpicFocus,
-                scenarioRangeOverride,
-                scenarioScrollTop,
-                scenarioScrollLeft,
-                scenarioViewportHeight,
-                scenarioHoverKey,
-                scenarioFlashKey,
-                scenarioLayout,
-                scenarioEdgeRender,
-                scenarioTooltip,
+                scenarioGroupValues,
                 hideExcludedStats,
                 showMissingAlert,
                 showBlockedAlert,
@@ -10520,14 +10417,6 @@ import {
                     && (!scenarioSearchFilterEnabled || scenarioSearchMatchSet.has(key))
                 ));
             }, [scenarioSummary, scenarioExcludedIssueKeys, scenarioSearchFilterEnabled, scenarioSearchMatchSet]);
-            const scenarioBottleneckLanes = React.useMemo(() => {
-                const lanes = scenarioSummary.bottleneck_lanes || [];
-                return lanes.filter(lane => {
-                    const laneInfo = scenarioLaneInfo.get(lane);
-                    if (!laneInfo) return true;
-                    return (laneInfo.lateCount || laneInfo.unschedulableCount);
-                });
-            }, [scenarioSummary, scenarioLaneInfo]);
             const scenarioLanes = React.useMemo(() => {
                 const lanes = Array.from(scenarioLaneInfo.keys());
                 return lanes.sort((a, b) => a.localeCompare(b));
@@ -10535,14 +10424,6 @@ import {
             const scenarioIssuesByLane = React.useMemo(() => {
                 return buildLaneIssues(scenarioTimelineWithSegments, scenarioLaneMode, scenarioLaneForIssue);
             }, [scenarioTimelineWithSegments, scenarioLaneMode, scenarioEpicFocus]);
-            const scenarioHasAssignees = React.useMemo(() => {
-                if (!scenarioEffectiveIssues || scenarioEffectiveIssues.length === 0) return false;
-                return scenarioEffectiveIssues.some(issue => issue.assignee);
-            }, [scenarioEffectiveIssues]);
-            const scenarioUnschedulable = React.useMemo(() => {
-                if (!scenarioEffectiveIssues || scenarioEffectiveIssues.length === 0) return [];
-                return scenarioEffectiveIssues.filter(issue => !issue.start || !issue.end);
-            }, [scenarioEffectiveIssues]);
             const scenarioTicks = React.useMemo(() => {
                 if (!scenarioViewStart || !scenarioViewEnd) return [];
                 const ticks = [];
@@ -11140,13 +11021,6 @@ import {
                 return edges;
             }, [scenarioDependencies, scenarioLaneMeta, scenarioLaneMode, scenarioIssueByKey]);
 
-            const scenarioDeadlineLeft = React.useMemo(() => {
-                if (!scenarioViewStart || !scenarioViewEnd || !scenarioDeadline) return 0;
-                if (!scenarioLayout.width) return 0;
-                const totalMs = Math.max(1, scenarioViewEnd - scenarioViewStart);
-                const ratio = Math.max(0, Math.min(1, (scenarioDeadline - scenarioViewStart) / totalMs));
-                return scenarioLayout.labelWidth + scenarioLayout.width * ratio;
-            }, [scenarioViewStart, scenarioViewEnd, scenarioDeadline, scenarioLayout]);
 
             const scenarioTodayLeft = React.useMemo(() => {
                 if (!scenarioViewStart || !scenarioViewEnd) return null;
@@ -11197,7 +11071,6 @@ import {
                 return blocked;
             }, [scenarioDependencies]);
 
-            const scenarioIsSingleTeamFocus = !isAllTeamsSelected && selectedTeamSet.size === 1;
             const scenarioBaselineEdges = React.useMemo(() => {
                 return scenarioEdgeCandidates;
             }, [scenarioEdgeCandidates]);

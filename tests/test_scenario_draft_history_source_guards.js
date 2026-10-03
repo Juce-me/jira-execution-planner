@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const childProcess = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
+const { readOwnerSource } = require('./frontend_source_helpers');
 
 const repoRoot = path.join(__dirname, '..');
 const frontendSrcPath = path.join(repoRoot, 'frontend', 'src');
@@ -204,7 +205,8 @@ test('draft save route sends csrf and baseDraftRevision', () => {
 
 test('scenario draft metadata stores display-safe scope payload without group membership', () => {
     const dashboardSource = readSource(dashboardPath);
-    const stateMatch = dashboardSource.match(/const \[scenarioDraftMeta, setScenarioDraftMeta\] = useState\(\{[\s\S]*?\n\s*\}\);/);
+    const stateSourceOwner = readOwnerSource(['frontend/src/scenario/useScenarioState.js'], { anchor: 'export function useScenarioState(' });
+    const stateMatch = stateSourceOwner.match(/const \[scenarioDraftMeta, setScenarioDraftMeta\] = useState\(\{[\s\S]*?\n\s*\}\);/);
     const scopeBuilderMatch = dashboardSource.match(/const buildScenarioDraftScope = \(\) => \(\{[\s\S]*?\n\s*\}\);/);
     const runScenarioMatch = dashboardSource.match(/const runScenario = async \(\{ recovery = null \} = \{\}\) => \{[\s\S]*?\n\s*\};\n\n\s*const toggleScenarioEditMode/);
 

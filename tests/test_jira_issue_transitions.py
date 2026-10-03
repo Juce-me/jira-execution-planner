@@ -304,12 +304,36 @@ class LoadTransitionOptionsTests(unittest.TestCase):
         self.assertNotIn("transitions", issues["PROD-2"])
         self.assertNotIn("forbidden detail", repr(result))
 
-    def test_snapshot_failure_raises_before_per_issue_calls(self):
+    def test_snapshot_failure_still_raises(self):
         search = make_search([], status_code=502)
         jira = RecordingJira()
         with self.assertRaises(IssueTransitionServiceError):
             load_transition_options(["PROD-1"], jira_request=jira.request, search_request=search)
-        self.assertEqual(jira.calls, [])
+
+    def test_snapshot_search_and_transition_fetch_run_concurrently(self):
+        # The snapshot search waits for the transitions GET to start. A sequential implementation
+        # never starts the GET until the search returns, so the wait times out and the search fails.
+        get_started = threading.Event()
+
+        def search(payload, *, context=None, timeout=30):
+            if not get_started.wait(timeout=5):
+                return FakeResponse(502, {})
+            return FakeResponse(200, {"issues": [
+                {"key": "PROD-1", "fields": {"summary": "A", "status": {"name": "To Do"}, "issuetype": {"name": "Story"}}},
+            ]})
+
+        class SignalingJira(RecordingJira):
+            def request(self, method, path, **kwargs):
+                get_started.set()
+                return super().request(method, path, **kwargs)
+
+        jira = SignalingJira()
+        jira.get_responses["PROD-1"] = FakeResponse(200, {"transitions": [{"id": "11", "name": "Start", "to": {"name": "In Progress"}}]})
+
+        result = load_transition_options(["PROD-1"], jira_request=jira.request, search_request=search)
+
+        self.assertEqual(result["issues"][0]["currentStatus"], "To Do")
+        self.assertEqual(result["issues"][0]["transitions"], [{"name": "Start", "toStatus": "In Progress"}])
 
 
 class TransitionIssuesTests(unittest.TestCase):

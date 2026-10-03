@@ -42,6 +42,7 @@ export default function IssueCard({
     statusTransitionTargetsCount = 0,
     statusTransitionPendingIssueKeys = null,
     onOpenStatusTransition,
+    onPrefetchStatusTransition,
     onCloseStatusTransition,
     onSubmitStatusTransition,
     priorityTransitionEnabled = false,
@@ -284,6 +285,7 @@ export default function IssueCard({
                             result={statusTransitionResult}
                             targetsCount={statusTransitionTargetsCount}
                             onOpen={onOpenStatusTransition}
+                            onPrefetch={onPrefetchStatusTransition}
                             onClose={onCloseStatusTransition}
                             onSubmit={(targetStatus) => onSubmitStatusTransition?.(targetStatus, task)}
                             previewOnly={onboardingPreviewSession}
@@ -389,6 +391,7 @@ export default function IssueCard({
                                             errorCode={statusTransitionErrorCode}
                                             result={statusTransitionResult}
                                             onOpen={onOpenStatusTransition}
+                                            onPrefetch={onPrefetchStatusTransition}
                                             onClose={onCloseStatusTransition}
                                             onSubmit={(targetStatus) => onSubmitStatusTransition?.(targetStatus, subtask, { singleIssue: true })}
                                             previewOnly={onboardingPreviewSession}

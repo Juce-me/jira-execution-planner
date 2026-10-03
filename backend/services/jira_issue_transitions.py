@@ -285,13 +285,19 @@ def _make_options_worker(jira_request):
 def load_transition_options(issue_keys, *, jira_request, search_request, context=None):
     """Resolve available status targets for each requested issue key.
 
-    Fetches issue snapshots in one batch search, then fetches transitions per
-    issue through a bounded pool. Per-issue transition failures become
-    ``error="transitions_unavailable"`` with no raw Jira body.
+    Fetches issue snapshots in one batch search while fetching transitions per
+    issue through a bounded pool; the two do not depend on each other, so a
+    status menu pays one Jira round trip instead of two. Per-issue transition
+    failures become ``error="transitions_unavailable"`` with no raw Jira body,
+    and a failed snapshot search still raises ``IssueTransitionServiceError``.
     """
     keys = normalize_issue_keys(issue_keys)
-    snapshots = load_issue_snapshots(keys, search_request=search_request, context=context)
-    fetched = _run_bounded_pool(keys, _make_options_worker(jira_request), context)
+    with ThreadPoolExecutor(max_workers=1) as snapshot_pool:
+        snapshot_future = snapshot_pool.submit(
+            load_issue_snapshots, keys, search_request=search_request, context=context,
+        )
+        fetched = _run_bounded_pool(keys, _make_options_worker(jira_request), context)
+        snapshots = snapshot_future.result()
 
     issues = []
     for key in keys:

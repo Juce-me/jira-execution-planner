@@ -71,6 +71,8 @@ fnm exec --using 20 npx playwright test tests/ui/dom_parity_helpers.spec.js --br
 
 `captureDomParity` in `ui/dom_parity_helpers.js` writes only when `JEP_DOM_PARITY_DIR` is set. Use two fresh ignored directories and run every instrumented spec in the extraction plan's DOM parity command, then compare nonempty matching filename lists and `diff -r`. Settings fixtures serve the source bundle; captures include every Settings subsection, a dirty Department draft, conflict/discard states, separate preserved-draft and auth-recovery roots, and first-run selection/saving/guide states. React identity normalization preserves reference relationships and live form values; invalid references or duplicate output labels fail before replacing a capture. Only the documented inactive-tab exceptions and app-owned EPM fetched-time readout are normalized.
 
+Scenario characterization in `ui/scenario_draft_history.spec.js` covers eight timeline states with a visible forward dependency, overlapping same-assignee work, and a nonconflicting bar that Conflicts Only removes and restores. `ui/scenario_draft_collaboration.spec.js` captures mounted presence, advisory-lock, dirty-conflict and blocked-writeback states, and pins Assignee mode after switching groups away and back. Set `JEP_SCENARIO_SCREENSHOT_DIR` to a fresh ignored directory for the headed review; the eight-state screenshot test allows 60 seconds for its repeated visual-settle waits, while ordinary behavior/parity runs retain the default timeout. The inactive `scenario_focus_positions.spec.js` remains untouched and does not load real fixtures.
+
 ## Test Categories
 
 ### Unit Tests

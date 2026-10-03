@@ -2,6 +2,7 @@ const { test, expect } = require('@playwright/test');
 const esbuild = require('esbuild');
 const fs = require('fs');
 const path = require('path');
+const { captureDomParity } = require('./dom_parity_helpers');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
@@ -472,7 +473,15 @@ async function installDashboardFromSource(page, options = {}) {
         if (url.pathname === '/api/me/connections/home-token') return json(route, { connected: false });
         if (url.pathname === '/api/scenario' && method === 'POST') {
             scenarioPosts.push(requestBody(request));
-            return json(route, scenarioPayload());
+            const payload = scenarioPayload();
+            if (options.dependencies) payload.dependencies = options.dependencies;
+            if (options.issueOverrides) {
+                payload.issues = payload.issues.map(issue => ({
+                    ...issue,
+                    ...(options.issueOverrides[issue.key] || {}),
+                }));
+            }
+            return json(route, payload);
         }
         if (url.pathname === '/api/scenario/drafts' && method === 'GET') {
             return json(route, draftMetadata);
@@ -1087,4 +1096,86 @@ test('changed private view reloads clean immediately when nothing unsaved would 
     await expect.poll(() => documents).toBe(documentsBefore + 1);
     await expect(page.getByText('The active workspace or private view changed')).toHaveCount(0);
     expect(await page.evaluate(() => sessionStorage.getItem('jira_dashboard_connection_recovery_v1'))).toBeNull();
+});
+
+test('Scenario lane modes, forward edge, epic focus, tooltip, and conflict filter', async ({ page }) => {
+    if (process.env.JEP_SCENARIO_SCREENSHOT_DIR) test.setTimeout(60000);
+    await installDashboardFromSource(page, {
+        dependencies: [{ from: 'PROD-1', to: 'PROD-2' }],
+        issueOverrides: {
+            'PROD-2': {
+                summary: 'Nonconflicting dependent work',
+                team: 'Scenario Team 1',
+                assignee: 'Dependency Owner',
+                start: '2026-04-12',
+                end: '2026-04-15',
+            },
+            'PROD-3': {
+                summary: 'Overlapping scenario work',
+                team: 'Scenario Team 1',
+                assignee: 'Alpha Owner',
+                start: '2026-04-07',
+                end: '2026-04-10',
+            },
+        },
+    });
+    await openScenario(page);
+    const root = '.scenario-fullbleed';
+    const captureState = async label => {
+        await captureDomParity(page, label, root);
+        if (process.env.JEP_SCENARIO_SCREENSHOT_DIR) await captureScenarioScreenshot(page, label);
+    };
+    const laneButton = name => page.locator('.scenario-toggle-group').getByRole('button', { name, exact: true });
+    const original = page.locator('.scenario-bar', { hasText: 'Build product scenario path' }).first();
+    const overlapping = page.locator('.scenario-bar', { hasText: 'Overlapping scenario work' }).first();
+    const nonconflicting = page.locator('.scenario-bar', { hasText: 'Nonconflicting dependent work' }).first();
+
+    // All teams starts collapsed. This fixture puts all three asserted bars in one lane.
+    const laneLabel = page.locator('.scenario-lane-label').first();
+    await expect(laneLabel).toHaveAttribute('aria-expanded', 'false');
+    await captureState('scenario-team-collapsed-lanes');
+    await laneLabel.click();
+    await expect(laneLabel).toHaveAttribute('aria-expanded', 'true');
+    await expect(original).toBeVisible();
+    await expect(overlapping).toBeVisible();
+    await expect(nonconflicting).toBeVisible();
+    // The dependent starts strictly after the prerequisite ends, so the edge can render.
+    await expect(page.locator('.scenario-edge').first()).toBeVisible();
+    await captureState('scenario-team-expanded-lane-edges');
+
+    await laneButton('Epic').click();
+    const epicBar = page.locator('.scenario-epic-bar').first();
+    await expect(epicBar).toBeVisible();
+    await captureState('scenario-epic-lanes');
+    await epicBar.click();
+    await expect(page.locator('.scenario-focus-indicator')).toBeVisible();
+    await captureState('scenario-epic-focus');
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.scenario-focus-indicator')).toHaveCount(0);
+
+    await laneButton('Assignee').click();
+    await expect(page.locator('.scenario-lane-label').first()).toContainText('Alpha Owner');
+    await captureState('scenario-assignee-lanes');
+    await laneButton('Team').click();
+
+    await original.hover();
+    await expect(page.locator('.scenario-tooltip.visible')).toBeVisible();
+    await captureState('scenario-tooltip');
+
+    await expect(original).toHaveClass(/assignee-conflict/);
+    await expect(overlapping).toHaveClass(/assignee-conflict/);
+    await expect(nonconflicting).not.toHaveClass(/assignee-conflict/);
+    const conflictsOnly = page.getByRole('button', { name: 'Conflicts Only', exact: true });
+    await conflictsOnly.click();
+    await expect(original).toBeVisible();
+    await expect(overlapping).toBeVisible();
+    await expect(page.locator('.scenario-bar')).toHaveCount(2);
+    await expect(nonconflicting).toHaveCount(0);
+    await captureState('scenario-conflicts-only');
+
+    await conflictsOnly.click();
+    await expect(original).toBeVisible();
+    await expect(overlapping).toBeVisible();
+    await expect(nonconflicting).toBeVisible();
+    await captureState('scenario-conflicts-restored');
 });

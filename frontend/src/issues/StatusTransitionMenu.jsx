@@ -12,6 +12,8 @@ import { getIssueStatusClassName, normalizeIssueStatus } from './issueViewUtils.
 // ENG status-transition surface is enabled; passive surfaces (EPM, Stats, Scenario,
 // Settings open) keep rendering the plain <StatusPill> span at the call site instead.
 
+// A mouse resting on the pill this long is about to open it; sweeping past does not warm anything.
+const PREFETCH_HOVER_DWELL_MS = 120;
 const TOO_MANY_ISSUES_MESSAGE = 'Too many issues selected. Narrow your selection, then try again.';
 const STATUS_SORT_RANK = new Map([
     ['pending', 10],
@@ -107,6 +109,7 @@ export default function StatusTransitionMenu({
     result = null,
     targetsCount = 0,
     onOpen,
+    onPrefetch,
     onClose,
     onSubmit,
     portalTarget = null,
@@ -148,6 +151,20 @@ export default function StatusTransitionMenu({
         ? `Apply to selected ${targetsCount === 1 ? 'target' : 'targets'} (${targetsCount})`
         : 'Apply';
 
+    // Warm the options before the click lands: a mouse that rests on the pill for the dwell is about
+    // to open it. Pressing cancels the dwell, so a click never races its own prefetch. The hook skips
+    // cached, in-flight and over-cap requests.
+    const prefetchTimerRef = React.useRef(null);
+    const cancelPrefetchDwell = () => {
+        window.clearTimeout(prefetchTimerRef.current);
+        prefetchTimerRef.current = null;
+    };
+    const prefetchOptions = () => {
+        cancelPrefetchDwell();
+        if (!isOpen && !previewDescriptor) onPrefetch?.(issue, fallbackIssueType);
+    };
+    React.useEffect(() => cancelPrefetchDwell, []);
+
     const handleTriggerClick = () => {
         if (isOpen) {
             onClose?.();
@@ -174,6 +191,11 @@ export default function StatusTransitionMenu({
                 className={statusClassName}
                 label={statusLabel}
                 onClick={handleTriggerClick}
+                onPointerEnter={(event) => {
+                    if (event.pointerType === 'mouse' && onPrefetch) prefetchTimerRef.current = window.setTimeout(prefetchOptions, PREFETCH_HOVER_DWELL_MS);
+                }}
+                onPointerLeave={cancelPrefetchDwell}
+                onPointerDown={cancelPrefetchDwell}
                 aria-haspopup="menu"
                 aria-expanded={isOpen}
                 data-status-transition-trigger="true"

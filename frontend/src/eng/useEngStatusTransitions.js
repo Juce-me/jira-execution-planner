@@ -22,6 +22,15 @@ const EMPTY_OPTIONS_REQUEST = { controller: null, signature: '' };
 // wholesale on scope changes.
 const transitionOptionsCache = new Map();
 
+// Option fetches started speculatively when a mouse rests on a status pill, so the click that
+// follows finds them cached or already on the wire. Keyed by the same signature as the
+// cache; capped because a pointer sweeping across a long list must not fan out Jira calls.
+const MAX_PREFETCH_IN_FLIGHT = 2;
+const transitionOptionsPrefetches = new Map();
+// Signatures a prefetch filled that no menu open has consumed yet: the first open of one still
+// reports status_options_open, as it would have had the open itself fetched the options.
+const transitionOptionsPrefetched = new Set();
+
 // Per-issue-key signature for degenerate elements: raw key strings, or targets carrying
 // neither issueType nor currentStatus (e.g. submit's explicit-key fallback shape).
 // Distinct from every project|type|status tuple, so a context-less element can never
@@ -52,10 +61,35 @@ export function transitionOptionCacheKey(targets) {
         .join(',');
 }
 
+// Passive warm-up for a status pill the user is about to open. Skips cached, already-fetching and
+// over-cap targets and never touches React state or analytics. A failure is swallowed and not
+// cached, so an open after it retries; an open that joins the request while it is still on the
+// wire shares its outcome, error included, instead of sending a second request.
+export function prefetchTransitionOptions(backendUrl, targets) {
+    const list = Array.isArray(targets) ? targets : [];
+    const keys = Array.from(new Set(list.map((t) => String(t?.key || t || '').trim()).filter(Boolean))).sort();
+    const signature = transitionOptionCacheKey(list);
+    if (!keys.length
+        || transitionOptionsCache.has(signature)
+        || transitionOptionsPrefetches.has(signature)
+        || transitionOptionsPrefetches.size >= MAX_PREFETCH_IN_FLIGHT
+        || readPendingAuthenticationRequired()) {
+        return null;
+    }
+    const request = fetchIssueTransitionOptions(backendUrl, keys).then((response) => {
+        transitionOptionsCache.set(signature, response);
+        transitionOptionsPrefetched.add(signature);
+        return response;
+    });
+    transitionOptionsPrefetches.set(signature, request);
+    return request.catch(() => null).finally(() => transitionOptionsPrefetches.delete(signature));
+}
+
 // Test/auth-recovery escape hatch mirroring clearPriorityOptionsCache in
 // useEngPriorityTransitions.js.
 export function clearTransitionOptionsCache() {
     transitionOptionsCache.clear();
+    transitionOptionsPrefetched.clear();
 }
 
 // React state for ENG single-issue status changes (Catch Up, Board, and Planning Epic and
@@ -141,8 +175,15 @@ export function useEngStatusTransitions({
             return null;
         }
 
+        const trackOptionsOpen = () => trackIssueStatusAction('status_options_open', buildStatusActionAnalyticsParams({
+            sourceSurface,
+            targets: list,
+            selectedStories,
+        }));
+
         if (transitionOptionsCache.has(signature)) {
             const cached = transitionOptionsCache.get(signature);
+            if (transitionOptionsPrefetched.delete(signature)) trackOptionsOpen();
             setTransitionOptions(cached);
             setTransitionOptionsLoading(false);
             setTransitionError('');
@@ -155,18 +196,20 @@ export function useEngStatusTransitions({
         setTransitionOptionsLoading(true);
         setTransitionError('');
         setTransitionErrorCode('');
-        trackIssueStatusAction('status_options_open', buildStatusActionAnalyticsParams({
-            sourceSurface,
-            targets: list,
-            selectedStories,
-        }));
+        trackOptionsOpen();
 
         try {
-            const response = await fetchIssueTransitionOptions(backendUrl, keys, { signal: controller.signal });
+            // Join a prefetch already on the wire for this signature instead of sending a second
+            // request; a failure of that shared request surfaces here like any other options error.
+            const prefetched = transitionOptionsPrefetches.get(signature);
+            const response = prefetched
+                ? await prefetched
+                : await fetchIssueTransitionOptions(backendUrl, keys, { signal: controller.signal });
             if (optionsRequestRef.current.controller !== controller) {
                 return null; // Superseded by a newer request; drop this stale response.
             }
             transitionOptionsCache.set(signature, response);
+            transitionOptionsPrefetched.delete(signature);
             setTransitionOptions(response);
             return response;
         } catch (err) {
@@ -195,6 +238,12 @@ export function useEngStatusTransitions({
         activeSingleIssueTargetRef.current = target;
         void loadTransitionOptions([target]);
     }, [loadTransitionOptions]);
+
+    const prefetchSingleIssueStatusOptions = React.useCallback((issue, fallbackIssueType) => {
+        const target = buildCatchUpStatusTargets(issue, fallbackIssueType);
+        if (!target || optionsRequestRef.current.signature === transitionOptionCacheKey([target])) return;
+        void prefetchTransitionOptions(backendUrl, [target]);
+    }, [backendUrl]);
 
     const closeSingleIssueStatusControl = React.useCallback(() => {
         setActiveSingleIssueTarget(null);
@@ -397,6 +446,7 @@ export function useEngStatusTransitions({
         sourceSurface,
         activeSingleIssueTarget,
         openSingleIssueStatusControl,
+        prefetchSingleIssueStatusOptions,
         closeSingleIssueStatusControl,
         transitionOptions,
         transitionOptionsLoading,

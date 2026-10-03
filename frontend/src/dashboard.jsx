@@ -12708,7 +12708,7 @@ import {
             });
             const {
                 activeSingleIssueTarget: statusTransitionActiveTarget,
-                openSingleIssueStatusControl, closeSingleIssueStatusControl,
+                openSingleIssueStatusControl, prefetchSingleIssueStatusOptions, closeSingleIssueStatusControl,
                 transitionOptions, transitionOptionsLoading,
                 transitionError, transitionErrorCode, transitionResult,
                 pendingIssueKeys: pendingStatusIssueKeys, submitStatusTransition,
@@ -14562,7 +14562,7 @@ import {
                     statusLabel={row.status} statusClassName={getIssueStatusClassName(row.status)} sourceSurface="planning" isOpen={statusTransitionActiveKey === row.key}
                     options={transitionOptions} optionsLoading={transitionOptionsLoading} submitting={statusTransitionSubmitting || pendingStatusIssueKeys.has(row.key)}
                     error={transitionError} errorCode={transitionErrorCode} result={transitionResult} targetsCount={row.rowKind === 'story' ? statusTransitionTargetsCount : 1}
-                    onOpen={openSingleIssueStatusControl} onClose={closeSingleIssueStatusControl} onSubmit={submitStatusTransition} />;
+                    onOpen={openSingleIssueStatusControl} onPrefetch={prefetchSingleIssueStatusOptions} onClose={closeSingleIssueStatusControl} onSubmit={submitStatusTransition} />;
                 if (field === 'priority') return <PriorityTransitionMenu
                     issue={{ key: row.key, priority: row.priority, summary: row.summary }} fallbackIssueType={row.rowKind === 'epic' ? 'Epic' : 'Story'}
                     priorityLabel={row.priority} currentPriorityLabel={row.priority} renderPriorityIcon={renderPriorityIcon}
@@ -14834,7 +14834,7 @@ import {
                                                                     error={transitionError}
                                                                     errorCode={transitionErrorCode}
                                                                     result={transitionResult}
-                                                                    onOpen={openSingleIssueStatusControl}
+                                                                    onOpen={openSingleIssueStatusControl} onPrefetch={prefetchSingleIssueStatusOptions}
                                                                     onClose={closeSingleIssueStatusControl}
                                                                     onSubmit={(targetStatus) => handleSubmitStatusTransition(targetStatus, { key: epicGroup.key }, { singleIssue: true })}
                                                                     previewOnly={onboardingPreviewSession}
@@ -14924,7 +14924,7 @@ import {
                                             statusTransitionResult={transitionResult}
                                             statusTransitionTargetsCount={statusTransitionTargetsCount}
                                             statusTransitionPendingIssueKeys={pendingStatusIssueKeys}
-                                            onOpenStatusTransition={openSingleIssueStatusControl}
+                                            onOpenStatusTransition={openSingleIssueStatusControl} onPrefetchStatusTransition={prefetchSingleIssueStatusOptions}
                                             onCloseStatusTransition={closeSingleIssueStatusControl}
                                             onSubmitStatusTransition={handleSubmitStatusTransition}
                                             priorityTransitionEnabled={priorityTransitionEnabled}

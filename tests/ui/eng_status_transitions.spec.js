@@ -155,6 +155,7 @@ function partialTransition(body) {
 async function installEngStatusFixture(page, {
     optionsStatus = 200,
     optionsBody = defaultOptionsBody,
+    optionsDelayMs = 0,
     transitions = successTransition,
     transitionDelayMs = 0,
     stories = null,
@@ -251,6 +252,7 @@ async function installEngStatusFixture(page, {
         if (url.pathname === '/api/analytics/context') return json(route, { enabled: false });
         if (url.pathname === '/api/issues/transitions/options') {
             const payload = typeof optionsBody === 'function' ? optionsBody(body) : optionsBody;
+            if (optionsDelayMs) await new Promise(resolve => setTimeout(resolve, optionsDelayMs));
             return json(route, payload, optionsStatus);
         }
         if (url.pathname === '/api/issues/transitions') {
@@ -555,6 +557,52 @@ test('Catch Up status menu reuses fetched options and changes status on option c
     const mutation = transitionCalls(calls)[0];
     expect(mutation.body.issueKeys).toEqual(['PROD-1']);
     expect(mutation.body.targetStatus).toBe('In Progress');
+});
+
+test('hovering a status pill warms its options so the click opens them without another request', async ({ page }) => {
+    await setPrefs(page, catchUpPrefs());
+    const { calls } = await installEngStatusFixture(page);
+    await page.goto(appBaseUrl);
+    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+    const optionCalls = () => calls.filter(c => c.pathname === '/api/issues/transitions/options');
+    expect(optionCalls()).toHaveLength(0);
+
+    await trigger(page, 'story', 'PROD-1').hover();
+    await expect.poll(() => optionCalls().length).toBe(1);
+    await expect(menu(page, 'PROD-1')).toHaveCount(0);
+
+    await trigger(page, 'story', 'PROD-1').click();
+    await expect(menu(page, 'PROD-1').getByRole('menuitem', { name: 'In Progress' })).toBeVisible();
+    await expect(menu(page, 'PROD-1').locator('.status-transition-menu-loading')).toHaveCount(0);
+    expect(optionCalls()).toHaveLength(1);
+});
+
+test('a click while the hover prefetch is still on the wire joins it instead of sending a second request', async ({ page }) => {
+    await setPrefs(page, catchUpPrefs());
+    const { calls } = await installEngStatusFixture(page, { optionsDelayMs: 1500 });
+    await page.goto(appBaseUrl);
+    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+    const optionCalls = () => calls.filter(c => c.pathname === '/api/issues/transitions/options');
+
+    await trigger(page, 'story', 'PROD-1').hover();
+    await expect.poll(() => optionCalls().length).toBe(1);
+    await trigger(page, 'story', 'PROD-1').click();
+    await expect(menu(page, 'PROD-1').locator('.status-transition-menu-loading')).toBeVisible();
+    await expect(menu(page, 'PROD-1').getByRole('menuitem', { name: 'In Progress' })).toBeVisible();
+    expect(optionCalls()).toHaveLength(1);
+});
+
+test('a pointer sweeping across a status pill without resting sends no options request', async ({ page }) => {
+    await setPrefs(page, catchUpPrefs());
+    const { calls } = await installEngStatusFixture(page);
+    await page.goto(appBaseUrl);
+    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+
+    const box = await trigger(page, 'story', 'PROD-1').boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.move(box.x + box.width / 2, box.y - 40);
+    await page.waitForTimeout(400);
+    expect(calls.filter(c => c.pathname === '/api/issues/transitions/options')).toHaveLength(0);
 });
 
 test('Catch Up applies rapid Story status changes optimistically without task-list refetches', async ({ page }) => {

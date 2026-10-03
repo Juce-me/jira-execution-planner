@@ -223,6 +223,7 @@ export default function EngBoardEpicPanel({
                 errorCode={statusTransitions.transitionErrorCode}
                 result={statusTransitions.transitionResult}
                 onOpen={statusTransitions.openSingleIssueStatusControl}
+                onPrefetch={statusTransitions.prefetchSingleIssueStatusOptions}
                 onClose={statusTransitions.closeSingleIssueStatusControl}
                 onSubmit={(targetStatus) => onSubmitStatusTransition?.(targetStatus, task)}
                 portalTarget={panelRef.current}
@@ -351,6 +352,7 @@ export default function EngBoardEpicPanel({
                                 errorCode={statusTransitions.transitionErrorCode}
                                 result={statusTransitions.transitionResult}
                                 onOpen={statusTransitions.openSingleIssueStatusControl}
+                                onPrefetch={statusTransitions.prefetchSingleIssueStatusOptions}
                                 onClose={statusTransitions.closeSingleIssueStatusControl}
                                 onSubmit={(targetStatus) => onSubmitStatusTransition?.(targetStatus, { key: epicKey })}
                                 portalTarget={panelRef.current}

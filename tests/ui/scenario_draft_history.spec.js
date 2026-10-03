@@ -2,6 +2,7 @@ const { test, expect } = require('@playwright/test');
 const esbuild = require('esbuild');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('node:crypto');
 const { captureDomParity } = require('./dom_parity_helpers');
 
 const repoRoot = path.join(__dirname, '..', '..');
@@ -13,6 +14,20 @@ const selectedSprintId = 34625;
 const selectedSprintName = '2026Q2 Sprint 42';
 const scopeKey = `${selectedSprintId}:grp-default`;
 
+const runtimeWorkDir = process.env.JEP_EXTRACTION_PERF_DIR;
+const runtimeCounterNames = [
+    'renders', 'edgeRequests', 'edgeFrames', 'edgeComputes',
+    'layoutReads', 'scrollReads', 'laneStacking', 'statsBuild',
+];
+const runtimeWorkLabels = [
+    'scenario-startup', 'scenario-run', 'scenario-team-collapsed-lanes',
+    'scenario-team-expanded-lane-edges', 'scenario-epic-lanes', 'scenario-epic-focus',
+    'scenario-assignee-lanes', 'scenario-tooltip', 'scenario-conflicts-only',
+    'scenario-conflicts-restored', 'scenario-idle-5s',
+];
+const runtimeAdapterAnchor = 'const perfStateLastRef = useRef({});';
+const runtimeAdapter = 'if (perfEnabled) window.__JEP_EXTRACTION_PERF__ = () => ({ ...perfCountersRef.current });';
+let runtimeBundle;
 let dashboardJs;
 const unexpectedApiRequestsByPage = new WeakMap();
 
@@ -27,6 +42,57 @@ test.beforeAll(() => {
         define: { 'process.env.NODE_ENV': '"test"' },
     });
     dashboardJs = result.outputFiles[0].text;
+    if (runtimeWorkDir) {
+        const sourceRelative = process.env.JEP_EXTRACTION_PERF_SOURCE_ROOT || '.';
+        const sourceRoot = path.resolve(repoRoot, sourceRelative);
+        const relativeRoot = path.relative(repoRoot, sourceRoot);
+        expect(path.isAbsolute(sourceRelative), 'source root must be repo-relative').toBe(false);
+        expect(relativeRoot === '..' || relativeRoot.startsWith(`..${path.sep}`), 'source root must stay inside repository').toBe(false);
+        const sourceSha = process.env.JEP_EXTRACTION_PERF_SOURCE_SHA || '';
+        expect(sourceSha, 'record the exact source SHA verified by the operator').toMatch(/^[a-f0-9]{40}$/);
+        const command = process.env.JEP_EXTRACTION_PERF_COMMAND;
+        expect(command, 'record the exact runtime probe command').toBeTruthy();
+        const entry = path.join(sourceRoot, 'frontend', 'src', 'dashboard.jsx');
+        const contents = fs.readFileSync(entry, 'utf8');
+        expect(contents.split(runtimeAdapterAnchor).length - 1, 'runtime adapter anchor must occur exactly once').toBe(1);
+        const adapted = esbuild.buildSync({
+            stdin: {
+                contents: contents.replace(runtimeAdapterAnchor, `${runtimeAdapterAnchor}\n${runtimeAdapter}`),
+                resolveDir: path.dirname(entry),
+                sourcefile: entry,
+                loader: 'jsx',
+            },
+            bundle: true,
+            write: false,
+            metafile: true,
+            nodePaths: [path.join(repoRoot, 'node_modules')],
+            format: 'iife',
+            loader: { '.css': 'empty' },
+            define: { 'process.env.NODE_ENV': '"test"' },
+        });
+        const sourceCss = esbuild.buildSync({
+            entryPoints: [path.join(sourceRoot, 'frontend', 'src', 'styles', 'dashboard.css')],
+            bundle: true,
+            write: false,
+        }).outputFiles[0].text;
+        const digest = value => crypto.createHash('sha256').update(value).digest('hex');
+        const sourceInputs = Object.keys(adapted.metafile.inputs).filter(file => file !== entry && file !== '<stdin>').map(file => {
+            const absolute = path.resolve(file);
+            return { path: path.relative(repoRoot, absolute), sha256: digest(fs.readFileSync(absolute)) };
+        });
+        runtimeBundle = {
+            js: adapted.outputFiles[0].text,
+            css: sourceCss,
+            html: fs.readFileSync(path.join(sourceRoot, 'jira-dashboard.html'), 'utf8'),
+            metadata: {
+                sourceSha, sourceRoot: sourceRelative, command, adapterAnchor: runtimeAdapterAnchor,
+                nodeVersion: process.version, playwrightVersion: require('@playwright/test/package.json').version,
+                esbuildVersion: esbuild.version, sourceShaVerifiedBy: 'operator',
+                dashboardSourceSha256: digest(contents), sourceInputs,
+                bundleSha256: digest(adapted.outputFiles[0].text), cssSha256: digest(sourceCss),
+            },
+        };
+    }
 });
 
 test.afterEach(({ page }) => {
@@ -287,6 +353,8 @@ async function installDashboardFromSource(page, options = {}) {
     const versionRequests = [];
     const rollbackPosts = [];
     const unexpectedApiRequests = [];
+    const apiRequests = [];
+    const apiRequestStartedAt = options.runtimeStartedAt || Date.now();
     unexpectedApiRequestsByPage.set(page, unexpectedApiRequests);
     let csrfCount = 0;
     let sprintsUnavailable = false;
@@ -367,25 +435,25 @@ async function installDashboardFromSource(page, options = {}) {
         };
     };
 
-    await page.route(/https?:\/\/[^/]+\/$/, route => route.fulfill({
+    await page.route(/https?:\/\/[^/]+\/(?:\?[^#]*)?$/, route => route.fulfill({
         status: 200,
         contentType: 'text/html',
-        body: dashboardHtml,
+        body: options.runtimeBundle?.html || dashboardHtml,
     }));
     await page.route('**/jira-dashboard.html', route => route.fulfill({
         status: 200,
         contentType: 'text/html',
-        body: dashboardHtml,
+        body: options.runtimeBundle?.html || dashboardHtml,
     }));
     await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({
         status: 200,
         contentType: 'application/javascript',
-        body: dashboardJs,
+        body: options.runtimeBundle?.js || dashboardJs,
     }));
     await page.route('**/frontend/dist/dashboard.css', route => route.fulfill({
         status: 200,
         contentType: 'text/css',
-        body: dashboardCss,
+        body: options.runtimeBundle?.css || dashboardCss,
     }));
     await page.route('**/epm-burst.svg', route => route.fulfill({
         status: 200,
@@ -404,6 +472,7 @@ async function installDashboardFromSource(page, options = {}) {
         const request = route.request();
         const url = new URL(request.url());
         const method = request.method();
+        apiRequests.push({ method, path: url.pathname, elapsedMs: Date.now() - apiRequestStartedAt });
 
         if (url.pathname === '/api/scenario/overrides') {
             unexpectedApiRequests.push(`${method} ${url.pathname}`);
@@ -623,6 +692,8 @@ async function installDashboardFromSource(page, options = {}) {
     });
 
     return {
+        apiRequests,
+        unexpectedApiRequests,
         draftPosts,
         rollbackPosts,
         scenarioPosts,
@@ -664,7 +735,7 @@ async function openScenarioWithDirtyDraft(page) {
     await expect(page.locator('.scenario-dirty-indicator', { hasText: '1 override' })).toBeVisible();
 }
 
-async function openScenario(page) {
+async function openScenario(page, runtimeProbe) {
     await page.setViewportSize({ width: 1280, height: 860 });
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
@@ -677,11 +748,13 @@ async function openScenario(page) {
         showScenario: true,
     });
 
-    await page.goto(appBaseUrl, { waitUntil: 'networkidle' });
+    await page.goto(runtimeProbe ? `${appBaseUrl}/?perf=1` : appBaseUrl, { waitUntil: 'networkidle' });
+    if (runtimeProbe) await runtimeProbe.capture('scenario-startup');
     await page.getByRole('radio', { name: 'Scenario' }).click();
     await page.getByRole('button', { name: 'Run Scenario' }).click();
     await expect(page.locator('.scenario-bar', { hasText: 'Build product scenario path' }).first()).toBeVisible();
     await expect(page.getByRole('button', { name: 'History', exact: true })).toBeEnabled();
+    if (runtimeProbe) await runtimeProbe.capture('scenario-run');
 }
 
 test('history opened after Run Scenario keeps Scenario layout sticky and scoped', async ({ page }) => {
@@ -1098,32 +1171,38 @@ test('changed private view reloads clean immediately when nothing unsaved would 
     expect(await page.evaluate(() => sessionStorage.getItem('jira_dashboard_connection_recovery_v1'))).toBeNull();
 });
 
-test('Scenario lane modes, forward edge, epic focus, tooltip, and conflict filter', async ({ page }) => {
-    if (process.env.JEP_SCENARIO_SCREENSHOT_DIR) test.setTimeout(60000);
-    await installDashboardFromSource(page, {
-        dependencies: [{ from: 'PROD-1', to: 'PROD-2' }],
-        issueOverrides: {
-            'PROD-2': {
-                summary: 'Nonconflicting dependent work',
-                team: 'Scenario Team 1',
-                assignee: 'Dependency Owner',
-                start: '2026-04-12',
-                end: '2026-04-15',
-            },
-            'PROD-3': {
-                summary: 'Overlapping scenario work',
-                team: 'Scenario Team 1',
-                assignee: 'Alpha Owner',
-                start: '2026-04-07',
-                end: '2026-04-10',
-            },
+const scenarioTimelineFixtureOptions = {
+    dependencies: [{ from: 'PROD-1', to: 'PROD-2' }],
+    issueOverrides: {
+        'PROD-2': {
+            summary: 'Nonconflicting dependent work',
+            team: 'Scenario Team 1',
+            assignee: 'Dependency Owner',
+            start: '2026-04-12',
+            end: '2026-04-15',
         },
+        'PROD-3': {
+            summary: 'Overlapping scenario work',
+            team: 'Scenario Team 1',
+            assignee: 'Alpha Owner',
+            start: '2026-04-07',
+            end: '2026-04-10',
+        },
+    },
+};
+
+async function characterizeScenarioTimeline(page, runtimeProbe) {
+    const fixture = await installDashboardFromSource(page, {
+        ...(runtimeProbe ? { runtimeBundle, runtimeStartedAt: runtimeProbe.startedAt } : {}),
+        ...scenarioTimelineFixtureOptions,
     });
-    await openScenario(page);
+    if (runtimeProbe) runtimeProbe.fixture = fixture;
+    await openScenario(page, runtimeProbe);
     const root = '.scenario-fullbleed';
     const captureState = async label => {
         await captureDomParity(page, label, root);
         if (process.env.JEP_SCENARIO_SCREENSHOT_DIR) await captureScenarioScreenshot(page, label);
+        if (runtimeProbe) await runtimeProbe.capture(label);
     };
     const laneButton = name => page.locator('.scenario-toggle-group').getByRole('button', { name, exact: true });
     const original = page.locator('.scenario-bar', { hasText: 'Build product scenario path' }).first();
@@ -1178,4 +1257,75 @@ test('Scenario lane modes, forward edge, epic focus, tooltip, and conflict filte
     await expect(overlapping).toBeVisible();
     await expect(nonconflicting).toBeVisible();
     await captureState('scenario-conflicts-restored');
+}
+
+test('Scenario lane modes, forward edge, epic focus, tooltip, and conflict filter', async ({ page }) => {
+    if (process.env.JEP_SCENARIO_SCREENSHOT_DIR) test.setTimeout(60000);
+    await characterizeScenarioTimeline(page);
+});
+
+test('Scenario runtime-work baseline', async ({ page, browser }, testInfo) => {
+    test.skip(!runtimeWorkDir, 'opt-in runtime-work campaign requires a fresh output directory and source metadata');
+    test.setTimeout(60000);
+    expect(testInfo.project.use.browserName || 'chromium').toBe('chromium');
+    expect(path.isAbsolute(runtimeWorkDir), 'runtime output must be repo-relative ignored tmp data').toBe(false);
+    const output = path.resolve(repoRoot, runtimeWorkDir);
+    expect(path.relative(path.join(repoRoot, 'tmp'), output).startsWith('..'), 'runtime output must stay under ignored tmp').toBe(false);
+    fs.mkdirSync(path.dirname(output), { recursive: true });
+    fs.mkdirSync(output);
+    const writeExclusive = (name, value) => fs.writeFileSync(path.join(output, name), `${JSON.stringify(value, null, 2)}\n`, { flag: 'wx' });
+    writeExclusive('metadata.json', {
+        ...runtimeBundle.metadata,
+        browser: { name: 'chromium', version: browser.version(), headless: testInfo.project.use.headless !== false },
+        viewport: { width: 1280, height: 860 },
+        fixture: { base: scenarioPayload(), ...scenarioTimelineFixtureOptions, selectedSprintId, selectedSprintName, scopeKey },
+        labels: runtimeWorkLabels,
+        counters: {
+            renders: 'instrumented App render entries', edgeRequests: 'edge scheduling requests',
+            edgeFrames: 'accepted edge frames', edgeComputes: 'instrumented edge computes',
+            layoutReads: 'instrumented layout callbacks', scrollReads: 'instrumented scroll callbacks',
+            laneStacking: 'instrumented lane stacking builds', statsBuild: 'instrumented statistics builds',
+        },
+        limitations: 'Counts exclude uninstrumented component renders/DOM reads and are not CPU or latency measurements. Normal polling and presence timers remain active.',
+    });
+    let previous = Object.fromEntries(runtimeCounterNames.map(name => [name, 0]));
+    let previousElapsedMs = 0;
+    const samples = [];
+    const startedAt = Date.now();
+    const probe = {
+        startedAt,
+        fixture: null,
+        async capture(label, settle = true) {
+            expect(samples.map(sample => sample.label), `duplicate runtime label ${label}`).not.toContain(label);
+            expect(runtimeWorkLabels[samples.length], 'runtime labels must occur once in the required order').toBe(label);
+            if (settle) await waitForVisualSettled(page);
+            const snapshot = await page.evaluate(() => {
+                if (typeof window.__JEP_EXTRACTION_PERF__ !== 'function') throw new Error('runtime counter adapter is missing');
+                return window.__JEP_EXTRACTION_PERF__();
+            });
+            expect(Object.keys(snapshot).sort()).toEqual([...runtimeCounterNames].sort());
+            for (const name of runtimeCounterNames) {
+                expect(Number.isSafeInteger(snapshot[name]) && snapshot[name] >= previous[name], `nonmonotonic counter ${name}`).toBe(true);
+            }
+            const elapsedMs = Date.now() - startedAt;
+            const sample = {
+                label, elapsedMs, phaseElapsedMs: elapsedMs - previousElapsedMs,
+                cumulative: snapshot,
+                delta: Object.fromEntries(runtimeCounterNames.map(name => [name, snapshot[name] - previous[name]])),
+                apiRequests: [...probe.fixture.apiRequests],
+            };
+            writeExclusive(`${label}.json`, sample);
+            samples.push(sample);
+            previous = { ...snapshot };
+            previousElapsedMs = elapsedMs;
+        },
+    };
+    await characterizeScenarioTimeline(page, probe);
+    // The final settled action snapshot is the idle phase baseline; never reset production refs.
+    await page.waitForTimeout(5000);
+    await probe.capture('scenario-idle-5s', false);
+    expect(samples.map(sample => sample.label)).toEqual(runtimeWorkLabels);
+    expect(probe.fixture.unexpectedApiRequests).toEqual([]);
+    expect(probe.fixture.scenarioPosts).toHaveLength(1);
+    writeExclusive('summary.json', { sourceSha: runtimeBundle.metadata.sourceSha, samples, unexpectedApiRequests: probe.fixture.unexpectedApiRequests });
 });

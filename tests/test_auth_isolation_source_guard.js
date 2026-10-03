@@ -1,7 +1,11 @@
 const fs = require('fs');
 const assert = require('assert');
+const path = require('node:path');
+const { readOwnerSource, repoRoot } = require('./frontend_source_helpers');
 
 const source = fs.readFileSync('frontend/src/dashboard.jsx', 'utf8');
+const ownerPaths = ['frontend/src/dashboard.jsx', 'frontend/src/scenario', 'frontend/src/settings'];
+const ownerSource = readOwnerSource(ownerPaths, { anchor: 'readPendingAuthenticationRequired' });
 const gateSource = fs.readFileSync('frontend/src/components/AuthRequiredGate.jsx', 'utf8');
 const authRequiredSource = fs.readFileSync('frontend/src/api/authRequired.js', 'utf8');
 const resumeSource = fs.readFileSync('frontend/src/api/authResumeState.js', 'utf8');
@@ -9,33 +13,33 @@ const coordinatorSource = fs.readFileSync('frontend/src/api/authRecoveryCoordina
 const localStorageAtlassianPattern = /localStorage[\s\S]{0,160}atlassian|atlassian[\s\S]{0,160}localStorage/i;
 
 assert(
-  !source.includes('/api/auth/status'),
-  'auth-mode implementation must stay isolated from dashboard.jsx in this slice'
+  !ownerSource.includes('/api/auth/status'),
+  'auth-mode implementation must stay isolated from dashboard and Scenario/Settings owners in this slice'
 );
 
 assert(
-  !source.includes('/api/auth/atlassian/login'),
-  'dashboard.jsx must not expose Atlassian login UI in this slice'
+  !ownerSource.includes('/api/auth/atlassian/login'),
+  'dashboard and Scenario/Settings owners must not expose Atlassian login UI in this slice'
 );
 
 assert(
-  !source.includes('/api/auth/refresh'),
-  'dashboard.jsx must not own OAuth focus refresh in this slice'
+  !ownerSource.includes('/api/auth/refresh'),
+  'dashboard and Scenario/Settings owners must not own OAuth focus refresh in this slice'
 );
 
 assert(
-  !source.includes('session_expired'),
-  'dashboard.jsx must not own expired-auth screen routing in this slice'
+  !ownerSource.includes('session_expired'),
+  'dashboard and Scenario/Settings owners must not own expired-auth screen routing in this slice'
 );
 
 assert(
-  !source.includes('auth_required'),
-  'dashboard.jsx must not add auth_required handling in this slice'
+  !ownerSource.includes('auth_required'),
+  'dashboard and Scenario/Settings owners must not add auth_required handling in this slice'
 );
 
 assert(
-  !localStorageAtlassianPattern.test(source),
-  'dashboard must not store Atlassian tokens in localStorage'
+  !localStorageAtlassianPattern.test(ownerSource),
+  'dashboard and Scenario/Settings owners must not store Atlassian tokens in localStorage'
 );
 
 assert(
@@ -106,26 +110,42 @@ assert(
   'an EPM save 401 must preserve the private draft and baseline'
 );
 
-const windowKeydownRegistrations = [...source.matchAll(
-  /window\.addEventListener\('keydown',\s*([A-Za-z_$][\w$]*)\);/g
-)];
-assert.strictEqual(
-  windowKeydownRegistrations.length,
-  6,
-  'enumerate every dashboard window keydown handler so new global shortcuts cannot bypass the auth lock'
-);
-for (const registration of windowKeydownRegistrations) {
-  const handlerName = registration[1];
-  const handlerMarker = `const ${handlerName} =`;
-  const handlerStart = source.lastIndexOf(handlerMarker, registration.index);
-  assert(handlerStart >= 0, `find the ${handlerName} implementation registered at ${registration.index}`);
-  const handlerSource = source.slice(handlerStart, registration.index);
-  const authGuardIndex = handlerSource.indexOf('if (readPendingAuthenticationRequired()) return;');
-  const keyReadIndexes = [handlerSource.indexOf('event.key'), handlerSource.indexOf('e.key')]
-    .filter(index => index >= 0);
-  const firstKeyReadIndex = keyReadIndexes.length ? Math.min(...keyReadIndexes) : Number.POSITIVE_INFINITY;
-  assert(
-    authGuardIndex >= 0 && authGuardIndex < firstKeyReadIndex,
-    `${handlerName} registered at ${registration.index} must check the terminal auth latch before handling a key`
-  );
+function listKeydownOwnerFiles(relative) {
+  const absolute = path.join(repoRoot, relative);
+  if (fs.statSync(absolute).isFile()) return [absolute];
+  return fs.readdirSync(absolute, { withFileTypes: true }).flatMap(entry => {
+    const child = path.join(relative, entry.name);
+    if (entry.isDirectory()) return listKeydownOwnerFiles(child);
+    return /\.jsx?$/.test(entry.name) ? [path.join(repoRoot, child)] : [];
+  });
 }
+
+let windowKeydownCount = 0;
+for (const file of ownerPaths.flatMap(listKeydownOwnerFiles)) {
+  const fileSource = fs.readFileSync(file, 'utf8');
+  const relativeFile = path.relative(repoRoot, file);
+  const windowKeydownRegistrations = [...fileSource.matchAll(
+    /window\.addEventListener\('keydown',\s*([A-Za-z_$][\w$]*)\);/g
+  )];
+  windowKeydownCount += windowKeydownRegistrations.length;
+  for (const registration of windowKeydownRegistrations) {
+    const handlerName = registration[1];
+    const handlerMarker = `const ${handlerName} =`;
+    const handlerStart = fileSource.lastIndexOf(handlerMarker, registration.index);
+    assert(handlerStart >= 0, `find the ${handlerName} implementation in ${relativeFile} registered at ${registration.index}`);
+    const handlerSource = fileSource.slice(handlerStart, registration.index);
+    const authGuardIndex = handlerSource.indexOf('if (readPendingAuthenticationRequired()) return;');
+    const keyReadIndexes = [handlerSource.indexOf('event.key'), handlerSource.indexOf('e.key')]
+      .filter(index => index >= 0);
+    const firstKeyReadIndex = keyReadIndexes.length ? Math.min(...keyReadIndexes) : Number.POSITIVE_INFINITY;
+    assert(
+      authGuardIndex >= 0 && authGuardIndex < firstKeyReadIndex,
+      `${handlerName} in ${relativeFile} registered at ${registration.index} must check the terminal auth latch before handling a key`
+    );
+  }
+}
+assert.strictEqual(
+  windowKeydownCount,
+  6,
+  'enumerate every dashboard and Scenario/Settings window keydown handler so new global shortcuts cannot bypass the auth lock'
+);

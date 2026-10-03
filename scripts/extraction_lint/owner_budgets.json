@@ -1,0 +1,5634 @@
+{
+  "schemaVersion": 1,
+  "baseSha": "ffeafb0ea3f37dd17a5d910595c20e1493166c5c",
+  "checkpointId": "PR0-current-base",
+  "sourceRoot": "frontend/src",
+  "ownerRoots": [
+    "scenario",
+    "settings",
+    "epm"
+  ],
+  "exclusions": {
+    "generated": [
+      "frontend/dist"
+    ],
+    "tests": [
+      "tests"
+    ],
+    "sharedImports": "Imported files outside owner roots excluded"
+  },
+  "dashboard": {
+    "path": "frontend/src/dashboard.jsx",
+    "lineCount": 18434,
+    "lineCeiling": 18434
+  },
+  "modules": [
+    {
+      "id": "epm.EpmControls",
+      "path": "frontend/src/epm/EpmControls.jsx",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "EpmControls"
+      ],
+      "lineCount": 295,
+      "lineCeiling": 295,
+      "interfaces": [
+        {
+          "exportName": "EpmControls",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "activeControlSurface",
+            "applyExclusiveDropdownState",
+            "epmProjectDropdownRefs",
+            "epmProjectSearch",
+            "epmProjectSort",
+            "epmProjectsLoading",
+            "epmSortDropdownRefs",
+            "epmSubGoalFilterDropdownRefs",
+            "epmSubGoalOptions",
+            "epmTab",
+            "filteredEpmProjects",
+            "renderEpmProjectCollapseAllButton",
+            "savedEpmSubGoalKeys",
+            "selectedEpmProject",
+            "selectedEpmSubGoalKeys",
+            "selectedView",
+            "setEpmProjectSearch",
+            "setEpmProjectSort",
+            "setEpmSelectedProjectId",
+            "setEpmSelectedSubGoalKeys",
+            "setEpmTab",
+            "setShowEpmProjectDropdown",
+            "setShowEpmSortDropdown",
+            "setShowEpmSubGoalDropdown",
+            "showEpmProjectDropdown",
+            "showEpmSortDropdown",
+            "showEpmSubGoalDropdown",
+            "showProjectPicker",
+            "showStateControl",
+            "surface",
+            "visibleEpmProjects"
+          ],
+          "expandedInputNames": [
+            "activeControlSurface",
+            "applyExclusiveDropdownState",
+            "epmProjectDropdownRefs",
+            "epmProjectDropdownRefs.current",
+            "epmProjectDropdownRefs.current[surface]",
+            "epmProjectSearch",
+            "epmProjectSort",
+            "epmProjectsLoading",
+            "epmSortDropdownRefs",
+            "epmSortDropdownRefs.current",
+            "epmSortDropdownRefs.current[surface]",
+            "epmSubGoalFilterDropdownRefs",
+            "epmSubGoalFilterDropdownRefs.current",
+            "epmSubGoalFilterDropdownRefs.current[surface]",
+            "epmSubGoalOptions",
+            "epmTab",
+            "filteredEpmProjects",
+            "filteredEpmProjects.length",
+            "filteredEpmProjects.map",
+            "renderEpmProjectCollapseAllButton",
+            "savedEpmSubGoalKeys",
+            "selectedEpmProject",
+            "selectedEpmProject.displayName",
+            "selectedEpmProject.homeProjectId",
+            "selectedEpmProject.name",
+            "selectedEpmSubGoalKeys",
+            "selectedView",
+            "setEpmProjectSearch",
+            "setEpmProjectSort",
+            "setEpmSelectedProjectId",
+            "setEpmSelectedSubGoalKeys",
+            "setEpmTab",
+            "setShowEpmProjectDropdown",
+            "setShowEpmSortDropdown",
+            "setShowEpmSubGoalDropdown",
+            "showEpmProjectDropdown",
+            "showEpmSortDropdown",
+            "showEpmSubGoalDropdown",
+            "showProjectPicker",
+            "showStateControl",
+            "surface",
+            "visibleEpmProjects",
+            "visibleEpmProjects.length"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 43,
+          "returnCount": 0,
+          "propCount": 31,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 43,
+          "returnCeiling": 0,
+          "propCeiling": 31,
+          "unresolved": [
+            "forwarded input surface",
+            "forwarded input selectedEpmProject",
+            "forwarded input showEpmProjectDropdown",
+            "bag epmProjectDropdownRefs dynamic deep member",
+            "forwarded input epmProjectSort",
+            "forwarded input showEpmSortDropdown",
+            "bag epmSortDropdownRefs dynamic deep member",
+            "forwarded input showEpmSubGoalDropdown",
+            "bag epmSubGoalFilterDropdownRefs dynamic deep member"
+          ],
+          "inventory": {
+            "source": "frontend/src/epm/EpmControls.jsx:21",
+            "sourceDigest": "a7beaebf7dcba0e96f2e6e41fbd40d0222ce6edfdfa1a062cc8e67795fed8181",
+            "reviewed": true,
+            "memberNames": [
+              "activeControlSurface",
+              "applyExclusiveDropdownState",
+              "epmProjectDropdownRefs",
+              "epmProjectDropdownRefs.current",
+              "epmProjectDropdownRefs.current[surface]",
+              "epmProjectSearch",
+              "epmProjectSort",
+              "epmProjectsLoading",
+              "epmSortDropdownRefs",
+              "epmSortDropdownRefs.current",
+              "epmSortDropdownRefs.current[surface]",
+              "epmSubGoalFilterDropdownRefs",
+              "epmSubGoalFilterDropdownRefs.current",
+              "epmSubGoalFilterDropdownRefs.current[surface]",
+              "epmSubGoalOptions",
+              "epmTab",
+              "filteredEpmProjects",
+              "filteredEpmProjects.length",
+              "filteredEpmProjects.map",
+              "renderEpmProjectCollapseAllButton",
+              "savedEpmSubGoalKeys",
+              "selectedEpmProject",
+              "selectedEpmProject.displayName",
+              "selectedEpmProject.homeProjectId",
+              "selectedEpmProject.name",
+              "selectedEpmSubGoalKeys",
+              "selectedView",
+              "setEpmProjectSearch",
+              "setEpmProjectSort",
+              "setEpmSelectedProjectId",
+              "setEpmSelectedSubGoalKeys",
+              "setEpmTab",
+              "setShowEpmProjectDropdown",
+              "setShowEpmSortDropdown",
+              "setShowEpmSubGoalDropdown",
+              "showEpmProjectDropdown",
+              "showEpmSortDropdown",
+              "showEpmSubGoalDropdown",
+              "showProjectPicker",
+              "showStateControl",
+              "surface",
+              "visibleEpmProjects",
+              "visibleEpmProjects.length"
+            ],
+            "rationale": "surface and sort are strings; dropdown flags booleans; selected project display-name fields come from epmProjectUtils.mjs:getEpmProjectDisplayName; ref.current[surface] entries are DOM nodes, not dependency bags."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "EpmControls",
+              "line": 14145,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "epm.EpmProjectCollapseAllButton",
+      "path": "frontend/src/epm/EpmProjectCollapseAllButton.jsx",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "default"
+      ],
+      "lineCount": 41,
+      "lineCeiling": 41,
+      "interfaces": [
+        {
+          "exportName": "default",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "label",
+            "onClick",
+            "pressed"
+          ],
+          "expandedInputNames": [
+            "label",
+            "onClick",
+            "pressed"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 3,
+          "returnCount": 0,
+          "propCount": 3,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 3,
+          "returnCeiling": 0,
+          "propCeiling": 3,
+          "unresolved": [],
+          "inventory": {
+            "source": "frontend/src/epm/EpmProjectCollapseAllButton.jsx:3",
+            "sourceDigest": "309429bdae69a66ce62d65d8c4ce813799e91c19b28e297a8bd7b15e3dfd24c2"
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "EpmProjectCollapseAllButton",
+              "line": 14194,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "epm.EpmRollupPanel",
+      "path": "frontend/src/epm/EpmRollupPanel.jsx",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "EpmRollupPanel"
+      ],
+      "lineCount": 787,
+      "lineCeiling": 787,
+      "interfaces": [
+        {
+          "exportName": "EpmRollupPanel",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "InitiativeIcon",
+            "collapsedProjectIds",
+            "epmAggregateTruncated",
+            "epmDuplicates",
+            "epmProjectRollupLoadingIds",
+            "epmRollupBoards",
+            "epmRollupLoading",
+            "epmRollupTree",
+            "epmTab",
+            "jiraUrl",
+            "onProjectExpand",
+            "openEpmSettingsTab",
+            "searchQuery",
+            "selectedEpmProject",
+            "selectedEpmProjectUpdateLine",
+            "selectedSprint",
+            "setCollapsedProjectIds"
+          ],
+          "expandedInputNames": [
+            "InitiativeIcon",
+            "collapsedProjectIds",
+            "epmAggregateTruncated",
+            "epmDuplicates",
+            "epmProjectRollupLoadingIds",
+            "epmProjectRollupLoadingIds.has",
+            "epmRollupBoards",
+            "epmRollupBoards.length",
+            "epmRollupBoards.map",
+            "epmRollupBoards[].project.displayName",
+            "epmRollupBoards[].project.dueDate",
+            "epmRollupBoards[].project.emoji",
+            "epmRollupBoards[].project.homeProjectId",
+            "epmRollupBoards[].project.homeUrl",
+            "epmRollupBoards[].project.iconEmoji",
+            "epmRollupBoards[].project.id",
+            "epmRollupBoards[].project.label",
+            "epmRollupBoards[].project.latestUpdateAuthor",
+            "epmRollupBoards[].project.latestUpdateDate",
+            "epmRollupBoards[].project.latestUpdateHtml",
+            "epmRollupBoards[].project.latestUpdateSnippet",
+            "epmRollupBoards[].project.latestUpdateUrl",
+            "epmRollupBoards[].project.name",
+            "epmRollupBoards[].project.owner.avatarUrl",
+            "epmRollupBoards[].project.owner.displayName",
+            "epmRollupBoards[].project.owner.name",
+            "epmRollupBoards[].project.owner.picture",
+            "epmRollupBoards[].project.ownerAvatarUrl",
+            "epmRollupBoards[].project.ownerName",
+            "epmRollupBoards[].project.recentlyCompleted",
+            "epmRollupBoards[].project.stateLabel",
+            "epmRollupBoards[].project.stateValue",
+            "epmRollupBoards[].project.targetDate",
+            "epmRollupBoards[].project.targetDate.date",
+            "epmRollupBoards[].project.targetDate.display",
+            "epmRollupBoards[].project.targetDate.displayValue",
+            "epmRollupBoards[].project.targetDate.endDate",
+            "epmRollupBoards[].project.targetDate.label",
+            "epmRollupBoards[].project.targetDate.startDate",
+            "epmRollupBoards[].project.targetDate.text",
+            "epmRollupBoards[].project.targetDate.value",
+            "epmRollupBoards[].project.targetDateEnd",
+            "epmRollupBoards[].project.targetDateLabel",
+            "epmRollupBoards[].project.targetDateStart",
+            "epmRollupBoards[].tree.initiatives",
+            "epmRollupBoards[].tree.initiatives[].epics[].issue.assignee",
+            "epmRollupBoards[].tree.initiatives[].epics[].issue.key",
+            "epmRollupBoards[].tree.initiatives[].epics[].issue.status",
+            "epmRollupBoards[].tree.initiatives[].epics[].issue.summary",
+            "epmRollupBoards[].tree.initiatives[].epics[].stories[].assignee",
+            "epmRollupBoards[].tree.initiatives[].epics[].stories[].id",
+            "epmRollupBoards[].tree.initiatives[].epics[].stories[].issueType",
+            "epmRollupBoards[].tree.initiatives[].epics[].stories[].key",
+            "epmRollupBoards[].tree.initiatives[].epics[].stories[].parentKey",
+            "epmRollupBoards[].tree.initiatives[].epics[].stories[].parentSummary",
+            "epmRollupBoards[].tree.initiatives[].epics[].stories[].priority",
+            "epmRollupBoards[].tree.initiatives[].epics[].stories[].status",
+            "epmRollupBoards[].tree.initiatives[].epics[].stories[].storyPoints",
+            "epmRollupBoards[].tree.initiatives[].epics[].stories[].summary",
+            "epmRollupBoards[].tree.initiatives[].epics[].stories[].teamId",
+            "epmRollupBoards[].tree.initiatives[].epics[].stories[].teamName",
+            "epmRollupBoards[].tree.initiatives[].epics[].stories[].updated",
+            "epmRollupBoards[].tree.initiatives[].issue.key",
+            "epmRollupBoards[].tree.initiatives[].issue.summary",
+            "epmRollupBoards[].tree.initiatives[].looseStories[].assignee",
+            "epmRollupBoards[].tree.initiatives[].looseStories[].id",
+            "epmRollupBoards[].tree.initiatives[].looseStories[].issueType",
+            "epmRollupBoards[].tree.initiatives[].looseStories[].key",
+            "epmRollupBoards[].tree.initiatives[].looseStories[].parentKey",
+            "epmRollupBoards[].tree.initiatives[].looseStories[].parentSummary",
+            "epmRollupBoards[].tree.initiatives[].looseStories[].priority",
+            "epmRollupBoards[].tree.initiatives[].looseStories[].status",
+            "epmRollupBoards[].tree.initiatives[].looseStories[].storyPoints",
+            "epmRollupBoards[].tree.initiatives[].looseStories[].summary",
+            "epmRollupBoards[].tree.initiatives[].looseStories[].teamId",
+            "epmRollupBoards[].tree.initiatives[].looseStories[].teamName",
+            "epmRollupBoards[].tree.initiatives[].looseStories[].updated",
+            "epmRollupBoards[].tree.kind",
+            "epmRollupBoards[].tree.orphanStories",
+            "epmRollupBoards[].tree.orphanStories[].assignee",
+            "epmRollupBoards[].tree.orphanStories[].id",
+            "epmRollupBoards[].tree.orphanStories[].issueType",
+            "epmRollupBoards[].tree.orphanStories[].key",
+            "epmRollupBoards[].tree.orphanStories[].parentKey",
+            "epmRollupBoards[].tree.orphanStories[].parentSummary",
+            "epmRollupBoards[].tree.orphanStories[].priority",
+            "epmRollupBoards[].tree.orphanStories[].status",
+            "epmRollupBoards[].tree.orphanStories[].storyPoints",
+            "epmRollupBoards[].tree.orphanStories[].summary",
+            "epmRollupBoards[].tree.orphanStories[].teamId",
+            "epmRollupBoards[].tree.orphanStories[].teamName",
+            "epmRollupBoards[].tree.orphanStories[].updated",
+            "epmRollupBoards[].tree.rootEpics",
+            "epmRollupBoards[].tree.rootEpics[].issue.assignee",
+            "epmRollupBoards[].tree.rootEpics[].issue.key",
+            "epmRollupBoards[].tree.rootEpics[].issue.status",
+            "epmRollupBoards[].tree.rootEpics[].issue.summary",
+            "epmRollupBoards[].tree.rootEpics[].stories[].assignee",
+            "epmRollupBoards[].tree.rootEpics[].stories[].id",
+            "epmRollupBoards[].tree.rootEpics[].stories[].issueType",
+            "epmRollupBoards[].tree.rootEpics[].stories[].key",
+            "epmRollupBoards[].tree.rootEpics[].stories[].parentKey",
+            "epmRollupBoards[].tree.rootEpics[].stories[].parentSummary",
+            "epmRollupBoards[].tree.rootEpics[].stories[].priority",
+            "epmRollupBoards[].tree.rootEpics[].stories[].status",
+            "epmRollupBoards[].tree.rootEpics[].stories[].storyPoints",
+            "epmRollupBoards[].tree.rootEpics[].stories[].summary",
+            "epmRollupBoards[].tree.rootEpics[].stories[].teamId",
+            "epmRollupBoards[].tree.rootEpics[].stories[].teamName",
+            "epmRollupBoards[].tree.rootEpics[].stories[].updated",
+            "epmRollupBoards[].tree.truncated",
+            "epmRollupLoading",
+            "epmRollupTree",
+            "epmRollupTree.initiatives",
+            "epmRollupTree.initiatives[].epics[].issue.assignee",
+            "epmRollupTree.initiatives[].epics[].issue.key",
+            "epmRollupTree.initiatives[].epics[].issue.status",
+            "epmRollupTree.initiatives[].epics[].issue.summary",
+            "epmRollupTree.initiatives[].epics[].stories[].assignee",
+            "epmRollupTree.initiatives[].epics[].stories[].id",
+            "epmRollupTree.initiatives[].epics[].stories[].issueType",
+            "epmRollupTree.initiatives[].epics[].stories[].key",
+            "epmRollupTree.initiatives[].epics[].stories[].parentKey",
+            "epmRollupTree.initiatives[].epics[].stories[].parentSummary",
+            "epmRollupTree.initiatives[].epics[].stories[].priority",
+            "epmRollupTree.initiatives[].epics[].stories[].status",
+            "epmRollupTree.initiatives[].epics[].stories[].storyPoints",
+            "epmRollupTree.initiatives[].epics[].stories[].summary",
+            "epmRollupTree.initiatives[].epics[].stories[].teamId",
+            "epmRollupTree.initiatives[].epics[].stories[].teamName",
+            "epmRollupTree.initiatives[].epics[].stories[].updated",
+            "epmRollupTree.initiatives[].issue.key",
+            "epmRollupTree.initiatives[].issue.summary",
+            "epmRollupTree.initiatives[].looseStories[].assignee",
+            "epmRollupTree.initiatives[].looseStories[].id",
+            "epmRollupTree.initiatives[].looseStories[].issueType",
+            "epmRollupTree.initiatives[].looseStories[].key",
+            "epmRollupTree.initiatives[].looseStories[].parentKey",
+            "epmRollupTree.initiatives[].looseStories[].parentSummary",
+            "epmRollupTree.initiatives[].looseStories[].priority",
+            "epmRollupTree.initiatives[].looseStories[].status",
+            "epmRollupTree.initiatives[].looseStories[].storyPoints",
+            "epmRollupTree.initiatives[].looseStories[].summary",
+            "epmRollupTree.initiatives[].looseStories[].teamId",
+            "epmRollupTree.initiatives[].looseStories[].teamName",
+            "epmRollupTree.initiatives[].looseStories[].updated",
+            "epmRollupTree.kind",
+            "epmRollupTree.orphanStories",
+            "epmRollupTree.orphanStories[].assignee",
+            "epmRollupTree.orphanStories[].id",
+            "epmRollupTree.orphanStories[].issueType",
+            "epmRollupTree.orphanStories[].key",
+            "epmRollupTree.orphanStories[].parentKey",
+            "epmRollupTree.orphanStories[].parentSummary",
+            "epmRollupTree.orphanStories[].priority",
+            "epmRollupTree.orphanStories[].status",
+            "epmRollupTree.orphanStories[].storyPoints",
+            "epmRollupTree.orphanStories[].summary",
+            "epmRollupTree.orphanStories[].teamId",
+            "epmRollupTree.orphanStories[].teamName",
+            "epmRollupTree.orphanStories[].updated",
+            "epmRollupTree.rootEpics",
+            "epmRollupTree.rootEpics[].issue.assignee",
+            "epmRollupTree.rootEpics[].issue.key",
+            "epmRollupTree.rootEpics[].issue.status",
+            "epmRollupTree.rootEpics[].issue.summary",
+            "epmRollupTree.rootEpics[].stories[].assignee",
+            "epmRollupTree.rootEpics[].stories[].id",
+            "epmRollupTree.rootEpics[].stories[].issueType",
+            "epmRollupTree.rootEpics[].stories[].key",
+            "epmRollupTree.rootEpics[].stories[].parentKey",
+            "epmRollupTree.rootEpics[].stories[].parentSummary",
+            "epmRollupTree.rootEpics[].stories[].priority",
+            "epmRollupTree.rootEpics[].stories[].status",
+            "epmRollupTree.rootEpics[].stories[].storyPoints",
+            "epmRollupTree.rootEpics[].stories[].summary",
+            "epmRollupTree.rootEpics[].stories[].teamId",
+            "epmRollupTree.rootEpics[].stories[].teamName",
+            "epmRollupTree.rootEpics[].stories[].updated",
+            "epmRollupTree.truncated",
+            "epmTab",
+            "jiraUrl",
+            "onProjectExpand",
+            "openEpmSettingsTab",
+            "searchQuery",
+            "selectedEpmProject",
+            "selectedEpmProject.displayName",
+            "selectedEpmProject.dueDate",
+            "selectedEpmProject.emoji",
+            "selectedEpmProject.homeProjectId",
+            "selectedEpmProject.homeUrl",
+            "selectedEpmProject.iconEmoji",
+            "selectedEpmProject.id",
+            "selectedEpmProject.label",
+            "selectedEpmProject.latestUpdateAuthor",
+            "selectedEpmProject.latestUpdateDate",
+            "selectedEpmProject.latestUpdateHtml",
+            "selectedEpmProject.latestUpdateSnippet",
+            "selectedEpmProject.latestUpdateUrl",
+            "selectedEpmProject.name",
+            "selectedEpmProject.owner.avatarUrl",
+            "selectedEpmProject.owner.displayName",
+            "selectedEpmProject.owner.name",
+            "selectedEpmProject.owner.picture",
+            "selectedEpmProject.ownerAvatarUrl",
+            "selectedEpmProject.ownerName",
+            "selectedEpmProject.recentlyCompleted",
+            "selectedEpmProject.stateLabel",
+            "selectedEpmProject.stateValue",
+            "selectedEpmProject.targetDate",
+            "selectedEpmProject.targetDate.date",
+            "selectedEpmProject.targetDate.display",
+            "selectedEpmProject.targetDate.displayValue",
+            "selectedEpmProject.targetDate.endDate",
+            "selectedEpmProject.targetDate.label",
+            "selectedEpmProject.targetDate.startDate",
+            "selectedEpmProject.targetDate.text",
+            "selectedEpmProject.targetDate.value",
+            "selectedEpmProject.targetDateEnd",
+            "selectedEpmProject.targetDateLabel",
+            "selectedEpmProject.targetDateStart",
+            "selectedEpmProjectUpdateLine",
+            "selectedSprint",
+            "setCollapsedProjectIds"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 224,
+          "returnCount": 0,
+          "propCount": 17,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 224,
+          "returnCeiling": 0,
+          "propCeiling": 17,
+          "unresolved": [
+            "forwarded input selectedEpmProject",
+            "forwarded input epmRollupTree",
+            "forwarded input epmRollupBoards"
+          ],
+          "inventory": {
+            "source": "frontend/src/epm/EpmRollupPanel.jsx:11",
+            "sourceDigest": "9a34fb0964c5103a7c45726537b595f09342830f737ece2b06d878f664b9c357",
+            "reviewed": true,
+            "memberNames": [
+              "InitiativeIcon",
+              "collapsedProjectIds",
+              "epmAggregateTruncated",
+              "epmDuplicates",
+              "epmProjectRollupLoadingIds",
+              "epmProjectRollupLoadingIds.has",
+              "epmRollupBoards",
+              "epmRollupBoards.length",
+              "epmRollupBoards.map",
+              "epmRollupBoards[].project.displayName",
+              "epmRollupBoards[].project.dueDate",
+              "epmRollupBoards[].project.emoji",
+              "epmRollupBoards[].project.homeProjectId",
+              "epmRollupBoards[].project.homeUrl",
+              "epmRollupBoards[].project.iconEmoji",
+              "epmRollupBoards[].project.id",
+              "epmRollupBoards[].project.label",
+              "epmRollupBoards[].project.latestUpdateAuthor",
+              "epmRollupBoards[].project.latestUpdateDate",
+              "epmRollupBoards[].project.latestUpdateHtml",
+              "epmRollupBoards[].project.latestUpdateSnippet",
+              "epmRollupBoards[].project.latestUpdateUrl",
+              "epmRollupBoards[].project.name",
+              "epmRollupBoards[].project.owner.avatarUrl",
+              "epmRollupBoards[].project.owner.displayName",
+              "epmRollupBoards[].project.owner.name",
+              "epmRollupBoards[].project.owner.picture",
+              "epmRollupBoards[].project.ownerAvatarUrl",
+              "epmRollupBoards[].project.ownerName",
+              "epmRollupBoards[].project.recentlyCompleted",
+              "epmRollupBoards[].project.stateLabel",
+              "epmRollupBoards[].project.stateValue",
+              "epmRollupBoards[].project.targetDate",
+              "epmRollupBoards[].project.targetDate.date",
+              "epmRollupBoards[].project.targetDate.display",
+              "epmRollupBoards[].project.targetDate.displayValue",
+              "epmRollupBoards[].project.targetDate.endDate",
+              "epmRollupBoards[].project.targetDate.label",
+              "epmRollupBoards[].project.targetDate.startDate",
+              "epmRollupBoards[].project.targetDate.text",
+              "epmRollupBoards[].project.targetDate.value",
+              "epmRollupBoards[].project.targetDateEnd",
+              "epmRollupBoards[].project.targetDateLabel",
+              "epmRollupBoards[].project.targetDateStart",
+              "epmRollupBoards[].tree.initiatives",
+              "epmRollupBoards[].tree.initiatives[].epics[].issue.assignee",
+              "epmRollupBoards[].tree.initiatives[].epics[].issue.key",
+              "epmRollupBoards[].tree.initiatives[].epics[].issue.status",
+              "epmRollupBoards[].tree.initiatives[].epics[].issue.summary",
+              "epmRollupBoards[].tree.initiatives[].epics[].stories[].assignee",
+              "epmRollupBoards[].tree.initiatives[].epics[].stories[].id",
+              "epmRollupBoards[].tree.initiatives[].epics[].stories[].issueType",
+              "epmRollupBoards[].tree.initiatives[].epics[].stories[].key",
+              "epmRollupBoards[].tree.initiatives[].epics[].stories[].parentKey",
+              "epmRollupBoards[].tree.initiatives[].epics[].stories[].parentSummary",
+              "epmRollupBoards[].tree.initiatives[].epics[].stories[].priority",
+              "epmRollupBoards[].tree.initiatives[].epics[].stories[].status",
+              "epmRollupBoards[].tree.initiatives[].epics[].stories[].storyPoints",
+              "epmRollupBoards[].tree.initiatives[].epics[].stories[].summary",
+              "epmRollupBoards[].tree.initiatives[].epics[].stories[].teamId",
+              "epmRollupBoards[].tree.initiatives[].epics[].stories[].teamName",
+              "epmRollupBoards[].tree.initiatives[].epics[].stories[].updated",
+              "epmRollupBoards[].tree.initiatives[].issue.key",
+              "epmRollupBoards[].tree.initiatives[].issue.summary",
+              "epmRollupBoards[].tree.initiatives[].looseStories[].assignee",
+              "epmRollupBoards[].tree.initiatives[].looseStories[].id",
+              "epmRollupBoards[].tree.initiatives[].looseStories[].issueType",
+              "epmRollupBoards[].tree.initiatives[].looseStories[].key",
+              "epmRollupBoards[].tree.initiatives[].looseStories[].parentKey",
+              "epmRollupBoards[].tree.initiatives[].looseStories[].parentSummary",
+              "epmRollupBoards[].tree.initiatives[].looseStories[].priority",
+              "epmRollupBoards[].tree.initiatives[].looseStories[].status",
+              "epmRollupBoards[].tree.initiatives[].looseStories[].storyPoints",
+              "epmRollupBoards[].tree.initiatives[].looseStories[].summary",
+              "epmRollupBoards[].tree.initiatives[].looseStories[].teamId",
+              "epmRollupBoards[].tree.initiatives[].looseStories[].teamName",
+              "epmRollupBoards[].tree.initiatives[].looseStories[].updated",
+              "epmRollupBoards[].tree.kind",
+              "epmRollupBoards[].tree.orphanStories",
+              "epmRollupBoards[].tree.orphanStories[].assignee",
+              "epmRollupBoards[].tree.orphanStories[].id",
+              "epmRollupBoards[].tree.orphanStories[].issueType",
+              "epmRollupBoards[].tree.orphanStories[].key",
+              "epmRollupBoards[].tree.orphanStories[].parentKey",
+              "epmRollupBoards[].tree.orphanStories[].parentSummary",
+              "epmRollupBoards[].tree.orphanStories[].priority",
+              "epmRollupBoards[].tree.orphanStories[].status",
+              "epmRollupBoards[].tree.orphanStories[].storyPoints",
+              "epmRollupBoards[].tree.orphanStories[].summary",
+              "epmRollupBoards[].tree.orphanStories[].teamId",
+              "epmRollupBoards[].tree.orphanStories[].teamName",
+              "epmRollupBoards[].tree.orphanStories[].updated",
+              "epmRollupBoards[].tree.rootEpics",
+              "epmRollupBoards[].tree.rootEpics[].issue.assignee",
+              "epmRollupBoards[].tree.rootEpics[].issue.key",
+              "epmRollupBoards[].tree.rootEpics[].issue.status",
+              "epmRollupBoards[].tree.rootEpics[].issue.summary",
+              "epmRollupBoards[].tree.rootEpics[].stories[].assignee",
+              "epmRollupBoards[].tree.rootEpics[].stories[].id",
+              "epmRollupBoards[].tree.rootEpics[].stories[].issueType",
+              "epmRollupBoards[].tree.rootEpics[].stories[].key",
+              "epmRollupBoards[].tree.rootEpics[].stories[].parentKey",
+              "epmRollupBoards[].tree.rootEpics[].stories[].parentSummary",
+              "epmRollupBoards[].tree.rootEpics[].stories[].priority",
+              "epmRollupBoards[].tree.rootEpics[].stories[].status",
+              "epmRollupBoards[].tree.rootEpics[].stories[].storyPoints",
+              "epmRollupBoards[].tree.rootEpics[].stories[].summary",
+              "epmRollupBoards[].tree.rootEpics[].stories[].teamId",
+              "epmRollupBoards[].tree.rootEpics[].stories[].teamName",
+              "epmRollupBoards[].tree.rootEpics[].stories[].updated",
+              "epmRollupBoards[].tree.truncated",
+              "epmRollupLoading",
+              "epmRollupTree",
+              "epmRollupTree.initiatives",
+              "epmRollupTree.initiatives[].epics[].issue.assignee",
+              "epmRollupTree.initiatives[].epics[].issue.key",
+              "epmRollupTree.initiatives[].epics[].issue.status",
+              "epmRollupTree.initiatives[].epics[].issue.summary",
+              "epmRollupTree.initiatives[].epics[].stories[].assignee",
+              "epmRollupTree.initiatives[].epics[].stories[].id",
+              "epmRollupTree.initiatives[].epics[].stories[].issueType",
+              "epmRollupTree.initiatives[].epics[].stories[].key",
+              "epmRollupTree.initiatives[].epics[].stories[].parentKey",
+              "epmRollupTree.initiatives[].epics[].stories[].parentSummary",
+              "epmRollupTree.initiatives[].epics[].stories[].priority",
+              "epmRollupTree.initiatives[].epics[].stories[].status",
+              "epmRollupTree.initiatives[].epics[].stories[].storyPoints",
+              "epmRollupTree.initiatives[].epics[].stories[].summary",
+              "epmRollupTree.initiatives[].epics[].stories[].teamId",
+              "epmRollupTree.initiatives[].epics[].stories[].teamName",
+              "epmRollupTree.initiatives[].epics[].stories[].updated",
+              "epmRollupTree.initiatives[].issue.key",
+              "epmRollupTree.initiatives[].issue.summary",
+              "epmRollupTree.initiatives[].looseStories[].assignee",
+              "epmRollupTree.initiatives[].looseStories[].id",
+              "epmRollupTree.initiatives[].looseStories[].issueType",
+              "epmRollupTree.initiatives[].looseStories[].key",
+              "epmRollupTree.initiatives[].looseStories[].parentKey",
+              "epmRollupTree.initiatives[].looseStories[].parentSummary",
+              "epmRollupTree.initiatives[].looseStories[].priority",
+              "epmRollupTree.initiatives[].looseStories[].status",
+              "epmRollupTree.initiatives[].looseStories[].storyPoints",
+              "epmRollupTree.initiatives[].looseStories[].summary",
+              "epmRollupTree.initiatives[].looseStories[].teamId",
+              "epmRollupTree.initiatives[].looseStories[].teamName",
+              "epmRollupTree.initiatives[].looseStories[].updated",
+              "epmRollupTree.kind",
+              "epmRollupTree.orphanStories",
+              "epmRollupTree.orphanStories[].assignee",
+              "epmRollupTree.orphanStories[].id",
+              "epmRollupTree.orphanStories[].issueType",
+              "epmRollupTree.orphanStories[].key",
+              "epmRollupTree.orphanStories[].parentKey",
+              "epmRollupTree.orphanStories[].parentSummary",
+              "epmRollupTree.orphanStories[].priority",
+              "epmRollupTree.orphanStories[].status",
+              "epmRollupTree.orphanStories[].storyPoints",
+              "epmRollupTree.orphanStories[].summary",
+              "epmRollupTree.orphanStories[].teamId",
+              "epmRollupTree.orphanStories[].teamName",
+              "epmRollupTree.orphanStories[].updated",
+              "epmRollupTree.rootEpics",
+              "epmRollupTree.rootEpics[].issue.assignee",
+              "epmRollupTree.rootEpics[].issue.key",
+              "epmRollupTree.rootEpics[].issue.status",
+              "epmRollupTree.rootEpics[].issue.summary",
+              "epmRollupTree.rootEpics[].stories[].assignee",
+              "epmRollupTree.rootEpics[].stories[].id",
+              "epmRollupTree.rootEpics[].stories[].issueType",
+              "epmRollupTree.rootEpics[].stories[].key",
+              "epmRollupTree.rootEpics[].stories[].parentKey",
+              "epmRollupTree.rootEpics[].stories[].parentSummary",
+              "epmRollupTree.rootEpics[].stories[].priority",
+              "epmRollupTree.rootEpics[].stories[].status",
+              "epmRollupTree.rootEpics[].stories[].storyPoints",
+              "epmRollupTree.rootEpics[].stories[].summary",
+              "epmRollupTree.rootEpics[].stories[].teamId",
+              "epmRollupTree.rootEpics[].stories[].teamName",
+              "epmRollupTree.rootEpics[].stories[].updated",
+              "epmRollupTree.truncated",
+              "epmTab",
+              "jiraUrl",
+              "onProjectExpand",
+              "openEpmSettingsTab",
+              "searchQuery",
+              "selectedEpmProject",
+              "selectedEpmProject.displayName",
+              "selectedEpmProject.dueDate",
+              "selectedEpmProject.emoji",
+              "selectedEpmProject.homeProjectId",
+              "selectedEpmProject.homeUrl",
+              "selectedEpmProject.iconEmoji",
+              "selectedEpmProject.id",
+              "selectedEpmProject.label",
+              "selectedEpmProject.latestUpdateAuthor",
+              "selectedEpmProject.latestUpdateDate",
+              "selectedEpmProject.latestUpdateHtml",
+              "selectedEpmProject.latestUpdateSnippet",
+              "selectedEpmProject.latestUpdateUrl",
+              "selectedEpmProject.name",
+              "selectedEpmProject.owner.avatarUrl",
+              "selectedEpmProject.owner.displayName",
+              "selectedEpmProject.owner.name",
+              "selectedEpmProject.owner.picture",
+              "selectedEpmProject.ownerAvatarUrl",
+              "selectedEpmProject.ownerName",
+              "selectedEpmProject.recentlyCompleted",
+              "selectedEpmProject.stateLabel",
+              "selectedEpmProject.stateValue",
+              "selectedEpmProject.targetDate",
+              "selectedEpmProject.targetDate.date",
+              "selectedEpmProject.targetDate.display",
+              "selectedEpmProject.targetDate.displayValue",
+              "selectedEpmProject.targetDate.endDate",
+              "selectedEpmProject.targetDate.label",
+              "selectedEpmProject.targetDate.startDate",
+              "selectedEpmProject.targetDate.text",
+              "selectedEpmProject.targetDate.value",
+              "selectedEpmProject.targetDateEnd",
+              "selectedEpmProject.targetDateLabel",
+              "selectedEpmProject.targetDateStart",
+              "selectedEpmProjectUpdateLine",
+              "selectedSprint",
+              "setCollapsedProjectIds"
+            ],
+            "rationale": "Project metadata is consumed by getEpmProjectDisplayName/buildEpmProjectUpdateLine in epmProjectUtils.mjs and panel rendering. Rollup trees and board records are data consumed by toEpmEngTask/renderStory/renderEpic; [] identifies array elements, not extra dependencies."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/epm/EpmView.jsx",
+              "symbol": "EpmRollupPanel",
+              "line": 55,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "epm.EpmRollupTree",
+      "path": "frontend/src/epm/EpmRollupTree.jsx",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "EpmEpicNode",
+        "EpmInitiativeNode",
+        "EpmProjectRemainder",
+        "EpmRollupIssue"
+      ],
+      "lineCount": 137,
+      "lineCeiling": 137,
+      "interfaces": [
+        {
+          "exportName": "EpmEpicNode",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "epicNode",
+            "jiraUrl"
+          ],
+          "expandedInputNames": [
+            "epicNode",
+            "epicNode.issue",
+            "epicNode.issue.key",
+            "epicNode.stories",
+            "epicNode.stories.length",
+            "epicNode.stories.map",
+            "jiraUrl"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 7,
+          "returnCount": 0,
+          "propCount": 2,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 7,
+          "returnCeiling": 0,
+          "propCeiling": 2,
+          "unresolved": [],
+          "inventory": {
+            "source": "frontend/src/epm/EpmRollupTree.jsx:62",
+            "sourceDigest": "0c95222adf1384a9d4525940973c448e852ac56e5462ab30a024a683b9239301"
+          },
+          "callers": [
+            {
+              "path": "frontend/src/epm/EpmRollupTree.jsx",
+              "symbol": "EpmEpicNode",
+              "line": 101,
+              "phase": "render"
+            },
+            {
+              "path": "frontend/src/epm/EpmRollupTree.jsx",
+              "symbol": "EpmEpicNode",
+              "line": 124,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        },
+        {
+          "exportName": "EpmInitiativeNode",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "InitiativeIcon",
+            "initiativeNode",
+            "jiraUrl"
+          ],
+          "expandedInputNames": [
+            "InitiativeIcon",
+            "initiativeNode",
+            "initiativeNode.epics",
+            "initiativeNode.epics.map",
+            "initiativeNode.issue",
+            "initiativeNode.issue.key",
+            "initiativeNode.issue.summary",
+            "initiativeNode.looseStories",
+            "initiativeNode.looseStories.map",
+            "jiraUrl"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 10,
+          "returnCount": 0,
+          "propCount": 3,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 10,
+          "returnCeiling": 0,
+          "propCeiling": 3,
+          "unresolved": [],
+          "inventory": {
+            "source": "frontend/src/epm/EpmRollupTree.jsx:77",
+            "sourceDigest": "0c95222adf1384a9d4525940973c448e852ac56e5462ab30a024a683b9239301"
+          },
+          "callers": [],
+          "remainingAppReaders": [],
+          "getters": []
+        },
+        {
+          "exportName": "EpmProjectRemainder",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "jiraUrl",
+            "project",
+            "tree"
+          ],
+          "expandedInputNames": [
+            "jiraUrl",
+            "project",
+            "project.displayName",
+            "project.homeProjectId",
+            "project.name",
+            "tree",
+            "tree.orphanStories",
+            "tree.orphanStories.length",
+            "tree.orphanStories.map",
+            "tree.rootEpics",
+            "tree.rootEpics.length",
+            "tree.rootEpics.map"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 12,
+          "returnCount": 0,
+          "propCount": 3,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 12,
+          "returnCeiling": 0,
+          "propCeiling": 3,
+          "unresolved": [
+            "forwarded input project"
+          ],
+          "inventory": {
+            "source": "frontend/src/epm/EpmRollupTree.jsx:111",
+            "sourceDigest": "0c95222adf1384a9d4525940973c448e852ac56e5462ab30a024a683b9239301",
+            "reviewed": true,
+            "memberNames": [
+              "jiraUrl",
+              "project",
+              "project.displayName",
+              "project.homeProjectId",
+              "project.name",
+              "tree",
+              "tree.orphanStories",
+              "tree.orphanStories.length",
+              "tree.orphanStories.map",
+              "tree.rootEpics",
+              "tree.rootEpics.length",
+              "tree.rootEpics.map"
+            ],
+            "rationale": "Project is display-name metadata consumed by epmProjectUtils.mjs:getEpmProjectDisplayName; exact displayName/name/homeProjectId fields inventoried."
+          },
+          "callers": [],
+          "remainingAppReaders": [],
+          "getters": []
+        },
+        {
+          "exportName": "EpmRollupIssue",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "extraClassName",
+            "issue",
+            "jiraUrl"
+          ],
+          "expandedInputNames": [
+            "extraClassName",
+            "issue",
+            "issue.assignee",
+            "issue.issueType",
+            "issue.key",
+            "issue.status",
+            "issue.summary",
+            "jiraUrl"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 8,
+          "returnCount": 0,
+          "propCount": 3,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 8,
+          "returnCeiling": 0,
+          "propCeiling": 3,
+          "unresolved": [],
+          "inventory": {
+            "source": "frontend/src/epm/EpmRollupTree.jsx:6",
+            "sourceDigest": "0c95222adf1384a9d4525940973c448e852ac56e5462ab30a024a683b9239301"
+          },
+          "callers": [
+            {
+              "path": "frontend/src/epm/EpmRollupTree.jsx",
+              "symbol": "EpmRollupIssue",
+              "line": 65,
+              "phase": "render"
+            },
+            {
+              "path": "frontend/src/epm/EpmRollupTree.jsx",
+              "symbol": "EpmRollupIssue",
+              "line": 69,
+              "phase": "render"
+            },
+            {
+              "path": "frontend/src/epm/EpmRollupTree.jsx",
+              "symbol": "EpmRollupIssue",
+              "line": 104,
+              "phase": "render"
+            },
+            {
+              "path": "frontend/src/epm/EpmRollupTree.jsx",
+              "symbol": "EpmRollupIssue",
+              "line": 130,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "epm.EpmSettings",
+      "path": "frontend/src/epm/EpmSettings.jsx",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "default"
+      ],
+      "lineCount": 673,
+      "lineCeiling": 673,
+      "interfaces": [
+        {
+          "exportName": "default",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "DEFAULT_EPM_LABEL_PREFIX",
+            "activeEpmRootGoalIndex",
+            "activeEpmSubGoalIndex",
+            "addCustomEpmProjectDraft",
+            "canLoadEpmProjects",
+            "clearEpmRootGoal",
+            "clearEpmSubGoal",
+            "deleteEpmProjectRow",
+            "ensureEpmSettingsProjectsLoaded",
+            "epmConfigDraft",
+            "epmConfigLoading",
+            "epmConfigSaving",
+            "epmLabelChanging",
+            "epmLabelMenuAnchor",
+            "epmLabelMenuInputRef",
+            "epmLabelPrefixMask",
+            "epmLabelShowAll",
+            "epmProjectPrerequisites",
+            "epmRootGoalQuery",
+            "epmRootGoalsError",
+            "epmRootGoalsLoading",
+            "epmScopeMeta",
+            "epmSettingsProjectRows",
+            "epmSettingsProjectSort",
+            "epmSettingsProjectView",
+            "epmSettingsProjects",
+            "epmSettingsProjectsError",
+            "epmSettingsProjectsFetchMeta",
+            "epmSettingsProjectsLoaded",
+            "epmSettingsProjectsLoadedAt",
+            "epmSettingsProjectsLoading",
+            "epmSettingsProjectsRefreshing",
+            "epmSettingsTab",
+            "epmSubGoalQuery",
+            "epmSubGoalsError",
+            "epmSubGoalsLoading",
+            "filteredEpmRootGoals",
+            "filteredEpmSubGoals",
+            "focusEpmScopeField",
+            "getEpmLabelRowKey",
+            "getEpmLabelSearchResults",
+            "handleEpmLabelSearchKeyDown",
+            "handleEpmRootGoalSearchKeyDown",
+            "handleEpmSettingsTabKeyDown",
+            "handleEpmSubGoalSearchKeyDown",
+            "hasSessionRemovedEpmProjects",
+            "labelSearchIndex",
+            "labelSearchLoading",
+            "labelSearchOpen",
+            "labelSearchQuery",
+            "loadEpmProjectLabels",
+            "loadEpmSubGoalsForRoot",
+            "openEpmLabelMenu",
+            "registerEpmLabelInput",
+            "renderEpmProjectSkeletonRows",
+            "requestEpmLabelFocus",
+            "selectEpmProjectLabel",
+            "selectEpmRootGoal",
+            "selectEpmSubGoal",
+            "selectedEpmRootGoal",
+            "selectedEpmSubGoals",
+            "setEpmLabelChanging",
+            "setEpmLabelMenuAnchor",
+            "setEpmLabelShowAll",
+            "setEpmRootGoalIndex",
+            "setEpmRootGoalOpen",
+            "setEpmRootGoalQuery",
+            "setEpmSettingsProjectSort",
+            "setEpmSettingsProjectView",
+            "setEpmSettingsTab",
+            "setEpmSubGoalIndex",
+            "setEpmSubGoalOpen",
+            "setEpmSubGoalQuery",
+            "setLabelSearchIndex",
+            "setLabelSearchOpen",
+            "setLabelSearchQuery",
+            "showEpmRootGoalResults",
+            "showEpmSubGoalResults",
+            "updateEpmLabelPrefixDraft",
+            "updateEpmProjectDraft",
+            "visibleEpmRootGoals",
+            "visibleEpmSubGoals"
+          ],
+          "expandedInputNames": [
+            "DEFAULT_EPM_LABEL_PREFIX",
+            "activeEpmRootGoalIndex",
+            "activeEpmSubGoalIndex",
+            "addCustomEpmProjectDraft",
+            "canLoadEpmProjects",
+            "clearEpmRootGoal",
+            "clearEpmSubGoal",
+            "deleteEpmProjectRow",
+            "ensureEpmSettingsProjectsLoaded",
+            "epmConfigDraft",
+            "epmConfigDraft.labelPrefix",
+            "epmConfigDraft.scope",
+            "epmConfigDraft.scope.rootGoalKey",
+            "epmConfigLoading",
+            "epmConfigSaving",
+            "epmLabelChanging",
+            "epmLabelChanging[rowKey]",
+            "epmLabelMenuAnchor",
+            "epmLabelMenuAnchor.left",
+            "epmLabelMenuAnchor.projectId",
+            "epmLabelMenuAnchor.rowKey",
+            "epmLabelMenuAnchor.top",
+            "epmLabelMenuAnchor.width",
+            "epmLabelMenuInputRef",
+            "epmLabelMenuInputRef.current",
+            "epmLabelPrefixMask",
+            "epmLabelShowAll",
+            "epmLabelShowAll[rowKey]",
+            "epmProjectPrerequisites",
+            "epmProjectPrerequisites.includes",
+            "epmProjectPrerequisites.length",
+            "epmRootGoalQuery",
+            "epmRootGoalsError",
+            "epmRootGoalsLoading",
+            "epmScopeMeta",
+            "epmScopeMeta.cloudId",
+            "epmScopeMeta.error",
+            "epmSettingsProjectRows",
+            "epmSettingsProjectRows.length",
+            "epmSettingsProjectRows.map",
+            "epmSettingsProjectSort",
+            "epmSettingsProjectView",
+            "epmSettingsProjects",
+            "epmSettingsProjects.length",
+            "epmSettingsProjectsError",
+            "epmSettingsProjectsFetchMeta",
+            "epmSettingsProjectsFetchMeta.cacheHit",
+            "epmSettingsProjectsFetchMeta.homeProjectCount",
+            "epmSettingsProjectsFetchMeta.homeProjectLimit",
+            "epmSettingsProjectsFetchMeta.possiblyTruncated",
+            "epmSettingsProjectsLoaded",
+            "epmSettingsProjectsLoadedAt",
+            "epmSettingsProjectsLoading",
+            "epmSettingsProjectsRefreshing",
+            "epmSettingsTab",
+            "epmSubGoalQuery",
+            "epmSubGoalsError",
+            "epmSubGoalsLoading",
+            "filteredEpmRootGoals",
+            "filteredEpmRootGoals.length",
+            "filteredEpmSubGoals",
+            "focusEpmScopeField",
+            "getEpmLabelRowKey",
+            "getEpmLabelSearchResults",
+            "handleEpmLabelSearchKeyDown",
+            "handleEpmRootGoalSearchKeyDown",
+            "handleEpmSettingsTabKeyDown",
+            "handleEpmSubGoalSearchKeyDown",
+            "hasSessionRemovedEpmProjects",
+            "labelSearchIndex",
+            "labelSearchIndex[rowKey]",
+            "labelSearchLoading",
+            "labelSearchLoading[rowKey]",
+            "labelSearchOpen",
+            "labelSearchOpen[rowKey]",
+            "labelSearchQuery",
+            "labelSearchQuery[rowKey]",
+            "loadEpmProjectLabels",
+            "loadEpmSubGoalsForRoot",
+            "openEpmLabelMenu",
+            "registerEpmLabelInput",
+            "renderEpmProjectSkeletonRows",
+            "requestEpmLabelFocus",
+            "selectEpmProjectLabel",
+            "selectEpmRootGoal",
+            "selectEpmSubGoal",
+            "selectedEpmRootGoal",
+            "selectedEpmRootGoal.key",
+            "selectedEpmRootGoal.name",
+            "selectedEpmSubGoals",
+            "selectedEpmSubGoals.length",
+            "selectedEpmSubGoals.map",
+            "setEpmLabelChanging",
+            "setEpmLabelMenuAnchor",
+            "setEpmLabelShowAll",
+            "setEpmRootGoalIndex",
+            "setEpmRootGoalOpen",
+            "setEpmRootGoalQuery",
+            "setEpmSettingsProjectSort",
+            "setEpmSettingsProjectView",
+            "setEpmSettingsTab",
+            "setEpmSubGoalIndex",
+            "setEpmSubGoalOpen",
+            "setEpmSubGoalQuery",
+            "setLabelSearchIndex",
+            "setLabelSearchOpen",
+            "setLabelSearchQuery",
+            "showEpmRootGoalResults",
+            "showEpmSubGoalResults",
+            "updateEpmLabelPrefixDraft",
+            "updateEpmProjectDraft",
+            "visibleEpmRootGoals",
+            "visibleEpmRootGoals.map",
+            "visibleEpmSubGoals",
+            "visibleEpmSubGoals.length",
+            "visibleEpmSubGoals.map"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 116,
+          "returnCount": 0,
+          "propCount": 82,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 116,
+          "returnCeiling": 0,
+          "propCeiling": 82,
+          "unresolved": [
+            "forwarded input selectedEpmRootGoal",
+            "bag labelSearchLoading dynamic member",
+            "bag labelSearchLoading dynamic deep member",
+            "bag epmLabelShowAll dynamic member",
+            "bag epmLabelShowAll dynamic deep member",
+            "bag epmLabelChanging dynamic member",
+            "bag epmLabelChanging dynamic deep member",
+            "bag labelSearchIndex dynamic member",
+            "bag labelSearchIndex dynamic deep member",
+            "bag labelSearchQuery dynamic member",
+            "bag labelSearchQuery dynamic deep member",
+            "bag labelSearchOpen dynamic member",
+            "bag labelSearchOpen dynamic deep member"
+          ],
+          "inventory": {
+            "source": "frontend/src/epm/EpmSettings.jsx:8",
+            "sourceDigest": "3530670711654ca0e2e69483a19cd3113f72e3f0b55e30402cada519de584426",
+            "reviewed": true,
+            "memberNames": [
+              "DEFAULT_EPM_LABEL_PREFIX",
+              "activeEpmRootGoalIndex",
+              "activeEpmSubGoalIndex",
+              "addCustomEpmProjectDraft",
+              "canLoadEpmProjects",
+              "clearEpmRootGoal",
+              "clearEpmSubGoal",
+              "deleteEpmProjectRow",
+              "ensureEpmSettingsProjectsLoaded",
+              "epmConfigDraft",
+              "epmConfigDraft.labelPrefix",
+              "epmConfigDraft.scope",
+              "epmConfigDraft.scope.rootGoalKey",
+              "epmConfigLoading",
+              "epmConfigSaving",
+              "epmLabelChanging",
+              "epmLabelChanging[rowKey]",
+              "epmLabelMenuAnchor",
+              "epmLabelMenuAnchor.left",
+              "epmLabelMenuAnchor.projectId",
+              "epmLabelMenuAnchor.rowKey",
+              "epmLabelMenuAnchor.top",
+              "epmLabelMenuAnchor.width",
+              "epmLabelMenuInputRef",
+              "epmLabelMenuInputRef.current",
+              "epmLabelPrefixMask",
+              "epmLabelShowAll",
+              "epmLabelShowAll[rowKey]",
+              "epmProjectPrerequisites",
+              "epmProjectPrerequisites.includes",
+              "epmProjectPrerequisites.length",
+              "epmRootGoalQuery",
+              "epmRootGoalsError",
+              "epmRootGoalsLoading",
+              "epmScopeMeta",
+              "epmScopeMeta.cloudId",
+              "epmScopeMeta.error",
+              "epmSettingsProjectRows",
+              "epmSettingsProjectRows.length",
+              "epmSettingsProjectRows.map",
+              "epmSettingsProjectSort",
+              "epmSettingsProjectView",
+              "epmSettingsProjects",
+              "epmSettingsProjects.length",
+              "epmSettingsProjectsError",
+              "epmSettingsProjectsFetchMeta",
+              "epmSettingsProjectsFetchMeta.cacheHit",
+              "epmSettingsProjectsFetchMeta.homeProjectCount",
+              "epmSettingsProjectsFetchMeta.homeProjectLimit",
+              "epmSettingsProjectsFetchMeta.possiblyTruncated",
+              "epmSettingsProjectsLoaded",
+              "epmSettingsProjectsLoadedAt",
+              "epmSettingsProjectsLoading",
+              "epmSettingsProjectsRefreshing",
+              "epmSettingsTab",
+              "epmSubGoalQuery",
+              "epmSubGoalsError",
+              "epmSubGoalsLoading",
+              "filteredEpmRootGoals",
+              "filteredEpmRootGoals.length",
+              "filteredEpmSubGoals",
+              "focusEpmScopeField",
+              "getEpmLabelRowKey",
+              "getEpmLabelSearchResults",
+              "handleEpmLabelSearchKeyDown",
+              "handleEpmRootGoalSearchKeyDown",
+              "handleEpmSettingsTabKeyDown",
+              "handleEpmSubGoalSearchKeyDown",
+              "hasSessionRemovedEpmProjects",
+              "labelSearchIndex",
+              "labelSearchIndex[rowKey]",
+              "labelSearchLoading",
+              "labelSearchLoading[rowKey]",
+              "labelSearchOpen",
+              "labelSearchOpen[rowKey]",
+              "labelSearchQuery",
+              "labelSearchQuery[rowKey]",
+              "loadEpmProjectLabels",
+              "loadEpmSubGoalsForRoot",
+              "openEpmLabelMenu",
+              "registerEpmLabelInput",
+              "renderEpmProjectSkeletonRows",
+              "requestEpmLabelFocus",
+              "selectEpmProjectLabel",
+              "selectEpmRootGoal",
+              "selectEpmSubGoal",
+              "selectedEpmRootGoal",
+              "selectedEpmRootGoal.key",
+              "selectedEpmRootGoal.name",
+              "selectedEpmSubGoals",
+              "selectedEpmSubGoals.length",
+              "selectedEpmSubGoals.map",
+              "setEpmLabelChanging",
+              "setEpmLabelMenuAnchor",
+              "setEpmLabelShowAll",
+              "setEpmRootGoalIndex",
+              "setEpmRootGoalOpen",
+              "setEpmRootGoalQuery",
+              "setEpmSettingsProjectSort",
+              "setEpmSettingsProjectView",
+              "setEpmSettingsTab",
+              "setEpmSubGoalIndex",
+              "setEpmSubGoalOpen",
+              "setEpmSubGoalQuery",
+              "setLabelSearchIndex",
+              "setLabelSearchOpen",
+              "setLabelSearchQuery",
+              "showEpmRootGoalResults",
+              "showEpmSubGoalResults",
+              "updateEpmLabelPrefixDraft",
+              "updateEpmProjectDraft",
+              "visibleEpmRootGoals",
+              "visibleEpmRootGoals.map",
+              "visibleEpmSubGoals",
+              "visibleEpmSubGoals.length",
+              "visibleEpmSubGoals.map"
+            ],
+            "rationale": "Goal display uses getEpmSubGoalDisplayParts in epmProjectUtils.mjs:key/name. Row-key maps hold boolean loading/show/change/open values, numeric indices and string queries; [rowKey] records arbitrary data keys, no hidden callbacks."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "EpmSettings",
+              "line": 17920,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "epm.EpmView",
+      "path": "frontend/src/epm/EpmView.jsx",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "EpmView"
+      ],
+      "lineCount": 77,
+      "lineCeiling": 77,
+      "interfaces": [
+        {
+          "exportName": "EpmView",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "InitiativeIcon",
+            "collapsedProjectIds",
+            "epmAggregateTruncated",
+            "epmConfigLoaded",
+            "epmDuplicates",
+            "epmProjectRollupLoadingIds",
+            "epmProjectsLoading",
+            "epmRollupBoards",
+            "epmRollupLoading",
+            "epmRollupTree",
+            "epmSelectedProjectId",
+            "epmTab",
+            "jiraUrl",
+            "loadArchivedEpmProjectRollup",
+            "openEpmSettingsTab",
+            "searchQuery",
+            "selectedEpmProject",
+            "selectedEpmProjectUpdateLine",
+            "selectedSprint",
+            "selectedView",
+            "setCollapsedProjectIds",
+            "visibleEpmRollupBoards"
+          ],
+          "expandedInputNames": [
+            "InitiativeIcon",
+            "collapsedProjectIds",
+            "epmAggregateTruncated",
+            "epmConfigLoaded",
+            "epmDuplicates",
+            "epmProjectRollupLoadingIds",
+            "epmProjectsLoading",
+            "epmRollupBoards",
+            "epmRollupLoading",
+            "epmRollupTree",
+            "epmSelectedProjectId",
+            "epmTab",
+            "jiraUrl",
+            "loadArchivedEpmProjectRollup",
+            "openEpmSettingsTab",
+            "searchQuery",
+            "selectedEpmProject",
+            "selectedEpmProjectUpdateLine",
+            "selectedSprint",
+            "selectedView",
+            "setCollapsedProjectIds",
+            "visibleEpmRollupBoards"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 22,
+          "returnCount": 0,
+          "propCount": 22,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 22,
+          "returnCeiling": 0,
+          "propCeiling": 22,
+          "unresolved": [],
+          "inventory": {
+            "source": "frontend/src/epm/EpmView.jsx:6",
+            "sourceDigest": "de3dbe24b73537b5bb49ffc64bd2f744cb3ddb17a819475750988c7e5bcfff8c"
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "EpmView",
+              "line": 17660,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "epm.epmProjectUtils",
+      "path": "frontend/src/epm/epmProjectUtils.mjs",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "DEFAULT_EPM_PROJECT_SORT",
+        "EPM_PROJECT_SORT_OPTIONS",
+        "EPM_PROJECT_UPDATE_STALE_DAYS",
+        "buildAggregateRollupBoards",
+        "buildEpmEngEpicGroup",
+        "buildEpmProjectProgress",
+        "buildEpmProjectUpdateLine",
+        "buildRollupTree",
+        "filterEpmProjectsForTab",
+        "filterEpmRollupBoardsForSearch",
+        "filterEpmSettingsProjectsForView",
+        "flattenEpmRollupBoardsForDependencies",
+        "getEpmProjectDisplayName",
+        "getEpmProjectIdentity",
+        "getEpmProjectPrerequisites",
+        "getEpmProjectSortLabel",
+        "getEpmSettingsProjectsCacheKey",
+        "getEpmSubGoalDisplayParts",
+        "getNextEpmSubGoalSelection",
+        "hydrateEpmProjectDraft",
+        "isEmptyCustomEpmProjectRow",
+        "isEpmProjectsConfigReady",
+        "isRecentlyCompletedEpmProject",
+        "normalizeEpmLabelPrefixMask",
+        "normalizeEpmProjectSort",
+        "normalizeEpmScopeSubGoalKeys",
+        "normalizeEpmSettingsKeyPart",
+        "shouldUseEpmSprint",
+        "sortEpmRollupBoards",
+        "sortEpmSettingsProjects",
+        "toEpmEngEpicDetails",
+        "toEpmEngTask"
+      ],
+      "lineCount": 737,
+      "lineCeiling": 737,
+      "interfaces": []
+    },
+    {
+      "id": "epm.useEpmViewData",
+      "path": "frontend/src/epm/useEpmViewData.js",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "useEpmViewData"
+      ],
+      "lineCount": 443,
+      "lineCeiling": 443,
+      "interfaces": [
+        {
+          "exportName": "useEpmViewData",
+          "inputNames": [
+            "backendUrl",
+            "epmConfigLoaded",
+            "epmProjectSearch",
+            "epmProjectSort",
+            "hasSavedEpmScope",
+            "initialEpmSelectedProjectId",
+            "initialEpmTab",
+            "onHomeTokenRequired",
+            "onServerConnectionFailure",
+            "savedEpmSubGoalKeys",
+            "searchQuery",
+            "selectedSprint",
+            "selectedView"
+          ],
+          "returnNames": [
+            "epmAggregateFallback",
+            "epmAggregateTruncated",
+            "epmDuplicates",
+            "epmProjectRollupLoadingIds",
+            "epmProjects",
+            "epmProjectsError",
+            "epmProjectsLoading",
+            "epmRollupBoards",
+            "epmRollupLoading",
+            "epmRollupTree",
+            "epmSelectedProjectId",
+            "epmSelectedSubGoalKeys",
+            "epmTab",
+            "filteredEpmProjects",
+            "loadArchivedEpmProjectRollup",
+            "refreshEpmProjects",
+            "refreshEpmRollup",
+            "refreshEpmView",
+            "runtimeEpmSubGoalKeys",
+            "selectedEpmProject",
+            "setEpmProjects",
+            "setEpmProjectsError",
+            "setEpmSelectedProjectId",
+            "setEpmSelectedSubGoalKeys",
+            "setEpmTab",
+            "visibleEpmProjects",
+            "visibleEpmRollupBoards"
+          ],
+          "propNames": [],
+          "expandedInputNames": [
+            "backendUrl",
+            "epmConfigLoaded",
+            "epmProjectSearch",
+            "epmProjectSearch.trim",
+            "epmProjectSort",
+            "hasSavedEpmScope",
+            "initialEpmSelectedProjectId",
+            "initialEpmTab",
+            "onHomeTokenRequired",
+            "onServerConnectionFailure",
+            "savedEpmSubGoalKeys",
+            "searchQuery",
+            "selectedSprint",
+            "selectedView"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 14,
+          "returnCount": 27,
+          "propCount": 0,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 14,
+          "returnCeiling": 27,
+          "propCeiling": 0,
+          "unresolved": [
+            "forwarded input backendUrl",
+            "forwarded input epmProjectSort",
+            "forwarded input searchQuery"
+          ],
+          "inventory": {
+            "source": "frontend/src/epm/useEpmViewData.js:39",
+            "sourceDigest": "afe4c25b6f806f6bc4a71f3120a3ab44bf4ff72b0459025718f760f1a7f8c7da",
+            "reviewed": true,
+            "memberNames": [
+              "backendUrl",
+              "epmConfigLoaded",
+              "epmProjectSearch",
+              "epmProjectSearch.trim",
+              "epmProjectSort",
+              "hasSavedEpmScope",
+              "initialEpmSelectedProjectId",
+              "initialEpmTab",
+              "onHomeTokenRequired",
+              "onServerConnectionFailure",
+              "savedEpmSubGoalKeys",
+              "searchQuery",
+              "selectedSprint",
+              "selectedView"
+            ],
+            "rationale": "backendUrl is an endpoint-base string passed to API wrappers; it has no callable or nested dependency members. epmProjectSort/searchQuery, where present, are strings. All statically read member names are inventoried."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "useEpmViewData",
+              "line": 2836,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [
+            {
+              "name": "epmTab",
+              "lines": [
+                2838,
+                2871,
+                2881,
+                6694,
+                6751,
+                14147,
+                15419,
+                15451,
+                17669
+              ]
+            },
+            {
+              "name": "setEpmTab",
+              "lines": [
+                14150
+              ]
+            },
+            {
+              "name": "setEpmProjects",
+              "lines": [
+                1545
+              ]
+            },
+            {
+              "name": "epmProjectsLoading",
+              "lines": [
+                14155,
+                15086,
+                15352,
+                17663
+              ]
+            },
+            {
+              "name": "setEpmProjectsError",
+              "lines": [
+                1546
+              ]
+            },
+            {
+              "name": "epmSelectedProjectId",
+              "lines": [
+                2839,
+                2853,
+                2858,
+                2860,
+                2865,
+                2871,
+                6695,
+                6752,
+                17666
+              ]
+            },
+            {
+              "name": "setEpmSelectedProjectId",
+              "lines": [
+                14175
+              ]
+            },
+            {
+              "name": "visibleEpmProjects",
+              "lines": [
+                14156
+              ]
+            },
+            {
+              "name": "selectedEpmProject",
+              "lines": [
+                12266,
+                12268,
+                12348,
+                14157,
+                17667
+              ]
+            },
+            {
+              "name": "filteredEpmProjects",
+              "lines": [
+                14158
+              ]
+            },
+            {
+              "name": "visibleEpmRollupBoards",
+              "lines": [
+                2854,
+                2858,
+                2865,
+                2882,
+                12264,
+                12265,
+                12268,
+                17672
+              ]
+            },
+            {
+              "name": "epmRollupTree",
+              "lines": [
+                12266,
+                12268,
+                17665
+              ]
+            },
+            {
+              "name": "epmRollupBoards",
+              "lines": [
+                17664
+              ]
+            },
+            {
+              "name": "epmDuplicates",
+              "lines": [
+                17673
+              ]
+            },
+            {
+              "name": "epmAggregateTruncated",
+              "lines": [
+                17674
+              ]
+            },
+            {
+              "name": "epmRollupLoading",
+              "lines": [
+                12317,
+                12329,
+                15086,
+                17671
+              ]
+            },
+            {
+              "name": "epmProjectRollupLoadingIds",
+              "lines": [
+                17675
+              ]
+            },
+            {
+              "name": "epmSelectedSubGoalKeys",
+              "lines": [
+                14180
+              ]
+            },
+            {
+              "name": "setEpmSelectedSubGoalKeys",
+              "lines": [
+                14184
+              ]
+            },
+            {
+              "name": "runtimeEpmSubGoalKeys",
+              "lines": []
+            },
+            {
+              "name": "refreshEpmProjects",
+              "lines": [
+                1543
+              ]
+            },
+            {
+              "name": "refreshEpmView",
+              "lines": [
+                15049
+              ]
+            },
+            {
+              "name": "loadArchivedEpmProjectRollup",
+              "lines": [
+                2882,
+                17679
+              ]
+            }
+          ],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "scenario.ScenarioBar",
+      "path": "frontend/src/scenario/ScenarioBar.jsx",
+      "features": [
+        "scenario"
+      ],
+      "exports": [
+        "default"
+      ],
+      "lineCount": 34,
+      "lineCeiling": 34,
+      "interfaces": []
+    },
+    {
+      "id": "scenario.connectionScenarioRecovery",
+      "path": "frontend/src/scenario/connectionScenarioRecovery.js",
+      "features": [
+        "scenario"
+      ],
+      "exports": [
+        "applyScenarioConnectionRecovery",
+        "useConnectionScenarioRecovery"
+      ],
+      "lineCount": 156,
+      "lineCeiling": 156,
+      "interfaces": [
+        {
+          "exportName": "useConnectionScenarioRecovery",
+          "inputNames": [
+            "activeGroupId",
+            "availableSprints",
+            "groupsLoading",
+            "pendingRecoveryRef",
+            "pendingShellRef",
+            "releaseOwnership",
+            "runScenario",
+            "scenarioScopeKey",
+            "scenarioStartedRef",
+            "selectedSprint",
+            "setNotice",
+            "setStatus",
+            "showScenario",
+            "sprintsLoading",
+            "stagedRevision",
+            "visibleControlGroups"
+          ],
+          "returnNames": [],
+          "propNames": [],
+          "expandedInputNames": [
+            "activeGroupId",
+            "availableSprints",
+            "availableSprints.some",
+            "groupsLoading",
+            "pendingRecoveryRef",
+            "pendingRecoveryRef.current",
+            "pendingRecoveryRef.current.droppedSettings",
+            "pendingRecoveryRef.current.scenario.activeDraftId",
+            "pendingRecoveryRef.current.scenario.baseDraftRevision",
+            "pendingRecoveryRef.current.scenario.editMode",
+            "pendingRecoveryRef.current.scenario.groupId",
+            "pendingRecoveryRef.current.scenario.localOverrides[issueKey].end",
+            "pendingRecoveryRef.current.scenario.localOverrides[issueKey].start",
+            "pendingRecoveryRef.current.scenario.savedOverrides[issueKey].end",
+            "pendingRecoveryRef.current.scenario.savedOverrides[issueKey].start",
+            "pendingRecoveryRef.current.scenario.scopeKey",
+            "pendingRecoveryRef.current.scenario.scrollLeft",
+            "pendingRecoveryRef.current.scenario.scrollTop",
+            "pendingRecoveryRef.current.scenario.sprintId",
+            "pendingRecoveryRef.current.view.activeGroupId",
+            "pendingRecoveryRef.current.view.engMode",
+            "pendingRecoveryRef.current.view.scrollX",
+            "pendingRecoveryRef.current.view.scrollY",
+            "pendingRecoveryRef.current.view.selectedSprint",
+            "pendingShellRef",
+            "pendingShellRef.current",
+            "releaseOwnership",
+            "runScenario",
+            "scenarioScopeKey",
+            "scenarioStartedRef",
+            "scenarioStartedRef.current",
+            "selectedSprint",
+            "setNotice",
+            "setStatus",
+            "showScenario",
+            "sprintsLoading",
+            "stagedRevision",
+            "visibleControlGroups",
+            "visibleControlGroups.some"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 39,
+          "returnCount": 0,
+          "propCount": 0,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 39,
+          "returnCeiling": 0,
+          "propCeiling": 0,
+          "unresolved": [
+            "bag pendingRecoveryRef member alias recovery"
+          ],
+          "inventory": {
+            "source": "frontend/src/scenario/connectionScenarioRecovery.js:78",
+            "sourceDigest": "75485b73ff61606a348ee16efacd2f7fb3f9dc94de91c2ddba5bb7a4e52d8887",
+            "reviewed": true,
+            "memberNames": [
+              "activeGroupId",
+              "availableSprints",
+              "availableSprints.some",
+              "groupsLoading",
+              "pendingRecoveryRef",
+              "pendingRecoveryRef.current",
+              "pendingRecoveryRef.current.droppedSettings",
+              "pendingRecoveryRef.current.scenario.activeDraftId",
+              "pendingRecoveryRef.current.scenario.baseDraftRevision",
+              "pendingRecoveryRef.current.scenario.editMode",
+              "pendingRecoveryRef.current.scenario.groupId",
+              "pendingRecoveryRef.current.scenario.localOverrides[issueKey].end",
+              "pendingRecoveryRef.current.scenario.localOverrides[issueKey].start",
+              "pendingRecoveryRef.current.scenario.savedOverrides[issueKey].end",
+              "pendingRecoveryRef.current.scenario.savedOverrides[issueKey].start",
+              "pendingRecoveryRef.current.scenario.scopeKey",
+              "pendingRecoveryRef.current.scenario.scrollLeft",
+              "pendingRecoveryRef.current.scenario.scrollTop",
+              "pendingRecoveryRef.current.scenario.sprintId",
+              "pendingRecoveryRef.current.view.activeGroupId",
+              "pendingRecoveryRef.current.view.engMode",
+              "pendingRecoveryRef.current.view.scrollX",
+              "pendingRecoveryRef.current.view.scrollY",
+              "pendingRecoveryRef.current.view.selectedSprint",
+              "pendingShellRef",
+              "pendingShellRef.current",
+              "releaseOwnership",
+              "runScenario",
+              "scenarioScopeKey",
+              "scenarioStartedRef",
+              "scenarioStartedRef.current",
+              "selectedSprint",
+              "setNotice",
+              "setStatus",
+              "showScenario",
+              "sprintsLoading",
+              "stagedRevision",
+              "visibleControlGroups",
+              "visibleControlGroups.some"
+            ],
+            "rationale": "pendingRecoveryRef.current aliases the strict data-only connection recovery capsule; local hook scope checks, applyScenarioConnectionRecovery and scenarioDraftOverrides.js consume the inventoried view/scenario fields and start/end overrides. No top-level return; effect-only hook."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "useConnectionScenarioRecovery",
+              "line": 9236,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "scenario.scenarioDraftOverrides",
+      "path": "frontend/src/scenario/scenarioDraftOverrides.js",
+      "features": [
+        "scenario"
+      ],
+      "exports": [
+        "normalizeScenarioDraftOverrides",
+        "overlayScenarioDraftDelta",
+        "scenarioDraftOverridesSignature"
+      ],
+      "lineCount": 44,
+      "lineCeiling": 44,
+      "interfaces": []
+    },
+    {
+      "id": "scenario.scenarioLaneUtils",
+      "path": "frontend/src/scenario/scenarioLaneUtils.js",
+      "features": [
+        "scenario"
+      ],
+      "exports": [
+        "buildCapacityPlaceholderRows",
+        "buildLaneIssues"
+      ],
+      "lineCount": 69,
+      "lineCeiling": 69,
+      "interfaces": []
+    },
+    {
+      "id": "scenario.scenarioUtils",
+      "path": "frontend/src/scenario/scenarioUtils.js",
+      "features": [
+        "scenario"
+      ],
+      "exports": [
+        "SCENARIO_BAR_GAP",
+        "SCENARIO_BAR_HEIGHT",
+        "SCENARIO_COLLAPSED_ROWS",
+        "SCENARIO_TEAM_LEAD_ROWS",
+        "applyIssueOverride",
+        "buildScenarioTooltipPayload",
+        "computeDateSource",
+        "createUndoStack",
+        "dateToISODate",
+        "dateToPx",
+        "normalizeScenarioSummary",
+        "parseScenarioDate",
+        "pxToDate",
+        "splitAtSprintBoundaries",
+        "validateDependencies"
+      ],
+      "lineCount": 172,
+      "lineCeiling": 172,
+      "interfaces": []
+    },
+    {
+      "id": "settings.AdminAccessSettings",
+      "path": "frontend/src/settings/AdminAccessSettings.jsx",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "default",
+        "useAdminAccessSettings"
+      ],
+      "lineCount": 148,
+      "lineCeiling": 148,
+      "interfaces": [
+        {
+          "exportName": "default",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "adminUserManagementAvailable",
+            "adminUsers",
+            "adminUsersError",
+            "adminUsersLoading",
+            "authMode",
+            "onToggleAdminUser",
+            "selectedAdminUserIds"
+          ],
+          "expandedInputNames": [
+            "adminUserManagementAvailable",
+            "adminUsers",
+            "adminUsers.length",
+            "adminUsers.map",
+            "adminUsersError",
+            "adminUsersLoading",
+            "authMode",
+            "onToggleAdminUser",
+            "selectedAdminUserIds"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 9,
+          "returnCount": 0,
+          "propCount": 7,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 9,
+          "returnCeiling": 0,
+          "propCeiling": 7,
+          "unresolved": [],
+          "inventory": {
+            "source": "frontend/src/settings/AdminAccessSettings.jsx:67",
+            "sourceDigest": "2dc2eb272e795faa805e8736e89e6955930ed8f80e0c9a2d411a1060139fa09b"
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "AdminAccessSettings",
+              "line": 17747,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        },
+        {
+          "exportName": "useAdminAccessSettings",
+          "inputNames": [
+            "active",
+            "available",
+            "backendUrl"
+          ],
+          "returnNames": [
+            "error",
+            "isDirty",
+            "loading",
+            "save",
+            "selectedUserIds",
+            "toggleUser",
+            "users"
+          ],
+          "propNames": [],
+          "expandedInputNames": [
+            "active",
+            "available",
+            "backendUrl"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 3,
+          "returnCount": 7,
+          "propCount": 0,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 3,
+          "returnCeiling": 7,
+          "propCeiling": 0,
+          "unresolved": [
+            "forwarded input backendUrl"
+          ],
+          "inventory": {
+            "source": "frontend/src/settings/AdminAccessSettings.jsx:5",
+            "sourceDigest": "2dc2eb272e795faa805e8736e89e6955930ed8f80e0c9a2d411a1060139fa09b",
+            "reviewed": true,
+            "memberNames": [
+              "active",
+              "available",
+              "backendUrl"
+            ],
+            "rationale": "backendUrl is an endpoint-base string passed to API wrappers; it has no callable or nested dependency members. epmProjectSort/searchQuery, where present, are strings. All statically read member names are inventoried."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "useAdminAccessSettings",
+              "line": 724,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [
+            {
+              "name": "adminAccess",
+              "lines": [
+                1332,
+                1336,
+                2977,
+                3684,
+                3814,
+                3815,
+                3816,
+                4263,
+                4264,
+                4265,
+                4267,
+                4273,
+                17751,
+                17752,
+                17753,
+                17754,
+                17755
+              ]
+            }
+          ],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "settings.AdminSettingsTabs",
+      "path": "frontend/src/settings/AdminSettingsTabs.jsx",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "default"
+      ],
+      "lineCount": 35,
+      "lineCeiling": 35,
+      "interfaces": [
+        {
+          "exportName": "default",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "accessAvailable",
+            "activeTab",
+            "onKeyDown",
+            "onSelect",
+            "performanceAvailable"
+          ],
+          "expandedInputNames": [
+            "accessAvailable",
+            "activeTab",
+            "onKeyDown",
+            "onSelect",
+            "performanceAvailable"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 5,
+          "returnCount": 0,
+          "propCount": 5,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 5,
+          "returnCeiling": 0,
+          "propCeiling": 5,
+          "unresolved": [],
+          "inventory": {
+            "source": "frontend/src/settings/AdminSettingsTabs.jsx:13",
+            "sourceDigest": "1cff40967190964e05e6708fc1b07791ac16208f7568abf1ce02d39338fac900"
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "AdminSettingsTabs",
+              "line": 17732,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "settings.FirstRunGroupConfigurationGuide",
+      "path": "frontend/src/settings/FirstRunGroupConfigurationGuide.jsx",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "FIRST_RUN_ADMIN_SECTION_KEYS",
+        "FIRST_RUN_CONFIGURATION_GUIDE_STEPS",
+        "buildFirstRunSettingsSaveOutcome",
+        "canAdvanceFirstRunConfigurationGuide",
+        "createFirstRunConfigurationSession",
+        "default",
+        "firstRunConfigurationSessionReducer",
+        "mergeFirstRunAdminSections",
+        "normalizeFirstRunAdminSections",
+        "validateFirstRunPendingGroup",
+        "verifyFirstRunGroupsSaveSnapshot"
+      ],
+      "lineCount": 440,
+      "lineCeiling": 440,
+      "interfaces": [
+        {
+          "exportName": "default",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "busy",
+            "error",
+            "group",
+            "groups",
+            "interactionReady",
+            "onBack",
+            "onCancel",
+            "onContinue",
+            "onRetry",
+            "onReturn",
+            "status",
+            "step"
+          ],
+          "expandedInputNames": [
+            "busy",
+            "error",
+            "group",
+            "group.id",
+            "group.missingInfoComponents",
+            "group.name",
+            "group.teamIds",
+            "groups",
+            "groups[].id",
+            "groups[].name",
+            "interactionReady",
+            "onBack",
+            "onCancel",
+            "onContinue",
+            "onRetry",
+            "onReturn",
+            "status",
+            "step"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 18,
+          "returnCount": 0,
+          "propCount": 12,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 18,
+          "returnCeiling": 0,
+          "propCeiling": 12,
+          "unresolved": [
+            "forwarded input step",
+            "forwarded input group",
+            "forwarded input groups"
+          ],
+          "inventory": {
+            "source": "frontend/src/settings/FirstRunGroupConfigurationGuide.jsx:255",
+            "sourceDigest": "ffb67aae56352464cede3dac25d259fafff99d0f46c25c8d2fb3afe06c7a12f5",
+            "reviewed": true,
+            "memberNames": [
+              "busy",
+              "error",
+              "group",
+              "group.id",
+              "group.missingInfoComponents",
+              "group.name",
+              "group.teamIds",
+              "groups",
+              "groups[].id",
+              "groups[].name",
+              "interactionReady",
+              "onBack",
+              "onCancel",
+              "onContinue",
+              "onRetry",
+              "onReturn",
+              "status",
+              "step"
+            ],
+            "rationale": "step is a guide-step enum. FirstRunGroupConfigurationGuide.jsx:canAdvanceFirstRunConfigurationGuide consumes group id/name/teamIds/missingInfoComponents and group-array id/name; data only."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "FirstRunGroupConfigurationGuide",
+              "line": 18148,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "settings.FirstRunGroupSelectionModal",
+      "path": "frontend/src/settings/FirstRunGroupSelectionModal.jsx",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "default"
+      ],
+      "lineCount": 158,
+      "lineCeiling": 158,
+      "interfaces": [
+        {
+          "exportName": "default",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "error",
+            "groups",
+            "onAddDepartment",
+            "onConfigureGroup",
+            "onContinue",
+            "onSelectGroup",
+            "onboardingDone",
+            "saving",
+            "selectedGroupId",
+            "setupChoiceOpen"
+          ],
+          "expandedInputNames": [
+            "error",
+            "groups",
+            "groups.length",
+            "groups[].id",
+            "groups[].missingInfoComponents",
+            "groups[].name",
+            "groups[].teamIds",
+            "onAddDepartment",
+            "onConfigureGroup",
+            "onContinue",
+            "onSelectGroup",
+            "onboardingDone",
+            "saving",
+            "selectedGroupId",
+            "setupChoiceOpen"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 15,
+          "returnCount": 0,
+          "propCount": 10,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 15,
+          "returnCeiling": 0,
+          "propCeiling": 10,
+          "unresolved": [
+            "spread input groups"
+          ],
+          "inventory": {
+            "source": "frontend/src/settings/FirstRunGroupSelectionModal.jsx:6",
+            "sourceDigest": "0ee7daf9fac773394fa4bfc3c5f58f33e0002864837ccd905888db5ef420fcbe",
+            "reviewed": true,
+            "memberNames": [
+              "error",
+              "groups",
+              "groups.length",
+              "groups[].id",
+              "groups[].missingInfoComponents",
+              "groups[].name",
+              "groups[].teamIds",
+              "onAddDepartment",
+              "onConfigureGroup",
+              "onContinue",
+              "onSelectGroup",
+              "onboardingDone",
+              "saving",
+              "selectedGroupId",
+              "setupChoiceOpen"
+            ],
+            "rationale": "Spread groups copies an array of group records, not object dependencies; rendering reads id/name/teamIds/missingInfoComponents."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "FirstRunGroupSelectionModal",
+              "line": 18358,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "settings.FirstRunGroupSetupChoice",
+      "path": "frontend/src/settings/FirstRunGroupSetupChoice.jsx",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "default"
+      ],
+      "lineCount": 98,
+      "lineCeiling": 98,
+      "interfaces": [
+        {
+          "exportName": "default",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "groups",
+            "onBack",
+            "onChange",
+            "onContinue",
+            "value"
+          ],
+          "expandedInputNames": [
+            "groups",
+            "groups.map",
+            "groups.some",
+            "onBack",
+            "onChange",
+            "onContinue",
+            "value",
+            "value.mode",
+            "value.removeComponents",
+            "value.removeTeams",
+            "value.sourceGroupId"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 11,
+          "returnCount": 0,
+          "propCount": 5,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 11,
+          "returnCeiling": 0,
+          "propCeiling": 5,
+          "unresolved": [
+            "spread input value"
+          ],
+          "inventory": {
+            "source": "frontend/src/settings/FirstRunGroupSetupChoice.jsx:5",
+            "sourceDigest": "f2aac94743e778d0a2c76159c660faa79ba674aee69d2f076e18e498a8d0267e",
+            "reviewed": true,
+            "memberNames": [
+              "groups",
+              "groups.map",
+              "groups.some",
+              "onBack",
+              "onChange",
+              "onContinue",
+              "value",
+              "value.mode",
+              "value.removeComponents",
+              "value.removeTeams",
+              "value.sourceGroupId"
+            ],
+            "rationale": "Spread value is the setup-choice data object: mode/sourceGroupId/removeTeams/removeComponents; component reads and updates exactly those keys."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "FirstRunGroupSetupChoice",
+              "line": 18371,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "settings.GroupBoardSettings",
+      "path": "frontend/src/settings/GroupBoardSettings.jsx",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "default"
+      ],
+      "lineCount": 1164,
+      "lineCeiling": 1164,
+      "interfaces": [
+        {
+          "exportName": "default",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "backendUrl",
+            "board",
+            "boardId",
+            "epicsByStatus",
+            "groupName",
+            "onChange",
+            "projectScopeKey",
+            "random"
+          ],
+          "expandedInputNames": [
+            "backendUrl",
+            "board",
+            "board.columns[].colour",
+            "board.columns[].id",
+            "board.columns[].max",
+            "board.columns[].min",
+            "board.columns[].name",
+            "board.columns[].star",
+            "board.columns[].statuses",
+            "board.doneEpicRetentionDays",
+            "boardId",
+            "epicsByStatus",
+            "epicsByStatus[status]",
+            "groupName",
+            "onChange",
+            "projectScopeKey",
+            "random"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 17,
+          "returnCount": 0,
+          "propCount": 8,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 17,
+          "returnCeiling": 0,
+          "propCeiling": 8,
+          "unresolved": [
+            "forwarded input board",
+            "forwarded input backendUrl",
+            "forwarded input epicsByStatus"
+          ],
+          "inventory": {
+            "source": "frontend/src/settings/GroupBoardSettings.jsx:109",
+            "sourceDigest": "bd196af035fa3782c873feb152ddd11770faf586eb9ed8540f61dc4fadba0be6",
+            "reviewed": true,
+            "memberNames": [
+              "backendUrl",
+              "board",
+              "board.columns[].colour",
+              "board.columns[].id",
+              "board.columns[].max",
+              "board.columns[].min",
+              "board.columns[].name",
+              "board.columns[].star",
+              "board.columns[].statuses",
+              "board.doneEpicRetentionDays",
+              "boardId",
+              "epicsByStatus",
+              "epicsByStatus[status]",
+              "groupName",
+              "onChange",
+              "projectScopeKey",
+              "random"
+            ],
+            "rationale": "board is data normalized by groupBoardModel.js:fromStoredBoard; columns have id/name/colour/star/min/max/statuses and doneEpicRetentionDays belongs to board. epicsByStatus[status] is a numeric count; backendUrl is a string."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/settings/GroupBoardsTab.jsx",
+              "symbol": "GroupBoardSettings",
+              "line": 82,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "settings.GroupBoardsTab",
+      "path": "frontend/src/settings/GroupBoardsTab.jsx",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "default"
+      ],
+      "lineCount": 101,
+      "lineCeiling": 101,
+      "interfaces": [
+        {
+          "exportName": "default",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "activeGroupDraft",
+            "backendUrl",
+            "board",
+            "boardId",
+            "epicsByStatus",
+            "filteredGroupDrafts",
+            "groupManageTab",
+            "groupName",
+            "groupSearchQuery",
+            "onChange",
+            "projectScopeKey",
+            "random",
+            "setActiveGroupDraftId",
+            "setGroupSearchQuery",
+            "setShowGroupListMobile",
+            "showGroupListMobile"
+          ],
+          "expandedInputNames": [
+            "activeGroupDraft",
+            "activeGroupDraft.id",
+            "activeGroupDraft.name",
+            "backendUrl",
+            "board",
+            "boardId",
+            "epicsByStatus",
+            "filteredGroupDrafts",
+            "groupManageTab",
+            "groupName",
+            "groupSearchQuery",
+            "onChange",
+            "projectScopeKey",
+            "random",
+            "setActiveGroupDraftId",
+            "setGroupSearchQuery",
+            "setShowGroupListMobile",
+            "showGroupListMobile"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 18,
+          "returnCount": 0,
+          "propCount": 16,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 18,
+          "returnCeiling": 0,
+          "propCeiling": 16,
+          "unresolved": [],
+          "inventory": {
+            "source": "frontend/src/settings/GroupBoardsTab.jsx:9",
+            "sourceDigest": "3b8837bc1ee8eb4b10759d59c59c53b90946966243ad45025413d124f8492ad7"
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "GroupBoardsTab",
+              "line": 18330,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "settings.GroupEpicSelector",
+      "path": "frontend/src/settings/GroupEpicSelector.jsx",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "default"
+      ],
+      "lineCount": 76,
+      "lineCeiling": 76,
+      "interfaces": [
+        {
+          "exportName": "default",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "chipLastRef",
+            "label",
+            "onAddEpic",
+            "onRemoveEpic",
+            "onSearchBlur",
+            "onSearchChange",
+            "onSearchFocus",
+            "onSearchKeyDown",
+            "searchIndex",
+            "searchInputRef",
+            "searchLoading",
+            "searchOpen",
+            "searchQuery",
+            "searchResults",
+            "selectedEpics"
+          ],
+          "expandedInputNames": [
+            "chipLastRef",
+            "label",
+            "onAddEpic",
+            "onRemoveEpic",
+            "onSearchBlur",
+            "onSearchChange",
+            "onSearchFocus",
+            "onSearchKeyDown",
+            "searchIndex",
+            "searchInputRef",
+            "searchLoading",
+            "searchOpen",
+            "searchQuery",
+            "searchQuery.trim",
+            "searchResults",
+            "searchResults.length",
+            "searchResults.map",
+            "selectedEpics"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 18,
+          "returnCount": 0,
+          "propCount": 15,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 18,
+          "returnCeiling": 0,
+          "propCeiling": 15,
+          "unresolved": [
+            "forwarded input selectedEpics"
+          ],
+          "inventory": {
+            "source": "frontend/src/settings/GroupEpicSelector.jsx:3",
+            "sourceDigest": "f128b99f68dc07a4dbca7fc4ea0079d15b9748c5b6ce59a6199b73585a974563",
+            "reviewed": true,
+            "memberNames": [
+              "chipLastRef",
+              "label",
+              "onAddEpic",
+              "onRemoveEpic",
+              "onSearchBlur",
+              "onSearchChange",
+              "onSearchFocus",
+              "onSearchKeyDown",
+              "searchIndex",
+              "searchInputRef",
+              "searchLoading",
+              "searchOpen",
+              "searchQuery",
+              "searchQuery.trim",
+              "searchResults",
+              "searchResults.length",
+              "searchResults.map",
+              "selectedEpics"
+            ],
+            "rationale": "selectedEpics is an Array.isArray-guarded array of issue-key strings consumed by mapping; no object dependency bag."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/settings/TeamGroupsSettings.jsx",
+              "symbol": "GroupEpicSelector",
+              "line": 501,
+              "phase": "render"
+            },
+            {
+              "path": "frontend/src/settings/TeamGroupsSettings.jsx",
+              "symbol": "GroupEpicSelector",
+              "line": 518,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "settings.JiraFieldSettings",
+      "path": "frontend/src/settings/JiraFieldSettings.jsx",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "default"
+      ],
+      "lineCount": 840,
+      "lineCeiling": 840,
+      "interfaces": [
+        {
+          "exportName": "default",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "addIssueType",
+            "addProjectSelection",
+            "boardIdDraft",
+            "boardNameDraft",
+            "boardSearchIndex",
+            "boardSearchInputRef",
+            "boardSearchOpen",
+            "boardSearchQuery",
+            "boardSearchRemoteLoading",
+            "boardSearchResults",
+            "capacityFieldIdDraft",
+            "capacityFieldNameDraft",
+            "capacityFieldSearchHidden",
+            "capacityFieldSearchIndex",
+            "capacityFieldSearchInputRef",
+            "capacityFieldSearchOpen",
+            "capacityFieldSearchQuery",
+            "capacityFieldSearchResults",
+            "capacityProjectDraft",
+            "capacityProjectSearchIndex",
+            "capacityProjectSearchInputRef",
+            "capacityProjectSearchOpen",
+            "capacityProjectSearchQuery",
+            "capacityProjectSearchResults",
+            "clearBoardSelection",
+            "deliveryOwnerFieldIdDraft",
+            "deliveryOwnerFieldNameDraft",
+            "deliveryOwnerFieldSearchHidden",
+            "deliveryOwnerFieldSearchIndex",
+            "deliveryOwnerFieldSearchInputRef",
+            "deliveryOwnerFieldSearchOpen",
+            "deliveryOwnerFieldSearchQuery",
+            "deliveryOwnerFieldSearchResults",
+            "groupManageTab",
+            "handleBoardSearchKeyDown",
+            "handleCapacityFieldSearchKeyDown",
+            "handleCapacityProjectSearchKeyDown",
+            "handleDeliveryOwnerFieldSearchKeyDown",
+            "handleIssueTypeSearchKeyDown",
+            "handleParentNameFieldSearchKeyDown",
+            "handleProjectSearchKeyDown",
+            "handleSprintFieldSearchKeyDown",
+            "handleStoryPointsFieldSearchKeyDown",
+            "handleTeamFieldSearchKeyDown",
+            "issueTypeSearchIndex",
+            "issueTypeSearchInputRef",
+            "issueTypeSearchOpen",
+            "issueTypeSearchQuery",
+            "issueTypeSearchResults",
+            "issueTypesDraft",
+            "jiraFields",
+            "jiraProjects",
+            "loadingFields",
+            "loadingProjects",
+            "mappingHoverKey",
+            "parentNameFieldIdDraft",
+            "parentNameFieldNameDraft",
+            "parentNameFieldSearchHidden",
+            "parentNameFieldSearchIndex",
+            "parentNameFieldSearchInputRef",
+            "parentNameFieldSearchOpen",
+            "parentNameFieldSearchQuery",
+            "parentNameFieldSearchResults",
+            "priorityWeightsDraft",
+            "priorityWeightsSource",
+            "priorityWeightsSum",
+            "priorityWeightsValidationError",
+            "projectSearchIndex",
+            "projectSearchInputRef",
+            "projectSearchOpen",
+            "projectSearchQuery",
+            "projectSearchRemoteLoading",
+            "projectSearchResults",
+            "removeIssueType",
+            "removeProjectSelection",
+            "resetPriorityWeightsDraft",
+            "resolveCapacityProjectName",
+            "resolveProjectName",
+            "selectedProjectsDraft",
+            "setBoardIdDraft",
+            "setBoardNameDraft",
+            "setBoardSearchIndex",
+            "setBoardSearchOpen",
+            "setBoardSearchQuery",
+            "setCapacityFieldIdDraft",
+            "setCapacityFieldNameDraft",
+            "setCapacityFieldSearchIndex",
+            "setCapacityFieldSearchOpen",
+            "setCapacityFieldSearchQuery",
+            "setCapacityProjectDraft",
+            "setCapacityProjectSearchIndex",
+            "setCapacityProjectSearchOpen",
+            "setCapacityProjectSearchQuery",
+            "setDeliveryOwnerFieldIdDraft",
+            "setDeliveryOwnerFieldNameDraft",
+            "setDeliveryOwnerFieldSearchIndex",
+            "setDeliveryOwnerFieldSearchOpen",
+            "setDeliveryOwnerFieldSearchQuery",
+            "setIssueTypeSearchIndex",
+            "setIssueTypeSearchOpen",
+            "setIssueTypeSearchQuery",
+            "setMappingHoverKey",
+            "setParentNameFieldIdDraft",
+            "setParentNameFieldNameDraft",
+            "setParentNameFieldSearchIndex",
+            "setParentNameFieldSearchOpen",
+            "setParentNameFieldSearchQuery",
+            "setProjectSearchIndex",
+            "setProjectSearchOpen",
+            "setProjectSearchQuery",
+            "setShowTechnicalFieldIds",
+            "setSprintFieldIdDraft",
+            "setSprintFieldNameDraft",
+            "setSprintFieldSearchIndex",
+            "setSprintFieldSearchOpen",
+            "setSprintFieldSearchQuery",
+            "setStoryPointsFieldIdDraft",
+            "setStoryPointsFieldNameDraft",
+            "setStoryPointsFieldSearchIndex",
+            "setStoryPointsFieldSearchOpen",
+            "setStoryPointsFieldSearchQuery",
+            "setTeamFieldIdDraft",
+            "setTeamFieldNameDraft",
+            "setTeamFieldSearchIndex",
+            "setTeamFieldSearchOpen",
+            "setTeamFieldSearchQuery",
+            "showTechnicalFieldIds",
+            "sprintFieldIdDraft",
+            "sprintFieldNameDraft",
+            "sprintFieldSearchHidden",
+            "sprintFieldSearchIndex",
+            "sprintFieldSearchInputRef",
+            "sprintFieldSearchOpen",
+            "sprintFieldSearchQuery",
+            "sprintFieldSearchResults",
+            "storyPointsFieldIdDraft",
+            "storyPointsFieldNameDraft",
+            "storyPointsFieldSearchHidden",
+            "storyPointsFieldSearchIndex",
+            "storyPointsFieldSearchInputRef",
+            "storyPointsFieldSearchOpen",
+            "storyPointsFieldSearchQuery",
+            "storyPointsFieldSearchResults",
+            "teamFieldIdDraft",
+            "teamFieldNameDraft",
+            "teamFieldSearchHidden",
+            "teamFieldSearchIndex",
+            "teamFieldSearchInputRef",
+            "teamFieldSearchOpen",
+            "teamFieldSearchQuery",
+            "teamFieldSearchResults",
+            "updatePriorityWeightDraft"
+          ],
+          "expandedInputNames": [
+            "addIssueType",
+            "addProjectSelection",
+            "boardIdDraft",
+            "boardNameDraft",
+            "boardSearchIndex",
+            "boardSearchInputRef",
+            "boardSearchOpen",
+            "boardSearchQuery",
+            "boardSearchQuery.trim",
+            "boardSearchRemoteLoading",
+            "boardSearchResults",
+            "boardSearchResults.length",
+            "boardSearchResults.map",
+            "capacityFieldIdDraft",
+            "capacityFieldNameDraft",
+            "capacityFieldSearchHidden",
+            "capacityFieldSearchIndex",
+            "capacityFieldSearchInputRef",
+            "capacityFieldSearchOpen",
+            "capacityFieldSearchQuery",
+            "capacityFieldSearchResults",
+            "capacityFieldSearchResults.length",
+            "capacityFieldSearchResults.map",
+            "capacityProjectDraft",
+            "capacityProjectSearchIndex",
+            "capacityProjectSearchInputRef",
+            "capacityProjectSearchOpen",
+            "capacityProjectSearchQuery",
+            "capacityProjectSearchQuery.trim",
+            "capacityProjectSearchResults",
+            "capacityProjectSearchResults.length",
+            "capacityProjectSearchResults.map",
+            "clearBoardSelection",
+            "deliveryOwnerFieldIdDraft",
+            "deliveryOwnerFieldNameDraft",
+            "deliveryOwnerFieldSearchHidden",
+            "deliveryOwnerFieldSearchIndex",
+            "deliveryOwnerFieldSearchInputRef",
+            "deliveryOwnerFieldSearchOpen",
+            "deliveryOwnerFieldSearchQuery",
+            "deliveryOwnerFieldSearchResults",
+            "deliveryOwnerFieldSearchResults.length",
+            "deliveryOwnerFieldSearchResults.map",
+            "groupManageTab",
+            "handleBoardSearchKeyDown",
+            "handleCapacityFieldSearchKeyDown",
+            "handleCapacityProjectSearchKeyDown",
+            "handleDeliveryOwnerFieldSearchKeyDown",
+            "handleIssueTypeSearchKeyDown",
+            "handleParentNameFieldSearchKeyDown",
+            "handleProjectSearchKeyDown",
+            "handleSprintFieldSearchKeyDown",
+            "handleStoryPointsFieldSearchKeyDown",
+            "handleTeamFieldSearchKeyDown",
+            "issueTypeSearchIndex",
+            "issueTypeSearchInputRef",
+            "issueTypeSearchOpen",
+            "issueTypeSearchQuery",
+            "issueTypeSearchQuery.trim",
+            "issueTypeSearchResults",
+            "issueTypeSearchResults.length",
+            "issueTypeSearchResults.map",
+            "issueTypesDraft",
+            "issueTypesDraft.0",
+            "issueTypesDraft.length",
+            "jiraFields",
+            "jiraFields.length",
+            "jiraProjects",
+            "jiraProjects.length",
+            "loadingFields",
+            "loadingProjects",
+            "mappingHoverKey",
+            "parentNameFieldIdDraft",
+            "parentNameFieldNameDraft",
+            "parentNameFieldSearchHidden",
+            "parentNameFieldSearchIndex",
+            "parentNameFieldSearchInputRef",
+            "parentNameFieldSearchOpen",
+            "parentNameFieldSearchQuery",
+            "parentNameFieldSearchResults",
+            "parentNameFieldSearchResults.length",
+            "parentNameFieldSearchResults.map",
+            "priorityWeightsDraft",
+            "priorityWeightsSource",
+            "priorityWeightsSum",
+            "priorityWeightsSum.toFixed",
+            "priorityWeightsValidationError",
+            "projectSearchIndex",
+            "projectSearchInputRef",
+            "projectSearchOpen",
+            "projectSearchQuery",
+            "projectSearchQuery.trim",
+            "projectSearchRemoteLoading",
+            "projectSearchResults",
+            "projectSearchResults.length",
+            "projectSearchResults.map",
+            "removeIssueType",
+            "removeProjectSelection",
+            "resetPriorityWeightsDraft",
+            "resolveCapacityProjectName",
+            "resolveProjectName",
+            "selectedProjectsDraft",
+            "selectedProjectsDraft.filter",
+            "setBoardIdDraft",
+            "setBoardNameDraft",
+            "setBoardSearchIndex",
+            "setBoardSearchOpen",
+            "setBoardSearchQuery",
+            "setCapacityFieldIdDraft",
+            "setCapacityFieldNameDraft",
+            "setCapacityFieldSearchIndex",
+            "setCapacityFieldSearchOpen",
+            "setCapacityFieldSearchQuery",
+            "setCapacityProjectDraft",
+            "setCapacityProjectSearchIndex",
+            "setCapacityProjectSearchOpen",
+            "setCapacityProjectSearchQuery",
+            "setDeliveryOwnerFieldIdDraft",
+            "setDeliveryOwnerFieldNameDraft",
+            "setDeliveryOwnerFieldSearchIndex",
+            "setDeliveryOwnerFieldSearchOpen",
+            "setDeliveryOwnerFieldSearchQuery",
+            "setIssueTypeSearchIndex",
+            "setIssueTypeSearchOpen",
+            "setIssueTypeSearchQuery",
+            "setMappingHoverKey",
+            "setParentNameFieldIdDraft",
+            "setParentNameFieldNameDraft",
+            "setParentNameFieldSearchIndex",
+            "setParentNameFieldSearchOpen",
+            "setParentNameFieldSearchQuery",
+            "setProjectSearchIndex",
+            "setProjectSearchOpen",
+            "setProjectSearchQuery",
+            "setShowTechnicalFieldIds",
+            "setSprintFieldIdDraft",
+            "setSprintFieldNameDraft",
+            "setSprintFieldSearchIndex",
+            "setSprintFieldSearchOpen",
+            "setSprintFieldSearchQuery",
+            "setStoryPointsFieldIdDraft",
+            "setStoryPointsFieldNameDraft",
+            "setStoryPointsFieldSearchIndex",
+            "setStoryPointsFieldSearchOpen",
+            "setStoryPointsFieldSearchQuery",
+            "setTeamFieldIdDraft",
+            "setTeamFieldNameDraft",
+            "setTeamFieldSearchIndex",
+            "setTeamFieldSearchOpen",
+            "setTeamFieldSearchQuery",
+            "showTechnicalFieldIds",
+            "sprintFieldIdDraft",
+            "sprintFieldNameDraft",
+            "sprintFieldSearchHidden",
+            "sprintFieldSearchIndex",
+            "sprintFieldSearchInputRef",
+            "sprintFieldSearchOpen",
+            "sprintFieldSearchQuery",
+            "sprintFieldSearchResults",
+            "sprintFieldSearchResults.length",
+            "sprintFieldSearchResults.map",
+            "storyPointsFieldIdDraft",
+            "storyPointsFieldNameDraft",
+            "storyPointsFieldSearchHidden",
+            "storyPointsFieldSearchIndex",
+            "storyPointsFieldSearchInputRef",
+            "storyPointsFieldSearchOpen",
+            "storyPointsFieldSearchQuery",
+            "storyPointsFieldSearchResults",
+            "storyPointsFieldSearchResults.length",
+            "storyPointsFieldSearchResults.map",
+            "teamFieldIdDraft",
+            "teamFieldNameDraft",
+            "teamFieldSearchHidden",
+            "teamFieldSearchIndex",
+            "teamFieldSearchInputRef",
+            "teamFieldSearchOpen",
+            "teamFieldSearchQuery",
+            "teamFieldSearchResults",
+            "teamFieldSearchResults.length",
+            "teamFieldSearchResults.map",
+            "updatePriorityWeightDraft"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 182,
+          "returnCount": 0,
+          "propCount": 152,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 182,
+          "returnCeiling": 0,
+          "propCeiling": 152,
+          "unresolved": [
+            "forwarded input capacityProjectDraft"
+          ],
+          "inventory": {
+            "source": "frontend/src/settings/JiraFieldSettings.jsx:5",
+            "sourceDigest": "6d8a269862ee3f25a9f8aff4e6e8ad597be1bed638a119707a42c135b1009681",
+            "reviewed": true,
+            "memberNames": [
+              "addIssueType",
+              "addProjectSelection",
+              "boardIdDraft",
+              "boardNameDraft",
+              "boardSearchIndex",
+              "boardSearchInputRef",
+              "boardSearchOpen",
+              "boardSearchQuery",
+              "boardSearchQuery.trim",
+              "boardSearchRemoteLoading",
+              "boardSearchResults",
+              "boardSearchResults.length",
+              "boardSearchResults.map",
+              "capacityFieldIdDraft",
+              "capacityFieldNameDraft",
+              "capacityFieldSearchHidden",
+              "capacityFieldSearchIndex",
+              "capacityFieldSearchInputRef",
+              "capacityFieldSearchOpen",
+              "capacityFieldSearchQuery",
+              "capacityFieldSearchResults",
+              "capacityFieldSearchResults.length",
+              "capacityFieldSearchResults.map",
+              "capacityProjectDraft",
+              "capacityProjectSearchIndex",
+              "capacityProjectSearchInputRef",
+              "capacityProjectSearchOpen",
+              "capacityProjectSearchQuery",
+              "capacityProjectSearchQuery.trim",
+              "capacityProjectSearchResults",
+              "capacityProjectSearchResults.length",
+              "capacityProjectSearchResults.map",
+              "clearBoardSelection",
+              "deliveryOwnerFieldIdDraft",
+              "deliveryOwnerFieldNameDraft",
+              "deliveryOwnerFieldSearchHidden",
+              "deliveryOwnerFieldSearchIndex",
+              "deliveryOwnerFieldSearchInputRef",
+              "deliveryOwnerFieldSearchOpen",
+              "deliveryOwnerFieldSearchQuery",
+              "deliveryOwnerFieldSearchResults",
+              "deliveryOwnerFieldSearchResults.length",
+              "deliveryOwnerFieldSearchResults.map",
+              "groupManageTab",
+              "handleBoardSearchKeyDown",
+              "handleCapacityFieldSearchKeyDown",
+              "handleCapacityProjectSearchKeyDown",
+              "handleDeliveryOwnerFieldSearchKeyDown",
+              "handleIssueTypeSearchKeyDown",
+              "handleParentNameFieldSearchKeyDown",
+              "handleProjectSearchKeyDown",
+              "handleSprintFieldSearchKeyDown",
+              "handleStoryPointsFieldSearchKeyDown",
+              "handleTeamFieldSearchKeyDown",
+              "issueTypeSearchIndex",
+              "issueTypeSearchInputRef",
+              "issueTypeSearchOpen",
+              "issueTypeSearchQuery",
+              "issueTypeSearchQuery.trim",
+              "issueTypeSearchResults",
+              "issueTypeSearchResults.length",
+              "issueTypeSearchResults.map",
+              "issueTypesDraft",
+              "issueTypesDraft.0",
+              "issueTypesDraft.length",
+              "jiraFields",
+              "jiraFields.length",
+              "jiraProjects",
+              "jiraProjects.length",
+              "loadingFields",
+              "loadingProjects",
+              "mappingHoverKey",
+              "parentNameFieldIdDraft",
+              "parentNameFieldNameDraft",
+              "parentNameFieldSearchHidden",
+              "parentNameFieldSearchIndex",
+              "parentNameFieldSearchInputRef",
+              "parentNameFieldSearchOpen",
+              "parentNameFieldSearchQuery",
+              "parentNameFieldSearchResults",
+              "parentNameFieldSearchResults.length",
+              "parentNameFieldSearchResults.map",
+              "priorityWeightsDraft",
+              "priorityWeightsSource",
+              "priorityWeightsSum",
+              "priorityWeightsSum.toFixed",
+              "priorityWeightsValidationError",
+              "projectSearchIndex",
+              "projectSearchInputRef",
+              "projectSearchOpen",
+              "projectSearchQuery",
+              "projectSearchQuery.trim",
+              "projectSearchRemoteLoading",
+              "projectSearchResults",
+              "projectSearchResults.length",
+              "projectSearchResults.map",
+              "removeIssueType",
+              "removeProjectSelection",
+              "resetPriorityWeightsDraft",
+              "resolveCapacityProjectName",
+              "resolveProjectName",
+              "selectedProjectsDraft",
+              "selectedProjectsDraft.filter",
+              "setBoardIdDraft",
+              "setBoardNameDraft",
+              "setBoardSearchIndex",
+              "setBoardSearchOpen",
+              "setBoardSearchQuery",
+              "setCapacityFieldIdDraft",
+              "setCapacityFieldNameDraft",
+              "setCapacityFieldSearchIndex",
+              "setCapacityFieldSearchOpen",
+              "setCapacityFieldSearchQuery",
+              "setCapacityProjectDraft",
+              "setCapacityProjectSearchIndex",
+              "setCapacityProjectSearchOpen",
+              "setCapacityProjectSearchQuery",
+              "setDeliveryOwnerFieldIdDraft",
+              "setDeliveryOwnerFieldNameDraft",
+              "setDeliveryOwnerFieldSearchIndex",
+              "setDeliveryOwnerFieldSearchOpen",
+              "setDeliveryOwnerFieldSearchQuery",
+              "setIssueTypeSearchIndex",
+              "setIssueTypeSearchOpen",
+              "setIssueTypeSearchQuery",
+              "setMappingHoverKey",
+              "setParentNameFieldIdDraft",
+              "setParentNameFieldNameDraft",
+              "setParentNameFieldSearchIndex",
+              "setParentNameFieldSearchOpen",
+              "setParentNameFieldSearchQuery",
+              "setProjectSearchIndex",
+              "setProjectSearchOpen",
+              "setProjectSearchQuery",
+              "setShowTechnicalFieldIds",
+              "setSprintFieldIdDraft",
+              "setSprintFieldNameDraft",
+              "setSprintFieldSearchIndex",
+              "setSprintFieldSearchOpen",
+              "setSprintFieldSearchQuery",
+              "setStoryPointsFieldIdDraft",
+              "setStoryPointsFieldNameDraft",
+              "setStoryPointsFieldSearchIndex",
+              "setStoryPointsFieldSearchOpen",
+              "setStoryPointsFieldSearchQuery",
+              "setTeamFieldIdDraft",
+              "setTeamFieldNameDraft",
+              "setTeamFieldSearchIndex",
+              "setTeamFieldSearchOpen",
+              "setTeamFieldSearchQuery",
+              "showTechnicalFieldIds",
+              "sprintFieldIdDraft",
+              "sprintFieldNameDraft",
+              "sprintFieldSearchHidden",
+              "sprintFieldSearchIndex",
+              "sprintFieldSearchInputRef",
+              "sprintFieldSearchOpen",
+              "sprintFieldSearchQuery",
+              "sprintFieldSearchResults",
+              "sprintFieldSearchResults.length",
+              "sprintFieldSearchResults.map",
+              "storyPointsFieldIdDraft",
+              "storyPointsFieldNameDraft",
+              "storyPointsFieldSearchHidden",
+              "storyPointsFieldSearchIndex",
+              "storyPointsFieldSearchInputRef",
+              "storyPointsFieldSearchOpen",
+              "storyPointsFieldSearchQuery",
+              "storyPointsFieldSearchResults",
+              "storyPointsFieldSearchResults.length",
+              "storyPointsFieldSearchResults.map",
+              "teamFieldIdDraft",
+              "teamFieldNameDraft",
+              "teamFieldSearchHidden",
+              "teamFieldSearchIndex",
+              "teamFieldSearchInputRef",
+              "teamFieldSearchOpen",
+              "teamFieldSearchQuery",
+              "teamFieldSearchResults",
+              "teamFieldSearchResults.length",
+              "teamFieldSearchResults.map",
+              "updatePriorityWeightDraft"
+            ],
+            "rationale": "capacityProjectDraft is a project-key string passed to resolveCapacityProjectName, not an object bag."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "JiraFieldSettings",
+              "line": 17759,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "settings.PerformanceSettings",
+      "path": "frontend/src/settings/PerformanceSettings.jsx",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "PerformanceTrend",
+        "default"
+      ],
+      "lineCount": 122,
+      "lineCeiling": 122,
+      "interfaces": [
+        {
+          "exportName": "PerformanceTrend",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "trend"
+          ],
+          "expandedInputNames": [
+            "trend",
+            "trend.filter"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 2,
+          "returnCount": 0,
+          "propCount": 1,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 2,
+          "returnCeiling": 0,
+          "propCeiling": 1,
+          "unresolved": [],
+          "inventory": {
+            "source": "frontend/src/settings/PerformanceSettings.jsx:8",
+            "sourceDigest": "b97cffd0d70bd5a350eb1cdc0bd42cdf89fe0ff2f06a078e550b471df0ab7f85"
+          },
+          "callers": [
+            {
+              "path": "frontend/src/settings/PerformanceSettings.jsx",
+              "symbol": "PerformanceTrend",
+              "line": 115,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        },
+        {
+          "exportName": "default",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "backendUrl"
+          ],
+          "expandedInputNames": [
+            "backendUrl"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 1,
+          "returnCount": 0,
+          "propCount": 1,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 1,
+          "returnCeiling": 0,
+          "propCeiling": 1,
+          "unresolved": [
+            "forwarded input backendUrl"
+          ],
+          "inventory": {
+            "source": "frontend/src/settings/PerformanceSettings.jsx:56",
+            "sourceDigest": "b97cffd0d70bd5a350eb1cdc0bd42cdf89fe0ff2f06a078e550b471df0ab7f85",
+            "reviewed": true,
+            "memberNames": [
+              "backendUrl"
+            ],
+            "rationale": "backendUrl is an endpoint-base string passed to API wrappers; it has no callable or nested dependency members. epmProjectSort/searchQuery, where present, are strings. All statically read member names are inventoried."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "PerformanceSettings",
+              "line": 17745,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "settings.SettingsModal",
+      "path": "frontend/src/settings/SettingsModal.jsx",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "default"
+      ],
+      "lineCount": 140,
+      "lineCeiling": 140,
+      "interfaces": [
+        {
+          "exportName": "default",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "activeTab",
+            "cancelLabel",
+            "children",
+            "headerAction",
+            "isDirty",
+            "onCancel",
+            "onDiscard",
+            "onKeepEditing",
+            "onRequestClose",
+            "onSave",
+            "onTestConfiguration",
+            "saveDisabled",
+            "saveLabel",
+            "saveTitle",
+            "showDiscardConfirm",
+            "showSave",
+            "showTestConfiguration",
+            "subtitle",
+            "tabs",
+            "testConfigurationDisabled",
+            "testConfigurationLabel",
+            "testConfigurationMessage",
+            "title",
+            "unsavedSectionsCount",
+            "validationActions",
+            "validationMessages"
+          ],
+          "expandedInputNames": [
+            "activeTab",
+            "cancelLabel",
+            "children",
+            "headerAction",
+            "isDirty",
+            "onCancel",
+            "onDiscard",
+            "onKeepEditing",
+            "onRequestClose",
+            "onSave",
+            "onTestConfiguration",
+            "saveDisabled",
+            "saveLabel",
+            "saveTitle",
+            "showDiscardConfirm",
+            "showSave",
+            "showTestConfiguration",
+            "subtitle",
+            "tabs",
+            "tabs.map",
+            "testConfigurationDisabled",
+            "testConfigurationLabel",
+            "testConfigurationMessage",
+            "title",
+            "unsavedSectionsCount",
+            "validationActions",
+            "validationMessages",
+            "validationMessages.length",
+            "validationMessages.map"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 29,
+          "returnCount": 0,
+          "propCount": 26,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 29,
+          "returnCeiling": 0,
+          "propCeiling": 26,
+          "unresolved": [
+            "forwarded input validationActions"
+          ],
+          "inventory": {
+            "source": "frontend/src/settings/SettingsModal.jsx:3",
+            "sourceDigest": "b5ddba78396c3fdbd1010a01d7715fe0b5385a982b111b56cdcbf7ff137d1f7d",
+            "reviewed": true,
+            "memberNames": [
+              "activeTab",
+              "cancelLabel",
+              "children",
+              "headerAction",
+              "isDirty",
+              "onCancel",
+              "onDiscard",
+              "onKeepEditing",
+              "onRequestClose",
+              "onSave",
+              "onTestConfiguration",
+              "saveDisabled",
+              "saveLabel",
+              "saveTitle",
+              "showDiscardConfirm",
+              "showSave",
+              "showTestConfiguration",
+              "subtitle",
+              "tabs",
+              "tabs.map",
+              "testConfigurationDisabled",
+              "testConfigurationLabel",
+              "testConfigurationMessage",
+              "title",
+              "unsavedSectionsCount",
+              "validationActions",
+              "validationMessages",
+              "validationMessages.length",
+              "validationMessages.map"
+            ],
+            "rationale": "validationActions is an opaque React render value checked for truthiness and placed in JSX; no dependency member is read."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "SettingsModal",
+              "line": 17689,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "settings.TeamGroupsSettings",
+      "path": "frontend/src/settings/TeamGroupsSettings.jsx",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "default"
+      ],
+      "lineCount": 619,
+      "lineCeiling": 619,
+      "interfaces": [
+        {
+          "exportName": "default",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "activeGroupDraft",
+            "activeTeamIndex",
+            "activeTeamQuery",
+            "activeTeamResultsLimited",
+            "adHocEpicChipLastRef",
+            "adHocEpicSearchIndex",
+            "adHocEpicSearchInputRef",
+            "adHocEpicSearchLoading",
+            "adHocEpicSearchOpen",
+            "adHocEpicSearchQuery",
+            "addGroupAdHocCapacityEpic",
+            "addGroupDraftRow",
+            "addGroupExcludedCapacityEpic",
+            "addGroupMissingInfoComponent",
+            "addTeamToGroup",
+            "availableTeams",
+            "componentSearchIndex",
+            "componentSearchLoading",
+            "componentSearchOpen",
+            "componentSearchQuery",
+            "duplicateGroupDraft",
+            "excludedEpicChipLastRef",
+            "excludedEpicSearchIndex",
+            "excludedEpicSearchInputRef",
+            "excludedEpicSearchLoading",
+            "excludedEpicSearchOpen",
+            "excludedEpicSearchQuery",
+            "exportGroupsConfig",
+            "favoriteGroupDraftId",
+            "fetchAllTeamsFromJira",
+            "filteredAdHocEpicSearchResults",
+            "filteredComponentSearchResults",
+            "filteredExcludedEpicSearchResults",
+            "filteredGroupDrafts",
+            "firstRunConfigurationActive",
+            "groupDraft",
+            "groupDraftError",
+            "groupImportText",
+            "groupManageTab",
+            "groupSearchQuery",
+            "groupVisibilitySaving",
+            "groupWarnings",
+            "groupsError",
+            "handleAdHocEpicSearchBlur",
+            "handleAdHocEpicSearchChange",
+            "handleAdHocEpicSearchFocus",
+            "handleAdHocEpicSearchKeyDown",
+            "handleComponentSearchKeyDown",
+            "handleExcludedEpicSearchBlur",
+            "handleExcludedEpicSearchChange",
+            "handleExcludedEpicSearchFocus",
+            "handleExcludedEpicSearchKeyDown",
+            "handleTeamSearchBlur",
+            "handleTeamSearchChange",
+            "handleTeamSearchFocus",
+            "handleTeamSearchKeyDown",
+            "importGroupsConfig",
+            "isGroupVisibleInControls",
+            "loadingTeams",
+            "personalGroupPreferencesEnabled",
+            "removeGroupAdHocCapacityEpic",
+            "removeGroupDraft",
+            "removeGroupExcludedCapacityEpic",
+            "removeGroupMissingInfoComponent",
+            "removeTeamFromGroup",
+            "resolveTeamName",
+            "selectDepartmentSettingsTab",
+            "setActiveGroupDraftId",
+            "setComponentSearchOpen",
+            "setComponentSearchQuery",
+            "setFavoriteGroupDraft",
+            "setGroupImportText",
+            "setGroupSearchQuery",
+            "setShowGroupAdvanced",
+            "setShowGroupImport",
+            "setShowGroupListMobile",
+            "showGroupAdvanced",
+            "showGroupImport",
+            "showGroupListMobile",
+            "teamCacheLabel",
+            "teamCatalogCanRefresh",
+            "teamCatalogReady",
+            "teamChipLastRef",
+            "teamSearchFeedback",
+            "teamSearchInputRefs",
+            "teamSearchOpen",
+            "toggleDefaultGroupDraft",
+            "toggleGroupVisibleInControls",
+            "updateGroupDraftName",
+            "visibleGroupDraftIds"
+          ],
+          "expandedInputNames": [
+            "activeGroupDraft",
+            "activeGroupDraft.adHocCapacityEpics",
+            "activeGroupDraft.board",
+            "activeGroupDraft.excludedCapacityEpics",
+            "activeGroupDraft.id",
+            "activeGroupDraft.missingInfoComponents",
+            "activeGroupDraft.missingInfoComponents.map",
+            "activeGroupDraft.name",
+            "activeGroupDraft.teamIds",
+            "activeTeamIndex",
+            "activeTeamQuery",
+            "activeTeamQuery.trim",
+            "activeTeamResultsLimited",
+            "activeTeamResultsLimited.length",
+            "activeTeamResultsLimited.map",
+            "activeTeamResultsLimited[].id",
+            "activeTeamResultsLimited[].name",
+            "adHocEpicChipLastRef",
+            "adHocEpicSearchIndex",
+            "adHocEpicSearchInputRef",
+            "adHocEpicSearchLoading",
+            "adHocEpicSearchOpen",
+            "adHocEpicSearchQuery",
+            "addGroupAdHocCapacityEpic",
+            "addGroupDraftRow",
+            "addGroupExcludedCapacityEpic",
+            "addGroupMissingInfoComponent",
+            "addTeamToGroup",
+            "availableTeams",
+            "availableTeams.length",
+            "componentSearchIndex",
+            "componentSearchLoading",
+            "componentSearchOpen",
+            "componentSearchQuery",
+            "componentSearchQuery.trim",
+            "duplicateGroupDraft",
+            "excludedEpicChipLastRef",
+            "excludedEpicSearchIndex",
+            "excludedEpicSearchInputRef",
+            "excludedEpicSearchLoading",
+            "excludedEpicSearchOpen",
+            "excludedEpicSearchQuery",
+            "exportGroupsConfig",
+            "favoriteGroupDraftId",
+            "fetchAllTeamsFromJira",
+            "filteredAdHocEpicSearchResults",
+            "filteredComponentSearchResults",
+            "filteredComponentSearchResults.length",
+            "filteredComponentSearchResults.map",
+            "filteredExcludedEpicSearchResults",
+            "filteredGroupDrafts",
+            "filteredGroupDrafts.length",
+            "filteredGroupDrafts.map",
+            "firstRunConfigurationActive",
+            "groupDraft",
+            "groupDraft.defaultGroupId",
+            "groupDraft.groups",
+            "groupDraftError",
+            "groupImportText",
+            "groupManageTab",
+            "groupSearchQuery",
+            "groupVisibilitySaving",
+            "groupWarnings",
+            "groupsError",
+            "handleAdHocEpicSearchBlur",
+            "handleAdHocEpicSearchChange",
+            "handleAdHocEpicSearchFocus",
+            "handleAdHocEpicSearchKeyDown",
+            "handleComponentSearchKeyDown",
+            "handleExcludedEpicSearchBlur",
+            "handleExcludedEpicSearchChange",
+            "handleExcludedEpicSearchFocus",
+            "handleExcludedEpicSearchKeyDown",
+            "handleTeamSearchBlur",
+            "handleTeamSearchChange",
+            "handleTeamSearchFocus",
+            "handleTeamSearchKeyDown",
+            "importGroupsConfig",
+            "isGroupVisibleInControls",
+            "loadingTeams",
+            "personalGroupPreferencesEnabled",
+            "removeGroupAdHocCapacityEpic",
+            "removeGroupDraft",
+            "removeGroupExcludedCapacityEpic",
+            "removeGroupMissingInfoComponent",
+            "removeTeamFromGroup",
+            "resolveTeamName",
+            "selectDepartmentSettingsTab",
+            "setActiveGroupDraftId",
+            "setComponentSearchOpen",
+            "setComponentSearchQuery",
+            "setFavoriteGroupDraft",
+            "setGroupImportText",
+            "setGroupSearchQuery",
+            "setShowGroupAdvanced",
+            "setShowGroupImport",
+            "setShowGroupListMobile",
+            "showGroupAdvanced",
+            "showGroupImport",
+            "showGroupListMobile",
+            "teamCacheLabel",
+            "teamCatalogCanRefresh",
+            "teamCatalogReady",
+            "teamChipLastRef",
+            "teamChipLastRef.current",
+            "teamChipLastRef.current[groupId]",
+            "teamSearchFeedback",
+            "teamSearchFeedback[groupId].message",
+            "teamSearchFeedback[groupId].tone",
+            "teamSearchInputRefs",
+            "teamSearchInputRefs.current",
+            "teamSearchInputRefs.current[groupId]",
+            "teamSearchOpen",
+            "teamSearchOpen[groupId]",
+            "toggleDefaultGroupDraft",
+            "toggleGroupVisibleInControls",
+            "updateGroupDraftName",
+            "visibleGroupDraftIds"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 118,
+          "returnCount": 0,
+          "propCount": 90,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 118,
+          "returnCeiling": 0,
+          "propCeiling": 90,
+          "unresolved": [
+            "bag teamChipLastRef dynamic deep member",
+            "forwarded input activeTeamResultsLimited",
+            "bag teamSearchInputRefs dynamic deep member",
+            "bag teamSearchOpen dynamic member",
+            "bag teamSearchOpen dynamic deep member",
+            "bag teamSearchFeedback dynamic member",
+            "bag teamSearchFeedback dynamic deep member"
+          ],
+          "inventory": {
+            "source": "frontend/src/settings/TeamGroupsSettings.jsx:5",
+            "sourceDigest": "a8e5d43bb9b8390c336c4f307366f32f023528021e7842d65244c8b08e130a7c",
+            "reviewed": true,
+            "memberNames": [
+              "activeGroupDraft",
+              "activeGroupDraft.adHocCapacityEpics",
+              "activeGroupDraft.board",
+              "activeGroupDraft.excludedCapacityEpics",
+              "activeGroupDraft.id",
+              "activeGroupDraft.missingInfoComponents",
+              "activeGroupDraft.missingInfoComponents.map",
+              "activeGroupDraft.name",
+              "activeGroupDraft.teamIds",
+              "activeTeamIndex",
+              "activeTeamQuery",
+              "activeTeamQuery.trim",
+              "activeTeamResultsLimited",
+              "activeTeamResultsLimited.length",
+              "activeTeamResultsLimited.map",
+              "activeTeamResultsLimited[].id",
+              "activeTeamResultsLimited[].name",
+              "adHocEpicChipLastRef",
+              "adHocEpicSearchIndex",
+              "adHocEpicSearchInputRef",
+              "adHocEpicSearchLoading",
+              "adHocEpicSearchOpen",
+              "adHocEpicSearchQuery",
+              "addGroupAdHocCapacityEpic",
+              "addGroupDraftRow",
+              "addGroupExcludedCapacityEpic",
+              "addGroupMissingInfoComponent",
+              "addTeamToGroup",
+              "availableTeams",
+              "availableTeams.length",
+              "componentSearchIndex",
+              "componentSearchLoading",
+              "componentSearchOpen",
+              "componentSearchQuery",
+              "componentSearchQuery.trim",
+              "duplicateGroupDraft",
+              "excludedEpicChipLastRef",
+              "excludedEpicSearchIndex",
+              "excludedEpicSearchInputRef",
+              "excludedEpicSearchLoading",
+              "excludedEpicSearchOpen",
+              "excludedEpicSearchQuery",
+              "exportGroupsConfig",
+              "favoriteGroupDraftId",
+              "fetchAllTeamsFromJira",
+              "filteredAdHocEpicSearchResults",
+              "filteredComponentSearchResults",
+              "filteredComponentSearchResults.length",
+              "filteredComponentSearchResults.map",
+              "filteredExcludedEpicSearchResults",
+              "filteredGroupDrafts",
+              "filteredGroupDrafts.length",
+              "filteredGroupDrafts.map",
+              "firstRunConfigurationActive",
+              "groupDraft",
+              "groupDraft.defaultGroupId",
+              "groupDraft.groups",
+              "groupDraftError",
+              "groupImportText",
+              "groupManageTab",
+              "groupSearchQuery",
+              "groupVisibilitySaving",
+              "groupWarnings",
+              "groupsError",
+              "handleAdHocEpicSearchBlur",
+              "handleAdHocEpicSearchChange",
+              "handleAdHocEpicSearchFocus",
+              "handleAdHocEpicSearchKeyDown",
+              "handleComponentSearchKeyDown",
+              "handleExcludedEpicSearchBlur",
+              "handleExcludedEpicSearchChange",
+              "handleExcludedEpicSearchFocus",
+              "handleExcludedEpicSearchKeyDown",
+              "handleTeamSearchBlur",
+              "handleTeamSearchChange",
+              "handleTeamSearchFocus",
+              "handleTeamSearchKeyDown",
+              "importGroupsConfig",
+              "isGroupVisibleInControls",
+              "loadingTeams",
+              "personalGroupPreferencesEnabled",
+              "removeGroupAdHocCapacityEpic",
+              "removeGroupDraft",
+              "removeGroupExcludedCapacityEpic",
+              "removeGroupMissingInfoComponent",
+              "removeTeamFromGroup",
+              "resolveTeamName",
+              "selectDepartmentSettingsTab",
+              "setActiveGroupDraftId",
+              "setComponentSearchOpen",
+              "setComponentSearchQuery",
+              "setFavoriteGroupDraft",
+              "setGroupImportText",
+              "setGroupSearchQuery",
+              "setShowGroupAdvanced",
+              "setShowGroupImport",
+              "setShowGroupListMobile",
+              "showGroupAdvanced",
+              "showGroupImport",
+              "showGroupListMobile",
+              "teamCacheLabel",
+              "teamCatalogCanRefresh",
+              "teamCatalogReady",
+              "teamChipLastRef",
+              "teamChipLastRef.current",
+              "teamChipLastRef.current[groupId]",
+              "teamSearchFeedback",
+              "teamSearchFeedback[groupId].message",
+              "teamSearchFeedback[groupId].tone",
+              "teamSearchInputRefs",
+              "teamSearchInputRefs.current",
+              "teamSearchInputRefs.current[groupId]",
+              "teamSearchOpen",
+              "teamSearchOpen[groupId]",
+              "toggleDefaultGroupDraft",
+              "toggleGroupVisibleInControls",
+              "updateGroupDraftName",
+              "visibleGroupDraftIds"
+            ],
+            "rationale": "Ref maps hold DOM nodes indexed by groupId; open map values are booleans, feedback records contain tone/message. activeTeamResultsLimited is Team record data with id/name; arbitrary group IDs do not multiply dependency count."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "TeamGroupsSettings",
+              "line": 18053,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "settings.UnconfiguredWorkspaceNotice",
+      "path": "frontend/src/settings/UnconfiguredWorkspaceNotice.jsx",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "default"
+      ],
+      "lineCount": 26,
+      "lineCeiling": 26,
+      "interfaces": [
+        {
+          "exportName": "default",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "adminContacts",
+            "canEditSettings",
+            "onOpenSettings"
+          ],
+          "expandedInputNames": [
+            "adminContacts",
+            "adminContacts.length",
+            "adminContacts.map",
+            "canEditSettings",
+            "onOpenSettings"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 5,
+          "returnCount": 0,
+          "propCount": 3,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 5,
+          "returnCeiling": 0,
+          "propCeiling": 3,
+          "unresolved": [],
+          "inventory": {
+            "source": "frontend/src/settings/UnconfiguredWorkspaceNotice.jsx:4",
+            "sourceDigest": "7bbfffad53620cbb4c99ca06238880686e516c9a155e959a1415afd398d798c9"
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "UnconfiguredWorkspaceNotice",
+              "line": 15483,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "settings.UserConnectionsSettings",
+      "path": "frontend/src/settings/UserConnectionsSettings.jsx",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "default"
+      ],
+      "lineCount": 210,
+      "lineCeiling": 210,
+      "interfaces": [
+        {
+          "exportName": "default",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "backendUrl",
+            "onConnectionChange"
+          ],
+          "expandedInputNames": [
+            "backendUrl",
+            "onConnectionChange"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 2,
+          "returnCount": 0,
+          "propCount": 2,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 2,
+          "returnCeiling": 0,
+          "propCeiling": 2,
+          "unresolved": [
+            "forwarded input backendUrl"
+          ],
+          "inventory": {
+            "source": "frontend/src/settings/UserConnectionsSettings.jsx:40",
+            "sourceDigest": "44bf44cd5ead9143ec0d12c10022e0a93fe88c42171c14be564e7ac5057d2d71",
+            "reviewed": true,
+            "memberNames": [
+              "backendUrl",
+              "onConnectionChange"
+            ],
+            "rationale": "backendUrl is an endpoint-base string passed to API wrappers; it has no callable or nested dependency members. epmProjectSort/searchQuery, where present, are strings. All statically read member names are inventoried."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "UserConnectionsSettings",
+              "line": 17725,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "settings.adminSettingsGate",
+      "path": "frontend/src/settings/adminSettingsGate.js",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "ADMIN_SETTINGS_GATE_PENDING",
+        "firstMissingAdminSettingsTab",
+        "resolveAdminSettingsGate",
+        "useAdminSettingsGate"
+      ],
+      "lineCount": 40,
+      "lineCeiling": 40,
+      "interfaces": [
+        {
+          "exportName": "useAdminSettingsGate",
+          "inputNames": [
+            "canEditSettings",
+            "openSettings"
+          ],
+          "returnNames": [
+            "0:gate",
+            "1:applyConfig",
+            "2:setGate"
+          ],
+          "propNames": [],
+          "expandedInputNames": [
+            "canEditSettings",
+            "openSettings"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 2,
+          "returnCount": 3,
+          "propCount": 0,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 2,
+          "returnCeiling": 3,
+          "propCeiling": 0,
+          "unresolved": [],
+          "inventory": {
+            "source": "frontend/src/settings/adminSettingsGate.js:22",
+            "sourceDigest": "0d64eebd6983d050484e5d3da334427ce5ad4cc2aeea0b8c63169286082b1bc9"
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "useAdminSettingsGate",
+              "line": 730,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [
+            {
+              "name": "adminSettingsGate",
+              "lines": [
+                983,
+                2188,
+                2190,
+                8500,
+                8578,
+                8760,
+                8908,
+                12146,
+                15483
+              ]
+            },
+            {
+              "name": "applyAdminSettingsGateConfig",
+              "lines": [
+                3698,
+                3936,
+                6914
+              ]
+            },
+            {
+              "name": "setAdminSettingsGate",
+              "lines": [
+                7000
+              ]
+            }
+          ],
+          "getters": [
+            {
+              "caller": "frontend/src/dashboard.jsx",
+              "name": "openSettings",
+              "line": 730,
+              "capturedBindings": [
+                "openGroupManage"
+              ],
+              "phase": "effect",
+              "evidence": "frontend/src/settings/adminSettingsGate.js:25-33 invokes openSettings only inside useEffect; dashboard.jsx:730 captures the per-render openGroupManage binding declared later at 2717. Dependencies remain [gate.status, canEditSettings]."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "settings.boardStatusCatalog",
+      "path": "frontend/src/settings/boardStatusCatalog.js",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "clearBoardStatusCatalogCache",
+        "loadBoardStatusCatalog"
+      ],
+      "lineCount": 34,
+      "lineCeiling": 34,
+      "interfaces": []
+    },
+    {
+      "id": "settings.firstRunGroupConfiguration",
+      "path": "frontend/src/settings/firstRunGroupConfiguration.js",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "beginFirstRunGroupConfiguration",
+        "buildFirstRunGroupDraft",
+        "buildPendingFirstRunGroupPreferencesDraft",
+        "shouldShowFirstRunGroupSearch"
+      ],
+      "lineCount": 73,
+      "lineCeiling": 73,
+      "interfaces": []
+    },
+    {
+      "id": "settings.groupBoardModel",
+      "path": "frontend/src/settings/groupBoardModel.js",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "BOARD_COLUMN_COLOURS",
+        "DEFAULT_COLUMN_COLOUR",
+        "DEFAULT_DONE_EPIC_RETENTION_DAYS",
+        "MAX_BOARD_COLUMNS",
+        "MAX_COLUMN_BOUND",
+        "MAX_COLUMN_NAME_LENGTH",
+        "MAX_DONE_EPIC_RETENTION_DAYS",
+        "MIN_COLUMN_BOUND",
+        "MIN_DONE_EPIC_RETENTION_DAYS",
+        "assignStatusToColumn",
+        "buildStatusPickerRows",
+        "columnEpicCount",
+        "createColumn",
+        "createColumnId",
+        "describeBreach",
+        "describeColumnMove",
+        "fromStoredBoard",
+        "insertColumnBeforeTerminal",
+        "isValidColumnId",
+        "moveColumn",
+        "normalizeStoredBoard",
+        "parseBoundInput",
+        "parseRetentionDaysInput",
+        "removeNonTerminalColumn",
+        "removeStatusFromColumns",
+        "resolveInsertIndex",
+        "retentionDaysFromStoredBoard",
+        "setStarredColumn",
+        "shiftColumn",
+        "staleColumnStatuses",
+        "toStoredBoard",
+        "unmappedStatuses",
+        "validateComposerBoard",
+        "validatePresentGroupBoards"
+      ],
+      "lineCount": 433,
+      "lineCeiling": 433,
+      "interfaces": []
+    },
+    {
+      "id": "settings.groupConfigUtils",
+      "path": "frontend/src/settings/groupConfigUtils.js",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "GROUPS_CONFIG_VERSION",
+        "TEAM_LABEL_ALIAS_LIMIT",
+        "addTeamLabelAlias",
+        "applyLocalGroupPreferences",
+        "buildGroupId",
+        "buildGroupsConfigWithExcludedCapacityToggle",
+        "buildTeamCatalogList",
+        "epicMatchesTeamAliases",
+        "flattenTeamLabelAliases",
+        "formatGroupBoardSummary",
+        "mergeTeamCatalog",
+        "normalizeGroupsConfig",
+        "normalizeTeamLabelAliases",
+        "parseTeamIdList",
+        "removeTeamLabelAlias",
+        "resolveInitialGroupId",
+        "validateImportedTeamLabels",
+        "validateTeamLabelAliases"
+      ],
+      "lineCount": 346,
+      "lineCeiling": 346,
+      "interfaces": []
+    },
+    {
+      "id": "settings.groupVisibilityUtils",
+      "path": "frontend/src/settings/groupVisibilityUtils.js",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "buildFirstRunGroupPreferencesPayload",
+        "buildGroupPreferencesPayload",
+        "buildSharedGroupsPayload",
+        "effectiveVisibleGroupIds",
+        "groupPreferencesSignature",
+        "normalizeGroupPreferences",
+        "resolveVisibleActiveGroupId",
+        "visibleGroupsForControls"
+      ],
+      "lineCount": 104,
+      "lineCeiling": 104,
+      "interfaces": []
+    },
+    {
+      "id": "settings.groupsConfigConflict",
+      "path": "frontend/src/settings/groupsConfigConflict.js",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "GROUP_CONFIG_CONFLICT_MESSAGE",
+        "boardDraftIsDirty",
+        "committedSectionLabels",
+        "groupConfigConflictHeadline",
+        "groupConfigConflictMessages",
+        "pendingSectionLabels",
+        "rebaseSharedGroupsPayload"
+      ],
+      "lineCount": 76,
+      "lineCeiling": 76,
+      "interfaces": []
+    },
+    {
+      "id": "settings.settingsConfigReadState",
+      "path": "frontend/src/settings/settingsConfigReadState.js",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "acceptSettingsConfigBaseline",
+        "createSettingsDraftReadGuard",
+        "useSettingsConfigBaselineRevision"
+      ],
+      "lineCount": 35,
+      "lineCeiling": 35,
+      "interfaces": [
+        {
+          "exportName": "useSettingsConfigBaselineRevision",
+          "inputNames": [],
+          "returnNames": [
+            "acceptBaseline",
+            "baselineRevision"
+          ],
+          "propNames": [],
+          "expandedInputNames": [],
+          "outerParameterCount": 0,
+          "expandedInputCount": 0,
+          "returnCount": 2,
+          "propCount": 0,
+          "outerParameterCeiling": 0,
+          "expandedInputCeiling": 0,
+          "returnCeiling": 2,
+          "propCeiling": 0,
+          "unresolved": [],
+          "inventory": {
+            "source": "frontend/src/settings/settingsConfigReadState.js:24",
+            "sourceDigest": "78cfe7b531801415edd263a027bb04ede2775958d05d91342d006b6df78c8551"
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "useSettingsConfigBaselineRevision",
+              "line": 837,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [
+            {
+              "name": "settingsConfigBaselineRevision",
+              "lines": [
+                2772,
+                2776,
+                2778,
+                2783,
+                2787
+              ]
+            },
+            {
+              "name": "acceptSettingsConfigBaseline",
+              "lines": [
+                4861,
+                4894,
+                4917,
+                4938,
+                4953,
+                5084,
+                5106,
+                5125,
+                5140,
+                5149,
+                6920,
+                6929,
+                6936,
+                6947,
+                6950
+              ]
+            }
+          ],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "settings.sharedExcludedCapacityToggle",
+      "path": "frontend/src/settings/sharedExcludedCapacityToggle.js",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "saveSharedExcludedCapacityToggle"
+      ],
+      "lineCount": 96,
+      "lineCeiling": 96,
+      "interfaces": []
+    },
+    {
+      "id": "settings.teamAvailability",
+      "path": "frontend/src/settings/teamAvailability.js",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "buildTeamAvailability",
+        "buildTeamMembershipOwnerKey",
+        "isTeamMembershipCurrent",
+        "shouldForceAfterOrdinaryTeamRead",
+        "shouldRetainTeamMembershipAfterFailure"
+      ],
+      "lineCount": 84,
+      "lineCeiling": 84,
+      "interfaces": []
+    },
+    {
+      "id": "settings.useGroupVisibilityPreferences",
+      "path": "frontend/src/settings/useGroupVisibilityPreferences.js",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "useGroupVisibilityPreferences"
+      ],
+      "lineCount": 320,
+      "lineCeiling": 320,
+      "interfaces": [
+        {
+          "exportName": "useGroupVisibilityPreferences",
+          "inputNames": [
+            "activeGroupId",
+            "applyPreferenceGroupsSnapshot",
+            "backendUrl",
+            "bucketCount",
+            "groupDraft",
+            "groupsConfig",
+            "groupsLoading",
+            "setActiveGroupId",
+            "setDepartmentSettingsTab",
+            "setGroupManageTab",
+            "setShowGroupManage",
+            "trackSettingsAction",
+            "useBackendPreferences"
+          ],
+          "returnNames": [
+            "effectiveGroupIds",
+            "favoriteGroupDraftId",
+            "favoriteGroupValidationError",
+            "firstRunError",
+            "firstRunFavoriteGroupId",
+            "firstRunSaving",
+            "groupPreferences",
+            "groupPreferencesBaselineRef",
+            "groupPreferencesSaving",
+            "groupVisibilitySaving",
+            "initializeGroupPreferencesDraft",
+            "isGroupVisibilityDraftDirty",
+            "isGroupVisibleInControls",
+            "persistGroupPreferences",
+            "saveFirstRunGroupPreferences",
+            "selectFirstRunFavoriteGroup",
+            "setFavoriteGroupDraft",
+            "setFavoriteGroupDraftId",
+            "setGroupPreferences",
+            "setGroupPreferencesSaving",
+            "setVisibleGroupDraftIds",
+            "toggleGroupVisibleInControls",
+            "visibleControlGroups",
+            "visibleGroupDraftIds"
+          ],
+          "propNames": [],
+          "expandedInputNames": [
+            "activeGroupId",
+            "applyPreferenceGroupsSnapshot",
+            "backendUrl",
+            "bucketCount",
+            "groupDraft",
+            "groupDraft.defaultGroupId",
+            "groupDraft.groups",
+            "groupsConfig",
+            "groupsConfig.defaultGroupId",
+            "groupsConfig.groups",
+            "groupsConfig.groups[].id",
+            "groupsConfig.preferences.activeGroupId",
+            "groupsConfig.source",
+            "groupsLoading",
+            "setActiveGroupId",
+            "setDepartmentSettingsTab",
+            "setGroupManageTab",
+            "setShowGroupManage",
+            "trackSettingsAction",
+            "useBackendPreferences"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 20,
+          "returnCount": 24,
+          "propCount": 0,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 20,
+          "returnCeiling": 24,
+          "propCeiling": 0,
+          "unresolved": [
+            "forwarded input backendUrl",
+            "forwarded input groupsConfig",
+            "forwarded input activeGroupId"
+          ],
+          "inventory": {
+            "source": "frontend/src/settings/useGroupVisibilityPreferences.js:30",
+            "sourceDigest": "303da0f898b7e18f3a9f66e621360a7d0a3461fb9c16a90a83d77105df44e044",
+            "reviewed": true,
+            "memberNames": [
+              "activeGroupId",
+              "applyPreferenceGroupsSnapshot",
+              "backendUrl",
+              "bucketCount",
+              "groupDraft",
+              "groupDraft.defaultGroupId",
+              "groupDraft.groups",
+              "groupsConfig",
+              "groupsConfig.defaultGroupId",
+              "groupsConfig.groups",
+              "groupsConfig.groups[].id",
+              "groupsConfig.preferences.activeGroupId",
+              "groupsConfig.source",
+              "groupsLoading",
+              "setActiveGroupId",
+              "setDepartmentSettingsTab",
+              "setGroupManageTab",
+              "setShowGroupManage",
+              "trackSettingsAction",
+              "useBackendPreferences"
+            ],
+            "rationale": "backendUrl and activeGroupId are strings. groupVisibilityUtils.js consumes groupsConfig groups[].id/source/defaultGroupId/preferences.activeGroupId and retains the original group records; no callable dependency members forwarded."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "useGroupVisibilityPreferences",
+              "line": 1290,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [
+            {
+              "name": "groupPreferences",
+              "lines": [
+                1319,
+                1338,
+                2188,
+                2190,
+                2242,
+                2243,
+                3094,
+                3102,
+                6746,
+                6799,
+                7024,
+                7097,
+                7100,
+                7121,
+                7878,
+                7930,
+                7936,
+                7953,
+                8365,
+                8463,
+                8500,
+                8578,
+                8760,
+                8907,
+                14439,
+                15009,
+                15017,
+                15085,
+                18356,
+                18367,
+                18383
+              ]
+            },
+            {
+              "name": "setGroupPreferences",
+              "lines": [
+                2675,
+                3103,
+                3658,
+                4272,
+                5458
+              ]
+            },
+            {
+              "name": "visibleGroupDraftIds",
+              "lines": [
+                18064
+              ]
+            },
+            {
+              "name": "setVisibleGroupDraftIds",
+              "lines": [
+                2249,
+                3325,
+                3359,
+                3625
+              ]
+            },
+            {
+              "name": "favoriteGroupDraftId",
+              "lines": [
+                18080
+              ]
+            },
+            {
+              "name": "setFavoriteGroupDraftId",
+              "lines": [
+                2250
+              ]
+            },
+            {
+              "name": "setFavoriteGroupDraft",
+              "lines": [
+                18081
+              ]
+            },
+            {
+              "name": "favoriteGroupValidationError",
+              "lines": [
+                3070,
+                3071,
+                3075
+              ]
+            },
+            {
+              "name": "setGroupPreferencesSaving",
+              "lines": [
+                4046
+              ]
+            },
+            {
+              "name": "groupVisibilitySaving",
+              "lines": [
+                3125,
+                18067
+              ]
+            },
+            {
+              "name": "isGroupVisibilityDraftDirty",
+              "lines": [
+                2991,
+                2994,
+                3005,
+                3007,
+                3755,
+                3898,
+                4070,
+                17696
+              ]
+            },
+            {
+              "name": "visibleControlGroups",
+              "lines": [
+                2050,
+                2051,
+                2054,
+                5743,
+                5744,
+                5912,
+                5915,
+                6415,
+                6451,
+                9245,
+                14036,
+                14421
+              ]
+            },
+            {
+              "name": "initializeGroupPreferencesDraft",
+              "lines": [
+                2240
+              ]
+            },
+            {
+              "name": "isGroupVisibleInControls",
+              "lines": [
+                18066
+              ]
+            },
+            {
+              "name": "toggleGroupVisibleInControls",
+              "lines": [
+                18065
+              ]
+            },
+            {
+              "name": "firstRunFavoriteGroupId",
+              "lines": [
+                18360
+              ]
+            },
+            {
+              "name": "selectFirstRunFavoriteGroup",
+              "lines": [
+                18361
+              ]
+            },
+            {
+              "name": "saveFirstRunGroupPreferences",
+              "lines": [
+                4163,
+                5466,
+                5490,
+                18362
+              ]
+            },
+            {
+              "name": "firstRunSaving",
+              "lines": [
+                18365
+              ]
+            },
+            {
+              "name": "firstRunError",
+              "lines": [
+                18366
+              ]
+            },
+            {
+              "name": "persistGroupPreferences",
+              "lines": [
+                3899
+              ]
+            }
+          ],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "settings.useJiraFieldPickers",
+      "path": "frontend/src/settings/useJiraFieldPickers.js",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "FIELD_SEARCH_RESULT_LIMIT",
+        "applyAcceptedFieldConfig",
+        "applyAcceptedFieldConfigs",
+        "makeFieldKeyDown",
+        "makeFieldSearchResults",
+        "useJiraFieldPickers"
+      ],
+      "lineCount": 303,
+      "lineCeiling": 303,
+      "interfaces": [
+        {
+          "exportName": "useJiraFieldPickers",
+          "inputNames": [
+            "backendUrl",
+            "jiraFields"
+          ],
+          "returnNames": [
+            "anyFieldConfigDirty",
+            "deliveryOwnerFieldIdDraft",
+            "deliveryOwnerFieldNameDraft",
+            "deliveryOwnerFieldSearchHidden",
+            "deliveryOwnerFieldSearchIndex",
+            "deliveryOwnerFieldSearchInputRef",
+            "deliveryOwnerFieldSearchOpen",
+            "deliveryOwnerFieldSearchQuery",
+            "deliveryOwnerFieldSearchResults",
+            "dirtyFieldConfigCount",
+            "handleDeliveryOwnerFieldSearchKeyDown",
+            "handleParentNameFieldSearchKeyDown",
+            "handleSprintFieldSearchKeyDown",
+            "handleStoryPointsFieldSearchKeyDown",
+            "handleTeamFieldSearchKeyDown",
+            "isDeliveryOwnerFieldDirty",
+            "isParentNameFieldDirty",
+            "isSprintFieldDirty",
+            "isStoryPointsFieldDirty",
+            "isTeamFieldDirty",
+            "loadAllFieldConfigs",
+            "parentNameFieldIdDraft",
+            "parentNameFieldNameDraft",
+            "parentNameFieldSearchHidden",
+            "parentNameFieldSearchIndex",
+            "parentNameFieldSearchInputRef",
+            "parentNameFieldSearchOpen",
+            "parentNameFieldSearchQuery",
+            "parentNameFieldSearchResults",
+            "saveDeliveryOwnerFieldConfig",
+            "saveParentNameFieldConfig",
+            "saveSprintFieldConfig",
+            "saveStoryPointsFieldConfig",
+            "saveTeamFieldConfig",
+            "seedSharedFieldConfigs",
+            "setDeliveryOwnerFieldIdDraft",
+            "setDeliveryOwnerFieldNameDraft",
+            "setDeliveryOwnerFieldSearchIndex",
+            "setDeliveryOwnerFieldSearchOpen",
+            "setDeliveryOwnerFieldSearchQuery",
+            "setParentNameFieldIdDraft",
+            "setParentNameFieldNameDraft",
+            "setParentNameFieldSearchIndex",
+            "setParentNameFieldSearchOpen",
+            "setParentNameFieldSearchQuery",
+            "setSprintFieldIdDraft",
+            "setSprintFieldNameDraft",
+            "setSprintFieldSearchIndex",
+            "setSprintFieldSearchOpen",
+            "setSprintFieldSearchQuery",
+            "setStoryPointsFieldIdDraft",
+            "setStoryPointsFieldNameDraft",
+            "setStoryPointsFieldSearchIndex",
+            "setStoryPointsFieldSearchOpen",
+            "setStoryPointsFieldSearchQuery",
+            "setTeamFieldIdDraft",
+            "setTeamFieldNameDraft",
+            "setTeamFieldSearchIndex",
+            "setTeamFieldSearchOpen",
+            "setTeamFieldSearchQuery",
+            "sprintFieldIdDraft",
+            "sprintFieldNameDraft",
+            "sprintFieldSearchHidden",
+            "sprintFieldSearchIndex",
+            "sprintFieldSearchInputRef",
+            "sprintFieldSearchOpen",
+            "sprintFieldSearchQuery",
+            "sprintFieldSearchResults",
+            "storyPointsFieldIdDraft",
+            "storyPointsFieldNameDraft",
+            "storyPointsFieldSearchHidden",
+            "storyPointsFieldSearchIndex",
+            "storyPointsFieldSearchInputRef",
+            "storyPointsFieldSearchOpen",
+            "storyPointsFieldSearchQuery",
+            "storyPointsFieldSearchResults",
+            "teamFieldIdDraft",
+            "teamFieldNameDraft",
+            "teamFieldSearchHidden",
+            "teamFieldSearchIndex",
+            "teamFieldSearchInputRef",
+            "teamFieldSearchOpen",
+            "teamFieldSearchQuery",
+            "teamFieldSearchResults"
+          ],
+          "propNames": [],
+          "expandedInputNames": [
+            "backendUrl",
+            "jiraFields",
+            "jiraFields[].id",
+            "jiraFields[].name"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 4,
+          "returnCount": 84,
+          "propCount": 0,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 4,
+          "returnCeiling": 84,
+          "propCeiling": 0,
+          "unresolved": [
+            "forwarded input backendUrl",
+            "forwarded input jiraFields"
+          ],
+          "inventory": {
+            "source": "frontend/src/settings/useJiraFieldPickers.js:116",
+            "sourceDigest": "c920b9038a4dff9bc2c38a857c1eaa2db68fb18f6321304b22fd3ed247b4f23e",
+            "reviewed": true,
+            "memberNames": [
+              "backendUrl",
+              "jiraFields",
+              "jiraFields[].id",
+              "jiraFields[].name"
+            ],
+            "rationale": "backendUrl is a string API base. makeFieldSearchResults consumes jiraFields[].id/name and retains the original field records; array cardinality is data, not dependencies."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "useJiraFieldPickers",
+              "line": 831,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [
+            {
+              "name": "sprintFieldIdDraft",
+              "lines": [
+                844,
+                1326,
+                1339,
+                3036,
+                3075,
+                17765
+              ]
+            },
+            {
+              "name": "setSprintFieldIdDraft",
+              "lines": [
+                4257,
+                17766
+              ]
+            },
+            {
+              "name": "sprintFieldNameDraft",
+              "lines": [
+                844,
+                1326,
+                1340,
+                17764
+              ]
+            },
+            {
+              "name": "setSprintFieldNameDraft",
+              "lines": [
+                4257,
+                17767
+              ]
+            },
+            {
+              "name": "sprintFieldSearchQuery",
+              "lines": [
+                17769
+              ]
+            },
+            {
+              "name": "setSprintFieldSearchQuery",
+              "lines": [
+                17770
+              ]
+            },
+            {
+              "name": "sprintFieldSearchOpen",
+              "lines": [
+                17776
+              ]
+            },
+            {
+              "name": "setSprintFieldSearchOpen",
+              "lines": [
+                17771
+              ]
+            },
+            {
+              "name": "sprintFieldSearchIndex",
+              "lines": [
+                17779
+              ]
+            },
+            {
+              "name": "setSprintFieldSearchIndex",
+              "lines": [
+                17772
+              ]
+            },
+            {
+              "name": "sprintFieldSearchInputRef",
+              "lines": [
+                17774
+              ]
+            },
+            {
+              "name": "sprintFieldSearchResults",
+              "lines": [
+                17777
+              ]
+            },
+            {
+              "name": "sprintFieldSearchHidden",
+              "lines": [
+                17778
+              ]
+            },
+            {
+              "name": "handleSprintFieldSearchKeyDown",
+              "lines": [
+                17773
+              ]
+            },
+            {
+              "name": "isSprintFieldDirty",
+              "lines": [
+                3678,
+                6822
+              ]
+            },
+            {
+              "name": "saveSprintFieldConfig",
+              "lines": [
+                3801
+              ]
+            },
+            {
+              "name": "parentNameFieldIdDraft",
+              "lines": [
+                845,
+                1327,
+                1338,
+                3039,
+                3075,
+                17818
+              ]
+            },
+            {
+              "name": "setParentNameFieldIdDraft",
+              "lines": [
+                4258,
+                17833
+              ]
+            },
+            {
+              "name": "parentNameFieldNameDraft",
+              "lines": [
+                845,
+                1327,
+                1339,
+                17814
+              ]
+            },
+            {
+              "name": "setParentNameFieldNameDraft",
+              "lines": [
+                4258,
+                17834
+              ]
+            },
+            {
+              "name": "parentNameFieldSearchQuery",
+              "lines": [
+                17835
+              ]
+            },
+            {
+              "name": "setParentNameFieldSearchQuery",
+              "lines": [
+                17836
+              ]
+            },
+            {
+              "name": "parentNameFieldSearchOpen",
+              "lines": [
+                17841
+              ]
+            },
+            {
+              "name": "setParentNameFieldSearchOpen",
+              "lines": [
+                17837
+              ]
+            },
+            {
+              "name": "parentNameFieldSearchIndex",
+              "lines": [
+                17844
+              ]
+            },
+            {
+              "name": "setParentNameFieldSearchIndex",
+              "lines": [
+                17838
+              ]
+            },
+            {
+              "name": "parentNameFieldSearchInputRef",
+              "lines": [
+                17840
+              ]
+            },
+            {
+              "name": "parentNameFieldSearchResults",
+              "lines": [
+                17842
+              ]
+            },
+            {
+              "name": "parentNameFieldSearchHidden",
+              "lines": [
+                17843
+              ]
+            },
+            {
+              "name": "handleParentNameFieldSearchKeyDown",
+              "lines": [
+                17839
+              ]
+            },
+            {
+              "name": "isParentNameFieldDirty",
+              "lines": [
+                3679,
+                6823
+              ]
+            },
+            {
+              "name": "saveParentNameFieldConfig",
+              "lines": [
+                3802
+              ]
+            },
+            {
+              "name": "storyPointsFieldIdDraft",
+              "lines": [
+                846,
+                1328,
+                1340,
+                3042,
+                3075,
+                17819
+              ]
+            },
+            {
+              "name": "setStoryPointsFieldIdDraft",
+              "lines": [
+                4259,
+                17845
+              ]
+            },
+            {
+              "name": "storyPointsFieldNameDraft",
+              "lines": [
+                846,
+                1328,
+                1340,
+                17815
+              ]
+            },
+            {
+              "name": "setStoryPointsFieldNameDraft",
+              "lines": [
+                4259,
+                17846
+              ]
+            },
+            {
+              "name": "storyPointsFieldSearchQuery",
+              "lines": [
+                17847
+              ]
+            },
+            {
+              "name": "setStoryPointsFieldSearchQuery",
+              "lines": [
+                17848
+              ]
+            },
+            {
+              "name": "storyPointsFieldSearchOpen",
+              "lines": [
+                17853
+              ]
+            },
+            {
+              "name": "setStoryPointsFieldSearchOpen",
+              "lines": [
+                17849
+              ]
+            },
+            {
+              "name": "storyPointsFieldSearchIndex",
+              "lines": [
+                17856
+              ]
+            },
+            {
+              "name": "setStoryPointsFieldSearchIndex",
+              "lines": [
+                17850
+              ]
+            },
+            {
+              "name": "storyPointsFieldSearchInputRef",
+              "lines": [
+                17852
+              ]
+            },
+            {
+              "name": "storyPointsFieldSearchResults",
+              "lines": [
+                17854
+              ]
+            },
+            {
+              "name": "storyPointsFieldSearchHidden",
+              "lines": [
+                17855
+              ]
+            },
+            {
+              "name": "handleStoryPointsFieldSearchKeyDown",
+              "lines": [
+                17851
+              ]
+            },
+            {
+              "name": "isStoryPointsFieldDirty",
+              "lines": [
+                3680,
+                6824
+              ]
+            },
+            {
+              "name": "saveStoryPointsFieldConfig",
+              "lines": [
+                3803
+              ]
+            },
+            {
+              "name": "teamFieldIdDraft",
+              "lines": [
+                847,
+                1329,
+                1340,
+                3045,
+                3075,
+                17820
+              ]
+            },
+            {
+              "name": "setTeamFieldIdDraft",
+              "lines": [
+                4260,
+                17867
+              ]
+            },
+            {
+              "name": "teamFieldNameDraft",
+              "lines": [
+                847,
+                1329,
+                1340,
+                17816
+              ]
+            },
+            {
+              "name": "setTeamFieldNameDraft",
+              "lines": [
+                4260,
+                17868
+              ]
+            },
+            {
+              "name": "teamFieldSearchQuery",
+              "lines": [
+                17857
+              ]
+            },
+            {
+              "name": "setTeamFieldSearchQuery",
+              "lines": [
+                17858
+              ]
+            },
+            {
+              "name": "teamFieldSearchOpen",
+              "lines": [
+                17863
+              ]
+            },
+            {
+              "name": "setTeamFieldSearchOpen",
+              "lines": [
+                17859
+              ]
+            },
+            {
+              "name": "teamFieldSearchIndex",
+              "lines": [
+                17866
+              ]
+            },
+            {
+              "name": "setTeamFieldSearchIndex",
+              "lines": [
+                17860
+              ]
+            },
+            {
+              "name": "teamFieldSearchInputRef",
+              "lines": [
+                17862
+              ]
+            },
+            {
+              "name": "teamFieldSearchResults",
+              "lines": [
+                17864
+              ]
+            },
+            {
+              "name": "teamFieldSearchHidden",
+              "lines": [
+                17865
+              ]
+            },
+            {
+              "name": "handleTeamFieldSearchKeyDown",
+              "lines": [
+                17861
+              ]
+            },
+            {
+              "name": "isTeamFieldDirty",
+              "lines": [
+                3681,
+                6825
+              ]
+            },
+            {
+              "name": "saveTeamFieldConfig",
+              "lines": [
+                3804
+              ]
+            },
+            {
+              "name": "deliveryOwnerFieldIdDraft",
+              "lines": [
+                848,
+                1330,
+                1337,
+                17821
+              ]
+            },
+            {
+              "name": "setDeliveryOwnerFieldIdDraft",
+              "lines": [
+                4261,
+                17879
+              ]
+            },
+            {
+              "name": "deliveryOwnerFieldNameDraft",
+              "lines": [
+                848,
+                1330,
+                1337,
+                17817
+              ]
+            },
+            {
+              "name": "setDeliveryOwnerFieldNameDraft",
+              "lines": [
+                4261,
+                17880
+              ]
+            },
+            {
+              "name": "deliveryOwnerFieldSearchQuery",
+              "lines": [
+                17869
+              ]
+            },
+            {
+              "name": "setDeliveryOwnerFieldSearchQuery",
+              "lines": [
+                17870
+              ]
+            },
+            {
+              "name": "deliveryOwnerFieldSearchOpen",
+              "lines": [
+                17875
+              ]
+            },
+            {
+              "name": "setDeliveryOwnerFieldSearchOpen",
+              "lines": [
+                17871
+              ]
+            },
+            {
+              "name": "deliveryOwnerFieldSearchIndex",
+              "lines": [
+                17878
+              ]
+            },
+            {
+              "name": "setDeliveryOwnerFieldSearchIndex",
+              "lines": [
+                17872
+              ]
+            },
+            {
+              "name": "deliveryOwnerFieldSearchInputRef",
+              "lines": [
+                17874
+              ]
+            },
+            {
+              "name": "deliveryOwnerFieldSearchResults",
+              "lines": [
+                17876
+              ]
+            },
+            {
+              "name": "deliveryOwnerFieldSearchHidden",
+              "lines": [
+                17877
+              ]
+            },
+            {
+              "name": "handleDeliveryOwnerFieldSearchKeyDown",
+              "lines": [
+                17873
+              ]
+            },
+            {
+              "name": "isDeliveryOwnerFieldDirty",
+              "lines": [
+                3682,
+                6826
+              ]
+            },
+            {
+              "name": "saveDeliveryOwnerFieldConfig",
+              "lines": [
+                3805
+              ]
+            },
+            {
+              "name": "loadAllFieldConfigs",
+              "lines": [
+                2270,
+                6973
+              ]
+            },
+            {
+              "name": "seedSharedFieldConfigs",
+              "lines": [
+                6951
+              ]
+            },
+            {
+              "name": "anyFieldConfigDirty",
+              "lines": [
+                2984,
+                2986
+              ]
+            },
+            {
+              "name": "dirtyFieldConfigCount",
+              "lines": [
+                3006,
+                3007
+              ]
+            }
+          ],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "settings.useTeamCatalogLifecycle",
+      "path": "frontend/src/settings/useTeamCatalogLifecycle.js",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "default"
+      ],
+      "lineCount": 464,
+      "lineCeiling": 464,
+      "interfaces": [
+        {
+          "exportName": "default",
+          "inputNames": [
+            "authResumeStagedRevision",
+            "backendUrl",
+            "selectedSprintInfo",
+            "setGroupDraftError",
+            "sharedConfigRevision",
+            "showSettings",
+            "sprintBrowserContextId",
+            "sprintCatalogGeneration",
+            "sprintCatalogIdentity"
+          ],
+          "returnNames": [
+            "fetchAllTeamsFromJira",
+            "invalidateTeamMembership",
+            "loadingTeams",
+            "teamCatalogReady",
+            "teamCatalogState",
+            "teamMembershipState"
+          ],
+          "propNames": [],
+          "expandedInputNames": [
+            "authResumeStagedRevision",
+            "backendUrl",
+            "selectedSprintInfo",
+            "selectedSprintInfo.id",
+            "selectedSprintInfo.name",
+            "setGroupDraftError",
+            "sharedConfigRevision",
+            "showSettings",
+            "sprintBrowserContextId",
+            "sprintCatalogGeneration",
+            "sprintCatalogIdentity"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 11,
+          "returnCount": 6,
+          "propCount": 0,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 11,
+          "returnCeiling": 6,
+          "propCeiling": 0,
+          "unresolved": [
+            "forwarded input backendUrl"
+          ],
+          "inventory": {
+            "source": "frontend/src/settings/useTeamCatalogLifecycle.js:30",
+            "sourceDigest": "f3adc4df2f061a142679fb64ff99516d2058bcbb69687dc623cc2615e27a76de",
+            "reviewed": true,
+            "memberNames": [
+              "authResumeStagedRevision",
+              "backendUrl",
+              "selectedSprintInfo",
+              "selectedSprintInfo.id",
+              "selectedSprintInfo.name",
+              "setGroupDraftError",
+              "sharedConfigRevision",
+              "showSettings",
+              "sprintBrowserContextId",
+              "sprintCatalogGeneration",
+              "sprintCatalogIdentity"
+            ],
+            "rationale": "backendUrl is an endpoint-base string passed to API wrappers; it has no callable or nested dependency members. epmProjectSort/searchQuery, where present, are strings. All statically read member names are inventoried."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "useTeamCatalogLifecycle",
+              "line": 1210,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [
+            {
+              "name": "teamCatalogState",
+              "lines": [
+                5394,
+                5403,
+                5508,
+                5509
+              ]
+            },
+            {
+              "name": "loadingTeams",
+              "lines": [
+                18073
+              ]
+            },
+            {
+              "name": "teamCatalogReady",
+              "lines": [
+                18074,
+                18158
+              ]
+            },
+            {
+              "name": "teamMembershipState",
+              "lines": [
+                5406,
+                5408,
+                5409,
+                5410,
+                5411
+              ]
+            },
+            {
+              "name": "fetchAllTeamsFromJira",
+              "lines": [
+                18072
+              ]
+            },
+            {
+              "name": "invalidateTeamMembership",
+              "lines": [
+                3691
+              ]
+            }
+          ],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "settings.workspaceConfigConflict",
+      "path": "frontend/src/settings/workspaceConfigConflict.js",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "committedWorkspaceSectionLabels",
+        "rebaseWorkspaceConfigSave",
+        "workspaceConfigConflictMessages"
+      ],
+      "lineCount": 28,
+      "lineCeiling": 28,
+      "interfaces": []
+    }
+  ],
+  "aggregates": {
+    "scenario": {
+      "measured": 475,
+      "ceiling": 475
+    },
+    "settings": {
+      "measured": 9803,
+      "ceiling": 9803
+    },
+    "uniqueOwners": {
+      "measured": 10278,
+      "ceiling": 10278
+    },
+    "appPlusOwners": {
+      "measured": 28712,
+      "ceiling": 28712
+    }
+  },
+  "transfer": {
+    "incomingRanges": [],
+    "scaffoldingAllowance": 0
+  }
+}

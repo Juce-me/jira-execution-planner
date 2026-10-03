@@ -1,3 +1,5 @@
+import argparse
+import json
 import unittest
 from pathlib import Path
 
@@ -197,7 +199,113 @@ def _line_count(path):
         return sum(1 for _ in handle)
 
 
+def validate_owner_budgets(manifest, repo_root=REPO_ROOT):
+    """Validate frozen physical-file and checkpoint totals without transfer credit."""
+    failures = []
+    required = {"schemaVersion", "baseSha", "checkpointId", "sourceRoot", "ownerRoots",
+                "exclusions", "dashboard", "modules", "aggregates", "transfer"}
+    if not isinstance(manifest, dict) or required - manifest.keys():
+        return ["manifest missing required schema fields"]
+    if manifest["schemaVersion"] != 1:
+        failures.append("unsupported schemaVersion")
+    if not isinstance(manifest["baseSha"], str) or not manifest["baseSha"] or not isinstance(manifest["checkpointId"], str) or not manifest["checkpointId"]:
+        failures.append("missing checkpoint identity")
+    if not isinstance(manifest["exclusions"], dict) or not manifest["exclusions"]:
+        failures.append("missing explicit exclusions")
+    if not isinstance(manifest["transfer"], dict) or not {"incomingRanges", "scaffoldingAllowance"} <= manifest["transfer"].keys():
+        failures.append("missing transfer accounting")
+    if not isinstance(manifest["sourceRoot"], str) or not isinstance(manifest["ownerRoots"], list) or not manifest["ownerRoots"] or not all(isinstance(value, str) and value for value in manifest["ownerRoots"]):
+        return failures + ["invalid sourceRoot/ownerRoots schema"]
+    if not isinstance(manifest["aggregates"], dict):
+        return failures + ["invalid aggregates schema"]
+    modules = manifest["modules"]
+    if not isinstance(modules, list):
+        return failures + ["modules must be an array"]
+    ids, paths, physical_paths = set(), set(), set()
+    totals = {"scenario": 0, "settings": 0, "uniqueOwners": 0}
+    for module in modules:
+        if not isinstance(module, dict) or not {"id", "path", "features", "exports", "lineCount", "lineCeiling", "interfaces"} <= module.keys():
+            failures.append("module missing required schema fields")
+            continue
+        name = module["path"]
+        if not isinstance(name, str) or not isinstance(module["id"], str):
+            failures.append("invalid module ID/path schema")
+            continue
+        if module["id"] in ids or name in paths:
+            failures.append(f"duplicate module ID/path: {name}")
+            continue
+        ids.add(module["id"])
+        paths.add(name)
+        relative = Path(name)
+        if relative.is_absolute() or ".." in relative.parts or relative.as_posix() != name:
+            failures.append(f"invalid repository-relative path: {name}")
+            continue
+        file = repo_root / relative
+        if file.resolve() in physical_paths:
+            failures.append(f"duplicate physical owner file: {name}")
+            continue
+        physical_paths.add(file.resolve())
+        if not file.is_file():
+            failures.append(f"missing owner file: {name}")
+            continue
+        if not isinstance(module["features"], list) or not module["features"] or set(module["features"]) - {"scenario", "settings"}:
+            failures.append(f"invalid feature membership: {name}")
+            continue
+        actual = _line_count(file)
+        if not isinstance(module["lineCeiling"], int) or isinstance(module["lineCeiling"], bool) or actual > module["lineCeiling"]:
+            failures.append(f"{name}: {actual} lines exceeds owner ceiling {module['lineCeiling']}")
+        if actual != module["lineCount"]:
+            failures.append(f"{name}: measured lineCount {module['lineCount']} differs from actual {actual}")
+        totals["uniqueOwners"] += actual
+        for feature in set(module["features"]):
+            totals[feature] += actual
+    if not manifest["sourceRoot"] or Path(manifest["sourceRoot"]).is_absolute() or ".." in Path(manifest["sourceRoot"]).parts or Path(manifest["sourceRoot"]).as_posix() != manifest["sourceRoot"]:
+        return failures + ["invalid sourceRoot path"]
+    source_root = repo_root / manifest["sourceRoot"]
+    for owner_root in manifest["ownerRoots"]:
+        if Path(owner_root).is_absolute() or ".." in Path(owner_root).parts or Path(owner_root).as_posix() != owner_root:
+            failures.append(f"invalid owner root: {owner_root}")
+            continue
+        directory = source_root / owner_root
+        if not directory.is_dir():
+            failures.append(f"missing owner root: {owner_root}")
+            continue
+        for file in directory.rglob("*"):
+            if file.is_file() and file.suffix in {".js", ".jsx", ".mjs"}:
+                relative = file.relative_to(repo_root).as_posix()
+                if relative not in paths:
+                    failures.append(f"unregistered owner source: {relative}")
+    dashboard = manifest["dashboard"]
+    if not isinstance(dashboard, dict) or not {"path", "lineCount", "lineCeiling"} <= dashboard.keys():
+        return failures + ["dashboard missing required schema fields"]
+    if not isinstance(dashboard["path"], str) or not dashboard["path"] or Path(dashboard["path"]).is_absolute() or ".." in Path(dashboard["path"]).parts or Path(dashboard["path"]).as_posix() != dashboard["path"]:
+        return failures + ["invalid dashboard path"]
+    file = repo_root / dashboard["path"]
+    if not file.is_file():
+        return failures + ["missing dashboard file"]
+    actual = _line_count(file)
+    if actual != dashboard["lineCount"]:
+        failures.append("dashboard measured lineCount differs from actual")
+    if not isinstance(dashboard["lineCeiling"], int) or actual > dashboard["lineCeiling"]:
+        failures.append("dashboard exceeds ceiling")
+    totals["appPlusOwners"] = actual + totals["uniqueOwners"]
+    for name, actual in totals.items():
+        budget = manifest["aggregates"].get(name)
+        if not isinstance(budget, dict) or not {"measured", "ceiling"} <= budget.keys():
+            failures.append(f"missing aggregate: {name}")
+            continue
+        if budget["measured"] != actual:
+            failures.append(f"{name}: measured aggregate {budget['measured']} differs from unique actual {actual}")
+        if not isinstance(budget["ceiling"], int) or actual > budget["ceiling"]:
+            failures.append(f"{name}: {actual} exceeds aggregate ceiling {budget['ceiling']}")
+    return failures
+
+
 class CodebaseStructureBudgetTests(unittest.TestCase):
+    def test_extraction_owner_checkpoint(self):
+        manifest = json.loads((REPO_ROOT / "scripts/extraction_lint/owner_budgets.json").read_text())
+        self.assertEqual(validate_owner_budgets(manifest), [])
+
     def test_legacy_entrypoints_do_not_grow(self):
         failures = []
         for relative_path, budget in LEGACY_ENTRYPOINT_LINE_BUDGETS.items():
@@ -210,4 +318,14 @@ class CodebaseStructureBudgetTests(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--manifest")
+    parser.add_argument("--repo-root", type=Path, default=REPO_ROOT)
+    args, remaining = parser.parse_known_args()
+    if args.manifest:
+        failures = validate_owner_budgets(json.loads(Path(args.manifest).read_text()), args.repo_root)
+        for failure in failures:
+            print(failure)
+        print(f"owner budgets: {len(failures)} problems")
+        raise SystemExit(bool(failures))
+    unittest.main(argv=[__file__, *remaining])

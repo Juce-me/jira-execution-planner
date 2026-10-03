@@ -1248,6 +1248,7 @@ test('ENG Catch Up, Planning, and Scenario render with scoped startup and sticky
         '/api/story-points-field/config',
         '/api/parent-name-field/config',
         '/api/team-field/config',
+        '/api/delivery-owner-field/config',
         '/api/issue-types/config',
     ].forEach(pathname => {
         expect(startupCounts[`GET ${pathname}`] || 0).toBe(0);

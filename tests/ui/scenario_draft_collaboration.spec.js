@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { captureDomParity } = require('./dom_parity_helpers');
 const esbuild = require('esbuild');
 const fs = require('fs');
 const path = require('path');
@@ -508,6 +509,19 @@ async function switchScenarioToAlternateGroup(page, calls) {
     await expect.poll(() => calls.events.some(call => call.draftId === 'draft-alt')).toBe(true);
 }
 
+test('group switch away and back characterizes Scenario lane mode', async ({ page }) => {
+    const calls = await installDashboard(page);
+    await openScenario(page);
+    await page.locator('.scenario-toggle-group').getByRole('button', { name: 'Assignee', exact: true }).click();
+    await expect(page.locator('.scenario-toggle-group .scenario-toggle.active')).toHaveText('Assignee');
+    await switchScenarioToAlternateGroup(page, calls);
+    await page.getByLabel('Select group').click();
+    await page.locator('.group-dropdown-option', { hasText: 'Default' }).click();
+    await page.getByRole('radio', { name: 'Scenario' }).click();
+    await expect(page.locator('.scenario-toggle-group .scenario-toggle.active')).toHaveText('Assignee');
+    expect(calls.unexpected).toEqual([]);
+});
+
 test('presence strip renders remote user and polling stops after scope switch', async ({ page }) => {
     const calls = await installDashboard(page, {
         eventQueues: {
@@ -534,6 +548,8 @@ test('presence strip renders remote user and polling stops after scope switch', 
     expect(calls.streams).toEqual([]);
     const defaultPollsBeforeSwitch = calls.events.filter(call => call.draftId === 'draft-default').length;
     expect(defaultPollsBeforeSwitch).toBeGreaterThan(0);
+    await expect(page.getByText('Remote Editor')).toBeVisible();
+    await captureDomParity(page, 'scenario-presence', '.scenario-fullbleed');
 
     await page.getByLabel('Select group').click();
     await page.locator('.group-dropdown-option', { hasText: 'Alternate' }).click();
@@ -754,6 +770,7 @@ test('lock warning shows same-issue advisory conflict during drag', async ({ pag
     await dragScenarioBar(page);
 
     await expect(page.getByRole('alert').filter({ hasText: 'Remote Editor is editing PROD-1' })).toBeVisible();
+    await captureDomParity(page, 'scenario-lock-warning', '.scenario-fullbleed');
 });
 
 test('lock lifecycle does not release advisory lock before mouseup', async ({ page }) => {
@@ -945,6 +962,7 @@ test('stale draftRevision shows recovery actions and keeps dirty local edits', a
     await expect(remoteVersionRow).toContainText('Remote Editor');
     await expect(remoteVersionRow).toContainText('Current');
     await expect(page.locator('.scenario-dirty-indicator', { hasText: '1 override' })).toBeVisible();
+    await captureDomParity(page, 'scenario-conflict-recovery', '.scenario-fullbleed');
 });
 
 test('dirty rollback asks before replacing local edits', async ({ page }) => {
@@ -1047,6 +1065,7 @@ test('write-back stays preview-only and blocked by the gate', async ({ page }) =
     await dialog.getByRole('button', { name: 'Check write-back gate' }).click();
     await expect(page.getByRole('alert').filter({ hasText: 'Scenario draft Jira write-back is blocked by the migration gate.' })).toBeVisible();
     expect(calls.writeback).toHaveLength(1);
+    await captureDomParity(page, 'scenario-writeback-preview', '.scenario-fullbleed');
 });
 
 test('write-back preview and gate responses after scope switch do not mutate new scope', async ({ page }) => {

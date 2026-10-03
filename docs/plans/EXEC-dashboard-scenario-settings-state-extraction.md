@@ -1,18 +1,18 @@
 # Dashboard Scenario And Settings State Extraction Implementation Plan
 
-> **Status:** Proposed, revision 3 (2026-10-01), base `89ffe589`. Revision 3 folds in three rounds of independent review (four reviewers on draft 1, four on revision 2, three targeted reviewers on revision 3; the rounds included dry runs on scratch copies of `dashboard.jsx`). The third round found no Blocker and no P1, and its findings are folded in. The Scenario and Settings halves pass their dry runs; the tooling in section 6 was executed (clean on the unmodified tree, all seeded defects caught, effect order verified both ways). The plan awaits the operator's approval, including decision D12 and the gates. Supersedes the "Extract Scenario Planner ownership" and "Move settings state/actions behind feature hooks" rows of `FUTURE-codebase-operability-improvements.md`.
+> **Status:** Execution in progress, revision 5 (2026-10-02), tracked by [issue #220](https://github.com/Juce-me/jira-execution-planner/issues/220). PR-1 landed revision 3 in [PR #219](https://github.com/Juce-me/jira-execution-planner/pull/219), merge `c9ca8eff`, on 2026-10-01. A fourth readiness review reproduced gaps in nested interface checks, conservation of already-extracted hooks, ST3 effect order, and PR0 characterization/parity captures; revision 4 corrected them. Revision 5 closes six further findings: identity-safe DOM normalization, recursive render/getter timing review, the post-ST5 size milestone, dependency-aware rollback, the permission fix's unused getter, and explicit 11-section/10-snapshot parity. It also requires owner/interface/aggregate budgets, a remaining-App responsibility inventory, and a reproducible runtime-work baseline before extraction. The original source ranges and dry-run measurements remain historical evidence from `89ffe589`; PR0 must refresh them against its latest `origin/main` base. Operator decisions recorded 2026-10-02: D12 is acknowledged; G1 proceeds with the planned split verified against current repository boundaries; G2 preserves the current save sequence and requires a separate fail-closed permission fix before ST5. Execution authorized in chat on 2026-10-02; PR0 P0-1 (`4149b615`) was validated by the operator on 2026-10-02; P0-2 (`a2cc9017`) was validated by the operator on 2026-10-03; P0-3 (`d7d47c60`) was validated by the operator on 2026-10-03; P0-4 (`472e98d8`) was validated by the operator on 2026-10-03; P0-5 (`cb8791d5`) was validated by the operator on 2026-10-03. P0-6 is implemented and awaiting operator validation after the approved unpublished rebase onto fetched main `06df6615f2b762f6f8b0c93a3c4df0d5592f9c39`; the source/base refresh and old-to-new rung SHAs are recorded below. Each rung still requires operator validation and publication remains separately gated. Supersedes the "Extract Scenario Planner ownership" and "Move settings state/actions behind feature hooks" rows of `FUTURE-codebase-operability-improvements.md`.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Execute one commit at a time under the validation protocol in section 5. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** Move the Scenario Planner and Settings state, effects, handlers, and JSX out of the single `App()` function in `frontend/src/dashboard.jsx` into feature-owned hooks and container components, with no user-visible or contract change, lowering the `dashboard.jsx` line budget in every slice.
 
-**Architecture:** Hooks are called unconditionally from `App()` and receive explicit inputs; no hook introduces a ref or late-binding callback to reach a value declared later. Scenario moves first as one verbatim hook (its code is contiguous, so effect order is preserved by construction) and may then be split inside `frontend/src/scenario/`. Settings is interleaved with other code, so it uses layers: shared-config primitives hoisted first, then per-section hooks (state layer at the existing state lines, behavior layer where its inputs exist), then the save orchestrator. Pure computation moves to plain modules with Node unit tests. JSX moves to stateless container components. Every move is proven verbatim by `check_move_conservation.mjs` (section 6), not by eye.
+**Architecture:** Hooks are called unconditionally from `App()` and receive explicit inputs. Later values use per-render getter closures only in handlers/effects, under D1; no latest-value ref is introduced. Scenario moves first as one verbatim hook (its code is contiguous, so effect order is preserved by construction) and may then be split inside `frontend/src/scenario/`. Settings is interleaved with other code, so it uses layers: shared-config primitives hoisted first, then per-section hooks (state layer at the existing state lines, behavior layer where its inputs exist, and separate effects layers where ordering requires them), then the save orchestrator. Pure computation moves to plain modules with Node unit tests. JSX moves to stateless container components and is checked by DOM parity and visual checks. Hook-statement moves are checked by `check_move_conservation.mjs` against both revisions (section 6), with every residual reviewed explicitly.
 
 **Tech Stack:** React 19, esbuild (classic JSX transform), Node 20 (`fnm exec --using 20`), `node --test`, Python `unittest`, Playwright (Chromium; headed Firefox/WebKit only when a commit touches glyph or form-control geometry).
 
 ## Global Constraints
 
-- Behavior-preserving: no route, payload, response-shape, cache-key, `Server-Timing`, startup-request-count, sticky-order (`--sticky-scenario-z: 60`), analytics, or visual change.
+- Behavior-preserving: no route, payload, response-shape, cache-key, `Server-Timing`, startup-request-count, sticky-order (`--sticky-scenario-z: 60`), analytics, or visual change. The separate G2 permission fix is the sole approved behavior correction: invalid/missing edit grants must deny administrator-section editing before ST5; valid-response behavior remains unchanged.
 - No new runtime or test dependency in `package.json`. The lint tooling in section 6 installs pinned versions into gitignored `tmp/lint`.
 - No `fetch(` or `/api/` literal outside `frontend/src/api/` (`tests/test_frontend_api_source_guards.js:196-217`).
 - Generated `frontend/dist` is never hand-edited; every source commit includes the rebuilt dist (Flask serves it, so the operator validates the committed build).
@@ -33,11 +33,73 @@
 | Growth | 15,022 lines on 2026-05-28; 104 commits touched the file since 2026-06-01 (22 since 2026-09-01) |
 | Scenario | 29 `useState`, 27 `useRef`, 57 `useMemo`, 18 effects in 9156-11589 plus those inside `useConnectionScenarioRecovery`; code at 1081, 5662-5686, 7262-7794, 8107-8112, 9137-11601; JSX 16338-17214. Eight other effects mention Scenario and correctly stay in `App()` (2387, 6367, 6497, 6503, 6510, 6648, 7118, 7860). 7262-7794 is 28 arrow-function constants plus the literal `SCENARIO_PRESENCE_TTL_MS` at 7345 |
 | Settings | about 140 `useState`, 40 `useRef`, 32 `useEffect`, 45 `useMemo`, interleaved with non-Settings code between 489 and 5660; JSX 17457-18166 |
-| Dry-run result (reviewers, scratch copies) | SC1 + SC2: lint 0 errors, both bundles build, all 136 effects keep their order, `dashboard.jsx` 18,203 to 15,133 lines (hook 3,227 lines, container 213). ST1-ST4: gate-clean after the fixes in section 11 |
+| Dry-run result (reviewers, scratch copies) | Historical SC1 + SC2: lint 0 errors, both bundles build, all 136 effects keep their order, `dashboard.jsx` 18,203 to 15,133 lines (hook 3,227 lines, container 213). Historical ST1-ST4 dry runs were gate-clean; revision 4 adds the ST3 ordering correction that lint alone did not prove |
 | Python baseline | `Ran 2006 tests ... OK (skipped=25)` (section 6 command) |
 | Node baseline | `node --test tests/test_*.js`: 1529 pass, 0 fail |
-| Lint baseline (section 6 config) | 0 errors, 119 `no-unused-vars` warnings (149 without the two React-scope rules); checker: 16 destructure sites, 0 enforced problems |
-| Full Chromium `tests/ui` baseline | recorded in PR0 (not yet measured) |
+| Lint baseline (revision-3 config/checker) | Historical: 0 errors, 119 `no-unused-vars` warnings (149 without the two React-scope rules); dashboard-only checker: 16 destructure sites, 0 enforced problems. These are not acceptance counts for the revised recursive checker |
+| Full Chromium `tests/ui` at PR-1 head `831acf7a` | PR #219 reports 956 passed, 3 skipped, 1 failed; the named onboarding timeout passed 3/3 isolated reruns. This is historical publication evidence, not a failure exemption for later slices |
+
+**PR0 initial execution-base refresh (2026-10-02).** Initially fetched `origin/main` was exactly `ffeafb0ea3f37dd17a5d910595c20e1493166c5c`; PR0 branch `improvement/dashboard-extraction-tooling` starts there with no historical issue-branch commits. The reviewed local revision-5 plan/index amendments reapplied cleanly. No open PR touched `dashboard.jsx` at branch creation. Its source is 18,434 lines and its existing structure ceiling is 18,434. Node 20.20.0 and the checkout's `.venv` interpreter run the checks. The upstream instruction template remains 2026-09-08. Fresh gate/interface/owner measurements are recorded below as P0-1 completes; historical counts above are not ceilings.
+
+Fresh unchanged-source suite evidence: `fnm exec --using 20 node --test tests/test_*.js` passed 1,726 tests, zero failures/skips, in 3.747 seconds. The section-6 environment-isolated `.venv/bin/python -m unittest discover -s tests` passed 2,111 tests with 29 skips in 158.643 seconds. `fnm exec --using 20 npm run build` and `make verify-dist-clean` passed with no generated diff. The fresh full Chromium run (`fnm exec --using 20 npx playwright test tests/ui --browser=chromium --workers=4`) passed 1,197 tests with 3 skips and zero failures in 10.1 minutes. P0-5 must refresh these baselines after characterization and record the required runtime-work samples. Initial sandbox browser launch failed at macOS Mach-port registration before any app assertion; the authorized run replaces that environment-failed attempt, which is not a product failure waiver.
+
+**P0-5 fresh baseline refresh (2026-10-03, verified locally).** The exact `ffeafb0ea3f37dd17a5d910595c20e1493166c5c` tree was read through an ignored Git archive without switching the checkout. Its complete frontend source matches the candidate production tree byte-for-byte. Fresh Espree measurements: 18,434 dashboard lines / 1,115,924 bytes, `App` 382–18427, return 15313–18426, 1,511 top-level statements, 327 state / 137 effect / 283 memo / 59 callback / 164 ref / 1 reducer calls. Other JS/JSX/MJS source: 214 files / 40,722 lines. All 41 registered owner LOC counts equal the P0-1 inventory; the 18,434 dashboard / 475 Scenario / 9,803 Settings-EPM / 10,278 unique-owner / 28,712 App-plus-owner ceilings remain measured values, not allowances.
+
+| Fresh check | Exact-base tree | Candidate production source at `472e98d8e3cdb0bf89ceb5b921d609d26b6116a1` |
+| --- | --- | --- |
+| Pinned Node suite | 1,726 passed, 0 failed/skipped; 4.159 s | 1,728 passed, 0 failed/skipped; 3.358 s |
+| Environment-isolated Python suite | 2,111 tests, OK, skipped 29; 158.612 s | 2,112 tests, OK, skipped 29; 260.279 s |
+| Full Chromium `tests/ui` | Final complete campaign: 1,197 passed, 0 failed, 3 skipped; 9.1 min. Earlier corrected-root campaign: 1,193 passed, 4 failed, 3 skipped; 13.1 min | Full publication gate remains required at the proposed publication head |
+| Recursive extraction gate on unchanged production source | 0 errors / 120 unchanged warnings; 16 sites / 41 modules; 0 enforced, 34 informational, 0 baselined; 0 budget problems | Same byte-identical source and frozen manifest |
+| Tooling controls | All 70 pass (7 shell controls plus 63 controls in the JavaScript suite, retaining the original 21 and all 49 additions) | Independent runtime-probe VM controls: 14 pass |
+
+Node uses `fnm exec --using 20 npm run test:frontend:unit`; Python uses the full section-6 explicit basic/jsonfile/local/scopes profile with `.venv/bin/python -m unittest discover -s tests`. The +2 Node checks are the quirk pins; the +1 Python check is the owner-budget test. Concurrent suite workloads make wall times observations, not performance comparisons. No check has an operator waiver.
+
+Archived-root setup initially caused five historical Board paint-boundary cases to fail before their fixture could build: `component_page_2`, `component_batch_2`, `team_parent_lookup_2`, `child_completion`, and `collapsed_first` in `eng_board_progressive_loading.spec.js`. That invalid campaign was aborted (exit 130) after case 272 and retained as diagnostic evidence. The archive has no `.git`; the test's read-only `git ls-tree`/`git show` looked at the parent checkout with the wrong directory prefix. Setting `GIT_DIR` to the checkout metadata and `GIT_WORK_TREE` to the archive fixes its root without editing source/tests. The corrected complete campaign passed those five cases.
+
+The corrected complete campaign had four other failures, retained by exact name: `eng_epic_refresh.spec.js` — “81. a priority change on a story and on an epic issues zero alert requests and does not blank the Stories Required ghosts”; `onboarding_tour.spec.js` — “production Catch Up Status preview resolves its exact Epic owner and never writes Jira”, “production Priority owner bridge rejects every stale descriptor tuple member”, and “hierarchy matrix and editing presence matrix retain deterministic order and compact only all-absent groups”. An unchanged one-worker diagnostic with tracing passed all four (25.5 s), with original assertions/timeouts. The two initial-onboarding failures' snapshots show Catch Up under the automatically opened tour, excluded from the initial role lookup; the matrix timeout snapshot still contains its tour (isolated 14.8 s). The Epic priority menu was absent in its timeout snapshot; static evidence does not prove its closing cause. The final unchanged four-worker complete campaign passed all four and all 1,197 passing cases (3 skips, 9.1 min). No assertions, timeouts or source files were changed; no failure exemption was introduced. The earlier failures remain diagnostic evidence, and later publication still requires its own full committed-head gate.
+
+Current range boundaries were matched to unchanged historical source lines, then checked in the current source. These are navigation evidence only; each slice still re-locates and records exact first/last statements before moving:
+
+**P0-6 main-move refresh (2026-10-03).** Fetched `origin/main` advanced to `c4ab713afccb70223f5dc0e2f94da9d774baaa0b` via the Planning Team editor change (#225): `IssueTeamEditor.jsx`, its UI test, its existing plan record and rebuilt JS bundles. Under D12 and the drift protocol, all five unpublished PR0 commits rebased cleanly. `git range-diff ffeafb0e..cb8791d5 c4ab713a..de7cbac7` shows every patch unchanged (`=`): P0-1 `4149b615` → `e7acc87e`, P0-2 `a2cc9017` → `42e86485`, P0-3 `d7d47c60` → `9b7d17da`, P0-4 `472e98d8` → `a993e56b`, P0-5 `cb8791d5` → `de7cbac7`. Earlier validation and full-suite/runtime evidence above remain exact-revision historical records, not measurements of the new main tree.
+
+Fresh measurements against the new exact base retain dashboard 18,434 lines / 1,115,924 bytes, App/return ranges, all primitive hook counts and 1,511 top-level statements. All 41 owner LOC counts and all five aggregate ceilings are unchanged; the complete interface inventory still has 16 sites / 41 modules / 34 informational findings / zero enforced problems. Other frontend JS/JSX/MJS remains 214 files and is now 40,795 lines, exactly +73 from the upstream Team editor. No extraction or budget allowance was introduced. `dashboard.jsx` and the complete registered owner set match the new base; textual anchors below retain their locations. Full proposed-publication-head suites and committed build remain required before publication.
+
+**Pre-publication main-move refresh (2026-10-03).** Before any push, fetch advanced main again to `06df6615f2b762f6f8b0c93a3c4df0d5592f9c39` (#226, ENG status-menu prefetch). Nothing was published. The six unpublished PR0 rungs rebased cleanly with identical patches before this P0-6 documentation amendment: `e7acc87e` → `f03f74f0`, `42e86485` → `eb830eeb`, `9b7d17da` → `a1e2796b`, `a993e56b` → `c0a6f330`, `de7cbac7` → `2916a8ba`, `c33d9944` → `293397eb`. The amendment refreshes only current-base documentation after the publication precondition failed; it preserves rung scope under D12. Prior publication verification at `c33d9944` remains historical: 1,728 Node passes, 2,112 Python tests OK (29 skips), 1,215 Chromium passes (5 skips), 70 tooling controls, four fresh c4/base–c33/head runtime probes and a clean committed build. Replacement-head verification and publication approval must refer to the replacement revision, not those counts or the previously approved exact head.
+
+At `06df6615`, dashboard LOC remains 18,434, bytes are 1,116,112 (+188 upstream), App/return ranges and 1,511 statements are unchanged, and primitive hook counts remain 327 state / 137 effect / 283 memo / 59 callback / 164 ref / 1 reducer. Other frontend JS/JSX/MJS: 214 files / 40,872 lines (+77 upstream since c4). All 41 registered owner LOC counts, five aggregate ceilings, 16 interface sites and 34 informational findings remain unchanged; the refreshed gate passes with 0 errors / 120 warnings / zero budget problems. No ceiling increase or new failure baseline is introduced.
+
+Independent comparison of App plus the complete upstream-affected `useEngStatusTransitions` hook reports 1,531 → 1,532 statements, five removed/six added residuals, and identical order across 138 effects. Every residual belongs to upstream status-prefetch wiring: App's status destructure and two render helpers, the hook's option loader/return, and its new prefetch callback. That hook is outside the registered Scenario/Settings/EPM owner manifest; its return gains `prefetchSingleIssueStatusOptions` (12 → 13 properties), while input parameters are unchanged. Its timer/event callback is deferred and reads initialized hook bindings. Current Scenario/Settings state, terminal auth lock, save order, G1 and G2 boundaries are unchanged. Fresh runtime/DOM captures and full suites will verify the replacement head before any publication. The new-base before capture campaign passed 182 tests with one intentional runtime skip (1.9 minutes), using the identical PR0 characterization harness and fresh `tmp/pr0-refresh-base/tmp/dom-parity/pr0-refresh-before`. Refreshed ontology verification resolves all four file-map targets, 195 file links, 161 inline paths, nine heading references and 64 symbols. Reviewer and `git diff --check` pass; no production or budget file is amended.
+
+| Area | Current lines at PR0 base | First textual anchor |
+| --- | --- | --- |
+| App | 382–18427 | `function App() {` |
+| Settings interleaved cluster | 505–5703 | `const [epmConfigDraft, setEpmConfigDraftState] = useState(createEmptyEpmConfigDraft());` |
+| Scenario state | 1115–1115 | `let scheduleScenarioEdgeUpdate;` |
+| Scenario issue refs | 5705–5729 | `const matchesScenarioSearch = (issue, query) => {` |
+| Scenario draft handlers | 7330–7862 | `const fetchScenarioCsrfToken = () =>` |
+| Scenario Team inputs | 8179–8184 | `const scenarioTeamIds = React.useMemo(() => {` |
+| Scenario planner start | 9209–9227 | `const scenarioRawIssues = scenarioData?.issues || EMPTY_ARRAY;` |
+| Scenario planner cluster | 9228–11661 | `useEffect(() => {` |
+| Scenario planner end | 11662–11673 | `if (!scenarioEpicFocus) return;` |
+| Scenario JSX | 16641–17517 | `{selectedView === 'eng' && showScenario && engWorkspaceConfigured && (` |
+| Settings JSX | 17688–18397 | `{showGroupManage && (` |
+
+P0-1 measurements and evidence (production source unchanged):
+
+| Check | Fresh result |
+| --- | --- |
+| App boundaries and React hooks (Espree) | `App` 382–18427; return 15313–18426; 327 `useState`, 137 `useEffect`, 283 `useMemo`, 59 `useCallback`, 164 `useRef`, 1 `useReducer` |
+| Complete pinned tooling dependencies | `eslint@9.39.5`, `globals@14.0.0`, `eslint-plugin-react@7.37.5`, `eslint-plugin-react-hooks@7.1.1`, `espree@10.4.0` installed in ignored `tmp/lint`; every version checked |
+| Extraction gate | 0 ESLint errors; 120 warnings (fresh ceiling, no pre-existing enforced problems baselined); 16 destructures across 41 recursively reached modules; 0 enforced, 34 informational interface diagnostics |
+| Frozen owner inventory | 41 modules; 32 interfaces; 20 digest-bound reviewed dynamic/forwarded contracts; 475 Scenario lines, 9,803 Settings/EPM lines, 10,278 unique owner lines, 28,712 App-plus-owner lines; exact measured ceilings, no transfer/scaffolding allowance |
+| Tooling controls | Original 21 controls plus 49 added budget/schema/registration/alias/ledger/timing controls; all 70 expected results observed |
+| Budget unit checks | `.venv/bin/python -m unittest tests.test_codebase_structure_budgets`: 2 tests pass |
+| Complete current-hook conservation | `check_move_conservation.mjs --base ffeafb0e` with connection recovery, admin gate/access, group visibility, Jira pickers, Team catalog, EPM hooks: 1,698 statements at each revision; zero removed/new residuals; identical order across 155 effects |
+
+The dependency bags and source-digest reviews are explicit inventory, not an exemption from later move review. Caller scans cover imported and same-file hook/container uses, including the seven local component sites found during review. The sole passed getter (`openSettings`) captures later `openGroupManage` and is called only inside the existing admin-gate effect. Its source proof and unchanged dependencies are in the manifest. Other transitive invocation phases still require manual review at each move. DOM parity captures, runtime-work characterization and new behavior characterization tests remain P0-2 through P0-5; no such evidence is claimed for this tooling-only rung. Analytics impact: internal tooling adds no user-visible interaction or event, so no taxonomy or transport change is needed.
+
+Additional current anchors: `scenarioLoading` 1032; `registerScenarioIssueRef` 5722; `runScenario` 7595; `loadGroupsConfig` 2653; `openGroupManage` 2717; `saveGroupsConfig` 3672; `retryFirstRunConfiguration` 5464; `loadConfig` 6803; `activeDepartmentSettingsTab` 14956. G1 preflight found no material source contradiction; the required post-SC2 split review remains pending. G2 is unchanged: current permission expression at 729 is preserved until the separate approved fix.
 
 Line numbers are as of `89ffe589` and drift after every merge. Every range is also identified by a **textual anchor** (the first and last statement text); re-locate by anchor with `rg -n`, never by number alone. Before moving a range, record its first and last statement text in the PR description. Ranges come from read-only scans and two review rounds on 2026-10-01; each commit re-verifies the ranges it moves.
 
@@ -53,24 +115,24 @@ Out of scope: ENG Catch Up/Planning/Stats/EPM/Board state, backend, CSS, contrac
 
 Settled by design:
 
-- **D1 Two layers where needed.** A hook cannot receive a value declared later in `App()` (TDZ at first render). Wherever a hook's inputs are not all available at its state lines, split it into a state layer called at the existing state lines and a behavior layer called where its inputs exist. A cycle between two layers is resolved by a getter closure (`() => value`, which keeps per-render capture), never by a ref. A getter may be called only from handlers and effects, never during render (a render-phase call is a TDZ error the gate cannot see), and a verbatim `useCallback` keeps its dependency array when its body starts calling a getter.
+- **D1 Layers where needed.** A hook cannot receive a value declared later in `App()` (TDZ at first render). Wherever a hook's inputs are not all available at its state lines, split it into a state layer called at the existing state lines and a behavior layer called where its inputs exist. An effect that would cross another effect writing the same state/ref gets a separate effects layer at its original position (ST3's selection normalization is mandatory). A cycle between layers is resolved by a getter closure (`() => value`, which keeps per-render capture), never by a ref. A getter may be called only from handlers and effects, never during render (a render-phase call is a TDZ error the gate cannot see), and a verbatim `useCallback` keeps its dependency array when its body starts calling a getter.
 - **D2 Always mounted.** Hooks are called unconditionally from `App()`. Dirty drafts and mount effects must survive mode and tab changes. Container components are stateless.
 - **D3 Strictly sequential.** One PR at a time, each merged before the next branch is cut; start-of-slice preconditions and the rebase recipe are in section 5.
 - **D4 Quirks move verbatim** (section 4). They are preserved, not fixed.
 - **D5 No new test dependency.** No jsdom. Effect-heavy behavior is proven by Playwright plus the DOM parity check; pure code gets Node unit tests; hook defaults get server-render probes.
 - **D6 Dead code is deleted (operator decision, 2026-10-01).** The first source commit of each slice deletes the never-read declarations of its cluster (lists in the PR sections). Only inert declarations are deleted: unread `const`/function/ref declarations, unread `useState` pairs whose every setter call is batched with another state update in the same synchronous block (the commit message lists each removed setter call and why it is batched; otherwise leave the pair), and imports orphaned by the deletion.
-- **D7 Gates.** G2 (before the last Settings PR) is the operator's decision. G1 (before splitting the Scenario hook) is this plan's recommendation; the operator may waive it. Both are "awaiting operator go", not open questions.
+- **D7 Gates (operator decisions, 2026-10-02).** G1 is approved: execute the planned Scenario split after verifying its boundaries against the current repository, and retain that design. G2 is conditionally approved: preserve the current imperative save sequence and complete the separate permission fix below before ST5. These strategic choices do not need repeated approval; the per-commit validation stops and publication approvals remain.
 - **D8 Commit-gated execution (operator decision).** One commit at a time; after each commit the executor stops, reports the automated results, and gives the operator a validation scope; the next commit starts only after the operator confirms (section 5). The publishing unit stays one PR per slice, assembled from commits the operator has validated. This reading of "one commit at a time" is an assumption; correct it if you meant otherwise.
 - **D9 `ScenarioView` takes the planner and the container.** The JSX block uses 98 `App()` bindings: 65 returned by the planner hook, 30 from the SC1 container (data, lane mode, edit mode, draft metadata, layout, tooltip, refs and their setters), and 3 scalars. `ScenarioView` therefore receives `scenario` (the planner object), `scenarioState` (the container object), and the three scalars `selectedSprint`, `normalizeEpicKey`, `excludedEpicSet`. This is a boundary choice inside the plan's own design (no new state or fetching is introduced); the operator can veto it when reviewing the plan.
-- **D10 Verbatim is proven mechanically.** `check_move_conservation.mjs` compares the `App()` body statements before the change with the `App()` plus hook-body statements after it. Statements that moved unchanged cancel out; every remaining line must be itemised in the commit message (SC1 + SC2 dry run: 5 removed and 12 new statements, all call sites, destructures, return objects, and the intentionally edited seam statements, out of about 3,000 moved lines).
-- **D11 Permission quirk acknowledged at G2.** `Boolean(config.settingsAdminOnly)` (3887, 6865) makes a missing flag leave `canEditSharedConfiguration === true`, which `AGENTS.md` section 11 says must never happen. The backend always sends the flag (`settings_routes.py:699`), so the risk is theoretical. The extraction preserves the behavior and pins it with a unit test labelled as a known deviation; fixing it is a separate change the operator decides at G2.
+- **D10 Hook statements are compared mechanically.** `check_move_conservation.mjs` compares `App()` plus the named owner-hook bodies at both revisions. Pass the complete affected hook-file set, including existing callers and newly created/deleted files; both effect sequences are expanded recursively from their own revision. Unchanged statements cancel out; every remaining statement is printed in full and itemised in the commit message. Residuals require human review, not merely a zero exit code. The original SC1 + SC2 dry run had 5 removed and 12 new statements (call sites, destructures, returns, and seam edits); that historical result does not prove later splits.
+- **D11 Permission correction before ST5 (operator decision, 2026-10-02).** The current expression `!settingsAdminOnly || userCanEditSettings` can grant administrator-section editing when `Boolean(config.settingsAdminOnly)` receives a missing flag, even without an explicit user grant. The operator chose a separate fix rather than preserving this deviation. Require `userCanEditSettings === true` as the editing authority, including loading, bootstrap, and post-save refresh; absent or mistyped grants deny editing. Successful `/api/config` responses include both flags (`settings_routes.py:699,708`), so preserve every valid backend-authorized journey. Storage errors return 503 and must not grant editing. Department-group and private EPM rights remain independent. ST5 extracts the verified fix verbatim.
 
-- **D12 History rewrite and the transaction (proposed for the operator's acknowledgement when approving the plan).** Local rung commits are outside the "commit, push, and PR creation are one blocking publication transaction" rule of root `AGENTS.md` section 10; that transaction runs at R6, at push time. Amending the latest unpublished commit after a failed validation, and rebasing unpublished slice commits onto a moved `main`, rewrite local history; only a recorded operator decision can authorize that, not this plan. Until the operator acknowledges D12 in chat, the executor stops and asks before any amend or rebase. Re-validation after a rebase happens at the new head only.
+- **D12 History rewrite and the transaction (operator acknowledgement, 2026-10-02).** The operator accepted D12 in chat ("d.12 seems logical"). During approved execution, local rung commits are outside the publication transaction; that transaction runs at R6 before push/PR creation. The executor may amend the latest unpublished rung after failed validation and rebase unpublished slice commits onto a moved `main`, preserving scope and rerunning verification at the new head. This does not authorize rewriting pushed history, changing the approved scope, pushing, creating a PR, or merging; those still require the approvals in section 5/8.
 
 Gates (operator go/no-go):
 
-- **G1** before `SC3` (split the single Scenario hook into feature hooks): decide after `SC2` whether one hook of about 3,200 lines is acceptable.
-- **G2** before `ST5` (shared-config bootstrap, save, modal shell): decide after `ST1`-`ST4` using their measured results. The ST5 design note is written after G2 is approved (rung R0) and is itself a commit with an operator stop.
+- **G1 — approved 2026-10-02.** Before SC3, verify the planned partition against current source and SC2 results. Proceed with the documented sub-hooks and the same flat external interface; do not reopen the split-vs-single decision or introduce a different architecture. Stop if evidence exposes a material contradiction requiring a design change.
+- **G2 — conditionally approved 2026-10-02.** Complete and merge the separate permission fix below after ST4 and before ST5, verify it on ST5's actual base, then proceed with the current imperative save sequence. ST5 R0 documents the selected interface and current layering; its ordinary validation stop remains. A table-driven save rewrite or preservation of the missing-grant deviation is not approved.
 
 ## 4. Preserved quirks and invariants
 
@@ -99,13 +161,15 @@ Every commit re-checks the rows that apply.
 
 Every slice is a sequence of commits. Rungs a slice does not need are omitted.
 
+Every source slice's file map also includes the canonical `scripts/extraction_lint/owner_budgets.json` update and its budget checks; a named slice map does not exempt these common files. The parent owns this shared file while subagents edit disjoint feature files.
+
 | Rung | Contents | Operator validation |
 | --- | --- | --- |
 | R1 Dead code | Delete the slice's inert never-read declarations (D6) and the one guard pin that names a deleted declaration, and nothing else; lower the lint ceiling (`run.sh` default) if warnings drop. | The slice's smoke scope. |
 | R2 Characterization | Playwright tests, fixture data, and parity captures of **existing** behavior; they pass on the unmodified source. No source change, and no test that imports a module that does not exist yet (unit tests of an extracted module are written in the R4 that creates it). Oracle fixture data for a function that will move is JSON generated from the current code, not a test. | Review the diff; no app check. |
 | R3 Prep | Hoists that make a later move legal (a pure primitive moved above the state lines; a pure module-level helper moved to a module). | The slice's smoke scope. |
-| R4 Move | One hook or component per rung: the verbatim move; the tests of the new module; the re-pointing of every guard the move breaks (section 7); removal of imports and destructured names the move orphaned; the rebuilt `frontend/dist`. After R4 the whole Node and Python suites are green. | The rung's validation scope. |
-| R5 Ratchet | Budget (`tests/test_codebase_structure_budgets.py`) to the measured `wc -l` (a slice that does not change `dashboard.jsx` states "no budget change"), the lint-ceiling default in `scripts/extraction_lint/run.sh`, `docs/ontology.md`, this plan's status table. Test, script-constant, and docs edits only. | Review the diff; no app check. |
+| R4 Move | Before the move, freeze the current-base dry-run owner/interface/aggregate ceilings and getter-phase ledger under section 6; record them in the preflight report at the preceding validation stop. Include those ceilings in the move commit; do not derive them from its final diff. One hook or component per rung: the verbatim move; the tests of the new module; the re-pointing of every guard the move breaks (section 7); removal of imports and destructured names the move orphaned; the rebuilt `frontend/dist`. After R4 the whole Node and Python suites are green. | The rung's validation scope. |
+| R5 Ratchet | Dashboard and registered owner/aggregate/interface ceilings down to measured values **within the frozen checkpoint** (`tests/test_codebase_structure_budgets.py`, `scripts/extraction_lint/owner_budgets.json`; a slice that does not change `dashboard.jsx` states "no dashboard budget change"). The next approved move has a new checkpoint accounting for transferred ownership under section 6. Ratchet the lint-ceiling default in `scripts/extraction_lint/run.sh`; update `docs/ontology.md` and this plan's status table. Test, script-constant, and docs edits only. | Review the diff; no app check. |
 | R6 Publish | After the last R5: the Node and Python suites, the committed-revision build with `make verify-dist-clean`, and the full Chromium `tests/ui` run at the exact head; the publication transaction (the section 8 steps apply unchanged), push, PR. | Operator go, then the PR page. |
 
 ### After every commit the executor
@@ -118,19 +182,31 @@ Every slice is a sequence of commits. Rungs a slice does not need are omitted.
 
 ### Failed validation, push, and merge
 
-- If the operator finds a defect in the **latest unpublished commit**, the executor amends that commit, rebuilds the dist, reruns the checks, and reports again. The operator pre-authorizes this amend for unpublished commits of these slices.
+- If the operator finds a defect in the **latest unpublished commit**, the executor may amend it under the recorded D12 acknowledgement, rebuild the dist, rerun the checks, and report again. Scope changes and rewriting pushed history still require separate authorization.
 - A defect in an **earlier** commit, or in a commit that was already pushed, stops the executor: state the defect and ask whether to amend by rebase or to add a fix commit (root `AGENTS.md` section 10 forbids rewriting history without authorization).
 - "Validated" is not authorization to push. The push happens only at R6, after the full UI run, on the operator's explicit go (one publication go per PR). The operator merges; the executor never merges.
+
+### Dependency-aware rollback
+
+Record each slice's exact merged SHA and direct consumers: imports, hook calls, props, moved guard owners, and data/effect interfaces. An earlier slice cannot be reverted independently after dependent consumers merge. Before rollback, identify its transitive consumer set and present the exact proposed commits, paths, and retained fixes for operator approval. Revert dependent consumers in reverse dependency order before their prerequisite, or prepare a forward repair preserving the current interfaces. For example, undoing SC2 after SC3/SC4 must account for both SC3's sub-hooks and SC4's planner interface; undoing SC3 alone may preserve that flat interface if all checks prove its consumers remain valid. Do not mechanically revert every later PR or rewrite published history.
+
+The G2 fail-closed permission fix is retained across extraction rollback. ST5's rollback base must include it. If restoring earlier Settings code conflicts with the fix, reapply its minimal equivalent and regression tests before publication: explicit boolean editing grant on loading/bootstrap/post-save paths, independent Department-group/private EPM rights, and zero administrator-section POSTs for denied grants. Record the retained fix SHA or equivalent patch. Never publish a rollback that restores the missing-grant deviation.
+
+At the resulting head, rebuild dist and run affected lint/interface/budget checks, conservation with explicit restored/deleted owners, parity and smoke tests, the required full suites, and section 8 publication verification. Rollback requires explicit operator authorization; reversibility is not publication approval.
 
 ### Drift and rebase (feature work keeps touching `dashboard.jsx`)
 
 - Start-of-slice preconditions: read the instruction chain, the relevant postmortems, and the `docs/ontology.md` entries the slice touches; run the `docs/plans/GATE-*.md` sweep (every slice is a plan execution; `GATE-05`, Home write capability, next review 2026-10-05, is not a dependency because no slice adds a Home/Townsquare path); `git fetch origin main`; the previous slice is merged; `gh pr list --state open` shows no open PR touching `frontend/src/dashboard.jsx` (ask the operator to hold such merges while a slice is open); the branch is cut from the latest `origin/main`.
-- If `main` moves while a slice is in progress: rebase the unpublished commits; rebuild the dist (a dist conflict is resolved by rebuilding, never by hand); re-measure `wc -l` and set the budget to the new value; recapture the "before" DOM parity directory at the new base; rerun the smoke scope at the new head only; re-locate every range by its textual anchor.
+- If `main` moves while a slice is in progress: rebase the unpublished commits; rebuild the dist (a dist conflict is resolved by rebuilding, never by hand); re-measure the dashboard and complete owner/interface/aggregate inventory against the recorded new base, explain upstream changes separately from extraction, and refresh dry-run ceilings with the same accounting before resuming (a rebase is not an automatic growth waiver); recapture the "before" DOM parity directory at the new base; rerun the smoke scope at the new head only; re-locate every range by its textual anchor.
 - A slice that stays open longer than a week without a push is rebased at the start of each session.
 
 ### Operator prerequisites for validation (confirm once before PR0)
 
 Settings slices ST4 and ST5 also need an account with empty group preferences (first-run) and accounts in the non-admin, editor, and tool-admin roles; where an account is not available, the commit report names the Playwright test that covers that scope instead. The commit under test must be what the local app serves: the checkout holding the commits is the one the app runs from, `npm run build` output is committed, and the app is started the usual way from that checkout. State which configuration you use (Basic/jsonfile local config, or your DB/OAuth dev config). Settings validation saves workspace-shared configuration: use a throwaway workspace or revert each edit afterwards.
+
+### Subagent handoff guardrails
+
+The parent alone manages Git, the canonical budget inventory, integration, and operator stops. Give each subagent an explicit rung, exact base/head SHA, verified file map, permitted edits, and named checks; only independent, bounded tasks run concurrently, with disjoint edited files. Subagents must report changed files, moved anchors, contracts and getter invocation phases, conservation residuals, budget deltas, test commands/results, and uncertainties. They do not start a later rung, publish, alter thresholds, merge, or change the approved design. The parent verifies those reports against the diff and current sources before D8 validation. Use the current repository's boundaries for G1 and preserve the G2 imperative save sequence and prerequisite fix.
 
 ### Smoke scopes
 
@@ -143,10 +219,10 @@ Settings slices ST4 and ST5 also need an account with empty group preferences (f
 **Environment.** A worktree has no `.venv`; set `JEP_TEST_PYTHON` to the main checkout's interpreter (`<main checkout>/.venv/bin/python`). Run `npm ci` once in a fresh worktree before the first build. Commands below are plain so they work in bash and zsh; prefix each Node command as shown.
 
 ```bash
-# Node unit tests (baseline: 1529 pass)
+# Node unit tests (historical baseline at 89ffe589: 1529 pass)
 fnm exec --using 20 node --test tests/test_*.js
 
-# Python suite (baseline: Ran 2006 tests, OK, skipped=25). Explicit env so a local .env cannot leak in.
+# Python suite (historical baseline at 89ffe589: Ran 2006 tests, OK, skipped=25). Explicit env so a local .env cannot leak in.
 # CI sets only JIRA_AUTH_MODE and CONFIG_STORAGE_BACKEND on Python 3.10 and 3.11; this is a superset.
 JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local \
 ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' \
@@ -170,23 +246,71 @@ Success criteria are "0 failures" plus the baselines recorded in PR0; absolute c
 
 ### The extraction gate
 
-esbuild does not report an identifier left behind by a move, and `no-undef` alone passed seeded defects in review. `run.sh` runs ESLint (`no-undef`, `react/jsx-no-undef`, `react/jsx-uses-react`, `react/react-in-jsx-scope` because the bundle uses the classic JSX transform, `no-use-before-define` with `variables:false` so a render-phase read of a binding declared later in the same function is an error, `react-hooks/rules-of-hooks`; `no-unused-vars` warnings may not exceed the ceiling) and then `check_hook_interfaces.mjs`, and exits non-zero if either fails. The checker verifies, for every local hook and component imported by `dashboard.jsx`: names destructured from the hook result (also through an alias, `const state = useX(...); const {...} = state;`) are returned by it; required keys of the callee's first object parameter are passed by the caller (spread calls are skipped); keys passed are accepted by the callee. Problems in files under `scenario/`, `settings/`, or `epm/` are enforced; everything else prints as informational (8 pre-existing at base, none enforced). **Limits, stated so nobody over-trusts it:** components whose first parameter is `props` or a defaulted parameter (eight today, among them `SettingsModal`, `JiraFieldSettings`, `TeamGroupsSettings`) and components or hooks it cannot resolve are not checked; calls that pass `{...{ a, b }}` spreads are skipped; a hook under `scenario/`, `settings/`, or `epm/` must return an object literal and a new container must destructure its first parameter, because otherwise the checker can only report "cannot verify". The prop-parity rewrite of `test_epm_settings_source_guards.js` stays as the backstop for the Settings containers.
+esbuild does not report an identifier left behind by a move, and `no-undef` alone passed seeded defects in review. `run.sh` runs ESLint (`no-undef`, the React JSX import/scope rules, `no-use-before-define` with `variables:false`, `react-hooks/rules-of-hooks`, and ratcheted `no-unused-vars` warnings), then `check_hook_interfaces.mjs`; either failure makes the gate nonzero. Starting at `dashboard.jsx`, the checker recursively inspects reachable modules under `scenario/`, `settings/`, and `epm/`, using each file's imports and lexical scopes. It checks hook-result destructures (including result aliases), required/accepted first-object-parameter keys, absent object arguments, and nested component props. Contracts whose callee is in an owner directory are enforced; shared callees elsewhere remain informational. The revised checker probe on `ffeafb0e` checked 16 destructure sites across 41 modules, with 0 enforced and 34 informational problems; re-measure these counts in PR0.
 
-Seven seeded defects (`negative_controls.sh`) prove the gate (a control whose anchor text no longer exists prints `ANCHOR ... re-anchor the control` and counts as a failure, so a slice that moves an anchor re-anchors the control in the same R4; the controls are anchored on text that the early slices move: `scenarioLoading`, `registerScenarioIssueRef`, `window.setInterval(poll, 5000)`, and the `useGroupVisibilityPreferences` call): a deleted JSX import, a render-phase read before declaration, an undefined name, a `.jsx` file without a React import, a destructured name the hook does not return, a required input not passed, and an edited statement the conservation check must report. All seven are caught on the unmodified tree's copy.
+**Limits:** unresolved callees, non-literal/spread call arguments, and first parameters written as `props` or a defaulted object remain unchecked. Existing examples include `SettingsModal`, `JiraFieldSettings`, and `TeamGroupsSettings`. New owner hooks must return an object literal and new containers must destructure their first parameter so their boundaries can be checked. The Settings prop-parity guard remains the backstop for existing unchecked containers. An exit of 0 proves only the checked boundaries; it does not prove closure timing or behavior.
+
+The original seven seeded defects (`negative_controls.sh`) plus 14 nested-interface/conservation controls (`tooling_controls.mjs`) exercise the gate (a control whose anchor text no longer exists prints `ANCHOR ... re-anchor the control` and counts as a failure, so a slice that moves an anchor re-anchors the control in the same R4; the controls are anchored on text that the early slices move: `scenarioLoading`, `registerScenarioIssueRef`, `window.setInterval(poll, 5000)`, and the `useGroupVisibilityPreferences` call): a deleted JSX import, a render-phase read before declaration, an undefined name, a `.jsx` file without a React import, a destructured name the hook does not return, a required input not passed, and an edited statement the conservation check must report. The original seven were caught on the revision-3 unmodified tree copy; PR0 reruns them against its current base. The additional 14 controls include clean and failing nested hook/component contracts, absent argument objects, shadowed aliases, preserved documented limits, clean existing-hook conservation, dropped/duplicated statements, reordered effects, created/deleted hooks, and literal-whitespace edits. Every expected result must be observed; testing only extraction from a monolithic `App()` is insufficient.
 
 **Known blind spots, and their procedures.**
 
-- `no-use-before-define` with `variables:false` ignores closures that run during render (a `useMemo` callback). After the call site is placed, list the hook's returned names (`node tmp/lint/check_hook_interfaces.mjs --print-returns <hookfile> <exportName>`) and filter the strict scan to those names:
+- `no-use-before-define` with `variables:false` ignores closures that run during render (`useMemo`, synchronous helper calls, or getters invoked by another hook). Maintain a caller/getter phase ledger for every changed owner boundary: declaring module/symbol, all direct and transitive callers, first read, and actual invocation phase. Scan **every changed caller**, including `useScenarioPlanner`/SC3 sub-hooks and all Settings layers, rather than only `dashboard.jsx`. A getter passed into a nested hook is safe only if every eventual invocation is deferred to an effect or event handler; creation of a closure is not proof. Calls during hook execution, render, dependency-array evaluation, or a `useMemo` factory are render-phase reads and block the move if the binding is later. Record deferred uses and the source evidence; unresolved invocation paths block the rung.
+
+  After placing the call sites, collect the moved hooks' returns and every getter's later-captured binding into `tmp/lint/returned-names.txt` (one exact identifier per line). Run the strict scan on the complete caller list from that ledger. This template preserves tooling failures and reads structured diagnostics instead of treating an empty filtered pipe as success:
 
   ```bash
-  fnm exec --using 20 node tmp/lint/check_hook_interfaces.mjs --print-returns <hookfile> <exportName> | sed "s/.*/'&' was used/" > tmp/lint/returned-names.txt
-  tmp/lint/node_modules/.bin/eslint --no-config-lookup -c tmp/lint/eslint.config.mjs \
+  fnm exec --using 20 node tmp/lint/check_hook_interfaces.mjs --print-returns <hookfile> <exportName> > tmp/lint/returned-names.txt || exit $?
+  # Append other hooks' returns and captured getter bindings; substitute all verified caller paths.
+  scan_result=0
+  fnm exec --using 20 node tmp/lint/node_modules/eslint/bin/eslint.js \
+    --no-config-lookup -c tmp/lint/eslint.config.mjs --format json \
     --rule '{"no-use-before-define":["error",{"functions":false,"classes":false,"variables":true}]}' \
-    frontend/src/dashboard.jsx | grep -F -f tmp/lint/returned-names.txt
+    <caller-file-1> <caller-file-2> > tmp/lint/strict-callers.json || scan_result=$?
+  if [ "$scan_result" -gt 1 ]; then exit "$scan_result"; fi
+  fnm exec --using 20 node --input-type=module <<'NODE'
+  import fs from 'node:fs';
+  const wanted = new Set(fs.readFileSync('tmp/lint/returned-names.txt', 'utf8').trim().split(/\s+/).filter(Boolean));
+  if (!wanted.size || [...wanted].some((name) => !/^[A-Za-z_$][\w$]*$/.test(name))) throw new Error('Missing/invalid caller binding inventory');
+  const results = JSON.parse(fs.readFileSync('tmp/lint/strict-callers.json', 'utf8'));
+  if (!Array.isArray(results) || !results.length) throw new Error('No caller files scanned');
+  for (const result of results) {
+      for (const message of result.messages) {
+          if (message.fatal || message.ruleId == null) throw new Error(`${result.filePath}: ${message.message}`);
+          const name = message.message.match(/^'([^']+)' was used/)?.[1];
+          if (message.ruleId === 'no-use-before-define' && wanted.has(name)) {
+              console.log(`${result.filePath}:${message.line}:${message.column} ${message.message}`);
+          }
+      }
+  }
+  NODE
   ```
 
-  (the unfiltered scan prints about 100 hits that are not about the hook). Every remaining hit must be a deferred closure (effect callback or event handler), and the PR description lists them; the SC2 dry run found exactly one, `runScenario()` in the 7860 effect. `--print-returns` warns when the hook returns a spread, because only literal keys are then listed.
-- The gate cannot see a wrong-but-defined name or a dropped or duplicated statement. `check_move_conservation.mjs` covers those: run `fnm exec --using 20 node tmp/lint/check_move_conservation.mjs --base <ref> <hook files...>` (or `--base-file <path>`); the residual must be fully itemised in the commit message. Human aid: `git diff --color-moved=dimmed-zebra --color-moved-ws=allow-indentation-change HEAD~1 HEAD`; non-dimmed lines are not verbatim. The script also prints the order of the top-level effects with hook bodies inlined at their call sites (`effect order: identical (136 top-level effects)` for the SC1 + SC2 dry run, or the first divergence); anything other than `identical` blocks the commit unless the effect-crossing table (Settings) justifies it.
+  Every filtered hit requires phase classification and every ledger caller must occur in the JSON results. A clean scan does not validate a getter's transitive invocation phase; review that separately. `--print-returns` warns on spreads, so explicitly inventory their members and getter captures rather than treating them as zero. PR0 adds a seeded nested caller whose `useMemo` reads a later hook result: the default scan passes, this strict scan must report it, and the deferred-effect variant remains a documented safe use.
+- The lint/interface gate cannot see a wrong-but-defined name or a dropped/duplicated statement. Conservation compares `App()` and the complete named owner-hook set at both revisions. Pass existing owners as positional paths, created owners with `--created-hook <path>`, and deleted owners with `--deleted-hook <path>`; omitting an existing baseline body is a coverage error, not an empty baseline. For a scratch comparison, use `--base-file <dashboard>` plus `--base-hook <current-hook>=<baseline-hook>` for each existing owner. Paths are resolved from the repo root. Examples:
+
+  ```bash
+  fnm exec --using 20 node tmp/lint/check_move_conservation.mjs --base HEAD~1 \
+    frontend/src/scenario/useScenarioPlanner.js \
+    --created-hook frontend/src/scenario/useScenarioDraft.js
+
+  fnm exec --using 20 node tmp/lint/check_move_conservation.mjs \
+    --base-file tmp/before/dashboard.jsx --dashboard tmp/after/dashboard.jsx \
+    --base-hook tmp/after/usePlanner.js=tmp/before/usePlanner.js tmp/after/usePlanner.js
+  ```
+
+  Include previously extracted owners whose effects participate in ordering, such as `useScenarioState` and the planner/sub-hooks in SC3, or the relevant prior Settings layers. The script prints complete residual statements; every one must be itemised and reviewed in the commit message. Inter-token whitespace is ignored; literal contents remain significant. Exit 0 means effect order is identical, not that residuals are approved; exit 1 means an effect mismatch, and exit 2 means a parsing/coverage error. An effect mismatch blocks the commit unless the Settings crossing table proves the exact crossing safe; ST3's open/normalize crossing cannot be waived as disjoint. Use `git diff --color-moved=dimmed-zebra --color-moved-ws=allow-indentation-change HEAD~1 HEAD` as an additional review aid.
+
+### Owner growth and interface budgets
+
+Reducing `dashboard.jsx` is insufficient if the extraction produces oversized owners or hides dependencies in bags. PR0 must extend `tests/test_codebase_structure_budgets.py` and `check_hook_interfaces.mjs`, and create the canonical `scripts/extraction_lint/owner_budgets.json` inventory. The six printed core tools below do **not** yet implement these extensions; copying them alone does not pass this gate. No new dependency is needed: use the existing Python checks and the checker's AST.
+
+- Inventory every affected existing and new feature-owned source file, including containers and helper modules; give it a stable module ID, repository-relative path, feature membership, exports, measured line count and ceiling. Count each physical file once in the combined total; a helper shared by both clusters is not counted twice. Exclude generated dist, tests, and unrelated imported shared modules from owner totals, and record those exclusions explicitly. Required source registration discovers reachable modules and all source files in the declared feature-owner roots so an unregistered helper cannot silently escape the budget.
+- For every exported hook/container, record all input, return and prop names and counts, both outer parameter count and expanded known bag-member count, caller paths, remaining App readers, and getters with invocation phases. Record accepted optional inputs as well as required inputs. Passing 100 dependencies in one object still records 100 expanded members. Spreads, dynamic returns and unresolved contracts require a complete reviewed member inventory linked to their source; unknown is never a zero count or a growth exemption. Preserve the approved flat planner interface and current Settings boundaries; the historical large EPM/Team Groups interfaces require accurate inventory, rather than a speculative redesign.
+- The manifest records `schemaVersion`, `baseSha`, `checkpointId`, per-module `id/path/features/exports/lineCeiling`, per-export `inputNames/returnNames/propNames/outerParameterCeiling/expandedInputCeiling/returnCeiling/propCeiling`, and **checkpoint-specific** aggregate ceilings for Scenario, Settings, the unique union of both, and that union plus `dashboard.jsx`. Record the incoming source ranges/ownership transfer and scaffolding allowance for each checkpoint. Owner-only totals necessarily grow as App statements move into owners (SC1 to SC2, for example); a single never-increasing owner-only total would incorrectly forbid the planned extraction. Measured values accompany ceilings; validate schema, duplicate paths/IDs, missing files/exports, and unresolved inventory entries. Symbol-level checks reject added members outside the frozen interface, even when a renamed bag or fewer outer parameters hides them. Per-file caps prevent sibling shrinkage from concealing an oversized owner; aggregate caps prevent many individually legal helpers from inflating the checkpoint.
+- Before each R4, derive the next checkpoint from the current-base scratch move, including new owners, transferred statement ranges, and itemized call sites, destructures, returns, imports, layers and other necessary scaffolding. Its combined App-plus-owner ceiling is the prior unique total plus that explicit net scaffolding allowance, minus verified deletions; merely moving statements adds no transfer credit to the combined total. Carry existing per-file/interface caps forward unless the approved move transfers additional responsibility into that owner; any such change must name the incoming ranges/members in the preflight ledger. Freeze the proposal at the preceding operator validation stop and include it in the R4 manifest update before checks. New owners need their initial cap before the move; they cannot remain unbudgeted until R5. R4 cannot raise a **frozen checkpoint** cap or derive it retroactively from the finished implementation. R5 ratchets down within that checkpoint; a later approved transfer receives its own frozen checkpoint, rather than an unexplained growth exemption. If a verified upstream change or necessary seam exceeds a proposal, report the exact delta and stop for a scoped operator decision before changing it; do not add padding or unrelated deletions. Unchanged owner interfaces stay at their prior ceilings.
+- Add clean/failing tooling controls for an oversized owner, an unregistered module, added interface members (including hidden bag members), aggregate growth while another file shrinks, and a wrong combined total caused by double-counting a shared helper. A clean authorized App-to-owner transfer must pass its new checkpoint while unaccounted combined growth fails. Run these alongside the existing 21 controls. Python validates source-file/aggregate LOC; the interface checker validates exports/names/counts and registration. `run.sh` invokes both, and `negative_controls.sh` invokes their controls. PR0 records their actual outputs; these checks must pass before the first extraction.
+
+At each R5 update the remaining-App responsibility inventory: canonical responsibility, retained symbols and readers, reason it stays in App, its owner relationship, and call-site/seam line cost. At completion the operator can see what the remaining roughly 10–12k lines do and how much code moved into each owner. Owner modules may not import `dashboard.jsx`; record and check dependency direction so a cycle cannot restore hidden App ownership. LOC and interface counts are maintenance limits, not performance evidence.
 
 ### Hook-input derivation (the five kinds of name)
 
@@ -243,66 +367,64 @@ export default [
 `scripts/extraction_lint/check_hook_interfaces.mjs`
 
 ```js
-// Verify the contracts between App() and the hooks/components it calls from local files:
-//  1. every name destructured from a local `useX()` result is in the hook's returned object literal;
-//  2. every required key of the hook's (or component's) first object parameter is passed by the caller;
-//  3. a key passed to a hook or component is accepted by its first object parameter.
-// Problems under frontend/src/scenario, settings, or epm are enforced (exit 1) unless listed in the
-// baseline file; everything else is informational. `--print-returns <file> [export]` lists return keys.
+// Check dashboard.jsx and the reachable scenario/, settings/, and epm/ modules.
+// Each file uses its own imports and lexical bindings; nested hook/component contracts count.
+// Spreads, non-literal call arguments, and props/defaulted component parameters remain unchecked.
 import fs from 'node:fs';
 import path from 'node:path';
 import * as espree from 'espree';
 
-const OWNER_DIRS = /^(scenario|settings|epm)[\\/]/;   // relative to the source root, so copies under tmp/ behave the same
+const OWNER_DIRS = /^(scenario|settings|epm)[\\/]/;
 const args = process.argv.slice(2);
 const flag = (name) => { const i = args.indexOf(name); if (i === -1) return null; const v = args[i + 1]; args.splice(i, 2); return v; };
 const baselineFile = flag('--baseline');
 const printReturns = args.indexOf('--print-returns');
-
 const parse = (file) => espree.parse(fs.readFileSync(file, 'utf8'), {
     ecmaVersion: 'latest', sourceType: 'module', ecmaFeatures: { jsx: true }, loc: true,
 });
 const resolveImport = (from, spec) => {
     const base = path.resolve(path.dirname(from), spec);
     for (const candidate of [base, `${base}.js`, `${base}.jsx`, `${base}.mjs`]) {
-        if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) return candidate;
+        if (fs.existsSync(candidate) && fs.statSync(candidate).isFile() && /\.(jsx?|mjs)$/.test(candidate)) return candidate;
     }
     return null;
 };
+function children(node) {
+    return Object.entries(node).filter(([key]) => key !== 'loc').flatMap(([, value]) => (
+        (Array.isArray(value) ? value : [value]).filter((child) => child && typeof child.type === 'string')
+    ));
+}
 function walk(node, visit, skipFunctions = false) {
     if (!node || typeof node.type !== 'string') return;
     visit(node);
-    for (const key of Object.keys(node)) {
-        if (key === 'loc' || key === 'parent') continue;
-        const value = node[key];
-        for (const child of Array.isArray(value) ? value : [value]) {
-            if (child && typeof child.type === 'string' && !(skipFunctions && /Function/.test(child.type))) walk(child, visit, skipFunctions);
-        }
-    }
+    for (const child of children(node)) if (!(skipFunctions && /Function/.test(child.type))) walk(child, visit, skipFunctions);
 }
-const keyName = (property) => property.key?.name ?? property.key?.value;
+const keyName = (property) => property.computed ? undefined : property.key?.name ?? property.key?.value;
 const cache = new Map();
+function moduleAst(file) {
+    if (!cache.has(file)) cache.set(file, parse(file));
+    return cache.get(file);
+}
 function findFunction(file, exportedName) {
-    const ast = cache.get(file) ?? parse(file);
-    cache.set(file, ast);
-    let fn = null;
+    const ast = moduleAst(file);
+    const functions = new Map();
+    let defaultName = null;
     for (const node of ast.body) {
-        const decl = node.type === 'ExportNamedDeclaration' || node.type === 'ExportDefaultDeclaration' ? node.declaration : node;
+        const decl = /^Export(Named|Default)Declaration$/.test(node.type) ? node.declaration : node;
         if (!decl) continue;
-        const isDefault = node.type === 'ExportDefaultDeclaration';
-        if (decl.type === 'FunctionDeclaration' && ((isDefault && exportedName === 'default') || decl.id?.name === exportedName)) fn = decl;
-        if (decl.type === 'VariableDeclaration') {
-            for (const d of decl.declarations) if (d.id.name === exportedName && /Function/.test(d.init?.type)) fn = d.init;
+        if (decl.type === 'FunctionDeclaration') {
+            if (decl.id) functions.set(decl.id.name, decl);
+            if (node.type === 'ExportDefaultDeclaration') functions.set('default', decl);
         }
-        if (isDefault && exportedName === 'default' && decl.type === 'Identifier') {
-            const target = decl.name;
-            for (const n of ast.body) {
-                if (n.type === 'FunctionDeclaration' && n.id.name === target) fn = n;
-                if (n.type === 'VariableDeclaration') for (const d of n.declarations) if (d.id.name === target && /Function/.test(d.init?.type)) fn = d.init;
-            }
+        if (decl.type === 'VariableDeclaration') {
+            for (const d of decl.declarations) if (d.id.type === 'Identifier' && /Function/.test(d.init?.type)) functions.set(d.id.name, d.init);
+        }
+        if (node.type === 'ExportDefaultDeclaration') {
+            if (decl.type === 'Identifier') defaultName = decl.name;
+            else if (/Function/.test(decl.type)) functions.set('default', decl);
         }
     }
-    return fn;
+    return functions.get(exportedName === 'default' && defaultName ? defaultName : exportedName) ?? null;
 }
 function returnKeys(fn) {
     const keys = new Set();
@@ -311,123 +433,185 @@ function returnKeys(fn) {
     walk(fn.body, (node) => {
         if (node.type !== 'ReturnStatement') return;
         sawReturn = true;
-        if (!node.argument || node.argument.type !== 'ObjectExpression') { unknown = true; return; }
+        if (node.argument?.type !== 'ObjectExpression') { unknown = true; return; }
         for (const property of node.argument.properties) {
-            if (property.type === 'SpreadElement') unknown = true;
-            else keys.add(keyName(property));
+            const name = keyName(property);
+            if (property.type === 'SpreadElement' || name === undefined) unknown = true;
+            else keys.add(name);
         }
     }, true);
     return { keys, unknown: unknown || !sawReturn };
 }
-function paramInfo(fn) {
+function paramInfo(fn, jsx = false) {
     const pattern = fn.params[0];
-    if (!pattern || pattern.type !== 'ObjectPattern') return null;
+    // Preserve the documented limit: props and a defaulted first parameter are not checked.
+    if (pattern?.type !== 'ObjectPattern') return null;
     const required = [];
     const accepted = new Set();
     let rest = false;
     for (const property of pattern.properties) {
         if (property.type === 'RestElement') { rest = true; continue; }
         const name = keyName(property);
+        if (name === undefined) return null;
         accepted.add(name);
-        // children arrive as JSX content and key/ref are consumed by React, so none of them are call-site inputs.
-        if (property.value.type !== 'AssignmentPattern' && name !== 'children') required.push(name);
+        if (property.value.type !== 'AssignmentPattern' && !(jsx && ['children', 'key', 'ref'].includes(name))) required.push(name);
     }
     return { required, accepted, rest };
 }
-
 if (printReturns !== -1) {
     const file = path.resolve(args[printReturns + 1]);
-    const exported = args[printReturns + 2] ?? 'default';
-    const fn = findFunction(file, exported) ?? findFunction(file, args[printReturns + 2] ?? '');
+    const fn = findFunction(file, args[printReturns + 2] ?? 'default');
     if (!fn) { console.error('function not found'); process.exit(2); }
     const result = returnKeys(fn);
     if (result.unknown) console.error('warning: the return uses a spread or non-literal; only literal keys are listed');
     console.log([...result.keys].join('\n'));
     process.exit(0);
 }
-
 const entry = path.resolve(args[0]);
-const ast = parse(entry);
-const imports = new Map();
-for (const node of ast.body) {
-    if (node.type !== 'ImportDeclaration' || !node.source.value.startsWith('.')) continue;
-    const resolved = resolveImport(entry, node.source.value);
-    for (const specifier of node.specifiers) {
-        imports.set(specifier.local.name, {
-            resolved,
-            exported: specifier.type === 'ImportDefaultSpecifier' ? 'default' : specifier.imported.name,
-        });
-    }
-}
+const sourceRoot = path.dirname(entry);
+const owned = (file) => OWNER_DIRS.test(path.relative(sourceRoot, file));
 const enforcedProblems = [];
 const informational = [];
 let checked = 0;
-const sourceRoot = path.dirname(entry);
-const report = (resolved, message) => (resolved && OWNER_DIRS.test(path.relative(sourceRoot, resolved)) ? enforcedProblems : informational).push(message);
-const at = (node) => `line ${node.loc?.start?.line ?? '?'}`;
-const aliases = new Map();
+let filesChecked = 0;
+// Keep the original enforcement boundary: contracts of shared components outside owner folders
+// are informational, even when an owner module calls them (many props are intentionally optional).
+const report = (caller, resolved, message) => (owned(resolved) ? enforcedProblems : informational).push(message);
 
-function checkDestructure(pattern, name, info, node) {
-    const { fn, resolved } = info;
-    const { keys, unknown } = returnKeys(fn);
-    checked += 1;
-    const wanted = pattern.properties.filter((p) => p.type === 'Property').map(keyName);
-    const missing = wanted.filter((key) => !keys.has(key));
-    if (missing.length && !unknown) report(resolved, `${name} (${at(node)}): destructured but not returned -> ${missing.join(', ')}`);
-    else if (missing.length) report(resolved, `${name} (${at(node)}): return uses a spread or non-literal (in scenario/, settings/, epm/ return an object literal); cannot verify ${missing.length} names`);
-}
-function lookup(name) {
-    const entryInfo = imports.get(name);
-    if (!entryInfo?.resolved) return null;
-    const fn = findFunction(entryInfo.resolved, entryInfo.exported);
-    return fn ? { fn, resolved: entryInfo.resolved } : null;
-}
-function checkParams(name, info, passed, hasSpread, node) {
-    const params = paramInfo(info.fn);
-    if (!params || hasSpread) return;
-    const missing = params.required.filter((key) => !passed.includes(key));
-    const unknownKeys = params.rest ? [] : passed.filter((key) => key !== 'key' && key !== 'ref' && !params.accepted.has(key));
-    if (missing.length) report(info.resolved, `${name} (${at(node)}): required input not passed -> ${missing.join(', ')}`);
-    if (unknownKeys.length) report(info.resolved, `${name} (${at(node)}): passed but not accepted -> ${unknownKeys.join(', ')}`);
-}
-
-walk(ast, (node) => {
-    if (node.type === 'VariableDeclarator' && node.init) {
-        if (node.id.type === 'ObjectPattern' && node.init.type === 'CallExpression' && node.init.callee.type === 'Identifier') {
-            const info = lookup(node.init.callee.name);
-            if (info && /^use[A-Z]/.test(node.init.callee.name)) checkDestructure(node.id, node.init.callee.name, info, node);
-        }
-        if (node.id.type === 'Identifier' && node.init.type === 'CallExpression' && node.init.callee.type === 'Identifier' && /^use[A-Z]/.test(node.init.callee.name)) {
-            const info = lookup(node.init.callee.name);
-            if (info) aliases.set(node.id.name, { name: node.init.callee.name, info });
-        }
-        if (node.id.type === 'ObjectPattern' && node.init.type === 'Identifier' && aliases.has(node.init.name)) {
-            const { name, info } = aliases.get(node.init.name);
-            checkDestructure(node.id, name, info, node);
-        }
+// Build scopes before checking expressions, so imports/aliases cannot leak across shadowing bindings.
+function lexicalScopes(ast, file) {
+    const scopes = new WeakMap();
+    const root = { parent: null, kind: 'Program', bindings: new Map() };
+    function bind(pattern, scope, value = {}) {
+        if (!pattern) return;
+        if (pattern.type === 'Identifier') scope.bindings.set(pattern.name, value);
+        else if (pattern.type === 'AssignmentPattern') bind(pattern.left, scope, value);
+        else if (pattern.type === 'RestElement') bind(pattern.argument, scope, value);
+        else if (pattern.type === 'ObjectPattern') for (const p of pattern.properties) bind(p.type === 'RestElement' ? p.argument : p.value, scope, value);
+        else if (pattern.type === 'ArrayPattern') for (const p of pattern.elements) bind(p, scope, value);
     }
-    if (node.type === 'CallExpression' && node.callee.type === 'Identifier' && /^use[A-Z]/.test(node.callee.name)) {
-        const info = lookup(node.callee.name);
-        const first = node.arguments[0];
-        if (info && first?.type === 'ObjectExpression') {
-            const hasSpread = first.properties.some((p) => p.type === 'SpreadElement');
-            checkParams(node.callee.name, info, first.properties.filter((p) => p.type === 'Property').map(keyName), hasSpread, node);
+    function visit(node, scope) {
+        if (node.type === 'FunctionDeclaration' && node.id) bind(node.id, scope, { fn: node, resolved: file });
+        if (/Function/.test(node.type)) {
+            scope = { parent: scope, kind: 'Function', bindings: new Map() };
+            if (node.id) bind(node.id, scope, { fn: node, resolved: file });
+            for (const param of node.params) bind(param, scope);
+        } else if (['BlockStatement', 'CatchClause', 'ForStatement', 'ForInStatement', 'ForOfStatement', 'SwitchStatement'].includes(node.type)) {
+            scope = { parent: scope, kind: 'Block', bindings: new Map() };
+            if (node.type === 'CatchClause') bind(node.param, scope);
         }
-    }
-    if (node.type === 'JSXOpeningElement' && node.name.type === 'JSXIdentifier' && /^[A-Z]/.test(node.name.name)) {
-        const info = lookup(node.name.name);
-        if (info) {
-            const hasSpread = node.attributes.some((a) => a.type === 'JSXSpreadAttribute');
-            checkParams(node.name.name, info, node.attributes.filter((a) => a.type === 'JSXAttribute').map((a) => a.name.name), hasSpread, node);
+        scopes.set(node, scope);
+        if (node.type === 'ImportDeclaration') {
+            const resolved = node.source.value.startsWith('.') ? resolveImport(file, node.source.value) : null;
+            for (const specifier of node.specifiers) {
+                bind(specifier.local, scope, { resolved, exported: specifier.type === 'ImportDefaultSpecifier' ? 'default' : specifier.imported?.name ?? specifier.imported?.value });
+            }
         }
+        if (node.type === 'VariableDeclaration') {
+            let target = scope;
+            if (node.kind === 'var') while (target.parent && target.kind === 'Block') target = target.parent;
+            for (const d of node.declarations) bind(d.id, target, d.id.type === 'Identifier' ? { init: d.init, initScope: scope } : {});
+        }
+        if (node.type === 'ClassDeclaration' && node.id) bind(node.id, scope);
+        for (const child of children(node)) visit(child, scope);
     }
-});
-
-const baseline = baselineFile && fs.existsSync(baselineFile)
-    ? new Set(fs.readFileSync(baselineFile, 'utf8').split('\n').filter(Boolean)) : new Set();
-const strip = (message) => message.replace(/ \(line \d+\)/, '');
+    visit(ast, root);
+    const binding = (name, scope) => {
+        for (let current = scope; current; current = current.parent) if (current.bindings.has(name)) return current.bindings.get(name);
+        return null;
+    };
+    function lookup(name, scope, seen = new Set()) {
+        const value = binding(name, scope);
+        if (!value || seen.has(value)) return null;
+        seen.add(value);
+        if (value.fn) return value;
+        if (value.resolved && value.exported) {
+            const fn = findFunction(value.resolved, value.exported);
+            return fn ? { fn, resolved: value.resolved } : null;
+        }
+        if (value.init?.type === 'Identifier') return lookup(value.init.name, value.initScope, seen);
+        if (/Function/.test(value.init?.type)) return { fn: value.init, resolved: file };
+        return null;
+    }
+    function resultAlias(name, scope, seen = new Set()) {
+        const value = binding(name, scope);
+        if (!value || seen.has(value)) return null;
+        seen.add(value);
+        if (value.init?.type === 'Identifier') return resultAlias(value.init.name, value.initScope, seen);
+        if (value.init?.type === 'CallExpression' && value.init.callee.type === 'Identifier' && /^use[A-Z]/.test(value.init.callee.name)) {
+            const info = lookup(value.init.callee.name, value.initScope);
+            return info ? { name: value.init.callee.name, info } : null;
+        }
+        return null;
+    }
+    return { scopes, lookup, resultAlias };
+}
+const queue = [entry];
+const visited = new Set();
+while (queue.length) {
+    const file = queue.shift();
+    if (visited.has(file)) continue;
+    visited.add(file);
+    const ast = moduleAst(file);
+    filesChecked += 1;
+    for (const node of ast.body) {
+        if (node.type !== 'ImportDeclaration' || !node.source.value.startsWith('.')) continue;
+        const resolved = resolveImport(file, node.source.value);
+        if (resolved && owned(resolved)) queue.push(resolved);
+    }
+    const { scopes, lookup, resultAlias } = lexicalScopes(ast, file);
+    const at = (node) => `${path.relative(sourceRoot, file)}:line ${node.loc.start.line}`;
+    function checkDestructure(pattern, name, info, node) {
+        const { keys, unknown } = returnKeys(info.fn);
+        checked += 1;
+        const wanted = pattern.properties.filter((p) => p.type === 'Property').map(keyName);
+        const missing = wanted.filter((key) => !keys.has(key));
+        if (missing.length && !unknown) report(file, info.resolved, `${name} (${at(node)}): destructured but not returned -> ${missing.join(', ')}`);
+        else if (missing.length) report(file, info.resolved, `${name} (${at(node)}): return uses a spread or non-literal; cannot verify ${missing.length} names`);
+    }
+    function checkParams(name, info, passed, node, jsx = false, absent = false) {
+        const params = paramInfo(info.fn, jsx);
+        if (!params) return;
+        if (absent && !params.required.length) {
+            report(file, info.resolved, `${name} (${at(node)}): required input not passed -> first object argument`);
+            return;
+        }
+        const missing = params.required.filter((key) => !passed.includes(key));
+        const unknownKeys = params.rest ? [] : passed.filter((key) => !(jsx && ['key', 'ref'].includes(key)) && !params.accepted.has(key));
+        if (missing.length) report(file, info.resolved, `${name} (${at(node)}): required input not passed -> ${missing.join(', ')}`);
+        if (unknownKeys.length) report(file, info.resolved, `${name} (${at(node)}): passed but not accepted -> ${unknownKeys.join(', ')}`);
+    }
+    walk(ast, (node) => {
+        const scope = scopes.get(node);
+        if (node.type === 'VariableDeclarator' && node.id.type === 'ObjectPattern' && node.init) {
+            if (node.init.type === 'CallExpression' && node.init.callee.type === 'Identifier' && /^use[A-Z]/.test(node.init.callee.name)) {
+                const info = lookup(node.init.callee.name, scope);
+                if (info) checkDestructure(node.id, node.init.callee.name, info, node);
+            } else if (node.init.type === 'Identifier') {
+                const alias = resultAlias(node.init.name, scope);
+                if (alias) checkDestructure(node.id, alias.name, alias.info, node);
+            }
+        }
+        if (node.type === 'CallExpression' && node.callee.type === 'Identifier' && /^use[A-Z]/.test(node.callee.name)) {
+            const info = lookup(node.callee.name, scope);
+            const first = node.arguments[0];
+            if (info && !first) checkParams(node.callee.name, info, [], node, false, true);
+            if (info && first?.type === 'ObjectExpression' && !first.properties.some((p) => p.type === 'SpreadElement' || p.computed)) {
+                checkParams(node.callee.name, info, first.properties.map(keyName), node);
+            }
+        }
+        if (node.type === 'JSXOpeningElement' && node.name.type === 'JSXIdentifier' && /^[A-Z]/.test(node.name.name)) {
+            const info = lookup(node.name.name, scope);
+            if (info && !node.attributes.some((a) => a.type === 'JSXSpreadAttribute')) {
+                checkParams(node.name.name, info, node.attributes.map((a) => a.name.name), node, true);
+            }
+        }
+    });
+}
+const baseline = baselineFile && fs.existsSync(baselineFile) ? new Set(fs.readFileSync(baselineFile, 'utf8').split('\n').filter(Boolean)) : new Set();
+const strip = (message) => message.replace(/:line \d+/, '');
 const newProblems = enforcedProblems.filter((message) => !baseline.has(strip(message)));
-console.log(`checked ${checked} destructure sites in ${path.basename(entry)}; enforced problems: ${newProblems.length}; informational: ${informational.length}; baselined: ${enforcedProblems.length - newProblems.length}`);
+console.log(`checked ${checked} destructure sites in ${filesChecked} modules; enforced problems: ${newProblems.length}; informational: ${informational.length}; baselined: ${enforcedProblems.length - newProblems.length}`);
 newProblems.forEach((message) => console.log(`  ENFORCED ${message}`));
 if (process.env.CHECKER_VERBOSE) informational.forEach((message) => console.log(`  info ${message}`));
 if (process.env.CHECKER_WRITE_BASELINE) fs.writeFileSync(process.env.CHECKER_WRITE_BASELINE, `${enforcedProblems.map(strip).join('\n')}\n`);
@@ -437,106 +621,247 @@ process.exitCode = newProblems.length ? 1 : 0;
 `scripts/extraction_lint/check_move_conservation.mjs`
 
 ```js
-// Prove a move was verbatim: compare the App() body statements before the change (a git ref or a file)
-// with the App() body statements plus the hook-function body statements after it. Statements that moved
-// unchanged cancel out; every remaining line (call sites, return objects, edited statements) must be
-// itemised in the commit message. Whitespace is collapsed, so re-indentation is not a difference.
-// It also compares the order of the top-level effects: hook bodies are inlined at their call sites.
+// Compare App() plus all named owner-hook bodies at BOTH revisions. Full residual statements need
+// human review; only effect-order divergence determines exit 1. Parse/coverage errors exit 2.
+// Git: --base REF [--created-hook FILE] [--deleted-hook FILE] EXISTING_HOOK_FILES...
+// Scratch: --base-file DASHBOARD --dashboard DASHBOARD --base-hook CURRENT_FILE=BASE_FILE ...
+// Newly created/deleted files must be explicit; hook paths form the same union on both sides.
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import * as espree from 'espree';
 
-const args = process.argv.slice(2);
-const flag = (name) => { const i = args.indexOf(name); if (i === -1) return null; const v = args[i + 1]; args.splice(i, 2); return v; };
-const baseRef = flag('--base');
-const baseFile = flag('--base-file');
-const dashboard = flag('--dashboard') ?? 'frontend/src/dashboard.jsx';
-const hookFiles = args;
-
-const parse = (code) => espree.parse(code, { ecmaVersion: 'latest', sourceType: 'module', ecmaFeatures: { jsx: true }, loc: true, range: true });
-const squash = (text) => text.replace(/\s+/g, ' ').trim();
-function findFunction(node, predicate) {
-    let found = null;
-    (function visit(n) {
-        if (found || !n || typeof n.type !== 'string') return;
-        if (predicate(n)) { found = n; return; }
-        for (const key of Object.keys(n)) {
-            if (key === 'loc' || key === 'range') continue;
-            const value = n[key];
-            for (const child of Array.isArray(value) ? value : [value]) visit(child);
+try {
+    const args = process.argv.slice(2);
+    const flag = (name) => { const i = args.indexOf(name); if (i === -1) return null; const v = args[i + 1]; if (!v || v.startsWith('--')) throw new Error(`${name} requires a value`); args.splice(i, 2); return v; };
+    const many = (name) => { const values = []; while (args.includes(name)) values.push(flag(name)); return values; };
+    const baseRef = flag('--base') ?? 'HEAD';
+    const baseFile = flag('--base-file');
+    const dashboard = flag('--dashboard') ?? 'frontend/src/dashboard.jsx';
+    const created = new Set(many('--created-hook').map((file) => path.resolve(file)));
+    const deleted = new Set(many('--deleted-hook').map((file) => path.resolve(file)));
+    const baselineHooks = new Map(many('--base-hook').map((value) => {
+        const separator = value.indexOf('=');
+        if (separator < 1) throw new Error('--base-hook requires CURRENT_FILE=BASE_FILE');
+        return [path.resolve(value.slice(0, separator)), value.slice(separator + 1)];
+    }));
+    if (args.some((arg) => arg.startsWith('--'))) throw new Error(`unknown option: ${args.find((arg) => arg.startsWith('--'))}`);
+    const hookFiles = [...new Set([...args.map((file) => path.resolve(file)), ...created, ...deleted, ...baselineHooks.keys()])];
+    for (const file of hookFiles) if (created.has(file) && deleted.has(file)) throw new Error(`${file} cannot be both created and deleted`);
+    const gitRoot = baseFile ? null : execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
+    if (!baseFile) execFileSync('git', ['rev-parse', '--verify', `${baseRef}^{commit}`], { stdio: 'ignore' });
+    const gitPath = (file) => path.relative(gitRoot, path.resolve(file)).split(path.sep).join('/');
+    const gitExists = (file) => {
+        try { execFileSync('git', ['cat-file', '-e', `${baseRef}:${gitPath(file)}`], { stdio: 'ignore' }); return true; }
+        catch { return false; }
+    };
+    const gitRead = (file) => execFileSync('git', ['show', `${baseRef}:${gitPath(file)}`], { encoding: 'utf8', maxBuffer: 1 << 28 });
+    const parse = (code) => espree.parse(code, { ecmaVersion: 'latest', sourceType: 'module', ecmaFeatures: { jsx: true }, loc: true, range: true, tokens: true });
+    function module(code, file) {
+        const ast = parse(code);
+        const functions = new Map();
+        const exports = new Map();
+        const imports = new Map();
+        for (const node of ast.body) {
+            if (node.type === 'ImportDeclaration' && node.source.value.startsWith('.')) {
+                for (const specifier of node.specifiers) imports.set(specifier.local.name, { spec: node.source.value, exported: specifier.type === 'ImportDefaultSpecifier' ? 'default' : specifier.imported?.name });
+            }
+            const decl = /^Export(Named|Default)Declaration$/.test(node.type) ? node.declaration : node;
+            if (!decl) continue;
+            if (decl.type === 'FunctionDeclaration' && decl.id) functions.set(decl.id.name, decl);
+            if (decl.type === 'VariableDeclaration') for (const d of decl.declarations) if (d.id.type === 'Identifier' && /Function/.test(d.init?.type)) functions.set(d.id.name, d.init);
+            if (node.type === 'ExportDefaultDeclaration') exports.set('default', decl.type === 'Identifier' ? decl.name : decl.id?.name);
+            if (node.type === 'ExportNamedDeclaration' && !node.source) for (const specifier of node.specifiers) exports.set(specifier.exported.name, specifier.local.name);
         }
-    })(node);
-    return found;
-}
-function statements(code, fn) {
-    return fn.body.body.map((node) => ({ text: squash(code.slice(node.range[0], node.range[1])), line: node.loc.start.line }));
-}
-const beforeCode = baseFile ? fs.readFileSync(baseFile, 'utf8') : execFileSync('git', ['show', `${baseRef ?? 'HEAD'}:${dashboard}`], { encoding: 'utf8', maxBuffer: 1 << 28 });
-const afterCode = fs.readFileSync(dashboard, 'utf8');
-const isApp = (n) => n.type === 'FunctionDeclaration' && n.id?.name === 'App';
-const before = statements(beforeCode, findFunction(parse(beforeCode), isApp));
-const after = statements(afterCode, findFunction(parse(afterCode), isApp));
-const afterApp = [...after];
-const hooks = new Map();   // hook function name -> its body statements
-for (const file of hookFiles) {
-    const code = fs.readFileSync(file, 'utf8');
-    const ast = parse(code);
-    const fns = [];
-    for (const node of ast.body) {
-        const decl = node.type === 'ExportNamedDeclaration' || node.type === 'ExportDefaultDeclaration' ? node.declaration : node;
-        if (decl?.type === 'FunctionDeclaration' && /^use[A-Z]/.test(decl.id?.name ?? '')) fns.push(decl);
+        const statements = (fn) => {
+            if (fn.body.type !== 'BlockStatement') throw new Error(`${file}: hook bodies must use a block`);
+            return fn.body.body.map((node) => ({
+                node, file, line: node.loc.start.line, text: code.slice(node.range[0], node.range[1]),
+                // Ignore only inter-token whitespace; preserve string/template/JSX literal contents.
+                signature: JSON.stringify(ast.tokens.filter((token) => token.range[0] >= node.range[0] && token.range[1] <= node.range[1]).map((token) => [token.type, code.slice(token.range[0], token.range[1])])),
+            }));
+        };
+        return { functions, exports, imports, statements };
     }
-    if (!fns.length) { console.error(`no hook function found in ${file}`); process.exit(2); }
-    for (const fn of fns) {
-        const body = statements(code, fn).map((s) => ({ ...s, file: path.basename(file) }));
-        hooks.set(fn.id.name, body);
-        for (const s of body) after.push(s);
+    const dashboardPath = path.resolve(dashboard);
+    const beforeModules = new Map([[dashboardPath, module(baseFile ? fs.readFileSync(baseFile, 'utf8') : gitRead(dashboard), dashboardPath)]]);
+    const afterModules = new Map([[dashboardPath, module(fs.readFileSync(dashboard, 'utf8'), dashboardPath)]]);
+    for (const file of hookFiles) {
+        const currentExists = fs.existsSync(file);
+        const beforeExists = baselineHooks.has(file) ? fs.existsSync(baselineHooks.get(file)) : baseFile ? false : gitExists(file);
+        if (created.has(file)) {
+            if (beforeExists || baselineHooks.has(file)) throw new Error(`created hook exists at baseline: ${file}`);
+            if (!currentExists) throw new Error(`created hook missing from current tree: ${file}`);
+        } else if (!beforeExists) {
+            throw new Error(`baseline hook missing: ${file}; mark --created-hook or supply --base-hook CURRENT_FILE=BASE_FILE`);
+        }
+        if (deleted.has(file)) {
+            if (currentExists) throw new Error(`deleted hook still exists in current tree: ${file}`);
+        } else if (!currentExists) {
+            throw new Error(`current hook missing: ${file}; mark --deleted-hook`);
+        }
+        if (beforeExists) beforeModules.set(file, module(baselineHooks.has(file) ? fs.readFileSync(baselineHooks.get(file), 'utf8') : gitRead(file), file));
+        if (currentExists) afterModules.set(file, module(fs.readFileSync(file, 'utf8'), file));
     }
+    function collect(modules) {
+        const appModule = modules.get(dashboardPath);
+        const app = appModule.functions.get('App');
+        if (!app) throw new Error('App() not found');
+        const appStatements = appModule.statements(app);
+        const bodies = new Map();
+        const all = [...appStatements];
+        for (const [file, owner] of modules) {
+            if (file === dashboardPath) continue;
+            const hooks = [...owner.functions].filter(([name]) => /^use[A-Z]/.test(name));
+            if (!hooks.length) throw new Error(`no hook function found in ${file}`);
+            for (const [name, fn] of hooks) {
+                const body = owner.statements(fn);
+                bodies.set(`${file}:${name}`, body);
+                all.push(...body);
+            }
+        }
+        function lookup(file, name) {
+            if (bodies.has(`${file}:${name}`)) return `${file}:${name}`;
+            const imported = modules.get(file).imports.get(name);
+            if (!imported) return null;
+            const base = path.resolve(path.dirname(file), imported.spec);
+            const resolved = [base, `${base}.js`, `${base}.jsx`, `${base}.mjs`].find((candidate) => modules.has(candidate));
+            if (!resolved) return null; // Unchanged hooks outside the named ownership set stay opaque on BOTH sides.
+            const owner = modules.get(resolved);
+            const target = owner.exports.get(imported.exported) ?? imported.exported;
+            return bodies.has(`${resolved}:${target}`) ? `${resolved}:${target}` : null;
+        }
+        const calls = (node) => {
+            if (node.type === 'ExpressionStatement' && node.expression.type === 'CallExpression') return [node.expression];
+            if (node.type === 'VariableDeclaration') return node.declarations.map((d) => d.init).filter((init) => init?.type === 'CallExpression');
+            return [];
+        };
+        const effectName = (callee) => callee.type === 'Identifier' ? callee.name : callee.type === 'MemberExpression' && !callee.computed && callee.object.name === 'React' ? callee.property.name : '';
+        function effects(list, stack = []) {
+            return list.flatMap((statement) => calls(statement.node).flatMap((call) => {
+                if (/^use(Layout)?Effect$/.test(effectName(call.callee))) return [statement];
+                if (call.callee.type !== 'Identifier') return [];
+                const key = lookup(statement.file, call.callee.name);
+                if (!key) return [];
+                if (stack.includes(key)) throw new Error(`recursive hook call: ${key}`);
+                return effects(bodies.get(key), [...stack, key]);
+            }));
+        }
+        return { all, effects: effects(appStatements) };
+    }
+    const before = collect(beforeModules);
+    const after = collect(afterModules);
+    const tally = (list) => {
+        const counts = new Map();
+        for (const s of list) counts.set(s.signature, (counts.get(s.signature) ?? 0) + 1);
+        return counts;
+    };
+    const unmatched = (list, otherCounts) => {
+        const seen = new Map();
+        return list.filter((s) => {
+            const n = (seen.get(s.signature) ?? 0) + 1;
+            seen.set(s.signature, n);
+            return n > (otherCounts.get(s.signature) ?? 0);
+        });
+    };
+    const removed = unmatched(before.all, tally(after.all));
+    const added = unmatched(after.all, tally(before.all));
+    console.log(`App + named hook statements before: ${before.all.length}; after: ${after.all.length}`);
+    console.log(`removed and not found in a hook: ${removed.length}; new statements: ${added.length}`);
+    removed.forEach((s) => console.log(`- (base ${path.relative(process.cwd(), s.file)} line ${s.line})\n${s.text}`));
+    added.forEach((s) => console.log(`+ (${path.relative(process.cwd(), s.file)} line ${s.line})\n${s.text}`));
+    let diverge = -1;
+    for (let i = 0; i < Math.max(before.effects.length, after.effects.length); i += 1) {
+        if (before.effects[i]?.signature !== after.effects[i]?.signature) { diverge = i; break; }
+    }
+    if (diverge === -1) console.log(`effect order: identical (${before.effects.length} top-level effects)`);
+    else {
+        console.log(`effect order: DIFFERS at effect ${diverge + 1} (before ${before.effects.length}, after ${after.effects.length})`);
+        console.log(`  before: ${before.effects[diverge]?.text ?? '(none)'}`);
+        console.log(`  after: ${after.effects[diverge]?.text ?? '(none)'}`);
+        process.exitCode = 1;
+    }
+} catch (error) {
+    console.error(error.message);
+    process.exitCode = 2;
 }
-const tally = (list) => {
-    const counts = new Map();
-    for (const s of list) counts.set(s.text, (counts.get(s.text) ?? 0) + 1);
-    return counts;
-};
-const beforeCounts = tally(before);
-const afterCounts = tally(after);
-const unmatched = (list, otherCounts) => {
-    const seen = new Map();
-    return list.filter((s) => {
-        const n = (seen.get(s.text) ?? 0) + 1;
-        seen.set(s.text, n);
-        return n > (otherCounts.get(s.text) ?? 0);
-    });
-};
-const removed = unmatched(before, afterCounts);
-const added = unmatched(after, beforeCounts);
-const snippet = (s) => (s.text.length > 110 ? `${s.text.slice(0, 107)}...` : s.text);
-console.log(`App() statements before: ${before.length}; after (App + hooks): ${after.length}`);
-console.log(`removed and not found in a hook: ${removed.length}; new statements: ${added.length}`);
-removed.forEach((s) => console.log(`- (base line ${s.line}) ${snippet(s)}`));
-added.forEach((s) => console.log(`+ (${s.file ?? 'dashboard.jsx'} line ${s.line}) ${snippet(s)}`));
+```
 
-// Effect order: expand hook calls inline, then compare the sequence of top-level effect statements.
-const isEffect = (text) => /^(React\.)?use(Layout)?Effect\(/.test(text);
-const expand = (list, depth = 0) => list.flatMap((s) => {
-    const called = [...hooks.keys()].find((name) => depth < 8 && new RegExp(`\\b${name}\\(`).test(s.text));
-    return called ? expand(hooks.get(called), depth + 1) : [s];
-});
-const afterEffects = expand(afterApp).filter((s) => isEffect(s.text));
-const beforeEffects = before.filter((s) => isEffect(s.text));
-const label = (s) => `${s.text.slice(Math.max(0, s.text.lastIndexOf('}, [')), s.text.length).slice(0, 80)}`;
-let diverge = -1;
-for (let i = 0; i < Math.max(beforeEffects.length, afterEffects.length); i += 1) {
-    if (beforeEffects[i]?.text !== afterEffects[i]?.text) { diverge = i; break; }
+`scripts/extraction_lint/tooling_controls.mjs`
+
+```js
+// Additional extraction controls, using only Node builtins. Run after run.sh copied tools to tmp/lint:
+// EXTRACTION_TOOL_DIR=tmp/lint node scripts/extraction_lint/tooling_controls.mjs
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+
+const toolDir = path.resolve(process.env.EXTRACTION_TOOL_DIR ?? path.dirname(fileURLToPath(import.meta.url)));
+const root = path.resolve('tmp/negative-controls/tooling');
+fs.rmSync(root, { recursive: true, force: true });
+fs.mkdirSync(root, { recursive: true });
+const write = (relative, code) => {
+    const file = path.join(root, relative);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, code);
+    return file;
+};
+let passed = 0;
+function run(name, script, args, status, patterns) {
+    const result = spawnSync(process.execPath, [path.join(toolDir, script), ...args], { encoding: 'utf8' });
+    const output = `${result.stdout ?? ''}${result.stderr ?? ''}`;
+    assert.equal(result.status, status, `${name}: expected exit ${status}, got ${result.status}\n${output}`);
+    for (const pattern of patterns) assert.match(output, pattern, `${name}: expected ${pattern}\n${output}`);
+    console.log(`ok    ${name}`);
+    passed += 1;
 }
-if (diverge === -1) {
-    console.log(`effect order: identical (${beforeEffects.length} top-level effects)`);
-} else {
-    console.log(`effect order: DIFFERS at effect ${diverge + 1} of ${beforeEffects.length} (before ${beforeEffects.length}, after ${afterEffects.length})`);
-    console.log(`  before: ${beforeEffects[diverge] ? label(beforeEffects[diverge]) : '(none)'}`);
-    console.log(`  after:  ${afterEffects[diverge] ? label(afterEffects[diverge]) : '(none)'}`);
-}
+const dashboard = write('interfaces/dashboard.jsx', 'import { useOuter } from "./scenario/useOuter.js"; function App() { const { actual } = useOuter({ required: 1 }); return null; }\n');
+const outer = write('interfaces/scenario/useOuter.js', 'import { useInner } from "./useInner.js"; export function useOuter({ required }) { const state = useInner({ required }); const alias = state; const { actual } = alias; return { actual }; }\n');
+const inner = write('interfaces/scenario/useInner.js', 'export function useInner({ required }) { return { actual: required }; }\n');
+const check = (name, status, patterns) => run(name, 'check_hook_interfaces.mjs', [dashboard], status, patterns);
+check('nested-interface-clean', 0, [/checked 2 destructure sites in 3 modules/, /enforced problems: 0/]);
+fs.writeFileSync(outer, 'import { useInner } from "./useInner.js"; export function useOuter({ required }) { const state = useInner({}); const alias = state; const { missing } = alias; return { actual: missing }; }\n');
+check('nested-interface-missing-return-and-input', 1, [/destructured but not returned -> missing/, /required input not passed -> required/]);
+fs.writeFileSync(outer, 'import { useInner } from "./useInner.js"; export function useOuter({ required }) { const { actual } = useInner(); return { actual }; }\n');
+check('nested-interface-absent-object-argument', 1, [/required input not passed -> required/]);
+fs.writeFileSync(outer, 'import { useInner } from "./useInner.js"; export function useOuter({ required }) { const state = useInner({ required }); { const state = {}; const { missing } = state; void missing; } function deferred(useInner) { const { unrelated } = useInner(); return unrelated; } const { actual } = state; return { actual }; }\n');
+check('nested-interface-lexical-shadowing', 0, [/enforced problems: 0/]);
+fs.writeFileSync(outer, 'import { useInner } from "./useInner.js"; import Panel from "./Panel.jsx"; export function useOuter({ required }) { const { actual } = useInner({ required }); return { actual }; } export function View() { return <Panel />; }\n');
+write('interfaces/scenario/Panel.jsx', 'export default function Panel({ required }) { return <div>{required}</div>; }\n');
+check('nested-component-missing-prop', 1, [/Panel .*required input not passed -> required/]);
+fs.writeFileSync(outer, 'import { useInner } from "./useInner.js"; export function useOuter({ required }) { const { actual } = useInner({ ...{ required } }); return { actual }; }\n');
+check('spread-input-documented-limit', 0, [/enforced problems: 0/]);
+fs.writeFileSync(outer, 'import { useInner } from "./useInner.js"; export function useOuter({ required }) { const { actual } = useInner(); return { actual }; }\n');
+fs.writeFileSync(inner, 'export function useInner({ required } = {}) { return { actual: required }; }\n');
+check('defaulted-parameter-documented-limit', 0, [/enforced problems: 0/]);
+
+const beforeDashboard = write('conservation/before.jsx', 'import { usePlanner } from "./scenario/usePlanner.js"; function App() { const result = usePlanner(); }\n');
+const afterDashboard = write('conservation/dashboard.jsx', fs.readFileSync(beforeDashboard, 'utf8'));
+const beforePlanner = write('conservation/base/usePlanner.js', 'export function usePlanner() { retain(); useEffect(() => first(), []); useEffect(() => second(), []); return {}; }\n');
+const planner = write('conservation/scenario/usePlanner.js', fs.readFileSync(beforePlanner, 'utf8'));
+const conserveArgs = ['--base-file', beforeDashboard, '--dashboard', afterDashboard, '--base-hook', `${planner}=${beforePlanner}`, planner];
+const conserve = (name, status, patterns, extra = []) => run(name, 'check_move_conservation.mjs', [...conserveArgs, ...extra], status, patterns);
+conserve('existing-hook-clean', 0, [/removed and not found in a hook: 0; new statements: 0/, /identical \(2 top-level effects\)/]);
+fs.writeFileSync(planner, 'export function usePlanner() { useEffect(() => first(), []); useEffect(() => second(), []); return {}; }\n');
+conserve('existing-hook-dropped-statement-reported', 0, [/removed and not found in a hook: 1; new statements: 0/, /retain\(\);/]);
+fs.writeFileSync(planner, 'export function usePlanner() { retain(); retain(); useEffect(() => first(), []); useEffect(() => second(), []); return {}; }\n');
+conserve('existing-hook-duplicated-statement-reported', 0, [/removed and not found in a hook: 0; new statements: 1/, /retain\(\);/]);
+fs.writeFileSync(planner, 'export function usePlanner() { retain(); useEffect(() => second(), []); useEffect(() => first(), []); return {}; }\n');
+conserve('existing-hook-effect-reorder-fails', 1, [/removed and not found in a hook: 0; new statements: 0/, /effect order: DIFFERS/]);
+const slice = write('conservation/scenario/useSlice.js', 'export function useSlice() { retain(); useEffect(() => first(), []); return {}; }\n');
+fs.writeFileSync(planner, 'import { useSlice } from "./useSlice.js"; export function usePlanner() { const slice = useSlice(); useEffect(() => second(), []); return {}; }\n');
+conserve('existing-hook-split-created-child-clean', 0, [/identical \(2 top-level effects\)/], ['--created-hook', slice]);
+const deleted = path.join(root, 'conservation/scenario/useDeleted.js');
+const deletedBase = write('conservation/base/useDeleted.js', 'export function useDeleted() { useEffect(() => first(), []); return {}; }\n');
+fs.writeFileSync(beforeDashboard, 'import { useDeleted } from "./scenario/useDeleted.js"; function App() { const result = useDeleted(); }\n');
+fs.writeFileSync(afterDashboard, 'import { useSlice } from "./scenario/useSlice.js"; function App() { const result = useSlice(); }\n');
+run('explicit-created-and-deleted-hooks', 'check_move_conservation.mjs', ['--base-file', beforeDashboard, '--dashboard', afterDashboard, '--base-hook', `${deleted}=${deletedBase}`, '--deleted-hook', deleted, '--created-hook', slice], 0, [/identical \(1 top-level effects\)/]);
+const literalBefore = write('literal/before.jsx', 'function App() { const label = "two words"; }\n');
+const literalAfter = write('literal/after.jsx', 'function App() { const label = "two  words"; }\n');
+run('literal-whitespace-change-reported', 'check_move_conservation.mjs', ['--base-file', literalBefore, '--dashboard', literalAfter], 0, [/removed and not found in a hook: 1; new statements: 1/]);
+console.log(`tooling controls passed: ${passed}`);
 ```
 
 `scripts/extraction_lint/run.sh`
@@ -558,6 +883,7 @@ if [ ! -x "$LINT_DIR/node_modules/.bin/eslint" ]; then
 fi
 cp scripts/extraction_lint/eslint.config.mjs "$LINT_DIR/eslint.config.mjs"
 cp scripts/extraction_lint/check_hook_interfaces.mjs "$LINT_DIR/check_hook_interfaces.mjs"
+cp scripts/extraction_lint/check_move_conservation.mjs "$LINT_DIR/check_move_conservation.mjs"
 status=0
 "$LINT_DIR/node_modules/.bin/eslint" --no-config-lookup -c "$LINT_DIR/eslint.config.mjs" \
     --max-warnings "$MAX_WARNINGS" "$SRC" || status=1
@@ -640,15 +966,18 @@ else
     echo "FAIL  edited-statement: the conservation check did not report the edit"; failures=$((failures + 1))
 fi
 
+EXTRACTION_TOOL_DIR="$LINT_DIR" node scripts/extraction_lint/tooling_controls.mjs \
+    || failures=$((failures + 1))
+
 echo "negative controls failed: $failures"
 exit "$failures"
 ```
 
-The `tests/README.md` note (PR0) documents the five commands above, the install location, and that nothing is added to `package.json`. If PR0 measures a warning count other than 119 on the unmodified tree, set `MAX_WARNINGS` in `run.sh` to the measured value. The optional file `scripts/extraction_lint/hook_interface_baseline.txt` is created only if a pre-existing enforced problem appears (none at base).
+The `tests/README.md` note (PR0) documents the commands above, all six tool files, the install location, conservation exit codes and explicit created/deleted/base-hook flags, and that nothing is added to `package.json`. Before the first gate run, measure warnings without a ceiling on the unchanged current base and set `MAX_WARNINGS` in `run.sh` to that value (119 is the historical placeholder); ratchet it down afterwards. The optional `scripts/extraction_lint/hook_interface_baseline.txt` contains only reviewed pre-existing enforced problems, with source paths and rationale. Use `CHECKER_WRITE_BASELINE` only to propose that list for review; never baseline a defect introduced by extraction.
 
 ### Per-commit checks by rung
 
-R1, R3, R4: gate, negative controls (once per PR), Node suite, Python suite, build plus committed dist plus `make verify-dist-clean`, the slice's targeted Playwright specs, DOM parity diff empty, and for R4 the conservation check. R2: the new tests pass on unmodified source. R5: budget and ceiling tests. R6: everything plus the full Chromium `tests/ui` run.
+R1, R3, R4: gate, negative controls (once per PR), Node suite, Python suite, build plus committed dist plus `make verify-dist-clean`, the slice's targeted Playwright specs, DOM parity diff empty, and for R4 the conservation check. R2: the new tests pass on unmodified source. R5: dashboard/owner/aggregate/interface budget and ceiling tests plus the remaining-App inventory. R4 also compares the section 9 runtime-work baseline for Scenario-affecting moves; unexplained extra work blocks validation. R6: everything plus the full Chromium `tests/ui` run.
 
 ### Guard ledger and orphans
 
@@ -656,7 +985,7 @@ Every PR description carries a ledger: for each guard that fails after a move, w
 
 ### DOM parity
 
-`JEP_DOM_PARITY_DIR=tmp/dom-parity/before` is captured at the start of the slice (before R1) and `.../after` after each R1, R3, and R4; `diff -r tmp/dom-parity/before tmp/dom-parity/after` must print nothing. The exact command (it must run every instrumented test, not only the ones titled `dom parity`):
+`JEP_DOM_PARITY_DIR=tmp/dom-parity/before` is captured at the start of the slice (before R1) and `.../after` after each R1, R3, and R4. Use fresh empty directories for every capture run; remove only generated captures from an earlier run before reusing these paths. Both directories must have a nonempty identical filename list including all required labels (both auth-expiry roots, all eight Scenario states, and ST3's reopened-empty-draft case once added). `diff -r tmp/dom-parity/before tmp/dom-parity/after` must print nothing. Duplicate labels fail rather than overwrite a file. The exact command (it must run every instrumented test, not only the ones titled `dom parity`):
 
 ```bash
 JEP_DOM_PARITY_DIR=tmp/dom-parity/after fnm exec --using 20 npx playwright test \
@@ -664,7 +993,7 @@ JEP_DOM_PARITY_DIR=tmp/dom-parity/after fnm exec --using 20 npx playwright test 
   tests/ui/settings_unified_save.spec.js tests/ui/shared_department_groups.spec.js --browser=chromium
 ```
 
-The Scenario specs bundle `dashboard.jsx` from source. The `mockConfigSettings` tests must pass `sourceBundle: true` for parity runs, because the default serves the on-disk `frontend/dist/dashboard.js` and a stale dist gives a vacuous green (the `mockFirstRunDashboard` tests in `shared_department_groups.spec.js` already always serve the source bundle). The helper writes only the normalized HTML, so `diff -r` can be empty after a dist rebuild.
+The Scenario specs bundle `dashboard.jsx` from source. The `mockConfigSettings` tests must pass `sourceBundle: true` for parity runs, because the default serves the on-disk `frontend/dist/dashboard.js` and a stale dist gives a vacuous green (the `mockFirstRunDashboard` tests in `shared_department_groups.spec.js` already always serve the source bundle). The helper canonicalizes only identity attributes with a one-to-one mapping: distinct React IDs remain distinct and repeated references stay consistent. It validates unique IDREF targets against the full live document; text and input values remain significant. Its only missing-target exceptions are the exact current inactive Admin/Department/EPM tab-panel pairs, requiring a uniquely mounted selected sibling panel; unknown pairs or a missing selected panel fail. Only the app-owned EPM fetched-time status text is normalized. This covers the listed HTML/ARIA IDREF attributes, not CSS/SVG URL references; inventory those separately if a moved component uses them. The helper writes normalized HTML, so `diff -r` can be empty after a dist rebuild without masking reference changes.
 
 ## 7. Guard ledger (known guards, first break)
 
@@ -677,7 +1006,7 @@ The Scenario specs bundle `dashboard.jsx` from source. The `mockConfigSettings` 
 | `tests/test_frontend_api_source_guards.js` | `:1469` scenarioApi import; config/jiraCatalog imports; `:11-17` "save auth outcomes stay in dashboard"; `:1204` `saveGroupsConfig` marker plus `invalidate('settings-save')`; repo-wide no-`fetch(`/no-`/api/` scan (`:196-217`) | SC2, ST5 (stays green through ST1-ST4) | Re-point import and marker checks; keep the repo-wide scan unchanged. |
 | `tests/test_excluded_capacity_stats_source_guards.js:841-855` | `buildScenarioPayload` regex assumes 12-space indent | SC2 | Re-point and make indentation-agnostic. |
 | `tests/test_epm_settings_source_guards.js` | prop spreads vs child props (`:162-179`), declaration strings (`:157` teamSearchQuery, `:161` priorityWeightsDraft, `:251` hasDraftEpmScope, `:765` `await savePriorityWeightsConfig();`), hotkey order, fail-closed assignments (`:644-671`) and negative pins (`:673-679`), `:753` visibility call arguments ("JSON/basic Department visibility stays browser-local"), EPM seed only from the private view (`:688-694`), workspace-conflict sections exclude EPM (`:706-709`) | ST1 (`:159`, `:160`, `:161`), ST2 (11 tests), ST3 (`:157`, `:158`, `:753`), ST5 (`:765` and the permission pins) | Keep as pinned guards on the new owners: the EPM seed pin, the conflict-section exclusion, `:753`, and the prop-parity check rewritten for the new containers. Convert the fail-closed assignments and negative bans (`userCanEditSettings !== false`, `canEditSharedConfiguration \|\| userCanEditEpmConfig`) into unit assertions on the permissions code (ST5) with inputs `true`, `'true'`, `1`, `undefined`, `null`, and a missing key. Until ST5, keep the text pins on `dashboard.jsx` through `readOwnerSource`. |
-| `tests/test_first_run_group_configuration.js` | `:74-97` capture/restore cover all 11 admin sections; declaration-order slices; `:544-573` `saveGroupsConfig`/`saveAllSettingsOnce` slices | ST4 (order slices), ST5 (`:544-573`) | Keep the section-coverage test and re-point it; add a key-parity test across the save map (3630-3642), the capture object (1284-1296), the restore function (4194-4226), `FIRST_RUN_ADMIN_SECTION_KEYS`, and the 10-key snapshot (810-821). Keep the reducer tests. |
+| `tests/test_first_run_group_configuration.js` | `:74-97` capture/restore cover all 11 admin sections; declaration-order slices; `:544-573` `saveGroupsConfig`/`saveAllSettingsOnce` slices | ST4 (order slices), ST5 (`:544-573`) | Keep and re-point the section-coverage test: save map (3630-3642), capture (1284-1296), restore (4194-4226), and `FIRST_RUN_ADMIN_SECTION_KEYS` equal all 11 sections; the render snapshot (810-821) equals that set excluding `adminAccess` (10). Assert the exact projection; do not add `adminAccess` to the snapshot. Keep the reducer tests. |
 | `tests/test_team_catalog_lifecycle_source_guards.js` | `} = useTeamCatalogLifecycle({`, `buildTeamAvailability({`, `recoverCatalogsAfterRejectedBoardSave` | ST3, ST5 | Re-point. |
 | `tests/test_analytics_source_guards.js` | `:500-504` slices `retryFirstRunConfiguration` (5421) to `filteredGroupDrafts` (5449); `openFirstRunSetupChoice` slice bans analytics/`fetch(`/`onboardingDone`/`groupSearchQuery` | ST3 (end marker moves; `indexOf` returns -1 and the slice runs to end of file), ST4 | Re-point both slices; assert both markers exist. |
 | `tests/test_onboarding_tour_utils.js` | `setCompletedModules`/`setGroupPreferences`, `onboardingBootstrapReady`, `openGroupManage(configurationTourRequested ? 'teams' : preferredSettingsTab)`, `data-onboarding-target="settings-launcher"` (gear JSX, 15091) | ST5 | Re-point. |
@@ -716,44 +1045,44 @@ test('scheduleScenarioEdgeUpdate keeps its late-assignment quirk', () => {
 });
 ```
 
-## 8. PR-1: Land this plan on `main`
+## 8. PR-1: Completed plan landing and publication protocol
 
-**Why:** every later PR cuts from `origin/main`, which does not contain this plan, and an execution handoff must only be published once the referenced plan is fetchable from the named remote ref.
+**Completed:** revision 3 landed in [PR #219](https://github.com/Juce-me/jira-execution-planner/pull/219), squash merge `c9ca8eff`, on 2026-10-01. The reviewed PR head was `831acf7a` (three plan commits; three documentation files). The 2026-10-02 fetch confirms the plan is present on `origin/main`. The former remote branch was deleted; its head is still fetchable through `refs/pull/219/head`. Do not repeat PR-1 or treat its former three-commit publication contract as the contract for another slice. Revision 4 is a local plan amendment until separately authorized publication is verified.
 
-**Branch:** `docs/dashboard-scenario-settings-extraction-plan` (holds the draft commit, the revision-2 commit, and the revision-3 commit: three commits; publish as three unless the operator authorizes squashing them into one, which is a history rewrite and needs explicit authorization).
+**Publication protocol for every remaining slice:**
 
-- [ ] The third check of revision 3 is complete: it found no Blocker and no P1, and its findings are folded in. Verify that no place still says the check is pending (the status block at the top, the section 12 PR-1 row, the last sentence of section 14, and the README entry), then make the single revision-3 commit, so HEAD holds exactly three plan commits (the draft, revision 2, revision 3) and no fourth commit exists.
-- [ ] Verification at the exact proposed head. Root `AGENTS.md` section 10 requires the full test suite and the full Chromium `tests/ui` run before any push and has no docs-only exception, so run: the Node suite, the Python suite (section 6 commands), and the full Chromium UI run, or record an explicit operator waiver in chat before the push. Run the committed-revision build at the exact head too (`fnm exec --using 20 npm run build`, then `make verify-dist-clean`; a docs-only head leaves `frontend/dist` unchanged).
-- [ ] The publication transaction, step by step: fetch the base; record the base and head SHAs; run `git status --short`, `git log --oneline -5`, `git log --oneline origin/main..HEAD`, `git diff --name-status origin/main...HEAD`; compare the commit list (3), the commit count, and the changed paths with this section (three docs files: this plan, `docs/plans/README.md`, `docs/plans/FUTURE-codebase-operability-improvements.md`); stop on any mismatch and ask the operator; wait for explicit operator confirmation before the first push; send the PR body through stdin with `gh pr create --body-file -`; then prove the remote head equals the approved local head, read back the rendered body, visually inspect the PR page, verify the remote changed-file list and commit count, and report the actual CI state. If any post-publication check fails, report the publication as malformed and stop for operator direction.
-- [ ] The operator merges. The executor then runs `git fetch` and confirms the plan is on `origin/main` before PR0 starts.
+- [ ] Fetch the intended base and record the exact base/head SHAs. Run `git status --short`, `git log --oneline -5`, `git log --oneline origin/main..HEAD`, and `git diff --name-status origin/main...HEAD`. Compare the complete commit list/count and every path against that slice's approved rungs and file map, including rebuilt dist and documentation. Stop on any mismatch and ask the operator; do not reuse PR-1's count of three or its docs-only file map. D12 controls any exception for local rung commits; root `AGENTS.md` remains authoritative until that decision is recorded.
+- [ ] Run the Node suite, Python suite, full Chromium `tests/ui`, and committed-revision build at the exact head (`fnm exec --using 20 npm run build`, then `make verify-dist-clean`). There is no docs-only exception. A pre-existing failure is evidence to triage, not an automatic exemption; any waiver must be an explicit operator decision naming the failure and revision before publication.
+- [ ] Wait for the operator's explicit publication go. Send the PR body through stdin with `gh pr create --body-file -`; prove the remote head equals the approved local head, read back the rendered body, visually inspect the PR page, verify the remote changed-file list and commit count, and report the actual CI state. If any post-publication check fails, report the publication as malformed and stop for operator direction.
+- [ ] The operator merges. Fetch and confirm the slice's merge on `origin/main` before cutting the next branch.
 
 ---
 
 ## 9. PR0: Tooling, coverage, and baselines
 
-**Branch:** `improvement/dashboard-extraction-tooling`. This PR changes tests, scripts, and docs only; no `dashboard.jsx` change, so no budget change.
+**Branch:** `improvement/dashboard-extraction-tooling`. This PR changes tests, scripts, and docs only; no production `dashboard.jsx` change. Its dashboard ceiling stays at the measured base, and it installs the new owner/interface/aggregate accounting.
 
 **Files:**
-- Create: `scripts/extraction_lint/{eslint.config.mjs,check_hook_interfaces.mjs,check_move_conservation.mjs,run.sh,negative_controls.sh}` (section 6), `tests/ui/dom_parity_helpers.js`, `tests/frontend_source_helpers.js`, `tests/test_extraction_quirk_pins.js`
-- Modify: `tests/ui/scenario_draft_history.spec.js`, `tests/ui/scenario_draft_collaboration.spec.js`, `tests/ui/settings_unified_save.spec.js`, `tests/ui/shared_department_groups.spec.js`, `tests/ui/codebase_structure_smoke.spec.js`, `tests/test_auth_isolation_source_guard.js`, `tests/README.md`, `docs/ontology.md`, this plan (baselines in section 1)
+- Create: `scripts/extraction_lint/{eslint.config.mjs,check_hook_interfaces.mjs,check_move_conservation.mjs,tooling_controls.mjs,run.sh,negative_controls.sh}` (section 6), `scripts/extraction_lint/owner_budgets.json`, `tests/ui/dom_parity_helpers.js`, `tests/ui/dom_parity_helpers.spec.js`, `tests/frontend_source_helpers.js`, `tests/test_extraction_quirk_pins.js`
+- Modify: `tests/test_codebase_structure_budgets.py`, `tests/ui/scenario_draft_history.spec.js`, `tests/ui/scenario_draft_collaboration.spec.js`, `tests/ui/settings_unified_save.spec.js`, `tests/ui/shared_department_groups.spec.js`, `tests/ui/codebase_structure_smoke.spec.js`, `tests/test_auth_isolation_source_guard.js`, `tests/README.md`, `docs/ontology.md`, this plan (baselines in section 1)
 
 ### Commit P0-1 (R2): extraction gate
 
-- [ ] Add the five scripts from section 6 and the `tests/README.md` note. Run `fnm exec --using 20 bash scripts/extraction_lint/run.sh`: it must exit 0 with "0 errors, 119 warnings" and "enforced problems: 0". Run `negative_controls.sh`: all seven controls must print `ok`.
-- [ ] Record the output of both runs in the commit message.
+- [x] Add the scripts from section 6 and the `tests/README.md` note. Measure the lint warning ceiling on PR0's unchanged current base; run `fnm exec --using 20 bash scripts/extraction_lint/run.sh`: it must exit 0 with zero errors and zero new enforced interface problems. Record the recursive module/site counts and any reviewed pre-existing interface baseline; do not require the obsolete 16-site dashboard-only count. Run `negative_controls.sh`: every control, including nested contracts and already-extracted-hook conservation, must print `ok`.
+- [x] Implement the owner/interface/aggregate budget extensions specified in section 6, register current owners, and test the manifest schema/registration/dependency direction. Add the growth and nested render-phase controls; wire budget checks into `run.sh` and all new controls into `negative_controls.sh`. The printed core scripts are the starting implementation, not evidence these additional gates already pass.
+- [x] Record the output of the gate and every control in the commit message.
 
 **Validation scope:** none in the app. The operator reviews the scripts and the two run outputs.
 
 ### Commit P0-2 (R2): DOM parity helper and Settings captures
 
-- [ ] Create `tests/ui/dom_parity_helpers.js` (flat, like `eng_sticky_stack_helpers.js`; Playwright's default `testMatch` does not run it):
+- [x] Create `tests/ui/dom_parity_helpers.js` (flat, like `eng_sticky_stack_helpers.js`; Playwright's default `testMatch` does not run it):
 
 ```js
 const fs = require('node:fs');
 const path = require('node:path');
 
-// Opt-in DOM parity capture for behavior-preserving refactors. Set JEP_DOM_PARITY_DIR to a
-// gitignored folder (for example tmp/dom-parity/before) to write one normalized HTML file per label.
+// Opt-in snapshots; use a fresh gitignored directory for each capture run.
 async function captureDomParity(page, label, selector) {
     const dir = process.env.JEP_DOM_PARITY_DIR;
     if (!dir) return;
@@ -771,31 +1100,99 @@ async function captureDomParity(page, label, selector) {
         await new Promise(requestAnimationFrame);
     });
     const html = await page.locator(selector).first().evaluate((root) => {
-        // outerHTML ignores properties set after mount; stamp them into attributes on a clone.
+        const all = (node) => [node, ...node.querySelectorAll('*')];
+        const sources = all(root);
         const clone = root.cloneNode(true);
-        const sources = root.querySelectorAll('input, select, textarea');
-        clone.querySelectorAll('input, select, textarea').forEach((node, index) => {
-            const source = sources[index];
-            if (!source) return;
-            if ('checked' in source) node.setAttribute('data-parity-checked', String(source.checked));
-            if ('value' in source) node.setAttribute('data-parity-value', String(source.value));
+        const copies = all(clone);
+        const referenceAttributes = [
+            'aria-labelledby', 'aria-describedby', 'aria-controls', 'aria-owns',
+            'aria-activedescendant', 'aria-details', 'aria-errormessage', 'aria-flowto',
+            'for', 'headers', 'list', 'form',
+        ];
+        const singleReferences = new Set(['for', 'list', 'form', 'aria-activedescendant']);
+        const ids = new Map();
+        const reactIds = new Map();
+        // The full live document is authoritative: labels/descriptions may be outside the capture.
+        // Assign by document order, retaining distinct identities and every repeated reference.
+        for (const node of root.ownerDocument.querySelectorAll('[id]')) {
+            const id = node.id;
+            if (!ids.has(id)) ids.set(id, []);
+            ids.get(id).push(node);
+            if (/^_r_[0-9a-z]+_$/.test(id) && !reactIds.has(id)) reactIds.set(id, `_r_parity_${reactIds.size}_`);
+        }
+        const canonical = (id) => reactIds.get(id) || id;
+        const targets = (value, attribute) => singleReferences.has(attribute)
+            ? [value.trim()].filter(Boolean) : value.trim().split(/\s+/).filter(Boolean);
+        // Existing Settings tab strips unmount inactive panels. Keep only these exact legacy
+        // unselected-tab/panel pairs; the selected sibling must still have its unique live panel.
+        // Evidence: AdminSettingsTabs.jsx, EpmSettings.jsx, dashboard.jsx Department tab strip.
+        const deferredPanels = new Map([
+            ['Admin settings sections', ['admin-settings', ['scope', 'source', 'mapping', 'capacity', 'priorityWeights', 'access', 'performance']]],
+            ['Departments settings sections', ['department-settings', ['teams', 'labels', 'boards']]],
+            ['EPM settings sections', ['epm-settings', ['scope', 'projects']]],
+        ]);
+        function isDeferredPanel(node, attribute, id) {
+            if (attribute !== 'aria-controls' || node.getAttribute('role') !== 'tab' || node.getAttribute('aria-selected') !== 'false') return false;
+            const strip = node.closest('[role="tablist"]');
+            const pattern = deferredPanels.get(strip?.getAttribute('aria-label'));
+            if (!pattern) return false;
+            const [prefix, sections] = pattern;
+            if (!sections.some((section) => node.id === `${prefix}-${section}-tab` && id === `${prefix}-${section}-panel`)) return false;
+            const selected = [...strip.querySelectorAll('[role="tab"][aria-selected="true"]')];
+            if (selected.length !== 1) return false;
+            const active = selected[0];
+            const section = sections.find((name) => active.id === `${prefix}-${name}-tab` && active.getAttribute('aria-controls') === `${prefix}-${name}-panel`);
+            const panels = ids.get(`${prefix}-${section}-panel`) || [];
+            return Boolean(section && panels.length === 1 && panels[0].getAttribute('role') === 'tabpanel');
+        }
+        sources.forEach((source, index) => {
+            const copy = copies[index];
+            if (source.id) {
+                if (ids.get(source.id)?.length !== 1) throw new Error(`duplicate id in capture: ${source.id}`);
+                copy.setAttribute('id', canonical(source.id));
+            }
+            for (const attribute of referenceAttributes) {
+                if (!source.hasAttribute(attribute)) continue;
+                const references = targets(source.getAttribute(attribute), attribute);
+                for (const id of references) {
+                    const matches = ids.get(id) || [];
+                    if (!matches.length && !isDeferredPanel(source, attribute, id)) throw new Error(`dangling ${attribute}: ${id}`);
+                    if (matches.length > 1) throw new Error(`duplicate ${attribute} target: ${id}`);
+                }
+                copy.setAttribute(attribute, references.map(canonical).join(' '));
+            }
+            // Normalize only DOM identity attributes. Text and input values, including strings
+            // resembling React ids or fetch timestamps, remain significant.
+            if (source.matches('input, select, textarea')) {
+                if ('checked' in source) copy.setAttribute('data-parity-checked', String(source.checked));
+                if ('value' in source) copy.setAttribute('data-parity-value', String(source.value));
+            }
         });
+        // This app-owned wall-clock readout is the only text normalization (EpmSettings.jsx).
+        for (const meta of clone.querySelectorAll('#epm-settings-projects-panel .epm-projects-header-actions .group-modal-meta[aria-live="polite"]')) {
+            for (const node of meta.childNodes) if (node.nodeType === Node.TEXT_NODE) {
+                node.textContent = node.textContent.replace(/(\bfetched )\d{1,2}:\d{2}(?:[\s\u202f]?[AP]M)?/gi, '$1HH:MM');
+            }
+        }
         return clone.outerHTML;
     });
-    const normalized = html
-        // React useId values (for example _r_3_) depend on hook order, which these refactors change.
-        .replace(/_r_[0-9a-z]+_/g, '_r_#_')
-        // The EPM Projects tab renders wall-clock fetch time (dashboard.jsx:1440, toLocaleTimeString).
-        .replace(/fetched \d{1,2}:\d{2}(?:[\s\u202f]?[AP]M)?/gi, 'fetched HH:MM')
-        .replace(/></g, '>\n<');
+    const normalized = html.replace(/></g, '>\n<');
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, `${label}.html`), `${normalized}\n`);
+    const destination = path.join(dir, `${label}.html`);
+    try {
+        fs.writeFileSync(destination, `${normalized}\n`, { flag: 'wx' });
+    } catch (error) {
+        if (error.code === 'EEXIST') throw new Error(`captureDomParity(${label}): duplicate label or nonempty capture directory`);
+        throw error;
+    }
 }
 
 module.exports = { captureDomParity };
 ```
 
-- [ ] In `tests/ui/settings_unified_save.spec.js` add `const { captureDomParity } = require('./dom_parity_helpers');` at the top and the opt-in test below. Top-level Settings tabs are `.group-modal-tab` buttons, but the nested sub-tab strips (Departments, Admin, EPM) use the same class, so the top-level locator is scoped by structure. `mockConfigSettings` already returns `userCanEditEpmConfig: true`, so the EPM tab renders; `sourceBundle: true` is required.
+- [x] Add `tests/ui/dom_parity_helpers.spec.js` with synthetic browser controls for valid ID renumbering, repeated references, changed references to another existing target, dangling references, duplicate captured IDs, unique external targets, duplicate external targets, retained form properties/user text, opt-in no-op, duplicate capture-label rejection, the exact inactive-tab exception, rejected unknown pairs/missing selected panels, and scoped clock normalization. Valid renumbering compares equal; changed reference relationships compare unequal; invalid targets throw before writing. These 13 controls must pass before trusting parity captures. Do not broaden the inactive-panel allowlist to make new failures disappear.
+
+- [x] In `tests/ui/settings_unified_save.spec.js` add `const { captureDomParity } = require('./dom_parity_helpers');` at the top and the opt-in test below. Top-level Settings tabs are `.group-modal-tab` buttons, but the nested sub-tab strips (Departments, Admin, EPM) use the same class, so the top-level locator is scoped by structure. `mockConfigSettings` already returns `userCanEditEpmConfig: true`, so the EPM tab renders; `sourceBundle: true` is required.
 
 ```js
 test('dom parity capture: every Settings tab, then an edited tab', async ({ page }) => {
@@ -837,44 +1234,92 @@ test('dom parity capture: every Settings tab, then an edited tab', async ({ page
 });
 ```
 
-- [ ] Add `await captureDomParity(...)` lines (no-ops without the env var) **at the stated mid-test anchor**, not at the end of the test (several of these tests end with the dialog closed, which a capture would time out on). Pass `sourceBundle: true` in the `mockConfigSettings` call of the `settings_unified_save.spec.js` tests; the `mockFirstRunDashboard` tests already serve the source bundle.
+- [x] Add `const { captureDomParity } = require('./dom_parity_helpers');` to `tests/ui/shared_department_groups.spec.js` (Settings already imports it above). Add `await captureDomParity(...)` lines (no-ops without the env var) **at the stated mid-test anchor**, not at the end of the test (several of these tests end with the dialog closed, which a capture would time out on). Pass `sourceBundle: true` in the `mockConfigSettings` call of the `settings_unified_save.spec.js` tests; the `mockFirstRunDashboard` tests already serve the source bundle.
   - `settings_unified_save.spec.js` `workspace conflict preserves later drafts and Keep mine rebases onto the server revision`: label `settings-workspace-conflict`, selector `[role="dialog"]`, immediately before `await banner.getByRole('button', { name: 'Keep mine' }).click();`.
-  - `workspace auth expiry preserves the draft, Cancel confirmation, and safe re-auth path`: after the last assertion (the test ends on the sign-in lock, not on a Cancel confirmation): label `settings-auth-expired-lock`, selectors `.group-modal` and `[role="alertdialog"]` (two calls).
+  - `workspace auth expiry preserves the draft, Cancel confirmation, and safe re-auth path`: after the last assertion (the test ends on the sign-in lock, not on a Cancel confirmation): capture `.group-modal` as `settings-auth-expired-draft` and `[role="alertdialog"]` as `settings-auth-expired-recovery`. Assert both files exist and the draft snapshot retains the edited value; never reuse one label for two roots.
   - `Discard mine applies the server config and clears the dirty state`: label `settings-discard-mine`, selector `[role="dialog"]`, at the last assertion that shows the cleared dirty state while the dialog is still open (read the test; if it ends with the dialog closed, capture one assertion earlier).
   - `shared_department_groups.spec.js` `first-run department selection blocks group-scoped task loads until preferences are saved`: label `first-run-selection`, selector `[role="dialog"]`, after `await expect(page.getByText('Add at least one team or component before choosing this Department')).toBeVisible();` and before the `Continue` click.
   - `first-run saving locks every picker mutation and restores controls after failure`: label `first-run-saving-locked`, selector `[role="dialog"]`, after `await expect(picker.getByRole('button', { name: 'Add Department' })).toBeDisabled();` (the locked state, before the gate resolves).
   - `first-run Add Department opens the anchored configuration guide and Cancel restores the picker`: label `first-run-guide`, selector `.group-modal`, after `await expect(settingsDialog.getByRole('button', { name: 'Run onboarding again' })).toHaveCount(0);` and before Cancel.
   - `first-run configuration guide target loss restores focus state and offers Return`: label `first-run-guide-target-loss`, selector `.first-run-configuration-guide`, after `await expect(guide.getByRole('button', { name: 'Return' })).toBeVisible();` and before the Return click.
-- [ ] Add `delivery-owner-field/config` to the zero-request startup assertions in `tests/ui/codebase_structure_smoke.spec.js` next to the four field endpoints it already lists (lines 1243-1252).
-- [ ] Determinism check: run the instrumented specs (section 6 command) twice on the unmodified tree into `tmp/dom-parity/run1` and `run2`; `diff -r` must print nothing. If it prints differences (timestamps, animation state), extend the normalization until it is empty. Do not continue with a nondeterministic capture.
+- [x] Add `delivery-owner-field/config` to the zero-request startup assertions in `tests/ui/codebase_structure_smoke.spec.js` next to the four field endpoints it already lists (lines 1243-1252).
+- [x] Prove the helper rejects a duplicate label without replacing the first file, and that the two auth-expiry labels produce two files containing the retained draft and recovery dialog respectively. Use a synthetic page; no live issue/user data.
+- [x] Determinism check: run the instrumented specs (section 6 command) twice on the unmodified tree into fresh empty `tmp/dom-parity/run1` and `run2`; each run must produce a nonempty matching file list including both auth-expiry snapshots. `diff -r` must print nothing. Investigate differences before adding narrowly scoped normalization; never normalize away a draft, value, class, or missing DOM node. Do not continue with a nondeterministic capture. Clear only these generated captures before retrying; the helper deliberately rejects stale files.
 
 **Validation scope:** none in the app; confirm the two-run diff is empty and the new assertions pass.
+
+P0-2 verification (2026-10-02, unchanged production source at `ffeafb0e`):
+
+- The helper matches the printed contract exactly. The 13 synthetic controls plus the scoped ENG startup/sticky smoke passed together: 14/14 in 9.9s. The added delivery-owner-field startup assertion remains zero requests.
+- The section 6 four-spec Chromium command ran with four workers, separately into fresh `tmp/dom-parity/run1` and `run2`: 167/167 passed in 1.9m and 1.8m, respectively. Both runs contain the exact same 22 nonempty labels: 13 Settings section captures (7 Admin, 3 Departments, Connections, 2 EPM), edited Department, workspace conflict, discard, two distinct auth-expiry roots, and four first-run states. `diff -r tmp/dom-parity/run1 tmp/dom-parity/run2` exited 0 with no output. Both runs explicitly prove `Parity Group` in the live edited value, retained cleared-board/dirty auth draft, and separate sign-in recovery.
+- Capture-only fixture details: enable the current Performance capability with a synthetic empty-history endpoint response and wait for its settled state; assert exact top/sub-tab inventories and enabled controls. Read source tab text with `textContent` because CSS uppercases `innerText`. Pin `Date` only in the opt-in all-tabs test so the existing Team-cache Updated readout is deterministic, with real timers preserved. No extra helper normalization or production change was made.
+- Gate: 0 errors/120 existing warnings, 16 destructure sites/41 modules, 0 enforced and 0 owner-budget problems. Structure-budget tests: 2/2 passed. Node 20 build and `make verify-dist-clean` passed; generated output matches the base. The owner manifest and production source/dependencies remain unchanged. No move conservation residual arises in this characterization-only rung. Read-only review approved the interfaces/ownership/save boundaries and capture coverage.
+- P0-1 (`4149b615`) was validated by the operator's 2026-10-02 continuation. P0-2 now stops for review of the 13 controls and the complete two-run comparison; no app exercise is required. P0-3 and later rungs remain unexecuted. Analytics impact remains internal characterization only, requiring no event or taxonomy change. Publication is not authorized.
 
 ### Commit P0-3 (R2): Scenario coverage that does not exist today
 
 Existing Scenario specs never render an edge, a lane mode, an epic bar, focus, or a tooltip: every fixture has `dependencies: []`, `scenario_focus_positions.spec.js` is entirely commented out, and nothing tests the group-switch restore that SC1 changes. Add the following; all pass on the unmodified source.
 
-- [ ] In `tests/ui/scenario_draft_history.spec.js` (add the `domParity` require at the top). First give `installDashboardFromSource(page, options)` an `options.dependencies` array (default `[]`) used where it builds the `/api/scenario` response (the single `scenarioPayload()` return); edges use `{ from, to }` keys (`validateDependencies`, `scenarioUtils.js:77`). Then:
+- [x] In `tests/ui/scenario_draft_history.spec.js` add `const { captureDomParity } = require('./dom_parity_helpers');`. Add opt-in `options.dependencies` and `options.issueOverrides` to the `/api/scenario` mock response; preserve the existing defaults for all other tests. Dependencies use `{ from, to }` keys (`validateDependencies`, `scenarioUtils.js:77`). Replace that response block with:
 
 ```js
-test('dom parity capture: lane modes, edges, epic focus, tooltip, conflicts-only', async ({ page }) => {
-    test.skip(!process.env.JEP_DOM_PARITY_DIR, 'opt-in refactor check');
-    await installDashboardFromSource(page, { dependencies: [{ from: 'PROD-1', to: 'PROD-2' }] });
+        if (url.pathname === '/api/scenario' && method === 'POST') {
+            scenarioPosts.push(requestBody(request));
+            const payload = scenarioPayload();
+            if (options.dependencies) payload.dependencies = options.dependencies;
+            if (options.issueOverrides) {
+                payload.issues = payload.issues.map(issue => ({
+                    ...issue,
+                    ...(options.issueOverrides[issue.key] || {}),
+                }));
+            }
+            return json(route, payload);
+        }
+```
+
+- [x] Add the always-on characterization test below. Only captures are opt-in. Its fixture puts a forward dependency and two same-assignee overlapping tasks in one visible Team lane; the third asserted task is nonconflicting. The current renderer suppresses backward/overlapping dependency edges, so the dependent must start strictly after the prerequisite ends. Conflicts Only must retain two actual conflict bars, remove the nonconflicting task, and restore it when disabled.
+
+```js
+test('Scenario lane modes, forward edge, epic focus, tooltip, and conflict filter', async ({ page }) => {
+    await installDashboardFromSource(page, {
+        dependencies: [{ from: 'PROD-1', to: 'PROD-2' }],
+        issueOverrides: {
+            'PROD-2': {
+                summary: 'Nonconflicting dependent work',
+                team: 'Scenario Team 1',
+                assignee: 'Dependency Owner',
+                start: '2026-04-12',
+                end: '2026-04-15',
+            },
+            'PROD-3': {
+                summary: 'Overlapping scenario work',
+                team: 'Scenario Team 1',
+                assignee: 'Alpha Owner',
+                start: '2026-04-07',
+                end: '2026-04-10',
+            },
+        },
+    });
     await openScenario(page);
     const root = '.scenario-fullbleed';
-    const laneButton = (name) => page.locator('.scenario-toggle-group').getByRole('button', { name, exact: true });
+    const laneButton = name => page.locator('.scenario-toggle-group').getByRole('button', { name, exact: true });
+    const original = page.locator('.scenario-bar', { hasText: 'Build product scenario path' }).first();
+    const overlapping = page.locator('.scenario-bar', { hasText: 'Overlapping scenario work' }).first();
+    const nonconflicting = page.locator('.scenario-bar', { hasText: 'Nonconflicting dependent work' }).first();
 
-    // Team mode with All teams collapses every lane on first render (effect at dashboard.jsx:10759).
+    // All teams starts collapsed. This fixture puts all three asserted bars in one lane.
     const laneLabel = page.locator('.scenario-lane-label').first();
     await expect(laneLabel).toHaveAttribute('aria-expanded', 'false');
     await captureDomParity(page, 'scenario-team-collapsed-lanes', root);
     await laneLabel.click();
     await expect(laneLabel).toHaveAttribute('aria-expanded', 'true');
-    // .scenario-edge renders only when scenarioEdgeRender.width > 0; confirm in a headed run that the PROD-1 to PROD-2 edge draws here.
-    await expect(page.locator('.scenario-edge').first()).toBeAttached();
+    await expect(original).toBeVisible();
+    await expect(overlapping).toBeVisible();
+    await expect(nonconflicting).toBeVisible();
+    // The dependent starts strictly after the prerequisite ends, so the edge can render.
+    await expect(page.locator('.scenario-edge').first()).toBeVisible();
     await captureDomParity(page, 'scenario-team-expanded-lane-edges', root);
 
-    // Epic summary bars exist only in Epic lane mode.
     await laneButton('Epic').click();
     const epicBar = page.locator('.scenario-epic-bar').first();
     await expect(epicBar).toBeVisible();
@@ -886,21 +1331,36 @@ test('dom parity capture: lane modes, edges, epic focus, tooltip, conflicts-only
     await expect(page.locator('.scenario-focus-indicator')).toHaveCount(0);
 
     await laneButton('Assignee').click();
+    await expect(page.locator('.scenario-lane-label').first()).toContainText('Alpha Owner');
     await captureDomParity(page, 'scenario-assignee-lanes', root);
     await laneButton('Team').click();
 
-    await page.locator('.scenario-bar').first().hover();
+    await original.hover();
     await expect(page.locator('.scenario-tooltip.visible')).toBeVisible();
     await captureDomParity(page, 'scenario-tooltip', root);
 
-    await page.getByRole('button', { name: 'Conflicts Only', exact: true }).click();
+    await expect(original).toHaveClass(/assignee-conflict/);
+    await expect(overlapping).toHaveClass(/assignee-conflict/);
+    await expect(nonconflicting).not.toHaveClass(/assignee-conflict/);
+    const conflictsOnly = page.getByRole('button', { name: 'Conflicts Only', exact: true });
+    await conflictsOnly.click();
+    await expect(original).toBeVisible();
+    await expect(overlapping).toBeVisible();
+    await expect(page.locator('.scenario-bar')).toHaveCount(2);
+    await expect(nonconflicting).toHaveCount(0);
     await captureDomParity(page, 'scenario-conflicts-only', root);
+
+    await conflictsOnly.click();
+    await expect(original).toBeVisible();
+    await expect(overlapping).toBeVisible();
+    await expect(nonconflicting).toBeVisible();
+    await captureDomParity(page, 'scenario-conflicts-restored', root);
 });
 ```
 
-Run the test headed once before the commit and confirm each state is on screen when it is captured (a collapsed lane in Team mode, `.scenario-epic-bar` elements in Epic mode, a visible tooltip); a test that passes only because a locator matched nothing is a defect. Add the same two-run determinism diff as in P0-2.
-- [ ] In `tests/ui/scenario_draft_collaboration.spec.js` add `await captureDomParity(page, '<label>', '.scenario-fullbleed');` (no-op without the env var) after the last assertion of these existing tests: `presence strip renders remote user and polling stops after scope switch` (`scenario-presence`), `lock warning shows same-issue advisory conflict during drag` (`scenario-lock-warning`), `stale draftRevision shows recovery actions and keeps dirty local edits` (`scenario-conflict-recovery`), `write-back stays preview-only and blocked by the gate` (`scenario-writeback-preview`).
-- [ ] In the same file add the group-switch-and-back test SC1 depends on (it reuses `installDashboard`, `openScenario`, and the `Select group` / `.group-dropdown-option` pattern from `switchScenarioToAlternateGroup`; the fixture's groups are `Default` (`grp-default`) and `Alternate` (`grp-alt`)):
+Run the test headed once before the commit and confirm each asserted state is on screen (collapsed Team lane, visible forward edge and both endpoints after expansion, Epic bars/focus, tooltip, and retained conflict bars). A capture of only an empty conflict result is insufficient. Run it with the real helper twice into fresh directories: both runs must pass, produce the eight stated Scenario labels, and have an empty `diff -r`.
+- [x] In `tests/ui/scenario_draft_collaboration.spec.js` add `const { captureDomParity } = require('./dom_parity_helpers');` at the top, then add `await captureDomParity(page, '<label>', '.scenario-fullbleed');` (no-op without the env var) at these mounted-state anchors: `presence strip renders remote user and polling stops after scope switch` (`scenario-presence`) immediately after the remote-user/default-poll assertions and before the scope switch; after the last assertion of `lock warning shows same-issue advisory conflict during drag` (`scenario-lock-warning`), `stale draftRevision shows recovery actions and keeps dirty local edits` (`scenario-conflict-recovery`), `write-back stays preview-only and blocked by the gate` (`scenario-writeback-preview`).
+- [x] In the same file add the group-switch-and-back test SC1 depends on (it reuses `installDashboard`, `openScenario`, and the `Select group` / `.group-dropdown-option` pattern from `switchScenarioToAlternateGroup`; the fixture's groups are `Default` (`grp-default`) and `Alternate` (`grp-alt`)):
 
 ```js
 test('group switch away and back restores Scenario lane mode', async ({ page }) => {
@@ -921,9 +1381,18 @@ Run it against the unmodified source first. If the restored lane mode differs fr
 
 **Validation scope:** none in the app; run the three Scenario specs headed once and confirm each new test exercises what its title says.
 
+P0-3 verification (2026-10-03, unchanged production source at `ffeafb0e`):
+
+- The optional dependency/issue overrides preserve existing fixture defaults. The always-on timeline characterization proves all eight named states, a strictly forward dependency with both endpoints visible, two actual same-assignee conflicts, removal of the nonconflicting bar and restoration. The new group-switch test passes with the planned **Assignee** restoration; no current-behavior exception is needed.
+- Mounted collaboration captures prove remote presence, an advisory lock warning, retained dirty conflict recovery, and blocked writeback. Current-source evidence required one mechanical anchor correction: the presence test switches to Alternate before its final polling-stop assertions, so an end-of-test snapshot loses Remote Editor. `scenario-presence` now captures immediately after the Default remote-user/poll assertions and before the switch; the original polling-stop assertions remain intact. No production strategy or behavior changed.
+- Headed command: `JEP_DOM_PARITY_DIR=tmp/dom-parity/p0-3-headed JEP_SCENARIO_SCREENSHOT_DIR=tmp/p0-3-headed-shots fnm exec --using 20 npx playwright test tests/ui/scenario_draft_history.spec.js tests/ui/scenario_draft_collaboration.spec.js tests/ui/scenario_focus_positions.spec.js --browser=chromium --headed --workers=4 --output=tmp/p0-3-headed-results`: 40/40 passed in 2.9m. The inactive focus-position template collected no tests and did not load real fixtures. All eight new headed screenshots were visually inspected by coordinator and reviewer: forward edge/endpoints, Epic bars/focus, Assignee lanes, tooltip, two retained red conflict bars and restored blue nonconflicting bar are visible. The existing helper's repeated visual-settle waits require a screenshot-only 60s timeout for the eight-state test (ordinary behavior/parity runs keep the default); no assertion or normalization was weakened.
+- The section 6 four-spec Chromium command ran twice with four workers into fresh `tmp/dom-parity/p0-3-run1` and `p0-3-run2`, with separate result directories: 169/169 passed in 2.6m and 1.8m. Each has exactly 34 nonempty labels (the 22 Settings/first-run labels, eight timeline labels, four collaboration labels). `diff -r tmp/dom-parity/p0-3-run1 tmp/dom-parity/p0-3-run2` exited 0 with no output. Explicit snapshot checks prove exactly two conflict bars, absent/restored nonconflicting work and all four collaboration state messages. The real P0-2 helper remains unchanged.
+- Gate: 0 errors/120 existing warnings, 16 sites/41 modules, 0 enforced/interface/owner-budget problems. Structure-budget unittest: 2/2 passed in 0.047s. Node 20 build and `make verify-dist-clean` passed. All production source, generated bundles, dependencies and the frozen owner manifest remain unchanged; no extraction conservation residual arises. Read-only review approved the current interface, ownership, closure/save boundaries and non-vacuous regression coverage.
+- P0-2 (`a2cc9017`) was validated by the operator's 2026-10-03 continuation. P0-3 (`d7d47c60`) was validated by the operator on 2026-10-03 after review of its tests, headed proof and complete empty two-run comparison. P0-4 is implemented below; later rungs remain unexecuted. Home-write gate remains blocked and is not a dependency here. Analytics impact is internal characterization only, requiring no new event or taxonomy change. No publication is authorized.
+
 ### Commit P0-4 (R2): Guard helper, auth-isolation widening, quirk pins
 
-- [ ] Create `tests/frontend_source_helpers.js` (flat, matching `tests/css_source_helpers.js`):
+- [x] Create `tests/frontend_source_helpers.js` (flat, matching `tests/css_source_helpers.js`):
 
 ```js
 const fs = require('node:fs');
@@ -952,23 +1421,118 @@ function readOwnerSource(relatives, { anchor } = {}) {
 module.exports = { readOwnerSource, repoRoot };
 ```
 
-- [ ] Widen `tests/test_auth_isolation_source_guard.js`: run the existing handler lookup **per file** (it uses `source.lastIndexOf` per file) over `frontend/src/dashboard.jsx` and every `.js`/`.jsx` file under `frontend/src/scenario/` and `frontend/src/settings/`; assert the summed count is exactly six and each handler checks `readPendingAuthenticationRequired()` before its first `event.key`; read the negative pins at `:12-36` through `readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario', 'frontend/src/settings'], { anchor: 'readPendingAuthenticationRequired' })`. It passes with no source change.
-- [ ] Create `tests/test_extraction_quirk_pins.js` exactly as printed in section 7 ("Quirk pins"); it passes on the unmodified tree.
+- [x] Widen `tests/test_auth_isolation_source_guard.js`: run the existing handler lookup **per file** (it uses `source.lastIndexOf` per file) over `frontend/src/dashboard.jsx` and every `.js`/`.jsx` file under `frontend/src/scenario/` and `frontend/src/settings/`; assert the summed count is exactly six and each handler checks `readPendingAuthenticationRequired()` before its first `event.key`; read the negative pins at `:12-36` through `readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario', 'frontend/src/settings'], { anchor: 'readPendingAuthenticationRequired' })`. It passes with no source change.
+- [x] Create `tests/test_extraction_quirk_pins.js` exactly as printed in section 7 ("Quirk pins"); it passes on the unmodified tree.
 
 **Validation scope:** none in the app; the operator confirms the Node suite passes.
 
+**P0-4 verification (2026-10-03):**
+
+- Implemented as printed: the flat anchored owner-source helper and two quirk pins; widened the six negative auth checks over dashboard/Scenario/Settings and checked window handlers per file across 34 `.js`/`.jsx` owners. Exactly six registrations retain their terminal latch before the first key read. Other authentication assertions and the EPM save guard remain unchanged.
+- Fresh fetch confirms base `ffeafb0ea3f37dd17a5d910595c20e1493166c5c`; production source, generated bundles and package dependencies are byte-identical to that base. No extraction occurred, so there are no conservation residuals or new DOM captures in this rung. The P0-3 parity evidence remains applicable.
+- `fnm exec --using 20 npm run test:frontend:unit`: **1,728 passed, 0 failed, 0 skipped** (5.690 seconds). `fnm exec --using 20 node --test tests/test_extraction_quirk_pins.js tests/test_auth_isolation_source_guard.js`: **3 passed** on unchanged production source. `fnm exec --using 20 node tmp/p0-4-synthetic-controls.cjs`: **8 passed**, proving recursive JS/JSX/MJS reads, missing-anchor rejection, moved nested handlers, same-name handlers in separate files, rejection of missing/late auth guards, moved forbidden auth behavior, and an extra seventh shortcut. Synthetic copies and the VM harness remain ignored under `tmp/`; production was never mutated.
+- `fnm exec --using 20 bash scripts/extraction_lint/run.sh`: **0 errors, 120 unchanged warnings**, 16 destructure sites across 41 modules, 0 enforced/34 informational/0 baselined interface problems, and 0 owner-budget problems. `.venv/bin/python -m unittest tests.test_codebase_structure_budgets`: **2 passed** (0.040 seconds). `fnm exec --using 20 npm run build` and `make verify-dist-clean` pass.
+- Operator validation scope: no app interaction; confirm the Node suite and the source guard/helper/quirk diff. P0-3 (`d7d47c60`) was validated by the operator's continuation. Stop at this local commit; P0-5 and later rungs remain unexecuted. Home-write remains blocked independently, with no approved target or process inputs. No publication is authorized.
+
+### Runtime-work baseline (PR0 characterization)
+
+Extend `tests/ui/scenario_draft_history.spec.js` with a reusable source-bundle probe on the same synthetic fixture and eight named Scenario transitions used by DOM parity. Run fresh Chromium contexts twice at both the recorded base and candidate SHAs. Enable existing counters with `/?perf=1`, keep normal polling/presence timers active, and permit the fixture's root route to accept the query. There is no production snapshot/reset API: the source-bundle harness applies an **in-memory test-only** esbuild adapter, anchored exactly once immediately after `const perfStateLastRef = useRef({});`:
+
+```js
+if (perfEnabled) window.__JEP_EXTRACTION_PERF__ = () => ({ ...perfCountersRef.current });
+```
+
+The adapter never modifies tracked production source or generated dist, adds no hook/effect/state update, and writes no counters. Missing/duplicate anchors fail. Read copied snapshots after startup/Run Scenario and each settled action: `renders`, `edgeRequests`, `edgeFrames`, `edgeComputes`, `layoutReads`, `scrollReads`, `laneStacking`, `statsBuild`. Reset a measurement phase by saving a copy and subtracting it from the next copy; never reset production refs or logger baselines. After the eight phases, take a settled snapshot, leave the UI untouched for 5,000 ms, and capture `scenario-idle-5s`. Export per-phase deltas and cumulative snapshots to a fresh ignored directory with exclusive creation, exact SHA, fixture/runtime/browser details and command; require all labels exactly once and no unexpected API requests.
+
+Compare repeat-run observations at the same runtime and fixture. Investigate extra rendering, scheduling, lane/layout or idle work, duplicate listeners/polls/SSE, and render loops; unexplained differences block the source rung for operator review. Explain concurrent-timer/frame-coalescing variation from the raw samples rather than adding arbitrary tolerances. These counters cover existing instrumentation, not all component renders/DOM reads, request counts, CPU duration, or production-scale performance: `edgeRequests` counts scheduling requests, `edgeFrames` accepted frames, and layout/scroll counts instrumented callbacks. Do not claim latency improvements from file size or test wall time.
+
+Historical-source feasibility probes on `831acf7a` passed twice, including all eight transitions and the idle phase. Both idle deltas were renders 4, scheduling requests 10, frames/computes 2, layout/scroll callbacks 2, lane stacking 4, stats builds 0; seven transition deltas matched and Epic-focus counts varied. Positive idle work is therefore preserved behavior, not an automatic failure. PR0 must commit the reusable probe and remeasure its actual-base baseline; these samples are not its acceptance envelope. Rebase refreshes that baseline. Run this named source-bundle probe for each Scenario-affecting R4 and at final acceptance.
+
 ### Commit P0-5 (R2): Baselines
 
-- [ ] Run the full Chromium `tests/ui` suite and record pass/fail/skip counts, wall time, and every pre-existing failure by name in section 1. Those failures are excluded from "must pass" later and listed in every PR description. Record the Node and Python suite results as well.
+- [x] Install and run the reusable runtime-work probe above twice against the unchanged PR0 base; record raw action/idle samples, counter meaning, command and source anchor. Run the 13 DOM-helper controls and all added growth/timing controls; no claim of coverage from the historical probes alone.
+- [x] At the recorded PR0 base SHA, refresh the source/hook/budget counts and run the recursive extraction gate, full Chromium `tests/ui`, Node suite, and Python suite. Record pass/fail/skip counts, wall time, and every failure by name in section 1; keep earlier counts labelled historical. Failures are not automatically excluded from later gates: resolve them, or obtain an explicit operator waiver naming each affected check and exact revision before publication. List any such waiver in every affected PR description.
 
 **Validation scope:** review the recorded baselines; no app check.
 
+**P0-5 runtime samples (2026-10-03):**
+
+The new opt-in `Scenario runtime-work baseline` shares P0-3's exact positive eight-state fixture/action assertions. Its source adapter inserts only the printed copied-read function after `const perfStateLastRef = useRef({});` (current line 406), in memory with esbuild `write: false`. It adds no hook, effect, state update, counter write or timer override. Missing/duplicate anchors, invalid provenance, label ordering, counter monotonicity and exclusive output are covered by 14 scratch VM controls. Ordinary runs skip this opt-in measurement.
+
+Fresh directories `tmp/p0-5-runtime/base-run1`, `base-run2`, `candidate-run1`, `candidate-run2` each contain metadata, eleven ordered sample files and a summary. Base source SHA is `ffeafb0ea3f37dd17a5d910595c20e1493166c5c`; candidate source SHA is `472e98d8e3cdb0bf89ceb5b921d609d26b6116a1` (production source matches both revisions exactly). Runtime: Node 20.20.0, Playwright 1.59.1, esbuild 0.27.2, headless Chromium 147.0.7727.15 with 1280×860 viewport. All 222 canonical build inputs have identical verified digests at both revisions. Reconstructed JS and CSS differ only in 257 and 58 source-path comment lines respectively, caused by the archive prefix; every executable/style line is identical. Sample campaigns passed individually in 36.4 / 33.4 / 33.5 / 33.8 seconds, with no unexpected API requests and exactly one Scenario compute POST each.
+
+The ignored driver recorded the exact `bash tmp/p0-5-run-probe.sh <label> <source-root> <source-sha>` invocation; its contents are:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+label="$1"
+source_root="$2"
+source_sha="$3"
+export JEP_EXTRACTION_PERF_DIR="tmp/p0-5-runtime/$label"
+export JEP_EXTRACTION_PERF_SOURCE_ROOT="$source_root"
+export JEP_EXTRACTION_PERF_SOURCE_SHA="$source_sha"
+export JEP_EXTRACTION_PERF_COMMAND="bash tmp/p0-5-run-probe.sh $label $source_root $source_sha"
+fnm exec --using 20 npx playwright test tests/ui/scenario_draft_history.spec.js --browser=chromium --workers=1 --grep 'Scenario runtime-work baseline$' --output="tmp/p0-5-probe-$label-results"
+```
+
+Each named call runs alone, with fresh output. Initial `--grep '^Scenario runtime-work baseline$'` matched no tests because Playwright matches qualified titles; the corrected suffix pattern above selected exactly one. That invocation produced no runtime samples and is not sample evidence.
+
+Counters are ordered `renders / edgeRequests / edgeFrames / edgeComputes / layoutReads / scrollReads / laneStacking / statsBuild`. Values are raw phase deltas; each exclusive sample file also contains cumulative counters and API timestamps.
+
+| Phase | Base run 1 | Base run 2 | Candidate run 1 | Candidate run 2 |
+| --- | --- | --- | --- | --- |
+| scenario-startup | `21/0/0/0/0/0/0/0` | `19/0/0/0/0/0/0/0` | `18/0/0/0/0/0/0/0` | `18/0/0/0/0/0/0/0` |
+| scenario-run | `17/34/8/8/5/5/12/0` | `17/34/8/8/5/5/12/0` | `17/34/8/8/5/5/12/0` | `17/34/8/8/5/5/12/0` |
+| scenario-team-collapsed-lanes | `2/5/1/1/1/1/2/0` | `2/5/1/1/1/1/2/0` | `2/5/1/1/1/1/2/0` | `2/5/1/1/1/1/2/0` |
+| scenario-team-expanded-lane-edges | `2/5/1/1/1/1/2/0` | `2/5/1/1/1/1/2/0` | `2/5/1/1/1/1/2/0` | `2/5/1/1/1/1/2/0` |
+| scenario-epic-lanes | `5/15/3/3/3/3/5/0` | `5/15/3/3/3/3/5/0` | `5/15/3/3/3/3/5/0` | `5/15/3/3/3/3/5/0` |
+| scenario-epic-focus | `6/16/3/3/2/2/6/0` | `8/21/4/4/3/3/8/0` | `6/16/3/3/2/2/6/0` | `6/16/3/3/2/2/6/0` |
+| scenario-assignee-lanes | `10/28/6/6/5/5/10/0` | `10/28/6/6/5/5/10/0` | `10/28/6/6/5/5/10/0` | `10/28/6/6/5/5/10/0` |
+| scenario-tooltip | `7/21/5/5/4/5/7/0` | `7/21/5/5/4/5/7/0` | `7/21/5/5/4/5/7/0` | `7/21/5/5/4/5/7/0` |
+| scenario-conflicts-only | `7/18/4/4/3/3/7/0` | `7/18/4/4/3/3/7/0` | `7/18/4/4/3/3/7/0` | `7/18/4/4/3/3/7/0` |
+| scenario-conflicts-restored | `5/15/3/3/3/3/5/0` | `3/10/2/2/2/2/3/0` | `3/10/2/2/2/2/3/0` | `3/10/2/2/2/2/3/0` |
+| scenario-idle-5s | `2/5/1/1/1/1/2/0` | `2/5/1/1/1/1/2/0` | `3/8/2/2/1/1/3/0` | `3/8/2/2/1/1/3/0` |
+
+Raw repeat differences remain visible. Run Scenario and six subsequent action deltas match in all four runs. Startup performs the same 23 API requests, with 18–21 instrumented App renders, consistent with independent bootstrap responses landing and batching; batching is inferred, not instrumented. The restored sample in base run 1 includes a poll before capture (poll 27,672 ms, sample 27,834 ms); base run 2 captures before its next poll (sample 27,066 ms, poll 27,234 ms). Base run 2's focus sample includes an extra render/layout/scroll/frame cycle, consistent with the existing focus range/viewport effects and pending-frame coalescing; callback causality is inferred, not instrumented. These are timing-supported explanations of unchanged-source samples, not proof that raw request timestamps uniquely identify each callback ordering.
+
+All four cumulative accepted edge-frame and compute counts are **35**. Base run 1 has seven event polls; the other three have six because their elapsed sample windows end on different sides of the five-second boundary. Every run has two presence POSTs, one Scenario compute POST, the same four startup task reads, and no SSE connection or draft save. The idle windows are 5,014–5,023 ms. Both base idle deltas are `2/5/1/1/1/1/2/0`; both candidate idle deltas are `3/8/2/2/1/1/3/0`. The extra candidate idle render and scheduling/frame/stacking counts have no extra API or layout/scroll callback: the normal poll and presence heartbeat land milliseconds apart, and `learnScenarioCurrentUserFromPresence` always creates a fresh identity object while the poll creates a fresh realtime-status object. Their updates can batch or land separately; this batching explanation is an inference, not instrumented callback ordering; the three existing edge-scheduling effects count requests before the pending-frame guard. The frame work redistributes between phases while total accepted frames remain 35. Source evidence: poll at 9330–9356, heartbeat at 9372–9390, identity update at 7397–7403, layout/scroll setup at 10880–10956, focus/viewport updates at 11528–11551, and request/frame coalescing at 11555–11601. Re-locate those symbols after moves.
+
+`edgeRequests` counts scheduling requests, `edgeFrames` accepted frames, and layout/scroll counters instrumented callbacks. This is an observation baseline with normal timers, not an arbitrary numerical tolerance, latency comparison, complete component-render/DOM-read inventory, or production-scale performance claim. Future source moves still require repeat raw samples and an explanation of extra work. The final full-base browser campaign passed as recorded in section 1; the full candidate committed-head browser run remains a publication gate.
+
+**P0-5 verification record:**
+
+- Exact-base Node/Python suites ran from the ignored archive; their commands, isolated profile, counts and wall times are in section 1. The final full Chromium command ran there with read-only Git root variables pointing to the checkout metadata/archive: `fnm exec --using 20 npx playwright test tests/ui --browser=chromium --workers=4 --output=../p0-5-base-ui-final-results`. It passed 1,197 tests with 3 skips in 9.1 minutes; the retained earlier failure names and unchanged diagnostic results are in section 1.
+- `fnm exec --using 20 bash scripts/extraction_lint/run.sh`: passed, 0 errors / 120 unchanged warnings, 41 owners, 16 sites, 0 budget problems. `fnm exec --using 20 bash scripts/extraction_lint/negative_controls.sh`: all 70 controls passed, including the original 21. `fnm exec --using 20 node tmp/p0-5-probe-controls.cjs`: 14 independent probe controls passed.
+- Candidate `fnm exec --using 20 npm run test:frontend:unit`: 1,728 passed in 3.358 seconds. Candidate isolated Python suite: 2,112 tests, OK with 29 skips in 260.279 seconds. `fnm exec --using 20 npm run build` and `make verify-dist-clean`: passed with no generated diff.
+- `JEP_DOM_PARITY_DIR=tmp/dom-parity/p0-5-candidate fnm exec --using 20 npx playwright test tests/ui/dom_parity_helpers.spec.js tests/ui/scenario_draft_history.spec.js tests/ui/scenario_draft_collaboration.spec.js tests/ui/settings_unified_save.spec.js tests/ui/shared_department_groups.spec.js --browser=chromium --workers=4 --output=tmp/p0-5-targeted-results`: 182 passed (169 characterization checks plus all 13 helper controls), 1 intentional opt-in runtime skip, 1.9 minutes. All 34 distinct nonempty captures match P0-3 run 2 by filename and byte content; `diff -r tmp/dom-parity/p0-3-run2 tmp/dom-parity/p0-5-candidate` produced no differences. The runtime test passed separately in all four recorded campaigns.
+- Production source is byte-identical across the base and candidate; App plus the complete 41-owner set retains the same inventory and budgets. No move occurred, so there is no statement-conservation residual to approve. The shared eight-state oracle retains every existing assertion. This test-only probe adds no user-visible analytics interaction or event; the internal-tooling allowlist applies.
+- Operator validation: review this baseline/probe diff and the recorded raw samples, timing explanations and suite evidence; no app interaction. P0-4 was validated by the continuation. Stop at this local P0-5 commit; P0-6 and all extraction rungs remain unexecuted. Home-write is blocked independently, and publication still requires explicit approval and full committed-head checks.
+
 ### Commit P0-6 (R5): Ontology and docs
 
-- [ ] Update `docs/ontology.md`: add entries "Scenario Planner ownership" and "Settings state ownership" (canonical names, aliases, entry points in `dashboard.jsx` today, this plan, tests, relationships `depends on`/`produces`) with a verification date; update the existing entries that cite `dashboard.jsx` ownership (Connection recovery, Scenario recovery compute, Unconfigured-workspace gate, Department group label mapping, "Board scope load authority" at line 76, "Startup config timeout" at line 18) and the Coverage line; confirm every cited path resolves.
-- [ ] Propose to the operator (do not edit unasked) a line for root `AGENTS.md` section 10 Commands naming `scripts/extraction_lint/run.sh`; section 10 is a preserved section and needs approval.
+- [x] Update `docs/ontology.md`: add entries "Scenario Planner ownership" and "Settings state ownership" (canonical names, aliases, entry points in `dashboard.jsx` today, this plan, tests, relationships `depends on`/`produces`) with a verification date; update the existing entries that cite `dashboard.jsx` ownership (Connection recovery, Scenario recovery compute, Unconfigured-workspace gate, Department group label mapping, "Board scope load authority" at line 76, "Startup config timeout" at line 18) and the Coverage line; confirm every cited path resolves.
+- [x] Propose to the operator (do not edit unasked) a line for root `AGENTS.md` section 10 Commands naming `scripts/extraction_lint/run.sh`; section 10 is a preserved section and needs approval.
 
 **Validation scope:** review the ontology text; no app check.
+
+**Proposed root `AGENTS.md` section 10 Commands entry (approval pending; root file unchanged):**
+
+```md
+- Extraction gate: fnm exec --using 20 bash scripts/extraction_lint/run.sh
+```
+
+**P0-6 outcome (2026-10-03):** Implemented as planned. Ontology coverage now includes current Scenario Planner/Settings ownership, six refreshed related entries, current symbols, contracts and relationships verified against `c4ab713a`. Already-extracted hook responsibilities remain explicit; future hook files are not claimed to exist. G1/G2, terminal authentication recovery and imperative saves retain the approved boundaries. This documentation-only rung adds no user-visible interaction or analytics event. The root command proposal is deliberately unapplied; P0-6 completion requires proposing it, not altering the preserved root section.
+
+The approved rebase/source refresh is recorded in section 1. Fresh extraction gate: 0 errors / 120 unchanged warnings, 16 sites / 41 modules / 34 informational findings / zero budget problems. `fnm exec --using 20 npm run test:frontend:unit`: 1,728 passed, zero failures/skips, 10.955 seconds. `fnm exec --using 20 npm run build` and `make verify-dist-clean` passed. The first scratch archive capture invocation used the wrong relative harness-copy directory and was interrupted; no app assertion result from that invalid setup is baseline evidence. After the copy was corrected, the identical six PR0 test/helper files ran against untouched new-base production source: 182 passed, one intentional runtime skip, 2.2 minutes, fresh directory `tmp/p0-6-base/tmp/dom-parity/p0-6-before-corrected`. Logs remain under ignored `tmp/`. All full-suite/runtime samples from the prior base remain labelled exact-revision evidence; full suites at the proposed publication head remain mandatory.
+
+Final independent `.venv/bin/python tmp/p0-6-verification.py`: passed; all four named files, 195 relative Markdown file links, 161 inline paths/module members, nine heading references and 64 current ownership/source symbols resolve. Reviewer found no remaining actionable issue. `git diff --check` passed.
+
+Rebased-head command: `JEP_DOM_PARITY_DIR=tmp/dom-parity/p0-6-after fnm exec --using 20 npx playwright test tests/ui/dom_parity_helpers.spec.js tests/ui/scenario_draft_history.spec.js tests/ui/scenario_draft_collaboration.spec.js tests/ui/settings_unified_save.spec.js tests/ui/shared_department_groups.spec.js tests/ui/codebase_structure_smoke.spec.js tests/ui/eng_issue_field_edits.spec.js --browser=chromium --workers=4 --output=tmp/p0-6-after-results`: 215 passed, one intentional opt-in runtime skip, 3.2 minutes. This covers Scenario/Settings synthetic smoke, structure/startup behavior, 13 DOM-helper controls and the upstream Team editor. All 34 distinct nonempty new-base/head captures have the same filenames and exact bytes; `diff -r tmp/p0-6-base/tmp/dom-parity/p0-6-before-corrected tmp/dom-parity/p0-6-after` produced no differences. Production source matches the new base, so there is no extraction conservation residual; range-diff preserves every unpublished rung patch.
+
+Stop at this local P0-6 commit for operator ontology/proposal review; no app check. Source extraction and publication remain unexecuted. The independent Home-write gate is still blocked and does not prevent this rung.
+
+
 
 ---
 
@@ -1178,13 +1742,13 @@ It stays out: the JSX, the SC1 seam, the clear/reset entry points at 2086-2090, 
 
 ### SC3 (gate G1): Split the hook inside `frontend/src/scenario/`
 
-**Branch:** `improvement/scenario-planner-split`. **Files:** create the sub-hook files under `frontend/src/scenario/` (`useScenarioDraft.js`, `useScenarioRealtime.js`, `useScenarioDerived.js`, `useScenarioDrag.js`, `useScenarioHistory.js`, `useScenarioLayout.js`) and `scenarioLayout.js`; modify `useScenarioPlanner.js`, `scenarioLaneUtils.js`, the guards in section 7, docs. **Targeted specs:** the three Scenario specs and `codebase_structure_smoke.spec.js:1184-1310`. Start only after the operator says go. `dashboard.jsx` is not touched: `useScenarioPlanner` keeps returning the same flat object, so the call site, the budget, and the SC4 props are unaffected.
+**Branch:** `improvement/scenario-planner-split`. **Files:** create the sub-hook files under `frontend/src/scenario/` (`useScenarioDraft.js`, `useScenarioRealtime.js`, `useScenarioDerived.js`, `useScenarioDrag.js`, `useScenarioHistory.js`, `useScenarioLayout.js`) and `scenarioLayout.js`; modify `useScenarioPlanner.js`, `scenarioLaneUtils.js`, `scripts/extraction_lint/owner_budgets.json`, the guards in section 7, docs. **Targeted specs:** the three Scenario specs and `codebase_structure_smoke.spec.js:1184-1310`, plus owner/interface/aggregate budget checks. G1 is approved; start after SC2 merges and the current-source partition is verified. `dashboard.jsx` is not touched: `useScenarioPlanner` keeps returning the same flat object, so the App call site, dashboard budget, and SC4 props are unaffected. New owners and scaffolding remain subject to the common budgets.
 
 **Partition** (contiguous runs of the original order; the first review found zero provider-called-later edges and the dry run confirmed the edges H2→H1, H4→H1/H2/H3, H5→H1, H6→H3 with no cycle; each sub-hook is called in this order inside `useScenarioPlanner`): H1 draft (7262-7303, 7427-7679, 9143-9199 incl. `scenarioHasStoredDraftScope` and `scenarioActiveDraftId`, and `scenarioTeamIds` 8107-8112), H2 realtime (7305-7425, 7696-7747, 9200-9375), H3 derived memos (9137-9142, 9376-9628 incl. `scenarioIssueByKey`, and `matchesScenarioSearch` 5662-5677), H4 drag/edit mode (7681-7694, 7749-7794, 9629-9746), H5 history (9748-10350), H6 layout (10352-11601 incl. `scenarioVisibleExportIssues` 10685-10702, `areScenarioCollapsedLanesEqual`, `areScenarioEdgeRendersEqual`, `registerScenarioIssueRef` 5679-5686, and the `let scheduleScenarioEdgeUpdate` with its assignment). Each sub-hook returns an object literal.
 
 **Pure extraction:** `frontend/src/scenario/scenarioLayout.js` receives only code with no DOM, ref, `performance`, or `console` reads. `scenarioLaneStacking` writes `perfCountersRef` and calls `performance.mark` (10559-10562) and `scenarioPositions` has a development-only `console.debug` (10893), so split the pure core from the instrumented wrapper (instrumentation stays in the hook). `computeScenarioEdgePaths` and anything using `scenarioIssueRefMap` or `getBoundingClientRect` stay in the hook. Extend `frontend/src/scenario/scenarioLaneUtils.js` and `tests/test_scenario_lane_utils.js` rather than creating a parallel module where the functions overlap. Oracle fixtures (synthetic) cover a single team, several teams, assignee mode, collapsed lanes, overlapping bars, and the empty case.
 
-**Ladder:** R2 (oracle fixture data as JSON generated from the current functions, with no test that imports a new module), then one R4 per sub-hook in the order above, each creating the sub-hook, its unit tests (pure functions against the stored oracle outputs), and re-pointing the guards it breaks to `readOwnerSource(['frontend/src/scenario'])`, (each with parity, conservation with effect order `identical`, and the SM-S scope for the area it moves: H1 Run/Save/Discard, H2 two-browser presence or the named collaboration specs, H3 filters and search, H4 drag and undo, H5 History and rollback, H6 lanes, edges, focus, tooltip), then R5 (lint ceiling and ontology and status only: "no budget change", because `dashboard.jsx` is untouched). The `let scheduleScenarioEdgeUpdate` and its assignment stay together in H6; the layout effect deps array is unchanged.
+**Ladder:** R2 (oracle fixture data as JSON generated from the current functions, with no test that imports a new module), then one R4 per sub-hook in the order above, each creating the sub-hook, its unit tests (pure functions against the stored oracle outputs), and re-pointing the guards it breaks to `readOwnerSource(['frontend/src/scenario'])`, (each with parity, conservation with effect order `identical`, and the SM-S scope for the area it moves: H1 Run/Save/Discard, H2 two-browser presence or the named collaboration specs, H3 filters and search, H4 drag and undo, H5 History and rollback, H6 lanes, edges, focus, tooltip), then R5 (owner/interface/aggregate ratchets, lint ceiling, ontology and status; record "no dashboard budget change" because `dashboard.jsx` is untouched). The `let scheduleScenarioEdgeUpdate` and its assignment stay together in H6; the layout effect deps array is unchanged.
 
 ### SC4: Scenario view component
 
@@ -1205,8 +1769,8 @@ After SC4, `rg -n '\bscenario[A-Z]\w*' frontend/src/dashboard.jsx` returns only 
 **Rules for every `ST*` PR.**
 
 1. **Ownership.** Each statement has exactly one owning PR, from the table below. Statements in no row stay in `App()`, are listed in the PR description, and are not a defect.
-2. **Hook map.** The PR description contains a generated map (hook, call-site line, inputs and their declaration lines), produced with the section 6 derivation procedure, plus an **effect-crossing table**: for every moved effect, the unmoved effects between its old and new position. Reordering relative to unmoved effects is allowed only when the table shows disjoint state and refs and no ordering reliance; otherwise choose a call position that keeps the order or split the hook at the effect. The dry runs counted crossings: ST3's 9 effects cross 32 unmoved ones; the Jira hook's 6 effects (4354, 4388, 4970, 4975, 5139, 5185) cross 31 with 4940-5033 included (4 cross 33 if that range stays in `App()`); the capacity hook's 2 cross 37; ST2's moved effects cross 13 to 15 depending on the call position (name it: 1362, the first ST2 statement); ST4 none at 1268. One concrete hazard is `fetchJiraFields` (5185) firing before the modal-open effect (2184). Playwright coverage for each crossing is named in the PR.
-3. **Layering.** One hook per section when every input is available at its state lines; otherwise a state layer at the state lines plus a behavior layer where the inputs exist, both in one file. A remaining cycle is resolved with a getter closure, never a ref or latest-ref.
+2. **Hook map.** The PR description contains a generated map (hook, call-site line, inputs and their declaration lines), produced with the section 6 derivation procedure, plus an **effect-crossing table**: for every moved effect, the unmoved effects between its old and new position. Reordering relative to unmoved effects is allowed only when the table shows disjoint state and refs and no ordering reliance; otherwise choose a call position that keeps the order or split the hook at the effect. ST3's normalization effect must stay after modal-open initialization: both write `activeGroupDraftId`, so that crossing is forbidden, even if lint passes. Its separate effects layer crosses zero effects; re-measure crossings for the other eight ST3 effects. Historical dry-run counts for the other sections: the Jira hook's 6 effects (4354, 4388, 4970, 4975, 5139, 5185) crossed 31 with 4940-5033 included (4 crossed 33 if that range stayed in `App()`); capacity's 2 crossed 37; ST2 crossed 13 to 15 at the candidate call positions; ST4 crossed none at 1268. Recompute against the current base. One concrete hazard is `fetchJiraFields` (5185) firing before the modal-open effect (2184). Playwright coverage for each crossing is named in the PR.
+3. **Layering.** One hook per section when every input is available at its state lines; otherwise a state layer at the state lines plus a behavior layer where the inputs exist, both in one file. Add a separate effects layer where order must be preserved; ST3's selection layer and ST5's hotkey layer are required. A remaining cycle is resolved with a getter closure, never a ref or latest-ref.
 4. **Module-level names.** Non-exported module-level declarations used by moved code (`createEmptyEpmConfigDraft`, `DEFAULT_EPM_LABEL_PREFIX`, the `*_TAB_IDS` sets, `stableAcceptedConfigValue`, `getLabelRowKey`) move to a small module in `frontend/src/settings/` that both `dashboard.jsx` and the hook import, so there is one instance. A hook file cannot import from `dashboard.jsx` (circular). JSX-returning helpers (for example `renderEpmProjectSkeletonRows`, 1382) go to a `.jsx` file, because esbuild rejects JSX in `.js`.
 5. Read `backend/security/CONFIGURATION_OWNERSHIP.md` first. Run the `docs/plans/GATE-*.md` sweep at the start of every slice (all PRs here are plan executions); `GATE-05` (Home write capability, next review 2026-10-05) is not a dependency because no slice adds a Home/Townsquare path.
 
@@ -1216,7 +1780,7 @@ After SC4, `rg -n '\bscenario[A-Z]\w*' frontend/src/dashboard.jsx` returns only 
 | --- | --- |
 | ST1 | Layer-0 hoists: `commitSharedConfigRevision` (4882-4886, depends only on 643-644, which stay in `App()` until ST5) and the `useSettingsConfigBaselineRevision()` call (806-809, no inputs) move up inside `App()` to just before 705. Priority weights: state 705-708, dirty memo 2731-2733, validation 2965-2984, load and mutators 4860-4880, 4900-4911, 4930-4938 (`updatePriorityWeightDraft`, `resetPriorityWeightsDraft`), `effectivePriorityWeightsRows` (consumed at 7885). Capacity mapping draft: state 766-774 and 777-780 (`capacityFieldSearch*`), dirty memo 2737-2740, functions 5051-5084, 5190-5260 (not the Planning capacity read at 982-997/12742-13005, not `PlanningTeamCapacityCards`/`updateCapacity` at 17248-17272, not `capacityEnabled` 982). Jira projects / source board / issue types / field catalog: state 709-717, 749-765, 775-776 (`jiraFields`, `loadingFields`), 804-805, 822-826, dirty memos 2727-2729, 2735, 2742-2744, functions 4326-4420, 4800-4858, 4888-4898 (`saveBoardConfig`), 4913-4928 (`clearBoardSelection` ends at 4928), 4940-5033 and 5035-5049 (`saveProjectSelection`) provided the gate shows no late inputs (otherwise they stay in `App()`), 5086-5188. The tab JSX in 17493-17687 (Connections and Admin bodies, including the large `JiraFieldSettings` spread) moves to stateless containers in `frontend/src/settings/`. |
 | ST2 | EPM settings: state 489-518 and 522-540 (519-521 are the modal tab ids and belong to ST5), refs 1144-1148, handlers 1362-1892, 3106-3115, 3123-3134, 3136-3167 (`handleEpmSettingsTabKeyDown`), 14832-14835 (`setTrackedEpmSettingsProjectSort`), normalization and memos 2466-2608, dirty and saved scope 2746-2768, project rows 2849-2932, effects 1667-1699, 2235-2335, 2765, 2856-2879, JSX 17688-17777. Prep (R3): `getLabelRowKey` (5508) to a settings module. |
-| ST3 | Team Groups / Labels / board layouts: state 605-617 (including the group read fences 613-615, so the `acceptedGroupsConfigRef` text pin moves with it), 626, 641, 652-680 except 656-657 and 678-679 (ST5), 718-736; `loadGroupsConfig` 2610-2657, `handleGroupDraftChange` and `loadTeamsFromCurrentView` 2659-2672, the `activeGroupDraftId` normalising effect 2337-2351, draft mutators and team search 3234-3611 except the app-update notice 3340-3353 (not Settings; stays), `applySavedGroupsConfig` 3612-3625, debounced searches 4423-4569, `handleComponentSearchKeyDown` 4570-4593, epic helpers 4594-4798, export/import 5262-5345, team directory memos 5347-5380, `filteredGroupDrafts` 5449, team-results block 5464-5487, label search 5510-5660 (5508 `getLabelRowKey` is ST2's hoist); the `useGroupVisibilityPreferences` call statement (1231-1267) and `applyPreferenceGroupsSnapshot` (1218-1228) (the hook's inputs and outputs feed Team Groups both ways, so the Team Groups behavior layer calls it at that position); dirty and validation 2710-2725 (`groupDraftSignature`, `isGroupBoardDraftDirty`); JSX 17778-18122 (the department-tabs conditional: tab strip 17778-17815, `TeamGroupsSettings` 17816-17934, Labels tab 17935-18092, `GroupBoardsTab` 18093-18120, and its closing `</>` and `)}` at 18121-18122), group-board props 14926-14942 and `const random = Math.random` (14943, a `GroupBoardsTab` prop). **Not ST3:** the aggregates `isGroupDraftDirty` (2945) and `groupConfigValidationErrors` (2987), which read `isEpmConfigDirty`, `isSharedConfigurationDraftDirty`, `shouldValidateAdminSettings`, and `priorityWeightsValidationError` and belong to ST5's aggregates layer. |
+| ST3 | Team Groups / Labels / board layouts: state 605-617 (including the group read fences 613-615, so the `acceptedGroupsConfigRef` text pin moves with it), 626, 641, 652-680 except 656-657 and 678-679 (ST5), 718-736; `loadGroupsConfig` 2610-2657, `handleGroupDraftChange` and `loadTeamsFromCurrentView` 2659-2672, the `activeGroupDraftId` normalising effect 2337-2351 (owned here but moved to `useTeamGroupSelectionEffect` called at its original position, not into the early behavior layer), draft mutators and team search 3234-3611 except the app-update notice 3340-3353 (not Settings; stays), `applySavedGroupsConfig` 3612-3625, debounced searches 4423-4569, `handleComponentSearchKeyDown` 4570-4593, epic helpers 4594-4798, export/import 5262-5345, team directory memos 5347-5380, `filteredGroupDrafts` 5449, team-results block 5464-5487, label search 5510-5660 (5508 `getLabelRowKey` is ST2's hoist); the `useGroupVisibilityPreferences` call statement (1231-1267) and `applyPreferenceGroupsSnapshot` (1218-1228) (the hook's inputs and outputs feed Team Groups both ways, so the Team Groups behavior layer calls it at that position); dirty and validation 2710-2725 (`groupDraftSignature`, `isGroupBoardDraftDirty`); JSX 17778-18122 (the department-tabs conditional: tab strip 17778-17815, `TeamGroupsSettings` 17816-17934, Labels tab 17935-18092, `GroupBoardsTab` 18093-18120, and its closing `</>` and `)}` at 18121-18122), group-board props 14926-14942 and `const random = Math.random` (14943, a `GroupBoardsTab` prop). **Not ST3:** the aggregates `isGroupDraftDirty` (2945) and `groupConfigValidationErrors` (2987), which read `isEpmConfigDirty`, `isSharedConfigurationDraftDirty`, `shouldValidateAdminSettings`, and `priorityWeightsValidationError` and belong to ST5's aggregates layer. |
 | ST4 | First-run: state 629-638 (`settingsSaveInFlightRef` 639 stays with ST5), handlers 1268-1348, 5382-5447, JSX 18125-18149 (the `<OnboardingTour>` at 18150-18166 stays). The onboarding controller (3042-3084, `useOnboardingController` at 3056) and `onboarding.replay` (14848-14868) stay in `App()`. The `keepMine*` handlers (4249-4285) are ST5's. |
 | ST5 (gate G2) | Permissions: 685-704 (including 694 `adminAccessAvailable` with its exact expression, and the `adminAccess` hook call 696-700; `performanceGate` 688, `activePerformanceLoadRef` 689, `performanceLoadRevision` 690 are ENG load performance and stay). Shared-config snapshot and save: 639, 642-651, aggregates 2934-3041 except ST1's 2965-2984 (this includes `isGroupDraftDirty` 2945, `groupConfigValidationErrors` 2987, `saveBlockedReason` 3033), `buildSettingsSaveOutcome` 3627, `saveGroupsConfig` 3629-4006, `saveAllSettingsOnce` 4008-4182, `saveAllSettings` 4184-4192, restore/return 4194-4244, conflict exits 4249-4285, and the Settings part of `loadConfig` (6760-6966, statements 6861-6949 interleaved with non-Settings writes; 6819 stays). Modal shell: 519-521, 625, 656-657, 678-679, 682, 859, functions 2674-2708, 3086-3105, 3117, 3168-3232, 14783-14841 except 14832-14835, 14948-14958, effects 2175, 4287-4324, 5488, 5500, JSX gears 15075-15112, `<SettingsModal>` shell 17457-17492 and its closing `</SettingsModal>` and `)}` at 18123-18124. |
 
@@ -1238,7 +1802,7 @@ Statements that stay in `App()` unless a later decision claims them: 627 `groupD
 | Rung | Commit | Validation scope |
 | --- | --- | --- |
 | R1 | Dead code (above). | SM-T. |
-| R2 | Playwright test: dirty `priorityWeights`, `board`, `capacity`, and `issueTypes` together and assert the recorded request sequence (method and path, ignoring `/api/auth/csrf`) equals the section 4 order, each with `baseRevision`; the key-parity test across the save map (3630-3642), the capture object (1284-1296), the restore function (4194-4226), `FIRST_RUN_ADMIN_SECTION_KEYS`, and the 10-key snapshot (810-821), reading through `readOwnerSource` with an anchor on each location (those locations move in ST4 and ST5, where the test is re-pointed). | Review the diff. |
+| R2 | Playwright test: dirty `priorityWeights`, `board`, `capacity`, and `issueTypes` together and assert the recorded request sequence (method and path, ignoring `/api/auth/csrf`) equals the section 4 order, each with `baseRevision`; key-parity assertions compare the save map (3630-3642), first-run admin capture (1284-1296), restore coverage (4194-4226), and `FIRST_RUN_ADMIN_SECTION_KEYS` against the same 11 admin sections. Separately assert `settingsDraftSnapshotRef.current` (810-821) contains exactly that set excluding `adminAccess` (10 keys); do not add `adminAccess` to the render-time snapshot. Read through `readOwnerSource` with an anchor for each location and re-point those locations in ST4/ST5. Existing first-run restoration coverage alone does not assert the snapshot projection. | Review the diff. |
 | R3 | Hoist `commitSharedConfigRevision` and the baseline-revision hook above 705. | SM-T: save one admin section. |
 | R4a | `usePriorityWeightsSettings` (+ its server-render probe: defaults, `isDirty === false`). | Admin: edit priority weights, Save, reload, persisted; reset to defaults. |
 | R4b | `useJiraProjectSettings` (+ probe). | Admin: Scope projects (add/remove), Jira source board (set/clear), issue types, field pickers; Save. |
@@ -1264,15 +1828,61 @@ Statements that stay in `App()` unless a later decision claims them: 627 `groupD
 
 **Branch:** `improvement/settings-team-groups-hook`. Targeted specs: `tests/ui/shared_department_groups.spec.js`, `tests/ui/settings_unified_save.spec.js`, `tests/ui/eng_group_board_settings_tab.spec.js`.
 
-**Design.** State layer at 605 (dry run: 0 inputs, 95 outputs); behavior layer at the position of the `useGroupVisibilityPreferences` statement (1231), which it calls internally (103 inputs). The two late inputs are resolved as `teamOptions` (7938) through a getter closure (`() => teamOptions`) feeding `loadTeamsFromCurrentView`, and `getLabelRowKey` (5508) through ST2's hoist. The dry run: 0 gate errors **provided** the aggregates 2945 and 2987 are not moved here (4 errors otherwise). Move `labelSearch*` ownership here and update `useEpmSettings` to read it from this hook. Group JSON export/import stays selected-group scoped. Team label aliases (up to three per Team) behave exactly as before.
+**Design.** State layer at 605 (historical dry run: 0 inputs, 95 outputs); behavior layer at the position of the `useGroupVisibilityPreferences` statement (1231), which it calls internally (historical 103 inputs). The `activeGroupDraftId` normalization effect (2337-2351) is excluded from that early behavior layer: export a separate `useTeamGroupSelectionEffect` from the same hook file and call it at the effect's original position, after the modal-open effect (2184-2233). Its explicit inputs are `showGroupManage`, `groupDraft`, `activeGroupDraftId`, `firstRunConfigurationActive`, `firstRunConfigurationTargetGroupId`, and `setActiveGroupDraftId`; retain the existing dependency array and body verbatim. Both effects write the selection, so swapping them is unsafe. The two late behavior inputs remain `teamOptions` (7938) through a getter closure (`() => teamOptions`) feeding `loadTeamsFromCurrentView`, and `getLabelRowKey` (5508) through ST2's hoist. The historical dry run had 0 gate errors **provided** aggregates 2945 and 2987 were not moved here (4 errors otherwise); that lint result did not prove effect order. Move `labelSearch*` ownership here and update `useEpmSettings` to read it from this hook. Group JSON export/import stays selected-group scoped. Team label aliases (up to three per Team) behave exactly as before.
 
 | Rung | Commit | Validation scope |
 | --- | --- | --- |
 | R1 | Dead code (above). | SM-T, Departments tab. |
-| R2 | Playwright assertions for group switch / favorite / visibility if missing; oracle fixture data (JSON generated from the current functions) for any pure group helper that will move, with the unit tests written in the R4 that creates the module. | Review the diff. |
-| R4a | State layer + behavior layer (without JSX). | Departments: create, rename, duplicate, delete a group; add/remove a Team; edit up to three label aliases for a Team; star a group; Save; reload persisted. |
+| R2 | Add `discarding an empty Department draft preserves selection when Settings reopens` to `settings_unified_save.spec.js`: use saved synthetic groups A/B with legacy default B, delete both draft groups, discard, reopen, and assert the unchanged implementation selects A (modal-open queues B, then normalization sees the old empty draft, queues null, and the next render normalizes to A). Capture the reopened modal as `settings-empty-draft-reopen`; include it in the parity command. Keep group switch / favorite / visibility assertions; generate oracle JSON for pure helpers, writing module tests in R4. | Review the diff; the new test must pass before extraction. |
+| R4a | State layer + behavior layer + `useTeamGroupSelectionEffect` at the original normalization-effect position (without JSX). Compare both revisions' effects; the open/normalize ordering must remain identical, not be waived by the crossing table. | Departments: create, rename, duplicate, delete a group; add/remove a Team; edit up to three label aliases for a Team; star a group; Save; reload persisted; delete-all/discard/reopen regression remains green. |
 | R4b | Departments panel containers incl. the Labels tab and Boards tab (+ probe). | Departments sub-tabs, Group labels (when enabled), Boards layout edit; export and import the active group only. |
 | R5 | Ledger tail (`test_analytics_source_guards.js:500-504`, the `acceptedGroupsConfigRef` pins in the three Board guards, `test_epm_settings_source_guards.js:157-158,:753`, `test_team_catalog_lifecycle_source_guards.js` are re-pointed inside R4), budget, ontology, status. | Review the diff. |
+
+Use the existing `mockConfigSettings` helper and PR0's `captureDomParity` import in `settings_unified_save.spec.js`. This characterization passes on the current source and the separate hook called at the original effect position; moving normalization ahead of modal-open selects B and fails the final assertion.
+
+```javascript
+test('discarding an empty Department draft preserves selection when Settings reopens', async ({ page }) => {
+    const calls = await mockConfigSettings(page, {
+        sourceBundle: true,
+        workspaceSnapshots: [{ authMode: 'basic' }],
+        groupsConfig: {
+            version: 1,
+            groups: [
+                { id: 'a', name: 'A', teamIds: ['team-platform'] },
+                { id: 'b', name: 'B', teamIds: ['team-platform'] },
+            ],
+            defaultGroupId: 'b',
+            configRevision: 2,
+            source: 'jsonfile',
+        },
+    });
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    const gear = page.getByRole('button', { name: 'Manage team groups' }).first();
+    await gear.click();
+    const dialog = page.locator('.group-modal');
+    await dialog.getByRole('button', { name: 'Departments', exact: true }).click();
+    await dialog.getByRole('tab', { name: 'Team groups', exact: true }).click();
+    const departmentName = dialog.getByRole('textbox', { name: 'Department name', exact: true });
+    await expect(departmentName).toHaveValue('B');
+    await dialog.getByRole('button', { name: 'Delete group', exact: true }).click();
+    await expect(departmentName).toHaveValue('A');
+    await dialog.getByRole('button', { name: 'Delete group', exact: true }).click();
+    await expect(dialog.locator('.group-list-item')).toHaveCount(0);
+    await expect(dialog.getByText('No groups match this search.', { exact: true })).toBeVisible();
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await page.getByRole('button', { name: 'Discard', exact: true }).click();
+    await expect(dialog).toBeHidden();
+    await gear.click();
+    await dialog.getByRole('button', { name: 'Departments', exact: true }).click();
+    await dialog.getByRole('tab', { name: 'Team groups', exact: true }).click();
+    await expect(departmentName).toHaveValue('A');
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(0);
+    expect(errors).toEqual([]);
+    await captureDomParity(page, 'settings-empty-draft-reopen', '.group-modal');
+});
+```
 
 ### ST4: First-run configuration
 
@@ -1286,9 +1896,21 @@ Statements that stay in `App()` unless a later decision claims them: 627 `groupD
 | R4b | First-run JSX container (18125-18149). | The same flow visually; the tour still launches from the gear. |
 | R5 | Ledger tail (`test_first_run_group_configuration.js`, `test_analytics_source_guards.js` are re-pointed inside R4), budget, ontology, status. | Review the diff. |
 
+### G2 prerequisite: Fail-closed Settings permission fix
+
+**Branch:** `bugfix/220-settings-permission-fail-closed`. This is a separate behavior correction after ST4 and before ST5, approved on 2026-10-02. Do not fold it into a verbatim extraction commit.
+
+**Files:** current permission expressions/bootstrap/save-refresh in `frontend/src/dashboard.jsx`, `tests/ui/settings_admin_access.spec.js`, `tests/ui/settings_unified_save.spec.js`, `tests/test_epm_settings_source_guards.js` where coverage needs tightening, rebuilt `frontend/dist/`, and affected plan/index/ontology entries. Verify this file map against the post-ST4 tree. No backend policy, persistence, route, credential, or save-order change is in scope.
+
+**Change and acceptance:** require the explicit boolean `userCanEditSettings === true` before enabling administrator-section tabs, controls, or save steps. Initial/loading state, missing grants, `undefined`, `null`, `'true'`, `1`, and `false` deny editing regardless of `settingsAdminOnly`; that metadata never grants access by itself. An explicit true grant preserves the authorized journey. Apply the rule on bootstrap and post-save config refresh. When replacing the expression, omit the now-unused `settingsAdminOnly` getter with `const [, setSettingsAdminOnly] = useState(true)` while preserving the existing initialization and bootstrap/save-refresh setter writes; do not export unused metadata or remove potentially meaningful rerender writes to silence lint. The warning ceiling remains unchanged. Preserve independent collaborative Department-group writes and private EPM rights under `CONFIGURATION_OWNERSHIP.md`.
+
+**Verification:** add synthetic browser regressions that fail on the old expressions and pass with the fix, including missing `settingsAdminOnly` without a true user grant and `settingsAdminOnly: false` with absent/mistyped/false grants. Cover valid editor/non-editor responses, loading, post-save permission refresh, tab/control visibility, and zero administrator-section POSTs when denied. A valid non-admin must still save groups and private EPM settings under their own grants. Trace the backend response contract and retain the existing negative source pins. Keep global 401 lock, 403 handling, and 409 draft preservation unchanged.
+
+**Ladder:** one minimal fix-and-regression-test commit with rebuilt dist and affected guards/docs. Run relevant browser tests, Node/Python suites, extraction gate, and before/after captures (valid responses unchanged; malformed responses deny editing). Report the exact commit and validation scope, then stop under D8. Complete section 8 publication on explicit operator go and verify the merge before ST5. Record base/head SHAs, failing-before/passing-after evidence, full-suite results, and merge in the status table. No failing permission test is waived as a preserved quirk.
+
 ### ST5 (gate G2): Shared-config bootstrap, save, permissions, and modal shell
 
-**Entry gate.** Do not start until the operator approves G2. Rung R0 is a docs-only commit (an operator stop) that appends a design note here, before any code, comparing two candidate interfaces for the save orchestrator (design it twice): (a) a table-driven sequence of `{ id, isDirty, save }` records in the section 4 order, preserving both commit conventions, with `adminAccess.save()` as a fixed sequential step between `issueTypes` and the groups POST (only its grant requests are parallel); (b) keep `saveGroupsConfig` imperative and move it intact into a hook that receives the section hooks. Choose one with reasons. The note must also use this layering data (from the AST dry run):
+**Entry gate.** G2 is conditionally approved: start after the separate permission fix is merged and verified on this slice's base. Preserve `saveGroupsConfig` as an imperative sequence moved intact into a hook receiving the section hooks. R0 remains a docs-only commit and validation stop; append fix evidence, measured layering, and a comparison explaining why a table-driven `{ id, isDirty, save }` rewrite adds risk without helping this extraction. Keep `adminAccess.save()` as a fixed sequential step between `issueTypes` and the groups POST (only its grant requests are parallel). Re-verify this historical layering data:
 
 - Modal state (519-521, 625, 656-657, 678-679, 682) has 0 inputs and `adminAccess` (696) reads it, so it is a state layer called by 519. The cells 642-651 (`sharedConfigRevisionRef`, `settingsDraftSnapshotRef`, board fences) are inputs of every ST1 hook and need a state layer before 705.
 - Permissions' first output reader is `adminSettingsGate` at 949; its `openSettings: tab => openGroupManage(tab)` stays an arrow created in `App()` (passing `openGroupManage` at 2674 directly is a TDZ).
@@ -1298,14 +1920,14 @@ Statements that stay in `App()` unless a later decision claims them: 627 `groupD
 
 **Files:** create `frontend/src/settings/useSettingsPermissions.js`, `useSharedConfigSave.js`, `useSettingsModalState.js`, `SettingsModalContainer.jsx`. Targeted specs: `settings_unified_save`, `settings_admin_access`, `unconfigured_workspace_gate`, `global_auth_lock`, `server_unavailable_ui`, `load_performance`, `codebase_structure_smoke`.
 
-**Design points.** `useSettingsPermissions` exposes `applyBootstrapPermissions(config)` and `applySavePermissions(config)` (the second omits `setUserIsToolAdmin`, `setPerformanceAdminAvailable`, `setJiraUrl`, `setGroupQueryTemplateEnabled`); defaults `false`/`false`/`true`; values set only with `=== true` (and `Boolean(config.settingsAdminOnly)`, see D11). The write at 6819 stays where it is. `loadConfig` also writes non-Settings state (`setJiraUrl`, `setAuthMode`, `setBoardAllWorkAvailable`, `performanceGate.resolve`, auth-resume and recovery refs, the sprint catalog controller): extract only the Settings statements behind one named call such as `settings.applyBootstrap(config, preserve)` and leave the other writes where they are. `loadConfig` is also called from `retryBoardScopeConfiguration` (14873) and `useLatestWorkspaceConfig` (4283); keep each call site's closure semantics (section 4). Both `loadConfig` and `loadGroupsConfig` failure paths must still resolve `adminSettingsGate` (6957) and `groupsLoading`. Payload scope: each admin section is gated by `canEditSharedConfiguration && isXDirty && !skip`; every workspace-config POST carries `baseRevision` from `sharedConfigRevisionRef`; groups post via `buildSharedGroupsPayload`; personal preferences post separately; the footer Save persists all dirty editable sections together without mixing fields across endpoints.
+**Design points.** `useSettingsPermissions` exposes `applyBootstrapPermissions(config)` and `applySavePermissions(config)` (the second omits `setUserIsToolAdmin`, `setPerformanceAdminAvailable`, `setJiraUrl`, `setGroupQueryTemplateEnabled`); defaults `false`/`false`/`true`; editing is granted only by `userCanEditSettings === true`, preserving the verified D11 fix. `settingsAdminOnly` remains metadata and cannot grant editing. The write at 6819 stays where it is. `loadConfig` also writes non-Settings state (`setJiraUrl`, `setAuthMode`, `setBoardAllWorkAvailable`, `performanceGate.resolve`, auth-resume and recovery refs, the sprint catalog controller): extract only the Settings statements behind one named call such as `settings.applyBootstrap(config, preserve)` and leave the other writes where they are. `loadConfig` is also called from `retryBoardScopeConfiguration` (14873) and `useLatestWorkspaceConfig` (4283); keep each call site's closure semantics (section 4). Both `loadConfig` and `loadGroupsConfig` failure paths must still resolve `adminSettingsGate` (6957) and `groupsLoading`. Payload scope: each admin section is gated by `canEditSharedConfiguration && isXDirty && !skip`; every workspace-config POST carries `baseRevision` from `sharedConfigRevisionRef`; groups post via `buildSharedGroupsPayload`; personal preferences post separately; the footer Save persists all dirty editable sections together without mixing fields across endpoints.
 
 | Rung | Commit | Validation scope |
 | --- | --- | --- |
-| R0 | Design note appended to this section (docs only; includes the layering data above). | Review the note; approve the chosen interface. |
+| R0 | Design note appended to this section (docs only; includes permission-fix evidence and current layering). | Validate the approved imperative interface and verified prerequisites. |
 | R1 | Dead code (above). | SM-T. |
 | R2 | Full-order Playwright test: with every workspace section dirty, the recorded sequence (method and path, ignoring `/api/auth/csrf`) equals the section 4 order including the `adminAccess` grant requests as a fixed step between `issueTypes` and `POST /api/groups-config`; a fallback-path fixture (no `sharedConfig`) startup test; the permissions unit tests are written in R4a with `useSettingsPermissions`. | Review the diff. |
-| R4a | `useSettingsPermissions` and its unit tests (`true`, `'true'`, `1`, `undefined`, `null`, missing key; a missing `settingsAdminOnly`, labelled a known deviation per D11). | Sign in as a non-admin, an editor, and a tool admin: tab visibility and read-only state; Access tab states. Where an account is not available, the commit report names the Playwright test (`settings_admin_access.spec.js`) that covers that scope instead. |
+| R4a | `useSettingsPermissions` and its unit tests (`true`, `'true'`, `1`, `undefined`, `null`, missing key; missing/false `settingsAdminOnly` cannot override an absent or false user grant). Preserve the verified D11 fix; no known-deviation exemption. | Sign in as a non-admin, an editor, and a tool admin: tab visibility and read-only state; Access tab states. Where an account is not available, the commit report names the Playwright test (`settings_admin_access.spec.js`) that covers that scope instead. |
 | R4b | `useSharedConfigSave` per the approved interface. | Edit several sections, Save: order and conflict handling; the forced 409 and expired-auth cases are covered by the named Playwright tests, and you confirm the draft is preserved with the recovery actions and no replay. |
 | R4c | `useSettingsModalState` and `SettingsModalContainer.jsx`. | Open from gear/hotkey/Board call-to-action; tab keyboard navigation; discard prompt; first-run still works; auth-resume reopens the same tab. |
 | R5 | Ledger tail (`test_epm_settings_source_guards.js` fail-closed pins become unit assertions, `test_planning_action_source_guards.js:278`, `test_first_run_group_configuration.js:544-573`, `test_frontend_api_source_guards.js:11-17,:1204`, `test_onboarding_tour_utils.js`, `test_eng_board_*` `acceptedBoardConfigRef` pins are re-pointed inside R4), budget, ontology, status. | Review the diff. |
@@ -1314,32 +1936,37 @@ Statements that stay in `App()` unless a later decision claims them: 627 `groupD
 
 ## 12. Execution status
 
-Updated in each R5 commit (root `AGENTS.md` section 4: the plan must match the result). "Awaiting operator go" is a gate, not a document gate.
+Updated in each R5 commit and the separate permission-fix commit (root `AGENTS.md` section 4). Strategic approval does not replace a gate's verification prerequisites, per-commit validation, or publication approval.
 
 | PR | Slice | Status | `dashboard.jsx` lines after | Budget after | PR | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| PR-1 | Land the plan | Ready to publish after the single revision-3 commit | n/a | 18,213 | | third check complete |
-| PR0 | Tooling, coverage, baselines | Not started | n/a | 18,213 | | UI baseline pending |
+| PR-1 | Land revision 3 of the plan | Merged 2026-10-01 | n/a | 18,213 (historical) | #219, `c9ca8eff` | Revision-5 amendment remains local until authorized publication |
+| PR0 | Tooling, coverage, baselines | P0-1 through P0-5 validated; P0-6 awaiting operator validation | 18,434 (unchanged) | 18,434 | | Fresh base and refreshed parity/smoke recorded above; PR0 validation/publication pending |
 | SC1 | Scenario state container and seam | Not started | | | | |
 | SC2 | Single Scenario hook | Not started | | | | |
-| SC3 | Split the Scenario hook (G1) | Awaiting operator go | | | | |
+| SC3 | Split the Scenario hook (G1) | Approved strategy; not started | | | | Verify current-source boundaries after SC2 |
 | SC4 | Scenario view component | Not started | | | | |
 | ST1 | Shared-config section hooks | Not started | | | | |
 | ST2 | EPM settings | Not started | | | | |
 | ST3 | Team Groups and Labels | Not started | | | | |
 | ST4 | First-run configuration | Not started | | | | |
-| ST5 | Shared-config save, permissions, shell (G2) | Awaiting operator go | | | | |
+| Permission fix | Explicit Settings editing grant (G2 prerequisite) | Approved; not started | | | | Separate fix after ST4; verify merge before ST5 |
+| ST5 | Shared-config save, permissions, shell (G2) | Conditional approval; not started | | | | Permission fix + R0 validation required |
 
 ## 13. Program acceptance
 
 - Every PR merged in order; `dashboard.jsx` lower and its budget ratcheted in each slice that changes it (PR-1, PR0, and SC3 do not change it); the lint ceiling never raised.
-- Estimated end state (replace with measured values): SC1 + SC2 were measured at about -3,070 lines in the dry run; the two clusters total about 8,000 lines of the 18,203, and `App()` keeps call sites, destructuring, and glue, so the realistic end size is about 11,000 plus or minus 1,000 lines. If the measured size after ST4 is above that range, report it to the operator before ST5.
-- No route, payload, startup-count, sticky-order, analytics, or visual change; DOM parity diff empty in every R1/R3/R4 commit; the conservation residual itemised in every R4 commit message; the full Chromium `tests/ui` run passes (modulo the baseline failures recorded in PR0) before every push.
+- Size milestones are forecasts until measured. At checked main `ffeafb0e` (18,434 lines), unchanged Scenario ranges project about 15,364 after SC2 (historical net reduction ~3,070), no additional dashboard delta in SC3, and about 14,494 after SC4 (~870 net lines). Re-measure every actual base and net reduction. The full end forecast is approximately **10,000–12,000 lines after ST5**, including retained call sites, destructuring and glue. At ST4, record its measured count and project the remaining G2/ST5 net reduction from verified ranges minus added seams; report a material projected mismatch before ST5. Apply the final measured-size check after ST5. Missing the forecast requires an explanation of retained responsibilities and seam overhead, not unrelated deletions or relaxation of the per-slice ratchet.
+- Every affected source file/export is registered and within its frozen/ratcheted owner/interface/aggregate ceilings. Remaining-App responsibilities, readers, getter invocation phases and seam costs are current; no owner imports `dashboard.jsx`. Runtime-work comparisons use the same synthetic fixture and refreshed base, with no unexplained additional work or duplicate lifecycle resources. File size alone establishes no performance improvement.
+- Extraction slices have no route, payload, startup-count, sticky-order, analytics, or visual change; the separate G2 fix changes only invalid/missing-grant administrator editing. Extraction DOM parity diff is empty in every R1/R3/R4 commit with complete distinct captures; the conservation residual itemised in every R4 commit message; the full Chromium `tests/ui` run passes before every push, or the exact named failure and revision have an explicit operator waiver. A recorded baseline failure alone is not a waiver.
 - Docs: `FUTURE-codebase-operability-improvements.md` and `docs/plans/README.md` aligned; `docs/ontology.md` has "Scenario Planner ownership" and "Settings state ownership" entries and every existing entry that cites `dashboard.jsx` ownership (Connection recovery, Scenario recovery compute, Unconfigured-workspace gate, Department group label mapping, Board scope load authority, Startup config timeout) points at the new owner files, with verification dates and resolving paths.
 - On completion rename this file to `DONE-dashboard-scenario-settings-state-extraction.md` with the status note naming the PRs, per `docs/plans/AGENTS.md`.
 
 ## 14. Estimate, risks, and review log
 
-- **Effort.** `FUTURE-codebase-operability-improvements.md` estimates 5-8 days (Scenario) and 4-7 days (Settings). This plan has 11 PRs and 49 commit stops (41 without SC3: PR0 6, SC1 3, SC2 2, SC3 8, SC4 2, ST1 7, ST2 6, ST3 5, ST4 3, ST5 7 including the design note) plus one publication go per PR after PR-1 (D8); non-source commits (R2, R5, R0) stop for a one-line confirmation. With same-day operator turnaround and no rebases, three to four weeks; with the feature-work churn on `dashboard.jsx` (22 commits since 2026-09-01), plan on five to six.
-- **Largest risks.** Drift and rebase breaking validated commits (mitigated by the section 5 protocol and textual anchors); validation that is skipped or falsely green (mitigated by named Playwright tests, `sourceBundle: true`, and the dist hash); a silent non-verbatim edit or an `undefined` prop (mitigated by `check_move_conservation.mjs` and the checker's parameter and prop parity); effect reordering in Settings (mitigated by the effect-crossing table); a guard that goes vacuous (mitigated by `readOwnerSource` anchors). Each PR is revertable; there is no data migration.
-- **Review log.** Draft 1 (commit `Add first draft of ...`) was reviewed by four independent reviewers on 2026-10-01 and found not executable (hook cycles and ordering, range ownership, weak lint gate, guard table errors, thin coverage). Revision 2 (commit `Revise ... after independent review`) was reviewed by four fresh reviewers: Scenario and Settings halves READY WITH FIXES (dry runs on scratch copies passed for SC1, SC2, ST1, ST2; ST3 and ST4 after range fixes), tooling and cold-read NOT READY with mechanical fixes. Revision 3 applies those fixes: the single-hook Scenario design verified by dry run; the corrected checker (spread returns informational, `loc`, parameter and prop parity, alias following, owner-directory enforcement relative to the source root), the React-scope lint rules, the conservation script, the negative controls and `run.sh` combining both stages (all executed on a scratch copy of the unmodified tree: gate exit 0 with 0 errors and 119 warnings, seven of seven seeded defects caught); the ladder reordering (tests of new modules and guard re-points inside R4; R5 for ratchets and docs only; R6 publish); the failed-validation, push, and drift protocols; executable smoke scopes; the corrected Scenario coverage (epic bars only in Epic mode; lanes collapsed by default in Team mode); the Settings ownership corrections and layer data; the `adminAccess` ordering; the `setPerformanceAdminAvailable` position; the D11 deviation record; the full publication transaction for PR-1; and the operator's decisions on dead code, gates, and commit-gated execution. A targeted third check of revision 3 (tooling executed as printed and PR0 test code traced; Scenario table and process coherence; Settings ownership and layering with a cumulative ST1-ST4 dry run) found no Blocker and no P1; its P2 and Minor findings are folded into this revision (SC4 guard re-pointing, SC3 fields, R2 rule, quirk-pin scope, JSX tail ownership, ST5 hotkey-effect layering, ledger timing, capture anchors, tooling fixes). The plan stays `Proposed` until the operator approves it, including D12 and the gates.
+- **Effort.** `FUTURE-codebase-operability-improvements.md` estimates 5-8 days (Scenario) and 4-7 days (Settings). The extraction ladder has 11 PRs and 49 commit stops (PR0 6, SC1 3, SC2 2, SC3 8, SC4 2, ST1 7, ST2 6, ST3 5, ST4 3, ST5 7 including the design note); the separate permission fix adds one PR and one commit stop, for 12 PRs including completed PR-1 and 50 remaining ladder stops plus one publication go per PR after PR-1 (D8); non-source commits (R2, R5, R0) stop for a one-line confirmation. With same-day operator turnaround and no rebases, three to four weeks; with the feature-work churn on `dashboard.jsx` (22 commits since 2026-09-01), plan on five to six.
+- **Largest risks.** Drift and rebase breaking validated commits (mitigated by the section 5 protocol and textual anchors); validation that is skipped or falsely green (mitigated by named Playwright tests, `sourceBundle: true`, and the dist hash); a silent non-verbatim edit or an `undefined` prop (mitigated by `check_move_conservation.mjs` and the checker's parameter and prop parity); effect reordering in Settings (mitigated by the effect-crossing table); a guard that goes vacuous (mitigated by `readOwnerSource` anchors). There is no data migration, but rollback must account for transitive consumers, rebuilt dist and retained G2 permission behavior (section 5); an earlier prerequisite PR is not independently revertible after its consumers merge.
+- **Review log.** Draft 1 was reviewed by four independent reviewers on 2026-10-01 and found not executable: hook cycles/order, range ownership, weak gates, inaccurate guard maps, and thin characterization. Revision 2's scratch dry runs passed SC1, SC2, ST1, ST2, and corrected ST3/ST4 ranges; tooling and cold-read review still required fixes. Revision 3 added the executable lint/conservation gate, seven seeded controls, cumulative dry runs, commit ladder, and publication protocol; its targeted third review reported no P1. PR #219 landed that revision. The 2026-10-02 fourth review reproduced three P1 findings (ST3 effect order, asymmetric conservation, dashboard-only interface coverage), three P2 findings (backward-edge fixture, empty-only conflict fixture, overwritten auth-expiry capture), and stale PR-1 status. Revision 4 corrects each and adds executable controls; earlier lint-clean dry runs do not establish behavior safety.
+- **Revision-4 verification (2026-10-02).** Three subagents verified tooling, Scenario characterization, and Settings behavior on ignored scratch copies. The six tool blocks extracted from this document pass Node syntax checks / `bash -n`. `EXTRACTION_TOOL_DIR=tmp/issue220-printed fnm exec --using 20 node tmp/issue220-printed/tooling_controls.mjs` reports 14/14 controls passing. The printed interface checker on an archive of `ffeafb0e` reports 16 destructure sites in 41 modules, 0 enforced and 34 informational problems. `fnm exec --using 20 node tmp/issue220-printed/check_move_conservation.mjs --base HEAD frontend/src/settings/useGroupVisibilityPreferences.js` compares 1,499 statements on each side with 0 residuals and identical order across 138 effects. The revised Scenario spec passes twice in Chromium, producing eight captures per run with identical file lists and no DOM diff. The Settings synthetic browser probe passes on the current source (reopened A), demonstrates the early-normalization candidate selects B, and passes with the separate normalization hook at its original position (A); none sends a shared save or raises a runtime error. The printed DOM helper passes a Chromium check of opt-in no-op behavior, distinct draft/recovery captures, retained input properties, and duplicate-label rejection without overwrite.
+- **Revision-5 verification (2026-10-02).** Three subagents checked the additional findings against source. The replacement DOM helper passes Node syntax and 13/13 synthetic Chromium controls; the Scenario spec passes twice (eight identical labels, recursive DOM diff empty). Two source-bundled runtime probes pass; identical 5s idle work and Epic-focus variation are recorded above. A Node projection probe confirms 11 admin keys and the 10-key snapshot excluding `adminAccess`; an isolated ESLint probe confirms the permission-expression-only change adds an unused-getter warning and omitting that getter removes it while preserving setters. The six printed core tools pass syntax checks and their 14 additional controls still pass. The printed strict JSON scan reports both seeded nested render and deferred uses that the default scan misses, and rejects fatal diagnostics. Committing reusable nested-caller controls and implementing owner-growth checks remain explicit PR0 requirements; these probes do not mean the printed core gate already enforces them.
+- **Remaining entry requirements.** These probes validate the revised examples; they do not complete PR0 or approve extraction. The optional full-lint scratch probe could not load `eslint-plugin-react` from the cached dependencies; it provides no warning baseline or gate-pass evidence. PR0 must refresh all ranges/budgets, implement and run the full current-base gate, the existing 21 controls plus all new growth/timing controls and 13 DOM-helper controls, freeze owner/interface budgets, commit/refresh the runtime probe, capture every required Settings/Scenario state, and run the required Python, Node, build, and full Chromium suites. D12 is acknowledged, G1 is approved against current-repository boundaries, and G2 is conditional on the separate verified permission fix and preserving the imperative save sequence. PR0 P0-1 (`4149b615`) has operator validation; P0-2 (`a2cc9017`) has operator validation; P0-3 (`d7d47c60`) and P0-4 (`472e98d8`) have operator validation; P0-5 has operator validation; P0-6 awaits operator validation, with extraction rungs unexecuted. No publication is authorized.

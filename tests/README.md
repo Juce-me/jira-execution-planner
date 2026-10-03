@@ -73,6 +73,8 @@ fnm exec --using 20 npx playwright test tests/ui/dom_parity_helpers.spec.js --br
 
 Scenario characterization in `ui/scenario_draft_history.spec.js` covers eight timeline states with a visible forward dependency, overlapping same-assignee work, and a nonconflicting bar that Conflicts Only removes and restores. `ui/scenario_draft_collaboration.spec.js` captures mounted presence, advisory-lock, dirty-conflict and blocked-writeback states, and pins Assignee mode after switching groups away and back. Set `JEP_SCENARIO_SCREENSHOT_DIR` to a fresh ignored directory for the headed review; the eight-state screenshot test allows 60 seconds for its repeated visual-settle waits, while ordinary behavior/parity runs retain the default timeout. The inactive `scenario_focus_positions.spec.js` remains untouched and does not load real fixtures.
 
+`frontend_source_helpers.js` reads explicit owner files and recursively collects `.js`, `.jsx`, and `.mjs` sources. Pass an existing positive anchor for negative pins so a move cannot silently empty their scope. `test_auth_isolation_source_guard.js` checks dashboard, Scenario and Settings owners for forbidden local auth behavior and resolves each of the six window keydown handlers within its own file, requiring the terminal auth latch before the first key read. `test_extraction_quirk_pins.js` pins the existing 17 Scenario and 33 Settings analytics calls across dashboard/Scenario/Settings/EPM and the edge-update declaration, layout dependency, and late-assignment order. These checks characterize the current source without changing application behavior.
+
 ## Test Categories
 
 ### Unit Tests

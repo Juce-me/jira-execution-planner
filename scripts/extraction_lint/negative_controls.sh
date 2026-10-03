@@ -43,7 +43,7 @@ control() {   # control <name> <expected finding> <python seed>
 control missing-jsx-import 'react/jsx-no-undef' \
 's = re.sub(r"^import SettingsModal[^\n]*\n", "", s, count=1, flags=re.M)'
 control use-before-define 'no-use-before-define' \
-'m = "const [scenarioLoading, setScenarioLoading] = useState(false);"
+'m = "const scenarioState = useScenarioState({ initialLaneMode: savedPrefsRef.current.scenarioLaneMode ?? " + chr(39) + "team" + chr(39) + " });"
 s = s.replace(m, m + "\n            const __probe = engWorkspaceConfigured;", 1)'
 control undefined-name 'no-undef' \
 's = s.replace("const registerScenarioIssueRef =", "const registerScenarioIssueRefMoved =", 1)'

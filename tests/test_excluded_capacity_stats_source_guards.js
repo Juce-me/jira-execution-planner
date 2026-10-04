@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { readOwnerSource } = require('./frontend_source_helpers');
 const { readDashboardCssSource } = require('./css_source_helpers');
 
 const repoRoot = path.join(__dirname, '..');
@@ -839,7 +840,8 @@ test('Stats Teams and capacity-table links keep Ad Hoc consistent with reclassif
 });
 
 test('Scenario payload sends only excluded capacity, never Ad Hoc keys', () => {
-    const payloadBlock = dashboardSource.match(/const buildScenarioPayload = \(\) => \{[\s\S]*?\n {12}\};/)?.[0] || '';
+    const scenarioSource = readOwnerSource(['frontend/src/scenario/useScenarioPlanner.js'], { anchor: 'export function useScenarioPlanner(' });
+    const payloadBlock = scenarioSource.match(/const buildScenarioPayload = \(\) => \{[\s\S]*?\n\s*\};/)?.[0] || '';
     assert.ok(payloadBlock, 'Expected to locate buildScenarioPayload');
     assert.ok(
         payloadBlock.includes('excluded_capacity_epics: Array.from(excludedEpicSet)'),

@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { readOwnerSource } = require('./frontend_source_helpers');
 
 const frontendSrcPath = path.join(__dirname, '..', 'frontend', 'src');
 const apiPathSegment = `${path.sep}api${path.sep}`;
@@ -1466,7 +1467,10 @@ test('Scenario API module owns draft, realtime, and run endpoint construction', 
     assert.ok(scenarioApiSource.includes('/api/scenario/drafts'), 'Expected draft save URL construction in scenarioApi.js');
     assert.ok(scenarioApiSource.includes('/api/scenario'), 'Expected scenario run URL construction in scenarioApi.js');
     assert.ok(scenarioApiSource.includes("'X-CSRF-Token': csrfToken"), 'Expected scenario CSRF header in scenarioApi.js');
-    assert.ok(dashboardSource.includes("from './api/scenarioApi.js'"), 'Expected dashboard to import scenario API wrappers');
+    const plannerSource = readOwnerSource(['frontend/src/scenario/useScenarioPlanner.js'], { anchor: 'export function useScenarioPlanner(' });
+    assert.ok(plannerSource.includes("from '../api/scenarioApi.js'"), 'Expected planner to import scenario API wrappers');
+    assert.ok(dashboardSource.includes("from './scenario/useScenarioPlanner.js'"), 'Expected dashboard to import the Scenario planner');
+    assert.equal(/(^|[^.])\/api\/scenario/.test(plannerSource), false, 'useScenarioPlanner.js must not own scenario endpoint literals');
     assert.equal(/(^|[^.])\/api\/scenario/.test(dashboardSource), false, 'dashboard.jsx must not own scenario endpoint literals');
 });
 

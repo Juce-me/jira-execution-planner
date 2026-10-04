@@ -47,9 +47,9 @@ test('frontend source has no legacy scenario overrides route strings', () => {
 });
 
 test('scenario draft polling helper returns data without mutating realtime state', () => {
-    const dashboardSource = readSource(dashboardPath);
-    const helperMatch = dashboardSource.match(/const pollScenarioDraftEvents = [\s\S]*?requestScenarioDraftEvents[\s\S]*?;\n\n\s*const saveScenarioDraftVersion/);
-    const pollingEffectMatch = dashboardSource.match(/React\.useEffect\(\(\) => \{\n\s*if \(!scenarioActiveDraftReady\)[\s\S]*?window\.setInterval\(poll, 5000\);[\s\S]*?\n\s*\}, \[scenarioActiveDraftReady, scenarioActiveDraftId, scenarioScopeKey, scenarioDraftLastEventNumber\]\);/);
+    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario/useScenarioPlanner.js'], { anchor: 'export function useScenarioPlanner(' });
+    const helperMatch = scenarioSource.match(/const pollScenarioDraftEvents = [\s\S]*?requestScenarioDraftEvents[\s\S]*?;\n\n\s*const saveScenarioDraftVersion/);
+    const pollingEffectMatch = scenarioSource.match(/React\.useEffect\(\(\) => \{\n\s*if \(!scenarioActiveDraftReady\)[\s\S]*?window\.setInterval\(poll, 5000\);[\s\S]*?\n\s*\}, \[scenarioActiveDraftReady, scenarioActiveDraftId, scenarioScopeKey, scenarioDraftLastEventNumber\]\);/);
 
     assert.ok(helperMatch, 'Expected pollScenarioDraftEvents helper to exist.');
     assert.ok(pollingEffectMatch, 'Expected scenario draft polling effect to exist.');
@@ -67,34 +67,34 @@ test('scenario draft polling helper returns data without mutating realtime state
 });
 
 test('scenario realtime self filtering learns identity from collaboration responses and keeps stable drag lifecycle', () => {
-    const dashboardSource = readSource(dashboardPath);
-    const remoteEditorsMatch = dashboardSource.match(/const scenarioRemoteEditors = React\.useMemo[\s\S]*?const scenarioIssueLockWarnings = React\.useMemo/);
-    const lockWarningsMatch = dashboardSource.match(/const scenarioIssueLockWarnings = React\.useMemo[\s\S]*?\}, \[scenarioDraftLocks, isScenarioCurrentUser\]\);/);
-    const dragEffectMatch = dashboardSource.match(/const scenarioDraggingIssueKey = scenarioDragState\?\.issueKey \|\| '';\n\s*React\.useEffect\(\(\) => \{[\s\S]*?\n\s*\}, \[scenarioDraggingIssueKey\]\);/);
+    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario/useScenarioPlanner.js'], { anchor: 'export function useScenarioPlanner(' });
+    const remoteEditorsMatch = scenarioSource.match(/const scenarioRemoteEditors = React\.useMemo[\s\S]*?const scenarioIssueLockWarnings = React\.useMemo/);
+    const lockWarningsMatch = scenarioSource.match(/const scenarioIssueLockWarnings = React\.useMemo[\s\S]*?\}, \[scenarioDraftLocks, isScenarioCurrentUser\]\);/);
+    const dragEffectMatch = scenarioSource.match(/const scenarioDraggingIssueKey = scenarioDragState\?\.issueKey \|\| '';\n\s*React\.useEffect\(\(\) => \{[\s\S]*?\n\s*\}, \[scenarioDraggingIssueKey\]\);/);
 
-    assert.equal(dashboardSource.includes("displayName !== 'profile@example.com'"), false, 'Scenario presence filtering must not hard-code the test fixture email.');
-    assert.equal(dashboardSource.includes("holderDisplayName || '').trim() !== 'profile@example.com'"), false, 'Scenario lock filtering must not hard-code the test fixture email.');
-    assert.equal(dashboardSource.includes('fetchAuthStatus(BACKEND_URL)'), false, 'Scenario realtime self filtering must not depend on auth status profile fields.');
-    assert.ok(dashboardSource.includes('learnScenarioCurrentUserFromPresence(data.presence)'), 'Presence heartbeat responses must teach the current user identity.');
-    assert.ok(dashboardSource.includes('learnScenarioCurrentUserFromLock(data.lock)'), 'Own lock responses must teach the current user identity.');
+    assert.equal(scenarioSource.includes("displayName !== 'profile@example.com'"), false, 'Scenario presence filtering must not hard-code the test fixture email.');
+    assert.equal(scenarioSource.includes("holderDisplayName || '').trim() !== 'profile@example.com'"), false, 'Scenario lock filtering must not hard-code the test fixture email.');
+    assert.equal(scenarioSource.includes('fetchAuthStatus(BACKEND_URL)'), false, 'Scenario realtime self filtering must not depend on auth status profile fields.');
+    assert.ok(scenarioSource.includes('learnScenarioCurrentUserFromPresence(data.presence)'), 'Presence heartbeat responses must teach the current user identity.');
+    assert.ok(scenarioSource.includes('learnScenarioCurrentUserFromLock(data.lock)'), 'Own lock responses must teach the current user identity.');
     assert.ok(remoteEditorsMatch, 'Expected remote editor filtering to exist.');
     assert.ok(lockWarningsMatch, 'Expected lock warning filtering to exist.');
     assert.ok(remoteEditorsMatch[0].includes('isScenarioCurrentUser([item?.userId, item?.displayName])'), 'Presence filtering must compare against current user identifiers.');
     assert.ok(lockWarningsMatch[0].includes('isScenarioCurrentUser([lock?.holderUserId, lock?.holderDisplayName])'), 'Lock filtering must compare against current user identifiers.');
     assert.ok(remoteEditorsMatch[0].includes('!isScenarioPresenceExpired(item)'), 'Presence rendering must filter expired historical presence rows.');
     assert.ok(lockWarningsMatch[0].includes('!isScenarioLockExpired(lock)'), 'Lock rendering must filter expired historical locks.');
-    assert.ok(dashboardSource.includes('const SCENARIO_PRESENCE_TTL_MS = 30000;'), 'Presence lastSeenAt expiry must use the server TTL window.');
-    assert.ok(dashboardSource.includes('lastSeenAt + SCENARIO_PRESENCE_TTL_MS <= Date.now()'), 'Presence lastSeenAt must not be treated as an absolute expiry timestamp.');
-    assert.ok(dashboardSource.includes('if (isScenarioPresenceExpired(payload.presence)) return;'), 'Presence events must not store expired historical presence rows.');
-    assert.ok(dashboardSource.includes('if (isScenarioLockExpired(payload.lock))'), 'Lock events must not store expired historical locks.');
-    assert.ok(dashboardSource.includes('const draftData = await fetchScenarioDraft(historyScopeKey, controller.signal);'), 'Opening draft history must refresh draft metadata after stale realtime events with an abort signal.');
-    assert.ok(dashboardSource.includes('scenarioHistoryRefreshControllerRef.current !== controller'), 'History refresh responses must be ignored after a newer request or scope change.');
-    assert.ok(dashboardSource.includes('!isScenarioScopeDraftCurrent(historyScopeKey, historyDraftId)'), 'History refresh must verify current scope and draft before mutating state.');
-    assert.ok(dashboardSource.includes('scenarioHistoryActionControllerRef.current !== controller'), 'History version/rollback responses must be ignored after a newer request or scope change.');
-    assert.ok(dashboardSource.includes('!isScenarioScopeDraftCurrent(expectedScopeKey, draftId)'), 'History actions must verify current scope and draft before mutating overrides or metadata.');
-    assert.ok(dashboardSource.includes('fetchScenarioDraftVersion(draftId, action.versionNumber, controller.signal)'), 'History version fetches must receive an abort signal.');
-    assert.ok(dashboardSource.includes('controller.signal\n                    );'), 'History rollback writes must receive an abort signal.');
-    assert.equal(dashboardSource.includes('setScenarioOverrides(overrides);') && dashboardSource.indexOf('const openScenarioDraftHistory') < dashboardSource.indexOf('setScenarioOverrides(overrides);'), false, 'History refresh must not apply remote overrides over local edits.');
+    assert.ok(scenarioSource.includes('const SCENARIO_PRESENCE_TTL_MS = 30000;'), 'Presence lastSeenAt expiry must use the server TTL window.');
+    assert.ok(scenarioSource.includes('lastSeenAt + SCENARIO_PRESENCE_TTL_MS <= Date.now()'), 'Presence lastSeenAt must not be treated as an absolute expiry timestamp.');
+    assert.ok(scenarioSource.includes('if (isScenarioPresenceExpired(payload.presence)) return;'), 'Presence events must not store expired historical presence rows.');
+    assert.ok(scenarioSource.includes('if (isScenarioLockExpired(payload.lock))'), 'Lock events must not store expired historical locks.');
+    assert.ok(scenarioSource.includes('const draftData = await fetchScenarioDraft(historyScopeKey, controller.signal);'), 'Opening draft history must refresh draft metadata after stale realtime events with an abort signal.');
+    assert.ok(scenarioSource.includes('scenarioHistoryRefreshControllerRef.current !== controller'), 'History refresh responses must be ignored after a newer request or scope change.');
+    assert.ok(scenarioSource.includes('!isScenarioScopeDraftCurrent(historyScopeKey, historyDraftId)'), 'History refresh must verify current scope and draft before mutating state.');
+    assert.ok(scenarioSource.includes('scenarioHistoryActionControllerRef.current !== controller'), 'History version/rollback responses must be ignored after a newer request or scope change.');
+    assert.ok(scenarioSource.includes('!isScenarioScopeDraftCurrent(expectedScopeKey, draftId)'), 'History actions must verify current scope and draft before mutating overrides or metadata.');
+    assert.ok(scenarioSource.includes('fetchScenarioDraftVersion(draftId, action.versionNumber, controller.signal)'), 'History version fetches must receive an abort signal.');
+    assert.ok(scenarioSource.includes('controller.signal\n            );'), 'History rollback writes must receive an abort signal.');
+    assert.equal(scenarioSource.includes('setScenarioOverrides(overrides);') && scenarioSource.indexOf('const openScenarioDraftHistory') < scenarioSource.indexOf('setScenarioOverrides(overrides);'), false, 'History refresh must not apply remote overrides over local edits.');
     assert.ok(dragEffectMatch, 'Drag mouse effect must be keyed by dragged issue, not every drag state update.');
     assert.equal(dragEffectMatch[0].includes('[scenarioDragState,'), false, 'Drag effect dependencies must not include mutable scenarioDragState.');
 });
@@ -117,10 +117,10 @@ test('generated frontend dist changes require frontend source changes', () => {
 });
 
 test('dirty scenario draft reruns are blocked before loading new scenario data', () => {
-    const dashboardSource = readSource(dashboardPath);
-    const dirtyGuardIndex = dashboardSource.indexOf('if (!recovery && scenarioHasUnsavedChanges) {');
-    const scenarioFetchIndex = dashboardSource.indexOf('requestScenarioRun(BACKEND_URL, buildScenarioPayload(),');
-    const setScenarioDataIndex = dashboardSource.indexOf('setScenarioData(data);');
+    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario/useScenarioPlanner.js'], { anchor: 'export function useScenarioPlanner(' });
+    const dirtyGuardIndex = scenarioSource.indexOf('if (!recovery && scenarioHasUnsavedChanges) {');
+    const scenarioFetchIndex = scenarioSource.indexOf('requestScenarioRun(BACKEND_URL, buildScenarioPayload(),');
+    const setScenarioDataIndex = scenarioSource.indexOf('setScenarioData(data);');
 
     assert.ok(dirtyGuardIndex > -1, 'Expected runScenario to guard any dirty draft changes with derived dirty state.');
     assert.ok(scenarioFetchIndex > -1, 'Expected runScenario scenario fetch to exist.');
@@ -128,26 +128,26 @@ test('dirty scenario draft reruns are blocked before loading new scenario data',
     assert.ok(dirtyGuardIndex < scenarioFetchIndex, 'Dirty draft guard must run before scenario fetch.');
     assert.ok(dirtyGuardIndex < setScenarioDataIndex, 'Dirty draft guard must run before scenario data is applied.');
     assert.match(
-        dashboardSource.slice(dirtyGuardIndex, scenarioFetchIndex),
+        scenarioSource.slice(dirtyGuardIndex, scenarioFetchIndex),
         /pendingScopeChange:\s*\{\s*scopeKey:\s*scenarioScopeKey\s*\}[\s\S]*return;/,
         'Dirty draft guard must defer the pending scope and return before loading new data.',
     );
     assert.equal(
-        dashboardSource.slice(dirtyGuardIndex, scenarioFetchIndex).includes('scenarioDraftMeta.scopeKey !== scenarioScopeKey'),
+        scenarioSource.slice(dirtyGuardIndex, scenarioFetchIndex).includes('scenarioDraftMeta.scopeKey !== scenarioScopeKey'),
         false,
         'Dirty draft guard must not be limited to cross-scope changes.',
     );
     assert.equal(
-        dashboardSource.slice(dirtyGuardIndex, scenarioFetchIndex).includes("scenarioDraftMeta.dirtyState === 'dirty'"),
+        scenarioSource.slice(dirtyGuardIndex, scenarioFetchIndex).includes("scenarioDraftMeta.dirtyState === 'dirty'"),
         false,
         'Dirty draft guard must not rely on async dirtyState mirror.',
     );
 });
 
 test('clean scenario scope resets draft state before new scenario data is applied', () => {
-    const dashboardSource = readSource(dashboardPath);
-    const resetMatch = dashboardSource.match(/setScenarioOverrides\(\{\}\);\n[\s\S]*?setScenarioDraftMeta\(prev => \(\{\n\s*\.\.\.prev,[\s\S]*?activeDraft: null,[\s\S]*?savedOverrides: \{\},[\s\S]*?scopePayload,[\s\S]*?scopeKey: scenarioScopeKey,[\s\S]*?\}\)\);/);
-    const setScenarioDataIndex = dashboardSource.indexOf('setScenarioData(data);');
+    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario/useScenarioPlanner.js'], { anchor: 'export function useScenarioPlanner(' });
+    const resetMatch = scenarioSource.match(/setScenarioOverrides\(\{\}\);\n[\s\S]*?setScenarioDraftMeta\(prev => \(\{\n\s*\.\.\.prev,[\s\S]*?activeDraft: null,[\s\S]*?savedOverrides: \{\},[\s\S]*?scopePayload,[\s\S]*?scopeKey: scenarioScopeKey,[\s\S]*?\}\)\);/);
+    const setScenarioDataIndex = scenarioSource.indexOf('setScenarioData(data);');
 
     const foundResetIndex = resetMatch ? resetMatch.index : -1;
 
@@ -155,7 +155,7 @@ test('clean scenario scope resets draft state before new scenario data is applie
     assert.ok(setScenarioDataIndex > -1, 'Expected runScenario to apply scenario data.');
     assert.ok(foundResetIndex < setScenarioDataIndex, 'Draft metadata reset must happen before new scenario data is visible.');
 
-    const resetSource = dashboardSource.slice(foundResetIndex, setScenarioDataIndex);
+    const resetSource = scenarioSource.slice(foundResetIndex, setScenarioDataIndex);
     assert.ok(resetSource.includes('setScenarioOverrides({});'), 'Draft reset must clear old overrides before new scenario data is visible.');
     assert.ok(resetSource.includes('loadingHistory: Boolean(scenarioScopeKey)'), 'Draft reset must mark draft history loading for the new scope.');
     assert.ok(resetSource.includes("dirtyState: 'clean'"), 'Draft reset must leave the new scope in a clean state while loading.');
@@ -166,8 +166,8 @@ test('clean scenario scope resets draft state before new scenario data is applie
 });
 
 test('discarding scenario overrides preserves loaded draft metadata', () => {
-    const dashboardSource = readSource(dashboardPath);
-    const discardMatch = dashboardSource.match(/const discardScenarioOverrides = \(\) => \{[\s\S]*?\n\s*\};\n\n\s*const scenarioLaneForIssue/);
+    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario/useScenarioPlanner.js'], { anchor: 'export function useScenarioPlanner(' });
+    const discardMatch = scenarioSource.match(/const discardScenarioOverrides = \(\) => \{[\s\S]*?\n\s*\};\n\n\s*const scenarioLaneForIssue/);
 
     assert.ok(discardMatch, 'Expected discardScenarioOverrides function to exist.');
     const discardSource = discardMatch[0];
@@ -182,10 +182,10 @@ test('discarding scenario overrides preserves loaded draft metadata', () => {
 });
 
 test('draft save route sends csrf and baseDraftRevision', () => {
-    const dashboardSource = readSource(dashboardPath);
+    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario/useScenarioPlanner.js'], { anchor: 'export function useScenarioPlanner(' });
     const scenarioApiSource = readSource(scenarioApiPath);
-    const saveHelperMatch = dashboardSource.match(/const saveScenarioDraftVersion = async[\s\S]*?\n\s*\};\n\n\s*const fetchScenarioDraftVersion/);
-    const saveCallerMatch = dashboardSource.match(/const saveScenarioDraft = async \(\) => \{[\s\S]*?\n\s*\};\n\n\s*const discardScenarioOverrides/);
+    const saveHelperMatch = scenarioSource.match(/const saveScenarioDraftVersion = async[\s\S]*?\n\s*\};\n\n\s*const fetchScenarioDraftVersion/);
+    const saveCallerMatch = scenarioSource.match(/const saveScenarioDraft = async \(\) => \{[\s\S]*?\n\s*\};\n\n\s*const discardScenarioOverrides/);
 
     assert.ok(saveHelperMatch, 'Expected saveScenarioDraftVersion helper to exist.');
     assert.ok(saveCallerMatch, 'Expected saveScenarioDraft caller to exist.');
@@ -204,11 +204,11 @@ test('draft save route sends csrf and baseDraftRevision', () => {
 });
 
 test('scenario draft metadata stores display-safe scope payload without group membership', () => {
-    const dashboardSource = readSource(dashboardPath);
+    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario/useScenarioPlanner.js'], { anchor: 'export function useScenarioPlanner(' });
     const stateSourceOwner = readOwnerSource(['frontend/src/scenario/useScenarioState.js'], { anchor: 'export function useScenarioState(' });
     const stateMatch = stateSourceOwner.match(/const \[scenarioDraftMeta, setScenarioDraftMeta\] = useState\(\{[\s\S]*?\n\s*\}\);/);
-    const scopeBuilderMatch = dashboardSource.match(/const buildScenarioDraftScope = \(\) => \(\{[\s\S]*?\n\s*\}\);/);
-    const runScenarioMatch = dashboardSource.match(/const runScenario = async \(\{ recovery = null \} = \{\}\) => \{[\s\S]*?\n\s*\};\n\n\s*const toggleScenarioEditMode/);
+    const scopeBuilderMatch = scenarioSource.match(/const buildScenarioDraftScope = \(\) => \(\{[\s\S]*?\n\s*\}\);/);
+    const runScenarioMatch = scenarioSource.match(/const runScenario = async \(\{ recovery = null \} = \{\}\) => \{[\s\S]*?\n\s*\};\n\n\s*const toggleScenarioEditMode/);
 
     assert.ok(stateMatch, 'Expected scenarioDraftMeta state to exist.');
     assert.ok(scopeBuilderMatch, 'Expected buildScenarioDraftScope to exist.');
@@ -230,8 +230,8 @@ test('scenario draft metadata stores display-safe scope payload without group me
 });
 
 test('draft load failure clears stale overrides for the newly applied scope', () => {
-    const dashboardSource = readSource(dashboardPath);
-    const failureMatch = dashboardSource.match(/catch \(err\) \{\n\s*if \(err\.name === 'AbortError'\) throw err;[\s\S]*?Failed to load scenario draft\.[\s\S]*?\n\s*\}\);/);
+    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario/useScenarioPlanner.js'], { anchor: 'export function useScenarioPlanner(' });
+    const failureMatch = scenarioSource.match(/catch \(err\) \{\n\s*if \(err\.name === 'AbortError'\) throw err;[\s\S]*?Failed to load scenario draft\.[\s\S]*?\n\s*\}\);/);
 
     assert.ok(failureMatch, 'Expected draft-load failure handler to exist.');
     const failureSource = failureMatch[0];
@@ -244,12 +244,12 @@ test('draft load failure clears stale overrides for the newly applied scope', ()
 });
 
 test('save and discard use normalized dirty state rather than override count', () => {
-    const dashboardSource = readSource(dashboardPath);
-    const dirtyStateMatch = dashboardSource.match(/const scenarioHasUnsavedChanges = scenarioOverridesSignature !== savedScenarioOverridesSignature;/);
-    const saveCallerMatch = dashboardSource.match(/const saveScenarioDraft = async \(\) => \{[\s\S]*?\n\s*\};\n\n\s*const discardScenarioOverrides/);
-    const discardMatch = dashboardSource.match(/const discardScenarioOverrides = \(\) => \{[\s\S]*?\n\s*\};\n\n\s*const scenarioLaneForIssue/);
-    const saveButtonMatch = dashboardSource.match(/onClick=\{saveScenarioDraft\}[\s\S]*?title="Save draft overrides to server"/);
-    const discardButtonMatch = dashboardSource.match(/onClick=\{discardScenarioOverrides\}[\s\S]*?title="Discard all overrides"/);
+    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario/useScenarioPlanner.js'], { anchor: 'export function useScenarioPlanner(' });
+    const dirtyStateMatch = scenarioSource.match(/const scenarioHasUnsavedChanges = scenarioOverridesSignature !== savedScenarioOverridesSignature;/);
+    const saveCallerMatch = scenarioSource.match(/const saveScenarioDraft = async \(\) => \{[\s\S]*?\n\s*\};\n\n\s*const discardScenarioOverrides/);
+    const discardMatch = scenarioSource.match(/const discardScenarioOverrides = \(\) => \{[\s\S]*?\n\s*\};\n\n\s*const scenarioLaneForIssue/);
+    const saveButtonMatch = scenarioSource.match(/onClick=\{saveScenarioDraft\}[\s\S]*?title="Save draft overrides to server"/);
+    const discardButtonMatch = scenarioSource.match(/onClick=\{discardScenarioOverrides\}[\s\S]*?title="Discard all overrides"/);
 
     assert.ok(dirtyStateMatch, 'Expected normalized dirty comparison to be derived.');
     assert.ok(saveCallerMatch, 'Expected saveScenarioDraft caller to exist.');
@@ -262,8 +262,8 @@ test('save and discard use normalized dirty state rather than override count', (
     const saveButtonSource = saveButtonMatch[0];
     const discardButtonSource = discardButtonMatch[0];
 
-    assert.ok(dashboardSource.includes('const scenarioCanSaveDraft = scenarioHasUnsavedChanges'), 'Save eligibility must use dirty state.');
-    assert.ok(dashboardSource.includes('!scenarioDraftMeta.loadingHistory'), 'Save eligibility must block while draft metadata is loading.');
+    assert.ok(scenarioSource.includes('const scenarioCanSaveDraft = scenarioHasUnsavedChanges'), 'Save eligibility must use dirty state.');
+    assert.ok(scenarioSource.includes('!scenarioDraftMeta.loadingHistory'), 'Save eligibility must block while draft metadata is loading.');
     assert.equal(saveCallerSource.includes('scenarioOverrideCount === 0'), false, 'Save must allow empty override versions when dirty.');
     assert.ok(discardSource.includes('!scenarioHasUnsavedChanges'), 'Discard early return must use dirty state.');
     assert.equal(discardSource.includes('scenarioOverrideCount === 0'), false, 'Discard must restore saved overrides even when current overrides are empty.');
@@ -283,10 +283,10 @@ test('connection recovery captures dirty Scenario work even when another ENG mod
 });
 
 test('dirty stored draft scope can be saved after current scenario data is cleared', () => {
-    const dashboardSource = readSource(dashboardPath);
-    const saveEligibilityMatch = dashboardSource.match(/const scenarioHasStoredDraftScope = Boolean\([\s\S]*?\);\n\s*const scenarioCanSaveDraft =[\s\S]*?;\n\s*const scenarioSprintBounds/);
-    const saveCallerMatch = dashboardSource.match(/const saveScenarioDraft = async \(\) => \{[\s\S]*?\n\s*\};\n\n\s*const discardScenarioOverrides/);
-    const saveButtonMatch = dashboardSource.match(/onClick=\{saveScenarioDraft\}[\s\S]*?title="Save draft overrides to server"/);
+    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario/useScenarioPlanner.js'], { anchor: 'export function useScenarioPlanner(' });
+    const saveEligibilityMatch = scenarioSource.match(/const scenarioHasStoredDraftScope = Boolean\([\s\S]*?\);\n\s*const scenarioCanSaveDraft =[\s\S]*?;\n\s*const scenarioSprintBounds/);
+    const saveCallerMatch = scenarioSource.match(/const saveScenarioDraft = async \(\) => \{[\s\S]*?\n\s*\};\n\n\s*const discardScenarioOverrides/);
+    const saveButtonMatch = scenarioSource.match(/onClick=\{saveScenarioDraft\}[\s\S]*?title="Save draft overrides to server"/);
 
     assert.ok(saveEligibilityMatch, 'Expected shared save eligibility to exist.');
     assert.ok(saveCallerMatch, 'Expected saveScenarioDraft caller to exist.');
@@ -326,9 +326,9 @@ test('scenario draft load and save failures are visibly rendered', () => {
 });
 
 test('draft save conflict blocks blind save with keep-editing and history actions', () => {
-    const dashboardSource = readSource(dashboardPath);
-    const saveEligibilityMatch = dashboardSource.match(/const scenarioCanSaveDraft = scenarioHasUnsavedChanges[\s\S]*?;\n\s*const scenarioSprintBounds/);
-    const saveCatchMatch = dashboardSource.match(/const saveScenarioDraft = async \(\) => \{[\s\S]*?\n\s*\};\n\n\s*const discardScenarioOverrides/);
+    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario/useScenarioPlanner.js'], { anchor: 'export function useScenarioPlanner(' });
+    const saveEligibilityMatch = scenarioSource.match(/const scenarioCanSaveDraft = scenarioHasUnsavedChanges[\s\S]*?;\n\s*const scenarioSprintBounds/);
+    const saveCatchMatch = scenarioSource.match(/const saveScenarioDraft = async \(\) => \{[\s\S]*?\n\s*\};\n\n\s*const discardScenarioOverrides/);
 
     assert.ok(saveEligibilityMatch, 'Expected shared save eligibility to exist.');
     assert.ok(saveCatchMatch, 'Expected save failure handler to exist.');
@@ -338,11 +338,11 @@ test('draft save conflict blocks blind save with keep-editing and history action
     const saveCatchIndex = saveSource.indexOf('} catch (err) {');
     assert.ok(saveCatchIndex > -1, 'Expected save failure catch block to exist.');
     const saveCatchSource = saveSource.slice(saveCatchIndex);
-    const conflictRenderIndex = dashboardSource.indexOf('{scenarioDraftMeta.conflict && (');
-    const scenarioLoadingIndex = dashboardSource.indexOf('{scenarioLoading &&', conflictRenderIndex);
+    const conflictRenderIndex = scenarioSource.indexOf('{scenarioDraftMeta.conflict && (');
+    const scenarioLoadingIndex = scenarioSource.indexOf('{scenarioLoading &&', conflictRenderIndex);
     assert.ok(conflictRenderIndex > -1, 'Expected conflict render block to exist.');
     assert.ok(scenarioLoadingIndex > conflictRenderIndex, 'Expected scenario loading block after conflict render.');
-    const conflictRenderSource = dashboardSource.slice(conflictRenderIndex, scenarioLoadingIndex);
+    const conflictRenderSource = scenarioSource.slice(conflictRenderIndex, scenarioLoadingIndex);
 
     assert.ok(saveEligibilitySource.includes("scenarioDraftMeta.dirtyState !== 'conflict_remote'"), 'Unresolved remote conflicts must block blind Save.');
     assert.ok(saveEligibilitySource.includes('!scenarioDraftMeta.conflict'), 'Visible conflict banners must block Save until resolved.');
@@ -365,16 +365,16 @@ test('draft save conflict blocks blind save with keep-editing and history action
 });
 
 test('draft save retries csrf_required once and preserves failed local edits', () => {
-    const dashboardSource = readSource(dashboardPath);
-    const saveCatchMatch = dashboardSource.match(/const saveScenarioDraft = async \(\) => \{[\s\S]*?\n\s*\};\n\n\s*const discardScenarioOverrides/);
+    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario/useScenarioPlanner.js'], { anchor: 'export function useScenarioPlanner(' });
+    const saveCatchMatch = scenarioSource.match(/const saveScenarioDraft = async \(\) => \{[\s\S]*?\n\s*\};\n\n\s*const discardScenarioOverrides/);
 
-    const saveHelperIndex = dashboardSource.indexOf('const saveScenarioDraftVersion = async');
-    const fetchVersionIndex = dashboardSource.indexOf('const fetchScenarioDraftVersion', saveHelperIndex);
+    const saveHelperIndex = scenarioSource.indexOf('const saveScenarioDraftVersion = async');
+    const fetchVersionIndex = scenarioSource.indexOf('const fetchScenarioDraftVersion', saveHelperIndex);
     assert.ok(saveHelperIndex > -1, 'Expected saveScenarioDraftVersion helper to exist.');
     assert.ok(fetchVersionIndex > saveHelperIndex, 'Expected fetchScenarioDraftVersion after save helper.');
     assert.ok(saveCatchMatch, 'Expected save failure handler to exist.');
 
-    const saveHelperSource = dashboardSource.slice(saveHelperIndex, fetchVersionIndex);
+    const saveHelperSource = scenarioSource.slice(saveHelperIndex, fetchVersionIndex);
     const saveSource = saveCatchMatch[0];
     const saveCatchIndex = saveSource.indexOf('} catch (err) {');
     assert.ok(saveCatchIndex > -1, 'Expected save failure catch block to exist.');
@@ -394,12 +394,12 @@ test('draft save retries csrf_required once and preserves failed local edits', (
 });
 
 test('history reload and rollback use inline dialog controls and guarded rollback writes', () => {
-    const dashboardSource = readSource(dashboardPath);
+    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario/useScenarioPlanner.js'], { anchor: 'export function useScenarioPlanner(' });
     const scenarioApiSource = readSource(scenarioApiPath);
-    const historyActionMatch = dashboardSource.match(/const requestScenarioHistoryAction = \(type, versionNumber\) => \{[\s\S]*?\n\s*\};\n\n\s*const scenarioLaneForIssue/);
-    const rollbackHelperMatch = dashboardSource.match(/const rollbackScenarioDraft = async[\s\S]*?\n\s*\};\n\n\s*const buildScenarioDraftScope/);
-    const historyRenderIndex = dashboardSource.indexOf('{scenarioDraftMeta.historyOpen && (');
-    const scenarioLoadingIndex = dashboardSource.indexOf('{scenarioLoading &&', historyRenderIndex);
+    const historyActionMatch = scenarioSource.match(/const requestScenarioHistoryAction = \(type, versionNumber\) => \{[\s\S]*?\n\s*\};\n\n\s*const scenarioLaneForIssue/);
+    const rollbackHelperMatch = scenarioSource.match(/const rollbackScenarioDraft = async[\s\S]*?\n\s*\};\n\n\s*const buildScenarioDraftScope/);
+    const historyRenderIndex = scenarioSource.indexOf('{scenarioDraftMeta.historyOpen && (');
+    const scenarioLoadingIndex = scenarioSource.indexOf('{scenarioLoading &&', historyRenderIndex);
 
     assert.ok(historyActionMatch, 'Expected history reload/rollback action handlers to exist.');
     assert.ok(rollbackHelperMatch, 'Expected rollback helper to exist.');
@@ -408,7 +408,7 @@ test('history reload and rollback use inline dialog controls and guarded rollbac
 
     const historyActionSource = historyActionMatch[0];
     const rollbackHelperSource = rollbackHelperMatch[0];
-    const historyRenderSource = dashboardSource.slice(historyRenderIndex, scenarioLoadingIndex);
+    const historyRenderSource = scenarioSource.slice(historyRenderIndex, scenarioLoadingIndex);
 
     assert.equal(historyActionSource.includes('window.confirm('), false, 'Dirty history replacement must not use browser-native confirm.');
     assert.equal(historyActionSource.includes('confirm('), false, 'Dirty history replacement must not use browser-native confirm.');

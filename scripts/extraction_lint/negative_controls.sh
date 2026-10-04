@@ -16,9 +16,9 @@ src = pathlib.Path(sys.argv[1])
 dash = src / "dashboard.jsx"
 s = dash.read_text()
 original = s
-before_files = {p.name for p in src.iterdir()}
+before_files = {str(p.relative_to(src)): p.read_bytes() for p in src.rglob('*') if p.is_file()}
 $2
-if s == original and {p.name for p in src.iterdir()} == before_files:
+if s == original and {str(p.relative_to(src)): p.read_bytes() for p in src.rglob('*') if p.is_file()} == before_files:
     sys.exit(3)
 dash.write_text(s)
 PY
@@ -46,7 +46,7 @@ control use-before-define 'no-use-before-define' \
 'm = "const scenarioState = useScenarioState({ initialLaneMode: savedPrefsRef.current.scenarioLaneMode ?? " + chr(39) + "team" + chr(39) + " });"
 s = s.replace(m, m + "\n            const __probe = engWorkspaceConfigured;", 1)'
 control undefined-name 'no-undef' \
-'s = s.replace("const registerScenarioIssueRef =", "const registerScenarioIssueRefMoved =", 1)'
+'s = s.replace("                registerScenarioIssueRef,", "                registerScenarioIssueRefMoved,", 1)'
 control react-not-in-scope 'react-in-jsx-scope' \
 '(src / "ProbeView.jsx").write_text("export default function ProbeView() { return <div />; }\n")'
 control destructured-name-not-returned 'destructured but not returned' \
@@ -60,10 +60,12 @@ s = s[:i] + s[i:j].replace("                groupsLoading,\n", "", 1) + s[j:]'
 dir="$OUT/edited-statement"
 mkdir -p "$dir"
 cp -R frontend/src "$dir/src"
-seed "$dir" 's = s.replace("window.setInterval(poll, 5000)", "window.setInterval(poll, 5001)", 1)' \
+seed "$dir" 'owner = src / "scenario" / "useScenarioPlanner.js"; owner.write_text(owner.read_text().replace("window.setInterval(poll, 5000)", "window.setInterval(poll, 5001)", 1))' \
     || { echo "ANCHOR edited-statement: the seed changed nothing; re-anchor the control"; failures=$((failures + 1)); }
 cp scripts/extraction_lint/check_move_conservation.mjs "$LINT_DIR/check_move_conservation.mjs"
-node "$LINT_DIR/check_move_conservation.mjs" --base-file frontend/src/dashboard.jsx --dashboard "$dir/src/dashboard.jsx" >"$dir/conservation.log" 2>&1
+node "$LINT_DIR/check_move_conservation.mjs" --base-file frontend/src/dashboard.jsx --dashboard "$dir/src/dashboard.jsx" \
+    --base-hook "$dir/src/scenario/useScenarioPlanner.js=frontend/src/scenario/useScenarioPlanner.js" \
+    "$dir/src/scenario/useScenarioPlanner.js" >"$dir/conservation.log" 2>&1
 if grep -q 'removed and not found in a hook: 1; new statements: 1' "$dir/conservation.log"; then
     echo "ok    edited-statement (conservation)"
 else

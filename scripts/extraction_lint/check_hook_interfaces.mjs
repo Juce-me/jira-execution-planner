@@ -496,7 +496,10 @@ if (manifestPath || writeInventory) {
                     const target = resolveImport(path.resolve(repoRoot, module.path), node.source.value);
                     if (target === entry) bad(`dependency direction: owner imports dashboard.jsx ${module.path}`);
                 }
-                if (node.source?.value?.includes('dashboard')) bad(`dependency direction: owner re-exports dashboard ${module.path}`);
+                if (['ExportNamedDeclaration', 'ExportAllDeclaration'].includes(node.type) && node.source?.value?.startsWith('.')) {
+                    const target = resolveImport(path.resolve(repoRoot, module.path), node.source.value);
+                    if (target === entry) bad(`dependency direction: owner re-exports dashboard ${module.path}`);
+                }
             }
         }
         for (const registered of manifest.modules ?? []) if (!measured.some(module => path.resolve(repoRoot, module.path) === path.resolve(repoRoot, registered.path))) bad(`registered module outside owner roots ${registered.path}`);

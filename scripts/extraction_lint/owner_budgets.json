@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "baseSha": "ae35f76de75ac924c151aa7a2ff79fbbc388e017",
-  "checkpointId": "SC1-state-container",
+  "baseSha": "bc17d28c9e1dae9a2331b4aeadb746142b0eab89",
+  "checkpointId": "SC2-planner-hook",
   "sourceRoot": "frontend/src",
   "ownerRoots": [
     "scenario",
@@ -19,8 +19,8 @@
   },
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
-    "lineCount": 18307,
-    "lineCeiling": 18307
+    "lineCount": 15368,
+    "lineCeiling": 15368
   },
   "modules": [
     {
@@ -191,7 +191,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "EpmControls",
-              "line": 14145,
+              "line": 11079,
               "phase": "render"
             }
           ],
@@ -243,7 +243,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "EpmProjectCollapseAllButton",
-              "line": 14194,
+              "line": 11128,
               "phase": "render"
             }
           ],
@@ -1361,7 +1361,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "EpmSettings",
-              "line": 17920,
+              "line": 14854,
               "phase": "render"
             }
           ],
@@ -1451,7 +1451,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "EpmView",
-              "line": 17660,
+              "line": 14594,
               "phase": "render"
             }
           ],
@@ -1618,7 +1618,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useEpmViewData",
-              "line": 2836,
+              "line": 2781,
               "phase": "hook execution"
             }
           ],
@@ -1626,150 +1626,150 @@
             {
               "name": "epmTab",
               "lines": [
-                2838,
-                2871,
-                2881,
-                6694,
-                6751,
-                14147,
-                15419,
-                15451,
-                17669
+                2783,
+                2816,
+                2826,
+                6525,
+                6582,
+                11081,
+                12353,
+                12385,
+                14603
               ]
             },
             {
               "name": "setEpmTab",
               "lines": [
-                14150
+                11084
               ]
             },
             {
               "name": "setEpmProjects",
               "lines": [
-                1545
+                1490
               ]
             },
             {
               "name": "epmProjectsLoading",
               "lines": [
-                14155,
-                15086,
-                15352,
-                17663
+                11089,
+                12020,
+                12286,
+                14597
               ]
             },
             {
               "name": "setEpmProjectsError",
               "lines": [
-                1546
+                1491
               ]
             },
             {
               "name": "epmSelectedProjectId",
               "lines": [
-                2839,
-                2853,
-                2858,
-                2860,
-                2865,
-                2871,
-                6695,
-                6752,
-                17666
+                2784,
+                2798,
+                2803,
+                2805,
+                2810,
+                2816,
+                6526,
+                6583,
+                14600
               ]
             },
             {
               "name": "setEpmSelectedProjectId",
               "lines": [
-                14175
+                11109
               ]
             },
             {
               "name": "visibleEpmProjects",
               "lines": [
-                14156
+                11090
               ]
             },
             {
               "name": "selectedEpmProject",
               "lines": [
-                12266,
-                12268,
-                12348,
-                14157,
-                17667
+                9200,
+                9202,
+                9282,
+                11091,
+                14601
               ]
             },
             {
               "name": "filteredEpmProjects",
               "lines": [
-                14158
+                11092
               ]
             },
             {
               "name": "visibleEpmRollupBoards",
               "lines": [
-                2854,
-                2858,
-                2865,
-                2882,
-                12264,
-                12265,
-                12268,
-                17672
+                2799,
+                2803,
+                2810,
+                2827,
+                9198,
+                9199,
+                9202,
+                14606
               ]
             },
             {
               "name": "epmRollupTree",
               "lines": [
-                12266,
-                12268,
-                17665
+                9200,
+                9202,
+                14599
               ]
             },
             {
               "name": "epmRollupBoards",
               "lines": [
-                17664
+                14598
               ]
             },
             {
               "name": "epmDuplicates",
               "lines": [
-                17673
+                14607
               ]
             },
             {
               "name": "epmAggregateTruncated",
               "lines": [
-                17674
+                14608
               ]
             },
             {
               "name": "epmRollupLoading",
               "lines": [
-                12317,
-                12329,
-                15086,
-                17671
+                9251,
+                9263,
+                12020,
+                14605
               ]
             },
             {
               "name": "epmProjectRollupLoadingIds",
               "lines": [
-                17675
+                14609
               ]
             },
             {
               "name": "epmSelectedSubGoalKeys",
               "lines": [
-                14180
+                11114
               ]
             },
             {
               "name": "setEpmSelectedSubGoalKeys",
               "lines": [
-                14184
+                11118
               ]
             },
             {
@@ -1779,20 +1779,20 @@
             {
               "name": "refreshEpmProjects",
               "lines": [
-                1543
+                1488
               ]
             },
             {
               "name": "refreshEpmView",
               "lines": [
-                15049
+                11983
               ]
             },
             {
               "name": "loadArchivedEpmProjectRollup",
               "lines": [
-                2882,
-                17679
+                2827,
+                14613
               ]
             }
           ],
@@ -1949,9 +1949,9 @@
           },
           "callers": [
             {
-              "path": "frontend/src/dashboard.jsx",
+              "path": "frontend/src/scenario/useScenarioPlanner.js",
               "symbol": "useConnectionScenarioRecovery",
-              "line": 9236,
+              "line": 718,
               "phase": "hook execution"
             }
           ],
@@ -1973,6 +1973,22 @@
       ],
       "lineCount": 44,
       "lineCeiling": 44,
+      "interfaces": []
+    },
+    {
+      "id": "scenario.scenarioGroupState",
+      "path": "frontend/src/scenario/scenarioGroupState.js",
+      "features": [
+        "scenario"
+      ],
+      "exports": [
+        "SCENARIO_GROUP_STATE_KEYS",
+        "applyScenarioGroupState",
+        "buildDefaultScenarioGroupState",
+        "resetScenarioTransientRefs"
+      ],
+      "lineCount": 95,
+      "lineCeiling": 95,
       "interfaces": []
     },
     {
@@ -2015,6 +2031,856 @@
       "lineCount": 172,
       "lineCeiling": 172,
       "interfaces": []
+    },
+    {
+      "id": "scenario.useScenarioPlanner",
+      "path": "frontend/src/scenario/useScenarioPlanner.js",
+      "features": [
+        "scenario"
+      ],
+      "exports": [
+        "useScenarioPlanner"
+      ],
+      "lineCount": 3201,
+      "lineCeiling": 3201,
+      "interfaces": [
+        {
+          "exportName": "useScenarioPlanner",
+          "inputNames": [
+            "BACKEND_URL",
+            "EMPTY_ARRAY",
+            "EMPTY_OBJECT",
+            "activeGroup",
+            "activeGroupId",
+            "availableSprints",
+            "cleanupSprintFetch",
+            "connectionRecoveryScenarioStartedRef",
+            "connectionRecoveryStagedRevision",
+            "excludedEpicSet",
+            "groupsLoading",
+            "isAllTeamsSelected",
+            "isCompletedSprintSelected",
+            "jiraUrl",
+            "normalizeEpicKey",
+            "pendingConnectionRecoveryRef",
+            "pendingShellAuthResumeRef",
+            "perfCountersRef",
+            "perfEnabled",
+            "registerSprintFetch",
+            "releaseConnectionRecoveryOwnership",
+            "scenarioState",
+            "searchQuery",
+            "selectedSprint",
+            "selectedSprintInfo",
+            "selectedSprintState",
+            "selectedTeamSet",
+            "setConnectionRecoveryNotice",
+            "setConnectionRecoveryStatus",
+            "showScenario",
+            "sprintsLoading",
+            "teamOptions",
+            "trackScenarioAction",
+            "visibleControlGroups"
+          ],
+          "returnNames": [
+            "SCENARIO_LANE_HEIGHT",
+            "cancelReloadActiveDraft",
+            "cancelScenarioHistoryAction",
+            "cancelScenarioReloadFromJira",
+            "checkScenarioDraftWritebackGate",
+            "clearScenarioEpicFocus",
+            "closeScenarioDraftHistory",
+            "discardScenarioOverrides",
+            "focusScenarioEpic",
+            "handleScenarioBarMouseDown",
+            "hideScenarioTooltip",
+            "moveScenarioTooltip",
+            "openScenarioDraftHistory",
+            "previewScenarioDraftWriteback",
+            "registerScenarioIssueRef",
+            "requestReloadActiveDraft",
+            "requestScenarioHistoryAction",
+            "requestScenarioReloadFromJira",
+            "runReloadActiveDraft",
+            "runScenario",
+            "runScenarioHistoryAction",
+            "runScenarioReloadFromJira",
+            "saveScenarioDraft",
+            "scenarioAssigneeConflicts",
+            "scenarioBarGap",
+            "scenarioBaseUrl",
+            "scenarioBlockedSet",
+            "scenarioCanSaveDraft",
+            "scenarioCriticalPathItems",
+            "scenarioDeadlineAtRisk",
+            "scenarioDepViolatedKeys",
+            "scenarioDepViolations",
+            "scenarioDownstreamSet",
+            "scenarioEpicBars",
+            "scenarioEpicEdges",
+            "scenarioFocusContextKeys",
+            "scenarioFocusIssueKeys",
+            "scenarioHasUnsavedChanges",
+            "scenarioIssueByKey",
+            "scenarioIssueLockWarnings",
+            "scenarioIssuesByLane",
+            "scenarioJiraEpicKeys",
+            "scenarioJiraStoryKeys",
+            "scenarioLaneAssigneeGroups",
+            "scenarioLaneInfo",
+            "scenarioLaneMeta",
+            "scenarioLateItems",
+            "scenarioOverrideCount",
+            "scenarioPositions",
+            "scenarioQuarterMarkers",
+            "scenarioRedo",
+            "scenarioRemoteEditors",
+            "scenarioSearchMatchSet",
+            "scenarioSearchQuery",
+            "scenarioTicks",
+            "scenarioTodayLeft",
+            "scenarioUndo",
+            "scenarioUnschedulableItems",
+            "scenarioUpstreamSet",
+            "scenarioViewEnd",
+            "scenarioViewStart",
+            "scenarioVisibleLanes",
+            "scrollToScenarioIssue",
+            "showScenarioTooltip",
+            "showScenarioTooltipFromElement",
+            "toggleScenarioEditMode",
+            "toggleScenarioLane"
+          ],
+          "propNames": [],
+          "expandedInputNames": [
+            "BACKEND_URL",
+            "EMPTY_ARRAY",
+            "EMPTY_ARRAY.filter",
+            "EMPTY_ARRAY.forEach",
+            "EMPTY_ARRAY.length",
+            "EMPTY_ARRAY.map",
+            "EMPTY_OBJECT",
+            "EMPTY_OBJECT.[computed]",
+            "EMPTY_OBJECT.[computed].devLead",
+            "EMPTY_OBJECT.[computed].size",
+            "EMPTY_OBJECT.critical_path",
+            "EMPTY_OBJECT.critical_path.filter",
+            "EMPTY_OBJECT.late_items",
+            "EMPTY_OBJECT.late_items.filter",
+            "EMPTY_OBJECT.quarter_end_date",
+            "EMPTY_OBJECT.start_date",
+            "EMPTY_OBJECT.unschedulable",
+            "EMPTY_OBJECT.unschedulable.filter",
+            "activeGroup",
+            "activeGroup.name",
+            "activeGroupId",
+            "availableSprints",
+            "cleanupSprintFetch",
+            "connectionRecoveryScenarioStartedRef",
+            "connectionRecoveryStagedRevision",
+            "excludedEpicSet",
+            "excludedEpicSet.has",
+            "groupsLoading",
+            "isAllTeamsSelected",
+            "isCompletedSprintSelected",
+            "jiraUrl",
+            "normalizeEpicKey",
+            "pendingConnectionRecoveryRef",
+            "pendingConnectionRecoveryRef.current",
+            "pendingShellAuthResumeRef",
+            "perfCountersRef",
+            "perfCountersRef.current",
+            "perfCountersRef.current.edgeComputes",
+            "perfCountersRef.current.edgeFrames",
+            "perfCountersRef.current.edgeRequests",
+            "perfCountersRef.current.laneStacking",
+            "perfCountersRef.current.layoutReads",
+            "perfCountersRef.current.scrollReads",
+            "perfEnabled",
+            "registerSprintFetch",
+            "releaseConnectionRecoveryOwnership",
+            "scenarioState",
+            "scenarioState.scenarioActiveDraftIdRef",
+            "scenarioState.scenarioActiveDraftIdRef.current",
+            "scenarioState.scenarioCollapsedLanes",
+            "scenarioState.scenarioCollapsedLanes.[computed]",
+            "scenarioState.scenarioCurrentUserIdentity",
+            "scenarioState.scenarioCurrentUserIdentity.displayName",
+            "scenarioState.scenarioCurrentUserIdentity.userId",
+            "scenarioState.scenarioData",
+            "scenarioState.scenarioData.capacity_by_team",
+            "scenarioState.scenarioData.capacity_by_team.[computed]",
+            "scenarioState.scenarioData.capacity_by_team.[computed].devLead",
+            "scenarioState.scenarioData.capacity_by_team.[computed].size",
+            "scenarioState.scenarioData.config",
+            "scenarioState.scenarioData.config.quarter_end_date",
+            "scenarioState.scenarioData.config.start_date",
+            "scenarioState.scenarioData.dependencies",
+            "scenarioState.scenarioData.dependencies.filter",
+            "scenarioState.scenarioData.dependencies.forEach",
+            "scenarioState.scenarioData.focus_set",
+            "scenarioState.scenarioData.focus_set.context_issue_keys",
+            "scenarioState.scenarioData.focus_set.focused_issue_keys",
+            "scenarioState.scenarioData.issues",
+            "scenarioState.scenarioData.issues.length",
+            "scenarioState.scenarioData.issues.map",
+            "scenarioState.scenarioData.jira_base_url",
+            "scenarioState.scenarioData.sprintBoundaries",
+            "scenarioState.scenarioData.sprintBoundaries.next",
+            "scenarioState.scenarioData.sprintBoundaries.next.endDate",
+            "scenarioState.scenarioData.sprintBoundaries.previous",
+            "scenarioState.scenarioData.sprintBoundaries.previous.startDate",
+            "scenarioState.scenarioData.sprintBoundaries.selected",
+            "scenarioState.scenarioData.sprintBoundaries.selected.endDate",
+            "scenarioState.scenarioData.sprintBoundaries.selected.startDate",
+            "scenarioState.scenarioData.summary",
+            "scenarioState.scenarioData.summary.critical_path",
+            "scenarioState.scenarioData.summary.critical_path.filter",
+            "scenarioState.scenarioData.summary.late_items",
+            "scenarioState.scenarioData.summary.late_items.filter",
+            "scenarioState.scenarioData.summary.unschedulable",
+            "scenarioState.scenarioData.summary.unschedulable.filter",
+            "scenarioState.scenarioDraftLastEventNumber",
+            "scenarioState.scenarioDraftLocks",
+            "scenarioState.scenarioDraftLocks.filter",
+            "scenarioState.scenarioDraftMeta",
+            "scenarioState.scenarioDraftMeta.activeDraft",
+            "scenarioState.scenarioDraftMeta.activeDraft.draftId",
+            "scenarioState.scenarioDraftMeta.baseDraftRevision",
+            "scenarioState.scenarioDraftMeta.conflict",
+            "scenarioState.scenarioDraftMeta.conflict.activeDraft",
+            "scenarioState.scenarioDraftMeta.conflict.activeDraft.draftId",
+            "scenarioState.scenarioDraftMeta.dirtyState",
+            "scenarioState.scenarioDraftMeta.historyOpen",
+            "scenarioState.scenarioDraftMeta.loadingHistory",
+            "scenarioState.scenarioDraftMeta.savedOverrides",
+            "scenarioState.scenarioDraftMeta.saving",
+            "scenarioState.scenarioDraftMeta.scopeKey",
+            "scenarioState.scenarioDraftMeta.scopePayload",
+            "scenarioState.scenarioDraftMeta.staleDraft",
+            "scenarioState.scenarioDraftMeta.staleDraft.activeDraft",
+            "scenarioState.scenarioDraftMeta.staleDraft.activeDraft.draftId",
+            "scenarioState.scenarioDraftPresence",
+            "scenarioState.scenarioDraftPresence.filter",
+            "scenarioState.scenarioDraftRealtimeStatus",
+            "scenarioState.scenarioDraftRealtimeStatus.paused",
+            "scenarioState.scenarioDragFrameRef",
+            "scenarioState.scenarioDragFrameRef.current",
+            "scenarioState.scenarioDragLockRefreshRef",
+            "scenarioState.scenarioDragLockRefreshRef.current",
+            "scenarioState.scenarioDragState",
+            "scenarioState.scenarioDragState.issueKey",
+            "scenarioState.scenarioDragStateRef",
+            "scenarioState.scenarioDragStateRef.current",
+            "scenarioState.scenarioDragStateRef.current.currentEnd",
+            "scenarioState.scenarioDragStateRef.current.currentStart",
+            "scenarioState.scenarioDragStateRef.current.durationMs",
+            "scenarioState.scenarioDragStateRef.current.issueKey",
+            "scenarioState.scenarioDragStateRef.current.offsetX",
+            "scenarioState.scenarioDragStateRef.current.originalEnd",
+            "scenarioState.scenarioDragStateRef.current.originalStart",
+            "scenarioState.scenarioDragStateRef.current.trackLeft",
+            "scenarioState.scenarioDragStateRef.current.trackWidth",
+            "scenarioState.scenarioEdgeFrameRef",
+            "scenarioState.scenarioEdgeFrameRef.current",
+            "scenarioState.scenarioEdgeUpdatePendingRef",
+            "scenarioState.scenarioEdgeUpdatePendingRef.current",
+            "scenarioState.scenarioEditMode",
+            "scenarioState.scenarioEpicFocus",
+            "scenarioState.scenarioEpicFocus.key",
+            "scenarioState.scenarioEpicFocus.summary",
+            "scenarioState.scenarioFocusRestoreRef",
+            "scenarioState.scenarioFocusRestoreRef.current",
+            "scenarioState.scenarioFocusRestoreRef.current.collapsedLanes",
+            "scenarioState.scenarioFocusRestoreRef.current.laneMode",
+            "scenarioState.scenarioFocusRestoreRef.current.rangeOverride",
+            "scenarioState.scenarioFocusRestoreRef.current.scrollTop",
+            "scenarioState.scenarioHistoryActionControllerRef",
+            "scenarioState.scenarioHistoryActionControllerRef.current",
+            "scenarioState.scenarioHistoryActionControllerRef.current.abort",
+            "scenarioState.scenarioHistoryButtonRef",
+            "scenarioState.scenarioHistoryButtonRef.current",
+            "scenarioState.scenarioHistoryButtonRef.current.focus",
+            "scenarioState.scenarioHistoryPanelRef",
+            "scenarioState.scenarioHistoryPanelRef.current",
+            "scenarioState.scenarioHistoryPanelRef.current.contains",
+            "scenarioState.scenarioHistoryRefreshControllerRef",
+            "scenarioState.scenarioHistoryRefreshControllerRef.current",
+            "scenarioState.scenarioHistoryRefreshControllerRef.current.abort",
+            "scenarioState.scenarioHistoryTitleRef",
+            "scenarioState.scenarioHistoryTitleRef.current",
+            "scenarioState.scenarioHistoryTitleRef.current.focus",
+            "scenarioState.scenarioHoverKey",
+            "scenarioState.scenarioIssueRefMap",
+            "scenarioState.scenarioIssueRefMap.current",
+            "scenarioState.scenarioIssueRefMap.current.delete",
+            "scenarioState.scenarioIssueRefMap.current.forEach",
+            "scenarioState.scenarioIssueRefMap.current.set",
+            "scenarioState.scenarioLaneMode",
+            "scenarioState.scenarioLayout",
+            "scenarioState.scenarioLayout.height",
+            "scenarioState.scenarioLayout.labelWidth",
+            "scenarioState.scenarioLayout.width",
+            "scenarioState.scenarioOverrides",
+            "scenarioState.scenarioOverrides.[computed]",
+            "scenarioState.scenarioPendingScrollRef",
+            "scenarioState.scenarioPendingScrollRef.current",
+            "scenarioState.scenarioRangeOverride",
+            "scenarioState.scenarioRangeOverride.end",
+            "scenarioState.scenarioRangeOverride.end.getTime",
+            "scenarioState.scenarioRangeOverride.start",
+            "scenarioState.scenarioRangeOverride.start.getTime",
+            "scenarioState.scenarioRealtimeCsrfRef",
+            "scenarioState.scenarioRealtimeCsrfRef.current",
+            "scenarioState.scenarioResizeFrameRef",
+            "scenarioState.scenarioResizeFrameRef.current",
+            "scenarioState.scenarioScopeKeyRef",
+            "scenarioState.scenarioScopeKeyRef.current",
+            "scenarioState.scenarioScrollFrameRef",
+            "scenarioState.scenarioScrollFrameRef.current",
+            "scenarioState.scenarioScrollTop",
+            "scenarioState.scenarioShowConflictsOnly",
+            "scenarioState.scenarioSkipAutoCollapseRef",
+            "scenarioState.scenarioSkipAutoCollapseRef.current",
+            "scenarioState.scenarioTeamCollapseInitRef",
+            "scenarioState.scenarioTeamCollapseInitRef.current",
+            "scenarioState.scenarioTimelineRef",
+            "scenarioState.scenarioTimelineRef.current",
+            "scenarioState.scenarioTimelineRef.current.addEventListener",
+            "scenarioState.scenarioTimelineRef.current.clientHeight",
+            "scenarioState.scenarioTimelineRef.current.clientWidth",
+            "scenarioState.scenarioTimelineRef.current.getBoundingClientRect",
+            "scenarioState.scenarioTimelineRef.current.querySelector",
+            "scenarioState.scenarioTimelineRef.current.removeEventListener",
+            "scenarioState.scenarioTimelineRef.current.scrollHeight",
+            "scenarioState.scenarioTimelineRef.current.scrollLeft",
+            "scenarioState.scenarioTimelineRef.current.scrollTo",
+            "scenarioState.scenarioTimelineRef.current.scrollTop",
+            "scenarioState.scenarioTimelineRef.current.scrollWidth",
+            "scenarioState.scenarioTooltipAnchorRef",
+            "scenarioState.scenarioTooltipAnchorRef.current",
+            "scenarioState.scenarioTooltipAnchorRef.current.bottom",
+            "scenarioState.scenarioTooltipAnchorRef.current.getBoundingClientRect",
+            "scenarioState.scenarioTooltipAnchorRef.current.left",
+            "scenarioState.scenarioTooltipAnchorRef.current.right",
+            "scenarioState.scenarioTooltipAnchorRef.current.top",
+            "scenarioState.scenarioTooltipRef",
+            "scenarioState.scenarioTooltipRef.current",
+            "scenarioState.scenarioTooltipRef.current.getBoundingClientRect",
+            "scenarioState.scenarioUndoStackRef",
+            "scenarioState.scenarioUndoStackRef.current",
+            "scenarioState.scenarioUndoStackRef.current.clear",
+            "scenarioState.scenarioUndoStackRef.current.push",
+            "scenarioState.scenarioUndoStackRef.current.redo",
+            "scenarioState.scenarioUndoStackRef.current.undo",
+            "scenarioState.scenarioViewRangeRef",
+            "scenarioState.scenarioViewRangeRef.current",
+            "scenarioState.scenarioViewRangeRef.current.end",
+            "scenarioState.scenarioViewRangeRef.current.start",
+            "scenarioState.scenarioViewportHeight",
+            "scenarioState.scenarioWasDraggedRef",
+            "scenarioState.scenarioWasDraggedRef.current",
+            "scenarioState.setScenarioCollapsedLanes",
+            "scenarioState.setScenarioCurrentUserIdentity",
+            "scenarioState.setScenarioData",
+            "scenarioState.setScenarioDraftEvents",
+            "scenarioState.setScenarioDraftLastEventNumber",
+            "scenarioState.setScenarioDraftLocks",
+            "scenarioState.setScenarioDraftMeta",
+            "scenarioState.setScenarioDraftPresence",
+            "scenarioState.setScenarioDraftRealtimeStatus",
+            "scenarioState.setScenarioDragState",
+            "scenarioState.setScenarioEdgeRender",
+            "scenarioState.setScenarioEditMode",
+            "scenarioState.setScenarioEpicFocus",
+            "scenarioState.setScenarioError",
+            "scenarioState.setScenarioFlashKey",
+            "scenarioState.setScenarioLaneMode",
+            "scenarioState.setScenarioLayout",
+            "scenarioState.setScenarioLoading",
+            "scenarioState.setScenarioOverrides",
+            "scenarioState.setScenarioRangeOverride",
+            "scenarioState.setScenarioScrollLeft",
+            "scenarioState.setScenarioScrollTop",
+            "scenarioState.setScenarioTooltip",
+            "scenarioState.setScenarioUndoVersion",
+            "scenarioState.setScenarioViewportHeight",
+            "searchQuery",
+            "searchQuery.trim",
+            "selectedSprint",
+            "selectedSprintInfo",
+            "selectedSprintInfo.name",
+            "selectedSprintState",
+            "selectedTeamSet",
+            "setConnectionRecoveryNotice",
+            "setConnectionRecoveryStatus",
+            "showScenario",
+            "sprintsLoading",
+            "teamOptions",
+            "teamOptions.filter",
+            "trackScenarioAction",
+            "visibleControlGroups"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 267,
+          "returnCount": 67,
+          "propCount": 0,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 267,
+          "returnCeiling": 67,
+          "propCeiling": 0,
+          "unresolved": [
+            "forwarded input BACKEND_URL",
+            "forwarded input selectedSprint",
+            "forwarded input selectedTeamSet",
+            "forwarded input excludedEpicSet"
+          ],
+          "inventory": {
+            "source": "frontend/src/scenario/useScenarioPlanner.js:14",
+            "sourceDigest": "9beb215d2f058e07add7576783ce61584032505c385a64d2727ad67f0aa3c323",
+            "reviewed": true,
+            "memberNames": [
+              "BACKEND_URL",
+              "EMPTY_ARRAY",
+              "EMPTY_ARRAY.filter",
+              "EMPTY_ARRAY.forEach",
+              "EMPTY_ARRAY.length",
+              "EMPTY_ARRAY.map",
+              "EMPTY_OBJECT",
+              "EMPTY_OBJECT.[computed]",
+              "EMPTY_OBJECT.[computed].devLead",
+              "EMPTY_OBJECT.[computed].size",
+              "EMPTY_OBJECT.critical_path",
+              "EMPTY_OBJECT.critical_path.filter",
+              "EMPTY_OBJECT.late_items",
+              "EMPTY_OBJECT.late_items.filter",
+              "EMPTY_OBJECT.quarter_end_date",
+              "EMPTY_OBJECT.start_date",
+              "EMPTY_OBJECT.unschedulable",
+              "EMPTY_OBJECT.unschedulable.filter",
+              "activeGroup",
+              "activeGroup.name",
+              "activeGroupId",
+              "availableSprints",
+              "cleanupSprintFetch",
+              "connectionRecoveryScenarioStartedRef",
+              "connectionRecoveryStagedRevision",
+              "excludedEpicSet",
+              "excludedEpicSet.has",
+              "groupsLoading",
+              "isAllTeamsSelected",
+              "isCompletedSprintSelected",
+              "jiraUrl",
+              "normalizeEpicKey",
+              "pendingConnectionRecoveryRef",
+              "pendingConnectionRecoveryRef.current",
+              "pendingShellAuthResumeRef",
+              "perfCountersRef",
+              "perfCountersRef.current",
+              "perfCountersRef.current.edgeComputes",
+              "perfCountersRef.current.edgeFrames",
+              "perfCountersRef.current.edgeRequests",
+              "perfCountersRef.current.laneStacking",
+              "perfCountersRef.current.layoutReads",
+              "perfCountersRef.current.scrollReads",
+              "perfEnabled",
+              "registerSprintFetch",
+              "releaseConnectionRecoveryOwnership",
+              "scenarioState",
+              "scenarioState.scenarioActiveDraftIdRef",
+              "scenarioState.scenarioActiveDraftIdRef.current",
+              "scenarioState.scenarioCollapsedLanes",
+              "scenarioState.scenarioCollapsedLanes.[computed]",
+              "scenarioState.scenarioCurrentUserIdentity",
+              "scenarioState.scenarioCurrentUserIdentity.displayName",
+              "scenarioState.scenarioCurrentUserIdentity.userId",
+              "scenarioState.scenarioData",
+              "scenarioState.scenarioData.capacity_by_team",
+              "scenarioState.scenarioData.capacity_by_team.[computed]",
+              "scenarioState.scenarioData.capacity_by_team.[computed].devLead",
+              "scenarioState.scenarioData.capacity_by_team.[computed].size",
+              "scenarioState.scenarioData.config",
+              "scenarioState.scenarioData.config.quarter_end_date",
+              "scenarioState.scenarioData.config.start_date",
+              "scenarioState.scenarioData.dependencies",
+              "scenarioState.scenarioData.dependencies.filter",
+              "scenarioState.scenarioData.dependencies.forEach",
+              "scenarioState.scenarioData.focus_set",
+              "scenarioState.scenarioData.focus_set.context_issue_keys",
+              "scenarioState.scenarioData.focus_set.focused_issue_keys",
+              "scenarioState.scenarioData.issues",
+              "scenarioState.scenarioData.issues.length",
+              "scenarioState.scenarioData.issues.map",
+              "scenarioState.scenarioData.jira_base_url",
+              "scenarioState.scenarioData.sprintBoundaries",
+              "scenarioState.scenarioData.sprintBoundaries.next",
+              "scenarioState.scenarioData.sprintBoundaries.next.endDate",
+              "scenarioState.scenarioData.sprintBoundaries.previous",
+              "scenarioState.scenarioData.sprintBoundaries.previous.startDate",
+              "scenarioState.scenarioData.sprintBoundaries.selected",
+              "scenarioState.scenarioData.sprintBoundaries.selected.endDate",
+              "scenarioState.scenarioData.sprintBoundaries.selected.startDate",
+              "scenarioState.scenarioData.summary",
+              "scenarioState.scenarioData.summary.critical_path",
+              "scenarioState.scenarioData.summary.critical_path.filter",
+              "scenarioState.scenarioData.summary.late_items",
+              "scenarioState.scenarioData.summary.late_items.filter",
+              "scenarioState.scenarioData.summary.unschedulable",
+              "scenarioState.scenarioData.summary.unschedulable.filter",
+              "scenarioState.scenarioDraftLastEventNumber",
+              "scenarioState.scenarioDraftLocks",
+              "scenarioState.scenarioDraftLocks.filter",
+              "scenarioState.scenarioDraftMeta",
+              "scenarioState.scenarioDraftMeta.activeDraft",
+              "scenarioState.scenarioDraftMeta.activeDraft.draftId",
+              "scenarioState.scenarioDraftMeta.baseDraftRevision",
+              "scenarioState.scenarioDraftMeta.conflict",
+              "scenarioState.scenarioDraftMeta.conflict.activeDraft",
+              "scenarioState.scenarioDraftMeta.conflict.activeDraft.draftId",
+              "scenarioState.scenarioDraftMeta.dirtyState",
+              "scenarioState.scenarioDraftMeta.historyOpen",
+              "scenarioState.scenarioDraftMeta.loadingHistory",
+              "scenarioState.scenarioDraftMeta.savedOverrides",
+              "scenarioState.scenarioDraftMeta.saving",
+              "scenarioState.scenarioDraftMeta.scopeKey",
+              "scenarioState.scenarioDraftMeta.scopePayload",
+              "scenarioState.scenarioDraftMeta.staleDraft",
+              "scenarioState.scenarioDraftMeta.staleDraft.activeDraft",
+              "scenarioState.scenarioDraftMeta.staleDraft.activeDraft.draftId",
+              "scenarioState.scenarioDraftPresence",
+              "scenarioState.scenarioDraftPresence.filter",
+              "scenarioState.scenarioDraftRealtimeStatus",
+              "scenarioState.scenarioDraftRealtimeStatus.paused",
+              "scenarioState.scenarioDragFrameRef",
+              "scenarioState.scenarioDragFrameRef.current",
+              "scenarioState.scenarioDragLockRefreshRef",
+              "scenarioState.scenarioDragLockRefreshRef.current",
+              "scenarioState.scenarioDragState",
+              "scenarioState.scenarioDragState.issueKey",
+              "scenarioState.scenarioDragStateRef",
+              "scenarioState.scenarioDragStateRef.current",
+              "scenarioState.scenarioDragStateRef.current.currentEnd",
+              "scenarioState.scenarioDragStateRef.current.currentStart",
+              "scenarioState.scenarioDragStateRef.current.durationMs",
+              "scenarioState.scenarioDragStateRef.current.issueKey",
+              "scenarioState.scenarioDragStateRef.current.offsetX",
+              "scenarioState.scenarioDragStateRef.current.originalEnd",
+              "scenarioState.scenarioDragStateRef.current.originalStart",
+              "scenarioState.scenarioDragStateRef.current.trackLeft",
+              "scenarioState.scenarioDragStateRef.current.trackWidth",
+              "scenarioState.scenarioEdgeFrameRef",
+              "scenarioState.scenarioEdgeFrameRef.current",
+              "scenarioState.scenarioEdgeUpdatePendingRef",
+              "scenarioState.scenarioEdgeUpdatePendingRef.current",
+              "scenarioState.scenarioEditMode",
+              "scenarioState.scenarioEpicFocus",
+              "scenarioState.scenarioEpicFocus.key",
+              "scenarioState.scenarioEpicFocus.summary",
+              "scenarioState.scenarioFocusRestoreRef",
+              "scenarioState.scenarioFocusRestoreRef.current",
+              "scenarioState.scenarioFocusRestoreRef.current.collapsedLanes",
+              "scenarioState.scenarioFocusRestoreRef.current.laneMode",
+              "scenarioState.scenarioFocusRestoreRef.current.rangeOverride",
+              "scenarioState.scenarioFocusRestoreRef.current.scrollTop",
+              "scenarioState.scenarioHistoryActionControllerRef",
+              "scenarioState.scenarioHistoryActionControllerRef.current",
+              "scenarioState.scenarioHistoryActionControllerRef.current.abort",
+              "scenarioState.scenarioHistoryButtonRef",
+              "scenarioState.scenarioHistoryButtonRef.current",
+              "scenarioState.scenarioHistoryButtonRef.current.focus",
+              "scenarioState.scenarioHistoryPanelRef",
+              "scenarioState.scenarioHistoryPanelRef.current",
+              "scenarioState.scenarioHistoryPanelRef.current.contains",
+              "scenarioState.scenarioHistoryRefreshControllerRef",
+              "scenarioState.scenarioHistoryRefreshControllerRef.current",
+              "scenarioState.scenarioHistoryRefreshControllerRef.current.abort",
+              "scenarioState.scenarioHistoryTitleRef",
+              "scenarioState.scenarioHistoryTitleRef.current",
+              "scenarioState.scenarioHistoryTitleRef.current.focus",
+              "scenarioState.scenarioHoverKey",
+              "scenarioState.scenarioIssueRefMap",
+              "scenarioState.scenarioIssueRefMap.current",
+              "scenarioState.scenarioIssueRefMap.current.delete",
+              "scenarioState.scenarioIssueRefMap.current.forEach",
+              "scenarioState.scenarioIssueRefMap.current.set",
+              "scenarioState.scenarioLaneMode",
+              "scenarioState.scenarioLayout",
+              "scenarioState.scenarioLayout.height",
+              "scenarioState.scenarioLayout.labelWidth",
+              "scenarioState.scenarioLayout.width",
+              "scenarioState.scenarioOverrides",
+              "scenarioState.scenarioOverrides.[computed]",
+              "scenarioState.scenarioPendingScrollRef",
+              "scenarioState.scenarioPendingScrollRef.current",
+              "scenarioState.scenarioRangeOverride",
+              "scenarioState.scenarioRangeOverride.end",
+              "scenarioState.scenarioRangeOverride.end.getTime",
+              "scenarioState.scenarioRangeOverride.start",
+              "scenarioState.scenarioRangeOverride.start.getTime",
+              "scenarioState.scenarioRealtimeCsrfRef",
+              "scenarioState.scenarioRealtimeCsrfRef.current",
+              "scenarioState.scenarioResizeFrameRef",
+              "scenarioState.scenarioResizeFrameRef.current",
+              "scenarioState.scenarioScopeKeyRef",
+              "scenarioState.scenarioScopeKeyRef.current",
+              "scenarioState.scenarioScrollFrameRef",
+              "scenarioState.scenarioScrollFrameRef.current",
+              "scenarioState.scenarioScrollTop",
+              "scenarioState.scenarioShowConflictsOnly",
+              "scenarioState.scenarioSkipAutoCollapseRef",
+              "scenarioState.scenarioSkipAutoCollapseRef.current",
+              "scenarioState.scenarioTeamCollapseInitRef",
+              "scenarioState.scenarioTeamCollapseInitRef.current",
+              "scenarioState.scenarioTimelineRef",
+              "scenarioState.scenarioTimelineRef.current",
+              "scenarioState.scenarioTimelineRef.current.addEventListener",
+              "scenarioState.scenarioTimelineRef.current.clientHeight",
+              "scenarioState.scenarioTimelineRef.current.clientWidth",
+              "scenarioState.scenarioTimelineRef.current.getBoundingClientRect",
+              "scenarioState.scenarioTimelineRef.current.querySelector",
+              "scenarioState.scenarioTimelineRef.current.removeEventListener",
+              "scenarioState.scenarioTimelineRef.current.scrollHeight",
+              "scenarioState.scenarioTimelineRef.current.scrollLeft",
+              "scenarioState.scenarioTimelineRef.current.scrollTo",
+              "scenarioState.scenarioTimelineRef.current.scrollTop",
+              "scenarioState.scenarioTimelineRef.current.scrollWidth",
+              "scenarioState.scenarioTooltipAnchorRef",
+              "scenarioState.scenarioTooltipAnchorRef.current",
+              "scenarioState.scenarioTooltipAnchorRef.current.bottom",
+              "scenarioState.scenarioTooltipAnchorRef.current.getBoundingClientRect",
+              "scenarioState.scenarioTooltipAnchorRef.current.left",
+              "scenarioState.scenarioTooltipAnchorRef.current.right",
+              "scenarioState.scenarioTooltipAnchorRef.current.top",
+              "scenarioState.scenarioTooltipRef",
+              "scenarioState.scenarioTooltipRef.current",
+              "scenarioState.scenarioTooltipRef.current.getBoundingClientRect",
+              "scenarioState.scenarioUndoStackRef",
+              "scenarioState.scenarioUndoStackRef.current",
+              "scenarioState.scenarioUndoStackRef.current.clear",
+              "scenarioState.scenarioUndoStackRef.current.push",
+              "scenarioState.scenarioUndoStackRef.current.redo",
+              "scenarioState.scenarioUndoStackRef.current.undo",
+              "scenarioState.scenarioViewRangeRef",
+              "scenarioState.scenarioViewRangeRef.current",
+              "scenarioState.scenarioViewRangeRef.current.end",
+              "scenarioState.scenarioViewRangeRef.current.start",
+              "scenarioState.scenarioViewportHeight",
+              "scenarioState.scenarioWasDraggedRef",
+              "scenarioState.scenarioWasDraggedRef.current",
+              "scenarioState.setScenarioCollapsedLanes",
+              "scenarioState.setScenarioCurrentUserIdentity",
+              "scenarioState.setScenarioData",
+              "scenarioState.setScenarioDraftEvents",
+              "scenarioState.setScenarioDraftLastEventNumber",
+              "scenarioState.setScenarioDraftLocks",
+              "scenarioState.setScenarioDraftMeta",
+              "scenarioState.setScenarioDraftPresence",
+              "scenarioState.setScenarioDraftRealtimeStatus",
+              "scenarioState.setScenarioDragState",
+              "scenarioState.setScenarioEdgeRender",
+              "scenarioState.setScenarioEditMode",
+              "scenarioState.setScenarioEpicFocus",
+              "scenarioState.setScenarioError",
+              "scenarioState.setScenarioFlashKey",
+              "scenarioState.setScenarioLaneMode",
+              "scenarioState.setScenarioLayout",
+              "scenarioState.setScenarioLoading",
+              "scenarioState.setScenarioOverrides",
+              "scenarioState.setScenarioRangeOverride",
+              "scenarioState.setScenarioScrollLeft",
+              "scenarioState.setScenarioScrollTop",
+              "scenarioState.setScenarioTooltip",
+              "scenarioState.setScenarioUndoVersion",
+              "scenarioState.setScenarioViewportHeight",
+              "searchQuery",
+              "searchQuery.trim",
+              "selectedSprint",
+              "selectedSprintInfo",
+              "selectedSprintInfo.name",
+              "selectedSprintState",
+              "selectedTeamSet",
+              "setConnectionRecoveryNotice",
+              "setConnectionRecoveryStatus",
+              "showScenario",
+              "sprintsLoading",
+              "teamOptions",
+              "teamOptions.filter",
+              "trackScenarioAction",
+              "visibleControlGroups"
+            ],
+            "rationale": "BACKEND_URL is the existing URL scalar; selectedSprint is the existing string/id scalar forwarded to APIs. selectedTeamSet and excludedEpicSet are existing Set collections forwarded to buildLaneIssues/collectJiraExportKeysFromScenarioIssues, not application dependency bags. Complete statically read named member paths are ledgered from resolved input references, including 70 scenarioState bindings and their nested record/ref paths; computed collection selectors are retained as [computed] markers, without claiming enumerable keys of runtime issue records. Lexically resolved local variable aliases, logical fallbacks and statically resolvable local-function argument forwarding are expanded to their source member paths. Runtime collection entry shapes and computed indices remain runtime data, represented by [computed] markers; they do not inject App bindings or concealed service dependencies. Imported function internals are independently owned existing APIs/helpers, rather than new hook input bags."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "useScenarioPlanner",
+              "line": 8503,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [
+            {
+              "name": "scenario",
+              "lines": [
+                8607,
+                11544
+              ]
+            }
+          ],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "scenario.useScenarioState",
+      "path": "frontend/src/scenario/useScenarioState.js",
+      "features": [
+        "scenario"
+      ],
+      "exports": [
+        "useScenarioState"
+      ],
+      "lineCount": 210,
+      "lineCeiling": 210,
+      "interfaces": [
+        {
+          "exportName": "useScenarioState",
+          "inputNames": [
+            "initialLaneMode"
+          ],
+          "returnNames": [
+            "scenarioActiveDraftIdRef",
+            "scenarioCollapsedCards",
+            "scenarioCollapsedLanes",
+            "scenarioCurrentUserIdentity",
+            "scenarioData",
+            "scenarioDraftEvents",
+            "scenarioDraftLastEventNumber",
+            "scenarioDraftLocks",
+            "scenarioDraftMeta",
+            "scenarioDraftPresence",
+            "scenarioDraftRealtimeStatus",
+            "scenarioDragFrameRef",
+            "scenarioDragLockRefreshRef",
+            "scenarioDragState",
+            "scenarioDragStateRef",
+            "scenarioEdgeFrameRef",
+            "scenarioEdgeRender",
+            "scenarioEdgeUpdatePendingRef",
+            "scenarioEditMode",
+            "scenarioEpicFocus",
+            "scenarioError",
+            "scenarioFlashKey",
+            "scenarioFocusRestoreRef",
+            "scenarioGroupValues",
+            "scenarioHistoryActionControllerRef",
+            "scenarioHistoryButtonRef",
+            "scenarioHistoryPanelRef",
+            "scenarioHistoryRefreshControllerRef",
+            "scenarioHistoryTitleRef",
+            "scenarioHoverKey",
+            "scenarioIssueRefMap",
+            "scenarioLaneMode",
+            "scenarioLayout",
+            "scenarioLoading",
+            "scenarioOverrides",
+            "scenarioPendingScrollRef",
+            "scenarioRangeOverride",
+            "scenarioRealtimeCsrfRef",
+            "scenarioRefreshNonceRef",
+            "scenarioResizeFrameRef",
+            "scenarioScopeKeyRef",
+            "scenarioScrollFrameRef",
+            "scenarioScrollLeft",
+            "scenarioScrollTop",
+            "scenarioShowConflictsOnly",
+            "scenarioSkipAutoCollapseRef",
+            "scenarioSummaryHidden",
+            "scenarioTeamCollapseInitRef",
+            "scenarioTimelineRef",
+            "scenarioTooltip",
+            "scenarioTooltipAnchorRef",
+            "scenarioTooltipRef",
+            "scenarioUndoStackRef",
+            "scenarioUndoVersion",
+            "scenarioViewRangeRef",
+            "scenarioViewportHeight",
+            "scenarioWasDraggedRef",
+            "setScenarioCollapsedCards",
+            "setScenarioCollapsedLanes",
+            "setScenarioCurrentUserIdentity",
+            "setScenarioData",
+            "setScenarioDraftEvents",
+            "setScenarioDraftLastEventNumber",
+            "setScenarioDraftLocks",
+            "setScenarioDraftMeta",
+            "setScenarioDraftPresence",
+            "setScenarioDraftRealtimeStatus",
+            "setScenarioDragState",
+            "setScenarioEdgeRender",
+            "setScenarioEditMode",
+            "setScenarioEpicFocus",
+            "setScenarioError",
+            "setScenarioFlashKey",
+            "setScenarioHoverKey",
+            "setScenarioLaneMode",
+            "setScenarioLayout",
+            "setScenarioLoading",
+            "setScenarioOverrides",
+            "setScenarioRangeOverride",
+            "setScenarioScrollLeft",
+            "setScenarioScrollTop",
+            "setScenarioShowConflictsOnly",
+            "setScenarioSummaryHidden",
+            "setScenarioTooltip",
+            "setScenarioUndoVersion",
+            "setScenarioViewportHeight"
+          ],
+          "propNames": [],
+          "expandedInputNames": [
+            "initialLaneMode"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 1,
+          "returnCount": 86,
+          "propCount": 0,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 1,
+          "returnCeiling": 86,
+          "propCeiling": 0,
+          "unresolved": [
+            "forwarded input initialLaneMode"
+          ],
+          "inventory": {
+            "source": "frontend/src/scenario/useScenarioState.js:4",
+            "sourceDigest": "8a5c29f0815a10d6985fa7ac6ab94da1b8d646a4e1817da8d0e4aeac403530fb",
+            "reviewed": true,
+            "complete": true,
+            "memberNames": [
+              "initialLaneMode"
+            ],
+            "rationale": "Only scalar initialLaneMode is forwarded to useState(initialLaneMode); there is no dependency bag. 86 named returns include the 14-member scenarioGroupValues object."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "useScenarioState",
+              "line": 462,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [
+            {
+              "name": "scenarioState",
+              "lines": [
+                520,
+                8504
+              ]
+            }
+          ],
+          "getters": []
+        }
+      ]
     },
     {
       "id": "settings.AdminAccessSettings",
@@ -2070,7 +2936,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "AdminAccessSettings",
-              "line": 17747,
+              "line": 14681,
               "phase": "render"
             }
           ],
@@ -2125,7 +2991,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useAdminAccessSettings",
-              "line": 724,
+              "line": 766,
               "phase": "hook execution"
             }
           ],
@@ -2133,23 +2999,23 @@
             {
               "name": "adminAccess",
               "lines": [
-                1332,
-                1336,
-                2977,
-                3684,
-                3814,
-                3815,
-                3816,
-                4263,
-                4264,
-                4265,
-                4267,
-                4273,
-                17751,
-                17752,
-                17753,
-                17754,
-                17755
+                1277,
+                1281,
+                2922,
+                3629,
+                3759,
+                3760,
+                3761,
+                4208,
+                4209,
+                4210,
+                4212,
+                4218,
+                14685,
+                14686,
+                14687,
+                14688,
+                14689
               ]
             }
           ],
@@ -2204,7 +3070,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "AdminSettingsTabs",
-              "line": 17732,
+              "line": 14666,
               "phase": "render"
             }
           ],
@@ -2316,7 +3182,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "FirstRunGroupConfigurationGuide",
-              "line": 18148,
+              "line": 15082,
               "phase": "render"
             }
           ],
@@ -2408,7 +3274,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "FirstRunGroupSelectionModal",
-              "line": 18358,
+              "line": 15292,
               "phase": "render"
             }
           ],
@@ -2487,7 +3353,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "FirstRunGroupSetupChoice",
-              "line": 18371,
+              "line": 15305,
               "phase": "render"
             }
           ],
@@ -2663,7 +3529,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "GroupBoardsTab",
-              "line": 18330,
+              "line": 15264,
               "phase": "render"
             }
           ],
@@ -3340,7 +4206,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "JiraFieldSettings",
-              "line": 17759,
+              "line": 14693,
               "phase": "render"
             }
           ],
@@ -3431,7 +4297,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "PerformanceSettings",
-              "line": 17745,
+              "line": 14679,
               "phase": "render"
             }
           ],
@@ -3567,7 +4433,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "SettingsModal",
-              "line": 17689,
+              "line": 14623,
               "phase": "render"
             }
           ],
@@ -3951,7 +4817,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "TeamGroupsSettings",
-              "line": 18053,
+              "line": 14987,
               "phase": "render"
             }
           ],
@@ -4005,7 +4871,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "UnconfiguredWorkspaceNotice",
-              "line": 15483,
+              "line": 12417,
               "phase": "render"
             }
           ],
@@ -4063,7 +4929,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "UserConnectionsSettings",
-              "line": 17725,
+              "line": 14659,
               "phase": "render"
             }
           ],
@@ -4120,7 +4986,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useAdminSettingsGate",
-              "line": 730,
+              "line": 772,
               "phase": "hook execution"
             }
           ],
@@ -4128,29 +4994,29 @@
             {
               "name": "adminSettingsGate",
               "lines": [
-                983,
-                2188,
-                2190,
-                8500,
-                8578,
-                8760,
-                8908,
-                12146,
-                15483
+                1025,
+                2133,
+                2135,
+                7794,
+                7872,
+                8054,
+                8202,
+                9080,
+                12417
               ]
             },
             {
               "name": "applyAdminSettingsGateConfig",
               "lines": [
-                3698,
-                3936,
-                6914
+                3643,
+                3881,
+                6745
               ]
             },
             {
               "name": "setAdminSettingsGate",
               "lines": [
-                7000
+                6831
               ]
             }
           ],
@@ -4158,7 +5024,7 @@
             {
               "caller": "frontend/src/dashboard.jsx",
               "name": "openSettings",
-              "line": 730,
+              "line": 772,
               "capturedBindings": [
                 "openGroupManage"
               ],
@@ -4354,7 +5220,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useSettingsConfigBaselineRevision",
-              "line": 837,
+              "line": 879,
               "phase": "hook execution"
             }
           ],
@@ -4362,31 +5228,31 @@
             {
               "name": "settingsConfigBaselineRevision",
               "lines": [
-                2772,
-                2776,
-                2778,
-                2783,
-                2787
+                2717,
+                2721,
+                2723,
+                2728,
+                2732
               ]
             },
             {
               "name": "acceptSettingsConfigBaseline",
               "lines": [
-                4861,
-                4894,
-                4917,
-                4938,
-                4953,
-                5084,
-                5106,
-                5125,
-                5140,
-                5149,
-                6920,
-                6929,
-                6936,
-                6947,
-                6950
+                4806,
+                4839,
+                4862,
+                4883,
+                4898,
+                5029,
+                5051,
+                5070,
+                5085,
+                5094,
+                6751,
+                6760,
+                6767,
+                6778,
+                6781
               ]
             }
           ],
@@ -4547,7 +5413,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useGroupVisibilityPreferences",
-              "line": 1290,
+              "line": 1235,
               "phase": "hook execution"
             }
           ],
@@ -4555,188 +5421,188 @@
             {
               "name": "groupPreferences",
               "lines": [
-                1319,
-                1338,
+                1264,
+                1283,
+                2133,
+                2135,
+                2187,
                 2188,
-                2190,
-                2242,
-                2243,
-                3094,
-                3102,
-                6746,
-                6799,
-                7024,
-                7097,
-                7100,
-                7121,
-                7878,
-                7930,
-                7936,
-                7953,
-                8365,
-                8463,
-                8500,
-                8578,
-                8760,
-                8907,
-                14439,
-                15009,
-                15017,
-                15085,
-                18356,
-                18367,
-                18383
+                3039,
+                3047,
+                6577,
+                6630,
+                6855,
+                6928,
+                6931,
+                6952,
+                7177,
+                7229,
+                7235,
+                7252,
+                7659,
+                7757,
+                7794,
+                7872,
+                8054,
+                8201,
+                11373,
+                11943,
+                11951,
+                12019,
+                15290,
+                15301,
+                15317
               ]
             },
             {
               "name": "setGroupPreferences",
               "lines": [
-                2675,
-                3103,
-                3658,
-                4272,
-                5458
+                2620,
+                3048,
+                3603,
+                4217,
+                5403
               ]
             },
             {
               "name": "visibleGroupDraftIds",
               "lines": [
-                18064
+                14998
               ]
             },
             {
               "name": "setVisibleGroupDraftIds",
               "lines": [
-                2249,
-                3325,
-                3359,
-                3625
+                2194,
+                3270,
+                3304,
+                3570
               ]
             },
             {
               "name": "favoriteGroupDraftId",
               "lines": [
-                18080
+                15014
               ]
             },
             {
               "name": "setFavoriteGroupDraftId",
               "lines": [
-                2250
+                2195
               ]
             },
             {
               "name": "setFavoriteGroupDraft",
               "lines": [
-                18081
+                15015
               ]
             },
             {
               "name": "favoriteGroupValidationError",
               "lines": [
-                3070,
-                3071,
-                3075
+                3015,
+                3016,
+                3020
               ]
             },
             {
               "name": "setGroupPreferencesSaving",
               "lines": [
-                4046
+                3991
               ]
             },
             {
               "name": "groupVisibilitySaving",
               "lines": [
-                3125,
-                18067
+                3070,
+                15001
               ]
             },
             {
               "name": "isGroupVisibilityDraftDirty",
               "lines": [
-                2991,
-                2994,
-                3005,
-                3007,
-                3755,
-                3898,
-                4070,
-                17696
+                2936,
+                2939,
+                2950,
+                2952,
+                3700,
+                3843,
+                4015,
+                14630
               ]
             },
             {
               "name": "visibleControlGroups",
               "lines": [
-                2050,
-                2051,
-                2054,
-                5743,
-                5744,
-                5912,
-                5915,
-                6415,
-                6451,
-                9245,
-                14036,
-                14421
+                1995,
+                1996,
+                1999,
+                5664,
+                5665,
+                5833,
+                5836,
+                6246,
+                6282,
+                8527,
+                10970,
+                11355
               ]
             },
             {
               "name": "initializeGroupPreferencesDraft",
               "lines": [
-                2240
+                2185
               ]
             },
             {
               "name": "isGroupVisibleInControls",
               "lines": [
-                18066
+                15000
               ]
             },
             {
               "name": "toggleGroupVisibleInControls",
               "lines": [
-                18065
+                14999
               ]
             },
             {
               "name": "firstRunFavoriteGroupId",
               "lines": [
-                18360
+                15294
               ]
             },
             {
               "name": "selectFirstRunFavoriteGroup",
               "lines": [
-                18361
+                15295
               ]
             },
             {
               "name": "saveFirstRunGroupPreferences",
               "lines": [
-                4163,
-                5466,
-                5490,
-                18362
+                4108,
+                5411,
+                5435,
+                15296
               ]
             },
             {
               "name": "firstRunSaving",
               "lines": [
-                18365
+                15299
               ]
             },
             {
               "name": "firstRunError",
               "lines": [
-                18366
+                15300
               ]
             },
             {
               "name": "persistGroupPreferences",
               "lines": [
-                3899
+                3844
               ]
             }
           ],
@@ -4888,7 +5754,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useJiraFieldPickers",
-              "line": 831,
+              "line": 873,
               "phase": "hook execution"
             }
           ],
@@ -4896,561 +5762,561 @@
             {
               "name": "sprintFieldIdDraft",
               "lines": [
-                844,
-                1326,
-                1339,
-                3036,
-                3075,
-                17765
+                886,
+                1271,
+                1284,
+                2981,
+                3020,
+                14699
               ]
             },
             {
               "name": "setSprintFieldIdDraft",
               "lines": [
-                4257,
-                17766
+                4202,
+                14700
               ]
             },
             {
               "name": "sprintFieldNameDraft",
               "lines": [
-                844,
-                1326,
-                1340,
-                17764
+                886,
+                1271,
+                1285,
+                14698
               ]
             },
             {
               "name": "setSprintFieldNameDraft",
               "lines": [
-                4257,
-                17767
+                4202,
+                14701
               ]
             },
             {
               "name": "sprintFieldSearchQuery",
               "lines": [
-                17769
+                14703
               ]
             },
             {
               "name": "setSprintFieldSearchQuery",
               "lines": [
-                17770
+                14704
               ]
             },
             {
               "name": "sprintFieldSearchOpen",
               "lines": [
-                17776
+                14710
               ]
             },
             {
               "name": "setSprintFieldSearchOpen",
               "lines": [
-                17771
+                14705
               ]
             },
             {
               "name": "sprintFieldSearchIndex",
               "lines": [
-                17779
+                14713
               ]
             },
             {
               "name": "setSprintFieldSearchIndex",
               "lines": [
-                17772
+                14706
               ]
             },
             {
               "name": "sprintFieldSearchInputRef",
               "lines": [
-                17774
+                14708
               ]
             },
             {
               "name": "sprintFieldSearchResults",
               "lines": [
-                17777
+                14711
               ]
             },
             {
               "name": "sprintFieldSearchHidden",
               "lines": [
-                17778
+                14712
               ]
             },
             {
               "name": "handleSprintFieldSearchKeyDown",
               "lines": [
-                17773
+                14707
               ]
             },
             {
               "name": "isSprintFieldDirty",
               "lines": [
-                3678,
-                6822
+                3623,
+                6653
               ]
             },
             {
               "name": "saveSprintFieldConfig",
               "lines": [
-                3801
+                3746
               ]
             },
             {
               "name": "parentNameFieldIdDraft",
               "lines": [
-                845,
-                1327,
-                1338,
-                3039,
-                3075,
-                17818
+                887,
+                1272,
+                1283,
+                2984,
+                3020,
+                14752
               ]
             },
             {
               "name": "setParentNameFieldIdDraft",
               "lines": [
-                4258,
-                17833
+                4203,
+                14767
               ]
             },
             {
               "name": "parentNameFieldNameDraft",
               "lines": [
-                845,
-                1327,
-                1339,
-                17814
+                887,
+                1272,
+                1284,
+                14748
               ]
             },
             {
               "name": "setParentNameFieldNameDraft",
               "lines": [
-                4258,
-                17834
+                4203,
+                14768
               ]
             },
             {
               "name": "parentNameFieldSearchQuery",
               "lines": [
-                17835
+                14769
               ]
             },
             {
               "name": "setParentNameFieldSearchQuery",
               "lines": [
-                17836
+                14770
               ]
             },
             {
               "name": "parentNameFieldSearchOpen",
               "lines": [
-                17841
+                14775
               ]
             },
             {
               "name": "setParentNameFieldSearchOpen",
               "lines": [
-                17837
+                14771
               ]
             },
             {
               "name": "parentNameFieldSearchIndex",
               "lines": [
-                17844
+                14778
               ]
             },
             {
               "name": "setParentNameFieldSearchIndex",
               "lines": [
-                17838
+                14772
               ]
             },
             {
               "name": "parentNameFieldSearchInputRef",
               "lines": [
-                17840
+                14774
               ]
             },
             {
               "name": "parentNameFieldSearchResults",
               "lines": [
-                17842
+                14776
               ]
             },
             {
               "name": "parentNameFieldSearchHidden",
               "lines": [
-                17843
+                14777
               ]
             },
             {
               "name": "handleParentNameFieldSearchKeyDown",
               "lines": [
-                17839
+                14773
               ]
             },
             {
               "name": "isParentNameFieldDirty",
               "lines": [
-                3679,
-                6823
+                3624,
+                6654
               ]
             },
             {
               "name": "saveParentNameFieldConfig",
               "lines": [
-                3802
+                3747
               ]
             },
             {
               "name": "storyPointsFieldIdDraft",
               "lines": [
-                846,
-                1328,
-                1340,
-                3042,
-                3075,
-                17819
+                888,
+                1273,
+                1285,
+                2987,
+                3020,
+                14753
               ]
             },
             {
               "name": "setStoryPointsFieldIdDraft",
               "lines": [
-                4259,
-                17845
+                4204,
+                14779
               ]
             },
             {
               "name": "storyPointsFieldNameDraft",
               "lines": [
-                846,
-                1328,
-                1340,
-                17815
+                888,
+                1273,
+                1285,
+                14749
               ]
             },
             {
               "name": "setStoryPointsFieldNameDraft",
               "lines": [
-                4259,
-                17846
+                4204,
+                14780
               ]
             },
             {
               "name": "storyPointsFieldSearchQuery",
               "lines": [
-                17847
+                14781
               ]
             },
             {
               "name": "setStoryPointsFieldSearchQuery",
               "lines": [
-                17848
+                14782
               ]
             },
             {
               "name": "storyPointsFieldSearchOpen",
               "lines": [
-                17853
+                14787
               ]
             },
             {
               "name": "setStoryPointsFieldSearchOpen",
               "lines": [
-                17849
+                14783
               ]
             },
             {
               "name": "storyPointsFieldSearchIndex",
               "lines": [
-                17856
+                14790
               ]
             },
             {
               "name": "setStoryPointsFieldSearchIndex",
               "lines": [
-                17850
+                14784
               ]
             },
             {
               "name": "storyPointsFieldSearchInputRef",
               "lines": [
-                17852
+                14786
               ]
             },
             {
               "name": "storyPointsFieldSearchResults",
               "lines": [
-                17854
+                14788
               ]
             },
             {
               "name": "storyPointsFieldSearchHidden",
               "lines": [
-                17855
+                14789
               ]
             },
             {
               "name": "handleStoryPointsFieldSearchKeyDown",
               "lines": [
-                17851
+                14785
               ]
             },
             {
               "name": "isStoryPointsFieldDirty",
               "lines": [
-                3680,
-                6824
+                3625,
+                6655
               ]
             },
             {
               "name": "saveStoryPointsFieldConfig",
               "lines": [
-                3803
+                3748
               ]
             },
             {
               "name": "teamFieldIdDraft",
               "lines": [
-                847,
-                1329,
-                1340,
-                3045,
-                3075,
-                17820
+                889,
+                1274,
+                1285,
+                2990,
+                3020,
+                14754
               ]
             },
             {
               "name": "setTeamFieldIdDraft",
               "lines": [
-                4260,
-                17867
+                4205,
+                14801
               ]
             },
             {
               "name": "teamFieldNameDraft",
               "lines": [
-                847,
-                1329,
-                1340,
-                17816
+                889,
+                1274,
+                1285,
+                14750
               ]
             },
             {
               "name": "setTeamFieldNameDraft",
               "lines": [
-                4260,
-                17868
+                4205,
+                14802
               ]
             },
             {
               "name": "teamFieldSearchQuery",
               "lines": [
-                17857
+                14791
               ]
             },
             {
               "name": "setTeamFieldSearchQuery",
               "lines": [
-                17858
+                14792
               ]
             },
             {
               "name": "teamFieldSearchOpen",
               "lines": [
-                17863
+                14797
               ]
             },
             {
               "name": "setTeamFieldSearchOpen",
               "lines": [
-                17859
+                14793
               ]
             },
             {
               "name": "teamFieldSearchIndex",
               "lines": [
-                17866
+                14800
               ]
             },
             {
               "name": "setTeamFieldSearchIndex",
               "lines": [
-                17860
+                14794
               ]
             },
             {
               "name": "teamFieldSearchInputRef",
               "lines": [
-                17862
+                14796
               ]
             },
             {
               "name": "teamFieldSearchResults",
               "lines": [
-                17864
+                14798
               ]
             },
             {
               "name": "teamFieldSearchHidden",
               "lines": [
-                17865
+                14799
               ]
             },
             {
               "name": "handleTeamFieldSearchKeyDown",
               "lines": [
-                17861
+                14795
               ]
             },
             {
               "name": "isTeamFieldDirty",
               "lines": [
-                3681,
-                6825
+                3626,
+                6656
               ]
             },
             {
               "name": "saveTeamFieldConfig",
               "lines": [
-                3804
+                3749
               ]
             },
             {
               "name": "deliveryOwnerFieldIdDraft",
               "lines": [
-                848,
-                1330,
-                1337,
-                17821
+                890,
+                1275,
+                1282,
+                14755
               ]
             },
             {
               "name": "setDeliveryOwnerFieldIdDraft",
               "lines": [
-                4261,
-                17879
+                4206,
+                14813
               ]
             },
             {
               "name": "deliveryOwnerFieldNameDraft",
               "lines": [
-                848,
-                1330,
-                1337,
-                17817
+                890,
+                1275,
+                1282,
+                14751
               ]
             },
             {
               "name": "setDeliveryOwnerFieldNameDraft",
               "lines": [
-                4261,
-                17880
+                4206,
+                14814
               ]
             },
             {
               "name": "deliveryOwnerFieldSearchQuery",
               "lines": [
-                17869
+                14803
               ]
             },
             {
               "name": "setDeliveryOwnerFieldSearchQuery",
               "lines": [
-                17870
+                14804
               ]
             },
             {
               "name": "deliveryOwnerFieldSearchOpen",
               "lines": [
-                17875
+                14809
               ]
             },
             {
               "name": "setDeliveryOwnerFieldSearchOpen",
               "lines": [
-                17871
+                14805
               ]
             },
             {
               "name": "deliveryOwnerFieldSearchIndex",
               "lines": [
-                17878
+                14812
               ]
             },
             {
               "name": "setDeliveryOwnerFieldSearchIndex",
               "lines": [
-                17872
+                14806
               ]
             },
             {
               "name": "deliveryOwnerFieldSearchInputRef",
               "lines": [
-                17874
+                14808
               ]
             },
             {
               "name": "deliveryOwnerFieldSearchResults",
               "lines": [
-                17876
+                14810
               ]
             },
             {
               "name": "deliveryOwnerFieldSearchHidden",
               "lines": [
-                17877
+                14811
               ]
             },
             {
               "name": "handleDeliveryOwnerFieldSearchKeyDown",
               "lines": [
-                17873
+                14807
               ]
             },
             {
               "name": "isDeliveryOwnerFieldDirty",
               "lines": [
-                3682,
-                6826
+                3627,
+                6657
               ]
             },
             {
               "name": "saveDeliveryOwnerFieldConfig",
               "lines": [
-                3805
+                3750
               ]
             },
             {
               "name": "loadAllFieldConfigs",
               "lines": [
-                2270,
-                6973
+                2215,
+                6804
               ]
             },
             {
               "name": "seedSharedFieldConfigs",
               "lines": [
-                6951
+                6782
               ]
             },
             {
               "name": "anyFieldConfigDirty",
               "lines": [
-                2984,
-                2986
+                2929,
+                2931
               ]
             },
             {
               "name": "dirtyFieldConfigCount",
               "lines": [
-                3006,
-                3007
+                2951,
+                2952
               ]
             }
           ],
@@ -5539,7 +6405,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useTeamCatalogLifecycle",
-              "line": 1210,
+              "line": 1155,
               "phase": "hook execution"
             }
           ],
@@ -5547,45 +6413,45 @@
             {
               "name": "teamCatalogState",
               "lines": [
-                5394,
-                5403,
-                5508,
-                5509
+                5339,
+                5348,
+                5453,
+                5454
               ]
             },
             {
               "name": "loadingTeams",
               "lines": [
-                18073
+                15007
               ]
             },
             {
               "name": "teamCatalogReady",
               "lines": [
-                18074,
-                18158
+                15008,
+                15092
               ]
             },
             {
               "name": "teamMembershipState",
               "lines": [
-                5406,
-                5408,
-                5409,
-                5410,
-                5411
+                5351,
+                5353,
+                5354,
+                5355,
+                5356
               ]
             },
             {
               "name": "fetchAllTeamsFromJira",
               "lines": [
-                18072
+                15006
               ]
             },
             {
               "name": "invalidateTeamMembership",
               "lines": [
-                3691
+                3636
               ]
             }
           ],
@@ -5607,728 +6473,94 @@
       "lineCount": 28,
       "lineCeiling": 28,
       "interfaces": []
-    },
-    {
-      "id": "scenario.scenarioGroupState",
-      "path": "frontend/src/scenario/scenarioGroupState.js",
-      "features": [
-        "scenario"
-      ],
-      "exports": [
-        "SCENARIO_GROUP_STATE_KEYS",
-        "applyScenarioGroupState",
-        "buildDefaultScenarioGroupState",
-        "resetScenarioTransientRefs"
-      ],
-      "lineCount": 95,
-      "lineCeiling": 95,
-      "interfaces": []
-    },
-    {
-      "id": "scenario.useScenarioState",
-      "path": "frontend/src/scenario/useScenarioState.js",
-      "features": [
-        "scenario"
-      ],
-      "exports": [
-        "useScenarioState"
-      ],
-      "lineCount": 210,
-      "lineCeiling": 210,
-      "interfaces": [
-        {
-          "exportName": "useScenarioState",
-          "inputNames": [
-            "initialLaneMode"
-          ],
-          "returnNames": [
-            "scenarioActiveDraftIdRef",
-            "scenarioCollapsedCards",
-            "scenarioCollapsedLanes",
-            "scenarioCurrentUserIdentity",
-            "scenarioData",
-            "scenarioDraftEvents",
-            "scenarioDraftLastEventNumber",
-            "scenarioDraftLocks",
-            "scenarioDraftMeta",
-            "scenarioDraftPresence",
-            "scenarioDraftRealtimeStatus",
-            "scenarioDragFrameRef",
-            "scenarioDragLockRefreshRef",
-            "scenarioDragState",
-            "scenarioDragStateRef",
-            "scenarioEdgeFrameRef",
-            "scenarioEdgeRender",
-            "scenarioEdgeUpdatePendingRef",
-            "scenarioEditMode",
-            "scenarioEpicFocus",
-            "scenarioError",
-            "scenarioFlashKey",
-            "scenarioFocusRestoreRef",
-            "scenarioGroupValues",
-            "scenarioHistoryActionControllerRef",
-            "scenarioHistoryButtonRef",
-            "scenarioHistoryPanelRef",
-            "scenarioHistoryRefreshControllerRef",
-            "scenarioHistoryTitleRef",
-            "scenarioHoverKey",
-            "scenarioIssueRefMap",
-            "scenarioLaneMode",
-            "scenarioLayout",
-            "scenarioLoading",
-            "scenarioOverrides",
-            "scenarioPendingScrollRef",
-            "scenarioRangeOverride",
-            "scenarioRealtimeCsrfRef",
-            "scenarioRefreshNonceRef",
-            "scenarioResizeFrameRef",
-            "scenarioScopeKeyRef",
-            "scenarioScrollFrameRef",
-            "scenarioScrollLeft",
-            "scenarioScrollTop",
-            "scenarioShowConflictsOnly",
-            "scenarioSkipAutoCollapseRef",
-            "scenarioSummaryHidden",
-            "scenarioTeamCollapseInitRef",
-            "scenarioTimelineRef",
-            "scenarioTooltip",
-            "scenarioTooltipAnchorRef",
-            "scenarioTooltipRef",
-            "scenarioUndoStackRef",
-            "scenarioUndoVersion",
-            "scenarioViewRangeRef",
-            "scenarioViewportHeight",
-            "scenarioWasDraggedRef",
-            "setScenarioCollapsedCards",
-            "setScenarioCollapsedLanes",
-            "setScenarioCurrentUserIdentity",
-            "setScenarioData",
-            "setScenarioDraftEvents",
-            "setScenarioDraftLastEventNumber",
-            "setScenarioDraftLocks",
-            "setScenarioDraftMeta",
-            "setScenarioDraftPresence",
-            "setScenarioDraftRealtimeStatus",
-            "setScenarioDragState",
-            "setScenarioEdgeRender",
-            "setScenarioEditMode",
-            "setScenarioEpicFocus",
-            "setScenarioError",
-            "setScenarioFlashKey",
-            "setScenarioHoverKey",
-            "setScenarioLaneMode",
-            "setScenarioLayout",
-            "setScenarioLoading",
-            "setScenarioOverrides",
-            "setScenarioRangeOverride",
-            "setScenarioScrollLeft",
-            "setScenarioScrollTop",
-            "setScenarioShowConflictsOnly",
-            "setScenarioSummaryHidden",
-            "setScenarioTooltip",
-            "setScenarioUndoVersion",
-            "setScenarioViewportHeight"
-          ],
-          "propNames": [],
-          "expandedInputNames": [
-            "initialLaneMode"
-          ],
-          "outerParameterCount": 1,
-          "expandedInputCount": 1,
-          "returnCount": 86,
-          "propCount": 0,
-          "outerParameterCeiling": 1,
-          "expandedInputCeiling": 1,
-          "returnCeiling": 86,
-          "propCeiling": 0,
-          "unresolved": [
-            "forwarded input initialLaneMode"
-          ],
-          "inventory": {
-            "source": "frontend/src/scenario/useScenarioState.js:4",
-            "sourceDigest": "8a5c29f0815a10d6985fa7ac6ab94da1b8d646a4e1817da8d0e4aeac403530fb",
-            "reviewed": true,
-            "complete": true,
-            "memberNames": [
-              "initialLaneMode"
-            ],
-            "rationale": "Only scalar initialLaneMode is forwarded to useState(initialLaneMode); there is no dependency bag. 86 named returns include the 14-member scenarioGroupValues object."
-          },
-          "callers": [
-            {
-              "path": "frontend/src/dashboard.jsx",
-              "symbol": "useScenarioState",
-              "line": 477,
-              "phase": "hook execution"
-            }
-          ],
-          "remainingAppReaders": [
-            {
-              "name": "scenarioState",
-              "lines": [
-                562
-              ]
-            }
-          ],
-          "getters": []
-        }
-      ]
     }
   ],
   "aggregates": {
     "scenario": {
-      "measured": 780,
-      "ceiling": 780
+      "measured": 3981,
+      "ceiling": 3981
     },
     "settings": {
       "measured": 9803,
       "ceiling": 9803
     },
     "uniqueOwners": {
-      "measured": 10583,
-      "ceiling": 10583
+      "measured": 13784,
+      "ceiling": 13784
     },
     "appPlusOwners": {
-      "measured": 28890,
-      "ceiling": 28890
+      "measured": 29152,
+      "ceiling": 29152
     }
   },
   "transfer": {
     "incomingRanges": [
       {
-        "id": "default-14-members",
-        "fromLine": 6018,
-        "toLine": 6041,
-        "removedPhysicalLines": 23,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "snapshot-14-members",
-        "fromLine": 6117,
-        "toLine": 6130,
-        "removedPhysicalLines": 13,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "memo-14-dependencies",
-        "fromLine": 6335,
-        "toLine": 6348,
-        "removedPhysicalLines": 13,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "apply-15-setters",
-        "fromLine": 6232,
-        "toLine": 6255,
-        "removedPhysicalLines": 23,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "delete-duplicate-loading-false",
-        "fromLine": 6275,
-        "toLine": 6276,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "reset-ref-block-1",
-        "fromLine": 6153,
-        "toLine": 6154,
+        "id": "scheduleScenarioEdgeUpdate-through-scheduleScenarioEdgeUpdate",
+        "fromLine": 1118,
+        "toLine": 1118,
         "removedPhysicalLines": 1,
         "addedPhysicalLines": 1
       },
       {
-        "id": "reset-ref-block-2",
-        "fromLine": 6154,
-        "toLine": 6155,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
+        "id": "matchesScenarioSearch-through-registerScenarioIssueRef",
+        "fromLine": 5692,
+        "toLine": 5716,
+        "removedPhysicalLines": 25,
+        "addedPhysicalLines": 25
       },
       {
-        "id": "reset-ref-block-3",
-        "fromLine": 6155,
-        "toLine": 6156,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
+        "id": "fetchScenarioCsrfToken-through-handleScenarioBarMouseDown",
+        "fromLine": 7227,
+        "toLine": 7759,
+        "removedPhysicalLines": 533,
+        "addedPhysicalLines": 533
       },
       {
-        "id": "reset-ref-block-4",
-        "fromLine": 6156,
-        "toLine": 6157,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
+        "id": "scenarioTeamIds-through-scenarioTeamIds",
+        "fromLine": 8076,
+        "toLine": 8081,
+        "removedPhysicalLines": 6,
+        "addedPhysicalLines": 6
       },
       {
-        "id": "reset-ref-block-5",
-        "fromLine": 6157,
-        "toLine": 6158,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "reset-ref-block-6",
-        "fromLine": 6158,
-        "toLine": 6162,
-        "removedPhysicalLines": 4,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "reset-ref-block-7",
-        "fromLine": 6163,
-        "toLine": 6167,
-        "removedPhysicalLines": 4,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "reset-ref-block-8",
-        "fromLine": 6167,
-        "toLine": 6171,
-        "removedPhysicalLines": 4,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "reset-ref-block-9",
-        "fromLine": 6171,
-        "toLine": 6172,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioCurrentUserIdentity",
-        "fromLine": 475,
-        "toLine": 479,
-        "removedPhysicalLines": 4,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioLoading",
-        "fromLine": 1032,
-        "toLine": 1033,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioError",
-        "fromLine": 1033,
-        "toLine": 1034,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioData",
-        "fromLine": 1034,
-        "toLine": 1035,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioLaneMode",
-        "fromLine": 1035,
-        "toLine": 1036,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioShowConflictsOnly",
-        "fromLine": 1036,
-        "toLine": 1037,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioTimelineRef",
-        "fromLine": 1037,
-        "toLine": 1038,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioLayout",
-        "fromLine": 1038,
-        "toLine": 1039,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioCollapsedLanes",
-        "fromLine": 1039,
-        "toLine": 1040,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioCollapsedCards",
-        "fromLine": 1040,
-        "toLine": 1041,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioSummaryHidden",
-        "fromLine": 1041,
-        "toLine": 1042,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioHoverKey",
-        "fromLine": 1042,
-        "toLine": 1043,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioFlashKey",
-        "fromLine": 1043,
-        "toLine": 1044,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioScrollTop",
-        "fromLine": 1044,
-        "toLine": 1045,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioScrollLeft",
-        "fromLine": 1046,
-        "toLine": 1047,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioViewportHeight",
-        "fromLine": 1047,
-        "toLine": 1048,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioEpicFocus",
-        "fromLine": 1048,
-        "toLine": 1049,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioRangeOverride",
-        "fromLine": 1049,
-        "toLine": 1050,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioFocusRestoreRef",
-        "fromLine": 1050,
-        "toLine": 1051,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioSkipAutoCollapseRef",
-        "fromLine": 1051,
-        "toLine": 1052,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioTeamCollapseInitRef",
-        "fromLine": 1052,
-        "toLine": 1053,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioHistoryButtonRef",
-        "fromLine": 1053,
-        "toLine": 1054,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioHistoryPanelRef",
-        "fromLine": 1054,
-        "toLine": 1055,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioHistoryTitleRef",
-        "fromLine": 1055,
-        "toLine": 1056,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioOverrides",
-        "fromLine": 1056,
-        "toLine": 1057,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioActiveDraftIdRef",
-        "fromLine": 1057,
-        "toLine": 1058,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioScopeKeyRef",
-        "fromLine": 1058,
-        "toLine": 1059,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioDraftMeta",
-        "fromLine": 1059,
-        "toLine": 1088,
-        "removedPhysicalLines": 29,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioDraftEvents",
-        "fromLine": 1088,
-        "toLine": 1089,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioDraftPresence",
-        "fromLine": 1089,
-        "toLine": 1090,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioDraftLocks",
-        "fromLine": 1090,
-        "toLine": 1091,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioDraftRealtimeStatus",
-        "fromLine": 1091,
-        "toLine": 1096,
-        "removedPhysicalLines": 5,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioDraftLastEventNumber",
-        "fromLine": 1096,
-        "toLine": 1097,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioEditMode",
-        "fromLine": 1097,
-        "toLine": 1098,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioUndoStackRef",
-        "fromLine": 1099,
-        "toLine": 1100,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioUndoVersion",
-        "fromLine": 1100,
-        "toLine": 1101,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioDragState",
-        "fromLine": 1101,
-        "toLine": 1102,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioDragStateRef",
-        "fromLine": 1102,
-        "toLine": 1103,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioDragFrameRef",
-        "fromLine": 1103,
-        "toLine": 1104,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioDragLockRefreshRef",
-        "fromLine": 1104,
-        "toLine": 1105,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioRealtimeCsrfRef",
-        "fromLine": 1105,
-        "toLine": 1106,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioHistoryRefreshControllerRef",
-        "fromLine": 1106,
-        "toLine": 1107,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioHistoryActionControllerRef",
-        "fromLine": 1107,
-        "toLine": 1108,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioViewRangeRef",
-        "fromLine": 1108,
-        "toLine": 1109,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioWasDraggedRef",
-        "fromLine": 1109,
-        "toLine": 1110,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioEdgeUpdatePendingRef",
-        "fromLine": 1110,
-        "toLine": 1111,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioEdgeFrameRef",
-        "fromLine": 1111,
-        "toLine": 1112,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioScrollFrameRef",
-        "fromLine": 1112,
-        "toLine": 1113,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioResizeFrameRef",
-        "fromLine": 1113,
-        "toLine": 1114,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioPendingScrollRef",
-        "fromLine": 1114,
-        "toLine": 1115,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioTooltip",
-        "fromLine": 1116,
-        "toLine": 1127,
-        "removedPhysicalLines": 11,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioTooltipRef",
-        "fromLine": 1127,
-        "toLine": 1128,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioTooltipAnchorRef",
-        "fromLine": 1128,
-        "toLine": 1129,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioIssueRefMap",
-        "fromLine": 1129,
-        "toLine": 1130,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioEdgeRender",
-        "fromLine": 1130,
-        "toLine": 1131,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
-      },
-      {
-        "id": "move-state-scenarioRefreshNonceRef",
-        "fromLine": 1188,
-        "toLine": 1189,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 0
+        "id": "scenarioRawIssues-through-ExpressionStatement",
+        "fromLine": 9106,
+        "toLine": 11546,
+        "removedPhysicalLines": 2441,
+        "addedPhysicalLines": 2441
       }
     ],
-    "scaffoldingAllowance": 202,
+    "scaffoldingAllowance": 262,
     "netPhysicalLOC": {
-      "priorAppPlusOwners": 28688,
-      "nextAppPlusOwners": 28890,
-      "transferredSourceLines": 168,
-      "helperWrapperAndConstantLines": 28,
-      "stateWrapperReturnsMemoImportsLines": 109,
-      "appCallsDestructureImportsLines": 93,
-      "removedSnapshotAndDependencyLines": 28
+      "priorAppPlusOwners": 28890,
+      "nextAppPlusOwners": 29152,
+      "transferredSourceLines": 3006,
+      "hookScaffoldingLines": 195,
+      "netAppScaffoldingLines": 67
     },
     "getters": [],
-    "rationale": "Current R1 source after 24-line approved dead deletion; App-to-owner statements receive zero combined growth credit. Existing 41 per-file/interface caps copied unchanged; exact formatting shown by frozen scratch hashes.",
+    "rationale": "Operator validated SC2 checkpoint on 2026-10-04; exact frozen source hashes, 267 reviewed expanded input paths, zero transfer growth credit. All 43 existing per-file and interface ceilings remain unchanged. R5 still owns structural and warning ratchets.",
     "scaffoldingBreakdown": {
-      "state": {
-        "imports": 2,
-        "blank": 1,
-        "functionHeader": 1,
-        "newGroupMemo": 16,
-        "returnWrapperAnd86Members": 88,
-        "functionClose": 1,
-        "total": 109
+      "incomingPhysicalLines": 3006,
+      "hook": {
+        "imports": 12,
+        "blankAndRunSeparators": 5,
+        "parameterSignature": 36,
+        "stateDestructure": 72,
+        "returnWrapper": 69,
+        "functionClosing": 1,
+        "total": 195
       },
       "app": {
-        "hookCall": 1,
-        "destructure83MembersAndWrapper": 85,
-        "imports": 2,
-        "defaultSnapshotDependenciesApplyResetSeamLines": 5,
-        "total": 93
+        "callAndDestructure": 105,
+        "newImport": 1,
+        "retainedRunAnchorBlankLines": 4,
+        "prunedStateBindings": 27,
+        "prunedWholeImports": 16,
+        "net": 67
       },
-      "helper": {
-        "explicit14keyConstant": 16,
-        "defaultFunctionAndReturnWrapper": 4,
-        "applyFunctionHeaderFallbackAndClose": 3,
-        "resetFunctionHeaderAndClose": 2,
-        "blankLines": 3,
-        "total": 28
-      },
-      "verifiedRemoved": {
-        "snapshot14Members": 14,
-        "dependencies14Members": 14,
-        "total": 28
-      },
-      "net": 202
+      "note": "3006 original inclusive physical lines transfer with zero combined credit. Hook adds12imports+1importblank+36signature+72state-destructure+4runseparatorblanks+69return+1closing=195. App adds105call/destructure+1import+4empty former-run anchors\u221227state-binding lines\u221216net import-pruning lines=67. Combined262."
     }
   }
 }

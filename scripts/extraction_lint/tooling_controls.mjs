@@ -157,6 +157,13 @@ fs.writeFileSync(contractOwner, 'export function useOwner({ bag }) { const { inn
 contracts('nested-bag-destructure-unreviewed-fails', 1, [/unresolved inventory|interface members added.*expandedInputNames/]);
 fs.writeFileSync(contractOwner, 'import "../dashboard.jsx"; export function useOwner({ bag }) { return { value: bag.value }; }\n');
 contracts('owner-to-app-dependency-fails', 1, [/dependency direction: owner imports dashboard.jsx/]);
+write('contracts/frontend/src/analytics/dashboardAnalytics.js', 'export const analytics = 1;\n');
+fs.writeFileSync(contractOwner, 'import "../analytics/dashboardAnalytics.js"; export function useOwner({ bag }) { return { value: bag.value }; }\n');
+contracts('owner-dashboard-analytics-dependency-clean', 0, [/owner budgets: 1 modules; problems: 0/]);
+fs.writeFileSync(contractOwner, 'export * from "../dashboard.jsx"; export function useOwner({ bag }) { return { value: bag.value }; }\n');
+contracts('owner-to-app-star-reexport-fails', 1, [/dependency direction: owner re-exports dashboard/]);
+fs.writeFileSync(contractOwner, 'export { App } from "../dashboard.jsx"; export function useOwner({ bag }) { return { value: bag.value }; }\n');
+contracts('owner-to-app-named-reexport-fails', 1, [/dependency direction: owner re-exports dashboard/]);
 fs.writeFileSync(contractOwner, 'export function useOwner({ bag }) { return { value: bag.value }; }\n');
 write('contracts/frontend/src/scenario/unregistered.js', 'export const hidden = 1;\n');
 contracts('ast-unregistered-module-fails', 1, [/unregistered owner module/]);

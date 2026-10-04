@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "baseSha": "bc17d28c9e1dae9a2331b4aeadb746142b0eab89",
-  "checkpointId": "SC2-planner-hook",
+  "baseSha": "f2e2b51049e1e7b3cce7c8323aa8d14ecff87934",
+  "checkpointId": "SC3-H1-draft-hook",
   "sourceRoot": "frontend/src",
   "ownerRoots": [
     "scenario",
@@ -1949,9 +1949,9 @@
           },
           "callers": [
             {
-              "path": "frontend/src/scenario/useScenarioPlanner.js",
+              "path": "frontend/src/scenario/useScenarioDraft.js",
               "symbol": "useConnectionScenarioRecovery",
-              "line": 718,
+              "line": 387,
               "phase": "hook execution"
             }
           ],
@@ -2033,6 +2033,237 @@
       "interfaces": []
     },
     {
+      "id": "scenario.useScenarioDraft",
+      "path": "frontend/src/scenario/useScenarioDraft.js",
+      "features": [
+        "scenario"
+      ],
+      "exports": [
+        "useScenarioDraft"
+      ],
+      "lineCount": 441,
+      "lineCeiling": 441,
+      "interfaces": [
+        {
+          "exportName": "useScenarioDraft",
+          "inputNames": [
+            "BACKEND_URL",
+            "activeGroup",
+            "activeGroupId",
+            "availableSprints",
+            "cleanupSprintFetch",
+            "connectionRecoveryScenarioStartedRef",
+            "connectionRecoveryStagedRevision",
+            "excludedEpicSet",
+            "groupsLoading",
+            "isAllTeamsSelected",
+            "isCompletedSprintSelected",
+            "pendingConnectionRecoveryRef",
+            "pendingShellAuthResumeRef",
+            "registerSprintFetch",
+            "releaseConnectionRecoveryOwnership",
+            "scenarioState",
+            "selectedSprint",
+            "selectedSprintInfo",
+            "selectedSprintState",
+            "selectedTeamSet",
+            "setConnectionRecoveryNotice",
+            "setConnectionRecoveryStatus",
+            "showScenario",
+            "sprintsLoading",
+            "teamOptions",
+            "trackScenarioAction",
+            "visibleControlGroups"
+          ],
+          "returnNames": [
+            "buildScenarioDraftScope",
+            "fetchScenarioDraft",
+            "fetchScenarioDraftVersion",
+            "isScenarioScopeDraftCurrent",
+            "pauseScenarioRealtime",
+            "pollScenarioDraftEvents",
+            "postScenarioRealtimeJson",
+            "reloadScenarioDraftFromJira",
+            "rollbackScenarioDraft",
+            "runScenario",
+            "saveScenarioDraftVersion",
+            "scenarioActiveDraftId",
+            "scenarioActiveDraftReady",
+            "scenarioCanSaveDraft",
+            "scenarioHasUnsavedChanges",
+            "scenarioScopeKey"
+          ],
+          "propNames": [],
+          "expandedInputNames": [
+            "BACKEND_URL",
+            "activeGroup",
+            "activeGroup.name",
+            "activeGroupId",
+            "availableSprints",
+            "cleanupSprintFetch",
+            "connectionRecoveryScenarioStartedRef",
+            "connectionRecoveryStagedRevision",
+            "excludedEpicSet",
+            "groupsLoading",
+            "isAllTeamsSelected",
+            "isCompletedSprintSelected",
+            "pendingConnectionRecoveryRef",
+            "pendingConnectionRecoveryRef.current",
+            "pendingShellAuthResumeRef",
+            "registerSprintFetch",
+            "releaseConnectionRecoveryOwnership",
+            "scenarioState",
+            "scenarioState.scenarioActiveDraftIdRef",
+            "scenarioState.scenarioActiveDraftIdRef.current",
+            "scenarioState.scenarioData",
+            "scenarioState.scenarioDraftMeta",
+            "scenarioState.scenarioDraftMeta.activeDraft",
+            "scenarioState.scenarioDraftMeta.activeDraft.draftId",
+            "scenarioState.scenarioDraftMeta.conflict",
+            "scenarioState.scenarioDraftMeta.dirtyState",
+            "scenarioState.scenarioDraftMeta.loadingHistory",
+            "scenarioState.scenarioDraftMeta.savedOverrides",
+            "scenarioState.scenarioDraftMeta.saving",
+            "scenarioState.scenarioDraftMeta.scopeKey",
+            "scenarioState.scenarioDraftMeta.scopePayload",
+            "scenarioState.scenarioLaneMode",
+            "scenarioState.scenarioOverrides",
+            "scenarioState.scenarioRealtimeCsrfRef",
+            "scenarioState.scenarioRealtimeCsrfRef.current",
+            "scenarioState.scenarioScopeKeyRef",
+            "scenarioState.scenarioScopeKeyRef.current",
+            "scenarioState.scenarioTimelineRef",
+            "scenarioState.scenarioTimelineRef.current",
+            "scenarioState.scenarioTimelineRef.current.scrollTop",
+            "scenarioState.scenarioUndoStackRef",
+            "scenarioState.setScenarioData",
+            "scenarioState.setScenarioDraftEvents",
+            "scenarioState.setScenarioDraftLastEventNumber",
+            "scenarioState.setScenarioDraftLocks",
+            "scenarioState.setScenarioDraftMeta",
+            "scenarioState.setScenarioDraftPresence",
+            "scenarioState.setScenarioDraftRealtimeStatus",
+            "scenarioState.setScenarioEditMode",
+            "scenarioState.setScenarioError",
+            "scenarioState.setScenarioLoading",
+            "scenarioState.setScenarioOverrides",
+            "scenarioState.setScenarioUndoVersion",
+            "selectedSprint",
+            "selectedSprintInfo",
+            "selectedSprintInfo.name",
+            "selectedSprintState",
+            "selectedTeamSet",
+            "setConnectionRecoveryNotice",
+            "setConnectionRecoveryStatus",
+            "showScenario",
+            "sprintsLoading",
+            "teamOptions",
+            "teamOptions.filter",
+            "trackScenarioAction",
+            "visibleControlGroups"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 66,
+          "returnCount": 16,
+          "propCount": 0,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 66,
+          "returnCeiling": 16,
+          "propCeiling": 0,
+          "unresolved": [
+            "forwarded input BACKEND_URL",
+            "forwarded input selectedSprint",
+            "forwarded input selectedTeamSet",
+            "forwarded input excludedEpicSet"
+          ],
+          "inventory": {
+            "source": "frontend/src/scenario/useScenarioDraft.js:11",
+            "sourceDigest": "d5aa050d7ce22dbe8ab8e0fa52e51fc7692f8583e3f0c6e64ecd10063bc786da",
+            "reviewed": true,
+            "memberNames": [
+              "BACKEND_URL",
+              "activeGroup",
+              "activeGroup.name",
+              "activeGroupId",
+              "availableSprints",
+              "cleanupSprintFetch",
+              "connectionRecoveryScenarioStartedRef",
+              "connectionRecoveryStagedRevision",
+              "excludedEpicSet",
+              "groupsLoading",
+              "isAllTeamsSelected",
+              "isCompletedSprintSelected",
+              "pendingConnectionRecoveryRef",
+              "pendingConnectionRecoveryRef.current",
+              "pendingShellAuthResumeRef",
+              "registerSprintFetch",
+              "releaseConnectionRecoveryOwnership",
+              "scenarioState",
+              "scenarioState.scenarioActiveDraftIdRef",
+              "scenarioState.scenarioActiveDraftIdRef.current",
+              "scenarioState.scenarioData",
+              "scenarioState.scenarioDraftMeta",
+              "scenarioState.scenarioDraftMeta.activeDraft",
+              "scenarioState.scenarioDraftMeta.activeDraft.draftId",
+              "scenarioState.scenarioDraftMeta.conflict",
+              "scenarioState.scenarioDraftMeta.dirtyState",
+              "scenarioState.scenarioDraftMeta.loadingHistory",
+              "scenarioState.scenarioDraftMeta.savedOverrides",
+              "scenarioState.scenarioDraftMeta.saving",
+              "scenarioState.scenarioDraftMeta.scopeKey",
+              "scenarioState.scenarioDraftMeta.scopePayload",
+              "scenarioState.scenarioLaneMode",
+              "scenarioState.scenarioOverrides",
+              "scenarioState.scenarioRealtimeCsrfRef",
+              "scenarioState.scenarioRealtimeCsrfRef.current",
+              "scenarioState.scenarioScopeKeyRef",
+              "scenarioState.scenarioScopeKeyRef.current",
+              "scenarioState.scenarioTimelineRef",
+              "scenarioState.scenarioTimelineRef.current",
+              "scenarioState.scenarioTimelineRef.current.scrollTop",
+              "scenarioState.scenarioUndoStackRef",
+              "scenarioState.setScenarioData",
+              "scenarioState.setScenarioDraftEvents",
+              "scenarioState.setScenarioDraftLastEventNumber",
+              "scenarioState.setScenarioDraftLocks",
+              "scenarioState.setScenarioDraftMeta",
+              "scenarioState.setScenarioDraftPresence",
+              "scenarioState.setScenarioDraftRealtimeStatus",
+              "scenarioState.setScenarioEditMode",
+              "scenarioState.setScenarioError",
+              "scenarioState.setScenarioLoading",
+              "scenarioState.setScenarioOverrides",
+              "scenarioState.setScenarioUndoVersion",
+              "selectedSprint",
+              "selectedSprintInfo",
+              "selectedSprintInfo.name",
+              "selectedSprintState",
+              "selectedTeamSet",
+              "setConnectionRecoveryNotice",
+              "setConnectionRecoveryStatus",
+              "showScenario",
+              "sprintsLoading",
+              "teamOptions",
+              "teamOptions.filter",
+              "trackScenarioAction",
+              "visibleControlGroups"
+            ],
+            "rationale": "Reviewed at SC3 H1 R4 (2026-10-04): BACKEND_URL is the existing URL scalar; selectedSprint is the string/id scalar forwarded to APIs; selectedTeamSet and excludedEpicSet are existing Set collections passed to Array.from in runScenario/buildScenarioPayload. Member paths moved verbatim from useScenarioPlanner H1 statements (150-191, 315-567, 684-689, 697-753 at f2e2b510), including 21 scenarioState bindings and their nested record/ref paths."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/scenario/useScenarioPlanner.js",
+              "symbol": "useScenarioDraft",
+              "line": 161,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        }
+      ]
+    },
+    {
       "id": "scenario.useScenarioPlanner",
       "path": "frontend/src/scenario/useScenarioPlanner.js",
       "features": [
@@ -2041,7 +2272,7 @@
       "exports": [
         "useScenarioPlanner"
       ],
-      "lineCount": 3201,
+      "lineCount": 2881,
       "lineCeiling": 3201,
       "interfaces": [
         {
@@ -2172,7 +2403,6 @@
             "EMPTY_OBJECT.unschedulable",
             "EMPTY_OBJECT.unschedulable.filter",
             "activeGroup",
-            "activeGroup.name",
             "activeGroupId",
             "availableSprints",
             "cleanupSprintFetch",
@@ -2186,7 +2416,6 @@
             "jiraUrl",
             "normalizeEpicKey",
             "pendingConnectionRecoveryRef",
-            "pendingConnectionRecoveryRef.current",
             "pendingShellAuthResumeRef",
             "perfCountersRef",
             "perfCountersRef.current",
@@ -2250,11 +2479,8 @@
             "scenarioState.scenarioDraftMeta.conflict",
             "scenarioState.scenarioDraftMeta.conflict.activeDraft",
             "scenarioState.scenarioDraftMeta.conflict.activeDraft.draftId",
-            "scenarioState.scenarioDraftMeta.dirtyState",
             "scenarioState.scenarioDraftMeta.historyOpen",
-            "scenarioState.scenarioDraftMeta.loadingHistory",
             "scenarioState.scenarioDraftMeta.savedOverrides",
-            "scenarioState.scenarioDraftMeta.saving",
             "scenarioState.scenarioDraftMeta.scopeKey",
             "scenarioState.scenarioDraftMeta.scopePayload",
             "scenarioState.scenarioDraftMeta.staleDraft",
@@ -2330,8 +2556,6 @@
             "scenarioState.scenarioRangeOverride.end.getTime",
             "scenarioState.scenarioRangeOverride.start",
             "scenarioState.scenarioRangeOverride.start.getTime",
-            "scenarioState.scenarioRealtimeCsrfRef",
-            "scenarioState.scenarioRealtimeCsrfRef.current",
             "scenarioState.scenarioResizeFrameRef",
             "scenarioState.scenarioResizeFrameRef.current",
             "scenarioState.scenarioScopeKeyRef",
@@ -2382,7 +2606,6 @@
             "scenarioState.scenarioWasDraggedRef.current",
             "scenarioState.setScenarioCollapsedLanes",
             "scenarioState.setScenarioCurrentUserIdentity",
-            "scenarioState.setScenarioData",
             "scenarioState.setScenarioDraftEvents",
             "scenarioState.setScenarioDraftLastEventNumber",
             "scenarioState.setScenarioDraftLocks",
@@ -2393,11 +2616,9 @@
             "scenarioState.setScenarioEdgeRender",
             "scenarioState.setScenarioEditMode",
             "scenarioState.setScenarioEpicFocus",
-            "scenarioState.setScenarioError",
             "scenarioState.setScenarioFlashKey",
             "scenarioState.setScenarioLaneMode",
             "scenarioState.setScenarioLayout",
-            "scenarioState.setScenarioLoading",
             "scenarioState.setScenarioOverrides",
             "scenarioState.setScenarioRangeOverride",
             "scenarioState.setScenarioScrollLeft",
@@ -2409,7 +2630,6 @@
             "searchQuery.trim",
             "selectedSprint",
             "selectedSprintInfo",
-            "selectedSprintInfo.name",
             "selectedSprintState",
             "selectedTeamSet",
             "setConnectionRecoveryNotice",
@@ -2417,12 +2637,11 @@
             "showScenario",
             "sprintsLoading",
             "teamOptions",
-            "teamOptions.filter",
             "trackScenarioAction",
             "visibleControlGroups"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 267,
+          "expandedInputCount": 255,
           "returnCount": 67,
           "propCount": 0,
           "outerParameterCeiling": 1,
@@ -2430,14 +2649,11 @@
           "returnCeiling": 67,
           "propCeiling": 0,
           "unresolved": [
-            "forwarded input BACKEND_URL",
-            "forwarded input selectedSprint",
-            "forwarded input selectedTeamSet",
-            "forwarded input excludedEpicSet"
+            "forwarded input BACKEND_URL"
           ],
           "inventory": {
             "source": "frontend/src/scenario/useScenarioPlanner.js:14",
-            "sourceDigest": "9beb215d2f058e07add7576783ce61584032505c385a64d2727ad67f0aa3c323",
+            "sourceDigest": "8b2a89d54ebe3960205b719a563f9e40b7ecbd88416f725c55bc3f0a9bf4e76c",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -2459,7 +2675,6 @@
               "EMPTY_OBJECT.unschedulable",
               "EMPTY_OBJECT.unschedulable.filter",
               "activeGroup",
-              "activeGroup.name",
               "activeGroupId",
               "availableSprints",
               "cleanupSprintFetch",
@@ -2473,7 +2688,6 @@
               "jiraUrl",
               "normalizeEpicKey",
               "pendingConnectionRecoveryRef",
-              "pendingConnectionRecoveryRef.current",
               "pendingShellAuthResumeRef",
               "perfCountersRef",
               "perfCountersRef.current",
@@ -2537,11 +2751,8 @@
               "scenarioState.scenarioDraftMeta.conflict",
               "scenarioState.scenarioDraftMeta.conflict.activeDraft",
               "scenarioState.scenarioDraftMeta.conflict.activeDraft.draftId",
-              "scenarioState.scenarioDraftMeta.dirtyState",
               "scenarioState.scenarioDraftMeta.historyOpen",
-              "scenarioState.scenarioDraftMeta.loadingHistory",
               "scenarioState.scenarioDraftMeta.savedOverrides",
-              "scenarioState.scenarioDraftMeta.saving",
               "scenarioState.scenarioDraftMeta.scopeKey",
               "scenarioState.scenarioDraftMeta.scopePayload",
               "scenarioState.scenarioDraftMeta.staleDraft",
@@ -2617,8 +2828,6 @@
               "scenarioState.scenarioRangeOverride.end.getTime",
               "scenarioState.scenarioRangeOverride.start",
               "scenarioState.scenarioRangeOverride.start.getTime",
-              "scenarioState.scenarioRealtimeCsrfRef",
-              "scenarioState.scenarioRealtimeCsrfRef.current",
               "scenarioState.scenarioResizeFrameRef",
               "scenarioState.scenarioResizeFrameRef.current",
               "scenarioState.scenarioScopeKeyRef",
@@ -2669,7 +2878,6 @@
               "scenarioState.scenarioWasDraggedRef.current",
               "scenarioState.setScenarioCollapsedLanes",
               "scenarioState.setScenarioCurrentUserIdentity",
-              "scenarioState.setScenarioData",
               "scenarioState.setScenarioDraftEvents",
               "scenarioState.setScenarioDraftLastEventNumber",
               "scenarioState.setScenarioDraftLocks",
@@ -2680,11 +2888,9 @@
               "scenarioState.setScenarioEdgeRender",
               "scenarioState.setScenarioEditMode",
               "scenarioState.setScenarioEpicFocus",
-              "scenarioState.setScenarioError",
               "scenarioState.setScenarioFlashKey",
               "scenarioState.setScenarioLaneMode",
               "scenarioState.setScenarioLayout",
-              "scenarioState.setScenarioLoading",
               "scenarioState.setScenarioOverrides",
               "scenarioState.setScenarioRangeOverride",
               "scenarioState.setScenarioScrollLeft",
@@ -2696,7 +2902,6 @@
               "searchQuery.trim",
               "selectedSprint",
               "selectedSprintInfo",
-              "selectedSprintInfo.name",
               "selectedSprintState",
               "selectedTeamSet",
               "setConnectionRecoveryNotice",
@@ -2704,11 +2909,10 @@
               "showScenario",
               "sprintsLoading",
               "teamOptions",
-              "teamOptions.filter",
               "trackScenarioAction",
               "visibleControlGroups"
             ],
-            "rationale": "BACKEND_URL is the existing URL scalar; selectedSprint is the existing string/id scalar forwarded to APIs. selectedTeamSet and excludedEpicSet are existing Set collections forwarded to buildLaneIssues/collectJiraExportKeysFromScenarioIssues, not application dependency bags. Complete statically read named member paths are ledgered from resolved input references, including 70 scenarioState bindings and their nested record/ref paths; computed collection selectors are retained as [computed] markers, without claiming enumerable keys of runtime issue records. Lexically resolved local variable aliases, logical fallbacks and statically resolvable local-function argument forwarding are expanded to their source member paths. Runtime collection entry shapes and computed indices remain runtime data, represented by [computed] markers; they do not inject App bindings or concealed service dependencies. Imported function internals are independently owned existing APIs/helpers, rather than new hook input bags."
+            "rationale": "BACKEND_URL is the existing URL scalar forwarded to buildScenarioDraftEventsStreamUrl. SC3 H1 moved the direct API/Set forwarding of selectedSprint, selectedTeamSet and excludedEpicSet into useScenarioDraft; the planner passes them by name in the literal useScenarioDraft call object. The 12 member paths read only by the moved H1 statements left this inventory. Complete statically read named member paths are ledgered from resolved input references, including 70 scenarioState bindings and their nested record/ref paths; computed collection selectors are retained as [computed] markers, without claiming enumerable keys of runtime issue records. Lexically resolved local variable aliases, logical fallbacks and statically resolvable local-function argument forwarding are expanded to their source member paths. Runtime collection entry shapes and computed indices remain runtime data, represented by [computed] markers; they do not inject App bindings or concealed service dependencies. Imported function internals are independently owned existing APIs/helpers, rather than new hook input bags."
           },
           "callers": [
             {
@@ -6477,90 +6681,88 @@
   ],
   "aggregates": {
     "scenario": {
-      "measured": 3981,
-      "ceiling": 3981
+      "measured": 4102,
+      "ceiling": 4102
     },
     "settings": {
       "measured": 9803,
       "ceiling": 9803
     },
     "uniqueOwners": {
-      "measured": 13784,
-      "ceiling": 13784
+      "measured": 13905,
+      "ceiling": 13905
     },
     "appPlusOwners": {
-      "measured": 29152,
-      "ceiling": 29152
+      "measured": 29273,
+      "ceiling": 29273
     }
   },
   "transfer": {
     "incomingRanges": [
       {
-        "id": "scheduleScenarioEdgeUpdate-through-scheduleScenarioEdgeUpdate",
-        "fromLine": 1118,
-        "toLine": 1118,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 1
+        "id": "fetchScenarioCsrfToken-through-postScenarioRealtimeJson",
+        "fromFile": "frontend/src/scenario/useScenarioPlanner.js",
+        "fromLine": 150,
+        "toLine": 191,
+        "removedPhysicalLines": 42,
+        "addedPhysicalLines": 42
       },
       {
-        "id": "matchesScenarioSearch-through-registerScenarioIssueRef",
-        "fromLine": 5692,
-        "toLine": 5716,
-        "removedPhysicalLines": 25,
-        "addedPhysicalLines": 25
-      },
-      {
-        "id": "fetchScenarioCsrfToken-through-handleScenarioBarMouseDown",
-        "fromLine": 7227,
-        "toLine": 7759,
-        "removedPhysicalLines": 533,
-        "addedPhysicalLines": 533
+        "id": "pollScenarioDraftEvents-through-runScenario",
+        "fromFile": "frontend/src/scenario/useScenarioPlanner.js",
+        "fromLine": 315,
+        "toLine": 567,
+        "removedPhysicalLines": 253,
+        "addedPhysicalLines": 253
       },
       {
         "id": "scenarioTeamIds-through-scenarioTeamIds",
-        "fromLine": 8076,
-        "toLine": 8081,
+        "fromFile": "frontend/src/scenario/useScenarioPlanner.js",
+        "fromLine": 684,
+        "toLine": 689,
         "removedPhysicalLines": 6,
         "addedPhysicalLines": 6
       },
       {
-        "id": "scenarioRawIssues-through-ExpressionStatement",
-        "fromLine": 9106,
-        "toLine": 11546,
-        "removedPhysicalLines": 2441,
-        "addedPhysicalLines": 2441
+        "id": "scenarioScopeKey-through-scenarioActiveDraftReady",
+        "fromFile": "frontend/src/scenario/useScenarioPlanner.js",
+        "fromLine": 697,
+        "toLine": 753,
+        "removedPhysicalLines": 57,
+        "addedPhysicalLines": 57
       }
     ],
-    "scaffoldingAllowance": 262,
+    "scaffoldingAllowance": 121,
     "netPhysicalLOC": {
-      "priorAppPlusOwners": 28890,
-      "nextAppPlusOwners": 29152,
-      "transferredSourceLines": 3006,
-      "hookScaffoldingLines": 195,
-      "netAppScaffoldingLines": 67
+      "priorAppPlusOwners": 29152,
+      "nextAppPlusOwners": 29273,
+      "transferredSourceLines": 358,
+      "hookScaffoldingLines": 83,
+      "netPlannerScaffoldingLines": 38
     },
     "getters": [],
-    "rationale": "Operator validated SC2 checkpoint on 2026-10-04; exact frozen source hashes, 267 reviewed expanded input paths, zero transfer growth credit. All 43 existing per-file and interface ceilings remain unchanged. R5 still owns structural and warning ratchets.",
+    "rationale": "SC3 H1 checkpoint, validated by the operator in chat on 2026-10-04 before R4. Planner-to-sub-hook transfer of 358 physical lines with zero growth credit; dashboard.jsx untouched. Existing per-file and interface ceilings carried forward (planner 3201 lines / 267 expanded inputs; R5 ratchets to 2881 / 255).",
     "scaffoldingBreakdown": {
-      "incomingPhysicalLines": 3006,
+      "incomingPhysicalLines": 358,
       "hook": {
-        "imports": 12,
-        "blankAndRunSeparators": 5,
-        "parameterSignature": 36,
-        "stateDestructure": 72,
-        "returnWrapper": 69,
+        "imports": 9,
+        "importBlank": 1,
+        "parameterSignature": 29,
+        "stateDestructure": 23,
+        "runSeparators": 2,
+        "returnWrapper": 18,
         "functionClosing": 1,
-        "total": 195
+        "total": 83
       },
-      "app": {
-        "callAndDestructure": 105,
+      "planner": {
+        "callAndDestructure": 46,
         "newImport": 1,
-        "retainedRunAnchorBlankLines": 4,
-        "prunedStateBindings": 27,
-        "prunedWholeImports": 16,
-        "net": 67
+        "removedRunTrailingBlankLines": -2,
+        "prunedStateBindings": -4,
+        "prunedWholeImports": -3,
+        "net": 38
       },
-      "note": "3006 original inclusive physical lines transfer with zero combined credit. Hook adds12imports+1importblank+36signature+72state-destructure+4runseparatorblanks+69return+1closing=195. App adds105call/destructure+1import+4empty former-run anchors\u221227state-binding lines\u221216net import-pruning lines=67. Combined262."
+      "note": "Hook 441 = 358 moved + 83 scaffolding. Planner 3201 -> 2881 = -358 moved -2 blanks +46 call/destructure +1 import -3 whole imports -4 state bindings (three import lines edited in place). Combined +121."
     }
   }
 }

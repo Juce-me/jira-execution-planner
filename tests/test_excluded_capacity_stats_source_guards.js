@@ -840,7 +840,7 @@ test('Stats Teams and capacity-table links keep Ad Hoc consistent with reclassif
 });
 
 test('Scenario payload sends only excluded capacity, never Ad Hoc keys', () => {
-    const scenarioSource = readOwnerSource(['frontend/src/scenario/useScenarioPlanner.js'], { anchor: 'export function useScenarioPlanner(' });
+    const scenarioSource = readOwnerSource(['frontend/src/scenario/useScenarioDraft.js'], { anchor: 'export function useScenarioDraft(' });
     const payloadBlock = scenarioSource.match(/const buildScenarioPayload = \(\) => \{[\s\S]*?\n\s*\};/)?.[0] || '';
     assert.ok(payloadBlock, 'Expected to locate buildScenarioPayload');
     assert.ok(

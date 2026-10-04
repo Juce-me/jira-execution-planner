@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const hookPath = path.join(__dirname, '../frontend/src/scenario/useScenarioPlanner.js');
+const draftHookPath = path.join(__dirname, '../frontend/src/scenario/useScenarioDraft.js');
 
 const EXPECTED_RETURN_NAMES = `
 registerScenarioIssueRef
@@ -135,6 +136,93 @@ test('planner hook preserves its exact flat interface and server-render defaults
     }
 });
 
+const EXPECTED_DRAFT_RETURN_NAMES = `
+fetchScenarioDraft
+pauseScenarioRealtime
+postScenarioRealtimeJson
+pollScenarioDraftEvents
+saveScenarioDraftVersion
+fetchScenarioDraftVersion
+rollbackScenarioDraft
+reloadScenarioDraftFromJira
+buildScenarioDraftScope
+runScenario
+scenarioScopeKey
+scenarioHasUnsavedChanges
+scenarioCanSaveDraft
+scenarioActiveDraftId
+isScenarioScopeDraftCurrent
+scenarioActiveDraftReady
+`.trim().split(/\s+/);
+
+test('draft hook preserves its exact flat interface, server-render defaults and render-phase ref writes', () => {
+    const React = require('react');
+    const { renderToString } = require('react-dom/server');
+    const esbuild = require('esbuild');
+    const Module = require('node:module');
+    const compiled = esbuild.buildSync({
+        stdin: {
+            contents: "export { useScenarioDraft } from './useScenarioDraft.js'; export { useScenarioState } from './useScenarioState.js';",
+            resolveDir: path.dirname(draftHookPath), sourcefile: 'scenarioDraftProbe.js',
+        },
+        bundle: true, write: false, format: 'cjs', platform: 'node', packages: 'external',
+    }).outputFiles[0].text;
+    const hookModule = new Module(draftHookPath, module);
+    hookModule.filename = draftHookPath;
+    hookModule.paths = module.paths;
+    hookModule._compile(compiled, draftHookPath);
+    const noop = () => {};
+    // Sentinel refs prove the hook's render-phase writes rather than the refs' initial values.
+    const scenarioActiveDraftIdRef = { current: 'stale-draft' };
+    const scenarioScopeKeyRef = { current: 'stale-scope' };
+    let result;
+    function Probe() {
+        const scenarioState = hookModule.exports.useScenarioState({ initialLaneMode: 'assignee' });
+        result = hookModule.exports.useScenarioDraft({
+            scenarioState: { ...scenarioState, scenarioActiveDraftIdRef, scenarioScopeKeyRef },
+            BACKEND_URL: '',
+            pendingConnectionRecoveryRef: { current: null },
+            releaseConnectionRecoveryOwnership: noop,
+            connectionRecoveryScenarioStartedRef: { current: false },
+            setConnectionRecoveryNotice: noop, setConnectionRecoveryStatus: noop,
+            connectionRecoveryStagedRevision: 0, selectedSprint: '42', availableSprints: [],
+            sprintsLoading: false, groupsLoading: false, activeGroupId: 'g1',
+            showScenario: false, pendingShellAuthResumeRef: { current: null },
+            selectedSprintInfo: { name: 'Sprint 42' }, trackScenarioAction: noop, visibleControlGroups: [],
+            selectedSprintState: '', isCompletedSprintSelected: false,
+            registerSprintFetch: noop, cleanupSprintFetch: noop,
+            activeGroup: { name: 'Group One' }, teamOptions: [], selectedTeamSet: new Set(),
+            isAllTeamsSelected: true, excludedEpicSet: new Set(),
+        });
+        return null;
+    }
+    assert.equal(renderToString(React.createElement(Probe)), '');
+    assert.deepEqual(Object.keys(result), EXPECTED_DRAFT_RETURN_NAMES);
+    assert.equal(EXPECTED_DRAFT_RETURN_NAMES.length, 16);
+    for (const name of EXPECTED_DRAFT_RETURN_NAMES) {
+        assert.equal(Object.getOwnPropertyDescriptor(result, name).get, undefined);
+    }
+    for (const name of ['fetchScenarioDraft', 'pauseScenarioRealtime', 'postScenarioRealtimeJson',
+        'pollScenarioDraftEvents', 'saveScenarioDraftVersion', 'fetchScenarioDraftVersion',
+        'rollbackScenarioDraft', 'reloadScenarioDraftFromJira', 'buildScenarioDraftScope',
+        'runScenario', 'isScenarioScopeDraftCurrent']) {
+        assert.equal(typeof result[name], 'function', name);
+    }
+    assert.equal(result.scenarioScopeKey, '42:g1');
+    assert.equal(result.scenarioHasUnsavedChanges, false);
+    assert.equal(result.scenarioCanSaveDraft, false);
+    assert.equal(result.scenarioActiveDraftId, '');
+    assert.equal(result.scenarioActiveDraftReady, false);
+    assert.equal(scenarioActiveDraftIdRef.current, '');
+    assert.equal(scenarioScopeKeyRef.current, '42:g1');
+    assert.deepEqual(result.buildScenarioDraftScope(), {
+        groupId: 'g1', groupName: 'Group One', sprintId: '42', sprintName: 'Sprint 42',
+    });
+    assert.equal(result.isScenarioScopeDraftCurrent('42:g1'), true);
+    assert.equal(result.isScenarioScopeDraftCurrent('42:g1', 'other-draft'), false);
+    assert.equal(result.isScenarioScopeDraftCurrent('41:g1'), false);
+});
+
 // Legacy output captured from the unchanged App body at the SC2 base before extraction.
 const EXPECTED_IDLE_ACTION_STATE = {
     "loadingVersionNumber": null,
@@ -151,7 +239,7 @@ const EXPECTED_IDLE_ACTION_STATE = {
 };
 
 test('planner idle action state preserves the legacy pure helper output', () => {
-    const source = fs.readFileSync(hookPath, 'utf8');
+    const source = fs.readFileSync(draftHookPath, 'utf8');
     const match = source.match(/const scenarioDraftIdleActionState = \(\) => \(\{[\s\S]*?\n\s*\}\);/);
     assert.ok(match, 'Expected the existing pure scenarioDraftIdleActionState body');
     const read = () => JSON.parse(vm.runInNewContext(`${match[0]}\nJSON.stringify(scenarioDraftIdleActionState())`));

@@ -47,7 +47,7 @@ test('frontend source has no legacy scenario overrides route strings', () => {
 });
 
 test('scenario draft polling helper returns data without mutating realtime state', () => {
-    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario/useScenarioPlanner.js'], { anchor: 'export function useScenarioPlanner(' });
+    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario'], { anchor: 'export function useScenarioDraft(' });
     const helperMatch = scenarioSource.match(/const pollScenarioDraftEvents = [\s\S]*?requestScenarioDraftEvents[\s\S]*?;\n\n\s*const saveScenarioDraftVersion/);
     const pollingEffectMatch = scenarioSource.match(/React\.useEffect\(\(\) => \{\n\s*if \(!scenarioActiveDraftReady\)[\s\S]*?window\.setInterval\(poll, 5000\);[\s\S]*?\n\s*\}, \[scenarioActiveDraftReady, scenarioActiveDraftId, scenarioScopeKey, scenarioDraftLastEventNumber\]\);/);
 
@@ -67,7 +67,7 @@ test('scenario draft polling helper returns data without mutating realtime state
 });
 
 test('scenario realtime self filtering learns identity from collaboration responses and keeps stable drag lifecycle', () => {
-    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario/useScenarioPlanner.js'], { anchor: 'export function useScenarioPlanner(' });
+    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario'], { anchor: 'export function useScenarioDraft(' });
     const remoteEditorsMatch = scenarioSource.match(/const scenarioRemoteEditors = React\.useMemo[\s\S]*?const scenarioIssueLockWarnings = React\.useMemo/);
     const lockWarningsMatch = scenarioSource.match(/const scenarioIssueLockWarnings = React\.useMemo[\s\S]*?\}, \[scenarioDraftLocks, isScenarioCurrentUser\]\);/);
     const dragEffectMatch = scenarioSource.match(/const scenarioDraggingIssueKey = scenarioDragState\?\.issueKey \|\| '';\n\s*React\.useEffect\(\(\) => \{[\s\S]*?\n\s*\}, \[scenarioDraggingIssueKey\]\);/);
@@ -117,7 +117,7 @@ test('generated frontend dist changes require frontend source changes', () => {
 });
 
 test('dirty scenario draft reruns are blocked before loading new scenario data', () => {
-    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario/useScenarioPlanner.js'], { anchor: 'export function useScenarioPlanner(' });
+    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario'], { anchor: 'export function useScenarioDraft(' });
     const dirtyGuardIndex = scenarioSource.indexOf('if (!recovery && scenarioHasUnsavedChanges) {');
     const scenarioFetchIndex = scenarioSource.indexOf('requestScenarioRun(BACKEND_URL, buildScenarioPayload(),');
     const setScenarioDataIndex = scenarioSource.indexOf('setScenarioData(data);');
@@ -145,7 +145,7 @@ test('dirty scenario draft reruns are blocked before loading new scenario data',
 });
 
 test('clean scenario scope resets draft state before new scenario data is applied', () => {
-    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario/useScenarioPlanner.js'], { anchor: 'export function useScenarioPlanner(' });
+    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario'], { anchor: 'export function useScenarioDraft(' });
     const resetMatch = scenarioSource.match(/setScenarioOverrides\(\{\}\);\n[\s\S]*?setScenarioDraftMeta\(prev => \(\{\n\s*\.\.\.prev,[\s\S]*?activeDraft: null,[\s\S]*?savedOverrides: \{\},[\s\S]*?scopePayload,[\s\S]*?scopeKey: scenarioScopeKey,[\s\S]*?\}\)\);/);
     const setScenarioDataIndex = scenarioSource.indexOf('setScenarioData(data);');
 
@@ -182,7 +182,7 @@ test('discarding scenario overrides preserves loaded draft metadata', () => {
 });
 
 test('draft save route sends csrf and baseDraftRevision', () => {
-    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario/useScenarioPlanner.js'], { anchor: 'export function useScenarioPlanner(' });
+    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario'], { anchor: 'export function useScenarioDraft(' });
     const scenarioApiSource = readSource(scenarioApiPath);
     const saveHelperMatch = scenarioSource.match(/const saveScenarioDraftVersion = async[\s\S]*?\n\s*\};\n\n\s*const fetchScenarioDraftVersion/);
     const saveCallerMatch = scenarioSource.match(/const saveScenarioDraft = async \(\) => \{[\s\S]*?\n\s*\};\n\n\s*const discardScenarioOverrides/);
@@ -204,11 +204,11 @@ test('draft save route sends csrf and baseDraftRevision', () => {
 });
 
 test('scenario draft metadata stores display-safe scope payload without group membership', () => {
-    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario/useScenarioPlanner.js'], { anchor: 'export function useScenarioPlanner(' });
+    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario'], { anchor: 'export function useScenarioDraft(' });
     const stateSourceOwner = readOwnerSource(['frontend/src/scenario/useScenarioState.js'], { anchor: 'export function useScenarioState(' });
     const stateMatch = stateSourceOwner.match(/const \[scenarioDraftMeta, setScenarioDraftMeta\] = useState\(\{[\s\S]*?\n\s*\}\);/);
     const scopeBuilderMatch = scenarioSource.match(/const buildScenarioDraftScope = \(\) => \(\{[\s\S]*?\n\s*\}\);/);
-    const runScenarioMatch = scenarioSource.match(/const runScenario = async \(\{ recovery = null \} = \{\}\) => \{[\s\S]*?\n\s*\};\n\n\s*const toggleScenarioEditMode/);
+    const runScenarioMatch = scenarioSource.match(/const runScenario = async \(\{ recovery = null \} = \{\}\) => \{[\s\S]*?\n\s*\};\n\n\s*const scenarioTeamIds/);
 
     assert.ok(stateMatch, 'Expected scenarioDraftMeta state to exist.');
     assert.ok(scopeBuilderMatch, 'Expected buildScenarioDraftScope to exist.');
@@ -230,7 +230,7 @@ test('scenario draft metadata stores display-safe scope payload without group me
 });
 
 test('draft load failure clears stale overrides for the newly applied scope', () => {
-    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario/useScenarioPlanner.js'], { anchor: 'export function useScenarioPlanner(' });
+    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario'], { anchor: 'export function useScenarioDraft(' });
     const failureMatch = scenarioSource.match(/catch \(err\) \{\n\s*if \(err\.name === 'AbortError'\) throw err;[\s\S]*?Failed to load scenario draft\.[\s\S]*?\n\s*\}\);/);
 
     assert.ok(failureMatch, 'Expected draft-load failure handler to exist.');
@@ -244,7 +244,7 @@ test('draft load failure clears stale overrides for the newly applied scope', ()
 });
 
 test('save and discard use normalized dirty state rather than override count', () => {
-    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario/useScenarioPlanner.js'], { anchor: 'export function useScenarioPlanner(' });
+    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario'], { anchor: 'export function useScenarioDraft(' });
     const dirtyStateMatch = scenarioSource.match(/const scenarioHasUnsavedChanges = scenarioOverridesSignature !== savedScenarioOverridesSignature;/);
     const saveCallerMatch = scenarioSource.match(/const saveScenarioDraft = async \(\) => \{[\s\S]*?\n\s*\};\n\n\s*const discardScenarioOverrides/);
     const discardMatch = scenarioSource.match(/const discardScenarioOverrides = \(\) => \{[\s\S]*?\n\s*\};\n\n\s*const scenarioLaneForIssue/);
@@ -283,8 +283,8 @@ test('connection recovery captures dirty Scenario work even when another ENG mod
 });
 
 test('dirty stored draft scope can be saved after current scenario data is cleared', () => {
-    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario/useScenarioPlanner.js'], { anchor: 'export function useScenarioPlanner(' });
-    const saveEligibilityMatch = scenarioSource.match(/const scenarioHasStoredDraftScope = Boolean\([\s\S]*?\);\n\s*const scenarioCanSaveDraft =[\s\S]*?;\n\s*const scenarioSprintBounds/);
+    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario'], { anchor: 'export function useScenarioDraft(' });
+    const saveEligibilityMatch = scenarioSource.match(/const scenarioHasStoredDraftScope = Boolean\([\s\S]*?\);\n\s*const scenarioCanSaveDraft =[\s\S]*?;\n\s*const scenarioActiveDraftId/);
     const saveCallerMatch = scenarioSource.match(/const saveScenarioDraft = async \(\) => \{[\s\S]*?\n\s*\};\n\n\s*const discardScenarioOverrides/);
     const saveButtonMatch = scenarioSource.match(/onClick=\{saveScenarioDraft\}[\s\S]*?title="Save draft overrides to server"/);
 
@@ -326,8 +326,8 @@ test('scenario draft load and save failures are visibly rendered', () => {
 });
 
 test('draft save conflict blocks blind save with keep-editing and history actions', () => {
-    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario/useScenarioPlanner.js'], { anchor: 'export function useScenarioPlanner(' });
-    const saveEligibilityMatch = scenarioSource.match(/const scenarioCanSaveDraft = scenarioHasUnsavedChanges[\s\S]*?;\n\s*const scenarioSprintBounds/);
+    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario'], { anchor: 'export function useScenarioDraft(' });
+    const saveEligibilityMatch = scenarioSource.match(/const scenarioCanSaveDraft = scenarioHasUnsavedChanges[\s\S]*?;\n\s*const scenarioActiveDraftId/);
     const saveCatchMatch = scenarioSource.match(/const saveScenarioDraft = async \(\) => \{[\s\S]*?\n\s*\};\n\n\s*const discardScenarioOverrides/);
 
     assert.ok(saveEligibilityMatch, 'Expected shared save eligibility to exist.');
@@ -365,7 +365,7 @@ test('draft save conflict blocks blind save with keep-editing and history action
 });
 
 test('draft save retries csrf_required once and preserves failed local edits', () => {
-    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario/useScenarioPlanner.js'], { anchor: 'export function useScenarioPlanner(' });
+    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario'], { anchor: 'export function useScenarioDraft(' });
     const saveCatchMatch = scenarioSource.match(/const saveScenarioDraft = async \(\) => \{[\s\S]*?\n\s*\};\n\n\s*const discardScenarioOverrides/);
 
     const saveHelperIndex = scenarioSource.indexOf('const saveScenarioDraftVersion = async');
@@ -394,7 +394,7 @@ test('draft save retries csrf_required once and preserves failed local edits', (
 });
 
 test('history reload and rollback use inline dialog controls and guarded rollback writes', () => {
-    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario/useScenarioPlanner.js'], { anchor: 'export function useScenarioPlanner(' });
+    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario'], { anchor: 'export function useScenarioDraft(' });
     const scenarioApiSource = readSource(scenarioApiPath);
     const historyActionMatch = scenarioSource.match(/const requestScenarioHistoryAction = \(type, versionNumber\) => \{[\s\S]*?\n\s*\};\n\n\s*const scenarioLaneForIssue/);
     const rollbackHelperMatch = scenarioSource.match(/const rollbackScenarioDraft = async[\s\S]*?\n\s*\};\n\n\s*const buildScenarioDraftScope/);

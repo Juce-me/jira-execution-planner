@@ -60,12 +60,13 @@ s = s[:i] + s[i:j].replace("                groupsLoading,\n", "", 1) + s[j:]'
 dir="$OUT/edited-statement"
 mkdir -p "$dir"
 cp -R frontend/src "$dir/src"
-seed "$dir" 'owner = src / "scenario" / "useScenarioPlanner.js"; owner.write_text(owner.read_text().replace("window.setInterval(poll, 5000)", "window.setInterval(poll, 5001)", 1))' \
+seed "$dir" 'owner = src / "scenario" / "useScenarioRealtime.js"; owner.write_text(owner.read_text().replace("window.setInterval(poll, 5000)", "window.setInterval(poll, 5001)", 1))' \
     || { echo "ANCHOR edited-statement: the seed changed nothing; re-anchor the control"; failures=$((failures + 1)); }
 cp scripts/extraction_lint/check_move_conservation.mjs "$LINT_DIR/check_move_conservation.mjs"
 node "$LINT_DIR/check_move_conservation.mjs" --base-file frontend/src/dashboard.jsx --dashboard "$dir/src/dashboard.jsx" \
     --base-hook "$dir/src/scenario/useScenarioPlanner.js=frontend/src/scenario/useScenarioPlanner.js" \
-    "$dir/src/scenario/useScenarioPlanner.js" >"$dir/conservation.log" 2>&1
+    --base-hook "$dir/src/scenario/useScenarioRealtime.js=frontend/src/scenario/useScenarioRealtime.js" \
+    "$dir/src/scenario/useScenarioPlanner.js" "$dir/src/scenario/useScenarioRealtime.js" >"$dir/conservation.log" 2>&1
 if grep -q 'removed and not found in a hook: 1; new statements: 1' "$dir/conservation.log"; then
     echo "ok    edited-statement (conservation)"
 else

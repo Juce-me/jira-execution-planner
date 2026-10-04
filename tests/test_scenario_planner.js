@@ -5,6 +5,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const hookPath = path.join(__dirname, '../frontend/src/scenario/useScenarioPlanner.js');
 const draftHookPath = path.join(__dirname, '../frontend/src/scenario/useScenarioDraft.js');
+const realtimeHookPath = path.join(__dirname, '../frontend/src/scenario/useScenarioRealtime.js');
 
 const EXPECTED_RETURN_NAMES = `
 registerScenarioIssueRef
@@ -221,6 +222,99 @@ test('draft hook preserves its exact flat interface, server-render defaults and 
     assert.equal(result.isScenarioScopeDraftCurrent('42:g1'), true);
     assert.equal(result.isScenarioScopeDraftCurrent('42:g1', 'other-draft'), false);
     assert.equal(result.isScenarioScopeDraftCurrent('41:g1'), false);
+});
+
+const EXPECTED_REALTIME_RETURN_NAMES = `
+acquireScenarioIssueLock
+refreshScenarioIssueLock
+releaseScenarioIssueLock
+scenarioRemoteEditors
+scenarioIssueLockWarnings
+`.trim().split(/\s+/);
+
+test('realtime hook preserves its exact flat interface, server-render defaults and no-network idle locks', async () => {
+    const React = require('react');
+    const { renderToString } = require('react-dom/server');
+    const esbuild = require('esbuild');
+    const Module = require('node:module');
+    const compiled = esbuild.buildSync({
+        stdin: {
+            contents: "export { useScenarioRealtime } from './useScenarioRealtime.js'; export { useScenarioState } from './useScenarioState.js';",
+            resolveDir: path.dirname(realtimeHookPath), sourcefile: 'scenarioRealtimeProbe.js',
+        },
+        bundle: true, write: false, format: 'cjs', platform: 'node', packages: 'external',
+    }).outputFiles[0].text;
+    const hookModule = new Module(realtimeHookPath, module);
+    hookModule.filename = realtimeHookPath;
+    hookModule.paths = module.paths;
+    hookModule._compile(compiled, realtimeHookPath);
+    const calls = [];
+    // Recorded even when a caller swallows the throw, so the final empty-calls assertion proves no network.
+    const record = name => () => { calls.push(name); throw new Error(`${name} must not run`); };
+    const savedFetch = globalThis.fetch;
+    const savedEventSource = globalThis.EventSource;
+    globalThis.fetch = record('fetch');
+    globalThis.EventSource = function EventSource() { calls.push('EventSource'); throw new Error('EventSource must not open'); };
+    const render = (stateOverrides = {}) => {
+        let result;
+        function Probe() {
+            const scenarioState = hookModule.exports.useScenarioState({ initialLaneMode: 'assignee' });
+            result = hookModule.exports.useScenarioRealtime({
+                scenarioState: { ...scenarioState, ...stateOverrides },
+                BACKEND_URL: '',
+                pauseScenarioRealtime: record('pauseScenarioRealtime'),
+                postScenarioRealtimeJson: record('postScenarioRealtimeJson'),
+                pollScenarioDraftEvents: record('pollScenarioDraftEvents'),
+                scenarioScopeKey: '42:g1',
+                scenarioActiveDraftId: '',
+                scenarioActiveDraftReady: false,
+            });
+            return null;
+        }
+        assert.equal(renderToString(React.createElement(Probe)), '');
+        return result;
+    };
+    try {
+        const result = render();
+        assert.deepEqual(Object.keys(result), EXPECTED_REALTIME_RETURN_NAMES);
+        assert.equal(EXPECTED_REALTIME_RETURN_NAMES.length, 5);
+        for (const name of EXPECTED_REALTIME_RETURN_NAMES) {
+            assert.equal(Object.getOwnPropertyDescriptor(result, name).get, undefined);
+        }
+        for (const name of ['acquireScenarioIssueLock', 'refreshScenarioIssueLock', 'releaseScenarioIssueLock']) {
+            assert.equal(typeof result[name], 'function', name);
+            assert.equal(await result[name]('ISSUE-1'), undefined, name);
+        }
+        assert.deepEqual(result.scenarioRemoteEditors, []);
+        assert.deepEqual(result.scenarioIssueLockWarnings, []);
+
+        const expired = '2000-01-01T00:00:00Z';
+        const seeded = render({
+            scenarioCurrentUserIdentity: { userId: 'u-self', displayName: 'Self User' },
+            scenarioDraftPresence: [
+                { userId: 'u-self', displayName: 'Self User' },
+                { userId: 'u-2', displayName: '  Remote Two  ' },
+                { userId: 'u-3', displayName: 'Expired', expiresAt: expired },
+                { userId: 'u-4', displayName: '' },
+            ],
+            scenarioDraftLocks: [
+                { resourceType: 'issue', resourceId: 'ISSUE-1', holderUserId: 'u-2', holderDisplayName: 'Remote Two' },
+                { resourceType: 'issue', resourceId: 'ISSUE-2', holderUserId: 'u-self' },
+                { resourceType: 'issue', resourceId: 'ISSUE-3', holderUserId: 'u-9' },
+                { resourceType: 'issue', resourceId: 'ISSUE-4', holderUserId: 'u-5', expiresAt: expired },
+                { resourceType: 'epic', resourceId: 'EPIC-1', holderUserId: 'u-6' },
+            ],
+        });
+        assert.deepEqual(seeded.scenarioRemoteEditors, [{ userId: 'u-2', displayName: 'Remote Two' }]);
+        assert.deepEqual(seeded.scenarioIssueLockWarnings, [
+            { issueKey: 'ISSUE-1', holderDisplayName: 'Remote Two' },
+            { issueKey: 'ISSUE-3', holderDisplayName: 'Another editor' },
+        ]);
+        assert.deepEqual(calls, []);
+    } finally {
+        globalThis.fetch = savedFetch;
+        globalThis.EventSource = savedEventSource;
+    }
 });
 
 // Legacy output captured from the unchanged App body at the SC2 base before extraction.

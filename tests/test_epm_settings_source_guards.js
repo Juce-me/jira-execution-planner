@@ -157,8 +157,10 @@ test('settings modal shell and tab bodies are extracted while dashboard keeps se
     assert.ok(!groupBoardsTabSource.includes('useState('), 'GroupBoardsTab must not own settings state');
     assert.ok(dashboardSource.includes("const [teamSearchQuery, setTeamSearchQuery] = useState({});"), 'Expected dashboard to keep team search state ownership');
     assert.ok(dashboardSource.includes('const handleTeamSearchChange = (groupId, value) => {'), 'Expected dashboard to keep team search handler ownership');
-    assert.ok(dashboardSource.includes("const [projectSearchQuery, setProjectSearchQuery] = useState('');"), 'Expected dashboard to keep project search state ownership');
-    assert.ok(dashboardSource.includes("const [boardSearchQuery, setBoardSearchQuery] = useState('');"), 'Expected dashboard to keep board search state ownership');
+    const jiraProjectSettingsSource = readOwnerSource(['frontend/src/settings/useJiraProjectSettings.js'], { anchor: 'export function useJiraProjectSettings(' });
+    assert.ok(jiraProjectSettingsSource.includes("const [projectSearchQuery, setProjectSearchQuery] = useState('');"), 'Expected the Jira project hook to own project search state');
+    assert.ok(jiraProjectSettingsSource.includes("const [boardSearchQuery, setBoardSearchQuery] = useState('');"), 'Expected the Jira project hook to own board search state');
+    assert.ok(dashboardSource.includes('} = useJiraProjectSettings({'), 'Expected dashboard to call the Jira project hook');
     assert.ok(readOwnerSource(['frontend/src/settings/usePriorityWeightsSettings.js'], { anchor: 'export function usePriorityWeightsSettings(' }).includes('const [priorityWeightsDraft, setPriorityWeightsDraft] = React.useState(() => clonePriorityWeightRows(DEFAULT_PRIORITY_WEIGHT_ROWS));'), 'Expected the priority weights hook to own the priority weight draft');
     assert.ok(dashboardSource.includes('} = usePriorityWeightsSettings({'), 'Expected dashboard to call the priority weights hook');
     assert.deepStrictEqual(

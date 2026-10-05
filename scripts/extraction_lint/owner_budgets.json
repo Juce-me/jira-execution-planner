@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "baseSha": "7a768d5ddf3607a5deb4bed759e8c26198ceaff5",
-  "checkpointId": "ST1-R4a-PriorityWeights",
+  "checkpointId": "ST1-R4b-JiraProjects",
   "sourceRoot": "frontend/src",
   "ownerRoots": [
     "scenario",
@@ -19,7 +19,7 @@
   },
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
-    "lineCount": 14340,
+    "lineCount": 13997,
     "lineCeiling": 14412
   },
   "modules": [
@@ -191,7 +191,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "EpmControls",
-              "line": 10919,
+              "line": 10576,
               "phase": "render"
             }
           ],
@@ -243,7 +243,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "EpmProjectCollapseAllButton",
-              "line": 10968,
+              "line": 10625,
               "phase": "render"
             }
           ],
@@ -1361,7 +1361,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "EpmSettings",
-              "line": 13826,
+              "line": 13483,
               "phase": "render"
             }
           ],
@@ -1451,7 +1451,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "EpmView",
-              "line": 13566,
+              "line": 13223,
               "phase": "render"
             }
           ],
@@ -1618,7 +1618,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useEpmViewData",
-              "line": 2773,
+              "line": 2803,
               "phase": "hook execution"
             }
           ],
@@ -1626,150 +1626,150 @@
             {
               "name": "epmTab",
               "lines": [
-                2775,
-                2808,
-                2818,
-                6432,
-                6489,
-                10921,
-                12193,
-                12225,
-                13575
+                2805,
+                2838,
+                2848,
+                6103,
+                6160,
+                10578,
+                11850,
+                11882,
+                13232
               ]
             },
             {
               "name": "setEpmTab",
               "lines": [
-                10924
+                10581
               ]
             },
             {
               "name": "setEpmProjects",
               "lines": [
-                1486
+                1526
               ]
             },
             {
               "name": "epmProjectsLoading",
               "lines": [
-                10929,
-                11860,
-                12126,
-                13569
+                10586,
+                11517,
+                11783,
+                13226
               ]
             },
             {
               "name": "setEpmProjectsError",
               "lines": [
-                1487
+                1527
               ]
             },
             {
               "name": "epmSelectedProjectId",
               "lines": [
-                2776,
-                2790,
-                2795,
-                2797,
-                2802,
-                2808,
-                6433,
-                6490,
-                13572
+                2806,
+                2820,
+                2825,
+                2827,
+                2832,
+                2838,
+                6104,
+                6161,
+                13229
               ]
             },
             {
               "name": "setEpmSelectedProjectId",
               "lines": [
-                10949
+                10606
               ]
             },
             {
               "name": "visibleEpmProjects",
               "lines": [
-                10930
+                10587
               ]
             },
             {
               "name": "selectedEpmProject",
               "lines": [
-                9040,
-                9042,
-                9122,
-                10931,
-                13573
+                8697,
+                8699,
+                8779,
+                10588,
+                13230
               ]
             },
             {
               "name": "filteredEpmProjects",
               "lines": [
-                10932
+                10589
               ]
             },
             {
               "name": "visibleEpmRollupBoards",
               "lines": [
-                2791,
-                2795,
-                2802,
-                2819,
-                9038,
-                9039,
-                9042,
-                13578
+                2821,
+                2825,
+                2832,
+                2849,
+                8695,
+                8696,
+                8699,
+                13235
               ]
             },
             {
               "name": "epmRollupTree",
               "lines": [
-                9040,
-                9042,
-                13571
+                8697,
+                8699,
+                13228
               ]
             },
             {
               "name": "epmRollupBoards",
               "lines": [
-                13570
+                13227
               ]
             },
             {
               "name": "epmDuplicates",
               "lines": [
-                13579
+                13236
               ]
             },
             {
               "name": "epmAggregateTruncated",
               "lines": [
-                13580
+                13237
               ]
             },
             {
               "name": "epmRollupLoading",
               "lines": [
-                9091,
-                9103,
-                11860,
-                13577
+                8748,
+                8760,
+                11517,
+                13234
               ]
             },
             {
               "name": "epmProjectRollupLoadingIds",
               "lines": [
-                13581
+                13238
               ]
             },
             {
               "name": "epmSelectedSubGoalKeys",
               "lines": [
-                10954
+                10611
               ]
             },
             {
               "name": "setEpmSelectedSubGoalKeys",
               "lines": [
-                10958
+                10615
               ]
             },
             {
@@ -1779,20 +1779,20 @@
             {
               "name": "refreshEpmProjects",
               "lines": [
-                1484
+                1524
               ]
             },
             {
               "name": "refreshEpmView",
               "lines": [
-                11823
+                11480
               ]
             },
             {
               "name": "loadArchivedEpmProjectRollup",
               "lines": [
-                2819,
-                13585
+                2849,
+                13242
               ]
             }
           ],
@@ -1957,7 +1957,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "ScenarioView",
-              "line": 13416,
+              "line": 13073,
               "phase": "render"
             }
           ],
@@ -3285,7 +3285,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useScenarioPlanner",
-              "line": 8406,
+              "line": 8063,
               "phase": "hook execution"
             }
           ],
@@ -3293,9 +3293,9 @@
             {
               "name": "scenario",
               "lines": [
-                8447,
-                11384,
-                13417
+                8104,
+                11041,
+                13074
               ]
             }
           ],
@@ -3576,7 +3576,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useScenarioState",
-              "line": 459,
+              "line": 449,
               "phase": "hook execution"
             }
           ],
@@ -3584,9 +3584,9 @@
             {
               "name": "scenarioState",
               "lines": [
-                493,
-                8407,
-                13418
+                483,
+                8064,
+                13075
               ]
             }
           ],
@@ -3648,7 +3648,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "AdminAccessSettings",
-              "line": 13653,
+              "line": 13310,
               "phase": "render"
             }
           ],
@@ -3703,7 +3703,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useAdminAccessSettings",
-              "line": 739,
+              "line": 729,
               "phase": "hook execution"
             }
           ],
@@ -3711,23 +3711,23 @@
             {
               "name": "adminAccess",
               "lines": [
-                1273,
-                1277,
-                2914,
-                3601,
-                3731,
-                3732,
-                3733,
-                4180,
-                4181,
-                4182,
-                4184,
-                4190,
-                13657,
-                13658,
-                13659,
-                13660,
-                13661
+                1313,
+                1317,
+                2944,
+                3631,
+                3761,
+                3762,
+                3763,
+                4210,
+                4211,
+                4212,
+                4214,
+                4220,
+                13314,
+                13315,
+                13316,
+                13317,
+                13318
               ]
             }
           ],
@@ -3782,7 +3782,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "AdminSettingsTabs",
-              "line": 13638,
+              "line": 13295,
               "phase": "render"
             }
           ],
@@ -3894,7 +3894,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "FirstRunGroupConfigurationGuide",
-              "line": 14054,
+              "line": 13711,
               "phase": "render"
             }
           ],
@@ -3986,7 +3986,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "FirstRunGroupSelectionModal",
-              "line": 14264,
+              "line": 13921,
               "phase": "render"
             }
           ],
@@ -4065,7 +4065,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "FirstRunGroupSetupChoice",
-              "line": 14277,
+              "line": 13934,
               "phase": "render"
             }
           ],
@@ -4241,7 +4241,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "GroupBoardsTab",
-              "line": 14236,
+              "line": 13893,
               "phase": "render"
             }
           ],
@@ -4918,7 +4918,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "JiraFieldSettings",
-              "line": 13665,
+              "line": 13322,
               "phase": "render"
             }
           ],
@@ -5009,7 +5009,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "PerformanceSettings",
-              "line": 13651,
+              "line": 13308,
               "phase": "render"
             }
           ],
@@ -5145,7 +5145,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "SettingsModal",
-              "line": 13595,
+              "line": 13252,
               "phase": "render"
             }
           ],
@@ -5529,7 +5529,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "TeamGroupsSettings",
-              "line": 13959,
+              "line": 13616,
               "phase": "render"
             }
           ],
@@ -5583,7 +5583,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "UnconfiguredWorkspaceNotice",
-              "line": 12257,
+              "line": 11914,
               "phase": "render"
             }
           ],
@@ -5641,7 +5641,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "UserConnectionsSettings",
-              "line": 13631,
+              "line": 13288,
               "phase": "render"
             }
           ],
@@ -5698,7 +5698,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useAdminSettingsGate",
-              "line": 745,
+              "line": 735,
               "phase": "hook execution"
             }
           ],
@@ -5706,29 +5706,29 @@
             {
               "name": "adminSettingsGate",
               "lines": [
-                1021,
-                2129,
-                2131,
-                7697,
-                7775,
-                7957,
-                8105,
-                8920,
-                12257
+                1061,
+                2169,
+                2171,
+                7354,
+                7432,
+                7614,
+                7762,
+                8577,
+                11914
               ]
             },
             {
               "name": "applyAdminSettingsGateConfig",
               "lines": [
-                3615,
-                3853,
-                6652
+                3645,
+                3883,
+                6323
               ]
             },
             {
               "name": "setAdminSettingsGate",
               "lines": [
-                6734
+                6391
               ]
             }
           ],
@@ -5736,7 +5736,7 @@
             {
               "caller": "frontend/src/dashboard.jsx",
               "name": "openSettings",
-              "line": 745,
+              "line": 735,
               "capturedBindings": [
                 "openGroupManage"
               ],
@@ -5932,7 +5932,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useSettingsConfigBaselineRevision",
-              "line": 751,
+              "line": 741,
               "phase": "hook execution"
             }
           ],
@@ -5940,29 +5940,19 @@
             {
               "name": "settingsConfigBaselineRevision",
               "lines": [
-                777,
-                2713,
-                2715,
-                2720,
-                2724
+                767,
+                850,
+                2754
               ]
             },
             {
               "name": "acceptSettingsConfigBaseline",
               "lines": [
-                773,
-                4764,
-                4797,
-                4813,
-                4936,
-                4958,
-                4977,
-                4992,
-                5001,
-                6658,
-                6667,
-                6674,
-                6684
+                763,
+                842,
+                4733,
+                4752,
+                6333
               ]
             }
           ],
@@ -6123,7 +6113,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useGroupVisibilityPreferences",
-              "line": 1231,
+              "line": 1271,
               "phase": "hook execution"
             }
           ],
@@ -6131,188 +6121,188 @@
             {
               "name": "groupPreferences",
               "lines": [
-                1260,
-                1279,
-                2129,
-                2131,
-                2183,
-                2184,
-                3011,
-                3019,
-                6484,
-                6537,
-                6758,
-                6831,
-                6834,
-                6855,
-                7080,
-                7132,
-                7138,
-                7155,
-                7562,
-                7660,
-                7697,
-                7775,
-                7957,
-                8104,
-                11213,
-                11783,
-                11791,
-                11859,
-                14262,
-                14273,
-                14289
+                1300,
+                1319,
+                2169,
+                2171,
+                2223,
+                2224,
+                3041,
+                3049,
+                6155,
+                6208,
+                6415,
+                6488,
+                6491,
+                6512,
+                6737,
+                6789,
+                6795,
+                6812,
+                7219,
+                7317,
+                7354,
+                7432,
+                7614,
+                7761,
+                10870,
+                11440,
+                11448,
+                11516,
+                13919,
+                13930,
+                13946
               ]
             },
             {
               "name": "setGroupPreferences",
               "lines": [
-                2616,
-                3020,
-                3575,
-                4189,
-                5310
+                2656,
+                3050,
+                3605,
+                4219,
+                4981
               ]
             },
             {
               "name": "visibleGroupDraftIds",
               "lines": [
-                13970
+                13627
               ]
             },
             {
               "name": "setVisibleGroupDraftIds",
               "lines": [
-                2190,
-                3242,
-                3276,
-                3542
+                2230,
+                3272,
+                3306,
+                3572
               ]
             },
             {
               "name": "favoriteGroupDraftId",
               "lines": [
-                13986
+                13643
               ]
             },
             {
               "name": "setFavoriteGroupDraftId",
               "lines": [
-                2191
+                2231
               ]
             },
             {
               "name": "setFavoriteGroupDraft",
               "lines": [
-                13987
+                13644
               ]
             },
             {
               "name": "favoriteGroupValidationError",
               "lines": [
-                2987,
-                2988,
-                2992
+                3017,
+                3018,
+                3022
               ]
             },
             {
               "name": "setGroupPreferencesSaving",
               "lines": [
-                3963
+                3993
               ]
             },
             {
               "name": "groupVisibilitySaving",
               "lines": [
-                3042,
-                13973
+                3072,
+                13630
               ]
             },
             {
               "name": "isGroupVisibilityDraftDirty",
               "lines": [
-                2928,
-                2931,
-                2942,
-                2944,
-                3672,
-                3815,
-                3987,
-                13602
+                2958,
+                2961,
+                2972,
+                2974,
+                3702,
+                3845,
+                4017,
+                13259
               ]
             },
             {
               "name": "visibleControlGroups",
               "lines": [
-                1991,
-                1992,
-                1995,
-                5571,
-                5572,
-                5740,
-                5743,
-                6153,
-                6189,
-                8430,
-                10810,
-                11195
+                2031,
+                2032,
+                2035,
+                5242,
+                5243,
+                5411,
+                5414,
+                5824,
+                5860,
+                8087,
+                10467,
+                10852
               ]
             },
             {
               "name": "initializeGroupPreferencesDraft",
               "lines": [
-                2181
+                2221
               ]
             },
             {
               "name": "isGroupVisibleInControls",
               "lines": [
-                13972
+                13629
               ]
             },
             {
               "name": "toggleGroupVisibleInControls",
               "lines": [
-                13971
+                13628
               ]
             },
             {
               "name": "firstRunFavoriteGroupId",
               "lines": [
-                14266
+                13923
               ]
             },
             {
               "name": "selectFirstRunFavoriteGroup",
               "lines": [
-                14267
+                13924
               ]
             },
             {
               "name": "saveFirstRunGroupPreferences",
               "lines": [
-                4080,
-                5318,
-                5342,
-                14268
+                4110,
+                4989,
+                5013,
+                13925
               ]
             },
             {
               "name": "firstRunSaving",
               "lines": [
-                14271
+                13928
               ]
             },
             {
               "name": "firstRunError",
               "lines": [
-                14272
+                13929
               ]
             },
             {
               "name": "persistGroupPreferences",
               "lines": [
-                3816
+                3846
               ]
             }
           ],
@@ -6464,7 +6454,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useJiraFieldPickers",
-              "line": 873,
+              "line": 920,
               "phase": "hook execution"
             }
           ],
@@ -6472,561 +6462,561 @@
             {
               "name": "sprintFieldIdDraft",
               "lines": [
-                882,
-                1267,
-                1280,
-                2953,
-                2992,
-                13671
+                927,
+                1307,
+                1320,
+                2983,
+                3022,
+                13328
               ]
             },
             {
               "name": "setSprintFieldIdDraft",
               "lines": [
-                4174,
-                13672
+                4204,
+                13329
               ]
             },
             {
               "name": "sprintFieldNameDraft",
               "lines": [
-                882,
-                1267,
-                1281,
-                13670
+                927,
+                1307,
+                1321,
+                13327
               ]
             },
             {
               "name": "setSprintFieldNameDraft",
               "lines": [
-                4174,
-                13673
+                4204,
+                13330
               ]
             },
             {
               "name": "sprintFieldSearchQuery",
               "lines": [
-                13675
+                13332
               ]
             },
             {
               "name": "setSprintFieldSearchQuery",
               "lines": [
-                13676
+                13333
               ]
             },
             {
               "name": "sprintFieldSearchOpen",
               "lines": [
-                13682
+                13339
               ]
             },
             {
               "name": "setSprintFieldSearchOpen",
               "lines": [
-                13677
+                13334
               ]
             },
             {
               "name": "sprintFieldSearchIndex",
               "lines": [
-                13685
+                13342
               ]
             },
             {
               "name": "setSprintFieldSearchIndex",
               "lines": [
-                13678
+                13335
               ]
             },
             {
               "name": "sprintFieldSearchInputRef",
               "lines": [
-                13680
+                13337
               ]
             },
             {
               "name": "sprintFieldSearchResults",
               "lines": [
-                13683
+                13340
               ]
             },
             {
               "name": "sprintFieldSearchHidden",
               "lines": [
-                13684
+                13341
               ]
             },
             {
               "name": "handleSprintFieldSearchKeyDown",
               "lines": [
-                13679
+                13336
               ]
             },
             {
               "name": "isSprintFieldDirty",
               "lines": [
-                3595,
-                6560
+                3625,
+                6231
               ]
             },
             {
               "name": "saveSprintFieldConfig",
               "lines": [
-                3718
+                3748
               ]
             },
             {
               "name": "parentNameFieldIdDraft",
               "lines": [
-                883,
-                1268,
-                1279,
-                2956,
-                2992,
-                13724
+                928,
+                1308,
+                1319,
+                2986,
+                3022,
+                13381
               ]
             },
             {
               "name": "setParentNameFieldIdDraft",
               "lines": [
-                4175,
-                13739
+                4205,
+                13396
               ]
             },
             {
               "name": "parentNameFieldNameDraft",
               "lines": [
-                883,
-                1268,
-                1280,
-                13720
+                928,
+                1308,
+                1320,
+                13377
               ]
             },
             {
               "name": "setParentNameFieldNameDraft",
               "lines": [
-                4175,
-                13740
+                4205,
+                13397
               ]
             },
             {
               "name": "parentNameFieldSearchQuery",
               "lines": [
-                13741
+                13398
               ]
             },
             {
               "name": "setParentNameFieldSearchQuery",
               "lines": [
-                13742
+                13399
               ]
             },
             {
               "name": "parentNameFieldSearchOpen",
               "lines": [
-                13747
+                13404
               ]
             },
             {
               "name": "setParentNameFieldSearchOpen",
               "lines": [
-                13743
+                13400
               ]
             },
             {
               "name": "parentNameFieldSearchIndex",
               "lines": [
-                13750
+                13407
               ]
             },
             {
               "name": "setParentNameFieldSearchIndex",
               "lines": [
-                13744
+                13401
               ]
             },
             {
               "name": "parentNameFieldSearchInputRef",
               "lines": [
-                13746
+                13403
               ]
             },
             {
               "name": "parentNameFieldSearchResults",
               "lines": [
-                13748
+                13405
               ]
             },
             {
               "name": "parentNameFieldSearchHidden",
               "lines": [
-                13749
+                13406
               ]
             },
             {
               "name": "handleParentNameFieldSearchKeyDown",
               "lines": [
-                13745
+                13402
               ]
             },
             {
               "name": "isParentNameFieldDirty",
               "lines": [
-                3596,
-                6561
+                3626,
+                6232
               ]
             },
             {
               "name": "saveParentNameFieldConfig",
               "lines": [
-                3719
+                3749
               ]
             },
             {
               "name": "storyPointsFieldIdDraft",
               "lines": [
-                884,
-                1269,
-                1281,
-                2959,
-                2992,
-                13725
+                929,
+                1309,
+                1321,
+                2989,
+                3022,
+                13382
               ]
             },
             {
               "name": "setStoryPointsFieldIdDraft",
               "lines": [
-                4176,
-                13751
+                4206,
+                13408
               ]
             },
             {
               "name": "storyPointsFieldNameDraft",
               "lines": [
-                884,
-                1269,
-                1281,
-                13721
+                929,
+                1309,
+                1321,
+                13378
               ]
             },
             {
               "name": "setStoryPointsFieldNameDraft",
               "lines": [
-                4176,
-                13752
+                4206,
+                13409
               ]
             },
             {
               "name": "storyPointsFieldSearchQuery",
               "lines": [
-                13753
+                13410
               ]
             },
             {
               "name": "setStoryPointsFieldSearchQuery",
               "lines": [
-                13754
+                13411
               ]
             },
             {
               "name": "storyPointsFieldSearchOpen",
               "lines": [
-                13759
+                13416
               ]
             },
             {
               "name": "setStoryPointsFieldSearchOpen",
               "lines": [
-                13755
+                13412
               ]
             },
             {
               "name": "storyPointsFieldSearchIndex",
               "lines": [
-                13762
+                13419
               ]
             },
             {
               "name": "setStoryPointsFieldSearchIndex",
               "lines": [
-                13756
+                13413
               ]
             },
             {
               "name": "storyPointsFieldSearchInputRef",
               "lines": [
-                13758
+                13415
               ]
             },
             {
               "name": "storyPointsFieldSearchResults",
               "lines": [
-                13760
+                13417
               ]
             },
             {
               "name": "storyPointsFieldSearchHidden",
               "lines": [
-                13761
+                13418
               ]
             },
             {
               "name": "handleStoryPointsFieldSearchKeyDown",
               "lines": [
-                13757
+                13414
               ]
             },
             {
               "name": "isStoryPointsFieldDirty",
               "lines": [
-                3597,
-                6562
+                3627,
+                6233
               ]
             },
             {
               "name": "saveStoryPointsFieldConfig",
               "lines": [
-                3720
+                3750
               ]
             },
             {
               "name": "teamFieldIdDraft",
               "lines": [
-                885,
-                1270,
-                1281,
-                2962,
+                930,
+                1310,
+                1321,
                 2992,
-                13726
+                3022,
+                13383
               ]
             },
             {
               "name": "setTeamFieldIdDraft",
               "lines": [
-                4177,
-                13773
+                4207,
+                13430
               ]
             },
             {
               "name": "teamFieldNameDraft",
               "lines": [
-                885,
-                1270,
-                1281,
-                13722
+                930,
+                1310,
+                1321,
+                13379
               ]
             },
             {
               "name": "setTeamFieldNameDraft",
               "lines": [
-                4177,
-                13774
+                4207,
+                13431
               ]
             },
             {
               "name": "teamFieldSearchQuery",
               "lines": [
-                13763
+                13420
               ]
             },
             {
               "name": "setTeamFieldSearchQuery",
               "lines": [
-                13764
+                13421
               ]
             },
             {
               "name": "teamFieldSearchOpen",
               "lines": [
-                13769
+                13426
               ]
             },
             {
               "name": "setTeamFieldSearchOpen",
               "lines": [
-                13765
+                13422
               ]
             },
             {
               "name": "teamFieldSearchIndex",
               "lines": [
-                13772
+                13429
               ]
             },
             {
               "name": "setTeamFieldSearchIndex",
               "lines": [
-                13766
+                13423
               ]
             },
             {
               "name": "teamFieldSearchInputRef",
               "lines": [
-                13768
+                13425
               ]
             },
             {
               "name": "teamFieldSearchResults",
               "lines": [
-                13770
+                13427
               ]
             },
             {
               "name": "teamFieldSearchHidden",
               "lines": [
-                13771
+                13428
               ]
             },
             {
               "name": "handleTeamFieldSearchKeyDown",
               "lines": [
-                13767
+                13424
               ]
             },
             {
               "name": "isTeamFieldDirty",
               "lines": [
-                3598,
-                6563
+                3628,
+                6234
               ]
             },
             {
               "name": "saveTeamFieldConfig",
               "lines": [
-                3721
+                3751
               ]
             },
             {
               "name": "deliveryOwnerFieldIdDraft",
               "lines": [
-                886,
-                1271,
-                1278,
-                13727
+                931,
+                1311,
+                1318,
+                13384
               ]
             },
             {
               "name": "setDeliveryOwnerFieldIdDraft",
               "lines": [
-                4178,
-                13785
+                4208,
+                13442
               ]
             },
             {
               "name": "deliveryOwnerFieldNameDraft",
               "lines": [
-                886,
-                1271,
-                1278,
-                13723
+                931,
+                1311,
+                1318,
+                13380
               ]
             },
             {
               "name": "setDeliveryOwnerFieldNameDraft",
               "lines": [
-                4178,
-                13786
+                4208,
+                13443
               ]
             },
             {
               "name": "deliveryOwnerFieldSearchQuery",
               "lines": [
-                13775
+                13432
               ]
             },
             {
               "name": "setDeliveryOwnerFieldSearchQuery",
               "lines": [
-                13776
+                13433
               ]
             },
             {
               "name": "deliveryOwnerFieldSearchOpen",
               "lines": [
-                13781
+                13438
               ]
             },
             {
               "name": "setDeliveryOwnerFieldSearchOpen",
               "lines": [
-                13777
+                13434
               ]
             },
             {
               "name": "deliveryOwnerFieldSearchIndex",
               "lines": [
-                13784
+                13441
               ]
             },
             {
               "name": "setDeliveryOwnerFieldSearchIndex",
               "lines": [
-                13778
+                13435
               ]
             },
             {
               "name": "deliveryOwnerFieldSearchInputRef",
               "lines": [
-                13780
+                13437
               ]
             },
             {
               "name": "deliveryOwnerFieldSearchResults",
               "lines": [
-                13782
+                13439
               ]
             },
             {
               "name": "deliveryOwnerFieldSearchHidden",
               "lines": [
-                13783
+                13440
               ]
             },
             {
               "name": "handleDeliveryOwnerFieldSearchKeyDown",
               "lines": [
-                13779
+                13436
               ]
             },
             {
               "name": "isDeliveryOwnerFieldDirty",
               "lines": [
-                3599,
-                6564
+                3629,
+                6235
               ]
             },
             {
               "name": "saveDeliveryOwnerFieldConfig",
               "lines": [
-                3722
+                3752
               ]
             },
             {
               "name": "loadAllFieldConfigs",
               "lines": [
-                2211,
-                6707
+                2251,
+                6364
               ]
             },
             {
               "name": "seedSharedFieldConfigs",
               "lines": [
-                6685
+                6342
               ]
             },
             {
               "name": "anyFieldConfigDirty",
               "lines": [
-                2921,
-                2923
+                2951,
+                2953
               ]
             },
             {
               "name": "dirtyFieldConfigCount",
               "lines": [
-                2943,
-                2944
+                2973,
+                2974
               ]
             }
           ],
@@ -7119,7 +7109,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "usePriorityWeightsSettings",
-              "line": 771,
+              "line": 761,
               "phase": "hook execution"
             }
           ],
@@ -7127,92 +7117,92 @@
             {
               "name": "priorityWeightsDraft",
               "lines": [
-                1264,
-                1280,
-                13814
+                1304,
+                1320,
+                13471
               ]
             },
             {
               "name": "setPriorityWeightsDraft",
               "lines": [
-                4159
+                4189
               ]
             },
             {
               "name": "priorityWeightsSource",
               "lines": [
-                13813
+                13470
               ]
             },
             {
               "name": "effectivePriorityWeightsRows",
               "lines": [
-                7159,
-                7160
+                6816,
+                6817
               ]
             },
             {
               "name": "isPriorityWeightsDirty",
               "lines": [
-                2917,
-                2923,
-                2935,
-                2944,
-                3592,
-                3928,
-                6558
+                2947,
+                2953,
+                2965,
+                2974,
+                3622,
+                3958,
+                6229
               ]
             },
             {
               "name": "priorityWeightsValidationError",
               "lines": [
-                2971,
-                2972,
-                2992,
-                13818
+                3001,
+                3002,
+                3022,
+                13475
               ]
             },
             {
               "name": "priorityWeightsSum",
               "lines": [
-                13816
+                13473
               ]
             },
             {
               "name": "loadPriorityWeightsConfig",
               "lines": [
-                2208,
-                6698
+                2248,
+                6355
               ]
             },
             {
               "name": "savePriorityWeightsConfig",
               "lines": [
-                3700
+                3730
               ]
             },
             {
               "name": "updatePriorityWeightDraft",
               "lines": [
-                13815
+                13472
               ]
             },
             {
               "name": "resetPriorityWeightsDraft",
               "lines": [
-                13817
+                13474
               ]
             },
             {
               "name": "applyPriorityWeightsLoaded",
               "lines": [
-                6681
+                6340
               ]
             },
             {
               "name": "priorityWeightsDraftSnapshot",
               "lines": [
-                880
+                925
               ]
             }
           ],
@@ -7301,7 +7291,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useTeamCatalogLifecycle",
-              "line": 1151,
+              "line": 1191,
               "phase": "hook execution"
             }
           ],
@@ -7309,45 +7299,45 @@
             {
               "name": "teamCatalogState",
               "lines": [
-                5246,
-                5255,
-                5360,
-                5361
+                4917,
+                4926,
+                5031,
+                5032
               ]
             },
             {
               "name": "loadingTeams",
               "lines": [
-                13979
+                13636
               ]
             },
             {
               "name": "teamCatalogReady",
               "lines": [
-                13980,
-                14064
+                13637,
+                13721
               ]
             },
             {
               "name": "teamMembershipState",
               "lines": [
-                5258,
-                5260,
-                5261,
-                5262,
-                5263
+                4929,
+                4931,
+                4932,
+                4933,
+                4934
               ]
             },
             {
               "name": "fetchAllTeamsFromJira",
               "lines": [
-                13978
+                13635
               ]
             },
             {
               "name": "invalidateTeamMembership",
               "lines": [
-                3608
+                3638
               ]
             }
           ],
@@ -7369,6 +7359,789 @@
       "lineCount": 28,
       "lineCeiling": 28,
       "interfaces": []
+    },
+    {
+      "id": "settings.useJiraProjectSettings",
+      "path": "frontend/src/settings/useJiraProjectSettings.js",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "useJiraProjectCatalogEffects",
+        "useJiraProjectSearchEffects",
+        "useJiraProjectSettings"
+      ],
+      "lineCount": 590,
+      "lineCeiling": 590,
+      "interfaces": [
+        {
+          "exportName": "useJiraProjectCatalogEffects",
+          "inputNames": [
+            "boardSearchIndex",
+            "boardSearchResults",
+            "fetchJiraFields",
+            "issueTypeSearchIndex",
+            "issueTypeSearchResults",
+            "projectSearchIndex",
+            "projectSearchResults",
+            "setBoardSearchIndex",
+            "setIssueTypeSearchIndex",
+            "setProjectSearchIndex",
+            "showGroupManage"
+          ],
+          "returnNames": [],
+          "propNames": [],
+          "expandedInputNames": [
+            "boardSearchIndex",
+            "boardSearchResults",
+            "boardSearchResults.length",
+            "fetchJiraFields",
+            "issueTypeSearchIndex",
+            "issueTypeSearchResults",
+            "issueTypeSearchResults.length",
+            "projectSearchIndex",
+            "projectSearchResults",
+            "projectSearchResults.length",
+            "setBoardSearchIndex",
+            "setIssueTypeSearchIndex",
+            "setProjectSearchIndex",
+            "showGroupManage"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 14,
+          "returnCount": 0,
+          "propCount": 0,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 14,
+          "returnCeiling": 0,
+          "propCeiling": 0,
+          "unresolved": [],
+          "inventory": {
+            "source": "frontend/src/settings/useJiraProjectSettings.js:557",
+            "sourceDigest": "5a2cbfcac9329647e0c293fd352dd561e799202ec0031eeedf405489657c6b65"
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "useJiraProjectCatalogEffects",
+              "line": 4707,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        },
+        {
+          "exportName": "useJiraProjectSearchEffects",
+          "inputNames": [
+            "BACKEND_URL",
+            "boardIdDraft",
+            "boardSearchQuery",
+            "groupManageTab",
+            "projectSearchQuery",
+            "setBoardSearchRemoteLoading",
+            "setBoardSearchRemoteResults",
+            "setProjectSearchRemoteLoading",
+            "setProjectSearchRemoteResults",
+            "showGroupManage"
+          ],
+          "returnNames": [],
+          "propNames": [],
+          "expandedInputNames": [
+            "BACKEND_URL",
+            "boardIdDraft",
+            "boardSearchQuery",
+            "boardSearchQuery.trim",
+            "groupManageTab",
+            "projectSearchQuery",
+            "projectSearchQuery.trim",
+            "setBoardSearchRemoteLoading",
+            "setBoardSearchRemoteResults",
+            "setProjectSearchRemoteLoading",
+            "setProjectSearchRemoteResults",
+            "showGroupManage"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 12,
+          "returnCount": 0,
+          "propCount": 0,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 12,
+          "returnCeiling": 0,
+          "propCeiling": 0,
+          "unresolved": [
+            "forwarded input BACKEND_URL"
+          ],
+          "inventory": {
+            "source": "frontend/src/settings/useJiraProjectSettings.js:476",
+            "sourceDigest": "5a2cbfcac9329647e0c293fd352dd561e799202ec0031eeedf405489657c6b65",
+            "reviewed": true,
+            "memberNames": [
+              "BACKEND_URL",
+              "boardIdDraft",
+              "boardSearchQuery",
+              "boardSearchQuery.trim",
+              "groupManageTab",
+              "projectSearchQuery",
+              "projectSearchQuery.trim",
+              "setBoardSearchRemoteLoading",
+              "setBoardSearchRemoteResults",
+              "setProjectSearchRemoteLoading",
+              "setProjectSearchRemoteResults",
+              "showGroupManage"
+            ],
+            "rationale": "BACKEND_URL is the module-constant API base string forwarded to the project and board search request wrappers; the remaining inputs are query strings, the board id draft, the tab name, the open flag and four state setters. No input is a bag."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "useJiraProjectSearchEffects",
+              "line": 4316,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        },
+        {
+          "exportName": "useJiraProjectSettings",
+          "inputNames": [
+            "BACKEND_URL",
+            "acceptSettingsConfigBaseline",
+            "boardConfigReadGenerationRef",
+            "boardConfigSaveReadFenceRef",
+            "clearServerConnectionError",
+            "commitSharedConfigRevision",
+            "reportServerConnectionError",
+            "setGroupDraftError",
+            "setGroupSaving",
+            "settingsConfigBaselineRevision",
+            "settingsDraftSnapshotRef",
+            "sharedConfigRevisionRef"
+          ],
+          "returnNames": [
+            "addIssueType",
+            "addProjectSelection",
+            "applyIssueTypesLoaded",
+            "applyProjectsAndBoardLoaded",
+            "boardIdDraft",
+            "boardNameDraft",
+            "boardSearchIndex",
+            "boardSearchInputRef",
+            "boardSearchOpen",
+            "boardSearchQuery",
+            "boardSearchRemoteLoading",
+            "boardSearchResults",
+            "clearBoardSelection",
+            "draftSnapshot",
+            "fetchAvailableIssueTypes",
+            "fetchJiraFields",
+            "fetchJiraProjects",
+            "handleBoardSearchKeyDown",
+            "handleIssueTypeSearchKeyDown",
+            "handleProjectSearchKeyDown",
+            "isBoardConfigDirty",
+            "isIssueTypesDraftDirty",
+            "isProjectsDraftDirty",
+            "issueTypeSearchIndex",
+            "issueTypeSearchInputRef",
+            "issueTypeSearchOpen",
+            "issueTypeSearchQuery",
+            "issueTypeSearchResults",
+            "issueTypesDraft",
+            "jiraFields",
+            "jiraProjects",
+            "loadBoardConfig",
+            "loadIssueTypesConfig",
+            "loadSelectedProjects",
+            "loadingFields",
+            "loadingProjects",
+            "projectSearchIndex",
+            "projectSearchInputRef",
+            "projectSearchOpen",
+            "projectSearchQuery",
+            "projectSearchRemoteLoading",
+            "projectSearchResults",
+            "removeIssueType",
+            "removeProjectSelection",
+            "resolveProjectName",
+            "saveBoardConfig",
+            "saveIssueTypesConfig",
+            "saveProjectSelection",
+            "savedBoardId",
+            "savedSelectedProjects",
+            "selectedProjectsDraft",
+            "setBoardIdDraft",
+            "setBoardNameDraft",
+            "setBoardSearchIndex",
+            "setBoardSearchOpen",
+            "setBoardSearchQuery",
+            "setBoardSearchRemoteLoading",
+            "setBoardSearchRemoteResults",
+            "setIssueTypeSearchIndex",
+            "setIssueTypeSearchOpen",
+            "setIssueTypeSearchQuery",
+            "setIssueTypesDraft",
+            "setProjectSearchIndex",
+            "setProjectSearchOpen",
+            "setProjectSearchQuery",
+            "setProjectSearchRemoteLoading",
+            "setProjectSearchRemoteResults",
+            "setSelectedProjectsDraft"
+          ],
+          "propNames": [],
+          "expandedInputNames": [
+            "BACKEND_URL",
+            "acceptSettingsConfigBaseline",
+            "boardConfigReadGenerationRef",
+            "boardConfigReadGenerationRef.current",
+            "boardConfigSaveReadFenceRef",
+            "boardConfigSaveReadFenceRef.current",
+            "clearServerConnectionError",
+            "commitSharedConfigRevision",
+            "reportServerConnectionError",
+            "setGroupDraftError",
+            "setGroupSaving",
+            "settingsConfigBaselineRevision",
+            "settingsDraftSnapshotRef",
+            "settingsDraftSnapshotRef.current",
+            "sharedConfigRevisionRef",
+            "sharedConfigRevisionRef.current"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 16,
+          "returnCount": 68,
+          "propCount": 0,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 16,
+          "returnCeiling": 68,
+          "propCeiling": 0,
+          "unresolved": [
+            "forwarded input BACKEND_URL",
+            "bag boardConfigSaveReadFenceRef member alias saveReadFence"
+          ],
+          "inventory": {
+            "source": "frontend/src/settings/useJiraProjectSettings.js:22",
+            "sourceDigest": "5a2cbfcac9329647e0c293fd352dd561e799202ec0031eeedf405489657c6b65",
+            "reviewed": true,
+            "memberNames": [
+              "BACKEND_URL",
+              "acceptSettingsConfigBaseline",
+              "boardConfigReadGenerationRef",
+              "boardConfigReadGenerationRef.current",
+              "boardConfigSaveReadFenceRef",
+              "boardConfigSaveReadFenceRef.current",
+              "clearServerConnectionError",
+              "commitSharedConfigRevision",
+              "reportServerConnectionError",
+              "setGroupDraftError",
+              "setGroupSaving",
+              "settingsConfigBaselineRevision",
+              "settingsDraftSnapshotRef",
+              "settingsDraftSnapshotRef.current",
+              "sharedConfigRevisionRef",
+              "sharedConfigRevisionRef.current"
+            ],
+            "rationale": "BACKEND_URL is the module-constant API base string forwarded to the configApi and jiraCatalogApi request wrappers; settingsDraftSnapshotRef, sharedConfigRevisionRef and the two board read-fence refs are refs read or written only through .current inside handlers; saveReadFence is the numeric value of boardConfigSaveReadFenceRef.current captured verbatim, not a bag. The remaining inputs are the baseline, revision-commit, connection-error and group-error callbacks and the baseline revision counter."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "useJiraProjectSettings",
+              "line": 840,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [
+            {
+              "name": "jiraProjects",
+              "lines": [
+                2255,
+                4758,
+                4765,
+                4768,
+                13359
+              ]
+            },
+            {
+              "name": "loadingProjects",
+              "lines": [
+                13358
+              ]
+            },
+            {
+              "name": "projectSearchQuery",
+              "lines": [
+                4321,
+                13360
+              ]
+            },
+            {
+              "name": "setProjectSearchQuery",
+              "lines": [
+                2244,
+                2714,
+                13361
+              ]
+            },
+            {
+              "name": "setProjectSearchRemoteResults",
+              "lines": [
+                4325
+              ]
+            },
+            {
+              "name": "projectSearchRemoteLoading",
+              "lines": [
+                13367
+              ]
+            },
+            {
+              "name": "setProjectSearchRemoteLoading",
+              "lines": [
+                4324
+              ]
+            },
+            {
+              "name": "projectSearchOpen",
+              "lines": [
+                13366
+              ]
+            },
+            {
+              "name": "setProjectSearchOpen",
+              "lines": [
+                2715,
+                13362
+              ]
+            },
+            {
+              "name": "projectSearchIndex",
+              "lines": [
+                4713,
+                13369
+              ]
+            },
+            {
+              "name": "setProjectSearchIndex",
+              "lines": [
+                2716,
+                4717,
+                13363
+              ]
+            },
+            {
+              "name": "selectedProjectsDraft",
+              "lines": [
+                1303,
+                1320,
+                2980,
+                3022,
+                13371
+              ]
+            },
+            {
+              "name": "setSelectedProjectsDraft",
+              "lines": [
+                4188
+              ]
+            },
+            {
+              "name": "savedSelectedProjects",
+              "lines": [
+                878,
+                884,
+                5270,
+                5275,
+                5291,
+                5296,
+                5315,
+                5326,
+                8633,
+                8635,
+                11584
+              ]
+            },
+            {
+              "name": "projectSearchInputRef",
+              "lines": [
+                13365
+              ]
+            },
+            {
+              "name": "setBoardSearchRemoteResults",
+              "lines": [
+                4323
+              ]
+            },
+            {
+              "name": "boardSearchRemoteLoading",
+              "lines": [
+                13344
+              ]
+            },
+            {
+              "name": "setBoardSearchRemoteLoading",
+              "lines": [
+                4322
+              ]
+            },
+            {
+              "name": "boardIdDraft",
+              "lines": [
+                1305,
+                1317,
+                4318,
+                13343
+              ]
+            },
+            {
+              "name": "setBoardIdDraft",
+              "lines": [
+                4191,
+                13354
+              ]
+            },
+            {
+              "name": "savedBoardId",
+              "lines": [
+                5271,
+                5275,
+                5292,
+                5296,
+                5322,
+                5326,
+                11583
+              ]
+            },
+            {
+              "name": "boardNameDraft",
+              "lines": [
+                1305,
+                1317,
+                13356
+              ]
+            },
+            {
+              "name": "setBoardNameDraft",
+              "lines": [
+                4192,
+                13355
+              ]
+            },
+            {
+              "name": "boardSearchQuery",
+              "lines": [
+                4319,
+                13345
+              ]
+            },
+            {
+              "name": "setBoardSearchQuery",
+              "lines": [
+                2717,
+                13346
+              ]
+            },
+            {
+              "name": "boardSearchOpen",
+              "lines": [
+                13351
+              ]
+            },
+            {
+              "name": "setBoardSearchOpen",
+              "lines": [
+                2718,
+                13347
+              ]
+            },
+            {
+              "name": "boardSearchIndex",
+              "lines": [
+                4708,
+                13353
+              ]
+            },
+            {
+              "name": "setBoardSearchIndex",
+              "lines": [
+                2719,
+                4715,
+                13348
+              ]
+            },
+            {
+              "name": "boardSearchInputRef",
+              "lines": [
+                13350
+              ]
+            },
+            {
+              "name": "jiraFields",
+              "lines": [
+                920,
+                4797,
+                4798,
+                13338
+              ]
+            },
+            {
+              "name": "loadingFields",
+              "lines": [
+                13331
+              ]
+            },
+            {
+              "name": "issueTypesDraft",
+              "lines": [
+                1312,
+                1319,
+                13376
+              ]
+            },
+            {
+              "name": "setIssueTypesDraft",
+              "lines": [
+                4209
+              ]
+            },
+            {
+              "name": "issueTypeSearchQuery",
+              "lines": [
+                13385
+              ]
+            },
+            {
+              "name": "setIssueTypeSearchQuery",
+              "lines": [
+                13386
+              ]
+            },
+            {
+              "name": "issueTypeSearchOpen",
+              "lines": [
+                13391
+              ]
+            },
+            {
+              "name": "setIssueTypeSearchOpen",
+              "lines": [
+                13387
+              ]
+            },
+            {
+              "name": "issueTypeSearchIndex",
+              "lines": [
+                4711,
+                13393
+              ]
+            },
+            {
+              "name": "setIssueTypeSearchIndex",
+              "lines": [
+                4716,
+                13388
+              ]
+            },
+            {
+              "name": "issueTypeSearchInputRef",
+              "lines": [
+                13390
+              ]
+            },
+            {
+              "name": "isProjectsDraftDirty",
+              "lines": [
+                2946,
+                2953,
+                2964,
+                2974,
+                3621,
+                3957,
+                6226
+              ]
+            },
+            {
+              "name": "isBoardConfigDirty",
+              "lines": [
+                2948,
+                2953,
+                2966,
+                2974,
+                3623,
+                3959,
+                6227
+              ]
+            },
+            {
+              "name": "isIssueTypesDraftDirty",
+              "lines": [
+                2950,
+                2953,
+                2968,
+                2974,
+                3630,
+                3963,
+                6230
+              ]
+            },
+            {
+              "name": "boardSearchResults",
+              "lines": [
+                4709,
+                13352
+              ]
+            },
+            {
+              "name": "projectSearchResults",
+              "lines": [
+                4714,
+                13368
+              ]
+            },
+            {
+              "name": "issueTypeSearchResults",
+              "lines": [
+                4712,
+                13392
+              ]
+            },
+            {
+              "name": "fetchJiraProjects",
+              "lines": [
+                2255
+              ]
+            },
+            {
+              "name": "loadSelectedProjects",
+              "lines": [
+                2247,
+                6353
+              ]
+            },
+            {
+              "name": "loadBoardConfig",
+              "lines": [
+                2249,
+                6359
+              ]
+            },
+            {
+              "name": "saveBoardConfig",
+              "lines": [
+                3736
+              ]
+            },
+            {
+              "name": "addProjectSelection",
+              "lines": [
+                13370
+              ]
+            },
+            {
+              "name": "clearBoardSelection",
+              "lines": [
+                13357
+              ]
+            },
+            {
+              "name": "removeProjectSelection",
+              "lines": [
+                13373
+              ]
+            },
+            {
+              "name": "handleProjectSearchKeyDown",
+              "lines": [
+                13364
+              ]
+            },
+            {
+              "name": "handleBoardSearchKeyDown",
+              "lines": [
+                13349
+              ]
+            },
+            {
+              "name": "resolveProjectName",
+              "lines": [
+                13372
+              ]
+            },
+            {
+              "name": "saveProjectSelection",
+              "lines": [
+                3724
+              ]
+            },
+            {
+              "name": "loadIssueTypesConfig",
+              "lines": [
+                2252,
+                6370
+              ]
+            },
+            {
+              "name": "saveIssueTypesConfig",
+              "lines": [
+                3757
+              ]
+            },
+            {
+              "name": "fetchAvailableIssueTypes",
+              "lines": [
+                2254
+              ]
+            },
+            {
+              "name": "addIssueType",
+              "lines": [
+                13394
+              ]
+            },
+            {
+              "name": "removeIssueType",
+              "lines": [
+                13395
+              ]
+            },
+            {
+              "name": "handleIssueTypeSearchKeyDown",
+              "lines": [
+                13389
+              ]
+            },
+            {
+              "name": "fetchJiraFields",
+              "lines": [
+                4710
+              ]
+            },
+            {
+              "name": "applyJiraProjectsAndBoardLoaded",
+              "lines": [
+                6326
+              ]
+            },
+            {
+              "name": "applyJiraIssueTypesLoaded",
+              "lines": [
+                6341
+              ]
+            },
+            {
+              "name": "jiraProjectsDraftSnapshot",
+              "lines": [
+                922,
+                923,
+                926
+              ]
+            }
+          ],
+          "getters": []
+        }
+      ]
     }
   ],
   "aggregates": {
@@ -7377,113 +8150,164 @@
       "ceiling": 5614
     },
     "settings": {
-      "measured": 9922,
-      "ceiling": 9922
+      "measured": 10512,
+      "ceiling": 10512
     },
     "uniqueOwners": {
-      "measured": 15536,
-      "ceiling": 15536
+      "measured": 16126,
+      "ceiling": 16126
     },
     "appPlusOwners": {
-      "measured": 29876,
-      "ceiling": 29876
+      "measured": 30123,
+      "ceiling": 30123
     }
   },
   "transfer": {
     "incomingRanges": [
       {
-        "id": "priority-weights-state",
+        "id": "jira-projects-state-block",
         "fromFile": "frontend/src/dashboard.jsx",
-        "toFile": "frontend/src/settings/usePriorityWeightsSettings.js",
-        "fromLine": 758,
-        "toLine": 761,
-        "removedPhysicalLines": 4,
+        "toFile": "frontend/src/settings/useJiraProjectSettings.js",
+        "fromLine": 781,
+        "toLine": 789,
+        "removedPhysicalLines": 9,
+        "addedPhysicalLines": 9
+      },
+      {
+        "id": "jira-projects-baseline-search-state",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useJiraProjectSettings.js",
+        "fromLine": 821,
+        "toLine": 835,
+        "removedPhysicalLines": 15,
+        "addedPhysicalLines": 15
+      },
+      {
+        "id": "jira-fields-state",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useJiraProjectSettings.js",
+        "fromLine": 845,
+        "toLine": 846,
+        "removedPhysicalLines": 2,
+        "addedPhysicalLines": 2
+      },
+      {
+        "id": "issue-types-state",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useJiraProjectSettings.js",
+        "fromLine": 874,
+        "toLine": 875,
+        "removedPhysicalLines": 2,
+        "addedPhysicalLines": 2
+      },
+      {
+        "id": "available-issue-types-state",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useJiraProjectSettings.js",
+        "fromLine": 888,
+        "toLine": 892,
+        "removedPhysicalLines": 5,
+        "addedPhysicalLines": 5
+      },
+      {
+        "id": "projects-dirty-memo",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useJiraProjectSettings.js",
+        "fromLine": 2711,
+        "toLine": 2716,
+        "removedPhysicalLines": 6,
         "addedPhysicalLines": 4
       },
       {
-        "id": "priority-weights-dirty-memo",
+        "id": "issue-types-dirty-memo",
         "fromFile": "frontend/src/dashboard.jsx",
-        "toFile": "frontend/src/settings/usePriorityWeightsSettings.js",
-        "fromLine": 2696,
-        "toLine": 2699,
+        "toFile": "frontend/src/settings/useJiraProjectSettings.js",
+        "fromLine": 2722,
+        "toLine": 2725,
         "removedPhysicalLines": 4,
         "addedPhysicalLines": 3
       },
       {
-        "id": "priority-weights-validation-memos",
+        "id": "fetch-projects-and-search-debounce-effects",
         "fromFile": "frontend/src/dashboard.jsx",
-        "toFile": "frontend/src/settings/usePriorityWeightsSettings.js",
-        "fromLine": 2930,
-        "toLine": 2949,
-        "removedPhysicalLines": 20,
-        "addedPhysicalLines": 20
+        "toFile": "frontend/src/settings/useJiraProjectSettings.js",
+        "fromLine": 4286,
+        "toLine": 4366,
+        "removedPhysicalLines": 81,
+        "addedPhysicalLines": 75
       },
       {
-        "id": "priority-weights-load",
+        "id": "project-board-handlers-save-and-index-clamp-effects",
         "fromFile": "frontend/src/dashboard.jsx",
-        "toFile": "frontend/src/settings/usePriorityWeightsSettings.js",
-        "fromLine": 4811,
-        "toLine": 4832,
-        "removedPhysicalLines": 22,
-        "addedPhysicalLines": 21
+        "toFile": "frontend/src/settings/useJiraProjectSettings.js",
+        "fromLine": 4746,
+        "toLine": 4944,
+        "removedPhysicalLines": 199,
+        "addedPhysicalLines": 185
       },
       {
-        "id": "priority-weights-save",
+        "id": "issue-types-loaders-search-and-fields-effect",
         "fromFile": "frontend/src/dashboard.jsx",
-        "toFile": "frontend/src/settings/usePriorityWeightsSettings.js",
-        "fromLine": 4845,
-        "toLine": 4857,
+        "toFile": "frontend/src/settings/useJiraProjectSettings.js",
+        "fromLine": 4981,
+        "toLine": 5084,
+        "removedPhysicalLines": 104,
+        "addedPhysicalLines": 94
+      },
+      {
+        "id": "loadconfig-projects-board-seed",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useJiraProjectSettings.js",
+        "fromLine": 6655,
+        "toLine": 6667,
         "removedPhysicalLines": 13,
-        "addedPhysicalLines": 12
+        "addedPhysicalLines": 13
       },
       {
-        "id": "priority-weights-mutators",
+        "id": "loadconfig-issue-types-seed",
         "fromFile": "frontend/src/dashboard.jsx",
-        "toFile": "frontend/src/settings/usePriorityWeightsSettings.js",
-        "fromLine": 4875,
-        "toLine": 4884,
-        "removedPhysicalLines": 10,
-        "addedPhysicalLines": 8
-      },
-      {
-        "id": "priority-weights-loadconfig-seed",
-        "fromFile": "frontend/src/dashboard.jsx",
-        "toFile": "frontend/src/settings/usePriorityWeightsSettings.js",
-        "fromLine": 6731,
-        "toLine": 6735,
-        "removedPhysicalLines": 5,
-        "addedPhysicalLines": 5
+        "toFile": "frontend/src/settings/useJiraProjectSettings.js",
+        "fromLine": 6682,
+        "toLine": 6684,
+        "removedPhysicalLines": 3,
+        "addedPhysicalLines": 3
       }
     ],
-    "scaffoldingAllowance": 65,
+    "scaffoldingAllowance": 247,
     "netPhysicalLOC": {
-      "priorAppPlusOwners": 29811,
-      "nextAppPlusOwners": 29876,
-      "transferredSourceLines": 73,
-      "componentScaffoldingLines": 46,
-      "netAppScaffoldingLines": 19
+      "priorAppPlusOwners": 29876,
+      "nextAppPlusOwners": 30123,
+      "transferredSourceLines": 410,
+      "componentScaffoldingLines": 180,
+      "netAppScaffoldingLines": 67
     },
     "getters": [],
-    "rationale": "ST1 R4a checkpoint (frozen from the current-base scratch dry run at 47f20bc0 before the move; reported to the operator at the R3 validation stop and approved in chat). App-to-hook transfer of the 78 priority-weights lines (state, dirty memo, two validation memos, load, save, two mutators, and the loadConfig seed) with zero growth credit; dashboard.jsx keeps the call, the 13-name result destructure, the draftSnapshot read in the render-time snapshot, and one applyLoaded call. The hook adds 46 scaffolding lines over the 73 moved content lines (119). The combined App-plus-owner total grows only by the 65-line scaffolding allowance (46 hook scaffolding + 26 App scaffolding - 2 orphaned imports - 5 blank separators). The dashboard.jsx lineCeiling 14412 is carried (measured 14340; R5 ratchets the manifest and tests/test_codebase_structure_budgets.py). Prior R1 and R3 deletions left 18 lines of combined headroom that this checkpoint does not spend: the combined ceiling is measured-plus-allowance.",
+    "rationale": "ST1 R4b checkpoint (frozen from the current-base scratch dry run at d71a1a87 before the move; reported to the operator at the R4a validation stop and approved in chat). App-to-hook transfer of 443 range lines (410 non-blank) for the Jira projects, source board, issue types and field-catalog cluster, in three exports of one file to preserve effect order: a state layer called at the old state position, a search-effects layer at the original position of the two search debounce effects, and a catalog-effects layer at the original position of the first index-clamp effect; each moved effect crosses zero unmoved effects. The two loadConfig seed groups become two inline seam calls at their exact original positions (projects+board, then issue types, with the capacity and priority-weights seeds still between them). The render-time snapshot assignment stays in App with its 10 keys and reads one returned draftSnapshot object. The combined App-plus-owner total grows only by the 247-line scaffolding allowance (160 hook scaffolding + 111 App scaffolding - 11 orphaned import lines - 13 dropped blank separators); the large allowance comes from the 68-name return and its App destructure. dashboard.jsx lineCeiling 14412 is carried (measured 13997; R5 ratchets the manifest and tests/test_codebase_structure_budgets.py). The combined ceiling is measured-plus-allowance.",
     "scaffoldingBreakdown": {
-      "incomingPhysicalLines": 78,
+      "incomingPhysicalLines": 443,
       "hook": {
-        "importsAndSignature": 19,
-        "draftSnapshot": 1,
-        "applyLoadedWrapper": 2,
-        "returnBlock": 16,
-        "blankSeparators": 8,
-        "total": 46
+        "imports": 21,
+        "signaturesAndClosings": 42,
+        "blankLinesBetweenHooks": 2,
+        "draftSnapshot": 6,
+        "seamWrappers": 6,
+        "returnBlock": 70,
+        "blankSeparators": 13,
+        "dryRunScaffoldingTotal": 160,
+        "carriedBlankLines": 20,
+        "total": 180
       },
       "app": {
-        "callSiteAndDestructure": 24,
+        "hookCallAndDestructure": 83,
+        "searchEffectsCall": 12,
+        "catalogEffectsCall": 13,
+        "seamCalls": 2,
         "hookImport": 1,
-        "applyLoadedCall": 1,
-        "orphanedImportLines": -2,
-        "droppedBlankSeparators": -5,
-        "net": 19
+        "orphanedImportLines": -11,
+        "blankLinesInMovedRanges": -33,
+        "net": 67
       },
-      "note": "usePriorityWeightsSettings.js 119 = 73 moved non-blank lines + 46 scaffolding. dashboard.jsx 14394 -> 14340 = -78 moved range lines (73 non-blank, 5 blank) +24 call and destructure +1 import +1 applyLoaded call -2 orphaned import lines. The in-place edits (the trimmed stats import and the snapshot line) change no line count. Combined +65."
+      "note": "useJiraProjectSettings.js 590 = 410 moved non-blank lines + 180 other lines (160 scaffolding as categorised by the dry run + 20 blank lines carried verbatim inside moved code, derived as 590-410-160). dashboard.jsx 14340 -> 13997 = -410 moved non-blank lines -33 blank lines inside the moved ranges +83 +12 +13 +2 +1 -11 orphaned import lines. Combined +247 (= 160 hook scaffolding + 111 App scaffolding - 11 orphaned imports - 13 range blank lines not carried into the hook)."
     }
   }
 }

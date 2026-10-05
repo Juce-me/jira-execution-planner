@@ -20,7 +20,7 @@
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
     "lineCount": 14412,
-    "lineCeiling": 15368
+    "lineCeiling": 14412
   },
   "modules": [
     {
@@ -7226,7 +7226,7 @@
       "netAppScaffoldingLines": -81
     },
     "getters": [],
-    "rationale": "SC4 checkpoint (frozen from the current-base scratch dry run before R4a; reported to the operator with the R4a commit). App-to-container transfer of the 875-line Scenario JSX block (verbatim, dedented 16 spaces) with zero growth credit; dashboard.jsx keeps the conditional parent and renders <ScenarioView> with the five D9 props. Owner-only Scenario/unique totals grow by the transferred lines plus the component scaffolding; the combined App-plus-owner total grows only by the net scaffolding. dashboard.jsx lineCeiling 15368 carried (measured 14412; R5 ratchets the manifest and tests/test_codebase_structure_budgets.py). Ledger line numbers of other modules are refreshed for the shifted App lines only.",
+    "rationale": "SC4 checkpoint (frozen from the current-base scratch dry run before R4a; reported to the operator with the R4a commit). App-to-container transfer of the 875-line Scenario JSX block (verbatim, dedented 16 spaces) with zero growth credit; dashboard.jsx keeps the conditional parent and renders <ScenarioView> with the five D9 props. Owner-only Scenario/unique totals grow by the transferred lines plus the component scaffolding; the combined App-plus-owner total grows only by the net scaffolding. dashboard.jsx lineCeiling 15368 carried (measured 14412; R5 ratchets the manifest and tests/test_codebase_structure_budgets.py). Ledger line numbers of other modules are refreshed for the shifted App lines only. SC4 R5 ratchets the dashboard.jsx ceiling to its measured 14,412 lines; every owner, interface and aggregate ceiling already equals its measured value.",
     "scaffoldingBreakdown": {
       "incomingPhysicalLines": 875,
       "component": {

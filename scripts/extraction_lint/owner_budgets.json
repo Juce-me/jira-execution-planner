@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "baseSha": "20a2a38c253d9d8ca220be100ace08056c0e2058",
-  "checkpointId": "SC3-H4-drag-hook",
+  "baseSha": "2fca1fe09ca178c0a65c2f31caeb86663c97b09f",
+  "checkpointId": "SC3-H5-history-hook",
   "sourceRoot": "frontend/src",
   "ownerRoots": [
     "scenario",
@@ -2140,7 +2140,7 @@
             {
               "path": "frontend/src/scenario/useScenarioPlanner.js",
               "symbol": "useScenarioDerived",
-              "line": 194,
+              "line": 182,
               "phase": "hook execution"
             }
           ],
@@ -2371,7 +2371,7 @@
             {
               "path": "frontend/src/scenario/useScenarioPlanner.js",
               "symbol": "useScenarioDraft",
-              "line": 124,
+              "line": 112,
               "phase": "hook execution"
             }
           ],
@@ -2453,7 +2453,107 @@
             {
               "path": "frontend/src/scenario/useScenarioPlanner.js",
               "symbol": "useScenarioDrag",
-              "line": 212,
+              "line": 200,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "scenario.useScenarioHistory",
+      "path": "frontend/src/scenario/useScenarioHistory.js",
+      "features": [
+        "scenario"
+      ],
+      "exports": [
+        "useScenarioHistory"
+      ],
+      "lineCount": 654,
+      "lineCeiling": 654,
+      "interfaces": [
+        {
+          "exportName": "useScenarioHistory",
+          "inputNames": [
+            "buildScenarioDraftScope",
+            "fetchScenarioDraft",
+            "fetchScenarioDraftVersion",
+            "isScenarioScopeDraftCurrent",
+            "postScenarioRealtimeJson",
+            "reloadScenarioDraftFromJira",
+            "rollbackScenarioDraft",
+            "saveScenarioDraftVersion",
+            "scenarioCanSaveDraft",
+            "scenarioHasUnsavedChanges",
+            "scenarioScopeKey",
+            "scenarioState",
+            "trackScenarioAction"
+          ],
+          "returnNames": [
+            "cancelReloadActiveDraft",
+            "cancelScenarioHistoryAction",
+            "cancelScenarioReloadFromJira",
+            "checkScenarioDraftWritebackGate",
+            "closeScenarioDraftHistory",
+            "discardScenarioOverrides",
+            "openScenarioDraftHistory",
+            "previewScenarioDraftWriteback",
+            "requestReloadActiveDraft",
+            "requestScenarioHistoryAction",
+            "requestScenarioReloadFromJira",
+            "runReloadActiveDraft",
+            "runScenarioHistoryAction",
+            "runScenarioReloadFromJira",
+            "saveScenarioDraft"
+          ],
+          "propNames": [],
+          "expandedInputNames": [
+            "buildScenarioDraftScope",
+            "fetchScenarioDraft",
+            "fetchScenarioDraftVersion",
+            "isScenarioScopeDraftCurrent",
+            "postScenarioRealtimeJson",
+            "reloadScenarioDraftFromJira",
+            "rollbackScenarioDraft",
+            "saveScenarioDraftVersion",
+            "scenarioCanSaveDraft",
+            "scenarioHasUnsavedChanges",
+            "scenarioScopeKey",
+            "scenarioState",
+            "scenarioState.scenarioDraftMeta",
+            "scenarioState.scenarioHistoryActionControllerRef",
+            "scenarioState.scenarioHistoryButtonRef",
+            "scenarioState.scenarioHistoryPanelRef",
+            "scenarioState.scenarioHistoryRefreshControllerRef",
+            "scenarioState.scenarioHistoryTitleRef",
+            "scenarioState.scenarioOverrides",
+            "scenarioState.scenarioUndoStackRef",
+            "scenarioState.setScenarioDraftMeta",
+            "scenarioState.setScenarioOverrides",
+            "scenarioState.setScenarioUndoVersion",
+            "trackScenarioAction"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 24,
+          "returnCount": 15,
+          "propCount": 0,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 24,
+          "returnCeiling": 15,
+          "propCeiling": 0,
+          "unresolved": [],
+          "inventory": {
+            "source": "frontend/src/scenario/useScenarioHistory.js:6",
+            "sourceDigest": "0f0edf15da2d6f655d821abd19fc1bef4bd8b03b6a85e1e2d83ffc61b3126b40",
+            "rationale": "SC3 H5 checkpoint (frozen from the current-base scratch dry run before R4; reported to the operator with the R4 commit)."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/scenario/useScenarioPlanner.js",
+              "symbol": "useScenarioHistory",
+              "line": 226,
               "phase": "hook execution"
             }
           ],
@@ -2471,7 +2571,7 @@
       "exports": [
         "useScenarioPlanner"
       ],
-      "lineCount": 2121,
+      "lineCount": 1537,
       "lineCeiling": 3201,
       "interfaces": [
         {
@@ -2615,21 +2715,14 @@
             "scenarioState",
             "scenarioState.scenarioCollapsedLanes",
             "scenarioState.scenarioData",
-            "scenarioState.scenarioDraftMeta",
             "scenarioState.scenarioEdgeFrameRef",
             "scenarioState.scenarioEdgeUpdatePendingRef",
             "scenarioState.scenarioEpicFocus",
             "scenarioState.scenarioFocusRestoreRef",
-            "scenarioState.scenarioHistoryActionControllerRef",
-            "scenarioState.scenarioHistoryButtonRef",
-            "scenarioState.scenarioHistoryPanelRef",
-            "scenarioState.scenarioHistoryRefreshControllerRef",
-            "scenarioState.scenarioHistoryTitleRef",
             "scenarioState.scenarioHoverKey",
             "scenarioState.scenarioIssueRefMap",
             "scenarioState.scenarioLaneMode",
             "scenarioState.scenarioLayout",
-            "scenarioState.scenarioOverrides",
             "scenarioState.scenarioPendingScrollRef",
             "scenarioState.scenarioRangeOverride",
             "scenarioState.scenarioResizeFrameRef",
@@ -2641,21 +2734,17 @@
             "scenarioState.scenarioTimelineRef",
             "scenarioState.scenarioTooltipAnchorRef",
             "scenarioState.scenarioTooltipRef",
-            "scenarioState.scenarioUndoStackRef",
             "scenarioState.scenarioViewportHeight",
             "scenarioState.setScenarioCollapsedLanes",
-            "scenarioState.setScenarioDraftMeta",
             "scenarioState.setScenarioEdgeRender",
             "scenarioState.setScenarioEpicFocus",
             "scenarioState.setScenarioFlashKey",
             "scenarioState.setScenarioLaneMode",
             "scenarioState.setScenarioLayout",
-            "scenarioState.setScenarioOverrides",
             "scenarioState.setScenarioRangeOverride",
             "scenarioState.setScenarioScrollLeft",
             "scenarioState.setScenarioScrollTop",
             "scenarioState.setScenarioTooltip",
-            "scenarioState.setScenarioUndoVersion",
             "scenarioState.setScenarioViewportHeight",
             "searchQuery",
             "selectedSprint",
@@ -2671,7 +2760,7 @@
             "visibleControlGroups"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 86,
+          "expandedInputCount": 75,
           "returnCount": 67,
           "propCount": 0,
           "outerParameterCeiling": 1,
@@ -2681,7 +2770,7 @@
           "unresolved": [],
           "inventory": {
             "source": "frontend/src/scenario/useScenarioPlanner.js:14",
-            "sourceDigest": "297687cf3f864df1f730b0f00de0a5b76f71d385112be6c25c3fb60d90a73bfd",
+            "sourceDigest": "fa381d8f8b3f0830415070587bcae0d1234036694907361a1dc695527350665f",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -3073,7 +3162,7 @@
             {
               "path": "frontend/src/scenario/useScenarioPlanner.js",
               "symbol": "useScenarioRealtime",
-              "line": 160,
+              "line": 148,
               "phase": "hook execution"
             }
           ],
@@ -6828,74 +6917,65 @@
   ],
   "aggregates": {
     "scenario": {
-      "measured": 4336,
-      "ceiling": 4336
+      "measured": 4406,
+      "ceiling": 4406
     },
     "settings": {
       "measured": 9803,
       "ceiling": 9803
     },
     "uniqueOwners": {
-      "measured": 14139,
-      "ceiling": 14139
+      "measured": 14209,
+      "ceiling": 14209
     },
     "appPlusOwners": {
-      "measured": 29507,
-      "ceiling": 29507
+      "measured": 29577,
+      "ceiling": 29577
     }
   },
   "transfer": {
     "incomingRanges": [
       {
-        "id": "toggleScenarioEditMode-through-handleScenarioBarMouseDown",
+        "id": "saveScenarioDraft-through-runScenarioHistoryAction",
         "fromFile": "frontend/src/scenario/useScenarioPlanner.js",
-        "toFile": "frontend/src/scenario/useScenarioDrag.js",
-        "fromLine": 179,
-        "toLine": 239,
-        "removedPhysicalLines": 61,
-        "addedPhysicalLines": 61
-      },
-      {
-        "id": "scenarioDraggingIssueKey-through-scenarioOverrideCount",
-        "fromFile": "frontend/src/scenario/useScenarioPlanner.js",
-        "toFile": "frontend/src/scenario/useScenarioDrag.js",
-        "fromLine": 276,
-        "toLine": 394,
-        "removedPhysicalLines": 119,
-        "addedPhysicalLines": 119
+        "toFile": "frontend/src/scenario/useScenarioHistory.js",
+        "fromLine": 222,
+        "toLine": 824,
+        "removedPhysicalLines": 603,
+        "addedPhysicalLines": 603
       }
     ],
-    "scaffoldingAllowance": 44,
+    "scaffoldingAllowance": 70,
     "netPhysicalLOC": {
-      "priorAppPlusOwners": 29463,
-      "nextAppPlusOwners": 29507,
-      "transferredSourceLines": 180,
-      "hookScaffoldingLines": 38,
-      "netPlannerScaffoldingLines": 6
+      "priorAppPlusOwners": 29507,
+      "nextAppPlusOwners": 29577,
+      "transferredSourceLines": 603,
+      "hookScaffoldingLines": 51,
+      "netPlannerScaffoldingLines": 19
     },
     "getters": [],
-    "rationale": "SC3 H4 checkpoint (frozen from the current-base scratch dry run before R4; reported to the operator with the R4 commit). Planner-to-sub-hook transfer of 180 physical lines (toggleScenarioEditMode, handleScenarioBarMouseDown, the drag effect, scenarioUndo/Redo, the undo keydown effect and scenarioOverrideCount) with zero growth credit; the section header comment stays in the planner above the call. dashboard.jsx untouched. Existing per-file and interface ceilings carried forward (planner 3201 lines / 267 expanded inputs; measured 2121 / 86).",
+    "rationale": "SC3 H5 checkpoint (frozen from the current-base scratch dry run before R4; reported to the operator with the R4 commit). Planner-to-sub-hook transfer of 603 physical lines (saveScenarioDraft through runScenarioHistoryAction, incl. the history-open focus and history Escape effects) with zero growth credit; the shared drag/save section header stays in the planner. dashboard.jsx untouched. Existing per-file and interface ceilings carried forward (planner 3201 lines / 267 expanded inputs; measured 1537 / 75).",
     "scaffoldingBreakdown": {
-      "incomingPhysicalLines": 180,
+      "incomingPhysicalLines": 603,
       "hook": {
-        "imports": 3,
+        "imports": 4,
         "importBlank": 1,
-        "parameterSignature": 9,
-        "stateDestructure": 16,
-        "runSeparators": 1,
-        "returnWrapper": 7,
+        "parameterSignature": 15,
+        "stateDestructure": 13,
+        "runSeparators": 0,
+        "returnWrapper": 17,
         "functionClosing": 1,
-        "total": 38
+        "total": 51
       },
       "planner": {
-        "callAndDestructure": 15,
+        "callAndDestructure": 31,
         "newImport": 1,
-        "removedRunTrailingBlankLines": -1,
-        "prunedStateBindings": -9,
-        "prunedWholeImports": 0,
-        "net": 6
+        "removedRunTrailingBlankLines": 0,
+        "prunedStateBindings": -11,
+        "prunedWholeImports": -2,
+        "net": 19
       },
-      "note": "Hook 218 = 180 moved + 38 scaffolding. Planner 2295 -> 2121 = -180 moved -1 trailing blank (240) +15 call/destructure +1 import -9 state bindings (pxToDate/dateToISODate trimmed in place from the scenarioUtils import). Combined +44."
+      "note": "Hook 654 = 603 moved + 51 scaffolding. Planner 2121 -> 1537 = -603 moved +31 call/destructure +1 import -2 whole imports (scenarioDraftOverrides.js, dashboardAnalytics.js) -11 state bindings (isAuthenticationRequiredError trimmed in place). Combined +70."
     }
   }
 }

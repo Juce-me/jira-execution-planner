@@ -8,6 +8,7 @@ const draftHookPath = path.join(__dirname, '../frontend/src/scenario/useScenario
 const realtimeHookPath = path.join(__dirname, '../frontend/src/scenario/useScenarioRealtime.js');
 const derivedHookPath = path.join(__dirname, '../frontend/src/scenario/useScenarioDerived.js');
 const dragHookPath = path.join(__dirname, '../frontend/src/scenario/useScenarioDrag.js');
+const historyHookPath = path.join(__dirname, '../frontend/src/scenario/useScenarioHistory.js');
 
 const EXPECTED_RETURN_NAMES = `
 registerScenarioIssueRef
@@ -705,6 +706,231 @@ test('drag hook preserves its exact flat interface, edit toggle, undo/redo seman
         }
 
         // (d) No network, EventSource, timers or animation frames during render or the exercised calls.
+        assert.deepEqual(globalCalls, []);
+    } finally {
+        for (const [name, value] of Object.entries(savedGlobals)) {
+            globalThis[name] = value;
+        }
+    }
+});
+
+const EXPECTED_HISTORY_RETURN_NAMES = `
+saveScenarioDraft
+discardScenarioOverrides
+openScenarioDraftHistory
+closeScenarioDraftHistory
+requestReloadActiveDraft
+cancelReloadActiveDraft
+runReloadActiveDraft
+requestScenarioHistoryAction
+cancelScenarioHistoryAction
+requestScenarioReloadFromJira
+cancelScenarioReloadFromJira
+runScenarioReloadFromJira
+previewScenarioDraftWriteback
+checkScenarioDraftWritebackGate
+runScenarioHistoryAction
+`.trim().split(/\s+/);
+
+test('history hook preserves its exact flat interface, discard/close/request/cancel updaters and no-network idle guards', async () => {
+    const React = require('react');
+    const { renderToString } = require('react-dom/server');
+    const esbuild = require('esbuild');
+    const Module = require('node:module');
+    const compiled = esbuild.buildSync({
+        stdin: {
+            contents: "export { useScenarioHistory } from './useScenarioHistory.js'; export { useScenarioState } from './useScenarioState.js';",
+            resolveDir: path.dirname(historyHookPath), sourcefile: 'scenarioHistoryProbe.js',
+        },
+        bundle: true, write: false, format: 'cjs', platform: 'node', packages: 'external',
+    }).outputFiles[0].text;
+    const hookModule = new Module(historyHookPath, module);
+    hookModule.filename = historyHookPath;
+    hookModule.paths = module.paths;
+    hookModule._compile(compiled, historyHookPath);
+    // renderToString never runs effects, so the history-open focus and Escape keydown effects are not
+    // covered here; tests/ui/scenario_draft_history.spec.js covers them.
+    const globalCalls = [];
+    const savedGlobals = {};
+    for (const name of ['fetch', 'EventSource', 'setTimeout', 'setInterval', 'requestAnimationFrame']) {
+        savedGlobals[name] = globalThis[name];
+        globalThis[name] = function recordedGlobal() { globalCalls.push(name); throw new Error(`${name} must not run`); };
+    }
+    const calls = [];
+    const spy = name => (...args) => { calls.push([name, ...args]); };
+    // H1 draft callbacks are recorded even when a caller swallows the throw, so empty calls prove no request.
+    const network = name => (...args) => { calls.push([name, ...args]); throw new Error(`${name} must not run`); };
+    const takeCalls = () => calls.splice(0, calls.length);
+    const render = ({ stateOverrides = {}, scenarioScopeKey = '', scenarioHasUnsavedChanges = false, scenarioCanSaveDraft = false } = {}) => {
+        let result;
+        let scenarioState;
+        function Probe() {
+            // Recording setters replace the real ones so updaters can be applied to a chosen previous value.
+            scenarioState = {
+                ...hookModule.exports.useScenarioState({ initialLaneMode: 'assignee' }),
+                setScenarioOverrides: spy('setScenarioOverrides'),
+                setScenarioDraftMeta: spy('setScenarioDraftMeta'),
+                setScenarioUndoVersion: spy('setScenarioUndoVersion'),
+                ...stateOverrides,
+            };
+            result = hookModule.exports.useScenarioHistory({
+                scenarioState,
+                trackScenarioAction: spy('trackScenarioAction'),
+                saveScenarioDraftVersion: network('saveScenarioDraftVersion'),
+                buildScenarioDraftScope: network('buildScenarioDraftScope'),
+                fetchScenarioDraft: network('fetchScenarioDraft'),
+                fetchScenarioDraftVersion: network('fetchScenarioDraftVersion'),
+                rollbackScenarioDraft: network('rollbackScenarioDraft'),
+                reloadScenarioDraftFromJira: network('reloadScenarioDraftFromJira'),
+                postScenarioRealtimeJson: network('postScenarioRealtimeJson'),
+                // Falsy, so a guard-less path records its calls and then bails out as a stale scope.
+                isScenarioScopeDraftCurrent: spy('isScenarioScopeDraftCurrent'),
+                scenarioScopeKey, scenarioCanSaveDraft, scenarioHasUnsavedChanges,
+            });
+            return null;
+        }
+        assert.equal(renderToString(React.createElement(Probe)), '');
+        return { result, scenarioState };
+    };
+    // A loaded draft with pending, stale and conflict metadata; frozen so updaters must copy, never mutate.
+    const loadedMeta = Object.freeze({
+        activeDraft: { draftId: 'draft-1', versionNumber: 3, draftRevision: 'rev-3' },
+        versions: [{ versionNumber: 3 }, { versionNumber: 2 }],
+        loadedVersionNumber: 3, baseDraftRevision: 'rev-3',
+        savedOverrides: { 'DEMO-1': { start: '2026-01-05', end: '2026-01-20' } },
+        scopePayload: { sprintId: '42', groupId: 'g1' }, scopeKey: '42:g1',
+        dirtyState: 'dirty_local', pendingScopeChange: { scopeKey: '43:g1' }, historyOpen: true,
+        pendingHistoryAction: { type: 'reload', versionNumber: 2 },
+        pendingActiveDraftReload: true, pendingReloadFromJira: true,
+        staleDraft: { draftRevision: 'rev-4' }, conflict: { kind: 'remote' },
+        message: 'Previous message', error: 'Previous error',
+    });
+    const applySingleMetaUpdate = label => {
+        const recorded = takeCalls();
+        assert.deepEqual(recorded.map(([name]) => name), ['setScenarioDraftMeta'], label);
+        return recorded[0][1](loadedMeta);
+    };
+    try {
+        // (a) Exact interface: plain values, all functions.
+        const { result: idle } = render();
+        assert.deepEqual(Object.keys(idle), EXPECTED_HISTORY_RETURN_NAMES);
+        assert.equal(EXPECTED_HISTORY_RETURN_NAMES.length, 15);
+        for (const name of EXPECTED_HISTORY_RETURN_NAMES) {
+            assert.equal(Object.getOwnPropertyDescriptor(idle, name).get, undefined, name);
+            assert.equal(typeof idle[name], 'function', name);
+        }
+        assert.deepEqual(takeCalls(), []);
+
+        // (b) Discard restores normalized saved overrides, clears undo and keeps the loaded draft metadata.
+        const { result: clean, scenarioState: cleanState } = render({ stateOverrides: { scenarioDraftMeta: loadedMeta } });
+        cleanState.scenarioUndoStackRef.current.push({ issueKey: 'DEMO-1' });
+        assert.equal(clean.discardScenarioOverrides(), undefined);
+        assert.deepEqual(takeCalls(), [], 'discard without unsaved changes is a no-op');
+        assert.equal(cleanState.scenarioUndoStackRef.current.canUndo(), true);
+        const discardMeta = { ...loadedMeta, savedOverrides: {
+            'DEMO-1': { start: '2026-01-05', end: '2026-01-20', extra: 'dropped' },
+            'DEMO-2': { start: 'not-a-date', end: '' }, 'bad key': { start: '2026-01-05' },
+        } };
+        const { result: dirty, scenarioState: dirtyState } = render({
+            stateOverrides: { scenarioDraftMeta: discardMeta }, scenarioHasUnsavedChanges: true,
+        });
+        dirtyState.scenarioUndoStackRef.current.push({ issueKey: 'DEMO-1' });
+        dirtyState.scenarioUndoStackRef.current.push({ issueKey: 'DEMO-2' });
+        dirtyState.scenarioUndoStackRef.current.undo();
+        dirty.discardScenarioOverrides();
+        const [[overridesName, restored], [metaName, discardUpdater], ...afterDiscard] = takeCalls();
+        assert.equal(overridesName, 'setScenarioOverrides');
+        assert.deepEqual(restored, { 'DEMO-1': { start: '2026-01-05', end: '2026-01-20' } });
+        assert.equal(metaName, 'setScenarioDraftMeta');
+        assert.deepEqual(afterDiscard, [['setScenarioUndoVersion', 0]]);
+        assert.deepEqual(discardUpdater(loadedMeta), {
+            ...loadedMeta, dirtyState: 'clean', pendingScopeChange: null, staleDraft: null,
+            conflict: null, message: '', error: '',
+        });
+        assert.equal(dirtyState.scenarioUndoStackRef.current.canUndo(), false, 'discard clears undo');
+        assert.equal(dirtyState.scenarioUndoStackRef.current.canRedo(), false, 'discard clears redo');
+
+        // (b) Save guards: no scope or no save permission returns before tracking or any metadata update.
+        const { result: unsavable } = render({ stateOverrides: { scenarioDraftMeta: loadedMeta }, scenarioScopeKey: '42:g1' });
+        assert.equal(await unsavable.saveScenarioDraft(), undefined);
+        assert.deepEqual(takeCalls(), [], 'save without permission does nothing');
+        const { result: scopeless } = render({ scenarioCanSaveDraft: true, scenarioHasUnsavedChanges: true });
+        assert.equal(await scopeless.saveScenarioDraft(), undefined);
+        assert.deepEqual(takeCalls(), [], 'save without a scope does nothing');
+
+        // (b) Close resets the open/pending flags and returns focus to the History button when it can focus.
+        const { result: closer } = render({ stateOverrides: { scenarioHistoryButtonRef: { current: { focus: spy('focus') } } } });
+        closer.closeScenarioDraftHistory();
+        const [[closeName, closeUpdater], ...afterClose] = takeCalls();
+        assert.equal(closeName, 'setScenarioDraftMeta');
+        assert.deepEqual(afterClose, [['focus']]);
+        assert.deepEqual(closeUpdater(loadedMeta), { ...loadedMeta, historyOpen: false, pendingHistoryAction: null });
+        render({ stateOverrides: { scenarioHistoryButtonRef: { current: {} } } }).result.closeScenarioDraftHistory();
+        applySingleMetaUpdate('close without a focusable button only updates metadata');
+
+        // (b) With unsaved changes each request only records a pending confirmation; cancel clears it.
+        const { result: pending } = render({ stateOverrides: { scenarioDraftMeta: loadedMeta }, scenarioScopeKey: '42:g1', scenarioHasUnsavedChanges: true });
+        pending.requestScenarioHistoryAction('rollback', 2);
+        assert.deepEqual(applySingleMetaUpdate('history request'),
+            { ...loadedMeta, pendingHistoryAction: { type: 'rollback', versionNumber: 2 }, error: '' });
+        pending.cancelScenarioHistoryAction();
+        assert.deepEqual(applySingleMetaUpdate('history cancel'), { ...loadedMeta, pendingHistoryAction: null });
+        pending.requestScenarioReloadFromJira();
+        assert.deepEqual(applySingleMetaUpdate('Jira reload request'), { ...loadedMeta, pendingReloadFromJira: true, error: '' });
+        pending.cancelScenarioReloadFromJira();
+        assert.deepEqual(applySingleMetaUpdate('Jira reload cancel'), { ...loadedMeta, pendingReloadFromJira: false });
+        pending.requestReloadActiveDraft();
+        assert.deepEqual(applySingleMetaUpdate('active reload request'), { ...loadedMeta, pendingActiveDraftReload: true, error: '' });
+        pending.cancelReloadActiveDraft();
+        assert.deepEqual(applySingleMetaUpdate('active reload cancel'), { ...loadedMeta, pendingActiveDraftReload: false });
+
+        // (b) Idle guards: without a draft id, scope, version or base revision nothing is tracked, set or fetched,
+        // and a previous action controller is neither aborted nor replaced.
+        const actionController = { abort: spy('actionAbort') };
+        const scenarioHistoryActionControllerRef = { current: actionController };
+        const { result: draftless } = render({ stateOverrides: { scenarioHistoryActionControllerRef } });
+        draftless.requestScenarioHistoryAction('reload', 2);
+        draftless.requestScenarioReloadFromJira();
+        draftless.requestReloadActiveDraft();
+        assert.deepEqual(takeCalls(), [], 'clean requests run the idle guards directly');
+        for (const [label, run] of [
+            ['history action without a draft', () => draftless.runScenarioHistoryAction({ type: 'reload', versionNumber: 2 })],
+            ['active reload without a scope', () => draftless.runReloadActiveDraft()],
+            ['Jira reload without a draft', () => draftless.runScenarioReloadFromJira()],
+            ['write-back preview without a draft', () => draftless.previewScenarioDraftWriteback()],
+            ['write-back gate without a draft', () => draftless.checkScenarioDraftWritebackGate()],
+        ]) {
+            assert.equal(await run(), undefined, label);
+            assert.deepEqual(takeCalls(), [], label);
+        }
+        const conflictOnlyMeta = { ...loadedMeta, activeDraft: null, baseDraftRevision: null, conflict: { activeDraft: { draftId: 'draft-1' } } };
+        const { result: unversioned } = render({ stateOverrides: { scenarioDraftMeta: conflictOnlyMeta, scenarioHistoryActionControllerRef } });
+        for (const [label, run] of [
+            ['history action without a version', () => unversioned.runScenarioHistoryAction({ type: 'rollback', versionNumber: 0 })],
+            ['history action without an action', () => unversioned.runScenarioHistoryAction()],
+            ['Jira reload without a base revision', () => unversioned.runScenarioReloadFromJira()],
+        ]) {
+            assert.equal(await run(), undefined, label);
+            assert.deepEqual(takeCalls(), [], label);
+        }
+        assert.equal(scenarioHistoryActionControllerRef.current, actionController);
+
+        // (b) Opening history without a scope tracks, aborts the previous refresh, opens the panel and stops before fetch.
+        const scenarioHistoryRefreshControllerRef = { current: { abort: spy('refreshAbort') } };
+        const { result: opener } = render({ stateOverrides: { scenarioHistoryRefreshControllerRef } });
+        assert.equal(await opener.openScenarioDraftHistory(), undefined);
+        const [trackCall, abortCall, [openName, openUpdater], ...afterOpen] = takeCalls();
+        assert.deepEqual(trackCall, ['trackScenarioAction', 'history_open']);
+        assert.deepEqual(abortCall, ['refreshAbort']);
+        assert.equal(openName, 'setScenarioDraftMeta');
+        assert.deepEqual(afterOpen, [], 'no fetchScenarioDraft without a scope');
+        assert.deepEqual(openUpdater(loadedMeta), {
+            ...loadedMeta, historyOpen: true, pendingHistoryAction: null, loadingHistory: false, error: '',
+        });
+        assert.ok(scenarioHistoryRefreshControllerRef.current instanceof AbortController);
+        assert.equal(scenarioHistoryRefreshControllerRef.current.signal.aborted, false);
+
+        // (c) No network, EventSource, timers or animation frames during render or the exercised calls.
         assert.deepEqual(globalCalls, []);
     } finally {
         for (const [name, value] of Object.entries(savedGlobals)) {

@@ -166,8 +166,8 @@ test('clean scenario scope resets draft state before new scenario data is applie
 });
 
 test('discarding scenario overrides preserves loaded draft metadata', () => {
-    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario/useScenarioPlanner.js'], { anchor: 'export function useScenarioPlanner(' });
-    const discardMatch = scenarioSource.match(/const discardScenarioOverrides = \(\) => \{[\s\S]*?\n\s*\};\n\n\s*const scenarioLaneForIssue/);
+    const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario'], { anchor: 'export function useScenarioHistory(' });
+    const discardMatch = scenarioSource.match(/const discardScenarioOverrides = \(\) => \{[\s\S]*?\n\s*\};\n\s*return \{\n\s*saveScenarioDraft,/);
 
     assert.ok(discardMatch, 'Expected discardScenarioOverrides function to exist.');
     const discardSource = discardMatch[0];
@@ -247,7 +247,7 @@ test('save and discard use normalized dirty state rather than override count', (
     const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario'], { anchor: 'export function useScenarioDraft(' });
     const dirtyStateMatch = scenarioSource.match(/const scenarioHasUnsavedChanges = scenarioOverridesSignature !== savedScenarioOverridesSignature;/);
     const saveCallerMatch = scenarioSource.match(/const saveScenarioDraft = async \(\) => \{[\s\S]*?\n\s*\};\n\n\s*const discardScenarioOverrides/);
-    const discardMatch = scenarioSource.match(/const discardScenarioOverrides = \(\) => \{[\s\S]*?\n\s*\};\n\n\s*const scenarioLaneForIssue/);
+    const discardMatch = scenarioSource.match(/const discardScenarioOverrides = \(\) => \{[\s\S]*?\n\s*\};\n\s*return \{\n\s*saveScenarioDraft,/);
     const saveButtonMatch = scenarioSource.match(/onClick=\{saveScenarioDraft\}[\s\S]*?title="Save draft overrides to server"/);
     const discardButtonMatch = scenarioSource.match(/onClick=\{discardScenarioOverrides\}[\s\S]*?title="Discard all overrides"/);
 
@@ -396,7 +396,7 @@ test('draft save retries csrf_required once and preserves failed local edits', (
 test('history reload and rollback use inline dialog controls and guarded rollback writes', () => {
     const scenarioSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario'], { anchor: 'export function useScenarioDraft(' });
     const scenarioApiSource = readSource(scenarioApiPath);
-    const historyActionMatch = scenarioSource.match(/const requestScenarioHistoryAction = \(type, versionNumber\) => \{[\s\S]*?\n\s*\};\n\n\s*const scenarioLaneForIssue/);
+    const historyActionMatch = scenarioSource.match(/const requestScenarioHistoryAction = \(type, versionNumber\) => \{[\s\S]*?\n\s*\};\n\s*return \{\n\s*saveScenarioDraft,/);
     const rollbackHelperMatch = scenarioSource.match(/const rollbackScenarioDraft = async[\s\S]*?\n\s*\};\n\n\s*const buildScenarioDraftScope/);
     const historyRenderIndex = scenarioSource.indexOf('{scenarioDraftMeta.historyOpen && (');
     const scenarioLoadingIndex = scenarioSource.indexOf('{scenarioLoading &&', historyRenderIndex);

@@ -135,7 +135,7 @@ import {
     summarizeEffortTypeSplitTotals
 } from './stats/excludedCapacityStats.js';
 import { PRIORITY_AXIS } from './stats/statsConstants.js';
-import { DEFAULT_PRIORITY_WEIGHT_ROWS, buildPriorityWeightMap, clonePriorityWeightRows } from './stats/priorityWeights.js';
+import { buildPriorityWeightMap } from './stats/priorityWeights.js';
 import { buildBurnoutChartModel } from './stats/burnoutChartUtils.js';
 import {
     buildLocalStatsFromTasks,
@@ -186,8 +186,6 @@ import {
     saveSelectedProjects as requestSaveSelectedProjects,
     fetchBoardConfig as requestBoardConfig,
     saveBoardConfig as requestSaveBoardConfig,
-    fetchPriorityWeightsConfig as requestPriorityWeightsConfig,
-    savePriorityWeightsConfig as requestSavePriorityWeightsConfig,
     fetchCapacityConfig as requestCapacityConfig,
     saveCapacityConfig as requestSaveCapacityConfig,
     fetchIssueTypesConfig as requestIssueTypesConfig,
@@ -272,6 +270,7 @@ import AdminSettingsTabs from './settings/AdminSettingsTabs.jsx';
 import PerformanceSettings from './settings/PerformanceSettings.jsx';
 import { createPerformanceGate } from './eng/loadPerformance.js';
 import { makeFieldSearchResults, useJiraFieldPickers } from './settings/useJiraFieldPickers.js';
+import { usePriorityWeightsSettings } from './settings/usePriorityWeightsSettings.js';
 import UserConnectionsSettings from './settings/UserConnectionsSettings.jsx';
 import { fetchHomeTokenConnection } from './api/authApi.js';
 import { AUTH_LONG_ABSENCE_EVENT } from './api/authRefreshContract.js';
@@ -755,10 +754,30 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 sharedConfigRevisionRef.current = payload.configRevision;
                 setSharedConfigRevision(payload.configRevision);
             };
-            const [priorityWeightsDraft, setPriorityWeightsDraft] = useState(() => clonePriorityWeightRows(DEFAULT_PRIORITY_WEIGHT_ROWS));
-            const [priorityWeightsSource, setPriorityWeightsSource] = useState('default');
-            const [effectivePriorityWeightsRows, setEffectivePriorityWeightsRows] = useState(() => clonePriorityWeightRows(DEFAULT_PRIORITY_WEIGHT_ROWS));
-            const priorityWeightsBaselineRef = useRef(JSON.stringify(clonePriorityWeightRows(DEFAULT_PRIORITY_WEIGHT_ROWS)));
+            const {
+                priorityWeightsDraft,
+                setPriorityWeightsDraft,
+                priorityWeightsSource,
+                effectivePriorityWeightsRows,
+                isPriorityWeightsDirty,
+                priorityWeightsValidationError,
+                priorityWeightsSum,
+                loadPriorityWeightsConfig,
+                savePriorityWeightsConfig,
+                updatePriorityWeightDraft,
+                resetPriorityWeightsDraft,
+                applyLoaded: applyPriorityWeightsLoaded,
+                draftSnapshot: priorityWeightsDraftSnapshot,
+            } = usePriorityWeightsSettings({
+                BACKEND_URL,
+                acceptSettingsConfigBaseline,
+                clearServerConnectionError,
+                commitSharedConfigRevision,
+                reportServerConnectionError,
+                settingsConfigBaselineRevision,
+                settingsDraftSnapshotRef,
+                sharedConfigRevisionRef,
+            });
             const [jiraProjects, setJiraProjects] = useState([]);
             const [loadingProjects, setLoadingProjects] = useState(false);
             const [projectSearchQuery, setProjectSearchQuery] = useState('');
@@ -858,7 +877,7 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 projects: JSON.stringify(selectedProjectsDraft),
                 board: JSON.stringify({ boardId: boardIdDraft, boardName: boardNameDraft }),
                 capacity: JSON.stringify({ project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft }),
-                priorityWeights: JSON.stringify(priorityWeightsDraft),
+                priorityWeights: priorityWeightsDraftSnapshot,
                 issueTypes: JSON.stringify(issueTypesDraft),
                 sprintField: JSON.stringify({ fieldId: sprintFieldIdDraft, fieldName: sprintFieldNameDraft }),
                 parentNameField: JSON.stringify({ fieldId: parentNameFieldIdDraft, fieldName: parentNameFieldNameDraft }),
@@ -2693,10 +2712,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 return JSON.stringify(selectedProjectsDraft) !== selectedProjectsBaselineRef.current;
             }, [selectedProjectsDraft, settingsConfigBaselineRevision]);
 
-            const isPriorityWeightsDirty = React.useMemo(() => {
-                return JSON.stringify(priorityWeightsDraft) !== priorityWeightsBaselineRef.current;
-            }, [priorityWeightsDraft, settingsConfigBaselineRevision]);
-
             const isBoardConfigDirty = React.useMemo(() => Boolean(boardConfigBaselineRef.current) && JSON.stringify({ boardId: boardIdDraft, boardName: boardNameDraft }) !== boardConfigBaselineRef.current, [boardIdDraft, boardNameDraft, settingsConfigBaselineRevision]);
 
             const isCapacityDraftDirty = React.useMemo(() => Boolean(capacityBaselineRef.current) && (
@@ -2927,26 +2942,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                     isGroupVisibilityDraftDirty
                 ].filter(Boolean).length + (canEditSharedConfiguration ? dirtyFieldConfigCount : 0);
             }, [canEditSharedConfiguration, canEditEpmConfiguration, isProjectsDraftDirty, isPriorityWeightsDirty, isBoardConfigDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, isAdminAccessDirty, dirtyFieldConfigCount, isEpmConfigDirty, groupDraft, groupDraftSignature, isGroupVisibilityDraftDirty]);
-            const priorityWeightsValidationError = React.useMemo(() => {
-                for (const row of (priorityWeightsDraft || [])) {
-                    const label = String(row?.priority || '').trim() || 'Priority';
-                    const numeric = Number(row?.weight);
-                    if (Number.isNaN(numeric) || !Number.isFinite(numeric)) {
-                        return `Priority weight must be numeric for ${label}.`;
-                    }
-                    if (numeric < 0) {
-                        return `Priority weight must be non-negative for ${label}.`;
-                    }
-                }
-                return '';
-            }, [priorityWeightsDraft]);
-            const priorityWeightsSum = React.useMemo(() => {
-                return (priorityWeightsDraft || []).reduce((acc, row) => {
-                    const numeric = Number(row?.weight);
-                    if (Number.isNaN(numeric) || !Number.isFinite(numeric)) return acc;
-                    return acc + numeric;
-                }, 0);
-            }, [priorityWeightsDraft]);
             const shouldValidateAdminSettings = canEditSharedConfiguration
                 && ((ADMIN_SETTINGS_TAB_IDS.has(groupManageTab) && !['access', 'performance'].includes(groupManageTab)) || isCoreSharedConfigurationDraftDirty);
             const groupConfigValidationErrors = React.useMemo(() => {
@@ -4808,28 +4803,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 }
             };
 
-            const loadPriorityWeightsConfig = async ({ shouldApplyDraft = () => true } = {}) => {
-                const preserveDraft = isPriorityWeightsDirty;
-                const draftReadGuard = createSettingsDraftReadGuard(() => settingsDraftSnapshotRef.current);
-                try {
-                    const response = await requestPriorityWeightsConfig(BACKEND_URL);
-                    if (!response.ok) return;
-                    const data = await response.json();
-                    const rows = clonePriorityWeightRows(data.weights);
-                    clearServerConnectionError();
-                    if (!preserveDraft && !draftReadGuard.draftChanged('priorityWeights') && shouldApplyDraft()) {
-                        setPriorityWeightsDraft(rows);
-                    }
-                    setEffectivePriorityWeightsRows(rows);
-                    setPriorityWeightsSource(String(data.source || 'default'));
-                    acceptSettingsConfigBaseline(priorityWeightsBaselineRef, JSON.stringify(rows));
-                } catch (err) {
-                    if (!reportServerConnectionError(err)) {
-                        console.error('Failed to load priority weights config:', err);
-                    }
-                }
-            };
-
             const saveBoardConfig = async () => {
                 const payload = await requestSaveBoardConfig(
                     BACKEND_URL,
@@ -4840,19 +4813,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 acceptSettingsConfigBaseline(boardConfigBaselineRef, JSON.stringify({ boardId: boardIdDraft, boardName: boardNameDraft }));
                 setSavedBoardId(boardIdDraft);
                 return payload;
-            };
-
-            const savePriorityWeightsConfig = async () => {
-                const data = await requestSavePriorityWeightsConfig(BACKEND_URL, (priorityWeightsDraft || []).map((row) => ({
-                    priority: String(row.priority || '').trim(),
-                    weight: Number(row.weight)
-                })), sharedConfigRevisionRef.current);
-                commitSharedConfigRevision(data);
-                const rows = clonePriorityWeightRows(data.weights);
-                setPriorityWeightsDraft(rows);
-                setEffectivePriorityWeightsRows(rows);
-                setPriorityWeightsSource(String(data.source || 'config'));
-                acceptSettingsConfigBaseline(priorityWeightsBaselineRef, JSON.stringify(rows));
             };
 
             const addProjectSelection = (key, type = 'product') => {
@@ -4870,16 +4830,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 setBoardNameDraft('');
                 setBoardSearchQuery('');
                 setBoardSearchOpen(false);
-            };
-
-            const updatePriorityWeightDraft = (priorityName, nextValue) => {
-                setPriorityWeightsDraft((prev) => (prev || []).map((row) => (
-                    row.priority === priorityName ? { ...row, weight: nextValue } : row
-                )));
-            };
-
-            const resetPriorityWeightsDraft = () => {
-                setPriorityWeightsDraft(clonePriorityWeightRows(DEFAULT_PRIORITY_WEIGHT_ROWS));
             };
 
             const removeProjectSelection = (key) => {
@@ -6728,11 +6678,7 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                             && capacity.fieldId
                             && config.capacityMutationEnabled !== true
                         ));
-                        const weightRows = clonePriorityWeightRows(sharedConfig.statsPriorityWeights);
-                        if (!shouldPreserveSettingsDraft('priorityWeights')) setPriorityWeightsDraft(weightRows);
-                        setEffectivePriorityWeightsRows(weightRows);
-                        setPriorityWeightsSource(sharedConfig.statsPriorityWeights ? 'config' : 'default');
-                        acceptSettingsConfigBaseline(priorityWeightsBaselineRef, JSON.stringify(weightRows));
+                        applyPriorityWeightsLoaded(sharedConfig, shouldPreserveSettingsDraft);
                         const issueTypes = sharedConfig.issueTypes || ['Story'];
                         if (!shouldPreserveSettingsDraft('issueTypes')) setIssueTypesDraft(issueTypes);
                         acceptSettingsConfigBaseline(issueTypesBaselineRef, JSON.stringify(issueTypes));

@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const test = require('node:test');
 const { readDashboardCssSource } = require('./css_source_helpers');
+const { readOwnerSource } = require('./frontend_source_helpers');
 
 const dashboardPath = path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx');
 const epmSettingsPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmSettings.jsx');
@@ -158,7 +159,8 @@ test('settings modal shell and tab bodies are extracted while dashboard keeps se
     assert.ok(dashboardSource.includes('const handleTeamSearchChange = (groupId, value) => {'), 'Expected dashboard to keep team search handler ownership');
     assert.ok(dashboardSource.includes("const [projectSearchQuery, setProjectSearchQuery] = useState('');"), 'Expected dashboard to keep project search state ownership');
     assert.ok(dashboardSource.includes("const [boardSearchQuery, setBoardSearchQuery] = useState('');"), 'Expected dashboard to keep board search state ownership');
-    assert.ok(dashboardSource.includes('const [priorityWeightsDraft, setPriorityWeightsDraft] = useState(() => clonePriorityWeightRows(DEFAULT_PRIORITY_WEIGHT_ROWS));'), 'Expected dashboard to keep priority weight draft ownership');
+    assert.ok(readOwnerSource(['frontend/src/settings/usePriorityWeightsSettings.js'], { anchor: 'export function usePriorityWeightsSettings(' }).includes('const [priorityWeightsDraft, setPriorityWeightsDraft] = React.useState(() => clonePriorityWeightRows(DEFAULT_PRIORITY_WEIGHT_ROWS));'), 'Expected the priority weights hook to own the priority weight draft');
+    assert.ok(dashboardSource.includes('} = usePriorityWeightsSettings({'), 'Expected dashboard to call the priority weights hook');
     assert.deepStrictEqual(
         extractShorthandSpreadProps(teamGroupsSettingsCallSource),
         extractDestructuredProps(teamGroupsSettingsSource),

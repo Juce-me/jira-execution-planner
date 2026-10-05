@@ -46,7 +46,9 @@ control use-before-define 'no-use-before-define' \
 'm = "const scenarioState = useScenarioState({ initialLaneMode: savedPrefsRef.current.scenarioLaneMode ?? " + chr(39) + "team" + chr(39) + " });"
 s = s.replace(m, m + "\n            const __probe = engWorkspaceConfigured;", 1)'
 control undefined-name 'no-undef' \
-'s = s.replace("                registerScenarioIssueRef,", "                registerScenarioIssueRefMoved,", 1)'
+'v = src / "scenario" / "ScenarioView.jsx"
+t = v.read_text()
+v.write_text(t.replace("        registerScenarioIssueRef,\n", "        registerScenarioIssueRefMoved,\n", 1))'
 control react-not-in-scope 'react-in-jsx-scope' \
 '(src / "ProbeView.jsx").write_text("export default function ProbeView() { return <div />; }\n")'
 control destructured-name-not-returned 'destructured but not returned' \

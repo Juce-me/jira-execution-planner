@@ -15,6 +15,7 @@ const groupVisibilityHookPath = path.join(__dirname, '..', 'frontend', 'src', 's
 const workspaceConfigConflictPath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'workspaceConfigConflict.js');
 const jiraFieldSettingsPath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'JiraFieldSettings.jsx');
 const adminSettingsTabsPath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'AdminSettingsTabs.jsx');
+const adminSettingsContainerPath = path.join(__dirname, '..', 'frontend', 'src', 'settings', 'AdminSettingsContainer.jsx');
 const controlFieldPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'ControlField.jsx');
 const iconButtonPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'IconButton.jsx');
 const loadingRowsPath = path.join(__dirname, '..', 'frontend', 'src', 'ui', 'LoadingRows.jsx');
@@ -34,6 +35,7 @@ const groupVisibilityHookSource = fs.existsSync(groupVisibilityHookPath) ? fs.re
 const workspaceConfigConflictSource = fs.readFileSync(workspaceConfigConflictPath, 'utf8');
 const jiraFieldSettingsSource = fs.existsSync(jiraFieldSettingsPath) ? fs.readFileSync(jiraFieldSettingsPath, 'utf8') : '';
 const adminSettingsTabsSource = fs.existsSync(adminSettingsTabsPath) ? fs.readFileSync(adminSettingsTabsPath, 'utf8') : '';
+const adminSettingsContainerSource = fs.existsSync(adminSettingsContainerPath) ? fs.readFileSync(adminSettingsContainerPath, 'utf8') : '';
 const epmSettingsUiSource = epmSettingsSource || dashboardSource;
 const epmApiSource = fs.existsSync(epmApiPath) ? fs.readFileSync(epmApiPath, 'utf8') : '';
 const epmViewDataSource = fs.existsSync(epmViewDataPath) ? fs.readFileSync(epmViewDataPath, 'utf8') : '';
@@ -57,6 +59,19 @@ function extractShorthandSpreadProps(source) {
         })
         .filter((line) => /^[A-Za-z_$][\w$]*$/.test(line))
         .sort();
+}
+
+function extractJsxAttributeNames(source) {
+    // Explicit `name={name}` attributes of one JSX call (the form the interface checker can verify).
+    return source.split('\n').map((line) => line.trim().match(/^([A-Za-z_$][\w$]*)=\{/)?.[1]).filter(Boolean).sort();
+}
+
+function extractParameterDestructureProps(source) {
+    const start = source.indexOf('({\n');
+    const end = source.indexOf('\n}) {', start);
+    assert.notStrictEqual(start, -1, 'Expected a destructured first parameter');
+    assert.notStrictEqual(end, -1, 'Expected the end of the destructured first parameter');
+    return source.slice(start + 3, end).split('\n').map((line) => line.trim().replace(/,$/, '')).filter(Boolean).sort();
 }
 
 function extractDestructuredProps(source) {
@@ -102,11 +117,16 @@ test('settings modal shell and tab bodies are extracted while dashboard keeps se
     const teamGroupsSettingsCallSource = teamGroupsSettingsCallStart === -1 || teamGroupsSettingsCallEnd === -1
         ? ''
         : dashboardSource.slice(teamGroupsSettingsCallStart, teamGroupsSettingsCallEnd);
-    const jiraFieldSettingsCallStart = dashboardSource.indexOf('<JiraFieldSettings');
-    const jiraFieldSettingsCallEnd = dashboardSource.indexOf('/>', jiraFieldSettingsCallStart);
+    const jiraFieldSettingsCallStart = adminSettingsContainerSource.indexOf('<JiraFieldSettings');
+    const jiraFieldSettingsCallEnd = adminSettingsContainerSource.indexOf('/>', jiraFieldSettingsCallStart);
     const jiraFieldSettingsCallSource = jiraFieldSettingsCallStart === -1 || jiraFieldSettingsCallEnd === -1
         ? ''
-        : dashboardSource.slice(jiraFieldSettingsCallStart, jiraFieldSettingsCallEnd);
+        : adminSettingsContainerSource.slice(jiraFieldSettingsCallStart, jiraFieldSettingsCallEnd);
+    const adminSettingsContainerCallStart = dashboardSource.indexOf('<AdminSettingsContainer');
+    const adminSettingsContainerCallEnd = dashboardSource.indexOf('/>', adminSettingsContainerCallStart);
+    const adminSettingsContainerCallSource = adminSettingsContainerCallStart === -1 || adminSettingsContainerCallEnd === -1
+        ? ''
+        : dashboardSource.slice(adminSettingsContainerCallStart, adminSettingsContainerCallEnd);
     const epmSettingsPropsStart = epmSettingsSource.indexOf('const {');
     const epmSettingsPropsEnd = epmSettingsSource.indexOf('} = props;', epmSettingsPropsStart);
     const epmSettingsPropsSource = epmSettingsPropsStart === -1 || epmSettingsPropsEnd === -1
@@ -147,9 +167,19 @@ test('settings modal shell and tab bodies are extracted while dashboard keeps se
     assert.ok(teamGroupsSettingsSource.includes('export default function TeamGroupsSettings'), 'Expected TeamGroupsSettings default component export');
     assert.ok(jiraFieldSettingsSource.includes('export default function JiraFieldSettings'), 'Expected JiraFieldSettings default component export');
     assert.ok(dashboardSource.includes("import TeamGroupsSettings from './settings/TeamGroupsSettings.jsx';"), 'Expected dashboard to import TeamGroupsSettings');
-    assert.ok(dashboardSource.includes("import JiraFieldSettings from './settings/JiraFieldSettings.jsx';"), 'Expected dashboard to import JiraFieldSettings');
+    assert.ok(adminSettingsContainerSource.includes("import JiraFieldSettings from './JiraFieldSettings.jsx';"), 'Expected the admin container to import JiraFieldSettings');
+    assert.ok(dashboardSource.includes("import AdminSettingsContainer from './settings/AdminSettingsContainer.jsx';"), 'Expected dashboard to import the admin container');
     assert.ok(settingsModalChildrenSource.includes('DEPARTMENT_SETTINGS_TAB_IDS.has(groupManageTab)') && settingsModalChildrenSource.includes('<TeamGroupsSettings'), 'Expected dashboard to delegate department tab content');
-    assert.ok(settingsModalChildrenSource.includes('ADMIN_SETTINGS_TAB_IDS.has(groupManageTab)') && settingsModalChildrenSource.includes('<JiraFieldSettings'), 'Expected dashboard to delegate admin tab content');
+    assert.ok(settingsModalChildrenSource.includes('ADMIN_SETTINGS_TAB_IDS.has(groupManageTab)') && settingsModalChildrenSource.includes('<AdminSettingsContainer') && adminSettingsContainerSource.includes('<JiraFieldSettings'), 'Expected dashboard to delegate admin tab content');
+    assert.ok(!adminSettingsContainerSource.includes('useState(') && !adminSettingsContainerSource.includes('useEffect('), 'AdminSettingsContainer must stay stateless');
+    assert.deepStrictEqual(
+        extractJsxAttributeNames(adminSettingsContainerCallSource),
+        extractParameterDestructureProps(adminSettingsContainerSource),
+        'Expected the props dashboard passes to AdminSettingsContainer to match the props it destructures exactly'
+    );
+    extractShorthandSpreadProps(jiraFieldSettingsCallSource).forEach((propName) => {
+        assert.ok(extractParameterDestructureProps(adminSettingsContainerSource).includes(propName), `Expected AdminSettingsContainer to receive ${propName} for JiraFieldSettings`);
+    });
     assert.ok(settingsModalChildrenSource.includes("groupManageTab === 'labels'"), 'Expected group label tab content to stay in dashboard');
     assert.ok(settingsModalChildrenSource.includes("groupManageTab === 'boards'") && settingsModalChildrenSource.includes('<GroupBoardsTab'), 'Expected dashboard to delegate the Boards tab content');
     assert.ok(!teamGroupsSettingsSource.includes('useState('), 'TeamGroupsSettings must not own settings state');
@@ -178,7 +208,8 @@ test('settings modal shell and tab bodies are extracted while dashboard keeps se
         assert.ok(teamGroupsSettingsSource.includes(`${propName},`), `Expected TeamGroupsSettings to receive ${propName}`);
     });
     ['groupManageTab', 'selectedProjectsDraft', 'jiraProjects', 'projectSearchQuery', 'boardSearchQuery', 'parentNameFieldSearchQuery', 'storyPointsFieldSearchQuery', 'capacityProjectSearchQuery', 'capacityFieldSearchQuery', 'priorityWeightsDraft'].forEach((propName) => {
-        assert.ok(jiraFieldSettingsCallSource.includes(`${propName},`), `Expected dashboard to pass ${propName} into JiraFieldSettings`);
+        assert.ok(jiraFieldSettingsCallSource.includes(`${propName},`), `Expected AdminSettingsContainer to pass ${propName} into JiraFieldSettings`);
+        assert.ok(adminSettingsContainerCallSource.includes(`${propName}={${propName}}`), `Expected dashboard to pass ${propName} into AdminSettingsContainer`);
         assert.ok(jiraFieldSettingsSource.includes(`${propName},`), `Expected JiraFieldSettings to receive ${propName}`);
     });
     assert.ok(teamGroupsSettingsSource.includes('className="selected-team-chip"'), 'Expected selected team chip markup in TeamGroupsSettings');
@@ -568,7 +599,7 @@ test('settings modal groups department and admin leaves behind local sub-tabs', 
     assert.ok(dashboardSource.includes("const activeSettingsModalTab = ADMIN_SETTINGS_TAB_IDS.has(groupManageTab)"), 'Expected leaf settings tabs to resolve to grouped top-level tabs');
     assert.ok(dashboardSource.includes('id="department-settings-teams-tab"'), 'Expected Team Groups local tab');
     assert.ok(dashboardSource.includes('id="department-settings-labels-tab"'), 'Expected Group Labels local tab');
-    assert.ok(dashboardSource.includes('<AdminSettingsTabs'), 'Expected extracted Admin local tab strip');
+    assert.ok(adminSettingsContainerSource.includes('<AdminSettingsTabs'), 'Expected extracted Admin local tab strip');
     assert.ok(adminSettingsTabsSource.includes("['scope', 'Scope projects']"), 'Expected Scope Projects local admin tab');
     assert.ok(adminSettingsTabsSource.includes("['source', 'Jira source']"), 'Expected Jira Source local admin tab');
     assert.ok(adminSettingsTabsSource.includes("['mapping', 'Field mapping']"), 'Expected Field Mapping local admin tab');

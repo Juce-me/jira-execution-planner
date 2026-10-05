@@ -307,7 +307,7 @@ test('dirty stored draft scope can be saved after current scenario data is clear
 });
 
 test('scenario draft load and save failures are visibly rendered', () => {
-    const dashboardSource = readSource(dashboardPath);
+    const dashboardSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/scenario'], { anchor: 'export function ScenarioView(' });
     const scenarioErrorIndex = dashboardSource.indexOf('{scenarioError && <div className="scenario-error" role="alert">{scenarioError}</div>}');
     const draftErrorIndex = dashboardSource.indexOf('{scenarioDraftMeta.error && (');
     const draftConflictIndex = dashboardSource.indexOf('{scenarioDraftMeta.conflict && (');

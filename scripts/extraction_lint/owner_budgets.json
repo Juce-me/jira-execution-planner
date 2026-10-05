@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "baseSha": "e1ed501fd851a7507aeae2fd4b971382a91944b7",
-  "checkpointId": "SC3-H6-layout-hook",
+  "baseSha": "1df92ad1856600211b0bfc3b5f83d19f3cc18068",
+  "checkpointId": "SC4-ScenarioView",
   "sourceRoot": "frontend/src",
   "ownerRoots": [
     "scenario",
@@ -19,8 +19,8 @@
   },
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
-    "lineCount": 15368,
-    "lineCeiling": 15368
+    "lineCount": 14412,
+    "lineCeiling": 14412
   },
   "modules": [
     {
@@ -191,7 +191,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "EpmControls",
-              "line": 11079,
+              "line": 10991,
               "phase": "render"
             }
           ],
@@ -243,7 +243,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "EpmProjectCollapseAllButton",
-              "line": 11128,
+              "line": 11040,
               "phase": "render"
             }
           ],
@@ -1361,7 +1361,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "EpmSettings",
-              "line": 14854,
+              "line": 13898,
               "phase": "render"
             }
           ],
@@ -1451,7 +1451,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "EpmView",
-              "line": 14594,
+              "line": 13638,
               "phase": "render"
             }
           ],
@@ -1618,7 +1618,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useEpmViewData",
-              "line": 2781,
+              "line": 2756,
               "phase": "hook execution"
             }
           ],
@@ -1626,150 +1626,150 @@
             {
               "name": "epmTab",
               "lines": [
-                2783,
-                2816,
-                2826,
-                6525,
-                6582,
-                11081,
-                12353,
-                12385,
-                14603
+                2758,
+                2791,
+                2801,
+                6500,
+                6557,
+                10993,
+                12265,
+                12297,
+                13647
               ]
             },
             {
               "name": "setEpmTab",
               "lines": [
-                11084
+                10996
               ]
             },
             {
               "name": "setEpmProjects",
               "lines": [
-                1490
+                1465
               ]
             },
             {
               "name": "epmProjectsLoading",
               "lines": [
-                11089,
-                12020,
-                12286,
-                14597
+                11001,
+                11932,
+                12198,
+                13641
               ]
             },
             {
               "name": "setEpmProjectsError",
               "lines": [
-                1491
+                1466
               ]
             },
             {
               "name": "epmSelectedProjectId",
               "lines": [
-                2784,
-                2798,
-                2803,
-                2805,
-                2810,
-                2816,
-                6526,
-                6583,
-                14600
+                2759,
+                2773,
+                2778,
+                2780,
+                2785,
+                2791,
+                6501,
+                6558,
+                13644
               ]
             },
             {
               "name": "setEpmSelectedProjectId",
               "lines": [
-                11109
+                11021
               ]
             },
             {
               "name": "visibleEpmProjects",
               "lines": [
-                11090
+                11002
               ]
             },
             {
               "name": "selectedEpmProject",
               "lines": [
-                9200,
-                9202,
-                9282,
-                11091,
-                14601
+                9112,
+                9114,
+                9194,
+                11003,
+                13645
               ]
             },
             {
               "name": "filteredEpmProjects",
               "lines": [
-                11092
+                11004
               ]
             },
             {
               "name": "visibleEpmRollupBoards",
               "lines": [
-                2799,
-                2803,
-                2810,
-                2827,
-                9198,
-                9199,
-                9202,
-                14606
+                2774,
+                2778,
+                2785,
+                2802,
+                9110,
+                9111,
+                9114,
+                13650
               ]
             },
             {
               "name": "epmRollupTree",
               "lines": [
-                9200,
-                9202,
-                14599
+                9112,
+                9114,
+                13643
               ]
             },
             {
               "name": "epmRollupBoards",
               "lines": [
-                14598
+                13642
               ]
             },
             {
               "name": "epmDuplicates",
               "lines": [
-                14607
+                13651
               ]
             },
             {
               "name": "epmAggregateTruncated",
               "lines": [
-                14608
+                13652
               ]
             },
             {
               "name": "epmRollupLoading",
               "lines": [
-                9251,
-                9263,
-                12020,
-                14605
+                9163,
+                9175,
+                11932,
+                13649
               ]
             },
             {
               "name": "epmProjectRollupLoadingIds",
               "lines": [
-                14609
+                13653
               ]
             },
             {
               "name": "epmSelectedSubGoalKeys",
               "lines": [
-                11114
+                11026
               ]
             },
             {
               "name": "setEpmSelectedSubGoalKeys",
               "lines": [
-                11118
+                11030
               ]
             },
             {
@@ -1779,20 +1779,20 @@
             {
               "name": "refreshEpmProjects",
               "lines": [
-                1488
+                1463
               ]
             },
             {
               "name": "refreshEpmView",
               "lines": [
-                11983
+                11895
               ]
             },
             {
               "name": "loadArchivedEpmProjectRollup",
               "lines": [
-                2827,
-                14613
+                2802,
+                13657
               ]
             }
           ],
@@ -1812,6 +1812,159 @@
       "lineCount": 34,
       "lineCeiling": 34,
       "interfaces": []
+    },
+    {
+      "id": "scenario.ScenarioView",
+      "path": "frontend/src/scenario/ScenarioView.jsx",
+      "features": [
+        "scenario"
+      ],
+      "exports": [
+        "ScenarioView"
+      ],
+      "lineCount": 988,
+      "lineCeiling": 988,
+      "interfaces": [
+        {
+          "exportName": "ScenarioView",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "excludedEpicSet",
+            "normalizeEpicKey",
+            "scenario",
+            "scenarioState",
+            "selectedSprint"
+          ],
+          "expandedInputNames": [
+            "excludedEpicSet",
+            "excludedEpicSet.has",
+            "normalizeEpicKey",
+            "scenario",
+            "scenario.SCENARIO_LANE_HEIGHT",
+            "scenario.cancelReloadActiveDraft",
+            "scenario.cancelScenarioHistoryAction",
+            "scenario.cancelScenarioReloadFromJira",
+            "scenario.checkScenarioDraftWritebackGate",
+            "scenario.clearScenarioEpicFocus",
+            "scenario.closeScenarioDraftHistory",
+            "scenario.discardScenarioOverrides",
+            "scenario.focusScenarioEpic",
+            "scenario.handleScenarioBarMouseDown",
+            "scenario.hideScenarioTooltip",
+            "scenario.moveScenarioTooltip",
+            "scenario.openScenarioDraftHistory",
+            "scenario.previewScenarioDraftWriteback",
+            "scenario.registerScenarioIssueRef",
+            "scenario.requestReloadActiveDraft",
+            "scenario.requestScenarioHistoryAction",
+            "scenario.requestScenarioReloadFromJira",
+            "scenario.runReloadActiveDraft",
+            "scenario.runScenario",
+            "scenario.runScenarioHistoryAction",
+            "scenario.runScenarioReloadFromJira",
+            "scenario.saveScenarioDraft",
+            "scenario.scenarioAssigneeConflicts",
+            "scenario.scenarioBarGap",
+            "scenario.scenarioBaseUrl",
+            "scenario.scenarioBlockedSet",
+            "scenario.scenarioCanSaveDraft",
+            "scenario.scenarioCriticalPathItems",
+            "scenario.scenarioDeadlineAtRisk",
+            "scenario.scenarioDepViolatedKeys",
+            "scenario.scenarioDepViolations",
+            "scenario.scenarioDownstreamSet",
+            "scenario.scenarioEpicBars",
+            "scenario.scenarioEpicEdges",
+            "scenario.scenarioFocusContextKeys",
+            "scenario.scenarioFocusIssueKeys",
+            "scenario.scenarioHasUnsavedChanges",
+            "scenario.scenarioIssueByKey",
+            "scenario.scenarioIssueLockWarnings",
+            "scenario.scenarioIssuesByLane",
+            "scenario.scenarioLaneAssigneeGroups",
+            "scenario.scenarioLaneInfo",
+            "scenario.scenarioLaneMeta",
+            "scenario.scenarioLateItems",
+            "scenario.scenarioOverrideCount",
+            "scenario.scenarioPositions",
+            "scenario.scenarioQuarterMarkers",
+            "scenario.scenarioRedo",
+            "scenario.scenarioRemoteEditors",
+            "scenario.scenarioSearchMatchSet",
+            "scenario.scenarioSearchQuery",
+            "scenario.scenarioTicks",
+            "scenario.scenarioTodayLeft",
+            "scenario.scenarioUndo",
+            "scenario.scenarioUnschedulableItems",
+            "scenario.scenarioUpstreamSet",
+            "scenario.scenarioViewEnd",
+            "scenario.scenarioViewStart",
+            "scenario.scenarioVisibleLanes",
+            "scenario.scrollToScenarioIssue",
+            "scenario.showScenarioTooltip",
+            "scenario.showScenarioTooltipFromElement",
+            "scenario.toggleScenarioEditMode",
+            "scenario.toggleScenarioLane",
+            "scenarioState",
+            "scenarioState.scenarioCollapsedCards",
+            "scenarioState.scenarioData",
+            "scenarioState.scenarioDraftMeta",
+            "scenarioState.scenarioDraftRealtimeStatus",
+            "scenarioState.scenarioDragState",
+            "scenarioState.scenarioEdgeRender",
+            "scenarioState.scenarioEditMode",
+            "scenarioState.scenarioEpicFocus",
+            "scenarioState.scenarioError",
+            "scenarioState.scenarioFlashKey",
+            "scenarioState.scenarioHistoryButtonRef",
+            "scenarioState.scenarioHistoryPanelRef",
+            "scenarioState.scenarioHistoryTitleRef",
+            "scenarioState.scenarioHoverKey",
+            "scenarioState.scenarioLaneMode",
+            "scenarioState.scenarioLayout",
+            "scenarioState.scenarioLoading",
+            "scenarioState.scenarioShowConflictsOnly",
+            "scenarioState.scenarioSummaryHidden",
+            "scenarioState.scenarioTimelineRef",
+            "scenarioState.scenarioTooltip",
+            "scenarioState.scenarioTooltipRef",
+            "scenarioState.scenarioUndoStackRef",
+            "scenarioState.scenarioWasDraggedRef",
+            "scenarioState.setScenarioCollapsedCards",
+            "scenarioState.setScenarioDraftMeta",
+            "scenarioState.setScenarioHoverKey",
+            "scenarioState.setScenarioLaneMode",
+            "scenarioState.setScenarioShowConflictsOnly",
+            "scenarioState.setScenarioSummaryHidden",
+            "selectedSprint"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 101,
+          "returnCount": 0,
+          "propCount": 5,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 101,
+          "returnCeiling": 0,
+          "propCeiling": 5,
+          "unresolved": [],
+          "inventory": {
+            "source": "frontend/src/scenario/ScenarioView.jsx:5",
+            "sourceDigest": "2328cf99565e795c64b58c4d78b3b0d7193d9b6984bdaad807653b346ab7d7b3",
+            "rationale": "SC4 checkpoint (frozen from the current-base scratch dry run before R4a; reported to the operator with the R4a commit)."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "ScenarioView",
+              "line": 13488,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        }
+      ]
     },
     {
       "id": "scenario.connectionScenarioRecovery",
@@ -3132,7 +3285,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useScenarioPlanner",
-              "line": 8503,
+              "line": 8478,
               "phase": "hook execution"
             }
           ],
@@ -3140,8 +3293,9 @@
             {
               "name": "scenario",
               "lines": [
-                8607,
-                11544
+                8519,
+                11456,
+                13489
               ]
             }
           ],
@@ -3422,7 +3576,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useScenarioState",
-              "line": 462,
+              "line": 461,
               "phase": "hook execution"
             }
           ],
@@ -3430,8 +3584,9 @@
             {
               "name": "scenarioState",
               "lines": [
-                520,
-                8504
+                495,
+                8479,
+                13490
               ]
             }
           ],
@@ -3493,7 +3648,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "AdminAccessSettings",
-              "line": 14681,
+              "line": 13725,
               "phase": "render"
             }
           ],
@@ -3548,7 +3703,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useAdminAccessSettings",
-              "line": 766,
+              "line": 741,
               "phase": "hook execution"
             }
           ],
@@ -3556,23 +3711,23 @@
             {
               "name": "adminAccess",
               "lines": [
-                1277,
-                1281,
-                2922,
-                3629,
-                3759,
-                3760,
-                3761,
-                4208,
-                4209,
-                4210,
-                4212,
-                4218,
-                14685,
-                14686,
-                14687,
-                14688,
-                14689
+                1252,
+                1256,
+                2897,
+                3604,
+                3734,
+                3735,
+                3736,
+                4183,
+                4184,
+                4185,
+                4187,
+                4193,
+                13729,
+                13730,
+                13731,
+                13732,
+                13733
               ]
             }
           ],
@@ -3627,7 +3782,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "AdminSettingsTabs",
-              "line": 14666,
+              "line": 13710,
               "phase": "render"
             }
           ],
@@ -3739,7 +3894,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "FirstRunGroupConfigurationGuide",
-              "line": 15082,
+              "line": 14126,
               "phase": "render"
             }
           ],
@@ -3831,7 +3986,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "FirstRunGroupSelectionModal",
-              "line": 15292,
+              "line": 14336,
               "phase": "render"
             }
           ],
@@ -3910,7 +4065,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "FirstRunGroupSetupChoice",
-              "line": 15305,
+              "line": 14349,
               "phase": "render"
             }
           ],
@@ -4086,7 +4241,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "GroupBoardsTab",
-              "line": 15264,
+              "line": 14308,
               "phase": "render"
             }
           ],
@@ -4763,7 +4918,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "JiraFieldSettings",
-              "line": 14693,
+              "line": 13737,
               "phase": "render"
             }
           ],
@@ -4854,7 +5009,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "PerformanceSettings",
-              "line": 14679,
+              "line": 13723,
               "phase": "render"
             }
           ],
@@ -4990,7 +5145,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "SettingsModal",
-              "line": 14623,
+              "line": 13667,
               "phase": "render"
             }
           ],
@@ -5374,7 +5529,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "TeamGroupsSettings",
-              "line": 14987,
+              "line": 14031,
               "phase": "render"
             }
           ],
@@ -5428,7 +5583,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "UnconfiguredWorkspaceNotice",
-              "line": 12417,
+              "line": 12329,
               "phase": "render"
             }
           ],
@@ -5486,7 +5641,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "UserConnectionsSettings",
-              "line": 14659,
+              "line": 13703,
               "phase": "render"
             }
           ],
@@ -5543,7 +5698,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useAdminSettingsGate",
-              "line": 772,
+              "line": 747,
               "phase": "hook execution"
             }
           ],
@@ -5551,29 +5706,29 @@
             {
               "name": "adminSettingsGate",
               "lines": [
-                1025,
-                2133,
-                2135,
-                7794,
-                7872,
-                8054,
-                8202,
-                9080,
-                12417
+                1000,
+                2108,
+                2110,
+                7769,
+                7847,
+                8029,
+                8177,
+                8992,
+                12329
               ]
             },
             {
               "name": "applyAdminSettingsGateConfig",
               "lines": [
-                3643,
-                3881,
-                6745
+                3618,
+                3856,
+                6720
               ]
             },
             {
               "name": "setAdminSettingsGate",
               "lines": [
-                6831
+                6806
               ]
             }
           ],
@@ -5581,7 +5736,7 @@
             {
               "caller": "frontend/src/dashboard.jsx",
               "name": "openSettings",
-              "line": 772,
+              "line": 747,
               "capturedBindings": [
                 "openGroupManage"
               ],
@@ -5777,7 +5932,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useSettingsConfigBaselineRevision",
-              "line": 879,
+              "line": 854,
               "phase": "hook execution"
             }
           ],
@@ -5785,31 +5940,31 @@
             {
               "name": "settingsConfigBaselineRevision",
               "lines": [
-                2717,
-                2721,
-                2723,
-                2728,
-                2732
+                2692,
+                2696,
+                2698,
+                2703,
+                2707
               ]
             },
             {
               "name": "acceptSettingsConfigBaseline",
               "lines": [
-                4806,
-                4839,
-                4862,
-                4883,
-                4898,
-                5029,
-                5051,
-                5070,
-                5085,
-                5094,
-                6751,
-                6760,
-                6767,
-                6778,
-                6781
+                4781,
+                4814,
+                4837,
+                4858,
+                4873,
+                5004,
+                5026,
+                5045,
+                5060,
+                5069,
+                6726,
+                6735,
+                6742,
+                6753,
+                6756
               ]
             }
           ],
@@ -5970,7 +6125,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useGroupVisibilityPreferences",
-              "line": 1235,
+              "line": 1210,
               "phase": "hook execution"
             }
           ],
@@ -5978,188 +6133,188 @@
             {
               "name": "groupPreferences",
               "lines": [
-                1264,
-                1283,
-                2133,
-                2135,
-                2187,
-                2188,
-                3039,
-                3047,
-                6577,
-                6630,
-                6855,
-                6928,
-                6931,
-                6952,
-                7177,
-                7229,
-                7235,
-                7252,
-                7659,
-                7757,
-                7794,
-                7872,
-                8054,
-                8201,
-                11373,
-                11943,
-                11951,
-                12019,
-                15290,
-                15301,
-                15317
+                1239,
+                1258,
+                2108,
+                2110,
+                2162,
+                2163,
+                3014,
+                3022,
+                6552,
+                6605,
+                6830,
+                6903,
+                6906,
+                6927,
+                7152,
+                7204,
+                7210,
+                7227,
+                7634,
+                7732,
+                7769,
+                7847,
+                8029,
+                8176,
+                11285,
+                11855,
+                11863,
+                11931,
+                14334,
+                14345,
+                14361
               ]
             },
             {
               "name": "setGroupPreferences",
               "lines": [
-                2620,
-                3048,
-                3603,
-                4217,
-                5403
+                2595,
+                3023,
+                3578,
+                4192,
+                5378
               ]
             },
             {
               "name": "visibleGroupDraftIds",
               "lines": [
-                14998
+                14042
               ]
             },
             {
               "name": "setVisibleGroupDraftIds",
               "lines": [
-                2194,
-                3270,
-                3304,
-                3570
+                2169,
+                3245,
+                3279,
+                3545
               ]
             },
             {
               "name": "favoriteGroupDraftId",
               "lines": [
-                15014
+                14058
               ]
             },
             {
               "name": "setFavoriteGroupDraftId",
               "lines": [
-                2195
+                2170
               ]
             },
             {
               "name": "setFavoriteGroupDraft",
               "lines": [
-                15015
+                14059
               ]
             },
             {
               "name": "favoriteGroupValidationError",
               "lines": [
-                3015,
-                3016,
-                3020
+                2990,
+                2991,
+                2995
               ]
             },
             {
               "name": "setGroupPreferencesSaving",
               "lines": [
-                3991
+                3966
               ]
             },
             {
               "name": "groupVisibilitySaving",
               "lines": [
-                3070,
-                15001
+                3045,
+                14045
               ]
             },
             {
               "name": "isGroupVisibilityDraftDirty",
               "lines": [
-                2936,
-                2939,
-                2950,
-                2952,
-                3700,
-                3843,
-                4015,
-                14630
+                2911,
+                2914,
+                2925,
+                2927,
+                3675,
+                3818,
+                3990,
+                13674
               ]
             },
             {
               "name": "visibleControlGroups",
               "lines": [
-                1995,
-                1996,
-                1999,
-                5664,
-                5665,
-                5833,
-                5836,
-                6246,
-                6282,
-                8527,
-                10970,
-                11355
+                1970,
+                1971,
+                1974,
+                5639,
+                5640,
+                5808,
+                5811,
+                6221,
+                6257,
+                8502,
+                10882,
+                11267
               ]
             },
             {
               "name": "initializeGroupPreferencesDraft",
               "lines": [
-                2185
+                2160
               ]
             },
             {
               "name": "isGroupVisibleInControls",
               "lines": [
-                15000
+                14044
               ]
             },
             {
               "name": "toggleGroupVisibleInControls",
               "lines": [
-                14999
+                14043
               ]
             },
             {
               "name": "firstRunFavoriteGroupId",
               "lines": [
-                15294
+                14338
               ]
             },
             {
               "name": "selectFirstRunFavoriteGroup",
               "lines": [
-                15295
+                14339
               ]
             },
             {
               "name": "saveFirstRunGroupPreferences",
               "lines": [
-                4108,
-                5411,
-                5435,
-                15296
+                4083,
+                5386,
+                5410,
+                14340
               ]
             },
             {
               "name": "firstRunSaving",
               "lines": [
-                15299
+                14343
               ]
             },
             {
               "name": "firstRunError",
               "lines": [
-                15300
+                14344
               ]
             },
             {
               "name": "persistGroupPreferences",
               "lines": [
-                3844
+                3819
               ]
             }
           ],
@@ -6311,7 +6466,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useJiraFieldPickers",
-              "line": 873,
+              "line": 848,
               "phase": "hook execution"
             }
           ],
@@ -6319,561 +6474,561 @@
             {
               "name": "sprintFieldIdDraft",
               "lines": [
-                886,
-                1271,
-                1284,
-                2981,
-                3020,
-                14699
+                861,
+                1246,
+                1259,
+                2956,
+                2995,
+                13743
               ]
             },
             {
               "name": "setSprintFieldIdDraft",
               "lines": [
-                4202,
-                14700
+                4177,
+                13744
               ]
             },
             {
               "name": "sprintFieldNameDraft",
               "lines": [
-                886,
-                1271,
-                1285,
-                14698
+                861,
+                1246,
+                1260,
+                13742
               ]
             },
             {
               "name": "setSprintFieldNameDraft",
               "lines": [
-                4202,
-                14701
+                4177,
+                13745
               ]
             },
             {
               "name": "sprintFieldSearchQuery",
               "lines": [
-                14703
+                13747
               ]
             },
             {
               "name": "setSprintFieldSearchQuery",
               "lines": [
-                14704
+                13748
               ]
             },
             {
               "name": "sprintFieldSearchOpen",
               "lines": [
-                14710
+                13754
               ]
             },
             {
               "name": "setSprintFieldSearchOpen",
               "lines": [
-                14705
+                13749
               ]
             },
             {
               "name": "sprintFieldSearchIndex",
               "lines": [
-                14713
+                13757
               ]
             },
             {
               "name": "setSprintFieldSearchIndex",
               "lines": [
-                14706
+                13750
               ]
             },
             {
               "name": "sprintFieldSearchInputRef",
               "lines": [
-                14708
+                13752
               ]
             },
             {
               "name": "sprintFieldSearchResults",
               "lines": [
-                14711
+                13755
               ]
             },
             {
               "name": "sprintFieldSearchHidden",
               "lines": [
-                14712
+                13756
               ]
             },
             {
               "name": "handleSprintFieldSearchKeyDown",
               "lines": [
-                14707
+                13751
               ]
             },
             {
               "name": "isSprintFieldDirty",
               "lines": [
-                3623,
-                6653
+                3598,
+                6628
               ]
             },
             {
               "name": "saveSprintFieldConfig",
               "lines": [
-                3746
+                3721
               ]
             },
             {
               "name": "parentNameFieldIdDraft",
               "lines": [
-                887,
-                1272,
-                1283,
-                2984,
-                3020,
-                14752
+                862,
+                1247,
+                1258,
+                2959,
+                2995,
+                13796
               ]
             },
             {
               "name": "setParentNameFieldIdDraft",
               "lines": [
-                4203,
-                14767
+                4178,
+                13811
               ]
             },
             {
               "name": "parentNameFieldNameDraft",
               "lines": [
-                887,
-                1272,
-                1284,
-                14748
+                862,
+                1247,
+                1259,
+                13792
               ]
             },
             {
               "name": "setParentNameFieldNameDraft",
               "lines": [
-                4203,
-                14768
+                4178,
+                13812
               ]
             },
             {
               "name": "parentNameFieldSearchQuery",
               "lines": [
-                14769
+                13813
               ]
             },
             {
               "name": "setParentNameFieldSearchQuery",
               "lines": [
-                14770
+                13814
               ]
             },
             {
               "name": "parentNameFieldSearchOpen",
               "lines": [
-                14775
+                13819
               ]
             },
             {
               "name": "setParentNameFieldSearchOpen",
               "lines": [
-                14771
+                13815
               ]
             },
             {
               "name": "parentNameFieldSearchIndex",
               "lines": [
-                14778
+                13822
               ]
             },
             {
               "name": "setParentNameFieldSearchIndex",
               "lines": [
-                14772
+                13816
               ]
             },
             {
               "name": "parentNameFieldSearchInputRef",
               "lines": [
-                14774
+                13818
               ]
             },
             {
               "name": "parentNameFieldSearchResults",
               "lines": [
-                14776
+                13820
               ]
             },
             {
               "name": "parentNameFieldSearchHidden",
               "lines": [
-                14777
+                13821
               ]
             },
             {
               "name": "handleParentNameFieldSearchKeyDown",
               "lines": [
-                14773
+                13817
               ]
             },
             {
               "name": "isParentNameFieldDirty",
               "lines": [
-                3624,
-                6654
+                3599,
+                6629
               ]
             },
             {
               "name": "saveParentNameFieldConfig",
               "lines": [
-                3747
+                3722
               ]
             },
             {
               "name": "storyPointsFieldIdDraft",
               "lines": [
-                888,
-                1273,
-                1285,
-                2987,
-                3020,
-                14753
+                863,
+                1248,
+                1260,
+                2962,
+                2995,
+                13797
               ]
             },
             {
               "name": "setStoryPointsFieldIdDraft",
               "lines": [
-                4204,
-                14779
+                4179,
+                13823
               ]
             },
             {
               "name": "storyPointsFieldNameDraft",
               "lines": [
-                888,
-                1273,
-                1285,
-                14749
+                863,
+                1248,
+                1260,
+                13793
               ]
             },
             {
               "name": "setStoryPointsFieldNameDraft",
               "lines": [
-                4204,
-                14780
+                4179,
+                13824
               ]
             },
             {
               "name": "storyPointsFieldSearchQuery",
               "lines": [
-                14781
+                13825
               ]
             },
             {
               "name": "setStoryPointsFieldSearchQuery",
               "lines": [
-                14782
+                13826
               ]
             },
             {
               "name": "storyPointsFieldSearchOpen",
               "lines": [
-                14787
+                13831
               ]
             },
             {
               "name": "setStoryPointsFieldSearchOpen",
               "lines": [
-                14783
+                13827
               ]
             },
             {
               "name": "storyPointsFieldSearchIndex",
               "lines": [
-                14790
+                13834
               ]
             },
             {
               "name": "setStoryPointsFieldSearchIndex",
               "lines": [
-                14784
+                13828
               ]
             },
             {
               "name": "storyPointsFieldSearchInputRef",
               "lines": [
-                14786
+                13830
               ]
             },
             {
               "name": "storyPointsFieldSearchResults",
               "lines": [
-                14788
+                13832
               ]
             },
             {
               "name": "storyPointsFieldSearchHidden",
               "lines": [
-                14789
+                13833
               ]
             },
             {
               "name": "handleStoryPointsFieldSearchKeyDown",
               "lines": [
-                14785
+                13829
               ]
             },
             {
               "name": "isStoryPointsFieldDirty",
               "lines": [
-                3625,
-                6655
+                3600,
+                6630
               ]
             },
             {
               "name": "saveStoryPointsFieldConfig",
               "lines": [
-                3748
+                3723
               ]
             },
             {
               "name": "teamFieldIdDraft",
               "lines": [
-                889,
-                1274,
-                1285,
-                2990,
-                3020,
-                14754
+                864,
+                1249,
+                1260,
+                2965,
+                2995,
+                13798
               ]
             },
             {
               "name": "setTeamFieldIdDraft",
               "lines": [
-                4205,
-                14801
+                4180,
+                13845
               ]
             },
             {
               "name": "teamFieldNameDraft",
               "lines": [
-                889,
-                1274,
-                1285,
-                14750
+                864,
+                1249,
+                1260,
+                13794
               ]
             },
             {
               "name": "setTeamFieldNameDraft",
               "lines": [
-                4205,
-                14802
+                4180,
+                13846
               ]
             },
             {
               "name": "teamFieldSearchQuery",
               "lines": [
-                14791
+                13835
               ]
             },
             {
               "name": "setTeamFieldSearchQuery",
               "lines": [
-                14792
+                13836
               ]
             },
             {
               "name": "teamFieldSearchOpen",
               "lines": [
-                14797
+                13841
               ]
             },
             {
               "name": "setTeamFieldSearchOpen",
               "lines": [
-                14793
+                13837
               ]
             },
             {
               "name": "teamFieldSearchIndex",
               "lines": [
-                14800
+                13844
               ]
             },
             {
               "name": "setTeamFieldSearchIndex",
               "lines": [
-                14794
+                13838
               ]
             },
             {
               "name": "teamFieldSearchInputRef",
               "lines": [
-                14796
+                13840
               ]
             },
             {
               "name": "teamFieldSearchResults",
               "lines": [
-                14798
+                13842
               ]
             },
             {
               "name": "teamFieldSearchHidden",
               "lines": [
-                14799
+                13843
               ]
             },
             {
               "name": "handleTeamFieldSearchKeyDown",
               "lines": [
-                14795
+                13839
               ]
             },
             {
               "name": "isTeamFieldDirty",
               "lines": [
-                3626,
-                6656
+                3601,
+                6631
               ]
             },
             {
               "name": "saveTeamFieldConfig",
               "lines": [
-                3749
+                3724
               ]
             },
             {
               "name": "deliveryOwnerFieldIdDraft",
               "lines": [
-                890,
-                1275,
-                1282,
-                14755
+                865,
+                1250,
+                1257,
+                13799
               ]
             },
             {
               "name": "setDeliveryOwnerFieldIdDraft",
               "lines": [
-                4206,
-                14813
+                4181,
+                13857
               ]
             },
             {
               "name": "deliveryOwnerFieldNameDraft",
               "lines": [
-                890,
-                1275,
-                1282,
-                14751
+                865,
+                1250,
+                1257,
+                13795
               ]
             },
             {
               "name": "setDeliveryOwnerFieldNameDraft",
               "lines": [
-                4206,
-                14814
+                4181,
+                13858
               ]
             },
             {
               "name": "deliveryOwnerFieldSearchQuery",
               "lines": [
-                14803
+                13847
               ]
             },
             {
               "name": "setDeliveryOwnerFieldSearchQuery",
               "lines": [
-                14804
+                13848
               ]
             },
             {
               "name": "deliveryOwnerFieldSearchOpen",
               "lines": [
-                14809
+                13853
               ]
             },
             {
               "name": "setDeliveryOwnerFieldSearchOpen",
               "lines": [
-                14805
+                13849
               ]
             },
             {
               "name": "deliveryOwnerFieldSearchIndex",
               "lines": [
-                14812
+                13856
               ]
             },
             {
               "name": "setDeliveryOwnerFieldSearchIndex",
               "lines": [
-                14806
+                13850
               ]
             },
             {
               "name": "deliveryOwnerFieldSearchInputRef",
               "lines": [
-                14808
+                13852
               ]
             },
             {
               "name": "deliveryOwnerFieldSearchResults",
               "lines": [
-                14810
+                13854
               ]
             },
             {
               "name": "deliveryOwnerFieldSearchHidden",
               "lines": [
-                14811
+                13855
               ]
             },
             {
               "name": "handleDeliveryOwnerFieldSearchKeyDown",
               "lines": [
-                14807
+                13851
               ]
             },
             {
               "name": "isDeliveryOwnerFieldDirty",
               "lines": [
-                3627,
-                6657
+                3602,
+                6632
               ]
             },
             {
               "name": "saveDeliveryOwnerFieldConfig",
               "lines": [
-                3750
+                3725
               ]
             },
             {
               "name": "loadAllFieldConfigs",
               "lines": [
-                2215,
-                6804
+                2190,
+                6779
               ]
             },
             {
               "name": "seedSharedFieldConfigs",
               "lines": [
-                6782
+                6757
               ]
             },
             {
               "name": "anyFieldConfigDirty",
               "lines": [
-                2929,
-                2931
+                2904,
+                2906
               ]
             },
             {
               "name": "dirtyFieldConfigCount",
               "lines": [
-                2951,
-                2952
+                2926,
+                2927
               ]
             }
           ],
@@ -6962,7 +7117,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useTeamCatalogLifecycle",
-              "line": 1155,
+              "line": 1130,
               "phase": "hook execution"
             }
           ],
@@ -6970,45 +7125,45 @@
             {
               "name": "teamCatalogState",
               "lines": [
-                5339,
-                5348,
-                5453,
-                5454
+                5314,
+                5323,
+                5428,
+                5429
               ]
             },
             {
               "name": "loadingTeams",
               "lines": [
-                15007
+                14051
               ]
             },
             {
               "name": "teamCatalogReady",
               "lines": [
-                15008,
-                15092
+                14052,
+                14136
               ]
             },
             {
               "name": "teamMembershipState",
               "lines": [
-                5351,
-                5353,
-                5354,
-                5355,
-                5356
+                5326,
+                5328,
+                5329,
+                5330,
+                5331
               ]
             },
             {
               "name": "fetchAllTeamsFromJira",
               "lines": [
-                15006
+                14050
               ]
             },
             {
               "name": "invalidateTeamMembership",
               "lines": [
-                3636
+                3611
               ]
             }
           ],
@@ -7034,266 +7189,65 @@
   ],
   "aggregates": {
     "scenario": {
-      "measured": 4626,
-      "ceiling": 4626
+      "measured": 5614,
+      "ceiling": 5614
     },
     "settings": {
       "measured": 9803,
       "ceiling": 9803
     },
     "uniqueOwners": {
-      "measured": 14429,
-      "ceiling": 14429
+      "measured": 15417,
+      "ceiling": 15417
     },
     "appPlusOwners": {
-      "measured": 29797,
-      "ceiling": 29797
+      "measured": 29829,
+      "ceiling": 29829
     }
   },
   "transfer": {
     "incomingRanges": [
       {
-        "id": "scheduleScenarioEdgeUpdate-let",
-        "fromFile": "frontend/src/scenario/useScenarioPlanner.js",
-        "toFile": "frontend/src/scenario/useScenarioLayout.js",
-        "fromLine": 84,
-        "toLine": 84,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 1
-      },
-      {
-        "id": "registerScenarioIssueRef-through-registerScenarioIssueRef",
-        "fromFile": "frontend/src/scenario/useScenarioPlanner.js",
-        "toFile": "frontend/src/scenario/useScenarioLayout.js",
-        "fromLine": 86,
-        "toLine": 93,
-        "removedPhysicalLines": 8,
-        "addedPhysicalLines": 8
-      },
-      {
-        "id": "scenarioLaneForIssue-through-Escape-epic-focus-effect",
-        "fromFile": "frontend/src/scenario/useScenarioPlanner.js",
-        "toFile": "frontend/src/scenario/useScenarioLayout.js",
-        "fromLine": 242,
-        "toLine": 1467,
-        "removedPhysicalLines": 1226,
-        "addedPhysicalLines": 1226
-      },
-      {
-        "id": "scenarioLaneInfo-factory-body",
-        "fromFile": "frontend/src/scenario/useScenarioLayout.js",
-        "toFile": "frontend/src/scenario/scenarioLayout.js",
-        "export": "buildScenarioLaneInfo",
-        "removedPhysicalLines": 65,
-        "addedPhysicalLines": 65
-      },
-      {
-        "id": "scenarioLateItems-factory-body",
-        "fromFile": "frontend/src/scenario/useScenarioLayout.js",
-        "toFile": "frontend/src/scenario/scenarioLayout.js",
-        "export": "buildScenarioLateItems",
-        "removedPhysicalLines": 4,
-        "addedPhysicalLines": 4
-      },
-      {
-        "id": "scenarioCriticalPathItems-factory-body",
-        "fromFile": "frontend/src/scenario/useScenarioLayout.js",
-        "toFile": "frontend/src/scenario/scenarioLayout.js",
-        "export": "buildScenarioCriticalPathItems",
-        "removedPhysicalLines": 4,
-        "addedPhysicalLines": 4
-      },
-      {
-        "id": "scenarioUnschedulableItems-factory-body",
-        "fromFile": "frontend/src/scenario/useScenarioLayout.js",
-        "toFile": "frontend/src/scenario/scenarioLayout.js",
-        "export": "buildScenarioUnschedulableItems",
-        "removedPhysicalLines": 4,
-        "addedPhysicalLines": 4
-      },
-      {
-        "id": "scenarioTicks-factory-body",
-        "fromFile": "frontend/src/scenario/useScenarioLayout.js",
-        "toFile": "frontend/src/scenario/scenarioLayout.js",
-        "export": "buildScenarioTicks",
-        "removedPhysicalLines": 35,
-        "addedPhysicalLines": 35
-      },
-      {
-        "id": "scenarioQuarterMarkers-factory-body",
-        "fromFile": "frontend/src/scenario/useScenarioLayout.js",
-        "toFile": "frontend/src/scenario/scenarioLayout.js",
-        "export": "buildScenarioQuarterMarkers",
-        "removedPhysicalLines": 32,
-        "addedPhysicalLines": 32
-      },
-      {
-        "id": "scenarioLaneStacking-factory-body-core-segments",
-        "fromFile": "frontend/src/scenario/useScenarioLayout.js",
-        "toFile": "frontend/src/scenario/scenarioLayout.js",
-        "export": "buildScenarioLaneStacking",
-        "removedPhysicalLines": 99,
-        "addedPhysicalLines": 99
-      },
-      {
-        "id": "scenarioVisibleExportIssues-factory-body",
-        "fromFile": "frontend/src/scenario/useScenarioLayout.js",
-        "toFile": "frontend/src/scenario/scenarioLayout.js",
-        "export": "buildScenarioVisibleExportIssues",
-        "removedPhysicalLines": 9,
-        "addedPhysicalLines": 9
-      },
-      {
-        "id": "scenarioLaneMeta-factory-body",
-        "fromFile": "frontend/src/scenario/useScenarioLayout.js",
-        "toFile": "frontend/src/scenario/scenarioLayout.js",
-        "export": "buildScenarioLaneMeta",
-        "removedPhysicalLines": 14,
-        "addedPhysicalLines": 14
-      },
-      {
-        "id": "scenarioLaneAssigneeGroups-factory-body",
-        "fromFile": "frontend/src/scenario/useScenarioLayout.js",
-        "toFile": "frontend/src/scenario/scenarioLayout.js",
-        "export": "buildScenarioLaneAssigneeGroups",
-        "removedPhysicalLines": 19,
-        "addedPhysicalLines": 19
-      },
-      {
-        "id": "scenarioPositions-factory-body-core-segments",
-        "fromFile": "frontend/src/scenario/useScenarioLayout.js",
-        "toFile": "frontend/src/scenario/scenarioLayout.js",
-        "export": "buildScenarioPositions",
-        "removedPhysicalLines": 38,
-        "addedPhysicalLines": 38
-      },
-      {
-        "id": "scenarioEdgeCandidates-factory-body",
-        "fromFile": "frontend/src/scenario/useScenarioLayout.js",
-        "toFile": "frontend/src/scenario/scenarioLayout.js",
-        "export": "buildScenarioEdgeCandidates",
-        "removedPhysicalLines": 6,
-        "addedPhysicalLines": 6
-      },
-      {
-        "id": "scenarioEdgeIndex-factory-body",
-        "fromFile": "frontend/src/scenario/useScenarioLayout.js",
-        "toFile": "frontend/src/scenario/scenarioLayout.js",
-        "export": "buildScenarioEdgeIndex",
-        "removedPhysicalLines": 13,
-        "addedPhysicalLines": 13
-      },
-      {
-        "id": "scenarioEpicBars-factory-body",
-        "fromFile": "frontend/src/scenario/useScenarioLayout.js",
-        "toFile": "frontend/src/scenario/scenarioLayout.js",
-        "export": "buildScenarioEpicBars",
-        "removedPhysicalLines": 56,
-        "addedPhysicalLines": 56
-      },
-      {
-        "id": "scenarioEpicEdges-factory-body",
-        "fromFile": "frontend/src/scenario/useScenarioLayout.js",
-        "toFile": "frontend/src/scenario/scenarioLayout.js",
-        "export": "buildScenarioEpicEdges",
-        "removedPhysicalLines": 28,
-        "addedPhysicalLines": 28
-      },
-      {
-        "id": "scenarioVisibleLanes-factory-body",
-        "fromFile": "frontend/src/scenario/useScenarioLayout.js",
-        "toFile": "frontend/src/scenario/scenarioLayout.js",
-        "export": "buildScenarioVisibleLanes",
-        "removedPhysicalLines": 9,
-        "addedPhysicalLines": 9
-      },
-      {
-        "id": "scenarioActiveEdges-factory-body",
-        "fromFile": "frontend/src/scenario/useScenarioLayout.js",
-        "toFile": "frontend/src/scenario/scenarioLayout.js",
-        "export": "buildScenarioActiveEdges",
-        "removedPhysicalLines": 2,
-        "addedPhysicalLines": 2
-      },
-      {
-        "id": "scenarioUpstreamSet-factory-body",
-        "fromFile": "frontend/src/scenario/useScenarioLayout.js",
-        "toFile": "frontend/src/scenario/scenarioLayout.js",
-        "export": "buildScenarioUpstreamSet",
-        "removedPhysicalLines": 2,
-        "addedPhysicalLines": 2
-      },
-      {
-        "id": "scenarioDownstreamSet-factory-body",
-        "fromFile": "frontend/src/scenario/useScenarioLayout.js",
-        "toFile": "frontend/src/scenario/scenarioLayout.js",
-        "export": "buildScenarioDownstreamSet",
-        "removedPhysicalLines": 2,
-        "addedPhysicalLines": 2
-      },
-      {
-        "id": "scenarioBlockedSet-factory-body",
-        "fromFile": "frontend/src/scenario/useScenarioLayout.js",
-        "toFile": "frontend/src/scenario/scenarioLayout.js",
-        "export": "buildScenarioBlockedSet",
-        "removedPhysicalLines": 7,
-        "addedPhysicalLines": 7
-      },
-      {
-        "id": "scenarioFocusEdges-factory-body",
-        "fromFile": "frontend/src/scenario/useScenarioLayout.js",
-        "toFile": "frontend/src/scenario/scenarioLayout.js",
-        "export": "buildScenarioFocusEdges",
-        "removedPhysicalLines": 17,
-        "addedPhysicalLines": 17
+        "id": "scenario-fullbleed-jsx-block",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/scenario/ScenarioView.jsx",
+        "fromLine": 13576,
+        "toLine": 14450,
+        "removedPhysicalLines": 875,
+        "addedPhysicalLines": 875
       }
     ],
-    "scaffoldingAllowance": 220,
+    "scaffoldingAllowance": 32,
     "netPhysicalLOC": {
-      "priorAppPlusOwners": 29577,
-      "nextAppPlusOwners": 29797,
-      "transferredSourceLines": 1235,
-      "factoryBodyLinesToPureModule": 465,
-      "layer1": 124,
-      "layer2": 96
+      "priorAppPlusOwners": 29797,
+      "nextAppPlusOwners": 29829,
+      "transferredSourceLines": 875,
+      "componentScaffoldingLines": 113,
+      "netAppScaffoldingLines": -81
     },
     "getters": [],
-    "rationale": "SC3 H6 checkpoint (frozen from the current-base scratch dry run before R4; reported to the operator with the R4 commit). Planner-to-sub-hook transfer of 1235 physical lines (let scheduleScenarioEdgeUpdate, registerScenarioIssueRef, scenarioLaneForIssue through the Escape epic-focus effect) with zero growth credit; then 465 factory-body lines of 21 useMemo statements move verbatim (token-identical) into the pure scenarioLayout.js, the hook keeping each useMemo with its byte-identical deps array; scenarioLaneStacking and scenarioPositions keep their guard and perf/debug instrumentation in the hook wrapper around the core call. scenarioLayout.js line cap 240 -> 768 is a new frozen checkpoint for these incoming ranges. dashboard.jsx untouched. Planner ceilings carried (3201 / 267; measured 320 / 34). SC3 R5 ratchets the planner line and input ceilings to their measured 320 and 34; every other file, interface and aggregate ceiling already equals its measured value.",
+    "rationale": "SC4 checkpoint (frozen from the current-base scratch dry run before R4a; reported to the operator with the R4a commit). App-to-container transfer of the 875-line Scenario JSX block (verbatim, dedented 16 spaces) with zero growth credit; dashboard.jsx keeps the conditional parent and renders <ScenarioView> with the five D9 props. Owner-only Scenario/unique totals grow by the transferred lines plus the component scaffolding; the combined App-plus-owner total grows only by the net scaffolding. dashboard.jsx lineCeiling 15368 carried (measured 14412; R5 ratchets the manifest and tests/test_codebase_structure_budgets.py). Ledger line numbers of other modules are refreshed for the shifted App lines only. SC4 R5 ratchets the dashboard.jsx ceiling to its measured 14,412 lines; every owner, interface and aggregate ceiling already equals its measured value.",
     "scaffoldingBreakdown": {
-      "incomingPhysicalLines": 1235,
-      "layer1": {
-        "hook": {
-          "imports": 6,
-          "importBlank": 1,
-          "parameterSignature": 28,
-          "stateDestructure": 35,
-          "runSeparators": 2,
-          "returnWrapper": 33,
-          "functionClosing": 1
-        },
-        "planner": {
-          "callAndDestructure": 60,
-          "newImport": 1,
-          "removedSeparatorBlankLines": -2,
-          "prunedStateDestructure": -35,
-          "prunedWholeImports": -6
-        }
+      "incomingPhysicalLines": 875,
+      "component": {
+        "imports": 3,
+        "importBlank": 1,
+        "signature": 7,
+        "plannerDestructure": 67,
+        "stateDestructure": 32,
+        "returnOpen": 1,
+        "returnClose": 1,
+        "functionClosing": 1,
+        "total": 113
       },
-      "layer2": {
-        "pureModule": {
-          "functionSignatures": 21,
-          "functionClosings": 21,
-          "blankSeparators": 21,
-          "importLineEdits": 0
-        },
-        "hookCallSites": {
-          "normalCallSiteLines": 74,
-          "removedNormalUseMemoOpenCloseAndDepsLines": -45,
-          "splitWrapperSeamLines": 3,
-          "coreImportLine": 1
-        }
+      "app": {
+        "callSiteProps": 7,
+        "prunedPlannerDestructureNames": -63,
+        "prunedStateDestructureNames": -24,
+        "prunedImportLines": -1,
+        "net": -81
       },
-      "note": "Layer 1: hook 1341 = 1235 + 106; planner 1537 -> 320 = -1235 -2 separator blanks +60 call/destructure +1 import -35 container destructure -6 whole imports (+124). Layer 2: scenarioLayout.js 240 -> 768 = +465 bodies +63 wrappers (signature, closing, blank per core); hook 1341 -> 909 = -465 bodies -45 removed open/close/deps lines +74 normal call-site lines +3 split seam lines +1 import (+96). Combined +220."
+      "note": "ScenarioView.jsx 988 = 875 + 113. dashboard.jsx 15368 -> 14412 = -875 +7 call-site lines -63 planner-result and -24 container destructure names that became unused -1 import line (scenarioUtils import deleted; the ScenarioBar import line replaced by the ScenarioView import). Combined +32."
     }
   }
 }

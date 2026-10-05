@@ -1,8 +1,9 @@
 import * as React from 'react';
-import { parseScenarioDate, normalizeScenarioSummary, applyIssueOverride, pxToDate, dateToISODate, validateDependencies, splitAtSprintBoundaries, SCENARIO_BAR_HEIGHT, SCENARIO_BAR_GAP, SCENARIO_COLLAPSED_ROWS, SCENARIO_TEAM_LEAD_ROWS } from './scenarioUtils.js';
+import { parseScenarioDate, normalizeScenarioSummary, pxToDate, dateToISODate, SCENARIO_BAR_HEIGHT, SCENARIO_BAR_GAP, SCENARIO_COLLAPSED_ROWS, SCENARIO_TEAM_LEAD_ROWS } from './scenarioUtils.js';
 import { normalizeScenarioDraftOverrides } from './scenarioDraftOverrides.js';
 import { useScenarioDraft } from './useScenarioDraft.js';
 import { useScenarioRealtime } from './useScenarioRealtime.js';
+import { useScenarioDerived } from './useScenarioDerived.js';
 import { buildLaneIssues } from './scenarioLaneUtils.js';
 import { isAuthenticationRequiredError, readPendingAuthenticationRequired } from '../api/authRequired.js';
 import { bucketCount } from '../analytics/dashboardAnalytics.js';
@@ -101,23 +102,6 @@ export function useScenarioPlanner({
         setScenarioEdgeRender,
     } = scenarioState;
     let scheduleScenarioEdgeUpdate;
-
-    const matchesScenarioSearch = (issue, query) => {
-        if (!query) return true;
-        const assigneeValue = issue?.assignee?.displayName || issue?.assignee?.name || issue?.assignee;
-        const teamValue = issue?.team?.name || issue?.team;
-        const tokens = [
-            issue?.summary,
-            issue?.key,
-            issue?.epicKey,
-            issue?.epicSummary,
-            teamValue,
-            assigneeValue
-        ]
-            .filter(Boolean)
-            .map(value => String(value).toLowerCase());
-        return tokens.some(value => value.includes(query));
-    };
 
     const registerScenarioIssueRef = (issueKey) => (node) => {
         const map = scenarioIssueRefMap.current;
@@ -254,261 +238,38 @@ export function useScenarioPlanner({
         }, 4000);
     };
 
-    const scenarioRawIssues = scenarioData?.issues || EMPTY_ARRAY;
-    const scenarioConfig = scenarioData?.config || EMPTY_OBJECT;
-    const scenarioSummary = scenarioData?.summary || EMPTY_OBJECT;
-    const scenarioBaseUrl = scenarioData?.jira_base_url || jiraUrl || '';
-    const scenarioDependencies = scenarioData?.dependencies || EMPTY_ARRAY;
-    const scenarioCapacityByTeam = scenarioData?.capacity_by_team || EMPTY_OBJECT;
-    const scenarioSprintBounds = React.useMemo(() => {
-        const b = scenarioData?.sprintBoundaries;
-        if (!b) return [];
-        return [b.previous?.startDate, b.selected?.startDate, b.selected?.endDate, b.next?.endDate]
-            .map(d => d ? parseScenarioDate(d) : null)
-            .filter(Boolean)
-            .sort((a, b) => a - b);
-    }, [scenarioData]);
-
-    // Apply virtual assignment for DevLead Management tasks
-    const scenarioIssues = React.useMemo(() => {
-        if (!scenarioRawIssues || scenarioRawIssues.length === 0) return scenarioRawIssues;
-
-        return scenarioRawIssues.map(issue => {
-            // Check if this is a DevLead Management task
-            const epicSummary = issue.epicSummary || '';
-            const isDevLeadTask = epicSummary.toLowerCase().includes('devlead management') ||
-                                 epicSummary.toLowerCase().includes('dev lead management');
-
-            // Only apply virtual assignment if task is unassigned and is a DevLead task
-            if (isDevLeadTask && !issue.assignee && issue.team) {
-                const teamCapacity = scenarioCapacityByTeam[issue.team];
-                const devLead = teamCapacity?.devLead;
-
-                if (devLead) {
-                    // Return a new issue object with virtual assignment
-                    return { ...issue, assignee: devLead };
-                }
-            }
-
-            return issue;
-        });
-    }, [scenarioRawIssues, scenarioCapacityByTeam]);
-    const scenarioEffectiveIssues = React.useMemo(() => {
-        if (!scenarioIssues || scenarioIssues.length === 0) return scenarioIssues;
-        return scenarioIssues.map(issue => applyIssueOverride(issue, scenarioOverrides[issue.key] || null));
-    }, [scenarioIssues, scenarioOverrides]);
-    const scenarioSearchQuery = React.useMemo(
-        () => (searchQuery || '').trim().toLowerCase(),
-        [searchQuery]
-    );
-    const scenarioSearchMatchSet = React.useMemo(() => {
-        const matches = new Set();
-        if (!scenarioSearchQuery || !scenarioEffectiveIssues || scenarioEffectiveIssues.length === 0) return matches;
-        scenarioEffectiveIssues.forEach(issue => {
-            if (issue?.key && matchesScenarioSearch(issue, scenarioSearchQuery)) {
-                matches.add(issue.key);
-            }
-        });
-        return matches;
-    }, [scenarioEffectiveIssues, scenarioSearchQuery]);
-    const scenarioFilteredIssues = React.useMemo(() => {
-        if (!scenarioSearchQuery) return scenarioEffectiveIssues;
-        return scenarioEffectiveIssues.filter(issue => scenarioSearchMatchSet.has(issue.key));
-    }, [scenarioEffectiveIssues, scenarioSearchQuery, scenarioSearchMatchSet]);
-    const scenarioExcludedIssueKeys = React.useMemo(() => {
-        const keys = new Set();
-        if (!scenarioEffectiveIssues || scenarioEffectiveIssues.length === 0) return keys;
-        scenarioEffectiveIssues.forEach(issue => {
-            if (excludedEpicSet.has(normalizeEpicKey(issue?.epicKey || ''))) {
-                keys.add(issue.key);
-            }
-        });
-        return keys;
-    }, [scenarioEffectiveIssues, excludedEpicSet]);
-    const scenarioFocusKeys = scenarioData?.focus_set?.focused_issue_keys || EMPTY_ARRAY;
-    const scenarioContextKeys = scenarioData?.focus_set?.context_issue_keys || EMPTY_ARRAY;
-    const scenarioFocusSet = React.useMemo(
-        () => new Set(scenarioFocusKeys),
-        [scenarioFocusKeys]
-    );
-    const scenarioContextSet = React.useMemo(
-        () => new Set(scenarioContextKeys),
-        [scenarioContextKeys]
-    );
-    const scenarioIssueByKey = React.useMemo(() => {
-        const map = new Map();
-        if (!scenarioEffectiveIssues || scenarioEffectiveIssues.length === 0) return map;
-        scenarioEffectiveIssues.forEach(issue => {
-            if (issue?.key) {
-                map.set(issue.key, issue);
-            }
-        });
-        return map;
-    }, [scenarioEffectiveIssues]);
-    const scenarioBaseStart = parseScenarioDate(scenarioConfig.start_date);
-    const scenarioDeadline = parseScenarioDate(scenarioConfig.quarter_end_date);
-    const scenarioBaseEnd = React.useMemo(() => {
-        if (!scenarioDeadline) return null;
-        if (!scenarioEffectiveIssues || scenarioEffectiveIssues.length === 0) return scenarioDeadline;
-        let latest = scenarioDeadline;
-        scenarioEffectiveIssues.forEach(issue => {
-            if (!issue.end) return;
-            const end = parseScenarioDate(issue.end);
-            if (end && end > latest) {
-                latest = end;
-            }
-        });
-        return latest;
-    }, [scenarioDeadline, scenarioEffectiveIssues]);
-    const scenarioViewStart = scenarioRangeOverride?.start || scenarioBaseStart;
-    const scenarioViewEnd = scenarioRangeOverride?.end || scenarioBaseEnd;
-    scenarioViewRangeRef.current = { start: scenarioViewStart, end: scenarioViewEnd };
-    const scenarioFocusEpicKey = scenarioEpicFocus?.key || null;
-    const scenarioFocusIssueKeys = React.useMemo(() => {
-        const keys = new Set();
-        if (!scenarioFocusEpicKey || !scenarioEffectiveIssues || scenarioEffectiveIssues.length === 0) return keys;
-        scenarioEffectiveIssues.forEach(issue => {
-            if (issue.epicKey === scenarioFocusEpicKey && issue.key) {
-                keys.add(issue.key);
-            }
-        });
-        return keys;
-    }, [scenarioEffectiveIssues, scenarioFocusEpicKey]);
-    const scenarioFocusContextKeys = React.useMemo(() => {
-        const keys = new Set();
-        if (!scenarioFocusEpicKey) return keys;
-        (scenarioDependencies || []).forEach(edge => {
-            if (!edge?.from || !edge?.to) return;
-            const fromInFocus = scenarioFocusIssueKeys.has(edge.from);
-            const toInFocus = scenarioFocusIssueKeys.has(edge.to);
-            if (fromInFocus && !toInFocus) {
-                keys.add(edge.to);
-            } else if (toInFocus && !fromInFocus) {
-                keys.add(edge.from);
-            }
-        });
-        return keys;
-    }, [scenarioDependencies, scenarioFocusIssueKeys, scenarioFocusEpicKey]);
-    const scenarioTimelineIssues = React.useMemo(() => {
-        const source = scenarioEpicFocus ? scenarioEffectiveIssues : scenarioFilteredIssues;
-        if (!scenarioEpicFocus) return source;
-        return source.filter(issue =>
-            scenarioFocusIssueKeys.has(issue.key) || scenarioFocusContextKeys.has(issue.key)
-        );
-    }, [scenarioEffectiveIssues, scenarioFilteredIssues, scenarioEpicFocus, scenarioFocusIssueKeys, scenarioFocusContextKeys]);
-    const scenarioTimelineWithSegments = React.useMemo(() => {
-        if (!scenarioTimelineIssues || scenarioTimelineIssues.length === 0) return scenarioTimelineIssues;
-        if (!scenarioSprintBounds || scenarioSprintBounds.length < 2) return scenarioTimelineIssues;
-        // Clip excluded capacity issues to the selected sprint window so
-        // they never extend beyond the sprint they belong to.
-        const sprintStartISO = scenarioViewStart ? dateToISODate(scenarioViewStart) : null;
-        const sprintEndISO   = scenarioDeadline  ? dateToISODate(scenarioDeadline)  : null;
-        const result = [];
-        scenarioTimelineIssues.forEach(issue => {
-            if (scenarioExcludedIssueKeys.has(issue.key)) {
-                const segments = splitAtSprintBoundaries(issue, scenarioSprintBounds);
-                segments.forEach(seg => {
-                    if (sprintStartISO && sprintEndISO) {
-                        const clippedStart = !seg.start || seg.start < sprintStartISO ? sprintStartISO : seg.start;
-                        const clippedEnd   = !seg.end   || seg.end   > sprintEndISO   ? sprintEndISO   : seg.end;
-                        if (clippedStart <= clippedEnd) {
-                            result.push({ ...seg, start: clippedStart, end: clippedEnd });
-                        }
-                    } else {
-                        result.push(seg);
-                    }
-                });
-            } else {
-                result.push(issue);
-            }
-        });
-        return result;
-    }, [scenarioTimelineIssues, scenarioExcludedIssueKeys, scenarioSprintBounds, scenarioViewStart, scenarioDeadline]);
-    const scenarioTimelineIssueKeys = React.useMemo(() => {
-        return new Set(scenarioTimelineWithSegments.map(issue => issue.key));
-    }, [scenarioTimelineWithSegments]);
-    const scenarioAssigneeConflicts = React.useMemo(() => {
-        // Early return if no data to avoid unnecessary computation
-        if (!scenarioTimelineIssues || scenarioTimelineIssues.length === 0) {
-            return { conflicts: new Set(), conflictDetails: new Map() };
-        }
-
-        const conflicts = new Set();
-        const conflictDetails = new Map();
-        const assigneeMap = new Map();
-
-        // Group issues by assignee
-        scenarioTimelineIssues.forEach(issue => {
-            const assignee = issue.assignee;
-            if (!assignee) return;
-            if (!issue.start || !issue.end) return;
-
-            // Skip excluded tasks - they're just noise and shouldn't create conflicts
-            const isExcluded = excludedEpicSet.has(normalizeEpicKey(issue.epicKey || ''));
-            if (isExcluded) return;
-
-            // Skip done tasks - they're complete and can't create real conflicts
-            if (issue.scheduledReason === 'already_done') return;
-
-            const startDate = parseScenarioDate(issue.start);
-            const endDate = parseScenarioDate(issue.end);
-            if (!startDate || !endDate) return;
-
-            if (!assigneeMap.has(assignee)) {
-                assigneeMap.set(assignee, []);
-            }
-            assigneeMap.get(assignee).push({
-                key: issue.key,
-                start: startDate,
-                end: endDate,
-                summary: issue.summary
-            });
-        });
-
-        // Check for overlaps within each assignee's tasks
-        assigneeMap.forEach((tasks, assignee) => {
-            if (tasks.length < 2) return;
-
-            // Sort by start date
-            tasks.sort((a, b) => a.start - b.start);
-
-            // Only check adjacent tasks (optimization)
-            for (let i = 0; i < tasks.length - 1; i++) {
-                const task1 = tasks[i];
-                const task2 = tasks[i + 1];
-
-                // Check if task1 ends AFTER task2 starts (true overlap)
-                if (task1.end && task2.start && task1.end.getTime() > task2.start.getTime()) {
-                    conflicts.add(task1.key);
-                    conflicts.add(task2.key);
-
-                    if (!conflictDetails.has(task1.key)) {
-                        conflictDetails.set(task1.key, []);
-                    }
-                    if (!conflictDetails.has(task2.key)) {
-                        conflictDetails.set(task2.key, []);
-                    }
-                    conflictDetails.get(task1.key).push(task2.key);
-                    conflictDetails.get(task2.key).push(task1.key);
-                }
-            }
-        });
-
-        return { conflicts, conflictDetails };
-    }, [scenarioTimelineIssues, excludedEpicSet]);
-    const scenarioDepViolations = React.useMemo(() => {
-        if (!scenarioEditMode) return new Set();
-        return validateDependencies(scenarioDependencies, scenarioIssueByKey);
-    }, [scenarioEditMode, scenarioDependencies, scenarioIssueByKey]);
-    const scenarioDepViolatedKeys = React.useMemo(() => {
-        const keys = new Set();
-        scenarioDepViolations.forEach(edge => {
-            const [from, to] = edge.split('->');
-            if (from) keys.add(from);
-            if (to) keys.add(to);
-        });
-        return keys;
-    }, [scenarioDepViolations]);
+    const {
+        scenarioSummary,
+        scenarioBaseUrl,
+        scenarioDependencies,
+        scenarioCapacityByTeam,
+        scenarioIssues,
+        scenarioSearchQuery,
+        scenarioSearchMatchSet,
+        scenarioExcludedIssueKeys,
+        scenarioFocusSet,
+        scenarioContextSet,
+        scenarioIssueByKey,
+        scenarioDeadline,
+        scenarioViewStart,
+        scenarioViewEnd,
+        scenarioFocusIssueKeys,
+        scenarioFocusContextKeys,
+        scenarioTimelineIssues,
+        scenarioTimelineWithSegments,
+        scenarioTimelineIssueKeys,
+        scenarioAssigneeConflicts,
+        scenarioDepViolations,
+        scenarioDepViolatedKeys,
+    } = useScenarioDerived({
+        scenarioState,
+        EMPTY_ARRAY,
+        EMPTY_OBJECT,
+        jiraUrl,
+        searchQuery,
+        normalizeEpicKey,
+        excludedEpicSet,
+    });
 
     // --- Drag effect, undo/redo, save/discard (placed after scenarioViewStart/End & scenarioIssueByKey) ---
 

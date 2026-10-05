@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "baseSha": "c8d0a3065e072313e68bfe5b7e281276bbfec2ce",
-  "checkpointId": "SC3-H3-derived-hook",
+  "baseSha": "20a2a38c253d9d8ca220be100ace08056c0e2058",
+  "checkpointId": "SC3-H4-drag-hook",
   "sourceRoot": "frontend/src",
   "ownerRoots": [
     "scenario",
@@ -2140,7 +2140,7 @@
             {
               "path": "frontend/src/scenario/useScenarioPlanner.js",
               "symbol": "useScenarioDerived",
-              "line": 264,
+              "line": 194,
               "phase": "hook execution"
             }
           ],
@@ -2371,7 +2371,89 @@
             {
               "path": "frontend/src/scenario/useScenarioPlanner.js",
               "symbol": "useScenarioDraft",
-              "line": 132,
+              "line": 124,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "scenario.useScenarioDrag",
+      "path": "frontend/src/scenario/useScenarioDrag.js",
+      "features": [
+        "scenario"
+      ],
+      "exports": [
+        "useScenarioDrag"
+      ],
+      "lineCount": 218,
+      "lineCeiling": 218,
+      "interfaces": [
+        {
+          "exportName": "useScenarioDrag",
+          "inputNames": [
+            "acquireScenarioIssueLock",
+            "refreshScenarioIssueLock",
+            "releaseScenarioIssueLock",
+            "scenarioHasUnsavedChanges",
+            "scenarioIssueByKey",
+            "scenarioState",
+            "trackScenarioAction"
+          ],
+          "returnNames": [
+            "handleScenarioBarMouseDown",
+            "scenarioOverrideCount",
+            "scenarioRedo",
+            "scenarioUndo",
+            "toggleScenarioEditMode"
+          ],
+          "propNames": [],
+          "expandedInputNames": [
+            "acquireScenarioIssueLock",
+            "refreshScenarioIssueLock",
+            "releaseScenarioIssueLock",
+            "scenarioHasUnsavedChanges",
+            "scenarioIssueByKey",
+            "scenarioIssueByKey.get",
+            "scenarioState",
+            "scenarioState.scenarioDragFrameRef",
+            "scenarioState.scenarioDragLockRefreshRef",
+            "scenarioState.scenarioDragState",
+            "scenarioState.scenarioDragStateRef",
+            "scenarioState.scenarioEditMode",
+            "scenarioState.scenarioOverrides",
+            "scenarioState.scenarioUndoStackRef",
+            "scenarioState.scenarioViewRangeRef",
+            "scenarioState.scenarioWasDraggedRef",
+            "scenarioState.setScenarioDragState",
+            "scenarioState.setScenarioEditMode",
+            "scenarioState.setScenarioEpicFocus",
+            "scenarioState.setScenarioOverrides",
+            "scenarioState.setScenarioUndoVersion",
+            "trackScenarioAction"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 22,
+          "returnCount": 5,
+          "propCount": 0,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 22,
+          "returnCeiling": 5,
+          "propCeiling": 0,
+          "unresolved": [],
+          "inventory": {
+            "source": "frontend/src/scenario/useScenarioDrag.js:5",
+            "sourceDigest": "98cb83aa6cf35b3c6c43a4e7f19277f9f78d3f1d0a6152f99d145611f383d70c",
+            "rationale": "SC3 H4 checkpoint (frozen from the current-base scratch dry run before R4; reported to the operator with the R4 commit)."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/scenario/useScenarioPlanner.js",
+              "symbol": "useScenarioDrag",
+              "line": 212,
               "phase": "hook execution"
             }
           ],
@@ -2389,7 +2471,7 @@
       "exports": [
         "useScenarioPlanner"
       ],
-      "lineCount": 2295,
+      "lineCount": 2121,
       "lineCeiling": 3201,
       "interfaces": [
         {
@@ -2534,13 +2616,8 @@
             "scenarioState.scenarioCollapsedLanes",
             "scenarioState.scenarioData",
             "scenarioState.scenarioDraftMeta",
-            "scenarioState.scenarioDragFrameRef",
-            "scenarioState.scenarioDragLockRefreshRef",
-            "scenarioState.scenarioDragState",
-            "scenarioState.scenarioDragStateRef",
             "scenarioState.scenarioEdgeFrameRef",
             "scenarioState.scenarioEdgeUpdatePendingRef",
-            "scenarioState.scenarioEditMode",
             "scenarioState.scenarioEpicFocus",
             "scenarioState.scenarioFocusRestoreRef",
             "scenarioState.scenarioHistoryActionControllerRef",
@@ -2565,14 +2642,10 @@
             "scenarioState.scenarioTooltipAnchorRef",
             "scenarioState.scenarioTooltipRef",
             "scenarioState.scenarioUndoStackRef",
-            "scenarioState.scenarioViewRangeRef",
             "scenarioState.scenarioViewportHeight",
-            "scenarioState.scenarioWasDraggedRef",
             "scenarioState.setScenarioCollapsedLanes",
             "scenarioState.setScenarioDraftMeta",
-            "scenarioState.setScenarioDragState",
             "scenarioState.setScenarioEdgeRender",
-            "scenarioState.setScenarioEditMode",
             "scenarioState.setScenarioEpicFocus",
             "scenarioState.setScenarioFlashKey",
             "scenarioState.setScenarioLaneMode",
@@ -2598,7 +2671,7 @@
             "visibleControlGroups"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 95,
+          "expandedInputCount": 86,
           "returnCount": 67,
           "propCount": 0,
           "outerParameterCeiling": 1,
@@ -2608,7 +2681,7 @@
           "unresolved": [],
           "inventory": {
             "source": "frontend/src/scenario/useScenarioPlanner.js:14",
-            "sourceDigest": "6621e8a6761725cd5d6b9ad6cff2bbac53cb50d74b6bbc60d191539018431508",
+            "sourceDigest": "297687cf3f864df1f730b0f00de0a5b76f71d385112be6c25c3fb60d90a73bfd",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -3000,7 +3073,7 @@
             {
               "path": "frontend/src/scenario/useScenarioPlanner.js",
               "symbol": "useScenarioRealtime",
-              "line": 168,
+              "line": 160,
               "phase": "hook execution"
             }
           ],
@@ -6755,210 +6828,74 @@
   ],
   "aggregates": {
     "scenario": {
-      "measured": 4292,
-      "ceiling": 4292
+      "measured": 4336,
+      "ceiling": 4336
     },
     "settings": {
       "measured": 9803,
       "ceiling": 9803
     },
     "uniqueOwners": {
-      "measured": 14095,
-      "ceiling": 14095
+      "measured": 14139,
+      "ceiling": 14139
     },
     "appPlusOwners": {
-      "measured": 29463,
-      "ceiling": 29463
+      "measured": 29507,
+      "ceiling": 29507
     }
   },
   "transfer": {
     "incomingRanges": [
       {
-        "id": "matchesScenarioSearch-through-matchesScenarioSearch",
+        "id": "toggleScenarioEditMode-through-handleScenarioBarMouseDown",
         "fromFile": "frontend/src/scenario/useScenarioPlanner.js",
-        "toFile": "frontend/src/scenario/useScenarioDerived.js",
-        "fromLine": 105,
-        "toLine": 120,
-        "removedPhysicalLines": 16,
-        "addedPhysicalLines": 16
+        "toFile": "frontend/src/scenario/useScenarioDrag.js",
+        "fromLine": 179,
+        "toLine": 239,
+        "removedPhysicalLines": 61,
+        "addedPhysicalLines": 61
       },
       {
-        "id": "scenarioRawIssues-through-scenarioDepViolatedKeys",
+        "id": "scenarioDraggingIssueKey-through-scenarioOverrideCount",
         "fromFile": "frontend/src/scenario/useScenarioPlanner.js",
-        "toFile": "frontend/src/scenario/useScenarioDerived.js",
-        "fromLine": 257,
-        "toLine": 511,
-        "removedPhysicalLines": 255,
-        "addedPhysicalLines": 255
-      },
-      {
-        "id": "scenarioSprintBounds-factory-body",
-        "fromFile": "frontend/src/scenario/useScenarioPlanner.js",
-        "toFile": "frontend/src/scenario/scenarioLayout.js",
-        "export": "buildScenarioSprintBounds",
-        "removedPhysicalLines": 6,
-        "addedPhysicalLines": 6
-      },
-      {
-        "id": "scenarioIssues-factory-body",
-        "fromFile": "frontend/src/scenario/useScenarioPlanner.js",
-        "toFile": "frontend/src/scenario/scenarioLayout.js",
-        "export": "buildScenarioIssues",
-        "removedPhysicalLines": 21,
-        "addedPhysicalLines": 21
-      },
-      {
-        "id": "scenarioEffectiveIssues-factory-body",
-        "fromFile": "frontend/src/scenario/useScenarioPlanner.js",
-        "toFile": "frontend/src/scenario/scenarioLayout.js",
-        "export": "buildScenarioEffectiveIssues",
-        "removedPhysicalLines": 2,
-        "addedPhysicalLines": 2
-      },
-      {
-        "id": "scenarioSearchMatchSet-factory-body",
-        "fromFile": "frontend/src/scenario/useScenarioPlanner.js",
-        "toFile": "frontend/src/scenario/scenarioLayout.js",
-        "export": "buildScenarioSearchMatchSet",
-        "removedPhysicalLines": 8,
-        "addedPhysicalLines": 8
-      },
-      {
-        "id": "scenarioFilteredIssues-factory-body",
-        "fromFile": "frontend/src/scenario/useScenarioPlanner.js",
-        "toFile": "frontend/src/scenario/scenarioLayout.js",
-        "export": "buildScenarioFilteredIssues",
-        "removedPhysicalLines": 2,
-        "addedPhysicalLines": 2
-      },
-      {
-        "id": "scenarioExcludedIssueKeys-factory-body",
-        "fromFile": "frontend/src/scenario/useScenarioPlanner.js",
-        "toFile": "frontend/src/scenario/scenarioLayout.js",
-        "export": "buildScenarioExcludedIssueKeys",
-        "removedPhysicalLines": 8,
-        "addedPhysicalLines": 8
-      },
-      {
-        "id": "scenarioIssueByKey-factory-body",
-        "fromFile": "frontend/src/scenario/useScenarioPlanner.js",
-        "toFile": "frontend/src/scenario/scenarioLayout.js",
-        "export": "buildScenarioIssueByKey",
-        "removedPhysicalLines": 8,
-        "addedPhysicalLines": 8
-      },
-      {
-        "id": "scenarioBaseEnd-factory-body",
-        "fromFile": "frontend/src/scenario/useScenarioPlanner.js",
-        "toFile": "frontend/src/scenario/scenarioLayout.js",
-        "export": "buildScenarioBaseEnd",
-        "removedPhysicalLines": 11,
-        "addedPhysicalLines": 11
-      },
-      {
-        "id": "scenarioFocusIssueKeys-factory-body",
-        "fromFile": "frontend/src/scenario/useScenarioPlanner.js",
-        "toFile": "frontend/src/scenario/scenarioLayout.js",
-        "export": "buildScenarioFocusIssueKeys",
-        "removedPhysicalLines": 8,
-        "addedPhysicalLines": 8
-      },
-      {
-        "id": "scenarioFocusContextKeys-factory-body",
-        "fromFile": "frontend/src/scenario/useScenarioPlanner.js",
-        "toFile": "frontend/src/scenario/scenarioLayout.js",
-        "export": "buildScenarioFocusContextKeys",
-        "removedPhysicalLines": 13,
-        "addedPhysicalLines": 13
-      },
-      {
-        "id": "scenarioTimelineIssues-factory-body",
-        "fromFile": "frontend/src/scenario/useScenarioPlanner.js",
-        "toFile": "frontend/src/scenario/scenarioLayout.js",
-        "export": "buildScenarioTimelineIssues",
-        "removedPhysicalLines": 5,
-        "addedPhysicalLines": 5
-      },
-      {
-        "id": "scenarioTimelineWithSegments-factory-body",
-        "fromFile": "frontend/src/scenario/useScenarioPlanner.js",
-        "toFile": "frontend/src/scenario/scenarioLayout.js",
-        "export": "buildScenarioTimelineWithSegments",
-        "removedPhysicalLines": 26,
-        "addedPhysicalLines": 26
-      },
-      {
-        "id": "scenarioAssigneeConflicts-factory-body",
-        "fromFile": "frontend/src/scenario/useScenarioPlanner.js",
-        "toFile": "frontend/src/scenario/scenarioLayout.js",
-        "export": "buildScenarioAssigneeConflicts",
-        "removedPhysicalLines": 67,
-        "addedPhysicalLines": 67
-      },
-      {
-        "id": "scenarioDepViolations-factory-body",
-        "fromFile": "frontend/src/scenario/useScenarioPlanner.js",
-        "toFile": "frontend/src/scenario/scenarioLayout.js",
-        "export": "buildScenarioDepViolations",
-        "removedPhysicalLines": 2,
-        "addedPhysicalLines": 2
-      },
-      {
-        "id": "scenarioDepViolatedKeys-factory-body",
-        "fromFile": "frontend/src/scenario/useScenarioPlanner.js",
-        "toFile": "frontend/src/scenario/scenarioLayout.js",
-        "export": "buildScenarioDepViolatedKeys",
-        "removedPhysicalLines": 7,
-        "addedPhysicalLines": 7
+        "toFile": "frontend/src/scenario/useScenarioDrag.js",
+        "fromLine": 276,
+        "toLine": 394,
+        "removedPhysicalLines": 119,
+        "addedPhysicalLines": 119
       }
     ],
-    "scaffoldingAllowance": 146,
+    "scaffoldingAllowance": 44,
     "netPhysicalLOC": {
-      "priorAppPlusOwners": 29317,
-      "nextAppPlusOwners": 29463,
-      "transferredSourceLines": 271,
-      "factoryBodyLinesToPureModule": 194,
-      "hookScaffoldingLines": 47,
-      "netPlannerScaffoldingLines": 32,
-      "pureModuleWrapperLines": 46,
-      "netMemoCallSiteLines": 21
+      "priorAppPlusOwners": 29463,
+      "nextAppPlusOwners": 29507,
+      "transferredSourceLines": 180,
+      "hookScaffoldingLines": 38,
+      "netPlannerScaffoldingLines": 6
     },
     "getters": [],
-    "rationale": "SC3 H3 checkpoint (frozen from the current-base scratch dry run before R4; reported to the operator with the R4 commit). Planner-to-sub-hook transfer of 271 physical lines (matchesScenarioSearch + the H3 selector/memo run) with zero growth credit; 194 factory-body lines of 15 useMemo statements then move verbatim (token-identical) into the pure scenarioLayout.js, the hook keeping each useMemo with its byte-identical deps array. dashboard.jsx untouched. Existing per-file and interface ceilings carried forward (planner 3201 lines / 267 expanded inputs; measured 2295 / 95).",
+    "rationale": "SC3 H4 checkpoint (frozen from the current-base scratch dry run before R4; reported to the operator with the R4 commit). Planner-to-sub-hook transfer of 180 physical lines (toggleScenarioEditMode, handleScenarioBarMouseDown, the drag effect, scenarioUndo/Redo, the undo keydown effect and scenarioOverrideCount) with zero growth credit; the section header comment stays in the planner above the call. dashboard.jsx untouched. Existing per-file and interface ceilings carried forward (planner 3201 lines / 267 expanded inputs; measured 2121 / 86).",
     "scaffoldingBreakdown": {
-      "incomingPhysicalLines": 271,
+      "incomingPhysicalLines": 180,
       "hook": {
         "imports": 3,
         "importBlank": 1,
         "parameterSignature": 9,
-        "stateDestructure": 8,
+        "stateDestructure": 16,
         "runSeparators": 1,
-        "returnWrapper": 24,
+        "returnWrapper": 7,
         "functionClosing": 1,
-        "total": 47
+        "total": 38
       },
       "planner": {
-        "callAndDestructure": 32,
+        "callAndDestructure": 15,
         "newImport": 1,
         "removedRunTrailingBlankLines": -1,
-        "prunedStateBindings": 0,
+        "prunedStateBindings": -9,
         "prunedWholeImports": 0,
-        "net": 32
+        "net": 6
       },
-      "pureModule": {
-        "imports": 1,
-        "importBlank": 1,
-        "functionSignatures": 15,
-        "functionClosings": 15,
-        "blankSeparators": 14,
-        "total": 46
-      },
-      "memoCallSites": {
-        "removedUseMemoOpenCloseLines": -30,
-        "callSiteLines": 51,
-        "net": 21
-      },
-      "note": "Layer 1 (verbatim move): hook 317 = 271 + 46; planner 2534 -> 2295 (-271 -1 blank +32 call/destructure +1 import; scenarioUtils import trimmed in place). Layer 2 (pure cores): 15 useMemo statements (224 lines) become 194 body lines in scenarioLayout.js + 51 call-site lines in the hook; scenarioLayout.js 240 = 194 + 2 import/blank + 30 function wrapper + 14 separators; hook 317 - 224 + 51 + 1 import = 145. Combined +146 (layer 1 +78, layer 2 +68)."
+      "note": "Hook 218 = 180 moved + 38 scaffolding. Planner 2295 -> 2121 = -180 moved -1 trailing blank (240) +15 call/destructure +1 import -9 state bindings (pxToDate/dateToISODate trimmed in place from the scenarioUtils import). Combined +44."
     }
   }
 }

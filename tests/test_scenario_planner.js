@@ -7,6 +7,7 @@ const hookPath = path.join(__dirname, '../frontend/src/scenario/useScenarioPlann
 const draftHookPath = path.join(__dirname, '../frontend/src/scenario/useScenarioDraft.js');
 const realtimeHookPath = path.join(__dirname, '../frontend/src/scenario/useScenarioRealtime.js');
 const derivedHookPath = path.join(__dirname, '../frontend/src/scenario/useScenarioDerived.js');
+const dragHookPath = path.join(__dirname, '../frontend/src/scenario/useScenarioDrag.js');
 
 const EXPECTED_RETURN_NAMES = `
 registerScenarioIssueRef
@@ -507,6 +508,209 @@ test('derived hook preserves its exact flat interface, idle fallbacks, render-ph
     assert.deepEqual(keys(searched.scenarioFocusContextKeys), []);
     assert.deepEqual(searched.scenarioTimelineIssues.map(i => i.key), ['DEMO-1', 'DEMO-2']);
     assert.deepEqual(keys(searched.scenarioDepViolations), []);
+});
+
+const EXPECTED_DRAG_RETURN_NAMES = `
+toggleScenarioEditMode
+handleScenarioBarMouseDown
+scenarioUndo
+scenarioRedo
+scenarioOverrideCount
+`.trim().split(/\s+/);
+
+test('drag hook preserves its exact flat interface, edit toggle, undo/redo semantics and idle mouse-down guards', () => {
+    const React = require('react');
+    const { renderToString } = require('react-dom/server');
+    const esbuild = require('esbuild');
+    const Module = require('node:module');
+    const compiled = esbuild.buildSync({
+        stdin: {
+            contents: "export { useScenarioDrag } from './useScenarioDrag.js'; export { useScenarioState } from './useScenarioState.js';",
+            resolveDir: path.dirname(dragHookPath), sourcefile: 'scenarioDragProbe.js',
+        },
+        bundle: true, write: false, format: 'cjs', platform: 'node', packages: 'external',
+    }).outputFiles[0].text;
+    const hookModule = new Module(dragHookPath, module);
+    hookModule.filename = dragHookPath;
+    hookModule.paths = module.paths;
+    hookModule._compile(compiled, dragHookPath);
+    // renderToString never runs effects, so the drag mousemove/mouseup and undo keydown effects are not
+    // covered here; tests/ui/scenario_draft_history.spec.js and scenario_draft_collaboration.spec.js cover them.
+    const globalCalls = [];
+    const savedGlobals = {};
+    for (const name of ['fetch', 'EventSource', 'setTimeout', 'setInterval', 'requestAnimationFrame']) {
+        savedGlobals[name] = globalThis[name];
+        globalThis[name] = function recordedGlobal() { globalCalls.push(name); throw new Error(`${name} must not run`); };
+    }
+    const calls = [];
+    const spy = name => (...args) => { calls.push([name, ...args]); };
+    const render = ({ stateOverrides = {}, scenarioHasUnsavedChanges = false, scenarioIssueByKey = new Map() } = {}) => {
+        let result;
+        let scenarioState;
+        function Probe() {
+            scenarioState = { ...hookModule.exports.useScenarioState({ initialLaneMode: 'assignee' }), ...stateOverrides };
+            result = hookModule.exports.useScenarioDrag({
+                scenarioState,
+                trackScenarioAction: spy('trackScenarioAction'),
+                scenarioHasUnsavedChanges,
+                acquireScenarioIssueLock: spy('acquireScenarioIssueLock'),
+                refreshScenarioIssueLock: spy('refreshScenarioIssueLock'),
+                releaseScenarioIssueLock: spy('releaseScenarioIssueLock'),
+                scenarioIssueByKey,
+            });
+            return null;
+        }
+        assert.equal(renderToString(React.createElement(Probe)), '');
+        return { result, scenarioState };
+    };
+    // Recording setters replace the real ones so updaters can be applied to a chosen previous value.
+    const setters = () => ({
+        setScenarioEditMode: spy('setScenarioEditMode'),
+        setScenarioEpicFocus: spy('setScenarioEpicFocus'),
+        setScenarioUndoVersion: spy('setScenarioUndoVersion'),
+        setScenarioOverrides: spy('setScenarioOverrides'),
+        setScenarioDragState: spy('setScenarioDragState'),
+    });
+    const takeCalls = () => calls.splice(0, calls.length);
+    try {
+        // (a) Exact interface and idle values.
+        const { result: idle } = render();
+        assert.deepEqual(Object.keys(idle), EXPECTED_DRAG_RETURN_NAMES);
+        assert.equal(EXPECTED_DRAG_RETURN_NAMES.length, 5);
+        for (const name of EXPECTED_DRAG_RETURN_NAMES) {
+            assert.equal(Object.getOwnPropertyDescriptor(idle, name).get, undefined, name);
+        }
+        for (const name of ['toggleScenarioEditMode', 'handleScenarioBarMouseDown', 'scenarioUndo', 'scenarioRedo']) {
+            assert.equal(typeof idle[name], 'function', name);
+        }
+        // (b) The override count is the number of overridden issue keys.
+        assert.equal(idle.scenarioOverrideCount, 0);
+        const { result: seeded } = render({ stateOverrides: { scenarioOverrides: {
+            'DEMO-1': { start: '2026-01-05', end: '2026-01-20' }, 'DEMO-2': { end: '2026-02-01' }, 'DEMO-3': {},
+        } } });
+        assert.equal(seeded.scenarioOverrideCount, 3);
+        assert.deepEqual(takeCalls(), []);
+
+        // (c) Toggle: tracking and side effects run inside the edit-mode updater, keyed on the previous mode.
+        const enterSetters = setters();
+        const { result: enter, scenarioState: enterState } = render({ stateOverrides: enterSetters });
+        const sentinelCmd = { issueKey: 'DEMO-1', oldStart: 'a', oldEnd: 'b', newStart: 'c', newEnd: 'd' };
+        enterState.scenarioUndoStackRef.current.push(sentinelCmd);
+        enter.toggleScenarioEditMode();
+        const [[toggleName, enterUpdater], ...afterToggle] = takeCalls();
+        assert.equal(toggleName, 'setScenarioEditMode');
+        assert.deepEqual(afterToggle, []);
+        assert.equal(enterUpdater(false), true);
+        assert.deepEqual(takeCalls(), [
+            ['trackScenarioAction', 'edit_start', { dirty_state: 'clean' }],
+            ['setScenarioEpicFocus', null],
+        ]);
+        assert.equal(enterState.scenarioUndoStackRef.current.canUndo(), true, 'entering edit keeps the undo stack');
+
+        const { result: exit, scenarioState: exitState } = render({ stateOverrides: setters(), scenarioHasUnsavedChanges: true });
+        exitState.scenarioUndoStackRef.current.push(sentinelCmd);
+        exitState.scenarioUndoStackRef.current.push({ ...sentinelCmd, issueKey: 'DEMO-2' });
+        exitState.scenarioUndoStackRef.current.undo();
+        exit.toggleScenarioEditMode();
+        const [[, exitUpdater]] = takeCalls();
+        assert.equal(exitUpdater(true), false);
+        assert.deepEqual(takeCalls(), [
+            ['trackScenarioAction', 'edit_stop', { dirty_state: 'dirty' }],
+            ['setScenarioUndoVersion', 0],
+        ]);
+        assert.equal(exitState.scenarioUndoStackRef.current.canUndo(), false, 'exiting edit clears undo');
+        assert.equal(exitState.scenarioUndoStackRef.current.canRedo(), false, 'exiting edit clears redo');
+
+        // (c) Undo/redo against a seeded stack and the computed issue dates.
+        const issueByKeyGets = [];
+        const scenarioIssueByKey = new Map([
+            ['DEMO-1', { key: 'DEMO-1', start: '2026-01-05', end: '2026-01-20' }],
+            ['DEMO-2', { key: 'DEMO-2', start: '2026-02-03', end: '2026-02-12' }],
+            ['DEMO-3', { key: 'DEMO-3', start: '2026-03-02', end: '2026-03-09' }],
+        ]);
+        const realGet = scenarioIssueByKey.get.bind(scenarioIssueByKey);
+        scenarioIssueByKey.get = key => { issueByKeyGets.push(key); return realGet(key); };
+        const { result: history, scenarioState: historyState } = render({ stateOverrides: setters(), scenarioIssueByKey });
+        const stack = historyState.scenarioUndoStackRef.current;
+        const cmdA = { issueKey: 'DEMO-1', oldStart: '2026-01-05', oldEnd: '2026-01-20', newStart: '2026-01-12', newEnd: '2026-01-27' };
+        const cmdB = { issueKey: 'DEMO-2', oldStart: '2026-02-01', oldEnd: '2026-02-10', newStart: '2026-02-05', newEnd: '2026-02-14' };
+        const cmdC = { issueKey: 'DEMO-3', oldStart: '2026-03-04', oldEnd: '2026-03-11', newStart: '2026-03-04', newEnd: '2026-03-11' };
+        [cmdA, cmdB, cmdC].forEach(cmd => stack.push(cmd));
+        const prev = Object.freeze({
+            'DEMO-1': { start: '2026-01-12', end: '2026-01-27' },
+            'DEMO-2': { start: '2026-02-05', end: '2026-02-14' },
+            'DEMO-9': { start: '2026-05-01', end: '2026-05-08' },
+        });
+        const step = action => {
+            history[action]();
+            const recorded = takeCalls();
+            if (recorded.length === 0) return null;
+            assert.deepEqual(recorded.map(([name]) => name), ['setScenarioUndoVersion', 'setScenarioOverrides']);
+            assert.equal(recorded[0][1](3), 4, `${action} bumps the undo version`);
+            return recorded[1][1](prev);
+        };
+        // A no-op move keeps the overrides as an equal fresh copy without reading the computed issue.
+        const afterC = step('scenarioUndo');
+        assert.notEqual(afterC, prev);
+        assert.deepEqual(afterC, prev);
+        assert.deepEqual(issueByKeyGets, []);
+        // Old dates that differ from the computed dates restore an explicit override.
+        assert.deepEqual(step('scenarioUndo'), { ...prev, 'DEMO-2': { start: '2026-02-01', end: '2026-02-10' } });
+        // Old dates equal to the computed dates drop the override entirely.
+        const afterA = step('scenarioUndo');
+        assert.deepEqual(afterA, { 'DEMO-2': prev['DEMO-2'], 'DEMO-9': prev['DEMO-9'] });
+        assert.deepEqual(issueByKeyGets, ['DEMO-2', 'DEMO-1']);
+        assert.equal(step('scenarioUndo'), null, 'an empty undo stack sets nothing');
+        // Redo re-applies the new dates in undo order.
+        assert.deepEqual(step('scenarioRedo'), { ...prev, 'DEMO-1': { start: '2026-01-12', end: '2026-01-27' } });
+        assert.deepEqual(step('scenarioRedo'), { ...prev, 'DEMO-2': { start: '2026-02-05', end: '2026-02-14' } });
+        assert.deepEqual(step('scenarioRedo'), { ...prev, 'DEMO-3': { start: '2026-03-04', end: '2026-03-11' } });
+        assert.equal(step('scenarioRedo'), null, 'an empty redo stack sets nothing');
+        assert.equal(Object.keys(prev).length, 3, 'updaters never mutate the previous overrides');
+
+        // (c) Mouse-down guards: no drag state, lock or default prevention before the edit/button/SP/date checks pass.
+        const makeEvent = (button, closest = () => null) => ({
+            button, clientX: 10,
+            preventDefault: spy('preventDefault'), stopPropagation: spy('stopPropagation'),
+            currentTarget: { closest, getBoundingClientRect: spy('getBoundingClientRect') },
+        });
+        const draggable = { key: 'DEMO-1', sp: 3, start: '2026-01-05', end: '2026-01-20' };
+        const dragRefs = () => ({
+            scenarioDragStateRef: { current: 'untouched' },
+            scenarioWasDraggedRef: { current: 'untouched' },
+            scenarioDragLockRefreshRef: { current: 'untouched' },
+        });
+        const viewRefs = dragRefs();
+        const { result: viewOnly } = render({ stateOverrides: { ...setters(), ...viewRefs } });
+        assert.equal(viewOnly.handleScenarioBarMouseDown(makeEvent(0, spy('closest')), draggable), undefined);
+        assert.deepEqual(takeCalls(), [], 'view mode ignores bar mouse-down');
+        const editRefs = dragRefs();
+        const { result: edit } = render({ stateOverrides: { ...setters(), ...editRefs, scenarioEditMode: true } });
+        for (const [event, issue, label] of [
+            [makeEvent(2, spy('closest')), draggable, 'non-primary button'],
+            [makeEvent(1, spy('closest')), draggable, 'middle button'],
+            [makeEvent(0, spy('closest')), { ...draggable, sp: 0 }, 'zero SP'],
+            [makeEvent(0, spy('closest')), { ...draggable, sp: 'n/a' }, 'non-numeric SP'],
+            [makeEvent(0, spy('closest')), { ...draggable, start: '' }, 'missing start'],
+            [makeEvent(0, spy('closest')), { ...draggable, end: null }, 'missing end'],
+        ]) {
+            assert.equal(edit.handleScenarioBarMouseDown(event, issue), undefined, label);
+            assert.deepEqual(takeCalls(), [], label);
+        }
+        // A bar outside a lane track stops the native event but never starts a drag or takes a lock.
+        edit.handleScenarioBarMouseDown(makeEvent(0, selector => { calls.push(['closest', selector]); return null; }), draggable);
+        assert.deepEqual(takeCalls(), [['preventDefault'], ['stopPropagation'], ['closest', '.scenario-lane-track']]);
+        for (const refs of [viewRefs, editRefs]) {
+            assert.deepEqual(Object.values(refs).map(ref => ref.current), ['untouched', 'untouched', 'untouched']);
+        }
+
+        // (d) No network, EventSource, timers or animation frames during render or the exercised calls.
+        assert.deepEqual(globalCalls, []);
+    } finally {
+        for (const [name, value] of Object.entries(savedGlobals)) {
+            globalThis[name] = value;
+        }
+    }
 });
 
 // Legacy output captured from the unchanged App body at the SC2 base before extraction.

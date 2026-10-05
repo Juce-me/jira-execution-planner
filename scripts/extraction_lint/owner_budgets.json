@@ -20,7 +20,7 @@
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
     "lineCount": 13884,
-    "lineCeiling": 14412
+    "lineCeiling": 13884
   },
   "modules": [
     {
@@ -8920,7 +8920,7 @@
       "netAppScaffoldingLines": 160
     },
     "getters": [],
-    "rationale": "ST1 R4c-container checkpoint (frozen from the current-base scratch dry run at ca161e71 before the move and re-based onto the R4c-hook head; the operator asked in chat to complete R4 and self-validate). App-to-container transfer of the 187-line Admin tab body JSX (the tab strip and the performance, access and field-settings branches inside the unchanged ADMIN_SETTINGS_TAB_IDS wrapper) into a stateless component that returns the same fragment, so the DOM is unchanged. All 160 props are explicit name={name} attributes, because the interface checker skips any JSX element with a spread attribute and a spread would leave the 160-name boundary unverified; 147 come from hook returns and 13 are App-owned; all are evaluated during App's render after their declarations, so there is no getter. The combined App-plus-owner total grows only by the 332-line scaffolding allowance (172 container + 162 App call site - 2 net import lines); the stage buys checker-verified wiring, not size. dashboard.jsx lineCeiling 14412 is carried (R5 ratchets). The combined ceiling is measured-plus-allowance. No Connections container was added: it would replace four lines with four in App and add 12 lines, so it is a deliberate deviation from the plan's wording.",
+    "rationale": "ST1 R4c-container checkpoint (frozen from the current-base scratch dry run at ca161e71 before the move and re-based onto the R4c-hook head; the operator asked in chat to complete R4 and self-validate). App-to-container transfer of the 187-line Admin tab body JSX (the tab strip and the performance, access and field-settings branches inside the unchanged ADMIN_SETTINGS_TAB_IDS wrapper) into a stateless component that returns the same fragment, so the DOM is unchanged. All 160 props are explicit name={name} attributes, because the interface checker skips any JSX element with a spread attribute and a spread would leave the 160-name boundary unverified; 147 come from hook returns and 13 are App-owned; all are evaluated during App's render after their declarations, so there is no getter. The combined App-plus-owner total grows only by the 332-line scaffolding allowance (172 container + 162 App call site - 2 net import lines); the stage buys checker-verified wiring, not size. The dashboard.jsx lineCeiling was carried at 14412 through R4 and ST1 R5 ratchets it to its measured 13,884; every other module, interface and aggregate ceiling already equals its measured value. The combined ceiling is measured-plus-allowance. No Connections container was added: it would replace four lines with four in App and add 12 lines, so it is a deliberate deviation from the plan's wording.",
     "scaffoldingBreakdown": {
       "incomingPhysicalLines": 187,
       "component": {

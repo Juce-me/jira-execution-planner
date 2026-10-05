@@ -2234,7 +2234,7 @@ Updated in each R5 commit and the separate permission-fix commit (root `AGENTS.m
 | SC2 | Single Scenario hook | Merged 2026-10-04 | 15,368 | 15,368; lint 113 | #229, `f2e2b510` | Frozen 3,201-line planner, 267 expanded inputs, 67 flat returns; all four CI checks passed |
 | SC3 | Split the Scenario hook (G1) | Merged 2026-10-05 | 15,368 (unchanged) | 15,368 (no dashboard budget change); lint 113 | #231, `1df92ad1` | Planner 3,201 → 320 lines; six sub-hooks and a 768-line pure `scenarioLayout.js`; all owner/interface/aggregate ceilings equal measured (combined 29,797) |
 | SC4 | Scenario view component | Merged 2026-10-05 | 14,412 | 14,412 (ratcheted); lint 113 | #232, `7a768d5d` | 988-line `ScenarioView`, five props; all owner/interface/aggregate ceilings equal measured (combined 29,829) |
-| ST1 | Shared-config section hooks | In progress: R1 to R3 and R4a validated 2026-10-05; R4b, R4c-hook and R4c-container local, awaiting validation; R5 not started | 13,884 after R4c-container | 14,412 (R5 ratchets); lint 110 | Local commits only | R4c-container moves the Admin tab body into `AdminSettingsContainer` (359 lines, 160 props) |
+| ST1 | Shared-config section hooks | R1 to R3 and R4a validated 2026-10-05; R4b, R4c-hook, R4c-container validated in chat 2026-10-05; R5 local, awaiting review; publication not started | 13,884 | 13,884 (ratcheted); lint 110 | Local commits only | Four owner files added: three hook files (with two effects layers) and the Admin container; combined 30,576 |
 | ST2 | EPM settings | Not started | | | | |
 | ST3 | Team Groups and Labels | Not started | | | | |
 | ST4 | First-run configuration | Not started | | | | |
@@ -2561,6 +2561,29 @@ Validation scope: SM-T, Admin → Capacity: remove and re-pick the capacity proj
 *Checks.* Node 1,801 passed, zero failures. Python 2,113 tests OK, 29 skips. Gate on this head: 0 errors, 110 warnings, 56 modules, 27 sites, 0 enforced problems; negative controls 73 passing. Scoped Chromium (the same fourteen-spec set as R4c-hook): 547 passed, one opt-in skip, zero failures; all 34 DOM captures byte-identical to the unchanged base. Independent review: all seven checks passed, including an exact match of the 187 moved lines and of the 160 passed and destructured props; its one observation, that the `PerformanceSettings` caller ledger still lists an internal `PerformanceTrend` call, predates this change.
 
 Validation scope: SM-T, every Admin tab with a tool-admin account: Scope projects, Jira source, Field mapping, Capacity, Priority weights, Access (App administrators) and, if enabled, Performance; the tab strip selection and the panel switching are unchanged; edit one field on each and confirm the Unsaved indicator, then discard.
+
+
+**ST1 R5 record (2026-10-05, local, unpublished).** Base is R4c-container `28408739` (R4b, R4c-hook and R4c-container validated by the operator in chat, "proceed"). R5 changes no source, generated output or test logic.
+
+*Ratchet.* The structural `dashboard.jsx` ceiling in `tests/test_codebase_structure_budgets.py` and the manifest's `dashboard.lineCeiling` move from 14,412 to the measured 13,884. An audit of all 56 registered modules confirms every file, interface (outer-parameter, expanded-input, return and prop) and aggregate ceiling already equals its measured value, because each R4 rung froze its checkpoint at the measured size: Scenario 5,614, Settings 11,078, unique owners 16,692, combined 30,576. The lint ceiling stays 110 (R1 lowered it from 113; R2 to R4 removed no warning). The manifest transfer rationale was reworded from "carried, R5 ratchets" to the ratcheted state. No unresolved input remains outside the reviewed forwarded-input entries.
+
+*Size milestone.* `dashboard.jsx` went 14,412 → 13,884 over ST1 (−528): R1 −17, R3 −1, R4a −54, R4b −343, R4c-hook −86, R4c-container −27. The combined App-plus-owner total went 29,829 → 30,576 (+747): the four new owner files add 1,275 lines (priority weights 119, Jira projects 590, capacity 207, Admin container 359) while App shrinks by 528; equivalently the R1 and R3 deletions removed 18 lines and the four frozen allowances added 765 (+65, +247, +121, +332). The program forecast of 10,000-12,000 lines after ST5 is unchanged and is re-measured at ST4; ST1 alone moves only the section drafts, loaders and the Admin body, while the Team Groups, EPM and first-run clusters, the save/permission/`loadConfig` authority and the modal shell remain App-owned until ST2 to ST5.
+
+*Remaining-App responsibility inventory after ST1* (verified against `28408739`; only the Settings rows changed since the SC4 inventory):
+
+| Canonical responsibility | Retained symbols and consumers | Why it remains / owner relationship | Current seam cost |
+| --- | --- | --- | ---: |
+| Settings shared-config section hooks | `usePriorityWeightsSettings`, `useJiraProjectSettings` (+ search and catalog effects layers), `useCapacityMappingSettings` (+ effects layer), their aliased results, seam calls in `loadConfig`, the render-time 10-key `settingsDraftSnapshotRef` assignment | The hooks own their drafts, baselines, search state, loaders, savers and seeds, with explicit inputs and no getter; App keeps the calls at the original state/effect positions because the snapshot, the first-run capture/restore, the dirty aggregates and the save sequence still read their results | 25 + 110 + 52 lines (hook calls and result destructures; imports excluded) |
+| Admin tab body | `<AdminSettingsContainer />` under the unchanged `ADMIN_SETTINGS_TAB_IDS` wrapper | The stateless container owns the 187-line Admin JSX; App passes 160 explicit props (147 hook returns, 13 App-owned) | 162 lines; four import lines net |
+| Settings bootstrap, draft/save authority and modal composition | `openGroupManage`, `loadConfig`, `loadGroupsConfig`, `saveGroupsConfig`, `saveEpmConfig`, `saveAllSettingsOnce`, `saveAllSettings`, `SettingsModal`, permission cells | ST2 to ST5 own later moves; G2 preserves the imperative save sequence and requires its separate fail-closed correction before ST5 | Unchanged |
+| EPM settings, Team Groups/Labels/board layouts, first-run | `epmConfigDraft` and its handlers, group drafts and mutators, first-run session handlers | ST2 to ST4 | Unchanged |
+| Scenario rows and shared scope/auth/ENG shell | unchanged from the SC4 inventory | | Unchanged |
+
+Import direction remains App → owners; no owner imports the dashboard entry. The scenario owners are untouched.
+
+*R5 verification.* `.venv/bin/python -m unittest tests.test_codebase_structure_budgets` passes both tests; the manifest budget test reports 0 problems; the extraction gate (`run.sh`) and the 73 negative controls are rerun at this head and recorded in the commit report; `docs/ontology.md` records the ST1 owners and the new verification figures (2026-10-05) with every link resolving. Full exact-head Node, Python and Chromium suites and the publication transaction require a separate go; R5 does not authorize push, PR creation or ST2.
+
+Operator validation scope: review the R5 diff only; no additional app smoke.
 
 
 ## 13. Program acceptance

@@ -252,7 +252,6 @@ import { fetchIssuesLookup as requestIssuesLookup } from './api/issuesApi.js';
 import {
     fetchJiraLabels as requestJiraLabels,
     fetchProjects as requestJiraProjects,
-    fetchBoards as requestJiraBoards,
     searchProjects as requestProjectSearch,
     searchBoards as requestBoardSearch,
     searchComponents as requestComponentSearch,
@@ -793,8 +792,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
             }, [savedSelectedProjects]);
             const selectedProjectsBaselineRef = useRef('[]');
             const projectSearchInputRef = useRef(null);
-            const [jiraBoards, setJiraBoards] = useState([]);
-            const [loadingBoards, setLoadingBoards] = useState(false);
             const [boardSearchRemoteResults, setBoardSearchRemoteResults] = useState([]);
             const [boardSearchRemoteLoading, setBoardSearchRemoteLoading] = useState(false);
             const [boardIdDraft, setBoardIdDraft] = useState('');
@@ -4297,20 +4294,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                     console.error('Failed to fetch Jira projects:', err);
                 } finally {
                     setLoadingProjects(false);
-                }
-            };
-
-            const fetchJiraBoards = async () => {
-                setLoadingBoards(true);
-                try {
-                    const response = await requestJiraBoards(BACKEND_URL);
-                    if (!response.ok) throw new Error(`Boards fetch error ${response.status}`);
-                    const data = await response.json();
-                    setJiraBoards(data.boards || []);
-                } catch (err) {
-                    console.error('Failed to fetch Jira boards:', err);
-                } finally {
-                    setLoadingBoards(false);
                 }
             };
 

@@ -2233,8 +2233,8 @@ Updated in each R5 commit and the separate permission-fix commit (root `AGENTS.m
 | SC1 | Scenario state container and seam | Merged 2026-10-03 | 18,307 | 18,307; lint 113 | #228, `bc17d28c` | Frozen 210-line container/95-line helper; complete measured caps, remaining-App inventory and four-probe audit |
 | SC2 | Single Scenario hook | Merged 2026-10-04 | 15,368 | 15,368; lint 113 | #229, `f2e2b510` | Frozen 3,201-line planner, 267 expanded inputs, 67 flat returns; all four CI checks passed |
 | SC3 | Split the Scenario hook (G1) | Merged 2026-10-05 | 15,368 (unchanged) | 15,368 (no dashboard budget change); lint 113 | #231, `1df92ad1` | Planner 3,201 → 320 lines; six sub-hooks and a 768-line pure `scenarioLayout.js`; all owner/interface/aggregate ceilings equal measured (combined 29,797) |
-| SC4 | Scenario view component | R4a and R5 validated 2026-10-05; publication and merge approved in chat | 14,412 | 14,412 (ratcheted); lint 113 | Local commits only | 988-line `ScenarioView`, five props; all owner/interface/aggregate ceilings equal measured (combined 29,829) |
-| ST1 | Shared-config section hooks | Not started | | | | |
+| SC4 | Scenario view component | Merged 2026-10-05 | 14,412 | 14,412 (ratcheted); lint 113 | #232, `7a768d5d` | 988-line `ScenarioView`, five props; all owner/interface/aggregate ceilings equal measured (combined 29,829) |
+| ST1 | Shared-config section hooks | In progress: R1 local, awaiting operator validation | 14,395 after R1 | 14,412 (R5 ratchets); lint 110 | Local commits only | R1 removes 17 inert lines |
 | ST2 | EPM settings | Not started | | | | |
 | ST3 | Team Groups and Labels | Not started | | | | |
 | ST4 | First-run configuration | Not started | | | | |
@@ -2456,6 +2456,9 @@ Import direction remains App → owners; no owner imports the dashboard entry. T
 *R5 verification.* `.venv/bin/python -m unittest tests.test_codebase_structure_budgets` passes both tests; `fnm exec --using 20 bash scripts/extraction_lint/run.sh` passes with zero errors, 113 warnings, 52 modules, 24 sites and zero enforced or budget problems; `docs/ontology.md` now records `ScenarioView` and its test contract with verification date 2026-10-05 and every link resolves. Full exact-head Node, Python and Chromium suites and the publication transaction require a separate go; R5 does not authorize push, PR creation or the Settings slices.
 
 Operator validation was **review the R5 diff only; no additional app smoke**, given in chat on 2026-10-05.
+
+
+**ST1 R1 record (2026-10-05, local, unpublished).** Base is exact main `7a768d5ddf3607a5deb4bed759e8c26198ceaff5` (SC4 merged in #232); branch `improvement/settings-shared-config-sections` was cut from it with a clean tree, no open PR touching `dashboard.jsx`, `frontend/src/settings` or the budget manifest, and `GATE-05` not due for review until 2026-10-12 (not a dependency). The R1 re-location by symbol found the three D6 targets exactly where the plan names them: the `fetchBoards as requestJiraBoards` import, the `jiraBoards`/`loadingBoards` state pairs (every setter call lived inside `fetchJiraBoards`, so no batching question arises) and the `fetchJiraBoards` function (no reader anywhere in `frontend/src` or `tests`). All three were deleted: 17 lines, `dashboard.jsx` 14,412 → 14,395. `fetchBoards` stays exported from `frontend/src/api/jiraCatalogApi.js`: the plan deletes only the import, and that module is outside the slice. No guard names a deleted declaration, so none was edited. Three `no-unused-vars` warnings disappeared (113 → 110) and the lint ceiling default in `run.sh` was lowered to 110. The budget manifest's measured `dashboard.lineCount` (14,395) and `appPlusOwners.measured` (29,812) were refreshed to match, together with the 27 caller/getter ledger line numbers that shifted; every ceiling, interface and checkpoint field is unchanged (the structural `dashboard.jsx` ceiling stays 14,412 until R5).
 
 
 ## 13. Program acceptance

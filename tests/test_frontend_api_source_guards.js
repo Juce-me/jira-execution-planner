@@ -1467,10 +1467,10 @@ test('Scenario API module owns draft, realtime, and run endpoint construction', 
     assert.ok(scenarioApiSource.includes('/api/scenario/drafts'), 'Expected draft save URL construction in scenarioApi.js');
     assert.ok(scenarioApiSource.includes('/api/scenario'), 'Expected scenario run URL construction in scenarioApi.js');
     assert.ok(scenarioApiSource.includes("'X-CSRF-Token': csrfToken"), 'Expected scenario CSRF header in scenarioApi.js');
-    const plannerSource = readOwnerSource(['frontend/src/scenario/useScenarioPlanner.js'], { anchor: 'export function useScenarioPlanner(' });
-    assert.ok(plannerSource.includes("from '../api/scenarioApi.js'"), 'Expected planner to import scenario API wrappers');
+    const scenarioOwnerSource = readOwnerSource(['frontend/src/scenario'], { anchor: 'export function useScenarioRealtime(' });
+    assert.ok(scenarioOwnerSource.includes("from '../api/scenarioApi.js'"), 'Expected Scenario owner hooks to import scenario API wrappers');
     assert.ok(dashboardSource.includes("from './scenario/useScenarioPlanner.js'"), 'Expected dashboard to import the Scenario planner');
-    assert.equal(/(^|[^.])\/api\/scenario/.test(plannerSource), false, 'useScenarioPlanner.js must not own scenario endpoint literals');
+    assert.equal(/(^|[^.])\/api\/scenario/.test(scenarioOwnerSource), false, 'Scenario owners (useScenarioPlanner/useScenarioDraft/useScenarioRealtime) must not own scenario endpoint literals');
     assert.equal(/(^|[^.])\/api\/scenario/.test(dashboardSource), false, 'dashboard.jsx must not own scenario endpoint literals');
 });
 

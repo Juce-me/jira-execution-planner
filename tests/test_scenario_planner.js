@@ -9,6 +9,7 @@ const realtimeHookPath = path.join(__dirname, '../frontend/src/scenario/useScena
 const derivedHookPath = path.join(__dirname, '../frontend/src/scenario/useScenarioDerived.js');
 const dragHookPath = path.join(__dirname, '../frontend/src/scenario/useScenarioDrag.js');
 const historyHookPath = path.join(__dirname, '../frontend/src/scenario/useScenarioHistory.js');
+const layoutHookPath = path.join(__dirname, '../frontend/src/scenario/useScenarioLayout.js');
 
 const EXPECTED_RETURN_NAMES = `
 registerScenarioIssueRef
@@ -939,6 +940,427 @@ test('history hook preserves its exact flat interface, discard/close/request/can
     }
 });
 
+const EXPECTED_LAYOUT_RETURN_NAMES = `
+registerScenarioIssueRef
+scenarioLaneInfo
+scenarioLateItems
+scenarioDeadlineAtRisk
+scenarioCriticalPathItems
+scenarioUnschedulableItems
+scenarioIssuesByLane
+scenarioTicks
+scenarioQuarterMarkers
+SCENARIO_LANE_HEIGHT
+scenarioBarGap
+scenarioJiraEpicKeys
+scenarioJiraStoryKeys
+scenarioLaneMeta
+scenarioLaneAssigneeGroups
+scenarioPositions
+scenarioEpicBars
+scenarioEpicEdges
+scenarioTodayLeft
+scenarioVisibleLanes
+scenarioUpstreamSet
+scenarioDownstreamSet
+scenarioBlockedSet
+toggleScenarioLane
+showScenarioTooltip
+showScenarioTooltipFromElement
+moveScenarioTooltip
+hideScenarioTooltip
+clearScenarioEpicFocus
+focusScenarioEpic
+scrollToScenarioIssue
+`.trim().split(/\s+/);
+
+const EXPECTED_LAYOUT_FUNCTION_NAMES = ['registerScenarioIssueRef', 'toggleScenarioLane', 'showScenarioTooltip',
+    'showScenarioTooltipFromElement', 'moveScenarioTooltip', 'hideScenarioTooltip', 'clearScenarioEpicFocus',
+    'focusScenarioEpic', 'scrollToScenarioIssue'];
+
+// The H3 values useScenarioPlanner forwards from useScenarioDerived into useScenarioLayout.
+const LAYOUT_DERIVED_INPUT_NAMES = ['scenarioSummary', 'scenarioDependencies', 'scenarioCapacityByTeam', 'scenarioIssues',
+    'scenarioSearchQuery', 'scenarioSearchMatchSet', 'scenarioExcludedIssueKeys', 'scenarioFocusSet', 'scenarioContextSet',
+    'scenarioIssueByKey', 'scenarioDeadline', 'scenarioViewStart', 'scenarioViewEnd', 'scenarioFocusIssueKeys',
+    'scenarioFocusContextKeys', 'scenarioTimelineIssues', 'scenarioTimelineWithSegments', 'scenarioTimelineIssueKeys',
+    'scenarioAssigneeConflicts'];
+
+test('layout hook preserves its exact flat interface, perf and debug instrumentation, ref callback and DOM-free updaters', () => {
+    const React = require('react');
+    const { renderToString } = require('react-dom/server');
+    const esbuild = require('esbuild');
+    const Module = require('node:module');
+    const compiled = esbuild.buildSync({
+        stdin: {
+            contents: "export { useScenarioLayout } from './useScenarioLayout.js'; export { useScenarioDerived } from './useScenarioDerived.js'; export { useScenarioState } from './useScenarioState.js';",
+            resolveDir: path.dirname(layoutHookPath), sourcefile: 'scenarioLayoutProbe.js',
+        },
+        bundle: true, write: false, format: 'cjs', platform: 'node', packages: 'external',
+    }).outputFiles[0].text;
+    const hookModule = new Module(layoutHookPath, module);
+    hookModule.filename = layoutHookPath;
+    hookModule.paths = module.paths;
+    hookModule._compile(compiled, layoutHookPath);
+    // renderToString never runs effects, so the nine layout effects (lane auto-collapse, collapse-init reset,
+    // layout/scroll measurement, the three edge-update schedulers, pending scroll, focus scroll and the Escape
+    // key) and the rAF edge computation are not covered here; tests/ui/scenario_draft_history.spec.js and
+    // tests/ui/scenario_focus_positions.spec.js cover them.
+    const globalCalls = [];
+    const savedGlobals = {};
+    for (const name of ['fetch', 'EventSource', 'setTimeout', 'setInterval', 'requestAnimationFrame']) {
+        savedGlobals[name] = globalThis[name];
+        globalThis[name] = function recordedGlobal() { globalCalls.push(name); throw new Error(`${name} must not run`); };
+    }
+    // performance.* and console.debug are recorded rather than thrown, so instrumentation order is observable.
+    const perfCalls = [];
+    const perfMethods = ['mark', 'measure', 'clearMarks', 'clearMeasures'];
+    let perfCountersRef = null;
+    for (const name of perfMethods) {
+        performance[name] = (...args) => { perfCalls.push([name, ...args, perfCountersRef?.current.laneStacking]); };
+    }
+    const savedDebug = console.debug;
+    const debugCalls = [];
+    console.debug = (...args) => { debugCalls.push(args); };
+    const savedNodeEnv = process.env.NODE_ENV;
+    const calls = [];
+    const spy = name => (...args) => { calls.push([name, ...args]); };
+    const takeCalls = () => calls.splice(0, calls.length);
+    const EMPTY_ARRAY = Object.freeze([]);
+    const EMPTY_OBJECT = Object.freeze({});
+    const normalizeEpicKey = value => String(value || '').trim().toUpperCase();
+    const render = ({ stateOverrides = {}, perfEnabled = false, counters = { laneStacking: 0 }, nodeEnv } = {}) => {
+        let result;
+        let derived;
+        let scenarioState;
+        perfCountersRef = { current: counters };
+        const layoutPerfCountersRef = perfCountersRef;
+        function Probe() {
+            scenarioState = { ...hookModule.exports.useScenarioState({ initialLaneMode: 'team' }), ...stateOverrides };
+            derived = hookModule.exports.useScenarioDerived({
+                scenarioState, EMPTY_ARRAY, EMPTY_OBJECT, jiraUrl: '', searchQuery: '', normalizeEpicKey, excludedEpicSet: new Set(),
+            });
+            result = hookModule.exports.useScenarioLayout({
+                scenarioState, perfEnabled, perfCountersRef: layoutPerfCountersRef, showScenario: true, normalizeEpicKey,
+                isAllTeamsSelected: false, excludedEpicSet: new Set(),
+                ...Object.fromEntries(LAYOUT_DERIVED_INPUT_NAMES.map(name => [name, derived[name]])),
+            });
+            return null;
+        }
+        if (nodeEnv === undefined) delete process.env.NODE_ENV;
+        else process.env.NODE_ENV = nodeEnv;
+        try {
+            assert.equal(renderToString(React.createElement(Probe)), '');
+        } finally {
+            if (savedNodeEnv === undefined) delete process.env.NODE_ENV;
+            else process.env.NODE_ENV = savedNodeEnv;
+        }
+        return { result, derived, scenarioState };
+    };
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const day = (y, m, d) => new Date(y, m - 1, d).getTime();
+    const issues = [
+        { key: 'DEMO-1', summary: 'Build API', team: 'Alpha', assignee: 'Ana', epicKey: 'EPIC-1', epicSummary: 'Platform', start: '2026-01-05', end: '2026-01-20', sp: 3, status: 'Accepted' },
+        { key: 'DEMO-2', summary: 'Build UI', team: 'Alpha', assignee: 'Bo', epicKey: 'EPIC-1', epicSummary: 'Platform', start: '2026-01-12', end: '2026-01-26', sp: 2, status: 'In Progress' },
+        { key: 'DEMO-3', summary: 'Docs', team: 'Beta', assignee: 'Cy', epicKey: 'EPIC-2', start: '2026-02-02', end: '2026-02-09', sp: 1, status: 'To Do' },
+        { key: 'DEMO-4', summary: 'Rollout', team: 'Beta', assignee: 'Cy', epicKey: 'EPIC-2', start: '2026-02-16', end: '2026-03-16', sp: 5, status: 'To Do' },
+    ];
+    const scenarioData = {
+        config: { start_date: '2026-01-05', quarter_end_date: '2026-03-31' },
+        dependencies: [{ from: 'DEMO-1', to: 'DEMO-2', type: 'block' }],
+        issues,
+    };
+    const scenarioLayout = { width: 1000, height: 400, labelWidth: 200 };
+    const visibleTip = Object.freeze({ visible: true, x: 5, y: 6, key: 'DEMO-1' });
+    const hiddenTip = Object.freeze({ visible: false, x: 0, y: 0, key: '' });
+    try {
+        // (a) Exact interface: plain values, function members are functions; idle (no data) early returns.
+        const { result: idle } = render({ perfEnabled: true, counters: { laneStacking: 7 }, nodeEnv: 'development' });
+        assert.deepEqual(Object.keys(idle), EXPECTED_LAYOUT_RETURN_NAMES);
+        assert.equal(EXPECTED_LAYOUT_RETURN_NAMES.length, 31);
+        for (const name of EXPECTED_LAYOUT_RETURN_NAMES) {
+            assert.equal(Object.getOwnPropertyDescriptor(idle, name).get, undefined, name);
+            assert.equal(typeof idle[name] === 'function', EXPECTED_LAYOUT_FUNCTION_NAMES.includes(name), name);
+        }
+        assert.equal(idle.SCENARIO_LANE_HEIGHT, 52);
+        assert.equal(idle.scenarioBarGap, 10);
+        assert.equal(idle.scenarioDeadlineAtRisk, false);
+        assert.equal(idle.scenarioLaneInfo.size, 0);
+        assert.equal(idle.scenarioIssuesByLane.size, 0);
+        assert.equal(idle.scenarioLaneMeta.meta.size, 0);
+        assert.equal(idle.scenarioLaneMeta.totalHeight, 0);
+        assert.deepEqual(idle.scenarioPositions, {});
+        assert.equal(idle.scenarioTodayLeft, null);
+        for (const name of ['scenarioLateItems', 'scenarioCriticalPathItems', 'scenarioUnschedulableItems', 'scenarioTicks',
+            'scenarioQuarterMarkers', 'scenarioJiraEpicKeys', 'scenarioJiraStoryKeys', 'scenarioEpicBars', 'scenarioEpicEdges',
+            'scenarioVisibleLanes']) {
+            assert.deepEqual(idle[name], [], name);
+        }
+        // Empty lanes return the early stacking literal before the perf counter and marks; positions return {}
+        // before the development debug block.
+        assert.deepEqual(perfCountersRef.current, { laneStacking: 7 });
+        assert.deepEqual(perfCalls.splice(0), []);
+        assert.deepEqual(debugCalls.splice(0), []);
+
+        // (b) With lanes, perf on: one laneStacking increment before the start mark, then the original mark/measure/clear order.
+        const counters = { laneStacking: 4, layoutReads: 0, scrollReads: 0, edgeComputes: 0, edgeRequests: 0, edgeFrames: 0 };
+        const { result: timed } = render({ stateOverrides: { scenarioData, scenarioLayout }, perfEnabled: true, counters });
+        assert.deepEqual(perfCountersRef.current,
+            { laneStacking: 5, layoutReads: 0, scrollReads: 0, edgeComputes: 0, edgeRequests: 0, edgeFrames: 0 });
+        assert.deepEqual(perfCalls.splice(0), [
+            ['mark', 'scenarioLaneStacking:start', 5],
+            ['mark', 'scenarioLaneStacking:end', 5],
+            ['measure', 'scenarioLaneStacking', 'scenarioLaneStacking:start', 'scenarioLaneStacking:end', 5],
+            ['clearMarks', 'scenarioLaneStacking:start', 5],
+            ['clearMarks', 'scenarioLaneStacking:end', 5],
+            ['clearMeasures', 'scenarioLaneStacking', 5],
+        ]);
+        assert.deepEqual([...timed.scenarioLaneInfo.keys()], ['Alpha', 'Beta']);
+        assert.deepEqual([...timed.scenarioLaneMeta.meta.keys()], ['Alpha', 'Beta']);
+        assert.deepEqual(Object.keys(timed.scenarioPositions), ['DEMO-1', 'DEMO-2', 'DEMO-3', 'DEMO-4']);
+        assert.deepEqual([...timed.scenarioBlockedSet], ['DEMO-2']);
+        // Not development: the positions debug block stays silent even with an Accepted task.
+        assert.deepEqual(debugCalls.splice(0), []);
+
+        // (b) Perf off: no counter change and no performance calls.
+        const { result: untimed } = render({ stateOverrides: { scenarioData, scenarioLayout }, nodeEnv: 'production' });
+        assert.deepEqual(perfCountersRef.current, { laneStacking: 0 });
+        assert.deepEqual(perfCalls.splice(0), []);
+        assert.deepEqual(debugCalls.splice(0), []);
+        assert.deepEqual(untimed.scenarioPositions, timed.scenarioPositions);
+
+        // (b) Development NODE_ENV with an Accepted task and a measured width: the two original debug lines.
+        const { derived: devDerived } = render({ stateOverrides: { scenarioData, scenarioLayout }, nodeEnv: 'development' });
+        assert.equal(debugCalls.length, 2);
+        const [[acceptedLabel, accepted], [rangeLabel, range]] = debugCalls.splice(0);
+        assert.equal(acceptedLabel, '[Scenario] Accepted tasks:');
+        assert.deepEqual(accepted, [{ key: 'DEMO-1', start: '2026-01-05', end: '2026-01-20', scheduledReason: undefined }]);
+        assert.equal(rangeLabel, '[Scenario] View range:');
+        assert.deepEqual(Object.keys(range), ['start', 'end', 'today']);
+        assert.equal(range.start, devDerived.scenarioViewStart);
+        assert.equal(range.end, devDerived.scenarioViewEnd);
+        assert.ok(range.today instanceof Date);
+        // ...but not without an Accepted task, and not when the positions early return fires first.
+        render({ stateOverrides: { scenarioData: { ...scenarioData, issues: issues.map(i => ({ ...i, status: 'To Do' })) }, scenarioLayout }, nodeEnv: 'development' });
+        assert.deepEqual(debugCalls.splice(0), []);
+        const { result: unmeasured } = render({ stateOverrides: { scenarioData }, nodeEnv: 'development' });
+        assert.deepEqual(unmeasured.scenarioPositions, {});
+        assert.equal(unmeasured.scenarioTodayLeft, null);
+        assert.deepEqual(debugCalls.splice(0), []);
+        assert.deepEqual(perfCalls.splice(0), []);
+
+        // (c) registerScenarioIssueRef: the ref callback stores a node under its key and deletes it on null,
+        // reading the ref's current Map at call time.
+        const { result: refs, scenarioState: refState } = render();
+        const refMap = refState.scenarioIssueRefMap.current;
+        const other = { id: 'other' };
+        refMap.set('DEMO-9', other);
+        const refCallback = refs.registerScenarioIssueRef('DEMO-1');
+        assert.equal(typeof refCallback, 'function');
+        const node = { id: 'node-1' };
+        assert.equal(refCallback(node), undefined);
+        assert.deepEqual([...refMap], [['DEMO-9', other], ['DEMO-1', node]]);
+        refCallback(null);
+        assert.deepEqual([...refMap], [['DEMO-9', other]]);
+        const swapped = new Map();
+        refState.scenarioIssueRefMap.current = swapped;
+        refCallback(node);
+        assert.deepEqual([...swapped], [['DEMO-1', node]]);
+        assert.deepEqual([...refMap], [['DEMO-9', other]]);
+
+        // (c) Lane toggle and tooltip updaters, with recording setters.
+        const setters = () => ({
+            setScenarioCollapsedLanes: spy('setScenarioCollapsedLanes'),
+            setScenarioTooltip: spy('setScenarioTooltip'),
+            setScenarioEpicFocus: spy('setScenarioEpicFocus'),
+            setScenarioRangeOverride: spy('setScenarioRangeOverride'),
+            setScenarioLaneMode: spy('setScenarioLaneMode'),
+            setScenarioFlashKey: spy('setScenarioFlashKey'),
+        });
+        const scenarioTooltipAnchorRef = { current: 'anchor' };
+        const { result: ui } = render({ stateOverrides: { ...setters(), scenarioTooltipAnchorRef } });
+        ui.toggleScenarioLane('Alpha');
+        const [[toggleName, toggleUpdater], ...afterToggle] = takeCalls();
+        assert.equal(toggleName, 'setScenarioCollapsedLanes');
+        assert.deepEqual(afterToggle, []);
+        const collapsed = Object.freeze({ Alpha: true, Beta: false });
+        assert.deepEqual(toggleUpdater(collapsed), { Alpha: false, Beta: false });
+        assert.deepEqual(toggleUpdater(null), { Alpha: true });
+        ui.toggleScenarioLane('Beta');
+        assert.deepEqual(takeCalls()[0][1](Object.freeze({ Alpha: true })), { Alpha: true, Beta: true });
+
+        ui.hideScenarioTooltip();
+        assert.equal(scenarioTooltipAnchorRef.current, null);
+        const [[hideName, hideUpdater], ...afterHide] = takeCalls();
+        assert.equal(hideName, 'setScenarioTooltip');
+        assert.deepEqual(afterHide, []);
+        assert.deepEqual(hideUpdater(visibleTip), { ...visibleTip, visible: false });
+        assert.equal(hideUpdater(hiddenTip), hiddenTip);
+
+        // Move: no anchor sets nothing; a hidden tooltip keeps its identity without measuring the anchor.
+        ui.moveScenarioTooltip();
+        assert.deepEqual(takeCalls(), []);
+        scenarioTooltipAnchorRef.current = {};
+        ui.moveScenarioTooltip();
+        const [[moveName, moveUpdater], ...afterMove] = takeCalls();
+        assert.equal(moveName, 'setScenarioTooltip');
+        assert.deepEqual(afterMove, []);
+        assert.equal(moveUpdater(hiddenTip), hiddenTip);
+
+        // Show guards: no payload or element returns before touching the anchor or the tooltip.
+        scenarioTooltipAnchorRef.current = 'kept';
+        ui.showScenarioTooltip({ clientX: 1, clientY: 1 }, null);
+        ui.showScenarioTooltipFromElement(null, { key: 'DEMO-1' });
+        ui.showScenarioTooltipFromElement({ id: 'element' }, null);
+        assert.deepEqual(takeCalls(), []);
+        assert.equal(scenarioTooltipAnchorRef.current, 'kept');
+        // Pointer fallback (event without currentTarget, unmeasured 240x56 tooltip) against a stub viewport.
+        const savedWindow = globalThis.window;
+        try {
+            for (const [viewport, event, expected] of [
+                [{ innerWidth: 1000, innerHeight: 800 }, { clientX: 100, clientY: 200 }, { x: 110, y: 134 }],
+                [{ innerWidth: 1000, innerHeight: 800 }, { clientX: 900, clientY: 20 }, { x: 650, y: 30 }],
+                [{ innerWidth: 1000, innerHeight: 700 }, { clientX: 5, clientY: 790 }, { x: 15, y: 632 }],
+            ]) {
+                globalThis.window = viewport;
+                ui.showScenarioTooltip(event, { key: 'DEMO-1', summary: 'Build API' });
+                assert.equal(scenarioTooltipAnchorRef.current, null);
+                assert.deepEqual(takeCalls(), [['setScenarioTooltip', { key: 'DEMO-1', summary: 'Build API', visible: true, ...expected }]]);
+            }
+        } finally {
+            if (savedWindow === undefined) delete globalThis.window;
+            else globalThis.window = savedWindow;
+        }
+
+        // (c) Clearing Epic focus restores the saved lane mode, collapsed lanes, range and scroll, then drops the restore.
+        const epicFocus = { key: 'EPIC-1', summary: 'Platform' };
+        const savedRange = { start: new Date(2026, 0, 1), end: new Date(2026, 1, 1) };
+        const restoreCollapsed = { Alpha: true };
+        const focusRefs = (restore) => ({
+            scenarioFocusRestoreRef: { current: restore },
+            scenarioSkipAutoCollapseRef: { current: false },
+            scenarioTooltipAnchorRef: { current: 'anchor' },
+            scenarioPendingScrollRef: { current: null },
+            scenarioTimelineRef: { current: { scrollTop: 120, scrollTo: spy('scrollTo') } },
+        });
+        const focused = (restore, extra = {}) => {
+            const refsFor = focusRefs(restore);
+            const { result } = render({ stateOverrides: {
+                ...setters(), ...refsFor, scenarioData, scenarioEpicFocus: epicFocus, scenarioLaneMode: 'epic', ...extra,
+            } });
+            return { result, refsFor };
+        };
+        const tooltipStep = (recorded, index) => {
+            assert.equal(recorded[index][0], 'setScenarioTooltip');
+            assert.equal(recorded[index][1](hiddenTip), hiddenTip);
+            recorded[index] = ['setScenarioTooltip'];
+        };
+        const restoring = focused({ laneMode: 'team', collapsedLanes: restoreCollapsed, scrollTop: 40, rangeOverride: savedRange });
+        restoring.result.clearScenarioEpicFocus();
+        const restoredCalls = takeCalls();
+        tooltipStep(restoredCalls, 1);
+        assert.deepEqual(restoredCalls, [
+            ['setScenarioEpicFocus', null], ['setScenarioTooltip'], ['setScenarioRangeOverride', savedRange],
+            ['setScenarioLaneMode', 'team'], ['setScenarioCollapsedLanes', restoreCollapsed],
+            ['scrollTo', { top: 40, behavior: 'auto' }],
+        ]);
+        assert.equal(restoredCalls[2][1], savedRange);
+        assert.equal(restoredCalls[4][1], restoreCollapsed);
+        assert.equal(restoring.refsFor.scenarioFocusRestoreRef.current, null);
+        assert.equal(restoring.refsFor.scenarioTooltipAnchorRef.current, null);
+        assert.equal(restoring.refsFor.scenarioSkipAutoCollapseRef.current, false);
+        // An Epic-mode restore skips the next auto-collapse and keeps the current lane mode.
+        const epicRestore = focused({ laneMode: 'epic', scrollTop: 'n/a' });
+        epicRestore.result.clearScenarioEpicFocus();
+        const epicRestoreCalls = takeCalls();
+        tooltipStep(epicRestoreCalls, 1);
+        assert.deepEqual(epicRestoreCalls, [['setScenarioEpicFocus', null], ['setScenarioTooltip'], ['setScenarioRangeOverride', null]]);
+        assert.equal(epicRestore.refsFor.scenarioSkipAutoCollapseRef.current, true);
+        assert.equal(epicRestore.refsFor.scenarioFocusRestoreRef.current, null);
+        // No restore: focus, tooltip and range only.
+        const bare = focused(null);
+        bare.result.clearScenarioEpicFocus();
+        const bareCalls = takeCalls();
+        tooltipStep(bareCalls, 1);
+        assert.deepEqual(bareCalls, [['setScenarioEpicFocus', null], ['setScenarioTooltip'], ['setScenarioRangeOverride', null]]);
+        assert.equal(bare.refsFor.scenarioSkipAutoCollapseRef.current, false);
+        // Without focus, clear is a no-op that keeps the restore.
+        const unfocusedRefs = focusRefs('kept-restore');
+        const { result: unfocused } = render({ stateOverrides: { ...setters(), ...unfocusedRefs, scenarioData } });
+        unfocused.clearScenarioEpicFocus();
+        assert.deepEqual(takeCalls(), []);
+        assert.equal(unfocusedRefs.scenarioFocusRestoreRef.current, 'kept-restore');
+
+        // (c) Focusing an Epic saves the restore point, switches to Epic lanes and pads the Epic's date range.
+        const teamRefs = focusRefs(null);
+        const { result: team } = render({ stateOverrides: {
+            ...setters(), ...teamRefs, scenarioData, scenarioCollapsedLanes: restoreCollapsed, scenarioRangeOverride: savedRange,
+        } });
+        team.focusScenarioEpic('', 'Ignored');
+        assert.deepEqual(takeCalls(), []);
+        team.focusScenarioEpic('EPIC-1', 'Issue. Platform');
+        assert.deepEqual(teamRefs.scenarioFocusRestoreRef.current,
+            { laneMode: 'team', collapsedLanes: { Alpha: true }, scrollTop: 120, rangeOverride: savedRange });
+        assert.notEqual(teamRefs.scenarioFocusRestoreRef.current.collapsedLanes, restoreCollapsed);
+        const [focusCall, modeCall, [rangeName, epicRange], ...afterFocus] = takeCalls();
+        assert.deepEqual(focusCall, ['setScenarioEpicFocus', { key: 'EPIC-1', summary: 'Platform' }]);
+        assert.deepEqual(modeCall, ['setScenarioLaneMode', 'epic']);
+        assert.equal(rangeName, 'setScenarioRangeOverride');
+        assert.deepEqual(afterFocus, []);
+        // A three-week Epic gets the two-day minimum padding.
+        assert.equal(epicRange.start.getTime(), day(2026, 1, 5) - 2 * DAY_MS);
+        assert.equal(epicRange.end.getTime(), day(2026, 1, 26) + 2 * DAY_MS);
+        // A longer Epic is padded by 6% of its span.
+        team.focusScenarioEpic('EPIC-2', '');
+        const [[, epic2Focus], , [, epic2Range]] = takeCalls();
+        assert.deepEqual(epic2Focus, { key: 'EPIC-2', summary: 'EPIC-2' });
+        const span = day(2026, 3, 16) - day(2026, 2, 2);
+        assert.ok(span * 0.06 > 2 * DAY_MS);
+        assert.equal(epic2Range.start.getTime(), day(2026, 2, 2) - span * 0.06);
+        assert.equal(epic2Range.end.getTime(), day(2026, 3, 16) + span * 0.06);
+        // An Epic without dated issues clears the range override.
+        team.focusScenarioEpic('EPIC-9', 'Empty');
+        assert.deepEqual(takeCalls(), [
+            ['setScenarioEpicFocus', { key: 'EPIC-9', summary: 'Empty' }], ['setScenarioLaneMode', 'epic'], ['setScenarioRangeOverride', null],
+        ]);
+        // While focused: the same Epic clears focus; another Epic keeps the original restore point and Epic lanes.
+        const sameRefs = focused({ laneMode: 'team' });
+        sameRefs.result.focusScenarioEpic('EPIC-1', 'Platform');
+        const sameCalls = takeCalls();
+        assert.deepEqual(sameCalls.map(([name]) => name), ['setScenarioEpicFocus', 'setScenarioTooltip', 'setScenarioRangeOverride', 'setScenarioLaneMode']);
+        assert.equal(sameCalls[0][1], null);
+        const switchRefs = focused('original-restore');
+        switchRefs.result.focusScenarioEpic('EPIC-2', 'Docs');
+        assert.equal(switchRefs.refsFor.scenarioFocusRestoreRef.current, 'original-restore');
+        assert.deepEqual(takeCalls().map(([name, value]) => [name, name === 'setScenarioRangeOverride' ? typeof value : value]), [
+            ['setScenarioEpicFocus', { key: 'EPIC-2', summary: 'Docs' }], ['setScenarioRangeOverride', 'object'],
+        ]);
+
+        // (c) scrollToScenarioIssue: while focused it parks the key and clears focus; otherwise unknown issues and a
+        // missing timeline return before any window scroll, flash or timer.
+        const parked = focused(null);
+        parked.result.scrollToScenarioIssue('DEMO-1');
+        assert.equal(parked.refsFor.scenarioPendingScrollRef.current, 'DEMO-1');
+        assert.deepEqual(takeCalls().map(([name]) => name), ['setScenarioEpicFocus', 'setScenarioTooltip', 'setScenarioRangeOverride']);
+        const { result: plain } = render({ stateOverrides: { ...setters(), scenarioData, scenarioTimelineRef: { current: null } } });
+        plain.scrollToScenarioIssue('DEMO-404');
+        plain.scrollToScenarioIssue('DEMO-1');
+        assert.deepEqual(takeCalls(), []);
+
+        // (d) No network, EventSource, timers or animation frames during render or the exercised calls.
+        assert.deepEqual(globalCalls, []);
+        assert.deepEqual(perfCalls, []);
+        assert.deepEqual(debugCalls, []);
+    } finally {
+        for (const [name, value] of Object.entries(savedGlobals)) {
+            globalThis[name] = value;
+        }
+        for (const name of perfMethods) delete performance[name];
+        console.debug = savedDebug;
+        if (savedNodeEnv === undefined) delete process.env.NODE_ENV;
+        else process.env.NODE_ENV = savedNodeEnv;
+    }
+});
+
 // Legacy output captured from the unchanged App body at the SC2 base before extraction.
 const EXPECTED_IDLE_ACTION_STATE = {
     "loadingVersionNumber": null,
@@ -1041,8 +1463,13 @@ const EXPECTED_PURE_HELPER_OUTPUTS = {
   ]
 };
 
-// matchesScenarioSearch moved with its only reader into the derived hook (SC3 H3).
-const pureHelperSourcePaths = { matchesScenarioSearch: derivedHookPath };
+// matchesScenarioSearch moved with its only reader into the derived hook (SC3 H3); the two equality helpers
+// moved with the auto-collapse effect and the edge scheduler into the layout hook (SC3 H6).
+const pureHelperSourcePaths = {
+    matchesScenarioSearch: derivedHookPath,
+    areScenarioCollapsedLanesEqual: layoutHookPath,
+    areScenarioEdgeRendersEqual: layoutHookPath,
+};
 
 for (const name of Object.keys(EXPECTED_PURE_HELPER_OUTPUTS)) {
     test(`${name} preserves the legacy deterministic helper oracle`, () => {

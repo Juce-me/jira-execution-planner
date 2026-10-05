@@ -2234,7 +2234,7 @@ Updated in each R5 commit and the separate permission-fix commit (root `AGENTS.m
 | SC2 | Single Scenario hook | Merged 2026-10-04 | 15,368 | 15,368; lint 113 | #229, `f2e2b510` | Frozen 3,201-line planner, 267 expanded inputs, 67 flat returns; all four CI checks passed |
 | SC3 | Split the Scenario hook (G1) | Merged 2026-10-05 | 15,368 (unchanged) | 15,368 (no dashboard budget change); lint 113 | #231, `1df92ad1` | Planner 3,201 → 320 lines; six sub-hooks and a 768-line pure `scenarioLayout.js`; all owner/interface/aggregate ceilings equal measured (combined 29,797) |
 | SC4 | Scenario view component | Merged 2026-10-05 | 14,412 | 14,412 (ratcheted); lint 113 | #232, `7a768d5d` | 988-line `ScenarioView`, five props; all owner/interface/aggregate ceilings equal measured (combined 29,829) |
-| ST1 | Shared-config section hooks | In progress: R1 validated 2026-10-05 (`ba7bd7ac`); R2 local, awaiting review | 14,395 after R1 | 14,412 (R5 ratchets); lint 110 | Local commits only | R1 removes 17 inert lines; R2 adds characterization tests only |
+| ST1 | Shared-config section hooks | In progress: R1 (`ba7bd7ac`) and R2 (`495722d0`) validated 2026-10-05; R3 local, awaiting validation | 14,394 after R3 | 14,412 (R5 ratchets); lint 110 | Local commits only | R1 removes 17 inert lines; R2 adds characterization tests only; R3 hoists two declarations |
 | ST2 | EPM settings | Not started | | | | |
 | ST3 | Team Groups and Labels | Not started | | | | |
 | ST4 | First-run configuration | Not started | | | | |
@@ -2468,6 +2468,15 @@ Operator validation was **review the R5 diff only; no additional app smoke**, gi
 *Key parity and snapshot projection* (`tests/test_settings_section_key_parity.js`, six tests). `FIRST_RUN_ADMIN_SECTION_KEYS` lists the 11 sections in order; the `adminSectionsToSave` save map, the `captureFirstRunSettingsDrafts` admin object and the `restoreSettingsDraftsToCommittedBaselines` restore coverage each equal the same 11 as sets; `settingsDraftSnapshotRef.current` holds exactly the 10 keys without `adminAccess`. Each location is read through `readOwnerSource` over `dashboard.jsx` and `frontend/src/settings` with its own anchor, so the pins follow the code when ST4/ST5 move it and fail loudly if an anchor disappears. Object keys come from a brace-depth scan (itself unit-tested) rather than a line regex. Seeded defects: deleting `deliveryOwnerField` from the snapshot and deleting `adminAccess` from the save map each fail exactly the matching test.
 
 *Checks.* Node suite 1,787 passed (1,781 plus six), zero failures or skips. `settings_unified_save.spec.js`: 51 passed, one opt-in DOM-capture skip. No other suite is affected by test-only additions; the Python suite, build and gate are unchanged from the R1 head. Validation scope: review the diff.
+
+
+**ST1 R3 record (2026-10-05, local, unpublished).** Base is the operator-validated R2 `495722d0`. R3 moves two declarations inside `App()` and changes nothing else in source.
+
+*Hoists.* `useSettingsConfigBaselineRevision()` (its `settingsConfigBaselineRevision` / `acceptSettingsConfigBaseline` destructure, previously after the issue-types state) and `commitSharedConfigRevision` (previously after the priority-weights loaders, just before `saveBoardConfig`) now sit together immediately before the first section state (`priorityWeightsDraft`), after `sharedConfigRevisionRef`, `setSharedConfigRevision` and every other value they read (verified: their only inputs are those two declarations, 687-688). That is the position the three planned section hooks need, so the later `usePriorityWeightsSettings` / `useJiraProjectSettings` / `useCapacityMappingSettings` calls can receive all three as inputs with no flagged call-site TDZ. Both are verbatim: the hook is `useState` plus a dependency-free `useCallback` with no effect (`settingsConfigReadState.js`), so no effect order changes; `commitSharedConfigRevision` stays a per-render closure (not wrapped in `useCallback`), as section 4 requires. The earliest reader of any of the three names is the dirty memo block, which is below the new position, as are all save handlers; no render-phase read precedes it. `dashboard.jsx` 14,395 → 14,394 (the moved function's trailing blank line was dropped with it). The budget manifest's measured `lineCount` (14,394), `appPlusOwners.measured` (29,811) and 23 shifted ledger lines are refreshed; every ceiling is unchanged.
+
+*Conservation.* `check_move_conservation.mjs --base HEAD` (App only, no owner hook changes): 1,287 statements before and after, 0 removed, 0 new, effect order identical across the 119 top-level effects `App()` itself declares (the program-wide 155 includes owner-hook effects, none of which R3 touches).
+
+*Validation scope:* SM-T, save one admin section (for example change one priority weight, Save, confirm it persists and that a second Save of another section works, so the revision still chains).
 
 
 ## 13. Program acceptance

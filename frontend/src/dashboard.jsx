@@ -746,6 +746,15 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
             const [adminSettingsGate, applyAdminSettingsGateConfig, setAdminSettingsGate] = useAdminSettingsGate({ canEditSettings: canEditSharedConfiguration, openSettings: tab => openGroupManage(tab) });
             const canEditEpmConfiguration = userCanEditEpmConfig === true;
             const preferredSettingsTab = canEditSharedConfiguration && !environmentConfigExists ? 'scope' : 'teams';
+            const {
+                baselineRevision: settingsConfigBaselineRevision,
+                acceptBaseline: acceptSettingsConfigBaseline,
+            } = useSettingsConfigBaselineRevision();
+            const commitSharedConfigRevision = (payload) => {
+                if (!Number.isInteger(payload?.configRevision)) return;
+                sharedConfigRevisionRef.current = payload.configRevision;
+                setSharedConfigRevision(payload.configRevision);
+            };
             const [priorityWeightsDraft, setPriorityWeightsDraft] = useState(() => clonePriorityWeightRows(DEFAULT_PRIORITY_WEIGHT_ROWS));
             const [priorityWeightsSource, setPriorityWeightsSource] = useState('default');
             const [effectivePriorityWeightsRows, setEffectivePriorityWeightsRows] = useState(() => clonePriorityWeightRows(DEFAULT_PRIORITY_WEIGHT_ROWS));
@@ -845,10 +854,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
             } = useJiraFieldPickers({ backendUrl: BACKEND_URL, jiraFields });
             const [issueTypesDraft, setIssueTypesDraft] = useState(['Story']);
             const issueTypesBaselineRef = useRef(JSON.stringify(['Story']));
-            const {
-                baselineRevision: settingsConfigBaselineRevision,
-                acceptBaseline: acceptSettingsConfigBaseline,
-            } = useSettingsConfigBaselineRevision();
             settingsDraftSnapshotRef.current = {
                 projects: JSON.stringify(selectedProjectsDraft),
                 board: JSON.stringify({ boardId: boardIdDraft, boardName: boardNameDraft }),
@@ -4823,12 +4828,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                         console.error('Failed to load priority weights config:', err);
                     }
                 }
-            };
-
-            const commitSharedConfigRevision = (payload) => {
-                if (!Number.isInteger(payload?.configRevision)) return;
-                sharedConfigRevisionRef.current = payload.configRevision;
-                setSharedConfigRevision(payload.configRevision);
             };
 
             const saveBoardConfig = async () => {

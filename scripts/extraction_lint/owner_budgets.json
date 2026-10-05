@@ -19,7 +19,7 @@
   },
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
-    "lineCount": 14395,
+    "lineCount": 14394,
     "lineCeiling": 14412
   },
   "modules": [
@@ -191,7 +191,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "EpmControls",
-              "line": 10974,
+              "line": 10973,
               "phase": "render"
             }
           ],
@@ -243,7 +243,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "EpmProjectCollapseAllButton",
-              "line": 11023,
+              "line": 11022,
               "phase": "render"
             }
           ],
@@ -1361,7 +1361,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "EpmSettings",
-              "line": 13881,
+              "line": 13880,
               "phase": "render"
             }
           ],
@@ -1451,7 +1451,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "EpmView",
-              "line": 13621,
+              "line": 13620,
               "phase": "render"
             }
           ],
@@ -1618,7 +1618,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useEpmViewData",
-              "line": 2753,
+              "line": 2758,
               "phase": "hook execution"
             }
           ],
@@ -1957,7 +1957,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "ScenarioView",
-              "line": 13471,
+              "line": 13470,
               "phase": "render"
             }
           ],
@@ -3285,7 +3285,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useScenarioPlanner",
-              "line": 8461,
+              "line": 8460,
               "phase": "hook execution"
             }
           ],
@@ -3648,7 +3648,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "AdminAccessSettings",
-              "line": 13708,
+              "line": 13707,
               "phase": "render"
             }
           ],
@@ -3782,7 +3782,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "AdminSettingsTabs",
-              "line": 13693,
+              "line": 13692,
               "phase": "render"
             }
           ],
@@ -3894,7 +3894,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "FirstRunGroupConfigurationGuide",
-              "line": 14109,
+              "line": 14108,
               "phase": "render"
             }
           ],
@@ -3986,7 +3986,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "FirstRunGroupSelectionModal",
-              "line": 14319,
+              "line": 14318,
               "phase": "render"
             }
           ],
@@ -4065,7 +4065,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "FirstRunGroupSetupChoice",
-              "line": 14332,
+              "line": 14331,
               "phase": "render"
             }
           ],
@@ -4241,7 +4241,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "GroupBoardsTab",
-              "line": 14291,
+              "line": 14290,
               "phase": "render"
             }
           ],
@@ -4918,7 +4918,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "JiraFieldSettings",
-              "line": 13720,
+              "line": 13719,
               "phase": "render"
             }
           ],
@@ -5009,7 +5009,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "PerformanceSettings",
-              "line": 13706,
+              "line": 13705,
               "phase": "render"
             }
           ],
@@ -5145,7 +5145,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "SettingsModal",
-              "line": 13650,
+              "line": 13649,
               "phase": "render"
             }
           ],
@@ -5529,7 +5529,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "TeamGroupsSettings",
-              "line": 14014,
+              "line": 14013,
               "phase": "render"
             }
           ],
@@ -5583,7 +5583,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "UnconfiguredWorkspaceNotice",
-              "line": 12312,
+              "line": 12311,
               "phase": "render"
             }
           ],
@@ -5641,7 +5641,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "UserConnectionsSettings",
-              "line": 13686,
+              "line": 13685,
               "phase": "render"
             }
           ],
@@ -5932,7 +5932,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useSettingsConfigBaselineRevision",
-              "line": 851,
+              "line": 752,
               "phase": "hook execution"
             }
           ],
@@ -6125,7 +6125,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useGroupVisibilityPreferences",
-              "line": 1207,
+              "line": 1212,
               "phase": "hook execution"
             }
           ],
@@ -6466,7 +6466,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useJiraFieldPickers",
-              "line": 845,
+              "line": 854,
               "phase": "hook execution"
             }
           ],
@@ -7117,7 +7117,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useTeamCatalogLifecycle",
-              "line": 1127,
+              "line": 1132,
               "phase": "hook execution"
             }
           ],
@@ -7201,7 +7201,7 @@
       "ceiling": 15417
     },
     "appPlusOwners": {
-      "measured": 29812,
+      "measured": 29811,
       "ceiling": 29829
     }
   },

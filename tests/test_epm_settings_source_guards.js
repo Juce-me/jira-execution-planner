@@ -27,6 +27,7 @@ const engViewPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'EngVie
 const dashboardSource = fs.readFileSync(dashboardPath, 'utf8');
 const epmSettingsHookSource = readOwnerSource(['frontend/src/settings/useEpmSettings.js'], { anchor: 'export function useEpmSettings(' });
 const epmSettingsTabSource = readOwnerSource(['frontend/src/epm/EpmSettingsTab.jsx'], { anchor: 'export default function EpmSettingsTab(' });
+const departmentsTabSource = readOwnerSource(['frontend/src/settings/DepartmentsSettingsTab.jsx'], { anchor: 'export default function DepartmentsSettingsTab(' });
 const teamGroupHookSource = readOwnerSource(['frontend/src/settings/useTeamGroupSettings.js'], { anchor: 'export function useTeamGroupSettings(' });
 const dashboardCssSource = readDashboardCssSource(path.join(__dirname, '..'));
 const epmSettingsSource = fs.existsSync(epmSettingsPath) ? fs.readFileSync(epmSettingsPath, 'utf8') : '';
@@ -120,11 +121,16 @@ test('settings modal shell and tab bodies are extracted while dashboard keeps se
     const epmSettingsTabCallSource = epmSettingsTabCallStart === -1 || epmSettingsTabCallEnd === -1
         ? ''
         : dashboardSource.slice(epmSettingsTabCallStart, epmSettingsTabCallEnd);
-    const teamGroupsSettingsCallStart = dashboardSource.indexOf('<TeamGroupsSettings');
-    const teamGroupsSettingsCallEnd = dashboardSource.indexOf('/>', teamGroupsSettingsCallStart);
+    const teamGroupsSettingsCallStart = departmentsTabSource.indexOf('<TeamGroupsSettings');
+    const teamGroupsSettingsCallEnd = departmentsTabSource.indexOf('/>', teamGroupsSettingsCallStart);
     const teamGroupsSettingsCallSource = teamGroupsSettingsCallStart === -1 || teamGroupsSettingsCallEnd === -1
         ? ''
-        : dashboardSource.slice(teamGroupsSettingsCallStart, teamGroupsSettingsCallEnd);
+        : departmentsTabSource.slice(teamGroupsSettingsCallStart, teamGroupsSettingsCallEnd);
+    const departmentsTabCallStart = dashboardSource.indexOf('<DepartmentsSettingsTab');
+    const departmentsTabCallEnd = dashboardSource.indexOf('/>', departmentsTabCallStart);
+    const departmentsTabCallSource = departmentsTabCallStart === -1 || departmentsTabCallEnd === -1
+        ? ''
+        : dashboardSource.slice(departmentsTabCallStart, departmentsTabCallEnd);
     const jiraFieldSettingsCallStart = adminSettingsContainerSource.indexOf('<JiraFieldSettings');
     const jiraFieldSettingsCallEnd = adminSettingsContainerSource.indexOf('/>', jiraFieldSettingsCallStart);
     const jiraFieldSettingsCallSource = jiraFieldSettingsCallStart === -1 || jiraFieldSettingsCallEnd === -1
@@ -174,10 +180,17 @@ test('settings modal shell and tab bodies are extracted while dashboard keeps se
     assert.ok(fs.existsSync(jiraFieldSettingsPath), 'Expected extracted JiraFieldSettings component');
     assert.ok(teamGroupsSettingsSource.includes('export default function TeamGroupsSettings'), 'Expected TeamGroupsSettings default component export');
     assert.ok(jiraFieldSettingsSource.includes('export default function JiraFieldSettings'), 'Expected JiraFieldSettings default component export');
-    assert.ok(dashboardSource.includes("import TeamGroupsSettings from './settings/TeamGroupsSettings.jsx';"), 'Expected dashboard to import TeamGroupsSettings');
+    assert.ok(dashboardSource.includes("import DepartmentsSettingsTab from './settings/DepartmentsSettingsTab.jsx';"), 'Expected dashboard to import the Departments tab container');
+    assert.ok(departmentsTabSource.includes("import TeamGroupsSettings from './TeamGroupsSettings.jsx';"), 'Expected the Departments container to import TeamGroupsSettings');
     assert.ok(adminSettingsContainerSource.includes("import JiraFieldSettings from './JiraFieldSettings.jsx';"), 'Expected the admin container to import JiraFieldSettings');
     assert.ok(dashboardSource.includes("import AdminSettingsContainer from './settings/AdminSettingsContainer.jsx';"), 'Expected dashboard to import the admin container');
-    assert.ok(settingsModalChildrenSource.includes('DEPARTMENT_SETTINGS_TAB_IDS.has(groupManageTab)') && settingsModalChildrenSource.includes('<TeamGroupsSettings'), 'Expected dashboard to delegate department tab content');
+    assert.ok(settingsModalChildrenSource.includes('DEPARTMENT_SETTINGS_TAB_IDS.has(groupManageTab)') && settingsModalChildrenSource.includes('<DepartmentsSettingsTab') && departmentsTabSource.includes('<TeamGroupsSettings'), 'Expected dashboard to delegate department tab content to the container, which mounts TeamGroupsSettings');
+    assert.ok(!/useState\(|useEffect\(|useRef\(|useMemo\(|useCallback\(/.test(departmentsTabSource), 'DepartmentsSettingsTab must stay stateless');
+    assert.deepStrictEqual(
+        extractJsxAttributeNames(departmentsTabCallSource),
+        extractParameterDestructureProps(departmentsTabSource),
+        'Expected the props dashboard passes to DepartmentsSettingsTab to match the props it destructures exactly'
+    );
     assert.ok(settingsModalChildrenSource.includes('ADMIN_SETTINGS_TAB_IDS.has(groupManageTab)') && settingsModalChildrenSource.includes('<AdminSettingsContainer') && adminSettingsContainerSource.includes('<JiraFieldSettings'), 'Expected dashboard to delegate admin tab content');
     assert.ok(!adminSettingsContainerSource.includes('useState(') && !adminSettingsContainerSource.includes('useEffect('), 'AdminSettingsContainer must stay stateless');
     assert.deepStrictEqual(
@@ -188,8 +201,8 @@ test('settings modal shell and tab bodies are extracted while dashboard keeps se
     extractShorthandSpreadProps(jiraFieldSettingsCallSource).forEach((propName) => {
         assert.ok(extractParameterDestructureProps(adminSettingsContainerSource).includes(propName), `Expected AdminSettingsContainer to receive ${propName} for JiraFieldSettings`);
     });
-    assert.ok(settingsModalChildrenSource.includes("groupManageTab === 'labels'"), 'Expected group label tab content to stay in dashboard');
-    assert.ok(settingsModalChildrenSource.includes("groupManageTab === 'boards'") && settingsModalChildrenSource.includes('<GroupBoardsTab'), 'Expected dashboard to delegate the Boards tab content');
+    assert.ok(departmentsTabSource.includes("groupManageTab === 'labels'"), 'Expected group label tab content to live in the Departments container');
+    assert.ok(departmentsTabSource.includes("groupManageTab === 'boards'") && departmentsTabSource.includes('<GroupBoardsTab'), 'Expected the Departments container to delegate the Boards tab content');
     assert.ok(!teamGroupsSettingsSource.includes('useState('), 'TeamGroupsSettings must not own settings state');
     assert.ok(!jiraFieldSettingsSource.includes('useState('), 'JiraFieldSettings must not own settings state');
     assert.ok(!groupBoardsTabSource.includes('useState('), 'GroupBoardsTab must not own settings state');
@@ -338,7 +351,7 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(!epmSettingsUiSource.includes('Jira epic'), 'Did not expect Jira Epic copy in EPM settings');
     assert.ok(epmSettingsHookSource.includes("const EPM_LABEL_SEARCH_GROUP_ID = 'epm-project';"), 'Expected dedicated EPM label search namespace constant');
     assert.ok(epmSettingsHookSource.includes('const getEpmLabelRowKey = (projectId) => getLabelRowKey(EPM_LABEL_SEARCH_GROUP_ID, projectId);'), 'Expected EPM label picker reads to use the dedicated shared key helper');
-    assert.ok(dashboardSource.includes("import { getLabelRowKey } from './settings/labelRowKey.js';") && !dashboardSource.includes('const getLabelRowKey ='), 'Expected the Team and EPM label pickers to share one imported getLabelRowKey');
+    assert.ok(teamGroupHookSource.includes("import { getLabelRowKey } from './labelRowKey.js';") && epmSettingsHookSource.includes("import { getLabelRowKey } from './labelRowKey.js';") && departmentsTabSource.includes("import { getLabelRowKey } from './labelRowKey.js';") && !dashboardSource.includes('const getLabelRowKey =') && !teamGroupHookSource.includes('const getLabelRowKey ='), 'Expected the Team and EPM label pickers to share one imported getLabelRowKey');
     assert.ok(epmSettingsUiSource.includes('openEpmLabelMenu(project.id, event.currentTarget, showAllLabels)'), 'Expected EPM label picker focus to open the label menu with prefix-scoped labels');
     assert.ok(!dashboardSource.includes("scheduleJiraLabelSearch('epm', homeProjectId, rawQuery);"), 'Did not expect the legacy EPM label search namespace');
     assert.ok(epmSettingsUiSource.includes('Search Jira labels...'), 'Expected EPM Jira label search placeholder copy');
@@ -451,6 +464,16 @@ test('dashboard calls the Team Groups hook and its effects layers at their origi
     assert.strictEqual(dashboardSource.split('loadTeamsFromCurrentView(').length - 1, 1, 'Expected one loadTeamsFromCurrentView caller');
     assert.ok(dashboardSource.indexOf('loadTeamsFromCurrentView()') > modalOpenEffectStart && dashboardSource.indexOf('loadTeamsFromCurrentView()') < modalOpenEffectEnd + 'setTeamNameInputs(loadTeamsFromCurrentView());\n            }, [showGroupManage]);'.length, 'Expected that caller to be the modal-open effect, an effect and never render');
     assert.strictEqual(dashboardSource.split('getTeamOptions: () => teamOptions').length - 1, 1, 'Expected the late Team options binding to be passed once, as a getter');
+});
+
+test('the group-board props are derived inside the Departments container from saved board scope only', () => {
+    assert.ok(departmentsTabSource.includes('const boardId = savedBoardId;'), 'Expected the Boards tab to key the statuses route by the saved board id');
+    assert.ok(departmentsTabSource.includes('const projectScopeKey = savedSelectedProjects'), 'Expected the Boards tab scope key to derive from saved projects');
+    assert.ok(departmentsTabSource.includes('const random = Math.random;'), 'Expected the container to own the GroupBoardsTab random prop');
+    for (const needle of ['const boardId = savedBoardId;', 'const projectScopeKey = savedSelectedProjects', 'const random = Math.random;', 'const groupName = activeGroupDraft?.name']) {
+        assert.ok(!dashboardSource.includes(needle), `dashboard must not keep ${needle}`);
+    }
+    assert.ok(!departmentsTabSource.includes('boardIdDraft') && !departmentsTabSource.includes('selectedProjectsDraft'), 'Unsaved Admin edits must not key the Boards statuses response');
 });
 
 test('EPM settings source uses shared basic UI primitives for representative rows and states', () => {
@@ -688,8 +711,8 @@ test('settings modal groups department and admin leaves behind local sub-tabs', 
     assert.ok(dashboardSource.includes("const [adminSettingsTab, setAdminSettingsTab] = useState('scope');"), 'Expected Admin-local settings tab state');
     assert.ok(dashboardSource.includes("const [departmentSettingsTab, setDepartmentSettingsTab] = useState('teams');"), 'Expected Departments-local settings tab state');
     assert.ok(dashboardSource.includes("const activeSettingsModalTab = ADMIN_SETTINGS_TAB_IDS.has(groupManageTab)"), 'Expected leaf settings tabs to resolve to grouped top-level tabs');
-    assert.ok(dashboardSource.includes('id="department-settings-teams-tab"'), 'Expected Team Groups local tab');
-    assert.ok(dashboardSource.includes('id="department-settings-labels-tab"'), 'Expected Group Labels local tab');
+    assert.ok(departmentsTabSource.includes('id="department-settings-teams-tab"'), 'Expected Team Groups local tab');
+    assert.ok(departmentsTabSource.includes('id="department-settings-labels-tab"'), 'Expected Group Labels local tab');
     assert.ok(adminSettingsContainerSource.includes('<AdminSettingsTabs'), 'Expected extracted Admin local tab strip');
     assert.ok(adminSettingsTabsSource.includes("['scope', 'Scope projects']"), 'Expected Scope Projects local admin tab');
     assert.ok(adminSettingsTabsSource.includes("['source', 'Jira source']"), 'Expected Jira Source local admin tab');
@@ -697,7 +720,7 @@ test('settings modal groups department and admin leaves behind local sub-tabs', 
     assert.ok(adminSettingsTabsSource.includes("['capacity', 'Capacity']"), 'Expected Capacity local admin tab');
     assert.ok(adminSettingsTabsSource.includes("['priorityWeights', 'Priority weights']"), 'Expected Priority Weights local admin tab');
     assert.ok(adminSettingsTabsSource.includes("['access', 'Access']"), 'Expected Access local admin tab');
-    assert.ok(dashboardSource.includes('aria-label="Departments settings sections"'), 'Expected accessible Departments sub-tab list');
+    assert.ok(departmentsTabSource.includes('aria-label="Departments settings sections"'), 'Expected accessible Departments sub-tab list');
     assert.ok(adminSettingsTabsSource.includes('aria-label="Admin settings sections"'), 'Expected accessible Admin sub-tab list');
     assert.ok(dashboardSource.includes('const handleDepartmentSettingsTabKeyDown = (event) => {'), 'Expected keyboard support for Departments sub-tabs');
     assert.ok(dashboardSource.includes('const handleAdminSettingsTabKeyDown = (event) => {'), 'Expected keyboard support for Admin sub-tabs');
@@ -705,7 +728,7 @@ test('settings modal groups department and admin leaves behind local sub-tabs', 
 
 test('Boards is a Departments leaf tab that mounts GroupBoardsTab, which mounts GroupBoardSettings, with matching props at each hop', () => {
     assert.ok(dashboardSource.includes("new Set(['teams', 'labels', 'boards'])"), 'Expected boards added to DEPARTMENT_SETTINGS_TAB_IDS');
-    assert.ok(dashboardSource.includes('id="department-settings-boards-tab"'), 'Expected Boards local tab DOM id');
+    assert.ok(departmentsTabSource.includes('id="department-settings-boards-tab"'), 'Expected Boards local tab DOM id');
 
     const tabsStart = dashboardSource.indexOf('const settingsModalAllTabs = [');
     const tabsEnd = dashboardSource.indexOf('];', tabsStart);
@@ -714,16 +737,16 @@ test('Boards is a Departments leaf tab that mounts GroupBoardsTab, which mounts 
     const tabsSource = dashboardSource.slice(tabsStart, tabsEnd);
     assert.ok(!tabsSource.includes("id: 'boards'"), 'Boards must live under Departments instead of the top-level tab list');
 
-    // Hop 1: dashboard.jsx (which keeps settings state ownership) mounts the extracted tab body.
+    // Hop 1: the Departments container (a stateless child of dashboard.jsx, which keeps settings state ownership) mounts the extracted tab body.
     assert.ok(fs.existsSync(groupBoardsTabPath), 'Expected extracted GroupBoardsTab component');
     assert.ok(groupBoardsTabSource.includes('export default function GroupBoardsTab'), 'Expected GroupBoardsTab default component export');
-    assert.ok(dashboardSource.includes("import GroupBoardsTab from './settings/GroupBoardsTab.jsx';"), 'Expected dashboard to import GroupBoardsTab');
+    assert.ok(departmentsTabSource.includes("import GroupBoardsTab from './GroupBoardsTab.jsx';"), 'Expected the Departments container to import GroupBoardsTab');
 
-    const groupBoardsTabCallStart = dashboardSource.indexOf('<GroupBoardsTab');
-    const groupBoardsTabCallEnd = dashboardSource.indexOf('/>', groupBoardsTabCallStart);
+    const groupBoardsTabCallStart = departmentsTabSource.indexOf('<GroupBoardsTab');
+    const groupBoardsTabCallEnd = departmentsTabSource.indexOf('/>', groupBoardsTabCallStart);
     const groupBoardsTabCallSource = groupBoardsTabCallStart === -1 || groupBoardsTabCallEnd === -1
         ? ''
-        : dashboardSource.slice(groupBoardsTabCallStart, groupBoardsTabCallEnd);
+        : departmentsTabSource.slice(groupBoardsTabCallStart, groupBoardsTabCallEnd);
     assert.deepStrictEqual(
         extractShorthandSpreadProps(groupBoardsTabCallSource),
         extractDestructuredProps(groupBoardsTabSource),

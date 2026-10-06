@@ -57,6 +57,8 @@ document. Catalog completion reads are bound to the original attempt and identit
 server attempt deadline and browser lifecycle, and cannot be combined with a forced refresh. Auth,
 Board, effective-scope, or document-generation changes retire stale completion work.
 
+The frontend grants administrator-section editing only when `GET /api/config` returns the explicit boolean `userCanEditSettings: true`; a successful (200) response always carries both `userCanEditSettings` and `settingsAdminOnly` as booleans, and a missing, mistyped or false grant (including while the response is loading) denies editing regardless of `settingsAdminOnly`, which is metadata only. Department groups and private EPM settings keep their own independent rights.
+
 Department group configuration is deliberately collaborative. A non-admin user must be able to
 read and save `/api/groups-config`. Concurrent saves use `configRevision` and return `409` rather
 than silently overwriting another user's change. Department board layouts belong to this shared

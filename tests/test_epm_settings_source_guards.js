@@ -688,7 +688,9 @@ test('settings tabs distinguish tool-admin configuration from team grouping', ()
     const tabsSource = dashboardSource.slice(tabsStart, tabsEnd);
 
     assert.ok(dashboardSource.includes('const [environmentConfigExists, setEnvironmentConfigExists] = useState(false);'), 'Expected environment-config state from /api/config');
-    assert.ok(dashboardSource.includes('const canEditSharedConfiguration = !settingsAdminOnly || userCanEditSettings;'), 'Expected explicit shared-configuration edit permission');
+    assert.ok(dashboardSource.includes('const canEditSharedConfiguration = userCanEditSettings === true;'), 'Expected administrator editing to require the explicit boolean grant');
+    assert.ok(!dashboardSource.includes('!settingsAdminOnly'), 'settingsAdminOnly is metadata and must never grant administrator editing');
+    assert.ok(dashboardSource.includes('const [, setSettingsAdminOnly] = useState(true);'), 'Expected settingsAdminOnly to stay write-only metadata');
     assert.ok(dashboardSource.includes('const canEditEpmConfiguration = userCanEditEpmConfig === true;'), 'Expected EPM configuration to require its explicit user-owned edit permission');
     assert.ok(dashboardSource.includes("const preferredSettingsTab = canEditSharedConfiguration && !environmentConfigExists ? 'scope' : 'teams';"), 'Expected configured environments to open settings on Team Groups');
     assert.ok(tabsSource.includes("id: 'departments'"), 'Expected Departments as the team grouping top-level tab');

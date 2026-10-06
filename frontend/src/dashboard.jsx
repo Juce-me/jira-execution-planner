@@ -2878,9 +2878,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                     return next;
                 });
             };
-            const hasDraftEpmScope = React.useMemo(() => {
-                return hasSavedEpmScopeConfig(epmConfigDraft);
-            }, [epmConfigDraft]);
             const epmProjectPrerequisites = React.useMemo(() => getEpmProjectPrerequisites(epmConfigDraft), [epmConfigDraft]);
             const canLoadEpmProjects = epmProjectPrerequisites.length === 0;
             const epmSettingsProjectsCacheKey = React.useMemo(() => getEpmSettingsProjectsCacheKey(epmConfigDraft), [epmConfigDraft]);

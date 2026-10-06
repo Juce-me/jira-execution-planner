@@ -283,7 +283,6 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(dashboardSource.includes('const rootGoalsPayload = await loadEpmGoals();'), 'Expected root-goal discovery load to be handled separately');
     assert.ok(dashboardSource.includes('const clearEpmRootGoal = () => {'), 'Expected root clear handler');
     assert.ok(dashboardSource.includes('const clearEpmSubGoal = (subGoalKey) => {'), 'Expected explicit sub-goal clear handler');
-    assert.ok(dashboardSource.includes('const hasDraftEpmScope = React.useMemo(() => {'), 'Expected draft-driven EPM scope helper for settings modal state');
     assert.ok(dashboardSource.includes('const showEpmRootGoalResults = epmRootGoalOpen &&') && dashboardSource.includes('Boolean(epmRootGoalsError)') && dashboardSource.includes('epmRootGoals.length === 0'), 'Expected root goal result panel gating to include error-only and empty-catalog states');
     assert.ok(dashboardSource.includes('const showEpmSubGoalResults = epmSubGoalOpen &&') && dashboardSource.includes('Boolean(epmSubGoalsError)') && dashboardSource.includes('epmSubGoals.length === 0'), 'Expected sub-goal result panel gating to include error-only and empty-catalog states');
     assert.ok(dashboardSource.includes('const handleEpmRootGoalSearchKeyDown = (event) => {'), 'Expected root goal keyboard handler');

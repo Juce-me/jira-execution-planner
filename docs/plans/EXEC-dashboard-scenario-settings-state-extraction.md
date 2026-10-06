@@ -2235,7 +2235,7 @@ Updated in each R5 commit and the separate permission-fix commit (root `AGENTS.m
 | SC3 | Split the Scenario hook (G1) | Merged 2026-10-05 | 15,368 (unchanged) | 15,368 (no dashboard budget change); lint 113 | #231, `1df92ad1` | Planner 3,201 → 320 lines; six sub-hooks and a 768-line pure `scenarioLayout.js`; all owner/interface/aggregate ceilings equal measured (combined 29,797) |
 | SC4 | Scenario view component | Merged 2026-10-05 | 14,412 | 14,412 (ratcheted); lint 113 | #232, `7a768d5d` | 988-line `ScenarioView`, five props; all owner/interface/aggregate ceilings equal measured (combined 29,829) |
 | ST1 | Shared-config section hooks | R1 to R3 and R4a validated 2026-10-05; R4b, R4c-hook, R4c-container validated in chat 2026-10-05; R5 local, awaiting review; publication not started | 13,884 | 13,884 (ratcheted); lint 110 | Local commits only | Four owner files added: three hook files (with two effects layers) and the Admin container; combined 30,576 |
-| ST2 | EPM settings | Not started | | | | |
+| ST2 | EPM settings | In progress: R1 local (stacked on the unpublished ST1 branch) | 13,881 after R1 | 13,884 (R5 ratchets); lint 109 | Local commits only | R1 removes `hasDraftEpmScope` |
 | ST3 | Team Groups and Labels | Not started | | | | |
 | ST4 | First-run configuration | Not started | | | | |
 | Permission fix | Explicit Settings editing grant (G2 prerequisite) | Approved; not started | | | | Separate fix after ST4; verify merge before ST5 |
@@ -2584,6 +2584,11 @@ Import direction remains App → owners; no owner imports the dashboard entry. T
 *R5 verification.* `.venv/bin/python -m unittest tests.test_codebase_structure_budgets` passes both tests; the manifest budget test reports 0 problems; the extraction gate (`run.sh`) and the 73 negative controls are rerun at this head and recorded in the commit report; `docs/ontology.md` records the ST1 owners and the new verification figures (2026-10-05) with every link resolving. Full exact-head Node, Python and Chromium suites and the publication transaction require a separate go; R5 does not authorize push, PR creation or ST2.
 
 Operator validation scope: review the R5 diff only; no additional app smoke.
+
+
+**ST2 R1 record (2026-10-06, local, unpublished).** From the operator's instruction on 2026-10-06 ("finish with settings, review yourself ... a greenlight on verifications you need to perform yourself"), the executor runs ST2 to ST5 and the permission fix without per-commit operator stops, self-verifies each rung and asks the operator to verify once the Settings part is complete. Publication and merge are not covered by that instruction. Because ST1 is unpublished, `improvement/settings-epm-hook` is cut from the ST1 branch tip `4811d7e5` (the per-slice branches the plan names are kept so each slice can later become its own pull request; D3's merge-before-next-branch rule cannot be met without publication and is flagged for the operator). Start-of-slice sweep: `origin/main` is still `7a768d5d`, no open pull request touches `dashboard.jsx`, `frontend/src/settings`, `frontend/src/epm` or the budget manifest, and `GATE-05` is not due until 2026-10-12.
+
+R1 deletes `hasDraftEpmScope` (a `useMemo` over `epmConfigDraft` with no reader) and its declaration pin in `tests/test_epm_settings_source_guards.js`; `hasSavedEpmScopeConfig` stays (still used at three sites). `dashboard.jsx` 13,884 → 13,881; the lint warning count falls 110 → 109 and the ceiling default in `run.sh` is lowered to 109; the manifest's measured line count, combined measured total (30,573) and 18 shifted ledger lines are refreshed with every ceiling unchanged. Self-validation: gate 0 errors, 109 warnings, 56 modules, 27 sites, 0 enforced problems; Node 1,801 passed; Python 2,113 OK (29 skips); scoped Chromium plus the five EPM specs (`epm_initial_config_load`, `epm-settings-gear`, `epm_settings_visual_states`, `home_token_connection_settings`, `settings-home-token-connection`): 578 passed, three opt-in skips, zero failures; all 34 DOM captures byte-identical to the unchanged base.
 
 
 ## 13. Program acceptance

@@ -5,7 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 SRC="${1:-frontend/src}"
 LINT_DIR=tmp/lint
-MAX_WARNINGS="${EXTRACTION_LINT_MAX_WARNINGS:-110}"   # ratchet: lower it whenever a commit removes warnings
+MAX_WARNINGS="${EXTRACTION_LINT_MAX_WARNINGS:-109}"   # ratchet: lower it whenever a commit removes warnings
 BASELINE=scripts/extraction_lint/hook_interface_baseline.txt   # optional; absent means empty
 mkdir -p "$LINT_DIR"
 # Verify every pinned package: a cached ESLint binary alone is insufficient.

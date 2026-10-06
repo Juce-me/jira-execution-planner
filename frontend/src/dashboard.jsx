@@ -2714,7 +2714,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                     showTech: savedPrefsRef.current.showTech ?? true,
                     showProduct: savedPrefsRef.current.showProduct ?? true,
                     groupByInitiativeChoice: savedPrefsRef.current.groupByInitiativeChoice ?? null,
-                    searchQuery: savedPrefsRef.current.searchQuery ?? '',
                     selectedTeams: selectedTeamsFromPlanning,
                     selectedTasks: selectedTasksFromPlanning,
                     planningSelectionMode: selectionModeFromPlanning,
@@ -2797,7 +2796,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 showTech,
                 showProduct,
                 groupByInitiativeChoice,
-                searchQuery,
                 selectedTeams,
                 selectedTasks,
                 planningSelectionMode,
@@ -2874,7 +2872,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 setShowTech(nextState.showTech ?? true);
                 setShowProduct(nextState.showProduct ?? true);
                 setGroupByInitiativeChoice(nextState.groupByInitiativeChoice ?? null);
-                setSearchQuery(nextState.searchQuery ?? '');
                 setSelectedTeams(normalizeSelectedTeams(nextState.selectedTeams));
                 setSelectedTasks(nextState.selectedTasks || {});
                 setPlanningSelectionMode(nextState.planningSelectionMode || PLANNING_SELECTION_MODE_MANUAL);
@@ -2961,7 +2958,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 showTech,
                 showProduct,
                 groupByInitiativeChoice,
-                searchQuery,
                 selectedTeams,
                 selectedTasks,
                 planningSelectionMode,

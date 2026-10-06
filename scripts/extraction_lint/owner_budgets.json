@@ -19,7 +19,7 @@
   },
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
-    "lineCount": 10855,
+    "lineCount": 10851,
     "lineCeiling": 10855
   },
   "modules": [
@@ -14482,15 +14482,15 @@
       "ceiling": 21911
     },
     "appPlusOwners": {
-      "measured": 32766,
-      "ceiling": 32766
+      "measured": 32762,
+      "ceiling": 32762
     }
   },
   "transfer": {
     "scaffoldingAllowance": 365,
     "netPhysicalLOC": {
       "priorAppPlusOwners": 32401,
-      "nextAppPlusOwners": 32766,
+      "nextAppPlusOwners": 32762,
       "transferredSourceLines": 314,
       "componentScaffoldingLines": 208,
       "netAppScaffoldingLines": 157

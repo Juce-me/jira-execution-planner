@@ -20,7 +20,7 @@
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
     "lineCount": 11649,
-    "lineCeiling": 11754
+    "lineCeiling": 11649
   },
   "modules": [
     {
@@ -12786,7 +12786,7 @@
       "netAppScaffoldingLines": 14
     },
     "getters": [],
-    "rationale": "ST4 R4b checkpoint (frozen from the current-base scratch dry run before the move; reported with this commit under the operator's 2026-10-06 instruction to finish Settings with self-verification). App-to-container transfer of the 23-line first-run fragment (the FirstRunGroupSelectionModal and FirstRunGroupSetupChoice elements) into a stateless component, FirstRunConfigurationContainer.jsx, that returns the same fragment, so the DOM is unchanged; the groupPreferences.onboardingRequired && !showGroupManage wrapper and the OnboardingTour stay in App. All 13 props are explicit name={name} attributes, evaluated during App's render after their declarations. The stage saves nine App lines and costs 37 combined (23 moved + 15 call-site lines, plus one import line, minus two removed import lines and the 23 moved lines on the other side); it is built because the plan's R4b requires it. The dashboard.jsx lineCeiling stays 11754 until the slice's R5. The combined ceiling is measured-plus-allowance.",
+    "rationale": "ST4 R4b checkpoint (frozen from the current-base scratch dry run before the move; reported with this commit under the operator's 2026-10-06 instruction to finish Settings with self-verification). App-to-container transfer of the 23-line first-run fragment (the FirstRunGroupSelectionModal and FirstRunGroupSetupChoice elements) into a stateless component, FirstRunConfigurationContainer.jsx, that returns the same fragment, so the DOM is unchanged; the groupPreferences.onboardingRequired && !showGroupManage wrapper and the OnboardingTour stay in App. All 13 props are explicit name={name} attributes, evaluated during App's render after their declarations. The stage saves nine App lines and costs 37 combined (23 moved + 15 call-site lines, plus one import line, minus two removed import lines and the 23 moved lines on the other side); it is built because the plan's R4b requires it. The dashboard.jsx lineCeiling was 11754 through ST4 R4 and ST4 R5 ratchets it to its measured 11,649. The combined ceiling is measured-plus-allowance.",
     "scaffoldingBreakdown": {
       "incomingPhysicalLines": 23,
       "component": {

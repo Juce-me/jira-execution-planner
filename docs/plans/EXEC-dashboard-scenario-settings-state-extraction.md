@@ -2237,7 +2237,7 @@ Updated in each R5 commit and the separate permission-fix commit (root `AGENTS.m
 | ST1 | Shared-config section hooks | R1 to R3 and R4a validated 2026-10-05; R4b, R4c-hook, R4c-container validated in chat 2026-10-05; R5 local, awaiting review; publication not started | 13,884 | 13,884 (ratcheted); lint 110 | Local commits only | Four owner files added: three hook files (with two effects layers) and the Admin container; combined 30,576 |
 | ST2 | EPM settings | R1 to R4b and R5 local (stacked on the unpublished ST1 branch); publication not started | 13,043 | 13,043 (ratcheted); lint 109 | Local commits only | `useEpmSettings` (1,208 lines, one hook plus four effects layers), `EpmSettingsTab` (189 lines), two helper modules; combined 31,141 |
 | ST3 | Team Groups and Labels | R1, R2, R4a, R4b and R5 local (stacked on the unpublished ST2 branch); publication not started | 11,754 | 11,754 (ratcheted); lint 107 | Local commits only | `useTeamGroupSettings` (1,480 lines, one hook plus three effects layers), `DepartmentsSettingsTab` (494 lines); combined 31,823 |
-| ST4 | First-run configuration | In progress: R4a and R4b local (stacked on the unpublished ST3 branch); R5 next | 11,649 after R4b | 11,754 (R5 ratchets); lint 107 | Local commits only | R4b moves the 23-line first-run fragment into `FirstRunConfigurationContainer` (46 lines, 13 props) |
+| ST4 | First-run configuration | R4a, R4b and R5 local (stacked on the unpublished ST3 branch); publication not started | 11,649 | 11,649 (ratcheted); lint 107 | Local commits only | `useFirstRunConfiguration` (258 lines, two layers), `FirstRunConfigurationContainer` (46 lines); combined 32,022 |
 | Permission fix | Explicit Settings editing grant (G2 prerequisite) | Approved; not started | | | | Separate fix after ST4; verify merge before ST5 |
 | ST5 | Shared-config save, permissions, shell (G2) | Conditional approval; not started | | | | Permission fix + R0 validation required |
 
@@ -2743,6 +2743,25 @@ Import direction remains App → owners; no owner imports the dashboard entry.
 *Conservation.* App statements 934 → 934; one removed and one new (the App `return`, which holds the call site); effect order identical across 94 top-level effects.
 
 *Tests.* New `tests/test_first_run_configuration_container.js` (five server-render tests; 11 of 11 seeded defects failed it in the dry run). No existing guard broke. Node 1,863 passed. Python 2,113 OK (29 skips). Gate: 0 errors, 107 warnings, 64 modules, 31 sites, 0 enforced problems; 73 negative controls passing. Scoped Chromium: 547 passed, one opt-in skip, one failure, and all 35 DOM captures byte-identical to the unchanged base. The failure is again `scenario_draft_history.spec.js` "keyboard opens history, focuses the title, and Escape returns focus to History" (a Scenario keyboard-focus test unrelated to first-run). It is load-sensitive: with the machine's load average at about 8.7 it failed 3 of 6 isolated runs on this tree and 2 of 6 on the committed ST4 R4a head without this change, while it passed 8 of 8 earlier at lower load on the ST3 tree; no test or timeout was changed. Independent review: all seven checks passed.
+
+
+**ST4 R5 record (2026-10-06, local, unpublished).** Base is R4b `48511752`. R5 changes no source, generated output or test logic.
+
+*Ratchet.* The structural `dashboard.jsx` ceiling (`tests/test_codebase_structure_budgets.py` and the manifest `dashboard.lineCeiling`) moves from 11,754 to the measured 11,649. An audit of all 64 registered modules confirms every file, interface and aggregate ceiling already equals its measured value (Scenario 5,614; Settings and EPM 14,759; unique owners 20,373; combined 32,022). The lint ceiling stays 107.
+
+*Size milestone and the ST5 projection (program acceptance requires one at ST4).* `dashboard.jsx` went 11,754 → 11,649 over ST4 (−105: R4a −96, R4b −9); the combined total went 31,823 → 32,022 (+199 = the frozen allowances +162 and +37). Measured at this head, the ST5 ownership row would move roughly: `saveGroupsConfig` (about 380 lines), `saveAllSettingsOnce` (about 175), `saveAllSettings` and the save-outcome builder (about 15), the restore, return and `keepMine*` handlers (about 70), the aggregates and validation (about 110), the Settings part of `loadConfig` (about 90 of its 177 lines), the modal state and functions (about 150), the permission cells (about 25) and the `SettingsModal` shell (about 50 of its 414 JSX lines; the tab containers stay as children), about 1,060 lines in all. The added seams (the save hook's call and input destructure, the permissions and modal-state calls) are estimated at about 300 lines, so the projected net reduction is roughly 750 lines and `dashboard.jsx` lands near 10,900, inside the 10,000-12,000 forecast; there is no material mismatch to report before ST5.
+
+*Remaining-App responsibility inventory after ST4* (only the first-run rows changed since ST3):
+
+| Canonical responsibility | Retained symbols and consumers | Why it remains / owner relationship | Current seam cost |
+| --- | --- | --- | ---: |
+| First-run configuration | `useFirstRunConfigurationState` and `useFirstRunConfiguration` calls and their destructures, the two getter arrows, `<FirstRunConfigurationContainer />` under the unchanged `onboardingRequired` wrapper | The hooks own the session, setup choice, capture, configure, cancel/retry and guide logic; the restore and return handlers, the `keepMine*` handlers, `settingsSaveInFlightRef` and the save paths stay for ST5 | 11 + 63 + 15 lines |
+| Settings bootstrap, draft/save authority and modal composition | `openGroupManage`, `loadConfig`, `saveGroupsConfig`, `saveAllSettingsOnce`, `saveAllSettings`, `restoreSettingsDraftsToCommittedBaselines`, `returnFromFirstRunConfigurationRecovery`, `keepMine*`, aggregates, `SettingsModal`, permission cells | ST5 (after the separate fail-closed permission correction) | Unchanged |
+| Team Groups, EPM, shared-config section hooks, Admin tab body, Scenario rows | unchanged from the ST3 inventory | | Unchanged |
+
+Import direction remains App → owners; no owner imports the dashboard entry.
+
+*R5 verification.* Both structure-budget tests pass; the manifest check reports 0 problems; the gate and the 73 controls pass at this head; `docs/ontology.md` records the first-run owners with every link resolving. Publication and the full exact-head suites require the operator's go.
 
 
 ## 13. Program acceptance

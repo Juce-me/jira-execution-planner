@@ -85,7 +85,7 @@ No P0 issues were found. The main structural risk is that extracted modules exis
 - The priority-weights service extraction slice was completed in PR #54 (`879ad59`) in `DONE-codebase-operability-priority-weights-service.md`.
 - The team-catalog service extraction slice was completed in PR #54 (`879ad59`) in `DONE-codebase-operability-team-catalog-service.md`.
 - The group-config service extraction slice was completed in PR #54 (`879ad59`) in `DONE-codebase-operability-group-config-service.md`.
-- The "Extract Scenario Planner ownership" and "Move settings state/actions behind feature hooks" slices are planned and executed in `EXEC-dashboard-scenario-settings-state-extraction.md` (the Scenario half merged in PRs #228 to #232; the Settings slices are complete locally, `frontend/src/dashboard.jsx` is about 10.9k lines, and publication is pending); do not execute them from this backlog.
+- The "Extract Scenario Planner ownership" and "Move settings state/actions behind feature hooks" slices were executed in `DONE-dashboard-scenario-settings-state-extraction.md` (Scenario in PRs #228 to #232, Settings in PRs #233 to #238; `frontend/src/dashboard.jsx` is 10,855 lines); do not execute them from this backlog.
 - Keep this as future scope until the user explicitly chooses a slice to execute.
 - Convert a chosen slice into a separate `EXEC-*` plan before implementation.
 - Do not execute multiple slices that touch `frontend/src/dashboard.jsx` in parallel.

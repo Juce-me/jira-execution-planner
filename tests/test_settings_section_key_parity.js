@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { readOwnerSource } = require('./frontend_source_helpers');
 
-// Characterization for the Settings extraction (docs/plans/EXEC-dashboard-scenario-settings-state-extraction.md,
+// Characterization for the Settings extraction (docs/plans/DONE-dashboard-scenario-settings-state-extraction.md,
 // ST1 R2): the five places that enumerate the 11 administrator sections must stay equal, and the
 // render-time draft snapshot must keep its 10-key projection (every section except adminAccess).
 // Each location is read through readOwnerSource with an anchor, so the pin follows the code when

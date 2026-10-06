@@ -26,6 +26,7 @@ const epmControlsPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'Ep
 const engViewPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'EngView.jsx');
 const dashboardSource = fs.readFileSync(dashboardPath, 'utf8');
 const epmSettingsHookSource = readOwnerSource(['frontend/src/settings/useEpmSettings.js'], { anchor: 'export function useEpmSettings(' });
+const epmSettingsTabSource = readOwnerSource(['frontend/src/epm/EpmSettingsTab.jsx'], { anchor: 'export default function EpmSettingsTab(' });
 const dashboardCssSource = readDashboardCssSource(path.join(__dirname, '..'));
 const epmSettingsSource = fs.existsSync(epmSettingsPath) ? fs.readFileSync(epmSettingsPath, 'utf8') : '';
 const settingsModalSource = fs.existsSync(settingsModalPath) ? fs.readFileSync(settingsModalPath, 'utf8') : '';
@@ -108,11 +109,16 @@ test('settings modal shell and tab bodies are extracted while dashboard keeps se
     const settingsModalChildrenSource = settingsModalChildrenStart === -1 || settingsModalChildrenEnd === -1
         ? ''
         : dashboardSource.slice(settingsModalChildrenStart, settingsModalChildrenEnd);
-    const epmSettingsCallStart = dashboardSource.indexOf('<EpmSettings');
-    const epmSettingsCallEnd = dashboardSource.indexOf('/>', epmSettingsCallStart);
+    const epmSettingsCallStart = epmSettingsTabSource.indexOf('<EpmSettings');
+    const epmSettingsCallEnd = epmSettingsTabSource.indexOf('/>', epmSettingsCallStart);
     const epmSettingsCallSource = epmSettingsCallStart === -1 || epmSettingsCallEnd === -1
         ? ''
-        : dashboardSource.slice(epmSettingsCallStart, epmSettingsCallEnd);
+        : epmSettingsTabSource.slice(epmSettingsCallStart, epmSettingsCallEnd);
+    const epmSettingsTabCallStart = dashboardSource.indexOf('<EpmSettingsTab');
+    const epmSettingsTabCallEnd = dashboardSource.indexOf('/>', epmSettingsTabCallStart);
+    const epmSettingsTabCallSource = epmSettingsTabCallStart === -1 || epmSettingsTabCallEnd === -1
+        ? ''
+        : dashboardSource.slice(epmSettingsTabCallStart, epmSettingsTabCallEnd);
     const teamGroupsSettingsCallStart = dashboardSource.indexOf('<TeamGroupsSettings');
     const teamGroupsSettingsCallEnd = dashboardSource.indexOf('/>', teamGroupsSettingsCallStart);
     const teamGroupsSettingsCallSource = teamGroupsSettingsCallStart === -1 || teamGroupsSettingsCallEnd === -1
@@ -223,8 +229,16 @@ test('settings modal shell and tab bodies are extracted while dashboard keeps se
     assert.ok(jiraFieldSettingsSource.includes("setCapacityFieldIdDraft(''); setCapacityFieldNameDraft('');"), 'Expected capacity field remove behavior in JiraFieldSettings');
     assert.ok(fs.existsSync(epmSettingsPath), 'Expected extracted EpmSettings component');
     assert.ok(epmSettingsSource.includes('export default function EpmSettings'), 'Expected EpmSettings default component export');
-    assert.ok(dashboardSource.includes("import EpmSettings from './epm/EpmSettings.jsx';"), 'Expected dashboard to import extracted EPM settings');
-    assert.ok(dashboardSource.includes("groupManageTab === 'epm'") && dashboardSource.includes('<EpmSettings'), 'Expected dashboard shell to render EpmSettings for the EPM tab');
+    assert.ok(epmSettingsTabSource.includes("import EpmSettings from './EpmSettings.jsx';"), 'Expected the EPM tab container to import extracted EPM settings');
+    assert.ok(dashboardSource.includes("import EpmSettingsTab from './epm/EpmSettingsTab.jsx';"), 'Expected dashboard to import the EPM tab container');
+    assert.ok(!dashboardSource.includes("import EpmSettings from './epm/EpmSettings.jsx';"), 'Dashboard must reach EpmSettings only through the EPM tab container');
+    assert.ok(dashboardSource.includes("groupManageTab === 'epm'") && dashboardSource.includes('<EpmSettingsTab') && epmSettingsTabSource.includes('<EpmSettings'), 'Expected dashboard shell to render the EPM tab container, which renders EpmSettings');
+    assert.ok(!epmSettingsTabSource.includes('useState(') && !epmSettingsTabSource.includes('useEffect(') && !epmSettingsTabSource.includes('React.use'), 'EpmSettingsTab must stay stateless');
+    assert.deepStrictEqual(
+        extractJsxAttributeNames(epmSettingsTabCallSource),
+        extractParameterDestructureProps(epmSettingsTabSource),
+        'Expected the props dashboard passes to EpmSettingsTab to match the props it destructures exactly'
+    );
     assert.ok(epmSettingsHookSource.includes("const [epmSettingsTab, setEpmSettingsTab] = useState('scope');"), 'Expected dashboard to keep EPM settings tab state ownership');
     assert.ok(epmSettingsHookSource.includes('const saveEpmConfig = async () => {'), 'Expected dashboard to keep EPM save ownership');
     ['epmConfigLoading', 'epmConfigSaving', 'focusEpmScopeField'].forEach((propName) => {
@@ -240,7 +254,7 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(dashboardSource.includes("groupManageTab === 'epm'"), 'Expected an EPM settings tab branch');
     assert.ok(fs.existsSync(epmViewDataPath), 'Expected EPM view data hook');
     assert.ok(readOwnerSource(['frontend/src/settings/epmConfigDraft.js'], { anchor: 'export const createEmptyEpmConfigDraft' }).includes("export const DEFAULT_EPM_LABEL_PREFIX = 'rnd_project_';"), 'Expected EPM label prefix default');
-    assert.ok(dashboardSource.includes("import { DEFAULT_EPM_LABEL_PREFIX, createEmptyEpmConfigDraft } from './settings/epmConfigDraft.js';"), 'Expected dashboard to import the EPM draft helpers from one module');
+    assert.ok(dashboardSource.includes("import { createEmptyEpmConfigDraft } from './settings/epmConfigDraft.js';") && epmSettingsTabSource.includes("import { DEFAULT_EPM_LABEL_PREFIX } from '../settings/epmConfigDraft.js';"), 'Expected dashboard and the EPM tab container to import the EPM draft helpers from one module');
     assert.ok(epmSettingsHookSource.includes("const [epmConfigDraft, setEpmConfigDraftState] = useState(createEmptyEpmConfigDraft());"), 'Expected EPM config draft state');
     assert.ok(epmSettingsHookSource.includes('const epmConfigDraftRef = useRef(epmConfigDraft);'), 'Expected current EPM draft tracking for in-flight saves');
     assert.ok(epmSettingsHookSource.includes("const epmConfigBaselineRef = useRef(JSON.stringify(createEmptyEpmConfigDraft()));"), 'Expected EPM config baseline tracking');
@@ -357,7 +371,7 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(dashboardSource.includes('epmSettingsProjectsRefreshing'), 'Expected refresh state that preserves rows');
     assert.ok(epmSettingsUiSource.includes('missingFromHomeFetch'), 'Expected missing Home project reconciliation state');
     assert.ok(epmSettingsHookSource.includes('const getHomeBackedEpmSettingsProjects = (projects) => {'), 'Expected settings project cache to exclude custom rows rendered from config');
-    assert.ok(dashboardSource.includes('epm-project-skeleton-row'), 'Expected skeleton loading rows');
+    assert.ok(epmSettingsTabSource.includes('epm-project-skeleton-row'), 'Expected skeleton loading rows');
     assert.ok(epmSettingsUiSource.includes('Retry'), 'Expected inline retry action for project load errors');
     assert.ok(!dashboardSource.includes('epmSettingsPreviewRequested'), 'EPM project configuration must not use preview-request state');
     assert.ok(!dashboardSource.includes('loadEpmProjectPreview'), 'EPM project configuration must not use preview-named loaders');
@@ -401,13 +415,13 @@ test('EPM settings source uses shared basic UI primitives for representative row
     assert.ok(fs.existsSync(emptyStatePath), 'Expected shared EmptyState primitive');
     assert.ok(dashboardSource.includes("import ControlField from './ui/ControlField.jsx';"), 'Expected dashboard to import ControlField');
     assert.ok(dashboardSource.includes("import IconButton from './ui/IconButton.jsx';"), 'Expected dashboard to import IconButton');
-    assert.ok(dashboardSource.includes("import LoadingRows from './ui/LoadingRows.jsx';"), 'Expected dashboard to import LoadingRows');
+    assert.ok(epmSettingsTabSource.includes("import LoadingRows from '../ui/LoadingRows.jsx';"), 'Expected the EPM tab container to import LoadingRows');
     assert.ok(dashboardSource.includes("import EmptyState from './ui/EmptyState.jsx';"), 'Expected dashboard to import EmptyState');
     assert.ok(dashboardSource.includes('<ControlField label="Search"'), 'Expected header search control to use ControlField');
     assert.ok(epmControlsSource.includes('<ControlField label="Project"'), 'Expected EPM project picker control to use ControlField');
     assert.ok(epmSettingsUiSource.includes('<IconButton') && epmSettingsUiSource.includes('className="epm-label-change-shortcut"'), 'Expected selected-label change action to use IconButton');
     assert.ok(epmSettingsUiSource.includes('<IconButton') && epmSettingsUiSource.includes('className="epm-project-home-shortcut"'), 'Expected Home project shortcut to use IconButton');
-    assert.ok(dashboardSource.includes('<LoadingRows') && dashboardSource.includes('ariaLabel="Loading EPM projects"'), 'Expected EPM project skeleton rows to use LoadingRows');
+    assert.ok(epmSettingsTabSource.includes('<LoadingRows') && epmSettingsTabSource.includes('ariaLabel="Loading EPM projects"'), 'Expected EPM project skeleton rows to use LoadingRows');
     assert.ok(engViewSource.includes('<EmptyState') && engViewSource.includes('title="No tasks found"'), 'Expected task empty state to use EmptyState');
 });
 

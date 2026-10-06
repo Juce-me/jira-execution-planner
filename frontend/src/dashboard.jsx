@@ -14,7 +14,6 @@ import LeadTimesWorkflowStatusCard from './cohort/LeadTimesWorkflowStatusCard.js
 import SegmentedControl from './ui/SegmentedControl.jsx';
 import ControlField from './ui/ControlField.jsx';
 import IconButton from './ui/IconButton.jsx';
-import LoadingRows from './ui/LoadingRows.jsx';
 import EmptyState from './ui/EmptyState.jsx';
 import LoadingState from './ui/LoadingState.jsx';
 import StatusPill from './ui/StatusPill.jsx';
@@ -239,14 +238,14 @@ import {
 import { EpmControls } from './epm/EpmControls.jsx';
 import EpmProjectCollapseAllButton from './epm/EpmProjectCollapseAllButton.jsx';
 import { EpmView } from './epm/EpmView.jsx';
-import EpmSettings from './epm/EpmSettings.jsx';
+import EpmSettingsTab from './epm/EpmSettingsTab.jsx';
 import SettingsModal from './settings/SettingsModal.jsx';
 import TeamGroupsSettings from './settings/TeamGroupsSettings.jsx';
 import GroupBoardsTab from './settings/GroupBoardsTab.jsx';
 import { createSettingsDraftReadGuard, useSettingsConfigBaselineRevision } from './settings/settingsConfigReadState.js';
 import { useAdminAccessSettings } from './settings/AdminAccessSettings.jsx';
 import AdminSettingsContainer from './settings/AdminSettingsContainer.jsx';
-import { DEFAULT_EPM_LABEL_PREFIX, createEmptyEpmConfigDraft } from './settings/epmConfigDraft.js';
+import { createEmptyEpmConfigDraft } from './settings/epmConfigDraft.js';
 import { getLabelRowKey } from './settings/labelRowKey.js';
 import { createPerformanceGate } from './eng/loadPerformance.js';
 import { useJiraFieldPickers } from './settings/useJiraFieldPickers.js';
@@ -269,9 +268,7 @@ import {
     DEFAULT_EPM_PROJECT_SORT,
     flattenEpmRollupBoardsForDependencies,
     getEpmProjectDisplayName,
-    isEmptyCustomEpmProjectRow,
     isEpmProjectsConfigReady,
-    normalizeEpmLabelPrefixMask,
     normalizeEpmProjectSort,
     shouldUseEpmSprint
 } from './epm/epmProjectUtils.mjs';
@@ -1459,15 +1456,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                     setSelectedView('eng');
                 }
             }, [homeTokenConnectionLoaded, showEpmNavigation, selectedView]);
-            const renderEpmProjectSkeletonRows = () => (
-                <LoadingRows
-                    className="epm-project-skeleton-list"
-                    rowClassName="epm-project-skeleton-row"
-                    ariaLabel="Loading EPM projects"
-                    rows={3}
-                    columns={2}
-                />
-            );
             useEpmLabelMenuEffects({
                 epmLabelMenuAnchor,
                 epmLabelMenuInputRef,
@@ -12544,93 +12532,87 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                                 />
                                 )}
                                 {groupManageTab === 'epm' && (
-                                <EpmSettings
-                                    {...{
-                                        DEFAULT_EPM_LABEL_PREFIX,
-                                        epmSettingsTab,
-                                        setEpmSettingsTab,
-                                        handleEpmSettingsTabKeyDown,
-                                        epmScopeMeta,
-                                        selectedEpmRootGoal,
-                                        clearEpmRootGoal,
-                                        epmRootGoalQuery,
-                                        setEpmRootGoalQuery,
-                                        setEpmRootGoalOpen,
-                                        setEpmRootGoalIndex,
-                                        handleEpmRootGoalSearchKeyDown,
-                                        epmRootGoalsLoading,
-                                        showEpmRootGoalResults,
-                                        epmRootGoalsError,
-                                        filteredEpmRootGoals,
-                                        visibleEpmRootGoals,
-                                        activeEpmRootGoalIndex,
-                                        selectEpmRootGoal,
-                                        selectedEpmSubGoals,
-                                        clearEpmSubGoal,
-                                        epmConfigDraft,
-                                        epmSubGoalQuery,
-                                        setEpmSubGoalQuery,
-                                        setEpmSubGoalOpen,
-                                        setEpmSubGoalIndex,
-                                        loadEpmSubGoalsForRoot,
-                                        handleEpmSubGoalSearchKeyDown,
-                                        epmSubGoalsLoading,
-                                        showEpmSubGoalResults,
-                                        epmSubGoalsError,
-                                        filteredEpmSubGoals,
-                                        visibleEpmSubGoals,
-                                        activeEpmSubGoalIndex,
-                                        selectEpmSubGoal,
-                                        updateEpmLabelPrefixDraft,
-                                        epmProjectPrerequisites,
-                                        canLoadEpmProjects,
-                                        epmConfigLoading,
-                                        epmConfigSaving,
-                                        epmSettingsProjectsError,
-                                        epmSettingsProjectsRefreshing,
-                                        ensureEpmSettingsProjectsLoaded,
-                                        epmSettingsProjectsLoadedAt,
-                                        epmSettingsProjectsFetchMeta,
-                                        epmSettingsProjectView,
-                                        setEpmSettingsProjectView,
-                                        focusEpmScopeField,
-                                        addCustomEpmProjectDraft,
-                                        epmSettingsProjectsLoading,
-                                        renderEpmProjectSkeletonRows,
-                                        epmSettingsProjectsLoaded,
-                                        epmSettingsProjectRows,
-                                        epmSettingsProjectSort,
-                                        setEpmSettingsProjectSort: setTrackedEpmSettingsProjectSort,
-                                        epmSettingsProjects,
-                                        getEpmLabelRowKey,
-                                        getEpmLabelSearchResults,
-                                        labelSearchLoading,
-                                        epmLabelShowAll,
-                                        epmLabelChanging,
-                                        labelSearchIndex,
-                                        isEmptyCustomEpmProjectRow,
-                                        setEpmLabelChanging,
-                                        openEpmLabelMenu,
-                                        loadEpmProjectLabels,
-                                        updateEpmProjectDraft,
-                                        labelSearchQuery,
-                                        setLabelSearchQuery,
-                                        setLabelSearchIndex,
-                                        setLabelSearchOpen,
-                                        setEpmLabelMenuAnchor,
-                                        epmLabelMenuInputRef,
-                                        handleEpmLabelSearchKeyDown,
-                                        setEpmLabelShowAll,
-                                        removeEpmProjectDraft,
-                                        epmLabelMenuAnchor,
-                                        labelSearchOpen,
-                                        selectEpmProjectLabel,
-                                        requestEpmLabelFocus,
-                                        registerEpmLabelInput,
-                                        epmLabelPrefixMask: normalizeEpmLabelPrefixMask(epmConfigDraft.labelPrefix ?? DEFAULT_EPM_LABEL_PREFIX),
-                                        deleteEpmProjectRow,
-                                        hasSessionRemovedEpmProjects: removedEpmProjectIds.size > 0,
-                                    }}
+                                <EpmSettingsTab
+                                    activeEpmRootGoalIndex={activeEpmRootGoalIndex}
+                                    activeEpmSubGoalIndex={activeEpmSubGoalIndex}
+                                    addCustomEpmProjectDraft={addCustomEpmProjectDraft}
+                                    canLoadEpmProjects={canLoadEpmProjects}
+                                    clearEpmRootGoal={clearEpmRootGoal}
+                                    clearEpmSubGoal={clearEpmSubGoal}
+                                    deleteEpmProjectRow={deleteEpmProjectRow}
+                                    ensureEpmSettingsProjectsLoaded={ensureEpmSettingsProjectsLoaded}
+                                    epmConfigDraft={epmConfigDraft}
+                                    epmConfigLoading={epmConfigLoading}
+                                    epmConfigSaving={epmConfigSaving}
+                                    epmLabelChanging={epmLabelChanging}
+                                    epmLabelMenuAnchor={epmLabelMenuAnchor}
+                                    epmLabelMenuInputRef={epmLabelMenuInputRef}
+                                    epmLabelShowAll={epmLabelShowAll}
+                                    epmProjectPrerequisites={epmProjectPrerequisites}
+                                    epmRootGoalQuery={epmRootGoalQuery}
+                                    epmRootGoalsError={epmRootGoalsError}
+                                    epmRootGoalsLoading={epmRootGoalsLoading}
+                                    epmScopeMeta={epmScopeMeta}
+                                    epmSettingsProjectRows={epmSettingsProjectRows}
+                                    epmSettingsProjectSort={epmSettingsProjectSort}
+                                    epmSettingsProjectView={epmSettingsProjectView}
+                                    epmSettingsProjects={epmSettingsProjects}
+                                    epmSettingsProjectsError={epmSettingsProjectsError}
+                                    epmSettingsProjectsFetchMeta={epmSettingsProjectsFetchMeta}
+                                    epmSettingsProjectsLoaded={epmSettingsProjectsLoaded}
+                                    epmSettingsProjectsLoadedAt={epmSettingsProjectsLoadedAt}
+                                    epmSettingsProjectsLoading={epmSettingsProjectsLoading}
+                                    epmSettingsProjectsRefreshing={epmSettingsProjectsRefreshing}
+                                    epmSettingsTab={epmSettingsTab}
+                                    epmSubGoalQuery={epmSubGoalQuery}
+                                    epmSubGoalsError={epmSubGoalsError}
+                                    epmSubGoalsLoading={epmSubGoalsLoading}
+                                    filteredEpmRootGoals={filteredEpmRootGoals}
+                                    filteredEpmSubGoals={filteredEpmSubGoals}
+                                    focusEpmScopeField={focusEpmScopeField}
+                                    getEpmLabelRowKey={getEpmLabelRowKey}
+                                    getEpmLabelSearchResults={getEpmLabelSearchResults}
+                                    handleEpmLabelSearchKeyDown={handleEpmLabelSearchKeyDown}
+                                    handleEpmRootGoalSearchKeyDown={handleEpmRootGoalSearchKeyDown}
+                                    handleEpmSettingsTabKeyDown={handleEpmSettingsTabKeyDown}
+                                    handleEpmSubGoalSearchKeyDown={handleEpmSubGoalSearchKeyDown}
+                                    labelSearchIndex={labelSearchIndex}
+                                    labelSearchLoading={labelSearchLoading}
+                                    labelSearchOpen={labelSearchOpen}
+                                    labelSearchQuery={labelSearchQuery}
+                                    loadEpmProjectLabels={loadEpmProjectLabels}
+                                    loadEpmSubGoalsForRoot={loadEpmSubGoalsForRoot}
+                                    openEpmLabelMenu={openEpmLabelMenu}
+                                    registerEpmLabelInput={registerEpmLabelInput}
+                                    removeEpmProjectDraft={removeEpmProjectDraft}
+                                    removedEpmProjectIds={removedEpmProjectIds}
+                                    requestEpmLabelFocus={requestEpmLabelFocus}
+                                    selectEpmProjectLabel={selectEpmProjectLabel}
+                                    selectEpmRootGoal={selectEpmRootGoal}
+                                    selectEpmSubGoal={selectEpmSubGoal}
+                                    selectedEpmRootGoal={selectedEpmRootGoal}
+                                    selectedEpmSubGoals={selectedEpmSubGoals}
+                                    setEpmLabelChanging={setEpmLabelChanging}
+                                    setEpmLabelMenuAnchor={setEpmLabelMenuAnchor}
+                                    setEpmLabelShowAll={setEpmLabelShowAll}
+                                    setEpmRootGoalIndex={setEpmRootGoalIndex}
+                                    setEpmRootGoalOpen={setEpmRootGoalOpen}
+                                    setEpmRootGoalQuery={setEpmRootGoalQuery}
+                                    setEpmSettingsProjectView={setEpmSettingsProjectView}
+                                    setEpmSettingsTab={setEpmSettingsTab}
+                                    setEpmSubGoalIndex={setEpmSubGoalIndex}
+                                    setEpmSubGoalOpen={setEpmSubGoalOpen}
+                                    setEpmSubGoalQuery={setEpmSubGoalQuery}
+                                    setLabelSearchIndex={setLabelSearchIndex}
+                                    setLabelSearchOpen={setLabelSearchOpen}
+                                    setLabelSearchQuery={setLabelSearchQuery}
+                                    setTrackedEpmSettingsProjectSort={setTrackedEpmSettingsProjectSort}
+                                    showEpmRootGoalResults={showEpmRootGoalResults}
+                                    showEpmSubGoalResults={showEpmSubGoalResults}
+                                    updateEpmLabelPrefixDraft={updateEpmLabelPrefixDraft}
+                                    updateEpmProjectDraft={updateEpmProjectDraft}
+                                    visibleEpmRootGoals={visibleEpmRootGoals}
+                                    visibleEpmSubGoals={visibleEpmSubGoals}
                                 />
                                 )}
                                 {DEPARTMENT_SETTINGS_TAB_IDS.has(groupManageTab) && (

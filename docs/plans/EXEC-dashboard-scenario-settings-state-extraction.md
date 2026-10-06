@@ -2235,7 +2235,7 @@ Updated in each R5 commit and the separate permission-fix commit (root `AGENTS.m
 | SC3 | Split the Scenario hook (G1) | Merged 2026-10-05 | 15,368 (unchanged) | 15,368 (no dashboard budget change); lint 113 | #231, `1df92ad1` | Planner 3,201 → 320 lines; six sub-hooks and a 768-line pure `scenarioLayout.js`; all owner/interface/aggregate ceilings equal measured (combined 29,797) |
 | SC4 | Scenario view component | Merged 2026-10-05 | 14,412 | 14,412 (ratcheted); lint 113 | #232, `7a768d5d` | 988-line `ScenarioView`, five props; all owner/interface/aggregate ceilings equal measured (combined 29,829) |
 | ST1 | Shared-config section hooks | R1 to R3 and R4a validated 2026-10-05; R4b, R4c-hook, R4c-container validated in chat 2026-10-05; R5 local, awaiting review; publication not started | 13,884 | 13,884 (ratcheted); lint 110 | Local commits only | Four owner files added: three hook files (with two effects layers) and the Admin container; combined 30,576 |
-| ST2 | EPM settings | In progress: R1, R2, R3, R4a local (stacked on the unpublished ST1 branch) | 13,061 after R4a | 13,884 (R5 ratchets); lint 109 | Local commits only | R4a extracts `useEpmSettings` (1,208 lines, one hook plus four effects layers) |
+| ST2 | EPM settings | In progress: R1 to R4b local (stacked on the unpublished ST1 branch); R5 next | 13,043 after R4b | 13,884 (R5 ratchets); lint 109 | Local commits only | R4b moves the EPM tab JSX into `EpmSettingsTab` (189 lines, 80 props) |
 | ST3 | Team Groups and Labels | Not started | | | | |
 | ST4 | First-run configuration | Not started | | | | |
 | Permission fix | Explicit Settings editing grant (G2 prerequisite) | Approved; not started | | | | Separate fix after ST4; verify merge before ST5 |
@@ -2616,6 +2616,21 @@ R1 deletes `hasDraftEpmScope` (a `useMemo` over `epmConfigDraft` with no reader)
 *Tests.* New `tests/test_use_epm_settings.js` (server-render probe with a thin React wrapper that seeds named state and records setter calls): six seeded defects fail it, and the layer-order pin catches a render-phase getter call. Interface checker seeds (a missing prop, an extra prop, a missing input) each produce an enforced problem.
 
 *Checks.* Node 1,814 passed (1,805 plus nine), zero failures. Python 2,113 OK (29 skips). Gate: 0 errors, 109 warnings, 59 modules, 28 sites, 0 enforced problems; 73 negative controls passing. Scoped Chromium plus six EPM specs (`epm_initial_config_load`, `epm-settings-gear`, `epm_settings_visual_states`, `home_token_connection_settings`, `settings-home-token-connection`, `epm-home-token-gating`): 582 passed, three opt-in skips, zero failures; all 34 DOM captures byte-identical to the unchanged base. The executor reproduced three of the dry run's seeded defects on the real files (a flipped default, a getter read outside `saveEpmConfig`, and two layer calls swapped in `dashboard.jsx`): each fails the matching test, and the sources were restored byte-identical.
+
+
+**ST2 R4b record (2026-10-06, local, unpublished).** Base is R4a `e8ac80d3`. Checkpoint frozen from the same scratch dry run before any code moved, installed unchanged as `ST2-R4b-EpmSettingsTab`.
+
+*Move.* The EPM tab JSX (the single `<EpmSettings ... />` element, 87 lines at HEAD 12547-12633) and the `renderEpmProjectSkeletonRows` helper (9 lines, HEAD 1462-1470) move verbatim into the new stateless `frontend/src/epm/EpmSettingsTab.jsx` (189 lines; `import * as React`, no hook, first parameter destructured, so the interface checker verifies prop parity). The container returns the same single element, so there is no wrapper or Fragment change and the DOM is unchanged; the conditional wrapper stays in App. App renders it with 80 explicit `name={name}` attributes rather than a spread (the checker skips JSX elements with a spread attribute), evaluated during App's render after their declarations, so there is no getter. ST3 owns the Department/Labels/Boards tab JSX and ST5 the `SettingsModal` shell.
+
+*Frozen checkpoint as installed.* Container cap 189 lines, 80 props (82 expanded), no unresolved entry; Settings 12,295 → 12,484 (`epm` modules count with Settings); unique owners 17,909 → 18,098; combined 30,970 → 31,141 (allowance +171, no transfer credit: 93 container scaffolding + 81 call-site lines − 3 orphaned import lines); `dashboard.jsx` 13,061 → 13,043 (structural ceiling 13,884 until R5). The caller ledger of `EpmSettings` now names the container.
+
+*Conservation.* App statements 1,092 → 1,091; two removed (the `renderEpmProjectSkeletonRows` constant and the App `return`, which holds the call site) and one new (the `return`); effect order identical across 104 top-level effects.
+
+*Guard ledger.* `tests/test_epm_settings_source_guards.js` (the plan's eleventh test, plus the tab-content pins) and `tests/test_epm_view_source_guards.js` re-pointed to read the container through `readOwnerSource` with anchors, with equal or greater strength, including an exact attribute-to-prop parity check.
+
+*Tests.* New `tests/test_epm_settings_tab.js` (container probe with stub props; five seeded defects fail it in the dry run). A scratch comparison of the old inline JSX with the container on identical props was byte-identical on 7 of 7 fixtures in the dry run.
+
+*Checks.* Node 1,821 passed, zero failures. Python 2,113 OK (29 skips). Gate: 0 errors, 109 warnings, 60 modules, 28 sites, 0 enforced problems; 73 negative controls passing. Scoped Chromium plus six EPM specs: 582 passed, three opt-in skips, zero failures; all 34 DOM captures byte-identical to the unchanged base. Independent review: all seven checks passed (exact match of the moved JSX and helper, 80 props against 80 attributes, orphaned imports, guard strength, manifest arithmetic).
 
 
 ## 13. Program acceptance

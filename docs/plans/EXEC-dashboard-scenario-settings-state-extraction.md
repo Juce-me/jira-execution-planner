@@ -2236,7 +2236,7 @@ Updated in each R5 commit and the separate permission-fix commit (root `AGENTS.m
 | SC4 | Scenario view component | Merged 2026-10-05 | 14,412 | 14,412 (ratcheted); lint 113 | #232, `7a768d5d` | 988-line `ScenarioView`, five props; all owner/interface/aggregate ceilings equal measured (combined 29,829) |
 | ST1 | Shared-config section hooks | R1 to R3 and R4a validated 2026-10-05; R4b, R4c-hook, R4c-container validated in chat 2026-10-05; R5 local, awaiting review; publication not started | 13,884 | 13,884 (ratcheted); lint 110 | Local commits only | Four owner files added: three hook files (with two effects layers) and the Admin container; combined 30,576 |
 | ST2 | EPM settings | R1 to R4b and R5 local (stacked on the unpublished ST1 branch); publication not started | 13,043 | 13,043 (ratcheted); lint 109 | Local commits only | `useEpmSettings` (1,208 lines, one hook plus four effects layers), `EpmSettingsTab` (189 lines), two helper modules; combined 31,141 |
-| ST3 | Team Groups and Labels | In progress: R1, R2, R4a, R4b local (stacked on the unpublished ST2 branch); R5 next | 11,754 after R4b | 13,043 (R5 ratchets); lint 107 | Local commits only | R4b moves the Departments tab body into `DepartmentsSettingsTab` (494 lines, 120 props) |
+| ST3 | Team Groups and Labels | R1, R2, R4a, R4b and R5 local (stacked on the unpublished ST2 branch); publication not started | 11,754 | 11,754 (ratcheted); lint 107 | Local commits only | `useTeamGroupSettings` (1,480 lines, one hook plus three effects layers), `DepartmentsSettingsTab` (494 lines); combined 31,823 |
 | ST4 | First-run configuration | Not started | | | | |
 | Permission fix | Explicit Settings editing grant (G2 prerequisite) | Approved; not started | | | | Separate fix after ST4; verify merge before ST5 |
 | ST5 | Shared-config save, permissions, shell (G2) | Conditional approval; not started | | | | Permission fix + R0 validation required |
@@ -2693,6 +2693,26 @@ R1 deletes the plan's four dead-code items: `updateGroupDraftTeams` and `toggleT
 *Guard ledger.* Four tests in `test_epm_settings_source_guards.js` (the department tab content pins and the `TeamGroupsSettings`/`GroupBoardsTab` prop-parity checks) re-pointed to read the container through `readOwnerSource` with anchors, with equal or greater strength, plus a pin that the container derives the group-board constants. New `tests/test_departments_settings_tab.js` (six tests).
 
 *Checks.* Node 1,838 passed. Python 2,113 OK (29 skips). Gate: 0 errors, 107 warnings, 62 modules, 29 sites, 0 enforced problems; 73 negative controls passing. Scoped Chromium plus `eng_group_board_settings_tab`: 548 passed, one opt-in skip, zero failures; all 35 DOM captures byte-identical to the unchanged base. Independent review: all seven checks passed (the 343 moved JSX lines and the seven constants equal the container text, 120 props against 120 attributes, orphaned imports, guard strength, manifest arithmetic).
+
+
+**ST3 R5 record (2026-10-06, local, unpublished).** Base is R4b `e9cf72c9`. R5 changes no source, generated output or test logic.
+
+*Ratchet.* The structural `dashboard.jsx` ceiling (`tests/test_codebase_structure_budgets.py` and the manifest `dashboard.lineCeiling`) moves from 13,043 to the measured 11,754. An audit of all 62 registered modules confirms every file, interface and aggregate ceiling already equals its measured value (Scenario 5,614; Settings and EPM 14,455; unique owners 20,069; combined 31,823). The lint ceiling stays 107.
+
+*Size milestone.* `dashboard.jsx` went 13,043 → 11,754 over ST3 (−1,289: R1 −29, R4a −1,018, R4b −242). The combined total went 31,141 → 31,823 (+682 = the frozen allowances +462 and +252, minus the 32 lines R1 removed). The program forecast of 10,000-12,000 lines after ST5 is already inside its range at 11,754, with the first-run flow, the save and permission authority and the modal shell still App-owned; ST4 re-measures it.
+
+*Remaining-App responsibility inventory after ST3* (only the Settings rows changed since ST2):
+
+| Canonical responsibility | Retained symbols and consumers | Why it remains / owner relationship | Current seam cost |
+| --- | --- | --- | ---: |
+| Team Groups, Labels and board layouts | `useTeamGroupSettings` call and its 158-name destructure, three effects-layer calls, the `getTeamOptions` getter arrow, `<DepartmentsSettingsTab />` under the unchanged `DEPARTMENT_SETTINGS_TAB_IDS` wrapper | The hook owns the shared group drafts, loaders, mutators, Team and label search, import/export and the private visibility hook; the selection effect layer runs after the modal-open effect; App keeps `groupSaving`, `groupDraftError`, the aggregates `isGroupDraftDirty` and `groupConfigValidationErrors` (ST5), `loadConfig`, `saveGroupsConfig` and the first-run handlers (ST4) | 177 + 38 + 122 lines (call and destructure, layer calls, container call); imports excluded |
+| Settings bootstrap, draft/save authority and modal composition | `openGroupManage`, `loadConfig`, `loadGroupsConfig` callers, `saveGroupsConfig`, `saveEpmConfig` callers, `saveAllSettingsOnce`, `saveAllSettings`, `SettingsModal`, permission cells | ST4 and ST5 own later moves; G2 preserves the imperative save sequence and requires its separate fail-closed correction before ST5 | Unchanged |
+| First-run configuration | session handlers and committed-section tracking | ST4 | Unchanged |
+| EPM, shared-config section hooks, Admin tab body, Scenario rows | unchanged from the ST2 inventory | | Unchanged |
+
+Import direction remains App → owners; no owner imports the dashboard entry.
+
+*R5 verification.* `tests.test_codebase_structure_budgets` passes both tests; the manifest budget check reports 0 problems; the gate and the 73 controls pass at this head; `docs/ontology.md` records the Team Groups owners (verification date 2026-10-06), every link resolving. The ontology entries for Department group label mapping, Board scope load authority and Startup config timeout still cite `App()` ownership and are re-pointed in the program-wide ontology pass at the end of ST5. Publication and the full exact-head suites require the operator's go.
 
 
 ## 13. Program acceptance

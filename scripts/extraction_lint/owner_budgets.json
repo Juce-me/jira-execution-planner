@@ -20,7 +20,7 @@
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
     "lineCount": 11754,
-    "lineCeiling": 13043
+    "lineCeiling": 11754
   },
   "modules": [
     {
@@ -12227,7 +12227,7 @@
       "netAppScaffoldingLines": 119
     },
     "getters": [],
-    "rationale": "ST3 R4b checkpoint (frozen from the current-base scratch dry run before the move; reported with this commit under the operator's 2026-10-06 instruction to finish Settings with self-verification). App-to-container transfer of the Departments tab JSX (the body of the DEPARTMENT_SETTINGS_TAB_IDS conditional: tab strip, TeamGroupsSettings call, the Labels tab and the GroupBoardsTab call) and the seven group-board composer consts that only feed it (board, backendUrl, boardId, projectScopeKey, groupName, onChange, random) into one stateless component, frontend/src/settings/DepartmentsSettingsTab.jsx, that returns the same fragment, so the DOM is unchanged; the conditional wrapper stays in App. All 120 props are explicit name={name} attributes, because the interface checker skips any JSX element with a spread attribute; the inner TeamGroupsSettings and GroupBoardsTab calls keep their verbatim object spreads (as before, they stay covered by the prop-parity guard, not the checker). The combined App-plus-owner total grows only by the 252-line scaffolding allowance (133 container scaffolding + 122 call-site lines + 2 added import lines - 5 removed import lines). The dashboard.jsx lineCeiling stays 13043 until the slice's R5. The combined ceiling is measured-plus-allowance.",
+    "rationale": "ST3 R4b checkpoint (frozen from the current-base scratch dry run before the move; reported with this commit under the operator's 2026-10-06 instruction to finish Settings with self-verification). App-to-container transfer of the Departments tab JSX (the body of the DEPARTMENT_SETTINGS_TAB_IDS conditional: tab strip, TeamGroupsSettings call, the Labels tab and the GroupBoardsTab call) and the seven group-board composer consts that only feed it (board, backendUrl, boardId, projectScopeKey, groupName, onChange, random) into one stateless component, frontend/src/settings/DepartmentsSettingsTab.jsx, that returns the same fragment, so the DOM is unchanged; the conditional wrapper stays in App. All 120 props are explicit name={name} attributes, because the interface checker skips any JSX element with a spread attribute; the inner TeamGroupsSettings and GroupBoardsTab calls keep their verbatim object spreads (as before, they stay covered by the prop-parity guard, not the checker). The combined App-plus-owner total grows only by the 252-line scaffolding allowance (133 container scaffolding + 122 call-site lines + 2 added import lines - 5 removed import lines). The dashboard.jsx lineCeiling was 13043 through ST3 R4 and ST3 R5 ratchets it to its measured 11,754. The combined ceiling is measured-plus-allowance.",
     "scaffoldingBreakdown": {
       "incomingPhysicalLines": 361,
       "component": {

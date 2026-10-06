@@ -192,7 +192,7 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # Merge of origin/main into feature/217-sprint-review-table: main's 18307 plus this branch's Planning table lines (+9 Planned Teams Effort strip, the rest as itemized above); the merged file is 18434 lines.
     # Issue #220 SC2 R5 ratchets to the validated planner-hook checkpoint.
     # Issue #220 SC4 R5 ratchets to the validated ScenarioView checkpoint (the Scenario JSX moved out).
-    "frontend/src/dashboard.jsx": 13043,
+    "frontend/src/dashboard.jsx": 11754,
 }
 
 

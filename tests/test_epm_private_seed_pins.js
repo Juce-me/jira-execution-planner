@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { readOwnerSource } = require('./frontend_source_helpers');
 
 // ST2 R2: the EPM "private view only" pins as owner-directory checks, so they keep their meaning when
-// the EPM settings code moves out of dashboard.jsx (docs/plans/EXEC-dashboard-scenario-settings-state-extraction.md, ST2).
+// the EPM settings code moves out of dashboard.jsx (docs/plans/DONE-dashboard-scenario-settings-state-extraction.md, ST2).
 // Every positive pin carries an anchor so a negative pin cannot go vacuous.
 const OWNERS = ['frontend/src/dashboard.jsx', 'frontend/src/settings', 'frontend/src/epm'];
 const count = (source, text) => source.split(text).length - 1;

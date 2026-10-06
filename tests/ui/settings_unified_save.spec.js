@@ -1642,7 +1642,7 @@ test('the unified save persists every dirty section together, group board includ
     expect(groupsBody.board).toBeUndefined();
 });
 
-// Characterization of ST1: the imperative save sequence in docs/plans/EXEC-dashboard-scenario-settings-state-extraction.md
+// Characterization of ST1: the imperative save sequence in docs/plans/DONE-dashboard-scenario-settings-state-extraction.md
 // section 4 ("Settings save order"). Every administrator section commits the shared revision it
 // receives, so each next POST must carry the previous response's configRevision.
 test('the unified save posts administrator sections in the documented order with a chained baseRevision', async ({ page }) => {
@@ -1723,7 +1723,7 @@ test('the unified save posts administrator sections in the documented order with
     expect(body('/api/epm/config').baseRevision).toBeUndefined();
 });
 
-// ST5 R2: the complete save sequence of docs/plans/EXEC-dashboard-scenario-settings-state-extraction.md section 4
+// ST5 R2: the complete save sequence of docs/plans/DONE-dashboard-scenario-settings-state-extraction.md section 4
 // ("Settings save order") with EVERY workspace section dirty. adminAccess is a fixed sequential step between
 // issueTypes and the groups POST; its grant requests carry no baseRevision.
 test('the unified save posts all eleven administrator sections in the documented order, adminAccess as a fixed step', async ({ page }) => {

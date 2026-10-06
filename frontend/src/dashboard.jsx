@@ -585,7 +585,7 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
             const [groupManageTab, setGroupManageTab] = useState('scope');
             const [showTechnicalFieldIds, setShowTechnicalFieldIds] = useState(false);
             const [mappingHoverKey, setMappingHoverKey] = useState(null);
-            const [settingsAdminOnly, setSettingsAdminOnly] = useState(true);
+            const [, setSettingsAdminOnly] = useState(true);
             const [userCanEditSettings, setUserCanEditSettings] = useState(false);
             const [performanceAdminAvailable, setPerformanceAdminAvailable] = useState(false);
             const performanceGate = React.useMemo(createPerformanceGate, []);
@@ -601,7 +601,7 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 available: adminUserManagementAvailable && userIsToolAdmin,
                 active: showGroupManage && groupManageTab === 'access',
             });
-            const canEditSharedConfiguration = !settingsAdminOnly || userCanEditSettings;
+            const canEditSharedConfiguration = userCanEditSettings === true;
             const [adminSettingsGate, applyAdminSettingsGateConfig, setAdminSettingsGate] = useAdminSettingsGate({ canEditSettings: canEditSharedConfiguration, openSettings: tab => openGroupManage(tab) });
             const canEditEpmConfiguration = userCanEditEpmConfig === true;
             const preferredSettingsTab = canEditSharedConfiguration && !environmentConfigExists ? 'scope' : 'teams';

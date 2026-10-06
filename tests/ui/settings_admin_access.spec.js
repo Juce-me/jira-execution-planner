@@ -21,8 +21,15 @@ async function installSettingsFixture(page, {
     userCanEditSettings = true,
     userCanEditEpmConfig = true,
     omitEpmPermission = false,
+    // Exact permission keys for /api/config, replacing settingsAdminOnly/userCanEditSettings (a missing key is omitted from the JSON).
+    permissions = null,
+    // Permission key sets for successive GET /api/config responses (the last one repeats): bootstrap, then the post-save refresh.
+    permissionSequence = null,
+    // Holds the first GET /api/config until the promise resolves.
+    configGate = null,
 } = {}) {
     const calls = [];
+    let configGets = 0;
     let users = [
         {
             id: 'db-user-admin',
@@ -68,11 +75,33 @@ async function installSettingsFixture(page, {
         if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
         if (url.pathname === '/api/auth/csrf') return json({ csrfToken: 'csrf-token' });
         if (url.pathname === '/api/analytics/context') return json({ enabled: false });
+        if (url.pathname === '/api/config') {
+            const configIndex = configGets;
+            configGets += 1;
+            if (configGate && configIndex === 0) await configGate;
+        }
+        if (url.pathname === '/api/groups-config' && request.method() === 'POST') return json({
+            ...requestBody(request),
+            configRevision: 3,
+            source: 'workspace_db',
+            preferences: {
+                customized: true,
+                preferenceExists: true,
+                onboardingRequired: false,
+                onboardingDone: true,
+                completedOnboardingModules: ['catch-up', 'configuration', 'planning', 'board', 'statistics'],
+                visibleGroupIds: ['synthetic'],
+                activeGroupId: 'synthetic',
+                effectiveVisibleGroupIds: ['synthetic'],
+            },
+        });
+        if (url.pathname === '/api/epm/config' && request.method() === 'POST') return json(requestBody(request));
         if (url.pathname === '/api/config') return json({
             jiraUrl: 'https://jira.example.test',
             authMode,
-            settingsAdminOnly,
-            userCanEditSettings,
+            ...(permissionSequence
+                ? permissionSequence[Math.min(configGets - 1, permissionSequence.length - 1)]
+                : (permissions || { settingsAdminOnly, userCanEditSettings })),
             ...(omitEpmPermission ? {} : { userCanEditEpmConfig }),
             adminUserManagementAvailable,
             userIsToolAdmin,
@@ -210,3 +239,108 @@ for (const permissionCase of [
         }
     });
 }
+
+// G2 permission fix (issue #220): administrator-section editing requires the explicit boolean grant
+// userCanEditSettings === true. settingsAdminOnly is metadata and can never grant editing by itself.
+const ADMIN_CONFIG_PATHS = [
+    '/api/projects/selected', '/api/stats/priority-weights-config', '/api/board-config', '/api/capacity/config',
+    '/api/sprint-field/config', '/api/parent-name-field/config', '/api/story-points-field/config',
+    '/api/team-field/config', '/api/delivery-owner-field/config', '/api/issue-types/config',
+];
+const adminWrites = calls => calls.filter(call => call.method !== 'GET'
+    && (ADMIN_CONFIG_PATHS.includes(call.pathname) || call.pathname.startsWith('/api/admin/')));
+
+// Waits for the bootstrap /api/config response and two animation frames before opening Settings, so an assertion that
+// the Admin tab is absent cannot pass merely because the config has not been applied yet.
+async function openSettings(page) {
+    const configResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/config');
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await configResponse;
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    return page.getByRole('dialog').first();
+}
+
+for (const denied of [
+    { name: 'settingsAdminOnly and userCanEditSettings both missing', permissions: {} },
+    { name: 'settingsAdminOnly missing, userCanEditSettings false', permissions: { userCanEditSettings: false } },
+    { name: 'settingsAdminOnly false, userCanEditSettings missing', permissions: { settingsAdminOnly: false } },
+    { name: 'settingsAdminOnly false, userCanEditSettings false', permissions: { settingsAdminOnly: false, userCanEditSettings: false } },
+    { name: "settingsAdminOnly false, userCanEditSettings 'true'", permissions: { settingsAdminOnly: false, userCanEditSettings: 'true' } },
+    { name: 'settingsAdminOnly false, userCanEditSettings 1', permissions: { settingsAdminOnly: false, userCanEditSettings: 1 } },
+    { name: 'settingsAdminOnly false, userCanEditSettings null', permissions: { settingsAdminOnly: false, userCanEditSettings: null } },
+    { name: 'settingsAdminOnly true, userCanEditSettings false', permissions: { settingsAdminOnly: true, userCanEditSettings: false } },
+]) {
+    test(`administrator editing is denied when ${denied.name}`, async ({ page }) => {
+        const calls = await installSettingsFixture(page, { permissions: denied.permissions });
+        const dialog = await openSettings(page);
+        await expect(dialog.getByRole('button', { name: 'Departments', exact: true })).toBeVisible();
+        await expect(dialog.getByRole('button', { name: 'Admin', exact: true })).toHaveCount(0);
+        expect(adminWrites(calls)).toEqual([]);
+    });
+}
+
+for (const granted of [
+    { name: 'settingsAdminOnly true', permissions: { settingsAdminOnly: true, userCanEditSettings: true } },
+    { name: 'settingsAdminOnly false', permissions: { settingsAdminOnly: false, userCanEditSettings: true } },
+    { name: 'settingsAdminOnly missing', permissions: { userCanEditSettings: true } },
+]) {
+    test(`an explicit true grant keeps administrator editing available with ${granted.name}`, async ({ page }) => {
+        await installSettingsFixture(page, { permissions: granted.permissions, userIsToolAdmin: false });
+        const dialog = await openSettings(page);
+        await expect(dialog.getByRole('button', { name: 'Admin', exact: true })).toBeVisible();
+    });
+}
+
+test('administrator editing stays denied while the config is loading and is granted once it arrives', async ({ page }) => {
+    let release;
+    const configGate = new Promise((resolve) => { release = resolve; });
+    await installSettingsFixture(page, { permissions: { settingsAdminOnly: true, userCanEditSettings: true }, configGate });
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    const gear = page.getByRole('button', { name: 'Manage team groups' });
+    await gear.click();
+    const dialog = page.getByRole('dialog').first();
+    await expect(dialog.getByRole('button', { name: 'Admin', exact: true })).toHaveCount(0);
+    release();
+    await expect(dialog.getByRole('button', { name: 'Admin', exact: true })).toBeVisible();
+});
+
+test('the post-save config refresh revokes administrator editing when the grant is no longer explicit', async ({ page }) => {
+    const calls = await installSettingsFixture(page, {
+        permissionSequence: [
+            { settingsAdminOnly: true, userCanEditSettings: true },
+            {},
+        ],
+    });
+    const dialog = await openSettings(page);
+    await expect(dialog.getByRole('button', { name: 'Admin', exact: true })).toBeVisible();
+    await dialog.getByRole('button', { name: 'Departments', exact: true }).click();
+    await dialog.getByPlaceholder('Group name').fill('Renamed Department');
+    await dialog.getByRole('button', { name: /^Save$/ }).click();
+    await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config').length).toBe(1);
+    await expect(dialog).toHaveCount(0);
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const reopened = page.getByRole('dialog').first();
+    await expect(reopened.getByRole('button', { name: 'Departments', exact: true })).toBeVisible();
+    await expect(reopened.getByRole('button', { name: 'Admin', exact: true })).toHaveCount(0);
+    expect(adminWrites(calls)).toEqual([]);
+});
+
+test('a valid non-admin still saves shared Department groups and private EPM settings without any administrator write', async ({ page }) => {
+    const calls = await installSettingsFixture(page, {
+        permissions: { settingsAdminOnly: true, userCanEditSettings: false },
+        userCanEditEpmConfig: true,
+    });
+    const dialog = await openSettings(page);
+    await expect(dialog.getByRole('button', { name: 'Admin', exact: true })).toHaveCount(0);
+    await dialog.getByRole('button', { name: 'Departments', exact: true }).click();
+    await dialog.getByPlaceholder('Group name').fill('Renamed Department');
+    await dialog.getByRole('button', { name: 'EPM', exact: true }).click();
+    await dialog.getByRole('tab', { name: 'Scope' }).click();
+    await dialog.locator('[data-epm-scope-field="labelPrefix"]').fill('rnd_project_core_');
+    await dialog.getByRole('button', { name: /^Save$/ }).click();
+    await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config').length).toBe(1);
+    await expect.poll(() => calls.filter(call => call.method === 'POST' && call.pathname === '/api/epm/config').length).toBe(1);
+    expect(adminWrites(calls)).toEqual([]);
+    expect(calls.find(call => call.method === 'POST' && call.pathname === '/api/epm/config').body.labelPrefix).toBe('rnd_project_core_');
+});

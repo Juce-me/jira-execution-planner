@@ -498,7 +498,9 @@ test('first-run guide recovery and focus ownership add no new analytics surface'
     const guide = read('frontend/src/settings/FirstRunGroupConfigurationGuide.jsx');
     const dashboard = read('frontend/src/dashboard.jsx');
     const recoveryStart = dashboard.indexOf('const retryFirstRunConfiguration');
-    const recoveryEnd = dashboard.indexOf('const filteredGroupDrafts', recoveryStart);
+    // The recovery callback ends where the next unmoved statement begins (filteredGroupDrafts moved into useTeamGroupSettings).
+    const recoveryEnd = dashboard.indexOf("if (groupManageTab === 'epm') {", recoveryStart);
+    assert.ok(recoveryStart >= 0 && recoveryEnd > recoveryStart, 'Expected both recovery slice markers in the dashboard');
     assert.equal(guide.includes('trackSettingsAction'), false);
     assert.equal(guide.includes('trackEvent'), false);
     assert.doesNotMatch(dashboard.slice(recoveryStart, recoveryEnd), /trackSettingsAction|trackEvent/);

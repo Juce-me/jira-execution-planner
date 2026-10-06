@@ -14,7 +14,6 @@ import LeadTimesWorkflowStatusCard from './cohort/LeadTimesWorkflowStatusCard.js
 import SegmentedControl from './ui/SegmentedControl.jsx';
 import ControlField from './ui/ControlField.jsx';
 import IconButton from './ui/IconButton.jsx';
-import LoadingRows from './ui/LoadingRows.jsx';
 import EmptyState from './ui/EmptyState.jsx';
 import LoadingState from './ui/LoadingState.jsx';
 import StatusPill from './ui/StatusPill.jsx';
@@ -180,7 +179,6 @@ import {
     fetchBootstrapConfig,
     fetchVersionInfo,
     testJiraConnection,
-    fetchGroupsConfig as requestGroupsConfig,
     saveGroupsConfig as requestSaveGroupsConfig,
     completeOnboardingModule as requestCompleteOnboardingModule,
     resetOnboardingModules as requestResetOnboardingModules,
@@ -189,7 +187,7 @@ import FirstRunGroupSelectionModal from './settings/FirstRunGroupSelectionModal.
 import FirstRunGroupSetupChoice from './settings/FirstRunGroupSetupChoice.jsx';
 import UnconfiguredWorkspaceNotice from './settings/UnconfiguredWorkspaceNotice.jsx';
 import { firstMissingAdminSettingsTab, resolveAdminSettingsGate, useAdminSettingsGate } from './settings/adminSettingsGate.js';
-import FirstRunGroupConfigurationGuide, {
+import {
     createFirstRunConfigurationSession,
     firstRunConfigurationSessionReducer,
     FIRST_RUN_CONFIGURATION_GUIDE_STEPS,
@@ -204,60 +202,47 @@ import {
     buildPendingFirstRunGroupPreferencesDraft,
 } from './settings/firstRunGroupConfiguration.js';
 import {
-    GROUPS_CONFIG_VERSION,
-    TEAM_LABEL_ALIAS_LIMIT,
-    addTeamLabelAlias,
-    applyLocalGroupPreferences,
-    buildGroupId,
     normalizeGroupsConfig,
     normalizeTeamLabelAliases,
-    parseTeamIdList,
-    removeTeamLabelAlias,
-    resolveInitialGroupId,
-    validateImportedTeamLabels
+    resolveInitialGroupId
 } from './settings/groupConfigUtils.js';
 import { validatePresentGroupBoards } from './settings/groupBoardModel.js';
-import { buildTeamAvailability } from './settings/teamAvailability.js';
-import { boardDraftIsDirty, committedSectionLabels, groupConfigConflictMessages, rebaseSharedGroupsPayload } from './settings/groupsConfigConflict.js';
+import { committedSectionLabels, groupConfigConflictMessages, rebaseSharedGroupsPayload } from './settings/groupsConfigConflict.js';
 import { committedWorkspaceSectionLabels, workspaceConfigConflictMessages } from './settings/workspaceConfigConflict.js';
 import { saveSharedExcludedCapacityToggle } from './settings/sharedExcludedCapacityToggle.js';
-import { useGroupVisibilityPreferences } from './settings/useGroupVisibilityPreferences.js';
+import {
+    useTeamGroupLabelEffects,
+    useTeamGroupSearchEffects,
+    useTeamGroupSelectionEffect,
+    useTeamGroupSettings,
+} from './settings/useTeamGroupSettings.js';
 import useTeamCatalogLifecycle from './settings/useTeamCatalogLifecycle.js';
-import {
-    buildSharedGroupsPayload,
-    effectiveVisibleGroupIds,
-    resolveVisibleActiveGroupId,
-} from './settings/groupVisibilityUtils.js';
-import {
-    fetchEpmConfig,
-    fetchEpmScope,
-    fetchEpmGoals,
-    fetchEpmConfigurationProjects,
-    saveEpmConfig as requestSaveEpmConfig,
-} from './api/epmApi.js';
+import { buildSharedGroupsPayload } from './settings/groupVisibilityUtils.js';
 
 import { fetchBurnoutStats as requestBurnoutStats, fetchEpicCohortStats as requestEpicCohortStats, fetchProjectTrackPhaseDurations as requestProjectTrackPhaseDurations } from './api/statsApi.js';
 import { fetchIssuesLookup as requestIssuesLookup } from './api/issuesApi.js';
-import {
-    fetchJiraLabels as requestJiraLabels,
-    searchComponents as requestComponentSearch,
-    searchEpics as requestEpicSearch,
-} from './api/jiraCatalogApi.js';
 import { EpmControls } from './epm/EpmControls.jsx';
 import EpmProjectCollapseAllButton from './epm/EpmProjectCollapseAllButton.jsx';
 import { EpmView } from './epm/EpmView.jsx';
-import EpmSettings from './epm/EpmSettings.jsx';
+import EpmSettingsTab from './epm/EpmSettingsTab.jsx';
 import SettingsModal from './settings/SettingsModal.jsx';
-import TeamGroupsSettings from './settings/TeamGroupsSettings.jsx';
-import GroupBoardsTab from './settings/GroupBoardsTab.jsx';
+import DepartmentsSettingsTab from './settings/DepartmentsSettingsTab.jsx';
 import { createSettingsDraftReadGuard, useSettingsConfigBaselineRevision } from './settings/settingsConfigReadState.js';
 import { useAdminAccessSettings } from './settings/AdminAccessSettings.jsx';
 import AdminSettingsContainer from './settings/AdminSettingsContainer.jsx';
+import { createEmptyEpmConfigDraft } from './settings/epmConfigDraft.js';
 import { createPerformanceGate } from './eng/loadPerformance.js';
 import { useJiraFieldPickers } from './settings/useJiraFieldPickers.js';
 import { usePriorityWeightsSettings } from './settings/usePriorityWeightsSettings.js';
 import { useJiraProjectCatalogEffects, useJiraProjectSearchEffects, useJiraProjectSettings } from './settings/useJiraProjectSettings.js';
 import { useCapacityMappingEffects, useCapacityMappingSettings } from './settings/useCapacityMappingSettings.js';
+import {
+    useEpmLabelMenuEffects,
+    useEpmSavedSubGoalsEffect,
+    useEpmSettings,
+    useEpmSettingsLoadEffect,
+    useEpmSettingsProjectsEffects,
+} from './settings/useEpmSettings.js';
 import UserConnectionsSettings from './settings/UserConnectionsSettings.jsx';
 import { fetchHomeTokenConnection } from './api/authApi.js';
 import { AUTH_LONG_ABSENCE_EVENT } from './api/authRefreshContract.js';
@@ -265,19 +250,11 @@ import { analyticsToken, buildPlanningReviewAnalyticsParams, bucketCount, expose
 import { useEpmViewData } from './epm/useEpmViewData.js';
 import {
     DEFAULT_EPM_PROJECT_SORT,
-    filterEpmSettingsProjectsForView,
     flattenEpmRollupBoardsForDependencies,
     getEpmProjectDisplayName,
-    getEpmProjectPrerequisites,
-    getEpmSettingsProjectsCacheKey,
-    hydrateEpmProjectDraft,
-    isEmptyCustomEpmProjectRow,
     isEpmProjectsConfigReady,
-    normalizeEpmLabelPrefixMask,
     normalizeEpmProjectSort,
-    normalizeEpmScopeSubGoalKeys,
-    shouldUseEpmSprint,
-    sortEpmSettingsProjects
+    shouldUseEpmSprint
 } from './epm/epmProjectUtils.mjs';
 import {
     PLANNING_SELECTION_MODE_DEFAULT_ALL,
@@ -299,7 +276,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
         const EMPTY_ARRAY = Object.freeze([]);
         exposeAnalyticsForTests();
         const EMPTY_OBJECT = Object.freeze({});
-        const DEFAULT_EPM_LABEL_PREFIX = 'rnd_project_';
         const EXCLUDED_CAPACITY_STATS_SOURCE_CONCURRENCY = 3;
         const ADMIN_SETTINGS_TAB_IDS = new Set(['scope', 'source', 'mapping', 'capacity', 'priorityWeights', 'access', 'performance']);
         const DEPARTMENT_SETTINGS_TAB_IDS = new Set(['teams', 'labels', 'boards']);
@@ -309,13 +285,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
             if (!value || typeof value !== 'object') return value;
             return Object.fromEntries(Object.keys(value).sort().map(key => [key, stableAcceptedConfigValue(value[key])]));
         };
-
-        const createEmptyEpmConfigDraft = () => ({
-            version: 2,
-            labelPrefix: DEFAULT_EPM_LABEL_PREFIX,
-            scope: { rootGoalKey: '', subGoalKeys: [] },
-            projects: {}
-        });
 
         // Backend server URL
         const BACKEND_URL = resolveBackendUrl(window);
@@ -504,58 +473,8 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
             const epmSubGoalFilterDropdownRefs = useRef({ main: null, compact: null });
             const [showEpmSortDropdown, setShowEpmSortDropdown] = useState(false);
             const epmSortDropdownRefs = useRef({ main: null, compact: null });
-            const [epmConfigDraft, setEpmConfigDraftState] = useState(createEmptyEpmConfigDraft());
-            const epmConfigDraftRef = useRef(epmConfigDraft);
-            const epmConfigDraftGenerationRef = useRef(0);
-            const setEpmConfigDraft = React.useCallback((updater) => {
-                setEpmConfigDraftState((previous) => {
-                    const next = typeof updater === 'function' ? updater(previous) : updater;
-                    epmConfigDraftRef.current = next;
-                    epmConfigDraftGenerationRef.current += 1;
-                    return next;
-                });
-            }, []);
-            const [epmConfigLoading, setEpmConfigLoading] = useState(false);
-            const [epmConfigSaving, setEpmConfigSaving] = useState(false);
-            const [epmConfigLoaded, setEpmConfigLoaded] = useState(false);
-            const [epmSettingsProjects, setEpmSettingsProjects] = useState([]);
-            const [epmSettingsProjectsLoading, setEpmSettingsProjectsLoading] = useState(false);
-            const [epmSettingsProjectsError, setEpmSettingsProjectsError] = useState('');
-            const [epmSettingsProjectsLoaded, setEpmSettingsProjectsLoaded] = useState(false);
-            const [epmSettingsProjectsLoadedAt, setEpmSettingsProjectsLoadedAt] = useState('');
-            const [epmSettingsProjectsFetchMeta, setEpmSettingsProjectsFetchMeta] = useState({
-                cacheHit: false,
-                fetchedAt: '',
-                homeProjectCount: 0,
-                homeProjectLimit: null,
-                possiblyTruncated: false,
-            });
-            const [epmSettingsProjectsRefreshing, setEpmSettingsProjectsRefreshing] = useState(false);
-            const [removedEpmProjectIds, setRemovedEpmProjectIds] = React.useState(() => new Set());
-            const [epmSettingsProjectSort, setEpmSettingsProjectSort] = useState('status');
-            const [epmSettingsProjectView, setEpmSettingsProjectView] = useState('current');
-            const [epmSettingsTab, setEpmSettingsTab] = useState('scope');
             const [adminSettingsTab, setAdminSettingsTab] = useState('scope');
             const [departmentSettingsTab, setDepartmentSettingsTab] = useState('teams');
-            const [epmLabelShowAll, setEpmLabelShowAll] = useState({});
-            const [epmLabelChanging, setEpmLabelChanging] = useState({});
-            const [epmLabelMenuAnchor, setEpmLabelMenuAnchor] = useState(null);
-            const epmLabelMenuInputRef = useRef(null);
-            const pendingLabelFocusRef = React.useRef(null);
-            const epmConfigBaselineRef = useRef(JSON.stringify(createEmptyEpmConfigDraft()));
-            const [epmScopeMeta, setEpmScopeMeta] = useState({ cloudId: '', error: '' });
-            const [epmRootGoals, setEpmRootGoals] = useState([]);
-            const [epmSubGoals, setEpmSubGoals] = useState([]);
-            const [epmRootGoalsLoading, setEpmRootGoalsLoading] = useState(false);
-            const [epmSubGoalsLoading, setEpmSubGoalsLoading] = useState(false);
-            const [epmRootGoalsError, setEpmRootGoalsError] = useState('');
-            const [epmSubGoalsError, setEpmSubGoalsError] = useState('');
-            const [epmRootGoalQuery, setEpmRootGoalQuery] = useState('');
-            const [epmSubGoalQuery, setEpmSubGoalQuery] = useState('');
-            const [epmRootGoalOpen, setEpmRootGoalOpen] = useState(false);
-            const [epmSubGoalOpen, setEpmSubGoalOpen] = useState(false);
-            const [epmRootGoalIndex, setEpmRootGoalIndex] = useState(0);
-            const [epmSubGoalIndex, setEpmSubGoalIndex] = useState(0);
             const [sprintCatalogState, setSprintCatalogState] = useState(sprintCatalogInitialStateRef.current);
             const sprintCatalogControllerRef = useRef(null);
             const sprintCatalogPersistedValidationRef = useRef('');
@@ -632,19 +551,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
             const availableSprints = sprintCatalogState.availableSprints;
             const sprintsLoading = sprintCatalogState.status === 'loading'
                 || (sprintCatalogState.status === 'unknown' && sprintCatalogState.authority !== 'validated');
-            const [groupsConfig, setGroupsConfig] = useState({
-                version: 1,
-                groups: [],
-                defaultGroupId: '',
-            });
-            const [groupsLoading, setGroupsLoading] = useState(true);
-            const [groupsError, setGroupsError] = useState('');
-            const [boardGroupsReadFailed, setBoardGroupsReadFailed] = useState(false);
-            const acceptedGroupsConfigRef = useRef(false);
-            const groupsReadGenerationRef = useRef(0);
-            const groupsSaveReadFenceRef = useRef(0);
-            const [groupWarnings, setGroupWarnings] = useState([]);
-            const [groupConfigSource, setGroupConfigSource] = useState('');
             const [boardView, setBoardView] = useState(null);
             // Session-scoped, separate from Catch Up's engStatusFilter/engPriorityFilter (D19).
             const [engBoardFilterSelection, setEngBoardFilterSelection] = useState({});
@@ -653,7 +559,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
             const [groupDropdownQuery, setGroupDropdownQuery] = useState('');
             const groupDropdownRefs = useRef({ main: null, compact: null });
             const [showGroupManage, setShowGroupManage] = useState(false);
-            const [groupDraft, setGroupDraft] = useState(null);
             const [groupDraftError, setGroupDraftError] = useState('');
             const [settingsSaveError, setSettingsSaveError] = useState('');
             const [firstRunSetupChoice, setFirstRunSetupChoice] = useState(null);
@@ -667,8 +572,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
             const pendingFirstRunConfigurationRef = useRef(null);
             const pendingFirstRunGroupPreferencesRef = useRef(null);
             const settingsSaveInFlightRef = useRef(false);
-            // { current, savedSections }: a rejected groups POST, kept so the draft survives it (D45).
-            const [groupsConfigConflict, setGroupsConfigConflict] = useState(null);
             const [workspaceConfigConflict, setWorkspaceConfigConflict] = useState(null);
             const [sharedConfigRevision, setSharedConfigRevision] = useState(0);
             const sharedConfigRevisionRef = useRef(0);
@@ -679,35 +582,11 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
             const boardConfigSaveReadFenceRef = useRef(0);
             const settingsSaveReadFenceSequenceRef = useRef(0);
             const settingsDraftSnapshotRef = useRef({});
-            const [groupImportText, setGroupImportText] = useState('');
-            const [showGroupImport, setShowGroupImport] = useState(false);
-            const [showGroupAdvanced, setShowGroupAdvanced] = useState(false);
             const [groupSaving, setGroupSaving] = useState(false);
             const [groupTesting, setGroupTesting] = useState(false);
             const [groupTestMessage, setGroupTestMessage] = useState('');
-            const [teamNameInputs, setTeamNameInputs] = useState([]);
-            const [teamSearchQuery, setTeamSearchQuery] = useState({});
-            const [teamSearchOpen, setTeamSearchOpen] = useState({});
-            const [teamSearchIndex, setTeamSearchIndex] = useState({});
-            const [teamSearchFeedback, setTeamSearchFeedback] = useState({});
-            const teamSearchInputRefs = useRef({});
-            const teamSearchFeedbackTimersRef = useRef({});
-            const teamChipLastRef = useRef({});
-            const [labelSearchQuery, setLabelSearchQuery] = useState({});
-            const [labelSearchOpen, setLabelSearchOpen] = useState({});
-            const [labelSearchResults, setLabelSearchResults] = useState({});
-            const [labelSearchLoading, setLabelSearchLoading] = useState({});
-            const [labelSearchIndex, setLabelSearchIndex] = useState({});
-            const [labelAddOpen, setLabelAddOpen] = useState({});
-            const labelAddButtonRefs = useRef({});
-            const labelSearchCacheRef = useRef({});
-            const labelSearchRequestIdRef = useRef({});
-            const labelSearchDebounceRef = useRef({});
-            const [groupSearchQuery, setGroupSearchQuery] = useState('');
-            const [activeGroupDraftId, setActiveGroupDraftId] = useState(null);
             const [showGroupListMobile, setShowGroupListMobile] = useState(false);
             const [showGroupDiscardConfirm, setShowGroupDiscardConfirm] = useState(false);
-            const groupDraftBaselineRef = useRef('');
             const [groupQueryTemplateEnabled, setGroupQueryTemplateEnabled] = useState(false);
             const [groupManageTab, setGroupManageTab] = useState('scope');
             const [showTechnicalFieldIds, setShowTechnicalFieldIds] = useState(false);
@@ -848,25 +727,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 settingsDraftSnapshotRef,
                 sharedConfigRevisionRef,
             });
-            const [componentSearchQuery, setComponentSearchQuery] = useState('');
-            const [componentSearchResults, setComponentSearchResults] = useState([]);
-            const [componentSearchOpen, setComponentSearchOpen] = useState(false);
-            const [componentSearchIndex, setComponentSearchIndex] = useState(0);
-            const [componentSearchLoading, setComponentSearchLoading] = useState(false);
-            const [excludedEpicSearchQuery, setExcludedEpicSearchQuery] = useState('');
-            const [excludedEpicSearchResults, setExcludedEpicSearchResults] = useState([]);
-            const [excludedEpicSearchOpen, setExcludedEpicSearchOpen] = useState(false);
-            const [excludedEpicSearchIndex, setExcludedEpicSearchIndex] = useState(0);
-            const [excludedEpicSearchLoading, setExcludedEpicSearchLoading] = useState(false);
-            const excludedEpicSearchInputRef = useRef(null);
-            const excludedEpicChipLastRef = useRef(null);
-            const [adHocEpicSearchQuery, setAdHocEpicSearchQuery] = useState('');
-            const [adHocEpicSearchResults, setAdHocEpicSearchResults] = useState([]);
-            const [adHocEpicSearchOpen, setAdHocEpicSearchOpen] = useState(false);
-            const [adHocEpicSearchIndex, setAdHocEpicSearchIndex] = useState(0);
-            const [adHocEpicSearchLoading, setAdHocEpicSearchLoading] = useState(false);
-            const adHocEpicSearchInputRef = useRef(null);
-            const adHocEpicChipLastRef = useRef(null);
             const [missingInfoEpics, setMissingInfoEpics] = useState([]);
             const [backlogProductEpics, setBacklogProductEpics] = useState([]);
             const [backlogTechEpics, setBacklogTechEpics] = useState([]);
@@ -1187,11 +1047,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
             const alertCohortListenersRef = useRef(new Set()); const notifyAlertCohortSettle = outcome => [...alertCohortListenersRef.current].forEach(listener => listener(outcome));
             const subscribeAlertCohortSettle = listener => { alertCohortListenersRef.current.add(listener); return () => { alertCohortListenersRef.current.delete(listener); }; };
             const storyRequirementScopeRef = useRef('');
-            const epmSettingsProjectsRequestIdRef = useRef(0);
-            const epmSettingsProjectsCacheRef = useRef(new Map());
-            const epmDraftIdCounterRef = useRef(0);
-            const epmSubGoalsRequestIdRef = useRef(0);
-            const epmSubGoalsCacheRef = useRef(new Map());
             const pendingConfigRefreshRef = useRef(0);
             const configRefreshTargetRef = useRef('none');
             const abortSprintFetches = React.useCallback(() => {
@@ -1260,20 +1115,89 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 trackIssueStatusAction, trackIssuePriorityAction, trackIssueProjectTrackAction, trackIssueFieldEditAction, trackEpicRefreshAction, trackPlanningCapacityAction, trackPlanningSelection, trackScenarioAction, trackSearch, trackSelectContent,
                 trackSettingsAction, trackSortChanged, trackStatsAction, trackProductEvent,
             } = useDashboardAnalytics(React, { authMode, selectedView, showPlanning, showStats, showScenario, showBoard, serverConnectionError });
-            const applyPreferenceGroupsSnapshot = React.useCallback((snapshot) => {
-                const normalized = normalizeGroupsConfig(snapshot);
-                setGroupsConfig(normalized);
-                setGroupWarnings(snapshot?.warnings || []);
-                setGroupConfigSource(normalized.source || snapshot?.source || '');
-                if (showGroupManage) {
-                    setGroupDraft(normalized);
-                    groupDraftBaselineRef.current = JSON.stringify(buildSharedGroupsPayload(normalized));
-                }
-                return normalized;
-            }, [showGroupManage]);
-            const personalGroupPreferencesEnabled = groupsConfig.source === 'workspace_db';
-            const onboardingAvailable = isOnboardingAvailable(authMode, groupsConfig.source);
             const {
+                groupsConfig,
+                setGroupsConfig,
+                groupsLoading,
+                setGroupsLoading,
+                groupsError,
+                setGroupsError,
+                boardGroupsReadFailed,
+                setBoardGroupsReadFailed,
+                acceptedGroupsConfigRef,
+                groupsReadGenerationRef,
+                groupsSaveReadFenceRef,
+                groupWarnings,
+                groupConfigSource,
+                groupDraft,
+                setGroupDraft,
+                groupsConfigConflict,
+                setGroupsConfigConflict,
+                groupImportText,
+                setGroupImportText,
+                showGroupImport,
+                setShowGroupImport,
+                showGroupAdvanced,
+                setShowGroupAdvanced,
+                setTeamNameInputs,
+                setTeamSearchQuery,
+                teamSearchOpen,
+                setTeamSearchOpen,
+                setTeamSearchIndex,
+                teamSearchFeedback,
+                setTeamSearchFeedback,
+                teamSearchInputRefs,
+                teamChipLastRef,
+                labelSearchQuery,
+                setLabelSearchQuery,
+                labelSearchOpen,
+                setLabelSearchOpen,
+                labelSearchResults,
+                setLabelSearchResults,
+                labelSearchLoading,
+                setLabelSearchLoading,
+                labelSearchIndex,
+                setLabelSearchIndex,
+                labelAddOpen,
+                setLabelAddOpen,
+                labelAddButtonRefs,
+                labelSearchRequestIdRef,
+                labelSearchDebounceRef,
+                groupSearchQuery,
+                setGroupSearchQuery,
+                activeGroupDraftId,
+                setActiveGroupDraftId,
+                groupDraftBaselineRef,
+                componentSearchQuery,
+                setComponentSearchQuery,
+                setComponentSearchResults,
+                componentSearchOpen,
+                setComponentSearchOpen,
+                componentSearchIndex,
+                setComponentSearchIndex,
+                componentSearchLoading,
+                setComponentSearchLoading,
+                excludedEpicSearchQuery,
+                setExcludedEpicSearchQuery,
+                setExcludedEpicSearchResults,
+                excludedEpicSearchOpen,
+                setExcludedEpicSearchOpen,
+                excludedEpicSearchIndex,
+                setExcludedEpicSearchIndex,
+                excludedEpicSearchLoading,
+                setExcludedEpicSearchLoading,
+                excludedEpicSearchInputRef,
+                excludedEpicChipLastRef,
+                adHocEpicSearchQuery,
+                setAdHocEpicSearchResults,
+                adHocEpicSearchOpen,
+                adHocEpicSearchIndex,
+                setAdHocEpicSearchIndex,
+                adHocEpicSearchLoading,
+                setAdHocEpicSearchLoading,
+                adHocEpicSearchInputRef,
+                adHocEpicChipLastRef,
+                personalGroupPreferencesEnabled,
                 groupPreferences,
                 setGroupPreferences,
                 visibleGroupDraftIds,
@@ -1295,21 +1219,202 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 firstRunSaving,
                 firstRunError,
                 persistGroupPreferences,
-            } = useGroupVisibilityPreferences({
-                backendUrl: BACKEND_URL,
-                groupsConfig,
-                groupsLoading,
-                groupDraft,
+                loadGroupsConfig,
+                loadTeamsFromCurrentView,
+                groupDraftSignature,
+                isGroupBoardDraftDirty,
+                closeAllTeamSearchDropdowns,
+                addGroupDraftRow,
+                updateGroupDraftName,
+                duplicateGroupDraft,
+                updateGroupDraftBoard,
+                addTeamToGroup,
+                removeTeamFromGroup,
+                removeTeamLabelFromGroup,
+                handleTeamSearchChange,
+                handleTeamSearchFocus,
+                handleTeamSearchBlur,
+                handleTeamSearchKeyDown,
+                removeGroupDraft,
+                toggleDefaultGroupDraft,
+                applySavedGroupsConfig,
+                filteredComponentSearchResults,
+                filteredExcludedEpicSearchResults,
+                filteredAdHocEpicSearchResults,
+                handleComponentSearchKeyDown,
+                addGroupMissingInfoComponent,
+                removeGroupMissingInfoComponent,
+                addGroupExcludedCapacityEpic,
+                removeGroupExcludedCapacityEpic,
+                addGroupAdHocCapacityEpic,
+                removeGroupAdHocCapacityEpic,
+                handleExcludedEpicSearchKeyDown,
+                handleAdHocEpicSearchKeyDown,
+                handleExcludedEpicSearchChange,
+                handleExcludedEpicSearchFocus,
+                handleExcludedEpicSearchBlur,
+                handleAdHocEpicSearchChange,
+                handleAdHocEpicSearchFocus,
+                handleAdHocEpicSearchBlur,
+                exportGroupsConfig,
+                importGroupsConfig,
+                availableTeams,
+                teamNameLookup,
+                resolveTeamName,
+                activeGroupDraft,
+                filteredGroupDrafts,
+                teamCacheLabel,
+                teamCatalogCanRefresh,
+                activeTeamQuery,
+                activeTeamResultsLimited,
+                activeTeamAvailabilityKey,
+                activeTeamIndex,
+                getLabelSearchResults,
+                closeTeamLabelSearch,
+                selectTeamLabel,
+                handleLabelSearchKeyDown,
+                scheduleJiraLabelSearch,
+            } = useTeamGroupSettings({
+                BACKEND_URL,
                 activeGroupId,
+                clearServerConnectionError,
+                firstRunConfigurationActive,
+                getTeamOptions: () => teamOptions,
+                markConnectionBootstrapHealthy,
+                reportServerConnectionError,
+                savedPrefsRef,
+                selectedSprintInfo,
                 setActiveGroupId,
-                setShowGroupManage,
-                setGroupManageTab,
-                setDepartmentSettingsTab,
-                applyPreferenceGroupsSnapshot,
+                setGroupDraftError,
+                setShowGroupListMobile,
+                showGroupManage,
+                teamCatalogState,
+                teamMembershipState,
                 trackSettingsAction,
-                bucketCount,
-                useBackendPreferences: personalGroupPreferencesEnabled,
             });
+            const {
+                epmConfigDraft,
+                epmConfigDraftRef,
+                epmConfigDraftGenerationRef,
+                setEpmConfigDraft,
+                epmConfigLoading,
+                setEpmConfigLoading,
+                epmConfigSaving,
+                epmConfigLoaded,
+                epmSettingsProjects,
+                epmSettingsProjectsLoading,
+                epmSettingsProjectsError,
+                epmSettingsProjectsLoaded,
+                setEpmSettingsProjectsLoaded,
+                epmSettingsProjectsLoadedAt,
+                setEpmSettingsProjectsLoadedAt,
+                epmSettingsProjectsFetchMeta,
+                setEpmSettingsProjectsFetchMeta,
+                epmSettingsProjectsRefreshing,
+                removedEpmProjectIds,
+                setRemovedEpmProjectIds,
+                epmSettingsProjectSort,
+                epmSettingsProjectView,
+                setEpmSettingsProjectView,
+                epmSettingsTab,
+                setEpmSettingsTab,
+                epmLabelShowAll,
+                setEpmLabelShowAll,
+                epmLabelChanging,
+                setEpmLabelChanging,
+                epmLabelMenuAnchor,
+                setEpmLabelMenuAnchor,
+                epmLabelMenuInputRef,
+                epmConfigBaselineRef,
+                epmScopeMeta,
+                setEpmScopeMeta,
+                setEpmRootGoals,
+                epmSubGoals,
+                epmRootGoalsLoading,
+                setEpmRootGoalsLoading,
+                epmSubGoalsLoading,
+                epmRootGoalsError,
+                setEpmRootGoalsError,
+                epmSubGoalsError,
+                epmRootGoalQuery,
+                setEpmRootGoalQuery,
+                epmSubGoalQuery,
+                setEpmSubGoalQuery,
+                setEpmRootGoalOpen,
+                setEpmSubGoalOpen,
+                setEpmRootGoalIndex,
+                setEpmSubGoalIndex,
+                epmSettingsProjectsCacheRef,
+                loadEpmConfig,
+                loadEpmScopeMeta,
+                loadEpmGoals,
+                ensureEpmSettingsProjectsLoaded,
+                saveEpmConfig,
+                updateEpmLabelPrefixDraft,
+                updateEpmProjectDraft,
+                getEpmLabelRowKey,
+                getEpmLabelSearchResults,
+                addCustomEpmProjectDraft,
+                removeEpmProjectDraft,
+                deleteEpmProjectRow,
+                loadEpmProjectLabels,
+                requestEpmLabelFocus,
+                registerEpmLabelInput,
+                selectEpmProjectLabel,
+                openEpmLabelMenu,
+                handleEpmLabelSearchKeyDown,
+                loadEpmSubGoalsForRoot,
+                selectEpmRootGoal,
+                clearEpmRootGoal,
+                clearEpmSubGoal,
+                selectEpmSubGoal,
+                normalizeEpmConfigDraft,
+                applySavedEpmConfig,
+                filteredEpmRootGoals,
+                filteredEpmSubGoals,
+                selectedEpmRootGoal,
+                selectedEpmSubGoals,
+                visibleEpmRootGoals,
+                visibleEpmSubGoals,
+                activeEpmRootGoalIndex,
+                activeEpmSubGoalIndex,
+                showEpmRootGoalResults,
+                showEpmSubGoalResults,
+                handleEpmRootGoalSearchKeyDown,
+                handleEpmSubGoalSearchKeyDown,
+                isEpmConfigDirty,
+                hasSavedEpmScope,
+                savedEpmSubGoalKeys,
+                savedEpmRootGoalKey,
+                epmProjectPrerequisites,
+                canLoadEpmProjects,
+                epmSettingsProjectsCacheKey,
+                epmSettingsProjectRows,
+                openEpmSettingsTab,
+                focusEpmScopeField,
+                handleEpmSettingsTabKeyDown,
+                setTrackedEpmSettingsProjectSort,
+            } = useEpmSettings({
+                BACKEND_URL,
+                canEditEpmConfiguration,
+                getEpmViewActions: () => ({ refreshEpmProjects, setEpmProjects, setEpmProjectsError }),
+                labelSearchIndex,
+                labelSearchOpen,
+                labelSearchQuery,
+                labelSearchRequestIdRef,
+                labelSearchResults,
+                setGroupDraftError,
+                setGroupManageTab,
+                setLabelSearchIndex,
+                setLabelSearchLoading,
+                setLabelSearchOpen,
+                setLabelSearchQuery,
+                setLabelSearchResults,
+                setShowGroupManage,
+                trackSettingsAction,
+                trackSortChanged,
+            });
+            const onboardingAvailable = isOnboardingAvailable(authMode, groupsConfig.source);
             const openFirstRunSetupChoice = React.useCallback(() => {
                 setFirstRunSetupChoice(beginFirstRunGroupConfiguration({ mode: 'create' }));
             }, []);
@@ -1404,537 +1509,15 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                     setSelectedView('eng');
                 }
             }, [homeTokenConnectionLoaded, showEpmNavigation, selectedView]);
-            const loadEpmConfig = () => fetchEpmConfig(BACKEND_URL);
-            const loadEpmScopeMeta = () => fetchEpmScope(BACKEND_URL);
-            const loadEpmGoals = (rootGoalKey = '') => fetchEpmGoals(BACKEND_URL, rootGoalKey);
-            const loadEpmConfigurationProjects = async (draftConfig, options = {}) => {
-                return fetchEpmConfigurationProjects(BACKEND_URL, draftConfig, options);
-            };
-            const resetEpmSettingsProjectRows = () => {
-                epmSettingsProjectsRequestIdRef.current += 1;
-                setEpmSettingsProjects([]);
-                setEpmSettingsProjectsLoading(false);
-                setEpmSettingsProjectsError('');
-                setEpmSettingsProjectsLoaded(false);
-                setEpmSettingsProjectsLoadedAt('');
-                setEpmSettingsProjectsRefreshing(false);
-            };
-            const getHomeBackedEpmSettingsProjects = (projects) => {
-                return Array.isArray(projects)
-                    ? projects.filter(project => project?.homeProjectId !== null)
-                    : [];
-            };
-            const renderEpmProjectSkeletonRows = () => (
-                <LoadingRows
-                    className="epm-project-skeleton-list"
-                    rowClassName="epm-project-skeleton-row"
-                    ariaLabel="Loading EPM projects"
-                    rows={3}
-                    columns={2}
-                />
-            );
-            const ensureEpmSettingsProjectsLoaded = async (options = {}) => {
-                const forceRefresh = Boolean(options.forceRefresh);
-                const draftConfig = normalizeEpmConfigDraft(options.draftConfig || epmConfigDraft);
-                const cacheKey = options.cacheKey || getEpmSettingsProjectsCacheKey(draftConfig);
-                epmSettingsProjectsRequestIdRef.current += 1;
-                const requestId = epmSettingsProjectsRequestIdRef.current;
-                if (!cacheKey) {
-                    setEpmSettingsProjectsError('');
-                    setEpmSettingsProjectsLoading(false);
-                    setEpmSettingsProjectsRefreshing(false);
-                    setEpmSettingsProjectsLoaded(false);
-                    setEpmSettingsProjectsLoadedAt('');
-                    return [];
-                }
-                if (!forceRefresh && epmSettingsProjectsCacheRef.current.has(cacheKey)) {
-                    const cachedEntry = epmSettingsProjectsCacheRef.current.get(cacheKey) || {};
-                    const cachedProjects = Array.isArray(cachedEntry.projects) ? cachedEntry.projects : [];
-                    const cachedLoadedAt = String(cachedEntry.loadedAt || '');
-                    setEpmSettingsProjects(cachedProjects);
-                    setEpmSettingsProjectsFetchMeta(cachedEntry.meta || {
-                        cacheHit: true,
-                        fetchedAt: '',
-                        homeProjectCount: cachedProjects.length,
-                        homeProjectLimit: null,
-                        possiblyTruncated: false,
-                    });
-                    setEpmSettingsProjectsError('');
-                    setEpmSettingsProjectsLoaded(true);
-                    setEpmSettingsProjectsLoadedAt(cachedLoadedAt);
-                    return cachedProjects;
-                }
-
-                const hasExistingRows = epmSettingsProjectsLoaded && epmSettingsProjectRows.length > 0;
-                setEpmSettingsProjectsLoading(!hasExistingRows);
-                setEpmSettingsProjectsRefreshing(hasExistingRows);
-                setEpmSettingsProjectsError('');
-                try {
-                    const payload = await loadEpmConfigurationProjects(draftConfig, { forceRefresh });
-                    if (epmSettingsProjectsRequestIdRef.current !== requestId) {
-                        return [];
-                    }
-                    const nextProjects = getHomeBackedEpmSettingsProjects(payload.projects);
-                    const nextMeta = {
-                        cacheHit: Boolean(payload.cacheHit),
-                        fetchedAt: String(payload.fetchedAt || ''),
-                        homeProjectCount: Number(payload.homeProjectCount || nextProjects.filter(project => project?.homeProjectId).length || 0),
-                        homeProjectLimit: payload.homeProjectLimit ?? null,
-                        possiblyTruncated: Boolean(payload.possiblyTruncated),
-                    };
-                    const loadedAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                    epmSettingsProjectsCacheRef.current.set(cacheKey, { projects: nextProjects, meta: nextMeta, loadedAt });
-                    setEpmSettingsProjects(nextProjects);
-                    if (forceRefresh) { setRemovedEpmProjectIds(new Set()); }
-                    setEpmSettingsProjectsFetchMeta(nextMeta);
-                    setEpmSettingsProjectsLoaded(true);
-                    setEpmSettingsProjectsLoadedAt(loadedAt);
-                    return nextProjects;
-                } catch (err) {
-                    if (epmSettingsProjectsRequestIdRef.current !== requestId) {
-                        return [];
-                    }
-                    if (isAuthenticationRequiredError(err)) return [];
-                    console.error('Failed to load EPM projects:', err);
-                    setEpmSettingsProjectsError(err?.message || 'Failed to load EPM projects.');
-                    return [];
-                } finally {
-                    if (epmSettingsProjectsRequestIdRef.current === requestId) {
-                        setEpmSettingsProjectsLoading(false);
-                        setEpmSettingsProjectsRefreshing(false);
-                    }
-                }
-            };
-            const updateEpmSettingsProjectRowsAfterSave = (savedConfig) => {
-                const previousCacheKey = getEpmSettingsProjectsCacheKey(epmConfigDraft);
-                const nextCacheKey = getEpmSettingsProjectsCacheKey(savedConfig);
-                if (!nextCacheKey) return;
-                const rawPreviousEntry = previousCacheKey
-                    ? epmSettingsProjectsCacheRef.current.get(previousCacheKey)
-                    : null;
-                const previousEntry = rawPreviousEntry
-                    ? {
-                        ...rawPreviousEntry,
-                        projects: getHomeBackedEpmSettingsProjects(rawPreviousEntry.projects),
-                    }
-                    : null;
-                const currentEntry = epmSettingsProjects.length > 0
-                    ? {
-                        projects: getHomeBackedEpmSettingsProjects(epmSettingsProjects),
-                        meta: epmSettingsProjectsFetchMeta,
-                        loadedAt: epmSettingsProjectsLoadedAt,
-                    }
-                    : null;
-                const nextEntry = previousEntry || currentEntry;
-                if (nextEntry) {
-                    epmSettingsProjectsCacheRef.current.set(nextCacheKey, nextEntry);
-                }
-            };
-            const saveEpmConfig = async () => {
-                setEpmConfigSaving(true);
-                setGroupDraftError('');
-                trackSettingsAction('epm', 'save', { dirty_state: isEpmConfigDirty ? 'dirty' : 'clean', project_count_bucket: bucketCount(epmConfigDraft?.projects?.length || 0) });
-                try {
-                    const submittedGeneration = epmConfigDraftGenerationRef.current;
-                    const normalizedDraft = normalizeEpmConfigDraft(epmConfigDraftRef.current);
-                    const payload = await requestSaveEpmConfig(BACKEND_URL, normalizedDraft);
-                    const nextConfig = normalizeEpmConfigDraft(payload);
-                    const draftUnchanged = epmConfigDraftGenerationRef.current === submittedGeneration;
-                    if (draftUnchanged) {
-                        applySavedEpmConfig(nextConfig);
-                    } else {
-                        epmConfigBaselineRef.current = JSON.stringify(nextConfig);
-                        setEpmConfigLoaded(true);
-                    }
-                    updateEpmSettingsProjectRowsAfterSave(nextConfig);
-                    if (hasSavedEpmScopeConfig(nextConfig)) {
-                        await refreshEpmProjects();
-                    } else {
-                        setEpmProjects([]);
-                        setEpmProjectsError('');
-                        setEpmSettingsProjects([]);
-                        setEpmSettingsProjectsLoaded(false);
-                    }
-                    trackSettingsAction('epm', 'save_result', { result: 'success' });
-                    return draftUnchanged;
-                } catch (err) {
-                    if (isAuthenticationRequiredError(err)) throw err;
-                    const message = err?.message || 'Failed to save EPM settings.';
-                    setGroupDraftError(message);
-                    console.error('Failed to save EPM config:', err);
-                    if (err?.status !== 409) trackSettingsAction('epm', 'save_result', { result: 'failure' });
-                    throw err;
-                } finally {
-                    setEpmConfigSaving(false);
-                }
-            };
-            const updateEpmLabelPrefixDraft = (value) => {
-                setEpmConfigDraft((prev) => ({
-                    ...prev,
-                    labelPrefix: value,
-                }));
-                setLabelSearchResults(prev => {
-                    const next = { ...prev };
-                    Object.keys(next).forEach((key) => {
-                        if (key.startsWith(`${EPM_LABEL_SEARCH_GROUP_ID}:`)) {
-                            delete next[key];
-                        }
-                    });
-                    return next;
-                });
-            };
-            const updateEpmProjectDraft = (projectId, field, value) => {
-                setEpmConfigDraft((prev) => {
-                    const prevProjects = prev.projects || {};
-                    const rowSource = epmSettingsProjectRows.find(row => row.id === projectId);
-                    const prevRow = prevProjects[projectId] || { id: projectId, homeProjectId: rowSource?.homeProjectId };
-                    return {
-                        ...prev,
-                        projects: {
-                            ...prevProjects,
-                            [projectId]: { ...prevRow, id: projectId, [field]: value },
-                        },
-                    };
-                });
-            };
-            const EPM_LABEL_SEARCH_GROUP_ID = 'epm-project';
-            const getEpmLabelRowKey = (projectId) => getLabelRowKey(EPM_LABEL_SEARCH_GROUP_ID, projectId);
-            const getEpmLabelSearchResults = (projectId) => {
-                const key = getEpmLabelRowKey(projectId);
-                const query = String(labelSearchQuery[key] || '').trim();
-                const results = labelSearchResults[key] || [];
-                if (!query) return results;
-                const normalizedQuery = query.toLowerCase();
-                return results.filter(label => String(label || '').toLowerCase().includes(normalizedQuery));
-            };
-            const addCustomEpmProjectDraft = () => {
-                epmDraftIdCounterRef.current += 1;
-                const draftId = `draft-${Date.now().toString(36)}-${epmDraftIdCounterRef.current}`;
-                setEpmConfigDraft((prev) => ({
-                    ...prev,
-                    projects: {
-                        ...(prev.projects || {}),
-                        [draftId]: {
-                            id: draftId,
-                            homeProjectId: null,
-                            name: '',
-                            label: '',
-                        },
-                    },
-                }));
-            };
-            const removeEpmProjectDraft = (projectId) => {
-                setEpmConfigDraft((prev) => {
-                    const nextProjects = { ...(prev.projects || {}) };
-                    delete nextProjects[projectId];
-                    return {
-                        ...prev,
-                        projects: nextProjects,
-                    };
-                });
-            };
-            const deleteEpmProjectRow = (project) => {
-                if (!project.homeProjectId) {
-                    removeEpmProjectDraft(project.id);
-                } else {
-                    setRemovedEpmProjectIds(prev => {
-                        const next = new Set(prev);
-                        if (project.id) next.add(String(project.id));
-                        if (project.homeProjectId) next.add(String(project.homeProjectId));
-                        return next;
-                    });
-                }
-            };
-            const loadEpmProjectLabels = async (projectId, showAll = false) => {
-                const key = getEpmLabelRowKey(projectId);
-                const requestId = (labelSearchRequestIdRef.current[key] || 0) + 1;
-                labelSearchRequestIdRef.current[key] = requestId;
-                setLabelSearchLoading(prev => ({ ...prev, [key]: true }));
-                try {
-                    const prefix = normalizeEpmLabelPrefixMask(epmConfigDraft.labelPrefix ?? DEFAULT_EPM_LABEL_PREFIX);
-                    const payload = await requestJiraLabels(BACKEND_URL, showAll || !prefix
-                        ? { limit: 200 }
-                        : { prefix, limit: 200 });
-                    const nextResults = Array.isArray(payload.labels) ? payload.labels : [];
-                    if (labelSearchRequestIdRef.current[key] === requestId) {
-                        setLabelSearchResults(prev => ({ ...prev, [key]: nextResults }));
-                        setLabelSearchIndex(prev => ({ ...prev, [key]: 0 }));
-                    }
-                } catch (error) {
-                    if (isAuthenticationRequiredError(error)) return;
-                    if (labelSearchRequestIdRef.current[key] === requestId) {
-                        setLabelSearchResults(prev => ({ ...prev, [key]: [] }));
-                        setLabelSearchIndex(prev => ({ ...prev, [key]: 0 }));
-                    }
-                } finally {
-                    if (labelSearchRequestIdRef.current[key] === requestId) {
-                        setLabelSearchLoading(prev => ({ ...prev, [key]: false }));
-                    }
-                }
-            };
-            const requestEpmLabelFocus = (projectId) => {
-                const rowKey = getEpmLabelRowKey(projectId);
-                setEpmLabelChanging(prev => ({ ...prev, [rowKey]: true }));
-                pendingLabelFocusRef.current = rowKey;
-            };
-            const registerEpmLabelInput = (projectId, node) => {
-                const rowKey = getEpmLabelRowKey(projectId);
-                if (node && pendingLabelFocusRef.current === rowKey) {
-                    node.focus();
-                    pendingLabelFocusRef.current = null;
-                }
-            };
-            const selectEpmProjectLabel = React.useCallback((projectId, label) => {
-                const key = getEpmLabelRowKey(projectId);
-                updateEpmProjectDraft(projectId, 'label', label);
-                setLabelSearchQuery(prev => ({ ...prev, [key]: '' }));
-                setLabelSearchIndex(prev => ({ ...prev, [key]: 0 }));
-                setLabelSearchOpen(prev => ({ ...prev, [key]: false }));
-                setEpmLabelChanging(prev => ({ ...prev, [key]: false }));
-                setEpmLabelMenuAnchor(null);
-                epmLabelMenuInputRef.current = null;
-            }, [updateEpmProjectDraft]);
-            const openEpmLabelMenu = (projectId, inputNode, showAllLabels) => {
-                if (!inputNode) return;
-                const rowKey = getEpmLabelRowKey(projectId);
-                const rect = inputNode.getBoundingClientRect();
-                epmLabelMenuInputRef.current = inputNode;
-                setEpmLabelMenuAnchor({
-                    projectId,
-                    rowKey,
-                    top: rect.bottom + 4,
-                    left: rect.left,
-                    width: rect.width,
-                });
-                setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
-                void loadEpmProjectLabels(projectId, showAllLabels);
-            };
-            useEffect(() => {
-                if (!epmLabelMenuAnchor) return;
-                const reposition = () => {
-                    const inputNode = epmLabelMenuInputRef.current;
-                    if (!inputNode || !document.body.contains(inputNode)) {
-                        setEpmLabelMenuAnchor(null);
-                        epmLabelMenuInputRef.current = null;
-                        return;
-                    }
-                    const rect = inputNode.getBoundingClientRect();
-                    setEpmLabelMenuAnchor(prev => prev ? {
-                        ...prev,
-                        top: rect.bottom + 4,
-                        left: rect.left,
-                        width: rect.width,
-                    } : prev);
-                };
-                const scrollRegion = document.querySelector('.epm-projects-scroll-region');
-                window.addEventListener('resize', reposition);
-                scrollRegion?.addEventListener('scroll', reposition, { passive: true });
-                return () => {
-                    window.removeEventListener('resize', reposition);
-                    scrollRegion?.removeEventListener('scroll', reposition);
-                };
-            }, [epmLabelMenuAnchor?.rowKey]);
-            useEffect(() => {
-                if (showGroupManage && groupManageTab === 'epm' && epmSettingsTab === 'projects') return;
-                setEpmLabelMenuAnchor(null);
-                epmLabelMenuInputRef.current = null;
-            }, [showGroupManage, groupManageTab, epmSettingsTab]);
-            useEffect(() => {
-                if (!showGroupManage) setRemovedEpmProjectIds(new Set());
-            }, [showGroupManage]);
-            const handleEpmLabelSearchKeyDown = React.useCallback((projectId, event, results) => {
-                const key = getEpmLabelRowKey(projectId);
-                if (event.key === 'ArrowDown') {
-                    if (!results.length) return;
-                    event.preventDefault();
-                    setLabelSearchOpen(prev => ({ ...prev, [key]: true }));
-                    setLabelSearchIndex(prev => ({
-                        ...prev,
-                        [key]: Math.min((prev[key] || 0) + 1, results.length - 1)
-                    }));
-                    return;
-                }
-                if (event.key === 'ArrowUp') {
-                    if (!results.length) return;
-                    event.preventDefault();
-                    setLabelSearchOpen(prev => ({ ...prev, [key]: true }));
-                    setLabelSearchIndex(prev => ({
-                        ...prev,
-                        [key]: Math.max((prev[key] || 0) - 1, 0)
-                    }));
-                    return;
-                }
-                if (event.key === 'Enter') {
-                    if (!results.length) return;
-                    event.preventDefault();
-                    const index = labelSearchIndex[key] || 0;
-                    const label = results[index] || results[0];
-                    if (label) {
-                        selectEpmProjectLabel(projectId, label);
-                    }
-                    return;
-                }
-                if (event.key === 'Escape' && labelSearchOpen[key]) {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    setLabelSearchOpen(prev => ({ ...prev, [key]: false }));
-                }
-            }, [labelSearchIndex, labelSearchOpen, selectEpmProjectLabel]);
-            const updateEpmScopeDraft = (field, value) => {
-                setEpmConfigDraft((prev) => ({
-                    ...prev,
-                    scope: {
-                        ...(prev.scope || {}),
-                        [field]: value,
-                    },
-                }));
-            };
-            const clearEpmSubGoalOptions = () => {
-                epmSubGoalsRequestIdRef.current += 1;
-                setEpmSubGoals([]);
-                setEpmSubGoalsLoading(false);
-                setEpmSubGoalsError('');
-                setEpmSubGoalOpen(false);
-                setEpmSubGoalIndex(0);
-            };
-            const loadEpmSubGoalsForRoot = async (rootGoalKey, expectedSubGoalKey = '', options = {}) => {
-                const normalizedRootGoalKey = String(rootGoalKey || '').trim().toUpperCase();
-                const normalizedExpectedSubGoalKey = String(expectedSubGoalKey || '').trim().toUpperCase();
-                const forceRefresh = Boolean(options.forceRefresh);
-                epmSubGoalsRequestIdRef.current += 1;
-                const requestId = epmSubGoalsRequestIdRef.current;
-                if (!normalizedRootGoalKey) {
-                    setEpmSubGoals([]);
-                    setEpmSubGoalsLoading(false);
-                    setEpmSubGoalsError('');
-                    return { goals: [], hasExpectedSubGoal: !normalizedExpectedSubGoalKey, lookupFailed: false };
-                }
-                if (!forceRefresh && epmSubGoalsCacheRef.current.has(normalizedRootGoalKey)) {
-                    const cachedGoals = epmSubGoalsCacheRef.current.get(normalizedRootGoalKey) || [];
-                    const hasExpectedSubGoal = !normalizedExpectedSubGoalKey
-                        || cachedGoals.some((goal) => String(goal?.key || '').trim().toUpperCase() === normalizedExpectedSubGoalKey);
-                    setEpmSubGoals(cachedGoals);
-                    setEpmSubGoalsLoading(false);
-                    setEpmSubGoalsError('');
-                    return { goals: cachedGoals, hasExpectedSubGoal, lookupFailed: false };
-                }
-                setEpmSubGoalsLoading(true);
-                setEpmSubGoalsError('');
-                try {
-                    const payload = await loadEpmGoals(normalizedRootGoalKey);
-                    if (epmSubGoalsRequestIdRef.current !== requestId) {
-                        return { goals: [], hasExpectedSubGoal: false, lookupFailed: true };
-                    }
-                    const nextGoals = Array.isArray(payload.goals) ? payload.goals : [];
-                    epmSubGoalsCacheRef.current.set(normalizedRootGoalKey, nextGoals);
-                    const lookupError = String(payload?.error || '').trim();
-                    const lookupFailed = Boolean(lookupError);
-                    const hasExpectedSubGoal = lookupFailed
-                        || !normalizedExpectedSubGoalKey
-                        || nextGoals.some((goal) => String(goal?.key || '').trim().toUpperCase() === normalizedExpectedSubGoalKey);
-                    setEpmSubGoals(nextGoals);
-                    setEpmSubGoalsError(lookupError);
-                    if (normalizedExpectedSubGoalKey && !lookupFailed && !hasExpectedSubGoal) {
-                        setEpmConfigDraft((prev) => {
-                            const prevRootGoalKey = String(prev?.scope?.rootGoalKey || '').trim().toUpperCase();
-                            const prevSubGoalKeys = normalizeEpmScopeSubGoalKeys(prev?.scope);
-                            if (prevRootGoalKey !== normalizedRootGoalKey || !prevSubGoalKeys.includes(normalizedExpectedSubGoalKey)) {
-                                return prev;
-                            }
-                            return {
-                                ...prev,
-                                scope: {
-                                    ...(prev.scope || {}),
-                                    subGoalKeys: prevSubGoalKeys.filter(key => key !== normalizedExpectedSubGoalKey),
-                                },
-                            };
-                        });
-                    }
-                    return { goals: nextGoals, hasExpectedSubGoal, lookupFailed };
-                } catch (err) {
-                    if (epmSubGoalsRequestIdRef.current !== requestId) {
-                        return { goals: [], hasExpectedSubGoal: false, lookupFailed: true };
-                    }
-                    if (isAuthenticationRequiredError(err)) return { goals: [], hasExpectedSubGoal: true, lookupFailed: true };
-                    console.error('Failed to fetch EPM sub-goals:', err);
-                    setEpmSubGoals([]);
-                    setEpmSubGoalsError(err?.message || '');
-                    return { goals: [], hasExpectedSubGoal: true, lookupFailed: true };
-                } finally {
-                    if (epmSubGoalsRequestIdRef.current === requestId) {
-                        setEpmSubGoalsLoading(false);
-                    }
-                }
-            };
-            const selectEpmRootGoal = async (goal) => {
-                const rootGoalKey = String(goal?.key || '').trim().toUpperCase();
-                const previousRootGoalKey = String(epmConfigDraft.scope?.rootGoalKey || '').trim().toUpperCase();
-                const rootChanged = previousRootGoalKey !== rootGoalKey;
-                if (rootChanged) {
-                    resetEpmSettingsProjectRows();
-                }
-                setEpmConfigDraft((prev) => ({
-                    ...prev,
-                    scope: {
-                        ...(prev.scope || {}),
-                        rootGoalKey,
-                        subGoalKeys: rootChanged ? [] : normalizeEpmScopeSubGoalKeys(prev.scope),
-                    },
-                }));
-                setEpmRootGoalQuery('');
-                setEpmSubGoalQuery('');
-                setEpmRootGoalOpen(false);
-                setEpmRootGoalIndex(0);
-                if (rootChanged) {
-                    clearEpmSubGoalOptions();
-                }
-                if (!rootGoalKey) {
-                    return;
-                }
-                await loadEpmSubGoalsForRoot(rootGoalKey);
-            };
-            const clearEpmRootGoal = () => {
-                resetEpmSettingsProjectRows();
-                updateEpmScopeDraft('rootGoalKey', '');
-                updateEpmScopeDraft('subGoalKeys', []);
-                setEpmRootGoalQuery('');
-                setEpmSubGoalQuery('');
-                setEpmRootGoalOpen(false);
-                setEpmRootGoalIndex(0);
-                clearEpmSubGoalOptions();
-            };
-            const clearEpmSubGoal = (subGoalKey) => {
-                resetEpmSettingsProjectRows();
-                const normalizedSubGoalKey = String(subGoalKey || '').trim().toUpperCase();
-                setEpmConfigDraft((prev) => ({
-                    ...prev,
-                    scope: {
-                        ...(prev.scope || {}),
-                        subGoalKeys: normalizeEpmScopeSubGoalKeys(prev.scope).filter(key => key !== normalizedSubGoalKey),
-                    },
-                }));
-                setEpmSubGoalQuery('');
-                setEpmSubGoalOpen(false);
-                setEpmSubGoalIndex(0);
-            };
-            const selectEpmSubGoal = (goal) => {
-                const subGoalKey = String(goal?.key || '').trim().toUpperCase();
-                if (!subGoalKey) return;
-                resetEpmSettingsProjectRows();
-                setEpmConfigDraft((prev) => {
-                    const subGoalKeys = normalizeEpmScopeSubGoalKeys(prev.scope);
-                    return {
-                        ...prev,
-                        scope: {
-                            ...(prev.scope || {}),
-                            subGoalKeys: subGoalKeys.includes(subGoalKey) ? subGoalKeys : [...subGoalKeys, subGoalKey],
-                        },
-                    };
-                });
-                setEpmSubGoalQuery('');
-                setEpmSubGoalOpen(false);
-                setEpmSubGoalIndex(0);
-            };
+            useEpmLabelMenuEffects({
+                epmLabelMenuAnchor,
+                epmLabelMenuInputRef,
+                epmSettingsTab,
+                groupManageTab,
+                setEpmLabelMenuAnchor,
+                setRemovedEpmProjectIds,
+                showGroupManage,
+            });
             const filteredSprints = React.useMemo(() => {
                 if (!sprintSearch.trim()) return availableSprints;
                 const query = sprintSearch.trim().toLowerCase();
@@ -2283,123 +1866,40 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 setTeamNameInputs(loadTeamsFromCurrentView());
             }, [showGroupManage]);
 
-            useEffect(() => {
-                if (!showGroupManage || groupManageTab !== 'epm') return;
-                let cancelled = false;
-                const loadEpmSettings = async () => {
-                    const emptyEpmConfig = createEmptyEpmConfigDraft();
-                    setEpmConfigLoading(true);
-                    setEpmScopeMeta({ cloudId: '', error: '' });
-                    setEpmRootGoals([]);
-                    setEpmRootGoalsLoading(false);
-                    setEpmRootGoalsError('');
-                    let rootGoalKey = '';
-                    let loadedConfig = null;
-                    let requestGeneration = null;
-                    try {
-                        if (isEpmConfigDirty) {
-                            loadedConfig = epmConfigDraft;
-                            rootGoalKey = String(epmConfigDraft.scope?.rootGoalKey || '').trim().toUpperCase();
-                        } else {
-                            requestGeneration = epmConfigDraftGenerationRef.current;
-                            const config = await loadEpmConfig();
-                            if (!cancelled) {
-                                const nextConfig = epmConfigDraftGenerationRef.current === requestGeneration
-                                    ? applySavedEpmConfig(config)
-                                    : epmConfigDraftRef.current;
-                                loadedConfig = nextConfig;
-                                rootGoalKey = String(nextConfig.scope?.rootGoalKey || '').trim().toUpperCase();
-                            }
-                        }
-                        if (!cancelled) {
-                            setEpmRootGoalQuery('');
-                            setEpmSubGoalQuery('');
-                            setEpmRootGoalOpen(false);
-                            setEpmSubGoalOpen(false);
-                            setEpmRootGoalIndex(0);
-                            setEpmSubGoalIndex(0);
-                        }
-                    } catch (err) {
-                        if (isAuthenticationRequiredError(err)) return;
-                        console.error('Failed to load EPM config:', err);
-                        if (!cancelled) {
-                            if (requestGeneration === epmConfigDraftGenerationRef.current) {
-                                applySavedEpmConfig(emptyEpmConfig);
-                            }
-                            setGroupDraftError('Failed to load EPM settings.');
-                            setEpmConfigLoading(false);
-                        }
-                        return;
-                    } finally {
-                        if (cancelled) {
-                            setEpmConfigLoading(false);
-                        }
-                    }
-                    if (cancelled) return;
-                    try {
-                        const scopeMeta = await loadEpmScopeMeta();
-                        if (!cancelled) {
-                            setEpmScopeMeta({
-                                cloudId: String(scopeMeta?.cloudId || '').trim(),
-                                error: String(scopeMeta?.error || '').trim(),
-                            });
-                        }
-                    } catch (err) {
-                        if (isAuthenticationRequiredError(err)) return;
-                        console.error('Failed to load EPM scope metadata:', err);
-                        if (!cancelled) {
-                            setEpmScopeMeta({ cloudId: '', error: err?.message || '' });
-                        }
-                    }
-                    if (cancelled) return;
-                    setEpmRootGoalsLoading(true);
-                    try {
-                        const rootGoalsPayload = await loadEpmGoals();
-                        if (!cancelled) {
-                            setEpmRootGoals(Array.isArray(rootGoalsPayload?.goals) ? rootGoalsPayload.goals : []);
-                            setEpmRootGoalsError(String(rootGoalsPayload?.error || '').trim());
-                        }
-                    } catch (err) {
-                        if (isAuthenticationRequiredError(err)) return;
-                        console.error('Failed to load EPM root goals:', err);
-                        if (!cancelled) {
-                            setEpmRootGoals([]);
-                            setEpmRootGoalsError(err?.message || '');
-                        }
-                    } finally {
-                        if (!cancelled) {
-                            setEpmRootGoalsLoading(false);
-                        }
-                    }
-                    if (!cancelled && rootGoalKey) {
-                        await loadEpmSubGoalsForRoot(rootGoalKey);
-                    }
-                    if (!cancelled) {
-                        setEpmConfigLoading(false);
-                    }
-                };
-                loadEpmSettings();
-                return () => {
-                    cancelled = true;
-                    setEpmConfigLoading(false);
-                };
-            }, [showGroupManage, groupManageTab]);
+            useEpmSettingsLoadEffect({
+                applySavedEpmConfig,
+                epmConfigDraft,
+                epmConfigDraftGenerationRef,
+                epmConfigDraftRef,
+                groupManageTab,
+                isEpmConfigDirty,
+                loadEpmConfig,
+                loadEpmGoals,
+                loadEpmScopeMeta,
+                loadEpmSubGoalsForRoot,
+                setEpmConfigLoading,
+                setEpmRootGoalIndex,
+                setEpmRootGoalOpen,
+                setEpmRootGoalQuery,
+                setEpmRootGoals,
+                setEpmRootGoalsError,
+                setEpmRootGoalsLoading,
+                setEpmScopeMeta,
+                setEpmSubGoalIndex,
+                setEpmSubGoalOpen,
+                setEpmSubGoalQuery,
+                setGroupDraftError,
+                showGroupManage,
+            });
 
-            useEffect(() => {
-                if (!showGroupManage) return;
-                if (!groupDraft) return;
-                const groups = groupDraft?.groups || [];
-                if (!groups.length) {
-                    setActiveGroupDraftId(null);
-                    return;
-                }
-                if (!activeGroupDraftId || !groups.some(group => group.id === activeGroupDraftId)) {
-                    if (firstRunConfigurationActive
-                        && firstRunConfigurationTargetGroupId
-                        && !groups.some(group => group.id === firstRunConfigurationTargetGroupId)) return;
-                    setActiveGroupDraftId(groups[0].id);
-                }
-            }, [showGroupManage, groupDraft, activeGroupDraftId, firstRunConfigurationActive, firstRunConfigurationTargetGroupId]);
+            useTeamGroupSelectionEffect({
+                activeGroupDraftId,
+                firstRunConfigurationActive,
+                firstRunConfigurationTargetGroupId,
+                groupDraft,
+                setActiveGroupDraftId,
+                showGroupManage,
+            });
 
             useEffect(() => {
                 if (!perfEnabled) return;
@@ -2514,214 +2014,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 return normalized === 'done' || normalized === 'killed' || normalized === 'incomplete';
             }, []);
 
-            const normalizeEpmConfigDraft = (config) => {
-                const sourceProjects = config?.projects && typeof config.projects === 'object' ? config.projects : {};
-                const projects = {};
-                Object.entries(sourceProjects).forEach(([projectId, row]) => {
-                    if (!row || typeof row !== 'object') return;
-                    const id = String(row.id || projectId || '').trim();
-                    if (!id) return;
-                    const normalizedRow = {
-                        id,
-                        name: String(row?.name ?? ''),
-                        label: String(row?.label ?? ''),
-                    };
-                    if (row.homeProjectId === null) {
-                        normalizedRow.homeProjectId = null;
-                    } else if (row.homeProjectId !== undefined) {
-                        normalizedRow.homeProjectId = String(row.homeProjectId || '').trim();
-                    }
-                    if (isEmptyCustomEpmProjectRow(normalizedRow)) return;
-                    projects[id] = normalizedRow;
-                });
-                return {
-                    version: 2,
-                    labelPrefix: String(config?.labelPrefix ?? DEFAULT_EPM_LABEL_PREFIX).trim(),
-                    scope: {
-                        rootGoalKey: String(config?.scope?.rootGoalKey || '').trim().toUpperCase(),
-                        subGoalKeys: normalizeEpmScopeSubGoalKeys(config?.scope),
-                    },
-                    issueTypes: config?.issueTypes && typeof config.issueTypes === 'object' ? config.issueTypes : undefined,
-                    projects,
-                };
-            };
-            const applySavedEpmConfig = (config) => {
-                const nextConfig = normalizeEpmConfigDraft(config);
-                setEpmConfigDraft(nextConfig);
-                epmConfigBaselineRef.current = JSON.stringify(nextConfig);
-                setEpmConfigLoaded(true);
-                return nextConfig;
-            };
-            const hasSavedEpmScopeConfig = (config) => {
-                return Boolean(config?.scope?.rootGoalKey && normalizeEpmScopeSubGoalKeys(config?.scope).length > 0);
-            };
-            const filteredEpmRootGoals = React.useMemo(() => {
-                const query = String(epmRootGoalQuery || '').trim().toLowerCase();
-                if (!query) return epmRootGoals;
-                return epmRootGoals.filter((goal) => {
-                    const name = String(goal?.name || '').toLowerCase();
-                    const key = String(goal?.key || '').toLowerCase();
-                    return name.includes(query) || key.includes(query);
-                });
-            }, [epmRootGoals, epmRootGoalQuery]);
-            const filteredEpmSubGoals = React.useMemo(() => {
-                const query = String(epmSubGoalQuery || '').trim().toLowerCase();
-                if (!query) return epmSubGoals;
-                return epmSubGoals.filter((goal) => {
-                    const name = String(goal?.name || '').toLowerCase();
-                    const key = String(goal?.key || '').toLowerCase();
-                    return name.includes(query) || key.includes(query);
-                });
-            }, [epmSubGoals, epmSubGoalQuery]);
-            const selectedEpmRootGoal = React.useMemo(() => {
-                const key = String(epmConfigDraft.scope?.rootGoalKey || '').trim().toUpperCase();
-                if (!key) return null;
-                return epmRootGoals.find((goal) => String(goal?.key || '').trim().toUpperCase() === key) || { key, name: key };
-            }, [epmConfigDraft.scope?.rootGoalKey, epmRootGoals]);
-            const selectedEpmSubGoals = React.useMemo(() => {
-                const keys = normalizeEpmScopeSubGoalKeys(epmConfigDraft.scope);
-                if (!keys.length) return [];
-                return keys.map((key) => (
-                    epmSubGoals.find((goal) => String(goal?.key || '').trim().toUpperCase() === key) || { key, name: key }
-                ));
-            }, [epmConfigDraft.scope?.subGoalKeys, epmSubGoals]);
-            const visibleEpmRootGoals = filteredEpmRootGoals.slice(0, 10);
-            const selectedEpmSubGoalKeySet = React.useMemo(
-                () => new Set(normalizeEpmScopeSubGoalKeys(epmConfigDraft.scope)),
-                [epmConfigDraft.scope?.subGoalKeys]
-            );
-            const visibleEpmSubGoals = filteredEpmSubGoals
-                .filter((goal) => !selectedEpmSubGoalKeySet.has(String(goal?.key || '').trim().toUpperCase()))
-                .slice(0, 10);
-            const activeEpmRootGoalIndex = Math.min(epmRootGoalIndex, Math.max(visibleEpmRootGoals.length - 1, 0));
-            const activeEpmSubGoalIndex = Math.min(epmSubGoalIndex, Math.max(visibleEpmSubGoals.length - 1, 0));
-            const showEpmRootGoalResults = epmRootGoalOpen && (epmRootGoalsLoading || Boolean(epmRootGoalsError) || Boolean(epmRootGoalQuery.trim()) || visibleEpmRootGoals.length > 0 || (!epmRootGoalsLoading && !epmRootGoalsError && epmRootGoals.length === 0));
-            const showEpmSubGoalResults = epmSubGoalOpen && Boolean(epmConfigDraft.scope?.rootGoalKey) && (epmSubGoalsLoading || Boolean(epmSubGoalsError) || Boolean(epmSubGoalQuery.trim()) || visibleEpmSubGoals.length > 0 || (!epmSubGoalsLoading && !epmSubGoalsError && epmSubGoals.length === 0));
-            const handleEpmRootGoalSearchKeyDown = (event) => {
-                if (event.key === 'ArrowDown') {
-                    if (!visibleEpmRootGoals.length) return;
-                    event.preventDefault();
-                    setEpmRootGoalOpen(true);
-                    setEpmRootGoalIndex((prev) => Math.min(prev + 1, visibleEpmRootGoals.length - 1));
-                    return;
-                }
-                if (event.key === 'ArrowUp') {
-                    if (!visibleEpmRootGoals.length) return;
-                    event.preventDefault();
-                    setEpmRootGoalOpen(true);
-                    setEpmRootGoalIndex((prev) => Math.max(prev - 1, 0));
-                    return;
-                }
-                if (event.key === 'Enter') {
-                    if (!visibleEpmRootGoals.length) return;
-                    event.preventDefault();
-                    const goal = visibleEpmRootGoals[activeEpmRootGoalIndex] || visibleEpmRootGoals[0];
-                    if (goal) {
-                        void selectEpmRootGoal(goal);
-                    }
-                    return;
-                }
-                if (event.key === 'Escape' && epmRootGoalOpen) {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    setEpmRootGoalOpen(false);
-                }
-            };
-            const handleEpmSubGoalSearchKeyDown = (event) => {
-                if (event.key === 'ArrowDown') {
-                    if (!visibleEpmSubGoals.length) return;
-                    event.preventDefault();
-                    setEpmSubGoalOpen(true);
-                    setEpmSubGoalIndex((prev) => Math.min(prev + 1, visibleEpmSubGoals.length - 1));
-                    return;
-                }
-                if (event.key === 'ArrowUp') {
-                    if (!visibleEpmSubGoals.length) return;
-                    event.preventDefault();
-                    setEpmSubGoalOpen(true);
-                    setEpmSubGoalIndex((prev) => Math.max(prev - 1, 0));
-                    return;
-                }
-                if (event.key === 'Enter') {
-                    if (!visibleEpmSubGoals.length) return;
-                    event.preventDefault();
-                    const goal = visibleEpmSubGoals[activeEpmSubGoalIndex] || visibleEpmSubGoals[0];
-                    if (goal) {
-                        selectEpmSubGoal(goal);
-                    }
-                    return;
-                }
-                if (event.key === 'Escape' && epmSubGoalOpen) {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    setEpmSubGoalOpen(false);
-                }
-            };
-
-            const loadGroupsConfig = async () => {
-                const saveReadFence = groupsSaveReadFenceRef.current;
-                const readGeneration = saveReadFence
-                    ? groupsReadGenerationRef.current
-                    : groupsReadGenerationRef.current + 1;
-                if (!saveReadFence) groupsReadGenerationRef.current = readGeneration;
-                const shouldApplyResult = () => saveReadFence === 0
-                    && groupsSaveReadFenceRef.current === 0
-                    && groupsReadGenerationRef.current === readGeneration;
-                setGroupsLoading(true);
-                setGroupsError('');
-                try {
-                    const response = await requestGroupsConfig(BACKEND_URL);
-                    if (!response.ok) {
-                        throw new Error(`Groups config error ${response.status}`);
-                    }
-                    const payload = await response.json();
-                    if (!shouldApplyResult()) return false;
-                    const normalized = applyLocalGroupPreferences(payload, savedPrefsRef.current);
-                    acceptedGroupsConfigRef.current = true;
-                    clearServerConnectionError();
-                    setGroupsConfig(normalized);
-                    setGroupPreferences(normalized.preferences);
-                    setGroupWarnings(payload.warnings || []);
-                    setGroupConfigSource(normalized.source || payload.source || '');
-                    markConnectionBootstrapHealthy('groups');
-                    setBoardGroupsReadFailed(false);
-                    setActiveGroupId(prev => {
-                        const effectiveIds = effectiveVisibleGroupIds(normalized, normalized.preferences);
-                        const preferred = normalized.preferences?.activeGroupId || savedPrefsRef.current.activeGroupId || prev;
-                        return resolveVisibleActiveGroupId(normalized, effectiveIds, preferred);
-                    });
-                    return true;
-                } catch (err) {
-                    if (!shouldApplyResult()) return false;
-                    acceptedGroupsConfigRef.current = false;
-                    setBoardGroupsReadFailed(true);
-                    if (isAuthenticationRequiredError(err)) return false;
-                    if (reportServerConnectionError(err, { bootstrapPart: 'groups' })) {
-                        setGroupsError('');
-                    } else {
-                        setGroupsError(err.message || 'Failed to load groups config.');
-                    }
-                    return false;
-                } finally {
-                    if (shouldApplyResult()) setGroupsLoading(false);
-                }
-            };
-
-            const handleGroupDraftChange = (updater) => {
-                setGroupDraft(prev => {
-                    if (!prev) return prev;
-                    return updater(prev);
-                });
-            };
-
-            const loadTeamsFromCurrentView = () => {
-                // Use teams from already-loaded tasks (same as teams dropdown)
-                const teams = teamOptions
-                    .filter(team => team.id !== 'all')
-                    .map(team => ({ id: team.id, name: team.name }));
-                return teams;
-            };
-
             const openGroupManage = (tab = preferredSettingsTab) => {
                 setGroupManageTab(tab);
                 setShowGroupManage(true);
@@ -2758,46 +2050,14 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 setCapacityFieldSearchOpen(false);
             };
 
-            const groupDraftSignature = React.useMemo(() => {
-                if (!groupDraft) return '';
-                return JSON.stringify(buildSharedGroupsPayload(groupDraft));
-            }, [groupDraft]);
-
-            // Whether the dirty group draft's trigger for the conflict banner is a board edit
-            // specifically, so the banner names a board only when one is actually unsaved.
-            const isGroupBoardDraftDirty = React.useMemo(() => {
-                let baselineGroups = [];
-                try {
-                    baselineGroups = JSON.parse(groupDraftBaselineRef.current || '{}').groups || [];
-                } catch (_) {
-                    baselineGroups = [];
-                }
-                return boardDraftIsDirty(groupDraft, baselineGroups);
-            }, [groupDraft, groupDraftSignature]);
-
-            const isEpmConfigDirty = React.useMemo(() => {
-                return JSON.stringify(epmConfigDraft) !== epmConfigBaselineRef.current;
-            }, [epmConfigDraft]);
-            const hasSavedEpmScope = React.useMemo(() => {
-                try {
-                    const savedConfig = JSON.parse(epmConfigBaselineRef.current || '{}');
-                    return hasSavedEpmScopeConfig(savedConfig);
-                } catch (err) {
-                    return false;
-                }
-            }, [epmConfigDraft]);
-            const savedEpmSubGoalKeys = React.useMemo(
-                () => normalizeEpmScopeSubGoalKeys(epmConfigDraft.scope),
-                [epmConfigDraft.scope?.subGoalKeys]
-            );
-            const savedEpmRootGoalKey = React.useMemo(
-                () => String(epmConfigDraft.scope?.rootGoalKey || '').trim().toUpperCase(),
-                [epmConfigDraft.scope?.rootGoalKey]
-            );
-            useEffect(() => {
-                if (!showEpmNavigation || selectedView !== 'epm' || !epmConfigLoaded || savedEpmSubGoalKeys.length < 1 || !savedEpmRootGoalKey) return;
-                void loadEpmSubGoalsForRoot(savedEpmRootGoalKey);
-            }, [showEpmNavigation, selectedView, epmConfigLoaded, savedEpmRootGoalKey, savedEpmSubGoalKeys]);
+            useEpmSavedSubGoalsEffect({
+                epmConfigLoaded,
+                loadEpmSubGoalsForRoot,
+                savedEpmRootGoalKey,
+                savedEpmSubGoalKeys,
+                selectedView,
+                showEpmNavigation,
+            });
             const {
                 epmTab,
                 setEpmTab,
@@ -2878,90 +2138,21 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                     return next;
                 });
             };
-            const hasDraftEpmScope = React.useMemo(() => {
-                return hasSavedEpmScopeConfig(epmConfigDraft);
-            }, [epmConfigDraft]);
-            const epmProjectPrerequisites = React.useMemo(() => getEpmProjectPrerequisites(epmConfigDraft), [epmConfigDraft]);
-            const canLoadEpmProjects = epmProjectPrerequisites.length === 0;
-            const epmSettingsProjectsCacheKey = React.useMemo(() => getEpmSettingsProjectsCacheKey(epmConfigDraft), [epmConfigDraft]);
 
-            useEffect(() => {
-                if (epmSettingsProjectsCacheKey && epmSettingsProjectsCacheRef.current.has(epmSettingsProjectsCacheKey)) return;
-                setEpmSettingsProjectsLoaded(false);
-                setEpmSettingsProjectsLoadedAt('');
-                setEpmSettingsProjectsFetchMeta({
-                    cacheHit: false,
-                    fetchedAt: '',
-                    homeProjectCount: 0,
-                    homeProjectLimit: null,
-                    possiblyTruncated: false,
-                });
-            }, [epmSettingsProjectsCacheKey]);
-
-            useEffect(() => {
-                if (!showGroupManage || groupManageTab !== 'epm' || epmSettingsTab !== 'projects') return;
-                if (!canLoadEpmProjects || !epmSettingsProjectsCacheKey) return;
-                const draftSnapshot = normalizeEpmConfigDraft(epmConfigDraft);
-                const cacheKeySnapshot = getEpmSettingsProjectsCacheKey(draftSnapshot);
-                if (!cacheKeySnapshot || cacheKeySnapshot !== epmSettingsProjectsCacheKey) return;
-                void ensureEpmSettingsProjectsLoaded({
-                    draftConfig: draftSnapshot,
-                    cacheKey: cacheKeySnapshot,
-                }).catch(() => {});
-            }, [showGroupManage, groupManageTab, epmSettingsTab, canLoadEpmProjects, epmSettingsProjectsCacheKey]);
-
-            const epmSettingsProjectRows = React.useMemo(() => {
-                const configuredProjects = epmConfigDraft.projects || {};
-                const rows = [];
-                const seen = new Set();
-                (epmSettingsProjects || []).forEach((project) => {
-                    const projectId = String(project?.id || project?.homeProjectId || '').trim();
-                    if (!projectId) return;
-                    const homeProjectId = String(project?.homeProjectId || projectId).trim();
-                    const configuredRow = configuredProjects[projectId] || configuredProjects[homeProjectId] || {};
-                    rows.push(hydrateEpmProjectDraft({
-                        id: projectId,
-                        homeProjectId,
-                        homeName: String(project?.name || ''),
-                        homeUrl: project?.homeUrl || project?.url || '',
-                        stateLabel: project?.stateLabel || '',
-                        stateValue: project?.stateValue || '',
-                        latestUpdateDate: project?.latestUpdateDate || '',
-                        latestUpdateSnippet: project?.latestUpdateSnippet || '',
-                        name: String(configuredRow?.name ?? ''),
-                        label: String(configuredRow?.label ?? ''),
-                        missingFromHomeFetch: Boolean(project?.missingFromHomeFetch),
-                    }, project));
-                    seen.add(projectId);
-                    seen.add(homeProjectId);
-                });
-                Object.entries(configuredProjects).forEach(([projectId, row]) => {
-                    if (!row || typeof row !== 'object') return;
-                    const id = String(row.id || projectId || '').trim();
-                    if (!id || seen.has(id)) return;
-                    const homeProjectId = row.homeProjectId === null ? null : String(row.homeProjectId || '').trim();
-                    if (homeProjectId && seen.has(homeProjectId)) return;
-                    rows.push(hydrateEpmProjectDraft({
-                        id,
-                        homeProjectId,
-                        homeName: '',
-                        homeUrl: '',
-                        stateLabel: '',
-                        stateValue: '',
-                        latestUpdateDate: '',
-                        latestUpdateSnippet: '',
-                        name: String(row?.name ?? ''),
-                        label: String(row?.label ?? ''),
-                    }, null));
-                });
-                const filteredRows = rows.filter(row => {
-                    const id = String(row.id || '').trim();
-                    if (id && removedEpmProjectIds.has(id)) return false;
-                    if (row.homeProjectId && removedEpmProjectIds.has(String(row.homeProjectId))) return false;
-                    return true;
-                });
-                return sortEpmSettingsProjects(filterEpmSettingsProjectsForView(filteredRows, epmSettingsProjectView), epmSettingsProjectSort);
-            }, [epmConfigDraft, epmSettingsProjectSort, epmSettingsProjectView, epmSettingsProjects, removedEpmProjectIds]);
+            useEpmSettingsProjectsEffects({
+                canLoadEpmProjects,
+                ensureEpmSettingsProjectsLoaded,
+                epmConfigDraft,
+                epmSettingsProjectsCacheKey,
+                epmSettingsProjectsCacheRef,
+                epmSettingsTab,
+                groupManageTab,
+                normalizeEpmConfigDraft,
+                setEpmSettingsProjectsFetchMeta,
+                setEpmSettingsProjectsLoaded,
+                setEpmSettingsProjectsLoadedAt,
+                showGroupManage,
+            });
 
             const isAdminAccessDirty = adminAccess.isDirty;
             const isCoreSharedConfigurationDraftDirty = React.useMemo(() => {
@@ -3115,67 +2306,11 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 closeGroupManage();
             };
             const labelsTabEnabled = (groupDraft?.groups || groupsConfig.groups || []).length > 0;
-            const openEpmSettingsTab = () => {
-                if (!canEditEpmConfiguration) {
-                    return;
-                }
-                trackSettingsAction('epm', 'open', { source_surface: 'epm' });
-                resetEpmSettingsProjectRows();
-                setShowGroupManage(true);
-                setGroupManageTab('epm');
-                setEpmSettingsTab('projects');
-            };
 
             const openUserConnectionsSettings = () => {
                 trackSettingsAction('connections', 'open');
                 setShowGroupManage(true);
                 setGroupManageTab('connections');
-            };
-
-            const focusEpmScopeField = React.useCallback((field) => {
-                setEpmSettingsTab('scope');
-                window.requestAnimationFrame(() => {
-                    const selector = field === 'labelPrefix'
-                        ? '[data-epm-scope-field="labelPrefix"]'
-                        : '[data-epm-scope-field="subGoal"]';
-                    const node = document.querySelector(selector);
-                    if (node && typeof node.focus === 'function') {
-                        node.focus();
-                    }
-                });
-            }, []);
-
-            const handleEpmSettingsTabKeyDown = (event) => {
-                const tabs = ['scope', 'projects'];
-                const focusTab = (tab) => {
-                    window.requestAnimationFrame(() => {
-                        const node = document.getElementById(`epm-settings-${tab}-tab`);
-                        if (node && typeof node.focus === 'function') {
-                            node.focus();
-                        }
-                    });
-                };
-                const currentIndex = tabs.indexOf(epmSettingsTab);
-                if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
-                    event.preventDefault();
-                    const direction = event.key === 'ArrowRight' ? 1 : -1;
-                    const nextIndex = (currentIndex + direction + tabs.length) % tabs.length;
-                    const nextTab = tabs[nextIndex];
-                    setEpmSettingsTab(nextTab);
-                    focusTab(nextTab);
-                    return;
-                }
-                if (event.key === 'Home') {
-                    event.preventDefault();
-                    setEpmSettingsTab('scope');
-                    focusTab('scope');
-                    return;
-                }
-                if (event.key === 'End') {
-                    event.preventDefault();
-                    setEpmSettingsTab('projects');
-                    focusTab('projects');
-                }
             };
 
             const focusSettingsSubTab = (prefix, tab) => {
@@ -3243,112 +2378,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 );
             };
 
-            const closeAllTeamSearchDropdowns = () => {
-                setTeamSearchOpen(prev => {
-                    const next = { ...prev };
-                    Object.keys(next).forEach(key => {
-                        next[key] = false;
-                    });
-                    return next;
-                });
-            };
-
-            const setTeamFeedback = (groupId, message, tone = 'neutral') => {
-                if (!groupId) return;
-                setTeamSearchFeedback(prev => ({
-                    ...prev,
-                    [groupId]: { message, tone }
-                }));
-                if (teamSearchFeedbackTimersRef.current[groupId]) {
-                    clearTimeout(teamSearchFeedbackTimersRef.current[groupId]);
-                }
-                teamSearchFeedbackTimersRef.current[groupId] = window.setTimeout(() => {
-                    setTeamSearchFeedback(prev => {
-                        const next = { ...prev };
-                        delete next[groupId];
-                        return next;
-                    });
-                    delete teamSearchFeedbackTimersRef.current[groupId];
-                }, 2200);
-            };
-
-            const addGroupDraftRow = () => {
-                let nextId = '';
-                handleGroupDraftChange(prev => {
-                    const existingIds = new Set((prev.groups || []).map(group => group.id));
-                    nextId = buildGroupId('New Group', existingIds);
-                    const nextGroup = {
-                        id: nextId,
-                        name: 'New Group',
-                        teamIds: [],
-                        missingInfoComponents: [],
-                        excludedCapacityEpics: []
-                    };
-                    return {
-                        ...prev,
-                        groups: [...(prev.groups || []), nextGroup]
-                    };
-                });
-                if (nextId) {
-                    setActiveGroupDraftId(nextId);
-                    setVisibleGroupDraftIds(prev => prev.includes(nextId) ? prev : [...prev, nextId]);
-                    setShowGroupListMobile(false);
-                }
-            };
-
-            const updateGroupDraftName = (groupId, name) => {
-                handleGroupDraftChange(prev => ({
-                    ...prev,
-                    groups: (prev.groups || []).map(group =>
-                        group.id === groupId ? { ...group, name } : group
-                    )
-                }));
-            };
-
-            const duplicateGroupDraft = (groupId) => {
-                let nextId = '';
-                handleGroupDraftChange(prev => {
-                    const source = (prev.groups || []).find(group => group.id === groupId);
-                    if (!source) return prev;
-                    const existingIds = new Set((prev.groups || []).map(group => group.id));
-                    const nextName = `${source.name || 'Group'} Copy`;
-                    nextId = buildGroupId(nextName, existingIds);
-                    const nextGroup = {
-                        ...structuredClone(source),
-                        id: nextId,
-                        name: nextName
-                    };
-                    return {
-                        ...prev,
-                        groups: [...(prev.groups || []), nextGroup]
-                    };
-                });
-                if (nextId) {
-                    setActiveGroupDraftId(nextId);
-                    setVisibleGroupDraftIds(prev => prev.includes(nextId) ? prev : [...prev, nextId]);
-                    setShowGroupListMobile(false);
-                }
-            };
-
-            const updateGroupDraftBoard = (groupId, board) => {
-                handleGroupDraftChange(prev => ({
-                    ...prev,
-                    groups: (prev.groups || []).map(group =>
-                        group.id === groupId ? { ...group, board } : group
-                    )
-                }));
-            };
-
-            const updateGroupDraftTeams = (groupId, rawTeams) => {
-                const teamIds = parseTeamIdList(rawTeams);
-                handleGroupDraftChange(prev => ({
-                    ...prev,
-                    groups: (prev.groups || []).map(group =>
-                        group.id === groupId ? { ...group, teamIds } : group
-                    )
-                }));
-            };
-
             const updateNoticeVisible = React.useMemo(() => {
                 if (!updateInfo || updateInfo.enabled === false) return false;
                 if (!updateInfo.updateAvailable) return false;
@@ -3362,243 +2391,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                     setUpdateDismissedHash(remoteHash);
                 }
                 setShowUpdateModal(false);
-            };
-
-            const toggleTeamInGroup = (groupId, teamId) => {
-                handleGroupDraftChange(prev => ({
-                    ...prev,
-                    groups: (prev.groups || []).map(group => {
-                        if (group.id !== groupId) return group;
-                        const currentTeams = group.teamIds || [];
-                        const hasTeam = currentTeams.includes(teamId);
-                        const newTeams = hasTeam
-                            ? currentTeams.filter(id => id !== teamId)
-                            : [...currentTeams, teamId];
-                        return { ...group, teamIds: newTeams };
-                    })
-                }));
-            };
-
-            const focusTeamSearchInput = (groupId) => {
-                const node = teamSearchInputRefs.current[groupId];
-                if (node && typeof node.focus === 'function') {
-                    node.focus();
-                }
-            };
-
-            const addTeamToGroup = (groupId, teamId) => {
-                const candidate = availableTeams.find(team => team.id === teamId);
-                if (!candidate?.canAdd) {
-                    setTeamFeedback(groupId, candidate?.availableInSprint === false
-                        ? 'Not in the selected sprint'
-                        : 'Wait for team membership to load', 'warn');
-                    return;
-                }
-                let added = false;
-                let alreadyAdded = false;
-                let limitReached = false;
-                handleGroupDraftChange(prev => ({
-                    ...prev,
-                    groups: (prev.groups || []).map(group => {
-                        if (group.id !== groupId) return group;
-                        const currentTeams = group.teamIds || [];
-                        if (currentTeams.includes(teamId)) {
-                            alreadyAdded = true;
-                            return group;
-                        }
-                        if (currentTeams.length >= 12) {
-                            limitReached = true;
-                            return group;
-                        }
-                        added = true;
-                        return {
-                            ...group,
-                            teamIds: [...currentTeams, teamId],
-                            teamLabels: { ...(group.teamLabels || {}) }
-                        };
-                    })
-                }));
-                if (alreadyAdded) {
-                    setTeamFeedback(groupId, 'Already added');
-                }
-                if (limitReached) {
-                    setTeamFeedback(groupId, 'Limit reached (12 max)', 'warn');
-                }
-                if (added) {
-                    setTeamSearchOpen(prev => ({ ...prev, [groupId]: true }));
-                    focusTeamSearchInput(groupId);
-                }
-            };
-
-            const removeTeamFromGroup = (groupId, teamId) => {
-                handleGroupDraftChange(prev => ({
-                    ...prev,
-                    groups: (prev.groups || []).map(group => {
-                        if (group.id !== groupId) return group;
-                        const nextTeamLabels = { ...(group.teamLabels || {}) };
-                        delete nextTeamLabels[teamId];
-                        return {
-                            ...group,
-                            teamIds: (group.teamIds || []).filter(id => id !== teamId),
-                            teamLabels: nextTeamLabels
-                        };
-                    })
-                }));
-            };
-
-            // Returns the add status from the rendered draft so a stale duplicate or over-limit
-            // selection is reported without relying on when React runs the updater.
-            const addTeamLabelToGroup = (groupId, teamId, label) => {
-                const currentGroup = (groupDraft?.groups || []).find(group => group.id === groupId);
-                const { status } = addTeamLabelAlias(currentGroup?.teamLabels, teamId, label);
-                if (status !== 'added') return status;
-                handleGroupDraftChange(prev => ({
-                    ...prev,
-                    groups: (prev.groups || []).map(group => {
-                        if (group.id !== groupId) return group;
-                        const result = addTeamLabelAlias(group.teamLabels, teamId, label);
-                        return result.status === 'added' ? { ...group, teamLabels: result.teamLabels } : group;
-                    })
-                }));
-                return status;
-            };
-
-            const removeTeamLabelFromGroup = (groupId, teamId, label) => {
-                handleGroupDraftChange(prev => ({
-                    ...prev,
-                    groups: (prev.groups || []).map(group => (
-                        group.id === groupId
-                            ? { ...group, teamLabels: removeTeamLabelAlias(group.teamLabels, teamId, label) }
-                            : group
-                    ))
-                }));
-            };
-
-            const handleTeamSearchChange = (groupId, value) => {
-                setTeamSearchQuery(prev => ({ ...prev, [groupId]: value }));
-                setTeamSearchOpen(prev => ({ ...prev, [groupId]: true }));
-                setTeamSearchIndex(prev => ({ ...prev, [groupId]: 0 }));
-                if (teamSearchFeedback[groupId]) {
-                    setTeamSearchFeedback(prev => {
-                        const next = { ...prev };
-                        delete next[groupId];
-                        return next;
-                    });
-                }
-            };
-
-            const handleTeamSearchFocus = (groupId) => {
-                setTeamSearchOpen(prev => ({ ...prev, [groupId]: true }));
-            };
-
-            const handleTeamSearchBlur = (groupId) => {
-                window.setTimeout(() => {
-                    setTeamSearchOpen(prev => ({ ...prev, [groupId]: false }));
-                }, 120);
-            };
-
-            const focusLastTeamChip = (groupId) => {
-                const node = teamChipLastRef.current[groupId];
-                if (node && typeof node.focus === 'function') {
-                    node.focus();
-                }
-            };
-
-            const getGroupTeamSearchResults = (group, queryText) => {
-                if (!group) return [];
-                const teamsInOtherGroups = new Set();
-                (groupDraft?.groups || []).forEach(g => {
-                    if (g.id !== group.id) {
-                        (g.teamIds || []).forEach(teamId => teamsInOtherGroups.add(teamId));
-                    }
-                });
-                const currentTeams = new Set(group.teamIds || []);
-                const query = String(queryText || '').toLowerCase();
-                return availableTeams.filter(team => {
-                    if (currentTeams.has(team.id)) return false;
-                    if (teamsInOtherGroups.has(team.id)) return false;
-                    const nameLower = String(team.name || '').toLowerCase();
-                    return nameLower.includes(query);
-                });
-            };
-
-            const handleTeamSearchKeyDown = (groupId, event, results) => {
-                if (!groupId) return;
-                const value = teamSearchQuery[groupId] || '';
-                const enabledIndexes = results.reduce((indexes, team, index) => {
-                    if (team.canAdd) indexes.push(index);
-                    return indexes;
-                }, []);
-                if (event.key === 'ArrowDown') {
-                    if (!enabledIndexes.length) return;
-                    event.preventDefault();
-                    const current = teamSearchIndex[groupId] || 0;
-                    const currentPosition = enabledIndexes.indexOf(current);
-                    setTeamSearchIndex(prev => ({
-                        ...prev,
-                        [groupId]: enabledIndexes[Math.min(currentPosition + 1, enabledIndexes.length - 1)]
-                    }));
-                    return;
-                }
-                if (event.key === 'ArrowUp') {
-                    if (!enabledIndexes.length) return;
-                    event.preventDefault();
-                    const current = teamSearchIndex[groupId] || 0;
-                    const currentPosition = enabledIndexes.indexOf(current);
-                    setTeamSearchIndex(prev => ({
-                        ...prev,
-                        [groupId]: enabledIndexes[currentPosition <= 0 ? 0 : currentPosition - 1]
-                    }));
-                    return;
-                }
-                if (event.key === 'Enter') {
-                    if (!enabledIndexes.length) return;
-                    event.preventDefault();
-                    const index = teamSearchIndex[groupId] || 0;
-                    const team = results[index]?.canAdd ? results[index] : results[enabledIndexes[0]];
-                    if (team?.id) {
-                        addTeamToGroup(groupId, team.id);
-                    }
-                    return;
-                }
-                if (event.key === 'Escape') {
-                    if (teamSearchOpen[groupId]) {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        setTeamSearchOpen(prev => ({ ...prev, [groupId]: false }));
-                    }
-                    return;
-                }
-                if (event.key === 'Backspace' && !value) {
-                    focusLastTeamChip(groupId);
-                }
-            };
-
-            const removeGroupDraft = (groupId) => {
-                let nextActiveId = activeGroupDraftId;
-                handleGroupDraftChange(prev => {
-                    const nextGroups = (prev.groups || []).filter(group => group.id !== groupId);
-                    const nextDefault = prev.defaultGroupId === groupId ? '' : prev.defaultGroupId;
-                    if (activeGroupDraftId === groupId) {
-                        nextActiveId = nextGroups[0]?.id || null;
-                    }
-                    return {
-                        ...prev,
-                        groups: nextGroups,
-                        defaultGroupId: nextDefault
-                    };
-                });
-                if (activeGroupDraftId === groupId) {
-                    setActiveGroupDraftId(nextActiveId);
-                }
-                setVisibleGroupDraftIds(prev => prev.filter(id => id !== groupId));
-            };
-
-            const toggleDefaultGroupDraft = (groupId) => {
-                handleGroupDraftChange(prev => ({
-                    ...prev,
-                    defaultGroupId: prev.defaultGroupId === groupId ? '' : groupId
-                }));
             };
 
             const testGroupsConfigConnection = async () => {
@@ -3619,21 +2411,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 } finally {
                     setGroupTesting(false);
                 }
-            };
-
-            const applySavedGroupsConfig = (payload) => {
-                const normalized = applyLocalGroupPreferences(payload, savedPrefsRef.current);
-                setGroupsConfig(normalized);
-                setGroupPreferences(normalized.preferences);
-                setGroupWarnings(payload?.warnings || []);
-                setGroupConfigSource(normalized.source || payload?.source || '');
-                setGroupDraft(normalized);
-                groupDraftBaselineRef.current = JSON.stringify(buildSharedGroupsPayload(normalized));
-                setActiveGroupId(prev => {
-                    const effectiveIds = effectiveVisibleGroupIds(normalized, normalized.preferences);
-                    return resolveVisibleActiveGroupId(normalized, effectiveIds, prev);
-                });
-                return normalized;
             };
 
             const buildSettingsSaveOutcome = (overrides = {}) => buildFirstRunSettingsSaveOutcome(overrides);
@@ -4348,383 +3125,29 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 showGroupManage,
             });
 
-            // Component search debounced fetch
-            useEffect(() => {
-                const query = componentSearchQuery.trim();
-                if (!showGroupManage || groupManageTab !== 'teams' || !query) {
-                    setComponentSearchResults([]);
-                    setComponentSearchLoading(false);
-                    return undefined;
-                }
-
-                const controller = new AbortController();
-                const timeoutId = window.setTimeout(async () => {
-                    setComponentSearchLoading(true);
-                    try {
-                        const response = await requestComponentSearch(BACKEND_URL, { query, signal: controller.signal });
-                        if (!response.ok) throw new Error(`Components search error ${response.status}`);
-                        const data = await response.json();
-                        setComponentSearchResults(data.components || []);
-                    } catch (err) {
-                        if (err.name !== 'AbortError') {
-                            console.error('Failed to search components:', err);
-                            setComponentSearchResults([]);
-                        }
-                    } finally {
-                        if (!controller.signal.aborted) {
-                            setComponentSearchLoading(false);
-                        }
-                    }
-                }, 220);
-
-                return () => {
-                    window.clearTimeout(timeoutId);
-                    controller.abort();
-                };
-            }, [showGroupManage, groupManageTab, componentSearchQuery]);
-
-            // Excluded epic search debounced fetch
-            useEffect(() => {
-                const query = excludedEpicSearchQuery.trim();
-                if (!showGroupManage || groupManageTab !== 'teams' || !query) {
-                    setExcludedEpicSearchResults([]);
-                    setExcludedEpicSearchLoading(false);
-                    return undefined;
-                }
-
-                const controller = new AbortController();
-                const timeoutId = window.setTimeout(async () => {
-                    setExcludedEpicSearchLoading(true);
-                    try {
-                        const response = await requestEpicSearch(BACKEND_URL, { query, signal: controller.signal });
-                        if (!response.ok) throw new Error(`Excluded epics search error ${response.status}`);
-                        const data = await response.json();
-                        setExcludedEpicSearchResults(data.epics || []);
-                    } catch (err) {
-                        if (err.name !== 'AbortError') {
-                            console.error('Failed to search excluded epics:', err);
-                            setExcludedEpicSearchResults([]);
-                        }
-                    } finally {
-                        if (!controller.signal.aborted) {
-                            setExcludedEpicSearchLoading(false);
-                        }
-                    }
-                }, 220);
-
-                return () => {
-                    window.clearTimeout(timeoutId);
-                    controller.abort();
-                };
-            }, [showGroupManage, groupManageTab, excludedEpicSearchQuery]);
-
-            useEffect(() => {
-                const query = adHocEpicSearchQuery.trim();
-                if (!showGroupManage || groupManageTab !== 'teams' || !query) {
-                    setAdHocEpicSearchResults([]);
-                    setAdHocEpicSearchLoading(false);
-                    return undefined;
-                }
-
-                const controller = new AbortController();
-                const timeoutId = window.setTimeout(async () => {
-                    setAdHocEpicSearchLoading(true);
-                    try {
-                        const response = await requestEpicSearch(BACKEND_URL, { query, signal: controller.signal });
-                        if (!response.ok) throw new Error(`Ad Hoc epics search error ${response.status}`);
-                        const data = await response.json();
-                        setAdHocEpicSearchResults(data.epics || []);
-                    } catch (err) {
-                        if (err.name !== 'AbortError') {
-                            console.error('Failed to search Ad Hoc epics:', err);
-                            setAdHocEpicSearchResults([]);
-                        }
-                    } finally {
-                        if (!controller.signal.aborted) {
-                            setAdHocEpicSearchLoading(false);
-                        }
-                    }
-                }, 220);
-
-                return () => {
-                    window.clearTimeout(timeoutId);
-                    controller.abort();
-                };
-            }, [showGroupManage, groupManageTab, adHocEpicSearchQuery]);
-
-            const filteredComponentSearchResults = React.useMemo(() => {
-                const group = activeGroupDraftId
-                    ? (groupDraft?.groups || []).find(g => g.id === activeGroupDraftId)
-                    : null;
-                const selected = new Set((group?.missingInfoComponents || []).map(c => c.toLowerCase()));
-                return componentSearchResults.filter(c => !selected.has(c.name.toLowerCase()));
-            }, [componentSearchResults, groupDraft, activeGroupDraftId]);
-
-            const filteredExcludedEpicSearchResults = React.useMemo(() => {
-                const group = activeGroupDraftId
-                    ? (groupDraft?.groups || []).find(g => g.id === activeGroupDraftId)
-                    : null;
-                const selected = new Set((group?.excludedCapacityEpics || []).map(key => String(key || '').trim().toUpperCase()));
-                return excludedEpicSearchResults.filter((epic) => {
-                    const key = String(epic?.key || '').trim().toUpperCase();
-                    return key && !selected.has(key);
-                });
-            }, [excludedEpicSearchResults, groupDraft, activeGroupDraftId]);
-
-            const filteredAdHocEpicSearchResults = React.useMemo(() => {
-                const group = activeGroupDraftId
-                    ? (groupDraft?.groups || []).find(g => g.id === activeGroupDraftId)
-                    : null;
-                const selected = new Set((group?.adHocCapacityEpics || []).map(key => String(key || '').trim().toUpperCase()));
-                return adHocEpicSearchResults.filter((epic) => {
-                    const key = String(epic?.key || '').trim().toUpperCase();
-                    return key && !selected.has(key);
-                });
-            }, [adHocEpicSearchResults, groupDraft, activeGroupDraftId]);
-
-            React.useEffect(() => {
-                const maxIndex = filteredComponentSearchResults.length - 1;
-                if (componentSearchIndex > maxIndex) setComponentSearchIndex(0);
-            }, [filteredComponentSearchResults.length]);
-
-            React.useEffect(() => {
-                const maxIndex = filteredExcludedEpicSearchResults.length - 1;
-                if (excludedEpicSearchIndex > maxIndex) setExcludedEpicSearchIndex(0);
-            }, [filteredExcludedEpicSearchResults.length]);
-
-            React.useEffect(() => {
-                const maxIndex = filteredAdHocEpicSearchResults.length - 1;
-                if (adHocEpicSearchIndex > maxIndex) setAdHocEpicSearchIndex(0);
-            }, [filteredAdHocEpicSearchResults.length]);
-
-            const handleComponentSearchKeyDown = (event) => {
-                if (event.key === 'ArrowDown') {
-                    if (!filteredComponentSearchResults.length) return;
-                    event.preventDefault();
-                    setComponentSearchIndex(prev => Math.min(prev + 1, filteredComponentSearchResults.length - 1));
-                } else if (event.key === 'ArrowUp') {
-                    if (!filteredComponentSearchResults.length) return;
-                    event.preventDefault();
-                    setComponentSearchIndex(prev => Math.max(prev - 1, 0));
-                } else if (event.key === 'Enter') {
-                    if (!filteredComponentSearchResults.length) return;
-                    event.preventDefault();
-                    const comp = filteredComponentSearchResults[componentSearchIndex] || filteredComponentSearchResults[0];
-                    if (comp && activeGroupDraft) addGroupMissingInfoComponent(activeGroupDraft.id, comp.name);
-                } else if (event.key === 'Escape') {
-                    if (componentSearchOpen) {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        setComponentSearchOpen(false);
-                    }
-                }
-            };
-
-            const addGroupMissingInfoComponent = (groupId, componentName) => {
-                setGroupDraft(prev => {
-                    if (!prev) return prev;
-                    const groups = (prev.groups || []).map(g => {
-                        if (g.id !== groupId) return g;
-                        const existing = g.missingInfoComponents || [];
-                        if (existing.some(c => c.toLowerCase() === componentName.toLowerCase())) return g;
-                        return { ...g, missingInfoComponents: [...existing, componentName] };
-                    });
-                    return { ...prev, groups };
-                });
-                setComponentSearchQuery('');
-                setComponentSearchOpen(false);
-            };
-
-            const removeGroupMissingInfoComponent = (groupId, componentName) => {
-                setGroupDraft(prev => {
-                    if (!prev) return prev;
-                    const groups = (prev.groups || []).map(g => {
-                        if (g.id !== groupId) return g;
-                        return { ...g, missingInfoComponents: (g.missingInfoComponents || []).filter(c => c !== componentName) };
-                    });
-                    return { ...prev, groups };
-                });
-            };
-
-            const addGroupExcludedCapacityEpic = (groupId, epicKey) => {
-                const normalizedKey = String(epicKey || '').trim().toUpperCase();
-                if (!normalizedKey) return;
-                let added = false;
-                setGroupDraft(prev => {
-                    if (!prev) return prev;
-                    const groups = (prev.groups || []).map(g => {
-                        if (g.id !== groupId) return g;
-                        const existing = (g.excludedCapacityEpics || []).map(key => String(key || '').trim().toUpperCase());
-                        if (existing.includes(normalizedKey)) return g;
-                        added = true;
-                        return { ...g, excludedCapacityEpics: [...existing, normalizedKey] };
-                    });
-                    return { ...prev, groups };
-                });
-                if (added) {
-                    setExcludedEpicSearchOpen(true);
-                    focusExcludedEpicSearchInput();
-                }
-            };
-
-            const removeGroupExcludedCapacityEpic = (groupId, epicKey) => {
-                const normalizedKey = String(epicKey || '').trim().toUpperCase();
-                setGroupDraft(prev => {
-                    if (!prev) return prev;
-                    const groups = (prev.groups || []).map(g => {
-                        if (g.id !== groupId) return g;
-                        return {
-                            ...g,
-                            excludedCapacityEpics: (g.excludedCapacityEpics || [])
-                                .map(key => String(key || '').trim().toUpperCase())
-                                .filter(key => key !== normalizedKey)
-                        };
-                    });
-                    return { ...prev, groups };
-                });
-            };
-
-            const addGroupAdHocCapacityEpic = (groupId, epicKey) => {
-                const normalizedKey = String(epicKey || '').trim().toUpperCase();
-                if (!normalizedKey) return;
-                let added = false;
-                setGroupDraft(prev => {
-                    if (!prev) return prev;
-                    const groups = (prev.groups || []).map(g => {
-                        if (g.id !== groupId) return g;
-                        const existing = (g.adHocCapacityEpics || []).map(key => String(key || '').trim().toUpperCase()).filter(Boolean);
-                        if (existing.includes(normalizedKey)) return g;
-                        added = true;
-                        return { ...g, adHocCapacityEpics: [...existing, normalizedKey] };
-                    });
-                    return { ...prev, groups };
-                });
-                if (added) {
-                    setAdHocEpicSearchOpen(true);
-                    focusAdHocEpicSearchInput();
-                }
-            };
-
-            const removeGroupAdHocCapacityEpic = (groupId, epicKey) => {
-                const normalizedKey = String(epicKey || '').trim().toUpperCase();
-                setGroupDraft(prev => {
-                    if (!prev) return prev;
-                    const groups = (prev.groups || []).map(g => {
-                        if (g.id !== groupId) return g;
-                        return {
-                            ...g,
-                            adHocCapacityEpics: (g.adHocCapacityEpics || [])
-                                .map(key => String(key || '').trim().toUpperCase())
-                                .filter(key => key !== normalizedKey)
-                        };
-                    });
-                    return { ...prev, groups };
-                });
-            };
-
-            const handleExcludedEpicSearchKeyDown = (event) => {
-                const value = excludedEpicSearchQuery || '';
-                if (event.key === 'ArrowDown') {
-                    if (!filteredExcludedEpicSearchResults.length) return;
-                    event.preventDefault();
-                    setExcludedEpicSearchIndex(prev => Math.min(prev + 1, filteredExcludedEpicSearchResults.length - 1));
-                } else if (event.key === 'ArrowUp') {
-                    if (!filteredExcludedEpicSearchResults.length) return;
-                    event.preventDefault();
-                    setExcludedEpicSearchIndex(prev => Math.max(prev - 1, 0));
-                } else if (event.key === 'Enter') {
-                    if (!filteredExcludedEpicSearchResults.length) return;
-                    event.preventDefault();
-                    const epic = filteredExcludedEpicSearchResults[excludedEpicSearchIndex] || filteredExcludedEpicSearchResults[0];
-                    if (epic && activeGroupDraft) addGroupExcludedCapacityEpic(activeGroupDraft.id, epic.key);
-                } else if (event.key === 'Escape') {
-                    if (excludedEpicSearchOpen) {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        setExcludedEpicSearchOpen(false);
-                    }
-                } else if (event.key === 'Backspace' && !value) {
-                    const node = excludedEpicChipLastRef.current;
-                    if (node && typeof node.focus === 'function') {
-                        node.focus();
-                    }
-                }
-            };
-
-            const focusExcludedEpicSearchInput = () => {
-                const node = excludedEpicSearchInputRef.current;
-                if (node && typeof node.focus === 'function') {
-                    node.focus();
-                }
-            };
-
-            const handleAdHocEpicSearchKeyDown = (event) => {
-                const value = adHocEpicSearchQuery || '';
-                if (event.key === 'ArrowDown') {
-                    if (!filteredAdHocEpicSearchResults.length) return;
-                    event.preventDefault();
-                    setAdHocEpicSearchIndex(prev => Math.min(prev + 1, filteredAdHocEpicSearchResults.length - 1));
-                } else if (event.key === 'ArrowUp') {
-                    if (!filteredAdHocEpicSearchResults.length) return;
-                    event.preventDefault();
-                    setAdHocEpicSearchIndex(prev => Math.max(prev - 1, 0));
-                } else if (event.key === 'Enter') {
-                    if (!filteredAdHocEpicSearchResults.length) return;
-                    event.preventDefault();
-                    const epic = filteredAdHocEpicSearchResults[adHocEpicSearchIndex] || filteredAdHocEpicSearchResults[0];
-                    if (epic && activeGroupDraft) addGroupAdHocCapacityEpic(activeGroupDraft.id, epic.key);
-                } else if (event.key === 'Escape') {
-                    if (adHocEpicSearchOpen) {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        setAdHocEpicSearchOpen(false);
-                    }
-                } else if (event.key === 'Backspace' && !value) {
-                    const node = adHocEpicChipLastRef.current;
-                    if (node && typeof node.focus === 'function') {
-                        node.focus();
-                    }
-                }
-            };
-
-            const focusAdHocEpicSearchInput = () => {
-                const node = adHocEpicSearchInputRef.current;
-                if (node && typeof node.focus === 'function') {
-                    node.focus();
-                }
-            };
-
-            const handleExcludedEpicSearchChange = (value) => {
-                setExcludedEpicSearchQuery(value);
-                setExcludedEpicSearchOpen(true);
-                setExcludedEpicSearchIndex(0);
-            };
-
-            const handleExcludedEpicSearchFocus = () => {
-                setExcludedEpicSearchOpen(true);
-            };
-
-            const handleExcludedEpicSearchBlur = () => {
-                window.setTimeout(() => {
-                    setExcludedEpicSearchOpen(false);
-                }, 120);
-            };
-
-            const handleAdHocEpicSearchChange = (value) => {
-                setAdHocEpicSearchQuery(value);
-                setAdHocEpicSearchOpen(true);
-                setAdHocEpicSearchIndex(0);
-            };
-
-            const handleAdHocEpicSearchFocus = () => {
-                setAdHocEpicSearchOpen(true);
-            };
-
-            const handleAdHocEpicSearchBlur = () => {
-                window.setTimeout(() => {
-                    setAdHocEpicSearchOpen(false);
-                }, 120);
-            };
+            useTeamGroupSearchEffects({
+                BACKEND_URL,
+                adHocEpicSearchIndex,
+                adHocEpicSearchQuery,
+                componentSearchIndex,
+                componentSearchQuery,
+                excludedEpicSearchIndex,
+                excludedEpicSearchQuery,
+                filteredAdHocEpicSearchResults,
+                filteredComponentSearchResults,
+                filteredExcludedEpicSearchResults,
+                groupManageTab,
+                setAdHocEpicSearchIndex,
+                setAdHocEpicSearchLoading,
+                setAdHocEpicSearchResults,
+                setComponentSearchIndex,
+                setComponentSearchLoading,
+                setComponentSearchResults,
+                setExcludedEpicSearchIndex,
+                setExcludedEpicSearchLoading,
+                setExcludedEpicSearchResults,
+                showGroupManage,
+            });
 
             useJiraProjectCatalogEffects({
                 boardSearchIndex,
@@ -4748,126 +3171,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 setCapacityFieldSearchIndex,
                 setCapacityProjectSearchIndex,
             });
-
-            const exportGroupsConfig = async () => {
-                setGroupDraftError('');
-                try {
-                    const selectedGroupId = String(activeGroupDraftId || '').trim();
-                    if (!selectedGroupId) {
-                        throw new Error('Select a group before exporting.');
-                    }
-                    const response = await requestGroupsConfig(BACKEND_URL);
-                    if (!response.ok) {
-                        throw new Error(`Export failed (${response.status})`);
-                    }
-                    const source = normalizeGroupsConfig(await response.json());
-                    const selectedGroup = source.groups.find(group => group.id === selectedGroupId);
-                    if (!selectedGroup) {
-                        throw new Error('Save the selected group before exporting.');
-                    }
-                    const payload = {
-                        version: GROUPS_CONFIG_VERSION,
-                        group: selectedGroup,
-                    };
-                    const json = JSON.stringify(payload, null, 2);
-                    const objectUrl = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
-                    const link = document.createElement('a');
-                    try {
-                        link.href = objectUrl;
-                        const safeGroupId = selectedGroupId.replace(/[^a-z0-9_-]+/gi, '-');
-                        link.download = `group-${safeGroupId || 'selected'}.json`;
-                        document.body.appendChild(link);
-                        link.click();
-                    } finally {
-                        link.remove();
-                        URL.revokeObjectURL(objectUrl);
-                    }
-                } catch (err) {
-                    setGroupDraftError(err.message || 'Failed to export groups configuration.');
-                }
-            };
-
-            const importGroupsConfig = () => {
-                if (!groupImportText.trim()) return;
-                try {
-                    const selectedGroupId = String(activeGroupDraftId || '').trim();
-                    const selectedGroup = (groupDraft?.groups || []).find(group => group.id === selectedGroupId);
-                    if (!selectedGroup) {
-                        throw new Error('Select a group before importing.');
-                    }
-                    const parsed = JSON.parse(groupImportText);
-                    let importedGroup = parsed?.group;
-                    if (!importedGroup && Array.isArray(parsed?.groups)) {
-                        importedGroup = parsed.groups.find(group => String(group?.id || '').trim() === selectedGroupId);
-                        if (!importedGroup && parsed.groups.length === 1) {
-                            [importedGroup] = parsed.groups;
-                        }
-                    }
-                    if (!importedGroup || typeof importedGroup !== 'object') {
-                        throw new Error('Imported JSON must contain one group or a group matching the selected group.');
-                    }
-                    const teamLabelsError = validateImportedTeamLabels(importedGroup.teamLabels);
-                    if (teamLabelsError) {
-                        throw new Error(teamLabelsError);
-                    }
-                    const normalized = normalizeGroupsConfig({
-                        version: parsed?.version || groupDraft?.version || GROUPS_CONFIG_VERSION,
-                        groups: [importedGroup],
-                    });
-                    if (!normalized.groups.length) {
-                        throw new Error('Imported config has no valid group.');
-                    }
-                    const importedSettings = normalized.groups[0];
-                    handleGroupDraftChange(prev => ({
-                        ...prev,
-                        groups: (prev.groups || []).map(group => (
-                            group.id === selectedGroupId
-                                ? { ...importedSettings, id: group.id, name: group.name }
-                                : group
-                        )),
-                    }));
-                    setGroupDraftError('');
-                    setGroupImportText('');
-                    setShowGroupImport(false);
-                } catch (err) {
-                    setGroupDraftError(err.message || 'Invalid JSON.');
-                }
-            };
-
-            const configuredTeamIds = React.useMemo(() => (
-                Array.from(new Set((groupDraft?.groups || []).flatMap(group => group.teamIds || [])))
-            ), [groupDraft]);
-            const teamNameDirectory = React.useMemo(() => {
-                const directory = { ...(teamCatalogState?.catalog || {}) };
-                (teamNameInputs || []).forEach(team => {
-                    const teamId = String(team?.id || '').trim();
-                    const name = String(team?.name || '').trim();
-                    if (teamId && name && !directory[teamId]) {
-                        directory[teamId] = { id: teamId, name };
-                    }
-                });
-                return directory;
-            }, [teamCatalogState, teamNameInputs]);
-            const availableTeams = React.useMemo(() => buildTeamAvailability({
-                directory: teamNameDirectory,
-                sprintTeams: teamMembershipState.snapshot,
-                configuredTeamIds,
-                membershipReady: teamMembershipState.status === 'ready'
-                    || teamMembershipState.validated === true,
-                generation: teamMembershipState.generation,
-            }), [teamNameDirectory, teamMembershipState, configuredTeamIds]);
-            const teamNameLookup = React.useMemo(() => Object.fromEntries(
-                availableTeams.map(team => [team.id, team.name || team.id])
-            ), [availableTeams]);
-
-            const resolveTeamName = (teamId) => {
-                return teamNameLookup[teamId] || teamId;
-            };
-
-            const activeGroupDraft = React.useMemo(() => {
-                if (!groupDraft || !activeGroupDraftId) return null;
-                return (groupDraft.groups || []).find(group => group.id === activeGroupDraftId) || null;
-            }, [groupDraft, activeGroupDraftId]);
 
             const advanceFirstRunConfigurationGuide = React.useCallback(() => {
                 const index = FIRST_RUN_CONFIGURATION_GUIDE_STEPS.indexOf(firstRunConfigurationSession.guideStep);
@@ -4936,45 +3239,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 });
             }, [firstRunConfigurationSession, groupsConfigConflict, workspaceConfigConflict, saveFirstRunGroupPreferences]);
 
-            const filteredGroupDrafts = React.useMemo(() => {
-                const groups = groupDraft?.groups || [];
-                if (firstRunConfigurationActive) return groups;
-                const query = groupSearchQuery.trim().toLowerCase();
-                if (!query) return groups;
-                return groups.filter(group => {
-                    const nameMatch = String(group.name || '').toLowerCase().includes(query);
-                    if (nameMatch) return true;
-                    return (group.teamIds || []).some(teamId => {
-                        const teamName = String(teamNameLookup[teamId] || teamId || '').toLowerCase();
-                        return teamName.includes(query);
-                    });
-                });
-            }, [firstRunConfigurationActive, groupDraft, groupSearchQuery, teamNameLookup]);
-
-            const teamCacheMeta = React.useMemo(() => {
-                return teamCatalogState?.meta || {};
-            }, [teamCatalogState]);
-
-            const teamCacheLabel = React.useMemo(() => {
-                const stamp = teamCacheMeta?.updatedAt ? new Date(teamCacheMeta.updatedAt) : null;
-                const formatted = stamp && !Number.isNaN(stamp.getTime()) ? stamp.toLocaleString() : '';
-                if (!formatted) {
-                    return `Teams: Not cached • ${availableTeams.length} available`;
-                }
-                return `Teams: Cached • ${availableTeams.length} available • Updated ${formatted}`;
-            }, [teamCacheMeta, availableTeams]);
-            const teamCatalogCanRefresh = Boolean(selectedSprintInfo);
-
-            const activeTeamQuery = activeGroupDraft ? (teamSearchQuery[activeGroupDraft.id] || '') : '';
-            const activeTeamResults = React.useMemo(() => {
-                if (!activeGroupDraft) return [];
-                return getGroupTeamSearchResults(activeGroupDraft, activeTeamQuery);
-            }, [activeGroupDraft, activeTeamQuery, availableTeams, groupDraft]);
-            const activeTeamResultsLimited = activeTeamResults.slice(0, 10);
-            const activeTeamAvailabilityKey = activeTeamResultsLimited
-                .map(team => `${team.id}:${team.canAdd ? '1' : '0'}`)
-                .join('|');
-            const activeTeamIndex = activeGroupDraft ? (teamSearchIndex[activeGroupDraft.id] || 0) : 0;
             useEffect(() => {
                 if (!showGroupManage) return;
                 if (groupManageTab === 'epm') {
@@ -4995,159 +3259,14 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                     setDepartmentSettingsTab(groupManageTab);
                 }
             }, [groupManageTab]);
-            const getLabelRowKey = (groupId, teamId) => `${groupId || 'group'}::${teamId || 'team'}`;
-            // Jira autocomplete results minus the Team's already-selected aliases (client-side only).
-            const getLabelSearchResults = (groupId, teamId, selectedAliases = []) => {
-                const key = getLabelRowKey(groupId, teamId);
-                const query = String(labelSearchQuery[key] || '').trim();
-                if (query.length < 3) return [];
-                const selected = new Set(selectedAliases.map(alias => alias.toLowerCase()));
-                return (labelSearchResults[key] || []).filter(label => !selected.has(String(label || '').trim().toLowerCase()));
-            };
-            const focusLabelAddButton = (key) => {
-                window.setTimeout(() => labelAddButtonRefs.current[key]?.focus(), 0);
-            };
-            const closeTeamLabelSearch = (key) => {
-                setLabelSearchQuery(prev => ({ ...prev, [key]: '' }));
-                setLabelSearchResults(prev => ({ ...prev, [key]: [] }));
-                setLabelSearchIndex(prev => ({ ...prev, [key]: 0 }));
-                setLabelSearchOpen(prev => ({ ...prev, [key]: false }));
-                setLabelAddOpen(prev => ({ ...prev, [key]: false }));
-            };
-            const selectTeamLabel = React.useCallback((groupId, teamId, label) => {
-                const key = getLabelRowKey(groupId, teamId);
-                const status = addTeamLabelToGroup(groupId, teamId, label);
-                if (status === 'duplicate') {
-                    setTeamFeedback(key, 'Already added');
-                    return;
-                }
-                if (status === 'limit') {
-                    setTeamFeedback(key, `Limit reached (${TEAM_LABEL_ALIAS_LIMIT} max)`, 'warn');
-                    return;
-                }
-                closeTeamLabelSearch(key);
-                focusLabelAddButton(key);
-            }, [addTeamLabelToGroup]);
-            const handleLabelSearchKeyDown = React.useCallback((groupId, teamId, event, results) => {
-                const key = getLabelRowKey(groupId, teamId);
-                if (event.key === 'ArrowDown') {
-                    if (!results.length) return;
-                    event.preventDefault();
-                    setLabelSearchOpen(prev => ({ ...prev, [key]: true }));
-                    setLabelSearchIndex(prev => ({
-                        ...prev,
-                        [key]: Math.min((prev[key] || 0) + 1, results.length - 1)
-                    }));
-                    return;
-                }
-                if (event.key === 'ArrowUp') {
-                    if (!results.length) return;
-                    event.preventDefault();
-                    setLabelSearchOpen(prev => ({ ...prev, [key]: true }));
-                    setLabelSearchIndex(prev => ({
-                        ...prev,
-                        [key]: Math.max((prev[key] || 0) - 1, 0)
-                    }));
-                    return;
-                }
-                if (event.key === 'Enter') {
-                    if (!results.length) return;
-                    event.preventDefault();
-                    const index = labelSearchIndex[key] || 0;
-                    const label = results[index] || results[0];
-                    if (label) {
-                        selectTeamLabel(groupId, teamId, label);
-                    }
-                    return;
-                }
-                if (event.key === 'Escape' && labelSearchOpen[key]) {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    setLabelSearchOpen(prev => ({ ...prev, [key]: false }));
-                    return;
-                }
-                if (event.key === 'Escape' && labelAddOpen[key]) {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    closeTeamLabelSearch(key);
-                    focusLabelAddButton(key);
-                }
-            }, [labelSearchIndex, labelSearchOpen, labelAddOpen, selectTeamLabel]);
-            const loadJiraLabels = React.useCallback(async (groupId, teamId, rawQuery) => {
-                const query = String(rawQuery || '').trim();
-                const key = getLabelRowKey(groupId, teamId);
-                if (query.length < 3) {
-                    setLabelSearchResults(prev => ({ ...prev, [key]: [] }));
-                    setLabelSearchLoading(prev => ({ ...prev, [key]: false }));
-                    setLabelSearchIndex(prev => ({ ...prev, [key]: 0 }));
-                    return;
-                }
-                const cacheKey = query.toLowerCase();
-                if (labelSearchCacheRef.current[cacheKey]) {
-                    setLabelSearchResults(prev => ({ ...prev, [key]: labelSearchCacheRef.current[cacheKey] }));
-                    setLabelSearchLoading(prev => ({ ...prev, [key]: false }));
-                    setLabelSearchIndex(prev => ({ ...prev, [key]: 0 }));
-                    return;
-                }
-                const requestId = (labelSearchRequestIdRef.current[key] || 0) + 1;
-                labelSearchRequestIdRef.current[key] = requestId;
-                setLabelSearchLoading(prev => ({ ...prev, [key]: true }));
-                try {
-                    const payload = await requestJiraLabels(BACKEND_URL, { query, limit: 20 });
-                    const nextResults = Array.isArray(payload.labels) ? payload.labels : [];
-                    labelSearchCacheRef.current[cacheKey] = nextResults;
-                    if (labelSearchRequestIdRef.current[key] === requestId) {
-                        setLabelSearchResults(prev => ({ ...prev, [key]: nextResults }));
-                        setLabelSearchIndex(prev => ({ ...prev, [key]: 0 }));
-                    }
-                } catch (error) {
-                    if (labelSearchRequestIdRef.current[key] === requestId) {
-                        setLabelSearchResults(prev => ({ ...prev, [key]: [] }));
-                        setLabelSearchIndex(prev => ({ ...prev, [key]: 0 }));
-                    }
-                } finally {
-                    if (labelSearchRequestIdRef.current[key] === requestId) {
-                        setLabelSearchLoading(prev => ({ ...prev, [key]: false }));
-                    }
-                }
-            }, []);
-            const scheduleJiraLabelSearch = React.useCallback((groupId, teamId, rawQuery) => {
-                const query = String(rawQuery || '').trim();
-                const key = getLabelRowKey(groupId, teamId);
-                const existingTimer = labelSearchDebounceRef.current[key];
-                if (existingTimer) {
-                    window.clearTimeout(existingTimer);
-                    delete labelSearchDebounceRef.current[key];
-                }
-                if (query.length < 3) {
-                    loadJiraLabels(groupId, teamId, query);
-                    return;
-                }
-                labelSearchDebounceRef.current[key] = window.setTimeout(() => {
-                    delete labelSearchDebounceRef.current[key];
-                    loadJiraLabels(groupId, teamId, query);
-                }, 250);
-            }, [loadJiraLabels]);
 
-            useEffect(() => {
-                return () => {
-                    Object.values(labelSearchDebounceRef.current).forEach((timerId) => {
-                        window.clearTimeout(timerId);
-                    });
-                    labelSearchDebounceRef.current = {};
-                };
-            }, []);
-
-            useEffect(() => {
-                if (!activeGroupDraft) return;
-                const maxIndex = activeTeamResultsLimited.length - 1;
-                setTeamSearchIndex(prev => {
-                    const current = prev[activeGroupDraft.id] || 0;
-                    if (current <= maxIndex && activeTeamResultsLimited[current]?.canAdd) return prev;
-                    const firstEnabled = activeTeamResultsLimited.findIndex(team => team.canAdd);
-                    return { ...prev, [activeGroupDraft.id]: firstEnabled < 0 ? 0 : firstEnabled };
-                });
-            }, [activeTeamResultsLimited.length, activeTeamAvailabilityKey, activeGroupDraft]);
+            useTeamGroupLabelEffects({
+                activeGroupDraft,
+                activeTeamAvailabilityKey,
+                activeTeamResultsLimited,
+                labelSearchDebounceRef,
+                setTeamSearchIndex,
+            });
 
 
 
@@ -11340,10 +9459,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                     if (outcome?.error) setSettingsSaveError(outcome.error);
                 });
             };
-            const setTrackedEpmSettingsProjectSort = (sortKey) => {
-                trackSortChanged('epm_settings_projects', sortKey, { sort_direction: 'asc', source_surface: 'epm_settings' });
-                setEpmSettingsProjectSort(sortKey);
-            };
             const settingsShowsSave = groupManageTab !== 'connections';
             const settingsSaveDisabled = Boolean(saveBlockedReason);
             const settingsSaveTitle = saveBlockedReason || '';
@@ -11485,24 +9600,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 alertCohortInFlight: () => alertCohortRef.current !== null, subscribeAlertCohortSettle, loadEpicAlerts, loadEpicReadiness: storyReadiness.loadEpic, mergeReadinessEpic: storyReadiness.mergeEpic, isFutureSprint: isFutureSprintSelected, track: trackEpicRefreshAction, sourceSurface: isCatchUpMode ? 'catch_up' : 'planning', active: isEpicRefreshMode, capacityScopeHoldRef,
             });
 
-            // Group Board composer props (Boards tab, GroupBoardsTab.jsx). The Save gate validates
-            // groupDraft directly (see groupConfigValidationErrors above); GroupBoardSettings reports
-            // nothing upward, so there is no validation callback to wire here.
-            const board = activeGroupDraft?.board || null;
-            const backendUrl = BACKEND_URL;
-            // Saved, not draft: the statuses route resolves board/project scope server-side, so
-            // unsaved Admin edits must not key the response the server produces.
-            const boardId = savedBoardId;
-            const projectScopeKey = savedSelectedProjects
-                .map((project) => String(project?.key || '').trim().toUpperCase())
-                .filter(Boolean)
-                .sort()
-                .join(',');
-            const groupName = activeGroupDraft?.name || '';
-            const onChange = (nextBoard) => {
-                if (activeGroupDraft) updateGroupDraftBoard(activeGroupDraft.id, nextBoard);
-            };
-            const random = Math.random;
             const engBoardDataProps = strictEngBoardViewProps({ active: boardScopeRequested, owner: strictBoard, model: strictBoardModel, legacyLoading: sprintsLoading || loading, legacyError: displayedEngError, legacyRetry: retryEngLoad });
             if (strictBoardActive && strictBoardData.error?.code === 'board_config_invalid') {
                 engBoardDataProps.error = 'Board configuration could not be used. Review Board setup and retry.';
@@ -13367,439 +11464,212 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                                 />
                                 )}
                                 {groupManageTab === 'epm' && (
-                                <EpmSettings
-                                    {...{
-                                        DEFAULT_EPM_LABEL_PREFIX,
-                                        epmSettingsTab,
-                                        setEpmSettingsTab,
-                                        handleEpmSettingsTabKeyDown,
-                                        epmScopeMeta,
-                                        selectedEpmRootGoal,
-                                        clearEpmRootGoal,
-                                        epmRootGoalQuery,
-                                        setEpmRootGoalQuery,
-                                        setEpmRootGoalOpen,
-                                        setEpmRootGoalIndex,
-                                        handleEpmRootGoalSearchKeyDown,
-                                        epmRootGoalsLoading,
-                                        showEpmRootGoalResults,
-                                        epmRootGoalsError,
-                                        filteredEpmRootGoals,
-                                        visibleEpmRootGoals,
-                                        activeEpmRootGoalIndex,
-                                        selectEpmRootGoal,
-                                        selectedEpmSubGoals,
-                                        clearEpmSubGoal,
-                                        epmConfigDraft,
-                                        epmSubGoalQuery,
-                                        setEpmSubGoalQuery,
-                                        setEpmSubGoalOpen,
-                                        setEpmSubGoalIndex,
-                                        loadEpmSubGoalsForRoot,
-                                        handleEpmSubGoalSearchKeyDown,
-                                        epmSubGoalsLoading,
-                                        showEpmSubGoalResults,
-                                        epmSubGoalsError,
-                                        filteredEpmSubGoals,
-                                        visibleEpmSubGoals,
-                                        activeEpmSubGoalIndex,
-                                        selectEpmSubGoal,
-                                        updateEpmLabelPrefixDraft,
-                                        epmProjectPrerequisites,
-                                        canLoadEpmProjects,
-                                        epmConfigLoading,
-                                        epmConfigSaving,
-                                        epmSettingsProjectsError,
-                                        epmSettingsProjectsRefreshing,
-                                        ensureEpmSettingsProjectsLoaded,
-                                        epmSettingsProjectsLoadedAt,
-                                        epmSettingsProjectsFetchMeta,
-                                        epmSettingsProjectView,
-                                        setEpmSettingsProjectView,
-                                        focusEpmScopeField,
-                                        addCustomEpmProjectDraft,
-                                        epmSettingsProjectsLoading,
-                                        renderEpmProjectSkeletonRows,
-                                        epmSettingsProjectsLoaded,
-                                        epmSettingsProjectRows,
-                                        epmSettingsProjectSort,
-                                        setEpmSettingsProjectSort: setTrackedEpmSettingsProjectSort,
-                                        epmSettingsProjects,
-                                        getEpmLabelRowKey,
-                                        getEpmLabelSearchResults,
-                                        labelSearchLoading,
-                                        epmLabelShowAll,
-                                        epmLabelChanging,
-                                        labelSearchIndex,
-                                        isEmptyCustomEpmProjectRow,
-                                        setEpmLabelChanging,
-                                        openEpmLabelMenu,
-                                        loadEpmProjectLabels,
-                                        updateEpmProjectDraft,
-                                        labelSearchQuery,
-                                        setLabelSearchQuery,
-                                        setLabelSearchIndex,
-                                        setLabelSearchOpen,
-                                        setEpmLabelMenuAnchor,
-                                        epmLabelMenuInputRef,
-                                        handleEpmLabelSearchKeyDown,
-                                        setEpmLabelShowAll,
-                                        removeEpmProjectDraft,
-                                        epmLabelMenuAnchor,
-                                        labelSearchOpen,
-                                        selectEpmProjectLabel,
-                                        requestEpmLabelFocus,
-                                        registerEpmLabelInput,
-                                        epmLabelPrefixMask: normalizeEpmLabelPrefixMask(epmConfigDraft.labelPrefix ?? DEFAULT_EPM_LABEL_PREFIX),
-                                        deleteEpmProjectRow,
-                                        hasSessionRemovedEpmProjects: removedEpmProjectIds.size > 0,
-                                    }}
+                                <EpmSettingsTab
+                                    activeEpmRootGoalIndex={activeEpmRootGoalIndex}
+                                    activeEpmSubGoalIndex={activeEpmSubGoalIndex}
+                                    addCustomEpmProjectDraft={addCustomEpmProjectDraft}
+                                    canLoadEpmProjects={canLoadEpmProjects}
+                                    clearEpmRootGoal={clearEpmRootGoal}
+                                    clearEpmSubGoal={clearEpmSubGoal}
+                                    deleteEpmProjectRow={deleteEpmProjectRow}
+                                    ensureEpmSettingsProjectsLoaded={ensureEpmSettingsProjectsLoaded}
+                                    epmConfigDraft={epmConfigDraft}
+                                    epmConfigLoading={epmConfigLoading}
+                                    epmConfigSaving={epmConfigSaving}
+                                    epmLabelChanging={epmLabelChanging}
+                                    epmLabelMenuAnchor={epmLabelMenuAnchor}
+                                    epmLabelMenuInputRef={epmLabelMenuInputRef}
+                                    epmLabelShowAll={epmLabelShowAll}
+                                    epmProjectPrerequisites={epmProjectPrerequisites}
+                                    epmRootGoalQuery={epmRootGoalQuery}
+                                    epmRootGoalsError={epmRootGoalsError}
+                                    epmRootGoalsLoading={epmRootGoalsLoading}
+                                    epmScopeMeta={epmScopeMeta}
+                                    epmSettingsProjectRows={epmSettingsProjectRows}
+                                    epmSettingsProjectSort={epmSettingsProjectSort}
+                                    epmSettingsProjectView={epmSettingsProjectView}
+                                    epmSettingsProjects={epmSettingsProjects}
+                                    epmSettingsProjectsError={epmSettingsProjectsError}
+                                    epmSettingsProjectsFetchMeta={epmSettingsProjectsFetchMeta}
+                                    epmSettingsProjectsLoaded={epmSettingsProjectsLoaded}
+                                    epmSettingsProjectsLoadedAt={epmSettingsProjectsLoadedAt}
+                                    epmSettingsProjectsLoading={epmSettingsProjectsLoading}
+                                    epmSettingsProjectsRefreshing={epmSettingsProjectsRefreshing}
+                                    epmSettingsTab={epmSettingsTab}
+                                    epmSubGoalQuery={epmSubGoalQuery}
+                                    epmSubGoalsError={epmSubGoalsError}
+                                    epmSubGoalsLoading={epmSubGoalsLoading}
+                                    filteredEpmRootGoals={filteredEpmRootGoals}
+                                    filteredEpmSubGoals={filteredEpmSubGoals}
+                                    focusEpmScopeField={focusEpmScopeField}
+                                    getEpmLabelRowKey={getEpmLabelRowKey}
+                                    getEpmLabelSearchResults={getEpmLabelSearchResults}
+                                    handleEpmLabelSearchKeyDown={handleEpmLabelSearchKeyDown}
+                                    handleEpmRootGoalSearchKeyDown={handleEpmRootGoalSearchKeyDown}
+                                    handleEpmSettingsTabKeyDown={handleEpmSettingsTabKeyDown}
+                                    handleEpmSubGoalSearchKeyDown={handleEpmSubGoalSearchKeyDown}
+                                    labelSearchIndex={labelSearchIndex}
+                                    labelSearchLoading={labelSearchLoading}
+                                    labelSearchOpen={labelSearchOpen}
+                                    labelSearchQuery={labelSearchQuery}
+                                    loadEpmProjectLabels={loadEpmProjectLabels}
+                                    loadEpmSubGoalsForRoot={loadEpmSubGoalsForRoot}
+                                    openEpmLabelMenu={openEpmLabelMenu}
+                                    registerEpmLabelInput={registerEpmLabelInput}
+                                    removeEpmProjectDraft={removeEpmProjectDraft}
+                                    removedEpmProjectIds={removedEpmProjectIds}
+                                    requestEpmLabelFocus={requestEpmLabelFocus}
+                                    selectEpmProjectLabel={selectEpmProjectLabel}
+                                    selectEpmRootGoal={selectEpmRootGoal}
+                                    selectEpmSubGoal={selectEpmSubGoal}
+                                    selectedEpmRootGoal={selectedEpmRootGoal}
+                                    selectedEpmSubGoals={selectedEpmSubGoals}
+                                    setEpmLabelChanging={setEpmLabelChanging}
+                                    setEpmLabelMenuAnchor={setEpmLabelMenuAnchor}
+                                    setEpmLabelShowAll={setEpmLabelShowAll}
+                                    setEpmRootGoalIndex={setEpmRootGoalIndex}
+                                    setEpmRootGoalOpen={setEpmRootGoalOpen}
+                                    setEpmRootGoalQuery={setEpmRootGoalQuery}
+                                    setEpmSettingsProjectView={setEpmSettingsProjectView}
+                                    setEpmSettingsTab={setEpmSettingsTab}
+                                    setEpmSubGoalIndex={setEpmSubGoalIndex}
+                                    setEpmSubGoalOpen={setEpmSubGoalOpen}
+                                    setEpmSubGoalQuery={setEpmSubGoalQuery}
+                                    setLabelSearchIndex={setLabelSearchIndex}
+                                    setLabelSearchOpen={setLabelSearchOpen}
+                                    setLabelSearchQuery={setLabelSearchQuery}
+                                    setTrackedEpmSettingsProjectSort={setTrackedEpmSettingsProjectSort}
+                                    showEpmRootGoalResults={showEpmRootGoalResults}
+                                    showEpmSubGoalResults={showEpmSubGoalResults}
+                                    updateEpmLabelPrefixDraft={updateEpmLabelPrefixDraft}
+                                    updateEpmProjectDraft={updateEpmProjectDraft}
+                                    visibleEpmRootGoals={visibleEpmRootGoals}
+                                    visibleEpmSubGoals={visibleEpmSubGoals}
                                 />
                                 )}
                                 {DEPARTMENT_SETTINGS_TAB_IDS.has(groupManageTab) && (
-                                <>
-                                <div
-                                    className="group-modal-tabs epm-settings-tabs"
-                                    role="tablist"
-                                    aria-label="Departments settings sections"
-                                    onKeyDown={handleDepartmentSettingsTabKeyDown}
-                                >
-                                    <button
-                                        className={`group-modal-tab ${groupManageTab === 'teams' ? 'active' : ''}`}
-                                        onClick={() => selectDepartmentSettingsTab('teams')}
-                                        role="tab"
-                                        aria-selected={groupManageTab === 'teams'}
-                                        aria-controls="department-settings-teams-panel"
-                                        id="department-settings-teams-tab"
-                                        type="button"
-                                    >Team groups</button>
-                                    <button
-                                        className={`group-modal-tab ${groupManageTab === 'labels' ? 'active' : ''}`}
-                                        onClick={() => selectDepartmentSettingsTab('labels')}
-                                        role="tab"
-                                        aria-selected={groupManageTab === 'labels'}
-                                        aria-controls="department-settings-labels-panel"
-                                        id="department-settings-labels-tab"
-                                        type="button"
-                                        disabled={!labelsTabEnabled}
-                                        title={labelsTabEnabled ? '' : 'Save at least one group first'}
-                                    >Group labels</button>
-                                    <button
-                                        className={`group-modal-tab ${groupManageTab === 'boards' ? 'active' : ''}`}
-                                        onClick={() => selectDepartmentSettingsTab('boards')}
-                                        role="tab"
-                                        aria-selected={groupManageTab === 'boards'}
-                                        aria-controls="department-settings-boards-panel"
-                                        id="department-settings-boards-tab"
-                                        type="button"
-                                    >Boards</button>
-                                </div>
-                                {groupManageTab === 'teams' && (
-                                <div
-                                    id="department-settings-teams-panel"
-                                    role="tabpanel"
-                                    aria-labelledby="department-settings-teams-tab"
-                                >
-                                <TeamGroupsSettings
-                                    {...{
-                                        groupManageTab,
-                                        showGroupListMobile,
-                                        setShowGroupListMobile,
-                                        addGroupDraftRow,
-                                        groupSearchQuery,
-                                        setGroupSearchQuery,
-                                        filteredGroupDrafts,
-                                        activeGroupDraft,
-                                        groupDraft,
-                                        visibleGroupDraftIds,
-                                        toggleGroupVisibleInControls,
-                                        isGroupVisibleInControls,
-                                        groupVisibilitySaving,
-                                        setActiveGroupDraftId,
-                                        groupsError,
-                                        groupWarnings,
-                                        groupDraftError,
-                                        fetchAllTeamsFromJira,
-                                        loadingTeams,
-                                        teamCatalogReady,
-                                        teamCatalogCanRefresh,
-                                        teamCacheLabel,
-                                        updateGroupDraftName,
-                                        toggleDefaultGroupDraft,
-                                        personalGroupPreferencesEnabled,
-                                        favoriteGroupDraftId,
-                                        setFavoriteGroupDraft,
-                                        duplicateGroupDraft,
-                                        resolveTeamName,
-                                        removeTeamFromGroup,
-                                        teamChipLastRef,
-                                        availableTeams,
-                                        activeTeamQuery,
-                                        handleTeamSearchChange,
-                                        handleTeamSearchFocus,
-                                        handleTeamSearchBlur,
-                                        handleTeamSearchKeyDown,
-                                        activeTeamResultsLimited,
-                                        teamSearchInputRefs,
-                                        teamSearchOpen,
-                                        activeTeamIndex,
-                                        addTeamToGroup,
-                                        teamSearchFeedback,
-                                        componentSearchQuery,
-                                        setComponentSearchQuery,
-                                        setComponentSearchOpen,
-                                        componentSearchOpen,
-                                        componentSearchLoading,
-                                        filteredComponentSearchResults,
-                                        componentSearchIndex,
-                                        handleComponentSearchKeyDown,
-                                        addGroupMissingInfoComponent,
-                                        removeGroupMissingInfoComponent,
-                                        excludedEpicSearchQuery,
-                                        handleExcludedEpicSearchChange,
-                                        handleExcludedEpicSearchFocus,
-                                        handleExcludedEpicSearchBlur,
-                                        handleExcludedEpicSearchKeyDown,
-                                        excludedEpicSearchInputRef,
-                                        excludedEpicSearchOpen,
-                                        excludedEpicSearchLoading,
-                                        filteredExcludedEpicSearchResults,
-                                        excludedEpicSearchIndex,
-                                        addGroupExcludedCapacityEpic,
-                                        removeGroupExcludedCapacityEpic,
-                                        excludedEpicChipLastRef,
-                                        adHocEpicSearchQuery,
-                                        handleAdHocEpicSearchChange,
-                                        handleAdHocEpicSearchFocus,
-                                        handleAdHocEpicSearchBlur,
-                                        handleAdHocEpicSearchKeyDown,
-                                        adHocEpicSearchInputRef,
-                                        adHocEpicSearchOpen,
-                                        adHocEpicSearchLoading,
-                                        filteredAdHocEpicSearchResults,
-                                        adHocEpicSearchIndex,
-                                        addGroupAdHocCapacityEpic,
-                                        removeGroupAdHocCapacityEpic,
-                                        adHocEpicChipLastRef,
-                                        showGroupAdvanced,
-                                        setShowGroupAdvanced,
-                                        showGroupImport,
-                                        setShowGroupImport,
-                                        exportGroupsConfig,
-                                        groupImportText,
-                                        setGroupImportText,
-                                        importGroupsConfig,
-                                        removeGroupDraft,
-                                        selectDepartmentSettingsTab,
-                                        firstRunConfigurationActive,
-                                    }}
+                                <DepartmentsSettingsTab
+                                    BACKEND_URL={BACKEND_URL}
+                                    activeGroupDraft={activeGroupDraft}
+                                    activeTeamIndex={activeTeamIndex}
+                                    activeTeamQuery={activeTeamQuery}
+                                    activeTeamResultsLimited={activeTeamResultsLimited}
+                                    adHocEpicChipLastRef={adHocEpicChipLastRef}
+                                    adHocEpicSearchIndex={adHocEpicSearchIndex}
+                                    adHocEpicSearchInputRef={adHocEpicSearchInputRef}
+                                    adHocEpicSearchLoading={adHocEpicSearchLoading}
+                                    adHocEpicSearchOpen={adHocEpicSearchOpen}
+                                    adHocEpicSearchQuery={adHocEpicSearchQuery}
+                                    addGroupAdHocCapacityEpic={addGroupAdHocCapacityEpic}
+                                    addGroupDraftRow={addGroupDraftRow}
+                                    addGroupExcludedCapacityEpic={addGroupExcludedCapacityEpic}
+                                    addGroupMissingInfoComponent={addGroupMissingInfoComponent}
+                                    addTeamToGroup={addTeamToGroup}
+                                    advanceFirstRunConfigurationGuide={advanceFirstRunConfigurationGuide}
+                                    availableTeams={availableTeams}
+                                    backFirstRunConfigurationGuide={backFirstRunConfigurationGuide}
+                                    cancelFirstRunConfiguration={cancelFirstRunConfiguration}
+                                    closeTeamLabelSearch={closeTeamLabelSearch}
+                                    componentSearchIndex={componentSearchIndex}
+                                    componentSearchLoading={componentSearchLoading}
+                                    componentSearchOpen={componentSearchOpen}
+                                    componentSearchQuery={componentSearchQuery}
+                                    duplicateGroupDraft={duplicateGroupDraft}
+                                    epicsByStatus={epicsByStatus}
+                                    excludedEpicChipLastRef={excludedEpicChipLastRef}
+                                    excludedEpicSearchIndex={excludedEpicSearchIndex}
+                                    excludedEpicSearchInputRef={excludedEpicSearchInputRef}
+                                    excludedEpicSearchLoading={excludedEpicSearchLoading}
+                                    excludedEpicSearchOpen={excludedEpicSearchOpen}
+                                    excludedEpicSearchQuery={excludedEpicSearchQuery}
+                                    exportGroupsConfig={exportGroupsConfig}
+                                    favoriteGroupDraftId={favoriteGroupDraftId}
+                                    fetchAllTeamsFromJira={fetchAllTeamsFromJira}
+                                    filteredAdHocEpicSearchResults={filteredAdHocEpicSearchResults}
+                                    filteredComponentSearchResults={filteredComponentSearchResults}
+                                    filteredExcludedEpicSearchResults={filteredExcludedEpicSearchResults}
+                                    filteredGroupDrafts={filteredGroupDrafts}
+                                    firstRunConfigurationActive={firstRunConfigurationActive}
+                                    firstRunConfigurationGuideVisible={firstRunConfigurationGuideVisible}
+                                    firstRunConfigurationSession={firstRunConfigurationSession}
+                                    getLabelSearchResults={getLabelSearchResults}
+                                    groupDraft={groupDraft}
+                                    groupDraftError={groupDraftError}
+                                    groupImportText={groupImportText}
+                                    groupManageTab={groupManageTab}
+                                    groupSearchQuery={groupSearchQuery}
+                                    groupVisibilitySaving={groupVisibilitySaving}
+                                    groupWarnings={groupWarnings}
+                                    groupsError={groupsError}
+                                    handleAdHocEpicSearchBlur={handleAdHocEpicSearchBlur}
+                                    handleAdHocEpicSearchChange={handleAdHocEpicSearchChange}
+                                    handleAdHocEpicSearchFocus={handleAdHocEpicSearchFocus}
+                                    handleAdHocEpicSearchKeyDown={handleAdHocEpicSearchKeyDown}
+                                    handleComponentSearchKeyDown={handleComponentSearchKeyDown}
+                                    handleDepartmentSettingsTabKeyDown={handleDepartmentSettingsTabKeyDown}
+                                    handleExcludedEpicSearchBlur={handleExcludedEpicSearchBlur}
+                                    handleExcludedEpicSearchChange={handleExcludedEpicSearchChange}
+                                    handleExcludedEpicSearchFocus={handleExcludedEpicSearchFocus}
+                                    handleExcludedEpicSearchKeyDown={handleExcludedEpicSearchKeyDown}
+                                    handleLabelSearchKeyDown={handleLabelSearchKeyDown}
+                                    handleTeamSearchBlur={handleTeamSearchBlur}
+                                    handleTeamSearchChange={handleTeamSearchChange}
+                                    handleTeamSearchFocus={handleTeamSearchFocus}
+                                    handleTeamSearchKeyDown={handleTeamSearchKeyDown}
+                                    importGroupsConfig={importGroupsConfig}
+                                    isGroupVisibleInControls={isGroupVisibleInControls}
+                                    labelAddButtonRefs={labelAddButtonRefs}
+                                    labelAddOpen={labelAddOpen}
+                                    labelSearchIndex={labelSearchIndex}
+                                    labelSearchLoading={labelSearchLoading}
+                                    labelSearchOpen={labelSearchOpen}
+                                    labelSearchQuery={labelSearchQuery}
+                                    labelsTabEnabled={labelsTabEnabled}
+                                    loadingTeams={loadingTeams}
+                                    personalGroupPreferencesEnabled={personalGroupPreferencesEnabled}
+                                    removeGroupAdHocCapacityEpic={removeGroupAdHocCapacityEpic}
+                                    removeGroupDraft={removeGroupDraft}
+                                    removeGroupExcludedCapacityEpic={removeGroupExcludedCapacityEpic}
+                                    removeGroupMissingInfoComponent={removeGroupMissingInfoComponent}
+                                    removeTeamFromGroup={removeTeamFromGroup}
+                                    removeTeamLabelFromGroup={removeTeamLabelFromGroup}
+                                    resolveTeamName={resolveTeamName}
+                                    retryFirstRunConfiguration={retryFirstRunConfiguration}
+                                    returnFromFirstRunConfigurationRecovery={returnFromFirstRunConfigurationRecovery}
+                                    savedBoardId={savedBoardId}
+                                    savedSelectedProjects={savedSelectedProjects}
+                                    scheduleJiraLabelSearch={scheduleJiraLabelSearch}
+                                    selectDepartmentSettingsTab={selectDepartmentSettingsTab}
+                                    selectTeamLabel={selectTeamLabel}
+                                    setActiveGroupDraftId={setActiveGroupDraftId}
+                                    setComponentSearchOpen={setComponentSearchOpen}
+                                    setComponentSearchQuery={setComponentSearchQuery}
+                                    setFavoriteGroupDraft={setFavoriteGroupDraft}
+                                    setGroupImportText={setGroupImportText}
+                                    setGroupSearchQuery={setGroupSearchQuery}
+                                    setLabelAddOpen={setLabelAddOpen}
+                                    setLabelSearchIndex={setLabelSearchIndex}
+                                    setLabelSearchOpen={setLabelSearchOpen}
+                                    setLabelSearchQuery={setLabelSearchQuery}
+                                    setShowGroupAdvanced={setShowGroupAdvanced}
+                                    setShowGroupImport={setShowGroupImport}
+                                    setShowGroupListMobile={setShowGroupListMobile}
+                                    showGroupAdvanced={showGroupAdvanced}
+                                    showGroupImport={showGroupImport}
+                                    showGroupListMobile={showGroupListMobile}
+                                    teamCacheLabel={teamCacheLabel}
+                                    teamCatalogCanRefresh={teamCatalogCanRefresh}
+                                    teamCatalogReady={teamCatalogReady}
+                                    teamChipLastRef={teamChipLastRef}
+                                    teamSearchFeedback={teamSearchFeedback}
+                                    teamSearchInputRefs={teamSearchInputRefs}
+                                    teamSearchOpen={teamSearchOpen}
+                                    toggleDefaultGroupDraft={toggleDefaultGroupDraft}
+                                    toggleGroupVisibleInControls={toggleGroupVisibleInControls}
+                                    updateGroupDraftBoard={updateGroupDraftBoard}
+                                    updateGroupDraftName={updateGroupDraftName}
+                                    visibleGroupDraftIds={visibleGroupDraftIds}
                                 />
-                                {firstRunConfigurationGuideVisible && (
-                                    <FirstRunGroupConfigurationGuide
-                                        step={firstRunConfigurationSession.guideStep}
-                                        group={activeGroupDraft}
-                                        groups={groupDraft?.groups || []}
-                                        onBack={backFirstRunConfigurationGuide}
-                                        onContinue={advanceFirstRunConfigurationGuide}
-                                        onCancel={cancelFirstRunConfiguration}
-                                        onRetry={retryFirstRunConfiguration}
-                                        onReturn={returnFromFirstRunConfigurationRecovery}
-                                        status={firstRunConfigurationSession.status}
-                                        interactionReady={teamCatalogReady}
-                                        busy={firstRunConfigurationSession.status === 'saving_sections'
-                                            || (firstRunConfigurationSession.status === 'preference_pending' && !firstRunConfigurationSession.error)}
-                                        error={firstRunConfigurationSession.error}
-                                    />
-                                )}
-                                </div>
-                                )}
-                                {groupManageTab === 'labels' && (
-                                <div
-                                    id="department-settings-labels-panel"
-                                    role="tabpanel"
-                                    aria-labelledby="department-settings-labels-tab"
-                                >
-                                <div className="group-modal-body group-modal-split">
-                                    <div className="group-pane group-list-pane">
-                                        <div className="group-pane-header">
-                                            <div className="group-pane-title">Groups</div>
-                                            <div className="group-pane-subtitle">Choose a team group to map Jira labels per team.</div>
-                                        </div>
-                                        <div className="group-pane-list">
-                                            {(filteredGroupDrafts || []).map((group) => {
-                                                const isActive = activeGroupDraft?.id === group.id;
-                                                const teamCount = (group.teamIds || []).length;
-                                                return (
-                                                    <button
-                                                        key={`label-group-${group.id}`}
-                                                        className={`group-list-item ${isActive ? 'active' : ''}`}
-                                                        onClick={() => {
-                                                            setActiveGroupDraftId(group.id);
-                                                            setShowGroupListMobile(false);
-                                                        }}
-                                                        type="button"
-                                                    >
-                                                        <div className="group-list-line">
-                                                            <span className="group-list-name">{group.name || 'Untitled group'}</span>
-                                                            <span className="group-list-dot">·</span>
-                                                            <span className="group-list-meta">{teamCount} team{teamCount !== 1 ? 's' : ''}</span>
-                                                        </div>
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                    <div className="group-pane group-editor-pane">
-                                        <div className="group-pane-header">
-                                            <div className="group-pane-title">Team labels</div>
-                                            <div className="group-pane-subtitle">Map up to three Jira Epic labels per Team; any of them matches the Team. Use labels only this Team applies.</div>
-                                        </div>
-                                        {!activeGroupDraft ? (
-                                            <div className="group-pane-empty">Select a group to edit its team label mappings.</div>
-                                        ) : (activeGroupDraft.teamIds || []).length === 0 ? (
-                                            <div className="group-pane-empty">Add teams in Team groups first, then return here to map labels.</div>
-                                        ) : (
-                                            <div className="group-pane-list">
-                                                {(activeGroupDraft.teamIds || []).map((teamId) => {
-                                                    const rowKey = getLabelRowKey(activeGroupDraft.id, teamId);
-                                                    const teamName = resolveTeamName(teamId);
-                                                    const aliases = normalizeTeamLabelAliases(activeGroupDraft?.teamLabels?.[teamId]);
-                                                    const atLimit = aliases.length >= TEAM_LABEL_ALIAS_LIMIT;
-                                                    const showSearch = !atLimit && (aliases.length === 0 || Boolean(labelAddOpen[rowKey]));
-                                                    const results = getLabelSearchResults(activeGroupDraft.id, teamId, aliases);
-                                                    const query = String(labelSearchQuery[rowKey] || '').trim();
-                                                    const isSearching = Boolean(labelSearchLoading[rowKey]);
-                                                    const activeIndex = Math.min(labelSearchIndex[rowKey] || 0, Math.max(results.length - 1, 0));
-                                                    const feedback = teamSearchFeedback[rowKey];
-                                                    return (
-                                                        <div key={rowKey} className="group-projects-subsection" style={{ marginTop: 0, paddingBottom: '1rem', borderBottom: '1px solid rgba(148,163,184,0.15)' }}>
-                                                            <div className="team-label-row">
-                                                                <div className="team-selector-label" style={{ margin: 0 }}>{teamName}</div>
-                                                                <div className="team-label-aliases">
-                                                                    {aliases.length > 0 && (
-                                                                        <div className="selected-teams-list">
-                                                                            {aliases.map((alias) => (
-                                                                                <div key={`${rowKey}-chip-${alias}`} className="selected-team-chip">
-                                                                                    <span className="team-name">{alias}</span>
-                                                                                    <button
-                                                                                        className="remove-btn"
-                                                                                        onClick={() => removeTeamLabelFromGroup(activeGroupDraft.id, teamId, alias)}
-                                                                                        type="button"
-                                                                                        title="Remove label"
-                                                                                        aria-label={`Remove ${alias} from ${teamName}`}
-                                                                                    >
-                                                                                        ×
-                                                                                    </button>
-                                                                                </div>
-                                                                            ))}
-                                                                            {atLimit ? (
-                                                                                <span className="group-modal-meta team-label-count">{`${TEAM_LABEL_ALIAS_LIMIT} of ${TEAM_LABEL_ALIAS_LIMIT} labels`}</span>
-                                                                            ) : !showSearch && (
-                                                                                <button
-                                                                                    className="secondary compact team-label-add"
-                                                                                    type="button"
-                                                                                    ref={(node) => {
-                                                                                        if (node) labelAddButtonRefs.current[rowKey] = node;
-                                                                                        else delete labelAddButtonRefs.current[rowKey];
-                                                                                    }}
-                                                                                    aria-label={`Add label for ${teamName}`}
-                                                                                    onClick={() => setLabelAddOpen(prev => ({ ...prev, [rowKey]: true }))}
-                                                                                >
-                                                                                    + Add label
-                                                                                </button>
-                                                                            )}
-                                                                        </div>
-                                                                    )}
-                                                                    {showSearch && (
-                                                                        <div className="team-search-wrapper" style={{ minWidth: 0 }}>
-                                                                            <input
-                                                                                type="text"
-                                                                                className="team-search-input"
-                                                                                placeholder="Type at least 3 characters..."
-                                                                                aria-label={`Search Jira labels for ${teamName}`}
-                                                                                autoFocus={aliases.length > 0}
-                                                                                value={labelSearchQuery[rowKey] || ''}
-                                                                                onChange={(event) => {
-                                                                                    const value = event.target.value;
-                                                                                    setLabelSearchQuery(prev => ({ ...prev, [rowKey]: value }));
-                                                                                    setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
-                                                                                    setLabelSearchIndex(prev => ({ ...prev, [rowKey]: 0 }));
-                                                                                    scheduleJiraLabelSearch(activeGroupDraft.id, teamId, value);
-                                                                                }}
-                                                                                onFocus={() => {
-                                                                                    setLabelSearchOpen(prev => ({ ...prev, [rowKey]: true }));
-                                                                                }}
-                                                                                onBlur={() => window.setTimeout(() => {
-                                                                                    if (aliases.length > 0) closeTeamLabelSearch(rowKey);
-                                                                                    else setLabelSearchOpen(prev => ({ ...prev, [rowKey]: false }));
-                                                                                }, 120)}
-                                                                                onKeyDown={(event) => handleLabelSearchKeyDown(activeGroupDraft.id, teamId, event, results)}
-                                                                            />
-                                                                            {labelSearchOpen[rowKey] && (
-                                                                                <div className="team-search-results" onMouseDown={(event) => event.preventDefault()}>
-                                                                                    {query.length < 3 ? (
-                                                                                        <div className="team-search-result-item is-empty">Type at least 3 characters</div>
-                                                                                    ) : results.length === 0 ? (
-                                                                                        <div className="team-search-result-item is-empty">{isSearching ? 'Searching labels...' : 'No labels found'}</div>
-                                                                                    ) : results.map((label, index) => (
-                                                                                        <div
-                                                                                            key={`${rowKey}-${label}`}
-                                                                                            className={`team-search-result-item ${activeIndex === index ? 'active' : ''}`}
-                                                                                            onMouseEnter={() => setLabelSearchIndex(prev => ({ ...prev, [rowKey]: index }))}
-                                                                                            onClick={() => selectTeamLabel(activeGroupDraft.id, teamId, label)}
-                                                                                        >
-                                                                                            {label}
-                                                                                        </div>
-                                                                                    ))}
-                                                                                </div>
-                                                                            )}
-                                                                        </div>
-                                                                    )}
-                                                                    {feedback && (
-                                                                        <div className={`team-search-feedback ${feedback.tone || ''}`} role="status">
-                                                                            {feedback.message}
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                                </div>
-                                )}
-                                {groupManageTab === 'boards' && (
-                                <div
-                                    id="department-settings-boards-panel"
-                                    role="tabpanel"
-                                    aria-labelledby="department-settings-boards-tab"
-                                >
-                                <GroupBoardsTab
-                                    {...{
-                                        groupManageTab,
-                                        filteredGroupDrafts,
-                                        activeGroupDraft,
-                                        groupSearchQuery,
-                                        setGroupSearchQuery,
-                                        setActiveGroupDraftId,
-                                        showGroupListMobile,
-                                        setShowGroupListMobile,
-                                        board,
-                                        backendUrl,
-                                        boardId,
-                                        projectScopeKey,
-                                        groupName,
-                                        epicsByStatus,
-                                        onChange,
-                                        random,
-                                    }}
-                                />
-                                </div>
-                                )}
-                                </>
                                 )}
                         </SettingsModal>
                     )}

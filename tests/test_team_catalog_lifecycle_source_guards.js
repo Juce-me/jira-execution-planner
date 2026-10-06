@@ -25,7 +25,10 @@ test('dashboard delegates Team lifecycle and retains only availability and UI wi
     assert.match(source, /\} = useTeamCatalogLifecycle\(\{/);
     assert.match(source, /invalidateTeamMembership,/);
     assert.match(source, /invalidateTeamMembership\(\);/);
-    assert.match(source, /buildTeamAvailability\(\{/);
+    // Team availability is derived inside the Team Groups hook (ST3); the dashboard passes the lifecycle state into it.
+    const teamGroupHook = read('frontend/src/settings/useTeamGroupSettings.js');
+    assert.match(teamGroupHook, /buildTeamAvailability\(\{/);
+    assert.match(source, /teamCatalogState,\n\s+teamMembershipState,/);
     assert.doesNotMatch(source, /fetchAllTeams as requestAllTeams/);
     assert.doesNotMatch(source, /teamCatalogHydrationInFlightRef/);
     assert.doesNotMatch(source, /const fetchAllTeamsFromJira = async/);

@@ -3,6 +3,8 @@ const fs = require('fs');
 const path = require('path');
 const test = require('node:test');
 const { readDashboardCssSource } = require('./css_source_helpers');
+const { readOwnerSource } = require('./frontend_source_helpers');
+const epmSettingsTabSource = readOwnerSource(['frontend/src/epm/EpmSettingsTab.jsx'], { anchor: 'export default function EpmSettingsTab(' });
 
 const dashboardPath = path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx');
 const epmApiPath = path.join(__dirname, '..', 'frontend', 'src', 'api', 'epmApi.js');
@@ -369,14 +371,14 @@ test('dashboard source uses shared basic UI primitives for representative contro
     assert.ok(dashboardSource.includes("import SegmentedControl from './ui/SegmentedControl.jsx';"), 'Expected dashboard to import SegmentedControl');
     assert.ok(dashboardSource.includes("import ControlField from './ui/ControlField.jsx';"), 'Expected dashboard to import ControlField');
     assert.ok(dashboardSource.includes("import IconButton from './ui/IconButton.jsx';"), 'Expected dashboard to import IconButton');
-    assert.ok(dashboardSource.includes("import LoadingRows from './ui/LoadingRows.jsx';"), 'Expected dashboard to import LoadingRows');
+    assert.ok(epmSettingsTabSource.includes("import LoadingRows from '../ui/LoadingRows.jsx';"), 'Expected the EPM tab container to import LoadingRows');
     assert.ok(epmViewSource.includes("import LoadingState from '../ui/LoadingState.jsx';"), 'Expected EPM view to import LoadingState');
     assert.ok(engViewSource.includes("import LoadingState from '../ui/LoadingState.jsx';"), 'Expected ENG view to import LoadingState');
     assert.ok(dashboardSource.includes("import EmptyState from './ui/EmptyState.jsx';"), 'Expected dashboard to import EmptyState');
     assert.ok(dashboardSource.includes('<SegmentedControl') && dashboardSource.includes('className="view-mode-control"'), 'Expected ENG/EPM selector to use SegmentedControl');
     assert.ok(dashboardSource.includes('<ControlField') && dashboardSource.includes('label="Search"'), 'Expected header search control to use ControlField');
     assert.ok(dashboardSource.includes('<IconButton') && dashboardSource.includes('className="header-icon-button refresh-icon"'), 'Expected compact refresh action to use the shared header IconButton geometry');
-    assert.ok(dashboardSource.includes('<LoadingRows') && dashboardSource.includes('className="epm-project-skeleton-list"'), 'Expected EPM project loading rows to use LoadingRows');
+    assert.ok(epmSettingsTabSource.includes('<LoadingRows') && epmSettingsTabSource.includes('className="epm-project-skeleton-list"'), 'Expected EPM project loading rows to use LoadingRows');
     assert.ok(loadingStateSource.includes('epm-burst.svg'), 'Expected LoadingState to use the EPM burst asset');
     assert.ok(loadingStateSource.includes('loading-mark-spinner'), 'Expected LoadingState to expose a rotating spinner mark');
     assert.ok(epmViewSource.includes('<LoadingState') && epmViewSource.includes('title="Loading EPM settings"'), 'Expected EPM loading states to use LoadingState');
@@ -656,12 +658,13 @@ test('EPM board bootstraps saved config from initial user config before loading 
     const hookEffects = getUseEffectBodies(epmViewDataSource);
     const epmViewLoadEffect = hookEffects.find(body => body.includes("if (selectedView !== 'epm') return;") && body.includes('void refreshEpmView();')) || '';
 
+    const epmSettingsHookSource = readOwnerSource(['frontend/src/settings/useEpmSettings.js'], { anchor: 'export function useEpmSettings(' });
     assert.ok(
-        dashboardSource.includes('const [epmConfigLoaded, setEpmConfigLoaded] = useState(false);'),
+        epmSettingsHookSource.includes('const [epmConfigLoaded, setEpmConfigLoaded] = useState(false);'),
         'Expected explicit EPM config loaded state'
     );
     assert.ok(
-        dashboardSource.includes('const applySavedEpmConfig = (config) => {'),
+        epmSettingsHookSource.includes('const applySavedEpmConfig = (config) => {'),
         'Expected shared helper for applying saved EPM config'
     );
     assert.ok(

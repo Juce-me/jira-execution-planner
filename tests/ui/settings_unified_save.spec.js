@@ -2154,6 +2154,53 @@ test('Field mapping tab renders Delivery Owner Field as a fifth entry styled lik
     await dialog.screenshot({ path: `${screenshotDir}/field-mapping-delivery-owner.png` });
 });
 
+// ST3 R2: characterization of the unchanged behavior the separate selection-effect layer must keep. Settings
+// open queues the legacy default group B, the normalization effect then sees the old empty draft and queues
+// null, and the next render normalizes to A; moving normalization ahead of the modal-open effect selects B.
+test('discarding an empty Department draft preserves selection when Settings reopens', async ({ page }) => {
+    // Freeze Date only (as the DOM parity capture test does): the modal prints a "Teams ... Updated" timestamp.
+    await page.clock.setFixedTime(new Date('2026-09-02T09:00:00Z'));
+    const calls = await mockConfigSettings(page, {
+        sourceBundle: true,
+        workspaceSnapshots: [{ authMode: 'basic' }],
+        groupsConfig: {
+            version: 1,
+            groups: [
+                { id: 'a', name: 'A', teamIds: ['team-platform'] },
+                { id: 'b', name: 'B', teamIds: ['team-platform'] },
+            ],
+            defaultGroupId: 'b',
+            configRevision: 2,
+            source: 'jsonfile',
+        },
+    });
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    const gear = page.getByRole('button', { name: 'Manage team groups' }).first();
+    await gear.click();
+    const dialog = page.locator('.group-modal');
+    await dialog.getByRole('button', { name: 'Departments', exact: true }).click();
+    await dialog.getByRole('tab', { name: 'Team groups', exact: true }).click();
+    const departmentName = dialog.getByRole('textbox', { name: 'Department name', exact: true });
+    await expect(departmentName).toHaveValue('B');
+    await dialog.getByRole('button', { name: 'Delete group', exact: true }).click();
+    await expect(departmentName).toHaveValue('A');
+    await dialog.getByRole('button', { name: 'Delete group', exact: true }).click();
+    await expect(dialog.locator('.group-list-item')).toHaveCount(0);
+    await expect(dialog.getByText('No groups match this search.', { exact: true })).toBeVisible();
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await page.getByRole('button', { name: 'Discard', exact: true }).click();
+    await expect(dialog).toBeHidden();
+    await gear.click();
+    await dialog.getByRole('button', { name: 'Departments', exact: true }).click();
+    await dialog.getByRole('tab', { name: 'Team groups', exact: true }).click();
+    await expect(departmentName).toHaveValue('A');
+    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(0);
+    expect(errors).toEqual([]);
+    await captureDomParity(page, 'settings-empty-draft-reopen', '.group-modal');
+});
+
 test('dom parity capture: every Settings tab, then an edited tab', async ({ page }) => {
     test.skip(!process.env.JEP_DOM_PARITY_DIR, 'opt-in refactor check');
     // Freeze Date only: legacy Team-directory writes use new Date(), while timers stay real.

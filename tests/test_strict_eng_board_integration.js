@@ -11,7 +11,11 @@ test('selector scheduling keeps requested scope suppression separate from ready 
     assert.match(source, /useStrictEngBoardOwner\(\{ active: strictBoardOwnerActive,/);
     assert.match(source, /groupRevision: acceptedStrictBoardRevision,/);
     assert.match(source, /acceptedBoardConfigRef\.current = false;/);
-    assert.match(source, /acceptedGroupsConfigRef\.current = false;/);
+    // The groups read fences moved into the Team Groups hook (ST3); loadGroupsConfig still clears the accepted flag on failure.
+    const teamGroupHook = fs.readFileSync(new URL('../frontend/src/settings/useTeamGroupSettings.js', import.meta.url), 'utf8');
+    assert.match(teamGroupHook, /const acceptedGroupsConfigRef = useRef\(false\);/);
+    assert.match(teamGroupHook, /acceptedGroupsConfigRef\.current = true;/);
+    assert.match(teamGroupHook, /acceptedGroupsConfigRef\.current = false;/);
     assert.doesNotMatch(source, /showBoard && boardAllWorkAvailable === null/);
 });
 

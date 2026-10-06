@@ -97,9 +97,10 @@ assert(
   'shared recovery records must contain only opaque attempt ids and timestamps'
 );
 
-const epmSaveStart = source.indexOf('const saveEpmConfig = async () => {');
-const epmSaveEnd = source.indexOf('const normalizeStatus = (status) => {', epmSaveStart);
-const epmSaveSource = source.slice(epmSaveStart, epmSaveEnd);
+const epmHookSource = readOwnerSource(['frontend/src/settings/useEpmSettings.js'], { anchor: 'export function useEpmSettings(' });
+const epmSaveStart = epmHookSource.indexOf('const saveEpmConfig = async () => {');
+assert(epmSaveStart >= 0, 'the EPM settings hook must own saveEpmConfig');
+const epmSaveSource = epmHookSource.slice(epmSaveStart);
 assert(
   epmSaveSource.includes('if (isAuthenticationRequiredError(err)) throw err;'),
   'EPM saves must preserve their draft and delegate authentication recovery to the root gate'

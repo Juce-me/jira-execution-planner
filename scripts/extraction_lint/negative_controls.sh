@@ -52,11 +52,11 @@ v.write_text(t.replace("        registerScenarioIssueRef,\n", "        registerS
 control react-not-in-scope 'react-in-jsx-scope' \
 '(src / "ProbeView.jsx").write_text("export default function ProbeView() { return <div />; }\n")'
 control destructured-name-not-returned 'destructured but not returned' \
-'s = s.replace("            } = useGroupVisibilityPreferences({", "                bogusName,\n            } = useGroupVisibilityPreferences({", 1)'
+'s = s.replace("            } = useJiraProjectSettings({", "                bogusName,\n            } = useJiraProjectSettings({", 1)'
 control required-input-not-passed 'required input not passed' \
-'i = s.index("= useGroupVisibilityPreferences({")
+'i = s.index("= useJiraProjectSettings({")
 j = s.index("});", i)
-s = s[:i] + s[i:j].replace("                groupsLoading,\n", "", 1) + s[j:]'
+s = s[:i] + s[i:j].replace("                acceptSettingsConfigBaseline,\n", "", 1) + s[j:]'
 
 # The conservation script is not part of the gate; its control proves it reports an edited statement.
 dir="$OUT/edited-statement"

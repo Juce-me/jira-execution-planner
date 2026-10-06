@@ -2,6 +2,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const test = require('node:test');
+const { readOwnerSource } = require('./frontend_source_helpers');
 
 const dashboardPath = path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx');
 const epmApiPath = path.join(__dirname, '..', 'frontend', 'src', 'api', 'epmApi.js');
@@ -119,7 +120,8 @@ test('dashboard source wires EPM runtime sub-goal narrowing through controls and
 test('dashboard source protects EPM selection during project loads and refreshes EPM data after save', () => {
     assert.ok(epmViewDataSource.includes('const epmProjectsPendingSelectionRef = useRef(false);'), 'Expected a pending EPM project-load ref in the EPM hook');
     assert.ok(epmViewDataSource.includes('if (epmProjectsPendingSelectionRef.current) return;'), 'Expected selection clearing to wait for project loading');
-    assert.ok(dashboardSource.includes('await refreshEpmProjects();'), 'Expected EPM config save to refresh project metadata');
+    assert.ok(readOwnerSource(['frontend/src/settings/useEpmSettings.js'], { anchor: 'export function useEpmSettings(' }).includes('await refreshEpmProjects();'), 'Expected EPM config save to refresh project metadata');
+    assert.ok(dashboardSource.includes('getEpmViewActions: () => ({ refreshEpmProjects, setEpmProjects, setEpmProjectsError }),'), 'Expected the EPM settings hook to reach the EPM view refresh through a handler-only getter');
 });
 
 test('dashboard source adds EPM rollup loading state and refresh-button branching', () => {

@@ -569,7 +569,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
             const [workspaceConfigConflict, setWorkspaceConfigConflict] = useState(null);
             const [sharedConfigRevision, setSharedConfigRevision] = useState(0);
             const sharedConfigRevisionRef = useRef(0);
-            const lastCommittedWorkspaceSectionsRef = useRef([]);
             const [sharedConfigReady, setSharedConfigReady] = useState(false);
             const acceptedBoardConfigRef = useRef(false);
             const boardConfigReadGenerationRef = useRef(0);
@@ -581,7 +580,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
             const [groupTestMessage, setGroupTestMessage] = useState('');
             const [showGroupListMobile, setShowGroupListMobile] = useState(false);
             const [showGroupDiscardConfirm, setShowGroupDiscardConfirm] = useState(false);
-            const [groupQueryTemplateEnabled, setGroupQueryTemplateEnabled] = useState(false);
             const [groupManageTab, setGroupManageTab] = useState('scope');
             const [showTechnicalFieldIds, setShowTechnicalFieldIds] = useState(false);
             const [mappingHoverKey, setMappingHoverKey] = useState(null);
@@ -2679,7 +2677,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                         closeGroupManage();
                     }
                     if (!suppressRepeatedAdminAnalytics) trackSettingsAction(analyticsSection, 'save_result', { result: 'success' });
-                    lastCommittedWorkspaceSectionsRef.current = committedWorkspaceSectionLabels(committedAdminSections);
                     return buildSettingsSaveOutcome({
                         ok: true,
                         normalizedGroups: normalized,
@@ -2791,7 +2788,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 const hasSharedSettingsChanges = canEditSharedConfiguration && isSharedConfigurationDraftDirty;
                 const hasDepartmentSettingsChanges = Boolean(groupDraft && groupDraftSignature !== groupDraftBaselineRef.current) || isGroupVisibilityDraftDirty;
                 const hasEpmSettingsChanges = canEditEpmConfiguration && isEpmConfigDirty;
-                lastCommittedWorkspaceSectionsRef.current = [];
                 if (firstRunSession) dispatchFirstRunConfigurationSession({ type: 'save_sections_started' });
                 let normalizedGroups = firstRunSession?.latestNormalizedGroups || groupsConfig;
                 let committedSections = {
@@ -4265,7 +4261,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                     setJiraUrl(config.jiraUrl || '');
                     setAuthMode(config.authMode || '');
                     setCapacityEnabled(Boolean(config.capacityProject || config.capacityConfigRequiresResolution));
-                    setGroupQueryTemplateEnabled(Boolean(config.groupQueryTemplateEnabled));
                     setSettingsAdminOnly(Boolean(config.settingsAdminOnly));
                     setUserCanEditSettings(config.userCanEditSettings === true);
                     setUserCanEditEpmConfig(config.userCanEditEpmConfig === true);

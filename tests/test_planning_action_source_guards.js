@@ -275,7 +275,11 @@ test('capacity read state is atomic, scope-tagged, and advances revision only af
     assert.match(source, /const \[capacityDataStale, setCapacityDataStale\] = useState\(false\)/);
     assert.match(source, /capacityState\.scopeSignature === capacityScopeSignature/);
     assert.match(source, /const capacityMutationEnabled = effectiveCapacityState\.mutationEnabled === true/);
-    assert.equal((source.match(/setCapacityEnabled\(Boolean\([^)]*capacityConfigRequiresResolution[^)]*\)\)/g) || []).length, 2);
+    const saveHookSource = fs.readFileSync(path.resolve(__dirname, '../frontend/src/settings/useSharedConfigSave.js'), 'utf8');
+    const capacityEnabledSites = /setCapacityEnabled\(Boolean\([^)]*capacityConfigRequiresResolution[^)]*\)\)/g;
+    assert.equal((source.match(capacityEnabledSites) || []).length, 1, 'loadConfig keeps one capacity-enabled write');
+    assert.equal((saveHookSource.match(capacityEnabledSites) || []).length, 1, 'the post-save refresh keeps the other');
+    assert.equal((source.match(capacityEnabledSites) || []).length + (saveHookSource.match(capacityEnabledSites) || []).length, 2);
     assert.match(source, /commitCapacityReadLifecycle\(\{ type: 'success', scopeSignature, payload: data \}\)/);
     assert.doesNotMatch(source, /handleCapacitySaved[\s\S]{0,800}setCapacityReadRevision/);
 });

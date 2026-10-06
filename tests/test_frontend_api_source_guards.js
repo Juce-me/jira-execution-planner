@@ -11,11 +11,11 @@ const allowedTransitionalWrappers = new Set();
 
 test('first-run guide owns no endpoint literals and save auth outcomes stay in dashboard state', () => {
     const guide = readSource(path.join(frontendSrcPath, 'settings', 'FirstRunGroupConfigurationGuide.jsx'));
-    const dashboard = readSource(path.join(frontendSrcPath, 'dashboard.jsx'));
+    const saveHook = readSource(path.join(frontendSrcPath, 'settings', 'useSharedConfigSave.js'));
     assert.doesNotMatch(guide, /\/api\//);
-    assert.ok(dashboard.includes('authRequired: true'));
-    assert.ok(dashboard.includes('pendingSections'));
-    assert.ok(dashboard.includes('committedSections'));
+    assert.ok(saveHook.includes('authRequired: true'));
+    assert.ok(saveHook.includes('pendingSections'));
+    assert.ok(saveHook.includes('committedSections'));
 });
 
 function listSourceFiles(root) {
@@ -1202,10 +1202,12 @@ test('dashboard Sprint authority subscribes global auth and guards manual work e
 
 test('dashboard Sprint authority reconciles slow config and fences every Board-affecting save attempt', () => {
     const dashboard = readSource(path.join(frontendSrcPath, 'dashboard.jsx'));
+    const saveHook = readSource(path.join(frontendSrcPath, 'settings', 'useSharedConfigSave.js'));
     assert.match(dashboard, /shouldReconcileSprintCatalogSource\([\s\S]*fetchBootstrapConfig\(BACKEND_URL\)[\s\S]*catalog_identity_changed/);
-    const saveStart = dashboard.indexOf('const saveGroupsConfig = async');
-    const firstEarlyReturn = dashboard.indexOf('if (!groupDraft)', saveStart);
-    const invalidation = dashboard.indexOf("sprintCatalogControllerRef.current.invalidate('settings-save')", saveStart);
+    const saveStart = saveHook.indexOf('const saveGroupsConfig = async');
+    const firstEarlyReturn = saveHook.indexOf('if (!groupDraft)', saveStart);
+    const invalidation = saveHook.indexOf("sprintCatalogControllerRef.current.invalidate('settings-save')", saveStart);
+    assert.ok(saveStart >= 0 && firstEarlyReturn > saveStart);
     assert.ok(invalidation > saveStart && invalidation < firstEarlyReturn);
 });
 

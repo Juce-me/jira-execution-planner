@@ -164,8 +164,11 @@ async function mockConfigSettings(page, {
     analyticsEnabled = false,
     userCanEditSettings = true,
     performanceAdminAvailable = false,
+    // Synthetic OAuth users for /api/admin/users and the admin-grant routes (null leaves them unrouted).
+    adminUsers = null,
 } = {}) {
     const calls = [];
+    let adminUserRows = adminUsers ? adminUsers.map(user => ({ ...user })) : null;
     const epicsInScope = epicsFromCounts(fixture.REFERENCE_EPICS_BY_STATUS);
     let groupsPostCount = 0;
     let configGetCount = 0;
@@ -234,6 +237,14 @@ async function mockConfigSettings(page, {
             samples: [],
         });
         if (url.pathname === '/api/version') return json({ enabled: false });
+        if (adminUserRows && url.pathname === '/api/admin/users' && request.method() === 'GET') return json({ users: adminUserRows });
+        const adminGrantMatch = adminUserRows && url.pathname.match(/^\/api\/admin\/users\/([^/]+)\/admin-grant$/);
+        if (adminGrantMatch && (request.method() === 'POST' || request.method() === 'DELETE')) {
+            adminUserRows = adminUserRows.map(user => (user.id === adminGrantMatch[1]
+                ? { ...user, accountType: request.method() === 'POST' ? 'admin' : 'user' }
+                : user));
+            return json({ user: adminUserRows.find(user => user.id === adminGrantMatch[1]) });
+        }
         if (url.pathname === '/api/config') {
             const requestIndex = configGetCount;
             const workspaceSnapshot = workspaceSnapshots?.[
@@ -1710,6 +1721,159 @@ test('the unified save posts administrator sections in the documented order with
     ].map(pathname => body(pathname).baseRevision)).toEqual([3, 4, 5, 6, 7, 8]);
     expect(body('/api/groups-config').baseRevision).toBe(2);
     expect(body('/api/epm/config').baseRevision).toBeUndefined();
+});
+
+// ST5 R2: the complete save sequence of docs/plans/EXEC-dashboard-scenario-settings-state-extraction.md section 4
+// ("Settings save order") with EVERY workspace section dirty. adminAccess is a fixed sequential step between
+// issueTypes and the groups POST; its grant requests carry no baseRevision.
+test('the unified save posts all eleven administrator sections in the documented order, adminAccess as a fixed step', async ({ page }) => {
+    const snapshot = sharedWorkspaceSnapshot({ revision: 3 });
+    snapshot.adminUserManagementAvailable = true;
+    snapshot.userIsToolAdmin = true;
+    snapshot.sharedConfig.capacity = { project: 'DEMO', fieldId: 'customfield_10050', fieldName: 'Capacity' };
+    snapshot.sharedConfig.statsPriorityWeights = [{ priority: 'P1', weight: 0.5 }];
+    const calls = await mockConfigSettings(page, {
+        sourceBundle: true,
+        extraFields: [
+            { id: 'customfield_10031', name: 'Parent Link Alt' },
+            { id: 'customfield_10032', name: 'Story Points Alt' },
+            { id: 'customfield_10033', name: 'Team Alt' },
+        ],
+        workspaceSnapshots: [snapshot],
+        adminUsers: [
+            { id: 'db-user-admin', externalProvider: 'atlassian', externalSubject: 'account-admin', displayName: 'Synthetic Admin', email: 'admin@example.test', accountType: 'admin', status: 'active', authConnections: [], projectAccess: [] },
+            { id: 'db-user-member', externalProvider: 'atlassian', externalSubject: 'account-member', displayName: 'Synthetic Member', email: 'member@example.test', accountType: 'user', status: 'active', authConnections: [], projectAccess: [] },
+        ],
+        workspaceSaveResponses: {
+            '/api/projects/selected': [{ body: { selected: [{ key: 'DEMO', type: 'product' }, { key: 'EXTRA', type: 'product' }], configRevision: 4 } }],
+            '/api/stats/priority-weights-config': [{ body: { weights: [{ priority: 'P1', weight: 0.75 }], configRevision: 5 } }],
+            '/api/board-config': [{ body: { boardId: '', boardName: '', configRevision: 6 } }],
+            '/api/capacity/config': [{ body: { project: '', fieldId: '', fieldName: '', configRevision: 7 } }],
+            '/api/sprint-field/config': [{ body: { fieldId: '', fieldName: '', configRevision: 8 } }],
+            '/api/parent-name-field/config': [{ body: { fieldId: '', fieldName: '', configRevision: 9 } }],
+            '/api/story-points-field/config': [{ body: { fieldId: '', fieldName: '', configRevision: 10 } }],
+            '/api/team-field/config': [{ body: { fieldId: '', fieldName: '', configRevision: 11 } }],
+            '/api/delivery-owner-field/config': [{ body: { fieldId: '', fieldName: '', configRevision: 12 } }],
+            '/api/issue-types/config': [{ body: { issueTypes: [], configRevision: 13 } }],
+        },
+    });
+
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+
+    await dialog.getByPlaceholder('Group name').fill('Platform Core');
+
+    await dialog.getByRole('button', { name: 'Admin' }).click();
+    await dialog.getByRole('tab', { name: 'Scope projects' }).click();
+    await dialog.getByPlaceholder('Search projects to add...').fill('EXTRA');
+    await dialog.locator('.team-search-result-item', { hasText: 'EXTRA' }).getByRole('button', { name: 'Product' }).click();
+    await dialog.getByRole('tab', { name: 'Jira source' }).click();
+    await dialog.getByRole('button', { name: 'Clear sprint board' }).click();
+    // The four required fields cannot be saved blank, so each is replaced by another catalog field; the optional
+    // delivery owner field is cleared.
+    await dialog.getByRole('button', { name: 'Remove sprint field' }).click();
+    await dialog.getByPlaceholder('Search fields...').fill('Sprint (new)');
+    await dialog.locator('.team-search-result-item', { hasText: 'Sprint (new)' }).first().click();
+    await dialog.getByRole('tab', { name: 'Field mapping' }).click();
+    for (const [mapKey, removeLabel, replacement] of [
+        ['parent', 'Remove parent name field', 'Parent Link Alt'],
+        ['storyPoints', 'Remove story points field', 'Story Points Alt'],
+        ['team', 'Remove team field', 'Team Alt'],
+    ]) {
+        await dialog.getByRole('button', { name: removeLabel }).click();
+        const entry = dialog.locator(`.mapping-config-grid [data-map-key="${mapKey}"]`);
+        await entry.locator('.team-search-input').fill(replacement);
+        await entry.locator('.team-search-result-item', { hasText: replacement }).first().click();
+    }
+    await dialog.getByRole('button', { name: 'Remove delivery owner field' }).click();
+    await dialog.getByRole('button', { name: 'Remove issue type Story' }).click();
+    await dialog.getByRole('tab', { name: 'Capacity' }).click();
+    await dialog.getByRole('button', { name: 'Remove capacity field' }).click();
+    await dialog.getByRole('button', { name: 'Remove capacity project' }).click();
+    await dialog.getByRole('tab', { name: 'Priority weights' }).click();
+    await dialog.getByLabel('P1 weight').fill('0.75');
+    await dialog.getByRole('tab', { name: 'Access' }).click();
+    await dialog.getByRole('checkbox', { name: 'Administrator access for Synthetic Member' }).check();
+
+    await dialog.getByRole('button', { name: 'EPM' }).click();
+    await dialog.getByRole('tab', { name: 'Scope' }).click();
+    await dialog.locator('[data-epm-scope-field="labelPrefix"]').fill('rnd_project_core_');
+
+    await dialog.getByRole('button', { name: /^Save$/ }).click();
+    await expect(dialog).toHaveCount(0);
+
+    // Method and path only (CSRF and the derived Team name directory excluded); the one GET /api/config is the
+    // post-save refresh between the groups POST and the private EPM save.
+    const firstSave = calls.findIndex(call => call.method === 'POST' && call.pathname === '/api/projects/selected');
+    const sequence = calls.slice(firstSave)
+        .filter(call => call.pathname !== '/api/auth/csrf' && call.pathname !== '/api/team-catalog'
+            && (call.method !== 'GET' || call.pathname === '/api/config'))
+        .filter(call => call.method !== 'GET' || call.pathname === '/api/config')
+        .map(call => `${call.method} ${call.pathname}`);
+    expect(sequence).toEqual([
+        'POST /api/projects/selected',
+        'POST /api/stats/priority-weights-config',
+        'POST /api/board-config',
+        'POST /api/capacity/config',
+        'POST /api/sprint-field/config',
+        'POST /api/parent-name-field/config',
+        'POST /api/story-points-field/config',
+        'POST /api/team-field/config',
+        'POST /api/delivery-owner-field/config',
+        'POST /api/issue-types/config',
+        'POST /api/admin/users/db-user-member/admin-grant',
+        'POST /api/groups-config',
+        'GET /api/config',
+        'POST /api/epm/config',
+    ]);
+
+    const body = pathname => calls.find(call => call.method === 'POST' && call.pathname === pathname).body;
+    expect([
+        '/api/projects/selected',
+        '/api/stats/priority-weights-config',
+        '/api/board-config',
+        '/api/capacity/config',
+        '/api/sprint-field/config',
+        '/api/parent-name-field/config',
+        '/api/story-points-field/config',
+        '/api/team-field/config',
+        '/api/delivery-owner-field/config',
+        '/api/issue-types/config',
+    ].map(pathname => body(pathname).baseRevision)).toEqual([3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    // The grant request carries no baseRevision and is not part of the shared-config revision chain.
+    expect(body('/api/admin/users/db-user-member/admin-grant')?.baseRevision).toBeUndefined();
+    expect(body('/api/groups-config').baseRevision).toBe(2);
+    expect(body('/api/epm/config').baseRevision).toBeUndefined();
+});
+
+// ST5 R2: with no sharedConfig object in /api/config, loadConfig's fallback branch reads only the two sections the ENG
+// shell needs (the selected projects and the priority weights) at mount; the other eight sections load once when
+// Settings opens (which also re-reads those two). Nothing writes either way.
+test('startup without sharedConfig reads the projects and priority weights once and the other sections only when Settings opens', async ({ page }) => {
+    const calls = await mockConfigSettings(page, { sourceBundle: true });
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    const mountPaths = ['/api/projects/selected', '/api/stats/priority-weights-config'];
+    const modalPaths = [
+        '/api/board-config', '/api/capacity/config', '/api/sprint-field/config', '/api/parent-name-field/config',
+        '/api/story-points-field/config', '/api/team-field/config', '/api/delivery-owner-field/config', '/api/issue-types/config',
+    ];
+    const reads = pathname => calls.filter(call => call.method === 'GET' && call.pathname === pathname).length;
+    await expect.poll(() => mountPaths.map(reads)).toEqual([1, 1]);
+    await expect.poll(() => reads('/api/config')).toBe(1);
+    await page.waitForTimeout(500);
+    expect([...mountPaths, ...modalPaths].map(reads)).toEqual([1, 1, 0, 0, 0, 0, 0, 0, 0, 0]);
+    expect(calls.filter(call => call.method !== 'GET' && call.pathname !== '/api/auth/csrf' && call.pathname !== '/api/auth/refresh')).toEqual([]);
+
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    await expect(page.getByRole('dialog').first()).toBeVisible();
+    await expect.poll(() => modalPaths.map(reads)).toEqual(modalPaths.map(() => 1));
+    await page.waitForTimeout(500);
+    // Opening Settings re-reads the projects and the priority weights as well (each twice in total).
+    expect([...mountPaths, ...modalPaths].map(reads)).toEqual([2, 2, 1, 1, 1, 1, 1, 1, 1, 1]);
+    // Only the derived Team name directory persists on its own lifecycle; no configuration section is written.
+    expect(calls.filter(call => call.method !== 'GET' && call.pathname !== '/api/auth/csrf' && call.pathname !== '/api/auth/refresh'
+        && call.pathname !== '/api/team-catalog')).toEqual([]);
 });
 
 test('settings save persists dirty department and EPM sections together', async ({ page }) => {

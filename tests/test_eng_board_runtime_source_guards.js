@@ -9,6 +9,7 @@ const dashboardRuntime = read('frontend/src/dashboardRuntime.js');
 const boardView = read('frontend/src/eng/EngBoardView.jsx');
 const engView = read('frontend/src/eng/EngView.jsx');
 const strictIntegration = read('frontend/src/eng/useStrictEngBoardIntegration.js');
+const sharedConfigSave = read('frontend/src/settings/useSharedConfigSave.js');
 
 test('dashboard wires Board loading, error, and retry state to EngBoardView', () => {
     const mount = dashboard.slice(dashboard.indexOf('<EngBoardView'), dashboard.indexOf('/>', dashboard.indexOf('<EngBoardView')));
@@ -30,7 +31,7 @@ test('dashboard wires Board loading, error, and retry state to EngBoardView', ()
 test('required sprint refreshes queue behind active discovery while Retry clicks deduplicate', () => {
     assert.match(dashboardRuntime, /if \(forceRefresh && activeRequestKind === 'ordinary'\)/);
     assert.match(dashboardRuntime, /if \(observer\?\.promise\) observer\.promise\.then\(queued\.resolve, queued\.reject\);/);
-    assert.match(dashboard, /if \(boardAffectingAdminSave && nextAdminSettingsGate\.status === 'clear'\) await loadSprints\(false\);/);
+    assert.match(sharedConfigSave, /if \(boardAffectingAdminSave && nextAdminSettingsGate\.status === 'clear'\) await loadSprints\(false\);/);
     assert.match(dashboard, /const retryEngLoad = sprintError \? \(\) => loadSprints\(true\) : fetchTasks;/);
     const refreshHandler = dashboard.slice(
         dashboard.indexOf('const refreshActiveViewFromJira'),

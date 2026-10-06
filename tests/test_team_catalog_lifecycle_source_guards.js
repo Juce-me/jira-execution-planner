@@ -24,7 +24,8 @@ test('dashboard delegates Team lifecycle and retains only availability and UI wi
     assert.match(source, /import useTeamCatalogLifecycle from '\.\/settings\/useTeamCatalogLifecycle\.js'/);
     assert.match(source, /\} = useTeamCatalogLifecycle\(\{/);
     assert.match(source, /invalidateTeamMembership,/);
-    assert.match(source, /invalidateTeamMembership\(\);/);
+    assert.match(read('frontend/src/settings/useSharedConfigSave.js'), /invalidateTeamMembership\(\);/);
+    assert.match(source, /invalidateTeamMembership: invalidateTeamMembership|\n\s+invalidateTeamMembership,/);
     // Team availability is derived inside the Team Groups hook (ST3); the dashboard passes the lifecycle state into it.
     const teamGroupHook = read('frontend/src/settings/useTeamGroupSettings.js');
     assert.match(teamGroupHook, /buildTeamAvailability\(\{/);
@@ -55,7 +56,7 @@ test('Team lifecycle does not expose the unused names-only resolver path', () =>
 });
 
 test('rejected Board-affecting saves recover Sprint and Team authority', () => {
-    const source = read('frontend/src/dashboard.jsx');
+    const source = read('frontend/src/settings/useSharedConfigSave.js');
     assert.match(source, /const recoverCatalogsAfterRejectedBoardSave = async/);
     assert.match(source, /recoverCatalogsAfterRejectedBoardSave[\s\S]*fetchAppConfig\(BACKEND_URL\)[\s\S]*acceptSource[\s\S]*loadSprints\(false\)/);
     assert.match(source, /if \(!groupDraft\)[\s\S]*void recoverCatalogsAfterRejectedBoardSave\(\)/);

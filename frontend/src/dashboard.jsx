@@ -183,8 +183,7 @@ import {
     completeOnboardingModule as requestCompleteOnboardingModule,
     resetOnboardingModules as requestResetOnboardingModules,
 } from './api/configApi.js';
-import FirstRunGroupSelectionModal from './settings/FirstRunGroupSelectionModal.jsx';
-import FirstRunGroupSetupChoice from './settings/FirstRunGroupSetupChoice.jsx';
+import FirstRunConfigurationContainer from './settings/FirstRunConfigurationContainer.jsx';
 import UnconfiguredWorkspaceNotice from './settings/UnconfiguredWorkspaceNotice.jsx';
 import { firstMissingAdminSettingsTab, resolveAdminSettingsGate, useAdminSettingsGate } from './settings/adminSettingsGate.js';
 import {
@@ -11578,29 +11577,21 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                         </SettingsModal>
                     )}
                     {groupPreferences.onboardingRequired && !showGroupManage && (
-                        <>
-                            <FirstRunGroupSelectionModal
-                                groups={groupsConfig.groups || []}
-                                selectedGroupId={firstRunFavoriteGroupId}
-                                onSelectGroup={selectFirstRunFavoriteGroup}
-                                onContinue={saveFirstRunGroupPreferences}
-                                onAddDepartment={openFirstRunSetupChoice}
-                                onConfigureGroup={configureFirstRunGroup}
-                                saving={firstRunSaving}
-                                error={firstRunError}
-                                onboardingDone={groupPreferences.onboardingDone}
-                                setupChoiceOpen={Boolean(firstRunSetupChoice)}
-                            />
-                            {firstRunSetupChoice && (
-                                <FirstRunGroupSetupChoice
-                                    groups={groupsConfig.groups || []}
-                                    value={firstRunSetupChoice}
-                                    onChange={setFirstRunSetupChoice}
-                                    onBack={closeFirstRunSetupChoice}
-                                    onContinue={continueFirstRunSetupChoice}
-                                />
-                            )}
-                        </>
+                        <FirstRunConfigurationContainer
+                            closeFirstRunSetupChoice={closeFirstRunSetupChoice}
+                            configureFirstRunGroup={configureFirstRunGroup}
+                            continueFirstRunSetupChoice={continueFirstRunSetupChoice}
+                            firstRunError={firstRunError}
+                            firstRunFavoriteGroupId={firstRunFavoriteGroupId}
+                            firstRunSaving={firstRunSaving}
+                            firstRunSetupChoice={firstRunSetupChoice}
+                            groupPreferences={groupPreferences}
+                            groupsConfig={groupsConfig}
+                            openFirstRunSetupChoice={openFirstRunSetupChoice}
+                            saveFirstRunGroupPreferences={saveFirstRunGroupPreferences}
+                            selectFirstRunFavoriteGroup={selectFirstRunFavoriteGroup}
+                            setFirstRunSetupChoice={setFirstRunSetupChoice}
+                        />
                     )}
                     <OnboardingTour
                         run={onboarding.run}

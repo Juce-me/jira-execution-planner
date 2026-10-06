@@ -2237,7 +2237,7 @@ Updated in each R5 commit and the separate permission-fix commit (root `AGENTS.m
 | ST1 | Shared-config section hooks | R1 to R3 and R4a validated 2026-10-05; R4b, R4c-hook, R4c-container validated in chat 2026-10-05; R5 local, awaiting review; publication not started | 13,884 | 13,884 (ratcheted); lint 110 | Local commits only | Four owner files added: three hook files (with two effects layers) and the Admin container; combined 30,576 |
 | ST2 | EPM settings | R1 to R4b and R5 local (stacked on the unpublished ST1 branch); publication not started | 13,043 | 13,043 (ratcheted); lint 109 | Local commits only | `useEpmSettings` (1,208 lines, one hook plus four effects layers), `EpmSettingsTab` (189 lines), two helper modules; combined 31,141 |
 | ST3 | Team Groups and Labels | R1, R2, R4a, R4b and R5 local (stacked on the unpublished ST2 branch); publication not started | 11,754 | 11,754 (ratcheted); lint 107 | Local commits only | `useTeamGroupSettings` (1,480 lines, one hook plus three effects layers), `DepartmentsSettingsTab` (494 lines); combined 31,823 |
-| ST4 | First-run configuration | In progress: R4a local (stacked on the unpublished ST3 branch) | 11,658 after R4a | 11,754 (R5 ratchets); lint 107 | Local commits only | R4a extracts `useFirstRunConfiguration` (258 lines, two layers) |
+| ST4 | First-run configuration | In progress: R4a and R4b local (stacked on the unpublished ST3 branch); R5 next | 11,649 after R4b | 11,754 (R5 ratchets); lint 107 | Local commits only | R4b moves the 23-line first-run fragment into `FirstRunConfigurationContainer` (46 lines, 13 props) |
 | Permission fix | Explicit Settings editing grant (G2 prerequisite) | Approved; not started | | | | Separate fix after ST4; verify merge before ST5 |
 | ST5 | Shared-config save, permissions, shell (G2) | Conditional approval; not started | | | | Permission fix + R0 validation required |
 
@@ -2732,6 +2732,17 @@ Import direction remains App → owners; no owner imports the dashboard entry.
 *Tests.* New `tests/test_use_first_run_configuration.js` (20 server-render probe tests; 20 of 20 seeded hook defects failed it in the dry run, and three layer and getter seeds fail its order pin).
 
 *Checks.* Node 1,858 passed. Python 2,113 OK (29 skips). Gate: 0 errors, 107 warnings, 63 modules, 31 sites, 0 enforced problems; 73 negative controls passing. Scoped Chromium: 548 passed, one opt-in skip, zero failures; all 35 DOM captures byte-identical to the unchanged base. Independent review: all eight checks passed (the 160 moved lines equal the hook text apart from three getter seam lines, effect order and dependency arrays, getter phases, guard strength, manifest arithmetic).
+
+
+**ST4 R4b record (2026-10-06, local, unpublished).** Base is R4a `1fc5f413`. Checkpoint frozen from the same dry run before the move, installed unchanged as `ST4-R4b-FirstRunConfigurationContainer`.
+
+*Move.* The 23-line first-run fragment (the `FirstRunGroupSelectionModal` and `FirstRunGroupSetupChoice` elements, HEAD lines 11581-11603) moves verbatim into the new stateless `frontend/src/settings/FirstRunConfigurationContainer.jsx` (46 lines; `import * as React`, no hook, first parameter destructured). It returns the same fragment, so the DOM is unchanged; the `groupPreferences.onboardingRequired && !showGroupManage &&` wrapper and the `<OnboardingTour>` stay in App. App passes 13 explicit `name={name}` attributes (15 expanded members), evaluated during render after their declarations, so there is no getter; the checker's one unresolved item (the forwarded `firstRunSetupChoice` state value) is recorded as reviewed.
+
+*Honest cost.* The stage saves nine App lines (11,658 → 11,649) and costs 37 combined (23 moved + 15 call-site lines, plus one added and minus two removed import lines): it buys a checker-verified App-to-container boundary, not size. It is built because the plan's R4b requires it. Frozen checkpoint as installed: container cap 46 lines, 13 props; Settings 14,713 → 14,759; unique owners 20,327 → 20,373; combined 31,985 → 32,022; structural ceiling 11,754 until R5. The caller ledgers of `FirstRunGroupSelectionModal` and `FirstRunGroupSetupChoice` now name the container.
+
+*Conservation.* App statements 934 → 934; one removed and one new (the App `return`, which holds the call site); effect order identical across 94 top-level effects.
+
+*Tests.* New `tests/test_first_run_configuration_container.js` (five server-render tests; 11 of 11 seeded defects failed it in the dry run). No existing guard broke. Node 1,863 passed. Python 2,113 OK (29 skips). Gate: 0 errors, 107 warnings, 64 modules, 31 sites, 0 enforced problems; 73 negative controls passing. Scoped Chromium: 547 passed, one opt-in skip, one failure, and all 35 DOM captures byte-identical to the unchanged base. The failure is again `scenario_draft_history.spec.js` "keyboard opens history, focuses the title, and Escape returns focus to History" (a Scenario keyboard-focus test unrelated to first-run). It is load-sensitive: with the machine's load average at about 8.7 it failed 3 of 6 isolated runs on this tree and 2 of 6 on the committed ST4 R4a head without this change, while it passed 8 of 8 earlier at lower load on the ST3 tree; no test or timeout was changed. Independent review: all seven checks passed.
 
 
 ## 13. Program acceptance

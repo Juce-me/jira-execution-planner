@@ -29,6 +29,9 @@ const epmSettingsHookSource = readOwnerSource(['frontend/src/settings/useEpmSett
 const settingsPermissionsSource = readOwnerSource(['frontend/src/settings/useSettingsPermissions.js'], { anchor: 'export function useSettingsPermissions(' });
 const sharedConfigSaveSource = readOwnerSource(['frontend/src/settings/useSharedConfigSave.js'], { anchor: 'export function useSharedConfigSave(' });
 const settingsTabIdsSource = readOwnerSource(['frontend/src/settings/settingsTabIds.js'], { anchor: 'export const ADMIN_SETTINGS_TAB_IDS' });
+const settingsModalStateSource = readOwnerSource(['frontend/src/settings/useSettingsModalState.js'], { anchor: 'export function useSettingsModalState(' });
+const settingsModalHookSource = readOwnerSource(['frontend/src/settings/useSettingsModalState.js'], { anchor: 'export function useSettingsModal(' });
+const settingsModalContainerSource = readOwnerSource(['frontend/src/settings/SettingsModalContainer.jsx'], { anchor: 'export default function SettingsModalContainer(' });
 const epmSettingsTabSource = readOwnerSource(['frontend/src/epm/EpmSettingsTab.jsx'], { anchor: 'export default function EpmSettingsTab(' });
 const departmentsTabSource = readOwnerSource(['frontend/src/settings/DepartmentsSettingsTab.jsx'], { anchor: 'export default function DepartmentsSettingsTab(' });
 const teamGroupHookSource = readOwnerSource(['frontend/src/settings/useTeamGroupSettings.js'], { anchor: 'export function useTeamGroupSettings(' });
@@ -101,16 +104,22 @@ function extractDestructuredProps(source) {
 }
 
 test('settings modal shell and tab bodies are extracted while dashboard keeps settings state ownership', () => {
-    const settingsModalCallStart = dashboardSource.indexOf('<SettingsModal');
-    const settingsModalOpenTagEndMarker = '\n                        >';
-    const settingsModalCallEnd = dashboardSource.indexOf(settingsModalOpenTagEndMarker, settingsModalCallStart);
+    const settingsModalCallStart = settingsModalContainerSource.indexOf('<SettingsModal');
+    const settingsModalOpenTagEndMarker = '\n        >';
+    const settingsModalCallEnd = settingsModalContainerSource.indexOf(settingsModalOpenTagEndMarker, settingsModalCallStart);
     const settingsModalCallSource = settingsModalCallStart === -1 || settingsModalCallEnd === -1
         ? ''
-        : dashboardSource.slice(settingsModalCallStart, settingsModalCallEnd);
-    const settingsModalChildrenStart = settingsModalCallEnd === -1
+        : settingsModalContainerSource.slice(settingsModalCallStart, settingsModalCallEnd);
+    const containerCallStart = dashboardSource.indexOf('<SettingsModalContainer');
+    const containerOpenTagEndMarker = '\n                        >';
+    const containerCallEnd = dashboardSource.indexOf(containerOpenTagEndMarker, containerCallStart);
+    const containerCallSource = containerCallStart === -1 || containerCallEnd === -1
+        ? ''
+        : dashboardSource.slice(containerCallStart, containerCallEnd);
+    const settingsModalChildrenStart = containerCallEnd === -1
         ? -1
-        : settingsModalCallEnd + settingsModalOpenTagEndMarker.length;
-    const settingsModalChildrenEnd = dashboardSource.indexOf('</SettingsModal>', settingsModalChildrenStart);
+        : containerCallEnd + containerOpenTagEndMarker.length;
+    const settingsModalChildrenEnd = dashboardSource.indexOf('</SettingsModalContainer>', settingsModalChildrenStart);
     const settingsModalChildrenSource = settingsModalChildrenStart === -1 || settingsModalChildrenEnd === -1
         ? ''
         : dashboardSource.slice(settingsModalChildrenStart, settingsModalChildrenEnd);
@@ -152,7 +161,15 @@ test('settings modal shell and tab bodies are extracted while dashboard keeps se
 
     assert.ok(fs.existsSync(settingsModalPath), 'Expected extracted SettingsModal shell component');
     assert.ok(settingsModalSource.includes('export default function SettingsModal'), 'Expected SettingsModal default component export');
-    assert.ok(dashboardSource.includes("import SettingsModal from './settings/SettingsModal.jsx';"), 'Expected dashboard to import extracted SettingsModal shell');
+    assert.ok(settingsModalContainerSource.includes("import SettingsModal from './SettingsModal.jsx';"), 'Expected the container to import the extracted SettingsModal shell');
+    assert.ok(dashboardSource.includes("import SettingsModalContainer from './settings/SettingsModalContainer.jsx';") && !dashboardSource.includes("import SettingsModal from './settings/SettingsModal.jsx';"), 'Expected dashboard to reach the SettingsModal shell only through its container');
+    assert.ok(containerCallSource.includes('<SettingsModalContainer') && !/useState\(|useEffect\(|useRef\(|useMemo\(|useCallback\(/.test(settingsModalContainerSource), 'SettingsModalContainer must stay stateless');
+    assert.deepStrictEqual(
+        extractJsxAttributeNames(containerCallSource),
+        extractParameterDestructureProps(settingsModalContainerSource).filter((name) => name !== 'children'),
+        'Expected the props dashboard passes to SettingsModalContainer to match the props it destructures exactly'
+    );
+    assert.ok(/\{showGroupManage && \(\s*<SettingsModalContainer/.test(dashboardSource), 'Expected the open-state conditional to stay in dashboard so closed Settings build no tab bodies');
     assert.ok(settingsModalCallSource.includes('activeTab={activeSettingsModalTab}'), 'Expected dashboard to pass grouped active settings tab into SettingsModal');
     assert.ok(settingsModalCallSource.includes('tabs={settingsModalTabs}'), 'Expected dashboard to pass tab descriptors into SettingsModal');
     assert.ok(settingsModalCallSource.includes("isDirty={groupManageTab !== 'connections' && isGroupDraftDirty}"), 'Expected dashboard to pass dirty state into SettingsModal');
@@ -324,9 +341,9 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(sharedConfigSaveSource.includes('const saveAllSettings = async (options = {}) => {'), 'Expected synchronous guarded settings save boundary');
     assert.ok(sharedConfigSaveSource.includes('const hasEpmSettingsChanges = canEditEpmConfiguration && isEpmConfigDirty;'), 'Expected unified save to detect dirty EPM settings');
     assert.ok(sharedConfigSaveSource.includes('await saveEpmConfig();'), 'Expected unified settings save to persist dirty EPM settings');
-    assert.ok(dashboardSource.includes('const settingsSaveHandler = () => {')
-        && dashboardSource.includes('void saveAllSettings({')
-        && dashboardSource.includes('firstRunSession: firstRunConfigurationActive ? firstRunConfigurationSession : null,'),
+    assert.ok(settingsModalHookSource.includes('const settingsSaveHandler = () => {')
+        && settingsModalHookSource.includes('void saveAllSettings({')
+        && settingsModalHookSource.includes('firstRunSession: firstRunConfigurationActive ? firstRunConfigurationSession : null,'),
     'Expected footer Save to use the modal-wide settings handler');
     assert.ok(epmSettingsHookSource.includes("setGroupDraftError(message);") && sharedConfigSaveSource.includes('throw err;'), 'Expected EPM save failures to surface and block shared save');
     assert.ok(epmSettingsUiSource.includes('Atlassian site'), 'Expected Atlassian site copy');
@@ -443,7 +460,7 @@ test('dashboard calls the Team Groups hook and its effects layers at their origi
     const jiraSearchEffectsPosition = positionOf(dashboardSource, 'useJiraProjectSearchEffects({');
     const searchLayerPosition = positionOf(dashboardSource, 'useTeamGroupSearchEffects({');
     const jiraCatalogEffectsPosition = positionOf(dashboardSource, 'useJiraProjectCatalogEffects({');
-    const settingsTabEffectEnd = positionOf(dashboardSource, '}, [groupManageTab]);');
+    const settingsTabEffectEnd = positionOf(dashboardSource, 'useSettingsTabGuardEffects({');
     const labelLayerPosition = positionOf(dashboardSource, 'useTeamGroupLabelEffects({');
     const registerSprintFetchPosition = positionOf(dashboardSource, 'const registerSprintFetch = ');
     assert.ok(analyticsPosition < teamHookPosition && teamHookPosition < epmHookPosition && epmHookPosition < firstRunReaderPosition, 'Expected the Team Groups hook after the useDashboardAnalytics destructure (its last input) and before useEpmSettings, which reads its label-search state, and before the first reader');
@@ -671,11 +688,13 @@ test('dashboard source separates EPM scope and project mapping tabs', () => {
 });
 
 test('settings hotkey effect is declared after the save handlers it depends on', () => {
-    const hotkeyEffectIndex = dashboardSource.indexOf("window.addEventListener('keydown', handleKey);");
+    const hotkeyEffectIndex = dashboardSource.indexOf('useSettingsHotkeyEffect({');
     const saveEpmConfigIndex = dashboardSource.indexOf('} = useEpmSettings({');
     const saveGroupsConfigIndex = dashboardSource.indexOf('} = useSharedConfigSave({');
 
-    assert.ok(hotkeyEffectIndex !== -1, 'Expected settings hotkey effect in dashboard.jsx');
+    assert.ok(hotkeyEffectIndex !== -1, 'Expected settings hotkey effect layer call in dashboard.jsx');
+    assert.ok(settingsModalHookSource.includes("window.addEventListener('keydown', handleKey);"), 'Expected the hotkey layer to own the keydown listener');
+    assert.ok(hotkeyEffectIndex > dashboardSource.indexOf('} = useSettingsModal({'), 'Expected the hotkey layer after the modal functions it reads in its dependency array');
     assert.ok(saveEpmConfigIndex !== -1, 'Expected dashboard.jsx to obtain saveEpmConfig from the EPM settings hook');
     assert.ok(epmSettingsHookSource.includes('const saveEpmConfig = async () => {'), 'Expected the EPM settings hook to own saveEpmConfig');
     assert.ok(saveGroupsConfigIndex !== -1, 'Expected dashboard.jsx to obtain saveGroupsConfig from the shared-config save hook');
@@ -685,11 +704,11 @@ test('settings hotkey effect is declared after the save handlers it depends on',
 });
 
 test('settings tabs distinguish tool-admin configuration from team grouping', () => {
-    const tabsStart = dashboardSource.indexOf('const settingsModalAllTabs = [');
-    const tabsEnd = dashboardSource.indexOf('];', tabsStart);
+    const tabsStart = settingsModalHookSource.indexOf('const settingsModalAllTabs = [');
+    const tabsEnd = settingsModalHookSource.indexOf('];', tabsStart);
     assert.notStrictEqual(tabsStart, -1, 'Expected settings tab descriptors');
     assert.notStrictEqual(tabsEnd, -1, 'Expected settings tab descriptors end');
-    const tabsSource = dashboardSource.slice(tabsStart, tabsEnd);
+    const tabsSource = settingsModalHookSource.slice(tabsStart, tabsEnd);
 
     assert.ok(settingsPermissionsSource.includes('const [environmentConfigExists, setEnvironmentConfigExists] = useState(false);'), 'Expected environment-config state from /api/config');
     assert.ok(settingsPermissionsSource.includes('const canEditSharedConfiguration = userCanEditSettings === true;'), 'Expected administrator editing to require the explicit boolean grant');
@@ -714,9 +733,9 @@ test('settings tabs distinguish tool-admin configuration from team grouping', ()
 });
 
 test('settings modal groups department and admin leaves behind local sub-tabs', () => {
-    assert.ok(dashboardSource.includes("const [adminSettingsTab, setAdminSettingsTab] = useState('scope');"), 'Expected Admin-local settings tab state');
-    assert.ok(dashboardSource.includes("const [departmentSettingsTab, setDepartmentSettingsTab] = useState('teams');"), 'Expected Departments-local settings tab state');
-    assert.ok(dashboardSource.includes("const activeSettingsModalTab = ADMIN_SETTINGS_TAB_IDS.has(groupManageTab)"), 'Expected leaf settings tabs to resolve to grouped top-level tabs');
+    assert.ok(settingsModalStateSource.includes("const [adminSettingsTab, setAdminSettingsTab] = useState('scope');"), 'Expected Admin-local settings tab state');
+    assert.ok(settingsModalStateSource.includes("const [departmentSettingsTab, setDepartmentSettingsTab] = useState('teams');"), 'Expected Departments-local settings tab state');
+    assert.ok(settingsModalHookSource.includes("const activeSettingsModalTab = ADMIN_SETTINGS_TAB_IDS.has(groupManageTab)"), 'Expected leaf settings tabs to resolve to grouped top-level tabs');
     assert.ok(departmentsTabSource.includes('id="department-settings-teams-tab"'), 'Expected Team Groups local tab');
     assert.ok(departmentsTabSource.includes('id="department-settings-labels-tab"'), 'Expected Group Labels local tab');
     assert.ok(adminSettingsContainerSource.includes('<AdminSettingsTabs'), 'Expected extracted Admin local tab strip');
@@ -728,19 +747,19 @@ test('settings modal groups department and admin leaves behind local sub-tabs', 
     assert.ok(adminSettingsTabsSource.includes("['access', 'Access']"), 'Expected Access local admin tab');
     assert.ok(departmentsTabSource.includes('aria-label="Departments settings sections"'), 'Expected accessible Departments sub-tab list');
     assert.ok(adminSettingsTabsSource.includes('aria-label="Admin settings sections"'), 'Expected accessible Admin sub-tab list');
-    assert.ok(dashboardSource.includes('const handleDepartmentSettingsTabKeyDown = (event) => {'), 'Expected keyboard support for Departments sub-tabs');
-    assert.ok(dashboardSource.includes('const handleAdminSettingsTabKeyDown = (event) => {'), 'Expected keyboard support for Admin sub-tabs');
+    assert.ok(settingsModalHookSource.includes('const handleDepartmentSettingsTabKeyDown = (event) => {'), 'Expected keyboard support for Departments sub-tabs');
+    assert.ok(settingsModalHookSource.includes('const handleAdminSettingsTabKeyDown = (event) => {'), 'Expected keyboard support for Admin sub-tabs');
 });
 
 test('Boards is a Departments leaf tab that mounts GroupBoardsTab, which mounts GroupBoardSettings, with matching props at each hop', () => {
     assert.ok(settingsTabIdsSource.includes("new Set(['teams', 'labels', 'boards'])"), 'Expected boards added to DEPARTMENT_SETTINGS_TAB_IDS');
     assert.ok(departmentsTabSource.includes('id="department-settings-boards-tab"'), 'Expected Boards local tab DOM id');
 
-    const tabsStart = dashboardSource.indexOf('const settingsModalAllTabs = [');
-    const tabsEnd = dashboardSource.indexOf('];', tabsStart);
+    const tabsStart = settingsModalHookSource.indexOf('const settingsModalAllTabs = [');
+    const tabsEnd = settingsModalHookSource.indexOf('];', tabsStart);
     assert.notStrictEqual(tabsStart, -1, 'Expected settings tab descriptors');
     assert.notStrictEqual(tabsEnd, -1, 'Expected settings tab descriptors end');
-    const tabsSource = dashboardSource.slice(tabsStart, tabsEnd);
+    const tabsSource = settingsModalHookSource.slice(tabsStart, tabsEnd);
     assert.ok(!tabsSource.includes("id: 'boards'"), 'Boards must live under Departments instead of the top-level tab list');
 
     // Hop 1: the Departments container (a stateless child of dashboard.jsx, which keeps settings state ownership) mounts the extracted tab body.
@@ -778,15 +797,15 @@ test('Boards is a Departments leaf tab that mounts GroupBoardsTab, which mounts 
 
 test('normal users do not receive admin-only settings tabs as disabled edit surfaces', () => {
     assert.ok(
-        dashboardSource.includes("if (tab.id === 'epm') return canEditEpmConfiguration;"),
+        settingsModalHookSource.includes("if (tab.id === 'epm') return canEditEpmConfiguration;"),
         'Expected EPM settings tab visibility to use user-owned EPM permission'
     );
     assert.ok(
-        dashboardSource.includes("if (tab.id === 'admin') return canEditSharedConfiguration;"),
+        settingsModalHookSource.includes("if (tab.id === 'admin') return canEditSharedConfiguration;"),
         'Expected normal-user settings tabs to omit admin-only shared configuration tabs'
     );
     assert.ok(
-        dashboardSource.includes('const settingsModalAllTabs = ['),
+        settingsModalHookSource.includes('const settingsModalAllTabs = ['),
         'Expected separate full tab list for tool admins'
     );
 });
@@ -861,7 +880,7 @@ test('private EPM bootstrap and save state are independent from shared administr
         'Switching back to EPM settings must not refetch over a dirty draft'
     );
     assert.ok(
-        dashboardSource.includes("setEpmConfigDraft(JSON.parse(epmConfigBaselineRef.current || '{}'));"),
+        settingsModalHookSource.includes("setEpmConfigDraft(JSON.parse(epmConfigBaselineRef.current || '{}'));"),
         'Explicit discard must restore the private EPM baseline'
     );
     assert.ok(epmSettingsHookSource.includes('const epmConfigDraftGenerationRef = useRef(0);'), 'Expected a private EPM draft generation guard');
@@ -937,11 +956,11 @@ test('department visibility controls are prop-owned and share one canonical row 
 
 test('group labels tab is available for the current group draft', () => {
     assert.ok(
-        dashboardSource.includes("const labelsTabEnabled = (groupDraft?.groups || groupsConfig.groups || []).length > 0;"),
+        settingsModalHookSource.includes("const labelsTabEnabled = (groupDraft?.groups || groupsConfig.groups || []).length > 0;"),
         'Group Labels should be enabled as soon as the draft has a group'
     );
     assert.ok(
-        !dashboardSource.includes("const labelsTabEnabled = (groupsConfig.groups || []).length > 0;"),
+        !dashboardSource.includes("const labelsTabEnabled = (groupsConfig.groups || []).length > 0;") && !settingsModalHookSource.includes("const labelsTabEnabled = (groupsConfig.groups || []).length > 0;"),
         'Group Labels must not require a saved group round-trip before editing labels'
     );
 });

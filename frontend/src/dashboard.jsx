@@ -176,12 +176,18 @@ import { resolveBackendUrl } from './api/backendUrl.js';
 import {
     fetchBootstrapConfig,
     fetchVersionInfo,
-    testJiraConnection,
     completeOnboardingModule as requestCompleteOnboardingModule,
     resetOnboardingModules as requestResetOnboardingModules,
 } from './api/configApi.js';
 import FirstRunConfigurationContainer from './settings/FirstRunConfigurationContainer.jsx';
 import { useSharedConfigSave, useSharedConfigSaveState } from './settings/useSharedConfigSave.js';
+import {
+    useSettingsAutoOpenEffect,
+    useSettingsHotkeyEffect,
+    useSettingsModal,
+    useSettingsModalState,
+    useSettingsTabGuardEffects,
+} from './settings/useSettingsModalState.js';
 import UnconfiguredWorkspaceNotice from './settings/UnconfiguredWorkspaceNotice.jsx';
 import { firstMissingAdminSettingsTab, resolveAdminSettingsGate, useAdminSettingsGate } from './settings/adminSettingsGate.js';
 import { buildPendingFirstRunGroupPreferencesDraft } from './settings/firstRunGroupConfiguration.js';
@@ -191,8 +197,6 @@ import {
     normalizeTeamLabelAliases,
     resolveInitialGroupId
 } from './settings/groupConfigUtils.js';
-import { groupConfigConflictMessages } from './settings/groupsConfigConflict.js';
-import { workspaceConfigConflictMessages } from './settings/workspaceConfigConflict.js';
 import { saveSharedExcludedCapacityToggle } from './settings/sharedExcludedCapacityToggle.js';
 import {
     useTeamGroupLabelEffects,
@@ -202,7 +206,7 @@ import {
 } from './settings/useTeamGroupSettings.js';
 import useTeamCatalogLifecycle from './settings/useTeamCatalogLifecycle.js';
 import { buildSharedGroupsPayload } from './settings/groupVisibilityUtils.js';
-import { ADMIN_SETTINGS_TAB_IDS, DEPARTMENT_SETTINGS_TAB_IDS, SHARED_CONFIGURATION_TAB_IDS } from './settings/settingsTabIds.js';
+import { ADMIN_SETTINGS_TAB_IDS, DEPARTMENT_SETTINGS_TAB_IDS } from './settings/settingsTabIds.js';
 
 import { fetchBurnoutStats as requestBurnoutStats, fetchEpicCohortStats as requestEpicCohortStats, fetchProjectTrackPhaseDurations as requestProjectTrackPhaseDurations } from './api/statsApi.js';
 import { fetchIssuesLookup as requestIssuesLookup } from './api/issuesApi.js';
@@ -210,7 +214,7 @@ import { EpmControls } from './epm/EpmControls.jsx';
 import EpmProjectCollapseAllButton from './epm/EpmProjectCollapseAllButton.jsx';
 import { EpmView } from './epm/EpmView.jsx';
 import EpmSettingsTab from './epm/EpmSettingsTab.jsx';
-import SettingsModal from './settings/SettingsModal.jsx';
+import SettingsModalContainer from './settings/SettingsModalContainer.jsx';
 import DepartmentsSettingsTab from './settings/DepartmentsSettingsTab.jsx';
 import { createSettingsDraftReadGuard, useSettingsConfigBaselineRevision } from './settings/settingsConfigReadState.js';
 import { useSettingsPermissions } from './settings/useSettingsPermissions.js';
@@ -455,8 +459,25 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
             const epmSubGoalFilterDropdownRefs = useRef({ main: null, compact: null });
             const [showEpmSortDropdown, setShowEpmSortDropdown] = useState(false);
             const epmSortDropdownRefs = useRef({ main: null, compact: null });
-            const [adminSettingsTab, setAdminSettingsTab] = useState('scope');
-            const [departmentSettingsTab, setDepartmentSettingsTab] = useState('teams');
+            const {
+                adminSettingsTab,
+                departmentSettingsTab,
+                groupManageButtonRef,
+                groupManageTab,
+                groupTestMessage,
+                groupTesting,
+                setAdminSettingsTab,
+                setDepartmentSettingsTab,
+                setGroupManageTab,
+                setGroupTestMessage,
+                setGroupTesting,
+                setShowGroupDiscardConfirm,
+                setShowGroupListMobile,
+                setShowGroupManage,
+                showGroupDiscardConfirm,
+                showGroupListMobile,
+                showGroupManage,
+            } = useSettingsModalState();
             const [sprintCatalogState, setSprintCatalogState] = useState(sprintCatalogInitialStateRef.current);
             const sprintCatalogControllerRef = useRef(null);
             const sprintCatalogPersistedValidationRef = useRef('');
@@ -540,7 +561,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
             const [showGroupDropdown, setShowGroupDropdown] = useState(false);
             const [groupDropdownQuery, setGroupDropdownQuery] = useState('');
             const groupDropdownRefs = useRef({ main: null, compact: null });
-            const [showGroupManage, setShowGroupManage] = useState(false);
             const [groupDraftError, setGroupDraftError] = useState('');
             const [settingsSaveError, setSettingsSaveError] = useState('');
             const {
@@ -569,11 +589,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 workspaceConfigConflict,
             } = useSharedConfigSaveState();
             const [groupSaving, setGroupSaving] = useState(false);
-            const [groupTesting, setGroupTesting] = useState(false);
-            const [groupTestMessage, setGroupTestMessage] = useState('');
-            const [showGroupListMobile, setShowGroupListMobile] = useState(false);
-            const [showGroupDiscardConfirm, setShowGroupDiscardConfirm] = useState(false);
-            const [groupManageTab, setGroupManageTab] = useState('scope');
             const [showTechnicalFieldIds, setShowTechnicalFieldIds] = useState(false);
             const [mappingHoverKey, setMappingHoverKey] = useState(null);
             const {
@@ -835,7 +850,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 savedPrefsRef.current.groupByInitiativeChoice ?? null
             );
             const headerRef = useRef(null);
-            const groupManageButtonRef = useRef(null);
             const compactHeaderRef = useRef(null);
             const [compactHeaderOffset, setCompactHeaderOffset] = useState(0);
             const [compactStickyVisible, setCompactStickyVisible] = useState(false);
@@ -1767,16 +1781,11 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 };
             }, [abortSprintFetches]);
 
-            // Auto-open settings modal on first launch (no config file exists)
-            const hasAutoOpenedRef = useRef(false);
-            useEffect(() => {
-                if (hasAutoOpenedRef.current) return;
-                if (groupsLoading) return;
-                if (groupConfigSource === 'auto') {
-                    hasAutoOpenedRef.current = true;
-                    setShowGroupManage(true);
-                }
-            }, [groupsLoading, groupConfigSource]);
+            useSettingsAutoOpenEffect({
+                groupConfigSource,
+                groupsLoading,
+                setShowGroupManage,
+            });
 
             useEffect(() => {
                 if (!showGroupManage) return;
@@ -1977,41 +1986,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 return normalized === 'done' || normalized === 'killed' || normalized === 'incomplete';
             }, []);
 
-            const openGroupManage = (tab = preferredSettingsTab) => {
-                setGroupManageTab(tab);
-                setShowGroupManage(true);
-            };
-
-            const closeGroupManage = () => {
-                setShowGroupManage(false);
-                setGroupDraftError('');
-                setSettingsSaveError('');
-                setGroupsConfigConflict(null);
-                setGroupImportText('');
-                setShowGroupImport(false);
-                setShowGroupAdvanced(false);
-                setShowGroupDiscardConfirm(false);
-                setShowGroupListMobile(false);
-                setGroupManageTab(preferredSettingsTab);
-                setProjectSearchQuery('');
-                setProjectSearchOpen(false);
-                setProjectSearchIndex(0);
-                setBoardSearchQuery('');
-                setBoardSearchOpen(false);
-                setBoardSearchIndex(0);
-                setComponentSearchQuery('');
-                setComponentSearchOpen(false);
-                setComponentSearchIndex(0);
-                setExcludedEpicSearchQuery('');
-                setExcludedEpicSearchOpen(false);
-                setExcludedEpicSearchIndex(0);
-                setGroupTesting(false);
-                setGroupTestMessage('');
-                setCapacityProjectSearchQuery('');
-                setCapacityProjectSearchOpen(false);
-                setCapacityFieldSearchQuery('');
-                setCapacityFieldSearchOpen(false);
-            };
 
             useEpmSavedSubGoalsEffect({
                 epmConfigLoaded,
@@ -2151,7 +2125,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 canEditSharedConfiguration,
                 capacityFieldIdDraft,
                 capacityProjectDraft,
-                closeGroupManage,
                 commitSharedConfigRevision,
                 dirtyFieldConfigCount,
                 dispatchFirstRunConfigurationSession,
@@ -2161,6 +2134,7 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 firstRunConfigurationActive,
                 firstRunConfigurationSession,
                 getActiveDepartmentSettingsTab: () => activeDepartmentSettingsTab,
+                getCloseGroupManage: () => closeGroupManage,
                 getLoadConfig: () => loadConfig,
                 getLoadSprints: () => loadSprints,
                 groupDraft,
@@ -2254,6 +2228,84 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 trackSettingsAction,
                 workspaceConfigConflict,
             });
+            const {
+                activeDepartmentSettingsTab,
+                activeSettingsModalTab,
+                closeGroupManage,
+                discardGroupDraftChanges,
+                handleAdminSettingsTabKeyDown,
+                handleDepartmentSettingsTabKeyDown,
+                labelsTabEnabled,
+                openBoardAdminScopeSettings,
+                openBoardDepartmentSettings,
+                openGroupManage,
+                requestCloseGroupManage,
+                selectAdminSettingsTab,
+                selectDepartmentSettingsTab,
+                settingsModalTabs,
+                settingsSaveDisabled,
+                settingsSaveHandler,
+                settingsSaveLabel,
+                settingsSaveTitle,
+                settingsShowsSave,
+                testGroupsConfigConnection,
+            } = useSettingsModal({
+                BACKEND_URL,
+                adminAccessAvailable,
+                adminSettingsTab,
+                canEditEpmConfiguration,
+                canEditSharedConfiguration,
+                departmentSettingsTab,
+                epmConfigBaselineRef,
+                epmConfigSaving,
+                firstRunConfigurationActive,
+                firstRunConfigurationSession,
+                groupDraft,
+                groupManageTab,
+                groupPreferences,
+                groupSaving,
+                groupsConfig,
+                isEpmConfigDirty,
+                isGroupDraftDirty,
+                openEpmSettingsTab,
+                performanceAdminAvailable,
+                preferredSettingsTab,
+                saveAllSettings,
+                saveBlockedReason,
+                setAdminSettingsTab,
+                setBoardSearchIndex,
+                setBoardSearchOpen,
+                setBoardSearchQuery,
+                setCapacityFieldSearchOpen,
+                setCapacityFieldSearchQuery,
+                setCapacityProjectSearchOpen,
+                setCapacityProjectSearchQuery,
+                setComponentSearchIndex,
+                setComponentSearchOpen,
+                setComponentSearchQuery,
+                setDepartmentSettingsTab,
+                setEpmConfigDraft,
+                setExcludedEpicSearchIndex,
+                setExcludedEpicSearchOpen,
+                setExcludedEpicSearchQuery,
+                setGroupDraftError,
+                setGroupImportText,
+                setGroupManageTab,
+                setGroupTestMessage,
+                setGroupTesting,
+                setGroupsConfigConflict,
+                setProjectSearchIndex,
+                setProjectSearchOpen,
+                setProjectSearchQuery,
+                setSettingsSaveError,
+                setShowGroupAdvanced,
+                setShowGroupDiscardConfirm,
+                setShowGroupImport,
+                setShowGroupListMobile,
+                setShowGroupManage,
+                trackSettingsAction,
+                userCanEditSettings,
+            });
             const onboardingActiveSurface = showGroupManage
                 ? 'settings'
                 : (selectedView === 'eng'
@@ -2298,97 +2350,7 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 || onboarding.pending
             );
 
-            const requestCloseGroupManage = () => {
-                if (groupSaving) return;
-                trackSettingsAction(groupManageTab, 'cancel', { dirty_state: isGroupDraftDirty ? 'dirty' : 'clean' });
-                if (isGroupDraftDirty) {
-                    setShowGroupDiscardConfirm(true);
-                    return;
-                }
-                closeGroupManage();
-            };
 
-            const discardGroupDraftChanges = () => {
-                if (isEpmConfigDirty) {
-                    try {
-                        setEpmConfigDraft(JSON.parse(epmConfigBaselineRef.current || '{}'));
-                    } catch (_) { /* baseline is produced by this document */ }
-                }
-                setShowGroupDiscardConfirm(false);
-                closeGroupManage();
-            };
-            const labelsTabEnabled = (groupDraft?.groups || groupsConfig.groups || []).length > 0;
-
-            const openUserConnectionsSettings = () => {
-                trackSettingsAction('connections', 'open');
-                setShowGroupManage(true);
-                setGroupManageTab('connections');
-            };
-
-            const focusSettingsSubTab = (prefix, tab) => {
-                window.requestAnimationFrame(() => {
-                    const node = document.getElementById(`${prefix}-${tab}-tab`);
-                    if (node && typeof node.focus === 'function') {
-                        node.focus();
-                    }
-                });
-            };
-
-            const handleSettingsSubTabKeyDown = (event, tabs, currentTab, setTab, prefix) => {
-                const currentIndex = Math.max(0, tabs.indexOf(currentTab));
-                if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
-                    event.preventDefault();
-                    const direction = event.key === 'ArrowRight' ? 1 : -1;
-                    const nextIndex = (currentIndex + direction + tabs.length) % tabs.length;
-                    const nextTab = tabs[nextIndex];
-                    setTab(nextTab);
-                    focusSettingsSubTab(prefix, nextTab);
-                    return;
-                }
-                if (event.key === 'Home') {
-                    event.preventDefault();
-                    setTab(tabs[0]);
-                    focusSettingsSubTab(prefix, tabs[0]);
-                    return;
-                }
-                if (event.key === 'End') {
-                    event.preventDefault();
-                    const nextTab = tabs[tabs.length - 1];
-                    setTab(nextTab);
-                    focusSettingsSubTab(prefix, nextTab);
-                }
-            };
-
-            const selectDepartmentSettingsTab = (tab) => {
-                if (tab === 'labels' && !labelsTabEnabled) return;
-                setDepartmentSettingsTab(tab);
-                setGroupManageTab(tab);
-            };
-
-            const selectAdminSettingsTab = (tab) => {
-                setAdminSettingsTab(tab);
-                setGroupManageTab(tab);
-            };
-
-            const handleDepartmentSettingsTabKeyDown = (event) => {
-                handleSettingsSubTabKeyDown(
-                    event,
-                    labelsTabEnabled ? ['teams', 'labels', 'boards'] : ['teams', 'boards'],
-                    departmentSettingsTab,
-                    selectDepartmentSettingsTab,
-                    'department-settings'
-                );
-            };
-
-            const handleAdminSettingsTabKeyDown = (event) => {
-                handleSettingsSubTabKeyDown(
-                    event,
-                    ['scope', 'source', 'mapping', 'capacity', 'priorityWeights', ...(adminAccessAvailable ? ['access'] : []), ...(performanceAdminAvailable ? ['performance'] : [])],
-                    adminSettingsTab,
-                    selectAdminSettingsTab,
-                    'admin-settings'
-                );
-            };
 
             const updateNoticeVisible = React.useMemo(() => {
                 if (!updateInfo || updateInfo.enabled === false) return false;
@@ -2405,66 +2367,23 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 setShowUpdateModal(false);
             };
 
-            const testGroupsConfigConnection = async () => {
-                setGroupTesting(true);
-                setGroupTestMessage('');
-                trackSettingsAction(groupManageTab, 'test');
-                try {
-                    const response = await testJiraConnection(BACKEND_URL);
-                    const payload = await response.json().catch(() => ({}));
-                    if (!response.ok) {
-                        throw new Error(payload.error || `Test failed (${response.status})`);
-                    }
-                    setGroupTestMessage(payload.message || 'Connection to Jira API looks good.');
-                    trackSettingsAction(groupManageTab, 'test_result', { result: 'success' });
-                } catch (error) {
-                    setGroupTestMessage(error?.message || 'Connection test failed.');
-                    trackSettingsAction(groupManageTab, 'test_result', { result: 'failure' });
-                } finally {
-                    setGroupTesting(false);
-                }
-            };
 
 
 
-            useEffect(() => {
-                if (!showGroupManage) return;
-                const handleKey = (event) => {
-                    if (readPendingAuthenticationRequired()) return;
-                    const key = event.key;
-                    if ((event.metaKey || event.ctrlKey) && key.toLowerCase() === 's') {
-                        event.preventDefault();
-                        if (groupManageTab === 'connections') return;
-                        if (!groupSaving && !epmConfigSaving) void saveAllSettings({
-                            firstRunSession: firstRunConfigurationActive ? firstRunConfigurationSession : null,
-                        });
-                        return;
-                    }
-                    if (key === 'Escape') {
-                        if (firstRunConfigurationActive) {
-                            event.preventDefault();
-                            const target = document.querySelector(`[data-first-run-guide-target="${firstRunConfigurationSession.guideStep}"]`);
-                            target?.focus?.();
-                            return;
-                        }
-                        const hasOpenDropdown = Object.values(teamSearchOpen || {}).some(Boolean);
-                        if (hasOpenDropdown) {
-                            event.preventDefault();
-                            closeAllTeamSearchDropdowns();
-                            return;
-                        }
-                        if (showGroupDiscardConfirm) {
-                            event.preventDefault();
-                            setShowGroupDiscardConfirm(false);
-                            return;
-                        }
-                        event.preventDefault();
-                        requestCloseGroupManage();
-                    }
-                };
-                window.addEventListener('keydown', handleKey);
-                return () => window.removeEventListener('keydown', handleKey);
-            }, [showGroupManage, groupManageTab, groupSaving, epmConfigSaving, firstRunConfigurationActive, firstRunConfigurationSession, teamSearchOpen, showGroupDiscardConfirm, requestCloseGroupManage, saveAllSettings]);
+            useSettingsHotkeyEffect({
+                closeAllTeamSearchDropdowns,
+                epmConfigSaving,
+                firstRunConfigurationActive,
+                firstRunConfigurationSession,
+                groupManageTab,
+                groupSaving,
+                requestCloseGroupManage,
+                saveAllSettings,
+                setShowGroupDiscardConfirm,
+                showGroupDiscardConfirm,
+                showGroupManage,
+                teamSearchOpen,
+            });
 
             useJiraProjectSearchEffects({
                 BACKEND_URL,
@@ -2526,26 +2445,15 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 setCapacityProjectSearchIndex,
             });
 
-            useEffect(() => {
-                if (!showGroupManage) return;
-                if (groupManageTab === 'epm') {
-                    if (!canEditEpmConfiguration) {
-                        setGroupManageTab('teams');
-                    }
-                    return;
-                }
-                if (!canEditSharedConfiguration && SHARED_CONFIGURATION_TAB_IDS.has(groupManageTab)) {
-                    setGroupManageTab('teams');
-                }
-            }, [showGroupManage, canEditSharedConfiguration, canEditEpmConfiguration, groupManageTab]);
-            useEffect(() => {
-                if (ADMIN_SETTINGS_TAB_IDS.has(groupManageTab)) {
-                    setAdminSettingsTab(groupManageTab);
-                }
-                if (DEPARTMENT_SETTINGS_TAB_IDS.has(groupManageTab)) {
-                    setDepartmentSettingsTab(groupManageTab);
-                }
-            }, [groupManageTab]);
+            useSettingsTabGuardEffects({
+                canEditEpmConfiguration,
+                canEditSharedConfiguration,
+                groupManageTab,
+                setAdminSettingsTab,
+                setDepartmentSettingsTab,
+                setGroupManageTab,
+                showGroupManage,
+            });
 
             useTeamGroupLabelEffects({
                 activeGroupDraft,
@@ -8682,61 +8590,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                         );
             };
 
-            const activeSettingsModalTab = ADMIN_SETTINGS_TAB_IDS.has(groupManageTab)
-                ? 'admin'
-                : DEPARTMENT_SETTINGS_TAB_IDS.has(groupManageTab)
-                    ? 'departments'
-                    : groupManageTab;
-            const activeDepartmentSettingsTab = departmentSettingsTab === 'labels' && !labelsTabEnabled
-                ? 'teams'
-                : departmentSettingsTab;
-            const settingsModalAllTabs = [
-                {
-                    id: 'admin',
-                    label: 'Admin',
-                    onClick: () => {
-                        trackSettingsAction('admin', 'tab_change');
-                        setGroupManageTab(adminSettingsTab);
-                    }
-                },
-                {
-                    id: 'departments',
-                    label: 'Departments',
-                    onClick: () => {
-                        trackSettingsAction('departments', 'tab_change');
-                        setGroupManageTab(activeDepartmentSettingsTab);
-                    }
-                },
-                {
-                    id: 'connections',
-                    label: 'Connections',
-                    onClick: openUserConnectionsSettings
-                },
-                {
-                    id: 'epm',
-                    label: 'EPM',
-                    onClick: openEpmSettingsTab
-                }
-            ];
-            const settingsModalTabs = settingsModalAllTabs.filter(tab => {
-                if (tab.id === 'epm') return canEditEpmConfiguration;
-                if (tab.id === 'admin') return canEditSharedConfiguration;
-                return true;
-            });
-            const settingsSaveHandler = () => {
-                setSettingsSaveError('');
-                void saveAllSettings({
-                    firstRunSession: firstRunConfigurationActive ? firstRunConfigurationSession : null,
-                }).then((outcome) => {
-                    if (outcome?.error) setSettingsSaveError(outcome.error);
-                });
-            };
-            const settingsShowsSave = groupManageTab !== 'connections';
-            const settingsSaveDisabled = Boolean(saveBlockedReason);
-            const settingsSaveTitle = saveBlockedReason || '';
-            const settingsSaveLabel = groupSaving || epmConfigSaving
-                ? 'Saving...'
-                : (firstRunConfigurationActive && groupPreferences.onboardingDone === false ? 'Save and continue' : 'Save');
             const settingsHeaderAction = onboardingAvailable
                 && groupPreferences.onboardingRequired === false
                 && !firstRunConfigurationActive ? (
@@ -8870,17 +8723,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
             if (strictBoardActive && strictBoardData.error?.code === 'board_config_invalid') {
                 engBoardDataProps.error = 'Board configuration could not be used. Review Board setup and retry.';
             }
-            const openBoardDepartmentSettings = (tab) => {
-                trackSettingsAction(tab, 'open', { source_surface: 'board' });
-                setShowGroupManage(true);
-                selectDepartmentSettingsTab(tab);
-            };
-            const openBoardAdminScopeSettings = () => {
-                if (userCanEditSettings !== true) return;
-                trackSettingsAction('scope', 'open', { source_surface: 'board' });
-                setShowGroupManage(true);
-                selectAdminSettingsTab('scope');
-            };
             const renderBlockedBoardScope = () => {
                 if (!boardScopeRequested || strictBoardActive) return null;
                 const readiness = selectedScopeReadiness === 'catalog_pending'
@@ -10524,40 +10366,41 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                     )}
 
                     {showGroupManage && (
-                        <SettingsModal
-                            headerAction={settingsHeaderAction}
-                            activeTab={activeSettingsModalTab}
-                            tabs={settingsModalTabs}
-                            isDirty={groupManageTab !== 'connections' && isGroupDraftDirty}
-                            unsavedSectionsCount={groupManageTab !== 'connections' ? unsavedSectionsCount : 0}
-                            onRequestClose={firstRunConfigurationActive ? () => {} : requestCloseGroupManage}
-                            validationMessages={groupManageTab !== 'connections' ? [...workspaceConfigConflictMessages(workspaceConfigConflict), ...groupConfigConflictMessages(groupsConfigConflict, { isBoardDraftDirty: isGroupBoardDraftDirty, pending: { epm: canEditEpmConfiguration && isEpmConfigDirty, groupVisibility: isGroupVisibilityDraftDirty } }), ...((settingsSaveError || groupDraftError) && SHARED_CONFIGURATION_TAB_IDS.has(groupManageTab) && !workspaceConfigConflict && !groupsConfigConflict ? [settingsSaveError || groupDraftError] : []), ...groupConfigValidationErrors] : []}
-                            validationActions={groupManageTab !== 'connections' && workspaceConfigConflict && !firstRunHasCommittedSection ? (
-                                <div className="group-modal-button-row" data-testid="workspace-config-conflict-actions">
-                                    <button className="secondary compact" onClick={useLatestWorkspaceConfig} type="button">Use latest</button>
-                                    <button className="compact" onClick={keepMineOnWorkspaceConfigConflict} type="button">Keep mine</button>
-                                </div>
-                            ) : groupManageTab !== 'connections' && groupsConfigConflict && !firstRunHasCommittedSection ? (
-                                <div className="group-modal-button-row">
-                                    <button className="secondary compact" onClick={discardMineOnGroupsConfigConflict} type="button">Discard mine</button>
-                                    <button className="compact" onClick={keepMineOnGroupsConfigConflict} type="button">Keep mine</button>
-                                </div>
-                            ) : null}
-                            showTestConfiguration={!['epm', 'connections', 'access', 'performance'].includes(groupManageTab)}
-                            onTestConfiguration={testGroupsConfigConnection}
-                            testConfigurationDisabled={groupTesting}
-                            testConfigurationLabel={groupTesting ? 'Testing...' : 'Test configuration'}
-                            testConfigurationMessage={groupTestMessage}
-                            onCancel={firstRunConfigurationActive ? cancelFirstRunConfiguration : requestCloseGroupManage}
-                            cancelLabel={groupManageTab === 'connections' ? 'Close' : 'Cancel'}
-                            onSave={settingsSaveHandler}
-                            showSave={settingsShowsSave}
-                            saveDisabled={settingsSaveDisabled}
-                            saveTitle={settingsSaveTitle}
-                            saveLabel={settingsSaveLabel}
-                            showDiscardConfirm={showGroupDiscardConfirm}
-                            onDiscard={discardGroupDraftChanges}
-                            onKeepEditing={() => setShowGroupDiscardConfirm(false)}
+                        <SettingsModalContainer
+                            activeSettingsModalTab={activeSettingsModalTab}
+                            canEditEpmConfiguration={canEditEpmConfiguration}
+                            cancelFirstRunConfiguration={cancelFirstRunConfiguration}
+                            discardGroupDraftChanges={discardGroupDraftChanges}
+                            discardMineOnGroupsConfigConflict={discardMineOnGroupsConfigConflict}
+                            firstRunConfigurationActive={firstRunConfigurationActive}
+                            firstRunHasCommittedSection={firstRunHasCommittedSection}
+                            groupConfigValidationErrors={groupConfigValidationErrors}
+                            groupDraftError={groupDraftError}
+                            groupManageTab={groupManageTab}
+                            groupTestMessage={groupTestMessage}
+                            groupTesting={groupTesting}
+                            groupsConfigConflict={groupsConfigConflict}
+                            isEpmConfigDirty={isEpmConfigDirty}
+                            isGroupBoardDraftDirty={isGroupBoardDraftDirty}
+                            isGroupDraftDirty={isGroupDraftDirty}
+                            isGroupVisibilityDraftDirty={isGroupVisibilityDraftDirty}
+                            keepMineOnGroupsConfigConflict={keepMineOnGroupsConfigConflict}
+                            keepMineOnWorkspaceConfigConflict={keepMineOnWorkspaceConfigConflict}
+                            requestCloseGroupManage={requestCloseGroupManage}
+                            setShowGroupDiscardConfirm={setShowGroupDiscardConfirm}
+                            settingsHeaderAction={settingsHeaderAction}
+                            settingsModalTabs={settingsModalTabs}
+                            settingsSaveDisabled={settingsSaveDisabled}
+                            settingsSaveError={settingsSaveError}
+                            settingsSaveHandler={settingsSaveHandler}
+                            settingsSaveLabel={settingsSaveLabel}
+                            settingsSaveTitle={settingsSaveTitle}
+                            settingsShowsSave={settingsShowsSave}
+                            showGroupDiscardConfirm={showGroupDiscardConfirm}
+                            testGroupsConfigConnection={testGroupsConfigConnection}
+                            unsavedSectionsCount={unsavedSectionsCount}
+                            useLatestWorkspaceConfig={useLatestWorkspaceConfig}
+                            workspaceConfigConflict={workspaceConfigConflict}
                         >
                                 {groupManageTab === 'connections' && (
                                 <UserConnectionsSettings
@@ -10937,7 +10780,7 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                                     visibleGroupDraftIds={visibleGroupDraftIds}
                                 />
                                 )}
-                        </SettingsModal>
+                        </SettingsModalContainer>
                     )}
                     {groupPreferences.onboardingRequired && !showGroupManage && (
                         <FirstRunConfigurationContainer

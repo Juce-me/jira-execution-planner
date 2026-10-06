@@ -73,7 +73,6 @@ export function useSharedConfigSave({
     canEditSharedConfiguration,
     capacityFieldIdDraft,
     capacityProjectDraft,
-    closeGroupManage,
     commitSharedConfigRevision,
     dirtyFieldConfigCount,
     dispatchFirstRunConfigurationSession,
@@ -83,6 +82,7 @@ export function useSharedConfigSave({
     firstRunConfigurationActive,
     firstRunConfigurationSession,
     getActiveDepartmentSettingsTab,
+    getCloseGroupManage,
     getLoadConfig,
     getLoadSprints,
     groupDraft,
@@ -272,6 +272,7 @@ export function useSharedConfigSave({
 
     const saveGroupsConfig = async ({ closeOnSuccess = true, rebaseOnto = null, skipAdminSections = {} } = {}) => {
         const loadSprints = getLoadSprints();
+        const closeGroupManage = getCloseGroupManage();
         const adminSectionsToSave = {
             projects: canEditSharedConfiguration && isProjectsDraftDirty && !skipAdminSections.projects,
             priorityWeights: canEditSharedConfiguration && isPriorityWeightsDirty && !skipAdminSections.priorityWeights,
@@ -647,6 +648,7 @@ export function useSharedConfigSave({
 
     const saveAllSettingsOnce = async ({ rebaseOnto = null, firstRunSession = null } = {}) => {
         const activeDepartmentSettingsTab = getActiveDepartmentSettingsTab();
+        const closeGroupManage = getCloseGroupManage();
         if (groupManageTab === 'connections') return;
         if (firstRunSession) {
             const validation = validateFirstRunPendingGroup(groupDraft?.groups || [], firstRunSession.pendingGroupId);
@@ -870,6 +872,7 @@ export function useSharedConfigSave({
     }, [adminAccess, firstRunConfigurationSession]);
 
     const returnFromFirstRunConfigurationRecovery = React.useCallback((snapshotOverride = null) => {
+        const closeGroupManage = getCloseGroupManage();
         const snapshot = Array.isArray(snapshotOverride?.groups)
             ? snapshotOverride
             : firstRunConfigurationSession.latestNormalizedGroups;

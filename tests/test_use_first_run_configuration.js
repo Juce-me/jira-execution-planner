@@ -400,7 +400,7 @@ test('layer order and getter phase: the state layer precedes its first reader an
     assert.ok(epmCall < handlersCall && handlersCall < homeTokenEffect && handlersCall < modalOpenEffect, 'the handlers layer sits at the old handler position, after useEpmSettings and before the next unmoved effect');
     const between = dashboardSource.slice(epmCall, handlersCall);
     assert.doesNotMatch(between, /\buseEffect\(|useLayoutEffect\(|Effects?\(\{/, 'the reset effect crosses no unmoved effect');
-    assert.equal(dashboardSource.split('getCloseGroupManage: () => closeGroupManage').length - 1, 1);
+    assert.equal(dashboardSource.split('getCloseGroupManage: () => closeGroupManage').length - 1, 2, 'one getter for the first-run hook and one for the shared-config save hook');
     assert.equal(dashboardSource.split('getSaveAllSettings: () => saveAllSettings').length - 1, 1);
     assert.equal(/getCloseGroupManage\(|getSaveAllSettings\(/.test(dashboardSource), false, 'App never calls a getter');
     const calls = (name) => [...handlersSource.matchAll(new RegExp(`${name}\\(\\)`, 'g'))].map((match) => match.index);

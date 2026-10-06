@@ -20,7 +20,7 @@
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
     "lineCount": 13043,
-    "lineCeiling": 13884
+    "lineCeiling": 13043
   },
   "modules": [
     {
@@ -10330,7 +10330,7 @@
       "netAppScaffoldingLines": 78
     },
     "getters": [],
-    "rationale": "ST2 R4b checkpoint (frozen from the current-base scratch dry run before the move; reported with this commit under the operator's 2026-10-06 instruction to finish Settings with self-verification). App-to-container transfer of the EPM tab JSX and the renderEpmProjectSkeletonRows helper into a stateless component, frontend/src/epm/EpmSettingsTab.jsx, that returns the same single <EpmSettings /> element, so the DOM is unchanged; the conditional wrapper stays in App. All 80 props are explicit name={name} attributes, because the interface checker skips any JSX element with a spread attribute; they are evaluated during App's render after their declarations, so there is no getter. The combined App-plus-owner total grows only by the 171-line scaffolding allowance (93 container scaffolding + 81 call-site lines - 3 orphaned import lines). The dashboard.jsx lineCeiling stays 13884 until the slice's R5. The combined ceiling is measured-plus-allowance.",
+    "rationale": "ST2 R4b checkpoint (frozen from the current-base scratch dry run before the move; reported with this commit under the operator's 2026-10-06 instruction to finish Settings with self-verification). App-to-container transfer of the EPM tab JSX and the renderEpmProjectSkeletonRows helper into a stateless component, frontend/src/epm/EpmSettingsTab.jsx, that returns the same single <EpmSettings /> element, so the DOM is unchanged; the conditional wrapper stays in App. All 80 props are explicit name={name} attributes, because the interface checker skips any JSX element with a spread attribute; they are evaluated during App's render after their declarations, so there is no getter. The combined App-plus-owner total grows only by the 171-line scaffolding allowance (93 container scaffolding + 81 call-site lines - 3 orphaned import lines). The dashboard.jsx lineCeiling was 13884 through ST2 R4 and ST2 R5 ratchets it to its measured 13,043. The combined ceiling is measured-plus-allowance.",
     "scaffoldingBreakdown": {
       "incomingPhysicalLines": 96,
       "component": {

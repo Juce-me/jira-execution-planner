@@ -2235,7 +2235,7 @@ Updated in each R5 commit and the separate permission-fix commit (root `AGENTS.m
 | SC3 | Split the Scenario hook (G1) | Merged 2026-10-05 | 15,368 (unchanged) | 15,368 (no dashboard budget change); lint 113 | #231, `1df92ad1` | Planner 3,201 → 320 lines; six sub-hooks and a 768-line pure `scenarioLayout.js`; all owner/interface/aggregate ceilings equal measured (combined 29,797) |
 | SC4 | Scenario view component | Merged 2026-10-05 | 14,412 | 14,412 (ratcheted); lint 113 | #232, `7a768d5d` | 988-line `ScenarioView`, five props; all owner/interface/aggregate ceilings equal measured (combined 29,829) |
 | ST1 | Shared-config section hooks | R1 to R3 and R4a validated 2026-10-05; R4b, R4c-hook, R4c-container validated in chat 2026-10-05; R5 local, awaiting review; publication not started | 13,884 | 13,884 (ratcheted); lint 110 | Local commits only | Four owner files added: three hook files (with two effects layers) and the Admin container; combined 30,576 |
-| ST2 | EPM settings | In progress: R1 to R4b local (stacked on the unpublished ST1 branch); R5 next | 13,043 after R4b | 13,884 (R5 ratchets); lint 109 | Local commits only | R4b moves the EPM tab JSX into `EpmSettingsTab` (189 lines, 80 props) |
+| ST2 | EPM settings | R1 to R4b and R5 local (stacked on the unpublished ST1 branch); publication not started | 13,043 | 13,043 (ratcheted); lint 109 | Local commits only | `useEpmSettings` (1,208 lines, one hook plus four effects layers), `EpmSettingsTab` (189 lines), two helper modules; combined 31,141 |
 | ST3 | Team Groups and Labels | Not started | | | | |
 | ST4 | First-run configuration | Not started | | | | |
 | Permission fix | Explicit Settings editing grant (G2 prerequisite) | Approved; not started | | | | Separate fix after ST4; verify merge before ST5 |
@@ -2631,6 +2631,26 @@ R1 deletes `hasDraftEpmScope` (a `useMemo` over `epmConfigDraft` with no reader)
 *Tests.* New `tests/test_epm_settings_tab.js` (container probe with stub props; five seeded defects fail it in the dry run). A scratch comparison of the old inline JSX with the container on identical props was byte-identical on 7 of 7 fixtures in the dry run.
 
 *Checks.* Node 1,821 passed, zero failures. Python 2,113 OK (29 skips). Gate: 0 errors, 109 warnings, 60 modules, 28 sites, 0 enforced problems; 73 negative controls passing. Scoped Chromium plus six EPM specs: 582 passed, three opt-in skips, zero failures; all 34 DOM captures byte-identical to the unchanged base. Independent review: all seven checks passed (exact match of the moved JSX and helper, 80 props against 80 attributes, orphaned imports, guard strength, manifest arithmetic).
+
+
+**ST2 R5 record (2026-10-06, local, unpublished).** Base is R4b `897c35c7`. R5 changes no source, generated output or test logic.
+
+*Ratchet.* The structural `dashboard.jsx` ceiling (`tests/test_codebase_structure_budgets.py` and the manifest `dashboard.lineCeiling`) moves from 13,884 to the measured 13,043. An audit of all 60 registered modules confirms every file, interface and aggregate ceiling already equals its measured value (Scenario 5,614; Settings and EPM 12,484; unique owners 18,098; combined 31,141). The lint ceiling stays 109 (R1 lowered it from 110; R2 to R4 removed no further warning).
+
+*Size milestone.* `dashboard.jsx` went 13,884 → 13,043 over ST2 (−841: R1 −3, R3 −7, R4a −813, R4b −18). The combined total went 30,576 → 31,141 (+565 = the three frozen allowances +2, +395 and +171 = +568, minus the 3 lines the R1 deletion removed). The program forecast of 10,000-12,000 lines after ST5 is unchanged and is re-measured at ST4; Team Groups/Labels, the first-run flow, the save and permission authority and the modal shell remain App-owned.
+
+*Remaining-App responsibility inventory after ST2* (only the Settings rows changed since ST1):
+
+| Canonical responsibility | Retained symbols and consumers | Why it remains / owner relationship | Current seam cost |
+| --- | --- | --- | ---: |
+| EPM settings | `useEpmSettings` call and its 101-name destructure, four effects-layer calls, the `getEpmViewActions` getter arrow, `<EpmSettingsTab />` under the unchanged `groupManageTab === 'epm'` wrapper | The hook owns the private EPM draft, loaders, handlers and effects; App keeps the calls at the original effect positions, the first-run capture/restore, the dirty aggregates and `loadConfig`/`saveAllSettingsOnce` readers; the `labelSearch*` state and `setGroupDraftError` are App-owned inputs until ST3 | 122 + 9 + 47 + 81 lines (call and destructure, label-menu layer, other layers, container call); imports excluded |
+| Settings bootstrap, draft/save authority and modal composition | `openGroupManage`, `loadConfig`, `loadGroupsConfig`, `saveGroupsConfig`, `saveEpmConfig` callers, `saveAllSettingsOnce`, `saveAllSettings`, `SettingsModal`, permission cells | ST3 to ST5 own later moves; G2 preserves the imperative save sequence and requires its separate fail-closed correction before ST5 | Unchanged |
+| Settings shared-config section hooks and Admin tab body | unchanged from the ST1 inventory | | Unchanged |
+| Team Groups/Labels/board layouts, first-run | group drafts and mutators, first-run session handlers | ST3 and ST4 | Unchanged |
+
+Import direction remains App → owners; no owner imports the dashboard entry.
+
+*R5 verification.* `tests.test_codebase_structure_budgets` passes both tests; the manifest budget check reports 0 problems; the gate and the 73 controls pass at this head; `docs/ontology.md` records the EPM owners (verification date 2026-10-06) with every link resolving. Publication and the full exact-head suites require the operator's go.
 
 
 ## 13. Program acceptance

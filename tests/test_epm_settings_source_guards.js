@@ -238,7 +238,8 @@ test('settings modal shell and tab bodies are extracted while dashboard keeps se
 test('dashboard source includes the EPM settings tab and lazy-load flow', () => {
     assert.ok(dashboardSource.includes("groupManageTab === 'epm'"), 'Expected an EPM settings tab branch');
     assert.ok(fs.existsSync(epmViewDataPath), 'Expected EPM view data hook');
-    assert.ok(dashboardSource.includes("const DEFAULT_EPM_LABEL_PREFIX = 'rnd_project_';"), 'Expected EPM label prefix default');
+    assert.ok(readOwnerSource(['frontend/src/settings/epmConfigDraft.js'], { anchor: 'export const createEmptyEpmConfigDraft' }).includes("export const DEFAULT_EPM_LABEL_PREFIX = 'rnd_project_';"), 'Expected EPM label prefix default');
+    assert.ok(dashboardSource.includes("import { DEFAULT_EPM_LABEL_PREFIX, createEmptyEpmConfigDraft } from './settings/epmConfigDraft.js';"), 'Expected dashboard to import the EPM draft helpers from one module');
     assert.ok(dashboardSource.includes("const [epmConfigDraft, setEpmConfigDraftState] = useState(createEmptyEpmConfigDraft());"), 'Expected EPM config draft state');
     assert.ok(dashboardSource.includes('const epmConfigDraftRef = useRef(epmConfigDraft);'), 'Expected current EPM draft tracking for in-flight saves');
     assert.ok(dashboardSource.includes("const epmConfigBaselineRef = useRef(JSON.stringify(createEmptyEpmConfigDraft()));"), 'Expected EPM config baseline tracking');
@@ -321,6 +322,7 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(!epmSettingsUiSource.includes('Jira epic'), 'Did not expect Jira Epic copy in EPM settings');
     assert.ok(dashboardSource.includes("const EPM_LABEL_SEARCH_GROUP_ID = 'epm-project';"), 'Expected dedicated EPM label search namespace constant');
     assert.ok(dashboardSource.includes('const getEpmLabelRowKey = (projectId) => getLabelRowKey(EPM_LABEL_SEARCH_GROUP_ID, projectId);'), 'Expected EPM label picker reads to use the dedicated shared key helper');
+    assert.ok(dashboardSource.includes("import { getLabelRowKey } from './settings/labelRowKey.js';") && !dashboardSource.includes('const getLabelRowKey ='), 'Expected the Team and EPM label pickers to share one imported getLabelRowKey');
     assert.ok(epmSettingsUiSource.includes('openEpmLabelMenu(project.id, event.currentTarget, showAllLabels)'), 'Expected EPM label picker focus to open the label menu with prefix-scoped labels');
     assert.ok(!dashboardSource.includes("scheduleJiraLabelSearch('epm', homeProjectId, rawQuery);"), 'Did not expect the legacy EPM label search namespace');
     assert.ok(epmSettingsUiSource.includes('Search Jira labels...'), 'Expected EPM Jira label search placeholder copy');

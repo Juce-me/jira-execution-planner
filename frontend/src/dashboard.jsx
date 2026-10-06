@@ -253,6 +253,8 @@ import GroupBoardsTab from './settings/GroupBoardsTab.jsx';
 import { createSettingsDraftReadGuard, useSettingsConfigBaselineRevision } from './settings/settingsConfigReadState.js';
 import { useAdminAccessSettings } from './settings/AdminAccessSettings.jsx';
 import AdminSettingsContainer from './settings/AdminSettingsContainer.jsx';
+import { DEFAULT_EPM_LABEL_PREFIX, createEmptyEpmConfigDraft } from './settings/epmConfigDraft.js';
+import { getLabelRowKey } from './settings/labelRowKey.js';
 import { createPerformanceGate } from './eng/loadPerformance.js';
 import { useJiraFieldPickers } from './settings/useJiraFieldPickers.js';
 import { usePriorityWeightsSettings } from './settings/usePriorityWeightsSettings.js';
@@ -299,7 +301,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
         const EMPTY_ARRAY = Object.freeze([]);
         exposeAnalyticsForTests();
         const EMPTY_OBJECT = Object.freeze({});
-        const DEFAULT_EPM_LABEL_PREFIX = 'rnd_project_';
         const EXCLUDED_CAPACITY_STATS_SOURCE_CONCURRENCY = 3;
         const ADMIN_SETTINGS_TAB_IDS = new Set(['scope', 'source', 'mapping', 'capacity', 'priorityWeights', 'access', 'performance']);
         const DEPARTMENT_SETTINGS_TAB_IDS = new Set(['teams', 'labels', 'boards']);
@@ -309,13 +310,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
             if (!value || typeof value !== 'object') return value;
             return Object.fromEntries(Object.keys(value).sort().map(key => [key, stableAcceptedConfigValue(value[key])]));
         };
-
-        const createEmptyEpmConfigDraft = () => ({
-            version: 2,
-            labelPrefix: DEFAULT_EPM_LABEL_PREFIX,
-            scope: { rootGoalKey: '', subGoalKeys: [] },
-            projects: {}
-        });
 
         // Backend server URL
         const BACKEND_URL = resolveBackendUrl(window);
@@ -4992,7 +4986,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                     setDepartmentSettingsTab(groupManageTab);
                 }
             }, [groupManageTab]);
-            const getLabelRowKey = (groupId, teamId) => `${groupId || 'group'}::${teamId || 'team'}`;
             // Jira autocomplete results minus the Team's already-selected aliases (client-side only).
             const getLabelSearchResults = (groupId, teamId, selectedAliases = []) => {
                 const key = getLabelRowKey(groupId, teamId);

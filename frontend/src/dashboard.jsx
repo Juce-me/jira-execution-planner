@@ -210,7 +210,6 @@ import {
     buildGroupId,
     normalizeGroupsConfig,
     normalizeTeamLabelAliases,
-    parseTeamIdList,
     removeTeamLabelAlias,
     resolveInitialGroupId,
     validateImportedTeamLabels
@@ -1354,9 +1353,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 groupDraft,
                 activeGroupId,
                 setActiveGroupId,
-                setShowGroupManage,
-                setGroupManageTab,
-                setDepartmentSettingsTab,
                 applyPreferenceGroupsSnapshot,
                 trackSettingsAction,
                 bucketCount,
@@ -2509,16 +2505,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 }));
             };
 
-            const updateGroupDraftTeams = (groupId, rawTeams) => {
-                const teamIds = parseTeamIdList(rawTeams);
-                handleGroupDraftChange(prev => ({
-                    ...prev,
-                    groups: (prev.groups || []).map(group =>
-                        group.id === groupId ? { ...group, teamIds } : group
-                    )
-                }));
-            };
-
             const updateNoticeVisible = React.useMemo(() => {
                 if (!updateInfo || updateInfo.enabled === false) return false;
                 if (!updateInfo.updateAvailable) return false;
@@ -2532,21 +2518,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                     setUpdateDismissedHash(remoteHash);
                 }
                 setShowUpdateModal(false);
-            };
-
-            const toggleTeamInGroup = (groupId, teamId) => {
-                handleGroupDraftChange(prev => ({
-                    ...prev,
-                    groups: (prev.groups || []).map(group => {
-                        if (group.id !== groupId) return group;
-                        const currentTeams = group.teamIds || [];
-                        const hasTeam = currentTeams.includes(teamId);
-                        const newTeams = hasTeam
-                            ? currentTeams.filter(id => id !== teamId)
-                            : [...currentTeams, teamId];
-                        return { ...group, teamIds: newTeams };
-                    })
-                }));
             };
 
             const focusTeamSearchInput = (groupId) => {

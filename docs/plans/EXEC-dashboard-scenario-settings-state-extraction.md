@@ -2236,7 +2236,7 @@ Updated in each R5 commit and the separate permission-fix commit (root `AGENTS.m
 | SC4 | Scenario view component | Merged 2026-10-05 | 14,412 | 14,412 (ratcheted); lint 113 | #232, `7a768d5d` | 988-line `ScenarioView`, five props; all owner/interface/aggregate ceilings equal measured (combined 29,829) |
 | ST1 | Shared-config section hooks | R1 to R3 and R4a validated 2026-10-05; R4b, R4c-hook, R4c-container validated in chat 2026-10-05; R5 local, awaiting review; publication not started | 13,884 | 13,884 (ratcheted); lint 110 | Local commits only | Four owner files added: three hook files (with two effects layers) and the Admin container; combined 30,576 |
 | ST2 | EPM settings | R1 to R4b and R5 local (stacked on the unpublished ST1 branch); publication not started | 13,043 | 13,043 (ratcheted); lint 109 | Local commits only | `useEpmSettings` (1,208 lines, one hook plus four effects layers), `EpmSettingsTab` (189 lines), two helper modules; combined 31,141 |
-| ST3 | Team Groups and Labels | Not started | | | | |
+| ST3 | Team Groups and Labels | In progress: R1 local (stacked on the unpublished ST2 branch) | 13,014 after R1 | 13,043 (R5 ratchets); lint 107 | Local commits only | R1 removes two unread handlers and three unused hook arguments |
 | ST4 | First-run configuration | Not started | | | | |
 | Permission fix | Explicit Settings editing grant (G2 prerequisite) | Approved; not started | | | | Separate fix after ST4; verify merge before ST5 |
 | ST5 | Shared-config save, permissions, shell (G2) | Conditional approval; not started | | | | Permission fix + R0 validation required |
@@ -2651,6 +2651,11 @@ R1 deletes `hasDraftEpmScope` (a `useMemo` over `epmConfigDraft` with no reader)
 Import direction remains App → owners; no owner imports the dashboard entry.
 
 *R5 verification.* `tests.test_codebase_structure_budgets` passes both tests; the manifest budget check reports 0 problems; the gate and the 73 controls pass at this head; `docs/ontology.md` records the EPM owners (verification date 2026-10-06) with every link resolving. Publication and the full exact-head suites require the operator's go.
+
+
+**ST3 R1 record (2026-10-06, local, unpublished).** `improvement/settings-team-groups-hook` is cut from the ST2 branch tip `a4be75f8` (ST1 and ST2 are unpublished, so the slices stack; see the ST2 R1 record). Start-of-slice sweep as for ST2: `origin/main` is still `7a768d5d`, no open pull request touches the Settings or EPM owners, `GATE-05` is not due until 2026-10-12.
+
+R1 deletes the plan's four dead-code items: `updateGroupDraftTeams` and `toggleTeamInGroup` (unread everywhere), the `parseTeamIdList` import their first user left orphaned, and the three unused arguments `setShowGroupManage`, `setGroupManageTab` and `setDepartmentSettingsTab` that `dashboard.jsx` passed to `useGroupVisibilityPreferences` together with their destructuring at the top of that hook (the hook never read them; App's own uses of the three setters elsewhere are untouched). `dashboard.jsx` 13,043 → 13,014 and the hook file 320 → 317 lines; the lint warnings fall 109 → 107 and the `run.sh` ceiling is lowered to 107. The manifest's measured counts, the 36 shifted ledger lines, the hook file's line count and its re-measured interface (three fewer inputs; reviewed member list updated to the new source digest, rationale unchanged) are refreshed, with every other entry untouched. Self-validation: gate 0 errors, 107 warnings, 60 modules, 28 sites, 0 enforced problems; Node 1,821 passed; Python 2,113 OK (29 skips). Scoped Chromium: 547 passed, one opt-in skip, zero failures; all 34 DOM captures byte-identical to the unchanged base.
 
 
 ## 13. Program acceptance

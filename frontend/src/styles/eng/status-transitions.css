@@ -182,6 +182,15 @@
             opacity: 0.55;
         }
 
+        .status-transition-option:disabled:hover,
+        .priority-transition-option:disabled:hover,
+        .project-track-transition-option:disabled:hover,
+        .issue-person-editor-option:disabled:hover {
+            background: transparent;
+            transform: none;
+            box-shadow: none;
+        }
+
         .status-transition-option-marker.task-status,
         .priority-transition-option-marker {
             display: inline-flex;

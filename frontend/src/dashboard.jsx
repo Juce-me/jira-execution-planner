@@ -6433,7 +6433,7 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
             // `singleIssue` marks an Epic or Subtask pill: in Planning it changes only that issue,
             // whereas a Story pill applies to the selected Stories.
             const handleSubmitStatusTransition = React.useCallback(async (targetStatus, issue, { singleIssue = false } = {}) => {
-                if (statusTransitionSourceSurface === 'catch_up') {
+                if (statusTransitionSourceSurface === 'catch_up' || (singleIssue && issue?.key)) {
                     return submitStatusTransition(targetStatus, issue?.key);
                 }
                 // Board acts on ONE explicit issue, like Catch Up. Without a key the hook falls
@@ -8203,8 +8203,8 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                     issue={{ key: row.key, status: row.status, summary: row.summary }} fallbackIssueType={row.rowKind === 'epic' ? 'Epic' : 'Story'}
                     statusLabel={row.status} statusClassName={getIssueStatusClassName(row.status)} sourceSurface="planning" isOpen={statusTransitionActiveKey === row.key}
                     options={transitionOptions} optionsLoading={transitionOptionsLoading} submitting={statusTransitionSubmitting || pendingStatusIssueKeys.has(row.key)}
-                    error={transitionError} errorCode={transitionErrorCode} result={transitionResult} targetsCount={row.rowKind === 'story' ? statusTransitionTargetsCount : 1}
-                    onOpen={openSingleIssueStatusControl} onPrefetch={prefetchSingleIssueStatusOptions} onClose={closeSingleIssueStatusControl} onSubmit={submitStatusTransition} />;
+                    error={transitionError} errorCode={transitionErrorCode} result={transitionResult} actsOnSelection={false}
+                    onOpen={openSingleIssueStatusControl} onPrefetch={prefetchSingleIssueStatusOptions} onClose={closeSingleIssueStatusControl} onSubmit={(targetStatus) => handleSubmitStatusTransition(targetStatus, { key: row.key }, { singleIssue: true })} />;
                 if (field === 'priority') return <PriorityTransitionMenu
                     issue={{ key: row.key, priority: row.priority, summary: row.summary }} fallbackIssueType={row.rowKind === 'epic' ? 'Epic' : 'Story'}
                     priorityLabel={row.priority} currentPriorityLabel={row.priority} renderPriorityIcon={renderPriorityIcon}

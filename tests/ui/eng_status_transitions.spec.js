@@ -1002,3 +1002,128 @@ test('sticky order keeps planning-panel above the epic header while a status men
     expect(during.epicPosition).toBe('sticky');
     expect(during.panelZ).toBeGreaterThan(during.epicZ);
 });
+
+async function openPlanningTable(page, { selectAll = false } = {}) {
+    await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Planning' }).click();
+    await expect(page.locator('.planning-panel.open')).toBeVisible();
+    await page.getByRole('button', { name: 'Show Planning table', exact: true }).click();
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await expect(trigger(page, 'story', 'PROD-1')).toBeVisible();
+    for (const key of ['PROD-1', 'PROD-2']) {
+        const checkbox = page.getByRole('checkbox', { name: `Select ${key}` });
+        if (selectAll) await expect(checkbox).toBeChecked();
+        else await checkbox.uncheck();
+    }
+}
+
+test('Planning Table Story pill changes only its own row when no Story is selected', async ({ page }) => {
+    await setPrefs(page, catchUpPrefs({ selectedSprint: futureSprintId, sprintName: futureSprintName }));
+    const { calls } = await installEngStatusFixture(page);
+    await page.goto(appBaseUrl);
+    await openPlanningTable(page);
+
+    await trigger(page, 'story', 'PROD-1').click();
+    const option = menu(page, 'PROD-1').getByRole('menuitem', { name: 'Accepted' });
+    await expect(option).toBeEnabled();
+    await expect(menu(page, 'PROD-1').locator('[aria-label^="Apply to selected targets"]')).toHaveCount(0);
+    await option.click();
+
+    await expect.poll(() => transitionCalls(calls).length).toBe(1);
+    expect(transitionCalls(calls)[0].body.issueKeys).toEqual(['PROD-1']);
+    expect(transitionCalls(calls)[0].body.targetStatus).toBe('Accepted');
+});
+
+test('Planning Table Story pill ignores the selected Stories', async ({ page }) => {
+    await setPrefs(page, catchUpPrefs({ selectedSprint: futureSprintId, sprintName: futureSprintName }));
+    const { calls } = await installEngStatusFixture(page);
+    await page.goto(appBaseUrl);
+    await openPlanningTable(page, { selectAll: true });
+
+    await trigger(page, 'story', 'PROD-1').click();
+    await menu(page, 'PROD-1').getByRole('menuitem', { name: 'Accepted' }).click();
+
+    await expect.poll(() => transitionCalls(calls).length).toBe(1);
+    expect(transitionCalls(calls)[0].body.issueKeys).toEqual(['PROD-1']);
+});
+
+test('Planning Table Epic pill changes only that Epic even with Stories selected', async ({ page }) => {
+    await setPrefs(page, catchUpPrefs({ selectedSprint: futureSprintId, sprintName: futureSprintName }));
+    const { calls } = await installEngStatusFixture(page);
+    await page.goto(appBaseUrl);
+    await openPlanningTable(page, { selectAll: true });
+    await page.getByRole('radio', { name: 'Epics', exact: true }).click();
+
+    await trigger(page, 'epic', 'PROD-EPIC').click();
+    await menu(page, 'PROD-EPIC').getByRole('menuitem', { name: 'Done' }).click();
+
+    await expect.poll(() => transitionCalls(calls).length).toBe(1);
+    expect(transitionCalls(calls)[0].body.issueKeys).toEqual(['PROD-EPIC']);
+});
+
+test('Planning Table Story status updates optimistically and keeps other pills usable', async ({ page }) => {
+    await setPrefs(page, catchUpPrefs({ selectedSprint: futureSprintId, sprintName: futureSprintName }));
+    const { calls, transitionState } = await installEngStatusFixture(page, { transitionDelayMs: 3000 });
+    await page.goto(appBaseUrl);
+    await openPlanningTable(page);
+    await page.waitForLoadState('networkidle');
+    const initialTaskRequests = calls.filter(call => call.pathname === '/api/tasks-with-team-name' && !call.params.purpose).length;
+
+    await trigger(page, 'story', 'PROD-1').click();
+    await menu(page, 'PROD-1').getByRole('menuitem', { name: 'In Progress' }).click();
+    await expect.poll(() => transitionState.inFlight).toBe(1);
+    expect(await trigger(page, 'story', 'PROD-1').innerText()).toContain('In Progress');
+    await page.locator('.subtitle-secondary').click();
+    await expect(menu(page, 'PROD-1')).toHaveCount(0);
+    await expect(trigger(page, 'story', 'PROD-1')).toBeDisabled();
+    await expect(trigger(page, 'story', 'PROD-2')).toBeEnabled();
+    await trigger(page, 'story', 'PROD-2').click();
+    const secondOption = menu(page, 'PROD-2').getByRole('menuitem', { name: 'Accepted' });
+    await expect(secondOption).toBeEnabled();
+    await secondOption.click();
+
+    await expect.poll(() => transitionCalls(calls).length).toBe(2);
+    await expect.poll(() => transitionState.inFlight).toBe(0);
+    expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name' && !call.params.purpose)).toHaveLength(initialTaskRequests);
+});
+
+test('Planning Table Story status rolls back and reports a failed change', async ({ page }) => {
+    await setPrefs(page, catchUpPrefs({ selectedSprint: futureSprintId, sprintName: futureSprintName }));
+    const failedTransition = body => ({
+        requested: 1,
+        succeeded: 0,
+        failed: 1,
+        targetStatus: body.targetStatus,
+        results: [{ key: body.issueKeys[0], result: 'failure', error: 'transition_not_available', currentStatus: 'To Do' }],
+    });
+    const { transitionState } = await installEngStatusFixture(page, { transitions: failedTransition, transitionDelayMs: 500 });
+    await page.goto(appBaseUrl);
+    await openPlanningTable(page);
+
+    await trigger(page, 'story', 'PROD-1').click();
+    await menu(page, 'PROD-1').getByRole('menuitem', { name: 'In Progress' }).click();
+    await expect.poll(() => transitionState.inFlight).toBe(1);
+    expect(await trigger(page, 'story', 'PROD-1').innerText()).toContain('In Progress');
+    await expect.poll(() => transitionState.inFlight).toBe(0);
+    await expect(menu(page, 'PROD-1').locator('.status-transition-menu-result')).toContainText('No issues updated');
+    await expect(trigger(page, 'story', 'PROD-1')).toContainText('To Do');
+});
+
+test('a disabled status option keeps readable colors under the pointer', async ({ page }) => {
+    await setPrefs(page, catchUpPrefs({ selectedSprint: futureSprintId, sprintName: futureSprintName }));
+    await installEngStatusFixture(page);
+    await page.goto(appBaseUrl);
+    await openPlanning(page);
+    await page.getByRole('button', { name: 'Clear Selected' }).click();
+
+    await trigger(page, 'story', 'PROD-1').click();
+    const option = menu(page, 'PROD-1').getByRole('menuitem', { name: 'Accepted' });
+    await expect(option).toBeDisabled();
+    await option.hover({ force: true });
+    await page.waitForTimeout(400);
+    const style = await option.evaluate((node) => {
+        const computed = getComputedStyle(node);
+        return { background: computed.backgroundColor, transform: computed.transform, shadow: computed.boxShadow };
+    });
+    expect(style.background).not.toBe('rgb(47, 47, 47)');
+    expect(style.transform).toBe('none');
+});

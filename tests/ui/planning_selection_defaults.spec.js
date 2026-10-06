@@ -954,3 +954,54 @@ test('planning epic excluded-capacity toggle updates shared group config', async
     await openFuturePlanning(page);
     await expect(epicBlock.getByRole('button', { name: /Excluded/ })).toBeVisible();
 });
+
+async function seedSearchPrefs(page, searchQuery) {
+    await page.addInitScript((value) => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({ planningLayout: 'list', searchQuery: value }));
+    }, searchQuery);
+}
+
+function searchInput(page) {
+    return page.getByPlaceholder('Search tickets...').first();
+}
+
+async function storedSearchQuery(page) {
+    return page.evaluate(() => JSON.parse(window.localStorage.getItem('jira_dashboard_ui_prefs_v1') || '{}').searchQuery);
+}
+
+test('a persisted search term is shown on load', async ({ page }) => {
+    await installPlanningFixture(page);
+    await seedSearchPrefs(page, 'persisted-term');
+    await page.goto(appBaseUrl);
+    await expect(searchInput(page)).toHaveValue('persisted-term');
+});
+
+test('a search term cleared before a sprint change is not restored', async ({ page }) => {
+    await installPlanningFixture(page);
+    await seedSearchPrefs(page, 'stale-term');
+    await page.goto(appBaseUrl);
+    await expect(searchInput(page)).toHaveValue('stale-term');
+
+    await searchInput(page).fill('');
+    await expect.poll(() => storedSearchQuery(page)).toBe('');
+    await selectSprint(page, futureSprintName);
+    await expect(page.locator('.sprint-dropdown-toggle').first()).toContainText(futureSprintName);
+    await expect(searchInput(page)).toHaveValue('');
+    await selectSprint(page, secondFutureSprintName);
+    await expect(page.locator('.sprint-dropdown-toggle').first()).toContainText(secondFutureSprintName);
+    await expect(searchInput(page)).toHaveValue('');
+    expect(await storedSearchQuery(page)).toBe('');
+});
+
+test('a typed search term survives a sprint change', async ({ page }) => {
+    await installPlanningFixture(page);
+    await page.goto(appBaseUrl);
+    await selectSprint(page, activeSprintName);
+
+    await searchInput(page).fill('kept-term');
+    await expect.poll(() => storedSearchQuery(page)).toBe('kept-term');
+    await selectSprint(page, futureSprintName);
+    await expect(page.locator('.sprint-dropdown-toggle').first()).toContainText(futureSprintName);
+    await expect(searchInput(page)).toHaveValue('kept-term');
+    expect(await storedSearchQuery(page)).toBe('kept-term');
+});

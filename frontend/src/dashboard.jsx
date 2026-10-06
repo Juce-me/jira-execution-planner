@@ -221,7 +221,7 @@ import EpmSettingsTab from './epm/EpmSettingsTab.jsx';
 import SettingsModal from './settings/SettingsModal.jsx';
 import DepartmentsSettingsTab from './settings/DepartmentsSettingsTab.jsx';
 import { createSettingsDraftReadGuard, useSettingsConfigBaselineRevision } from './settings/settingsConfigReadState.js';
-import { useAdminAccessSettings } from './settings/AdminAccessSettings.jsx';
+import { useSettingsPermissions } from './settings/useSettingsPermissions.js';
 import AdminSettingsContainer from './settings/AdminSettingsContainer.jsx';
 import { createEmptyEpmConfigDraft } from './settings/epmConfigDraft.js';
 import { createPerformanceGate } from './eng/loadPerformance.js';
@@ -583,26 +583,27 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
             const [groupManageTab, setGroupManageTab] = useState('scope');
             const [showTechnicalFieldIds, setShowTechnicalFieldIds] = useState(false);
             const [mappingHoverKey, setMappingHoverKey] = useState(null);
-            const [, setSettingsAdminOnly] = useState(true);
-            const [userCanEditSettings, setUserCanEditSettings] = useState(false);
-            const [performanceAdminAvailable, setPerformanceAdminAvailable] = useState(false);
+            const {
+                adminAccess,
+                adminAccessAvailable,
+                adminUserManagementAvailable,
+                applyBootstrapPermissions,
+                applySavePermissions,
+                canEditEpmConfiguration,
+                canEditSharedConfiguration,
+                performanceAdminAvailable,
+                preferredSettingsTab,
+                setPerformanceAdminAvailable,
+                userCanEditSettings,
+            } = useSettingsPermissions({
+                BACKEND_URL,
+                groupManageTab,
+                showGroupManage,
+            });
             const performanceGate = React.useMemo(createPerformanceGate, []);
             const activePerformanceLoadRef = useRef(null);
             const [performanceLoadRevision, setPerformanceLoadRevision] = useState(0);
-            const [userCanEditEpmConfig, setUserCanEditEpmConfig] = useState(false);
-            const [adminUserManagementAvailable, setAdminUserManagementAvailable] = useState(false);
-            const [userIsToolAdmin, setUserIsToolAdmin] = useState(false);
-            const adminAccessAvailable = !adminUserManagementAvailable || userIsToolAdmin; // DB user directory: tool admins only
-            const [environmentConfigExists, setEnvironmentConfigExists] = useState(false);
-            const adminAccess = useAdminAccessSettings({
-                backendUrl: BACKEND_URL,
-                available: adminUserManagementAvailable && userIsToolAdmin,
-                active: showGroupManage && groupManageTab === 'access',
-            });
-            const canEditSharedConfiguration = userCanEditSettings === true;
             const [adminSettingsGate, applyAdminSettingsGateConfig, setAdminSettingsGate] = useAdminSettingsGate({ canEditSettings: canEditSharedConfiguration, openSettings: tab => openGroupManage(tab) });
-            const canEditEpmConfiguration = userCanEditEpmConfig === true;
-            const preferredSettingsTab = canEditSharedConfiguration && !environmentConfigExists ? 'scope' : 'teams';
             const {
                 baselineRevision: settingsConfigBaselineRevision,
                 acceptBaseline: acceptSettingsConfigBaseline,
@@ -2647,12 +2648,8 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                                 clearSaveReadFence();
                                 setAuthMode(cfg.authMode || '');
                                 setCapacityEnabled(Boolean(cfg.capacityProject || cfg.capacityConfigRequiresResolution));
-                                setSettingsAdminOnly(Boolean(cfg.settingsAdminOnly));
-                                setUserCanEditSettings(cfg.userCanEditSettings === true);
-                                setUserCanEditEpmConfig(cfg.userCanEditEpmConfig === true);
-                                setAdminUserManagementAvailable(cfg.adminUserManagementAvailable === true);
+                                applySavePermissions(cfg);
                                 setBoardAllWorkAvailable(cfg.boardAllWorkAvailable);
-                                setEnvironmentConfigExists(Boolean(cfg.environmentConfigExists || cfg.projectsConfigured));
                                 const nextAdminSettingsGate = applyAdminSettingsGateConfig(cfg);
                                 sprintCatalogControllerRef.current.acceptSource(cfg.sprintCatalogSource || null);
                                 acceptedBoardConfigRef.current = true;
@@ -4261,12 +4258,7 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                     setJiraUrl(config.jiraUrl || '');
                     setAuthMode(config.authMode || '');
                     setCapacityEnabled(Boolean(config.capacityProject || config.capacityConfigRequiresResolution));
-                    setSettingsAdminOnly(Boolean(config.settingsAdminOnly));
-                    setUserCanEditSettings(config.userCanEditSettings === true);
-                    setUserCanEditEpmConfig(config.userCanEditEpmConfig === true);
-                    setAdminUserManagementAvailable(config.adminUserManagementAvailable === true);
-                    setUserIsToolAdmin(config.userIsToolAdmin === true);
-                    setEnvironmentConfigExists(Boolean(config.environmentConfigExists || config.projectsConfigured));
+                    applyBootstrapPermissions(config);
                     applyAdminSettingsGateConfig(config);
                     const sharedConfig = config.sharedConfig;
                     if (sharedConfig && Number.isInteger(config.sharedConfigRevision)) {

@@ -26,6 +26,7 @@ const epmControlsPath = path.join(__dirname, '..', 'frontend', 'src', 'epm', 'Ep
 const engViewPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'EngView.jsx');
 const dashboardSource = fs.readFileSync(dashboardPath, 'utf8');
 const epmSettingsHookSource = readOwnerSource(['frontend/src/settings/useEpmSettings.js'], { anchor: 'export function useEpmSettings(' });
+const settingsPermissionsSource = readOwnerSource(['frontend/src/settings/useSettingsPermissions.js'], { anchor: 'export function useSettingsPermissions(' });
 const epmSettingsTabSource = readOwnerSource(['frontend/src/epm/EpmSettingsTab.jsx'], { anchor: 'export default function EpmSettingsTab(' });
 const departmentsTabSource = readOwnerSource(['frontend/src/settings/DepartmentsSettingsTab.jsx'], { anchor: 'export default function DepartmentsSettingsTab(' });
 const teamGroupHookSource = readOwnerSource(['frontend/src/settings/useTeamGroupSettings.js'], { anchor: 'export function useTeamGroupSettings(' });
@@ -687,12 +688,12 @@ test('settings tabs distinguish tool-admin configuration from team grouping', ()
     assert.notStrictEqual(tabsEnd, -1, 'Expected settings tab descriptors end');
     const tabsSource = dashboardSource.slice(tabsStart, tabsEnd);
 
-    assert.ok(dashboardSource.includes('const [environmentConfigExists, setEnvironmentConfigExists] = useState(false);'), 'Expected environment-config state from /api/config');
-    assert.ok(dashboardSource.includes('const canEditSharedConfiguration = userCanEditSettings === true;'), 'Expected administrator editing to require the explicit boolean grant');
-    assert.ok(!dashboardSource.includes('!settingsAdminOnly'), 'settingsAdminOnly is metadata and must never grant administrator editing');
-    assert.ok(dashboardSource.includes('const [, setSettingsAdminOnly] = useState(true);'), 'Expected settingsAdminOnly to stay write-only metadata');
-    assert.ok(dashboardSource.includes('const canEditEpmConfiguration = userCanEditEpmConfig === true;'), 'Expected EPM configuration to require its explicit user-owned edit permission');
-    assert.ok(dashboardSource.includes("const preferredSettingsTab = canEditSharedConfiguration && !environmentConfigExists ? 'scope' : 'teams';"), 'Expected configured environments to open settings on Team Groups');
+    assert.ok(settingsPermissionsSource.includes('const [environmentConfigExists, setEnvironmentConfigExists] = useState(false);'), 'Expected environment-config state from /api/config');
+    assert.ok(settingsPermissionsSource.includes('const canEditSharedConfiguration = userCanEditSettings === true;'), 'Expected administrator editing to require the explicit boolean grant');
+    assert.ok(!dashboardSource.includes('!settingsAdminOnly') && !settingsPermissionsSource.includes('!settingsAdminOnly'), 'settingsAdminOnly is metadata and must never grant administrator editing');
+    assert.ok(settingsPermissionsSource.includes('const [, setSettingsAdminOnly] = useState(true);'), 'Expected settingsAdminOnly to stay write-only metadata');
+    assert.ok(settingsPermissionsSource.includes('const canEditEpmConfiguration = userCanEditEpmConfig === true;'), 'Expected EPM configuration to require its explicit user-owned edit permission');
+    assert.ok(settingsPermissionsSource.includes("const preferredSettingsTab = canEditSharedConfiguration && !environmentConfigExists ? 'scope' : 'teams';"), 'Expected configured environments to open settings on Team Groups');
     assert.ok(tabsSource.includes("id: 'departments'"), 'Expected Departments as the team grouping top-level tab');
     assert.ok(tabsSource.includes("label: 'Departments'"), 'Expected Departments tab label');
     assert.ok(tabsSource.includes("id: 'admin'"), 'Expected Admin as the shared configuration top-level tab');
@@ -788,44 +789,34 @@ test('normal users do not receive admin-only settings tabs as disabled edit surf
 });
 
 test('shared configuration permission fails closed while user config is missing or loading', () => {
+    // The explicit-grant derivation and its true/'true'/1/undefined/null/missing-key matrix are exercised as unit
+    // assertions in test_use_settings_permissions.js; these pins keep both writers routed through the hook.
+    const bootstrapStart = settingsPermissionsSource.indexOf('const applyBootstrapPermissions = (config) => {');
+    const saveStart = settingsPermissionsSource.indexOf('const applySavePermissions = (config) => {');
+    assert.ok(bootstrapStart !== -1 && saveStart > bootstrapStart, 'Expected the bootstrap and post-save permission writers');
+    const bootstrapSource = settingsPermissionsSource.slice(bootstrapStart, saveStart);
+    const saveSource = settingsPermissionsSource.slice(saveStart, settingsPermissionsSource.indexOf('return {', saveStart));
     assert.ok(
-        dashboardSource.includes('const [userCanEditSettings, setUserCanEditSettings] = useState(false);'),
+        settingsPermissionsSource.includes('const [userCanEditSettings, setUserCanEditSettings] = useState(false);'),
         'Expected settings edit permission to fail closed before /api/config returns'
     );
     assert.ok(
-        dashboardSource.includes('const [userCanEditEpmConfig, setUserCanEditEpmConfig] = useState(false);'),
+        settingsPermissionsSource.includes('const [userCanEditEpmConfig, setUserCanEditEpmConfig] = useState(false);'),
         'Expected EPM edit permission to fail closed before /api/config returns'
     );
+    for (const [label, source] of [['bootstrap', bootstrapSource], ['post-save refresh', saveSource]]) {
+        assert.ok(source.includes('setUserCanEditSettings(config.userCanEditSettings === true);'), `Expected ${label} to require an explicit editable permission`);
+        assert.ok(source.includes('setUserCanEditEpmConfig(config.userCanEditEpmConfig === true);'), `Expected ${label} to require explicit EPM editable permission`);
+        assert.ok(source.includes('setEnvironmentConfigExists(Boolean(config.environmentConfigExists || config.projectsConfigured));'), `Expected ${label} to preserve legacy projectsConfigured as an environment-config fallback`);
+    }
+    assert.ok(dashboardSource.includes('applyBootstrapPermissions(config);'), 'Expected the config bootstrap to apply permissions through the hook');
+    assert.ok(dashboardSource.includes('applySavePermissions(cfg);'), 'Expected the post-save config refresh to apply permissions through the hook');
     assert.ok(
-        dashboardSource.includes('setUserCanEditSettings(config.userCanEditSettings === true);'),
-        'Expected initial config load to require an explicit editable permission'
-    );
-    assert.ok(
-        dashboardSource.includes('setUserCanEditEpmConfig(config.userCanEditEpmConfig === true);'),
-        'Expected initial config load to require explicit EPM editable permission'
-    );
-    assert.ok(
-        dashboardSource.includes('setEnvironmentConfigExists(Boolean(config.environmentConfigExists || config.projectsConfigured));'),
-        'Expected initial config load to preserve legacy projectsConfigured as an environment-config fallback'
-    );
-    assert.ok(
-        dashboardSource.includes('setUserCanEditSettings(cfg.userCanEditSettings === true);'),
-        'Expected config refresh after save to require an explicit editable permission'
-    );
-    assert.ok(
-        dashboardSource.includes('setUserCanEditEpmConfig(cfg.userCanEditEpmConfig === true);'),
-        'Expected config refresh after save to require explicit EPM editable permission'
-    );
-    assert.ok(
-        dashboardSource.includes('setEnvironmentConfigExists(Boolean(cfg.environmentConfigExists || cfg.projectsConfigured));'),
-        'Expected config refresh after save to preserve legacy projectsConfigured as an environment-config fallback'
-    );
-    assert.ok(
-        !dashboardSource.includes('userCanEditSettings !== false'),
+        !dashboardSource.includes('userCanEditSettings !== false') && !settingsPermissionsSource.includes('userCanEditSettings !== false'),
         'Missing userCanEditSettings must not imply editable admin configuration'
     );
     assert.ok(
-        !dashboardSource.includes('canEditSharedConfiguration || userCanEditEpmConfig'),
+        !dashboardSource.includes('canEditSharedConfiguration || userCanEditEpmConfig') && !settingsPermissionsSource.includes('canEditSharedConfiguration || userCanEditEpmConfig'),
         'Administrator edit permission must not grant private EPM edit permission'
     );
 });

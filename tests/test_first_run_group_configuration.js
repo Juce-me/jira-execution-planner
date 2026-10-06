@@ -74,15 +74,18 @@ test('admin progress merge never clears a committed subsection on retry', () => 
 
 test('first-run Return capture (hook) and restoration (dashboard) cover every settings section', () => {
     const dashboard = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx'), 'utf8');
+    const saveHook = readOwnerSource(['frontend/src/settings/useSharedConfigSave.js'], { anchor: 'const restoreSettingsDraftsToCommittedBaselines' });
     const firstRunHook = readOwnerSource(['frontend/src/settings/useFirstRunConfiguration.js'], { anchor: 'const captureFirstRunSettingsDrafts' });
     const captureStart = firstRunHook.indexOf('const captureFirstRunSettingsDrafts');
     const captureEnd = firstRunHook.indexOf('const configureFirstRunGroup', captureStart);
     assert.ok(captureStart >= 0 && captureEnd > captureStart, 'Expected the capture slice markers in the first-run hook');
     assert.equal(dashboard.includes('const captureFirstRunSettingsDrafts'), false, 'capture is owned by the first-run hook');
-    const restoreStart = dashboard.indexOf('const restoreSettingsDraftsToCommittedBaselines');
-    const restoreEnd = dashboard.indexOf('const returnFromFirstRunConfigurationRecovery', restoreStart);
+    const restoreStart = saveHook.indexOf('const restoreSettingsDraftsToCommittedBaselines');
+    const restoreEnd = saveHook.indexOf('const returnFromFirstRunConfigurationRecovery', restoreStart);
+    assert.ok(restoreStart >= 0 && restoreEnd > restoreStart, 'Expected the restore slice markers in the shared-config save hook');
+    assert.equal(dashboard.includes('const restoreSettingsDraftsToCommittedBaselines'), false, 'restore is owned by the shared-config save hook');
     const capture = firstRunHook.slice(captureStart, captureEnd);
-    const restore = dashboard.slice(restoreStart, restoreEnd);
+    const restore = saveHook.slice(restoreStart, restoreEnd);
     for (const key of [
         'projects', 'priorityWeights', 'board', 'capacity', 'sprintField', 'parentNameField',
         'storyPointsField', 'teamField', 'deliveryOwnerField', 'issueTypes', 'adminAccess',
@@ -96,8 +99,8 @@ test('first-run Return capture (hook) and restoration (dashboard) cover every se
     assert.ok(restore.includes('latestNormalizedGroups') === false, 'group restoration belongs to the recovery caller');
     assert.ok(restore.includes('committedSections?.epm'));
     assert.ok(restore.includes('setGroupPreferences(capturedPrivate)'));
-    assert.equal(dashboard.includes('restoreFieldConfigDrafts'), false);
-    assert.equal(dashboard.includes('adminAccess.restoreDraft'), false);
+    assert.equal(dashboard.includes('restoreFieldConfigDrafts') || saveHook.includes('restoreFieldConfigDrafts'), false);
+    assert.equal(dashboard.includes('adminAccess.restoreDraft') || saveHook.includes('adminAccess.restoreDraft'), false);
 });
 
 test('group save snapshot verification compares every shared field but accepts set ordering', () => {
@@ -523,16 +526,17 @@ test('dashboard owns one reducer session and ordered first-run preference handof
     const dashboard = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx'), 'utf8');
     const preferences = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'settings', 'useGroupVisibilityPreferences.js'), 'utf8');
     const firstRunHook = readOwnerSource(['frontend/src/settings/useFirstRunConfiguration.js'], { anchor: 'export function useFirstRunConfigurationState(' });
+    const saveHook = readOwnerSource(['frontend/src/settings/useSharedConfigSave.js'], { anchor: 'saveAllSettingsOnce = async' });
     assert.match(firstRunHook, /React\.useReducer\(\s*firstRunConfigurationSessionReducer/);
     assert.equal(firstRunHook.split('React.useReducer(').length - 1, 1, 'Expected exactly one first-run reducer session');
     assert.equal(dashboard.includes('React.useReducer(\n                firstRunConfigurationSessionReducer'), false, 'the reducer session moved out of the dashboard');
     assert.equal(dashboard.split('useFirstRunConfigurationState()').length - 1, 1, 'Expected the dashboard to call the first-run state layer once');
-    assert.ok(dashboard.includes('saveAllSettingsOnce = async ({ rebaseOnto = null, firstRunSession = null } = {})'));
-    assert.ok(dashboard.includes('if (settingsSaveInFlightRef.current) return buildSettingsSaveOutcome({ inFlight: true })'));
-    assert.ok(dashboard.includes('saveFirstRunGroupPreferences({'));
+    assert.ok(saveHook.includes('saveAllSettingsOnce = async ({ rebaseOnto = null, firstRunSession = null } = {})'));
+    assert.ok(saveHook.includes('if (settingsSaveInFlightRef.current) return buildSettingsSaveOutcome({ inFlight: true })'));
+    assert.ok(saveHook.includes('saveFirstRunGroupPreferences({'));
     assert.equal(dashboard.includes("document.querySelector('.group-modal .group-editor .group-name-input')"), false);
-    assert.ok(dashboard.includes('groupsSnapshot:'));
-    assert.ok(dashboard.includes('selectedGroupId: firstRunSession.pendingGroupId'));
+    assert.ok(saveHook.includes('groupsSnapshot:'));
+    assert.ok(saveHook.includes('selectedGroupId: firstRunSession.pendingGroupId'));
     assert.ok(preferences.includes('saveFirstRunGroupPreferences = React.useCallback(async ({ groupsSnapshot = groupsConfig, selectedGroupId = firstRunFavoriteGroupId } = {})'));
     assert.ok(preferences.includes('const hasGroupScope = (group) =>'));
     assert.ok(preferences.includes("(group?.missingInfoComponents || []).some(component => String(component || '').trim())"));
@@ -552,16 +556,15 @@ test('first-run Department chooser treats Team or Component scope as eligible', 
 
 test('group save returns the normalized committed snapshot to first-run preference save', () => {
     const dashboard = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx'), 'utf8');
-    const saveGroupsStart = dashboard.indexOf('const saveGroupsConfig = async');
-    const saveAllStart = dashboard.indexOf('const saveAllSettings = async');
-    const saveGroupsSource = dashboard.slice(saveGroupsStart, saveAllStart);
+    const saveHook = readOwnerSource(['frontend/src/settings/useSharedConfigSave.js'], { anchor: 'const saveGroupsConfig = async' });
+    const saveGroupsStart = saveHook.indexOf('const saveGroupsConfig = async');
+    const saveAllStart = saveHook.indexOf('const saveAllSettings = async');
+    const saveGroupsSource = saveHook.slice(saveGroupsStart, saveAllStart);
 
     assert.ok(saveGroupsStart >= 0 && saveAllStart > saveGroupsStart);
     assert.match(saveGroupsSource, /return buildSettingsSaveOutcome\(\{\s*ok: true,\s*normalizedGroups: normalized,/);
-    assert.doesNotMatch(
-        dashboard.slice(dashboard.indexOf('const filteredRows = rows.filter'), saveGroupsStart),
-        /normalizedGroups: normalized/
-    );
+    assert.doesNotMatch(saveHook.slice(0, saveGroupsStart), /normalizedGroups: normalized/);
+    assert.doesNotMatch(dashboard, /normalizedGroups: normalized/);
     assert.ok(saveGroupsSource.includes('authRequired: true'));
     assert.ok(saveGroupsSource.includes('committedSections'));
     assert.ok(saveGroupsSource.includes('pendingSections'));
@@ -571,19 +574,21 @@ test('group save returns the normalized committed snapshot to first-run preferen
 });
 
 test('conflict exits preserve the first-run session through Keep and Discard', () => {
-    const dashboard = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx'), 'utf8');
-    const keepStart = dashboard.indexOf('const keepMineOnGroupsConfigConflict');
-    const discardEnd = dashboard.indexOf('const keepMineOnWorkspaceConfigConflict', keepStart);
-    const conflictSource = dashboard.slice(keepStart, discardEnd);
+    const saveHook = readOwnerSource(['frontend/src/settings/useSharedConfigSave.js'], { anchor: 'const keepMineOnGroupsConfigConflict' });
+    const keepStart = saveHook.indexOf('const keepMineOnGroupsConfigConflict');
+    const discardEnd = saveHook.indexOf('const keepMineOnWorkspaceConfigConflict', keepStart);
+    assert.ok(keepStart >= 0 && discardEnd > keepStart, 'Expected the conflict exits in the shared-config save hook');
+    const conflictSource = saveHook.slice(keepStart, discardEnd);
     assert.ok(conflictSource.includes('firstRunSession: firstRunConfigurationActive ? firstRunConfigurationSession : null'));
     assert.ok(conflictSource.includes('returnFromFirstRunConfigurationRecovery'));
 });
 
 test('first-run save validates the pending name and teams immediately before writes', () => {
-    const dashboard = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx'), 'utf8');
-    const saveStart = dashboard.indexOf('const saveAllSettingsOnce = async');
-    const saveEnd = dashboard.indexOf('const keepMineOnGroupsConfigConflict', saveStart);
-    const source = dashboard.slice(saveStart, saveEnd);
+    const saveHook = readOwnerSource(['frontend/src/settings/useSharedConfigSave.js'], { anchor: 'const saveAllSettingsOnce = async' });
+    const saveStart = saveHook.indexOf('const saveAllSettingsOnce = async');
+    const saveEnd = saveHook.indexOf('const keepMineOnGroupsConfigConflict', saveStart);
+    assert.ok(saveStart >= 0 && saveEnd > saveStart, 'Expected the unified save slice in the shared-config save hook');
+    const source = saveHook.slice(saveStart, saveEnd);
     assert.ok(source.includes('validateFirstRunPendingGroup'));
     assert.ok(source.indexOf('validateFirstRunPendingGroup') < source.indexOf('saveGroupsConfig('));
 });

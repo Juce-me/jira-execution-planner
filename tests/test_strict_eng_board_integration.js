@@ -11,6 +11,13 @@ test('selector scheduling keeps requested scope suppression separate from ready 
     assert.match(source, /useStrictEngBoardOwner\(\{ active: strictBoardOwnerActive,/);
     assert.match(source, /groupRevision: acceptedStrictBoardRevision,/);
     assert.match(source, /acceptedBoardConfigRef\.current = false;/);
+    // The accepted-Board-config fence cell and its four write-false sites (before the Board-affecting save, after the groups POST,
+    // before the refresh, and on a failed refresh) moved with the save hook (ST5); loadConfig keeps its own writes in the dashboard.
+    const saveHook = fs.readFileSync(new URL('../frontend/src/settings/useSharedConfigSave.js', import.meta.url), 'utf8');
+    assert.match(saveHook, /const acceptedBoardConfigRef = useRef\(false\);/);
+    assert.equal(saveHook.split('acceptedBoardConfigRef.current = false;').length - 1, 4);
+    assert.equal(saveHook.split('acceptedBoardConfigRef.current = true;').length - 1, 1);
+    assert.equal(source.includes('const acceptedBoardConfigRef = useRef(false);'), false);
     // The groups read fences moved into the Team Groups hook (ST3); loadGroupsConfig still clears the accepted flag on failure.
     const teamGroupHook = fs.readFileSync(new URL('../frontend/src/settings/useTeamGroupSettings.js', import.meta.url), 'utf8');
     assert.match(teamGroupHook, /const acceptedGroupsConfigRef = useRef\(false\);/);

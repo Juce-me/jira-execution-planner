@@ -27,6 +27,8 @@ const engViewPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'EngVie
 const dashboardSource = fs.readFileSync(dashboardPath, 'utf8');
 const epmSettingsHookSource = readOwnerSource(['frontend/src/settings/useEpmSettings.js'], { anchor: 'export function useEpmSettings(' });
 const settingsPermissionsSource = readOwnerSource(['frontend/src/settings/useSettingsPermissions.js'], { anchor: 'export function useSettingsPermissions(' });
+const sharedConfigSaveSource = readOwnerSource(['frontend/src/settings/useSharedConfigSave.js'], { anchor: 'export function useSharedConfigSave(' });
+const settingsTabIdsSource = readOwnerSource(['frontend/src/settings/settingsTabIds.js'], { anchor: 'export const ADMIN_SETTINGS_TAB_IDS' });
 const epmSettingsTabSource = readOwnerSource(['frontend/src/epm/EpmSettingsTab.jsx'], { anchor: 'export default function EpmSettingsTab(' });
 const departmentsTabSource = readOwnerSource(['frontend/src/settings/DepartmentsSettingsTab.jsx'], { anchor: 'export default function DepartmentsSettingsTab(' });
 const teamGroupHookSource = readOwnerSource(['frontend/src/settings/useTeamGroupSettings.js'], { anchor: 'export function useTeamGroupSettings(' });
@@ -275,8 +277,8 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(epmSettingsHookSource.includes("const epmConfigBaselineRef = useRef(JSON.stringify(createEmptyEpmConfigDraft()));"), 'Expected EPM config baseline tracking');
     assert.ok(epmViewDataSource.includes("const [epmProjectsError, setEpmProjectsError] = useState('');"), 'Expected EPM project error state');
     assert.ok(epmSettingsHookSource.includes('const isEpmConfigDirty = React.useMemo(() => {'), 'Expected EPM dirty-state tracking');
-    assert.ok(dashboardSource.includes('if (canEditEpmConfiguration && isEpmConfigDirty) return true;'), 'Expected EPM dirty-state participation in modal dirty checks');
-    assert.ok(dashboardSource.includes('isEpmConfigDirty,'), 'Expected EPM dirty-state participation in unsaved section counting');
+    assert.ok(sharedConfigSaveSource.includes('if (canEditEpmConfiguration && isEpmConfigDirty) return true;'), 'Expected EPM dirty-state participation in modal dirty checks');
+    assert.ok(dashboardSource.includes('isEpmConfigDirty,') && sharedConfigSaveSource.includes('canEditEpmConfiguration && isEpmConfigDirty,'), 'Expected EPM dirty-state participation in unsaved section counting');
     assert.ok(epmSettingsHookSource.includes('const loadEpmConfig = () => fetchEpmConfig(BACKEND_URL);'), 'Expected EPM config loader wrapper');
     assert.ok(epmSettingsHookSource.includes('const loadEpmScopeMeta = () => fetchEpmScope(BACKEND_URL);'), 'Expected EPM scope metadata loader wrapper');
     assert.ok(epmSettingsHookSource.includes('const loadEpmGoals = (rootGoalKey = \'\') => fetchEpmGoals(BACKEND_URL, rootGoalKey);'), 'Expected EPM goals loader wrapper');
@@ -318,15 +320,15 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(epmSettingsHookSource.includes('const showEpmSubGoalResults = epmSubGoalOpen &&') && epmSettingsHookSource.includes('Boolean(epmSubGoalsError)') && epmSettingsHookSource.includes('epmSubGoals.length === 0'), 'Expected sub-goal result panel gating to include error-only and empty-catalog states');
     assert.ok(epmSettingsHookSource.includes('const handleEpmRootGoalSearchKeyDown = (event) => {'), 'Expected root goal keyboard handler');
     assert.ok(epmSettingsHookSource.includes('const handleEpmSubGoalSearchKeyDown = (event) => {'), 'Expected sub-goal keyboard handler');
-    assert.ok(dashboardSource.includes('const saveAllSettingsOnce = async ({ rebaseOnto = null, firstRunSession = null } = {}) => {'), 'Expected modal-wide settings save implementation');
-    assert.ok(dashboardSource.includes('const saveAllSettings = async (options = {}) => {'), 'Expected synchronous guarded settings save boundary');
-    assert.ok(dashboardSource.includes('const hasEpmSettingsChanges = canEditEpmConfiguration && isEpmConfigDirty;'), 'Expected unified save to detect dirty EPM settings');
-    assert.ok(dashboardSource.includes('await saveEpmConfig();'), 'Expected unified settings save to persist dirty EPM settings');
+    assert.ok(sharedConfigSaveSource.includes('const saveAllSettingsOnce = async ({ rebaseOnto = null, firstRunSession = null } = {}) => {'), 'Expected modal-wide settings save implementation');
+    assert.ok(sharedConfigSaveSource.includes('const saveAllSettings = async (options = {}) => {'), 'Expected synchronous guarded settings save boundary');
+    assert.ok(sharedConfigSaveSource.includes('const hasEpmSettingsChanges = canEditEpmConfiguration && isEpmConfigDirty;'), 'Expected unified save to detect dirty EPM settings');
+    assert.ok(sharedConfigSaveSource.includes('await saveEpmConfig();'), 'Expected unified settings save to persist dirty EPM settings');
     assert.ok(dashboardSource.includes('const settingsSaveHandler = () => {')
         && dashboardSource.includes('void saveAllSettings({')
         && dashboardSource.includes('firstRunSession: firstRunConfigurationActive ? firstRunConfigurationSession : null,'),
     'Expected footer Save to use the modal-wide settings handler');
-    assert.ok(epmSettingsHookSource.includes("setGroupDraftError(message);") && dashboardSource.includes('throw err;'), 'Expected EPM save failures to surface and block shared save');
+    assert.ok(epmSettingsHookSource.includes("setGroupDraftError(message);") && sharedConfigSaveSource.includes('throw err;'), 'Expected EPM save failures to surface and block shared save');
     assert.ok(epmSettingsUiSource.includes('Atlassian site'), 'Expected Atlassian site copy');
     assert.ok(epmSettingsUiSource.includes('Main goal'), 'Expected Main goal copy');
     assert.ok(epmSettingsUiSource.includes('Sub-goals'), 'Expected Sub-goals copy');
@@ -671,12 +673,13 @@ test('dashboard source separates EPM scope and project mapping tabs', () => {
 test('settings hotkey effect is declared after the save handlers it depends on', () => {
     const hotkeyEffectIndex = dashboardSource.indexOf("window.addEventListener('keydown', handleKey);");
     const saveEpmConfigIndex = dashboardSource.indexOf('} = useEpmSettings({');
-    const saveGroupsConfigIndex = dashboardSource.indexOf('const saveGroupsConfig = async ({ closeOnSuccess = true, rebaseOnto = null, skipAdminSections = {} } = {}) => {');
+    const saveGroupsConfigIndex = dashboardSource.indexOf('} = useSharedConfigSave({');
 
     assert.ok(hotkeyEffectIndex !== -1, 'Expected settings hotkey effect in dashboard.jsx');
     assert.ok(saveEpmConfigIndex !== -1, 'Expected dashboard.jsx to obtain saveEpmConfig from the EPM settings hook');
     assert.ok(epmSettingsHookSource.includes('const saveEpmConfig = async () => {'), 'Expected the EPM settings hook to own saveEpmConfig');
-    assert.ok(saveGroupsConfigIndex !== -1, 'Expected saveGroupsConfig in dashboard.jsx');
+    assert.ok(saveGroupsConfigIndex !== -1, 'Expected dashboard.jsx to obtain saveGroupsConfig from the shared-config save hook');
+    assert.ok(sharedConfigSaveSource.includes('const saveGroupsConfig = async ({ closeOnSuccess = true, rebaseOnto = null, skipAdminSections = {} } = {}) => {'), 'Expected the shared-config save hook to own saveGroupsConfig');
     assert.ok(hotkeyEffectIndex > saveEpmConfigIndex, 'Expected settings hotkey effect after the EPM settings hook call that provides saveEpmConfig');
     assert.ok(hotkeyEffectIndex > saveGroupsConfigIndex, 'Expected settings hotkey effect after saveGroupsConfig');
 });
@@ -730,7 +733,7 @@ test('settings modal groups department and admin leaves behind local sub-tabs', 
 });
 
 test('Boards is a Departments leaf tab that mounts GroupBoardsTab, which mounts GroupBoardSettings, with matching props at each hop', () => {
-    assert.ok(dashboardSource.includes("new Set(['teams', 'labels', 'boards'])"), 'Expected boards added to DEPARTMENT_SETTINGS_TAB_IDS');
+    assert.ok(settingsTabIdsSource.includes("new Set(['teams', 'labels', 'boards'])"), 'Expected boards added to DEPARTMENT_SETTINGS_TAB_IDS');
     assert.ok(departmentsTabSource.includes('id="department-settings-boards-tab"'), 'Expected Boards local tab DOM id');
 
     const tabsStart = dashboardSource.indexOf('const settingsModalAllTabs = [');
@@ -810,7 +813,7 @@ test('shared configuration permission fails closed while user config is missing 
         assert.ok(source.includes('setEnvironmentConfigExists(Boolean(config.environmentConfigExists || config.projectsConfigured));'), `Expected ${label} to preserve legacy projectsConfigured as an environment-config fallback`);
     }
     assert.ok(dashboardSource.includes('applyBootstrapPermissions(config);'), 'Expected the config bootstrap to apply permissions through the hook');
-    assert.ok(dashboardSource.includes('applySavePermissions(cfg);'), 'Expected the post-save config refresh to apply permissions through the hook');
+    assert.ok(sharedConfigSaveSource.includes('applySavePermissions(cfg);'), 'Expected the post-save config refresh to apply permissions through the hook');
     assert.ok(
         !dashboardSource.includes('userCanEditSettings !== false') && !settingsPermissionsSource.includes('userCanEditSettings !== false'),
         'Missing userCanEditSettings must not imply editable admin configuration'
@@ -823,15 +826,15 @@ test('shared configuration permission fails closed while user config is missing 
 
 test('private EPM bootstrap and save state are independent from shared administrator revisions', () => {
     assert.ok(
-        dashboardSource.includes('const SHARED_CONFIGURATION_TAB_IDS = new Set(ADMIN_SETTINGS_TAB_IDS);'),
+        settingsTabIdsSource.includes('export const SHARED_CONFIGURATION_TAB_IDS = new Set(ADMIN_SETTINGS_TAB_IDS);'),
         'EPM must not be classified as shared administrator configuration'
     );
     assert.ok(
-        dashboardSource.includes('const personalEpm = config.viewConfig?.view?.epm || config.epm;'),
+        sharedConfigSaveSource.includes('const personalEpm = config.viewConfig?.view?.epm || config.epm;'),
         'Expected private view EPM to win over the compatibility bootstrap field'
     );
     assert.ok(
-        !dashboardSource.includes('config.epm || sharedConfig.epm'),
+        !dashboardSource.includes('config.epm || sharedConfig.epm') && !sharedConfigSaveSource.includes('config.epm || sharedConfig.epm'),
         'Workspace administrator EPM must never seed the private draft'
     );
 
@@ -843,13 +846,14 @@ test('private EPM bootstrap and save state are independent from shared administr
     assert.ok(!saveSource.includes('commitSharedConfigRevision'), 'EPM save must not advance a workspace revision');
     assert.ok(!saveSource.includes('setWorkspaceConfigConflict'), 'EPM conflicts must not enter workspace conflict state');
     assert.ok(!workspaceConfigConflictSource.includes("['epm', 'EPM settings']"), 'Workspace conflicts must not classify private EPM as a shared section');
-    const workspaceConflictStart = dashboardSource.indexOf("if (err?.status === 409 && err?.payload?.error === 'workspace_config_conflict')");
-    const workspaceConflictEnd = dashboardSource.indexOf('setGroupDraftError(', workspaceConflictStart);
-    const workspaceConflictSource = dashboardSource.slice(workspaceConflictStart, workspaceConflictEnd);
+    const workspaceConflictStart = sharedConfigSaveSource.indexOf("if (err?.status === 409 && workspaceConflictPayload?.error === 'workspace_config_conflict')");
+    const workspaceConflictEnd = sharedConfigSaveSource.indexOf('setGroupDraftError(', workspaceConflictStart);
+    const workspaceConflictSource = sharedConfigSaveSource.slice(workspaceConflictStart, workspaceConflictEnd);
+    assert.ok(workspaceConflictStart !== -1 && workspaceConflictEnd > workspaceConflictStart, 'Expected the workspace conflict branch in the shared-config save hook');
     assert.ok(!workspaceConflictSource.includes('epm:'), 'Workspace conflict pending sections must exclude private EPM state');
 
     assert.ok(
-        dashboardSource.includes('await loadConfig({ preserveEpmDraft: isEpmConfigDirty, replaceWorkspaceDrafts: true });'),
+        sharedConfigSaveSource.includes('await loadConfig({ preserveEpmDraft: isEpmConfigDirty, replaceWorkspaceDrafts: true });'),
         'Use latest must preserve a dirty private EPM draft and baseline'
     );
     assert.ok(
@@ -867,16 +871,16 @@ test('private EPM bootstrap and save state are independent from shared administr
 });
 
 test('unified settings save gates admin writes while saving dirty config sections', () => {
-    const saveStart = dashboardSource.indexOf('const saveGroupsConfig = async ({ closeOnSuccess = true, rebaseOnto = null, skipAdminSections = {} } = {}) => {');
-    const saveEnd = dashboardSource.indexOf('const saveAllSettingsOnce = async ({ rebaseOnto = null, firstRunSession = null } = {}) => {', saveStart);
+    const saveStart = sharedConfigSaveSource.indexOf('const saveGroupsConfig = async ({ closeOnSuccess = true, rebaseOnto = null, skipAdminSections = {} } = {}) => {');
+    const saveEnd = sharedConfigSaveSource.indexOf('const saveAllSettingsOnce = async ({ rebaseOnto = null, firstRunSession = null } = {}) => {', saveStart);
     assert.notStrictEqual(saveStart, -1, 'Expected saveGroupsConfig implementation');
     assert.notStrictEqual(saveEnd, -1, 'Expected saveGroupsConfig implementation end');
-    const saveSource = dashboardSource.slice(saveStart, saveEnd);
-    const unifiedStart = dashboardSource.indexOf('const saveAllSettingsOnce = async ({ rebaseOnto = null, firstRunSession = null } = {}) => {');
-    const unifiedEnd = dashboardSource.indexOf('useEffect(() => {', unifiedStart);
+    const saveSource = sharedConfigSaveSource.slice(saveStart, saveEnd);
+    const unifiedStart = sharedConfigSaveSource.indexOf('const saveAllSettingsOnce = async ({ rebaseOnto = null, firstRunSession = null } = {}) => {');
+    const unifiedEnd = sharedConfigSaveSource.indexOf('const applySharedConfigBootstrap = ', unifiedStart);
     assert.notStrictEqual(unifiedStart, -1, 'Expected saveAllSettings implementation');
     assert.notStrictEqual(unifiedEnd, -1, 'Expected saveAllSettings implementation end');
-    const unifiedSource = dashboardSource.slice(unifiedStart, unifiedEnd);
+    const unifiedSource = sharedConfigSaveSource.slice(unifiedStart, unifiedEnd);
 
     assert.ok(!saveSource.includes('Tool admin access is required for shared configuration changes.'), 'Team group save must not block normal-user changes because hidden shared config drafts are dirty');
     assert.ok(saveSource.includes('const savingAdminSettings = Object.values(adminSectionsToSave).some(Boolean);'), 'Expected shared admin config writes to use the exact permitted dirty subsection map');

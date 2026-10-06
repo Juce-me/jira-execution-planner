@@ -677,7 +677,10 @@ test('Jira catalog API module owns Jira catalog request endpoint construction', 
     assert.ok(jiraCatalogApiSource.includes('/api/jira/labels'), 'Expected Jira labels URL construction in jiraCatalogApi.js');
     assert.ok(jiraCatalogApiSource.includes('/api/teams'), 'Expected teams catalog URL construction in jiraCatalogApi.js');
     assert.ok(jiraCatalogApiSource.includes('/api/team-catalog'), 'Expected team catalog URL construction in jiraCatalogApi.js');
-    assert.ok(dashboardSource.includes("from './api/jiraCatalogApi.js'"), 'Expected dashboard to import Jira catalog API wrappers');
+    // The label and component/epic search wrappers moved with Team Groups into useTeamGroupSettings (ST3).
+    const teamGroupHookSource = readSource(path.join(frontendSrcPath, 'settings', 'useTeamGroupSettings.js'));
+    assert.ok(dashboardSource.includes('useTeamGroupSettings'), 'Expected dashboard to call the Team Groups hook that imports the Jira catalog wrappers');
+    assert.ok(teamGroupHookSource.includes("from '../api/jiraCatalogApi.js'"), 'Expected the Team Groups hook to import Jira catalog API wrappers');
 });
 
 test('auth API module owns current-user connection endpoint construction', () => {

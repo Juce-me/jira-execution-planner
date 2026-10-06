@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "baseSha": "7a768d5ddf3607a5deb4bed759e8c26198ceaff5",
-  "checkpointId": "ST2-R4b-EpmSettingsTab",
+  "checkpointId": "ST3-R4a-TeamGroupSettings",
   "sourceRoot": "frontend/src",
   "ownerRoots": [
     "scenario",
@@ -19,7 +19,7 @@
   },
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
-    "lineCount": 13014,
+    "lineCount": 11996,
     "lineCeiling": 13043
   },
   "modules": [
@@ -191,7 +191,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "EpmControls",
-              "line": 9628,
+              "line": 8610,
               "phase": "render"
             }
           ],
@@ -243,7 +243,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "EpmProjectCollapseAllButton",
-              "line": 9677,
+              "line": 8659,
               "phase": "render"
             }
           ],
@@ -1451,7 +1451,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "EpmView",
-              "line": 12271,
+              "line": 11253,
               "phase": "render"
             }
           ],
@@ -1618,7 +1618,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useEpmViewData",
-              "line": 2116,
+              "line": 2088,
               "phase": "hook execution"
             }
           ],
@@ -1626,150 +1626,150 @@
             {
               "name": "epmTab",
               "lines": [
-                2118,
-                2151,
-                2161,
-                5167,
-                5224,
-                9630,
-                10898,
-                10930,
-                12280
+                2090,
+                2123,
+                2133,
+                4149,
+                4206,
+                8612,
+                9880,
+                9912,
+                11262
               ]
             },
             {
               "name": "setEpmTab",
               "lines": [
-                9633
+                8615
               ]
             },
             {
               "name": "setEpmProjects",
               "lines": [
-                1297
+                1403
               ]
             },
             {
               "name": "epmProjectsLoading",
               "lines": [
-                9638,
-                10565,
-                10831,
-                12274
+                8620,
+                9547,
+                9813,
+                11256
               ]
             },
             {
               "name": "setEpmProjectsError",
               "lines": [
-                1297
+                1403
               ]
             },
             {
               "name": "epmSelectedProjectId",
               "lines": [
-                2119,
-                2133,
-                2138,
-                2140,
-                2145,
-                2151,
-                5168,
-                5225,
-                12277
+                2091,
+                2105,
+                2110,
+                2112,
+                2117,
+                2123,
+                4150,
+                4207,
+                11259
               ]
             },
             {
               "name": "setEpmSelectedProjectId",
               "lines": [
-                9658
+                8640
               ]
             },
             {
               "name": "visibleEpmProjects",
               "lines": [
-                9639
+                8621
               ]
             },
             {
               "name": "selectedEpmProject",
               "lines": [
-                7749,
-                7751,
-                7831,
-                9640,
-                12278
+                6731,
+                6733,
+                6813,
+                8622,
+                11260
               ]
             },
             {
               "name": "filteredEpmProjects",
               "lines": [
-                9641
+                8623
               ]
             },
             {
               "name": "visibleEpmRollupBoards",
               "lines": [
+                2106,
+                2110,
+                2117,
                 2134,
-                2138,
-                2145,
-                2162,
-                7747,
-                7748,
-                7751,
-                12283
+                6729,
+                6730,
+                6733,
+                11265
               ]
             },
             {
               "name": "epmRollupTree",
               "lines": [
-                7749,
-                7751,
-                12276
+                6731,
+                6733,
+                11258
               ]
             },
             {
               "name": "epmRollupBoards",
               "lines": [
-                12275
+                11257
               ]
             },
             {
               "name": "epmDuplicates",
               "lines": [
-                12284
+                11266
               ]
             },
             {
               "name": "epmAggregateTruncated",
               "lines": [
-                12285
+                11267
               ]
             },
             {
               "name": "epmRollupLoading",
               "lines": [
-                7800,
-                7812,
-                10565,
-                12282
+                6782,
+                6794,
+                9547,
+                11264
               ]
             },
             {
               "name": "epmProjectRollupLoadingIds",
               "lines": [
-                12286
+                11268
               ]
             },
             {
               "name": "epmSelectedSubGoalKeys",
               "lines": [
-                9663
+                8645
               ]
             },
             {
               "name": "setEpmSelectedSubGoalKeys",
               "lines": [
-                9667
+                8649
               ]
             },
             {
@@ -1779,20 +1779,20 @@
             {
               "name": "refreshEpmProjects",
               "lines": [
-                1297
+                1403
               ]
             },
             {
               "name": "refreshEpmView",
               "lines": [
-                10528
+                9510
               ]
             },
             {
               "name": "loadArchivedEpmProjectRollup",
               "lines": [
-                2162,
-                12290
+                2134,
+                11272
               ]
             }
           ],
@@ -1957,7 +1957,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "ScenarioView",
-              "line": 12121,
+              "line": 11103,
               "phase": "render"
             }
           ],
@@ -3285,7 +3285,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useScenarioPlanner",
-              "line": 7115,
+              "line": 6097,
               "phase": "hook execution"
             }
           ],
@@ -3293,9 +3293,9 @@
             {
               "name": "scenario",
               "lines": [
-                7156,
-                10093,
-                12122
+                6138,
+                9075,
+                11104
               ]
             }
           ],
@@ -3576,7 +3576,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useScenarioState",
-              "line": 430,
+              "line": 418,
               "phase": "hook execution"
             }
           ],
@@ -3584,9 +3584,9 @@
             {
               "name": "scenarioState",
               "lines": [
-                464,
-                7116,
-                12123
+                452,
+                6098,
+                11105
               ]
             }
           ],
@@ -3703,7 +3703,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useAdminAccessSettings",
-              "line": 660,
+              "line": 608,
               "phase": "hook execution"
             }
           ],
@@ -3711,19 +3711,19 @@
             {
               "name": "adminAccess",
               "lines": [
-                1388,
-                1392,
-                2188,
-                2794,
-                2924,
-                2925,
-                2926,
-                3373,
-                3374,
-                3375,
-                3377,
-                3383,
-                12346
+                1448,
+                1452,
+                2160,
+                2433,
+                2563,
+                2564,
+                2565,
+                3012,
+                3013,
+                3014,
+                3016,
+                3022,
+                11328
               ]
             }
           ],
@@ -3890,7 +3890,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "FirstRunGroupConfigurationGuide",
-              "line": 12728,
+              "line": 11710,
               "phase": "render"
             }
           ],
@@ -3982,7 +3982,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "FirstRunGroupSelectionModal",
-              "line": 12938,
+              "line": 11920,
               "phase": "render"
             }
           ],
@@ -4061,7 +4061,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "FirstRunGroupSetupChoice",
-              "line": 12951,
+              "line": 11933,
               "phase": "render"
             }
           ],
@@ -4237,7 +4237,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "GroupBoardsTab",
-              "line": 12910,
+              "line": 11892,
               "phase": "render"
             }
           ],
@@ -5141,7 +5141,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "SettingsModal",
-              "line": 12300,
+              "line": 11282,
               "phase": "render"
             }
           ],
@@ -5525,7 +5525,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "TeamGroupsSettings",
-              "line": 12633,
+              "line": 11615,
               "phase": "render"
             }
           ],
@@ -5579,7 +5579,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "UnconfiguredWorkspaceNotice",
-              "line": 10962,
+              "line": 9944,
               "phase": "render"
             }
           ],
@@ -5637,7 +5637,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "UserConnectionsSettings",
-              "line": 12336,
+              "line": 11318,
               "phase": "render"
             }
           ],
@@ -5694,7 +5694,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useAdminSettingsGate",
-              "line": 666,
+              "line": 614,
               "phase": "hook execution"
             }
           ],
@@ -5702,29 +5702,29 @@
             {
               "name": "adminSettingsGate",
               "lines": [
-                1022,
-                1722,
-                1724,
-                6406,
-                6484,
-                6666,
-                6814,
-                7629,
-                10962
+                951,
+                1782,
+                1784,
+                5388,
+                5466,
+                5648,
+                5796,
+                6611,
+                9944
               ]
             },
             {
               "name": "applyAdminSettingsGateConfig",
               "lines": [
-                2808,
-                3046,
-                5387
+                2447,
+                2685,
+                4369
               ]
             },
             {
               "name": "setAdminSettingsGate",
               "lines": [
-                5443
+                4425
               ]
             }
           ],
@@ -5732,7 +5732,7 @@
             {
               "caller": "frontend/src/dashboard.jsx",
               "name": "openSettings",
-              "line": 666,
+              "line": 614,
               "capturedBindings": [
                 "openGroupManage"
               ],
@@ -5928,7 +5928,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useSettingsConfigBaselineRevision",
-              "line": 672,
+              "line": 620,
               "phase": "hook execution"
             }
           ],
@@ -5936,17 +5936,17 @@
             {
               "name": "settingsConfigBaselineRevision",
               "lines": [
-                698,
-                781,
-                855
+                646,
+                729,
+                784
               ]
             },
             {
               "name": "acceptSettingsConfigBaseline",
               "lines": [
-                694,
-                773,
-                850
+                642,
+                721,
+                779
               ]
             }
           ],
@@ -6088,201 +6088,13 @@
           },
           "callers": [
             {
-              "path": "frontend/src/dashboard.jsx",
+              "path": "frontend/src/settings/useTeamGroupSettings.js",
               "symbol": "useGroupVisibilityPreferences",
-              "line": 1349,
+              "line": 145,
               "phase": "hook execution"
             }
           ],
-          "remainingAppReaders": [
-            {
-              "name": "groupPreferences",
-              "lines": [
-                1375,
-                1394,
-                1722,
-                1724,
-                1776,
-                1777,
-                2285,
-                2293,
-                5219,
-                5272,
-                5467,
-                5540,
-                5543,
-                5564,
-                5789,
-                5841,
-                5847,
-                5864,
-                6271,
-                6369,
-                6406,
-                6484,
-                6666,
-                6813,
-                9922,
-                10488,
-                10496,
-                10564,
-                12936,
-                12947,
-                12963
-              ]
-            },
-            {
-              "name": "setGroupPreferences",
-              "lines": [
-                1989,
-                2294,
-                2768,
-                3382,
-                4046
-              ]
-            },
-            {
-              "name": "visibleGroupDraftIds",
-              "lines": [
-                12644
-              ]
-            },
-            {
-              "name": "setVisibleGroupDraftIds",
-              "lines": [
-                1783,
-                2460,
-                2494,
-                2735
-              ]
-            },
-            {
-              "name": "favoriteGroupDraftId",
-              "lines": [
-                12660
-              ]
-            },
-            {
-              "name": "setFavoriteGroupDraftId",
-              "lines": [
-                1784
-              ]
-            },
-            {
-              "name": "setFavoriteGroupDraft",
-              "lines": [
-                12661
-              ]
-            },
-            {
-              "name": "favoriteGroupValidationError",
-              "lines": [
-                2261,
-                2262,
-                2266
-              ]
-            },
-            {
-              "name": "setGroupPreferencesSaving",
-              "lines": [
-                3156
-              ]
-            },
-            {
-              "name": "groupVisibilitySaving",
-              "lines": [
-                2316,
-                12647
-              ]
-            },
-            {
-              "name": "isGroupVisibilityDraftDirty",
-              "lines": [
-                2202,
-                2205,
-                2216,
-                2218,
-                2865,
-                3008,
-                3180,
-                12307
-              ]
-            },
-            {
-              "name": "visibleControlGroups",
-              "lines": [
-                1584,
-                1585,
-                1588,
-                4306,
-                4307,
-                4475,
-                4478,
-                4888,
-                4924,
-                7139,
-                9519,
-                9904
-              ]
-            },
-            {
-              "name": "initializeGroupPreferencesDraft",
-              "lines": [
-                1774
-              ]
-            },
-            {
-              "name": "isGroupVisibleInControls",
-              "lines": [
-                12646
-              ]
-            },
-            {
-              "name": "toggleGroupVisibleInControls",
-              "lines": [
-                12645
-              ]
-            },
-            {
-              "name": "firstRunFavoriteGroupId",
-              "lines": [
-                12940
-              ]
-            },
-            {
-              "name": "selectFirstRunFavoriteGroup",
-              "lines": [
-                12941
-              ]
-            },
-            {
-              "name": "saveFirstRunGroupPreferences",
-              "lines": [
-                3273,
-                4054,
-                4078,
-                12942
-              ]
-            },
-            {
-              "name": "firstRunSaving",
-              "lines": [
-                12945
-              ]
-            },
-            {
-              "name": "firstRunError",
-              "lines": [
-                12946
-              ]
-            },
-            {
-              "name": "persistGroupPreferences",
-              "lines": [
-                3009
-              ]
-            }
-          ],
+          "remainingAppReaders": [],
           "getters": []
         }
       ]
@@ -6431,7 +6243,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useJiraFieldPickers",
-              "line": 881,
+              "line": 810,
               "phase": "hook execution"
             }
           ],
@@ -6439,561 +6251,561 @@
             {
               "name": "sprintFieldIdDraft",
               "lines": [
-                888,
-                1382,
-                1395,
-                2227,
-                2266,
-                12478
+                817,
+                1442,
+                1455,
+                2199,
+                2238,
+                11460
               ]
             },
             {
               "name": "setSprintFieldIdDraft",
               "lines": [
-                3367,
-                12462
+                3006,
+                11444
               ]
             },
             {
               "name": "sprintFieldNameDraft",
               "lines": [
-                888,
-                1382,
-                1396,
-                12479
+                817,
+                1442,
+                1456,
+                11461
               ]
             },
             {
               "name": "setSprintFieldNameDraft",
               "lines": [
-                3367,
-                12463
+                3006,
+                11445
               ]
             },
             {
               "name": "sprintFieldSearchQuery",
               "lines": [
-                12484
+                11466
               ]
             },
             {
               "name": "setSprintFieldSearchQuery",
               "lines": [
-                12466
+                11448
               ]
             },
             {
               "name": "sprintFieldSearchOpen",
               "lines": [
-                12483
+                11465
               ]
             },
             {
               "name": "setSprintFieldSearchOpen",
               "lines": [
-                12465
+                11447
               ]
             },
             {
               "name": "sprintFieldSearchIndex",
               "lines": [
-                12481
+                11463
               ]
             },
             {
               "name": "setSprintFieldSearchIndex",
               "lines": [
-                12464
+                11446
               ]
             },
             {
               "name": "sprintFieldSearchInputRef",
               "lines": [
-                12482
+                11464
               ]
             },
             {
               "name": "sprintFieldSearchResults",
               "lines": [
-                12485
+                11467
               ]
             },
             {
               "name": "sprintFieldSearchHidden",
               "lines": [
-                12480
+                11462
               ]
             },
             {
               "name": "handleSprintFieldSearchKeyDown",
               "lines": [
-                12390
+                11372
               ]
             },
             {
               "name": "isSprintFieldDirty",
               "lines": [
-                2788,
-                5295
+                2427,
+                4277
               ]
             },
             {
               "name": "saveSprintFieldConfig",
               "lines": [
-                2911
+                2550
               ]
             },
             {
               "name": "parentNameFieldIdDraft",
               "lines": [
-                889,
-                1383,
-                1394,
-                2230,
-                2266,
-                12404
+                818,
+                1443,
+                1454,
+                2202,
+                2238,
+                11386
               ]
             },
             {
               "name": "setParentNameFieldIdDraft",
               "lines": [
-                3368,
-                12453
+                3007,
+                11435
               ]
             },
             {
               "name": "parentNameFieldNameDraft",
               "lines": [
-                889,
-                1383,
-                1395,
-                12405
+                818,
+                1443,
+                1455,
+                11387
               ]
             },
             {
               "name": "setParentNameFieldNameDraft",
               "lines": [
-                3368,
-                12454
+                3007,
+                11436
               ]
             },
             {
               "name": "parentNameFieldSearchQuery",
               "lines": [
-                12410
+                11392
               ]
             },
             {
               "name": "setParentNameFieldSearchQuery",
               "lines": [
-                12457
+                11439
               ]
             },
             {
               "name": "parentNameFieldSearchOpen",
               "lines": [
-                12409
+                11391
               ]
             },
             {
               "name": "setParentNameFieldSearchOpen",
               "lines": [
-                12456
+                11438
               ]
             },
             {
               "name": "parentNameFieldSearchIndex",
               "lines": [
-                12407
+                11389
               ]
             },
             {
               "name": "setParentNameFieldSearchIndex",
               "lines": [
-                12455
+                11437
               ]
             },
             {
               "name": "parentNameFieldSearchInputRef",
               "lines": [
-                12408
+                11390
               ]
             },
             {
               "name": "parentNameFieldSearchResults",
               "lines": [
-                12411
+                11393
               ]
             },
             {
               "name": "parentNameFieldSearchHidden",
               "lines": [
-                12406
+                11388
               ]
             },
             {
               "name": "handleParentNameFieldSearchKeyDown",
               "lines": [
-                12388
+                11370
               ]
             },
             {
               "name": "isParentNameFieldDirty",
               "lines": [
-                2789,
-                5296
+                2428,
+                4278
               ]
             },
             {
               "name": "saveParentNameFieldConfig",
               "lines": [
-                2912
+                2551
               ]
             },
             {
               "name": "storyPointsFieldIdDraft",
               "lines": [
-                890,
-                1384,
-                1396,
-                2233,
-                2266,
-                12486
+                819,
+                1444,
+                1456,
+                2205,
+                2238,
+                11468
               ]
             },
             {
               "name": "setStoryPointsFieldIdDraft",
               "lines": [
-                3369,
-                12467
+                3008,
+                11449
               ]
             },
             {
               "name": "storyPointsFieldNameDraft",
               "lines": [
-                890,
-                1384,
-                1396,
-                12487
+                819,
+                1444,
+                1456,
+                11469
               ]
             },
             {
               "name": "setStoryPointsFieldNameDraft",
               "lines": [
-                3369,
-                12468
+                3008,
+                11450
               ]
             },
             {
               "name": "storyPointsFieldSearchQuery",
               "lines": [
-                12492
+                11474
               ]
             },
             {
               "name": "setStoryPointsFieldSearchQuery",
               "lines": [
-                12471
+                11453
               ]
             },
             {
               "name": "storyPointsFieldSearchOpen",
               "lines": [
-                12491
+                11473
               ]
             },
             {
               "name": "setStoryPointsFieldSearchOpen",
               "lines": [
-                12470
+                11452
               ]
             },
             {
               "name": "storyPointsFieldSearchIndex",
               "lines": [
-                12489
+                11471
               ]
             },
             {
               "name": "setStoryPointsFieldSearchIndex",
               "lines": [
-                12469
+                11451
               ]
             },
             {
               "name": "storyPointsFieldSearchInputRef",
               "lines": [
-                12490
+                11472
               ]
             },
             {
               "name": "storyPointsFieldSearchResults",
               "lines": [
-                12493
+                11475
               ]
             },
             {
               "name": "storyPointsFieldSearchHidden",
               "lines": [
-                12488
+                11470
               ]
             },
             {
               "name": "handleStoryPointsFieldSearchKeyDown",
               "lines": [
-                12391
+                11373
               ]
             },
             {
               "name": "isStoryPointsFieldDirty",
               "lines": [
-                2790,
-                5297
+                2429,
+                4279
               ]
             },
             {
               "name": "saveStoryPointsFieldConfig",
               "lines": [
-                2913
+                2552
               ]
             },
             {
               "name": "teamFieldIdDraft",
               "lines": [
-                891,
-                1385,
-                1396,
-                2236,
-                2266,
-                12494
+                820,
+                1445,
+                1456,
+                2208,
+                2238,
+                11476
               ]
             },
             {
               "name": "setTeamFieldIdDraft",
               "lines": [
-                3370,
-                12472
+                3009,
+                11454
               ]
             },
             {
               "name": "teamFieldNameDraft",
               "lines": [
-                891,
-                1385,
-                1396,
-                12495
+                820,
+                1445,
+                1456,
+                11477
               ]
             },
             {
               "name": "setTeamFieldNameDraft",
               "lines": [
-                3370,
-                12473
+                3009,
+                11455
               ]
             },
             {
               "name": "teamFieldSearchQuery",
               "lines": [
-                12500
+                11482
               ]
             },
             {
               "name": "setTeamFieldSearchQuery",
               "lines": [
-                12476
+                11458
               ]
             },
             {
               "name": "teamFieldSearchOpen",
               "lines": [
-                12499
+                11481
               ]
             },
             {
               "name": "setTeamFieldSearchOpen",
               "lines": [
-                12475
+                11457
               ]
             },
             {
               "name": "teamFieldSearchIndex",
               "lines": [
-                12497
+                11479
               ]
             },
             {
               "name": "setTeamFieldSearchIndex",
               "lines": [
-                12474
+                11456
               ]
             },
             {
               "name": "teamFieldSearchInputRef",
               "lines": [
-                12498
+                11480
               ]
             },
             {
               "name": "teamFieldSearchResults",
               "lines": [
-                12501
+                11483
               ]
             },
             {
               "name": "teamFieldSearchHidden",
               "lines": [
-                12496
+                11478
               ]
             },
             {
               "name": "handleTeamFieldSearchKeyDown",
               "lines": [
-                12392
+                11374
               ]
             },
             {
               "name": "isTeamFieldDirty",
               "lines": [
-                2791,
-                5298
+                2430,
+                4280
               ]
             },
             {
               "name": "saveTeamFieldConfig",
               "lines": [
-                2914
+                2553
               ]
             },
             {
               "name": "deliveryOwnerFieldIdDraft",
               "lines": [
-                892,
-                1386,
-                1393,
-                12373
+                821,
+                1446,
+                1453,
+                11355
               ]
             },
             {
               "name": "setDeliveryOwnerFieldIdDraft",
               "lines": [
-                3371,
-                12444
+                3010,
+                11426
               ]
             },
             {
               "name": "deliveryOwnerFieldNameDraft",
               "lines": [
-                892,
-                1386,
-                1393,
-                12374
+                821,
+                1446,
+                1453,
+                11356
               ]
             },
             {
               "name": "setDeliveryOwnerFieldNameDraft",
               "lines": [
-                3371,
-                12445
+                3010,
+                11427
               ]
             },
             {
               "name": "deliveryOwnerFieldSearchQuery",
               "lines": [
-                12379
+                11361
               ]
             },
             {
               "name": "setDeliveryOwnerFieldSearchQuery",
               "lines": [
-                12448
+                11430
               ]
             },
             {
               "name": "deliveryOwnerFieldSearchOpen",
               "lines": [
-                12378
+                11360
               ]
             },
             {
               "name": "setDeliveryOwnerFieldSearchOpen",
               "lines": [
-                12447
+                11429
               ]
             },
             {
               "name": "deliveryOwnerFieldSearchIndex",
               "lines": [
-                12376
+                11358
               ]
             },
             {
               "name": "setDeliveryOwnerFieldSearchIndex",
               "lines": [
-                12446
+                11428
               ]
             },
             {
               "name": "deliveryOwnerFieldSearchInputRef",
               "lines": [
-                12377
+                11359
               ]
             },
             {
               "name": "deliveryOwnerFieldSearchResults",
               "lines": [
-                12380
+                11362
               ]
             },
             {
               "name": "deliveryOwnerFieldSearchHidden",
               "lines": [
-                12375
+                11357
               ]
             },
             {
               "name": "handleDeliveryOwnerFieldSearchKeyDown",
               "lines": [
-                12386
+                11368
               ]
             },
             {
               "name": "isDeliveryOwnerFieldDirty",
               "lines": [
-                2792,
-                5299
+                2431,
+                4281
               ]
             },
             {
               "name": "saveDeliveryOwnerFieldConfig",
               "lines": [
-                2915
+                2554
               ]
             },
             {
               "name": "loadAllFieldConfigs",
               "lines": [
-                1804,
-                5416
+                1864,
+                4398
               ]
             },
             {
               "name": "seedSharedFieldConfigs",
               "lines": [
-                5394
+                4376
               ]
             },
             {
               "name": "anyFieldConfigDirty",
               "lines": [
-                2195,
-                2197
+                2167,
+                2169
               ]
             },
             {
               "name": "dirtyFieldConfigCount",
               "lines": [
-                2217,
-                2218
+                2189,
+                2190
               ]
             }
           ],
@@ -7086,7 +6898,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "usePriorityWeightsSettings",
-              "line": 692,
+              "line": 640,
               "phase": "hook execution"
             }
           ],
@@ -7094,92 +6906,92 @@
             {
               "name": "priorityWeightsDraft",
               "lines": [
-                1379,
-                1395,
-                12413
+                1439,
+                1455,
+                11395
               ]
             },
             {
               "name": "setPriorityWeightsDraft",
               "lines": [
-                3352
+                2991
               ]
             },
             {
               "name": "priorityWeightsSource",
               "lines": [
-                12414
+                11396
               ]
             },
             {
               "name": "effectivePriorityWeightsRows",
               "lines": [
-                5868,
-                5869
+                4850,
+                4851
               ]
             },
             {
               "name": "isPriorityWeightsDirty",
               "lines": [
-                2191,
-                2197,
-                2209,
-                2218,
-                2785,
-                3121,
-                5293
+                2163,
+                2169,
+                2181,
+                2190,
+                2424,
+                2760,
+                4275
               ]
             },
             {
               "name": "priorityWeightsValidationError",
               "lines": [
-                2245,
-                2246,
-                2266,
-                12416
+                2217,
+                2218,
+                2238,
+                11398
               ]
             },
             {
               "name": "priorityWeightsSum",
               "lines": [
-                12415
+                11397
               ]
             },
             {
               "name": "loadPriorityWeightsConfig",
               "lines": [
-                1801,
-                5407
+                1861,
+                4389
               ]
             },
             {
               "name": "savePriorityWeightsConfig",
               "lines": [
-                2893
+                2532
               ]
             },
             {
               "name": "updatePriorityWeightDraft",
               "lines": [
-                12502
+                11484
               ]
             },
             {
               "name": "resetPriorityWeightsDraft",
               "lines": [
-                12425
+                11407
               ]
             },
             {
               "name": "applyPriorityWeightsLoaded",
               "lines": [
-                5392
+                4374
               ]
             },
             {
               "name": "priorityWeightsDraftSnapshot",
               "lines": [
-                886
+                815
               ]
             }
           ],
@@ -7268,7 +7080,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useTeamCatalogLifecycle",
-              "line": 1147,
+              "line": 1076,
               "phase": "hook execution"
             }
           ],
@@ -7276,45 +7088,38 @@
             {
               "name": "teamCatalogState",
               "lines": [
-                3982,
-                3991,
-                4096,
-                4097
+                1294
               ]
             },
             {
               "name": "loadingTeams",
               "lines": [
-                12653
+                11635
               ]
             },
             {
               "name": "teamCatalogReady",
               "lines": [
-                12654,
-                12738
+                11636,
+                11720
               ]
             },
             {
               "name": "teamMembershipState",
               "lines": [
-                3994,
-                3996,
-                3997,
-                3998,
-                3999
+                1295
               ]
             },
             {
               "name": "fetchAllTeamsFromJira",
               "lines": [
-                12652
+                11634
               ]
             },
             {
               "name": "invalidateTeamMembership",
               "lines": [
-                2801
+                2440
               ]
             }
           ],
@@ -7401,7 +7206,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useJiraProjectCatalogEffects",
-              "line": 3870,
+              "line": 3155,
               "phase": "hook execution"
             }
           ],
@@ -7473,7 +7278,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useJiraProjectSearchEffects",
-              "line": 3479,
+              "line": 3118,
               "phase": "hook execution"
             }
           ],
@@ -7625,7 +7430,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useJiraProjectSettings",
-              "line": 771,
+              "line": 719,
               "phase": "hook execution"
             }
           ],
@@ -7633,483 +7438,483 @@
             {
               "name": "jiraProjects",
               "lines": [
-                854,
-                1808,
-                12400
+                783,
+                1868,
+                11382
               ]
             },
             {
               "name": "loadingProjects",
               "lines": [
-                12402
+                11384
               ]
             },
             {
               "name": "projectSearchQuery",
               "lines": [
-                3484,
-                12420
+                3123,
+                11402
               ]
             },
             {
               "name": "setProjectSearchQuery",
               "lines": [
-                1797,
-                2047,
-                12460
+                1857,
+                2036,
+                11442
               ]
             },
             {
               "name": "setProjectSearchRemoteResults",
               "lines": [
-                3488
+                3127
               ]
             },
             {
               "name": "projectSearchRemoteLoading",
               "lines": [
-                12421
+                11403
               ]
             },
             {
               "name": "setProjectSearchRemoteLoading",
               "lines": [
-                3487
+                3126
               ]
             },
             {
               "name": "projectSearchOpen",
               "lines": [
-                12419
+                11401
               ]
             },
             {
               "name": "setProjectSearchOpen",
               "lines": [
-                2048,
-                12459
+                2037,
+                11441
               ]
             },
             {
               "name": "projectSearchIndex",
               "lines": [
-                3876,
-                12417
+                3161,
+                11399
               ]
             },
             {
               "name": "setProjectSearchIndex",
               "lines": [
-                2049,
-                3880,
-                12458
+                2038,
+                3165,
+                11440
               ]
             },
             {
               "name": "selectedProjectsDraft",
               "lines": [
-                1378,
-                1395,
-                2224,
-                2266,
-                12429
+                1438,
+                1455,
+                2196,
+                2238,
+                11411
               ]
             },
             {
               "name": "setSelectedProjectsDraft",
               "lines": [
-                3351
+                2990
               ]
             },
             {
               "name": "savedSelectedProjects",
               "lines": [
-                809,
-                815,
-                4334,
-                4339,
-                4355,
-                4360,
-                4379,
-                4390,
-                7685,
-                7687,
-                10632
+                738,
+                744,
+                3316,
+                3321,
+                3337,
+                3342,
+                3361,
+                3372,
+                6667,
+                6669,
+                9614
               ]
             },
             {
               "name": "projectSearchInputRef",
               "lines": [
-                12418
+                11400
               ]
             },
             {
               "name": "setBoardSearchRemoteResults",
               "lines": [
-                3486
+                3125
               ]
             },
             {
               "name": "boardSearchRemoteLoading",
               "lines": [
-                12356
+                11338
               ]
             },
             {
               "name": "setBoardSearchRemoteLoading",
               "lines": [
-                3485
+                3124
               ]
             },
             {
               "name": "boardIdDraft",
               "lines": [
-                1380,
-                1392,
-                3481,
-                12350
+                1440,
+                1452,
+                3120,
+                11332
               ]
             },
             {
               "name": "setBoardIdDraft",
               "lines": [
-                3354,
-                12430
+                2993,
+                11412
               ]
             },
             {
               "name": "savedBoardId",
               "lines": [
-                4335,
-                4339,
-                4356,
-                4360,
-                4386,
-                4390,
-                10631
+                3317,
+                3321,
+                3338,
+                3342,
+                3368,
+                3372,
+                9613
               ]
             },
             {
               "name": "boardNameDraft",
               "lines": [
-                1380,
-                1392,
-                12351
+                1440,
+                1452,
+                11333
               ]
             },
             {
               "name": "setBoardNameDraft",
               "lines": [
-                3355,
-                12431
+                2994,
+                11413
               ]
             },
             {
               "name": "boardSearchQuery",
               "lines": [
-                3482,
-                12355
+                3121,
+                11337
               ]
             },
             {
               "name": "setBoardSearchQuery",
               "lines": [
-                2050,
-                12434
+                2039,
+                11416
               ]
             },
             {
               "name": "boardSearchOpen",
               "lines": [
-                12354
+                11336
               ]
             },
             {
               "name": "setBoardSearchOpen",
               "lines": [
-                2051,
-                12433
+                2040,
+                11415
               ]
             },
             {
               "name": "boardSearchIndex",
               "lines": [
-                3871,
-                12352
+                3156,
+                11334
               ]
             },
             {
               "name": "setBoardSearchIndex",
               "lines": [
-                2052,
-                3878,
-                12432
+                2041,
+                3163,
+                11414
               ]
             },
             {
               "name": "boardSearchInputRef",
               "lines": [
-                12353
+                11335
               ]
             },
             {
               "name": "jiraFields",
               "lines": [
-                853,
-                881,
-                12399
+                782,
+                810,
+                11381
               ]
             },
             {
               "name": "loadingFields",
               "lines": [
-                12401
+                11383
               ]
             },
             {
               "name": "issueTypesDraft",
               "lines": [
-                1387,
-                1394,
-                12398
+                1447,
+                1454,
+                11380
               ]
             },
             {
               "name": "setIssueTypesDraft",
               "lines": [
-                3372
+                3011
               ]
             },
             {
               "name": "issueTypeSearchQuery",
               "lines": [
-                12396
+                11378
               ]
             },
             {
               "name": "setIssueTypeSearchQuery",
               "lines": [
-                12451
+                11433
               ]
             },
             {
               "name": "issueTypeSearchOpen",
               "lines": [
-                12395
+                11377
               ]
             },
             {
               "name": "setIssueTypeSearchOpen",
               "lines": [
-                12450
+                11432
               ]
             },
             {
               "name": "issueTypeSearchIndex",
               "lines": [
-                3874,
-                12393
+                3159,
+                11375
               ]
             },
             {
               "name": "setIssueTypeSearchIndex",
               "lines": [
-                3879,
-                12449
+                3164,
+                11431
               ]
             },
             {
               "name": "issueTypeSearchInputRef",
               "lines": [
-                12394
+                11376
               ]
             },
             {
               "name": "isProjectsDraftDirty",
               "lines": [
+                2162,
+                2169,
+                2180,
                 2190,
-                2197,
-                2208,
-                2218,
-                2784,
-                3120,
-                5290
+                2423,
+                2759,
+                4272
               ]
             },
             {
               "name": "isBoardConfigDirty",
               "lines": [
-                2192,
-                2197,
-                2210,
-                2218,
-                2786,
-                3122,
-                5291
+                2164,
+                2169,
+                2182,
+                2190,
+                2425,
+                2761,
+                4273
               ]
             },
             {
               "name": "isIssueTypesDraftDirty",
               "lines": [
-                2194,
-                2197,
-                2212,
-                2218,
-                2793,
-                3126,
-                5294
+                2166,
+                2169,
+                2184,
+                2190,
+                2432,
+                2765,
+                4276
               ]
             },
             {
               "name": "boardSearchResults",
               "lines": [
-                3872,
-                12357
+                3157,
+                11339
               ]
             },
             {
               "name": "projectSearchResults",
               "lines": [
-                3877,
-                12422
+                3162,
+                11404
               ]
             },
             {
               "name": "issueTypeSearchResults",
               "lines": [
-                3875,
-                12397
+                3160,
+                11379
               ]
             },
             {
               "name": "fetchJiraProjects",
               "lines": [
-                1808
+                1868
               ]
             },
             {
               "name": "loadSelectedProjects",
               "lines": [
-                1800,
-                5405
+                1860,
+                4387
               ]
             },
             {
               "name": "loadBoardConfig",
               "lines": [
-                1802,
-                5411
+                1862,
+                4393
               ]
             },
             {
               "name": "saveBoardConfig",
               "lines": [
-                2899
+                2538
               ]
             },
             {
               "name": "addProjectSelection",
               "lines": [
-                12345
+                11327
               ]
             },
             {
               "name": "clearBoardSelection",
               "lines": [
-                12372
+                11354
               ]
             },
             {
               "name": "removeProjectSelection",
               "lines": [
-                12424
+                11406
               ]
             },
             {
               "name": "handleProjectSearchKeyDown",
               "lines": [
-                12389
+                11371
               ]
             },
             {
               "name": "handleBoardSearchKeyDown",
               "lines": [
-                12383
+                11365
               ]
             },
             {
               "name": "resolveProjectName",
               "lines": [
-                12427
+                11409
               ]
             },
             {
               "name": "saveProjectSelection",
               "lines": [
-                2887
+                2526
               ]
             },
             {
               "name": "loadIssueTypesConfig",
               "lines": [
-                1805,
-                5422
+                1865,
+                4404
               ]
             },
             {
               "name": "saveIssueTypesConfig",
               "lines": [
-                2920
+                2559
               ]
             },
             {
               "name": "fetchAvailableIssueTypes",
               "lines": [
-                1807
+                1867
               ]
             },
             {
               "name": "addIssueType",
               "lines": [
-                12344
+                11326
               ]
             },
             {
               "name": "removeIssueType",
               "lines": [
-                12423
+                11405
               ]
             },
             {
               "name": "handleIssueTypeSearchKeyDown",
               "lines": [
-                12387
+                11369
               ]
             },
             {
               "name": "fetchJiraFields",
               "lines": [
-                3873
+                3158
               ]
             },
             {
               "name": "applyJiraProjectsAndBoardLoaded",
               "lines": [
-                5390
+                4372
               ]
             },
             {
               "name": "applyJiraIssueTypesLoaded",
               "lines": [
-                5393
+                4375
               ]
             },
             {
               "name": "jiraProjectsDraftSnapshot",
               "lines": [
-                883,
-                884,
-                887
+                812,
+                813,
+                816
               ]
             }
           ],
@@ -8169,7 +7974,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useCapacityMappingEffects",
-              "line": 3884,
+              "line": 3169,
               "phase": "hook execution"
             }
           ],
@@ -8275,7 +8080,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useCapacityMappingSettings",
-              "line": 848,
+              "line": 777,
               "phase": "hook execution"
             }
           ],
@@ -8283,219 +8088,219 @@
             {
               "name": "capacityProjectDraft",
               "lines": [
-                1381,
-                1393,
-                2239,
-                2242,
-                2266,
-                12366
+                1441,
+                1453,
+                2211,
+                2214,
+                2238,
+                11348
               ]
             },
             {
               "name": "setCapacityProjectDraft",
               "lines": [
-                3358,
-                12440
+                2997,
+                11422
               ]
             },
             {
               "name": "capacityFieldIdDraft",
               "lines": [
-                1381,
-                1392,
-                2239,
-                2242,
-                2266,
-                12358
+                1441,
+                1452,
+                2211,
+                2214,
+                2238,
+                11340
               ]
             },
             {
               "name": "setCapacityFieldIdDraft",
               "lines": [
-                3359,
-                12435
+                2998,
+                11417
               ]
             },
             {
               "name": "capacityFieldNameDraft",
               "lines": [
-                1381,
-                1393,
-                12359
+                1441,
+                1453,
+                11341
               ]
             },
             {
               "name": "setCapacityFieldNameDraft",
               "lines": [
-                3360,
-                12436
+                2999,
+                11418
               ]
             },
             {
               "name": "capacityProjectSearchQuery",
               "lines": [
-                12370
+                11352
               ]
             },
             {
               "name": "setCapacityProjectSearchQuery",
               "lines": [
-                2061,
-                12443
+                2050,
+                11425
               ]
             },
             {
               "name": "capacityProjectSearchOpen",
               "lines": [
-                12369
+                11351
               ]
             },
             {
               "name": "setCapacityProjectSearchOpen",
               "lines": [
-                2062,
-                12442
+                2051,
+                11424
               ]
             },
             {
               "name": "capacityProjectSearchIndex",
               "lines": [
-                3887,
-                12367
+                3172,
+                11349
               ]
             },
             {
               "name": "setCapacityProjectSearchIndex",
               "lines": [
-                3890,
-                12441
+                3175,
+                11423
               ]
             },
             {
               "name": "capacityProjectSearchInputRef",
               "lines": [
-                12368
+                11350
               ]
             },
             {
               "name": "capacityFieldSearchQuery",
               "lines": [
-                12364
+                11346
               ]
             },
             {
               "name": "setCapacityFieldSearchQuery",
               "lines": [
-                2063,
-                12439
+                2052,
+                11421
               ]
             },
             {
               "name": "capacityFieldSearchOpen",
               "lines": [
-                12363
+                11345
               ]
             },
             {
               "name": "setCapacityFieldSearchOpen",
               "lines": [
-                2064,
-                12438
+                2053,
+                11420
               ]
             },
             {
               "name": "capacityFieldSearchIndex",
               "lines": [
-                3885,
-                12361
+                3170,
+                11343
               ]
             },
             {
               "name": "setCapacityFieldSearchIndex",
               "lines": [
-                3889,
-                12437
+                3174,
+                11419
               ]
             },
             {
               "name": "capacityFieldSearchInputRef",
               "lines": [
-                12362
+                11344
               ]
             },
             {
               "name": "isCapacityDraftDirty",
               "lines": [
-                2193,
-                2197,
-                2211,
-                2218,
-                2787,
-                3123,
-                5292
+                2165,
+                2169,
+                2183,
+                2190,
+                2426,
+                2762,
+                4274
               ]
             },
             {
               "name": "loadCapacityConfig",
               "lines": [
-                1803,
-                5412
+                1863,
+                4394
               ]
             },
             {
               "name": "saveCapacityConfig",
               "lines": [
-                2906
+                2545
               ]
             },
             {
               "name": "resolveCapacityProjectName",
               "lines": [
-                12426
+                11408
               ]
             },
             {
               "name": "capacityProjectSearchResults",
               "lines": [
-                3888,
-                12371
+                3173,
+                11353
               ]
             },
             {
               "name": "handleCapacityProjectSearchKeyDown",
               "lines": [
-                12385
+                11367
               ]
             },
             {
               "name": "capacityFieldSearchResults",
               "lines": [
-                3886,
-                12365
+                3171,
+                11347
               ]
             },
             {
               "name": "capacityFieldSearchHidden",
               "lines": [
-                12360
+                11342
               ]
             },
             {
               "name": "handleCapacityFieldSearchKeyDown",
               "lines": [
-                12384
+                11366
               ]
             },
             {
               "name": "applyCapacityLoaded",
               "lines": [
-                5391
+                4373
               ]
             },
             {
               "name": "capacityDraftSnapshot",
               "lines": [
-                885
+                814
               ]
             }
           ],
@@ -8865,7 +8670,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "AdminSettingsContainer",
-              "line": 12342,
+              "line": 11324,
               "phase": "render"
             }
           ],
@@ -8973,7 +8778,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useEpmLabelMenuEffects",
-              "line": 1455,
+              "line": 1515,
               "phase": "hook execution"
             }
           ],
@@ -9031,7 +8836,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useEpmSavedSubGoalsEffect",
-              "line": 2084,
+              "line": 2056,
               "phase": "hook execution"
             }
           ],
@@ -9236,7 +9041,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useEpmSettings",
-              "line": 1294,
+              "line": 1400,
               "phase": "hook execution"
             }
           ],
@@ -9244,657 +9049,657 @@
             {
               "name": "epmConfigDraft",
               "lines": [
-                1390,
-                1394,
-                1814,
-                2176,
-                12515
+                1450,
+                1454,
+                1874,
+                2148,
+                11497
               ]
             },
             {
               "name": "epmConfigDraftRef",
               "lines": [
-                1816
+                1876
               ]
             },
             {
               "name": "epmConfigDraftGenerationRef",
               "lines": [
-                1815,
-                5285,
-                5287
+                1875,
+                4267,
+                4269
               ]
             },
             {
               "name": "setEpmConfigDraft",
               "lines": [
-                2333,
-                3380
+                2305,
+                3019
               ]
             },
             {
               "name": "epmConfigLoading",
               "lines": [
-                2271,
-                2275,
-                12516
+                2243,
+                2247,
+                11498
               ]
             },
             {
               "name": "setEpmConfigLoading",
               "lines": [
-                1823
+                1883
               ]
             },
             {
               "name": "epmConfigSaving",
               "lines": [
-                2268,
-                2275,
-                2315,
-                3448,
-                3477,
-                10486,
-                12517
+                2240,
+                2247,
+                2287,
+                3087,
+                3116,
+                9468,
+                11499
               ]
             },
             {
               "name": "epmConfigLoaded",
               "lines": [
-                2085,
-                2121,
-                12273
+                2057,
+                2093,
+                11255
               ]
             },
             {
               "name": "epmSettingsProjects",
               "lines": [
-                12530
+                11512
               ]
             },
             {
               "name": "epmSettingsProjectsLoading",
               "lines": [
-                12535
+                11517
               ]
             },
             {
               "name": "epmSettingsProjectsError",
               "lines": [
-                12531
+                11513
               ]
             },
             {
               "name": "epmSettingsProjectsLoaded",
               "lines": [
-                12533
+                11515
               ]
             },
             {
               "name": "setEpmSettingsProjectsLoaded",
               "lines": [
-                2183
+                2155
               ]
             },
             {
               "name": "epmSettingsProjectsLoadedAt",
               "lines": [
-                12534
+                11516
               ]
             },
             {
               "name": "setEpmSettingsProjectsLoadedAt",
               "lines": [
-                2184
+                2156
               ]
             },
             {
               "name": "epmSettingsProjectsFetchMeta",
               "lines": [
-                12532
+                11514
               ]
             },
             {
               "name": "setEpmSettingsProjectsFetchMeta",
               "lines": [
-                2182
+                2154
               ]
             },
             {
               "name": "epmSettingsProjectsRefreshing",
               "lines": [
-                12536
+                11518
               ]
             },
             {
               "name": "removedEpmProjectIds",
               "lines": [
-                12559
+                11541
               ]
             },
             {
               "name": "setRemovedEpmProjectIds",
               "lines": [
-                1461
+                1521
               ]
             },
             {
               "name": "epmSettingsProjectSort",
               "lines": [
-                12528
+                11510
               ]
             },
             {
               "name": "epmSettingsProjectView",
               "lines": [
-                12529
+                11511
               ]
             },
             {
               "name": "setEpmSettingsProjectView",
               "lines": [
-                12572
+                11554
               ]
             },
             {
               "name": "epmSettingsTab",
               "lines": [
-                1458,
-                2179,
-                12537
+                1518,
+                2151,
+                11519
               ]
             },
             {
               "name": "setEpmSettingsTab",
               "lines": [
-                12573
+                11555
               ]
             },
             {
               "name": "epmLabelShowAll",
               "lines": [
-                12521
+                11503
               ]
             },
             {
               "name": "setEpmLabelShowAll",
               "lines": [
-                12568
+                11550
               ]
             },
             {
               "name": "epmLabelChanging",
               "lines": [
-                12518
+                11500
               ]
             },
             {
               "name": "setEpmLabelChanging",
               "lines": [
-                12566
+                11548
               ]
             },
             {
               "name": "epmLabelMenuAnchor",
               "lines": [
-                1456,
-                12519
+                1516,
+                11501
               ]
             },
             {
               "name": "setEpmLabelMenuAnchor",
               "lines": [
-                1460,
-                12567
+                1520,
+                11549
               ]
             },
             {
               "name": "epmLabelMenuInputRef",
               "lines": [
-                1457,
-                12520
+                1517,
+                11502
               ]
             },
             {
               "name": "epmConfigBaselineRef",
               "lines": [
-                2333
+                2305
               ]
             },
             {
               "name": "epmScopeMeta",
               "lines": [
-                12526
+                11508
               ]
             },
             {
               "name": "setEpmScopeMeta",
               "lines": [
-                1830
+                1890
               ]
             },
             {
               "name": "setEpmRootGoals",
               "lines": [
-                1827
+                1887
               ]
             },
             {
               "name": "epmSubGoals",
               "lines": [
-                9662
+                8644
               ]
             },
             {
               "name": "epmRootGoalsLoading",
               "lines": [
-                12525
+                11507
               ]
             },
             {
               "name": "setEpmRootGoalsLoading",
               "lines": [
-                1829
+                1889
               ]
             },
             {
               "name": "epmSubGoalsLoading",
               "lines": [
-                12540
+                11522
               ]
             },
             {
               "name": "epmRootGoalsError",
               "lines": [
-                12524
+                11506
               ]
             },
             {
               "name": "setEpmRootGoalsError",
               "lines": [
-                1828
+                1888
               ]
             },
             {
               "name": "epmSubGoalsError",
               "lines": [
-                12539
+                11521
               ]
             },
             {
               "name": "epmRootGoalQuery",
               "lines": [
-                12523
+                11505
               ]
             },
             {
               "name": "setEpmRootGoalQuery",
               "lines": [
-                1826,
-                12571
+                1886,
+                11553
               ]
             },
             {
               "name": "epmSubGoalQuery",
               "lines": [
-                12538
+                11520
               ]
             },
             {
               "name": "setEpmSubGoalQuery",
               "lines": [
-                1833,
-                12576
+                1893,
+                11558
               ]
             },
             {
               "name": "setEpmRootGoalOpen",
               "lines": [
-                1825,
-                12570
+                1885,
+                11552
               ]
             },
             {
               "name": "setEpmSubGoalOpen",
               "lines": [
-                1832,
-                12575
+                1892,
+                11557
               ]
             },
             {
               "name": "setEpmRootGoalIndex",
               "lines": [
-                1824,
-                12569
+                1884,
+                11551
               ]
             },
             {
               "name": "setEpmSubGoalIndex",
               "lines": [
-                1831,
-                12574
+                1891,
+                11556
               ]
             },
             {
               "name": "epmSettingsProjectsCacheRef",
               "lines": [
-                2178
+                2150
               ]
             },
             {
               "name": "loadEpmConfig",
               "lines": [
-                1819
+                1879
               ]
             },
             {
               "name": "loadEpmScopeMeta",
               "lines": [
-                1821
+                1881
               ]
             },
             {
               "name": "loadEpmGoals",
               "lines": [
-                1820
+                1880
               ]
             },
             {
               "name": "ensureEpmSettingsProjectsLoaded",
               "lines": [
-                2175,
-                12514
+                2147,
+                11496
               ]
             },
             {
               "name": "saveEpmConfig",
               "lines": [
-                3247
+                2886
               ]
             },
             {
               "name": "updateEpmLabelPrefixDraft",
               "lines": [
-                12583
+                11565
               ]
             },
             {
               "name": "updateEpmProjectDraft",
               "lines": [
-                12584
+                11566
               ]
             },
             {
               "name": "getEpmLabelRowKey",
               "lines": [
-                12544
+                11526
               ]
             },
             {
               "name": "getEpmLabelSearchResults",
               "lines": [
-                12545
+                11527
               ]
             },
             {
               "name": "addCustomEpmProjectDraft",
               "lines": [
-                12509
+                11491
               ]
             },
             {
               "name": "removeEpmProjectDraft",
               "lines": [
-                12558
+                11540
               ]
             },
             {
               "name": "deleteEpmProjectRow",
               "lines": [
-                12513
+                11495
               ]
             },
             {
               "name": "loadEpmProjectLabels",
               "lines": [
-                12554
+                11536
               ]
             },
             {
               "name": "requestEpmLabelFocus",
               "lines": [
-                12560
+                11542
               ]
             },
             {
               "name": "registerEpmLabelInput",
               "lines": [
-                12557
+                11539
               ]
             },
             {
               "name": "selectEpmProjectLabel",
               "lines": [
-                12561
+                11543
               ]
             },
             {
               "name": "openEpmLabelMenu",
               "lines": [
-                12556
+                11538
               ]
             },
             {
               "name": "handleEpmLabelSearchKeyDown",
               "lines": [
-                12546
+                11528
               ]
             },
             {
               "name": "loadEpmSubGoalsForRoot",
               "lines": [
-                1822,
-                2086,
-                12555
+                1882,
+                2058,
+                11537
               ]
             },
             {
               "name": "selectEpmRootGoal",
               "lines": [
-                12562
+                11544
               ]
             },
             {
               "name": "clearEpmRootGoal",
               "lines": [
-                12511
+                11493
               ]
             },
             {
               "name": "clearEpmSubGoal",
               "lines": [
-                12512
+                11494
               ]
             },
             {
               "name": "selectEpmSubGoal",
               "lines": [
-                12563
+                11545
               ]
             },
             {
               "name": "normalizeEpmConfigDraft",
               "lines": [
-                2181
+                2153
               ]
             },
             {
               "name": "applySavedEpmConfig",
               "lines": [
-                1813,
-                5396,
-                5404,
-                5447
+                1873,
+                4378,
+                4386,
+                4429
               ]
             },
             {
               "name": "filteredEpmRootGoals",
               "lines": [
-                12541
+                11523
               ]
             },
             {
               "name": "filteredEpmSubGoals",
               "lines": [
-                12542
+                11524
               ]
             },
             {
               "name": "selectedEpmRootGoal",
               "lines": [
-                12564
+                11546
               ]
             },
             {
               "name": "selectedEpmSubGoals",
               "lines": [
-                12565
+                11547
               ]
             },
             {
               "name": "visibleEpmRootGoals",
               "lines": [
-                12585
+                11567
               ]
             },
             {
               "name": "visibleEpmSubGoals",
               "lines": [
-                12586
+                11568
               ]
             },
             {
               "name": "activeEpmRootGoalIndex",
               "lines": [
-                12507
+                11489
               ]
             },
             {
               "name": "activeEpmSubGoalIndex",
               "lines": [
-                12508
+                11490
               ]
             },
             {
               "name": "showEpmRootGoalResults",
               "lines": [
-                12581
+                11563
               ]
             },
             {
               "name": "showEpmSubGoalResults",
               "lines": [
-                12582
+                11564
               ]
             },
             {
               "name": "handleEpmRootGoalSearchKeyDown",
               "lines": [
-                12547
+                11529
               ]
             },
             {
               "name": "handleEpmSubGoalSearchKeyDown",
               "lines": [
-                12549
+                11531
               ]
             },
             {
               "name": "isEpmConfigDirty",
               "lines": [
-                1818,
-                2201,
-                2205,
-                2214,
-                2218,
-                2271,
-                2275,
-                2331,
-                3170,
-                3181,
-                3436,
-                12307
+                1878,
+                2173,
+                2177,
+                2186,
+                2190,
+                2243,
+                2247,
+                2303,
+                2809,
+                2820,
+                3075,
+                11289
               ]
             },
             {
               "name": "hasSavedEpmScope",
               "lines": [
-                2122
+                2094
               ]
             },
             {
               "name": "savedEpmSubGoalKeys",
               "lines": [
-                2088,
-                2123,
-                9661
+                2060,
+                2095,
+                8643
               ]
             },
             {
               "name": "savedEpmRootGoalKey",
               "lines": [
-                2087
+                2059
               ]
             },
             {
               "name": "epmProjectPrerequisites",
               "lines": [
-                12522
+                11504
               ]
             },
             {
               "name": "canLoadEpmProjects",
               "lines": [
-                2174,
-                12510
+                2146,
+                11492
               ]
             },
             {
               "name": "epmSettingsProjectsCacheKey",
               "lines": [
-                2177
+                2149
               ]
             },
             {
               "name": "epmSettingsProjectRows",
               "lines": [
-                12527
+                11509
               ]
             },
             {
               "name": "openEpmSettingsTab",
               "lines": [
-                10467,
-                10871,
-                12291
+                9449,
+                9853,
+                11273
               ]
             },
             {
               "name": "focusEpmScopeField",
               "lines": [
-                12543
+                11525
               ]
             },
             {
               "name": "handleEpmSettingsTabKeyDown",
               "lines": [
-                12548
+                11530
               ]
             },
             {
               "name": "setTrackedEpmSettingsProjectSort",
               "lines": [
-                12580
+                11562
               ]
             }
           ],
@@ -9902,7 +9707,7 @@
             {
               "caller": "frontend/src/dashboard.jsx",
               "name": "getEpmViewActions",
-              "line": 1297,
+              "line": 1403,
               "capturedBindings": [
                 "refreshEpmProjects",
                 "setEpmProjects",
@@ -9988,7 +9793,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useEpmSettingsLoadEffect",
-              "line": 1812,
+              "line": 1872,
               "phase": "hook execution"
             }
           ],
@@ -10067,7 +9872,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useEpmSettingsProjectsEffects",
-              "line": 2173,
+              "line": 2145,
               "phase": "hook execution"
             }
           ],
@@ -10275,12 +10080,1704 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "EpmSettingsTab",
-              "line": 12506,
+              "line": 11488,
               "phase": "render"
             }
           ],
           "remainingAppReaders": [],
           "getters": []
+        }
+      ]
+    },
+    {
+      "id": "settings.useTeamGroupSettings",
+      "path": "frontend/src/settings/useTeamGroupSettings.js",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "useTeamGroupLabelEffects",
+        "useTeamGroupSearchEffects",
+        "useTeamGroupSelectionEffect",
+        "useTeamGroupSettings"
+      ],
+      "lineCount": 1480,
+      "lineCeiling": 1480,
+      "interfaces": [
+        {
+          "exportName": "useTeamGroupLabelEffects",
+          "inputNames": [
+            "activeGroupDraft",
+            "activeTeamAvailabilityKey",
+            "activeTeamResultsLimited",
+            "labelSearchDebounceRef",
+            "setTeamSearchIndex"
+          ],
+          "returnNames": [],
+          "propNames": [],
+          "expandedInputNames": [
+            "activeGroupDraft",
+            "activeGroupDraft.id",
+            "activeTeamAvailabilityKey",
+            "activeTeamResultsLimited",
+            "activeTeamResultsLimited.findIndex",
+            "activeTeamResultsLimited.length",
+            "labelSearchDebounceRef",
+            "labelSearchDebounceRef.current",
+            "setTeamSearchIndex"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 9,
+          "returnCount": 0,
+          "propCount": 0,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 9,
+          "returnCeiling": 0,
+          "propCeiling": 0,
+          "unresolved": [
+            "bag activeTeamResultsLimited dynamic deep member",
+            "bag activeTeamResultsLimited dynamic member"
+          ],
+          "inventory": {
+            "source": "frontend/src/settings/useTeamGroupSettings.js:1454",
+            "sourceDigest": "73964f6e8a9e47de78c45fe2751dfe3050a6d158e2bdb39566a6ea04581f3a9b",
+            "reviewed": true,
+            "memberNames": [
+              "activeGroupDraft",
+              "activeGroupDraft.id",
+              "activeTeamAvailabilityKey",
+              "activeTeamResultsLimited",
+              "activeTeamResultsLimited.findIndex",
+              "activeTeamResultsLimited.length",
+              "labelSearchDebounceRef",
+              "labelSearchDebounceRef.current",
+              "setTeamSearchIndex"
+            ],
+            "rationale": "activeTeamResultsLimited is the active group's limited Team result list, read by dynamic position inside the label effects, so its member count is data and the checker cannot enumerate it; the other inputs are the label search state and setters."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "useTeamGroupLabelEffects",
+              "line": 3266,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        },
+        {
+          "exportName": "useTeamGroupSearchEffects",
+          "inputNames": [
+            "BACKEND_URL",
+            "adHocEpicSearchIndex",
+            "adHocEpicSearchQuery",
+            "componentSearchIndex",
+            "componentSearchQuery",
+            "excludedEpicSearchIndex",
+            "excludedEpicSearchQuery",
+            "filteredAdHocEpicSearchResults",
+            "filteredComponentSearchResults",
+            "filteredExcludedEpicSearchResults",
+            "groupManageTab",
+            "setAdHocEpicSearchIndex",
+            "setAdHocEpicSearchLoading",
+            "setAdHocEpicSearchResults",
+            "setComponentSearchIndex",
+            "setComponentSearchLoading",
+            "setComponentSearchResults",
+            "setExcludedEpicSearchIndex",
+            "setExcludedEpicSearchLoading",
+            "setExcludedEpicSearchResults",
+            "showGroupManage"
+          ],
+          "returnNames": [],
+          "propNames": [],
+          "expandedInputNames": [
+            "BACKEND_URL",
+            "adHocEpicSearchIndex",
+            "adHocEpicSearchQuery",
+            "adHocEpicSearchQuery.trim",
+            "componentSearchIndex",
+            "componentSearchQuery",
+            "componentSearchQuery.trim",
+            "excludedEpicSearchIndex",
+            "excludedEpicSearchQuery",
+            "excludedEpicSearchQuery.trim",
+            "filteredAdHocEpicSearchResults",
+            "filteredAdHocEpicSearchResults.length",
+            "filteredComponentSearchResults",
+            "filteredComponentSearchResults.length",
+            "filteredExcludedEpicSearchResults",
+            "filteredExcludedEpicSearchResults.length",
+            "groupManageTab",
+            "setAdHocEpicSearchIndex",
+            "setAdHocEpicSearchLoading",
+            "setAdHocEpicSearchResults",
+            "setComponentSearchIndex",
+            "setComponentSearchLoading",
+            "setComponentSearchResults",
+            "setExcludedEpicSearchIndex",
+            "setExcludedEpicSearchLoading",
+            "setExcludedEpicSearchResults",
+            "showGroupManage"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 27,
+          "returnCount": 0,
+          "propCount": 0,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 27,
+          "returnCeiling": 0,
+          "propCeiling": 0,
+          "unresolved": [
+            "forwarded input BACKEND_URL"
+          ],
+          "inventory": {
+            "source": "frontend/src/settings/useTeamGroupSettings.js:1311",
+            "sourceDigest": "73964f6e8a9e47de78c45fe2751dfe3050a6d158e2bdb39566a6ea04581f3a9b",
+            "reviewed": true,
+            "memberNames": [
+              "BACKEND_URL",
+              "adHocEpicSearchIndex",
+              "adHocEpicSearchQuery",
+              "adHocEpicSearchQuery.trim",
+              "componentSearchIndex",
+              "componentSearchQuery",
+              "componentSearchQuery.trim",
+              "excludedEpicSearchIndex",
+              "excludedEpicSearchQuery",
+              "excludedEpicSearchQuery.trim",
+              "filteredAdHocEpicSearchResults",
+              "filteredAdHocEpicSearchResults.length",
+              "filteredComponentSearchResults",
+              "filteredComponentSearchResults.length",
+              "filteredExcludedEpicSearchResults",
+              "filteredExcludedEpicSearchResults.length",
+              "groupManageTab",
+              "setAdHocEpicSearchIndex",
+              "setAdHocEpicSearchLoading",
+              "setAdHocEpicSearchResults",
+              "setComponentSearchIndex",
+              "setComponentSearchLoading",
+              "setComponentSearchResults",
+              "setExcludedEpicSearchIndex",
+              "setExcludedEpicSearchLoading",
+              "setExcludedEpicSearchResults",
+              "showGroupManage"
+            ],
+            "rationale": "BACKEND_URL is the module-constant API base string forwarded to the component, epic and Team search request wrappers; the remaining inputs are query strings, open flags, per-key request-id refs and state setters, none a dependency bag."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "useTeamGroupSearchEffects",
+              "line": 3131,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        },
+        {
+          "exportName": "useTeamGroupSelectionEffect",
+          "inputNames": [
+            "activeGroupDraftId",
+            "firstRunConfigurationActive",
+            "firstRunConfigurationTargetGroupId",
+            "groupDraft",
+            "setActiveGroupDraftId",
+            "showGroupManage"
+          ],
+          "returnNames": [],
+          "propNames": [],
+          "expandedInputNames": [
+            "activeGroupDraftId",
+            "firstRunConfigurationActive",
+            "firstRunConfigurationTargetGroupId",
+            "groupDraft",
+            "groupDraft.groups",
+            "setActiveGroupDraftId",
+            "showGroupManage"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 7,
+          "returnCount": 0,
+          "propCount": 0,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 7,
+          "returnCeiling": 0,
+          "propCeiling": 0,
+          "unresolved": [],
+          "inventory": {
+            "source": "frontend/src/settings/useTeamGroupSettings.js:1286",
+            "sourceDigest": "73964f6e8a9e47de78c45fe2751dfe3050a6d158e2bdb39566a6ea04581f3a9b"
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "useTeamGroupSelectionEffect",
+              "line": 1898,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        },
+        {
+          "exportName": "useTeamGroupSettings",
+          "inputNames": [
+            "BACKEND_URL",
+            "activeGroupId",
+            "clearServerConnectionError",
+            "firstRunConfigurationActive",
+            "getTeamOptions",
+            "markConnectionBootstrapHealthy",
+            "reportServerConnectionError",
+            "savedPrefsRef",
+            "selectedSprintInfo",
+            "setActiveGroupId",
+            "setGroupDraftError",
+            "setShowGroupListMobile",
+            "showGroupManage",
+            "teamCatalogState",
+            "teamMembershipState",
+            "trackSettingsAction"
+          ],
+          "returnNames": [
+            "acceptedGroupsConfigRef",
+            "activeGroupDraft",
+            "activeGroupDraftId",
+            "activeTeamAvailabilityKey",
+            "activeTeamIndex",
+            "activeTeamQuery",
+            "activeTeamResultsLimited",
+            "adHocEpicChipLastRef",
+            "adHocEpicSearchIndex",
+            "adHocEpicSearchInputRef",
+            "adHocEpicSearchLoading",
+            "adHocEpicSearchOpen",
+            "adHocEpicSearchQuery",
+            "addGroupAdHocCapacityEpic",
+            "addGroupDraftRow",
+            "addGroupExcludedCapacityEpic",
+            "addGroupMissingInfoComponent",
+            "addTeamToGroup",
+            "applySavedGroupsConfig",
+            "availableTeams",
+            "boardGroupsReadFailed",
+            "closeAllTeamSearchDropdowns",
+            "closeTeamLabelSearch",
+            "componentSearchIndex",
+            "componentSearchLoading",
+            "componentSearchOpen",
+            "componentSearchQuery",
+            "duplicateGroupDraft",
+            "excludedEpicChipLastRef",
+            "excludedEpicSearchIndex",
+            "excludedEpicSearchInputRef",
+            "excludedEpicSearchLoading",
+            "excludedEpicSearchOpen",
+            "excludedEpicSearchQuery",
+            "exportGroupsConfig",
+            "favoriteGroupDraftId",
+            "favoriteGroupValidationError",
+            "filteredAdHocEpicSearchResults",
+            "filteredComponentSearchResults",
+            "filteredExcludedEpicSearchResults",
+            "filteredGroupDrafts",
+            "firstRunError",
+            "firstRunFavoriteGroupId",
+            "firstRunSaving",
+            "getLabelSearchResults",
+            "groupConfigSource",
+            "groupDraft",
+            "groupDraftBaselineRef",
+            "groupDraftSignature",
+            "groupImportText",
+            "groupPreferences",
+            "groupSearchQuery",
+            "groupVisibilitySaving",
+            "groupWarnings",
+            "groupsConfig",
+            "groupsConfigConflict",
+            "groupsError",
+            "groupsLoading",
+            "groupsReadGenerationRef",
+            "groupsSaveReadFenceRef",
+            "handleAdHocEpicSearchBlur",
+            "handleAdHocEpicSearchChange",
+            "handleAdHocEpicSearchFocus",
+            "handleAdHocEpicSearchKeyDown",
+            "handleComponentSearchKeyDown",
+            "handleExcludedEpicSearchBlur",
+            "handleExcludedEpicSearchChange",
+            "handleExcludedEpicSearchFocus",
+            "handleExcludedEpicSearchKeyDown",
+            "handleLabelSearchKeyDown",
+            "handleTeamSearchBlur",
+            "handleTeamSearchChange",
+            "handleTeamSearchFocus",
+            "handleTeamSearchKeyDown",
+            "importGroupsConfig",
+            "initializeGroupPreferencesDraft",
+            "isGroupBoardDraftDirty",
+            "isGroupVisibilityDraftDirty",
+            "isGroupVisibleInControls",
+            "labelAddButtonRefs",
+            "labelAddOpen",
+            "labelSearchDebounceRef",
+            "labelSearchIndex",
+            "labelSearchLoading",
+            "labelSearchOpen",
+            "labelSearchQuery",
+            "labelSearchRequestIdRef",
+            "labelSearchResults",
+            "loadGroupsConfig",
+            "loadTeamsFromCurrentView",
+            "persistGroupPreferences",
+            "personalGroupPreferencesEnabled",
+            "removeGroupAdHocCapacityEpic",
+            "removeGroupDraft",
+            "removeGroupExcludedCapacityEpic",
+            "removeGroupMissingInfoComponent",
+            "removeTeamFromGroup",
+            "removeTeamLabelFromGroup",
+            "resolveTeamName",
+            "saveFirstRunGroupPreferences",
+            "scheduleJiraLabelSearch",
+            "selectFirstRunFavoriteGroup",
+            "selectTeamLabel",
+            "setActiveGroupDraftId",
+            "setAdHocEpicSearchIndex",
+            "setAdHocEpicSearchLoading",
+            "setAdHocEpicSearchResults",
+            "setBoardGroupsReadFailed",
+            "setComponentSearchIndex",
+            "setComponentSearchLoading",
+            "setComponentSearchOpen",
+            "setComponentSearchQuery",
+            "setComponentSearchResults",
+            "setExcludedEpicSearchIndex",
+            "setExcludedEpicSearchLoading",
+            "setExcludedEpicSearchOpen",
+            "setExcludedEpicSearchQuery",
+            "setExcludedEpicSearchResults",
+            "setFavoriteGroupDraft",
+            "setFavoriteGroupDraftId",
+            "setGroupDraft",
+            "setGroupImportText",
+            "setGroupPreferences",
+            "setGroupPreferencesSaving",
+            "setGroupSearchQuery",
+            "setGroupsConfig",
+            "setGroupsConfigConflict",
+            "setGroupsError",
+            "setGroupsLoading",
+            "setLabelAddOpen",
+            "setLabelSearchIndex",
+            "setLabelSearchLoading",
+            "setLabelSearchOpen",
+            "setLabelSearchQuery",
+            "setLabelSearchResults",
+            "setShowGroupAdvanced",
+            "setShowGroupImport",
+            "setTeamNameInputs",
+            "setTeamSearchFeedback",
+            "setTeamSearchIndex",
+            "setTeamSearchOpen",
+            "setTeamSearchQuery",
+            "setVisibleGroupDraftIds",
+            "showGroupAdvanced",
+            "showGroupImport",
+            "teamCacheLabel",
+            "teamCatalogCanRefresh",
+            "teamChipLastRef",
+            "teamNameLookup",
+            "teamSearchFeedback",
+            "teamSearchInputRefs",
+            "teamSearchOpen",
+            "toggleDefaultGroupDraft",
+            "toggleGroupVisibleInControls",
+            "updateGroupDraftBoard",
+            "updateGroupDraftName",
+            "visibleControlGroups",
+            "visibleGroupDraftIds"
+          ],
+          "propNames": [],
+          "expandedInputNames": [
+            "BACKEND_URL",
+            "activeGroupId",
+            "clearServerConnectionError",
+            "firstRunConfigurationActive",
+            "getTeamOptions",
+            "markConnectionBootstrapHealthy",
+            "reportServerConnectionError",
+            "savedPrefsRef",
+            "savedPrefsRef.current",
+            "savedPrefsRef.current.activeGroupId",
+            "selectedSprintInfo",
+            "setActiveGroupId",
+            "setGroupDraftError",
+            "setShowGroupListMobile",
+            "showGroupManage",
+            "teamCatalogState",
+            "teamCatalogState.catalog",
+            "teamCatalogState.meta",
+            "teamMembershipState",
+            "teamMembershipState.generation",
+            "teamMembershipState.snapshot",
+            "teamMembershipState.status",
+            "teamMembershipState.validated",
+            "trackSettingsAction"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 24,
+          "returnCount": 158,
+          "propCount": 0,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 24,
+          "returnCeiling": 158,
+          "propCeiling": 0,
+          "unresolved": [
+            "forwarded input BACKEND_URL",
+            "forwarded input selectedSprintInfo"
+          ],
+          "inventory": {
+            "source": "frontend/src/settings/useTeamGroupSettings.js:32",
+            "sourceDigest": "73964f6e8a9e47de78c45fe2751dfe3050a6d158e2bdb39566a6ea04581f3a9b",
+            "reviewed": true,
+            "memberNames": [
+              "BACKEND_URL",
+              "activeGroupId",
+              "clearServerConnectionError",
+              "firstRunConfigurationActive",
+              "getTeamOptions",
+              "markConnectionBootstrapHealthy",
+              "reportServerConnectionError",
+              "savedPrefsRef",
+              "savedPrefsRef.current",
+              "savedPrefsRef.current.activeGroupId",
+              "selectedSprintInfo",
+              "setActiveGroupId",
+              "setGroupDraftError",
+              "setShowGroupListMobile",
+              "showGroupManage",
+              "teamCatalogState",
+              "teamCatalogState.catalog",
+              "teamCatalogState.meta",
+              "teamMembershipState",
+              "teamMembershipState.generation",
+              "teamMembershipState.snapshot",
+              "teamMembershipState.status",
+              "teamMembershipState.validated",
+              "trackSettingsAction"
+            ],
+            "rationale": "BACKEND_URL is the module-constant API base string forwarded to the Team group request wrappers and selectedSprintInfo is the selected Sprint record forwarded to the Team availability helper; neither is a dependency bag. The remaining inputs are state cells, refs, setters and callbacks declared before the call, plus the handler-only getTeamOptions getter."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "useTeamGroupSettings",
+              "line": 1280,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [
+            {
+              "name": "groupsConfig",
+              "lines": [
+                1420,
+                1434,
+                1454,
+                1475,
+                1479,
+                1495,
+                1823,
+                2311,
+                2570,
+                2573,
+                2823,
+                3352,
+                3371,
+                7033,
+                8903,
+                8905,
+                8908,
+                11921,
+                11934
+              ]
+            },
+            {
+              "name": "setGroupsConfig",
+              "lines": [
+                3207
+              ]
+            },
+            {
+              "name": "groupsLoading",
+              "lines": [
+                1782,
+                1784,
+                1814,
+                1819,
+                1957,
+                1994,
+                2253,
+                3313,
+                3320,
+                3334,
+                3341,
+                3455,
+                3460,
+                4446,
+                4522,
+                4525,
+                4546,
+                4770,
+                4823,
+                4828,
+                4839,
+                5006,
+                5041,
+                6113,
+                8839,
+                8842,
+                8847,
+                8853,
+                8876,
+                8884,
+                9546,
+                9838
+              ]
+            },
+            {
+              "name": "setGroupsLoading",
+              "lines": [
+                2489
+              ]
+            },
+            {
+              "name": "groupsError",
+              "lines": [
+                2254,
+                11631
+              ]
+            },
+            {
+              "name": "setGroupsError",
+              "lines": [
+                2625
+              ]
+            },
+            {
+              "name": "boardGroupsReadFailed",
+              "lines": [
+                3314,
+                3320,
+                3335,
+                3341
+              ]
+            },
+            {
+              "name": "setBoardGroupsReadFailed",
+              "lines": [
+                2624
+              ]
+            },
+            {
+              "name": "acceptedGroupsConfigRef",
+              "lines": [
+                2623,
+                3334,
+                3335
+              ]
+            },
+            {
+              "name": "groupsReadGenerationRef",
+              "lines": [
+                2478
+              ]
+            },
+            {
+              "name": "groupsSaveReadFenceRef",
+              "lines": [
+                2479,
+                2487,
+                2488
+              ]
+            },
+            {
+              "name": "groupWarnings",
+              "lines": [
+                11632
+              ]
+            },
+            {
+              "name": "groupConfigSource",
+              "lines": [
+                1815,
+                1819
+              ]
+            },
+            {
+              "name": "groupDraft",
+              "lines": [
+                1902,
+                2175,
+                2177,
+                2187,
+                2190,
+                2221,
+                2236,
+                2238,
+                2311,
+                2455,
+                2457,
+                2576,
+                2803,
+                2819,
+                11625,
+                11713
+              ]
+            },
+            {
+              "name": "setGroupDraft",
+              "lines": [
+                1832,
+                3044,
+                3208
+              ]
+            },
+            {
+              "name": "groupsConfigConflict",
+              "lines": [
+                2786,
+                3042,
+                3052,
+                3053,
+                3057,
+                3058,
+                3240,
+                3243,
+                11289,
+                11295
+              ]
+            },
+            {
+              "name": "setGroupsConfigConflict",
+              "lines": [
+                2029,
+                2495,
+                2586,
+                3054
+              ]
+            },
+            {
+              "name": "groupImportText",
+              "lines": [
+                11701
+              ]
+            },
+            {
+              "name": "setGroupImportText",
+              "lines": [
+                1847,
+                2030,
+                11702
+              ]
+            },
+            {
+              "name": "showGroupImport",
+              "lines": [
+                11698
+              ]
+            },
+            {
+              "name": "setShowGroupImport",
+              "lines": [
+                1848,
+                2031,
+                11699
+              ]
+            },
+            {
+              "name": "showGroupAdvanced",
+              "lines": [
+                11696
+              ]
+            },
+            {
+              "name": "setShowGroupAdvanced",
+              "lines": [
+                1849,
+                2032,
+                11697
+              ]
+            },
+            {
+              "name": "setTeamNameInputs",
+              "lines": [
+                1869
+              ]
+            },
+            {
+              "name": "setTeamSearchQuery",
+              "lines": [
+                1851
+              ]
+            },
+            {
+              "name": "teamSearchOpen",
+              "lines": [
+                3099,
+                3116,
+                11656
+              ]
+            },
+            {
+              "name": "setTeamSearchOpen",
+              "lines": [
+                1852
+              ]
+            },
+            {
+              "name": "setTeamSearchIndex",
+              "lines": [
+                1853,
+                3271
+              ]
+            },
+            {
+              "name": "teamSearchFeedback",
+              "lines": [
+                11659,
+                11785
+              ]
+            },
+            {
+              "name": "setTeamSearchFeedback",
+              "lines": [
+                1854
+              ]
+            },
+            {
+              "name": "teamSearchInputRefs",
+              "lines": [
+                11655
+              ]
+            },
+            {
+              "name": "teamChipLastRef",
+              "lines": [
+                11647
+              ]
+            },
+            {
+              "name": "labelSearchQuery",
+              "lines": [
+                1406,
+                11535,
+                11782,
+                11833
+              ]
+            },
+            {
+              "name": "setLabelSearchQuery",
+              "lines": [
+                1414,
+                11561,
+                11836
+              ]
+            },
+            {
+              "name": "labelSearchOpen",
+              "lines": [
+                1405,
+                11534,
+                11850
+              ]
+            },
+            {
+              "name": "setLabelSearchOpen",
+              "lines": [
+                1413,
+                11560,
+                11837,
+                11842,
+                11846
+              ]
+            },
+            {
+              "name": "labelSearchResults",
+              "lines": [
+                1408
+              ]
+            },
+            {
+              "name": "setLabelSearchResults",
+              "lines": [
+                1415
+              ]
+            },
+            {
+              "name": "labelSearchLoading",
+              "lines": [
+                11533,
+                11783
+              ]
+            },
+            {
+              "name": "setLabelSearchLoading",
+              "lines": [
+                1412
+              ]
+            },
+            {
+              "name": "labelSearchIndex",
+              "lines": [
+                1404,
+                11532,
+                11784
+              ]
+            },
+            {
+              "name": "setLabelSearchIndex",
+              "lines": [
+                1411,
+                11559,
+                11838,
+                11860
+              ]
+            },
+            {
+              "name": "labelAddOpen",
+              "lines": [
+                11780
+              ]
+            },
+            {
+              "name": "setLabelAddOpen",
+              "lines": [
+                11818
+              ]
+            },
+            {
+              "name": "labelAddButtonRefs",
+              "lines": [
+                11814,
+                11815
+              ]
+            },
+            {
+              "name": "labelSearchRequestIdRef",
+              "lines": [
+                1407
+              ]
+            },
+            {
+              "name": "labelSearchDebounceRef",
+              "lines": [
+                3270
+              ]
+            },
+            {
+              "name": "groupSearchQuery",
+              "lines": [
+                11621,
+                11897
+              ]
+            },
+            {
+              "name": "setGroupSearchQuery",
+              "lines": [
+                1850,
+                11622,
+                11898
+              ]
+            },
+            {
+              "name": "activeGroupDraftId",
+              "lines": [
+                1899
+              ]
+            },
+            {
+              "name": "setActiveGroupDraftId",
+              "lines": [
+                1858,
+                1903,
+                2805,
+                11630,
+                11749,
+                11899
+              ]
+            },
+            {
+              "name": "groupDraftBaselineRef",
+              "lines": [
+                1833,
+                2176,
+                2187,
+                2455,
+                2819,
+                3209
+              ]
+            },
+            {
+              "name": "componentSearchQuery",
+              "lines": [
+                3136,
+                11660
+              ]
+            },
+            {
+              "name": "setComponentSearchQuery",
+              "lines": [
+                2042,
+                11661
+              ]
+            },
+            {
+              "name": "setComponentSearchResults",
+              "lines": [
+                3148
+              ]
+            },
+            {
+              "name": "componentSearchOpen",
+              "lines": [
+                11663
+              ]
+            },
+            {
+              "name": "setComponentSearchOpen",
+              "lines": [
+                2043,
+                11662
+              ]
+            },
+            {
+              "name": "componentSearchIndex",
+              "lines": [
+                3135,
+                11666
+              ]
+            },
+            {
+              "name": "setComponentSearchIndex",
+              "lines": [
+                2044,
+                3146
+              ]
+            },
+            {
+              "name": "componentSearchLoading",
+              "lines": [
+                11664
+              ]
+            },
+            {
+              "name": "setComponentSearchLoading",
+              "lines": [
+                3147
+              ]
+            },
+            {
+              "name": "excludedEpicSearchQuery",
+              "lines": [
+                3138,
+                11670
+              ]
+            },
+            {
+              "name": "setExcludedEpicSearchQuery",
+              "lines": [
+                2045
+              ]
+            },
+            {
+              "name": "setExcludedEpicSearchResults",
+              "lines": [
+                3151
+              ]
+            },
+            {
+              "name": "excludedEpicSearchOpen",
+              "lines": [
+                11676
+              ]
+            },
+            {
+              "name": "setExcludedEpicSearchOpen",
+              "lines": [
+                2046
+              ]
+            },
+            {
+              "name": "excludedEpicSearchIndex",
+              "lines": [
+                3137,
+                11679
+              ]
+            },
+            {
+              "name": "setExcludedEpicSearchIndex",
+              "lines": [
+                2047,
+                3149
+              ]
+            },
+            {
+              "name": "excludedEpicSearchLoading",
+              "lines": [
+                11677
+              ]
+            },
+            {
+              "name": "setExcludedEpicSearchLoading",
+              "lines": [
+                3150
+              ]
+            },
+            {
+              "name": "excludedEpicSearchInputRef",
+              "lines": [
+                11675
+              ]
+            },
+            {
+              "name": "excludedEpicChipLastRef",
+              "lines": [
+                11682
+              ]
+            },
+            {
+              "name": "adHocEpicSearchQuery",
+              "lines": [
+                3134,
+                11683
+              ]
+            },
+            {
+              "name": "setAdHocEpicSearchResults",
+              "lines": [
+                3145
+              ]
+            },
+            {
+              "name": "adHocEpicSearchOpen",
+              "lines": [
+                11689
+              ]
+            },
+            {
+              "name": "adHocEpicSearchIndex",
+              "lines": [
+                3133,
+                11692
+              ]
+            },
+            {
+              "name": "setAdHocEpicSearchIndex",
+              "lines": [
+                3143
+              ]
+            },
+            {
+              "name": "adHocEpicSearchLoading",
+              "lines": [
+                11690
+              ]
+            },
+            {
+              "name": "setAdHocEpicSearchLoading",
+              "lines": [
+                3144
+              ]
+            },
+            {
+              "name": "adHocEpicSearchInputRef",
+              "lines": [
+                11688
+              ]
+            },
+            {
+              "name": "adHocEpicChipLastRef",
+              "lines": [
+                11695
+              ]
+            },
+            {
+              "name": "personalGroupPreferencesEnabled",
+              "lines": [
+                11641
+              ]
+            },
+            {
+              "name": "groupPreferences",
+              "lines": [
+                1435,
+                1454,
+                1782,
+                1784,
+                1836,
+                1837,
+                2257,
+                2265,
+                4201,
+                4254,
+                4449,
+                4522,
+                4525,
+                4546,
+                4771,
+                4823,
+                4829,
+                4846,
+                5253,
+                5351,
+                5388,
+                5466,
+                5648,
+                5795,
+                8904,
+                9470,
+                9478,
+                9546,
+                11918,
+                11929,
+                11945
+              ]
+            },
+            {
+              "name": "setGroupPreferences",
+              "lines": [
+                2266,
+                3021,
+                3211
+              ]
+            },
+            {
+              "name": "visibleGroupDraftIds",
+              "lines": [
+                11626
+              ]
+            },
+            {
+              "name": "setVisibleGroupDraftIds",
+              "lines": [
+                1843
+              ]
+            },
+            {
+              "name": "favoriteGroupDraftId",
+              "lines": [
+                11642
+              ]
+            },
+            {
+              "name": "setFavoriteGroupDraftId",
+              "lines": [
+                1844
+              ]
+            },
+            {
+              "name": "setFavoriteGroupDraft",
+              "lines": [
+                11643
+              ]
+            },
+            {
+              "name": "favoriteGroupValidationError",
+              "lines": [
+                2233,
+                2234,
+                2238
+              ]
+            },
+            {
+              "name": "setGroupPreferencesSaving",
+              "lines": [
+                2795
+              ]
+            },
+            {
+              "name": "groupVisibilitySaving",
+              "lines": [
+                2288,
+                11629
+              ]
+            },
+            {
+              "name": "isGroupVisibilityDraftDirty",
+              "lines": [
+                2174,
+                2177,
+                2188,
+                2190,
+                2504,
+                2647,
+                2819,
+                11289
+              ]
+            },
+            {
+              "name": "visibleControlGroups",
+              "lines": [
+                1644,
+                1645,
+                1648,
+                3288,
+                3289,
+                3457,
+                3460,
+                3870,
+                3906,
+                6121,
+                8501,
+                8886
+              ]
+            },
+            {
+              "name": "initializeGroupPreferencesDraft",
+              "lines": [
+                1834
+              ]
+            },
+            {
+              "name": "isGroupVisibleInControls",
+              "lines": [
+                11628
+              ]
+            },
+            {
+              "name": "toggleGroupVisibleInControls",
+              "lines": [
+                11627
+              ]
+            },
+            {
+              "name": "firstRunFavoriteGroupId",
+              "lines": [
+                11922
+              ]
+            },
+            {
+              "name": "selectFirstRunFavoriteGroup",
+              "lines": [
+                11923
+              ]
+            },
+            {
+              "name": "saveFirstRunGroupPreferences",
+              "lines": [
+                2912,
+                3219,
+                3243,
+                11924
+              ]
+            },
+            {
+              "name": "firstRunSaving",
+              "lines": [
+                11927
+              ]
+            },
+            {
+              "name": "firstRunError",
+              "lines": [
+                11928
+              ]
+            },
+            {
+              "name": "persistGroupPreferences",
+              "lines": [
+                2648
+              ]
+            },
+            {
+              "name": "loadGroupsConfig",
+              "lines": [
+                1777,
+                9502
+              ]
+            },
+            {
+              "name": "loadTeamsFromCurrentView",
+              "lines": [
+                1869
+              ]
+            },
+            {
+              "name": "groupDraftSignature",
+              "lines": [
+                2176,
+                2177,
+                2187,
+                2190,
+                2455,
+                2819
+              ]
+            },
+            {
+              "name": "isGroupBoardDraftDirty",
+              "lines": [
+                11289
+              ]
+            },
+            {
+              "name": "closeAllTeamSearchDropdowns",
+              "lines": [
+                3102
+              ]
+            },
+            {
+              "name": "addGroupDraftRow",
+              "lines": [
+                11620
+              ]
+            },
+            {
+              "name": "updateGroupDraftName",
+              "lines": [
+                11639
+              ]
+            },
+            {
+              "name": "duplicateGroupDraft",
+              "lines": [
+                11644
+              ]
+            },
+            {
+              "name": "updateGroupDraftBoard",
+              "lines": [
+                9621
+              ]
+            },
+            {
+              "name": "addTeamToGroup",
+              "lines": [
+                11658
+              ]
+            },
+            {
+              "name": "removeTeamFromGroup",
+              "lines": [
+                11646
+              ]
+            },
+            {
+              "name": "removeTeamLabelFromGroup",
+              "lines": [
+                11798
+              ]
+            },
+            {
+              "name": "handleTeamSearchChange",
+              "lines": [
+                11650
+              ]
+            },
+            {
+              "name": "handleTeamSearchFocus",
+              "lines": [
+                11651
+              ]
+            },
+            {
+              "name": "handleTeamSearchBlur",
+              "lines": [
+                11652
+              ]
+            },
+            {
+              "name": "handleTeamSearchKeyDown",
+              "lines": [
+                11653
+              ]
+            },
+            {
+              "name": "removeGroupDraft",
+              "lines": [
+                11704
+              ]
+            },
+            {
+              "name": "toggleDefaultGroupDraft",
+              "lines": [
+                11640
+              ]
+            },
+            {
+              "name": "applySavedGroupsConfig",
+              "lines": [
+                2622,
+                3028,
+                3053,
+                7034
+              ]
+            },
+            {
+              "name": "filteredComponentSearchResults",
+              "lines": [
+                3140,
+                11665
+              ]
+            },
+            {
+              "name": "filteredExcludedEpicSearchResults",
+              "lines": [
+                3141,
+                11678
+              ]
+            },
+            {
+              "name": "filteredAdHocEpicSearchResults",
+              "lines": [
+                3139,
+                11691
+              ]
+            },
+            {
+              "name": "handleComponentSearchKeyDown",
+              "lines": [
+                11667
+              ]
+            },
+            {
+              "name": "addGroupMissingInfoComponent",
+              "lines": [
+                11668
+              ]
+            },
+            {
+              "name": "removeGroupMissingInfoComponent",
+              "lines": [
+                11669
+              ]
+            },
+            {
+              "name": "addGroupExcludedCapacityEpic",
+              "lines": [
+                11680
+              ]
+            },
+            {
+              "name": "removeGroupExcludedCapacityEpic",
+              "lines": [
+                11681
+              ]
+            },
+            {
+              "name": "addGroupAdHocCapacityEpic",
+              "lines": [
+                11693
+              ]
+            },
+            {
+              "name": "removeGroupAdHocCapacityEpic",
+              "lines": [
+                11694
+              ]
+            },
+            {
+              "name": "handleExcludedEpicSearchKeyDown",
+              "lines": [
+                11674
+              ]
+            },
+            {
+              "name": "handleAdHocEpicSearchKeyDown",
+              "lines": [
+                11687
+              ]
+            },
+            {
+              "name": "handleExcludedEpicSearchChange",
+              "lines": [
+                11671
+              ]
+            },
+            {
+              "name": "handleExcludedEpicSearchFocus",
+              "lines": [
+                11672
+              ]
+            },
+            {
+              "name": "handleExcludedEpicSearchBlur",
+              "lines": [
+                11673
+              ]
+            },
+            {
+              "name": "handleAdHocEpicSearchChange",
+              "lines": [
+                11684
+              ]
+            },
+            {
+              "name": "handleAdHocEpicSearchFocus",
+              "lines": [
+                11685
+              ]
+            },
+            {
+              "name": "handleAdHocEpicSearchBlur",
+              "lines": [
+                11686
+              ]
+            },
+            {
+              "name": "exportGroupsConfig",
+              "lines": [
+                11700
+              ]
+            },
+            {
+              "name": "importGroupsConfig",
+              "lines": [
+                11703
+              ]
+            },
+            {
+              "name": "availableTeams",
+              "lines": [
+                11648
+              ]
+            },
+            {
+              "name": "teamNameLookup",
+              "lines": [
+                3376,
+                4915,
+                4918
+              ]
+            },
+            {
+              "name": "resolveTeamName",
+              "lines": [
+                3375,
+                7956,
+                7960,
+                11645,
+                11777
+              ]
+            },
+            {
+              "name": "activeGroupDraft",
+              "lines": [
+                3267,
+                9472,
+                9609,
+                9619,
+                9621,
+                11624,
+                11712,
+                11742,
+                11769,
+                11771,
+                11775,
+                11776,
+                11778,
+                11781,
+                11798,
+                11839,
+                11848,
+                11861,
+                11896
+              ]
+            },
+            {
+              "name": "filteredGroupDrafts",
+              "lines": [
+                11623,
+                11741,
+                11895
+              ]
+            },
+            {
+              "name": "teamCacheLabel",
+              "lines": [
+                11638
+              ]
+            },
+            {
+              "name": "teamCatalogCanRefresh",
+              "lines": [
+                11637
+              ]
+            },
+            {
+              "name": "activeTeamQuery",
+              "lines": [
+                11649
+              ]
+            },
+            {
+              "name": "activeTeamResultsLimited",
+              "lines": [
+                3269,
+                11654
+              ]
+            },
+            {
+              "name": "activeTeamAvailabilityKey",
+              "lines": [
+                3268
+              ]
+            },
+            {
+              "name": "activeTeamIndex",
+              "lines": [
+                11657
+              ]
+            },
+            {
+              "name": "getLabelSearchResults",
+              "lines": [
+                11781
+              ]
+            },
+            {
+              "name": "closeTeamLabelSearch",
+              "lines": [
+                11845
+              ]
+            },
+            {
+              "name": "selectTeamLabel",
+              "lines": [
+                11861
+              ]
+            },
+            {
+              "name": "handleLabelSearchKeyDown",
+              "lines": [
+                11848
+              ]
+            },
+            {
+              "name": "scheduleJiraLabelSearch",
+              "lines": [
+                11839
+              ]
+            }
+          ],
+          "getters": [
+            {
+              "caller": "frontend/src/dashboard.jsx",
+              "name": "getTeamOptions",
+              "line": 1285,
+              "capturedBindings": [
+                "teamOptions"
+              ],
+              "phase": "effect",
+              "evidence": "useTeamGroupSettings reads the getter only inside loadTeamsFromCurrentView; its only caller is the modal-open effect, which runs after commit and never during render, a memo or a dependency array. teamOptions is declared later in App (it needs the Team catalog lifecycle outputs), so a direct input would be a TDZ at the call site; the getter keeps per-render capture and is read at most when that effect fires."
+            }
+          ]
         }
       ]
     }
@@ -10291,63 +11788,268 @@
       "ceiling": 5614
     },
     "settings": {
-      "measured": 12481,
-      "ceiling": 12484
+      "measured": 13961,
+      "ceiling": 13961
     },
     "uniqueOwners": {
-      "measured": 18095,
-      "ceiling": 18098
+      "measured": 19575,
+      "ceiling": 19575
     },
     "appPlusOwners": {
-      "measured": 31109,
-      "ceiling": 31141
+      "measured": 31571,
+      "ceiling": 31571
     }
   },
   "transfer": {
-    "scaffoldingAllowance": 171,
+    "scaffoldingAllowance": 462,
     "netPhysicalLOC": {
-      "priorAppPlusOwners": 30970,
-      "nextAppPlusOwners": 31141,
-      "transferredSourceLines": 96,
-      "componentScaffoldingLines": 93,
-      "netAppScaffoldingLines": 78
+      "priorAppPlusOwners": 31109,
+      "nextAppPlusOwners": 31571,
+      "transferredSourceLines": 1156,
+      "componentScaffoldingLines": 324,
+      "netAppScaffoldingLines": 138
     },
-    "getters": [],
-    "rationale": "ST2 R4b checkpoint (frozen from the current-base scratch dry run before the move; reported with this commit under the operator's 2026-10-06 instruction to finish Settings with self-verification). App-to-container transfer of the EPM tab JSX and the renderEpmProjectSkeletonRows helper into a stateless component, frontend/src/epm/EpmSettingsTab.jsx, that returns the same single <EpmSettings /> element, so the DOM is unchanged; the conditional wrapper stays in App. All 80 props are explicit name={name} attributes, because the interface checker skips any JSX element with a spread attribute; they are evaluated during App's render after their declarations, so there is no getter. The combined App-plus-owner total grows only by the 171-line scaffolding allowance (93 container scaffolding + 81 call-site lines - 3 orphaned import lines). The dashboard.jsx lineCeiling was 13884 through ST2 R4 and ST2 R5 ratchets it to its measured 13,043. The combined ceiling is measured-plus-allowance.",
+    "getters": [
+      {
+        "caller": "frontend/src/dashboard.jsx",
+        "name": "getTeamOptions",
+        "capturedBindings": [
+          "teamOptions"
+        ],
+        "phase": "effect",
+        "evidence": "useTeamGroupSettings reads the getter only inside loadTeamsFromCurrentView; its only caller is the modal-open effect, which runs after commit and never during render, a memo or a dependency array. teamOptions is declared later in App (it needs the Team catalog lifecycle outputs), so a direct input would be a TDZ at the call site; the getter keeps per-render capture and is read at most when that effect fires."
+      }
+    ],
+    "rationale": "ST3 R4a checkpoint, variant S (frozen from the current-base scratch dry run before the move; reported with this commit under the operator's 2026-10-06 instruction to finish Settings with self-verification). App-to-hook transfer of the Team Groups, Labels and board-layout cluster (1,212 range lines, 1,156 non-blank, in 23 ranges) into settings/useTeamGroupSettings.js: ONE hook (state and behavior, 16 inputs, 24 expanded, 158 returns) called right after the useDashboardAnalytics destructure and before useEpmSettings (which now takes labelSearch* from this hook's returns), plus three effects layers called at their original effect positions: the selection effect (after the modal-open effect, so the activeGroupDraftId initialization order is preserved), the search effects and the label effects, so every moved effect crosses zero unmoved effects. The plan's state layer plus behavior layer was also built and measured (87-input behavior layer; 181 lines and 83 interface names larger); one hook works because nothing outside the moved ranges reads the group state before the hook's slot. groupSaving and groupDraftError/setGroupDraftError stay in App because useJiraProjectSettings and useTeamCatalogLifecycle consume them before that slot, and testGroupsConfigConnection stays because it is a Basic-mode Jira connection test, not Team Groups. The one getter, getTeamOptions, is described in the ledger. The combined App-plus-owner total grows only by the 462-line scaffolding allowance. The dashboard.jsx lineCeiling stays 13043 until the slice's R5. The combined ceiling is measured-plus-allowance.",
     "scaffoldingBreakdown": {
-      "incomingPhysicalLines": 96,
-      "component": {
-        "imports": 6,
-        "importBlankSeparator": 1,
-        "signatureAndDestructure": 82,
-        "returnAndClosings": 4,
-        "total": 93,
-        "note": "derived: 189 - 96 moved lines"
+      "incomingPhysicalLines": 1212,
+      "hook": {
+        "imports": 29,
+        "importBlank": 2,
+        "signaturesAndInputs": 56,
+        "returnBlocks": 160,
+        "closings": 4,
+        "blankSeparators": 17,
+        "carriedBlank": 56,
+        "movedNonBlank": 1156
       },
       "app": {
-        "callSite": 81,
-        "orphanedImportLines": -3
+        "hookCallAndDestructure": 177,
+        "layerCalls": 38,
+        "importLinesAdded": 9,
+        "importLinesRemoved": 21,
+        "orphanedImportNet": -12,
+        "adjoiningBlankSeparatorsDropped": 9
       },
-      "note": "EpmSettingsTab.jsx 189 lines. dashboard.jsx 13061 -> 13043 = -9 skeleton helper lines -87 moved JSX lines +81 call-site lines (open tag, 80 attributes, self-close) -3 orphaned import lines (LoadingRows, isEmptyCustomEpmProjectRow, normalizeEpmLabelPrefixMask); the EpmSettings import is swapped for the EpmSettingsTab import. Combined +171 (= container 189 - App 18)."
+      "note": "useTeamGroupSettings.js 1480 = 1156 moved non-blank + 324 other (scaffolding as categorised in hook plus 56 blank lines carried inside moved code). dashboard.jsx 13014 -> 11996 = -1018 = -1156 moved non-blank + 138 net App lines (call and destructure, layer calls, imports, orphaned imports, dropped blank lines). Combined +462."
     },
     "incomingRanges": [
       {
-        "id": "epm-project-skeleton-rows-helper",
+        "id": "group-config-state-and-read-fences",
         "fromFile": "frontend/src/dashboard.jsx",
-        "toFile": "frontend/src/epm/EpmSettingsTab.jsx",
-        "fromLine": 1462,
-        "toLine": 1470,
-        "removedPhysicalLines": 9,
-        "addedPhysicalLines": 9
+        "toFile": "frontend/src/settings/useTeamGroupSettings.js",
+        "fromLine": 569,
+        "toLine": 581,
+        "removedPhysicalLines": 13,
+        "addedPhysicalLines": 13
       },
       {
-        "id": "epm-settings-tab-jsx",
+        "id": "group-draft-state",
         "fromFile": "frontend/src/dashboard.jsx",
-        "toFile": "frontend/src/epm/EpmSettingsTab.jsx",
-        "fromLine": 12547,
-        "toLine": 12633,
-        "removedPhysicalLines": 87,
-        "addedPhysicalLines": 87
+        "toFile": "frontend/src/settings/useTeamGroupSettings.js",
+        "fromLine": 590,
+        "toLine": 590,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 1
+      },
+      {
+        "id": "groups-config-conflict-state",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useTeamGroupSettings.js",
+        "fromLine": 604,
+        "toLine": 605,
+        "removedPhysicalLines": 2,
+        "addedPhysicalLines": 2
+      },
+      {
+        "id": "group-import-advanced-state",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useTeamGroupSettings.js",
+        "fromLine": 616,
+        "toLine": 618,
+        "removedPhysicalLines": 3,
+        "addedPhysicalLines": 3
+      },
+      {
+        "id": "team-search-label-search-draft-selection-state",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useTeamGroupSettings.js",
+        "fromLine": 622,
+        "toLine": 641,
+        "removedPhysicalLines": 20,
+        "addedPhysicalLines": 20
+      },
+      {
+        "id": "group-draft-baseline-ref",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useTeamGroupSettings.js",
+        "fromLine": 644,
+        "toLine": 644,
+        "removedPhysicalLines": 1,
+        "addedPhysicalLines": 1
+      },
+      {
+        "id": "component-excluded-epic-adhoc-search-state",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useTeamGroupSettings.js",
+        "fromLine": 785,
+        "toLine": 803,
+        "removedPhysicalLines": 19,
+        "addedPhysicalLines": 19
+      },
+      {
+        "id": "preference-snapshot-apply-and-personal-flag",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useTeamGroupSettings.js",
+        "fromLine": 1314,
+        "toLine": 1325,
+        "removedPhysicalLines": 12,
+        "addedPhysicalLines": 12
+      },
+      {
+        "id": "useGroupVisibilityPreferences-call",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useTeamGroupSettings.js",
+        "fromLine": 1327,
+        "toLine": 1360,
+        "removedPhysicalLines": 34,
+        "addedPhysicalLines": 34
+      },
+      {
+        "id": "loadGroupsConfig-handleGroupDraftChange-loadTeamsFromCurrentView",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useTeamGroupSettings.js",
+        "fromLine": 1967,
+        "toLine": 2029,
+        "removedPhysicalLines": 63,
+        "addedPhysicalLines": 61
+      },
+      {
+        "id": "draft-signature-and-board-dirty",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useTeamGroupSettings.js",
+        "fromLine": 2067,
+        "toLine": 2082,
+        "removedPhysicalLines": 16,
+        "addedPhysicalLines": 15
+      },
+      {
+        "id": "draft-mutators-group-rows",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useTeamGroupSettings.js",
+        "fromLine": 2412,
+        "toLine": 2506,
+        "removedPhysicalLines": 95,
+        "addedPhysicalLines": 90
+      },
+      {
+        "id": "team-search-and-draft-mutators",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useTeamGroupSettings.js",
+        "fromLine": 2523,
+        "toLine": 2743,
+        "removedPhysicalLines": 221,
+        "addedPhysicalLines": 209
+      },
+      {
+        "id": "applySavedGroupsConfig",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useTeamGroupSettings.js",
+        "fromLine": 2765,
+        "toLine": 2778,
+        "removedPhysicalLines": 14,
+        "addedPhysicalLines": 14
+      },
+      {
+        "id": "filtered-search-result-memos",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useTeamGroupSettings.js",
+        "fromLine": 3596,
+        "toLine": 3624,
+        "removedPhysicalLines": 29,
+        "addedPhysicalLines": 27
+      },
+      {
+        "id": "search-key-handlers-and-epic-helpers",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useTeamGroupSettings.js",
+        "fromLine": 3641,
+        "toLine": 3868,
+        "removedPhysicalLines": 228,
+        "addedPhysicalLines": 212
+      },
+      {
+        "id": "export-import-team-directory-active-draft",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useTeamGroupSettings.js",
+        "fromLine": 3893,
+        "toLine": 4011,
+        "removedPhysicalLines": 119,
+        "addedPhysicalLines": 115
+      },
+      {
+        "id": "filtered-drafts-and-team-results",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useTeamGroupSettings.js",
+        "fromLine": 4080,
+        "toLine": 4118,
+        "removedPhysicalLines": 39,
+        "addedPhysicalLines": 36
+      },
+      {
+        "id": "label-search-helpers",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useTeamGroupSettings.js",
+        "fromLine": 4139,
+        "toLine": 4270,
+        "removedPhysicalLines": 132,
+        "addedPhysicalLines": 132
+      },
+      {
+        "id": "useTeamGroupSelectionEffect",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useTeamGroupSettings.js",
+        "fromLine": 1838,
+        "toLine": 1852,
+        "removedPhysicalLines": 15,
+        "addedPhysicalLines": 15
+      },
+      {
+        "id": "useTeamGroupSearchEffects",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useTeamGroupSettings.js",
+        "fromLine": 3492,
+        "toLine": 3594,
+        "removedPhysicalLines": 103,
+        "addedPhysicalLines": 95
+      },
+      {
+        "id": "useTeamGroupSearchEffects-2",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useTeamGroupSettings.js",
+        "fromLine": 3626,
+        "toLine": 3639,
+        "removedPhysicalLines": 14,
+        "addedPhysicalLines": 12
+      },
+      {
+        "id": "useTeamGroupLabelEffects",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useTeamGroupSettings.js",
+        "fromLine": 4272,
+        "toLine": 4290,
+        "removedPhysicalLines": 19,
+        "addedPhysicalLines": 18
       }
     ]
   }

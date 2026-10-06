@@ -27,6 +27,7 @@ const engViewPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'EngVie
 const dashboardSource = fs.readFileSync(dashboardPath, 'utf8');
 const epmSettingsHookSource = readOwnerSource(['frontend/src/settings/useEpmSettings.js'], { anchor: 'export function useEpmSettings(' });
 const epmSettingsTabSource = readOwnerSource(['frontend/src/epm/EpmSettingsTab.jsx'], { anchor: 'export default function EpmSettingsTab(' });
+const teamGroupHookSource = readOwnerSource(['frontend/src/settings/useTeamGroupSettings.js'], { anchor: 'export function useTeamGroupSettings(' });
 const dashboardCssSource = readDashboardCssSource(path.join(__dirname, '..'));
 const epmSettingsSource = fs.existsSync(epmSettingsPath) ? fs.readFileSync(epmSettingsPath, 'utf8') : '';
 const settingsModalSource = fs.existsSync(settingsModalPath) ? fs.readFileSync(settingsModalPath, 'utf8') : '';
@@ -192,8 +193,8 @@ test('settings modal shell and tab bodies are extracted while dashboard keeps se
     assert.ok(!teamGroupsSettingsSource.includes('useState('), 'TeamGroupsSettings must not own settings state');
     assert.ok(!jiraFieldSettingsSource.includes('useState('), 'JiraFieldSettings must not own settings state');
     assert.ok(!groupBoardsTabSource.includes('useState('), 'GroupBoardsTab must not own settings state');
-    assert.ok(dashboardSource.includes("const [teamSearchQuery, setTeamSearchQuery] = useState({});"), 'Expected dashboard to keep team search state ownership');
-    assert.ok(dashboardSource.includes('const handleTeamSearchChange = (groupId, value) => {'), 'Expected dashboard to keep team search handler ownership');
+    assert.ok(teamGroupHookSource.includes("const [teamSearchQuery, setTeamSearchQuery] = useState({});"), 'Expected dashboard to keep team search state ownership');
+    assert.ok(teamGroupHookSource.includes('const handleTeamSearchChange = (groupId, value) => {'), 'Expected dashboard to keep team search handler ownership');
     const jiraProjectSettingsSource = readOwnerSource(['frontend/src/settings/useJiraProjectSettings.js'], { anchor: 'export function useJiraProjectSettings(' });
     assert.ok(jiraProjectSettingsSource.includes("const [projectSearchQuery, setProjectSearchQuery] = useState('');"), 'Expected the Jira project hook to own project search state');
     assert.ok(jiraProjectSettingsSource.includes("const [boardSearchQuery, setBoardSearchQuery] = useState('');"), 'Expected the Jira project hook to own board search state');
@@ -406,6 +407,50 @@ test('dashboard calls the EPM settings layers at their original effect positions
     const saveEnd = epmSettingsHookSource.indexOf('const updateEpmLabelPrefixDraft = (value) => {', saveStart);
     assert.strictEqual(getterCalls, 1, 'Expected one getEpmViewActions call');
     assert.ok(epmSettingsHookSource.indexOf('getEpmViewActions(') > saveStart && epmSettingsHookSource.indexOf('getEpmViewActions(') < saveEnd, 'Expected the EPM view getter to be invoked only inside the save handler, never during render');
+});
+
+test('dashboard calls the Team Groups hook and its effects layers at their original positions', () => {
+    const positionOf = (source, needle, label = 'dashboard') => {
+        const index = source.indexOf(needle);
+        assert.notStrictEqual(index, -1, `Expected ${label} to contain ${needle}`);
+        return index;
+    };
+    const analyticsPosition = positionOf(dashboardSource, '} = useDashboardAnalytics(React,');
+    const teamHookPosition = positionOf(dashboardSource, '} = useTeamGroupSettings({');
+    const epmHookPosition = positionOf(dashboardSource, '} = useEpmSettings({');
+    const firstRunReaderPosition = positionOf(dashboardSource, 'const openFirstRunSetupChoice = ');
+    const modalOpenEffectStart = positionOf(dashboardSource, 'const nextGroupDraft = pendingDraft ? {');
+    const modalOpenEffectEnd = positionOf(dashboardSource, 'setTeamNameInputs(loadTeamsFromCurrentView());\n            }, [showGroupManage]);');
+    const epmLoadEffectPosition = positionOf(dashboardSource, 'useEpmSettingsLoadEffect({');
+    const selectionLayerPosition = positionOf(dashboardSource, 'useTeamGroupSelectionEffect({');
+    const perfEffectPosition = positionOf(dashboardSource, 'if (!perfEnabled) return;');
+    const jiraSearchEffectsPosition = positionOf(dashboardSource, 'useJiraProjectSearchEffects({');
+    const searchLayerPosition = positionOf(dashboardSource, 'useTeamGroupSearchEffects({');
+    const jiraCatalogEffectsPosition = positionOf(dashboardSource, 'useJiraProjectCatalogEffects({');
+    const settingsTabEffectEnd = positionOf(dashboardSource, '}, [groupManageTab]);');
+    const labelLayerPosition = positionOf(dashboardSource, 'useTeamGroupLabelEffects({');
+    const registerSprintFetchPosition = positionOf(dashboardSource, 'const registerSprintFetch = ');
+    assert.ok(analyticsPosition < teamHookPosition && teamHookPosition < epmHookPosition && epmHookPosition < firstRunReaderPosition, 'Expected the Team Groups hook after the useDashboardAnalytics destructure (its last input) and before useEpmSettings, which reads its label-search state, and before the first reader');
+    assert.ok(modalOpenEffectStart < modalOpenEffectEnd && modalOpenEffectEnd < epmLoadEffectPosition && epmLoadEffectPosition < selectionLayerPosition && selectionLayerPosition < perfEffectPosition, 'Expected the selection normalization layer after the modal-open effect (both write activeGroupDraftId) and the EPM load effect, before the performance effects');
+    assert.ok(jiraSearchEffectsPosition < searchLayerPosition && searchLayerPosition < jiraCatalogEffectsPosition, 'Expected the search effects layer between the Jira project search effects and the catalog effects layers');
+    assert.ok(settingsTabEffectEnd < labelLayerPosition && labelLayerPosition < registerSprintFetchPosition, 'Expected the label effects layer after the settings-tab effects and before the Sprint fetch registration');
+    const mainStart = teamGroupHookSource.indexOf('export function useTeamGroupSettings(');
+    const mainEnd = teamGroupHookSource.indexOf('export function useTeamGroupSelectionEffect(');
+    const mainSource = teamGroupHookSource.slice(mainStart, mainEnd);
+    assert.ok(mainStart >= 0 && mainEnd > mainStart);
+    assert.ok(!/(?:React\.)?useEffect\(/.test(mainSource), 'The main Team Groups hook must register no effect of its own; effects live in the three layers at their original positions');
+    assert.ok(!mainSource.includes('setActiveGroupDraftId(groups[0].id)'), 'The normalization effect must never sit in the early hook');
+    assert.ok(teamGroupHookSource.indexOf('export function useTeamGroupSelectionEffect(') > 0 && teamGroupHookSource.includes("}, [showGroupManage, groupDraft, activeGroupDraftId, firstRunConfigurationActive, firstRunConfigurationTargetGroupId]);"), 'Expected the selection layer to keep its dependency array');
+    assert.ok(!dashboardSource.includes('} = useGroupVisibilityPreferences({'), 'Expected the Team Groups hook to call the group-visibility hook internally');
+    assert.ok(positionOf(teamGroupHookSource, 'const applyPreferenceGroupsSnapshot', 'hook') < positionOf(teamGroupHookSource, '} = useGroupVisibilityPreferences({', 'hook'), 'Expected applyPreferenceGroupsSnapshot before the group-visibility call that consumes it');
+    const getterReads = teamGroupHookSource.split('getTeamOptions(').length - 1;
+    const loaderStart = teamGroupHookSource.indexOf('const loadTeamsFromCurrentView = () => {');
+    const loaderEnd = teamGroupHookSource.indexOf('};', loaderStart);
+    assert.strictEqual(getterReads, 1, 'Expected exactly one Team options getter read');
+    assert.ok(teamGroupHookSource.indexOf('getTeamOptions(') > loaderStart && teamGroupHookSource.indexOf('getTeamOptions(') < loaderEnd, 'Expected the getter to be read only inside loadTeamsFromCurrentView');
+    assert.strictEqual(dashboardSource.split('loadTeamsFromCurrentView(').length - 1, 1, 'Expected one loadTeamsFromCurrentView caller');
+    assert.ok(dashboardSource.indexOf('loadTeamsFromCurrentView()') > modalOpenEffectStart && dashboardSource.indexOf('loadTeamsFromCurrentView()') < modalOpenEffectEnd + 'setTeamNameInputs(loadTeamsFromCurrentView());\n            }, [showGroupManage]);'.length, 'Expected that caller to be the modal-open effect, an effect and never render');
+    assert.strictEqual(dashboardSource.split('getTeamOptions: () => teamOptions').length - 1, 1, 'Expected the late Team options binding to be passed once, as a getter');
 });
 
 test('EPM settings source uses shared basic UI primitives for representative rows and states', () => {
@@ -828,8 +873,8 @@ test('unified settings save gates admin writes while saving dirty config section
     assert.ok(unifiedSource.includes('skipAdminSections: firstRunSession?.committedAdminSections || {}'), 'Expected unified retry to skip committed admin subsections');
     assert.ok(unifiedSource.includes('await saveEpmConfig();'), 'Expected unified save to persist EPM settings before closing once');
     assert.ok(saveSource.includes('await persistGroupPreferences(normalized);'), 'Expected Department visibility preferences to save separately from shared catalog');
-    assert.ok(dashboardSource.includes("const personalGroupPreferencesEnabled = groupsConfig.source === 'workspace_db';"), 'Expected workspace DB mode to own personal preferences');
-    assert.ok(dashboardSource.includes('useBackendPreferences: personalGroupPreferencesEnabled'), 'Expected JSON/basic Department visibility to stay browser-local');
+    assert.ok(teamGroupHookSource.includes("const personalGroupPreferencesEnabled = groupsConfig.source === 'workspace_db';"), 'Expected workspace DB mode to own personal preferences');
+    assert.ok(teamGroupHookSource.includes('useBackendPreferences: personalGroupPreferencesEnabled'), 'Expected JSON/basic Department visibility to stay browser-local');
     assert.ok(groupVisibilityHookSource.includes('requestSaveGroupPreferences'), 'Expected Department visibility preference helper to own the preference POST');
     assert.ok(groupVisibilityHookSource.includes('if (!useBackendPreferences) {'), 'Expected preference helper to avoid DB-only endpoint outside workspace DB mode');
     assert.ok(groupVisibilityHookSource.includes('buildGroupPreferencesPayload'), 'Expected Department visibility preference helper to send only user visibility preferences');

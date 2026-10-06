@@ -264,10 +264,12 @@ test('personal group favorite analytics omit identity and retain existing event 
     assert.doesNotMatch(preferencesSource, /trackSettingsAction\([^\n]*star/);
     assert.doesNotMatch(firstRunPickerSource, /trackSettingsAction|trackEvent|fetch\(/);
     assert.doesNotMatch(firstRunChoiceSource, /trackSettingsAction|trackEvent|fetch\(/);
-    const handlersStart = dashboardSource.indexOf('const openFirstRunSetupChoice = React.useCallback');
-    const handlersEnd = dashboardSource.indexOf('useEffect(() => {', handlersStart);
+    const firstRunHookSource = read('frontend/src/settings/useFirstRunConfiguration.js');
+    const handlersStart = firstRunHookSource.indexOf('const openFirstRunSetupChoice = React.useCallback');
+    const handlersEnd = firstRunHookSource.indexOf('useEffect(() => {', handlersStart);
     assert.ok(handlersStart >= 0 && handlersEnd > handlersStart, 'Expected first-run setup handlers');
-    const firstRunSetupHandlers = dashboardSource.slice(handlersStart, handlersEnd);
+    assert.equal(dashboardSource.includes('const openFirstRunSetupChoice = React.useCallback'), false, 'the first-run setup handlers are owned by the first-run hook');
+    const firstRunSetupHandlers = firstRunHookSource.slice(handlersStart, handlersEnd);
     assert.match(firstRunSetupHandlers, /buildFirstRunGroupDraft\(/);
     assert.match(firstRunSetupHandlers, /mode: 'repair'/);
     assert.doesNotMatch(
@@ -496,14 +498,15 @@ test('tour target activation adds no onboarding event and retains safe field opt
 
 test('first-run guide recovery and focus ownership add no new analytics surface', () => {
     const guide = read('frontend/src/settings/FirstRunGroupConfigurationGuide.jsx');
-    const dashboard = read('frontend/src/dashboard.jsx');
-    const recoveryStart = dashboard.indexOf('const retryFirstRunConfiguration');
-    // The recovery callback ends where the next unmoved statement begins (filteredGroupDrafts moved into useTeamGroupSettings).
-    const recoveryEnd = dashboard.indexOf("if (groupManageTab === 'epm') {", recoveryStart);
-    assert.ok(recoveryStart >= 0 && recoveryEnd > recoveryStart, 'Expected both recovery slice markers in the dashboard');
+    const firstRunHook = read('frontend/src/settings/useFirstRunConfiguration.js');
+    const recoveryStart = firstRunHook.indexOf('const retryFirstRunConfiguration');
+    // The recovery callback ends at the first-run hook's return statement.
+    const recoveryEnd = firstRunHook.indexOf('    return {', recoveryStart);
+    assert.ok(recoveryStart >= 0 && recoveryEnd > recoveryStart, 'Expected both recovery slice markers in the first-run hook');
     assert.equal(guide.includes('trackSettingsAction'), false);
     assert.equal(guide.includes('trackEvent'), false);
-    assert.doesNotMatch(dashboard.slice(recoveryStart, recoveryEnd), /trackSettingsAction|trackEvent/);
+    assert.doesNotMatch(firstRunHook.slice(recoveryStart, recoveryEnd), /trackSettingsAction|trackEvent/);
+    assert.doesNotMatch(firstRunHook, /trackSettingsAction|trackEvent/, 'the first-run hook owns no analytics call');
 });
 
 test('Jira issue transition API module sends the eng_status_transitions surface for both endpoints', () => {

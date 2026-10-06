@@ -183,24 +183,17 @@ import {
     completeOnboardingModule as requestCompleteOnboardingModule,
     resetOnboardingModules as requestResetOnboardingModules,
 } from './api/configApi.js';
-import FirstRunGroupSelectionModal from './settings/FirstRunGroupSelectionModal.jsx';
-import FirstRunGroupSetupChoice from './settings/FirstRunGroupSetupChoice.jsx';
+import FirstRunConfigurationContainer from './settings/FirstRunConfigurationContainer.jsx';
 import UnconfiguredWorkspaceNotice from './settings/UnconfiguredWorkspaceNotice.jsx';
 import { firstMissingAdminSettingsTab, resolveAdminSettingsGate, useAdminSettingsGate } from './settings/adminSettingsGate.js';
 import {
-    createFirstRunConfigurationSession,
-    firstRunConfigurationSessionReducer,
-    FIRST_RUN_CONFIGURATION_GUIDE_STEPS,
     buildFirstRunSettingsSaveOutcome,
     mergeFirstRunAdminSections,
     validateFirstRunPendingGroup,
     verifyFirstRunGroupsSaveSnapshot,
 } from './settings/FirstRunGroupConfigurationGuide.jsx';
-import {
-    beginFirstRunGroupConfiguration,
-    buildFirstRunGroupDraft,
-    buildPendingFirstRunGroupPreferencesDraft,
-} from './settings/firstRunGroupConfiguration.js';
+import { buildPendingFirstRunGroupPreferencesDraft } from './settings/firstRunGroupConfiguration.js';
+import { useFirstRunConfiguration, useFirstRunConfigurationState } from './settings/useFirstRunConfiguration.js';
 import {
     normalizeGroupsConfig,
     normalizeTeamLabelAliases,
@@ -561,16 +554,17 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
             const [showGroupManage, setShowGroupManage] = useState(false);
             const [groupDraftError, setGroupDraftError] = useState('');
             const [settingsSaveError, setSettingsSaveError] = useState('');
-            const [firstRunSetupChoice, setFirstRunSetupChoice] = useState(null);
-            const [firstRunConfigurationTargetGroupId, setFirstRunConfigurationTargetGroupId] = useState(null);
-            const [firstRunConfigurationSession, dispatchFirstRunConfigurationSession] = React.useReducer(
-                firstRunConfigurationSessionReducer,
-                undefined,
-                createFirstRunConfigurationSession
-            );
-            const firstRunConfigurationActive = !['idle', 'complete'].includes(firstRunConfigurationSession.status);
-            const pendingFirstRunConfigurationRef = useRef(null);
-            const pendingFirstRunGroupPreferencesRef = useRef(null);
+            const {
+                dispatchFirstRunConfigurationSession,
+                firstRunConfigurationActive,
+                firstRunConfigurationSession,
+                firstRunConfigurationTargetGroupId,
+                firstRunSetupChoice,
+                pendingFirstRunConfigurationRef,
+                pendingFirstRunGroupPreferencesRef,
+                setFirstRunConfigurationTargetGroupId,
+                setFirstRunSetupChoice,
+            } = useFirstRunConfigurationState();
             const settingsSaveInFlightRef = useRef(false);
             const [workspaceConfigConflict, setWorkspaceConfigConflict] = useState(null);
             const [sharedConfigRevision, setSharedConfigRevision] = useState(0);
@@ -1415,87 +1409,69 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 trackSortChanged,
             });
             const onboardingAvailable = isOnboardingAvailable(authMode, groupsConfig.source);
-            const openFirstRunSetupChoice = React.useCallback(() => {
-                setFirstRunSetupChoice(beginFirstRunGroupConfiguration({ mode: 'create' }));
-            }, []);
-            const openFirstRunConfigurationSettings = React.useCallback(() => {
-                setGroupManageTab('teams');
-                setDepartmentSettingsTab('teams');
-                setShowGroupListMobile(true);
-                setShowGroupManage(true);
-            }, []);
-            const closeFirstRunSetupChoice = React.useCallback(() => {
-                setFirstRunSetupChoice(null);
-            }, []);
-            const captureFirstRunSettingsDrafts = React.useCallback(() => ({
-                shared: groupsConfig,
-                private: groupPreferences,
+            const {
+                advanceFirstRunConfigurationGuide,
+                backFirstRunConfigurationGuide,
+                cancelFirstRunConfiguration,
+                closeFirstRunSetupChoice,
+                configureFirstRunGroup,
+                continueFirstRunSetupChoice,
+                firstRunConfigurationGuideVisible,
+                firstRunHasCommittedSection,
+                openFirstRunSetupChoice,
+                retryFirstRunConfiguration,
+            } = useFirstRunConfiguration({
+                activeGroupDraft,
                 activeGroupId,
-                admin: {
-                    projects: selectedProjectsDraft,
-                    priorityWeights: priorityWeightsDraft,
-                    board: { boardId: boardIdDraft, boardName: boardNameDraft },
-                    capacity: { project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft },
-                    sprintField: { fieldId: sprintFieldIdDraft, fieldName: sprintFieldNameDraft },
-                    parentNameField: { fieldId: parentNameFieldIdDraft, fieldName: parentNameFieldNameDraft },
-                    storyPointsField: { fieldId: storyPointsFieldIdDraft, fieldName: storyPointsFieldNameDraft },
-                    teamField: { fieldId: teamFieldIdDraft, fieldName: teamFieldNameDraft },
-                    deliveryOwnerField: { fieldId: deliveryOwnerFieldIdDraft, fieldName: deliveryOwnerFieldNameDraft },
-                    issueTypes: issueTypesDraft,
-                    adminAccess: adminAccess.selectedUserIds,
-                },
-                epm: epmConfigDraft,
-            }), [
-                activeGroupId, adminAccess.selectedUserIds, boardIdDraft, boardNameDraft, capacityFieldIdDraft,
-                capacityFieldNameDraft, capacityProjectDraft, deliveryOwnerFieldIdDraft, deliveryOwnerFieldNameDraft,
-                epmConfigDraft, groupPreferences, groupsConfig, issueTypesDraft, parentNameFieldIdDraft,
-                parentNameFieldNameDraft, priorityWeightsDraft, selectedProjectsDraft, sprintFieldIdDraft,
-                sprintFieldNameDraft, storyPointsFieldIdDraft, storyPointsFieldNameDraft, teamFieldIdDraft, teamFieldNameDraft,
-            ]);
-            const configureFirstRunGroup = React.useCallback((sourceGroupId) => {
-                pendingFirstRunConfigurationRef.current = beginFirstRunGroupConfiguration({
-                    mode: 'repair',
-                    sourceGroupId,
-                });
-                setFirstRunConfigurationTargetGroupId(sourceGroupId);
-                setFirstRunSetupChoice(null);
-                dispatchFirstRunConfigurationSession({
-                    type: 'start',
-                    mode: 'repair',
-                    pendingGroupId: sourceGroupId,
-                    drafts: captureFirstRunSettingsDrafts(),
-                });
-                openFirstRunConfigurationSettings();
-            }, [captureFirstRunSettingsDrafts, openFirstRunConfigurationSettings]);
-            const continueFirstRunSetupChoice = React.useCallback(() => {
-                if (!firstRunSetupChoice) return;
-                const sourceGroup = (groupsConfig.groups || []).find(group => group.id === firstRunSetupChoice.sourceGroupId) || null;
-                const draft = buildFirstRunGroupDraft({
-                    ...firstRunSetupChoice,
-                    sourceGroup,
-                    existingGroups: groupsConfig.groups || [],
-                });
-                if (!draft) return;
-                pendingFirstRunConfigurationRef.current = {
-                    ...firstRunSetupChoice,
-                    draft,
-                };
-                setFirstRunConfigurationTargetGroupId(draft.id);
-                setFirstRunSetupChoice(null);
-                dispatchFirstRunConfigurationSession({
-                    type: 'start',
-                    mode: firstRunSetupChoice.mode,
-                    pendingGroupId: draft.id,
-                    drafts: captureFirstRunSettingsDrafts(),
-                });
-                openFirstRunConfigurationSettings();
-            }, [captureFirstRunSettingsDrafts, firstRunSetupChoice, groupsConfig.groups, openFirstRunConfigurationSettings]);
-            useEffect(() => {
-                if (!showGroupManage && firstRunConfigurationActive) {
-                    pendingFirstRunGroupPreferencesRef.current = null;
-                    setFirstRunConfigurationTargetGroupId(null);
-                }
-            }, [showGroupManage, firstRunConfigurationActive]);
+                adminAccess,
+                boardIdDraft,
+                boardNameDraft,
+                capacityFieldIdDraft,
+                capacityFieldNameDraft,
+                capacityProjectDraft,
+                deliveryOwnerFieldIdDraft,
+                deliveryOwnerFieldNameDraft,
+                dispatchFirstRunConfigurationSession,
+                epmConfigDraft,
+                firstRunConfigurationActive,
+                firstRunConfigurationSession,
+                firstRunSetupChoice,
+                getCloseGroupManage: () => closeGroupManage,
+                getSaveAllSettings: () => saveAllSettings,
+                groupDraftBaselineRef,
+                groupPreferences,
+                groupsConfig,
+                groupsConfigConflict,
+                issueTypesDraft,
+                parentNameFieldIdDraft,
+                parentNameFieldNameDraft,
+                pendingFirstRunConfigurationRef,
+                pendingFirstRunGroupPreferencesRef,
+                priorityWeightsDraft,
+                saveFirstRunGroupPreferences,
+                selectedProjectsDraft,
+                setActiveGroupId,
+                setDepartmentSettingsTab,
+                setFirstRunConfigurationTargetGroupId,
+                setFirstRunSetupChoice,
+                setGroupDraft,
+                setGroupManageTab,
+                setGroupPreferences,
+                setGroupsConfig,
+                setSharedConfigRevision,
+                setShowGroupListMobile,
+                setShowGroupManage,
+                setWorkspaceConfigConflict,
+                sharedConfigRevisionRef,
+                showGroupManage,
+                sprintFieldIdDraft,
+                sprintFieldNameDraft,
+                storyPointsFieldIdDraft,
+                storyPointsFieldNameDraft,
+                teamFieldIdDraft,
+                teamFieldNameDraft,
+                workspaceConfigConflict,
+            });
             useEffect(() => {
                 if (!homeTokenConnectionLoaded) return;
                 if (showEpmNavigation) {
@@ -3171,73 +3147,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 setCapacityFieldSearchIndex,
                 setCapacityProjectSearchIndex,
             });
-
-            const advanceFirstRunConfigurationGuide = React.useCallback(() => {
-                const index = FIRST_RUN_CONFIGURATION_GUIDE_STEPS.indexOf(firstRunConfigurationSession.guideStep);
-                if (index < 0) return;
-                if (index === FIRST_RUN_CONFIGURATION_GUIDE_STEPS.length - 1) {
-                    dispatchFirstRunConfigurationSession({ type: 'complete_guide' });
-                    return;
-                }
-                dispatchFirstRunConfigurationSession({
-                    type: 'set_guide_step',
-                    step: FIRST_RUN_CONFIGURATION_GUIDE_STEPS[index + 1],
-                });
-                if (firstRunConfigurationSession.guideStep === 'name') setShowGroupListMobile(false);
-            }, [firstRunConfigurationSession.guideStep]);
-
-            const backFirstRunConfigurationGuide = React.useCallback(() => {
-                const index = FIRST_RUN_CONFIGURATION_GUIDE_STEPS.indexOf(firstRunConfigurationSession.guideStep);
-                if (index <= 0) return;
-                const previousStep = FIRST_RUN_CONFIGURATION_GUIDE_STEPS[index - 1];
-                dispatchFirstRunConfigurationSession({
-                    type: 'set_guide_step',
-                    step: previousStep,
-                });
-                if (previousStep === 'name') setShowGroupListMobile(true);
-            }, [firstRunConfigurationSession.guideStep]);
-
-            const cancelFirstRunConfiguration = React.useCallback(() => {
-                if (Object.values(firstRunConfigurationSession.committedSections || {}).some(Boolean)) return;
-                const captured = firstRunConfigurationSession.capturedDrafts;
-                if (captured?.shared) {
-                    setGroupsConfig(captured.shared);
-                    setGroupDraft(captured.shared);
-                    groupDraftBaselineRef.current = JSON.stringify(buildSharedGroupsPayload(captured.shared));
-                }
-                if (captured?.private) setGroupPreferences(captured.private);
-                setActiveGroupId(captured?.activeGroupId || null);
-                dispatchFirstRunConfigurationSession({ type: 'cancel' });
-                closeGroupManage();
-            }, [firstRunConfigurationSession]);
-
-            const retryFirstRunConfiguration = React.useCallback(async () => {
-                if (firstRunConfigurationSession.status === 'preference_pending') {
-                    const preferenceResult = await saveFirstRunGroupPreferences({
-                        groupsSnapshot: firstRunConfigurationSession.latestNormalizedGroups,
-                        selectedGroupId: firstRunConfigurationSession.pendingGroupId,
-                    });
-                    if (preferenceResult?.authRequired || preferenceResult?.inFlight) return;
-                    if (!preferenceResult?.ok) {
-                        dispatchFirstRunConfigurationSession({
-                            type: 'preference_save_failed', error: 'Your favorite Department could not be saved.',
-                        });
-                        return;
-                    }
-                    dispatchFirstRunConfigurationSession({ type: 'preference_saved' });
-                    closeGroupManage();
-                    return;
-                }
-                if (workspaceConfigConflict?.currentRevision != null) {
-                    sharedConfigRevisionRef.current = Number(workspaceConfigConflict.currentRevision);
-                    setSharedConfigRevision(sharedConfigRevisionRef.current);
-                    setWorkspaceConfigConflict(null);
-                }
-                await saveAllSettings({
-                    rebaseOnto: groupsConfigConflict?.current || null,
-                    firstRunSession: firstRunConfigurationSession,
-                });
-            }, [firstRunConfigurationSession, groupsConfigConflict, workspaceConfigConflict, saveFirstRunGroupPreferences]);
 
             useEffect(() => {
                 if (!showGroupManage) return;
@@ -9465,12 +9374,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
             const settingsSaveLabel = groupSaving || epmConfigSaving
                 ? 'Saving...'
                 : (firstRunConfigurationActive && groupPreferences.onboardingDone === false ? 'Save and continue' : 'Save');
-            const firstRunConfigurationGuideVisible = firstRunConfigurationActive
-                && activeGroupDraft
-                && (!firstRunConfigurationSession.guideComplete
-                    || ['sections_pending', 'preference_pending'].includes(firstRunConfigurationSession.status));
-            const firstRunHasCommittedSection = firstRunConfigurationActive
-                && Object.values(firstRunConfigurationSession.committedSections || {}).some(Boolean);
             const settingsHeaderAction = onboardingAvailable
                 && groupPreferences.onboardingRequired === false
                 && !firstRunConfigurationActive ? (
@@ -11674,29 +11577,21 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                         </SettingsModal>
                     )}
                     {groupPreferences.onboardingRequired && !showGroupManage && (
-                        <>
-                            <FirstRunGroupSelectionModal
-                                groups={groupsConfig.groups || []}
-                                selectedGroupId={firstRunFavoriteGroupId}
-                                onSelectGroup={selectFirstRunFavoriteGroup}
-                                onContinue={saveFirstRunGroupPreferences}
-                                onAddDepartment={openFirstRunSetupChoice}
-                                onConfigureGroup={configureFirstRunGroup}
-                                saving={firstRunSaving}
-                                error={firstRunError}
-                                onboardingDone={groupPreferences.onboardingDone}
-                                setupChoiceOpen={Boolean(firstRunSetupChoice)}
-                            />
-                            {firstRunSetupChoice && (
-                                <FirstRunGroupSetupChoice
-                                    groups={groupsConfig.groups || []}
-                                    value={firstRunSetupChoice}
-                                    onChange={setFirstRunSetupChoice}
-                                    onBack={closeFirstRunSetupChoice}
-                                    onContinue={continueFirstRunSetupChoice}
-                                />
-                            )}
-                        </>
+                        <FirstRunConfigurationContainer
+                            closeFirstRunSetupChoice={closeFirstRunSetupChoice}
+                            configureFirstRunGroup={configureFirstRunGroup}
+                            continueFirstRunSetupChoice={continueFirstRunSetupChoice}
+                            firstRunError={firstRunError}
+                            firstRunFavoriteGroupId={firstRunFavoriteGroupId}
+                            firstRunSaving={firstRunSaving}
+                            firstRunSetupChoice={firstRunSetupChoice}
+                            groupPreferences={groupPreferences}
+                            groupsConfig={groupsConfig}
+                            openFirstRunSetupChoice={openFirstRunSetupChoice}
+                            saveFirstRunGroupPreferences={saveFirstRunGroupPreferences}
+                            selectFirstRunFavoriteGroup={selectFirstRunFavoriteGroup}
+                            setFirstRunSetupChoice={setFirstRunSetupChoice}
+                        />
                     )}
                     <OnboardingTour
                         run={onboarding.run}

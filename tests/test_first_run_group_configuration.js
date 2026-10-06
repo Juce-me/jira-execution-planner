@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { readOwnerSource } = require('./frontend_source_helpers');
 
 function loadFirstRunGroupConfiguration() {
     const modulePath = path.join(
@@ -71,13 +72,16 @@ test('admin progress merge never clears a committed subsection on retry', () => 
     assert.deepEqual(Object.keys(merged), FIRST_RUN_ADMIN_SECTION_KEYS);
 });
 
-test('dashboard-owned Return capture and restoration cover every settings section', () => {
+test('first-run Return capture (hook) and restoration (dashboard) cover every settings section', () => {
     const dashboard = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx'), 'utf8');
-    const captureStart = dashboard.indexOf('const captureFirstRunSettingsDrafts');
-    const captureEnd = dashboard.indexOf('const configureFirstRunGroup', captureStart);
+    const firstRunHook = readOwnerSource(['frontend/src/settings/useFirstRunConfiguration.js'], { anchor: 'const captureFirstRunSettingsDrafts' });
+    const captureStart = firstRunHook.indexOf('const captureFirstRunSettingsDrafts');
+    const captureEnd = firstRunHook.indexOf('const configureFirstRunGroup', captureStart);
+    assert.ok(captureStart >= 0 && captureEnd > captureStart, 'Expected the capture slice markers in the first-run hook');
+    assert.equal(dashboard.includes('const captureFirstRunSettingsDrafts'), false, 'capture is owned by the first-run hook');
     const restoreStart = dashboard.indexOf('const restoreSettingsDraftsToCommittedBaselines');
     const restoreEnd = dashboard.indexOf('const returnFromFirstRunConfigurationRecovery', restoreStart);
-    const capture = dashboard.slice(captureStart, captureEnd);
+    const capture = firstRunHook.slice(captureStart, captureEnd);
     const restore = dashboard.slice(restoreStart, restoreEnd);
     for (const key of [
         'projects', 'priorityWeights', 'board', 'capacity', 'sprintField', 'parentNameField',
@@ -423,8 +427,10 @@ test('Task 2 session contracts live with the guide and expose no generic discard
 
 test('recovery states remain renderable after the guide is complete', () => {
     const dashboard = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx'), 'utf8');
+    const firstRunHook = readOwnerSource(['frontend/src/settings/useFirstRunConfiguration.js'], { anchor: 'const firstRunConfigurationGuideVisible' });
     assert.equal(dashboard.includes('firstRunConfigurationActive && !firstRunConfigurationSession.guideComplete && activeGroupDraft'), false);
-    assert.ok(dashboard.includes("['sections_pending', 'preference_pending'].includes(firstRunConfigurationSession.status)"));
+    assert.equal(firstRunHook.includes('firstRunConfigurationActive && !firstRunConfigurationSession.guideComplete && activeGroupDraft'), false);
+    assert.ok(firstRunHook.includes("['sections_pending', 'preference_pending'].includes(firstRunConfigurationSession.status)"));
 });
 
 test('configuration guide accepts either Team or Component scope', () => {
@@ -516,7 +522,11 @@ test('SettingsModal owns the replay header action slot', () => {
 test('dashboard owns one reducer session and ordered first-run preference handoff', () => {
     const dashboard = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx'), 'utf8');
     const preferences = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'settings', 'useGroupVisibilityPreferences.js'), 'utf8');
-    assert.match(dashboard, /React\.useReducer\(\s*firstRunConfigurationSessionReducer/);
+    const firstRunHook = readOwnerSource(['frontend/src/settings/useFirstRunConfiguration.js'], { anchor: 'export function useFirstRunConfigurationState(' });
+    assert.match(firstRunHook, /React\.useReducer\(\s*firstRunConfigurationSessionReducer/);
+    assert.equal(firstRunHook.split('React.useReducer(').length - 1, 1, 'Expected exactly one first-run reducer session');
+    assert.equal(dashboard.includes('React.useReducer(\n                firstRunConfigurationSessionReducer'), false, 'the reducer session moved out of the dashboard');
+    assert.equal(dashboard.split('useFirstRunConfigurationState()').length - 1, 1, 'Expected the dashboard to call the first-run state layer once');
     assert.ok(dashboard.includes('saveAllSettingsOnce = async ({ rebaseOnto = null, firstRunSession = null } = {})'));
     assert.ok(dashboard.includes('if (settingsSaveInFlightRef.current) return buildSettingsSaveOutcome({ inFlight: true })'));
     assert.ok(dashboard.includes('saveFirstRunGroupPreferences({'));

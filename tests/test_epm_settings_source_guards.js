@@ -401,7 +401,7 @@ test('dashboard calls the EPM settings layers at their original effect positions
     };
     const analyticsPosition = positionOf('} = useDashboardAnalytics(React,');
     const hookPosition = positionOf('} = useEpmSettings({');
-    const firstEpmStateReaderPosition = positionOf('const captureFirstRunSettingsDrafts = ');
+    const firstEpmStateReaderPosition = positionOf('} = useFirstRunConfiguration({');
     const navigationEffectEnd = positionOf('}, [homeTokenConnectionLoaded, showEpmNavigation, selectedView]);');
     const labelMenuEffectsPosition = positionOf('useEpmLabelMenuEffects({');
     const modalOpenEffectEnd = positionOf('setTeamNameInputs(loadTeamsFromCurrentView());\n            }, [showGroupManage]);');
@@ -431,7 +431,7 @@ test('dashboard calls the Team Groups hook and its effects layers at their origi
     const analyticsPosition = positionOf(dashboardSource, '} = useDashboardAnalytics(React,');
     const teamHookPosition = positionOf(dashboardSource, '} = useTeamGroupSettings({');
     const epmHookPosition = positionOf(dashboardSource, '} = useEpmSettings({');
-    const firstRunReaderPosition = positionOf(dashboardSource, 'const openFirstRunSetupChoice = ');
+    const firstRunReaderPosition = positionOf(dashboardSource, '} = useFirstRunConfiguration({');
     const modalOpenEffectStart = positionOf(dashboardSource, 'const nextGroupDraft = pendingDraft ? {');
     const modalOpenEffectEnd = positionOf(dashboardSource, 'setTeamNameInputs(loadTeamsFromCurrentView());\n            }, [showGroupManage]);');
     const epmLoadEffectPosition = positionOf(dashboardSource, 'useEpmSettingsLoadEffect({');

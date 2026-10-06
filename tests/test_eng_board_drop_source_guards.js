@@ -29,7 +29,7 @@ test('a board status submit without an issue key is refused before it reaches th
 
 test('the hook ships the one permitted generalization: the rename with the widening', () => {
     const source = read('frontend/src/eng/useEngStatusTransitions.js');
-    assert.match(source, /const isSingleIssueSurface = sourceSurface !== 'planning';/);
+    assert.match(source, /const isSingleIssueSurface = sourceSurface !== 'planning' \|\| Boolean\(explicitKey\);/);
     assert.ok(!/isCatchUp/.test(source), 'the rename ships with the widening — no isCatchUp may remain');
 });
 
@@ -49,15 +49,26 @@ test('the Board special case refreshes after the shared serialized write', () =>
     assert.equal((source.match(/transitionIssues\(/g) || []).length, 1, 'Board must not add a parallel Jira write');
 });
 
-test('the widened flag is a strict widening: Catch Up keeps the same branches', () => {
-    // The behavioural claim the §13 amendment is conditioned on, stated over every surface the
-    // hook is instantiated with (dashboard.jsx: showPlanning ? 'planning' : showBoard ? 'board'
-    // : 'catch_up'). Catch Up and Planning both evaluate exactly as they did; only Board moves.
-    const wasCatchUpOnly = (surface) => surface === 'catch_up';
-    const isSingleIssueSurface = (surface) => surface !== 'planning';
+test('the widened flag is a strict widening: only a keyed Planning submit joins the single-issue branches', () => {
+    // Catch Up and Board evaluate exactly as they did; keyless Planning stays the Story batch;
+    // a Planning submit with an explicit key (Epic, Subtask and Table row pills) acts on that
+    // one issue and therefore takes the optimistic patch, rollback and per-key pending guard.
+    const wasSingleIssue = (surface) => surface !== 'planning';
+    const isSingleIssueSurface = (surface, explicitKey) => surface !== 'planning' || Boolean(explicitKey);
 
-    assert.equal(isSingleIssueSurface('catch_up'), wasCatchUpOnly('catch_up'));
-    assert.equal(isSingleIssueSurface('planning'), wasCatchUpOnly('planning'));
-    assert.equal(isSingleIssueSurface('board'), true);
-    assert.equal(wasCatchUpOnly('board'), false);
+    for (const surface of ['catch_up', 'board']) {
+        assert.equal(isSingleIssueSurface(surface, ''), wasSingleIssue(surface));
+        assert.equal(isSingleIssueSurface(surface, 'KEY-1'), true);
+    }
+    assert.equal(isSingleIssueSurface('planning', ''), false);
+    assert.equal(isSingleIssueSurface('planning', 'KEY-1'), true);
+});
+
+test('Planning Table status pills submit through the keyed handler, never the raw hook', () => {
+    const source = read('frontend/src/dashboard.jsx');
+    assert.match(
+        source,
+        /sourceSurface="planning" isOpen=\{statusTransitionActiveKey === row\.key\}[\s\S]*?actsOnSelection=\{false\}[\s\S]*?onSubmit=\{\(targetStatus\) => handleSubmitStatusTransition\(targetStatus, \{ key: row\.key \}, \{ singleIssue: true \}\)\}/,
+        'a Table row pill must act on its own row, not on the selected Stories',
+    );
 });

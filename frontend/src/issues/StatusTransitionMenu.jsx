@@ -108,6 +108,7 @@ export default function StatusTransitionMenu({
     errorCode = '',
     result = null,
     targetsCount = 0,
+    actsOnSelection = true,
     onOpen,
     onPrefetch,
     onClose,
@@ -130,8 +131,9 @@ export default function StatusTransitionMenu({
 
     const isServerTooMany = errorCode === 'too_many_issues';
     // Only a Planning Story pill applies to the selected Stories; Epic and Subtask pills act on
-    // themselves, so they behave like Catch Up and never show the batch count or cap.
-    const isPlanning = sourceSurface === 'planning' && String(fallbackIssueType || '').toLowerCase() === 'story';
+    // themselves, so they behave like Catch Up and never show the batch count or cap. A Planning
+    // Table row pill also acts on its own row, so it opts out with actsOnSelection={false}.
+    const isPlanning = actsOnSelection && sourceSurface === 'planning' && String(fallbackIssueType || '').toLowerCase() === 'story';
     // Client-side over-cap: the composed Planning batch exceeds the shared cap. Unlike a
     // server too_many_issues (options failed, so no valid statuses), the cached status
     // options are still visible but disabled so a >50 mutation can never be sent.

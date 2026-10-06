@@ -305,7 +305,7 @@ export function useEngStatusTransitions({
         // (§13): on a dragged card, waiting for a refetch reads as a failed drop, and a
         // board-local patch would be the parallel write path §9.5 forbids. Catch Up and Planning
         // both evaluate exactly as before, so their behaviour is unchanged.
-        const isSingleIssueSurface = sourceSurface !== 'planning';
+        const isSingleIssueSurface = sourceSurface !== 'planning' || Boolean(explicitKey);
         const singleIssueTarget = isSingleIssueSurface ? targets[0] : null;
         const singleIssueKey = singleIssueTarget?.key || '';
         if (isSingleIssueSurface && pendingMutationKeysRef.current.has(singleIssueKey)) return null;

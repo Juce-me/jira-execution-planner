@@ -135,7 +135,7 @@ import {
     summarizeEffortTypeSplitTotals
 } from './stats/excludedCapacityStats.js';
 import { PRIORITY_AXIS } from './stats/statsConstants.js';
-import { DEFAULT_PRIORITY_WEIGHT_ROWS, buildPriorityWeightMap, clonePriorityWeightRows } from './stats/priorityWeights.js';
+import { buildPriorityWeightMap } from './stats/priorityWeights.js';
 import { buildBurnoutChartModel } from './stats/burnoutChartUtils.js';
 import {
     buildLocalStatsFromTasks,
@@ -182,17 +182,6 @@ import {
     testJiraConnection,
     fetchGroupsConfig as requestGroupsConfig,
     saveGroupsConfig as requestSaveGroupsConfig,
-    fetchSelectedProjects as requestSelectedProjects,
-    saveSelectedProjects as requestSaveSelectedProjects,
-    fetchBoardConfig as requestBoardConfig,
-    saveBoardConfig as requestSaveBoardConfig,
-    fetchPriorityWeightsConfig as requestPriorityWeightsConfig,
-    savePriorityWeightsConfig as requestSavePriorityWeightsConfig,
-    fetchCapacityConfig as requestCapacityConfig,
-    saveCapacityConfig as requestSaveCapacityConfig,
-    fetchIssueTypesConfig as requestIssueTypesConfig,
-    saveIssueTypesConfig as requestSaveIssueTypesConfig,
-    fetchAvailableIssueTypes as requestAvailableIssueTypes,
     completeOnboardingModule as requestCompleteOnboardingModule,
     resetOnboardingModules as requestResetOnboardingModules,
 } from './api/configApi.js';
@@ -251,13 +240,8 @@ import { fetchBurnoutStats as requestBurnoutStats, fetchEpicCohortStats as reque
 import { fetchIssuesLookup as requestIssuesLookup } from './api/issuesApi.js';
 import {
     fetchJiraLabels as requestJiraLabels,
-    fetchProjects as requestJiraProjects,
-    fetchBoards as requestJiraBoards,
-    searchProjects as requestProjectSearch,
-    searchBoards as requestBoardSearch,
     searchComponents as requestComponentSearch,
     searchEpics as requestEpicSearch,
-    fetchFields as requestJiraFields,
 } from './api/jiraCatalogApi.js';
 import { EpmControls } from './epm/EpmControls.jsx';
 import EpmProjectCollapseAllButton from './epm/EpmProjectCollapseAllButton.jsx';
@@ -266,13 +250,14 @@ import EpmSettings from './epm/EpmSettings.jsx';
 import SettingsModal from './settings/SettingsModal.jsx';
 import TeamGroupsSettings from './settings/TeamGroupsSettings.jsx';
 import GroupBoardsTab from './settings/GroupBoardsTab.jsx';
-import JiraFieldSettings from './settings/JiraFieldSettings.jsx';
 import { createSettingsDraftReadGuard, useSettingsConfigBaselineRevision } from './settings/settingsConfigReadState.js';
-import AdminAccessSettings, { useAdminAccessSettings } from './settings/AdminAccessSettings.jsx';
-import AdminSettingsTabs from './settings/AdminSettingsTabs.jsx';
-import PerformanceSettings from './settings/PerformanceSettings.jsx';
+import { useAdminAccessSettings } from './settings/AdminAccessSettings.jsx';
+import AdminSettingsContainer from './settings/AdminSettingsContainer.jsx';
 import { createPerformanceGate } from './eng/loadPerformance.js';
-import { makeFieldSearchResults, useJiraFieldPickers } from './settings/useJiraFieldPickers.js';
+import { useJiraFieldPickers } from './settings/useJiraFieldPickers.js';
+import { usePriorityWeightsSettings } from './settings/usePriorityWeightsSettings.js';
+import { useJiraProjectCatalogEffects, useJiraProjectSearchEffects, useJiraProjectSettings } from './settings/useJiraProjectSettings.js';
+import { useCapacityMappingEffects, useCapacityMappingSettings } from './settings/useCapacityMappingSettings.js';
 import UserConnectionsSettings from './settings/UserConnectionsSettings.jsx';
 import { fetchHomeTokenConnection } from './api/authApi.js';
 import { AUTH_LONG_ABSENCE_EVENT } from './api/authRefreshContract.js';
@@ -747,19 +732,122 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
             const [adminSettingsGate, applyAdminSettingsGateConfig, setAdminSettingsGate] = useAdminSettingsGate({ canEditSettings: canEditSharedConfiguration, openSettings: tab => openGroupManage(tab) });
             const canEditEpmConfiguration = userCanEditEpmConfig === true;
             const preferredSettingsTab = canEditSharedConfiguration && !environmentConfigExists ? 'scope' : 'teams';
-            const [priorityWeightsDraft, setPriorityWeightsDraft] = useState(() => clonePriorityWeightRows(DEFAULT_PRIORITY_WEIGHT_ROWS));
-            const [priorityWeightsSource, setPriorityWeightsSource] = useState('default');
-            const [effectivePriorityWeightsRows, setEffectivePriorityWeightsRows] = useState(() => clonePriorityWeightRows(DEFAULT_PRIORITY_WEIGHT_ROWS));
-            const priorityWeightsBaselineRef = useRef(JSON.stringify(clonePriorityWeightRows(DEFAULT_PRIORITY_WEIGHT_ROWS)));
-            const [jiraProjects, setJiraProjects] = useState([]);
-            const [loadingProjects, setLoadingProjects] = useState(false);
-            const [projectSearchQuery, setProjectSearchQuery] = useState('');
-            const [projectSearchRemoteResults, setProjectSearchRemoteResults] = useState([]);
-            const [projectSearchRemoteLoading, setProjectSearchRemoteLoading] = useState(false);
-            const [projectSearchOpen, setProjectSearchOpen] = useState(false);
-            const [projectSearchIndex, setProjectSearchIndex] = useState(0);
-            const [selectedProjectsDraft, setSelectedProjectsDraft] = useState([]);
-            const [savedSelectedProjects, setSavedSelectedProjects] = useState([]);
+            const {
+                baselineRevision: settingsConfigBaselineRevision,
+                acceptBaseline: acceptSettingsConfigBaseline,
+            } = useSettingsConfigBaselineRevision();
+            const commitSharedConfigRevision = (payload) => {
+                if (!Number.isInteger(payload?.configRevision)) return;
+                sharedConfigRevisionRef.current = payload.configRevision;
+                setSharedConfigRevision(payload.configRevision);
+            };
+            const {
+                priorityWeightsDraft,
+                setPriorityWeightsDraft,
+                priorityWeightsSource,
+                effectivePriorityWeightsRows,
+                isPriorityWeightsDirty,
+                priorityWeightsValidationError,
+                priorityWeightsSum,
+                loadPriorityWeightsConfig,
+                savePriorityWeightsConfig,
+                updatePriorityWeightDraft,
+                resetPriorityWeightsDraft,
+                applyLoaded: applyPriorityWeightsLoaded,
+                draftSnapshot: priorityWeightsDraftSnapshot,
+            } = usePriorityWeightsSettings({
+                BACKEND_URL,
+                acceptSettingsConfigBaseline,
+                clearServerConnectionError,
+                commitSharedConfigRevision,
+                reportServerConnectionError,
+                settingsConfigBaselineRevision,
+                settingsDraftSnapshotRef,
+                sharedConfigRevisionRef,
+            });
+            const {
+                jiraProjects,
+                loadingProjects,
+                projectSearchQuery,
+                setProjectSearchQuery,
+                setProjectSearchRemoteResults,
+                projectSearchRemoteLoading,
+                setProjectSearchRemoteLoading,
+                projectSearchOpen,
+                setProjectSearchOpen,
+                projectSearchIndex,
+                setProjectSearchIndex,
+                selectedProjectsDraft,
+                setSelectedProjectsDraft,
+                savedSelectedProjects,
+                projectSearchInputRef,
+                setBoardSearchRemoteResults,
+                boardSearchRemoteLoading,
+                setBoardSearchRemoteLoading,
+                boardIdDraft,
+                setBoardIdDraft,
+                savedBoardId,
+                boardNameDraft,
+                setBoardNameDraft,
+                boardSearchQuery,
+                setBoardSearchQuery,
+                boardSearchOpen,
+                setBoardSearchOpen,
+                boardSearchIndex,
+                setBoardSearchIndex,
+                boardSearchInputRef,
+                jiraFields,
+                loadingFields,
+                issueTypesDraft,
+                setIssueTypesDraft,
+                issueTypeSearchQuery,
+                setIssueTypeSearchQuery,
+                issueTypeSearchOpen,
+                setIssueTypeSearchOpen,
+                issueTypeSearchIndex,
+                setIssueTypeSearchIndex,
+                issueTypeSearchInputRef,
+                isProjectsDraftDirty,
+                isBoardConfigDirty,
+                isIssueTypesDraftDirty,
+                boardSearchResults,
+                projectSearchResults,
+                issueTypeSearchResults,
+                fetchJiraProjects,
+                loadSelectedProjects,
+                loadBoardConfig,
+                saveBoardConfig,
+                addProjectSelection,
+                clearBoardSelection,
+                removeProjectSelection,
+                handleProjectSearchKeyDown,
+                handleBoardSearchKeyDown,
+                resolveProjectName,
+                saveProjectSelection,
+                loadIssueTypesConfig,
+                saveIssueTypesConfig,
+                fetchAvailableIssueTypes,
+                addIssueType,
+                removeIssueType,
+                handleIssueTypeSearchKeyDown,
+                fetchJiraFields,
+                applyProjectsAndBoardLoaded: applyJiraProjectsAndBoardLoaded,
+                applyIssueTypesLoaded: applyJiraIssueTypesLoaded,
+                draftSnapshot: jiraProjectsDraftSnapshot,
+            } = useJiraProjectSettings({
+                BACKEND_URL,
+                acceptSettingsConfigBaseline,
+                boardConfigReadGenerationRef,
+                boardConfigSaveReadFenceRef,
+                clearServerConnectionError,
+                commitSharedConfigRevision,
+                reportServerConnectionError,
+                setGroupDraftError,
+                setGroupSaving,
+                settingsConfigBaselineRevision,
+                settingsDraftSnapshotRef,
+                sharedConfigRevisionRef,
+            });
             const [componentSearchQuery, setComponentSearchQuery] = useState('');
             const [componentSearchResults, setComponentSearchResults] = useState([]);
             const [componentSearchOpen, setComponentSearchOpen] = useState(false);
@@ -791,38 +879,49 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 if (keys.size === 0) keys.add('TECH');
                 return keys;
             }, [savedSelectedProjects]);
-            const selectedProjectsBaselineRef = useRef('[]');
-            const projectSearchInputRef = useRef(null);
-            const [jiraBoards, setJiraBoards] = useState([]);
-            const [loadingBoards, setLoadingBoards] = useState(false);
-            const [boardSearchRemoteResults, setBoardSearchRemoteResults] = useState([]);
-            const [boardSearchRemoteLoading, setBoardSearchRemoteLoading] = useState(false);
-            const [boardIdDraft, setBoardIdDraft] = useState('');
-            // The last-saved board id, distinct from boardIdDraft (the unsaved Admin -> Jira Source
-            // input): the Board summaries in Team groups and the Boards tab must not flicker to an
-            // unsaved value while an admin edits or clears the field without saving.
-            const [savedBoardId, setSavedBoardId] = useState('');
-            const [boardNameDraft, setBoardNameDraft] = useState('');
-            const boardConfigBaselineRef = useRef('');
-            const [boardSearchQuery, setBoardSearchQuery] = useState('');
-            const [boardSearchOpen, setBoardSearchOpen] = useState(false);
-            const [boardSearchIndex, setBoardSearchIndex] = useState(0);
-            const boardSearchInputRef = useRef(null);
-            const [capacityProjectDraft, setCapacityProjectDraft] = useState('');
-            const [capacityFieldIdDraft, setCapacityFieldIdDraft] = useState('');
-            const [capacityFieldNameDraft, setCapacityFieldNameDraft] = useState('');
-            const capacityBaselineRef = useRef('');
-            const [capacityVerificationRequired, setCapacityVerificationRequired] = useState(false);
-            const [capacityProjectSearchQuery, setCapacityProjectSearchQuery] = useState('');
-            const [capacityProjectSearchOpen, setCapacityProjectSearchOpen] = useState(false);
-            const [capacityProjectSearchIndex, setCapacityProjectSearchIndex] = useState(0);
-            const capacityProjectSearchInputRef = useRef(null);
-            const [jiraFields, setJiraFields] = useState([]);
-            const [loadingFields, setLoadingFields] = useState(false);
-            const [capacityFieldSearchQuery, setCapacityFieldSearchQuery] = useState('');
-            const [capacityFieldSearchOpen, setCapacityFieldSearchOpen] = useState(false);
-            const [capacityFieldSearchIndex, setCapacityFieldSearchIndex] = useState(0);
-            const capacityFieldSearchInputRef = useRef(null);
+            const {
+                capacityProjectDraft,
+                setCapacityProjectDraft,
+                capacityFieldIdDraft,
+                setCapacityFieldIdDraft,
+                capacityFieldNameDraft,
+                setCapacityFieldNameDraft,
+                capacityProjectSearchQuery,
+                setCapacityProjectSearchQuery,
+                capacityProjectSearchOpen,
+                setCapacityProjectSearchOpen,
+                capacityProjectSearchIndex,
+                setCapacityProjectSearchIndex,
+                capacityProjectSearchInputRef,
+                capacityFieldSearchQuery,
+                setCapacityFieldSearchQuery,
+                capacityFieldSearchOpen,
+                setCapacityFieldSearchOpen,
+                capacityFieldSearchIndex,
+                setCapacityFieldSearchIndex,
+                capacityFieldSearchInputRef,
+                isCapacityDraftDirty,
+                loadCapacityConfig,
+                saveCapacityConfig,
+                resolveCapacityProjectName,
+                capacityProjectSearchResults,
+                handleCapacityProjectSearchKeyDown,
+                capacityFieldSearchResults,
+                capacityFieldSearchHidden,
+                handleCapacityFieldSearchKeyDown,
+                applyLoaded: applyCapacityLoaded,
+                draftSnapshot: capacityDraftSnapshot,
+            } = useCapacityMappingSettings({
+                BACKEND_URL,
+                acceptSettingsConfigBaseline,
+                authMode,
+                commitSharedConfigRevision,
+                jiraFields,
+                jiraProjects,
+                settingsConfigBaselineRevision,
+                settingsDraftSnapshotRef,
+                sharedConfigRevisionRef,
+            });
             const {
                 sprintFieldIdDraft, setSprintFieldIdDraft, sprintFieldNameDraft, setSprintFieldNameDraft,
                 sprintFieldSearchQuery, setSprintFieldSearchQuery, sprintFieldSearchOpen, setSprintFieldSearchOpen,
@@ -846,29 +945,18 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 handleDeliveryOwnerFieldSearchKeyDown, isDeliveryOwnerFieldDirty, saveDeliveryOwnerFieldConfig,
                 loadAllFieldConfigs, seedSharedFieldConfigs, anyFieldConfigDirty, dirtyFieldConfigCount,
             } = useJiraFieldPickers({ backendUrl: BACKEND_URL, jiraFields });
-            const [issueTypesDraft, setIssueTypesDraft] = useState(['Story']);
-            const issueTypesBaselineRef = useRef(JSON.stringify(['Story']));
-            const {
-                baselineRevision: settingsConfigBaselineRevision,
-                acceptBaseline: acceptSettingsConfigBaseline,
-            } = useSettingsConfigBaselineRevision();
             settingsDraftSnapshotRef.current = {
-                projects: JSON.stringify(selectedProjectsDraft),
-                board: JSON.stringify({ boardId: boardIdDraft, boardName: boardNameDraft }),
-                capacity: JSON.stringify({ project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft }),
-                priorityWeights: JSON.stringify(priorityWeightsDraft),
-                issueTypes: JSON.stringify(issueTypesDraft),
+                projects: jiraProjectsDraftSnapshot.projects,
+                board: jiraProjectsDraftSnapshot.board,
+                capacity: capacityDraftSnapshot,
+                priorityWeights: priorityWeightsDraftSnapshot,
+                issueTypes: jiraProjectsDraftSnapshot.issueTypes,
                 sprintField: JSON.stringify({ fieldId: sprintFieldIdDraft, fieldName: sprintFieldNameDraft }),
                 parentNameField: JSON.stringify({ fieldId: parentNameFieldIdDraft, fieldName: parentNameFieldNameDraft }),
                 storyPointsField: JSON.stringify({ fieldId: storyPointsFieldIdDraft, fieldName: storyPointsFieldNameDraft }),
                 teamField: JSON.stringify({ fieldId: teamFieldIdDraft, fieldName: teamFieldNameDraft }),
                 deliveryOwnerField: JSON.stringify({ fieldId: deliveryOwnerFieldIdDraft, fieldName: deliveryOwnerFieldNameDraft }),
             };
-            const [availableIssueTypes, setAvailableIssueTypes] = useState([]);
-            const [issueTypeSearchQuery, setIssueTypeSearchQuery] = useState('');
-            const [issueTypeSearchOpen, setIssueTypeSearchOpen] = useState(false);
-            const [issueTypeSearchIndex, setIssueTypeSearchIndex] = useState(0);
-            const issueTypeSearchInputRef = useRef(null);
             const pageLoadRefreshRef = useRef(false);
             const [jiraUrl, setJiraUrl] = useState('');
             const [selectedTasks, setSelectedTasks] = useState({});
@@ -2687,25 +2775,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 return boardDraftIsDirty(groupDraft, baselineGroups);
             }, [groupDraft, groupDraftSignature]);
 
-            const isProjectsDraftDirty = React.useMemo(() => {
-                return JSON.stringify(selectedProjectsDraft) !== selectedProjectsBaselineRef.current;
-            }, [selectedProjectsDraft, settingsConfigBaselineRevision]);
-
-            const isPriorityWeightsDirty = React.useMemo(() => {
-                return JSON.stringify(priorityWeightsDraft) !== priorityWeightsBaselineRef.current;
-            }, [priorityWeightsDraft, settingsConfigBaselineRevision]);
-
-            const isBoardConfigDirty = React.useMemo(() => Boolean(boardConfigBaselineRef.current) && JSON.stringify({ boardId: boardIdDraft, boardName: boardNameDraft }) !== boardConfigBaselineRef.current, [boardIdDraft, boardNameDraft, settingsConfigBaselineRevision]);
-
-            const isCapacityDraftDirty = React.useMemo(() => Boolean(capacityBaselineRef.current) && (
-                JSON.stringify({ project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft }) !== capacityBaselineRef.current
-                || (capacityVerificationRequired && Boolean(capacityProjectDraft && capacityFieldIdDraft))
-            ), [capacityProjectDraft, capacityFieldIdDraft, capacityFieldNameDraft, capacityVerificationRequired, settingsConfigBaselineRevision]);
-
-            const isIssueTypesDraftDirty = React.useMemo(() => {
-                return JSON.stringify(issueTypesDraft) !== issueTypesBaselineRef.current;
-            }, [issueTypesDraft, settingsConfigBaselineRevision]);
-
             const isEpmConfigDirty = React.useMemo(() => {
                 return JSON.stringify(epmConfigDraft) !== epmConfigBaselineRef.current;
             }, [epmConfigDraft]);
@@ -2925,26 +2994,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                     isGroupVisibilityDraftDirty
                 ].filter(Boolean).length + (canEditSharedConfiguration ? dirtyFieldConfigCount : 0);
             }, [canEditSharedConfiguration, canEditEpmConfiguration, isProjectsDraftDirty, isPriorityWeightsDirty, isBoardConfigDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, isAdminAccessDirty, dirtyFieldConfigCount, isEpmConfigDirty, groupDraft, groupDraftSignature, isGroupVisibilityDraftDirty]);
-            const priorityWeightsValidationError = React.useMemo(() => {
-                for (const row of (priorityWeightsDraft || [])) {
-                    const label = String(row?.priority || '').trim() || 'Priority';
-                    const numeric = Number(row?.weight);
-                    if (Number.isNaN(numeric) || !Number.isFinite(numeric)) {
-                        return `Priority weight must be numeric for ${label}.`;
-                    }
-                    if (numeric < 0) {
-                        return `Priority weight must be non-negative for ${label}.`;
-                    }
-                }
-                return '';
-            }, [priorityWeightsDraft]);
-            const priorityWeightsSum = React.useMemo(() => {
-                return (priorityWeightsDraft || []).reduce((acc, row) => {
-                    const numeric = Number(row?.weight);
-                    if (Number.isNaN(numeric) || !Number.isFinite(numeric)) return acc;
-                    return acc + numeric;
-                }, 0);
-            }, [priorityWeightsDraft]);
             const shouldValidateAdminSettings = canEditSharedConfiguration
                 && ((ADMIN_SETTINGS_TAB_IDS.has(groupManageTab) && !['access', 'performance'].includes(groupManageTab)) || isCoreSharedConfigurationDraftDirty);
             const groupConfigValidationErrors = React.useMemo(() => {
@@ -4286,101 +4335,18 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 return () => window.removeEventListener('keydown', handleKey);
             }, [showGroupManage, groupManageTab, groupSaving, epmConfigSaving, firstRunConfigurationActive, firstRunConfigurationSession, teamSearchOpen, showGroupDiscardConfirm, requestCloseGroupManage, saveAllSettings]);
 
-            const fetchJiraProjects = async () => {
-                setLoadingProjects(true);
-                try {
-                    const response = await requestJiraProjects(BACKEND_URL);
-                    if (!response.ok) throw new Error(`Projects fetch error ${response.status}`);
-                    const data = await response.json();
-                    setJiraProjects(data.projects || []);
-                } catch (err) {
-                    console.error('Failed to fetch Jira projects:', err);
-                } finally {
-                    setLoadingProjects(false);
-                }
-            };
-
-            const fetchJiraBoards = async () => {
-                setLoadingBoards(true);
-                try {
-                    const response = await requestJiraBoards(BACKEND_URL);
-                    if (!response.ok) throw new Error(`Boards fetch error ${response.status}`);
-                    const data = await response.json();
-                    setJiraBoards(data.boards || []);
-                } catch (err) {
-                    console.error('Failed to fetch Jira boards:', err);
-                } finally {
-                    setLoadingBoards(false);
-                }
-            };
-
-            useEffect(() => {
-                const query = projectSearchQuery.trim();
-                if (!showGroupManage || groupManageTab !== 'scope' || !query) {
-                    setProjectSearchRemoteResults([]);
-                    setProjectSearchRemoteLoading(false);
-                    return undefined;
-                }
-
-                const controller = new AbortController();
-                const timeoutId = window.setTimeout(async () => {
-                    setProjectSearchRemoteLoading(true);
-                    try {
-                        const response = await requestProjectSearch(BACKEND_URL, { query, signal: controller.signal });
-                        if (!response.ok) throw new Error(`Projects search error ${response.status}`);
-                        const data = await response.json();
-                        setProjectSearchRemoteResults(data.projects || []);
-                    } catch (err) {
-                        if (err.name !== 'AbortError') {
-                            console.error('Failed to search Jira projects:', err);
-                            setProjectSearchRemoteResults([]);
-                        }
-                    } finally {
-                        if (!controller.signal.aborted) {
-                            setProjectSearchRemoteLoading(false);
-                        }
-                    }
-                }, 220);
-
-                return () => {
-                    window.clearTimeout(timeoutId);
-                    controller.abort();
-                };
-            }, [showGroupManage, groupManageTab, projectSearchQuery]);
-
-            useEffect(() => {
-                const query = boardSearchQuery.trim();
-                if (!showGroupManage || groupManageTab !== 'source' || boardIdDraft || !query) {
-                    setBoardSearchRemoteResults([]);
-                    setBoardSearchRemoteLoading(false);
-                    return undefined;
-                }
-
-                const controller = new AbortController();
-                const timeoutId = window.setTimeout(async () => {
-                    setBoardSearchRemoteLoading(true);
-                    try {
-                        const response = await requestBoardSearch(BACKEND_URL, { query, signal: controller.signal });
-                        if (!response.ok) throw new Error(`Boards search error ${response.status}`);
-                        const data = await response.json();
-                        setBoardSearchRemoteResults(data.boards || []);
-                    } catch (err) {
-                        if (err.name !== 'AbortError') {
-                            console.error('Failed to search Jira boards:', err);
-                            setBoardSearchRemoteResults([]);
-                        }
-                    } finally {
-                        if (!controller.signal.aborted) {
-                            setBoardSearchRemoteLoading(false);
-                        }
-                    }
-                }, 220);
-
-                return () => {
-                    window.clearTimeout(timeoutId);
-                    controller.abort();
-                };
-            }, [showGroupManage, groupManageTab, boardIdDraft, boardSearchQuery]);
+            useJiraProjectSearchEffects({
+                BACKEND_URL,
+                boardIdDraft,
+                boardSearchQuery,
+                groupManageTab,
+                projectSearchQuery,
+                setBoardSearchRemoteLoading,
+                setBoardSearchRemoteResults,
+                setProjectSearchRemoteLoading,
+                setProjectSearchRemoteResults,
+                showGroupManage,
+            });
 
             // Component search debounced fetch
             useEffect(() => {
@@ -4760,467 +4726,28 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 }, 120);
             };
 
-            const loadSelectedProjects = async ({
-                readGeneration = boardConfigReadGenerationRef.current,
-                preserveDraft = isProjectsDraftDirty,
-            } = {}) => {
-                const saveReadFence = boardConfigSaveReadFenceRef.current;
-                const shouldApplyResult = () => saveReadFence === 0
-                    && boardConfigSaveReadFenceRef.current === 0
-                    && boardConfigReadGenerationRef.current === readGeneration;
-                const draftReadGuard = createSettingsDraftReadGuard(() => settingsDraftSnapshotRef.current);
-                try {
-                    const response = await requestSelectedProjects(BACKEND_URL);
-                    if (!response.ok) throw new Error(`Selected projects fetch error ${response.status}`);
-                    const data = await response.json();
-                    if (!shouldApplyResult()) return false;
-                    const selected = data.selected || [];
-                    clearServerConnectionError();
-                    if (!preserveDraft && !draftReadGuard.draftChanged('projects')) setSelectedProjectsDraft(selected);
-                    setSavedSelectedProjects(selected);
-                    acceptSettingsConfigBaseline(selectedProjectsBaselineRef, JSON.stringify(selected));
-                    return true;
-                } catch (err) {
-                    if (!shouldApplyResult()) return false;
-                    if (isAuthenticationRequiredError(err)) return false;
-                    if (!reportServerConnectionError(err)) {
-                        console.error('Failed to load selected projects:', err);
-                    }
-                    return false;
-                }
-            };
+            useJiraProjectCatalogEffects({
+                boardSearchIndex,
+                boardSearchResults,
+                fetchJiraFields,
+                issueTypeSearchIndex,
+                issueTypeSearchResults,
+                projectSearchIndex,
+                projectSearchResults,
+                setBoardSearchIndex,
+                setIssueTypeSearchIndex,
+                setProjectSearchIndex,
+                showGroupManage,
+            });
 
-            const loadBoardConfig = async ({
-                readGeneration = boardConfigReadGenerationRef.current,
-                preserveDraft = isBoardConfigDirty,
-            } = {}) => {
-                const saveReadFence = boardConfigSaveReadFenceRef.current;
-                const shouldApplyResult = () => saveReadFence === 0
-                    && boardConfigSaveReadFenceRef.current === 0
-                    && boardConfigReadGenerationRef.current === readGeneration;
-                const draftReadGuard = createSettingsDraftReadGuard(() => settingsDraftSnapshotRef.current);
-                try {
-                    const response = await requestBoardConfig(BACKEND_URL);
-                    if (!response.ok) return false;
-                    const data = await response.json();
-                    if (!shouldApplyResult()) return false;
-                    const nextBoardId = String(data.boardId || '');
-                    const nextBoardName = String(data.boardName || '');
-                    if (!preserveDraft && !draftReadGuard.draftChanged('board')) {
-                        setBoardIdDraft(nextBoardId);
-                        setBoardNameDraft(nextBoardName);
-                    }
-                    setSavedBoardId(nextBoardId);
-                    acceptSettingsConfigBaseline(boardConfigBaselineRef, JSON.stringify({ boardId: nextBoardId, boardName: nextBoardName }));
-                    return true;
-                } catch (err) {
-                    if (!shouldApplyResult()) return false;
-                    console.error('Failed to load board config:', err);
-                    return false;
-                }
-            };
-
-            const loadPriorityWeightsConfig = async ({ shouldApplyDraft = () => true } = {}) => {
-                const preserveDraft = isPriorityWeightsDirty;
-                const draftReadGuard = createSettingsDraftReadGuard(() => settingsDraftSnapshotRef.current);
-                try {
-                    const response = await requestPriorityWeightsConfig(BACKEND_URL);
-                    if (!response.ok) return;
-                    const data = await response.json();
-                    const rows = clonePriorityWeightRows(data.weights);
-                    clearServerConnectionError();
-                    if (!preserveDraft && !draftReadGuard.draftChanged('priorityWeights') && shouldApplyDraft()) {
-                        setPriorityWeightsDraft(rows);
-                    }
-                    setEffectivePriorityWeightsRows(rows);
-                    setPriorityWeightsSource(String(data.source || 'default'));
-                    acceptSettingsConfigBaseline(priorityWeightsBaselineRef, JSON.stringify(rows));
-                } catch (err) {
-                    if (!reportServerConnectionError(err)) {
-                        console.error('Failed to load priority weights config:', err);
-                    }
-                }
-            };
-
-            const commitSharedConfigRevision = (payload) => {
-                if (!Number.isInteger(payload?.configRevision)) return;
-                sharedConfigRevisionRef.current = payload.configRevision;
-                setSharedConfigRevision(payload.configRevision);
-            };
-
-            const saveBoardConfig = async () => {
-                const payload = await requestSaveBoardConfig(
-                    BACKEND_URL,
-                    { boardId: boardIdDraft, boardName: boardNameDraft },
-                    sharedConfigRevisionRef.current,
-                );
-                commitSharedConfigRevision(payload);
-                acceptSettingsConfigBaseline(boardConfigBaselineRef, JSON.stringify({ boardId: boardIdDraft, boardName: boardNameDraft }));
-                setSavedBoardId(boardIdDraft);
-                return payload;
-            };
-
-            const savePriorityWeightsConfig = async () => {
-                const data = await requestSavePriorityWeightsConfig(BACKEND_URL, (priorityWeightsDraft || []).map((row) => ({
-                    priority: String(row.priority || '').trim(),
-                    weight: Number(row.weight)
-                })), sharedConfigRevisionRef.current);
-                commitSharedConfigRevision(data);
-                const rows = clonePriorityWeightRows(data.weights);
-                setPriorityWeightsDraft(rows);
-                setEffectivePriorityWeightsRows(rows);
-                setPriorityWeightsSource(String(data.source || 'config'));
-                acceptSettingsConfigBaseline(priorityWeightsBaselineRef, JSON.stringify(rows));
-            };
-
-            const addProjectSelection = (key, type = 'product') => {
-                setSelectedProjectsDraft(prev => {
-                    if (prev.some(p => p.key === key)) return prev;
-                    return [...prev, { key, type }];
-                });
-                setProjectSearchQuery('');
-                setProjectSearchOpen(true);
-                if (projectSearchInputRef.current) projectSearchInputRef.current.focus();
-            };
-
-            const clearBoardSelection = () => {
-                setBoardIdDraft('');
-                setBoardNameDraft('');
-                setBoardSearchQuery('');
-                setBoardSearchOpen(false);
-            };
-
-            const updatePriorityWeightDraft = (priorityName, nextValue) => {
-                setPriorityWeightsDraft((prev) => (prev || []).map((row) => (
-                    row.priority === priorityName ? { ...row, weight: nextValue } : row
-                )));
-            };
-
-            const resetPriorityWeightsDraft = () => {
-                setPriorityWeightsDraft(clonePriorityWeightRows(DEFAULT_PRIORITY_WEIGHT_ROWS));
-            };
-
-            const removeProjectSelection = (key) => {
-                setSelectedProjectsDraft(prev => prev.filter(p => p.key !== key));
-            };
-
-            const selectedProjectKeys = React.useMemo(() => {
-                return new Set(selectedProjectsDraft.map(p => p.key));
-            }, [selectedProjectsDraft]);
-
-            const boardSearchResults = React.useMemo(() => {
-                const query = boardSearchQuery.trim().toLowerCase();
-                if (!query) return [];
-                return (boardSearchRemoteResults || [])
-                    .filter((board) => {
-                        const id = String(board.id || '');
-                        const name = String(board.name || '');
-                        return id.includes(query) || name.toLowerCase().includes(query);
-                    })
-                    .slice(0, 20);
-            }, [boardSearchQuery, boardSearchRemoteResults]);
-
-            const projectSearchResults = React.useMemo(() => {
-                const query = projectSearchQuery.toLowerCase().trim();
-                if (!query) return [];
-                const sourceProjects = projectSearchRemoteResults.length > 0 ? projectSearchRemoteResults : jiraProjects;
-                return sourceProjects.filter(p => {
-                    if (selectedProjectKeys.has(p.key)) return false;
-                    return p.key.toLowerCase().includes(query) || p.name.toLowerCase().includes(query);
-                }).slice(0, 10);
-            }, [projectSearchQuery, jiraProjects, projectSearchRemoteResults, selectedProjectsDraft]);
-
-            React.useEffect(() => {
-                const maxIndex = projectSearchResults.length - 1;
-                if (projectSearchIndex > maxIndex) setProjectSearchIndex(0);
-            }, [projectSearchResults.length]);
-
-            React.useEffect(() => {
-                const maxIndex = boardSearchResults.length - 1;
-                if (boardSearchIndex > maxIndex) setBoardSearchIndex(0);
-            }, [boardSearchResults.length]);
-
-            const handleProjectSearchKeyDown = (event) => {
-                if (event.key === 'ArrowDown') {
-                    if (!projectSearchResults.length) return;
-                    event.preventDefault();
-                    setProjectSearchIndex(prev => Math.min(prev + 1, projectSearchResults.length - 1));
-                } else if (event.key === 'ArrowUp') {
-                    if (!projectSearchResults.length) return;
-                    event.preventDefault();
-                    setProjectSearchIndex(prev => Math.max(prev - 1, 0));
-                } else if (event.key === 'Enter') {
-                    if (!projectSearchResults.length) return;
-                    event.preventDefault();
-                    const p = projectSearchResults[projectSearchIndex] || projectSearchResults[0];
-                    if (p) addProjectSelection(p.key);
-                } else if (event.key === 'Escape') {
-                    if (projectSearchOpen) {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        setProjectSearchOpen(false);
-                    }
-                }
-            };
-
-            const handleBoardSearchKeyDown = (event) => {
-                if (event.key === 'ArrowDown') {
-                    if (!boardSearchResults.length) return;
-                    event.preventDefault();
-                    setBoardSearchIndex((prev) => Math.min(prev + 1, boardSearchResults.length - 1));
-                } else if (event.key === 'ArrowUp') {
-                    if (!boardSearchResults.length) return;
-                    event.preventDefault();
-                    setBoardSearchIndex((prev) => Math.max(prev - 1, 0));
-                } else if (event.key === 'Enter') {
-                    if (!boardSearchResults.length) return;
-                    event.preventDefault();
-                    const board = boardSearchResults[boardSearchIndex] || boardSearchResults[0];
-                    if (!board) return;
-                    setBoardIdDraft(String(board.id || ''));
-                    setBoardNameDraft(String(board.name || ''));
-                    setBoardSearchQuery('');
-                    setBoardSearchOpen(false);
-                } else if (event.key === 'Escape') {
-                    if (boardSearchOpen) {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        setBoardSearchOpen(false);
-                    }
-                }
-            };
-
-            const resolveProjectName = (key) => {
-                const proj = jiraProjects.find(p => p.key === key);
-                return proj ? proj.name : key;
-            };
-
-            const saveProjectSelection = async () => {
-                setGroupSaving(true);
-                setGroupDraftError('');
-                try {
-                    const payload = await requestSaveSelectedProjects(BACKEND_URL, selectedProjectsDraft, sharedConfigRevisionRef.current);
-                    commitSharedConfigRevision(payload);
-                    acceptSettingsConfigBaseline(selectedProjectsBaselineRef, JSON.stringify(selectedProjectsDraft));
-                    setSavedSelectedProjects([...selectedProjectsDraft]);
-                } catch (err) {
-                    setGroupDraftError(err.message || 'Failed to save project selection.');
-                    throw err;
-                } finally {
-                    setGroupSaving(false);
-                }
-            };
-
-            const loadCapacityConfig = async ({ authMode: requestedAuthMode = authMode, shouldApplyDraft = () => true } = {}) => {
-                const preserveDraft = isCapacityDraftDirty;
-                const draftReadGuard = createSettingsDraftReadGuard(() => settingsDraftSnapshotRef.current);
-                try {
-                    const response = await requestCapacityConfig(BACKEND_URL);
-                    if (!response.ok) return;
-                    const data = await response.json();
-                    if (!preserveDraft && !draftReadGuard.draftChanged('capacity') && shouldApplyDraft()) {
-                        setCapacityProjectDraft(data.project || '');
-                        setCapacityFieldIdDraft(data.fieldId || '');
-                        setCapacityFieldNameDraft(data.fieldName || '');
-                    }
-                    acceptSettingsConfigBaseline(capacityBaselineRef, JSON.stringify({ project: data.project || '', fieldId: data.fieldId || '', fieldName: data.fieldName || '' }));
-                    setCapacityVerificationRequired(Boolean(
-                        requestedAuthMode === 'atlassian_oauth'
-                        && data.project
-                        && data.fieldId
-                        && data.mutationEnabled !== true
-                    ));
-                } catch (err) {
-                    console.error('Failed to load capacity config:', err);
-                }
-            };
-
-            const saveCapacityConfig = async () => {
-                const payload = await requestSaveCapacityConfig(
-                    BACKEND_URL,
-                    { project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft },
-                    sharedConfigRevisionRef.current,
-                );
-                commitSharedConfigRevision(payload);
-                acceptSettingsConfigBaseline(capacityBaselineRef, JSON.stringify({ project: capacityProjectDraft, fieldId: capacityFieldIdDraft, fieldName: capacityFieldNameDraft }));
-                setCapacityVerificationRequired(false);
-            };
-
-            const loadIssueTypesConfig = async ({ shouldApplyDraft = () => true } = {}) => {
-                const preserveDraft = isIssueTypesDraftDirty;
-                const draftReadGuard = createSettingsDraftReadGuard(() => settingsDraftSnapshotRef.current);
-                try {
-                    const response = await requestIssueTypesConfig(BACKEND_URL);
-                    if (!response.ok) return;
-                    const data = await response.json();
-                    const types = data.issueTypes || ['Story'];
-                    if (!preserveDraft && !draftReadGuard.draftChanged('issueTypes') && shouldApplyDraft()) {
-                        setIssueTypesDraft(types);
-                    }
-                    acceptSettingsConfigBaseline(issueTypesBaselineRef, JSON.stringify(types));
-                } catch (err) {
-                    console.error('Failed to load issue types config:', err);
-                }
-            };
-
-            const saveIssueTypesConfig = async () => {
-                const payload = await requestSaveIssueTypesConfig(BACKEND_URL, issueTypesDraft, sharedConfigRevisionRef.current);
-                commitSharedConfigRevision(payload);
-                acceptSettingsConfigBaseline(issueTypesBaselineRef, JSON.stringify(issueTypesDraft));
-            };
-
-            const fetchAvailableIssueTypes = async () => {
-                try {
-                    const response = await requestAvailableIssueTypes(BACKEND_URL);
-                    if (!response.ok) return;
-                    const data = await response.json();
-                    setAvailableIssueTypes(data.issueTypes || []);
-                } catch (err) {
-                    console.error('Failed to fetch available issue types:', err);
-                }
-            };
-
-            const addIssueType = (name) => {
-                setIssueTypesDraft([name]);
-                setIssueTypeSearchQuery('');
-                setIssueTypeSearchOpen(false);
-            };
-
-            const removeIssueType = (name) => {
-                setIssueTypesDraft(prev => prev.filter(t => t !== name));
-            };
-
-            const issueTypeSearchResults = React.useMemo(() => {
-                const query = issueTypeSearchQuery.toLowerCase().trim();
-                if (!query) return [];
-                return availableIssueTypes.filter(it => {
-                    if (issueTypesDraft.includes(it.name)) return false;
-                    return it.name.toLowerCase().includes(query);
-                }).slice(0, 10);
-            }, [issueTypeSearchQuery, availableIssueTypes, issueTypesDraft]);
-
-            React.useEffect(() => {
-                if (issueTypeSearchIndex >= issueTypeSearchResults.length) setIssueTypeSearchIndex(0);
-            }, [issueTypeSearchResults.length]);
-
-            const handleIssueTypeSearchKeyDown = (event) => {
-                if (event.key === 'ArrowDown') {
-                    if (!issueTypeSearchResults.length) return;
-                    event.preventDefault();
-                    setIssueTypeSearchIndex(prev => Math.min(prev + 1, issueTypeSearchResults.length - 1));
-                } else if (event.key === 'ArrowUp') {
-                    if (!issueTypeSearchResults.length) return;
-                    event.preventDefault();
-                    setIssueTypeSearchIndex(prev => Math.max(prev - 1, 0));
-                } else if (event.key === 'Enter') {
-                    if (!issueTypeSearchResults.length) return;
-                    event.preventDefault();
-                    const it = issueTypeSearchResults[issueTypeSearchIndex] || issueTypeSearchResults[0];
-                    if (it) addIssueType(it.name);
-                } else if (event.key === 'Escape') {
-                    if (issueTypeSearchOpen) {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        setIssueTypeSearchOpen(false);
-                    }
-                }
-            };
-
-            // Unscoped on purpose: asking the fields endpoint for a project answers from that
-            // project's createmeta screens, a strict subset of the instance catalog. Every picker
-            // fed by this list configures an instance-wide field, so scoping it hid real ones.
-            const fetchJiraFields = async () => {
-                setLoadingFields(true);
-                try {
-                    const response = await requestJiraFields(BACKEND_URL, {});
-                    if (!response.ok) throw new Error(`Fields fetch error ${response.status}`);
-                    const data = await response.json();
-                    setJiraFields(data.fields || []);
-                } catch (err) {
-                    console.error('Failed to fetch Jira fields:', err);
-                } finally {
-                    setLoadingFields(false);
-                }
-            };
-
-            // Fetch fields when the modal opens. The catalog is instance-wide, so it does not
-            // depend on the capacity project draft.
-            React.useEffect(() => {
-                if (!showGroupManage) return;
-                fetchJiraFields();
-            }, [showGroupManage]);
-
-            const resolveCapacityProjectName = (key) => {
-                if (!key) return '';
-                const p = jiraProjects.find(p => p.key === key);
-                return p ? p.name : '';
-            };
-
-            const capacityProjectSearchResults = React.useMemo(() => {
-                const query = capacityProjectSearchQuery.toLowerCase().trim();
-                if (!query) return [];
-                return jiraProjects.filter(p => {
-                    return p.key.toLowerCase().includes(query) || p.name.toLowerCase().includes(query);
-                }).slice(0, 10);
-            }, [capacityProjectSearchQuery, jiraProjects]);
-
-            React.useEffect(() => {
-                if (capacityProjectSearchIndex >= capacityProjectSearchResults.length) setCapacityProjectSearchIndex(0);
-            }, [capacityProjectSearchResults.length]);
-
-            const handleCapacityProjectSearchKeyDown = (event) => {
-                if (event.key === 'ArrowDown') {
-                    if (!capacityProjectSearchResults.length) return;
-                    event.preventDefault();
-                    setCapacityProjectSearchIndex(prev => Math.min(prev + 1, capacityProjectSearchResults.length - 1));
-                } else if (event.key === 'ArrowUp') {
-                    if (!capacityProjectSearchResults.length) return;
-                    event.preventDefault();
-                    setCapacityProjectSearchIndex(prev => Math.max(prev - 1, 0));
-                } else if (event.key === 'Enter') {
-                    if (!capacityProjectSearchResults.length) return;
-                    event.preventDefault();
-                    const p = capacityProjectSearchResults[capacityProjectSearchIndex] || capacityProjectSearchResults[0];
-                    if (p) { setCapacityProjectDraft(p.key); setCapacityProjectSearchQuery(''); setCapacityProjectSearchOpen(false); }
-                } else if (event.key === 'Escape') {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    setCapacityProjectSearchOpen(false);
-                }
-            };
-
-            // Same search and the same reported cap as the five Mapping pickers.
-            const capacityFieldSearch = React.useMemo(
-                () => makeFieldSearchResults(capacityFieldSearchQuery, jiraFields),
-                [capacityFieldSearchQuery, jiraFields],
-            );
-            const capacityFieldSearchResults = capacityFieldSearch.items;
-            const capacityFieldSearchHidden = capacityFieldSearch.total - capacityFieldSearch.items.length;
-
-            React.useEffect(() => {
-                if (capacityFieldSearchIndex >= capacityFieldSearchResults.length) setCapacityFieldSearchIndex(0);
-            }, [capacityFieldSearchResults.length]);
-
-            const handleCapacityFieldSearchKeyDown = (event) => {
-                if (event.key === 'ArrowDown') {
-                    if (!capacityFieldSearchResults.length) return;
-                    event.preventDefault();
-                    setCapacityFieldSearchIndex(prev => Math.min(prev + 1, capacityFieldSearchResults.length - 1));
-                } else if (event.key === 'ArrowUp') {
-                    if (!capacityFieldSearchResults.length) return;
-                    event.preventDefault();
-                    setCapacityFieldSearchIndex(prev => Math.max(prev - 1, 0));
-                } else if (event.key === 'Enter') {
-                    if (!capacityFieldSearchResults.length) return;
-                    event.preventDefault();
-                    const f = capacityFieldSearchResults[capacityFieldSearchIndex] || capacityFieldSearchResults[0];
-                    if (f) { setCapacityFieldIdDraft(f.id); setCapacityFieldNameDraft(f.name); setCapacityFieldSearchQuery(''); setCapacityFieldSearchOpen(false); }
-                } else if (event.key === 'Escape') {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    setCapacityFieldSearchOpen(false);
-                }
-            };
+            useCapacityMappingEffects({
+                capacityFieldSearchIndex,
+                capacityFieldSearchResults,
+                capacityProjectSearchIndex,
+                capacityProjectSearchResults,
+                setCapacityFieldSearchIndex,
+                setCapacityProjectSearchIndex,
+            });
 
             const exportGroupsConfig = async () => {
                 setGroupDraftError('');
@@ -6720,40 +6247,10 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                     applyAdminSettingsGateConfig(config);
                     const sharedConfig = config.sharedConfig;
                     if (sharedConfig && Number.isInteger(config.sharedConfigRevision)) {
-                        const selectedProjects = sharedConfig.projects?.selected || [];
-                        if (!shouldPreserveSettingsDraft('projects')) setSelectedProjectsDraft(selectedProjects);
-                        setSavedSelectedProjects(selectedProjects);
-                        acceptSettingsConfigBaseline(selectedProjectsBaselineRef, JSON.stringify(selectedProjects));
-                        const board = sharedConfig.board || {};
-                        const nextBoardId = String(board.boardId || '');
-                        const nextBoardName = String(board.boardName || '');
-                        if (!shouldPreserveSettingsDraft('board')) {
-                            setBoardIdDraft(nextBoardId);
-                            setBoardNameDraft(nextBoardName);
-                        }
-                        setSavedBoardId(nextBoardId);
-                        acceptSettingsConfigBaseline(boardConfigBaselineRef, JSON.stringify({ boardId: nextBoardId, boardName: nextBoardName }));
-                        const capacity = sharedConfig.capacity || {};
-                        if (!shouldPreserveSettingsDraft('capacity')) {
-                            setCapacityProjectDraft(capacity.project || '');
-                            setCapacityFieldIdDraft(capacity.fieldId || '');
-                            setCapacityFieldNameDraft(capacity.fieldName || '');
-                        }
-                        acceptSettingsConfigBaseline(capacityBaselineRef, JSON.stringify({ project: capacity.project || '', fieldId: capacity.fieldId || '', fieldName: capacity.fieldName || '' }));
-                        setCapacityVerificationRequired(Boolean(
-                            config.authMode === 'atlassian_oauth'
-                            && capacity.project
-                            && capacity.fieldId
-                            && config.capacityMutationEnabled !== true
-                        ));
-                        const weightRows = clonePriorityWeightRows(sharedConfig.statsPriorityWeights);
-                        if (!shouldPreserveSettingsDraft('priorityWeights')) setPriorityWeightsDraft(weightRows);
-                        setEffectivePriorityWeightsRows(weightRows);
-                        setPriorityWeightsSource(sharedConfig.statsPriorityWeights ? 'config' : 'default');
-                        acceptSettingsConfigBaseline(priorityWeightsBaselineRef, JSON.stringify(weightRows));
-                        const issueTypes = sharedConfig.issueTypes || ['Story'];
-                        if (!shouldPreserveSettingsDraft('issueTypes')) setIssueTypesDraft(issueTypes);
-                        acceptSettingsConfigBaseline(issueTypesBaselineRef, JSON.stringify(issueTypes));
+                        applyJiraProjectsAndBoardLoaded(sharedConfig, shouldPreserveSettingsDraft);
+                        applyCapacityLoaded(sharedConfig, shouldPreserveSettingsDraft, config);
+                        applyPriorityWeightsLoaded(sharedConfig, shouldPreserveSettingsDraft);
+                        applyJiraIssueTypesLoaded(sharedConfig, shouldPreserveSettingsDraft);
                         seedSharedFieldConfigs(sharedConfig, { shouldPreserveDraft: shouldPreserveSettingsDraft });
                         const personalEpm = config.viewConfig?.view?.epm || config.epm;
                         if (!shouldPreserveEpmDraft()) applySavedEpmConfig(personalEpm);
@@ -13706,193 +13203,168 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                                 />
                                 )}
                                 {ADMIN_SETTINGS_TAB_IDS.has(groupManageTab) && (
-                                <>
-                                <AdminSettingsTabs
-                                    activeTab={groupManageTab}
-                                    performanceAvailable={performanceAdminAvailable}
-                                    accessAvailable={adminAccessAvailable}
-                                    onSelect={selectAdminSettingsTab}
-                                    onKeyDown={handleAdminSettingsTabKeyDown}
+                                <AdminSettingsContainer
+                                    BACKEND_URL={BACKEND_URL}
+                                    addIssueType={addIssueType}
+                                    addProjectSelection={addProjectSelection}
+                                    adminAccess={adminAccess}
+                                    adminAccessAvailable={adminAccessAvailable}
+                                    adminUserManagementAvailable={adminUserManagementAvailable}
+                                    authMode={authMode}
+                                    boardIdDraft={boardIdDraft}
+                                    boardNameDraft={boardNameDraft}
+                                    boardSearchIndex={boardSearchIndex}
+                                    boardSearchInputRef={boardSearchInputRef}
+                                    boardSearchOpen={boardSearchOpen}
+                                    boardSearchQuery={boardSearchQuery}
+                                    boardSearchRemoteLoading={boardSearchRemoteLoading}
+                                    boardSearchResults={boardSearchResults}
+                                    capacityFieldIdDraft={capacityFieldIdDraft}
+                                    capacityFieldNameDraft={capacityFieldNameDraft}
+                                    capacityFieldSearchHidden={capacityFieldSearchHidden}
+                                    capacityFieldSearchIndex={capacityFieldSearchIndex}
+                                    capacityFieldSearchInputRef={capacityFieldSearchInputRef}
+                                    capacityFieldSearchOpen={capacityFieldSearchOpen}
+                                    capacityFieldSearchQuery={capacityFieldSearchQuery}
+                                    capacityFieldSearchResults={capacityFieldSearchResults}
+                                    capacityProjectDraft={capacityProjectDraft}
+                                    capacityProjectSearchIndex={capacityProjectSearchIndex}
+                                    capacityProjectSearchInputRef={capacityProjectSearchInputRef}
+                                    capacityProjectSearchOpen={capacityProjectSearchOpen}
+                                    capacityProjectSearchQuery={capacityProjectSearchQuery}
+                                    capacityProjectSearchResults={capacityProjectSearchResults}
+                                    clearBoardSelection={clearBoardSelection}
+                                    deliveryOwnerFieldIdDraft={deliveryOwnerFieldIdDraft}
+                                    deliveryOwnerFieldNameDraft={deliveryOwnerFieldNameDraft}
+                                    deliveryOwnerFieldSearchHidden={deliveryOwnerFieldSearchHidden}
+                                    deliveryOwnerFieldSearchIndex={deliveryOwnerFieldSearchIndex}
+                                    deliveryOwnerFieldSearchInputRef={deliveryOwnerFieldSearchInputRef}
+                                    deliveryOwnerFieldSearchOpen={deliveryOwnerFieldSearchOpen}
+                                    deliveryOwnerFieldSearchQuery={deliveryOwnerFieldSearchQuery}
+                                    deliveryOwnerFieldSearchResults={deliveryOwnerFieldSearchResults}
+                                    groupManageTab={groupManageTab}
+                                    handleAdminSettingsTabKeyDown={handleAdminSettingsTabKeyDown}
+                                    handleBoardSearchKeyDown={handleBoardSearchKeyDown}
+                                    handleCapacityFieldSearchKeyDown={handleCapacityFieldSearchKeyDown}
+                                    handleCapacityProjectSearchKeyDown={handleCapacityProjectSearchKeyDown}
+                                    handleDeliveryOwnerFieldSearchKeyDown={handleDeliveryOwnerFieldSearchKeyDown}
+                                    handleIssueTypeSearchKeyDown={handleIssueTypeSearchKeyDown}
+                                    handleParentNameFieldSearchKeyDown={handleParentNameFieldSearchKeyDown}
+                                    handleProjectSearchKeyDown={handleProjectSearchKeyDown}
+                                    handleSprintFieldSearchKeyDown={handleSprintFieldSearchKeyDown}
+                                    handleStoryPointsFieldSearchKeyDown={handleStoryPointsFieldSearchKeyDown}
+                                    handleTeamFieldSearchKeyDown={handleTeamFieldSearchKeyDown}
+                                    issueTypeSearchIndex={issueTypeSearchIndex}
+                                    issueTypeSearchInputRef={issueTypeSearchInputRef}
+                                    issueTypeSearchOpen={issueTypeSearchOpen}
+                                    issueTypeSearchQuery={issueTypeSearchQuery}
+                                    issueTypeSearchResults={issueTypeSearchResults}
+                                    issueTypesDraft={issueTypesDraft}
+                                    jiraFields={jiraFields}
+                                    jiraProjects={jiraProjects}
+                                    loadingFields={loadingFields}
+                                    loadingProjects={loadingProjects}
+                                    mappingHoverKey={mappingHoverKey}
+                                    parentNameFieldIdDraft={parentNameFieldIdDraft}
+                                    parentNameFieldNameDraft={parentNameFieldNameDraft}
+                                    parentNameFieldSearchHidden={parentNameFieldSearchHidden}
+                                    parentNameFieldSearchIndex={parentNameFieldSearchIndex}
+                                    parentNameFieldSearchInputRef={parentNameFieldSearchInputRef}
+                                    parentNameFieldSearchOpen={parentNameFieldSearchOpen}
+                                    parentNameFieldSearchQuery={parentNameFieldSearchQuery}
+                                    parentNameFieldSearchResults={parentNameFieldSearchResults}
+                                    performanceAdminAvailable={performanceAdminAvailable}
+                                    priorityWeightsDraft={priorityWeightsDraft}
+                                    priorityWeightsSource={priorityWeightsSource}
+                                    priorityWeightsSum={priorityWeightsSum}
+                                    priorityWeightsValidationError={priorityWeightsValidationError}
+                                    projectSearchIndex={projectSearchIndex}
+                                    projectSearchInputRef={projectSearchInputRef}
+                                    projectSearchOpen={projectSearchOpen}
+                                    projectSearchQuery={projectSearchQuery}
+                                    projectSearchRemoteLoading={projectSearchRemoteLoading}
+                                    projectSearchResults={projectSearchResults}
+                                    removeIssueType={removeIssueType}
+                                    removeProjectSelection={removeProjectSelection}
+                                    resetPriorityWeightsDraft={resetPriorityWeightsDraft}
+                                    resolveCapacityProjectName={resolveCapacityProjectName}
+                                    resolveProjectName={resolveProjectName}
+                                    selectAdminSettingsTab={selectAdminSettingsTab}
+                                    selectedProjectsDraft={selectedProjectsDraft}
+                                    setBoardIdDraft={setBoardIdDraft}
+                                    setBoardNameDraft={setBoardNameDraft}
+                                    setBoardSearchIndex={setBoardSearchIndex}
+                                    setBoardSearchOpen={setBoardSearchOpen}
+                                    setBoardSearchQuery={setBoardSearchQuery}
+                                    setCapacityFieldIdDraft={setCapacityFieldIdDraft}
+                                    setCapacityFieldNameDraft={setCapacityFieldNameDraft}
+                                    setCapacityFieldSearchIndex={setCapacityFieldSearchIndex}
+                                    setCapacityFieldSearchOpen={setCapacityFieldSearchOpen}
+                                    setCapacityFieldSearchQuery={setCapacityFieldSearchQuery}
+                                    setCapacityProjectDraft={setCapacityProjectDraft}
+                                    setCapacityProjectSearchIndex={setCapacityProjectSearchIndex}
+                                    setCapacityProjectSearchOpen={setCapacityProjectSearchOpen}
+                                    setCapacityProjectSearchQuery={setCapacityProjectSearchQuery}
+                                    setDeliveryOwnerFieldIdDraft={setDeliveryOwnerFieldIdDraft}
+                                    setDeliveryOwnerFieldNameDraft={setDeliveryOwnerFieldNameDraft}
+                                    setDeliveryOwnerFieldSearchIndex={setDeliveryOwnerFieldSearchIndex}
+                                    setDeliveryOwnerFieldSearchOpen={setDeliveryOwnerFieldSearchOpen}
+                                    setDeliveryOwnerFieldSearchQuery={setDeliveryOwnerFieldSearchQuery}
+                                    setIssueTypeSearchIndex={setIssueTypeSearchIndex}
+                                    setIssueTypeSearchOpen={setIssueTypeSearchOpen}
+                                    setIssueTypeSearchQuery={setIssueTypeSearchQuery}
+                                    setMappingHoverKey={setMappingHoverKey}
+                                    setParentNameFieldIdDraft={setParentNameFieldIdDraft}
+                                    setParentNameFieldNameDraft={setParentNameFieldNameDraft}
+                                    setParentNameFieldSearchIndex={setParentNameFieldSearchIndex}
+                                    setParentNameFieldSearchOpen={setParentNameFieldSearchOpen}
+                                    setParentNameFieldSearchQuery={setParentNameFieldSearchQuery}
+                                    setProjectSearchIndex={setProjectSearchIndex}
+                                    setProjectSearchOpen={setProjectSearchOpen}
+                                    setProjectSearchQuery={setProjectSearchQuery}
+                                    setShowTechnicalFieldIds={setShowTechnicalFieldIds}
+                                    setSprintFieldIdDraft={setSprintFieldIdDraft}
+                                    setSprintFieldNameDraft={setSprintFieldNameDraft}
+                                    setSprintFieldSearchIndex={setSprintFieldSearchIndex}
+                                    setSprintFieldSearchOpen={setSprintFieldSearchOpen}
+                                    setSprintFieldSearchQuery={setSprintFieldSearchQuery}
+                                    setStoryPointsFieldIdDraft={setStoryPointsFieldIdDraft}
+                                    setStoryPointsFieldNameDraft={setStoryPointsFieldNameDraft}
+                                    setStoryPointsFieldSearchIndex={setStoryPointsFieldSearchIndex}
+                                    setStoryPointsFieldSearchOpen={setStoryPointsFieldSearchOpen}
+                                    setStoryPointsFieldSearchQuery={setStoryPointsFieldSearchQuery}
+                                    setTeamFieldIdDraft={setTeamFieldIdDraft}
+                                    setTeamFieldNameDraft={setTeamFieldNameDraft}
+                                    setTeamFieldSearchIndex={setTeamFieldSearchIndex}
+                                    setTeamFieldSearchOpen={setTeamFieldSearchOpen}
+                                    setTeamFieldSearchQuery={setTeamFieldSearchQuery}
+                                    showTechnicalFieldIds={showTechnicalFieldIds}
+                                    sprintFieldIdDraft={sprintFieldIdDraft}
+                                    sprintFieldNameDraft={sprintFieldNameDraft}
+                                    sprintFieldSearchHidden={sprintFieldSearchHidden}
+                                    sprintFieldSearchIndex={sprintFieldSearchIndex}
+                                    sprintFieldSearchInputRef={sprintFieldSearchInputRef}
+                                    sprintFieldSearchOpen={sprintFieldSearchOpen}
+                                    sprintFieldSearchQuery={sprintFieldSearchQuery}
+                                    sprintFieldSearchResults={sprintFieldSearchResults}
+                                    storyPointsFieldIdDraft={storyPointsFieldIdDraft}
+                                    storyPointsFieldNameDraft={storyPointsFieldNameDraft}
+                                    storyPointsFieldSearchHidden={storyPointsFieldSearchHidden}
+                                    storyPointsFieldSearchIndex={storyPointsFieldSearchIndex}
+                                    storyPointsFieldSearchInputRef={storyPointsFieldSearchInputRef}
+                                    storyPointsFieldSearchOpen={storyPointsFieldSearchOpen}
+                                    storyPointsFieldSearchQuery={storyPointsFieldSearchQuery}
+                                    storyPointsFieldSearchResults={storyPointsFieldSearchResults}
+                                    teamFieldIdDraft={teamFieldIdDraft}
+                                    teamFieldNameDraft={teamFieldNameDraft}
+                                    teamFieldSearchHidden={teamFieldSearchHidden}
+                                    teamFieldSearchIndex={teamFieldSearchIndex}
+                                    teamFieldSearchInputRef={teamFieldSearchInputRef}
+                                    teamFieldSearchOpen={teamFieldSearchOpen}
+                                    teamFieldSearchQuery={teamFieldSearchQuery}
+                                    teamFieldSearchResults={teamFieldSearchResults}
+                                    updatePriorityWeightDraft={updatePriorityWeightDraft}
                                 />
-                                <div
-                                    id={`admin-settings-${groupManageTab}-panel`}
-                                    role="tabpanel"
-                                    aria-labelledby={`admin-settings-${groupManageTab}-tab`}
-                                >
-                                {groupManageTab === 'performance' ? (
-                                performanceAdminAvailable ? <PerformanceSettings backendUrl={BACKEND_URL} /> : null
-                                ) : groupManageTab === 'access' ? (
-                                <AdminAccessSettings
-                                    {...{
-                                        authMode,
-                                        adminUserManagementAvailable,
-                                        adminUsers: adminAccess.users,
-                                        adminUsersLoading: adminAccess.loading,
-                                        adminUsersError: adminAccess.error,
-                                        selectedAdminUserIds: adminAccess.selectedUserIds,
-                                        onToggleAdminUser: adminAccess.toggleUser,
-                                    }}
-                                />
-                                ) : (
-                                <JiraFieldSettings
-                                    {...{
-                                        groupManageTab,
-                                        showTechnicalFieldIds,
-                                        setShowTechnicalFieldIds,
-                                        sprintFieldNameDraft,
-                                        sprintFieldIdDraft,
-                                        setSprintFieldIdDraft,
-                                        setSprintFieldNameDraft,
-                                        loadingFields,
-                                        sprintFieldSearchQuery,
-                                        setSprintFieldSearchQuery,
-                                        setSprintFieldSearchOpen,
-                                        setSprintFieldSearchIndex,
-                                        handleSprintFieldSearchKeyDown,
-                                        sprintFieldSearchInputRef,
-                                        jiraFields,
-                                        sprintFieldSearchOpen,
-                                        sprintFieldSearchResults,
-                                        sprintFieldSearchHidden,
-                                        sprintFieldSearchIndex,
-                                        boardIdDraft,
-                                        boardSearchRemoteLoading,
-                                        boardSearchQuery,
-                                        setBoardSearchQuery,
-                                        setBoardSearchOpen,
-                                        setBoardSearchIndex,
-                                        handleBoardSearchKeyDown,
-                                        boardSearchInputRef,
-                                        boardSearchOpen,
-                                        boardSearchResults,
-                                        boardSearchIndex,
-                                        setBoardIdDraft,
-                                        setBoardNameDraft,
-                                        boardNameDraft,
-                                        clearBoardSelection,
-                                        loadingProjects,
-                                        jiraProjects,
-                                        projectSearchQuery,
-                                        setProjectSearchQuery,
-                                        setProjectSearchOpen,
-                                        setProjectSearchIndex,
-                                        handleProjectSearchKeyDown,
-                                        projectSearchInputRef,
-                                        projectSearchOpen,
-                                        projectSearchRemoteLoading,
-                                        projectSearchResults,
-                                        projectSearchIndex,
-                                        addProjectSelection,
-                                        selectedProjectsDraft,
-                                        resolveProjectName,
-                                        removeProjectSelection,
-                                        mappingHoverKey,
-                                        setMappingHoverKey,
-                                        issueTypesDraft,
-                                        parentNameFieldNameDraft,
-                                        storyPointsFieldNameDraft,
-                                        teamFieldNameDraft,
-                                        deliveryOwnerFieldNameDraft,
-                                        parentNameFieldIdDraft,
-                                        storyPointsFieldIdDraft,
-                                        teamFieldIdDraft,
-                                        deliveryOwnerFieldIdDraft,
-                                        issueTypeSearchQuery,
-                                        setIssueTypeSearchQuery,
-                                        setIssueTypeSearchOpen,
-                                        setIssueTypeSearchIndex,
-                                        handleIssueTypeSearchKeyDown,
-                                        issueTypeSearchInputRef,
-                                        issueTypeSearchOpen,
-                                        issueTypeSearchResults,
-                                        issueTypeSearchIndex,
-                                        addIssueType,
-                                        removeIssueType,
-                                        setParentNameFieldIdDraft,
-                                        setParentNameFieldNameDraft,
-                                        parentNameFieldSearchQuery,
-                                        setParentNameFieldSearchQuery,
-                                        setParentNameFieldSearchOpen,
-                                        setParentNameFieldSearchIndex,
-                                        handleParentNameFieldSearchKeyDown,
-                                        parentNameFieldSearchInputRef,
-                                        parentNameFieldSearchOpen,
-                                        parentNameFieldSearchResults,
-                                        parentNameFieldSearchHidden,
-                                        parentNameFieldSearchIndex,
-                                        setStoryPointsFieldIdDraft,
-                                        setStoryPointsFieldNameDraft,
-                                        storyPointsFieldSearchQuery,
-                                        setStoryPointsFieldSearchQuery,
-                                        setStoryPointsFieldSearchOpen,
-                                        setStoryPointsFieldSearchIndex,
-                                        handleStoryPointsFieldSearchKeyDown,
-                                        storyPointsFieldSearchInputRef,
-                                        storyPointsFieldSearchOpen,
-                                        storyPointsFieldSearchResults,
-                                        storyPointsFieldSearchHidden,
-                                        storyPointsFieldSearchIndex,
-                                        teamFieldSearchQuery,
-                                        setTeamFieldSearchQuery,
-                                        setTeamFieldSearchOpen,
-                                        setTeamFieldSearchIndex,
-                                        handleTeamFieldSearchKeyDown,
-                                        teamFieldSearchInputRef,
-                                        teamFieldSearchOpen,
-                                        teamFieldSearchResults,
-                                        teamFieldSearchHidden,
-                                        teamFieldSearchIndex,
-                                        setTeamFieldIdDraft,
-                                        setTeamFieldNameDraft,
-                                        deliveryOwnerFieldSearchQuery,
-                                        setDeliveryOwnerFieldSearchQuery,
-                                        setDeliveryOwnerFieldSearchOpen,
-                                        setDeliveryOwnerFieldSearchIndex,
-                                        handleDeliveryOwnerFieldSearchKeyDown,
-                                        deliveryOwnerFieldSearchInputRef,
-                                        deliveryOwnerFieldSearchOpen,
-                                        deliveryOwnerFieldSearchResults,
-                                        deliveryOwnerFieldSearchHidden,
-                                        deliveryOwnerFieldSearchIndex,
-                                        setDeliveryOwnerFieldIdDraft,
-                                        setDeliveryOwnerFieldNameDraft,
-                                        capacityProjectDraft,
-                                        resolveCapacityProjectName,
-                                        setCapacityProjectDraft,
-                                        capacityProjectSearchQuery,
-                                        setCapacityProjectSearchQuery,
-                                        setCapacityProjectSearchOpen,
-                                        setCapacityProjectSearchIndex,
-                                        handleCapacityProjectSearchKeyDown,
-                                        capacityProjectSearchInputRef,
-                                        capacityProjectSearchOpen,
-                                        capacityProjectSearchResults,
-                                        capacityProjectSearchIndex,
-                                        capacityFieldNameDraft,
-                                        capacityFieldIdDraft,
-                                        setCapacityFieldIdDraft,
-                                        setCapacityFieldNameDraft,
-                                        capacityFieldSearchQuery,
-                                        setCapacityFieldSearchQuery,
-                                        setCapacityFieldSearchOpen,
-                                        setCapacityFieldSearchIndex,
-                                        handleCapacityFieldSearchKeyDown,
-                                        capacityFieldSearchInputRef,
-                                        capacityFieldSearchOpen,
-                                        capacityFieldSearchResults,
-                                        capacityFieldSearchHidden,
-                                        capacityFieldSearchIndex,
-                                        priorityWeightsSource,
-                                        priorityWeightsDraft,
-                                        updatePriorityWeightDraft,
-                                        priorityWeightsSum,
-                                        resetPriorityWeightsDraft,
-                                        priorityWeightsValidationError,
-                                    }}
-                                />
-                                )}
-                                </div>
-                                </>
                                 )}
                                 {groupManageTab === 'epm' && (
                                 <EpmSettings

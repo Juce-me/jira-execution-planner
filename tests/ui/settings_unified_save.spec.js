@@ -1631,6 +1631,87 @@ test('the unified save persists every dirty section together, group board includ
     expect(groupsBody.board).toBeUndefined();
 });
 
+// Characterization of ST1: the imperative save sequence in docs/plans/EXEC-dashboard-scenario-settings-state-extraction.md
+// section 4 ("Settings save order"). Every administrator section commits the shared revision it
+// receives, so each next POST must carry the previous response's configRevision.
+test('the unified save posts administrator sections in the documented order with a chained baseRevision', async ({ page }) => {
+    const snapshot = sharedWorkspaceSnapshot({ revision: 3 });
+    snapshot.sharedConfig.capacity = { project: 'DEMO', fieldId: 'customfield_10050', fieldName: 'Capacity' };
+    snapshot.sharedConfig.statsPriorityWeights = [{ priority: 'P1', weight: 0.5 }];
+    const calls = await mockConfigSettings(page, {
+        sourceBundle: true,
+        workspaceSnapshots: [snapshot],
+        workspaceSaveResponses: {
+            '/api/projects/selected': [{ body: { selected: [{ key: 'DEMO', type: 'product' }, { key: 'EXTRA', type: 'product' }], configRevision: 4 } }],
+            '/api/stats/priority-weights-config': [{ body: { weights: [{ priority: 'P1', weight: 0.75 }], configRevision: 5 } }],
+            '/api/board-config': [{ body: { boardId: '', boardName: '', configRevision: 6 } }],
+            '/api/capacity/config': [{ body: { project: '', fieldId: '', fieldName: '', configRevision: 7 } }],
+            '/api/delivery-owner-field/config': [{ body: { fieldId: '', fieldName: '', configRevision: 8 } }],
+            '/api/issue-types/config': [{ body: { issueTypes: [], configRevision: 9 } }],
+        },
+    });
+
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+
+    await dialog.getByPlaceholder('Group name').fill('Platform Core');
+
+    await dialog.getByRole('button', { name: 'Admin' }).click();
+    await dialog.getByRole('tab', { name: 'Scope projects' }).click();
+    await dialog.getByPlaceholder('Search projects to add...').fill('EXTRA');
+    await dialog.locator('.team-search-result-item', { hasText: 'EXTRA' }).getByRole('button', { name: 'Product' }).click();
+    await dialog.getByRole('tab', { name: 'Jira source' }).click();
+    await dialog.getByRole('button', { name: 'Clear sprint board' }).click();
+    await dialog.getByRole('tab', { name: 'Field mapping' }).click();
+    await dialog.getByRole('button', { name: 'Remove delivery owner field' }).click();
+    await dialog.getByRole('button', { name: 'Remove issue type Story' }).click();
+    await dialog.getByRole('tab', { name: 'Capacity' }).click();
+    await dialog.getByRole('button', { name: 'Remove capacity field' }).click();
+    await dialog.getByRole('button', { name: 'Remove capacity project' }).click();
+    await dialog.getByRole('tab', { name: 'Priority weights' }).click();
+    await dialog.getByLabel('P1 weight').fill('0.75');
+
+    await dialog.getByRole('button', { name: 'EPM' }).click();
+    await dialog.getByRole('tab', { name: 'Scope' }).click();
+    await dialog.locator('[data-epm-scope-field="labelPrefix"]').fill('rnd_project_core_');
+
+    await dialog.getByRole('button', { name: /^Save$/ }).click();
+    await expect(dialog).toHaveCount(0);
+
+    // Method and path only (the CSRF fetch is ignored). The single GET /api/config is the
+    // post-save refresh that follows the groups POST and precedes the EPM save. The derived Team
+    // name directory (/api/team-catalog) persists on its own lifecycle outside this sequence.
+    const firstSave = calls.findIndex(call => call.method === 'POST' && call.pathname === '/api/projects/selected');
+    const sequence = calls.slice(firstSave)
+        .filter(call => call.pathname !== '/api/auth/csrf' && call.pathname !== '/api/team-catalog'
+            && (call.method === 'POST' || (call.method === 'GET' && call.pathname === '/api/config')))
+        .map(call => `${call.method} ${call.pathname}`);
+    expect(sequence).toEqual([
+        'POST /api/projects/selected',
+        'POST /api/stats/priority-weights-config',
+        'POST /api/board-config',
+        'POST /api/capacity/config',
+        'POST /api/delivery-owner-field/config',
+        'POST /api/issue-types/config',
+        'POST /api/groups-config',
+        'GET /api/config',
+        'POST /api/epm/config',
+    ]);
+
+    const body = pathname => calls.find(call => call.method === 'POST' && call.pathname === pathname).body;
+    expect([
+        '/api/projects/selected',
+        '/api/stats/priority-weights-config',
+        '/api/board-config',
+        '/api/capacity/config',
+        '/api/delivery-owner-field/config',
+        '/api/issue-types/config',
+    ].map(pathname => body(pathname).baseRevision)).toEqual([3, 4, 5, 6, 7, 8]);
+    expect(body('/api/groups-config').baseRevision).toBe(2);
+    expect(body('/api/epm/config').baseRevision).toBeUndefined();
+});
+
 test('settings save persists dirty department and EPM sections together', async ({ page }) => {
     const calls = await mockConfigSettings(page, { sourceBundle: true });
 

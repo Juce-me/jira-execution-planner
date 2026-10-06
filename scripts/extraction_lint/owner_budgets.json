@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "baseSha": "7a768d5ddf3607a5deb4bed759e8c26198ceaff5",
-  "checkpointId": "ST2-R3-EpmHelpers",
+  "checkpointId": "ST2-R4a-EpmSettings",
   "sourceRoot": "frontend/src",
   "ownerRoots": [
     "scenario",
@@ -19,7 +19,7 @@
   },
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
-    "lineCount": 13874,
+    "lineCount": 13061,
     "lineCeiling": 13884
   },
   "modules": [
@@ -191,7 +191,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "EpmControls",
-              "line": 10478,
+              "line": 9669,
               "phase": "render"
             }
           ],
@@ -243,7 +243,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "EpmProjectCollapseAllButton",
-              "line": 10527,
+              "line": 9718,
               "phase": "render"
             }
           ],
@@ -1361,7 +1361,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "EpmSettings",
-              "line": 13360,
+              "line": 12547,
               "phase": "render"
             }
           ],
@@ -1451,7 +1451,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "EpmView",
-              "line": 13125,
+              "line": 12312,
               "phase": "render"
             }
           ],
@@ -1618,7 +1618,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useEpmViewData",
-              "line": 2819,
+              "line": 2132,
               "phase": "hook execution"
             }
           ],
@@ -1626,150 +1626,150 @@
             {
               "name": "epmTab",
               "lines": [
-                2821,
-                2854,
-                2864,
-                6017,
-                6074,
-                10480,
-                11752,
-                11784,
-                13134
+                2134,
+                2167,
+                2177,
+                5208,
+                5265,
+                9671,
+                10939,
+                10971,
+                12321
               ]
             },
             {
               "name": "setEpmTab",
               "lines": [
-                10483
+                9674
               ]
             },
             {
               "name": "setEpmProjects",
               "lines": [
-                1547
+                1301
               ]
             },
             {
               "name": "epmProjectsLoading",
               "lines": [
-                10488,
-                11419,
-                11685,
-                13128
+                9679,
+                10606,
+                10872,
+                12315
               ]
             },
             {
               "name": "setEpmProjectsError",
               "lines": [
-                1548
+                1301
               ]
             },
             {
               "name": "epmSelectedProjectId",
               "lines": [
-                2822,
-                2836,
-                2841,
-                2843,
-                2848,
-                2854,
-                6018,
-                6075,
-                13131
+                2135,
+                2149,
+                2154,
+                2156,
+                2161,
+                2167,
+                5209,
+                5266,
+                12318
               ]
             },
             {
               "name": "setEpmSelectedProjectId",
               "lines": [
-                10508
+                9699
               ]
             },
             {
               "name": "visibleEpmProjects",
               "lines": [
-                10489
+                9680
               ]
             },
             {
               "name": "selectedEpmProject",
               "lines": [
-                8599,
-                8601,
-                8681,
-                10490,
-                13132
+                7790,
+                7792,
+                7872,
+                9681,
+                12319
               ]
             },
             {
               "name": "filteredEpmProjects",
               "lines": [
-                10491
+                9682
               ]
             },
             {
               "name": "visibleEpmRollupBoards",
               "lines": [
-                2837,
-                2841,
-                2848,
-                2865,
-                8597,
-                8598,
-                8601,
-                13137
+                2150,
+                2154,
+                2161,
+                2178,
+                7788,
+                7789,
+                7792,
+                12324
               ]
             },
             {
               "name": "epmRollupTree",
               "lines": [
-                8599,
-                8601,
-                13130
+                7790,
+                7792,
+                12317
               ]
             },
             {
               "name": "epmRollupBoards",
               "lines": [
-                13129
+                12316
               ]
             },
             {
               "name": "epmDuplicates",
               "lines": [
-                13138
+                12325
               ]
             },
             {
               "name": "epmAggregateTruncated",
               "lines": [
-                13139
+                12326
               ]
             },
             {
               "name": "epmRollupLoading",
               "lines": [
-                8650,
-                8662,
-                11419,
-                13136
+                7841,
+                7853,
+                10606,
+                12323
               ]
             },
             {
               "name": "epmProjectRollupLoadingIds",
               "lines": [
-                13140
+                12327
               ]
             },
             {
               "name": "epmSelectedSubGoalKeys",
               "lines": [
-                10513
+                9704
               ]
             },
             {
               "name": "setEpmSelectedSubGoalKeys",
               "lines": [
-                10517
+                9708
               ]
             },
             {
@@ -1779,20 +1779,20 @@
             {
               "name": "refreshEpmProjects",
               "lines": [
-                1545
+                1301
               ]
             },
             {
               "name": "refreshEpmView",
               "lines": [
-                11382
+                10569
               ]
             },
             {
               "name": "loadArchivedEpmProjectRollup",
               "lines": [
-                2865,
-                13144
+                2178,
+                12331
               ]
             }
           ],
@@ -1957,7 +1957,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "ScenarioView",
-              "line": 12975,
+              "line": 12162,
               "phase": "render"
             }
           ],
@@ -3285,7 +3285,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useScenarioPlanner",
-              "line": 7965,
+              "line": 7156,
               "phase": "hook execution"
             }
           ],
@@ -3293,9 +3293,9 @@
             {
               "name": "scenario",
               "lines": [
-                8006,
-                10943,
-                12976
+                7197,
+                10134,
+                12163
               ]
             }
           ],
@@ -3576,7 +3576,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useScenarioState",
-              "line": 440,
+              "line": 434,
               "phase": "hook execution"
             }
           ],
@@ -3584,9 +3584,9 @@
             {
               "name": "scenarioState",
               "lines": [
-                474,
-                7966,
-                12977
+                468,
+                7157,
+                12164
               ]
             }
           ],
@@ -3703,7 +3703,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useAdminAccessSettings",
-              "line": 720,
+              "line": 664,
               "phase": "hook execution"
             }
           ],
@@ -3711,19 +3711,19 @@
             {
               "name": "adminAccess",
               "lines": [
-                1334,
-                1338,
-                2957,
-                3644,
-                3774,
-                3775,
-                3776,
-                4223,
-                4224,
-                4225,
-                4227,
-                4233,
-                13200
+                1395,
+                1399,
+                2204,
+                2835,
+                2965,
+                2966,
+                2967,
+                3414,
+                3415,
+                3416,
+                3418,
+                3424,
+                12387
               ]
             }
           ],
@@ -3890,7 +3890,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "FirstRunGroupConfigurationGuide",
-              "line": 13588,
+              "line": 12775,
               "phase": "render"
             }
           ],
@@ -3982,7 +3982,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "FirstRunGroupSelectionModal",
-              "line": 13798,
+              "line": 12985,
               "phase": "render"
             }
           ],
@@ -4061,7 +4061,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "FirstRunGroupSetupChoice",
-              "line": 13811,
+              "line": 12998,
               "phase": "render"
             }
           ],
@@ -4237,7 +4237,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "GroupBoardsTab",
-              "line": 13770,
+              "line": 12957,
               "phase": "render"
             }
           ],
@@ -5141,7 +5141,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "SettingsModal",
-              "line": 13154,
+              "line": 12341,
               "phase": "render"
             }
           ],
@@ -5525,7 +5525,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "TeamGroupsSettings",
-              "line": 13493,
+              "line": 12680,
               "phase": "render"
             }
           ],
@@ -5579,7 +5579,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "UnconfiguredWorkspaceNotice",
-              "line": 11816,
+              "line": 11003,
               "phase": "render"
             }
           ],
@@ -5637,7 +5637,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "UserConnectionsSettings",
-              "line": 13190,
+              "line": 12377,
               "phase": "render"
             }
           ],
@@ -5694,7 +5694,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useAdminSettingsGate",
-              "line": 726,
+              "line": 670,
               "phase": "hook execution"
             }
           ],
@@ -5702,29 +5702,29 @@
             {
               "name": "adminSettingsGate",
               "lines": [
-                1082,
-                2190,
-                2192,
-                7256,
-                7334,
-                7516,
-                7664,
-                8479,
-                11816
+                1026,
+                1738,
+                1740,
+                6447,
+                6525,
+                6707,
+                6855,
+                7670,
+                11003
               ]
             },
             {
               "name": "applyAdminSettingsGateConfig",
               "lines": [
-                3658,
-                3896,
-                6237
+                2849,
+                3087,
+                5428
               ]
             },
             {
               "name": "setAdminSettingsGate",
               "lines": [
-                6293
+                5484
               ]
             }
           ],
@@ -5732,7 +5732,7 @@
             {
               "caller": "frontend/src/dashboard.jsx",
               "name": "openSettings",
-              "line": 726,
+              "line": 670,
               "capturedBindings": [
                 "openGroupManage"
               ],
@@ -5928,7 +5928,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useSettingsConfigBaselineRevision",
-              "line": 732,
+              "line": 676,
               "phase": "hook execution"
             }
           ],
@@ -5936,17 +5936,17 @@
             {
               "name": "settingsConfigBaselineRevision",
               "lines": [
-                758,
-                841,
-                915
+                702,
+                785,
+                859
               ]
             },
             {
               "name": "acceptSettingsConfigBaseline",
               "lines": [
-                754,
-                833,
-                910
+                698,
+                777,
+                854
               ]
             }
           ],
@@ -6107,7 +6107,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useGroupVisibilityPreferences",
-              "line": 1292,
+              "line": 1353,
               "phase": "hook execution"
             }
           ],
@@ -6115,188 +6115,188 @@
             {
               "name": "groupPreferences",
               "lines": [
-                1321,
-                1340,
-                2190,
-                2192,
-                2244,
-                2245,
-                3054,
-                3062,
-                6069,
-                6122,
-                6317,
-                6390,
-                6393,
-                6414,
-                6639,
-                6691,
-                6697,
-                6714,
-                7121,
-                7219,
-                7256,
-                7334,
-                7516,
-                7663,
-                10772,
-                11342,
-                11350,
-                11418,
-                13796,
-                13807,
-                13823
+                1382,
+                1401,
+                1738,
+                1740,
+                1792,
+                1793,
+                2301,
+                2309,
+                5260,
+                5313,
+                5508,
+                5581,
+                5584,
+                5605,
+                5830,
+                5882,
+                5888,
+                5905,
+                6312,
+                6410,
+                6447,
+                6525,
+                6707,
+                6854,
+                9963,
+                10529,
+                10537,
+                10605,
+                12983,
+                12994,
+                13010
               ]
             },
             {
               "name": "setGroupPreferences",
               "lines": [
-                2677,
-                3063,
-                3618,
-                4232,
-                4896
+                2005,
+                2310,
+                2809,
+                3423,
+                4087
               ]
             },
             {
               "name": "visibleGroupDraftIds",
               "lines": [
-                13504
+                12691
               ]
             },
             {
               "name": "setVisibleGroupDraftIds",
               "lines": [
-                2251,
-                3285,
-                3319,
-                3585
+                1799,
+                2476,
+                2510,
+                2776
               ]
             },
             {
               "name": "favoriteGroupDraftId",
               "lines": [
-                13520
+                12707
               ]
             },
             {
               "name": "setFavoriteGroupDraftId",
               "lines": [
-                2252
+                1800
               ]
             },
             {
               "name": "setFavoriteGroupDraft",
               "lines": [
-                13521
+                12708
               ]
             },
             {
               "name": "favoriteGroupValidationError",
               "lines": [
-                3030,
-                3031,
-                3035
+                2277,
+                2278,
+                2282
               ]
             },
             {
               "name": "setGroupPreferencesSaving",
               "lines": [
-                4006
+                3197
               ]
             },
             {
               "name": "groupVisibilitySaving",
               "lines": [
-                3085,
-                13507
+                2332,
+                12694
               ]
             },
             {
               "name": "isGroupVisibilityDraftDirty",
               "lines": [
-                2971,
-                2974,
-                2985,
-                2987,
-                3715,
-                3858,
-                4030,
-                13161
+                2218,
+                2221,
+                2232,
+                2234,
+                2906,
+                3049,
+                3221,
+                12348
               ]
             },
             {
               "name": "visibleControlGroups",
               "lines": [
-                2052,
-                2053,
-                2056,
-                5156,
-                5157,
-                5325,
-                5328,
-                5738,
-                5774,
-                7989,
-                10369,
-                10754
+                1600,
+                1601,
+                1604,
+                4347,
+                4348,
+                4516,
+                4519,
+                4929,
+                4965,
+                7180,
+                9560,
+                9945
               ]
             },
             {
               "name": "initializeGroupPreferencesDraft",
               "lines": [
-                2242
+                1790
               ]
             },
             {
               "name": "isGroupVisibleInControls",
               "lines": [
-                13506
+                12693
               ]
             },
             {
               "name": "toggleGroupVisibleInControls",
               "lines": [
-                13505
+                12692
               ]
             },
             {
               "name": "firstRunFavoriteGroupId",
               "lines": [
-                13800
+                12987
               ]
             },
             {
               "name": "selectFirstRunFavoriteGroup",
               "lines": [
-                13801
+                12988
               ]
             },
             {
               "name": "saveFirstRunGroupPreferences",
               "lines": [
-                4123,
-                4904,
-                4928,
-                13802
+                3314,
+                4095,
+                4119,
+                12989
               ]
             },
             {
               "name": "firstRunSaving",
               "lines": [
-                13805
+                12992
               ]
             },
             {
               "name": "firstRunError",
               "lines": [
-                13806
+                12993
               ]
             },
             {
               "name": "persistGroupPreferences",
               "lines": [
-                3859
+                3050
               ]
             }
           ],
@@ -6448,7 +6448,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useJiraFieldPickers",
-              "line": 941,
+              "line": 885,
               "phase": "hook execution"
             }
           ],
@@ -6456,561 +6456,561 @@
             {
               "name": "sprintFieldIdDraft",
               "lines": [
-                948,
-                1328,
-                1341,
-                2996,
-                3035,
-                13332
+                892,
+                1389,
+                1402,
+                2243,
+                2282,
+                12519
               ]
             },
             {
               "name": "setSprintFieldIdDraft",
               "lines": [
-                4217,
-                13316
+                3408,
+                12503
               ]
             },
             {
               "name": "sprintFieldNameDraft",
               "lines": [
-                948,
-                1328,
-                1342,
-                13333
+                892,
+                1389,
+                1403,
+                12520
               ]
             },
             {
               "name": "setSprintFieldNameDraft",
               "lines": [
-                4217,
-                13317
+                3408,
+                12504
               ]
             },
             {
               "name": "sprintFieldSearchQuery",
               "lines": [
-                13338
+                12525
               ]
             },
             {
               "name": "setSprintFieldSearchQuery",
               "lines": [
-                13320
+                12507
               ]
             },
             {
               "name": "sprintFieldSearchOpen",
               "lines": [
-                13337
+                12524
               ]
             },
             {
               "name": "setSprintFieldSearchOpen",
               "lines": [
-                13319
+                12506
               ]
             },
             {
               "name": "sprintFieldSearchIndex",
               "lines": [
-                13335
+                12522
               ]
             },
             {
               "name": "setSprintFieldSearchIndex",
               "lines": [
-                13318
+                12505
               ]
             },
             {
               "name": "sprintFieldSearchInputRef",
               "lines": [
-                13336
+                12523
               ]
             },
             {
               "name": "sprintFieldSearchResults",
               "lines": [
-                13339
+                12526
               ]
             },
             {
               "name": "sprintFieldSearchHidden",
               "lines": [
-                13334
+                12521
               ]
             },
             {
               "name": "handleSprintFieldSearchKeyDown",
               "lines": [
-                13244
+                12431
               ]
             },
             {
               "name": "isSprintFieldDirty",
               "lines": [
-                3638,
-                6145
+                2829,
+                5336
               ]
             },
             {
               "name": "saveSprintFieldConfig",
               "lines": [
-                3761
+                2952
               ]
             },
             {
               "name": "parentNameFieldIdDraft",
               "lines": [
-                949,
-                1329,
-                1340,
-                2999,
-                3035,
-                13258
+                893,
+                1390,
+                1401,
+                2246,
+                2282,
+                12445
               ]
             },
             {
               "name": "setParentNameFieldIdDraft",
               "lines": [
-                4218,
-                13307
+                3409,
+                12494
               ]
             },
             {
               "name": "parentNameFieldNameDraft",
               "lines": [
-                949,
-                1329,
-                1341,
-                13259
+                893,
+                1390,
+                1402,
+                12446
               ]
             },
             {
               "name": "setParentNameFieldNameDraft",
               "lines": [
-                4218,
-                13308
+                3409,
+                12495
               ]
             },
             {
               "name": "parentNameFieldSearchQuery",
               "lines": [
-                13264
+                12451
               ]
             },
             {
               "name": "setParentNameFieldSearchQuery",
               "lines": [
-                13311
+                12498
               ]
             },
             {
               "name": "parentNameFieldSearchOpen",
               "lines": [
-                13263
+                12450
               ]
             },
             {
               "name": "setParentNameFieldSearchOpen",
               "lines": [
-                13310
+                12497
               ]
             },
             {
               "name": "parentNameFieldSearchIndex",
               "lines": [
-                13261
+                12448
               ]
             },
             {
               "name": "setParentNameFieldSearchIndex",
               "lines": [
-                13309
+                12496
               ]
             },
             {
               "name": "parentNameFieldSearchInputRef",
               "lines": [
-                13262
+                12449
               ]
             },
             {
               "name": "parentNameFieldSearchResults",
               "lines": [
-                13265
+                12452
               ]
             },
             {
               "name": "parentNameFieldSearchHidden",
               "lines": [
-                13260
+                12447
               ]
             },
             {
               "name": "handleParentNameFieldSearchKeyDown",
               "lines": [
-                13242
+                12429
               ]
             },
             {
               "name": "isParentNameFieldDirty",
               "lines": [
-                3639,
-                6146
+                2830,
+                5337
               ]
             },
             {
               "name": "saveParentNameFieldConfig",
               "lines": [
-                3762
+                2953
               ]
             },
             {
               "name": "storyPointsFieldIdDraft",
               "lines": [
-                950,
-                1330,
-                1342,
-                3002,
-                3035,
-                13340
+                894,
+                1391,
+                1403,
+                2249,
+                2282,
+                12527
               ]
             },
             {
               "name": "setStoryPointsFieldIdDraft",
               "lines": [
-                4219,
-                13321
+                3410,
+                12508
               ]
             },
             {
               "name": "storyPointsFieldNameDraft",
               "lines": [
-                950,
-                1330,
-                1342,
-                13341
+                894,
+                1391,
+                1403,
+                12528
               ]
             },
             {
               "name": "setStoryPointsFieldNameDraft",
               "lines": [
-                4219,
-                13322
+                3410,
+                12509
               ]
             },
             {
               "name": "storyPointsFieldSearchQuery",
               "lines": [
-                13346
+                12533
               ]
             },
             {
               "name": "setStoryPointsFieldSearchQuery",
               "lines": [
-                13325
+                12512
               ]
             },
             {
               "name": "storyPointsFieldSearchOpen",
               "lines": [
-                13345
+                12532
               ]
             },
             {
               "name": "setStoryPointsFieldSearchOpen",
               "lines": [
-                13324
+                12511
               ]
             },
             {
               "name": "storyPointsFieldSearchIndex",
               "lines": [
-                13343
+                12530
               ]
             },
             {
               "name": "setStoryPointsFieldSearchIndex",
               "lines": [
-                13323
+                12510
               ]
             },
             {
               "name": "storyPointsFieldSearchInputRef",
               "lines": [
-                13344
+                12531
               ]
             },
             {
               "name": "storyPointsFieldSearchResults",
               "lines": [
-                13347
+                12534
               ]
             },
             {
               "name": "storyPointsFieldSearchHidden",
               "lines": [
-                13342
+                12529
               ]
             },
             {
               "name": "handleStoryPointsFieldSearchKeyDown",
               "lines": [
-                13245
+                12432
               ]
             },
             {
               "name": "isStoryPointsFieldDirty",
               "lines": [
-                3640,
-                6147
+                2831,
+                5338
               ]
             },
             {
               "name": "saveStoryPointsFieldConfig",
               "lines": [
-                3763
+                2954
               ]
             },
             {
               "name": "teamFieldIdDraft",
               "lines": [
-                951,
-                1331,
-                1342,
-                3005,
-                3035,
-                13348
+                895,
+                1392,
+                1403,
+                2252,
+                2282,
+                12535
               ]
             },
             {
               "name": "setTeamFieldIdDraft",
               "lines": [
-                4220,
-                13326
+                3411,
+                12513
               ]
             },
             {
               "name": "teamFieldNameDraft",
               "lines": [
-                951,
-                1331,
-                1342,
-                13349
+                895,
+                1392,
+                1403,
+                12536
               ]
             },
             {
               "name": "setTeamFieldNameDraft",
               "lines": [
-                4220,
-                13327
+                3411,
+                12514
               ]
             },
             {
               "name": "teamFieldSearchQuery",
               "lines": [
-                13354
+                12541
               ]
             },
             {
               "name": "setTeamFieldSearchQuery",
               "lines": [
-                13330
+                12517
               ]
             },
             {
               "name": "teamFieldSearchOpen",
               "lines": [
-                13353
+                12540
               ]
             },
             {
               "name": "setTeamFieldSearchOpen",
               "lines": [
-                13329
+                12516
               ]
             },
             {
               "name": "teamFieldSearchIndex",
               "lines": [
-                13351
+                12538
               ]
             },
             {
               "name": "setTeamFieldSearchIndex",
               "lines": [
-                13328
+                12515
               ]
             },
             {
               "name": "teamFieldSearchInputRef",
               "lines": [
-                13352
+                12539
               ]
             },
             {
               "name": "teamFieldSearchResults",
               "lines": [
-                13355
+                12542
               ]
             },
             {
               "name": "teamFieldSearchHidden",
               "lines": [
-                13350
+                12537
               ]
             },
             {
               "name": "handleTeamFieldSearchKeyDown",
               "lines": [
-                13246
+                12433
               ]
             },
             {
               "name": "isTeamFieldDirty",
               "lines": [
-                3641,
-                6148
+                2832,
+                5339
               ]
             },
             {
               "name": "saveTeamFieldConfig",
               "lines": [
-                3764
+                2955
               ]
             },
             {
               "name": "deliveryOwnerFieldIdDraft",
               "lines": [
-                952,
-                1332,
-                1339,
-                13227
+                896,
+                1393,
+                1400,
+                12414
               ]
             },
             {
               "name": "setDeliveryOwnerFieldIdDraft",
               "lines": [
-                4221,
-                13298
+                3412,
+                12485
               ]
             },
             {
               "name": "deliveryOwnerFieldNameDraft",
               "lines": [
-                952,
-                1332,
-                1339,
-                13228
+                896,
+                1393,
+                1400,
+                12415
               ]
             },
             {
               "name": "setDeliveryOwnerFieldNameDraft",
               "lines": [
-                4221,
-                13299
+                3412,
+                12486
               ]
             },
             {
               "name": "deliveryOwnerFieldSearchQuery",
               "lines": [
-                13233
+                12420
               ]
             },
             {
               "name": "setDeliveryOwnerFieldSearchQuery",
               "lines": [
-                13302
+                12489
               ]
             },
             {
               "name": "deliveryOwnerFieldSearchOpen",
               "lines": [
-                13232
+                12419
               ]
             },
             {
               "name": "setDeliveryOwnerFieldSearchOpen",
               "lines": [
-                13301
+                12488
               ]
             },
             {
               "name": "deliveryOwnerFieldSearchIndex",
               "lines": [
-                13230
+                12417
               ]
             },
             {
               "name": "setDeliveryOwnerFieldSearchIndex",
               "lines": [
-                13300
+                12487
               ]
             },
             {
               "name": "deliveryOwnerFieldSearchInputRef",
               "lines": [
-                13231
+                12418
               ]
             },
             {
               "name": "deliveryOwnerFieldSearchResults",
               "lines": [
-                13234
+                12421
               ]
             },
             {
               "name": "deliveryOwnerFieldSearchHidden",
               "lines": [
-                13229
+                12416
               ]
             },
             {
               "name": "handleDeliveryOwnerFieldSearchKeyDown",
               "lines": [
-                13240
+                12427
               ]
             },
             {
               "name": "isDeliveryOwnerFieldDirty",
               "lines": [
-                3642,
-                6149
+                2833,
+                5340
               ]
             },
             {
               "name": "saveDeliveryOwnerFieldConfig",
               "lines": [
-                3765
+                2956
               ]
             },
             {
               "name": "loadAllFieldConfigs",
               "lines": [
-                2272,
-                6266
+                1820,
+                5457
               ]
             },
             {
               "name": "seedSharedFieldConfigs",
               "lines": [
-                6244
+                5435
               ]
             },
             {
               "name": "anyFieldConfigDirty",
               "lines": [
-                2964,
-                2966
+                2211,
+                2213
               ]
             },
             {
               "name": "dirtyFieldConfigCount",
               "lines": [
-                2986,
-                2987
+                2233,
+                2234
               ]
             }
           ],
@@ -7103,7 +7103,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "usePriorityWeightsSettings",
-              "line": 752,
+              "line": 696,
               "phase": "hook execution"
             }
           ],
@@ -7111,92 +7111,92 @@
             {
               "name": "priorityWeightsDraft",
               "lines": [
-                1325,
-                1341,
-                13267
+                1386,
+                1402,
+                12454
               ]
             },
             {
               "name": "setPriorityWeightsDraft",
               "lines": [
-                4202
+                3393
               ]
             },
             {
               "name": "priorityWeightsSource",
               "lines": [
-                13268
+                12455
               ]
             },
             {
               "name": "effectivePriorityWeightsRows",
               "lines": [
-                6718,
-                6719
+                5909,
+                5910
               ]
             },
             {
               "name": "isPriorityWeightsDirty",
               "lines": [
-                2960,
-                2966,
-                2978,
-                2987,
-                3635,
-                3971,
-                6143
+                2207,
+                2213,
+                2225,
+                2234,
+                2826,
+                3162,
+                5334
               ]
             },
             {
               "name": "priorityWeightsValidationError",
               "lines": [
-                3014,
-                3015,
-                3035,
-                13270
+                2261,
+                2262,
+                2282,
+                12457
               ]
             },
             {
               "name": "priorityWeightsSum",
               "lines": [
-                13269
+                12456
               ]
             },
             {
               "name": "loadPriorityWeightsConfig",
               "lines": [
-                2269,
-                6257
+                1817,
+                5448
               ]
             },
             {
               "name": "savePriorityWeightsConfig",
               "lines": [
-                3743
+                2934
               ]
             },
             {
               "name": "updatePriorityWeightDraft",
               "lines": [
-                13356
+                12543
               ]
             },
             {
               "name": "resetPriorityWeightsDraft",
               "lines": [
-                13279
+                12466
               ]
             },
             {
               "name": "applyPriorityWeightsLoaded",
               "lines": [
-                6242
+                5433
               ]
             },
             {
               "name": "priorityWeightsDraftSnapshot",
               "lines": [
-                946
+                890
               ]
             }
           ],
@@ -7285,7 +7285,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useTeamCatalogLifecycle",
-              "line": 1212,
+              "line": 1151,
               "phase": "hook execution"
             }
           ],
@@ -7293,45 +7293,45 @@
             {
               "name": "teamCatalogState",
               "lines": [
-                4832,
-                4841,
-                4946,
-                4947
+                4023,
+                4032,
+                4137,
+                4138
               ]
             },
             {
               "name": "loadingTeams",
               "lines": [
-                13513
+                12700
               ]
             },
             {
               "name": "teamCatalogReady",
               "lines": [
-                13514,
-                13598
+                12701,
+                12785
               ]
             },
             {
               "name": "teamMembershipState",
               "lines": [
-                4844,
-                4846,
-                4847,
-                4848,
-                4849
+                4035,
+                4037,
+                4038,
+                4039,
+                4040
               ]
             },
             {
               "name": "fetchAllTeamsFromJira",
               "lines": [
-                13512
+                12699
               ]
             },
             {
               "name": "invalidateTeamMembership",
               "lines": [
-                3651
+                2842
               ]
             }
           ],
@@ -7418,7 +7418,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useJiraProjectCatalogEffects",
-              "line": 4720,
+              "line": 3911,
               "phase": "hook execution"
             }
           ],
@@ -7490,7 +7490,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useJiraProjectSearchEffects",
-              "line": 4329,
+              "line": 3520,
               "phase": "hook execution"
             }
           ],
@@ -7642,7 +7642,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useJiraProjectSettings",
-              "line": 831,
+              "line": 775,
               "phase": "hook execution"
             }
           ],
@@ -7650,483 +7650,483 @@
             {
               "name": "jiraProjects",
               "lines": [
-                914,
-                2276,
-                13254
+                858,
+                1824,
+                12441
               ]
             },
             {
               "name": "loadingProjects",
               "lines": [
-                13256
+                12443
               ]
             },
             {
               "name": "projectSearchQuery",
               "lines": [
-                4334,
-                13274
+                3525,
+                12461
               ]
             },
             {
               "name": "setProjectSearchQuery",
               "lines": [
-                2265,
-                2735,
-                13314
+                1813,
+                2063,
+                12501
               ]
             },
             {
               "name": "setProjectSearchRemoteResults",
               "lines": [
-                4338
+                3529
               ]
             },
             {
               "name": "projectSearchRemoteLoading",
               "lines": [
-                13275
+                12462
               ]
             },
             {
               "name": "setProjectSearchRemoteLoading",
               "lines": [
-                4337
+                3528
               ]
             },
             {
               "name": "projectSearchOpen",
               "lines": [
-                13273
+                12460
               ]
             },
             {
               "name": "setProjectSearchOpen",
               "lines": [
-                2736,
-                13313
+                2064,
+                12500
               ]
             },
             {
               "name": "projectSearchIndex",
               "lines": [
-                4726,
-                13271
+                3917,
+                12458
               ]
             },
             {
               "name": "setProjectSearchIndex",
               "lines": [
-                2737,
-                4730,
-                13312
+                2065,
+                3921,
+                12499
               ]
             },
             {
               "name": "selectedProjectsDraft",
               "lines": [
-                1324,
-                1341,
-                2993,
-                3035,
-                13283
+                1385,
+                1402,
+                2240,
+                2282,
+                12470
               ]
             },
             {
               "name": "setSelectedProjectsDraft",
               "lines": [
-                4201
+                3392
               ]
             },
             {
               "name": "savedSelectedProjects",
               "lines": [
-                869,
-                875,
-                5184,
-                5189,
-                5205,
-                5210,
-                5229,
-                5240,
-                8535,
-                8537,
-                11486
+                813,
+                819,
+                4375,
+                4380,
+                4396,
+                4401,
+                4420,
+                4431,
+                7726,
+                7728,
+                10673
               ]
             },
             {
               "name": "projectSearchInputRef",
               "lines": [
-                13272
+                12459
               ]
             },
             {
               "name": "setBoardSearchRemoteResults",
               "lines": [
-                4336
+                3527
               ]
             },
             {
               "name": "boardSearchRemoteLoading",
               "lines": [
-                13210
+                12397
               ]
             },
             {
               "name": "setBoardSearchRemoteLoading",
               "lines": [
-                4335
+                3526
               ]
             },
             {
               "name": "boardIdDraft",
               "lines": [
-                1326,
-                1338,
-                4331,
-                13204
+                1387,
+                1399,
+                3522,
+                12391
               ]
             },
             {
               "name": "setBoardIdDraft",
               "lines": [
-                4204,
-                13284
+                3395,
+                12471
               ]
             },
             {
               "name": "savedBoardId",
               "lines": [
-                5185,
-                5189,
-                5206,
-                5210,
-                5236,
-                5240,
-                11485
+                4376,
+                4380,
+                4397,
+                4401,
+                4427,
+                4431,
+                10672
               ]
             },
             {
               "name": "boardNameDraft",
               "lines": [
-                1326,
-                1338,
-                13205
+                1387,
+                1399,
+                12392
               ]
             },
             {
               "name": "setBoardNameDraft",
               "lines": [
-                4205,
-                13285
+                3396,
+                12472
               ]
             },
             {
               "name": "boardSearchQuery",
               "lines": [
-                4332,
-                13209
+                3523,
+                12396
               ]
             },
             {
               "name": "setBoardSearchQuery",
               "lines": [
-                2738,
-                13288
+                2066,
+                12475
               ]
             },
             {
               "name": "boardSearchOpen",
               "lines": [
-                13208
+                12395
               ]
             },
             {
               "name": "setBoardSearchOpen",
               "lines": [
-                2739,
-                13287
+                2067,
+                12474
               ]
             },
             {
               "name": "boardSearchIndex",
               "lines": [
-                4721,
-                13206
+                3912,
+                12393
               ]
             },
             {
               "name": "setBoardSearchIndex",
               "lines": [
-                2740,
-                4728,
-                13286
+                2068,
+                3919,
+                12473
               ]
             },
             {
               "name": "boardSearchInputRef",
               "lines": [
-                13207
+                12394
               ]
             },
             {
               "name": "jiraFields",
               "lines": [
-                913,
-                941,
-                13253
+                857,
+                885,
+                12440
               ]
             },
             {
               "name": "loadingFields",
               "lines": [
-                13255
+                12442
               ]
             },
             {
               "name": "issueTypesDraft",
               "lines": [
-                1333,
-                1340,
-                13252
+                1394,
+                1401,
+                12439
               ]
             },
             {
               "name": "setIssueTypesDraft",
               "lines": [
-                4222
+                3413
               ]
             },
             {
               "name": "issueTypeSearchQuery",
               "lines": [
-                13250
+                12437
               ]
             },
             {
               "name": "setIssueTypeSearchQuery",
               "lines": [
-                13305
+                12492
               ]
             },
             {
               "name": "issueTypeSearchOpen",
               "lines": [
-                13249
+                12436
               ]
             },
             {
               "name": "setIssueTypeSearchOpen",
               "lines": [
-                13304
+                12491
               ]
             },
             {
               "name": "issueTypeSearchIndex",
               "lines": [
-                4724,
-                13247
+                3915,
+                12434
               ]
             },
             {
               "name": "setIssueTypeSearchIndex",
               "lines": [
-                4729,
-                13303
+                3920,
+                12490
               ]
             },
             {
               "name": "issueTypeSearchInputRef",
               "lines": [
-                13248
+                12435
               ]
             },
             {
               "name": "isProjectsDraftDirty",
               "lines": [
-                2959,
-                2966,
-                2977,
-                2987,
-                3634,
-                3970,
-                6140
+                2206,
+                2213,
+                2224,
+                2234,
+                2825,
+                3161,
+                5331
               ]
             },
             {
               "name": "isBoardConfigDirty",
               "lines": [
-                2961,
-                2966,
-                2979,
-                2987,
-                3636,
-                3972,
-                6141
+                2208,
+                2213,
+                2226,
+                2234,
+                2827,
+                3163,
+                5332
               ]
             },
             {
               "name": "isIssueTypesDraftDirty",
               "lines": [
-                2963,
-                2966,
-                2981,
-                2987,
-                3643,
-                3976,
-                6144
+                2210,
+                2213,
+                2228,
+                2234,
+                2834,
+                3167,
+                5335
               ]
             },
             {
               "name": "boardSearchResults",
               "lines": [
-                4722,
-                13211
+                3913,
+                12398
               ]
             },
             {
               "name": "projectSearchResults",
               "lines": [
-                4727,
-                13276
+                3918,
+                12463
               ]
             },
             {
               "name": "issueTypeSearchResults",
               "lines": [
-                4725,
-                13251
+                3916,
+                12438
               ]
             },
             {
               "name": "fetchJiraProjects",
               "lines": [
-                2276
+                1824
               ]
             },
             {
               "name": "loadSelectedProjects",
               "lines": [
-                2268,
-                6255
+                1816,
+                5446
               ]
             },
             {
               "name": "loadBoardConfig",
               "lines": [
-                2270,
-                6261
+                1818,
+                5452
               ]
             },
             {
               "name": "saveBoardConfig",
               "lines": [
-                3749
+                2940
               ]
             },
             {
               "name": "addProjectSelection",
               "lines": [
-                13199
+                12386
               ]
             },
             {
               "name": "clearBoardSelection",
               "lines": [
-                13226
+                12413
               ]
             },
             {
               "name": "removeProjectSelection",
               "lines": [
-                13278
+                12465
               ]
             },
             {
               "name": "handleProjectSearchKeyDown",
               "lines": [
-                13243
+                12430
               ]
             },
             {
               "name": "handleBoardSearchKeyDown",
               "lines": [
-                13237
+                12424
               ]
             },
             {
               "name": "resolveProjectName",
               "lines": [
-                13281
+                12468
               ]
             },
             {
               "name": "saveProjectSelection",
               "lines": [
-                3737
+                2928
               ]
             },
             {
               "name": "loadIssueTypesConfig",
               "lines": [
-                2273,
-                6272
+                1821,
+                5463
               ]
             },
             {
               "name": "saveIssueTypesConfig",
               "lines": [
-                3770
+                2961
               ]
             },
             {
               "name": "fetchAvailableIssueTypes",
               "lines": [
-                2275
+                1823
               ]
             },
             {
               "name": "addIssueType",
               "lines": [
-                13198
+                12385
               ]
             },
             {
               "name": "removeIssueType",
               "lines": [
-                13277
+                12464
               ]
             },
             {
               "name": "handleIssueTypeSearchKeyDown",
               "lines": [
-                13241
+                12428
               ]
             },
             {
               "name": "fetchJiraFields",
               "lines": [
-                4723
+                3914
               ]
             },
             {
               "name": "applyJiraProjectsAndBoardLoaded",
               "lines": [
-                6240
+                5431
               ]
             },
             {
               "name": "applyJiraIssueTypesLoaded",
               "lines": [
-                6243
+                5434
               ]
             },
             {
               "name": "jiraProjectsDraftSnapshot",
               "lines": [
-                943,
-                944,
-                947
+                887,
+                888,
+                891
               ]
             }
           ],
@@ -8186,7 +8186,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useCapacityMappingEffects",
-              "line": 4734,
+              "line": 3925,
               "phase": "hook execution"
             }
           ],
@@ -8292,7 +8292,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useCapacityMappingSettings",
-              "line": 908,
+              "line": 852,
               "phase": "hook execution"
             }
           ],
@@ -8300,219 +8300,219 @@
             {
               "name": "capacityProjectDraft",
               "lines": [
-                1327,
-                1339,
-                3008,
-                3011,
-                3035,
-                13220
+                1388,
+                1400,
+                2255,
+                2258,
+                2282,
+                12407
               ]
             },
             {
               "name": "setCapacityProjectDraft",
               "lines": [
-                4208,
-                13294
+                3399,
+                12481
               ]
             },
             {
               "name": "capacityFieldIdDraft",
               "lines": [
-                1327,
-                1338,
-                3008,
-                3011,
-                3035,
-                13212
+                1388,
+                1399,
+                2255,
+                2258,
+                2282,
+                12399
               ]
             },
             {
               "name": "setCapacityFieldIdDraft",
               "lines": [
-                4209,
-                13289
+                3400,
+                12476
               ]
             },
             {
               "name": "capacityFieldNameDraft",
               "lines": [
-                1327,
-                1339,
-                13213
+                1388,
+                1400,
+                12400
               ]
             },
             {
               "name": "setCapacityFieldNameDraft",
               "lines": [
-                4210,
-                13290
+                3401,
+                12477
               ]
             },
             {
               "name": "capacityProjectSearchQuery",
               "lines": [
-                13224
+                12411
               ]
             },
             {
               "name": "setCapacityProjectSearchQuery",
               "lines": [
-                2749,
-                13297
+                2077,
+                12484
               ]
             },
             {
               "name": "capacityProjectSearchOpen",
               "lines": [
-                13223
+                12410
               ]
             },
             {
               "name": "setCapacityProjectSearchOpen",
               "lines": [
-                2750,
-                13296
+                2078,
+                12483
               ]
             },
             {
               "name": "capacityProjectSearchIndex",
               "lines": [
-                4737,
-                13221
+                3928,
+                12408
               ]
             },
             {
               "name": "setCapacityProjectSearchIndex",
               "lines": [
-                4740,
-                13295
+                3931,
+                12482
               ]
             },
             {
               "name": "capacityProjectSearchInputRef",
               "lines": [
-                13222
+                12409
               ]
             },
             {
               "name": "capacityFieldSearchQuery",
               "lines": [
-                13218
+                12405
               ]
             },
             {
               "name": "setCapacityFieldSearchQuery",
               "lines": [
-                2751,
-                13293
+                2079,
+                12480
               ]
             },
             {
               "name": "capacityFieldSearchOpen",
               "lines": [
-                13217
+                12404
               ]
             },
             {
               "name": "setCapacityFieldSearchOpen",
               "lines": [
-                2752,
-                13292
+                2080,
+                12479
               ]
             },
             {
               "name": "capacityFieldSearchIndex",
               "lines": [
-                4735,
-                13215
+                3926,
+                12402
               ]
             },
             {
               "name": "setCapacityFieldSearchIndex",
               "lines": [
-                4739,
-                13291
+                3930,
+                12478
               ]
             },
             {
               "name": "capacityFieldSearchInputRef",
               "lines": [
-                13216
+                12403
               ]
             },
             {
               "name": "isCapacityDraftDirty",
               "lines": [
-                2962,
-                2966,
-                2980,
-                2987,
-                3637,
-                3973,
-                6142
+                2209,
+                2213,
+                2227,
+                2234,
+                2828,
+                3164,
+                5333
               ]
             },
             {
               "name": "loadCapacityConfig",
               "lines": [
-                2271,
-                6262
+                1819,
+                5453
               ]
             },
             {
               "name": "saveCapacityConfig",
               "lines": [
-                3756
+                2947
               ]
             },
             {
               "name": "resolveCapacityProjectName",
               "lines": [
-                13280
+                12467
               ]
             },
             {
               "name": "capacityProjectSearchResults",
               "lines": [
-                4738,
-                13225
+                3929,
+                12412
               ]
             },
             {
               "name": "handleCapacityProjectSearchKeyDown",
               "lines": [
-                13239
+                12426
               ]
             },
             {
               "name": "capacityFieldSearchResults",
               "lines": [
-                4736,
-                13219
+                3927,
+                12406
               ]
             },
             {
               "name": "capacityFieldSearchHidden",
               "lines": [
-                13214
+                12401
               ]
             },
             {
               "name": "handleCapacityFieldSearchKeyDown",
               "lines": [
-                13238
+                12425
               ]
             },
             {
               "name": "applyCapacityLoaded",
               "lines": [
-                6241
+                5432
               ]
             },
             {
               "name": "capacityDraftSnapshot",
               "lines": [
-                945
+                889
               ]
             }
           ],
@@ -8882,7 +8882,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "AdminSettingsContainer",
-              "line": 13196,
+              "line": 12383,
               "phase": "render"
             }
           ],
@@ -8917,6 +8917,1182 @@
       "lineCount": 1,
       "lineCeiling": 1,
       "interfaces": []
+    },
+    {
+      "id": "settings.useEpmSettings",
+      "path": "frontend/src/settings/useEpmSettings.js",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "useEpmLabelMenuEffects",
+        "useEpmSavedSubGoalsEffect",
+        "useEpmSettings",
+        "useEpmSettingsLoadEffect",
+        "useEpmSettingsProjectsEffects"
+      ],
+      "lineCount": 1208,
+      "lineCeiling": 1208,
+      "interfaces": [
+        {
+          "exportName": "useEpmLabelMenuEffects",
+          "inputNames": [
+            "epmLabelMenuAnchor",
+            "epmLabelMenuInputRef",
+            "epmSettingsTab",
+            "groupManageTab",
+            "setEpmLabelMenuAnchor",
+            "setRemovedEpmProjectIds",
+            "showGroupManage"
+          ],
+          "returnNames": [],
+          "propNames": [],
+          "expandedInputNames": [
+            "epmLabelMenuAnchor",
+            "epmLabelMenuAnchor.rowKey",
+            "epmLabelMenuInputRef",
+            "epmLabelMenuInputRef.current",
+            "epmSettingsTab",
+            "groupManageTab",
+            "setEpmLabelMenuAnchor",
+            "setRemovedEpmProjectIds",
+            "showGroupManage"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 9,
+          "returnCount": 0,
+          "propCount": 0,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 9,
+          "returnCeiling": 0,
+          "propCeiling": 0,
+          "unresolved": [
+            "bag epmLabelMenuInputRef member alias inputNode"
+          ],
+          "inventory": {
+            "source": "frontend/src/settings/useEpmSettings.js:984",
+            "sourceDigest": "99bf382198323c044eb4d994b9434895d3e968f5e45a10b499e8b0815f2bbcc3",
+            "reviewed": true,
+            "memberNames": [
+              "epmLabelMenuAnchor",
+              "epmLabelMenuAnchor.rowKey",
+              "epmLabelMenuInputRef",
+              "epmLabelMenuInputRef.current",
+              "epmSettingsTab",
+              "groupManageTab",
+              "setEpmLabelMenuAnchor",
+              "setRemovedEpmProjectIds",
+              "showGroupManage"
+            ],
+            "rationale": "epmLabelMenuInputRef is a ref whose .current is a DOM input node focused inside the effect, not a dependency bag; the other inputs are the open-menu key, the pending-focus ref and state setters."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "useEpmLabelMenuEffects",
+              "line": 1471,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        },
+        {
+          "exportName": "useEpmSavedSubGoalsEffect",
+          "inputNames": [
+            "epmConfigLoaded",
+            "loadEpmSubGoalsForRoot",
+            "savedEpmRootGoalKey",
+            "savedEpmSubGoalKeys",
+            "selectedView",
+            "showEpmNavigation"
+          ],
+          "returnNames": [],
+          "propNames": [],
+          "expandedInputNames": [
+            "epmConfigLoaded",
+            "loadEpmSubGoalsForRoot",
+            "savedEpmRootGoalKey",
+            "savedEpmSubGoalKeys",
+            "savedEpmSubGoalKeys.length",
+            "selectedView",
+            "showEpmNavigation"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 7,
+          "returnCount": 0,
+          "propCount": 0,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 7,
+          "returnCeiling": 0,
+          "propCeiling": 0,
+          "unresolved": [
+            "forwarded input savedEpmRootGoalKey"
+          ],
+          "inventory": {
+            "source": "frontend/src/settings/useEpmSettings.js:1156",
+            "sourceDigest": "99bf382198323c044eb4d994b9434895d3e968f5e45a10b499e8b0815f2bbcc3",
+            "reviewed": true,
+            "memberNames": [
+              "epmConfigLoaded",
+              "loadEpmSubGoalsForRoot",
+              "savedEpmRootGoalKey",
+              "savedEpmSubGoalKeys",
+              "savedEpmSubGoalKeys.length",
+              "selectedView",
+              "showEpmNavigation"
+            ],
+            "rationale": "savedEpmRootGoalKey is a string forwarded to the sub-goals request wrapper, not a bag; the other inputs are the saved scope flag and state setters."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "useEpmSavedSubGoalsEffect",
+              "line": 2100,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        },
+        {
+          "exportName": "useEpmSettings",
+          "inputNames": [
+            "BACKEND_URL",
+            "canEditEpmConfiguration",
+            "getEpmViewActions",
+            "labelSearchIndex",
+            "labelSearchOpen",
+            "labelSearchQuery",
+            "labelSearchRequestIdRef",
+            "labelSearchResults",
+            "setGroupDraftError",
+            "setGroupManageTab",
+            "setLabelSearchIndex",
+            "setLabelSearchLoading",
+            "setLabelSearchOpen",
+            "setLabelSearchQuery",
+            "setLabelSearchResults",
+            "setShowGroupManage",
+            "trackSettingsAction",
+            "trackSortChanged"
+          ],
+          "returnNames": [
+            "activeEpmRootGoalIndex",
+            "activeEpmSubGoalIndex",
+            "addCustomEpmProjectDraft",
+            "applySavedEpmConfig",
+            "canLoadEpmProjects",
+            "clearEpmRootGoal",
+            "clearEpmSubGoal",
+            "deleteEpmProjectRow",
+            "ensureEpmSettingsProjectsLoaded",
+            "epmConfigBaselineRef",
+            "epmConfigDraft",
+            "epmConfigDraftGenerationRef",
+            "epmConfigDraftRef",
+            "epmConfigLoaded",
+            "epmConfigLoading",
+            "epmConfigSaving",
+            "epmLabelChanging",
+            "epmLabelMenuAnchor",
+            "epmLabelMenuInputRef",
+            "epmLabelShowAll",
+            "epmProjectPrerequisites",
+            "epmRootGoalQuery",
+            "epmRootGoalsError",
+            "epmRootGoalsLoading",
+            "epmScopeMeta",
+            "epmSettingsProjectRows",
+            "epmSettingsProjectSort",
+            "epmSettingsProjectView",
+            "epmSettingsProjects",
+            "epmSettingsProjectsCacheKey",
+            "epmSettingsProjectsCacheRef",
+            "epmSettingsProjectsError",
+            "epmSettingsProjectsFetchMeta",
+            "epmSettingsProjectsLoaded",
+            "epmSettingsProjectsLoadedAt",
+            "epmSettingsProjectsLoading",
+            "epmSettingsProjectsRefreshing",
+            "epmSettingsTab",
+            "epmSubGoalQuery",
+            "epmSubGoals",
+            "epmSubGoalsError",
+            "epmSubGoalsLoading",
+            "filteredEpmRootGoals",
+            "filteredEpmSubGoals",
+            "focusEpmScopeField",
+            "getEpmLabelRowKey",
+            "getEpmLabelSearchResults",
+            "handleEpmLabelSearchKeyDown",
+            "handleEpmRootGoalSearchKeyDown",
+            "handleEpmSettingsTabKeyDown",
+            "handleEpmSubGoalSearchKeyDown",
+            "hasSavedEpmScope",
+            "isEpmConfigDirty",
+            "loadEpmConfig",
+            "loadEpmGoals",
+            "loadEpmProjectLabels",
+            "loadEpmScopeMeta",
+            "loadEpmSubGoalsForRoot",
+            "normalizeEpmConfigDraft",
+            "openEpmLabelMenu",
+            "openEpmSettingsTab",
+            "registerEpmLabelInput",
+            "removeEpmProjectDraft",
+            "removedEpmProjectIds",
+            "requestEpmLabelFocus",
+            "saveEpmConfig",
+            "savedEpmRootGoalKey",
+            "savedEpmSubGoalKeys",
+            "selectEpmProjectLabel",
+            "selectEpmRootGoal",
+            "selectEpmSubGoal",
+            "selectedEpmRootGoal",
+            "selectedEpmSubGoals",
+            "setEpmConfigDraft",
+            "setEpmConfigLoading",
+            "setEpmLabelChanging",
+            "setEpmLabelMenuAnchor",
+            "setEpmLabelShowAll",
+            "setEpmRootGoalIndex",
+            "setEpmRootGoalOpen",
+            "setEpmRootGoalQuery",
+            "setEpmRootGoals",
+            "setEpmRootGoalsError",
+            "setEpmRootGoalsLoading",
+            "setEpmScopeMeta",
+            "setEpmSettingsProjectView",
+            "setEpmSettingsProjectsFetchMeta",
+            "setEpmSettingsProjectsLoaded",
+            "setEpmSettingsProjectsLoadedAt",
+            "setEpmSettingsTab",
+            "setEpmSubGoalIndex",
+            "setEpmSubGoalOpen",
+            "setEpmSubGoalQuery",
+            "setRemovedEpmProjectIds",
+            "setTrackedEpmSettingsProjectSort",
+            "showEpmRootGoalResults",
+            "showEpmSubGoalResults",
+            "updateEpmLabelPrefixDraft",
+            "updateEpmProjectDraft",
+            "visibleEpmRootGoals",
+            "visibleEpmSubGoals"
+          ],
+          "propNames": [],
+          "expandedInputNames": [
+            "BACKEND_URL",
+            "canEditEpmConfiguration",
+            "getEpmViewActions",
+            "labelSearchIndex",
+            "labelSearchOpen",
+            "labelSearchQuery",
+            "labelSearchRequestIdRef",
+            "labelSearchRequestIdRef.current",
+            "labelSearchResults",
+            "setGroupDraftError",
+            "setGroupManageTab",
+            "setLabelSearchIndex",
+            "setLabelSearchLoading",
+            "setLabelSearchOpen",
+            "setLabelSearchQuery",
+            "setLabelSearchResults",
+            "setShowGroupManage",
+            "trackSettingsAction",
+            "trackSortChanged"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 19,
+          "returnCount": 101,
+          "propCount": 0,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 19,
+          "returnCeiling": 101,
+          "propCeiling": 0,
+          "unresolved": [
+            "forwarded input BACKEND_URL",
+            "bag labelSearchIndex dynamic member",
+            "bag labelSearchIndex dynamic deep member",
+            "bag labelSearchOpen dynamic member",
+            "bag labelSearchOpen dynamic deep member",
+            "bag labelSearchQuery dynamic member",
+            "bag labelSearchQuery dynamic deep member",
+            "bag labelSearchRequestIdRef dynamic deep member",
+            "bag labelSearchResults dynamic member",
+            "bag labelSearchResults dynamic deep member"
+          ],
+          "inventory": {
+            "source": "frontend/src/settings/useEpmSettings.js:27",
+            "sourceDigest": "99bf382198323c044eb4d994b9434895d3e968f5e45a10b499e8b0815f2bbcc3",
+            "reviewed": true,
+            "memberNames": [
+              "BACKEND_URL",
+              "canEditEpmConfiguration",
+              "getEpmViewActions",
+              "labelSearchIndex",
+              "labelSearchOpen",
+              "labelSearchQuery",
+              "labelSearchRequestIdRef",
+              "labelSearchRequestIdRef.current",
+              "labelSearchResults",
+              "setGroupDraftError",
+              "setGroupManageTab",
+              "setLabelSearchIndex",
+              "setLabelSearchLoading",
+              "setLabelSearchOpen",
+              "setLabelSearchQuery",
+              "setLabelSearchResults",
+              "setShowGroupManage",
+              "trackSettingsAction",
+              "trackSortChanged"
+            ],
+            "rationale": "BACKEND_URL is the module-constant API base string forwarded to the EPM request wrappers. labelSearchQuery, labelSearchOpen, labelSearchIndex, labelSearchResults and labelSearchRequestIdRef are the Team label picker's per-row state maps (records keyed by group and team row key), owned by App until ST3; the hook reads and writes entries by dynamic row key, so their member count is data and the interface checker cannot enumerate it. The remaining inputs are state cells, refs, setters and callbacks declared before the call."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "useEpmSettings",
+              "line": 1298,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [
+            {
+              "name": "epmConfigDraft",
+              "lines": [
+                1397,
+                1401,
+                1830,
+                2192,
+                12570,
+                12630
+              ]
+            },
+            {
+              "name": "epmConfigDraftRef",
+              "lines": [
+                1832
+              ]
+            },
+            {
+              "name": "epmConfigDraftGenerationRef",
+              "lines": [
+                1831,
+                5326,
+                5328
+              ]
+            },
+            {
+              "name": "setEpmConfigDraft",
+              "lines": [
+                2349,
+                3421
+              ]
+            },
+            {
+              "name": "epmConfigLoading",
+              "lines": [
+                2287,
+                2291,
+                12587
+              ]
+            },
+            {
+              "name": "setEpmConfigLoading",
+              "lines": [
+                1839
+              ]
+            },
+            {
+              "name": "epmConfigSaving",
+              "lines": [
+                2284,
+                2291,
+                2331,
+                3489,
+                3518,
+                10527,
+                12588
+              ]
+            },
+            {
+              "name": "epmConfigLoaded",
+              "lines": [
+                2101,
+                2137,
+                12314
+              ]
+            },
+            {
+              "name": "epmSettingsProjects",
+              "lines": [
+                12604
+              ]
+            },
+            {
+              "name": "epmSettingsProjectsLoading",
+              "lines": [
+                12598
+              ]
+            },
+            {
+              "name": "epmSettingsProjectsError",
+              "lines": [
+                12589
+              ]
+            },
+            {
+              "name": "epmSettingsProjectsLoaded",
+              "lines": [
+                12600
+              ]
+            },
+            {
+              "name": "setEpmSettingsProjectsLoaded",
+              "lines": [
+                2199
+              ]
+            },
+            {
+              "name": "epmSettingsProjectsLoadedAt",
+              "lines": [
+                12592
+              ]
+            },
+            {
+              "name": "setEpmSettingsProjectsLoadedAt",
+              "lines": [
+                2200
+              ]
+            },
+            {
+              "name": "epmSettingsProjectsFetchMeta",
+              "lines": [
+                12593
+              ]
+            },
+            {
+              "name": "setEpmSettingsProjectsFetchMeta",
+              "lines": [
+                2198
+              ]
+            },
+            {
+              "name": "epmSettingsProjectsRefreshing",
+              "lines": [
+                12590
+              ]
+            },
+            {
+              "name": "removedEpmProjectIds",
+              "lines": [
+                12632
+              ]
+            },
+            {
+              "name": "setRemovedEpmProjectIds",
+              "lines": [
+                1477
+              ]
+            },
+            {
+              "name": "epmSettingsProjectSort",
+              "lines": [
+                12602
+              ]
+            },
+            {
+              "name": "epmSettingsProjectView",
+              "lines": [
+                12594
+              ]
+            },
+            {
+              "name": "setEpmSettingsProjectView",
+              "lines": [
+                12595
+              ]
+            },
+            {
+              "name": "epmSettingsTab",
+              "lines": [
+                1474,
+                2195,
+                12550
+              ]
+            },
+            {
+              "name": "setEpmSettingsTab",
+              "lines": [
+                12551
+              ]
+            },
+            {
+              "name": "epmLabelShowAll",
+              "lines": [
+                12608
+              ]
+            },
+            {
+              "name": "setEpmLabelShowAll",
+              "lines": [
+                12623
+              ]
+            },
+            {
+              "name": "epmLabelChanging",
+              "lines": [
+                12609
+              ]
+            },
+            {
+              "name": "setEpmLabelChanging",
+              "lines": [
+                12612
+              ]
+            },
+            {
+              "name": "epmLabelMenuAnchor",
+              "lines": [
+                1472,
+                12625
+              ]
+            },
+            {
+              "name": "setEpmLabelMenuAnchor",
+              "lines": [
+                1476,
+                12620
+              ]
+            },
+            {
+              "name": "epmLabelMenuInputRef",
+              "lines": [
+                1473,
+                12621
+              ]
+            },
+            {
+              "name": "epmConfigBaselineRef",
+              "lines": [
+                2349
+              ]
+            },
+            {
+              "name": "epmScopeMeta",
+              "lines": [
+                12553
+              ]
+            },
+            {
+              "name": "setEpmScopeMeta",
+              "lines": [
+                1846
+              ]
+            },
+            {
+              "name": "setEpmRootGoals",
+              "lines": [
+                1843
+              ]
+            },
+            {
+              "name": "epmSubGoals",
+              "lines": [
+                9703
+              ]
+            },
+            {
+              "name": "epmRootGoalsLoading",
+              "lines": [
+                12561
+              ]
+            },
+            {
+              "name": "setEpmRootGoalsLoading",
+              "lines": [
+                1845
+              ]
+            },
+            {
+              "name": "epmSubGoalsLoading",
+              "lines": [
+                12577
+              ]
+            },
+            {
+              "name": "epmRootGoalsError",
+              "lines": [
+                12563
+              ]
+            },
+            {
+              "name": "setEpmRootGoalsError",
+              "lines": [
+                1844
+              ]
+            },
+            {
+              "name": "epmSubGoalsError",
+              "lines": [
+                12579
+              ]
+            },
+            {
+              "name": "epmRootGoalQuery",
+              "lines": [
+                12556
+              ]
+            },
+            {
+              "name": "setEpmRootGoalQuery",
+              "lines": [
+                1842,
+                12557
+              ]
+            },
+            {
+              "name": "epmSubGoalQuery",
+              "lines": [
+                12571
+              ]
+            },
+            {
+              "name": "setEpmSubGoalQuery",
+              "lines": [
+                1849,
+                12572
+              ]
+            },
+            {
+              "name": "setEpmRootGoalOpen",
+              "lines": [
+                1841,
+                12558
+              ]
+            },
+            {
+              "name": "setEpmSubGoalOpen",
+              "lines": [
+                1848,
+                12573
+              ]
+            },
+            {
+              "name": "setEpmRootGoalIndex",
+              "lines": [
+                1840,
+                12559
+              ]
+            },
+            {
+              "name": "setEpmSubGoalIndex",
+              "lines": [
+                1847,
+                12574
+              ]
+            },
+            {
+              "name": "epmSettingsProjectsCacheRef",
+              "lines": [
+                2194
+              ]
+            },
+            {
+              "name": "loadEpmConfig",
+              "lines": [
+                1835
+              ]
+            },
+            {
+              "name": "loadEpmScopeMeta",
+              "lines": [
+                1837
+              ]
+            },
+            {
+              "name": "loadEpmGoals",
+              "lines": [
+                1836
+              ]
+            },
+            {
+              "name": "ensureEpmSettingsProjectsLoaded",
+              "lines": [
+                2191,
+                12591
+              ]
+            },
+            {
+              "name": "saveEpmConfig",
+              "lines": [
+                3288
+              ]
+            },
+            {
+              "name": "updateEpmLabelPrefixDraft",
+              "lines": [
+                12584
+              ]
+            },
+            {
+              "name": "updateEpmProjectDraft",
+              "lines": [
+                12615
+              ]
+            },
+            {
+              "name": "getEpmLabelRowKey",
+              "lines": [
+                12605
+              ]
+            },
+            {
+              "name": "getEpmLabelSearchResults",
+              "lines": [
+                12606
+              ]
+            },
+            {
+              "name": "addCustomEpmProjectDraft",
+              "lines": [
+                12597
+              ]
+            },
+            {
+              "name": "removeEpmProjectDraft",
+              "lines": [
+                12624
+              ]
+            },
+            {
+              "name": "deleteEpmProjectRow",
+              "lines": [
+                12631
+              ]
+            },
+            {
+              "name": "loadEpmProjectLabels",
+              "lines": [
+                12614
+              ]
+            },
+            {
+              "name": "requestEpmLabelFocus",
+              "lines": [
+                12628
+              ]
+            },
+            {
+              "name": "registerEpmLabelInput",
+              "lines": [
+                12629
+              ]
+            },
+            {
+              "name": "selectEpmProjectLabel",
+              "lines": [
+                12627
+              ]
+            },
+            {
+              "name": "openEpmLabelMenu",
+              "lines": [
+                12613
+              ]
+            },
+            {
+              "name": "handleEpmLabelSearchKeyDown",
+              "lines": [
+                12622
+              ]
+            },
+            {
+              "name": "loadEpmSubGoalsForRoot",
+              "lines": [
+                1838,
+                2102,
+                12575
+              ]
+            },
+            {
+              "name": "selectEpmRootGoal",
+              "lines": [
+                12567
+              ]
+            },
+            {
+              "name": "clearEpmRootGoal",
+              "lines": [
+                12555
+              ]
+            },
+            {
+              "name": "clearEpmSubGoal",
+              "lines": [
+                12569
+              ]
+            },
+            {
+              "name": "selectEpmSubGoal",
+              "lines": [
+                12583
+              ]
+            },
+            {
+              "name": "normalizeEpmConfigDraft",
+              "lines": [
+                2197
+              ]
+            },
+            {
+              "name": "applySavedEpmConfig",
+              "lines": [
+                1829,
+                5437,
+                5445,
+                5488
+              ]
+            },
+            {
+              "name": "filteredEpmRootGoals",
+              "lines": [
+                12564
+              ]
+            },
+            {
+              "name": "filteredEpmSubGoals",
+              "lines": [
+                12580
+              ]
+            },
+            {
+              "name": "selectedEpmRootGoal",
+              "lines": [
+                12554
+              ]
+            },
+            {
+              "name": "selectedEpmSubGoals",
+              "lines": [
+                12568
+              ]
+            },
+            {
+              "name": "visibleEpmRootGoals",
+              "lines": [
+                12565
+              ]
+            },
+            {
+              "name": "visibleEpmSubGoals",
+              "lines": [
+                12581
+              ]
+            },
+            {
+              "name": "activeEpmRootGoalIndex",
+              "lines": [
+                12566
+              ]
+            },
+            {
+              "name": "activeEpmSubGoalIndex",
+              "lines": [
+                12582
+              ]
+            },
+            {
+              "name": "showEpmRootGoalResults",
+              "lines": [
+                12562
+              ]
+            },
+            {
+              "name": "showEpmSubGoalResults",
+              "lines": [
+                12578
+              ]
+            },
+            {
+              "name": "handleEpmRootGoalSearchKeyDown",
+              "lines": [
+                12560
+              ]
+            },
+            {
+              "name": "handleEpmSubGoalSearchKeyDown",
+              "lines": [
+                12576
+              ]
+            },
+            {
+              "name": "isEpmConfigDirty",
+              "lines": [
+                1834,
+                2217,
+                2221,
+                2230,
+                2234,
+                2287,
+                2291,
+                2347,
+                3211,
+                3222,
+                3477,
+                12348
+              ]
+            },
+            {
+              "name": "hasSavedEpmScope",
+              "lines": [
+                2138
+              ]
+            },
+            {
+              "name": "savedEpmSubGoalKeys",
+              "lines": [
+                2104,
+                2139,
+                9702
+              ]
+            },
+            {
+              "name": "savedEpmRootGoalKey",
+              "lines": [
+                2103
+              ]
+            },
+            {
+              "name": "epmProjectPrerequisites",
+              "lines": [
+                12585
+              ]
+            },
+            {
+              "name": "canLoadEpmProjects",
+              "lines": [
+                2190,
+                12586
+              ]
+            },
+            {
+              "name": "epmSettingsProjectsCacheKey",
+              "lines": [
+                2193
+              ]
+            },
+            {
+              "name": "epmSettingsProjectRows",
+              "lines": [
+                12601
+              ]
+            },
+            {
+              "name": "openEpmSettingsTab",
+              "lines": [
+                10508,
+                10912,
+                12332
+              ]
+            },
+            {
+              "name": "focusEpmScopeField",
+              "lines": [
+                12596
+              ]
+            },
+            {
+              "name": "handleEpmSettingsTabKeyDown",
+              "lines": [
+                12552
+              ]
+            },
+            {
+              "name": "setTrackedEpmSettingsProjectSort",
+              "lines": [
+                12603
+              ]
+            }
+          ],
+          "getters": [
+            {
+              "caller": "frontend/src/dashboard.jsx",
+              "name": "getEpmViewActions",
+              "line": 1301,
+              "capturedBindings": [
+                "refreshEpmProjects",
+                "setEpmProjects",
+                "setEpmProjectsError"
+              ],
+              "phase": "event handler",
+              "evidence": "useEpmSettings.js:222 reads it only as the first statement of saveEpmConfig; saveEpmConfig is called only at dashboard.jsx:3288 inside saveAllSettingsOnce (3202), reached from settingsSaveHandler (click), the Ctrl/Cmd+S handleKey handler, keepMineOnGroupsConfigConflict, keepMineOnWorkspaceConfigConflict and retryFirstRunConfiguration, never from render, a memo or a dependency array. The captured bindings come from the useEpmViewData destructure (dashboard.jsx:2109-2132), after the useEpmSettings call at 1298."
+            }
+          ]
+        },
+        {
+          "exportName": "useEpmSettingsLoadEffect",
+          "inputNames": [
+            "applySavedEpmConfig",
+            "epmConfigDraft",
+            "epmConfigDraftGenerationRef",
+            "epmConfigDraftRef",
+            "groupManageTab",
+            "isEpmConfigDirty",
+            "loadEpmConfig",
+            "loadEpmGoals",
+            "loadEpmScopeMeta",
+            "loadEpmSubGoalsForRoot",
+            "setEpmConfigLoading",
+            "setEpmRootGoalIndex",
+            "setEpmRootGoalOpen",
+            "setEpmRootGoalQuery",
+            "setEpmRootGoals",
+            "setEpmRootGoalsError",
+            "setEpmRootGoalsLoading",
+            "setEpmScopeMeta",
+            "setEpmSubGoalIndex",
+            "setEpmSubGoalOpen",
+            "setEpmSubGoalQuery",
+            "setGroupDraftError",
+            "showGroupManage"
+          ],
+          "returnNames": [],
+          "propNames": [],
+          "expandedInputNames": [
+            "applySavedEpmConfig",
+            "epmConfigDraft",
+            "epmConfigDraft.scope",
+            "epmConfigDraft.scope.rootGoalKey",
+            "epmConfigDraftGenerationRef",
+            "epmConfigDraftGenerationRef.current",
+            "epmConfigDraftRef",
+            "epmConfigDraftRef.current",
+            "groupManageTab",
+            "isEpmConfigDirty",
+            "loadEpmConfig",
+            "loadEpmGoals",
+            "loadEpmScopeMeta",
+            "loadEpmSubGoalsForRoot",
+            "setEpmConfigLoading",
+            "setEpmRootGoalIndex",
+            "setEpmRootGoalOpen",
+            "setEpmRootGoalQuery",
+            "setEpmRootGoals",
+            "setEpmRootGoalsError",
+            "setEpmRootGoalsLoading",
+            "setEpmScopeMeta",
+            "setEpmSubGoalIndex",
+            "setEpmSubGoalOpen",
+            "setEpmSubGoalQuery",
+            "setGroupDraftError",
+            "showGroupManage"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 27,
+          "returnCount": 0,
+          "propCount": 0,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 27,
+          "returnCeiling": 0,
+          "propCeiling": 0,
+          "unresolved": [],
+          "inventory": {
+            "source": "frontend/src/settings/useEpmSettings.js:1028",
+            "sourceDigest": "99bf382198323c044eb4d994b9434895d3e968f5e45a10b499e8b0815f2bbcc3"
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "useEpmSettingsLoadEffect",
+              "line": 1828,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        },
+        {
+          "exportName": "useEpmSettingsProjectsEffects",
+          "inputNames": [
+            "canLoadEpmProjects",
+            "ensureEpmSettingsProjectsLoaded",
+            "epmConfigDraft",
+            "epmSettingsProjectsCacheKey",
+            "epmSettingsProjectsCacheRef",
+            "epmSettingsTab",
+            "groupManageTab",
+            "normalizeEpmConfigDraft",
+            "setEpmSettingsProjectsFetchMeta",
+            "setEpmSettingsProjectsLoaded",
+            "setEpmSettingsProjectsLoadedAt",
+            "showGroupManage"
+          ],
+          "returnNames": [],
+          "propNames": [],
+          "expandedInputNames": [
+            "canLoadEpmProjects",
+            "ensureEpmSettingsProjectsLoaded",
+            "epmConfigDraft",
+            "epmSettingsProjectsCacheKey",
+            "epmSettingsProjectsCacheRef",
+            "epmSettingsProjectsCacheRef.current",
+            "epmSettingsProjectsCacheRef.current.has",
+            "epmSettingsTab",
+            "groupManageTab",
+            "normalizeEpmConfigDraft",
+            "setEpmSettingsProjectsFetchMeta",
+            "setEpmSettingsProjectsLoaded",
+            "setEpmSettingsProjectsLoadedAt",
+            "showGroupManage"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 14,
+          "returnCount": 0,
+          "propCount": 0,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 14,
+          "returnCeiling": 0,
+          "propCeiling": 0,
+          "unresolved": [
+            "forwarded input epmConfigDraft",
+            "forwarded input epmSettingsProjectsCacheKey"
+          ],
+          "inventory": {
+            "source": "frontend/src/settings/useEpmSettings.js:1170",
+            "sourceDigest": "99bf382198323c044eb4d994b9434895d3e968f5e45a10b499e8b0815f2bbcc3",
+            "reviewed": true,
+            "memberNames": [
+              "canLoadEpmProjects",
+              "ensureEpmSettingsProjectsLoaded",
+              "epmConfigDraft",
+              "epmSettingsProjectsCacheKey",
+              "epmSettingsProjectsCacheRef",
+              "epmSettingsProjectsCacheRef.current",
+              "epmSettingsProjectsCacheRef.current.has",
+              "epmSettingsTab",
+              "groupManageTab",
+              "normalizeEpmConfigDraft",
+              "setEpmSettingsProjectsFetchMeta",
+              "setEpmSettingsProjectsLoaded",
+              "setEpmSettingsProjectsLoadedAt",
+              "showGroupManage"
+            ],
+            "rationale": "epmConfigDraft is the private EPM draft object and epmSettingsProjectsCacheKey a string derived from it; both are forwarded to the project cache and request helpers, not dependency bags."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "useEpmSettingsProjectsEffects",
+              "line": 2189,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        }
+      ]
     }
   ],
   "aggregates": {
@@ -8925,69 +10101,228 @@
       "ceiling": 5614
     },
     "settings": {
-      "measured": 11087,
-      "ceiling": 11087
+      "measured": 12295,
+      "ceiling": 12295
     },
     "uniqueOwners": {
-      "measured": 16701,
-      "ceiling": 16701
+      "measured": 17909,
+      "ceiling": 17909
     },
     "appPlusOwners": {
-      "measured": 30575,
-      "ceiling": 30575
+      "measured": 30970,
+      "ceiling": 30970
     }
   },
   "transfer": {
-    "scaffoldingAllowance": 2,
+    "scaffoldingAllowance": 395,
     "netPhysicalLOC": {
-      "priorAppPlusOwners": 30573,
-      "nextAppPlusOwners": 30575,
-      "transferredSourceLines": 8,
-      "componentScaffoldingLines": 1,
-      "netAppScaffoldingLines": 1
+      "priorAppPlusOwners": 30575,
+      "nextAppPlusOwners": 30970,
+      "transferredSourceLines": 972,
+      "componentScaffoldingLines": 236,
+      "netAppScaffoldingLines": 159
     },
-    "getters": [],
-    "rationale": "ST2 R3 checkpoint (frozen from the current-base scratch dry run before the move). Hoist of three pure module-level declarations (DEFAULT_EPM_LABEL_PREFIX, createEmptyEpmConfigDraft, getLabelRowKey) into two small settings modules that dashboard.jsx and the later EPM hook both import, so there is one instance and no owner imports dashboard.jsx. Combined +2 (+1 blank line in the new module, +2 import lines in App, -1 blank line from the moved range). The dashboard.jsx lineCeiling stays 13884 until the slice's R5.",
+    "getters": [
+      {
+        "caller": "frontend/src/dashboard.jsx",
+        "name": "getEpmViewActions",
+        "capturedBindings": [
+          "refreshEpmProjects",
+          "setEpmProjects",
+          "setEpmProjectsError"
+        ],
+        "phase": "event handler",
+        "evidence": "useEpmSettings.js:222 reads it only as the first statement of saveEpmConfig; saveEpmConfig is called only at dashboard.jsx:3288 inside saveAllSettingsOnce (3202), reached from settingsSaveHandler (click), the Ctrl/Cmd+S handleKey handler, keepMineOnGroupsConfigConflict, keepMineOnWorkspaceConfigConflict and retryFirstRunConfiguration, never from render, a memo or a dependency array. The captured bindings come from the useEpmViewData destructure (dashboard.jsx:2109-2132), after the useEpmSettings call at 1298."
+      }
+    ],
+    "rationale": "ST2 R4a checkpoint, variant S (frozen from the current-base scratch dry run before the move; the operator asked in chat on 2026-10-06 to finish Settings with self-verification, so it is reported with this commit). App-to-hook transfer of the EPM settings cluster (981 range lines, 972 non-blank) into settings/useEpmSettings.js: ONE hook (state and behavior, 18 inputs, 101 returns) called right after the useDashboardAnalytics destructure, the earliest point where all its inputs exist and before the first reader of its state, plus four effects layers called at their original effect positions (label menu, load, saved sub-goals, projects) so each moved effect crosses zero unmoved effects. This replaces the plan's state layer at the old state position plus a behavior layer with about 80 inputs: D1 requires a split only where inputs are unavailable at the state lines, nothing in App reads EPM state earlier, and the split would add about 56 pass-through names and 142 lines. The one getter, getEpmViewActions, supplies refreshEpmProjects, setEpmProjects and setEpmProjectsError from useEpmViewData (declared later, with EPM outputs among its arguments) and is read only as the first statement of saveEpmConfig, which runs only from event handlers. The single added line in moved code is that getter read. The combined App-plus-owner total grows only by the 395-line scaffolding allowance (227 hook scaffolding + 185 App scaffolding - 13 orphaned import lines - 4 dropped blank separators). The dashboard.jsx lineCeiling stays 13884 until R5. The combined ceiling is measured-plus-allowance.",
     "scaffoldingBreakdown": {
-      "incomingPhysicalLines": 9,
-      "component": {
-        "blankSeparators": 1,
-        "total": 1
+      "incomingPhysicalLines": 981,
+      "hook": {
+        "imports": 24,
+        "signaturesAndInputs": 76,
+        "closings": 5,
+        "returnBlocks": 103,
+        "getterSeam": 1,
+        "blankSeparators": 18,
+        "dryRunScaffoldingTotal": 227,
+        "carriedBlankLines": 9,
+        "total": 236,
+        "note": "signatures: main 20 (18 inputs), label-menu effects 9, load effect 25, sub-goals effect 8, project effects 14; returns 103 (101 names)"
       },
       "app": {
-        "importLines": 2,
-        "droppedBlankLines": -1,
-        "net": 1
+        "hookCallAndDestructure": 122,
+        "labelMenuEffectsCall": 9,
+        "otherEffectsLayerCalls": 47,
+        "hookImport": 7,
+        "orphanedImportLines": -13,
+        "blankLinesInMovedRangesAndAdjoiningSeparators": -13,
+        "net": 159
       },
-      "note": "epmConfigDraft.js 8 lines and labelRowKey.js 1 line = 8 moved non-blank lines + 1 blank separator. dashboard.jsx 13881 -> 13874 = -8 moved non-blank lines -1 blank +2 import lines."
+      "note": "useEpmSettings.js 1208 = 972 moved non-blank lines + 236 other (227 scaffolding as categorised by the dry run + 9 blank lines carried verbatim inside moved code, derived as 236-227). dashboard.jsx 13874 -> 13061 = -972 moved non-blank lines -9 blank lines in the moved ranges -4 adjoining separators +122 +9 +47 +7 -13 orphaned import lines. Combined +395 (= 227 hook scaffolding + 185 App scaffolding - 13 orphaned imports - 4 dropped blank separators)."
     },
     "incomingRanges": [
       {
-        "id": "epm-label-prefix-const",
+        "id": "epm-state-block",
         "fromFile": "frontend/src/dashboard.jsx",
-        "toFile": "frontend/src/settings/epmConfigDraft.js and labelRowKey.js",
-        "fromLine": 302,
-        "toLine": 302,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 1
+        "toFile": "frontend/src/settings/useEpmSettings.js",
+        "fromLine": 507,
+        "toLine": 537,
+        "removedPhysicalLines": 31,
+        "addedPhysicalLines": 31
       },
       {
-        "id": "create-empty-epm-config-draft",
+        "id": "epm-label-and-goal-state",
         "fromFile": "frontend/src/dashboard.jsx",
-        "toFile": "frontend/src/settings/epmConfigDraft.js and labelRowKey.js",
-        "fromLine": 313,
-        "toLine": 319,
-        "removedPhysicalLines": 7,
-        "addedPhysicalLines": 6
+        "toFile": "frontend/src/settings/useEpmSettings.js",
+        "fromLine": 540,
+        "toLine": 558,
+        "removedPhysicalLines": 19,
+        "addedPhysicalLines": 19
       },
       {
-        "id": "get-label-row-key",
+        "id": "epm-settings-refs",
         "fromFile": "frontend/src/dashboard.jsx",
-        "toFile": "frontend/src/settings/epmConfigDraft.js and labelRowKey.js",
-        "fromLine": 4995,
-        "toLine": 4995,
-        "removedPhysicalLines": 1,
-        "addedPhysicalLines": 1
+        "toFile": "frontend/src/settings/useEpmSettings.js",
+        "fromLine": 1190,
+        "toLine": 1194,
+        "removedPhysicalLines": 5,
+        "addedPhysicalLines": 5
+      },
+      {
+        "id": "epm-loaders-and-row-reset",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useEpmSettings.js",
+        "fromLine": 1407,
+        "toLine": 1426,
+        "removedPhysicalLines": 20,
+        "addedPhysicalLines": 20
+      },
+      {
+        "id": "epm-projects-load-save-and-label-handlers",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useEpmSettings.js",
+        "fromLine": 1436,
+        "toLine": 1711,
+        "removedPhysicalLines": 276,
+        "addedPhysicalLines": 275
+      },
+      {
+        "id": "epm-label-menu-effects",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useEpmSettings.js",
+        "fromLine": 1712,
+        "toLine": 1744,
+        "removedPhysicalLines": 33,
+        "addedPhysicalLines": 33
+      },
+      {
+        "id": "epm-goal-handlers",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useEpmSettings.js",
+        "fromLine": 1745,
+        "toLine": 1937,
+        "removedPhysicalLines": 193,
+        "addedPhysicalLines": 193
+      },
+      {
+        "id": "epm-normalization-and-goal-memos-and-key-handlers",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useEpmSettings.js",
+        "fromLine": 2517,
+        "toLine": 2659,
+        "removedPhysicalLines": 143,
+        "addedPhysicalLines": 142
+      },
+      {
+        "id": "epm-dirty-and-saved-scope-memos",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useEpmSettings.js",
+        "fromLine": 2778,
+        "toLine": 2796,
+        "removedPhysicalLines": 19,
+        "addedPhysicalLines": 19
+      },
+      {
+        "id": "epm-saved-subgoals-effect",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useEpmSettings.js",
+        "fromLine": 2797,
+        "toLine": 2800,
+        "removedPhysicalLines": 4,
+        "addedPhysicalLines": 4
+      },
+      {
+        "id": "epm-project-prerequisites-and-cache-key",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useEpmSettings.js",
+        "fromLine": 2881,
+        "toLine": 2883,
+        "removedPhysicalLines": 3,
+        "addedPhysicalLines": 3
+      },
+      {
+        "id": "epm-project-row-effects",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useEpmSettings.js",
+        "fromLine": 2885,
+        "toLine": 2908,
+        "removedPhysicalLines": 24,
+        "addedPhysicalLines": 22
+      },
+      {
+        "id": "epm-settings-project-rows-memo",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useEpmSettings.js",
+        "fromLine": 2910,
+        "toLine": 2961,
+        "removedPhysicalLines": 52,
+        "addedPhysicalLines": 51
+      },
+      {
+        "id": "epm-open-settings-tab",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useEpmSettings.js",
+        "fromLine": 3115,
+        "toLine": 3124,
+        "removedPhysicalLines": 10,
+        "addedPhysicalLines": 9
+      },
+      {
+        "id": "epm-focus-scope-field",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useEpmSettings.js",
+        "fromLine": 3132,
+        "toLine": 3143,
+        "removedPhysicalLines": 12,
+        "addedPhysicalLines": 11
+      },
+      {
+        "id": "epm-settings-tab-keydown",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useEpmSettings.js",
+        "fromLine": 3145,
+        "toLine": 3176,
+        "removedPhysicalLines": 32,
+        "addedPhysicalLines": 31
+      },
+      {
+        "id": "epm-tracked-project-sort",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useEpmSettings.js",
+        "fromLine": 11340,
+        "toLine": 11343,
+        "removedPhysicalLines": 4,
+        "addedPhysicalLines": 4
+      },
+      {
+        "id": "epm-settings-load-effect",
+        "fromFile": "frontend/src/dashboard.jsx",
+        "toFile": "frontend/src/settings/useEpmSettings.js",
+        "fromLine": 2286,
+        "toLine": 2386,
+        "removedPhysicalLines": 101,
+        "addedPhysicalLines": 100
       }
     ]
   }

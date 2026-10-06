@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const test = require('node:test');
 const { readDashboardCssSource } = require('./css_source_helpers');
+const { readOwnerSource } = require('./frontend_source_helpers');
 
 const dashboardPath = path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx');
 const epmApiPath = path.join(__dirname, '..', 'frontend', 'src', 'api', 'epmApi.js');
@@ -656,12 +657,13 @@ test('EPM board bootstraps saved config from initial user config before loading 
     const hookEffects = getUseEffectBodies(epmViewDataSource);
     const epmViewLoadEffect = hookEffects.find(body => body.includes("if (selectedView !== 'epm') return;") && body.includes('void refreshEpmView();')) || '';
 
+    const epmSettingsHookSource = readOwnerSource(['frontend/src/settings/useEpmSettings.js'], { anchor: 'export function useEpmSettings(' });
     assert.ok(
-        dashboardSource.includes('const [epmConfigLoaded, setEpmConfigLoaded] = useState(false);'),
+        epmSettingsHookSource.includes('const [epmConfigLoaded, setEpmConfigLoaded] = useState(false);'),
         'Expected explicit EPM config loaded state'
     );
     assert.ok(
-        dashboardSource.includes('const applySavedEpmConfig = (config) => {'),
+        epmSettingsHookSource.includes('const applySavedEpmConfig = (config) => {'),
         'Expected shared helper for applying saved EPM config'
     );
     assert.ok(

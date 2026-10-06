@@ -16,7 +16,7 @@ This plan summarizes a read-only review of the current checkout on 2026-05-28. T
 
 No P0 issues were found. The main structural risk is that extracted modules exist, but the true ownership centers are still large legacy files:
 
-- `frontend/src/dashboard.jsx` is still about 15.5k lines and owns Scenario, settings state, planning/capacity behavior, and transitional API calls.
+- `frontend/src/dashboard.jsx` was about 15.5k lines when this review was written and owned Scenario, settings state, planning/capacity behavior, and transitional API calls (after the Scenario and Settings extraction it is about 10.9k lines and keeps the cross-feature composition, ENG, Planning, Statistics and EPM views).
 - `jira_server.py` is still about 6.8k lines and owns runtime configuration, caches, auth/session helpers, Jira wrappers, EPM orchestration, and compatibility exports.
 - `backend/services/` exists but has no service modules yet.
 
@@ -85,7 +85,7 @@ No P0 issues were found. The main structural risk is that extracted modules exis
 - The priority-weights service extraction slice was completed in PR #54 (`879ad59`) in `DONE-codebase-operability-priority-weights-service.md`.
 - The team-catalog service extraction slice was completed in PR #54 (`879ad59`) in `DONE-codebase-operability-team-catalog-service.md`.
 - The group-config service extraction slice was completed in PR #54 (`879ad59`) in `DONE-codebase-operability-group-config-service.md`.
-- The "Extract Scenario Planner ownership" and "Move settings state/actions behind feature hooks" slices are now planned in `EXEC-dashboard-scenario-settings-state-extraction.md`; do not execute them from this backlog.
+- The "Extract Scenario Planner ownership" and "Move settings state/actions behind feature hooks" slices are planned and executed in `EXEC-dashboard-scenario-settings-state-extraction.md` (the Scenario half merged in PRs #228 to #232; the Settings slices are complete locally, `frontend/src/dashboard.jsx` is about 10.9k lines, and publication is pending); do not execute them from this backlog.
 - Keep this as future scope until the user explicitly chooses a slice to execute.
 - Convert a chosen slice into a separate `EXEC-*` plan before implementation.
 - Do not execute multiple slices that touch `frontend/src/dashboard.jsx` in parallel.

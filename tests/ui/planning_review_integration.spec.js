@@ -520,6 +520,37 @@ for(const width of [390,1280]) test(`Summary edits inside its cell with Enter, b
     await expect(trigger).toHaveText('Saved on blur');expect(saved).toEqual(['Edited in the cell','Saved on blur']);
 });
 
+test('Summary loading and saving show a spinner inside the input and never change the row height',async({page})=>{
+    const summary='Original summary';let release,hold;const gate=new Promise(resolve=>{release=resolve});const saveGate=new Promise(resolve=>{hold=resolve});
+    await page.setViewportSize({width:1280,height:900});
+    await installPlanningFixture(page,{authMode:'atlassian_oauth',summary});
+    await page.route('**/epm-burst.svg',route=>route.fulfill({path:'assets/epm-burst.svg',contentType:'image/svg+xml'}));
+    await page.route('**/api/eng/sprints/*/review',route=>json(route,{schemaRevision:0,columns:[],capabilities:{canRead:false,canSave:false}}));
+    await page.route('**/api/issues/PLAN-EPIC/editable-fields?*',async route=>{await gate;return json(route,{editable:true,currentValue:summary,mappingRevision:'synthetic',baseUpdated:'synthetic'});});
+    await page.route('**/api/issues/PLAN-EPIC/field',async route=>{await saveGate;return json(route,{value:'Edited',result:'updated',mappingRevision:'synthetic'});});
+    await openPlanning(page);await page.getByRole('button',{name:'Show Planning table',exact:true}).click();
+    const row=page.locator('tbody tr').first(),cell=row.locator('.planning-review-summary');
+    const trigger=cell.getByRole('button',{name:'Edit summary for PLAN-EPIC',exact:true});
+    const rest=(await row.boundingBox()).height;
+    await trigger.click();
+    const editor=cell.getByRole('textbox',{name:'Summary for PLAN-EPIC',exact:true});
+    const busy=cell.getByRole('status',{name:'Loading summary',exact:true});
+    await expect(busy).toBeVisible();
+    await expect(page.getByText('Loading summary…')).toHaveCount(0);
+    // The spinner sits inside the input's right edge.
+    const inside=await page.evaluate(()=>{const spinner=document.querySelector('.issue-summary-editor-busy').getBoundingClientRect(),input=document.querySelector('textarea.issue-summary-editor-input').getBoundingClientRect();return spinner.left>=input.left&&spinner.right<=input.right&&spinner.top>=input.top&&spinner.bottom<=input.bottom&&input.right-spinner.right<12;});
+    expect(inside).toBe(true);
+    await cell.screenshot({path:'tmp/245/summary-loading.png'});
+    expect((await row.boundingBox()).height).toBeLessThanOrEqual(rest+1);
+    release();await expect(editor).toBeEditable();await expect(busy).toHaveCount(0);
+    expect((await row.boundingBox()).height).toBeLessThanOrEqual(rest+1);
+    await editor.fill('Edited');await editor.press('Enter');
+    await expect(cell.getByRole('status',{name:'Saving summary',exact:true})).toBeVisible();
+    await expect(page.getByText('Saving…')).toHaveCount(0);
+    expect((await row.boundingBox()).height).toBeLessThanOrEqual(rest+1);
+    hold();
+});
+
 test('Summary conflict stays inside the cell and reloads before another edit',async({page})=>{
     let writes=0,reads=0;await installPlanningFixture(page,{authMode:'atlassian_oauth',summary:'Original summary'});
     await page.route('**/api/eng/sprints/*/review',route=>json(route,{schemaRevision:0,columns:[],capabilities:{canRead:false,canSave:false}}));

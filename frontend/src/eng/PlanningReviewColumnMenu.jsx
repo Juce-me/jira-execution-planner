@@ -28,7 +28,7 @@ function RenameField({ column, review, onError, onFinish, onRenamed }) {
         }} />;
 }
 
-// Per-column actions, opened from the header cell. Required Jira columns can only move; optional columns can also be hidden;
+// Per-column actions, opened from the header cell. Every column but the pinned Summary can be hidden; the pinned Key only hides;
 // review (custom) columns can also be renamed, totalled and archived.
 export default function PlanningReviewColumnMenu({ column, editable, review, canMoveLeft, canMoveRight, onMove, onHide, onError, onClose, onTrack }) {
     const rootRef = React.useRef(null);
@@ -51,10 +51,10 @@ export default function PlanningReviewColumnMenu({ column, editable, review, can
             {column.type === 'number' && <MenuOption label="Show total" pressed={total} locked={!editable}
                 onClick={() => { if (review.changeSchema({ action: 'aggregation', columnId: column.id, aggregation: total ? 'none' : 'sum' })) onTrack('column_aggregation_changed'); }} />}
         </div></div>}
-        <div className="pop-group"><div className="pop-list">
+        {column.id !== 'key' && <div className="pop-group"><div className="pop-list">
             <MenuOption label="Move left" aligned={aligned} locked={!editable || !canMoveLeft} onClick={() => onMove(-1)} />
             <MenuOption label="Move right" aligned={aligned} locked={!editable || !canMoveRight} onClick={() => onMove(1)} />
-        </div></div>
+        </div></div>}
         {(column.optional || column.custom) && <div className="pop-group"><div className="pop-list">
             <MenuOption label="Hide column" aligned={aligned} locked={!editable} onClick={onHide} />
             {column.custom && (confirming

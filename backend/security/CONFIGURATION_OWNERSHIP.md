@@ -141,4 +141,4 @@ Before merging a database, rights, or configuration change, verify all of these 
    concurrency, and preservation of unrelated private/shared fields.
 8. Migrations do not infer private-to-shared ownership or publish one user's configuration to others.
 
-Sprint review column order and optional visibility are shared per workspace/Sprint/row kind in `WorkspaceSprintReview.layouts`, under the same authenticated-user save rights and optimistic schema revision as custom definitions. They are not private user preferences. Key/Summary remain pinned and required columns cannot be hidden.
+Sprint review column order and optional visibility are shared per workspace/Sprint/row kind in `WorkspaceSprintReview.layouts`, under the same authenticated-user save rights and optimistic schema revision as custom definitions. They are not private user preferences. Key and Summary stay pinned first; every column except Summary can be hidden, and Key is never part of the saved order.

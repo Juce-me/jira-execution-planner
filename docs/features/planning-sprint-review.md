@@ -124,15 +124,24 @@ header row, or when the review cannot be edited.
 The chevron opens a column menu anchored to the header cell (also from the docked
 header; an open menu closes when the header docks or undocks). Move left and Move right
 step the column past its nearest visible neighbour like dragging does and stay open;
-optional Jira columns and review columns also offer Hide column, which closes the
-menu. Review columns add Rename (an inline field: Enter or leaving it saves, Escape
+every column except the pinned Summary also offers Hide column, which closes the
+menu (Key is pinned first, so its menu holds only Hide column). Review columns add Rename (an inline field: Enter or leaving it saves, Escape
 cancels and keeps the menu open), Show total (numbers only, a pressed toggle for the
 footer Σ) and Archive column…, which asks inline first and closes the menu (archiving is refused, and the reason shown under the toolbar, while the column still has unsaved cell drafts).
 The menu does not repeat the column name (it opens directly under that heading) or a usage hint;
 only review columns carry a small "Shared review column" title, and only a menu with a toggle
 row keeps a checkbox gutter, so plain actions start at the left edge.
 Drag column handles to place Jira and custom columns in any order after the pinned
-Key and Summary columns. Arrow keys on a focused handle move it past the nearest
+Key and Summary columns. Summary is the only column that is always visible. While Key is hidden,
+each real Epic or Story row carries a Jira icon link (accessible name Open KEY in Jira) before its
+Summary, Summary freezes straight after the selection column, and Key is never part of the saved
+order (it appears in the saved hidden list only). Hiding a column also drops any sort on it; Show
+hidden restores it, Key at its pinned first position.
+On wide displays the bordered sheet shrinks to the width of its columns and sits centred in the
+region, with no blank frame beside it; a sheet wider than the region fills it and scrolls horizontally.
+Status and awaited-Story pills use the Catch Up and filter typography (Plex Mono capitals). While
+the signed-in Summary editor loads or saves, a small spinner sits inside the input's right edge;
+the row never grows for a status line. Arrow keys on a focused handle move it past the nearest
 visible neighbour, stepping over hidden columns; the headers are the only place to
 reorder. Hide column in a column's menu and Show hidden in the Add popover control
 optional visibility.

@@ -141,17 +141,17 @@ export function buildPlanningReviewColumns({ rows = [], mode = 'epic', customCol
     const teams = new Set(rows.flatMap(row => row.rowKind === 'epic' ? row.teamsInScope || [] : [row.team?.name || 'Unknown Team']));
     const projects = new Set(rows.filter(row => !row.synthetic).map(row => row.project).filter(Boolean));
     const columns = [
-        { id: 'key', label: 'Key', type: 'text', required: true },
+        { id: 'key', label: 'Key', type: 'text', optional: true },
         { id: 'summary', label: 'Summary', type: 'text', required: true },
-        { id: 'status', label: 'Status', type: 'text', required: true },
-        { id: 'priority', label: 'Priority', type: 'priority', required: true },
-        { id: 'storyPoints', label: mode === 'epic' ? 'Sprint SP' : 'Story Points', type: 'number', required: true, aggregation: 'sum' },
+        { id: 'status', label: 'Status', type: 'text', optional: true },
+        { id: 'priority', label: 'Priority', type: 'priority', optional: true },
+        { id: 'storyPoints', label: mode === 'epic' ? 'Sprint SP' : 'Story Points', type: 'number', optional: true, aggregation: 'sum' },
         { id: 'accepted', label: 'Accepted', type: 'number', optional: true, aggregation: 'sum' },
     ];
-    if ((admittedTeamCount ?? teams.size) > 1) columns.push({ id: mode === 'epic' ? 'teamsInScope' : 'team', label: mode === 'epic' ? 'Teams in scope' : 'Team', type: 'text', required: true });
+    if ((admittedTeamCount ?? teams.size) > 1) columns.push({ id: mode === 'epic' ? 'teamsInScope' : 'team', label: mode === 'epic' ? 'Teams in scope' : 'Team', type: 'text', optional: true });
     if ((admittedProjectCount ?? projects.size) > 1) columns.push({ id: 'project', label: 'Project', type: 'text', optional: true });
     if (mode === 'epic') columns.push({ id: 'team', label: 'Epic Team', type: 'text', optional: true });
-    if (mode === 'story') columns.push({ id: 'epic', label: 'Epic', type: 'text', required: true });
+    if (mode === 'story') columns.push({ id: 'epic', label: 'Epic', type: 'text', optional: true });
     columns.push({ id: 'assignee', label: 'Assignee', type: 'text', optional: true }, { id: 'components', label: 'Component', type: 'text', optional: true }, { id: 'capacity', label: 'Capacity', type: 'text', optional: true }, { id: 'projectTrack', label: 'Project Track', type: 'text', optional: true });
     columns.push(...customColumns.filter(column => column.rowKind === mode && !column.archived).sort((a, b) => a.order - b.order).map(column => ({ ...column, custom: true })));
     const order = new Map((layout.order || []).map((id, index) => [id, index]));

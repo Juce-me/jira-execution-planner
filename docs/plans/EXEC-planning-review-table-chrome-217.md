@@ -15,7 +15,7 @@ Written: 2026-10-02 from five read-only reviews (complexity, interaction, visual
 
 ## Global Constraints
 
-- Key and Summary stay pinned and non-hideable (AGENTS.md "share column order and optional visibility per workspace/Sprint/row kind … keep Key/Summary pinned").
+- (Superseded by #245: only Summary is non-hideable; Key hides and leaves a Jira icon link in Summary.) Key and Summary stay pinned and non-hideable (AGENTS.md "share column order and optional visibility per workspace/Sprint/row kind … keep Key/Summary pinned").
 - Order and visibility stay shared per workspace + Sprint + row kind, remain drafts until Save review, and a layout save is accepted only when its response confirms the exact order and visibility.
 - Popups stay anchored, viewport-bounded and never shift the table or page; the docked header and totals keep the measured geometry; rows keep scrolling with the document.
 - Numeric headings, values, editors and totals align right; text aligns left.

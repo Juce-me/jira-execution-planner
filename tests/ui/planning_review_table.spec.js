@@ -553,7 +553,7 @@ for (const width of [1440, 2400]) test(`column widths fit their content instead 
     expect(cells.Priority.width).toBeLessThanOrEqual(110);
     expect(cells['Project Track']).toBeUndefined();
     expect(cells['Cost 0'].width).toBeLessThanOrEqual(132);   // the 112px editor column plus the 20px column-menu lane
-    for(const cell of Object.values(cells)) expect(cell.scroll).toBeLessThanOrEqual(cell.client+1);
+    for(const [name,cell] of Object.entries(cells)) expect(cell.scroll,name).toBeLessThanOrEqual(cell.client+1);
 });
 
 for(const width of [390,1440]) test(`review toolbar holds only the row switch and its popups do not shift the table at ${width}px`,async({page})=>{
@@ -671,9 +671,10 @@ test('lane controls are hidden at rest and revealed by hover without changing th
     for (const node of await lane.all()) await expect.poll(() => node.evaluate(element => getComputedStyle(element).opacity)).toBe('1');
     expect({ width: (await table.boundingBox()).width, header: (await cell.boundingBox()).height }).toEqual(before);
     await page.screenshot({ path: path.join(root, 'tmp/217-ui/column-lane-hover-1440.png'), clip: { x: 440, y: 140, width: 720, height: 60 } });
-    // Key and Summary are pinned: no lane.
+    // Summary is pinned and always visible: no lane. Key is pinned first but hideable: a menu, never a drag grip.
     await expect(page.getByRole('columnheader', { name: 'Summary', exact: true }).locator('.planning-review-colmenu, .planning-review-drag')).toHaveCount(0);
-    await expect(page.getByRole('columnheader', { name: 'Key', exact: true }).locator('.planning-review-colmenu, .planning-review-drag')).toHaveCount(0);
+    await expect(page.getByRole('columnheader', { name: 'Key', exact: true }).locator('.planning-review-drag')).toHaveCount(0);
+    await expect(page.getByRole('columnheader', { name: 'Key', exact: true }).locator('.planning-review-colmenu')).toHaveCount(1);
 });
 
 test('column menu items follow the column kind and opening it is reported', async ({ page }) => {
@@ -687,8 +688,12 @@ test('column menu items follow the column kind and opening it is reported', asyn
     const inset = await popup.evaluate(node => { const label = node.querySelector('.pop-opt-label').getBoundingClientRect(); return label.left - node.getBoundingClientRect().left; });
     expect(inset).toBeLessThan(30);
     await page.screenshot({ path: path.join(root, 'tmp/217-ui/column-menu-jira.png'), clip: { x: 0, y: 120, width: 1000, height: 200 } });
-    expect(await menuItems(popup)).toEqual(['Move left', 'Move right']);
+    expect(await menuItems(popup)).toEqual(['Move left', 'Move right', 'Hide column']);
     await expect(popup).not.toContainText('Shift-click');
+    await page.keyboard.press('Escape'); await expect(popup).toHaveCount(0);
+    // Key is pinned first: it only hides.
+    await columnMenuButton(page, 'Key').click();
+    expect(await menuItems(columnMenu(page, 'Key'))).toEqual(['Hide column']);
     await page.keyboard.press('Escape'); await expect(popup).toHaveCount(0);
     await showHiddenColumn(page, 'Component');
     await columnMenuButton(page, 'Component').click();
@@ -1294,4 +1299,83 @@ test('heading hover keeps a readable fill from the shared border token', async (
     const settled = await read();
     expect(contrastRatio(rgbOf(settled.color).slice(0, 3), rgbOf(settled.bg).slice(0, 3))).toBeGreaterThanOrEqual(4.5);
     expect(settled.transform).toBe('none'); expect(settled.shadow).toBe('none');
+});
+
+test('on a wide display the sheet shrinks to its columns and sits centred with no blank frame to its right', async ({ page }) => {
+    await page.setViewportSize({ width: 2400, height: 900 }); await install(page);
+    for (const mode of ['Epics', 'Stories']) {
+        await page.getByRole('radio', { name: mode, exact: true }).click();
+        const geometry = await page.evaluate(() => {
+            const scroll = document.querySelector('.planning-review-scroll'), table = scroll.querySelector('table'), region = document.querySelector('.planning-review-region');
+            const frame = scroll.getBoundingClientRect(), sheet = table.getBoundingClientRect(), bounds = region.getBoundingClientRect();
+            return { frameWidth: frame.width, sheetWidth: sheet.width, borders: scroll.clientLeft * 2, left: frame.left - bounds.left, right: bounds.right - frame.right, scrolls: scroll.scrollWidth > scroll.clientWidth };
+        });
+        await page.screenshot({ path: path.join(root, 'tmp/245/wide-' + mode + '.png') });
+        const note = `${mode} ${JSON.stringify(geometry)}`;
+        expect(geometry.scrolls, note).toBe(false);
+        expect(Math.abs(geometry.frameWidth - geometry.sheetWidth - geometry.borders), note).toBeLessThanOrEqual(1);
+        expect(Math.abs(geometry.left - geometry.right), note).toBeLessThanOrEqual(1);
+        if (mode === 'Epics') expect(geometry.left, note).toBeGreaterThan(100);
+    }
+    // A sheet wider than the region still fills it and scrolls horizontally.
+    await page.setViewportSize({ width: 900, height: 900 });
+    const narrow = await page.evaluate(() => { const scroll = document.querySelector('.planning-review-scroll'), region = document.querySelector('.planning-review-region'); return { frame: scroll.getBoundingClientRect().width, region: region.getBoundingClientRect().width, scrolls: scroll.scrollWidth > scroll.clientWidth }; });
+    expect(narrow.scrolls).toBe(true);
+    expect(Math.abs(narrow.frame - narrow.region)).toBeLessThanOrEqual(1);
+});
+
+test('every column but Summary hides; Key becomes a Jira icon link in Summary and returns first from Show hidden', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 }); await install(page); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await expect(page.getByRole('columnheader', { name: 'Summary', exact: true }).locator('.planning-review-colmenu')).toHaveCount(0);
+    await hideColumn(page, 'Key');
+    await expect(page.getByRole('columnheader', { name: 'Key', exact: true })).toHaveCount(0);
+    const cell = page.locator('tbody .planning-review-summary').first();
+    const link = cell.getByRole('link', { name: /^Open DEMO-\d+ in Jira$/ });
+    await expect(link).toHaveAttribute('href', /^https:\/\/jira\.example\/browse\/DEMO-\d+$/);
+    await expect(link).toHaveAttribute('target', '_blank');
+    await page.locator('.planning-review-scroll').screenshot({ path: path.join(root, 'tmp/245/key-hidden.png') });
+    expect(await link.evaluate(node => { const rect = node.querySelector('svg').getBoundingClientRect(); return { width: rect.width, height: rect.height }; })).toEqual({ width: 14, height: 14 });
+    // Summary now freezes straight after the selection column and the saved order never names Key.
+    expect(await page.locator('thead .planning-review-summary').evaluate(node => getComputedStyle(node).left)).toBe('46px');
+    const layout = await page.evaluate(() => window.harness.state().layouts.story);
+    expect(layout.hidden).toContain('key'); expect(layout.order).not.toContain('key');
+    await showHiddenColumn(page, 'Key');
+    expect(await page.locator('thead th').evaluateAll(nodes => nodes.slice(1, 3).map(node => node.getAttribute('aria-label')))).toEqual(['Key', 'Summary']);
+    await expect(cell.getByRole('link')).toHaveCount(0);
+    expect(await page.locator('thead .planning-review-summary').evaluate(node => getComputedStyle(node).left)).toBe('142px');
+    expect((await page.evaluate(() => window.harness.state().layouts.story)).order).not.toContain('key');
+});
+
+test('hiding the Jira columns keeps selection, totals, sorting and editing working', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 }); await install(page); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    const heading = label => page.getByRole('columnheader', { name: label, exact: true }).locator('.planning-review-heading');
+    await heading('Status').click();
+    await expect(heading('Status')).toContainText('↑');
+    for (const label of ['Key', 'Status', 'Priority', 'Story Points', 'Team', 'Epic']) await hideColumn(page, label);
+    for (const label of ['Key', 'Status', 'Priority', 'Story Points', 'Team', 'Epic']) await expect(page.getByRole('columnheader', { name: label, exact: true })).toHaveCount(0);
+    await expect(page.getByRole('columnheader', { name: 'Summary', exact: true })).toBeVisible();
+    // Selection and totals do not depend on the hidden columns.
+    const box = page.locator('tbody tr').first().locator('.planning-review-selection input[type="checkbox"]');
+    await box.check(); await expect(box).toBeChecked();
+    await expect(page.locator('tfoot')).toBeVisible();
+    // The sort on a hidden column is dropped, not kept in secret.
+    await showHiddenColumn(page, 'Status');
+    await expect(heading('Status')).not.toContainText('↑');
+    // The sheet still fits its header cells.
+    expect(await page.locator('thead th').evaluateAll(nodes => nodes.filter(node => node.scrollWidth > node.clientWidth + 1).map(node => node.getAttribute('aria-label')))).toEqual([]);
+});
+
+test('status pills use the Catch Up capital Plex Mono typography', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 }); await install(page);
+    for (const mode of ['Epics', 'Stories']) {
+        await page.getByRole('radio', { name: mode, exact: true }).click();
+        const read = await page.evaluate(() => {
+            const probe = document.createElement('div'); probe.className = 'task-meta'; document.body.append(probe);
+            const meta = getComputedStyle(probe), pill = document.querySelector('tbody .planning-review-status .status-pill'), own = getComputedStyle(pill);
+            const result = { pill: { family: own.fontFamily, transform: own.textTransform, spacing: own.letterSpacing, size: own.fontSize }, meta: { family: meta.fontFamily, transform: meta.textTransform, spacing: meta.letterSpacing, size: meta.fontSize } };
+            probe.remove(); return result;
+        });
+        expect(read.pill, mode).toEqual(read.meta);
+        await page.locator('.planning-review-scroll').screenshot({ path: path.join(root, `tmp/245/status-${mode}.png`) });
+    }
 });

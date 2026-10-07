@@ -1071,7 +1071,8 @@ test('Planning Table Story status updates optimistically and keeps other pills u
     await trigger(page, 'story', 'PROD-1').click();
     await menu(page, 'PROD-1').getByRole('menuitem', { name: 'In Progress' }).click();
     await expect.poll(() => transitionState.inFlight).toBe(1);
-    expect(await trigger(page, 'story', 'PROD-1').innerText()).toContain('In Progress');
+    // Table pills render in capitals, so innerText carries the transformed case.
+    expect((await trigger(page, 'story', 'PROD-1').innerText()).toLowerCase()).toContain('in progress');
     await page.locator('.subtitle-secondary').click();
     await expect(menu(page, 'PROD-1')).toHaveCount(0);
     await expect(trigger(page, 'story', 'PROD-1')).toBeDisabled();
@@ -1102,7 +1103,8 @@ test('Planning Table Story status rolls back and reports a failed change', async
     await trigger(page, 'story', 'PROD-1').click();
     await menu(page, 'PROD-1').getByRole('menuitem', { name: 'In Progress' }).click();
     await expect.poll(() => transitionState.inFlight).toBe(1);
-    expect(await trigger(page, 'story', 'PROD-1').innerText()).toContain('In Progress');
+    // Table pills render in capitals, so innerText carries the transformed case.
+    expect((await trigger(page, 'story', 'PROD-1').innerText()).toLowerCase()).toContain('in progress');
     await expect.poll(() => transitionState.inFlight).toBe(0);
     await expect(menu(page, 'PROD-1').locator('.status-transition-menu-result')).toContainText('No issues updated');
     await expect(trigger(page, 'story', 'PROD-1')).toContainText('To Do');

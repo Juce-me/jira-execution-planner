@@ -76,7 +76,20 @@ class SprintReviewTests(ReviewFixture, unittest.TestCase):
                 revision = result['schemaRevision']
                 self.assertEqual(result['layouts'][kind]['hidden'], defaults)
         with self.assertRaises(review.ReviewError):
-            self.save(schemas=[{'action': 'layout', 'rowKind': 'story', 'order': ['status'], 'hidden': ['status']}], base=revision)
+            self.save(schemas=[{'action': 'layout', 'rowKind': 'story', 'order': ['status'], 'hidden': ['summary']}], base=revision)
+
+    def test_layout_hides_every_column_but_summary_and_keeps_key_out_of_the_order(self):
+        revision = self.add()['schemaRevision']
+        every = {'epic': ['key', 'status', 'priority', 'storyPoints', 'teamsInScope', 'team'], 'story': ['key', 'status', 'priority', 'storyPoints', 'team', 'epic']}
+        for kind, hidden in every.items():
+            with self.subTest(kind=kind):
+                order = [column for column in hidden if column != 'key']
+                result = self.save(schemas=[{'action': 'layout', 'rowKind': kind, 'order': order, 'hidden': hidden}], base=revision)
+                revision = result['schemaRevision']
+                self.assertEqual(result['layouts'][kind], {'order': order, 'hidden': hidden})
+        for invalid in ({'order': ['key'], 'hidden': []}, {'order': ['status'], 'hidden': ['summary']}, {'order': ['summary'], 'hidden': []}):
+            with self.subTest(invalid=invalid), self.assertRaises(review.ReviewError):
+                self.save(schemas=[{'action': 'layout', 'rowKind': 'story', **invalid}], base=revision)
 
     def test_layout_accepts_the_accepted_column_in_order_and_hidden(self):
         # The computed Accepted column is a built-in the table can order and hide like Assignee.
@@ -98,7 +111,7 @@ class SprintReviewTests(ReviewFixture, unittest.TestCase):
         with self.assertRaises(review.ReviewError) as error:
             self.save(schemas=[layout], base=1)
         self.assertEqual(error.exception.status, 409)
-        for invalid in ({**layout, 'order': ['key']}, {**layout, 'order': ['status', 'status']}, {**layout, 'order': ['unknown']}, {**layout, 'hidden': ['storyPoints']}):
+        for invalid in ({**layout, 'order': ['key']}, {**layout, 'order': ['status', 'status']}, {**layout, 'order': ['unknown']}, {**layout, 'hidden': ['summary']}):
             with self.assertRaises(review.ReviewError):
                 self.save(schemas=[invalid], base=2)
         self.assertEqual(review.load_review(other, '17', self.url)['layouts'], result['layouts'])

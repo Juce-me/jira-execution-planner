@@ -103,7 +103,7 @@ test('shared order places custom columns among Jira columns and keeps row identi
     assert.equal(columns.some(column=>column.id==='team'),false);
 });
 
-test('Component, Project, Capacity and Project Track are optional while required identity and core facts stay visible', async()=>{
+test('every column but Summary is optional and hideable, and Summary always stays visible', async()=>{
     const {buildPlanningReviewColumns,DEFAULT_REVIEW_HIDDEN_COLUMNS}=await model();
     assert.deepEqual(DEFAULT_REVIEW_HIDDEN_COLUMNS,['components','project','capacity','projectTrack']);
     for(const mode of ['epic','story']) {
@@ -111,8 +111,9 @@ test('Component, Project, Capacity and Project Track are optional while required
         const all=buildPlanningReviewColumns(options);
         for(const id of DEFAULT_REVIEW_HIDDEN_COLUMNS) assert.equal(all.find(column=>column.id===id).optional,true);
         const hidden=buildPlanningReviewColumns({...options,hidden:new Set([...DEFAULT_REVIEW_HIDDEN_COLUMNS,'key','summary','status','storyPoints'])});
-        for(const id of DEFAULT_REVIEW_HIDDEN_COLUMNS) assert.equal(hidden.some(column=>column.id===id),false);
-        for(const id of ['key','summary','status','storyPoints']) assert.equal(hidden.some(column=>column.id===id),true);
+        for(const id of [...DEFAULT_REVIEW_HIDDEN_COLUMNS,'key','status','storyPoints']) assert.equal(hidden.some(column=>column.id===id),false,id);
+        assert.equal(hidden.some(column=>column.id==='summary'),true);
+        for(const column of all) assert.equal(Boolean(column.required),column.id==='summary',column.id);
     }
 });
 

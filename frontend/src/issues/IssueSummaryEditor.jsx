@@ -1,4 +1,5 @@
 import * as React from 'react';
+import LoadingMark from '../ui/LoadingMark.jsx';
 
 export default function IssueSummaryEditor({
     issueKey, currentValue = '', isOpen = false, metadata = null, loading = false,
@@ -51,8 +52,7 @@ export default function IssueSummaryEditor({
                     if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancelledRef.current = true; restoreFocusRef.current = true; onClose?.('escape'); }
                     if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); restoreFocusRef.current = true; void commit(); }
                 }} />
-            {loading && <span className="planning-review-requirement" role="status">Loading summary…</span>}
-            {submitting && <span className="planning-review-requirement" role="status">Saving…</span>}
+            {(loading || submitting) && <span className="issue-summary-editor-busy" role="status" aria-label={loading ? 'Loading summary' : 'Saving summary'}><LoadingMark /></span>}
             {(validationError || error) && <span className="planning-review-validation" role="alert">{validationError || error}</span>}
             {recoveryMode === 'reload' && <button type="button" className="planning-action-button" onClick={onReload}>Reload field</button>}
             {recoveryMode === 'check_jira' && <button type="button" className="planning-action-button" onClick={onCheckJira}>Check Jira</button>}

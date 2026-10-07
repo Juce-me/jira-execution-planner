@@ -8433,7 +8433,9 @@ input.story-points-editor.story-points-alert-highlight {
 }
 .planning-review-scroll {
   overflow-x: auto;
+  width: fit-content;
   max-width: 100%;
+  margin-inline: auto;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg-secondary);
@@ -8607,6 +8609,11 @@ input.story-points-editor.story-points-alert-highlight {
     left: 142px;
     z-index: 2;
     box-shadow: 1px 0 0 var(--border);
+  }
+}
+@media (min-width: 1000px) {
+  .planning-review-table.planning-review-key-hidden .planning-review-summary {
+    left: 46px;
   }
 }
 @media (max-width: 600px) {
@@ -8975,6 +8982,10 @@ input.story-points-editor.story-points-alert-highlight {
   border-radius: 50%;
   color: var(--text-primary);
 }
+.planning-review-table th.planning-review-key .planning-review-head .planning-review-colmenu {
+  left: auto;
+  right: 0;
+}
 .planning-review-table th.planning-review-boundary-hot .planning-review-colmenu {
   opacity: 0;
   pointer-events: none;
@@ -9006,20 +9017,31 @@ input.story-points-editor.story-points-alert-highlight {
   }
 }
 .planning-review-summary .issue-summary-editor-inline {
+  position: relative;
   display: flex;
   flex-direction: column;
   width: 100%;
   min-width: 0;
+}
+.planning-review-summary .issue-summary-editor-busy {
+  position: absolute;
+  top: 3px;
+  right: 6px;
+  display: inline-flex;
+  pointer-events: none;
+}
+.planning-review-summary .issue-summary-editor-inline:has(.issue-summary-editor-busy) textarea.issue-summary-editor-input {
+  padding-right: 26px;
 }
 .planning-review-summary textarea.issue-summary-editor-input {
   display: block;
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
-  min-height: 28px;
+  min-height: 22px;
   resize: none;
   overflow: hidden;
-  padding: 3px 5px;
+  padding: 2px 5px;
   margin: 0;
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -9249,6 +9271,28 @@ input.story-points-editor.story-points-alert-highlight {
 .planning-review-table button.issue-person-editor-trigger:hover,
 .planning-review-table input.issue-person-editor-trigger:focus-visible,
 .planning-review-table button.issue-person-editor-trigger:focus-visible {
+  color: #d48806;
+}
+.planning-review-table .status-pill {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.planning-review-jira-link {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  color: #0052cc;
+}
+.planning-review-jira-link svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+  stroke: none;
+}
+.planning-review-jira-link:hover,
+.planning-review-jira-link:focus-visible {
   color: #d48806;
 }
 

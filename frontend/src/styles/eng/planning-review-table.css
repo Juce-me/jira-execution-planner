@@ -183,7 +183,7 @@
 .planning-review-table input.issue-person-editor-trigger:focus-visible, .planning-review-table button.issue-person-editor-trigger:focus-visible { color: #d48806; }
 
 /* Every pill in the table (Status, awaited Stories) shares the Catch Up and filter typography: Plex Mono capitals. Passive spans and the editing button read identically. */
-.planning-review-table .status-pill { font-family: 'IBM Plex Mono', monospace; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; }
+.planning-review-table .status-pill { font-family: 'IBM Plex Mono', monospace; font-size: 0.5rem; text-transform: uppercase; letter-spacing: 0.1em; }
 
 /* Key stands in for itself as a Jira icon in the Summary cell while the Key column is hidden. */
 .planning-review-jira-link { display: inline-flex; flex: 0 0 auto; align-items: center; color: #0052cc; }

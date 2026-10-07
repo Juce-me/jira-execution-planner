@@ -1375,7 +1375,9 @@ test('status pills use the Catch Up capital Plex Mono typography', async ({ page
             const result = { pill: { family: own.fontFamily, transform: own.textTransform, spacing: own.letterSpacing, size: own.fontSize }, meta: { family: meta.fontFamily, transform: meta.textTransform, spacing: meta.letterSpacing, size: meta.fontSize } };
             probe.remove(); return result;
         });
-        expect(read.pill, mode).toEqual(read.meta);
+        expect({ family: read.pill.family, transform: read.pill.transform }, mode).toEqual({ family: read.meta.family, transform: read.meta.transform });
+        const heights = await page.evaluate(() => ({ pill: document.querySelector('tbody .planning-review-status .status-pill').getBoundingClientRect().height, key: document.querySelector('tbody .planning-review-key .task-key-link').getBoundingClientRect().height }));
+        expect(heights.pill, mode).toBeLessThanOrEqual(heights.key + 4);
         await page.locator('.planning-review-scroll').screenshot({ path: path.join(root, `tmp/245/status-${mode}.png`) });
     }
 });

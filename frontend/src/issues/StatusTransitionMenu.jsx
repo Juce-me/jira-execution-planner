@@ -3,6 +3,7 @@ import StatusPill from '../ui/StatusPill.jsx';
 import IssueFieldOptionMenu from './IssueFieldOptionMenu.jsx';
 import { MAX_STATUS_TRANSITION_ISSUES } from '../eng/engStatusTransitionUtils.js';
 import { getIssueStatusClassName, normalizeIssueStatus } from './issueViewUtils.js';
+import { useStatusColourStyle } from './StatusColourContext.jsx';
 
 // Shared ENG status-transition control used by Catch Up (single issue) and Planning for
 // Epic, Story, and Subtask status pills. In Planning a Story pill applies to every selected
@@ -118,6 +119,7 @@ export default function StatusTransitionMenu({
     onPreviewLifecycleChange,
 }) {
     const issueKey = String(issue?.key || '').trim();
+    const statusStyle = useStatusColourStyle();
     // Owns the trigger anchor. The menu normally stays inside this wrapper; Board panel menus
     // portal to the panel root, and IssueFieldOptionMenu includes both nodes in outside-click
     // dismissal so option clicks are never mistaken for click-away gestures.
@@ -192,6 +194,7 @@ export default function StatusTransitionMenu({
                 interactive
                 className={statusClassName}
                 label={statusLabel}
+                status={statusLabel}
                 onClick={handleTriggerClick}
                 onPointerEnter={(event) => {
                     if (event.pointerType === 'mouse' && onPrefetch) prefetchTimerRef.current = window.setTimeout(prefetchOptions, PREFETCH_HOVER_DWELL_MS);
@@ -221,12 +224,16 @@ export default function StatusTransitionMenu({
                     options={isServerTooMany ? [] : targetStatuses}
                     optionKey={(entry) => entry.name}
                     optionLabel={optionLabel}
-                    renderMarker={(entry) => (
-                        <span
-                            className={getIssueStatusClassName(entry.name, 'status-transition-option-marker')}
-                            aria-hidden="true"
-                        />
-                    )}
+                    renderMarker={(entry) => {
+                        const background = statusStyle(entry.name)?.background;
+                        return (
+                            <span
+                                className={getIssueStatusClassName(entry.name, 'status-transition-option-marker')}
+                                style={background ? { background } : undefined}
+                                aria-hidden="true"
+                            />
+                        );
+                    }}
                     onSelect={(entry) => { if (!previewDescriptor) handleOptionClick(entry.name); }}
                     disabled={optionDisabled}
                     result={result ? resultMessage(result) : ''}

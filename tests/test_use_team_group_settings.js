@@ -269,6 +269,45 @@ test('export and import stay scoped to the selected group', async () => {
     }
 });
 
+test('the Board colour flag follows export, import and duplicate of the selected group only', async () => {
+    const previousFetch = global.fetch;
+    const previous = { window: global.window, document: global.document, URL: global.URL };
+    const blobs = [];
+    const board = { columns: [{ id: 'col-00000001', name: 'To do', statuses: ['To Do'], colour: '#8c8c8c', star: false, min: null, max: null }], doneEpicRetentionDays: 28, inheritColumnColours: true };
+    const flagged = { ...DRAFT, groups: [{ ...DRAFT.groups[0], board }, DRAFT.groups[1]] };
+    try {
+        global.fetch = async () => ({ ok: true, status: 200, headers: { get: () => '' }, json: async () => flagged });
+        const link = { click() {}, remove() {} };
+        global.document = { createElement: () => link, body: { appendChild() {} } };
+        global.URL = Object.assign(function URLShim() {}, { createObjectURL: (blob) => { blobs.push(blob); return 'blob:x'; }, revokeObjectURL() {} });
+
+        await renderHook({ state: { groupDraft: flagged, activeGroupDraftId: 'g1' } }).result.exportGroupsConfig();
+        assert.equal(JSON.parse(await blobs[0].text()).group.board.inheritColumnColours, true);
+        await renderHook({ state: { groupDraft: flagged, activeGroupDraftId: 'g2' } }).result.exportGroupsConfig();
+        assert.equal(Object.hasOwn(JSON.parse(await blobs[1].text()).group, 'board'), false, 'the other group carries no flag');
+
+        const importText = (group) => JSON.stringify({ version: 1, group });
+        const withFlag = renderHook({ state: { groupDraft: DRAFT, activeGroupDraftId: 'g1', groupImportText: importText({ id: 'z', name: 'Z', teamIds: ['t9'], board }) } });
+        withFlag.result.importGroupsConfig();
+        const imported = withFlag.setterCalls.find(([name]) => name === 'setGroupDraft')[1](DRAFT);
+        assert.equal(imported.groups[0].board.inheritColumnColours, true);
+        assert.equal(Object.hasOwn(imported.groups[1], 'board'), false);
+
+        const withoutBoard = renderHook({ state: { groupDraft: flagged, activeGroupDraftId: 'g1', groupImportText: importText({ id: 'z', name: 'Z', teamIds: ['t9'] }) } });
+        withoutBoard.result.importGroupsConfig();
+        const replaced = withoutBoard.setterCalls.find(([name]) => name === 'setGroupDraft')[1](flagged);
+        assert.equal(Object.hasOwn(replaced.groups[0], 'board'), false, 'an import without a board drops the flag');
+
+        const duplicating = renderHook({ state: { groupDraft: flagged, activeGroupDraftId: 'g1' } });
+        duplicating.result.duplicateGroupDraft('g1');
+        const duplicated = duplicating.setterCalls.find(([name]) => name === 'setGroupDraft')[1](flagged);
+        assert.equal(duplicated.groups[2].board.inheritColumnColours, true);
+    } finally {
+        global.fetch = previousFetch;
+        Object.assign(global, previous);
+    }
+});
+
 test('the selection effect keeps its body and dependency array', () => {
     const { useTeamGroupSelectionEffect } = loadHooks();
     const run = (props) => {

@@ -640,3 +640,16 @@ test('duplicate draft deep-copies every Team alias array', () => {
     draft.teamLabels['team-a'].push('label_team_a_extra');
     assert.deepEqual(sourceGroup.teamLabels['team-a'], ['label_team_a', 'label_team_a_old']);
 });
+
+test('duplicate draft keeps the Board colour inheritance flag', () => {
+    const { buildFirstRunGroupDraft } = loadFirstRunGroupConfiguration();
+    const sourceGroup = {
+        id: 'source',
+        name: 'Source',
+        teamIds: ['team-a'],
+        board: { columns: [{ id: 'col-00000001', name: 'To do', statuses: ['To Do'], colour: '#8c8c8c', star: false, min: null, max: null }], doneEpicRetentionDays: 28, inheritColumnColours: true },
+    };
+    const draft = buildFirstRunGroupDraft({ mode: 'duplicate', sourceGroup, existingGroups: [sourceGroup] });
+    assert.equal(draft.board.inheritColumnColours, true);
+    assert.deepEqual(draft.board, sourceGroup.board);
+});

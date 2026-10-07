@@ -122,6 +122,43 @@ class TestGroupConfigService(unittest.TestCase):
         self.assertEqual(errors, ['Group "Group 1" board must have at least 1 column.'])
         self.assertEqual(warnings, [])
 
+    def test_validate_groups_config_prefixes_inherit_flag_warning_and_omits_the_key(self):
+        normalized, errors, warnings = group_config.validate_groups_config(
+            {
+                'groups': [{
+                    'id': 'group-1',
+                    'name': 'Group 1',
+                    'teamIds': ['team-a'],
+                    'board': {
+                        'columns': [{
+                            'id': 'col-00000001',
+                            'name': 'To do',
+                            'statuses': ['To Do'],
+                            'colour': '#8c8c8c',
+                            'star': False,
+                            'min': None,
+                            'max': None,
+                        }],
+                        'inheritColumnColours': 'yes',
+                    },
+                }],
+                'defaultGroupId': 'group-1',
+            },
+            groups_config_version=1,
+            groups_max_teams=12,
+            normalize_team_ids_fn=_normalize_team_ids,
+            normalize_epic_keys_fn=_normalize_epic_keys,
+            normalize_group_team_labels_fn=lambda _raw, _ids: ({}, []),
+            normalize_group_board_fn=group_board.normalize_group_board,
+        )
+
+        self.assertEqual(errors, [])
+        self.assertEqual(
+            warnings,
+            ['Group "Group 1" board.inheritColumnColours must be true or false; treating it as off.'],
+        )
+        self.assertNotIn('inheritColumnColours', normalized['groups'][0]['board'])
+
     def test_validate_groups_config_prefixes_board_warning_and_keeps_it_out_of_errors(self):
         # Same propagation loop, warning side: a colour coercion must land
         # in `warnings`, prefixed the same way as errors, and must not also

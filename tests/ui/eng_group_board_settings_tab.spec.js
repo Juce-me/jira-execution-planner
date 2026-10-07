@@ -846,3 +846,99 @@ test('a non-string status entry in an imported column shows the board instead of
     await expect(dialog.locator('.board-column').first()).toHaveClass(/is-empty/);
     expect(pageErrors).toEqual([]);
 });
+
+/* ── Use column colours for statuses (#244) ─────────────────────────────────────────────────── */
+
+const inheritCheckbox = (dialog) => dialog.getByRole('checkbox', { name: 'Use column colours for statuses' });
+
+// The active Department's name renders as an input, so only an inactive one matches by text.
+async function selectDepartment(dialog, name) {
+    const item = dialog.locator('.group-pane-list .group-list-item', { hasText: name });
+    if (await item.count()) await item.click();
+}
+
+// Northwind's saved board carries the flag; Southridge has no board at all.
+function flaggedGroupsConfig() {
+    const config = baseGroupsConfig();
+    config.groups[0].board = { ...fixture.referenceBoard(), doneEpicRetentionDays: 28, inheritColumnColours: true };
+    return config;
+}
+
+test('the colour flag follows the selected Department: switching groups isolates it and a no-board Department shows it disabled', async ({ page }) => {
+    await mockConfigSettings(page, { groupsConfig: flaggedGroupsConfig() });
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+    await openBoardsTab(page, dialog);
+    await expect(inheritCheckbox(dialog)).toBeChecked();
+    await expect(inheritCheckbox(dialog)).toBeEnabled();
+
+    await selectDepartment(dialog, 'Southridge');
+    await expect(dialog.locator('.board-column')).toHaveCount(0);
+    await expect(inheritCheckbox(dialog)).not.toBeChecked();
+    await expect(inheritCheckbox(dialog)).toBeDisabled();
+    await expect(dialog.locator('.group-visible-helper', { hasText: 'Add a column first.' })).toBeVisible();
+
+    await selectDepartment(dialog, 'Northwind');
+    await expect(inheritCheckbox(dialog)).toBeChecked();
+});
+
+test('Export JSON carries the flag for the selected Department only', async ({ page }) => {
+    await mockConfigSettings(page, { groupsConfig: flaggedGroupsConfig() });
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+
+    const exportGroup = async (name, filename) => {
+        await selectDepartment(dialog, name);
+        if (await dialog.getByRole('button', { name: 'Export JSON' }).isHidden()) {
+            await dialog.locator('summary', { hasText: 'Advanced' }).click();
+        }
+        const download = page.waitForEvent('download', { timeout: 5000 });
+        await dialog.getByRole('button', { name: 'Export JSON' }).click();
+        const file = await download;
+        expect(file.suggestedFilename()).toBe(filename);
+        return JSON.parse(fs.readFileSync(await file.path(), 'utf8')).group;
+    };
+    const northwind = await exportGroup('Northwind', 'group-northwind.json');
+    expect(northwind.board.inheritColumnColours).toBe(true);
+    const southridge = await exportGroup('Southridge', 'group-southridge.json');
+    expect(Object.hasOwn(southridge, 'board')).toBe(false);
+});
+
+test('Import JSON replaces only the selected Department board, flag included, and leaves siblings alone', async ({ page }) => {
+    await mockConfigSettings(page, { groupsConfig: flaggedGroupsConfig() });
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+    const importInto = async (name, group) => {
+        await dialog.getByRole('tab', { name: 'Team groups' }).click();
+        await selectDepartment(dialog, name);
+        if (await dialog.getByRole('button', { name: 'Import JSON' }).isHidden()) {
+            await dialog.locator('summary', { hasText: 'Advanced' }).click();
+        }
+        await dialog.getByRole('button', { name: 'Import JSON' }).click();
+        await dialog.locator('textarea').fill(JSON.stringify({ version: 1, group }));
+        await dialog.getByRole('button', { name: 'Apply Import' }).click();
+    };
+
+    // A flagged board into Southridge (which had none).
+    await importInto('Southridge', {
+        id: 'source', name: 'Source', teamIds: ['team-b'],
+        board: { ...fixture.referenceBoard(), doneEpicRetentionDays: 28, inheritColumnColours: true },
+    });
+    await openBoardsTab(page, dialog);
+    await selectDepartment(dialog, 'Southridge');
+    await expect(inheritCheckbox(dialog)).toBeChecked();
+    await selectDepartment(dialog, 'Northwind');
+    await expect(inheritCheckbox(dialog)).toBeChecked();
+
+    // An import without a board drops the whole board, flag included, from the selected Department only.
+    await importInto('Northwind', { id: 'source', name: 'Source', teamIds: ['team-a'] });
+    await openBoardsTab(page, dialog);
+    await selectDepartment(dialog, 'Northwind');
+    await expect(dialog.locator('.board-column')).toHaveCount(0);
+    await expect(inheritCheckbox(dialog)).not.toBeChecked();
+    await selectDepartment(dialog, 'Southridge');
+    await expect(inheritCheckbox(dialog)).toBeChecked();
+});

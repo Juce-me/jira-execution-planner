@@ -644,3 +644,14 @@ test('epic refresh analytics keeps per-click requests on a dedicated api surface
     assert.ok(runbook.includes('epic_refresh_action'));
     assert.match(runbook, /Do not register `issue_count_bucket` as a custom dimension[^.]*named report/i);
 });
+
+test('Department Board status colours are passive: allowlisted and free of analytics calls', () => {
+    const analyticsDoc = read('docs/README_ANALYTICS.md');
+    assert.ok(analyticsDoc.includes('Group Board composer draft edits, the "Use column colours for statuses" checkbox'));
+    assert.ok(analyticsDoc.includes('Department Board status colours on Jira status pills (passive recolouring)'));
+    ['frontend/src/issues/statusColumnColours.js', 'frontend/src/issues/StatusColourContext.jsx', 'frontend/src/ui/StatusPill.jsx'].forEach((filePath) => {
+        const source = read(filePath);
+        assert.equal(source.includes('trackEvent'), false, `${filePath} must not emit analytics`);
+        assert.equal(source.includes('dataLayer.push'), false, `${filePath} must not push analytics`);
+    });
+});

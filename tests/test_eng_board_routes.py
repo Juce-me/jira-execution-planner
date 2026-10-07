@@ -646,6 +646,39 @@ class EngBoardRouteContractTests(unittest.TestCase):
             with self.assertRaises(eng_board_routes.BoardScopeChanged):
                 eng_board_routes._assert_current(snapshot)
 
+    def test_snapshot_board_is_invariant_to_the_inherit_column_colours_flag(self):
+        query = board_query(focused_column_id=None)
+        dashboard = {'issueTypes': ['Story']}
+        group = {'id': 'department-a', 'missingInfoComponents': ['Component A']}
+        board = {
+            'columns': [
+                {'id': 'col-11111111', 'name': 'To do', 'statuses': ['To Do'], 'colour': '#597ef7'},
+                {'id': 'col-22222222', 'name': 'Done', 'statuses': ['Done'], 'colour': '#52c41a'},
+            ],
+            'doneEpicRetentionDays': 28,
+        }
+        boards = []
+        for flag_fields in ({}, {'inheritColumnColours': True}):
+            context = db_context(token_version='1')
+            server = SimpleNamespace(
+                ATLASSIAN_SCOPES='read:jira-work',
+                current_request_auth_context=Mock(return_value=context),
+                current_jira_session_data=Mock(return_value={'access_token': 'token'}),
+            )
+            load_result = ({'revision': 1}, dashboard, group, {**group, 'board': {**board, **flag_fields}}, 4, 3)
+            with patch.object(eng_board_routes, '_load_authority', return_value=load_result), patch.object(
+                eng_board_routes, '_resolve_projects', return_value=(('ABC', 'product'),),
+            ), patch.object(
+                eng_board_routes, '_jira_json', side_effect=(
+                    [{'id': '10001', 'name': 'Story', 'hierarchyLevel': 0, 'subtask': False}],
+                    [],
+                ),
+            ):
+                boards.append(eng_board_routes._capture_snapshot(
+                    server, query, EngBoardRequestTransport(), b'test-secret',
+                ).board)
+        self.assertEqual(boards[0], boards[1])
+
     def test_snapshot_refreshes_then_uses_fresh_context_and_detects_catalog_rotation(self):
         first = db_context(token_version='1')
         refreshed = db_context(token_version='2')

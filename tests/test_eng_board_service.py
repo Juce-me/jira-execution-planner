@@ -452,6 +452,21 @@ class EngBoardScopeTests(unittest.TestCase):
         with self.assertRaisesRegex(eng_board.EngBoardError, 'board_config_invalid'):
             eng_board.build_epic_index_jql((('P', 'product'),), (), ('Done',), 91)
 
+    def test_normalize_board_is_invariant_to_the_inherit_column_colours_flag(self):
+        columns = [
+            {'id': 'col-11111111', 'name': 'To do', 'statuses': ['To Do'], 'colour': '#597ef7'},
+            {'id': 'col-22222222', 'name': 'Done', 'statuses': ['Done'], 'colour': '#52c41a'},
+        ]
+        base = {'columns': columns, 'doneEpicRetentionDays': 28}
+        expected = eng_board.normalize_board(base)
+        for flag in (True, False, 'yes', 1, None):
+            with self.subTest(flag=flag):
+                self.assertEqual(
+                    expected,
+                    eng_board.normalize_board({**base, 'inheritColumnColours': flag}),
+                )
+        self.assertNotIn('inheritColumnColours', expected)
+
     def test_absent_board_is_selected_sprint_synthetic_shape(self):
         normalized = eng_board.normalize_board(None)
         self.assertFalse(normalized['configured'])

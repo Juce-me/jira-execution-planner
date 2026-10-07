@@ -163,6 +163,9 @@ async function mockConfigSettings(page, {
     ],
     analyticsEnabled = false,
     userCanEditSettings = true,
+    settingsAdminOnly = false,
+    // Makes POST /api/groups-config persist, so a Save is visible to the next GET (reload).
+    persistGroups = false,
     performanceAdminAvailable = false,
     // Synthetic OAuth users for /api/admin/users and the admin-grant routes (null leaves them unrouted).
     adminUsers = null,
@@ -266,7 +269,7 @@ async function mockConfigSettings(page, {
             jiraUrl: workspaceSnapshot?.jiraUrl || 'https://jira.example',
             authMode: workspaceSnapshot ? 'atlassian_oauth' : '',
             projectsConfigured: true,
-            settingsAdminOnly: false,
+            settingsAdminOnly,
             userCanEditSettings,
             userCanEditEpmConfig: true,
             performanceAdminAvailable,
@@ -308,6 +311,15 @@ async function mockConfigSettings(page, {
                     message: 'Team groups were changed by another user.',
                     current: conflict,
                 }, 409);
+            }
+            if (persistGroups) {
+                groupsConfig = {
+                    ...requestBody(request),
+                    configRevision: (groupsConfig.configRevision || 2) + 1,
+                    source: 'workspace_db',
+                    preferences: groupsConfig.preferences,
+                };
+                return json(groupsConfig);
             }
             return json({
                 ...requestBody(request),
@@ -2412,4 +2424,129 @@ test('dom parity capture: every Settings tab, then an edited tab', async ({ page
     await dialog.getByPlaceholder('Group name').fill('Parity Group');
     await expect(dialog.getByText('Unsaved changes')).toBeVisible();
     await captureDomParity(page, 'settings-edited-departments', '[role="dialog"]');
+});
+
+
+/* ── Use column colours for statuses (#244) ─────────────────────────────────────────────────── */
+
+const inheritCheckbox = (dialog) => dialog.getByRole('checkbox', { name: 'Use column colours for statuses' });
+const platformBoard = (post) => post.body.groups.find(group => group.id === 'platform').board;
+
+test('a flag-only edit counts as a dirty board and saves with every column unchanged', async ({ page }) => {
+    const calls = await mockConfigSettings(page, { sourceBundle: true, persistGroups: true });
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+    const save = dialog.getByRole('button', { name: /^Save$/ });
+    await openBoardsTab(page, dialog);
+    await expect(inheritCheckbox(dialog)).not.toBeChecked();
+    await expect(save).toBeDisabled();
+    await expect(dialog.locator('.group-modal-dirty')).toHaveCount(0);
+
+    await inheritCheckbox(dialog).check();
+    await expect(save).toBeEnabled();
+    await expect(dialog.locator('.group-modal-dirty')).toHaveCount(1);
+
+    await save.click();
+    await expect.poll(() => groupsPosts(calls).length).toBe(1);
+    const posted = platformBoard(groupsPosts(calls)[0]);
+    expect(posted.inheritColumnColours).toBe(true);
+    expect(posted.columns).toEqual(fixture.referenceBoard().columns);
+    // Saved: the section clears and Save disables again; the modal reopens on the saved value.
+    await expect(dialog).toHaveCount(0);
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    await openBoardsTab(page, page.getByRole('dialog').first());
+    await expect(inheritCheckbox(page.getByRole('dialog').first())).toBeChecked();
+    await expect(page.getByRole('dialog').first().getByRole('button', { name: /^Save$/ })).toBeDisabled();
+});
+
+test('closing with an unsaved flag asks to discard, and reopening shows the saved value', async ({ page }) => {
+    await mockConfigSettings(page, { sourceBundle: true });
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    let dialog = page.getByRole('dialog').first();
+    await openBoardsTab(page, dialog);
+    await inheritCheckbox(dialog).check();
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(page.getByText('Discard changes?')).toBeVisible();
+    await page.getByRole('button', { name: 'Keep editing' }).click();
+    await expect(inheritCheckbox(dialog)).toBeChecked();
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await page.getByRole('button', { name: 'Discard', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    dialog = page.getByRole('dialog').first();
+    await openBoardsTab(page, dialog);
+    await expect(inheritCheckbox(dialog)).not.toBeChecked();
+    await expect(dialog.getByRole('button', { name: /^Save$/ })).toBeDisabled();
+});
+
+test('Keep mine re-POSTs the local flag onto the server revision', async ({ page }) => {
+    const calls = await mockConfigSettings(page, { sourceBundle: true, conflictCurrents: [conflictingServerConfig()] });
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+    await openBoardsTab(page, dialog);
+    await inheritCheckbox(dialog).check();
+    await dialog.getByRole('button', { name: /^Save$/ }).click();
+    await dialog.locator('.group-modal-validation').getByRole('button', { name: 'Keep mine' }).click();
+    await expect(dialog).toHaveCount(0);
+
+    const posts = groupsPosts(calls);
+    expect(posts.map(post => post.body.baseRevision)).toEqual([2, 9]);
+    expect(platformBoard(posts[0]).inheritColumnColours).toBe(true);
+    expect(platformBoard(posts[1]).inheritColumnColours).toBe(true);
+});
+
+test('Discard mine adopts the server config, so the flag is absent and the checkbox unchecked', async ({ page }) => {
+    await mockConfigSettings(page, { sourceBundle: true, conflictCurrents: [conflictingServerConfig()] });
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+    await openBoardsTab(page, dialog);
+    await inheritCheckbox(dialog).check();
+    await dialog.getByRole('button', { name: /^Save$/ }).click();
+    await dialog.locator('.group-modal-validation').getByRole('button', { name: 'Discard mine' }).click();
+
+    await expect(dialog.locator('.board-column').first().locator('.board-column-name')).toHaveValue('Server Column');
+    await expect(inheritCheckbox(dialog)).not.toBeChecked();
+    await expect(dialog.locator('.group-modal-dirty')).toHaveCount(0);
+    await expect(dialog.getByRole('button', { name: /^Save$/ })).toBeDisabled();
+});
+
+test('a user without admin rights can toggle, save and reload the flag while the admin tabs stay locked', async ({ page }) => {
+    const calls = await mockConfigSettings(page, {
+        sourceBundle: true, persistGroups: true, settingsAdminOnly: true, userCanEditSettings: false,
+    });
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    let dialog = page.getByRole('dialog').first();
+    await expect(dialog.getByRole('button', { name: 'Admin' })).toHaveCount(0);
+
+    // The checkbox exists only in the Boards tab.
+    await dialog.getByRole('tab', { name: 'Team groups' }).click();
+    await expect(inheritCheckbox(dialog)).toHaveCount(0);
+    await dialog.getByRole('tab', { name: 'Group labels' }).click();
+    await expect(inheritCheckbox(dialog)).toHaveCount(0);
+
+    await openBoardsTab(page, dialog);
+    await expect(inheritCheckbox(dialog)).toBeEnabled();
+    await inheritCheckbox(dialog).check();
+    await dialog.getByRole('button', { name: /^Save$/ }).click();
+    await expect.poll(() => groupsPosts(calls).length).toBe(1);
+    expect(platformBoard(groupsPosts(calls)[0]).inheritColumnColours).toBe(true);
+    await expect(dialog).toHaveCount(0);
+
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    dialog = page.getByRole('dialog').first();
+    await openBoardsTab(page, dialog);
+    await expect(inheritCheckbox(dialog)).toBeChecked();
+    // Section scoping: the flag travels in the groups payload only; no administrator endpoint is written.
+    const written = new Set(calls.filter(call => call.method === 'POST').map(call => call.pathname));
+    written.delete('/api/auth/refresh');
+    written.delete('/api/team-catalog');
+    expect([...written]).toEqual(['/api/groups-config']);
+    expect(Object.keys(groupsPosts(calls)[0].body).sort()).toEqual(['baseRevision', 'defaultGroupId', 'groups', 'version']);
 });

@@ -3,6 +3,7 @@ import { isAuthenticationRequiredError } from '../api/authRequired.js';
 import IconButton from '../ui/IconButton.jsx';
 import StatusPill from '../ui/StatusPill.jsx';
 import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
+import { buildStatusStyle, resolveStatusColumnColour } from '../issues/statusColumnColours.js';
 import { loadBoardStatusCatalog } from './boardStatusCatalog.js';
 import { deriveDefaultBoardColumns } from '../eng/engBoardColumns.js';
 import {
@@ -15,6 +16,7 @@ import {
     describeBreach,
     describeColumnMove,
     fromStoredBoard,
+    inheritColumnColoursFromStoredBoard,
     moveColumn,
     parseBoundInput,
     retentionDaysFromStoredBoard,
@@ -119,6 +121,11 @@ export default function GroupBoardSettings(props) {
     } = props;
     const [columns, setColumns] = React.useState(() => fromStoredBoard(board));
     const retentionDaysRef = React.useRef(retentionDaysFromStoredBoard(board));
+    // The flag has no other editor state: the ref feeds commit() (which runs in stale closures), the
+    // state is what the checkbox shows, so it never depends on the parent echoing the board back.
+    const inheritColoursRef = React.useRef(inheritColumnColoursFromStoredBoard(board));
+    const [inheritColours, setInheritColours] = React.useState(inheritColoursRef.current);
+    const inheritHelperId = React.useId();
     // `statuses` is the name list every rule here works in; `entries` keeps the catalog rows whole
     // for the shared default-column derivation.
     const [catalog, setCatalog] = React.useState({ state: 'loading', statuses: [], entries: [], code: '', message: '' });
@@ -223,6 +230,8 @@ export default function GroupBoardSettings(props) {
         if (board === lastEmittedRef.current) return;
         lastEmittedRef.current = board;
         retentionDaysRef.current = retentionDaysFromStoredBoard(board);
+        inheritColoursRef.current = inheritColumnColoursFromStoredBoard(board);
+        setInheritColours(inheritColoursRef.current);
         const seeded = fromStoredBoard(board);
         seeded.forEach((column) => usedIdsRef.current.add(column.id));
         setColumns(seeded);
@@ -271,7 +280,7 @@ export default function GroupBoardSettings(props) {
 
     const commit = (next) => {
         setColumns(next);
-        const stored = toStoredBoard(next, retentionDaysRef.current);
+        const stored = toStoredBoard(next, retentionDaysRef.current, inheritColoursRef.current);
         lastEmittedRef.current = stored;
         onChange?.(stored);
     };
@@ -668,9 +677,20 @@ export default function GroupBoardSettings(props) {
 
     /* ── Rendering ──────────────────────────────────────────────────────────────────────────── */
 
+    const toggleInheritColours = (checked) => {
+        inheritColoursRef.current = checked;
+        setInheritColours(checked);
+        commit(columnsRef.current);
+    };
+
+    // Previews the draft directly, without the dashboard provider (a status in no column stays uncoloured).
     const renderStatusChipBody = (status) => (
         <span className="component-name">
-            <StatusPill label={status} className={getIssueStatusClassName(status)} />
+            <StatusPill
+                label={status}
+                className={getIssueStatusClassName(status)}
+                style={inheritColours ? buildStatusStyle(resolveStatusColumnColour(columns, status)) : undefined}
+            />
         </span>
     );
 
@@ -966,6 +986,21 @@ export default function GroupBoardSettings(props) {
                     belongs to exactly one column; anything left over is shown in the first column (To Do) so
                     no epic disappears. Min and Max only warn — they never block a transition or a save.
                 </span>
+                <div className="group-preference-row">
+                    <label className="group-visible-control">
+                        <input
+                            type="checkbox"
+                            checked={inheritColours}
+                            disabled={!columns.length}
+                            aria-describedby={columns.length ? undefined : inheritHelperId}
+                            onChange={(event) => toggleInheritColours(event.target.checked)}
+                        />
+                        <span>Use column colours for statuses</span>
+                    </label>
+                    {!columns.length && (
+                        <span id={inheritHelperId} className="group-visible-helper">Add a column first.</span>
+                    )}
+                </div>
                 {/* The asset puts this in a `.group-pane-tools` strip that production has no
                     equivalent of, so it sits here instead — beside the columns it replaces, in the
                     app's own `.group-modal-button-row` with the app's own button classes (D25). */}

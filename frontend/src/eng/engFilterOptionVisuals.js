@@ -1,13 +1,10 @@
-import { BOARD_COLUMN_COLOURS } from '../settings/groupBoardModel.js';
+import { resolveStatusColumnColour } from '../issues/statusColumnColours.js';
 
 export function resolveEngFilterOptionVisual({ facetId, option, boardColumns } = {}) {
     if (facetId === 'status') {
-        const owner = Array.isArray(boardColumns)
-            ? boardColumns.find((column) => Array.isArray(column?.statuses) && column.statuses.includes(option?.label))
-            : null;
         return {
             kind: 'status_label',
-            configuredColour: BOARD_COLUMN_COLOURS.includes(owner?.colour) ? owner.colour : null,
+            configuredColour: resolveStatusColumnColour(boardColumns, option?.label),
         };
     }
     if (facetId === 'priority') return { kind: 'priority', value: option?.label };

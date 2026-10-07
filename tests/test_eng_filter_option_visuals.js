@@ -37,3 +37,13 @@ test('Priority and Project Track reuse presentation vocabularies while text-only
     assert.equal(resolveEngFilterOptionVisual({ facetId: 'assignee', option: { label: 'Anyone' } }), null);
     assert.equal(resolveEngFilterOptionVisual({ facetId: 'unknown', option: { label: 'Anything' } }), null);
 });
+
+test('Status ignores a later owner when the first owner has an invalid colour and skips malformed entries', async () => {
+    const { resolveEngFilterOptionVisual } = await loadModule();
+    const visual = (boardColumns) => resolveEngFilterOptionVisual({ facetId: 'status', option: { label: 'Done' }, boardColumns });
+    const none = { kind: 'status_label', configuredColour: null };
+    assert.deepEqual(visual([{ colour: '#ffa940', statuses: ['Done'] }, { colour: '#ff4d4f', statuses: ['Done'] }]), none);
+    assert.deepEqual(visual([null, { colour: '#ff4d4f', statuses: ['Done'] }]), { kind: 'status_label', configuredColour: '#ff4d4f' });
+    assert.deepEqual(visual({ colour: '#ff4d4f', statuses: ['Done'] }), none);
+    assert.deepEqual(visual([{ colour: '#ff4d4f', statuses: 'Done' }]), none);
+});

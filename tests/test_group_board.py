@@ -498,6 +498,70 @@ def _js_literal_exports(source):
     return exports
 
 
+INHERIT_WARNING = 'board.inheritColumnColours must be true or false; treating it as off.'
+
+
+class GroupBoardInheritColumnColoursTests(unittest.TestCase):
+    def test_absent_flag_is_not_emitted(self):
+        normalized, errors, warnings = group_board.normalize_group_board(_board([_column()]))
+        self.assertEqual([], errors)
+        self.assertEqual([], warnings)
+        self.assertNotIn('inheritColumnColours', normalized)
+
+    def test_true_is_kept_and_emitted_after_retention(self):
+        normalized, errors, warnings = group_board.normalize_group_board(
+            _board([_column()], doneEpicRetentionDays=28, inheritColumnColours=True)
+        )
+        self.assertEqual([], errors)
+        self.assertEqual([], warnings)
+        self.assertIs(True, normalized['inheritColumnColours'])
+        self.assertEqual(['columns', 'doneEpicRetentionDays', 'inheritColumnColours'], list(normalized))
+
+    def test_explicit_false_is_omitted_without_a_warning(self):
+        normalized, errors, warnings = group_board.normalize_group_board(
+            _board([_column()], inheritColumnColours=False)
+        )
+        self.assertEqual([], errors)
+        self.assertEqual([], warnings)
+        self.assertNotIn('inheritColumnColours', normalized)
+
+    def test_non_bool_values_are_omitted_with_a_warning_and_never_an_error(self):
+        baseline, _errors, _warnings = group_board.normalize_group_board(_board([_column()]))
+        for value in ('yes', 'false', 0, 1, None):
+            with self.subTest(value=value):
+                normalized, errors, warnings = group_board.normalize_group_board(
+                    _board([_column()], inheritColumnColours=value)
+                )
+                self.assertEqual([], errors)
+                self.assertEqual([INHERIT_WARNING], warnings)
+                self.assertEqual(baseline, normalized)
+
+    def test_idempotent_under_renormalization(self):
+        first, _errors, _warnings = group_board.normalize_group_board(
+            _board([_column()], inheritColumnColours=True)
+        )
+        second, errors, warnings = group_board.normalize_group_board(first)
+        self.assertEqual([], errors)
+        self.assertEqual([], warnings)
+        self.assertEqual(first, second)
+
+    def test_flag_does_not_count_as_retention_present_for_legacy_done_inference(self):
+        raw = _board([
+            _column(id='col-00000001', name='Done work', statuses=['Done']),
+            _column(id='col-00000002', name='Later', statuses=['Release']),
+        ], inheritColumnColours=True)
+        normalized, errors, _warnings = group_board.normalize_group_board(raw)
+        self.assertEqual([], errors)
+        self.assertEqual(['col-00000002', 'col-00000001'], [row['id'] for row in normalized['columns']])
+        self.assertIs(True, normalized['inheritColumnColours'])
+        again, _errors, _warnings = group_board.normalize_group_board(normalized)
+        self.assertEqual(normalized, again)
+
+    def test_flag_only_board_still_errors_for_missing_columns(self):
+        _normalized, errors, _warnings = group_board.normalize_group_board({'inheritColumnColours': True})
+        self.assertIn('board must have at least 1 column.', errors)
+
+
 class GroupBoardReferenceFixtureParityTests(unittest.TestCase):
     """§13: the Python and JavaScript halves of the §5.5 fixture are one fixture.
 
@@ -705,6 +769,25 @@ class GroupBoardJsonRoundTripTests(unittest.TestCase):
 
                 reloaded = client.get('/api/groups-config').get_json()
 
+        self.assertEqual(reloaded['groups'][0]['board'], board)
+
+
+class GroupBoardInheritFlagJsonRoundTripTests(unittest.TestCase):
+    def test_flag_survives_save_and_reload_in_basic_mode(self):
+        force_basic_auth_mode(self, jira_server)
+        app = jira_server.app
+        app.testing = True
+        client = app.test_client()
+        board = {**_round_trip_board(), 'inheritColumnColours': True}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dashboard_path = os.path.join(tmpdir, 'dashboard-config.json')
+            with open(dashboard_path, 'w', encoding='utf-8') as handle:
+                json.dump({'version': 1, 'projects': {'selected': []}}, handle)
+            with patch.object(jira_server, 'resolve_dashboard_config_path', return_value=dashboard_path):
+                response = client.post('/api/groups-config', json=_round_trip_groups_payload(board))
+                self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+                self.assertEqual(response.get_json()['groups'][0]['board'], board)
+                reloaded = client.get('/api/groups-config').get_json()
         self.assertEqual(reloaded['groups'][0]['board'], board)
 
 

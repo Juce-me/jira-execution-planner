@@ -266,6 +266,109 @@ class SharedGroupConfigServiceTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.current['configRevision'], first['configRevision'])
 
+    def _flag_groups(self, flag):
+        board = {
+            'columns': [{
+                'id': 'col-00000001',
+                'name': 'To do',
+                'statuses': ['To Do'],
+                'colour': '#8c8c8c',
+                'star': False,
+                'min': None,
+                'max': None,
+            }],
+            'doneEpicRetentionDays': 28,
+            'inheritColumnColours': flag,
+        }
+        return {
+            'version': 1,
+            'groups': [{'id': 'platform', 'name': 'Platform', 'teamIds': ['team-a'], 'board': board}],
+            'defaultGroupId': 'platform',
+        }
+
+    def test_inherit_column_colours_flag_round_trips_and_a_non_bool_warns_on_save(self):
+        loaded = service.load_shared_groups(
+            self.context,
+            fallback_loader=lambda: {'teamGroups': self._groups()},
+            validate_groups_config_fn=validate_groups_config,
+            database_url=self.database_url,
+        )
+        saved = service.save_shared_groups(
+            self.context,
+            self._flag_groups(True),
+            base_revision=loaded['configRevision'],
+            validate_groups_config_fn=validate_groups_config,
+            database_url=self.database_url,
+        )
+        self.assertIs(True, saved['groups'][0]['board']['inheritColumnColours'])
+        self.assertNotIn('warnings', saved)
+        reloaded = service.load_shared_groups(
+            self.context,
+            fallback_loader=lambda: None,
+            validate_groups_config_fn=validate_groups_config,
+            database_url=self.database_url,
+        )
+        self.assertIs(True, reloaded['groups'][0]['board']['inheritColumnColours'])
+
+        resaved = service.save_shared_groups(
+            self.context,
+            self._flag_groups('yes'),
+            base_revision=saved['configRevision'],
+            validate_groups_config_fn=validate_groups_config,
+            database_url=self.database_url,
+        )
+        self.assertNotIn('inheritColumnColours', resaved['groups'][0]['board'])
+        self.assertEqual(
+            ['Group "Platform" board.inheritColumnColours must be true or false; treating it as off.'],
+            resaved['warnings'],
+        )
+
+    def test_stale_save_conflict_current_carries_the_inherit_flag(self):
+        loaded = service.load_shared_groups(
+            self.context,
+            fallback_loader=lambda: {'teamGroups': self._groups()},
+            validate_groups_config_fn=validate_groups_config,
+            database_url=self.database_url,
+        )
+        service.save_shared_groups(
+            self.context,
+            self._flag_groups(True),
+            base_revision=loaded['configRevision'],
+            validate_groups_config_fn=validate_groups_config,
+            database_url=self.database_url,
+        )
+        with self.assertRaises(service.GroupConfigConflict) as raised:
+            service.save_shared_groups(
+                self.other_context,
+                self._flag_groups(False),
+                base_revision=loaded['configRevision'],
+                validate_groups_config_fn=validate_groups_config,
+                database_url=self.database_url,
+            )
+        self.assertIs(True, raised.exception.current['groups'][0]['board']['inheritColumnColours'])
+
+    def test_stored_non_bool_inherit_flag_reads_back_omitted_without_error_or_warnings(self):
+        stored = self._flag_groups('yes')
+        stored['configRevision'] = 1
+        with self.factory() as session:
+            session.add(models.WorkspaceGroupConfig(
+                workspace_id=self.workspace_id,
+                payload_version=2,
+                payload=stored,
+                config_revision=1,
+                created_by=self.user_id,
+                updated_by=self.user_id,
+            ))
+            session.commit()
+        loaded = service.load_shared_groups(
+            self.context,
+            fallback_loader=lambda: None,
+            validate_groups_config_fn=validate_groups_config,
+            database_url=self.database_url,
+        )
+        self.assertNotIn('inheritColumnColours', loaded['groups'][0]['board'])
+        self.assertNotIn('warnings', loaded)
+
     def test_preferences_filter_unknown_groups_and_keep_default_visible(self):
         preferences = service.normalize_group_preferences(
             {'visibleGroupIds': ['platform', 'missing'], 'activeGroupId': 'missing', 'customized': True},

@@ -106,6 +106,20 @@ test('normalizeGroupsConfig preserves the board field instead of silently droppi
     assert.deepEqual(normalized.groups[0].board, board);
 });
 
+test('normalizeGroupsConfig keeps inheritColumnColours only when exactly true and is idempotent', async () => {
+    const { normalizeGroupsConfig } = await import('../frontend/src/settings/groupConfigUtils.js');
+    const board = { columns: [{ id: 'col-00000001', name: 'To do', statuses: ['To Do'], colour: '#8c8c8c', star: false, min: null, max: null }], doneEpicRetentionDays: 28, inheritColumnColours: true };
+    const normalize = (flag) => normalizeGroupsConfig({
+        groups: [{ id: 'alpha', name: 'Alpha', teamIds: ['team-a'], board: { ...board, inheritColumnColours: flag } }],
+    });
+    const kept = normalize(true);
+    assert.equal(kept.groups[0].board.inheritColumnColours, true);
+    assert.deepEqual(normalizeGroupsConfig(kept).groups[0].board, kept.groups[0].board);
+    for (const flag of [false, 'yes', 1, null, undefined]) {
+        assert.equal(Object.hasOwn(normalize(flag).groups[0].board, 'inheritColumnColours'), false, String(flag));
+    }
+});
+
 test('normalizeGroupsConfig materializes legacy retention without mutating the source board', async () => {
     const { normalizeGroupsConfig } = await import('../frontend/src/settings/groupConfigUtils.js');
     const board = {

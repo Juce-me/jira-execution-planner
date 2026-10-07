@@ -71,6 +71,7 @@ import { useEngAlertFilters } from './eng/useEngAlertFilters.js';
 import { isStatusTransitionSurfaceEnabled, buildEngStatusTargets, resolveSubtaskParentStoryKeys } from './eng/engStatusTransitionUtils.js';
 import { deriveActiveEngMode, useEngModeState } from './eng/engModeState.js';
 import StatusTransitionMenu from './issues/StatusTransitionMenu.jsx';
+import { StatusColourProvider } from './issues/StatusColourContext.jsx';
 import PriorityTransitionMenu from './issues/PriorityTransitionMenu.jsx';
 import ProjectTrackTransitionMenu from './issues/ProjectTrackTransitionMenu.jsx';
 import IssuePersonEditor from './issues/IssuePersonEditor.jsx';
@@ -8494,6 +8495,7 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                                                                 <StatusPill
                                                                     className={`${epicStatusClassName} epic-status-value`}
                                                                     label={epicStatus}
+                                                                    status={epicStatus}
                                                                 />
                                                             </span>
                                                         )
@@ -8855,6 +8857,7 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                         />}
                     />
             ); return (
+                <StatusColourProvider columns={activeGroup?.board?.columns} enabled={selectedView === 'eng' && activeGroup?.board?.inheritColumnColours === true}>
                 <div className="container" style={containerStyle}>
                     <PlanningReviewScopeDialog review={planningReview} />
                     <header ref={headerRef}>
@@ -10840,6 +10843,7 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                         </div>
                     )}
                 </div>
+                </StatusColourProvider>
             );
         }
 

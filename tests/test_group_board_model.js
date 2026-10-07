@@ -661,3 +661,65 @@ test('fromStoredBoard is total: no malformed column element shape throws', async
     });
     assert.deepEqual(withMixedStatuses.statuses, ['Real Status']);
 });
+
+/* ── inheritColumnColours ───────────────────────────────────────────────────────────────────── */
+
+test('toStoredBoard emits the inherit flag last and only when exactly true', async () => {
+    const module = await loadModule();
+    const list = columns({ name: 'A', statuses: ['a'] });
+    assert.deepEqual(Object.keys(module.toStoredBoard(list, 28, true)), ['columns', 'doneEpicRetentionDays', 'inheritColumnColours']);
+    assert.equal(module.toStoredBoard(list, 28, true).inheritColumnColours, true);
+    for (const value of [false, undefined, 'true', 1, null]) {
+        assert.deepEqual(Object.keys(module.toStoredBoard(list, 28, value)), ['columns', 'doneEpicRetentionDays'], String(value));
+    }
+    assert.deepEqual(Object.keys(module.toStoredBoard(list)), ['columns', 'doneEpicRetentionDays']);
+});
+
+test('normalizeStoredBoard keeps exactly-true and omits everything else, in a stable key order', async () => {
+    const module = await loadModule();
+    const stored = { columns: columns({ name: 'A', statuses: ['a'] }), doneEpicRetentionDays: 28 };
+    const kept = module.normalizeStoredBoard({ ...stored, inheritColumnColours: true });
+    assert.deepEqual(Object.keys(kept), ['columns', 'doneEpicRetentionDays', 'inheritColumnColours']);
+    assert.equal(kept.inheritColumnColours, true);
+    for (const value of [false, 'yes', 1, null, undefined]) {
+        const normalized = module.normalizeStoredBoard({ ...stored, inheritColumnColours: value });
+        assert.deepEqual(Object.keys(normalized), ['columns', 'doneEpicRetentionDays'], String(value));
+    }
+    assert.deepEqual(Object.keys(module.normalizeStoredBoard(stored)), ['columns', 'doneEpicRetentionDays']);
+});
+
+test('inheritColumnColoursFromStoredBoard reads only an exact true', async () => {
+    const module = await loadModule();
+    assert.equal(module.inheritColumnColoursFromStoredBoard({ columns: [], inheritColumnColours: true }), true);
+    for (const board of [undefined, null, {}, { inheritColumnColours: false }, { inheritColumnColours: 'true' }, { inheritColumnColours: 1 }]) {
+        assert.equal(module.inheritColumnColoursFromStoredBoard(board), false);
+    }
+});
+
+test('a legacy board still serialises to the pinned legacy string and the flag survives a round trip', async () => {
+    const module = await loadModule();
+    const legacy = {
+        columns: [{
+            id: 'col-aaaaaaaa', name: 'Open', statuses: ['To Do'], colour: '#8c8c8c', star: false, min: null, max: null,
+        }],
+    };
+    assert.equal(
+        JSON.stringify(module.toStoredBoard(module.fromStoredBoard(legacy), module.retentionDaysFromStoredBoard(legacy))),
+        '{"columns":[{"id":"col-aaaaaaaa","name":"Open","statuses":["To Do"],"colour":"#8c8c8c","star":false,"min":null,"max":null}],"doneEpicRetentionDays":28}',
+    );
+    const withFlag = { ...legacy, doneEpicRetentionDays: 28, inheritColumnColours: true };
+    const again = module.toStoredBoard(
+        module.fromStoredBoard(withFlag),
+        module.retentionDaysFromStoredBoard(withFlag),
+        module.inheritColumnColoursFromStoredBoard(withFlag),
+    );
+    assert.equal(again.inheritColumnColours, true);
+    assert.deepEqual(module.normalizeStoredBoard(again), again);
+});
+
+test('a flag on an empty board is still rejected like any empty present board', async () => {
+    const { validatePresentGroupBoards, toStoredBoard } = await loadModule();
+    const board = toStoredBoard([], 28, true);
+    assert.equal(board.inheritColumnColours, true);
+    assert.ok(validatePresentGroupBoards([{ id: 'g', name: 'G', board }]).some((message) => /at least one column/i.test(message)));
+});

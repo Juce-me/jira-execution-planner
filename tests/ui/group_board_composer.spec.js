@@ -55,7 +55,7 @@ function harnessHtml(initialBoardJs = 'undefined', randomJs = 'undefined') {
         + `<script>${harnessJs}</script></body></html>`;
 }
 
-async function openComposer(page, { statuses = 'ok', initialBoard = 'undefined', random = 'undefined' } = {}) {
+async function openComposer(page, { statuses = 'ok', initialBoard = 'undefined', random = 'undefined', waitForColumns = true } = {}) {
     const requests = { count: 0 };
     await page.route('**/api/board-config/statuses', (route) => {
         requests.count += 1;
@@ -106,7 +106,8 @@ async function openComposer(page, { statuses = 'ok', initialBoard = 'undefined',
     }));
     await page.setViewportSize({ width: 1440, height: 1200 });
     await page.goto(harnessUrl);
-    await page.waitForSelector('.board-column');
+    // A zero-column seed has no `.board-column` to wait for.
+    await page.waitForSelector(waitForColumns ? '.board-column' : '.group-board-composer');
     return requests;
 }
 
@@ -1220,4 +1221,160 @@ test('Reset to default columns is disabled while the board statuses are unavaila
     });
     await expect(page.getByRole('button', { name: 'Reset to default columns' })).toBeDisabled();
     expect(await columnNames(page)).toHaveLength(7);
+});
+
+/* ── Use column colours for statuses (#244) ─────────────────────────────────────────────────── */
+
+const inheritCheckbox = (page) => page.getByRole('checkbox', { name: 'Use column colours for statuses' });
+const referenceWithFlag = (extra = {}) => JSON.stringify({ ...fixture.referenceBoard(), doneEpicRetentionDays: 28, inheritColumnColours: true, ...extra });
+const chipStyle = (locator) => locator.locator('.status-pill').first().evaluate((node) => ({
+    inline: node.getAttribute('style'), background: getComputedStyle(node).backgroundColor, color: getComputedStyle(node).color,
+}));
+
+test('the colour checkbox is unchecked by default and checked when the stored board carries the flag', async ({ page }) => {
+    await openComposer(page);
+    await expect(inheritCheckbox(page)).not.toBeChecked();
+    await expect(inheritCheckbox(page)).toBeEnabled();
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+    await openComposer(page, { initialBoard: referenceWithFlag() });
+    await expect(inheritCheckbox(page)).toBeChecked();
+});
+
+test('toggling emits the flag last and toggling off restores the legacy shape', async ({ page }) => {
+    await openComposer(page, { initialBoard: JSON.stringify({ ...fixture.referenceBoard(), doneEpicRetentionDays: 28 }) });
+    const before = await boardState(page);
+    expect(Object.keys(before)).toEqual(['columns', 'doneEpicRetentionDays']);
+    await inheritCheckbox(page).check();
+    const on = await boardState(page);
+    expect(Object.keys(on)).toEqual(['columns', 'doneEpicRetentionDays', 'inheritColumnColours']);
+    expect(on.inheritColumnColours).toBe(true);
+    expect(on.columns).toEqual(before.columns);
+    await inheritCheckbox(page).uncheck();
+    expect(await boardState(page)).toEqual(before);
+});
+
+test('the flag survives column add, edit, delete and Reset to default columns', async ({ page }) => {
+    await openComposer(page, { initialBoard: referenceWithFlag() });
+    const flagged = async () => (await boardState(page)).inheritColumnColours === true;
+    await page.getByRole('button', { name: '+ Add column' }).click();
+    expect(await flagged()).toBe(true);
+    await page.locator('.board-column-name').first().fill('Renamed column');
+    await page.locator('.board-column-name').first().blur();
+    expect(await flagged()).toBe(true);
+    await page.locator('.board-column .remove-btn[title="Delete column"]').last().click();
+    expect(await flagged()).toBe(true);
+    await page.getByRole('button', { name: 'Reset to default columns' }).click();
+    expect(await flagged()).toBe(true);
+    await expect(inheritCheckbox(page)).toBeChecked();
+});
+
+test('deleting the last column with the flag on emits the empty board with the flag, and re-adding restores the normal shape', async ({ page }) => {
+    await openComposer(page, { initialBoard: referenceWithFlag() });
+    for (let index = 0; index < 7; index += 1) {
+        await page.locator('.board-column .remove-btn[title="Delete column"]').first().click();
+    }
+    await expect(page.locator('.board-column')).toHaveCount(0);
+    expect(await boardState(page)).toEqual({ columns: [], doneEpicRetentionDays: 28, inheritColumnColours: true });
+    await expect(inheritCheckbox(page)).toBeDisabled();
+    await expect(page.locator('#harness-save')).toBeDisabled();
+    await page.getByRole('button', { name: '+ Add column' }).click();
+    const board = await boardState(page);
+    expect(board.columns).toHaveLength(1);
+    expect(board.inheritColumnColours).toBe(true);
+    await expect(inheritCheckbox(page)).toBeEnabled();
+});
+
+test('an external board re-seeds the checkbox in both directions', async ({ page }) => {
+    await openComposer(page);
+    await expect(inheritCheckbox(page)).not.toBeChecked();
+    await page.evaluate((board) => window.__groupBoardHarness.setBoard(board), JSON.parse(referenceWithFlag()));
+    await expect(inheritCheckbox(page)).toBeChecked();
+    await page.evaluate((board) => window.__groupBoardHarness.setBoard(board), { ...fixture.referenceBoard(), doneEpicRetentionDays: 28 });
+    await expect(inheritCheckbox(page)).not.toBeChecked();
+});
+
+test('the checkbox is disabled, with its reason visible, while the Department has no columns', async ({ page }) => {
+    await openComposer(page, { initialBoard: 'undefined', waitForColumns: true });
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+    await openComposer(page, { initialBoard: 'null', waitForColumns: false });
+    await expect(page.locator('.board-column')).toHaveCount(0);
+    const checkbox = inheritCheckbox(page);
+    await expect(checkbox).toBeDisabled();
+    const describedBy = await checkbox.getAttribute('aria-describedby');
+    expect(describedBy).toBeTruthy();
+    await expect(page.locator(`[id="${describedBy}"]`)).toBeVisible();
+    await expect(page.locator(`[id="${describedBy}"]`)).toHaveText('Add a column first.');
+});
+
+test('with the flag on, column chips and picker rows preview the draft colours and pool chips stay uncoloured', async ({ page }) => {
+    await openComposer(page, { initialBoard: referenceWithFlag() });
+    const boardColours = Object.fromEntries(fixture.REFERENCE_COLUMNS.flatMap((column) => column.statuses.map((status) => [status, column.colour])));
+    // The same tint the filter popover uses, resolved by the browser from the theme variables.
+    const tintOf = (hex) => page.evaluate((colour) => {
+        const probe = document.createElement('span');
+        probe.style.background = `color-mix(in srgb, ${colour} 28%, var(--bg-secondary))`;
+        probe.style.color = 'var(--text-primary)';
+        document.body.appendChild(probe);
+        const style = getComputedStyle(probe);
+        const result = { background: style.backgroundColor, color: style.color };
+        probe.remove();
+        return result;
+    }, hex);
+    const todo = await chipStyle(page.locator('.board-column').first().locator('.component-chip[data-status="To Do"]'));
+    expect(todo.background).toBe((await tintOf(boardColours['To Do'])).background);
+    expect(todo.color).toBe((await tintOf(boardColours['To Do'])).color);
+
+    // Move a status out: it lands in the pool and takes no colour.
+    await page.locator('.board-column').nth(1).locator('.component-chip[data-status="Analysis"] .remove-btn').click();
+    const pooled = await chipStyle(page.locator('.board-unmapped .component-chip[data-status="Analysis"]'));
+    expect(pooled.inline).toBeNull();
+
+    // A picker row shows its current column's colour; a status in no column shows none.
+    await page.locator('.board-column').first().locator('.board-add-status').click();
+    const owned = await chipStyle(page.locator('.board-pick .component-chip[data-status="Accepted"]'));
+    expect(owned.background).toBe((await tintOf(boardColours.Accepted)).background);
+    expect((await chipStyle(page.locator('.board-pick .component-chip[data-status="Analysis"]'))).inline).toBeNull();
+
+    // Flag off: built-in colours again.
+    await inheritCheckbox(page).uncheck();
+    // React leaves an empty style attribute behind once the inline colours are removed.
+    expect((await chipStyle(page.locator('.board-column').first().locator('.component-chip[data-status="To Do"]'))).inline || null).toBeNull();
+});
+
+test('the colour checkbox row uses the shared row classes and stays inside its row (desktop and 375px)', async ({ page }) => {
+    for (const [name, initialBoard] of [['unchecked', 'undefined'], ['checked', referenceWithFlag()], ['disabled', 'null']]) {
+        for (const width of [1440, 375]) {
+            await page.unrouteAll({ behavior: 'ignoreErrors' });
+            await openComposer(page, { initialBoard, waitForColumns: name !== 'disabled' });
+            await page.setViewportSize({ width, height: 1200 });
+            const row = page.locator('.group-preference-row').filter({ has: inheritCheckbox(page) });
+            await expect(row.locator('label.group-visible-control')).toHaveCount(1);
+            const geometry = await row.evaluate((node) => {
+                const rowBox = node.getBoundingClientRect();
+                const label = node.querySelector('label.group-visible-control');
+                const span = label.querySelector('span');
+                const range = document.createRange();
+                range.selectNodeContents(span);
+                const text = range.getBoundingClientRect();
+                const next = node.nextElementSibling;
+                const nextTop = next ? next.getBoundingClientRect().top : Infinity;
+                const helper = node.querySelector('.group-visible-helper');
+                return {
+                    labelWhiteSpace: getComputedStyle(label).whiteSpace,
+                    minHeight: getComputedStyle(label).minHeight,
+                    scrollFits: label.scrollWidth <= label.clientWidth + 1,
+                    textRight: text.right, rowRight: rowBox.right, textBottom: text.bottom,
+                    nextTop, helperVisible: helper ? helper.getBoundingClientRect().height > 0 : null,
+                    documentOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+                };
+            });
+            expect(geometry.labelWhiteSpace, `${name} ${width}`).toBe('nowrap');
+            expect(geometry.minHeight, `${name} ${width}`).toBe('44px');
+            expect(geometry.scrollFits, `${name} ${width}: label text must not overflow its box`).toBe(true);
+            expect(geometry.textRight, `${name} ${width}: label right edge inside the row`).toBeLessThanOrEqual(geometry.rowRight + 1);
+            expect(geometry.textBottom, `${name} ${width}: clear of the next control`).toBeLessThanOrEqual(geometry.nextTop);
+            if (name === 'disabled') expect(geometry.helperVisible).toBe(true);
+            await page.screenshot({ path: path.join(screenshotDir, `inherit-checkbox-${name}-${width}.png`), clip: { x: 0, y: 0, width, height: 700 } });
+        }
+    }
 });

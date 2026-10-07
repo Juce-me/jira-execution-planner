@@ -19,7 +19,7 @@
   },
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
-    "lineCount": 10851,
+    "lineCount": 10855,
     "lineCeiling": 10855
   },
   "modules": [
@@ -4060,8 +4060,8 @@
       "exports": [
         "default"
       ],
-      "lineCount": 1164,
-      "lineCeiling": 1164,
+      "lineCount": 1199,
+      "lineCeiling": 1199,
       "interfaces": [
         {
           "exportName": "default",
@@ -4110,8 +4110,8 @@
             "forwarded input epicsByStatus"
           ],
           "inventory": {
-            "source": "frontend/src/settings/GroupBoardSettings.jsx:109",
-            "sourceDigest": "bd196af035fa3782c873feb152ddd11770faf586eb9ed8540f61dc4fadba0be6",
+            "source": "frontend/src/settings/GroupBoardSettings.jsx:111",
+            "sourceDigest": "5894b54457d0999f95c2fe66b4a0e1d8987090e5f0018bb713020d147e094aef",
             "reviewed": true,
             "memberNames": [
               "backendUrl",
@@ -5777,6 +5777,7 @@
         "describeBreach",
         "describeColumnMove",
         "fromStoredBoard",
+        "inheritColumnColoursFromStoredBoard",
         "insertColumnBeforeTerminal",
         "isValidColumnId",
         "moveColumn",
@@ -5795,8 +5796,8 @@
         "validateComposerBoard",
         "validatePresentGroupBoards"
       ],
-      "lineCount": 433,
-      "lineCeiling": 433,
+      "lineCount": 439,
+      "lineCeiling": 439,
       "interfaces": []
     },
     {
@@ -14474,23 +14475,23 @@
       "ceiling": 5614
     },
     "settings": {
-      "measured": 16297,
-      "ceiling": 16297
+      "measured": 16338,
+      "ceiling": 16338
     },
     "uniqueOwners": {
-      "measured": 21911,
-      "ceiling": 21911
+      "measured": 21952,
+      "ceiling": 21952
     },
     "appPlusOwners": {
-      "measured": 32762,
-      "ceiling": 32762
+      "measured": 32807,
+      "ceiling": 32807
     }
   },
   "transfer": {
     "scaffoldingAllowance": 365,
     "netPhysicalLOC": {
       "priorAppPlusOwners": 32401,
-      "nextAppPlusOwners": 32762,
+      "nextAppPlusOwners": 32807,
       "transferredSourceLines": 314,
       "componentScaffoldingLines": 208,
       "netAppScaffoldingLines": 157

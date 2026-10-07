@@ -20,7 +20,7 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 ## Dashboard decomposition
 
-- [App decomposition](EXEC-dashboard-app-decomposition.md): planned (2026-10-07), not started. Moves Statistics, Alerts derivation and Capacity out of `App()` using the #220 container-plus-seam pattern, turns the closure renderers into components, hoists the shared scope, and lazy-loads Stats, Scenario and Settings. One PR, separate commits, one operator stop before publication. Group bootstrap, Sprint catalog and task loading are out of scope.
+- [App decomposition](EXEC-dashboard-app-decomposition.md): planned (2026-10-07), not started. Moves Statistics, Alerts derivation and Capacity out of `App()` using the #220 container-plus-seam pattern, turns the closure renderers into components, hoists the shared scope, and lazy-loads Stats, Scenario and Settings, which ends direct `file://` open of `jira-dashboard.html` (OAuth-only direction). One PR, separate commits, one operator stop before publication. Group bootstrap, Sprint catalog and task loading are out of scope.
 - [Scenario Planner and Settings state extraction](DONE-dashboard-scenario-settings-state-extraction.md): implemented and merged (issue #220; PR-1 #219, PR0 #227, Scenario slices #228 to #232, Settings slices #233 to #238, 2026-10-06). `frontend/src/dashboard.jsx` went from 18,203 to 10,855 lines with Scenario and Settings state, effects and tab bodies in feature-owned hooks and containers; the only behavior change is the fail-closed Settings edit grant (#237). The per-rung records are historical; the Scenario history/save/rollback rebuild remains deferred (issue #230).
 
 ## Current Stats Work

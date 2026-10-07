@@ -9275,7 +9275,7 @@ input.story-points-editor.story-points-alert-highlight {
 }
 .planning-review-table .status-pill {
   font-family: "IBM Plex Mono", monospace;
-  font-size: 0.7rem;
+  font-size: 0.5rem;
   text-transform: uppercase;
   letter-spacing: 0.1em;
 }

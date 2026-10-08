@@ -72,7 +72,6 @@ const EXPECTED = {
         "burnoutTotals",
         "burndownMetricIsStoryPoints",
         "formatBurndownValue",
-        "resolveBurnoutPointer",
         "buildBurnoutTaskFilter",
         "canRenderStatsPanel",
         "isLeadTimesFocusMode"
@@ -202,7 +201,6 @@ const EFFECT_DEPS = [
     "[excludedCapacitySelectedEpicKeys, excludedCapacityEpicOptions]",
     "[statsView, excludedCapacityChartMode, excludedCapacityIsolatedTeam, excludedCapacityIsolatedSeries]",
     "[excludedCapacityEpicDropdownOpen]",
-    "[burnoutChartModel, statsView]"
 ];
 function loadHooks() {
     const code = esbuild.buildSync({entryPoints:[path.join(__dirname,'../frontend/src/stats/useStatsData.js')],bundle:true,write:false,format:'cjs',platform:'node',external:['react']}).outputFiles[0].text;
@@ -239,9 +237,9 @@ for (const layer of ['A','B','C']) test('Statistics layer '+layer+' preserves it
     if(layer==='B') {assert.deepEqual(result.excludedCapacitySprintRange,[]);assert.equal(result.effortSplitSprintLabel,'No sprint range selected');}
     if(layer==='C') {assert.equal(result.canRenderStatsPanel,false);assert.equal(result.isLeadTimesFocusMode,false);}
 });
-test('Statistics layers preserve all sixteen effect dependencies and remain separate', () => {
+test('Statistics layers preserve all fifteen retained effect dependencies and remain separate', () => {
     const source=fs.readFileSync(path.join(__dirname,'../frontend/src/stats/useStatsData.js'),'utf8');
-    assert.equal((source.match(/useEffect\(\(\) =>/g)||[]).length,16);
+    assert.equal((source.match(/useEffect\(\(\) =>/g)||[]).length,15);
     for(const dep of EFFECT_DEPS) assert.ok(source.replace(/\s+/g,' ').includes(dep), 'Missing frozen dependency '+dep);
     for(const layer of ['A','B','C']) assert.equal((source.match(new RegExp('useStatsDerived'+layer+'\\(', 'g'))||[]).length,1);
     assert.ok(source.includes('perfCountersRef.current.statsBuild'));

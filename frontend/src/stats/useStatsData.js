@@ -1033,8 +1033,7 @@ export function useStatsDerivedB({
 }
 
 export function useStatsDerivedC({
-    scope, burndownMetric, burnoutAssigneeFilter, burnoutChartRef,
-    burnoutData, burnoutIssueWeightByKey, burnoutTaskStatusByIssueKey, burnoutTaskTeamByIssueKey,
+    scope, burndownMetric, burnoutAssigneeFilter, burnoutData, burnoutIssueWeightByKey, burnoutTaskStatusByIssueKey, burnoutTaskTeamByIssueKey,
     effectivePriorityWeightMap, effectiveStatsData, isBurnoutClosedStatus, isCompletedSprintSelected,
     priorityAxis, priorityOrder, resolveStatsTeamColor, showStats,
     statsView
@@ -1256,46 +1255,7 @@ export function useStatsDerivedC({
         if (!Number.isFinite(numeric)) return burndownMetricIsStoryPoints ? '0.0' : '0';
         return burndownMetricIsStoryPoints ? numeric.toFixed(1) : String(Math.round(numeric));
     }, [burndownMetricIsStoryPoints]);
-    const resolveBurnoutPointer = React.useCallback((event) => {
-        if (!burnoutChartModel) return null;
-        const chart = burnoutChartRef.current;
-        const rect = chart?.getBoundingClientRect();
-        if (!rect) return null;
-        const viewportX = event.clientX - rect.left;
-        const viewportY = event.clientY - rect.top;
-        const contentWidth = Math.max(chart.scrollWidth || rect.width, 1);
-        const ratioX = burnoutChartModel.width / contentWidth;
-        const localX = (viewportX + (chart.scrollLeft || 0)) * ratioX;
-        const localY = viewportY * (burnoutChartModel.height / rect.height);
-        const clampedX = Math.max(
-            burnoutChartModel.padding.left,
-            Math.min(burnoutChartModel.width - burnoutChartModel.padding.right, localX)
-        );
-        const relative = clampedX - burnoutChartModel.padding.left;
-        const rawIndex = burnoutChartModel.rows.length <= 1
-            ? 0
-            : Math.round(relative / Math.max(1, burnoutChartModel.xStep));
-        const index = Math.max(0, Math.min(burnoutChartModel.rows.length - 1, rawIndex));
-        const row = burnoutChartModel.rows[index];
-        if (!row) return null;
-        let hoveredTeamKey = null;
-        for (let i = burnoutChartModel.teams.length - 1; i >= 0; i -= 1) {
-            const team = burnoutChartModel.teams[i];
-            const stack = row.stacks?.[team.key];
-            if (!stack) continue;
-            if ((stack.value || 0) <= 0) continue;
-            if (localY >= stack.yTop && localY <= stack.yBottom) {
-                hoveredTeamKey = team.key;
-                break;
-            }
-        }
-        return {
-            row,
-            hoveredTeamKey,
-            viewportX,
-            bubbleX: Math.max(180, Math.min(rect.width - 180, viewportX))
-        };
-    }, [burnoutChartModel]);
+
     const buildBurnoutTaskFilter = React.useCallback((dateKey, teamKey = null) => {
         if (!burnoutChartModel || !dateKey) return null;
         const snapshots = Array.isArray(burnoutChartModel.issueSnapshots) ? burnoutChartModel.issueSnapshots : [];
@@ -1318,28 +1278,13 @@ export function useStatsDerivedC({
             issueKeys
         };
     }, [burnoutChartModel]);
-    useEffect(() => {
-        if (!burnoutChartModel || statsView !== 'burnout') return;
-        const chart = burnoutChartRef.current;
-        if (!chart) return;
-        if ((chart.scrollWidth || 0) <= (chart.clientWidth || 0) + 2) {
-            chart.scrollLeft = 0;
-            return;
-        }
-        const todayX = Number(burnoutChartModel.todayX);
-        if (!Number.isFinite(todayX)) {
-            chart.scrollLeft = 0;
-            return;
-        }
-        const target = Math.max(0, todayX - (chart.clientWidth * 0.6));
-        chart.scrollLeft = target;
-    }, [burnoutChartModel, statsView]);
+
     const canRenderStatsPanel = Boolean(effectiveStatsData) || statsView === 'burnout' || statsView === 'cohort' || statsView === 'excludedCapacity' || statsView === 'monoCrossShare' || statsView === 'projectTrack';
     const isLeadTimesFocusMode = showStats && statsView === 'cohort';
     return {
         priorityTeamIds, priorityRows, priorityRadar, statsTeamRows,
         statsBarColumns, statsTotals, burnoutAssigneeOptions, burnoutChartModel,
-        burnoutTotals, burndownMetricIsStoryPoints, formatBurndownValue, resolveBurnoutPointer,
+        burnoutTotals, burndownMetricIsStoryPoints, formatBurndownValue,
         buildBurnoutTaskFilter, canRenderStatsPanel, isLeadTimesFocusMode
     };
 }

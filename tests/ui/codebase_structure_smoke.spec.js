@@ -4,6 +4,7 @@ const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
 const { buildRuntimeProbeBundle, readAppRenderCount } = require('./runtime_probe_helpers');
 const { installDashboardShell } = require('./epm_home_token_fixture');
+const { captureDomParity } = require('./dom_parity_helpers');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const screenshotDir = path.join(repoRoot, 'test-results', 'codebase-structure-smoke');
@@ -443,6 +444,22 @@ async function waitForVisualSettled(page) {
 async function captureSmokeScreenshot(page, name) {
     await waitForVisualSettled(page);
     await page.screenshot({ path: `${screenshotDir}/${name}.png`, fullPage: true });
+}
+
+async function captureStatsParityScreenshots(page, name) {
+    const dir = process.env.JEP_STATS_SCREENSHOT_DIR;
+    if (!dir) return;
+    fs.mkdirSync(dir, { recursive: true });
+    const originalViewport = page.viewportSize();
+    for (const width of [1280, 375]) {
+        const destination = path.join(dir, `${name}-${width}.png`);
+        if (fs.existsSync(destination)) throw new Error(`Duplicate Statistics screenshot: ${destination}`);
+        await page.setViewportSize({ width, height: 760 });
+        await waitForVisualSettled(page);
+        await page.screenshot({ path: destination, fullPage: true });
+    }
+    await page.setViewportSize(originalViewport);
+    await waitForVisualSettled(page);
 }
 
 async function captureCapacitySmokeScreenshot(page, name) {
@@ -1811,6 +1828,8 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     await expect(statsTabs.getByRole('radio', { name: 'Teams' })).toHaveAttribute('aria-checked', 'true');
     await expect(page.locator('.stats-view.open .stats-bars')).toBeVisible();
     await expect(page.locator('.stats-view.open .stats-table')).toContainText('Alpha Team');
+    await captureDomParity(page, 'stats-teams', '.stats-panel');
+    await captureStatsParityScreenshots(page, 'stats-teams');
     await captureSmokeScreenshot(page, 'statistics-teams');
 
     await statsTabs.getByRole('radio', { name: 'Priority' }).click();
@@ -1818,6 +1837,7 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     await expect(page.locator('.stats-view.open .priority-legend')).toContainText('Alpha Team');
     await expect(page.locator('.stats-view.open .stats-table')).toContainText('Major');
     const priorityLegendColors = await legendColors('.stats-view.open .priority-legend > span');
+    await captureDomParity(page, 'stats-priority', '.stats-panel');
     await captureSmokeScreenshot(page, 'statistics-priority');
 
     await statsTabs.getByRole('radio', { name: 'Burndown' }).click();
@@ -1834,6 +1854,8 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     });
     expect([...burnoutCall.body.issueKeys].sort()).toEqual(expectedStatsIssueKeys);
     const burnoutLegendColors = await legendColors('.stats-view.open .burnout-legend > span');
+    await captureDomParity(page, 'stats-burnout', '.stats-panel');
+    await captureStatsParityScreenshots(page, 'stats-burnout');
     await captureSmokeScreenshot(page, 'statistics-burndown');
 
     await statsTabs.getByRole('radio', { name: 'Lead Times' }).click();
@@ -1893,6 +1915,8 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
         components: [],
         refresh: false,
     });
+    await captureDomParity(page, 'stats-cohort', '.stats-panel');
+    await captureStatsParityScreenshots(page, 'stats-cohort');
     await captureSmokeScreenshot(page, 'statistics-lead-times');
 
     await page.setViewportSize({ width: 1964, height: 900 });
@@ -2072,6 +2096,7 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     await statsTabs.getByRole('radio', { name: 'Excluded Capacity' }).click();
     await waitForCallCount(calls, call => call.pathname === '/api/stats/excluded-capacity-source', 1);
     await expect(page.locator('.stats-view.open .effort-type-split-chart')).toBeVisible();
+    await captureDomParity(page, 'stats-excludedCapacity', '.stats-panel');
 
     // Excluded Capacity shares the StatsRangeControl range group; no native Start/End select remains.
     const excludedRange = page.locator('[data-stats-range="excluded-capacity-sprint"]');
@@ -2087,6 +2112,7 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     const monoCrossRange = page.locator('[data-stats-range="mono-cross-sprint"]');
     await expect(monoCrossRange).toBeVisible();
     await expect(monoCrossRange.locator('select')).toHaveCount(0);
+    await captureDomParity(page, 'stats-monoCrossShare', '.stats-panel');
     await captureSmokeScreenshot(page, 'statistics-mono-cross');
     const monoCrossLegendColors = await legendColors('.stats-view.open .excluded-capacity-line-legend-item');
 
@@ -2445,6 +2471,8 @@ test('Project Track tab renders filter bar, mode title, totals, per-sprint and b
     expect(segmentColor.declaredColor).toBe(noTrackColor);
     expect(segmentColor.backgroundColor).toBe(segmentColor.expectedRgb);
 
+    await captureDomParity(page, 'stats-projectTrack', '.stats-panel');
+    await captureStatsParityScreenshots(page, 'stats-projectTrack');
     await captureSmokeScreenshot(page, 'statistics-project-track-epic');
 
     // Toggle Capacity side -> Tech (only TECH-EPIC, Committed 4 SP, no Flexible).
@@ -2680,6 +2708,9 @@ test('Project Track Team mode strips split each track by Board column with a hov
     await modeControl.getByRole('radio', { name: 'Epic' }).click();
     await expect(statsView.locator('.project-track-mode-title')).toHaveText('EPIC MODE');
     await expect(statsView.locator('.stacked-bar-strip')).toHaveCount(0);
+    await waitForCallCount(calls, call => call.pathname === '/api/stats/project-track-phase-durations', 1);
+    await expect(statsView.locator('.project-track-phase-section .project-track-phase-summary')).toBeVisible();
+    await expect(statsView.locator('.project-track-phase-section .stacked-bar-row').first()).toBeVisible();
     const phasePath = (call) => call.pathname !== '/api/stats/excluded-capacity-source' && call.pathname.startsWith('/api/stats/');
     await page.waitForLoadState('networkidle');
     const afterEpic = calls.length;
@@ -3578,11 +3609,11 @@ test('EPM all-project board can collapse and expand all visible projects', async
     expect(apiMocks.unexpectedCalls).toEqual([]);
 });
 
-test('Stats chart hover does not re-render App', async ({ page }) => {
+test('Stats chart hover does not re-render App', async ({ page }, testInfo) => {
     test.skip(process.env.JEP_RUNTIME_PROBE !== '1', 'opt-in runtime probe');
     const calls = [];
     await installApiMocks(page, calls, { excludedCapacityEpics: ['BAU-EPIC'], runtimeProbe: true });
-    await page.setViewportSize({ width: 1280, height: 760 });
+    await page.setViewportSize({ width: 1280, height: 1100 });
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, { selectedView: 'eng', planningLayout: 'list', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
@@ -3596,6 +3627,17 @@ test('Stats chart hover does not re-render App', async ({ page }) => {
     const radarPolygons = page.locator('.stats-view.open .priority-radar polygon[fill-opacity]');
     const radarSeries = radarPolygons.last();
     await expect(radarSeries).toBeVisible();
+    // Keep the polygon and legend in view: Playwright auto-scroll otherwise activates
+    // the App-owned compact header, which is separate from chart hover ownership.
+    const priorityGeometry = await page.locator('.stats-view.open .priority-legend').evaluate((node) => ({
+        top: node.getBoundingClientRect().top, bottom: node.getBoundingClientRect().bottom,
+        viewportHeight: innerHeight, scrollY,
+    }));
+    expect(priorityGeometry.top).toBeGreaterThanOrEqual(0);
+    expect(priorityGeometry.bottom).toBeLessThanOrEqual(priorityGeometry.viewportHeight);
+    const radarGeometry = await radarSeries.boundingBox();
+    expect(radarGeometry.y).toBeGreaterThanOrEqual(0);
+    expect(radarGeometry.y + radarGeometry.height).toBeLessThanOrEqual(priorityGeometry.viewportHeight);
     const beforePriority = await readAppRenderCount(page);
     await radarSeries.hover();
     // Prove both handlers still produce the visible active/dimmed series state.
@@ -3604,7 +3646,10 @@ test('Stats chart hover does not re-render App', async ({ page }) => {
     await page.locator('.stats-view.open .priority-legend > span').first().hover();
     await expect(radarPolygons.first()).toHaveAttribute('fill-opacity', '0.18');
     await expect(radarSeries).toHaveAttribute('fill-opacity', '0.04');
-    expect(await readAppRenderCount(page)).toBe(beforePriority);
+    const afterPriority = await readAppRenderCount(page);
+    expect(await page.evaluate(() => scrollY)).toBe(priorityGeometry.scrollY);
+    console.log('Priority hover measurement', JSON.stringify({ priorityGeometry, beforePriority, afterPriority, afterScrollY: await page.evaluate(() => scrollY) }));
+    expect(afterPriority).toBe(beforePriority);
 
     await tabs.getByRole('radio', { name: 'Burndown' }).click();
     await waitForCallCount(calls, call => call.pathname === '/api/stats/burnout', 1);
@@ -3615,7 +3660,12 @@ test('Stats chart hover does not re-render App', async ({ page }) => {
     await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.5);
     await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.5);
     await expect(page.locator('.burnout-hover-bubble')).toBeVisible();
-    expect(await readAppRenderCount(page)).toBe(beforeBurnout);
+    const afterBurnout = await readAppRenderCount(page);
+    expect(afterBurnout).toBe(beforeBurnout);
+    console.log('Stats hover render counts', JSON.stringify({ priorityGeometry, priority: { before: beforePriority, after: afterPriority }, burnout: { before: beforeBurnout, after: afterBurnout } }));
+    await testInfo.attach('stats-hover-render-counts', { contentType: 'application/json',
+        body: JSON.stringify({ priorityGeometry, priority: { before: beforePriority, after: afterPriority },
+            burnout: { before: beforeBurnout, after: afterBurnout } }, null, 2) });
 });
 
 // Contract exclusions: query t/_ts are timestamp cache busters. Credentials are never

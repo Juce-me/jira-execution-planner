@@ -2,6 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
+const { readOwnerSource } = require('./frontend_source_helpers');
+const statsPanel = readOwnerSource(['frontend/src/stats/StatsPanel.jsx'], { anchor: 'export function StatsPanel(' });
 const dashboard = fs.readFileSync('frontend/src/dashboard.jsx', 'utf8');
 const rangePath = 'frontend/src/stats/StatsRangeControl.jsx';
 
@@ -22,14 +24,14 @@ test('dashboard keeps the global Sprint control isolated from stats ranges', () 
 });
 
 test('implemented stats ranges use StatsRangeControl and Lead Times headings share one style', () => {
-    assert.equal((dashboard.match(/<StatsRangeControl/g) || []).length, 4);
-    assert.equal(/<label>Start (?:Sprint|Quarter)<\/label>/.test(dashboard), false);
-    assert.equal(/<label>End (?:Sprint|Quarter)<\/label>/.test(dashboard), false);
+    assert.equal((statsPanel.match(/<StatsRangeControl/g) || []).length, 4);
+    assert.equal(/<label>Start (?:Sprint|Quarter)<\/label>/.test(statsPanel), false);
+    assert.equal(/<label>End (?:Sprint|Quarter)<\/label>/.test(statsPanel), false);
 
-    const start = dashboard.indexOf('<div className="stats-controls cohort-controls">');
-    const end = dashboard.indexOf('<div className="stats-actions cohort-status-actions">', start);
+    const start = statsPanel.indexOf('<div className="stats-controls cohort-controls">');
+    const end = statsPanel.indexOf('<div className="stats-actions cohort-status-actions">', start);
     assert.ok(start >= 0 && end > start, 'Expected the Lead Times controls block');
-    const controls = dashboard.slice(start, end);
+    const controls = statsPanel.slice(start, end);
     ['Group By', 'Project', 'Assignee', 'Exclude'].forEach((label) => {
         assert.ok(controls.includes(`<div className="controls-label">${label}</div>`), label);
     });

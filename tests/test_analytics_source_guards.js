@@ -230,13 +230,7 @@ test('effort split chart_action sends only the safe series_type enum token, neve
 });
 
 test('Lead Times capacity exclusions change local state without an app-owned event', () => {
-    const owners = [['frontend/src/dashboard.jsx', 'function App(']];
-    const panel = 'frontend/src/stats/StatsPanel.jsx';
-    if (fs.existsSync(path.join(repoRoot, panel))) owners.push([panel, 'function StatsPanel(']);
-    const sources = owners.map(([file, anchor]) => readOwnerSource([file], { anchor }));
-    const capacitySources = sources.filter(source => source.includes('data-stats-capacity-filters'));
-    assert.equal(capacitySources.length, 1, 'Exactly one planned Stats owner must contain the Lead Times controls');
-    const source = capacitySources[0];
+    const source = readOwnerSource(['frontend/src/stats/StatsPanel.jsx'], { anchor: 'export function StatsPanel(' });
     assert.equal(source.split('data-stats-capacity-filters').length - 1, 1);
     const start = source.indexOf('data-stats-capacity-filters');
     const end = source.indexOf('<div className="stats-actions cohort-status-actions">', start);

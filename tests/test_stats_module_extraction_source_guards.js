@@ -11,6 +11,7 @@ const { readOwnerSource } = require('./frontend_source_helpers.js');
 const dashboardSource = read('frontend', 'src', 'dashboard.jsx');
 const statsStateSource = readOwnerSource(['frontend/src/stats/useStatsState.js'], { anchor: 'export function useStatsState' });
 const statsGroupSource = readOwnerSource(['frontend/src/stats/statsGroupState.js'], { anchor: 'export function buildDefaultStatsGroupState' });
+const statsPanelSource = readOwnerSource(['frontend/src/stats/StatsPanel.jsx'], { anchor: 'export function StatsPanel(' });
 const statsDataSource = read('frontend', 'src', 'stats', 'useStatsData.js');
 const statsDir = sourcePath('frontend', 'src', 'stats');
 const statsFileNames = () => fs.readdirSync(statsDir).filter((fileName) => /\.(js|jsx|mjs)$/.test(fileName));
@@ -49,7 +50,7 @@ test('dashboard imports extracted statistics utilities and components', () => {
         "from './stats/StatsPriorityView.jsx'",
         "from './stats/BurnoutChart.jsx'",
     ].forEach((expectedImport) => {
-        assert.ok(dashboardSource.includes(expectedImport) || statsDataSource.includes(expectedImport.replace("from './stats/", "from './")), `Expected explicit statistics owner import ${expectedImport}`);
+        assert.ok(dashboardSource.includes(expectedImport) || statsDataSource.includes(expectedImport.replace("from './stats/", "from './")) || statsPanelSource.includes(expectedImport.replace("from './stats/", "from './")), `Expected explicit statistics owner import ${expectedImport}`);
     });
 });
 
@@ -126,7 +127,7 @@ test('statistics team colors are unified through one shared resolver', () => {
     assert.equal(burnoutUtilsSource.includes("import { RADAR_PALETTE }"), false);
     assert.equal(burnoutUtilsSource.includes('team.color = RADAR_PALETTE'), false);
     assert.ok(statsDataSource.includes('resolveTeamColor: resolveStatsTeamColor'));
-    assert.ok((dashboardSource.match(/resolveTeamColor=\{resolveStatsTeamColor\}/g) || []).length >= 3);
+    assert.ok((statsPanelSource.match(/resolveTeamColor=\{resolveStatsTeamColor\}/g) || []).length >= 3);
 });
 
 test('extracted statistics components own their expected view markup', () => {
@@ -146,7 +147,7 @@ test('existing excluded capacity stats extraction remains intact', () => {
         "import ExcludedCapacityLineChart from './stats/ExcludedCapacityLineChart.jsx';",
         "import EffortTypeSplitChart from './stats/EffortTypeSplitChart.jsx';",
     ].forEach((expectedImport) => {
-        assert.ok(dashboardSource.includes(expectedImport) || statsDataSource.includes(expectedImport.replace("from './stats/", "from './")), `Expected explicit statistics owner import ${expectedImport}`);
+        assert.ok(dashboardSource.includes(expectedImport) || statsDataSource.includes(expectedImport.replace("from './stats/", "from './")) || statsPanelSource.includes(expectedImport.replace("from './stats/", "from './")), `Expected explicit statistics owner import ${expectedImport}`);
     });
 });
 

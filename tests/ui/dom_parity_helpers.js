@@ -64,6 +64,26 @@ async function captureDomParity(page, label, selector) {
             const panels = ids.get(`${prefix}-${section}-panel`) || [];
             return Boolean(section && panels.length === 1 && panels[0].getAttribute('role') === 'tabpanel');
         }
+        // StatsRangeControl mounts each exact listbox only while its toggle is open.
+        function isDeferredStatsRange(node, attribute, id) {
+            if (attribute !== 'aria-controls' || !node.matches('button.sprint-dropdown-toggle[aria-haspopup="listbox"][aria-expanded="false"]')) return false;
+            const dropdown = node.parentElement;
+            const field = dropdown?.parentElement;
+            const filters = field?.parentElement;
+            const group = filters?.parentElement;
+            if (!dropdown?.matches('.sprint-dropdown[data-range-end]') || !field?.matches('.control-field')
+                || !filters?.matches('.view-filters') || !group?.matches('[data-stats-range][role="group"]')) return false;
+            const prefix = group.getAttribute('data-stats-range');
+            const labels = new Map([
+                ['excluded-capacity-sprint', 'Sprint range'],
+                ['mono-cross-sprint', 'Sprint range'],
+                ['project-track-sprint', 'Sprint range'],
+                ['lead-times-quarter', 'Quarter range'],
+            ]);
+            const end = dropdown.getAttribute('data-range-end');
+            return labels.has(prefix) && group.getAttribute('aria-label') === labels.get(prefix)
+                && ['start', 'end'].includes(end) && id === `${prefix}-${end}-listbox`;
+        }
         sources.forEach((source, index) => {
             const copy = copies[index];
             if (source.id) {
@@ -75,7 +95,7 @@ async function captureDomParity(page, label, selector) {
                 const references = targets(source.getAttribute(attribute), attribute);
                 for (const id of references) {
                     const matches = ids.get(id) || [];
-                    if (!matches.length && !isDeferredPanel(source, attribute, id)) throw new Error(`dangling ${attribute}: ${id}`);
+                    if (!matches.length && !isDeferredPanel(source, attribute, id) && !isDeferredStatsRange(source, attribute, id)) throw new Error(`dangling ${attribute}: ${id}`);
                     if (matches.length > 1) throw new Error(`duplicate ${attribute} target: ${id}`);
                 }
                 copy.setAttribute(attribute, references.map(canonical).join(' '));

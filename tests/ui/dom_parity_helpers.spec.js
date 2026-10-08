@@ -144,3 +144,39 @@ test('parity control: clock normalization is scoped to the exact app-owned reado
     const changed = await capture(page, html.replace('fetched 05:06 PM', 'fetched 08:09 PM'), 'changed-outside-readout');
     expect(changed).not.toBe(before);
 });
+
+function statsRangeFixture(prefix = 'excluded-capacity-sprint', end = 'start', expanded = false, target = false) {
+    const label = prefix === 'lead-times-quarter' ? 'Quarter range' : 'Sprint range';
+    const id = `${prefix}-${end}-listbox`;
+    return `<section id="root"><div role="group" aria-label="${label}" data-stats-range="${prefix}"><div class="view-filters"><div class="control-field"><span class="control-label">Start</span><div class="sprint-dropdown" data-range-end="${end}"><button class="sprint-dropdown-toggle" aria-haspopup="listbox" aria-expanded="${expanded}" aria-controls="${id}">Start</button>${target ? `<div id="${id}" role="listbox">Options</div>` : ''}</div></div></div></div></section>`;
+}
+
+test('parity control: only exact closed Stats range listboxes may be deferred', async ({ page }) => {
+    for (const prefix of ['excluded-capacity-sprint', 'mono-cross-sprint', 'project-track-sprint', 'lead-times-quarter']) {
+        for (const end of ['start', 'end']) {
+            const html = await capture(page, statsRangeFixture(prefix, end), `${prefix}-${end}`);
+            expect(html).toContain(`aria-controls="${prefix}-${end}-listbox"`);
+        }
+    }
+    await capture(page, statsRangeFixture('project-track-sprint', 'end', true, true), 'open-valid');
+});
+
+test('parity control: Stats range exceptions reject unknown, mismatched, open and duplicate references', async ({ page }) => {
+    const fixture = statsRangeFixture();
+    const invalid = [
+        statsRangeFixture('unknown'), statsRangeFixture('excluded-capacity-sprint', 'unknown'),
+        statsRangeFixture('excluded-capacity-sprint', 'start', true),
+        fixture.replace('aria-controls="excluded-capacity-sprint-start-listbox"', 'aria-controls="excluded-capacity-sprint-end-listbox"'),
+        fixture.replace('aria-haspopup="listbox"', 'aria-haspopup="menu"'),
+        fixture.replace('role="group"', 'role="region"'),
+        fixture.replace('aria-label="Sprint range"', 'aria-label="Unknown range"'),
+        fixture.replace('aria-controls=', 'aria-describedby='),
+        fixture.replace('class="sprint-dropdown-toggle"', 'class="other-toggle"'),
+        fixture.replace('class="control-field"', 'class="other-field"'),
+        fixture.replace('class="view-filters"', 'class="other-filters"'),
+    ];
+    for (const [index, html] of invalid.entries()) await rejectCapture(page, html, `invalid-stats-${index}`, 'dangling');
+    const duplicate = statsRangeFixture('excluded-capacity-sprint', 'start', false, true)
+        .replace('</section>', '<div id="excluded-capacity-sprint-start-listbox"></div></section>');
+    await rejectCapture(page, duplicate, 'duplicate-stats', 'duplicate');
+});

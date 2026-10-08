@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "baseSha": "7e18428cf3fa709066eff6f1706c78d7de40eb4d",
-  "checkpointId": "dashboard-decomposition-Task1",
+  "baseSha": "3ccea324b3125ed1430a2e4ca538326c76b4dd0b",
+  "checkpointId": "dashboard-decomposition-Task3",
   "sourceRoot": "frontend/src",
   "ownerRoots": [
     "scenario",
@@ -19,8 +19,8 @@
   },
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
-    "lineCount": 9557,
-    "lineCeiling": 9557
+    "lineCount": 8910,
+    "lineCeiling": 8910
   },
   "modules": [
     {
@@ -15672,8 +15672,8 @@
         "useStatsDerivedB",
         "useStatsDerivedC"
       ],
-      "lineCount": 1345,
-      "lineCeiling": 1345,
+      "lineCount": 1290,
+      "lineCeiling": 1290,
       "interfaces": [
         {
           "exportName": "useStatsDerivedA",
@@ -15781,7 +15781,7 @@
           ],
           "inventory": {
             "source": "frontend/src/stats/useStatsData.js:12",
-            "sourceDigest": "cef87f8873904b09fdd43d0107edc1fc66d35ad6e19255a2551ce37981e001b8",
+            "sourceDigest": "fe55a6920e7f446e576ccf56ee5cd831942928faae5c82f88a40bd5ae5de81d2",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -15832,13 +15832,13 @@
               "statsView",
               "tasksFetched"
             ],
-            "rationale": "BACKEND_URL is forwarded only as the existing API wrapper base URL. burnoutCacheRef.current indexes burnoutQueryKey; cached is the stored Stats payload tested for presence and passed unchanged to setBurnoutData. No dynamic callback or getter is supplied. issueEditStateRef aggregate read methods keep the same captured token and deferred timing."
+            "rationale": "BACKEND_URL is forwarded only as the existing API wrapper base URL. burnoutCacheRef.current indexes burnoutQueryKey; cached is the stored Stats payload tested for presence and passed unchanged to setBurnoutData. No dynamic callback or getter is supplied. issueEditStateRef aggregate read methods keep the same captured token and deferred timing. Task 3 reviewed change: unchanged bindings/aliases except removal of panel-owned burnoutChartRef/pointer and exact scroll effect; retained memo/fetch/cache ownership unchanged."
           },
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useStatsDerivedA",
-              "line": 4211,
+              "line": 4190,
               "phase": "hook execution"
             }
           ],
@@ -15846,56 +15846,56 @@
             {
               "name": "effectiveStatsData",
               "lines": [
-                4484
+                4460
               ]
             },
             {
               "name": "burnoutTaskTeamByIssueKey",
               "lines": [
-                4483
+                4459
               ]
             },
             {
               "name": "burnoutTaskStatusByIssueKey",
               "lines": [
-                4483
+                4459
               ]
             },
             {
               "name": "burnoutIssueWeightByKey",
               "lines": [
-                4483
+                4459
               ]
             },
             {
               "name": "burnoutScopedTeamIds",
               "lines": [
-                4241,
-                8880
+                4217,
+                8229
               ]
             },
             {
               "name": "burnoutScopedTeamSignature",
               "lines": [
-                4241
+                4217
               ]
             },
             {
               "name": "cohortScopedTeamSignature",
               "lines": [
-                4243
+                4219
               ]
             },
             {
               "name": "burnoutQueryKey",
               "lines": [
-                4240
+                4216
               ]
             },
             {
               "name": "cohortQueryKey",
               "lines": [
-                4243
+                4219
               ]
             }
           ],
@@ -16161,7 +16161,7 @@
           ],
           "inventory": {
             "source": "frontend/src/stats/useStatsData.js:277",
-            "sourceDigest": "cef87f8873904b09fdd43d0107edc1fc66d35ad6e19255a2551ce37981e001b8",
+            "sourceDigest": "fe55a6920e7f446e576ccf56ee5cd831942928faae5c82f88a40bd5ae5de81d2",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -16280,13 +16280,13 @@
               "statsView",
               "trackApiResult"
             ],
-            "rationale": "BACKEND_URL is forwarded only as the existing API wrapper base URL. cohortCacheRef.current indexes cohortQueryKey; excludedCapacityCacheRef.current indexes progressive scoped sprint keys; projectTrackPhaseCacheRef.current indexes projectTrackPhaseSignature. Cached payload aliases are checked for presence and passed unchanged to existing setters or merge helpers. node aliases the dropdown DOM ref and only calls contains(event.target); forceRefresh aliases a boolean ref. Forwarded sprint ids, isolated team and selected epic keys retain the existing helper argument and setter contracts. All asynchronous callbacks and abort/generation guards are unchanged."
+            "rationale": "BACKEND_URL is forwarded only as the existing API wrapper base URL. cohortCacheRef.current indexes cohortQueryKey; excludedCapacityCacheRef.current indexes progressive scoped sprint keys; projectTrackPhaseCacheRef.current indexes projectTrackPhaseSignature. Cached payload aliases are checked for presence and passed unchanged to existing setters or merge helpers. node aliases the dropdown DOM ref and only calls contains(event.target); forceRefresh aliases a boolean ref. Forwarded sprint ids, isolated team and selected epic keys retain the existing helper argument and setter contracts. All asynchronous callbacks and abort/generation guards are unchanged. Task 3 reviewed change: unchanged bindings/aliases except removal of panel-owned burnoutChartRef/pointer and exact scroll effect; retained memo/fetch/cache ownership unchanged."
           },
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useStatsDerivedB",
-              "line": 4237,
+              "line": 4213,
               "phase": "hook execution"
             }
           ],
@@ -16294,282 +16294,241 @@
             {
               "name": "cohortQuarterOptions",
               "lines": [
-                8699
+                8196
               ]
             },
             {
               "name": "cohortProjectOptions",
               "lines": [
-                8735
+                8206
               ]
             },
             {
               "name": "cohortAssigneeOptions",
               "lines": [
-                8751
+                8209
               ]
             },
             {
               "name": "cohortSummary",
               "lines": [
-                8805,
-                8807,
-                8814
+                8217
               ]
             },
             {
               "name": "cohortWorkflowStatusTotal",
               "lines": [
-                8815
+                8218
               ]
             },
             {
               "name": "cohortGridModel",
               "lines": [
-                8862
+                8225
               ]
             },
             {
               "name": "cohortOpenBars",
               "lines": [
-                8870
+                8227
               ]
             },
             {
               "name": "cohortCompletedBars",
               "lines": [
-                8871
+                8228
               ]
             },
             {
               "name": "cohortAverageLeadDays",
               "lines": [
-                8820
+                8219
               ]
             },
             {
               "name": "cohortMedianLeadDays",
               "lines": [
-                8827
+                8220
               ]
             },
             {
               "name": "cohortWarnings",
               "lines": [
-                8835,
-                8837
+                8223
               ]
             },
             {
               "name": "cohortStatusControls",
               "lines": [
-                8784
+                8214
               ]
             },
             {
               "name": "cohortSelectedRowLabel",
               "lines": [
-                8848,
-                8850,
-                8872
+                8224
               ]
             },
             {
               "name": "excludedCapacitySprintOptions",
               "lines": [
-                8228,
-                8435,
-                8537
+                8141
               ]
             },
             {
               "name": "excludedCapacitySprintRange",
               "lines": [
-                8447
+                8174
               ]
             },
             {
               "name": "effortSplitSprintLabel",
               "lines": [
-                8389
+                8165
               ]
             },
             {
               "name": "excludedCapacityEpicOptions",
               "lines": [
-                8403
+                8169
               ]
             },
             {
               "name": "projectTrackSeries",
               "lines": [
-                8629,
-                8636,
-                8640
+                8187
               ]
             },
             {
               "name": "projectTrackTotals",
               "lines": [
-                8628
+                8186
               ]
             },
             {
               "name": "projectTrackBreakdown",
               "lines": [
-                8652
+                8190
               ]
             },
             {
               "name": "projectTrackColumnSplit",
               "lines": [
-                8632,
-                8655
+                8189
               ]
             },
             {
               "name": "projectTrackRangeLabel",
               "lines": [
-                8631
+                8188
               ]
             },
             {
               "name": "projectTrackPhaseEpics",
               "lines": [
-                8684
+                8195
               ]
             },
             {
               "name": "projectTrackPhaseSummary",
               "lines": [
-                8676,
-                8677,
-                8679,
-                8680
+                8194
               ]
             },
             {
               "name": "excludedCapacityEpicCatalog",
               "lines": [
-                8270,
-                8273
+                8152
               ]
             },
             {
               "name": "excludedCapacityEffectiveFilters",
               "lines": [
-                8274
+                8153
               ]
             },
             {
               "name": "excludedCapacityFilterLabel",
               "lines": [
-                8245
+                8149
               ]
             },
             {
               "name": "effortSplitRows",
               "lines": [
-                8392
+                8166
               ]
             },
             {
               "name": "excludedCapacityRows",
               "lines": [
-                8407
+                8170
               ]
             },
             {
               "name": "excludedCapacityLineSeries",
               "lines": [
-                8413,
-                8414,
-                8416
+                8171
               ]
             },
             {
               "name": "excludedCapacityModeOverall",
               "lines": [
-                8452,
-                8457,
-                8462,
-                8472,
-                8475,
-                8478,
-                8487
+                8175
               ]
             },
             {
               "name": "excludedCapacityModeSprintRows",
               "lines": [
-                8488
+                8176
               ]
             },
             {
               "name": "excludedCapacityModeTeamLineSeries",
               "lines": [
-                8515,
-                8516
+                8177
               ]
             },
             {
               "name": "effortSplitTotals",
               "lines": [
-                8338,
-                8339,
-                8343,
-                8348,
-                8353,
-                8358,
-                8368,
-                8378,
-                8381
+                8160
               ]
             },
             {
               "name": "excludedCapacityWarnings",
               "lines": [
-                8371,
-                8373
+                8164
               ]
             },
             {
               "name": "formatExcludedPoints",
               "lines": [
-                8338,
-                8339,
-                8397,
-                8421,
-                8452,
-                8457,
-                8496,
-                8500,
-                8501,
-                8523
+                8159
               ]
             },
             {
               "name": "toggleExcludedCapacityEpicKey",
               "lines": [
-                8286
+                8154
               ]
             },
             {
               "name": "clearExcludedCapacityEpicSelection",
               "lines": [
-                8265
+                8151
               ]
             },
             {
               "name": "selectAllExcludedCapacityEpics",
               "lines": [
-                8257
+                8150
               ]
             },
             {
               "name": "toggleEffortSplitBucket",
               "lines": [
-                8395
+                8168
               ]
             }
           ],
@@ -16580,7 +16539,6 @@
           "inputNames": [
             "burndownMetric",
             "burnoutAssigneeFilter",
-            "burnoutChartRef",
             "burnoutData",
             "burnoutIssueWeightByKey",
             "burnoutTaskStatusByIssueKey",
@@ -16608,7 +16566,6 @@
             "priorityRadar",
             "priorityRows",
             "priorityTeamIds",
-            "resolveBurnoutPointer",
             "statsBarColumns",
             "statsTeamRows",
             "statsTotals"
@@ -16617,12 +16574,6 @@
           "expandedInputNames": [
             "burndownMetric",
             "burnoutAssigneeFilter",
-            "burnoutChartRef",
-            "burnoutChartRef.current",
-            "burnoutChartRef.current.clientWidth",
-            "burnoutChartRef.current.getBoundingClientRect",
-            "burnoutChartRef.current.scrollLeft",
-            "burnoutChartRef.current.scrollWidth",
             "burnoutData",
             "burnoutData.assignees",
             "burnoutIssueWeightByKey",
@@ -16648,15 +16599,14 @@
             "statsView"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 31,
-          "returnCount": 15,
+          "expandedInputCount": 25,
+          "returnCount": 14,
           "propCount": 0,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 31,
-          "returnCeiling": 15,
+          "expandedInputCeiling": 25,
+          "returnCeiling": 14,
           "propCeiling": 0,
           "unresolved": [
-            "bag burnoutChartRef member alias chart",
             "forwarded input effectivePriorityWeightMap",
             "forwarded input effectiveStatsData",
             "bag priorityOrder dynamic member",
@@ -16664,17 +16614,11 @@
           ],
           "inventory": {
             "source": "frontend/src/stats/useStatsData.js:1035",
-            "sourceDigest": "cef87f8873904b09fdd43d0107edc1fc66d35ad6e19255a2551ce37981e001b8",
+            "sourceDigest": "fe55a6920e7f446e576ccf56ee5cd831942928faae5c82f88a40bd5ae5de81d2",
             "reviewed": true,
             "memberNames": [
               "burndownMetric",
               "burnoutAssigneeFilter",
-              "burnoutChartRef",
-              "burnoutChartRef.current",
-              "burnoutChartRef.current.clientWidth",
-              "burnoutChartRef.current.getBoundingClientRect",
-              "burnoutChartRef.current.scrollLeft",
-              "burnoutChartRef.current.scrollWidth",
               "burnoutData",
               "burnoutData.assignees",
               "burnoutIssueWeightByKey",
@@ -16699,13 +16643,13 @@
               "showStats",
               "statsView"
             ],
-            "rationale": "chart aliases burnoutChartRef.current in the retained pointer callback and scroll effect. The pointer callback calls getBoundingClientRect() to translate pointer coordinates; the scroll effect reads clientWidth and scrollWidth and writes scrollLeft only. effectivePriorityWeightMap and effectiveStatsData are forwarded unchanged to existing model helpers; priorityOrder is indexed by priority name solely for numeric sorting. No getter, new dependency or delayed interface is added."
+            "rationale": "chart aliases burnoutChartRef.current in the retained pointer callback and scroll effect. The pointer callback calls getBoundingClientRect() to translate pointer coordinates; the scroll effect reads clientWidth and scrollWidth and writes scrollLeft only. effectivePriorityWeightMap and effectiveStatsData are forwarded unchanged to existing model helpers; priorityOrder is indexed by priority name solely for numeric sorting. No getter, new dependency or delayed interface is added. Task 3 reviewed change: unchanged bindings/aliases except removal of panel-owned burnoutChartRef/pointer and exact scroll effect; retained memo/fetch/cache ownership unchanged."
           },
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useStatsDerivedC",
-              "line": 4481,
+              "line": 4457,
               "phase": "hook execution"
             }
           ],
@@ -16713,95 +16657,269 @@
             {
               "name": "priorityTeamIds",
               "lines": [
-                5656
+                5632
               ]
             },
             {
               "name": "priorityRows",
               "lines": [
-                8192
+                8127
               ]
             },
             {
               "name": "priorityRadar",
               "lines": [
-                8191
+                8126
               ]
             },
             {
               "name": "statsTeamRows",
               "lines": [
-                8177
+                8124
               ]
             },
             {
               "name": "statsBarColumns",
               "lines": [
-                8178
+                8125
               ]
             },
             {
               "name": "statsTotals",
               "lines": [
-                8169
+                8123
               ]
             },
             {
               "name": "burnoutAssigneeOptions",
               "lines": [
-                8203
+                8130
               ]
             },
             {
               "name": "burnoutChartModel",
               "lines": [
-                8210
+                8137
               ]
             },
             {
               "name": "burnoutTotals",
               "lines": [
-                8207
+                8134
               ]
             },
             {
               "name": "burndownMetricIsStoryPoints",
               "lines": [
-                8206
+                8133
               ]
             },
             {
               "name": "formatBurndownValue",
               "lines": [
-                8218
-              ]
-            },
-            {
-              "name": "resolveBurnoutPointer",
-              "lines": [
-                8219
+                8139
               ]
             },
             {
               "name": "buildBurnoutTaskFilter",
               "lines": [
-                8220
+                8140
               ]
             },
             {
               "name": "canRenderStatsPanel",
               "lines": [
-                8141,
-                8144
+                8118
               ]
             },
             {
               "name": "isLeadTimesFocusMode",
               "lines": [
-                8931
+                8283
               ]
             }
           ],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "stats.StatsPanel",
+      "path": "frontend/src/stats/StatsPanel.jsx",
+      "features": [
+        "stats"
+      ],
+      "exports": [
+        "StatsPanel"
+      ],
+      "lineCount": 957,
+      "lineCeiling": 957,
+      "interfaces": [
+        {
+          "exportName": "StatsPanel",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "activeGroupMissingComponents",
+            "analytics",
+            "jiraUrl",
+            "links",
+            "onSelectBurnoutTask",
+            "priorityAxis",
+            "resolveStatsTeamColor",
+            "showStats",
+            "stats"
+          ],
+          "expandedInputNames": [
+            "activeGroupMissingComponents",
+            "analytics",
+            "analytics.trackStatsAction",
+            "analytics.trackStatsAnalyticsAction",
+            "jiraUrl",
+            "links",
+            "links.buildPriorityStatLink",
+            "links.buildStatLink",
+            "onSelectBurnoutTask",
+            "priorityAxis",
+            "resolveStatsTeamColor",
+            "showStats",
+            "stats",
+            "stats.buildBurnoutTaskFilter",
+            "stats.burndownMetric",
+            "stats.burndownMetricIsStoryPoints",
+            "stats.burnoutAssigneeFilter",
+            "stats.burnoutAssigneeOptions",
+            "stats.burnoutChartModel",
+            "stats.burnoutData",
+            "stats.burnoutError",
+            "stats.burnoutLoading",
+            "stats.burnoutScopedTeamIds",
+            "stats.burnoutTaskFilter",
+            "stats.burnoutTotals",
+            "stats.canRenderStatsPanel",
+            "stats.clearExcludedCapacityEpicSelection",
+            "stats.cohortAssigneeFilter",
+            "stats.cohortAssigneeOptions",
+            "stats.cohortAverageLeadDays",
+            "stats.cohortCompletedBars",
+            "stats.cohortEndQuarter",
+            "stats.cohortError",
+            "stats.cohortExcludeAdHoc",
+            "stats.cohortExcludeCapacity",
+            "stats.cohortGridModel",
+            "stats.cohortGroupBy",
+            "stats.cohortLoading",
+            "stats.cohortMedianLeadDays",
+            "stats.cohortOpenBars",
+            "stats.cohortProjectFilter",
+            "stats.cohortProjectOptions",
+            "stats.cohortQuarterOptions",
+            "stats.cohortSelectedRow",
+            "stats.cohortSelectedRowLabel",
+            "stats.cohortStartQuarter",
+            "stats.cohortStatusControls",
+            "stats.cohortStatusToggles",
+            "stats.cohortSummary",
+            "stats.cohortWarnings",
+            "stats.cohortWorkflowStatusTotal",
+            "stats.effortSplitRows",
+            "stats.effortSplitSprintLabel",
+            "stats.effortSplitTotals",
+            "stats.effortSplitVisibleBuckets",
+            "stats.excludedCapacityChartMode",
+            "stats.excludedCapacityData",
+            "stats.excludedCapacityEffectiveFilters",
+            "stats.excludedCapacityEndSprintId",
+            "stats.excludedCapacityEpicCatalog",
+            "stats.excludedCapacityEpicDropdownOpen",
+            "stats.excludedCapacityEpicDropdownRef",
+            "stats.excludedCapacityEpicOptions",
+            "stats.excludedCapacityError",
+            "stats.excludedCapacityFilterLabel",
+            "stats.excludedCapacityIsolatedTeam",
+            "stats.excludedCapacityLineSeries",
+            "stats.excludedCapacityLoading",
+            "stats.excludedCapacityMetric",
+            "stats.excludedCapacityModeOverall",
+            "stats.excludedCapacityModeSprintRows",
+            "stats.excludedCapacityModeTeamLineSeries",
+            "stats.excludedCapacityRows",
+            "stats.excludedCapacitySprintOptions",
+            "stats.excludedCapacitySprintRange",
+            "stats.excludedCapacityStartSprintId",
+            "stats.excludedCapacityWarnings",
+            "stats.formatBurndownValue",
+            "stats.formatExcludedPoints",
+            "stats.priorityRadar",
+            "stats.priorityRows",
+            "stats.projectTrackBreakdown",
+            "stats.projectTrackCapacitySide",
+            "stats.projectTrackColumnSplit",
+            "stats.projectTrackExcludeAdHoc",
+            "stats.projectTrackExcludeExcludedCapacity",
+            "stats.projectTrackMode",
+            "stats.projectTrackPhaseData",
+            "stats.projectTrackPhaseEpics",
+            "stats.projectTrackPhaseError",
+            "stats.projectTrackPhaseLoading",
+            "stats.projectTrackPhaseSummary",
+            "stats.projectTrackRangeLabel",
+            "stats.projectTrackSeries",
+            "stats.projectTrackTotals",
+            "stats.selectAllExcludedCapacityEpics",
+            "stats.setBurndownMetric",
+            "stats.setBurnoutAssigneeFilter",
+            "stats.setCohortAssigneeFilter",
+            "stats.setCohortEndQuarter",
+            "stats.setCohortExcludeAdHoc",
+            "stats.setCohortExcludeCapacity",
+            "stats.setCohortGroupBy",
+            "stats.setCohortProjectFilter",
+            "stats.setCohortSelectedRow",
+            "stats.setCohortStartQuarter",
+            "stats.setCohortStatusToggles",
+            "stats.setExcludedCapacityChartMode",
+            "stats.setExcludedCapacityEndSprintId",
+            "stats.setExcludedCapacityEpicDropdownOpen",
+            "stats.setExcludedCapacityIsolatedTeam",
+            "stats.setExcludedCapacityMetric",
+            "stats.setExcludedCapacityStartSprintId",
+            "stats.setProjectTrackCapacitySide",
+            "stats.setProjectTrackExcludeAdHoc",
+            "stats.setProjectTrackExcludeExcludedCapacity",
+            "stats.setProjectTrackMode",
+            "stats.setStatsGraphMode",
+            "stats.setStatsView",
+            "stats.statsBarColumns",
+            "stats.statsGraphMode",
+            "stats.statsTeamRows",
+            "stats.statsTotals",
+            "stats.statsView",
+            "stats.toggleEffortSplitBucket",
+            "stats.toggleExcludedCapacityEpicKey"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 126,
+          "returnCount": 0,
+          "propCount": 9,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 126,
+          "returnCeiling": 0,
+          "propCeiling": 9,
+          "unresolved": [],
+          "inventory": {
+            "source": "frontend/src/stats/StatsPanel.jsx:21",
+            "sourceDigest": "cb3727cd7e4205a17b86bc2b8576d5658a4a55929b768e2e59f92ebddd4d0617"
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "StatsPanel",
+              "line": 8116,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
           "getters": []
         }
       ]
@@ -16817,20 +16935,20 @@
       "ceiling": 16338
     },
     "stats": {
-      "measured": 1627,
-      "ceiling": 1627
+      "measured": 2529,
+      "ceiling": 2529
     },
     "eng": {
       "measured": 0,
       "ceiling": 0
     },
     "uniqueOwners": {
-      "measured": 23579,
-      "ceiling": 23579
+      "measured": 24481,
+      "ceiling": 24481
     },
     "appPlusOwners": {
-      "measured": 33136,
-      "ceiling": 33136
+      "measured": 33391,
+      "ceiling": 33391
     }
   },
   "transfer": {

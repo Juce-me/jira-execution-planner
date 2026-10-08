@@ -307,8 +307,9 @@ class LoadPerformanceTests(unittest.TestCase):
         older['cacheState'] = 'miss'
         newer = board_observation(700)
         newer['cacheState'] = 'hit'
-        self.save(older, now=datetime(2026, 9, 8, 10, 0, tzinfo=timezone.utc))
-        self.save(newer, now=datetime(2026, 9, 8, 10, 1, tzinfo=timezone.utc))
+        now = datetime.now(timezone.utc)
+        self.save(older, now=now - timedelta(minutes=1))
+        self.save(newer, now=now)
         report = performance.load_report(
             self.session, 'workspace-a', {'surface': 'eng_board', 'cacheState': 'miss'},
             limit=1, environment='local',

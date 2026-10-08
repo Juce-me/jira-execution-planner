@@ -18,13 +18,17 @@ function effectiveOptions(mode) {
         loader: { '.css': 'empty' }, define: { 'process.env.NODE_ENV': JSON.stringify(mode) },
     };
 }
+// Only files esbuild bundles may shape the build ID. CSS is loaded empty; hidden and editor files
+// (.DS_Store, swap and lock files) differ per machine and must not make a local dist differ from CI's.
+const BUNDLED_EXTENSIONS = new Set(['.js', '.jsx', '.mjs', '.json']);
 function capture(root, mode) {
     const files = new Map();
     function visit(relative) {
         for (const entry of fs.readdirSync(path.join(root, relative), { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+            if (entry.name.startsWith('.')) continue;
             const name = `${relative}/${entry.name}`;
             if (entry.isDirectory()) visit(name);
-            else if (entry.isFile()) files.set(name, fs.readFileSync(path.join(root, name)));
+            else if (entry.isFile()) { if (BUNDLED_EXTENSIONS.has(path.extname(entry.name))) files.set(name, fs.readFileSync(path.join(root, name))); }
             else throw new Error(`Unsupported frontend source entry: ${name}`);
         }
     }
@@ -43,10 +47,10 @@ function snapshotPlugin(root, snapshot) {
     return { name: 'immutable-frontend-snapshot', setup(api) {
         api.onLoad({ filter: /./ }, args => {
             if (!args.path.startsWith(sourceRoot)) return;
-            const relative = slash(path.relative(root, args.path));
-            if (!snapshot.files.has(relative)) throw new Error(`Frontend source absent from build snapshot: ${relative}`);
             const extension = path.extname(args.path).slice(1);
             if (extension === 'css') return { contents: '', loader: 'empty' };
+            const relative = slash(path.relative(root, args.path));
+            if (!snapshot.files.has(relative)) throw new Error(`Frontend source absent from build snapshot: ${relative}`);
             const loader = { js: 'js', jsx: 'jsx', mjs: 'js', json: 'json' }[extension];
             if (!loader) throw new Error(`Unsupported frontend snapshot loader: ${relative}`);
             return { contents: snapshot.files.get(relative), loader, resolveDir: path.dirname(args.path) };
@@ -63,7 +67,7 @@ function outputsFor(root, snapshot, result) {
         const [name, info] = matches[0];
         const relative = slash(path.relative(dist, path.resolve(root, name)));
         const stem = path.basename(entry, '.jsx');
-        if (!new RegExp(`^chunks/${stem}-[A-Z0-9]+\\.js$`).test(relative) || !info.exports.includes(exportName) || !outputs.has(relative)) throw new Error(`Invalid dynamic output for ${entry}`);
+        if (!new RegExp(`^chunks/${stem}-[A-Z0-9]{8}\\.js$`).test(relative) || !info.exports.includes(exportName) || !outputs.has(relative)) throw new Error(`Invalid dynamic output for ${entry}`);
         manifest.views[id] = { path: relative, exportName };
     }
     outputs.set(`lazy-views-${snapshot.buildId}.json`, Buffer.from(JSON.stringify(manifest, null, 2) + '\n'));

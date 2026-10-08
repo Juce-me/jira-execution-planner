@@ -49,6 +49,23 @@ test('split CLI is deterministic, fingerprints lazy edits, cleans stale files an
     put('frontend/src/stats/StatsPanel.jsx', 'export default !!!');
     assert.notEqual(cli(root).status, 0); assert.deepEqual(bytes(root), second);
 });
+test('build ID covers bundled sources only, not editor debris, hidden files or CSS', t => {
+    const { root, put } = fixture(t);
+    const run = () => { const result = cli(root); assert.equal(result.status, 0, result.stderr); };
+    put('frontend/src/dashboard.jsx', `${fs.readFileSync(path.join(root, 'frontend/src/dashboard.jsx'), 'utf8')}\nimport './styles/shell.css';`);
+    put('frontend/src/styles/shell.css', '.a { color: red; }');
+    run();
+    const first = bytes(root);
+    put('frontend/src/styles/shell.css', '.a { color: blue; }');
+    put('frontend/src/.DS_Store', 'finder'); put('frontend/src/stats/.StatsPanel.jsx.swp', 'swap');
+    put('frontend/src/stats/StatsPanel.jsx~', 'backup'); put('frontend/src/notes.md', 'notes');
+    fs.symlinkSync('missing-target', path.join(root, 'frontend/src/.#StatsPanel.jsx'));
+    run();
+    assert.deepEqual(bytes(root), first);
+    put('frontend/src/stats/StatsPanel.jsx', 'export default "stats-two";');
+    run();
+    assert.notDeepEqual(bytes(root), first);
+});
 test('coordinator serializes rebuilds, discards stale snapshots and distinguishes modes', async t => {
     const { root, put } = fixture(t);
     const { createBuildCoordinator } = await import(pathToFileURL(helper));

@@ -162,14 +162,14 @@ test('settings modal shell and tab bodies are extracted while dashboard keeps se
     assert.ok(fs.existsSync(settingsModalPath), 'Expected extracted SettingsModal shell component');
     assert.ok(settingsModalSource.includes('export default function SettingsModal'), 'Expected SettingsModal default component export');
     assert.ok(settingsModalContainerSource.includes("import SettingsModal from './SettingsModal.jsx';"), 'Expected the container to import the extracted SettingsModal shell');
-    assert.ok(dashboardSource.includes("import SettingsModalContainer from './settings/SettingsModalContainer.jsx';") && !dashboardSource.includes("import SettingsModal from './settings/SettingsModal.jsx';"), 'Expected dashboard to reach the SettingsModal shell only through its container');
+    assert.ok(dashboardSource.includes("initialLoad: () => import('./settings/SettingsModalContainer.jsx')") && !dashboardSource.includes("import SettingsModal from './settings/SettingsModal.jsx';"), 'Expected dashboard to reach the SettingsModal shell only through its container');
     assert.ok(containerCallSource.includes('<SettingsModalContainer') && !/useState\(|useEffect\(|useRef\(|useMemo\(|useCallback\(/.test(settingsModalContainerSource), 'SettingsModalContainer must stay stateless');
     assert.deepStrictEqual(
         extractJsxAttributeNames(containerCallSource),
         extractParameterDestructureProps(settingsModalContainerSource).filter((name) => name !== 'children'),
         'Expected the props dashboard passes to SettingsModalContainer to match the props it destructures exactly'
     );
-    assert.ok(/\{showGroupManage && \(\s*<SettingsModalContainer/.test(dashboardSource), 'Expected the open-state conditional to stay in dashboard so closed Settings build no tab bodies');
+    assert.ok(/\{showGroupManage && \(\s*<LazyViewBoundary load=\{loadSettingsView\} fallback=\{settingsLoadingFallback\}>\s*\{SettingsModalContainer => <SettingsModalContainer/.test(dashboardSource), 'Expected the open-state conditional to stay in dashboard so closed Settings build no tab bodies');
     assert.ok(settingsModalCallSource.includes('activeTab={activeSettingsModalTab}'), 'Expected dashboard to pass grouped active settings tab into SettingsModal');
     assert.ok(settingsModalCallSource.includes('tabs={settingsModalTabs}'), 'Expected dashboard to pass tab descriptors into SettingsModal');
     assert.ok(settingsModalCallSource.includes("isDirty={groupManageTab !== 'connections' && isGroupDraftDirty}"), 'Expected dashboard to pass dirty state into SettingsModal');

@@ -413,6 +413,8 @@ test('ScenarioView module exports only ScenarioView, which destructures exactly 
 
     // The dashboard passes exactly those five props, each under its own name.
     const dashboard = fs.readFileSync(dashboardPath, 'utf8');
+    assert.match(dashboard, /const loadScenarioView = createLazyViewLoader\(\{ viewId: 'scenario',[\s\S]*?initialLoad: \(\) => import\('\.\/scenario\/ScenarioView\.jsx'\)\.then\([\s\S]*?module => \(\{ default: module\.ScenarioView \}\)\)/);
+    assert.match(dashboard, /<LazyViewBoundary load=\{loadScenarioView\} fallback=\{scenarioLoadingFallback\}>\s*\{ScenarioView => <ScenarioView/);
     const callsites = [...dashboard.matchAll(/<ScenarioView\b([\s\S]*?)\/>/g)];
     assert.equal(callsites.length, 1);
     assert.deepEqual([...callsites[0][1].matchAll(/(\w+)=\{(\w+)\}/g)].map(([, prop, value]) => [prop, value]),

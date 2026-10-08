@@ -955,3 +955,5 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
         </div>
     );
 }
+
+export default StatsPanel;

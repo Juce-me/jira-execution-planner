@@ -3737,7 +3737,7 @@ test('Statistics preserves per-mode cold-load request contracts and cached reope
         const context = await browser.newContext();
         const page = await context.newPage();
         const calls = [];
-        await installApiMocks(page, calls, { excludedCapacityEpics: ['BAU-EPIC'] });
+        await installApiMocks(page, calls, { excludedCapacityEpics: ['BAU-EPIC'], useCommittedDist: true });
         await seedStatsContractPrefs(page, { showStats: !['catch-up', 'planning'].includes(mode),
             showPlanning: mode === 'planning', statsView: ['catch-up', 'planning'].includes(mode) ? 'teams' : mode });
         await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
@@ -3764,7 +3764,7 @@ test('Statistics preserves analytics event contracts', async ({ page }) => {
     // duration_bucket contract without depending on browser/host scheduling delays.
     await page.addInitScript(() => Object.defineProperty(performance, 'now', { value: () => 100 }));
     const calls = [];
-    await installApiMocks(page, calls, { authMode: 'basic', analyticsContext: { enabled: true }, excludedCapacityEpics: ['BAU-EPIC'] });
+    await installApiMocks(page, calls, { useCommittedDist: true, authMode: 'basic', analyticsContext: { enabled: true }, excludedCapacityEpics: ['BAU-EPIC'] });
     await seedStatsContractPrefs(page);
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
     await settleContract(page);
@@ -5486,4 +5486,169 @@ test('Statistics shared scope preserves identity across mounted renders', async 
     expect(await page.evaluate(() => Object.keys(window.__ENG_SCOPE_PROBE__))).toEqual(names);
     expect(await initial.evaluate(scope => Object.keys(scope).filter(name => name !== 'selectedSprint').every(name => window.__ENG_SCOPE_PROBE__[name] === scope[name]))).toBe(true);
     await initial.dispose();
+});
+
+function lazyManifest() {
+    const dist = path.join(repoRoot, 'frontend/dist');
+    const files = fs.readdirSync(dist).filter(name => /^lazy-views-[a-f0-9]{64}\.json$/.test(name));
+    expect(files).toHaveLength(1);
+    return JSON.parse(fs.readFileSync(path.join(dist, files[0]), 'utf8'));
+}
+async function installLazyStatsProbe(page, { abortRetry = false, mutateManifest } = {}) {
+    const manifest = lazyManifest();
+    const requests = { chunks: [], manifests: [], documents: [] };
+    page.on('request', request => {
+        const url = new URL(request.url());
+        if (request.isNavigationRequest() && request.frame() === page.mainFrame()) requests.documents.push(url.pathname);
+    });
+    await page.route(`**/frontend/dist/${manifest.views.stats.path}*`, async route => {
+        const url = new URL(route.request().url()); requests.chunks.push(url.href);
+        if (!url.searchParams.has('jep_retry') || abortRetry) return route.abort('failed');
+        return route.fallback();
+    });
+    await page.route('**/frontend/dist/lazy-views-*.json', async route => {
+        requests.manifests.push(route.request().url());
+        if (!mutateManifest) return route.fallback();
+        const changed = JSON.parse(JSON.stringify(manifest)); mutateManifest(changed);
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(changed) });
+    });
+    return { manifest, requests };
+}
+
+test('Statistics lazy Retry refetches its chunk after one abort', async ({ page }, testInfo) => {
+    const calls = [];
+    await installApiMocks(page, calls, { useCommittedDist: true });
+    await seedStatsContractPrefs(page, { showStats: false });
+    const { requests, manifest } = await installLazyStatsProbe(page);
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'Filter teams', exact: true }).click();
+    await page.locator('.team-dropdown-panel').getByLabel('Alpha Team', { exact: true }).check();
+    await page.getByRole('textbox', { name: 'Filter teams', exact: true }).press('Escape');
+    await expect(page.locator('.team-dropdown-selection-label').first()).toHaveText('Alpha Team');
+    await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Statistics', exact: true }).click();
+    await page.addStyleTag({ content: '* { transition: none !important; animation: none !important; }' });
+    const retry = page.getByRole('button', { name: 'Retry', exact: true });
+    await retry.hover();
+    const hover = await retry.evaluate(node => {
+        const style = getComputedStyle(node);
+        return { color: style.color, background: style.backgroundColor };
+    });
+    expect(hover.color).not.toBe(hover.background);
+    await testInfo.attach('lazy-retry-before', { body: await page.screenshot({ path: `${screenshotDir}/lazy-retry-before.png` }), contentType: 'image/png' });
+    await retry.click();
+    await expect(page.locator('.stats-panel.open .stats-view-toggle')).toBeVisible();
+    await testInfo.attach('lazy-retry-after', { body: await page.screenshot({ path: `${screenshotDir}/lazy-retry-after.png` }), contentType: 'image/png' });
+    expect(requests.chunks).toHaveLength(2);
+    expect(new URL(requests.chunks[0]).search).toBe('');
+    expect(new URL(requests.chunks[1]).searchParams.get('jep_retry')).toBe('1');
+    expect(requests.manifests).toEqual([`${appBaseUrl}/frontend/dist/lazy-views-${manifest.buildId}.json`]);
+    await expect(page.locator('.team-dropdown-selection-label').first()).toHaveText('Alpha Team');
+    const modes = page.locator('.view-selector .eng-mode-control');
+    await modes.getByRole('radio', { name: 'Catch Up', exact: true }).click();
+    await modes.getByRole('radio', { name: 'Statistics', exact: true }).click();
+    await expect(page.locator('.stats-panel.open')).toBeVisible();
+    expect(requests.chunks).toHaveLength(2);
+    await page.getByRole('button', { name: 'Filter teams', exact: true }).click();
+    await expect(page.locator('.team-dropdown-panel').getByLabel('Alpha Team', { exact: true })).toBeChecked();
+});
+
+test('Statistics lazy failure twice offers reload guidance', async ({ page }) => {
+    await installApiMocks(page, [], { useCommittedDist: true });
+    await seedStatsContractPrefs(page);
+    const { requests } = await installLazyStatsProbe(page, { abortRetry: true });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'Retry', exact: true }).click();
+    await expect(page.getByRole('alert')).toHaveText('Reload the page to get the latest version');
+    await settleContract(page);
+    expect(requests.chunks).toHaveLength(2);
+    expect(requests.manifests).toHaveLength(1);
+    expect(requests.documents).toEqual(['/']);
+    await expect(page.getByRole('button', { name: 'Retry', exact: true })).toHaveCount(0);
+});
+
+for (const [name, mutateManifest] of [
+    ['rejects a different build manifest', manifest => { manifest.buildId = 'b'.repeat(64); manifest.views.stats.path = 'chunks/StatsPanel-NEWBUILD.js'; }],
+    ['rejects a malformed manifest', manifest => { manifest.schemaVersion = 2; }],
+    ['rejects a path traversal manifest', manifest => { manifest.views.stats.path = 'chunks/../StatsPanel-NEWBUILD.js'; }],
+]) test(`Statistics lazy recovery ${name}`, async ({ page }) => {
+    await installApiMocks(page, [], { useCommittedDist: true });
+    await seedStatsContractPrefs(page);
+    const { requests } = await installLazyStatsProbe(page, { mutateManifest });
+    const graphs = [];
+    page.on('request', request => { if (/StatsPanel.*\.js/.test(request.url())) graphs.push(request.url()); });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'Retry', exact: true }).click();
+    await expect(page.getByRole('alert')).toHaveText('Reload the page to get the latest version');
+    expect(graphs).toHaveLength(1);
+    expect(requests.manifests).toHaveLength(1);
+    expect(requests.documents).toEqual(['/']);
+});
+
+test('Statistics lazy failure preserves terminal root auth lock', async ({ page }) => {
+    await installApiMocks(page, [], { useCommittedDist: true, authMode: 'basic' });
+    await seedStatsContractPrefs(page);
+    const { requests } = await installLazyStatsProbe(page);
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await expect(page.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
+    await page.route('**/api/analytics/context', route => route.fulfill({ status: 401,
+        contentType: 'application/json', body: JSON.stringify({ error: 'auth_required', loginUrl: '/login?reason=session_expired' }) }));
+    await page.evaluate(() => window.JepAnalytics.refreshAnalyticsContext().catch(() => null));
+    await expect(page.getByRole('alertdialog')).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Sign in again' })).toBeVisible();
+    expect(await page.getByRole('button', { name: 'Retry', exact: true }).count()).toBe(0);
+    expect(requests.chunks).toHaveLength(1);
+    expect(requests.manifests).toHaveLength(0);
+});
+
+test('Statistics lazy Burndown mounts after data and scrolls to today', async ({ page }) => {
+    const calls = [];
+    await page.clock.setFixedTime(new Date('2026-04-10T12:00:00Z'));
+    await installApiMocks(page, calls, { useCommittedDist: true });
+    await seedStatsContractPrefs(page, { statsView: 'burnout' });
+    await page.addInitScript(() => {
+        const install = () => {
+            const style = document.createElement('style');
+            style.textContent = '.burnout-chart { width: 300px !important; overflow-x: auto !important; } .burnout-chart .burnout-area-chart { width: 1600px !important; min-width: 1600px !important; }';
+            document.head.append(style);
+        };
+        if (document.head) install(); else document.addEventListener('DOMContentLoaded', install, { once: true });
+    });
+    const gate = createDeferred();
+    const manifest = lazyManifest();
+    await page.route(`**/frontend/dist/${manifest.views.stats.path}`, async route => { await gate.promise; await route.fallback(); });
+    const response = page.waitForResponse(response => response.url().includes('/api/stats/burnout') && response.status() === 200);
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await (await response).finished();
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await expect(page.locator('.burnout-chart')).toHaveCount(0);
+    await expect(page.getByText('Loading Statistics…', { exact: true })).toBeVisible();
+    gate.resolve();
+    const chart = page.locator('.stats-view.open .burnout-chart');
+    await expect(chart).toBeVisible();
+    await expect.poll(() => chart.evaluate(node => node.scrollLeft)).toBeGreaterThan(0);
+    const geometry = await chart.evaluate(node => {
+        const todayX = Number(node.querySelector('.burnout-today-line').getAttribute('x1'));
+        return { scroll: node.scrollLeft, width: node.clientWidth, total: node.scrollWidth,
+            target: Math.min(node.scrollWidth - node.clientWidth, Math.max(0, todayX - node.clientWidth * 0.6)) };
+    });
+    expect(geometry.total).toBeGreaterThan(geometry.width + 2);
+    expect(geometry.target).toBeGreaterThan(0);
+    expect(Math.abs(geometry.scroll - geometry.target)).toBeLessThanOrEqual(1);
+});
+
+test('Statistics lazy sibling Scenario and Settings retain named and default exports', async ({ page }) => {
+    await installApiMocks(page, [], { useCommittedDist: true });
+    await seedStatsContractPrefs(page, { showStats: false });
+    const manifest = lazyManifest();
+    const requested = [];
+    page.on('request', request => { const pathname = new URL(request.url()).pathname; if (pathname.includes('/chunks/')) requested.push(pathname); });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    for (const view of Object.values(manifest.views)) expect(requested).not.toContain(`/frontend/dist/${view.path}`);
+    await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Scenario', exact: true }).click();
+    await expect(page.locator('.scenario-title', { hasText: 'Scenario Planner' })).toBeVisible();
+    expect(requested).toContain(`/frontend/dist/${manifest.views.scenario.path}`);
+    await page.getByRole('button', { name: 'Manage team groups', exact: true }).click();
+    await expect(page.locator('.group-modal')).toBeVisible();
+    expect(requested).toContain(`/frontend/dist/${manifest.views.settings.path}`);
+    expect(requested).not.toContain(`/frontend/dist/${manifest.views.stats.path}`);
 });

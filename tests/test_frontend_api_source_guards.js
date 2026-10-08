@@ -205,12 +205,59 @@ test('frontend API endpoint literals live in api modules or approved transitiona
     assert.deepEqual(violations, []);
 });
 
+const lazyLoaderOwner = 'frontend/src/components/lazyViewLoaders.js';
+const mountedManifestFetch = "fetch(manifestUrl.href, { cache: 'no-store' })";
+
+function withoutMountedManifestFetch(source) {
+    for (const pin of [
+        'export function validateLazyViewManifest(manifest, buildId)',
+        'export function createLazyViewLoader({ viewId, initialLoad })',
+        'async function loadMountedManifest()',
+        "const mountedBuildId = typeof __JEP_DASHBOARD_BUILD_ID__ === 'string' ? __JEP_DASHBOARD_BUILD_ID__ : 'source-probe';",
+        "document.getElementById('dashboard-entry')",
+        'if (!script || !/^[a-f0-9]{64}$/.test(mountedBuildId)) throw staleBuild();',
+        'const entryUrl = new URL(script.src, document.baseURI);',
+        'if (entryUrl.origin !== window.location.origin) throw staleBuild();',
+        'const manifestUrl = new URL(`lazy-views-${mountedBuildId}.json`, entryUrl);',
+        'manifest.schemaVersion !== 1 || manifest.buildId !== buildId',
+        'manifest = validateLazyViewManifest(await response.json(), mountedBuildId);',
+        'if (url.origin !== entryUrl.origin) throw staleBuild();',
+    ]) {
+        assert.ok(source.includes(pin), `Mounted static manifest contract is missing: ${pin}`);
+    }
+    assert.doesNotMatch(source, /\/api\//, 'Lazy asset recovery must not own application API endpoints');
+    assert.equal(source.split(mountedManifestFetch).length - 1, 1, 'Expected exactly one approved static manifest fetch');
+    const remainingSource = source.replace(mountedManifestFetch, '');
+    assert.doesNotMatch(remainingSource, /\bfetch\s*\(/, 'Lazy asset recovery must not add native fetch calls');
+    return remainingSource;
+}
+
 test('native application API fetch is owned only by the shared HTTP boundary', () => {
+    const loaderSource = readOwnerSource([lazyLoaderOwner], { anchor: 'export function validateLazyViewManifest' });
+    const loaderWithoutStaticFetch = withoutMountedManifestFetch(loaderSource);
     const violations = listSourceFiles(frontendSrcPath)
-        .filter((filePath) => readSource(filePath).includes('fetch('))
+        .filter((filePath) => (relativeFile(filePath) === lazyLoaderOwner ? loaderWithoutStaticFetch : readSource(filePath)).includes('fetch('))
         .filter((filePath) => relativeFile(filePath) !== 'frontend/src/api/http.js')
         .map(relativeFile);
     assert.deepEqual(violations, []);
+});
+
+test('static manifest fetch classification rejects extra fetches and changed asset contracts', () => {
+    const source = readOwnerSource([lazyLoaderOwner], { anchor: 'export function createLazyViewLoader' });
+    const mutations = [
+        source + "\nfetch('/unexpected');",
+        source + "\nfetch ('/unexpected');",
+        source + `\n${mountedManifestFetch};`,
+        source.replace(mountedManifestFetch, "fetch(manifestUrl.href, { cache: 'no-cache' })"),
+        source.replace(mountedManifestFetch, "fetch(entryUrl.href, { cache: 'no-store' })"),
+        source + "\nconst endpoint = '/api/example';",
+        source.replace('lazy-views-${mountedBuildId}.json', 'lazy-views-latest.json'),
+        source.replace('if (entryUrl.origin !== window.location.origin) throw staleBuild();', ''),
+        source.replace('manifest.schemaVersion !== 1 || manifest.buildId !== buildId', 'manifest.schemaVersion !== 1'),
+    ];
+    for (const mutatedSource of mutations) {
+        assert.throws(() => withoutMountedManifestFetch(mutatedSource), assert.AssertionError);
+    }
 });
 
 test('ENG startup uses cached task data unless the user explicitly refreshes', () => {

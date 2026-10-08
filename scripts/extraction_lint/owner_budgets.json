@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "baseSha": "46aa831ae82a60615ec784f2a41433d64d0bb242",
-  "checkpointId": "dashboard-decomposition-Task7",
+  "baseSha": "e745f60124e7cd1ed7bf3c67c587924bac5dbce2",
+  "checkpointId": "dashboard-decomposition-Task8",
   "sourceRoot": "frontend/src",
   "ownerRoots": [
     "scenario",
@@ -19,8 +19,8 @@
   },
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
-    "lineCount": 7600,
-    "lineCeiling": 7600
+    "lineCount": 7616,
+    "lineCeiling": 7616
   },
   "modules": [
     {
@@ -1953,14 +1953,7 @@
             "sourceDigest": "2328cf99565e795c64b58c4d78b3b0d7193d9b6984bdaad807653b346ab7d7b3",
             "rationale": "SC4 checkpoint (frozen from the current-base scratch dry run before R4a; reported to the operator with the R4a commit)."
           },
-          "callers": [
-            {
-              "path": "frontend/src/dashboard.jsx",
-              "symbol": "ScenarioView",
-              "line": 10190,
-              "phase": "render"
-            }
-          ],
+          "callers": [],
           "remainingAppReaders": [],
           "getters": []
         }
@@ -13700,14 +13693,7 @@
             ],
             "rationale": "groupConfigValidationErrors is spread into the validationMessages array (an array of strings, not a dependency bag); groupManageTab is a string and groupsConfigConflict and workspaceConfigConflict are plain data objects forwarded to the conflict-message builders. The 34 props are explicit name={name} attributes plus children, evaluated during App's render after their declarations; the container has no hook."
           },
-          "callers": [
-            {
-              "path": "frontend/src/dashboard.jsx",
-              "symbol": "SettingsModalContainer",
-              "line": 10369,
-              "phase": "render"
-            }
-          ],
+          "callers": [],
           "remainingAppReaders": [],
           "getters": []
         }
@@ -16750,10 +16736,11 @@
         "stats"
       ],
       "exports": [
-        "StatsPanel"
+        "StatsPanel",
+        "default"
       ],
-      "lineCount": 957,
-      "lineCeiling": 957,
+      "lineCount": 959,
+      "lineCeiling": 959,
       "interfaces": [
         {
           "exportName": "StatsPanel",
@@ -16911,14 +16898,167 @@
             "source": "frontend/src/stats/StatsPanel.jsx:21",
             "sourceDigest": "cb3727cd7e4205a17b86bc2b8576d5658a4a55929b768e2e59f92ebddd4d0617"
           },
-          "callers": [
-            {
-              "path": "frontend/src/dashboard.jsx",
-              "symbol": "StatsPanel",
-              "line": 8116,
-              "phase": "render"
-            }
+          "callers": [],
+          "remainingAppReaders": [],
+          "getters": []
+        },
+        {
+          "exportName": "default",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "activeGroupMissingComponents",
+            "analytics",
+            "jiraUrl",
+            "links",
+            "onSelectBurnoutTask",
+            "priorityAxis",
+            "resolveStatsTeamColor",
+            "showStats",
+            "stats"
           ],
+          "expandedInputNames": [
+            "activeGroupMissingComponents",
+            "analytics",
+            "analytics.trackStatsAction",
+            "analytics.trackStatsAnalyticsAction",
+            "jiraUrl",
+            "links",
+            "links.buildPriorityStatLink",
+            "links.buildStatLink",
+            "onSelectBurnoutTask",
+            "priorityAxis",
+            "resolveStatsTeamColor",
+            "showStats",
+            "stats",
+            "stats.buildBurnoutTaskFilter",
+            "stats.burndownMetric",
+            "stats.burndownMetricIsStoryPoints",
+            "stats.burnoutAssigneeFilter",
+            "stats.burnoutAssigneeOptions",
+            "stats.burnoutChartModel",
+            "stats.burnoutData",
+            "stats.burnoutError",
+            "stats.burnoutLoading",
+            "stats.burnoutScopedTeamIds",
+            "stats.burnoutTaskFilter",
+            "stats.burnoutTotals",
+            "stats.canRenderStatsPanel",
+            "stats.clearExcludedCapacityEpicSelection",
+            "stats.cohortAssigneeFilter",
+            "stats.cohortAssigneeOptions",
+            "stats.cohortAverageLeadDays",
+            "stats.cohortCompletedBars",
+            "stats.cohortEndQuarter",
+            "stats.cohortError",
+            "stats.cohortExcludeAdHoc",
+            "stats.cohortExcludeCapacity",
+            "stats.cohortGridModel",
+            "stats.cohortGroupBy",
+            "stats.cohortLoading",
+            "stats.cohortMedianLeadDays",
+            "stats.cohortOpenBars",
+            "stats.cohortProjectFilter",
+            "stats.cohortProjectOptions",
+            "stats.cohortQuarterOptions",
+            "stats.cohortSelectedRow",
+            "stats.cohortSelectedRowLabel",
+            "stats.cohortStartQuarter",
+            "stats.cohortStatusControls",
+            "stats.cohortStatusToggles",
+            "stats.cohortSummary",
+            "stats.cohortWarnings",
+            "stats.cohortWorkflowStatusTotal",
+            "stats.effortSplitRows",
+            "stats.effortSplitSprintLabel",
+            "stats.effortSplitTotals",
+            "stats.effortSplitVisibleBuckets",
+            "stats.excludedCapacityChartMode",
+            "stats.excludedCapacityData",
+            "stats.excludedCapacityEffectiveFilters",
+            "stats.excludedCapacityEndSprintId",
+            "stats.excludedCapacityEpicCatalog",
+            "stats.excludedCapacityEpicDropdownOpen",
+            "stats.excludedCapacityEpicDropdownRef",
+            "stats.excludedCapacityEpicOptions",
+            "stats.excludedCapacityError",
+            "stats.excludedCapacityFilterLabel",
+            "stats.excludedCapacityIsolatedTeam",
+            "stats.excludedCapacityLineSeries",
+            "stats.excludedCapacityLoading",
+            "stats.excludedCapacityMetric",
+            "stats.excludedCapacityModeOverall",
+            "stats.excludedCapacityModeSprintRows",
+            "stats.excludedCapacityModeTeamLineSeries",
+            "stats.excludedCapacityRows",
+            "stats.excludedCapacitySprintOptions",
+            "stats.excludedCapacitySprintRange",
+            "stats.excludedCapacityStartSprintId",
+            "stats.excludedCapacityWarnings",
+            "stats.formatBurndownValue",
+            "stats.formatExcludedPoints",
+            "stats.priorityRadar",
+            "stats.priorityRows",
+            "stats.projectTrackBreakdown",
+            "stats.projectTrackCapacitySide",
+            "stats.projectTrackColumnSplit",
+            "stats.projectTrackExcludeAdHoc",
+            "stats.projectTrackExcludeExcludedCapacity",
+            "stats.projectTrackMode",
+            "stats.projectTrackPhaseData",
+            "stats.projectTrackPhaseEpics",
+            "stats.projectTrackPhaseError",
+            "stats.projectTrackPhaseLoading",
+            "stats.projectTrackPhaseSummary",
+            "stats.projectTrackRangeLabel",
+            "stats.projectTrackSeries",
+            "stats.projectTrackTotals",
+            "stats.selectAllExcludedCapacityEpics",
+            "stats.setBurndownMetric",
+            "stats.setBurnoutAssigneeFilter",
+            "stats.setCohortAssigneeFilter",
+            "stats.setCohortEndQuarter",
+            "stats.setCohortExcludeAdHoc",
+            "stats.setCohortExcludeCapacity",
+            "stats.setCohortGroupBy",
+            "stats.setCohortProjectFilter",
+            "stats.setCohortSelectedRow",
+            "stats.setCohortStartQuarter",
+            "stats.setCohortStatusToggles",
+            "stats.setExcludedCapacityChartMode",
+            "stats.setExcludedCapacityEndSprintId",
+            "stats.setExcludedCapacityEpicDropdownOpen",
+            "stats.setExcludedCapacityIsolatedTeam",
+            "stats.setExcludedCapacityMetric",
+            "stats.setExcludedCapacityStartSprintId",
+            "stats.setProjectTrackCapacitySide",
+            "stats.setProjectTrackExcludeAdHoc",
+            "stats.setProjectTrackExcludeExcludedCapacity",
+            "stats.setProjectTrackMode",
+            "stats.setStatsGraphMode",
+            "stats.setStatsView",
+            "stats.statsBarColumns",
+            "stats.statsGraphMode",
+            "stats.statsTeamRows",
+            "stats.statsTotals",
+            "stats.statsView",
+            "stats.toggleEffortSplitBucket",
+            "stats.toggleExcludedCapacityEpicKey"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 126,
+          "returnCount": 0,
+          "propCount": 9,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 126,
+          "returnCeiling": 0,
+          "propCeiling": 9,
+          "unresolved": [],
+          "inventory": {
+            "source": "frontend/src/stats/StatsPanel.jsx:21",
+            "sourceDigest": "9b809ffba6c72084aab78f0c3407ce93fd5fb8d67253be390430e962126dd172"
+          },
+          "callers": [],
           "remainingAppReaders": [],
           "getters": []
         }
@@ -18775,32 +18915,114 @@
           "getters": []
         }
       ]
+    },
+    {
+      "id": "components.LazyViewBoundary",
+      "path": "frontend/src/components/LazyViewBoundary.jsx",
+      "features": [
+        "scenario",
+        "settings",
+        "stats"
+      ],
+      "exports": [
+        "default"
+      ],
+      "lineCount": 30,
+      "lineCeiling": 30,
+      "interfaces": [
+        {
+          "exportName": "default",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "children",
+            "fallback",
+            "load"
+          ],
+          "expandedInputNames": [
+            "children",
+            "fallback",
+            "load"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 3,
+          "returnCount": 0,
+          "propCount": 3,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 3,
+          "returnCeiling": 0,
+          "propCeiling": 3,
+          "unresolved": [],
+          "inventory": {
+            "source": "frontend/src/components/LazyViewBoundary.jsx:22",
+            "sourceDigest": "0ed90c8ba34cb44b92411be46fa231b7f12440fc5d452030c1184a4ee2b742ad"
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "LazyViewBoundary",
+              "line": 6816,
+              "phase": "render"
+            },
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "LazyViewBoundary",
+              "line": 6946,
+              "phase": "render"
+            },
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "LazyViewBoundary",
+              "line": 7127,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "components.lazyViewLoaders",
+      "path": "frontend/src/components/lazyViewLoaders.js",
+      "features": [
+        "scenario",
+        "settings",
+        "stats"
+      ],
+      "exports": [
+        "createLazyViewLoader",
+        "validateLazyViewManifest"
+      ],
+      "lineCount": 71,
+      "lineCeiling": 71,
+      "interfaces": []
     }
   ],
   "aggregates": {
     "scenario": {
-      "measured": 5614,
-      "ceiling": 5614
+      "measured": 5715,
+      "ceiling": 5715
     },
     "settings": {
-      "measured": 16338,
-      "ceiling": 16338
+      "measured": 16439,
+      "ceiling": 16439
     },
     "stats": {
-      "measured": 2529,
-      "ceiling": 2529
+      "measured": 2632,
+      "ceiling": 2632
     },
     "eng": {
       "measured": 1752,
       "ceiling": 1752
     },
     "uniqueOwners": {
-      "measured": 26233,
-      "ceiling": 26233
+      "measured": 26336,
+      "ceiling": 26336
     },
     "appPlusOwners": {
-      "measured": 33833,
-      "ceiling": 33833
+      "measured": 33952,
+      "ceiling": 33952
     }
   },
   "transfer": {

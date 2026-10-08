@@ -1,7 +1,8 @@
 import { useEngScope } from './eng/useEngScope.js';
 import { SearchControl, ViewSwitch, SprintControl, GroupControl, TeamControl } from './eng/EngControls.jsx';
 import { EpicBlock } from './eng/EpicBlock.jsx';
-import { StatsPanel } from './stats/StatsPanel.jsx';
+import LazyViewBoundary from './components/LazyViewBoundary.jsx';
+import { createLazyViewLoader } from './components/lazyViewLoaders.js';
 import { useStatsDerivedA, useStatsDerivedB, useStatsDerivedC } from './stats/useStatsData.js';
 import { useStatsState } from './stats/useStatsState.js';
 import { buildDefaultStatsGroupState, snapshotStatsGroupState, applyStatsGroupState, resetStatsTransientRefs } from './stats/statsGroupState.js';
@@ -13,7 +14,6 @@ import { createRoot } from 'react-dom/client';
 import './styles/dashboard.css';
 import { normalizeScenarioDraftOverrides } from './scenario/scenarioDraftOverrides.js';
 
-import { ScenarioView } from './scenario/ScenarioView.jsx';
 
 import IconButton from './ui/IconButton.jsx';
 import EmptyState from './ui/EmptyState.jsx';
@@ -132,7 +132,6 @@ import { EpmControls } from './epm/EpmControls.jsx';
 import EpmProjectCollapseAllButton from './epm/EpmProjectCollapseAllButton.jsx';
 import { EpmView } from './epm/EpmView.jsx';
 import EpmSettingsTab from './epm/EpmSettingsTab.jsx';
-import SettingsModalContainer from './settings/SettingsModalContainer.jsx';
 import DepartmentsSettingsTab from './settings/DepartmentsSettingsTab.jsx';
 import { createSettingsDraftReadGuard, useSettingsConfigBaselineRevision } from './settings/settingsConfigReadState.js';
 import { useSettingsPermissions } from './settings/useSettingsPermissions.js';
@@ -178,6 +177,17 @@ import {
     selectedTeamSelectionsEqual
 } from './teamSelectionUtils.mjs';
 import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTasks, normalizeJiraExportKeys, openJiraIssueSearch } from './jiraExportUtils.mjs';
+
+const loadStatsView = createLazyViewLoader({ viewId: 'stats',
+    initialLoad: () => import('./stats/StatsPanel.jsx') });
+const loadScenarioView = createLazyViewLoader({ viewId: 'scenario',
+    initialLoad: () => import('./scenario/ScenarioView.jsx').then(
+        module => ({ default: module.ScenarioView })) });
+const loadSettingsView = createLazyViewLoader({ viewId: 'settings',
+    initialLoad: () => import('./settings/SettingsModalContainer.jsx') });
+const statsLoadingFallback = <div className="stats-note">Loading Statistics…</div>;
+const scenarioLoadingFallback = <div className="stats-note">Loading Scenario…</div>;
+const settingsLoadingFallback = <div className="stats-note">Loading Settings…</div>;
 
         const { useState, useEffect, useRef } = React;
         const EMPTY_ARRAY = Object.freeze([]);
@@ -6803,7 +6813,8 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                     )}
 
                     {selectedView === 'eng' && showStats && engWorkspaceConfigured && (
-                    <StatsPanel
+                    <LazyViewBoundary load={loadStatsView} fallback={statsLoadingFallback}>
+                    {StatsPanel => <StatsPanel
                         stats={{
                             canRenderStatsPanel,
                             statsView,
@@ -6927,17 +6938,20 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                         activeGroupMissingComponents={activeGroupMissingComponents}
                         priorityAxis={priorityAxis}
                         resolveStatsTeamColor={resolveStatsTeamColor}
-                    />
+                    />}
+                    </LazyViewBoundary>
                     )}
 
                     {selectedView === 'eng' && showScenario && engWorkspaceConfigured && (
-                        <ScenarioView
+                        <LazyViewBoundary load={loadScenarioView} fallback={scenarioLoadingFallback}>
+                        {ScenarioView => <ScenarioView
                             scenario={scenario}
                             scenarioState={scenarioState}
                             selectedSprint={selectedSprint}
                             normalizeEpicKey={normalizeEpicKey}
                             excludedEpicSet={excludedEpicSet}
-                        />
+                        />}
+                        </LazyViewBoundary>
                     )}
 
                     {selectedView === 'eng' && showBoard && engWorkspaceConfigured && (
@@ -7110,7 +7124,8 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                     )}
 
                     {showGroupManage && (
-                        <SettingsModalContainer
+                        <LazyViewBoundary load={loadSettingsView} fallback={settingsLoadingFallback}>
+                        {SettingsModalContainer => <SettingsModalContainer
                             activeSettingsModalTab={activeSettingsModalTab}
                             canEditEpmConfiguration={canEditEpmConfiguration}
                             cancelFirstRunConfiguration={cancelFirstRunConfiguration}
@@ -7524,7 +7539,8 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                                     visibleGroupDraftIds={visibleGroupDraftIds}
                                 />
                                 )}
-                        </SettingsModalContainer>
+                        </SettingsModalContainer>}
+                        </LazyViewBoundary>
                     )}
                     {groupPreferences.onboardingRequired && !showGroupManage && (
                         <FirstRunConfigurationContainer

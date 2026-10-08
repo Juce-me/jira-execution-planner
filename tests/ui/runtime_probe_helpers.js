@@ -36,4 +36,39 @@ async function readAppRenderCount(page) {
     return page.evaluate(() => window.__JEP_EXTRACTION_PERF__().renders);
 }
 
-module.exports = { buildRuntimeProbeBundle, readAppRenderCount };
+// Separate synthetic mounted fixture: no dashboard imports or production adapters.
+function buildEngScopeProbeBundle() {
+    return esbuild.buildSync({
+        stdin: {
+            contents: `
+                import * as React from 'react';
+                import { createRoot } from 'react-dom/client';
+                import { useEngScope } from './frontend/src/eng/useEngScope.js';
+                const stable = {
+                    activeGroupId: 'group-a', selectedSprintInfo: { name: 'Sprint A' },
+                    isAllTeamsSelected: false, selectedTeamSet: new Set(['team-a']),
+                    teamNameById: new Map([['team-a', 'Team A']]), teamOptions: [{ id: 'team-a', name: 'Team A' }],
+                    capacityTasks: [{ key: 'SYNTHETIC-1' }], techProjectKeys: new Set(['SYNTHETIC']),
+                    excludedEpicSet: new Set(['SYNTHETIC-2']), adHocEpicSet: new Set(['SYNTHETIC-3']),
+                    adHocEpicSignature: 'SYNTHETIC-3', speculativeMember: 'must not escape',
+                };
+                function Probe() {
+                    const [unrelated, setUnrelated] = React.useState(0);
+                    const [selectedSprint, setSelectedSprint] = React.useState('sprint-a');
+                    const scope = useEngScope({ ...stable, selectedSprint });
+                    React.useLayoutEffect(() => { window.__ENG_SCOPE_PROBE__ = scope; });
+                    return React.createElement('div', null,
+                        React.createElement('button', { onClick: () => setUnrelated(value => value + 1) }, 'Unrelated ' + unrelated),
+                        React.createElement('button', { onClick: () => setSelectedSprint('sprint-b') }, 'Change sprint'),
+                        React.createElement('span', null, selectedSprint));
+                }
+                createRoot(document.getElementById('root')).render(React.createElement(Probe));
+            `,
+            resolveDir: repoRoot, sourcefile: 'eng-scope-probe.js', loader: 'js',
+        },
+        bundle: true, write: false, format: 'iife',
+        define: { 'process.env.NODE_ENV': '"test"' },
+    }).outputFiles[0].text;
+}
+
+module.exports = { buildRuntimeProbeBundle, readAppRenderCount, buildEngScopeProbeBundle };

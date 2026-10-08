@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "baseSha": "a29d657f80e459e8f5ab4398bbb98ae29f65e6dc",
-  "checkpointId": "dashboard-decomposition-Task6",
+  "baseSha": "46aa831ae82a60615ec784f2a41433d64d0bb242",
+  "checkpointId": "dashboard-decomposition-Task7",
   "sourceRoot": "frontend/src",
   "ownerRoots": [
     "scenario",
@@ -19,8 +19,8 @@
   },
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
-    "lineCount": 7599,
-    "lineCeiling": 7599
+    "lineCount": 7600,
+    "lineCeiling": 7600
   },
   "modules": [
     {
@@ -18648,6 +18648,133 @@
           "getters": []
         }
       ]
+    },
+    {
+      "id": "eng.useEngScope",
+      "path": "frontend/src/eng/useEngScope.js",
+      "features": [
+        "eng"
+      ],
+      "exports": [
+        "useEngScope"
+      ],
+      "lineCount": 9,
+      "lineCeiling": 9,
+      "interfaces": [
+        {
+          "exportName": "useEngScope",
+          "inputNames": [
+            "activeGroupId",
+            "adHocEpicSet",
+            "adHocEpicSignature",
+            "capacityTasks",
+            "excludedEpicSet",
+            "isAllTeamsSelected",
+            "selectedSprint",
+            "selectedSprintInfo",
+            "selectedTeamSet",
+            "teamNameById",
+            "teamOptions",
+            "techProjectKeys"
+          ],
+          "returnNames": [],
+          "propNames": [],
+          "expandedInputNames": [
+            "activeGroupId",
+            "adHocEpicSet",
+            "adHocEpicSignature",
+            "capacityTasks",
+            "excludedEpicSet",
+            "isAllTeamsSelected",
+            "selectedSprint",
+            "selectedSprintInfo",
+            "selectedTeamSet",
+            "teamNameById",
+            "teamOptions",
+            "techProjectKeys"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 12,
+          "returnCount": 0,
+          "propCount": 0,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 12,
+          "returnCeiling": 0,
+          "propCeiling": 0,
+          "unresolved": [
+            "return spread/dynamic"
+          ],
+          "inventory": {
+            "source": "frontend/src/eng/useEngScope.js:3",
+            "sourceDigest": "af2257e8171d647b69da1060e47b9e4c904ee221c37896c5b8596be9ffa750f7",
+            "reviewed": true,
+            "memberNames": [
+              "activeGroupId",
+              "adHocEpicSet",
+              "adHocEpicSignature",
+              "capacityTasks",
+              "excludedEpicSet",
+              "isAllTeamsSelected",
+              "selectedSprint",
+              "selectedSprintInfo",
+              "selectedTeamSet",
+              "teamNameById",
+              "teamOptions",
+              "techProjectKeys"
+            ],
+            "memoReturnNames": [
+              "activeGroupId",
+              "selectedSprint",
+              "selectedSprintInfo",
+              "isAllTeamsSelected",
+              "selectedTeamSet",
+              "teamNameById",
+              "teamOptions",
+              "capacityTasks",
+              "techProjectKeys",
+              "excludedEpicSet",
+              "adHocEpicSet",
+              "adHocEpicSignature"
+            ],
+            "rationale": "The literal twelve-property useMemo return and dependency list are moved verbatim from App. The checker cannot expand memo-return expressions; tests/test_use_eng_scope.js freezes ordered twelve keys, scalar values and input references, and the mounted smoke fixture proves unrelated-render identity and selectedSprint invalidation. No additional state/effects/requests/storage or feature-only bindings. All five existing consumer hooks receive the same object at unchanged call positions."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "useEngScope",
+              "line": 4150,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [
+            {
+              "name": "scope",
+              "lines": [
+                1435,
+                1444,
+                1450,
+                1469,
+                1471,
+                1473,
+                1475,
+                1477,
+                1524,
+                1533,
+                4158,
+                4181,
+                4425,
+                4988,
+                5012,
+                5035,
+                5108,
+                5389,
+                5959
+              ]
+            }
+          ],
+          "getters": []
+        }
+      ]
     }
   ],
   "aggregates": {
@@ -18664,16 +18791,16 @@
       "ceiling": 2529
     },
     "eng": {
-      "measured": 1743,
-      "ceiling": 1743
+      "measured": 1752,
+      "ceiling": 1752
     },
     "uniqueOwners": {
-      "measured": 26224,
-      "ceiling": 26224
+      "measured": 26233,
+      "ceiling": 26233
     },
     "appPlusOwners": {
-      "measured": 33823,
-      "ceiling": 33823
+      "measured": 33833,
+      "ceiling": 33833
     }
   },
   "transfer": {

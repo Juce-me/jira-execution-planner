@@ -196,7 +196,7 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # import (+1), the provider open and close tags (+2) and the Epic-header pill's status= (+1).
     # The resolver, context and StatusPill support live in frontend/src/issues/ and ui/ (+4 in total,
     # inside the 4 lines of slack the R5 ratchet left, so the budget itself is unchanged).
-    "frontend/src/dashboard.jsx": 7599,
+    "frontend/src/dashboard.jsx": 7600,
 }
 
 

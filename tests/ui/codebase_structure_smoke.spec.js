@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
-const { buildRuntimeProbeBundle, readAppRenderCount } = require('./runtime_probe_helpers');
+const { buildRuntimeProbeBundle, readAppRenderCount, buildEngScopeProbeBundle } = require('./runtime_probe_helpers');
 const { installDashboardShell } = require('./epm_home_token_fixture');
 const { captureDomParity } = require('./dom_parity_helpers');
 
@@ -5464,3 +5464,26 @@ const groupReturnRequestContract = [
         "requestedWith": "jira-execution-planner"
     }
 ];
+
+
+test('Statistics shared scope preserves identity across mounted renders', async ({ page }) => {
+    const bundle = buildEngScopeProbeBundle();
+    await page.route('https://eng-scope.synthetic.invalid/**', route => route.fulfill({
+        contentType: 'text/html', body: '<!doctype html><html><body><div id="root"></div><script>' + bundle + '</script></body></html>',
+    }));
+    await page.goto('https://eng-scope.synthetic.invalid/');
+    await expect(page.getByRole('button', { name: 'Unrelated 0', exact: true })).toBeVisible();
+    const initial = await page.evaluateHandle(() => window.__ENG_SCOPE_PROBE__);
+    const names = ['activeGroupId', 'selectedSprint', 'selectedSprintInfo', 'isAllTeamsSelected', 'selectedTeamSet', 'teamNameById', 'teamOptions', 'capacityTasks', 'techProjectKeys', 'excludedEpicSet', 'adHocEpicSet', 'adHocEpicSignature'];
+    expect(await initial.evaluate(scope => Object.keys(scope))).toEqual(names);
+    await page.getByRole('button', { name: 'Unrelated 0', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Unrelated 1', exact: true })).toBeVisible();
+    expect(await initial.evaluate(scope => window.__ENG_SCOPE_PROBE__ === scope)).toBe(true);
+    await page.getByRole('button', { name: 'Change sprint', exact: true }).click();
+    await expect(page.getByText('sprint-b', { exact: true })).toBeVisible();
+    expect(await initial.evaluate(scope => window.__ENG_SCOPE_PROBE__ !== scope)).toBe(true);
+    expect(await page.evaluate(() => window.__ENG_SCOPE_PROBE__.selectedSprint)).toBe('sprint-b');
+    expect(await page.evaluate(() => Object.keys(window.__ENG_SCOPE_PROBE__))).toEqual(names);
+    expect(await initial.evaluate(scope => Object.keys(scope).filter(name => name !== 'selectedSprint').every(name => window.__ENG_SCOPE_PROBE__[name] === scope[name]))).toBe(true);
+    await initial.dispose();
+});

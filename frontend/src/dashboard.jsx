@@ -1,3 +1,4 @@
+import { useEngScope } from './eng/useEngScope.js';
 import { SearchControl, ViewSwitch, SprintControl, GroupControl, TeamControl } from './eng/EngControls.jsx';
 import { EpicBlock } from './eng/EpicBlock.jsx';
 import { StatsPanel } from './stats/StatsPanel.jsx';
@@ -4146,9 +4147,9 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 () => Array.from(adHocEpicSet).sort().join('|'),
                 [adHocEpicSet]
             );
-            const scope = React.useMemo(() => ({
+            const scope = useEngScope({
                 activeGroupId, selectedSprint, selectedSprintInfo, isAllTeamsSelected, selectedTeamSet, teamNameById, teamOptions, capacityTasks, techProjectKeys, excludedEpicSet, adHocEpicSet, adHocEpicSignature
-            }), [activeGroupId, selectedSprint, selectedSprintInfo, isAllTeamsSelected, selectedTeamSet, teamNameById, teamOptions, capacityTasks, techProjectKeys, excludedEpicSet, adHocEpicSet, adHocEpicSignature]);
+            });
             const {
                 effectiveStatsData, burnoutTaskTeamByIssueKey, burnoutTaskStatusByIssueKey, burnoutIssueWeightByKey,
                 burnoutScopedTeamIds, burnoutScopedTeamSignature, cohortScopedTeamSignature, burnoutQueryKey,

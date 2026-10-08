@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { readOwnerSource } = require('./frontend_source_helpers');
 
 const dashboardPath = path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx');
 const issueCardPath = path.join(__dirname, '..', 'frontend', 'src', 'issues', 'IssueCard.jsx');
@@ -590,9 +591,10 @@ test('dashboard late writers use issue edit generations in addition to scope gua
     assert.match(dashboardSource, /fetchMissingPlanningInfo[\s\S]*beginRead\(\)[\s\S]*reconcileIssues[\s\S]*finishRead/);
     assert.match(dashboardSource, /fetchDependencies[\s\S]*beginRead\(\{ aggregate: true \}\)[\s\S]*isCurrentAggregateRead/);
     assert.match(dashboardSource, /loadBacklog[\s\S]*beginRead\(\)[\s\S]*reconcileIssues[\s\S]*finishRead/);
-    assert.match(dashboardSource, /fetchBurnout[\s\S]*beginRead\(\{ aggregate: true \}\)[\s\S]*isCurrentAggregateRead/);
-    assert.match(dashboardSource, /fetchCohort[\s\S]*beginRead\(\{ aggregate: true \}\)[\s\S]*isCurrentAggregateRead/);
-    assert.match(dashboardSource, /loadExcludedCapacity[\s\S]*beginRead\(\{ aggregate: true \}\)[\s\S]*isCurrentAggregateRead/);
+    const statsDataSource = readOwnerSource(['frontend/src/stats/useStatsData.js'], { anchor: 'useStatsDerivedA' });
+    assert.match(statsDataSource, /fetchBurnout[\s\S]*beginRead\(\{ aggregate: true \}\)[\s\S]*isCurrentAggregateRead/);
+    assert.match(statsDataSource, /fetchCohort[\s\S]*beginRead\(\{ aggregate: true \}\)[\s\S]*isCurrentAggregateRead/);
+    assert.match(statsDataSource, /loadExcludedCapacity[\s\S]*beginRead\(\{ aggregate: true \}\)[\s\S]*isCurrentAggregateRead/);
     assert.match(dashboardSource, /groupStateRef\.current\.set\(activeGroupId, issueEditStateRef\.current\.reconcileSnapshot\(groupStateSnapshot\)\)/);
     assert.match(dashboardSource, /applyGroupState\(issueEditStateRef\.current\.reconcileSnapshot\(cached\)\)/);
     assert.doesNotMatch(dashboardSource, /projectTrackPhaseCacheRef\.current = \{\};/);

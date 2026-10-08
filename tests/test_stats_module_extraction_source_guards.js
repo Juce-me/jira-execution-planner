@@ -11,6 +11,7 @@ const { readOwnerSource } = require('./frontend_source_helpers.js');
 const dashboardSource = read('frontend', 'src', 'dashboard.jsx');
 const statsStateSource = readOwnerSource(['frontend/src/stats/useStatsState.js'], { anchor: 'export function useStatsState' });
 const statsGroupSource = readOwnerSource(['frontend/src/stats/statsGroupState.js'], { anchor: 'export function buildDefaultStatsGroupState' });
+const statsDataSource = read('frontend', 'src', 'stats', 'useStatsData.js');
 const statsDir = sourcePath('frontend', 'src', 'stats');
 const statsFileNames = () => fs.readdirSync(statsDir).filter((fileName) => /\.(js|jsx|mjs)$/.test(fileName));
 const readStatsFile = (fileName) => read('frontend', 'src', 'stats', fileName);
@@ -48,7 +49,7 @@ test('dashboard imports extracted statistics utilities and components', () => {
         "from './stats/StatsPriorityView.jsx'",
         "from './stats/BurnoutChart.jsx'",
     ].forEach((expectedImport) => {
-        assert.ok(dashboardSource.includes(expectedImport), `Expected dashboard import ${expectedImport}`);
+        assert.ok(dashboardSource.includes(expectedImport) || statsDataSource.includes(expectedImport.replace("from './stats/", "from './")), `Expected explicit statistics owner import ${expectedImport}`);
     });
 });
 
@@ -66,9 +67,14 @@ test('extracted statistics modules remain render/pure helpers with no request or
     ];
     statsFileNames().forEach((fileName) => {
         const source = readStatsFile(fileName);
-        forbidden.forEach((term) => {
+        // Only the named data owner may import these three existing API modules.
+        // The body keeps the original substring ban, including interpolated/concatenated paths.
+        const requestBody = fileName === 'useStatsData.js'
+            ? source.replace(/^import [^\n]+ from '\.\.\/api\/(?:authRequired|engApi|statsApi)\.js';$/gm, '')
+            : source;
+        forbidden.filter(term => !(fileName === 'useStatsData.js' && term === 'BACKEND_URL')).forEach((term) => {
             assert.equal(
-                source.includes(term),
+                requestBody.includes(term),
                 false,
                 `frontend/src/stats/${fileName} must not own request/storage behavior: ${term}`
             );
@@ -79,7 +85,8 @@ test('extracted statistics modules remain render/pure helpers with no request or
         assert.ok(dashboardSource.includes(term), `dashboard.jsx must keep external cache consumers for ${term}`);
     });
     ['requestBurnoutStats', 'requestExcludedCapacityStatsSource'].forEach((term) => {
-        assert.ok(dashboardSource.includes(term), `dashboard.jsx must keep request ownership for ${term}`);
+        assert.ok(statsDataSource.includes(`${term}(`), `useStatsData.js must own wrapper call ${term}`);
+        assert.equal(dashboardSource.includes(`${term}(`), false);
         assert.equal(statsStateSource.includes(term), false);
         assert.equal(statsGroupSource.includes(term), false);
     });
@@ -118,7 +125,7 @@ test('statistics team colors are unified through one shared resolver', () => {
     const burnoutUtilsSource = readStatsFile('burnoutChartUtils.js');
     assert.equal(burnoutUtilsSource.includes("import { RADAR_PALETTE }"), false);
     assert.equal(burnoutUtilsSource.includes('team.color = RADAR_PALETTE'), false);
-    assert.ok(dashboardSource.includes('resolveTeamColor: resolveStatsTeamColor'));
+    assert.ok(statsDataSource.includes('resolveTeamColor: resolveStatsTeamColor'));
     assert.ok((dashboardSource.match(/resolveTeamColor=\{resolveStatsTeamColor\}/g) || []).length >= 3);
 });
 
@@ -139,7 +146,7 @@ test('existing excluded capacity stats extraction remains intact', () => {
         "import ExcludedCapacityLineChart from './stats/ExcludedCapacityLineChart.jsx';",
         "import EffortTypeSplitChart from './stats/EffortTypeSplitChart.jsx';",
     ].forEach((expectedImport) => {
-        assert.ok(dashboardSource.includes(expectedImport), `Expected existing import ${expectedImport}`);
+        assert.ok(dashboardSource.includes(expectedImport) || statsDataSource.includes(expectedImport.replace("from './stats/", "from './")), `Expected explicit statistics owner import ${expectedImport}`);
     });
 });
 

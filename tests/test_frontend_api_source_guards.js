@@ -1563,7 +1563,9 @@ test('Stats and issues API modules own dashboard stats and lookup endpoints', ()
     assert.ok(statsApiSource.includes('/api/stats/epic-cohort'), 'Expected epic cohort URL construction in statsApi.js');
     assert.ok(statsApiSource.includes('/api/stats/project-track-phase-durations'), 'Expected Project Track phase URL construction in statsApi.js');
     assert.ok(issuesApiSource.includes('/api/issues/lookup?keys='), 'Expected issue lookup URL construction in issuesApi.js');
-    assert.ok(dashboardSource.includes("from './api/statsApi.js'"), 'Expected dashboard to import stats API wrappers');
+    const statsDataSource = readSource(path.join(frontendSrcPath, 'stats', 'useStatsData.js'));
+    assert.ok(statsDataSource.includes("from '../api/statsApi.js'"), 'Expected Stats data owner to import stats API wrappers');
+    assert.equal(/(^|[^.])\/api\/stats/.test(statsDataSource), false, 'Stats data owner must not own endpoint literals');
     assert.ok(dashboardSource.includes("from './api/issuesApi.js'"), 'Expected dashboard to import issue lookup API wrapper');
     assert.equal(/(^|[^.])\/api\/stats/.test(dashboardSource), false, 'dashboard.jsx must not own stats endpoint literals');
     assert.equal(/(^|[^.])\/api\/issues/.test(dashboardSource), false, 'dashboard.jsx must not own issue lookup endpoint literals');

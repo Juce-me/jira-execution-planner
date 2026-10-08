@@ -7,6 +7,7 @@ const { readDashboardCssSource } = require('./css_source_helpers');
 
 const repoRoot = path.join(__dirname, '..');
 const dashboardSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', 'dashboard.jsx'), 'utf8');
+const statsDataSource = readOwnerSource(['frontend/src/stats/useStatsData.js'], { anchor: 'export function useStatsDerivedB(' });
 const cssSource = readDashboardCssSource(repoRoot);
 const lineChartSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', 'stats', 'ExcludedCapacityLineChart.jsx'), 'utf8');
 const effortSplitChartSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', 'stats', 'EffortTypeSplitChart.jsx'), 'utf8');
@@ -17,11 +18,11 @@ const statsTeamsViewSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'sr
 
 test('dashboard wires excluded-capacity analytics into the existing Statistics view', () => {
     assert.ok(
-        dashboardSource.includes("from './stats/excludedCapacityStats.js'"),
+        statsDataSource.includes("from './excludedCapacityStats.js'"),
         'Expected dashboard to import excluded-capacity stats helpers'
     );
     assert.ok(
-        dashboardSource.includes('fetchExcludedCapacityStatsSource'),
+        statsDataSource.includes('fetchExcludedCapacityStatsSource'),
         'Expected dashboard to use the excluded-capacity stats API wrapper'
     );
     assert.ok(
@@ -66,19 +67,19 @@ test('effort split chart uses explicit Excluded Capacity naming', () => {
 
 test('effort split chart uses selected sprint range source data and visible scope text', () => {
     assert.ok(
-        dashboardSource.includes('buildEffortTypeSplitRows'),
+        statsDataSource.includes('buildEffortTypeSplitRows'),
         'Expected dashboard to derive effort split rows with the pure helper'
     );
     assert.ok(
-        dashboardSource.includes('buildEffortTypeSplitRows(excludedCapacityIssues, excludedCapacitySprintRange'),
+        statsDataSource.includes('buildEffortTypeSplitRows(excludedCapacityIssues, excludedCapacitySprintRange'),
         'Expected Effort Split to use the Start Sprint / End Sprint range'
     );
     assert.ok(
-        !dashboardSource.includes('excludedCapacitySelectedSprintForSplit'),
+        !readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/stats/useStatsData.js'], { anchor: 'useStatsDerivedB' }).includes('excludedCapacitySelectedSprintForSplit'),
         'Effort Split should not use the top selected sprint independently from the range controls'
     );
     assert.ok(
-        !dashboardSource.includes('excludedCapacitySourceSprintIds'),
+        !readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/stats/useStatsData.js'], { anchor: 'useStatsDerivedB' }).includes('excludedCapacitySourceSprintIds'),
         'Stats source fetches should follow the selected range, not a separate Effort Split sprint union'
     );
     assert.ok(
@@ -94,7 +95,7 @@ test('effort split chart uses selected sprint range source data and visible scop
 test('excluded-capacity summary shows effort share cards instead of source copy', () => {
     const excludedSummaryBlock = dashboardSource.match(/className="stats-summary excluded-capacity-summary"[\s\S]*?\n\s*\{excludedCapacityLoading/)?.[0] || '';
     assert.ok(
-        dashboardSource.includes('summarizeEffortTypeSplitTotals'),
+        statsDataSource.includes('summarizeEffortTypeSplitTotals'),
         'Expected dashboard to use shared effort split totals for summary cards'
     );
     assert.ok(
@@ -410,7 +411,7 @@ test('excluded-capacity epic filter stays compact without selected chips', () =>
 
 test('excluded-capacity filter has no BAU/ad hoc summary auto-select preset', () => {
     assert.ok(
-        !dashboardSource.includes('excludedCapacityAutoEpicKeys'),
+        !readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/stats/useStatsData.js'], { anchor: 'useStatsDerivedB' }).includes('excludedCapacityAutoEpicKeys'),
         'The summary-regex BAU/ad hoc auto-selection preset must be removed'
     );
     assert.ok(
@@ -437,15 +438,15 @@ test('excluded-capacity filter has no BAU/ad hoc summary auto-select preset', ()
 
 test('excluded-capacity capacity mix loads when excluded OR Ad Hoc epics are configured', () => {
     assert.ok(
-        dashboardSource.includes('!excludedCapacityEpicOptions.length && adHocEpicSet.size === 0'),
+        statsDataSource.includes('!excludedCapacityEpicOptions.length && adHocEpicSet.size === 0'),
         'Expected the source-load gate to require excluded OR Ad Hoc epics, not excluded only'
     );
     assert.match(
-        dashboardSource,
+        statsDataSource,
         /buildEffortTypeSplitRows\(excludedCapacityIssues, excludedCapacitySprintRange, \{[\s\S]*adHocEpicKeys: Array\.from\(adHocEpicSet\)/,
         'Expected Effort Split rows to receive the Ad Hoc set'
     );
-    const effortSplitMemoBlock = dashboardSource.match(/const effortSplitRows = React\.useMemo\(\(\) => \{[\s\S]*?\n\s*\]\);/)?.[0] || '';
+    const effortSplitMemoBlock = statsDataSource.match(/const effortSplitRows = React\.useMemo\(\(\) => \{[\s\S]*?\n\s*\]\);/)?.[0] || '';
     assert.ok(
         effortSplitMemoBlock.includes('adHocEpicSignature'),
         'Expected effortSplitRows dependency array to include adHocEpicSignature'
@@ -457,9 +458,9 @@ test('excluded line chart stays excluded-only and shows an excluded-only empty s
         dashboardSource.includes('This chart tracks excluded capacity only; Ad Hoc is reported in the Effort Split above.'),
         'Expected an excluded-only empty state when no excluded epics are configured'
     );
-    const effortSplitRowsMemo = dashboardSource.match(/const effortSplitRows = React\.useMemo[\s\S]*?\]\);/)?.[0] || '';
+    const effortSplitRowsMemo = statsDataSource.match(/const effortSplitRows = React\.useMemo[\s\S]*?\]\);/)?.[0] || '';
     // The excluded line chart numerator must never receive the Ad Hoc set.
-    const lineSeriesMemo = dashboardSource.match(/const excludedCapacityLineSeries = React\.useMemo[\s\S]*?\]\);/)?.[0] || '';
+    const lineSeriesMemo = statsDataSource.match(/const excludedCapacityLineSeries = React\.useMemo[\s\S]*?\]\);/)?.[0] || '';
     assert.ok(
         !lineSeriesMemo.includes('adHoc'),
         'Excluded line chart series must not include Ad Hoc keys'
@@ -471,9 +472,9 @@ test('excluded line chart stays excluded-only and shows an excluded-only empty s
 });
 
 test('mono-cross share counts all scoped epics without excluded-capacity filters', () => {
-    const modeOverallBlock = dashboardSource.match(/const excludedCapacityModeOverall = React\.useMemo\(\(\) => \{[\s\S]*?\n\s*\}\);/)?.[0] || '';
-    const modeSprintBlock = dashboardSource.match(/const excludedCapacityModeSprintRows = React\.useMemo\(\(\) => \{[\s\S]*?\n\s*\}\);/)?.[0] || '';
-    const modeTeamLineBlock = dashboardSource.match(/const excludedCapacityModeTeamLineSeries = React\.useMemo\(\(\) => \{[\s\S]*?\n\s*\}\);/)?.[0] || '';
+    const modeOverallBlock = statsDataSource.match(/const excludedCapacityModeOverall = React\.useMemo\(\(\) => \{[\s\S]*?\n\s*\}\);/)?.[0] || '';
+    const modeSprintBlock = statsDataSource.match(/const excludedCapacityModeSprintRows = React\.useMemo\(\(\) => \{[\s\S]*?\n\s*\}\);/)?.[0] || '';
+    const modeTeamLineBlock = statsDataSource.match(/const excludedCapacityModeTeamLineSeries = React\.useMemo\(\(\) => \{[\s\S]*?\n\s*\}\);/)?.[0] || '';
     assert.ok(modeOverallBlock.includes('includeAllEpics: true'), 'Expected mono/cross overall row to include all scoped epics');
     assert.ok(modeSprintBlock.includes('includeAllEpics: true'), 'Expected mono/cross sprint rows to include all scoped epics');
     assert.ok(!modeOverallBlock.includes('excludedEpicKeyFilters'), 'Mono/cross overall row should not use excluded-capacity filters');
@@ -483,7 +484,7 @@ test('mono-cross share counts all scoped epics without excluded-capacity filters
 
 test('mono-cross team share renders as a per-sprint team line graph', () => {
     assert.ok(
-        dashboardSource.includes('buildEpicTeamCrossShareLineSeries'),
+        statsDataSource.includes('buildEpicTeamCrossShareLineSeries'),
         'Expected dashboard to build a team cross-share line series'
     );
     assert.ok(
@@ -499,22 +500,22 @@ test('mono-cross team share renders as a per-sprint team line graph', () => {
         'Team Cross Share should use the graph, not sprint text chips'
     );
     assert.ok(
-        dashboardSource.includes("statsView === 'monoCrossShare' ? excludedCapacityModeTeamLineSeries.series : excludedCapacityLineSeries.series"),
+        statsDataSource.includes("statsView === 'monoCrossShare' ? excludedCapacityModeTeamLineSeries.series : excludedCapacityLineSeries.series"),
         'Expected isolated team validation to use the Mono vs Cross team series while that tab is active'
     );
 });
 
 test('excluded-capacity stats source loads progressively and source-only tabs skip ENG task surfaces', () => {
     assert.ok(
-        dashboardSource.includes('mergeExcludedCapacityStatsSourceChunks'),
+        statsDataSource.includes('mergeExcludedCapacityStatsSourceChunks'),
         'Expected dashboard to merge progressive excluded-capacity sprint chunks'
     );
     assert.ok(
-        dashboardSource.includes('sprintIds: [sprintId]'),
+        statsDataSource.includes('sprintIds: [sprintId]'),
         'Expected excluded-capacity stats source requests to load one sprint at a time'
     );
     assert.ok(
-        !dashboardSource.includes('sprintIds: excludedCapacitySprintIds,'),
+        !statsDataSource.includes('sprintIds: excludedCapacitySprintIds,'),
         'Excluded-capacity stats source should not request the whole sprint range in one blocking call'
     );
     assert.ok(
@@ -743,7 +744,7 @@ test('Ad Hoc set threads only into classification/reporting helpers, never exclu
         'Expected Planning selected team project stats to receive the Ad Hoc set'
     );
     assert.match(
-        dashboardSource,
+        statsDataSource,
         /buildLocalStatsFromTasks\(statsTaskList, \{[\s\S]*adHocEpicSet,/,
         'Expected the local stats build to receive the Ad Hoc set'
     );

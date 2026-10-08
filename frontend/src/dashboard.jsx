@@ -1,3 +1,5 @@
+import { useStatsState } from './stats/useStatsState.js';
+import { buildDefaultStatsGroupState, snapshotStatsGroupState, applyStatsGroupState, resetStatsTransientRefs } from './stats/statsGroupState.js';
 import { useScenarioPlanner } from './scenario/useScenarioPlanner.js';
 import { useScenarioState } from './scenario/useScenarioState.js';
 import { buildDefaultScenarioGroupState, applyScenarioGroupState, resetScenarioTransientRefs } from './scenario/scenarioGroupState.js';
@@ -882,87 +884,104 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
             const resolveStatsGraphMode = (value) => (value === 'weighted' || value === 'absolute') ? value : 'weighted';
             const resolveBurndownMetric = (value) => (value === 'issueCount' || value === 'storyPoints') ? value : 'storyPoints';
             const resolveCohortGroupBy = (value) => (value === 'month' || value === 'quarter') ? value : 'quarter';
-            const [statsView, setStatsView] = useState(resolveStatsView(savedPrefsRef.current.statsView));
-            const [statsGraphMode, setStatsGraphMode] = useState(resolveStatsGraphMode(savedPrefsRef.current.statsGraphMode));
-            const [priorityHoverIndex, setPriorityHoverIndex] = useState(null);
-            const [burnoutData, setBurnoutData] = useState(null);
-            const [burnoutLoading, setBurnoutLoading] = useState(false);
-            const [burnoutError, setBurnoutError] = useState('');
-            const [burnoutAssigneeFilter, setBurnoutAssigneeFilter] = useState(savedPrefsRef.current.burnoutAssigneeFilter || 'all');
-            const [burndownMetric, setBurndownMetric] = useState(resolveBurndownMetric(savedPrefsRef.current.burndownMetric));
-            const [cohortData, setCohortData] = useState(null);
-            const [cohortLoading, setCohortLoading] = useState(false);
-            const [cohortError, setCohortError] = useState('');
-            const [cohortStartQuarter, setCohortStartQuarter] = useState(savedPrefsRef.current.cohortStartQuarter || getCurrentQuarterLabel());
-            const [cohortEndQuarter, setCohortEndQuarter] = useState(savedPrefsRef.current.cohortEndQuarter || getCurrentQuarterLabel());
-            const [cohortGroupBy, setCohortGroupBy] = useState(resolveCohortGroupBy(savedPrefsRef.current.cohortGroupBy));
-            const [cohortProjectFilter, setCohortProjectFilter] = useState(savedPrefsRef.current.cohortProjectFilter || 'all');
-            const [cohortAssigneeFilter, setCohortAssigneeFilter] = useState(savedPrefsRef.current.cohortAssigneeFilter || 'all');
-            const [cohortExcludeAdHoc, setCohortExcludeAdHoc] = useState(Boolean(savedPrefsRef.current.cohortExcludeAdHoc));
-            const [cohortExcludeCapacity, setCohortExcludeCapacity] = useState(savedPrefsRef.current.cohortExcludeCapacity ?? true);
-            const [cohortStatusToggles, setCohortStatusToggles] = useState(() => ({
-                done: true,
-                open: true,
-                killed: false,
-                incomplete: false,
-                postponed: false,
-                ...(savedPrefsRef.current.cohortStatusToggles || {})
-            }));
-            const [cohortSelectedRow, setCohortSelectedRow] = useState(null);
-            const [excludedCapacityData, setExcludedCapacityData] = useState(null);
-            const [excludedCapacityLoading, setExcludedCapacityLoading] = useState(false);
-            const [excludedCapacityError, setExcludedCapacityError] = useState('');
-            const [excludedCapacityStartSprintId, setExcludedCapacityStartSprintId] = useState(savedPrefsRef.current.excludedCapacityStartSprintId || '');
-            const [excludedCapacityEndSprintId, setExcludedCapacityEndSprintId] = useState(savedPrefsRef.current.excludedCapacityEndSprintId || '');
-            const [excludedCapacitySelectedEpicKeys, setExcludedCapacitySelectedEpicKeys] = useState(() => {
-                const saved = savedPrefsRef.current.excludedCapacitySelectedEpicKeys;
-                if (Array.isArray(saved)) {
-                    return saved.map(key => String(key || '').trim().toUpperCase()).filter(Boolean);
-                }
-                return null;
-            });
-            const [excludedCapacityChartMode, setExcludedCapacityChartMode] = useState(
-                savedPrefsRef.current.excludedCapacityChartMode === 'group' ? 'group' : 'teams'
-            );
-            const [excludedCapacityMetric, setExcludedCapacityMetric] = useState(
-                savedPrefsRef.current.excludedCapacityMetric === 'storyPoints' ? 'storyPoints' : 'percent'
-            );
-            const [effortSplitVisibleBuckets, setEffortSplitVisibleBuckets] = useState({
-                excludedCapacity: true,
-                adHoc: true,
-                product: true,
-                tech: true
-            });
-            const [excludedCapacityIsolatedTeam, setExcludedCapacityIsolatedTeam] = useState(null);
-            const [excludedCapacityEpicDropdownOpen, setExcludedCapacityEpicDropdownOpen] = useState(false);
-            const [excludedCapacityRefreshNonce, setExcludedCapacityRefreshNonce] = useState(0), [issuePeopleStatsRevision, setIssuePeopleStatsRevision] = useState(0);
-            const excludedCapacityEpicDropdownRef = useRef(null);
+            const {
+                statsView,
+                setStatsView,
+                statsGraphMode,
+                setStatsGraphMode,
+                burnoutData,
+                setBurnoutData,
+                burnoutLoading,
+                setBurnoutLoading,
+                burnoutError,
+                setBurnoutError,
+                burnoutAssigneeFilter,
+                setBurnoutAssigneeFilter,
+                burndownMetric,
+                setBurndownMetric,
+                cohortData,
+                setCohortData,
+                cohortLoading,
+                setCohortLoading,
+                cohortError,
+                setCohortError,
+                cohortStartQuarter,
+                setCohortStartQuarter,
+                cohortEndQuarter,
+                setCohortEndQuarter,
+                cohortGroupBy,
+                setCohortGroupBy,
+                cohortProjectFilter,
+                setCohortProjectFilter,
+                cohortAssigneeFilter,
+                setCohortAssigneeFilter,
+                cohortExcludeAdHoc,
+                setCohortExcludeAdHoc,
+                cohortExcludeCapacity,
+                setCohortExcludeCapacity,
+                cohortStatusToggles,
+                setCohortStatusToggles,
+                cohortSelectedRow,
+                setCohortSelectedRow,
+                excludedCapacityData,
+                setExcludedCapacityData,
+                excludedCapacityLoading,
+                setExcludedCapacityLoading,
+                excludedCapacityError,
+                setExcludedCapacityError,
+                excludedCapacityStartSprintId,
+                setExcludedCapacityStartSprintId,
+                excludedCapacityEndSprintId,
+                setExcludedCapacityEndSprintId,
+                excludedCapacitySelectedEpicKeys,
+                setExcludedCapacitySelectedEpicKeys,
+                excludedCapacityChartMode,
+                setExcludedCapacityChartMode,
+                excludedCapacityMetric,
+                setExcludedCapacityMetric,
+                effortSplitVisibleBuckets,
+                setEffortSplitVisibleBuckets,
+                excludedCapacityIsolatedTeam,
+                setExcludedCapacityIsolatedTeam,
+                excludedCapacityEpicDropdownOpen,
+                setExcludedCapacityEpicDropdownOpen,
+                excludedCapacityRefreshNonce,
+                setExcludedCapacityRefreshNonce,
+                issuePeopleStatsRevision,
+                setIssuePeopleStatsRevision,
+                excludedCapacityEpicDropdownRef,
+                projectTrackCapacitySide,
+                setProjectTrackCapacitySide,
+                projectTrackMode,
+                setProjectTrackMode,
+                projectTrackExcludeAdHoc,
+                setProjectTrackExcludeAdHoc,
+                projectTrackExcludeExcludedCapacity,
+                setProjectTrackExcludeExcludedCapacity,
+                projectTrackPhaseData,
+                setProjectTrackPhaseData,
+                projectTrackPhaseLoading,
+                setProjectTrackPhaseLoading,
+                projectTrackPhaseError,
+                setProjectTrackPhaseError,
+                projectTrackPhaseCacheRef,
+                projectTrackPhaseAbortRef,
+                burnoutTaskFilter,
+                setBurnoutTaskFilter,
+                burnoutCacheRef,
+                cohortCacheRef,
+                excludedCapacityCacheRef,
+                excludedCapacityForceRefreshRef,
+            } = useStatsState({ savedPrefsRef, resolveStatsView, resolveStatsGraphMode, resolveBurndownMetric, resolveCohortGroupBy });
             const isStatsSourceOnlyStatsView = showStats && (statsView === 'excludedCapacity' || statsView === 'monoCrossShare' || statsView === 'projectTrack');
+            const [priorityHoverIndex, setPriorityHoverIndex] = useState(null);
             const isCatchUpMode = selectedView === 'eng' && !showPlanning && !showStats && !showScenario && !showBoard;
             const isEpicRefreshMode = selectedView === 'eng' && !showStats && !showScenario && !showBoard;
             const boardScopeRequested = selectedView === 'eng' && showBoard && ['component', 'all_work'].includes(boardStrictScope)
                 && adminSettingsGate.status !== 'missing';
             useEffect(() => { if (selectedView !== 'eng' || !showBoard) setBoardStrictScope(''); }, [selectedView, showBoard]);
-            const [projectTrackCapacitySide, setProjectTrackCapacitySide] = useState(
-                ['product', 'tech', 'both'].includes(savedPrefsRef.current.projectTrackCapacitySide) ? savedPrefsRef.current.projectTrackCapacitySide : 'product'
-            );
-            const [projectTrackMode, setProjectTrackMode] = useState(
-                savedPrefsRef.current.projectTrackMode === 'team' ? 'team' : 'epic'
-            );
-            const [projectTrackExcludeAdHoc, setProjectTrackExcludeAdHoc] = useState(Boolean(savedPrefsRef.current.projectTrackExcludeAdHoc));
-            const [projectTrackExcludeExcludedCapacity, setProjectTrackExcludeExcludedCapacity] = useState(Boolean(savedPrefsRef.current.projectTrackExcludeExcludedCapacity));
-            const [projectTrackPhaseData, setProjectTrackPhaseData] = useState(null);
-            const [projectTrackPhaseLoading, setProjectTrackPhaseLoading] = useState(false);
-            const [projectTrackPhaseError, setProjectTrackPhaseError] = useState('');
-            const projectTrackPhaseCacheRef = useRef({});
-            const projectTrackPhaseAbortRef = useRef(null);
             const [burnoutHoverPoint, setBurnoutHoverPoint] = useState(null);
             const [burnoutHoverTeamKey, setBurnoutHoverTeamKey] = useState(null);
-            const [burnoutTaskFilter, setBurnoutTaskFilter] = useState(null);
-            const burnoutCacheRef = useRef({});
-            const cohortCacheRef = useRef({});
-            const excludedCapacityCacheRef = useRef({});
-            const excludedCapacityForceRefreshRef = useRef(false);
             const burnoutChartRef = useRef(null);
             const [showTeamDropdown, setShowTeamDropdown] = useState(false);
             const [teamDropdownQuery, setTeamDropdownQuery] = useState('');
@@ -1677,9 +1696,7 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 setBacklogTechEpics([]);
                 setDependencyData({});
                 clearStorySubtasks();
-                burnoutCacheRef.current = {};
-                cohortCacheRef.current = {};
-                excludedCapacityCacheRef.current = {};
+                resetStatsTransientRefs({ burnoutCacheRef, cohortCacheRef, excludedCapacityCacheRef });
                 setBurnoutData(null);
                 setBurnoutError('');
                 setBurnoutLoading(false);
@@ -2726,32 +2743,7 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                     engBoardFilterSelection: {},
                     showDependencies: true,
                     epicDetails: {},
-                    statsView: resolveStatsView(savedPrefsRef.current.statsView),
-                    statsGraphMode: resolveStatsGraphMode(savedPrefsRef.current.statsGraphMode),
-                    burnoutData: null,
-                    burnoutLoading: false,
-                    burnoutError: '',
-                    burnoutAssigneeFilter: savedPrefsRef.current.burnoutAssigneeFilter || 'all',
-                    burndownMetric: resolveBurndownMetric(savedPrefsRef.current.burndownMetric),
-                    cohortData: null,
-                    cohortLoading: false,
-                    cohortError: '',
-                    cohortStartQuarter: savedPrefsRef.current.cohortStartQuarter || getCurrentQuarterLabel(),
-                    cohortEndQuarter: savedPrefsRef.current.cohortEndQuarter || getCurrentQuarterLabel(),
-                    cohortGroupBy: resolveCohortGroupBy(savedPrefsRef.current.cohortGroupBy),
-                    cohortProjectFilter: savedPrefsRef.current.cohortProjectFilter || 'all',
-                    cohortAssigneeFilter: savedPrefsRef.current.cohortAssigneeFilter || 'all',
-                    cohortExcludeAdHoc: Boolean(savedPrefsRef.current.cohortExcludeAdHoc),
-                    cohortExcludeCapacity: savedPrefsRef.current.cohortExcludeCapacity ?? true,
-                    cohortStatusToggles: {
-                        done: true,
-                        open: true,
-                        killed: false,
-                        incomplete: false,
-                        postponed: false,
-                        ...(savedPrefsRef.current.cohortStatusToggles || {})
-                    },
-                    cohortSelectedRow: null,
+                    ...buildDefaultStatsGroupState(savedPrefsRef.current, { resolveStatsView, resolveStatsGraphMode, resolveBurndownMetric, resolveCohortGroupBy }),
                     ...buildDefaultScenarioGroupState(savedPrefsRef.current.scenarioLaneMode),
                     hideExcludedStats: savedPrefsRef.current.hideExcludedStats ?? true,
                     showMissingAlert: savedPrefsRef.current.showMissingAlert ?? true,
@@ -2808,25 +2800,7 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 engBoardFilterSelection,
                 showDependencies,
                 epicDetails,
-                statsView,
-                statsGraphMode,
-                burnoutData,
-                burnoutLoading,
-                burnoutError,
-                burnoutAssigneeFilter,
-                burndownMetric,
-                cohortData,
-                cohortLoading,
-                cohortError,
-                cohortStartQuarter,
-                cohortEndQuarter,
-                cohortGroupBy,
-                cohortProjectFilter,
-                cohortAssigneeFilter,
-                cohortExcludeAdHoc,
-                cohortExcludeCapacity,
-                cohortStatusToggles,
-                cohortSelectedRow,
+                ...snapshotStatsGroupState({ statsView, statsGraphMode, burnoutData, burnoutLoading, burnoutError, burnoutAssigneeFilter, burndownMetric, cohortData, cohortLoading, cohortError, cohortStartQuarter, cohortEndQuarter, cohortGroupBy, cohortProjectFilter, cohortAssigneeFilter, cohortExcludeAdHoc, cohortExcludeCapacity, cohortStatusToggles, cohortSelectedRow }),
                 ...scenarioGroupValues,
                 hideExcludedStats,
                 showMissingAlert,
@@ -2885,32 +2859,7 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 setEngBoardFilterSelection(nextState.engBoardFilterSelection ?? {});
                 setShowDependencies(true);
                 setEpicDetails(nextState.epicDetails || {});
-                setStatsView(resolveStatsView(nextState.statsView));
-                setStatsGraphMode(resolveStatsGraphMode(nextState.statsGraphMode));
-                setBurnoutData(nextState.burnoutData || null);
-                setBurnoutLoading(false);
-                setBurnoutError(nextState.burnoutError || '');
-                setBurnoutAssigneeFilter(nextState.burnoutAssigneeFilter || 'all');
-                setBurndownMetric(resolveBurndownMetric(nextState.burndownMetric));
-                setCohortData(nextState.cohortData || null);
-                setCohortLoading(false);
-                setCohortError(nextState.cohortError || '');
-                setCohortStartQuarter(nextState.cohortStartQuarter || getCurrentQuarterLabel());
-                setCohortEndQuarter(nextState.cohortEndQuarter || getCurrentQuarterLabel());
-                setCohortGroupBy(resolveCohortGroupBy(nextState.cohortGroupBy));
-                setCohortProjectFilter(nextState.cohortProjectFilter || 'all');
-                setCohortAssigneeFilter(nextState.cohortAssigneeFilter || 'all');
-                setCohortExcludeAdHoc(Boolean(nextState.cohortExcludeAdHoc));
-                setCohortExcludeCapacity(nextState.cohortExcludeCapacity ?? true);
-                setCohortStatusToggles({
-                    done: true,
-                    open: true,
-                    killed: false,
-                    incomplete: false,
-                    postponed: false,
-                    ...(nextState.cohortStatusToggles || {})
-                });
-                setCohortSelectedRow(nextState.cohortSelectedRow || null);
+                applyStatsGroupState(nextState, { setStatsView, setStatsGraphMode, setBurnoutData, setBurnoutLoading, setBurnoutError, setBurnoutAssigneeFilter, setBurndownMetric, setCohortData, setCohortLoading, setCohortError, setCohortStartQuarter, setCohortEndQuarter, setCohortGroupBy, setCohortProjectFilter, setCohortAssigneeFilter, setCohortExcludeAdHoc, setCohortExcludeCapacity, setCohortStatusToggles, setCohortSelectedRow }, { resolveStatsView, resolveStatsGraphMode, resolveBurndownMetric, resolveCohortGroupBy });
                 applyScenarioGroupState({ setScenarioData, setScenarioError, setScenarioLaneMode, setScenarioCollapsedLanes, setScenarioEpicFocus, setScenarioRangeOverride, setScenarioScrollTop, setScenarioScrollLeft, setScenarioViewportHeight, setScenarioHoverKey, setScenarioFlashKey, setScenarioLayout, setScenarioEdgeRender, setScenarioTooltip, setScenarioLoading }, nextState);
                 setHideExcludedStats(nextState.hideExcludedStats ?? true);
                 setShowMissingAlert(nextState.showMissingAlert ?? true);
@@ -6301,7 +6250,7 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
             }, [onboardingPreviewDescriptorMatches]);
             const invalidateEngIssueFieldSources = ({ field }) => {
                 if (field === 'assignee') {
-                    burnoutCacheRef.current = {}; cohortCacheRef.current = {}; excludedCapacityCacheRef.current = {}; setBurnoutData(null); setCohortData(null); setExcludedCapacityData(null); setIssuePeopleStatsRevision(value => value + 1); setExcludedCapacityRefreshNonce(value => value + 1); rearmCatchUpAlerts();
+                    resetStatsTransientRefs({ burnoutCacheRef, cohortCacheRef, excludedCapacityCacheRef }); setBurnoutData(null); setCohortData(null); setExcludedCapacityData(null); setIssuePeopleStatsRevision(value => value + 1); setExcludedCapacityRefreshNonce(value => value + 1); rearmCatchUpAlerts();
                 } else if (field === 'customfield_10004' || field === 'storyPoints') {
                     excludedCapacityCacheRef.current = {}; setExcludedCapacityData(null); setDependencyData({}); setDependencyLookupCache({}); setDependencyRefreshNonce(value => value + 1); setExcludedCapacityRefreshNonce(value => value + 1); rearmCatchUpAlerts();
                 }
@@ -8641,9 +8590,7 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                     // A review that is loading or saving is already current (the old Refresh review button was disabled then too).
                     if (planningLayout === 'table' && !planningReview.loading && !planningReview.saving) void planningReview.refresh();
                 }
-                burnoutCacheRef.current = {};
-                cohortCacheRef.current = {};
-                excludedCapacityCacheRef.current = {};
+                resetStatsTransientRefs({ burnoutCacheRef, cohortCacheRef, excludedCapacityCacheRef });
                 loadSprints(true, { queueIfBusy: true });
                 if (isStatsSourceOnlyStatsView) {
                     excludedCapacityForceRefreshRef.current = true;
@@ -8705,7 +8652,7 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 getViewport: () => ({ top: epicStickyTop + (document.querySelector('.epic-block .epic-header')?.offsetHeight || 0), bottom: window.innerHeight }),
                 priorityOrder,
                 clearAggregateSources: () => {
-                    burnoutCacheRef.current = {}; cohortCacheRef.current = {}; excludedCapacityCacheRef.current = {};
+                    resetStatsTransientRefs({ burnoutCacheRef, cohortCacheRef, excludedCapacityCacheRef });
                     setBurnoutData(null); setCohortData(null); setExcludedCapacityData(null);
                 },
                 afterApply: (update) => {

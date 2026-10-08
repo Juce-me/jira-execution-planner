@@ -7,7 +7,10 @@ const repoRoot = path.join(__dirname, '..');
 const sourcePath = (...parts) => path.join(repoRoot, ...parts);
 const read = (...parts) => fs.readFileSync(sourcePath(...parts), 'utf8');
 
+const { readOwnerSource } = require('./frontend_source_helpers.js');
 const dashboardSource = read('frontend', 'src', 'dashboard.jsx');
+const statsStateSource = readOwnerSource(['frontend/src/stats/useStatsState.js'], { anchor: 'export function useStatsState' });
+const statsGroupSource = readOwnerSource(['frontend/src/stats/statsGroupState.js'], { anchor: 'export function buildDefaultStatsGroupState' });
 const statsDir = sourcePath('frontend', 'src', 'stats');
 const statsFileNames = () => fs.readdirSync(statsDir).filter((fileName) => /\.(js|jsx|mjs)$/.test(fileName));
 const readStatsFile = (fileName) => read('frontend', 'src', 'stats', fileName);
@@ -71,13 +74,14 @@ test('extracted statistics modules remain render/pure helpers with no request or
             );
         });
     });
-    [
-        'burnoutCacheRef',
-        'excludedCapacityCacheRef',
-        'requestBurnoutStats',
-        'requestExcludedCapacityStatsSource',
-    ].forEach((term) => {
-        assert.ok(dashboardSource.includes(term), `dashboard.jsx must keep request/cache ownership for ${term}`);
+    ['burnoutCacheRef', 'excludedCapacityCacheRef'].forEach((term) => {
+        assert.ok(statsStateSource.includes(`const ${term} = useRef`), `useStatsState.js must own cache declarations for ${term}`);
+        assert.ok(dashboardSource.includes(term), `dashboard.jsx must keep external cache consumers for ${term}`);
+    });
+    ['requestBurnoutStats', 'requestExcludedCapacityStatsSource'].forEach((term) => {
+        assert.ok(dashboardSource.includes(term), `dashboard.jsx must keep request ownership for ${term}`);
+        assert.equal(statsStateSource.includes(term), false);
+        assert.equal(statsGroupSource.includes(term), false);
     });
 });
 
@@ -151,19 +155,19 @@ function sliceBetween(source, startMarker, endMarker) {
 }
 
 test('cohortEndQuarter is threaded through every per-group persistence site', () => {
-    // Site 1: buildDefaultGroupState seeds cohortEndQuarter for a freshly-created group.
+    // Site 1: the explicit Stats owner seeds cohortEndQuarter at the original App insertion site.
     const defaultStateSlice = sliceBetween(
-        dashboardSource,
-        'const buildDefaultGroupState = (groupId) => {',
-        'const buildGroupStateSnapshot = () => ('
+        statsGroupSource,
+        'export function buildDefaultStatsGroupState',
+        'export function snapshotStatsGroupState'
     );
     assert.ok(defaultStateSlice.includes('cohortEndQuarter:'), 'buildDefaultGroupState must seed cohortEndQuarter');
 
-    // Site 2: buildGroupStateSnapshot captures it, and the memo wrapping it depends on it.
+    // Site 2: the Stats snapshot owner captures it, and the App memo depends on it.
     const snapshotObjectSlice = sliceBetween(
-        dashboardSource,
-        'const buildGroupStateSnapshot = () => (',
-        'const applyGroupState = (state) => {'
+        statsGroupSource,
+        'export function snapshotStatsGroupState',
+        'export function applyStatsGroupState'
     );
     assert.ok(snapshotObjectSlice.includes('cohortEndQuarter,'), 'buildGroupStateSnapshot must capture cohortEndQuarter');
     const snapshotDepsSlice = sliceBetween(
@@ -173,11 +177,11 @@ test('cohortEndQuarter is threaded through every per-group persistence site', ()
     );
     assert.ok(snapshotDepsSlice.includes('cohortEndQuarter,'), 'groupStateSnapshot useMemo dependency array must include cohortEndQuarter');
 
-    // Site 3: applyGroupState restores it on group switch, falling back to the current quarter.
+    // Site 3: the Stats application owner restores it with the unchanged quarter fallback.
     const applyStateSlice = sliceBetween(
-        dashboardSource,
-        'const applyGroupState = (state) => {',
-        'const groupStateSnapshot = React.useMemo(() => buildGroupStateSnapshot(), ['
+        statsGroupSource,
+        'export function applyStatsGroupState',
+        'export function resetStatsTransientRefs'
     );
     assert.ok(
         applyStateSlice.includes('setCohortEndQuarter(nextState.cohortEndQuarter || getCurrentQuarterLabel())'),
@@ -194,23 +198,25 @@ test('cohortEndQuarter is threaded through every per-group persistence site', ()
 });
 
 test('cohort capacity exclusions replace the legacy inclusive filter at every state site', () => {
-    assert.ok(dashboardSource.includes('const [cohortExcludeAdHoc, setCohortExcludeAdHoc]'));
+    assert.ok(statsStateSource.includes('const [cohortExcludeAdHoc, setCohortExcludeAdHoc]'));
+    assert.equal(statsStateSource.includes('cohortCapacityFilter'), false);
+    assert.equal(statsGroupSource.includes('cohortCapacityFilter'), false);
     assert.equal(dashboardSource.includes('cohortCapacityFilter'), false);
 
     const defaultState = sliceBetween(
-        dashboardSource,
-        'const buildDefaultGroupState = (groupId) => {',
-        'const buildGroupStateSnapshot = () => ('
+        statsGroupSource,
+        'export function buildDefaultStatsGroupState',
+        'export function snapshotStatsGroupState'
     );
     const snapshot = sliceBetween(
-        dashboardSource,
-        'const buildGroupStateSnapshot = () => (',
-        'const applyGroupState = (state) => {'
+        statsGroupSource,
+        'export function snapshotStatsGroupState',
+        'export function applyStatsGroupState'
     );
     const applyState = sliceBetween(
-        dashboardSource,
-        'const applyGroupState = (state) => {',
-        'const groupStateSnapshot = React.useMemo(() => buildGroupStateSnapshot(), ['
+        statsGroupSource,
+        'export function applyStatsGroupState',
+        'export function resetStatsTransientRefs'
     );
     const snapshotDeps = sliceBetween(
         dashboardSource,
@@ -219,7 +225,7 @@ test('cohort capacity exclusions replace the legacy inclusive filter at every st
     );
     const savedPrefs = sliceBetween(dashboardSource, 'saveUiPrefs({', ']);');
 
-    assert.ok(defaultState.includes('cohortExcludeAdHoc: Boolean(savedPrefsRef.current.cohortExcludeAdHoc)'));
+    assert.ok(defaultState.includes('cohortExcludeAdHoc: Boolean(savedPrefs.cohortExcludeAdHoc)'));
     assert.ok(defaultState.includes('cohortExcludeCapacity:'));
     assert.ok(snapshot.includes('cohortExcludeAdHoc,'));
     assert.ok(snapshot.includes('cohortExcludeCapacity,'));

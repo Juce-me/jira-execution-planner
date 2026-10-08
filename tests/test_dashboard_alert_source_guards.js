@@ -228,7 +228,7 @@ test('deferred alert execution plan contains no agent or tool-branded worker boi
 });
 
 test('ready-to-close alert treats only done killed and incomplete stories as closed', () => {
-    const source = fs.readFileSync(dashboardPath, 'utf8');
+    const source = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/eng/useEngAlerts.js'], { anchor: 'export function useEngAlerts' });
 
     assert.match(
         source,
@@ -247,13 +247,14 @@ test('backlog alert header chip links to the backlog epic key list in Jira', () 
 });
 
 test('Story readiness alerts use the authoritative composite Team requirements', () => {
-    const source = fs.readFileSync(dashboardPath, 'utf8');
+    const source = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/eng/useEngAlerts.js'], { anchor: 'export function useEngAlerts' });
     const hierarchySource = fs.readFileSync(engWorkHierarchyPath, 'utf8');
 
     assert.match(
         source,
-        /import \{ epicHasExplicitlyEmptySprintValue, epicHasSelectedSprintLabel, epicMatchesSelectedSprint, filterExplicitBacklogEpics, issueMatchesSelectedSprint \}/
+        /import \{ epicHasExplicitlyEmptySprintValue, issueMatchesSelectedSprint \}/
     );
+    assert.match(source, /import \{ epicHasSelectedSprintLabel, epicMatchesSelectedSprint, filterExplicitBacklogEpics \}/);
     assert.match(
         source,
         /const getFuturePlanningTeamInfos = React\.useCallback/
@@ -635,7 +636,7 @@ test('oversized alert scope is reported per project and kept out of generic task
 });
 
 test('oversized alert scope gates alert-purpose epicsInScope once and stays scope-guarded', () => {
-    const dashboardSource = fs.readFileSync(dashboardPath, 'utf8');
+    const dashboardSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/eng/useEngAlerts.js'], { anchor: 'export function useEngAlerts' });
     const alertLoadEffectStart = dashboardSource.indexOf('const alertLoadSignature =');
     const alertLoadEffect = dashboardSource.slice(alertLoadEffectStart, dashboardSource.indexOf('}, [', alertLoadEffectStart));
     assert.match(

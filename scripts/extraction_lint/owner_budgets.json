@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "baseSha": "3ccea324b3125ed1430a2e4ca538326c76b4dd0b",
-  "checkpointId": "dashboard-decomposition-Task3",
+  "baseSha": "d754f1cb48c02d581d6ffd4c667c2c4ebf1183b1",
+  "checkpointId": "dashboard-decomposition-Task4",
   "sourceRoot": "frontend/src",
   "ownerRoots": [
     "scenario",
@@ -19,8 +19,8 @@
   },
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
-    "lineCount": 8910,
-    "lineCeiling": 8910
+    "lineCount": 8477,
+    "lineCeiling": 8477
   },
   "modules": [
     {
@@ -16923,6 +16923,347 @@
           "getters": []
         }
       ]
+    },
+    {
+      "id": "eng.useEngAlerts",
+      "path": "frontend/src/eng/useEngAlerts.js",
+      "features": [
+        "eng"
+      ],
+      "exports": [
+        "useEngAlerts"
+      ],
+      "lineCount": 475,
+      "lineCeiling": 475,
+      "interfaces": [
+        {
+          "exportName": "useEngAlerts",
+          "inputNames": [
+            "activeGroupTeamLabels",
+            "alertScopeTooLarge",
+            "backlogProductEpics",
+            "backlogTechEpics",
+            "burnoutTaskFilter",
+            "dismissedAlertKeys",
+            "dismissedStoryRequirementIds",
+            "engCatchUpFilters",
+            "engWorkHierarchy",
+            "epicDetails",
+            "epicsInScope",
+            "getTeamInfo",
+            "hasStoryPoints",
+            "isExcludedStatus",
+            "isFutureSprintSelected",
+            "isTaskInSelectedSprint",
+            "missingPlanningInfoTasks",
+            "normalizeStatus",
+            "priorityOrder",
+            "readyToCloseEpicsInScope",
+            "readyToCloseTasks",
+            "resolveTeamName",
+            "scope",
+            "searchQuery",
+            "selectedSprintState",
+            "selectionTasks",
+            "tasks",
+            "visibleTasks",
+            "visibleTasksForList"
+          ],
+          "returnNames": [
+            "alertCounts",
+            "alertItemCount",
+            "analysisEpicTeams",
+            "backlogEpicTeams",
+            "blockedAlertKeySet",
+            "blockedAlertTeams",
+            "doneAlertKeySet",
+            "doneEpicTeams",
+            "emptyAlertKeySet",
+            "emptyEpicTeams",
+            "missingAlertKeySet",
+            "missingAlertTeams",
+            "missingLabelEpicTeams",
+            "missingTeamEpicTeams",
+            "needsStoriesAlertKeySet",
+            "needsStoriesTeams",
+            "postponedAlertKeySet",
+            "postponedAlertTeams",
+            "postponedEpicTeams",
+            "visibleAlertCollections",
+            "waitingAlertKeySet"
+          ],
+          "propNames": [],
+          "expandedInputNames": [
+            "activeGroupTeamLabels",
+            "alertScopeTooLarge",
+            "backlogProductEpics",
+            "backlogTechEpics",
+            "burnoutTaskFilter",
+            "dismissedAlertKeys",
+            "dismissedStoryRequirementIds",
+            "engCatchUpFilters",
+            "engWorkHierarchy",
+            "engWorkHierarchy.alertTargets",
+            "epicDetails",
+            "epicsInScope",
+            "getTeamInfo",
+            "hasStoryPoints",
+            "isExcludedStatus",
+            "isFutureSprintSelected",
+            "isTaskInSelectedSprint",
+            "missingPlanningInfoTasks",
+            "normalizeStatus",
+            "priorityOrder",
+            "priorityOrder[a.fields.priority?.name]",
+            "priorityOrder[a.task.fields.priority?.name]",
+            "priorityOrder[b.fields.priority?.name]",
+            "priorityOrder[b.task.fields.priority?.name]",
+            "readyToCloseEpicsInScope",
+            "readyToCloseEpicsInScope.filter",
+            "readyToCloseTasks",
+            "readyToCloseTasks.filter",
+            "resolveTeamName",
+            "scope",
+            "scope.isAllTeamsSelected",
+            "scope.selectedSprint",
+            "scope.selectedSprintInfo",
+            "scope.selectedTeamSet",
+            "scope.teamNameById",
+            "scope.techProjectKeys",
+            "searchQuery",
+            "selectedSprintState",
+            "selectionTasks",
+            "selectionTasks.forEach",
+            "tasks",
+            "tasks.filter",
+            "tasks.forEach",
+            "visibleTasks",
+            "visibleTasks.filter",
+            "visibleTasks.forEach",
+            "visibleTasksForList"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 47,
+          "returnCount": 21,
+          "propCount": 0,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 47,
+          "returnCeiling": 21,
+          "propCeiling": 0,
+          "unresolved": [
+            "bag priorityOrder dynamic member",
+            "bag priorityOrder dynamic deep member",
+            "spread input backlogProductEpics",
+            "spread input backlogTechEpics",
+            "spread input readyToCloseEpicsInScope",
+            "forwarded input burnoutTaskFilter"
+          ],
+          "inventory": {
+            "source": "frontend/src/eng/useEngAlerts.js:9",
+            "sourceDigest": "97b85dd1062b4b0126d411fdcc80647a8f92564990920dee1ebfc4d31c59ec55",
+            "reviewed": true,
+            "memberNames": [
+              "activeGroupTeamLabels",
+              "alertScopeTooLarge",
+              "backlogProductEpics",
+              "backlogTechEpics",
+              "burnoutTaskFilter",
+              "dismissedAlertKeys",
+              "dismissedStoryRequirementIds",
+              "engCatchUpFilters",
+              "engWorkHierarchy",
+              "engWorkHierarchy.alertTargets",
+              "epicDetails",
+              "epicsInScope",
+              "getTeamInfo",
+              "hasStoryPoints",
+              "isExcludedStatus",
+              "isFutureSprintSelected",
+              "isTaskInSelectedSprint",
+              "missingPlanningInfoTasks",
+              "normalizeStatus",
+              "priorityOrder",
+              "priorityOrder[a.fields.priority?.name]",
+              "priorityOrder[a.task.fields.priority?.name]",
+              "priorityOrder[b.fields.priority?.name]",
+              "priorityOrder[b.task.fields.priority?.name]",
+              "readyToCloseEpicsInScope",
+              "readyToCloseEpicsInScope.filter",
+              "readyToCloseTasks",
+              "readyToCloseTasks.filter",
+              "resolveTeamName",
+              "scope",
+              "scope.isAllTeamsSelected",
+              "scope.selectedSprint",
+              "scope.selectedSprintInfo",
+              "scope.selectedTeamSet",
+              "scope.teamNameById",
+              "scope.techProjectKeys",
+              "searchQuery",
+              "selectedSprintState",
+              "selectionTasks",
+              "selectionTasks.forEach",
+              "tasks",
+              "tasks.filter",
+              "tasks.forEach",
+              "visibleTasks",
+              "visibleTasks.filter",
+              "visibleTasks.forEach",
+              "visibleTasksForList"
+            ],
+            "rationale": "Reviewed exact Task 4 immutable closure ledger: priorityOrder aliases PRIORITY_ORDER and is indexed only by task priority names for numeric sorting (fallback 999); member paths name both consolidated item.task and task sort comparators. Spread backlogProductEpics/backlogTechEpics are the existing remote Backlog Epic arrays; readyToCloseEpicsInScope is the existing independently loaded ready-to-close Epic array. Each spread is iterated only as Epic metadata with existing key/status/team predicates. burnoutTaskFilter is converted only by Boolean() to the unchanged focusedFilterActive argument of useEngAlertFilters; no member or callback invocation. All six scope aliases are destructured directly and explicit App helpers remain synchronous predicates, with deferred dismissAlertItem/celebration callbacks staying App-owned."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "useEngAlerts",
+              "line": 5723,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [
+            {
+              "name": "visibleAlertCollections",
+              "lines": [
+                7888,
+                7890,
+                7893,
+                7896,
+                7898,
+                7899,
+                7900,
+                7911,
+                7913,
+                7914,
+                7915,
+                7919,
+                7940
+              ]
+            },
+            {
+              "name": "missingAlertKeySet",
+              "lines": [
+                4716
+              ]
+            },
+            {
+              "name": "blockedAlertKeySet",
+              "lines": [
+                4717
+              ]
+            },
+            {
+              "name": "postponedAlertKeySet",
+              "lines": [
+                4718
+              ]
+            },
+            {
+              "name": "needsStoriesAlertKeySet",
+              "lines": [
+                4719
+              ]
+            },
+            {
+              "name": "waitingAlertKeySet",
+              "lines": [
+                4720
+              ]
+            },
+            {
+              "name": "emptyAlertKeySet",
+              "lines": [
+                4721
+              ]
+            },
+            {
+              "name": "doneAlertKeySet",
+              "lines": [
+                4722
+              ]
+            },
+            {
+              "name": "alertCounts",
+              "lines": [
+                7880
+              ]
+            },
+            {
+              "name": "alertItemCount",
+              "lines": [
+                7879
+              ]
+            },
+            {
+              "name": "missingAlertTeams",
+              "lines": [
+                7909
+              ]
+            },
+            {
+              "name": "blockedAlertTeams",
+              "lines": [
+                7889
+              ]
+            },
+            {
+              "name": "doneEpicTeams",
+              "lines": [
+                7895
+              ]
+            },
+            {
+              "name": "postponedAlertTeams",
+              "lines": [
+                7917
+              ]
+            },
+            {
+              "name": "postponedEpicTeams",
+              "lines": [
+                7918
+              ]
+            },
+            {
+              "name": "emptyEpicTeams",
+              "lines": [
+                7897
+              ]
+            },
+            {
+              "name": "analysisEpicTeams",
+              "lines": [
+                7886
+              ]
+            },
+            {
+              "name": "backlogEpicTeams",
+              "lines": [
+                7887
+              ]
+            },
+            {
+              "name": "missingTeamEpicTeams",
+              "lines": [
+                7912
+              ]
+            },
+            {
+              "name": "missingLabelEpicTeams",
+              "lines": [
+                7910
+              ]
+            },
+            {
+              "name": "needsStoriesTeams",
+              "lines": [
+                7916
+              ]
+            }
+          ],
+          "getters": []
+        }
+      ]
     }
   ],
   "aggregates": {
@@ -16939,16 +17280,16 @@
       "ceiling": 2529
     },
     "eng": {
-      "measured": 0,
-      "ceiling": 0
+      "measured": 475,
+      "ceiling": 475
     },
     "uniqueOwners": {
-      "measured": 24481,
-      "ceiling": 24481
+      "measured": 24956,
+      "ceiling": 24956
     },
     "appPlusOwners": {
-      "measured": 33391,
-      "ceiling": 33391
+      "measured": 33433,
+      "ceiling": 33433
     }
   },
   "transfer": {

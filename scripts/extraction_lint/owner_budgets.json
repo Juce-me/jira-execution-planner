@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "baseSha": "7a768d5ddf3607a5deb4bed759e8c26198ceaff5",
-  "checkpointId": "ST5-R4c-SettingsModal",
+  "baseSha": "e745f60124e7cd1ed7bf3c67c587924bac5dbce2",
+  "checkpointId": "dashboard-decomposition-Task8",
   "sourceRoot": "frontend/src",
   "ownerRoots": [
     "scenario",
@@ -19,8 +19,8 @@
   },
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
-    "lineCount": 10855,
-    "lineCeiling": 10855
+    "lineCount": 7616,
+    "lineCeiling": 7616
   },
   "modules": [
     {
@@ -1953,14 +1953,7 @@
             "sourceDigest": "2328cf99565e795c64b58c4d78b3b0d7193d9b6984bdaad807653b346ab7d7b3",
             "rationale": "SC4 checkpoint (frozen from the current-base scratch dry run before R4a; reported to the operator with the R4a commit)."
           },
-          "callers": [
-            {
-              "path": "frontend/src/dashboard.jsx",
-              "symbol": "ScenarioView",
-              "line": 10190,
-              "phase": "render"
-            }
-          ],
+          "callers": [],
           "remainingAppReaders": [],
           "getters": []
         }
@@ -13700,14 +13693,7 @@
             ],
             "rationale": "groupConfigValidationErrors is spread into the validationMessages array (an array of strings, not a dependency bag); groupManageTab is a string and groupsConfigConflict and workspaceConfigConflict are plain data objects forwarded to the conflict-message builders. The 34 props are explicit name={name} attributes plus children, evaluated during App's render after their declarations; the container has no hook."
           },
-          "callers": [
-            {
-              "path": "frontend/src/dashboard.jsx",
-              "symbol": "SettingsModalContainer",
-              "line": 10369,
-              "phase": "render"
-            }
-          ],
+          "callers": [],
           "remainingAppReaders": [],
           "getters": []
         }
@@ -14467,24 +14453,4587 @@
           "getters": []
         }
       ]
+    },
+    {
+      "id": "stats.statsGroupState",
+      "path": "frontend/src/stats/statsGroupState.js",
+      "features": [
+        "stats"
+      ],
+      "exports": [
+        "STATS_GROUP_STATE_KEYS",
+        "applyStatsGroupState",
+        "buildDefaultStatsGroupState",
+        "resetStatsTransientRefs",
+        "snapshotStatsGroupState"
+      ],
+      "lineCount": 114,
+      "lineCeiling": 114,
+      "interfaces": []
+    },
+    {
+      "id": "stats.useStatsState",
+      "path": "frontend/src/stats/useStatsState.js",
+      "features": [
+        "stats"
+      ],
+      "exports": [
+        "useStatsState"
+      ],
+      "lineCount": 168,
+      "lineCeiling": 168,
+      "interfaces": [
+        {
+          "exportName": "useStatsState",
+          "inputNames": [
+            "resolveBurndownMetric",
+            "resolveCohortGroupBy",
+            "resolveStatsGraphMode",
+            "resolveStatsView",
+            "savedPrefsRef"
+          ],
+          "returnNames": [
+            "burndownMetric",
+            "burnoutAssigneeFilter",
+            "burnoutCacheRef",
+            "burnoutData",
+            "burnoutError",
+            "burnoutLoading",
+            "burnoutTaskFilter",
+            "cohortAssigneeFilter",
+            "cohortCacheRef",
+            "cohortData",
+            "cohortEndQuarter",
+            "cohortError",
+            "cohortExcludeAdHoc",
+            "cohortExcludeCapacity",
+            "cohortGroupBy",
+            "cohortLoading",
+            "cohortProjectFilter",
+            "cohortSelectedRow",
+            "cohortStartQuarter",
+            "cohortStatusToggles",
+            "effortSplitVisibleBuckets",
+            "excludedCapacityCacheRef",
+            "excludedCapacityChartMode",
+            "excludedCapacityData",
+            "excludedCapacityEndSprintId",
+            "excludedCapacityEpicDropdownOpen",
+            "excludedCapacityEpicDropdownRef",
+            "excludedCapacityError",
+            "excludedCapacityForceRefreshRef",
+            "excludedCapacityIsolatedTeam",
+            "excludedCapacityLoading",
+            "excludedCapacityMetric",
+            "excludedCapacityRefreshNonce",
+            "excludedCapacitySelectedEpicKeys",
+            "excludedCapacityStartSprintId",
+            "issuePeopleStatsRevision",
+            "projectTrackCapacitySide",
+            "projectTrackExcludeAdHoc",
+            "projectTrackExcludeExcludedCapacity",
+            "projectTrackMode",
+            "projectTrackPhaseAbortRef",
+            "projectTrackPhaseCacheRef",
+            "projectTrackPhaseData",
+            "projectTrackPhaseError",
+            "projectTrackPhaseLoading",
+            "setBurndownMetric",
+            "setBurnoutAssigneeFilter",
+            "setBurnoutData",
+            "setBurnoutError",
+            "setBurnoutLoading",
+            "setBurnoutTaskFilter",
+            "setCohortAssigneeFilter",
+            "setCohortData",
+            "setCohortEndQuarter",
+            "setCohortError",
+            "setCohortExcludeAdHoc",
+            "setCohortExcludeCapacity",
+            "setCohortGroupBy",
+            "setCohortLoading",
+            "setCohortProjectFilter",
+            "setCohortSelectedRow",
+            "setCohortStartQuarter",
+            "setCohortStatusToggles",
+            "setEffortSplitVisibleBuckets",
+            "setExcludedCapacityChartMode",
+            "setExcludedCapacityData",
+            "setExcludedCapacityEndSprintId",
+            "setExcludedCapacityEpicDropdownOpen",
+            "setExcludedCapacityError",
+            "setExcludedCapacityIsolatedTeam",
+            "setExcludedCapacityLoading",
+            "setExcludedCapacityMetric",
+            "setExcludedCapacityRefreshNonce",
+            "setExcludedCapacitySelectedEpicKeys",
+            "setExcludedCapacityStartSprintId",
+            "setIssuePeopleStatsRevision",
+            "setProjectTrackCapacitySide",
+            "setProjectTrackExcludeAdHoc",
+            "setProjectTrackExcludeExcludedCapacity",
+            "setProjectTrackMode",
+            "setProjectTrackPhaseData",
+            "setProjectTrackPhaseError",
+            "setProjectTrackPhaseLoading",
+            "setStatsGraphMode",
+            "setStatsView",
+            "statsGraphMode",
+            "statsView"
+          ],
+          "propNames": [],
+          "expandedInputNames": [
+            "resolveBurndownMetric",
+            "resolveCohortGroupBy",
+            "resolveStatsGraphMode",
+            "resolveStatsView",
+            "savedPrefsRef",
+            "savedPrefsRef.current",
+            "savedPrefsRef.current.burndownMetric",
+            "savedPrefsRef.current.burnoutAssigneeFilter",
+            "savedPrefsRef.current.cohortAssigneeFilter",
+            "savedPrefsRef.current.cohortEndQuarter",
+            "savedPrefsRef.current.cohortExcludeAdHoc",
+            "savedPrefsRef.current.cohortExcludeCapacity",
+            "savedPrefsRef.current.cohortGroupBy",
+            "savedPrefsRef.current.cohortProjectFilter",
+            "savedPrefsRef.current.cohortStartQuarter",
+            "savedPrefsRef.current.cohortStatusToggles",
+            "savedPrefsRef.current.excludedCapacityChartMode",
+            "savedPrefsRef.current.excludedCapacityEndSprintId",
+            "savedPrefsRef.current.excludedCapacityMetric",
+            "savedPrefsRef.current.excludedCapacitySelectedEpicKeys",
+            "savedPrefsRef.current.excludedCapacitySelectedEpicKeys.filter",
+            "savedPrefsRef.current.excludedCapacitySelectedEpicKeys.map",
+            "savedPrefsRef.current.excludedCapacityStartSprintId",
+            "savedPrefsRef.current.projectTrackCapacitySide",
+            "savedPrefsRef.current.projectTrackExcludeAdHoc",
+            "savedPrefsRef.current.projectTrackExcludeExcludedCapacity",
+            "savedPrefsRef.current.projectTrackMode",
+            "savedPrefsRef.current.statsGraphMode",
+            "savedPrefsRef.current.statsView"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 29,
+          "returnCount": 87,
+          "propCount": 0,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 29,
+          "returnCeiling": 87,
+          "propCeiling": 0,
+          "unresolved": [
+            "bag savedPrefsRef member alias saved"
+          ],
+          "inventory": {
+            "source": "frontend/src/stats/useStatsState.js:4",
+            "sourceDigest": "d455176b96ad454225911c95e57cf3c83cfdb484d85d076fca44e3cee0ed2f7f",
+            "reviewed": true,
+            "memberNames": [
+              "resolveBurndownMetric",
+              "resolveCohortGroupBy",
+              "resolveStatsGraphMode",
+              "resolveStatsView",
+              "savedPrefsRef",
+              "savedPrefsRef.current",
+              "savedPrefsRef.current.burndownMetric",
+              "savedPrefsRef.current.burnoutAssigneeFilter",
+              "savedPrefsRef.current.cohortAssigneeFilter",
+              "savedPrefsRef.current.cohortEndQuarter",
+              "savedPrefsRef.current.cohortExcludeAdHoc",
+              "savedPrefsRef.current.cohortExcludeCapacity",
+              "savedPrefsRef.current.cohortGroupBy",
+              "savedPrefsRef.current.cohortProjectFilter",
+              "savedPrefsRef.current.cohortStartQuarter",
+              "savedPrefsRef.current.cohortStatusToggles",
+              "savedPrefsRef.current.excludedCapacityChartMode",
+              "savedPrefsRef.current.excludedCapacityEndSprintId",
+              "savedPrefsRef.current.excludedCapacityMetric",
+              "savedPrefsRef.current.excludedCapacitySelectedEpicKeys",
+              "savedPrefsRef.current.excludedCapacityStartSprintId",
+              "savedPrefsRef.current.projectTrackCapacitySide",
+              "savedPrefsRef.current.projectTrackExcludeAdHoc",
+              "savedPrefsRef.current.projectTrackExcludeExcludedCapacity",
+              "savedPrefsRef.current.projectTrackMode",
+              "savedPrefsRef.current.statsGraphMode",
+              "savedPrefsRef.current.statsView",
+              "savedPrefsRef.current.excludedCapacitySelectedEpicKeys.map",
+              "savedPrefsRef.current.excludedCapacitySelectedEpicKeys.filter"
+            ],
+            "rationale": "saved aliases only savedPrefsRef.current.excludedCapacitySelectedEpicKeys inside its lazy initializer; it is tested with Array.isArray, normalized with String(key || '').trim().toUpperCase(), and filtered with Boolean. The current preference record is read synchronously during hook render or lazy initialization. No callbacks, getters, effects, requests or storage are owned here."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "useStatsState",
+              "line": 975,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [
+            {
+              "name": "statsView",
+              "lines": [
+                976,
+                1588,
+                2803,
+                2922,
+                3305,
+                3362,
+                4375,
+                4467,
+                4498,
+                4501,
+                4503,
+                4510,
+                4589,
+                4770,
+                4774,
+                4909,
+                4983,
+                5040,
+                5163,
+                5170,
+                5179,
+                5715,
+                5729,
+                5730,
+                5731,
+                7662,
+                9393,
+                9409,
+                9420,
+                9431,
+                9444,
+                9467,
+                9477,
+                9674,
+                9684,
+                9776,
+                9786,
+                9938,
+                9956
+              ]
+            },
+            {
+              "name": "setStatsView",
+              "lines": [
+                2862,
+                9396
+              ]
+            },
+            {
+              "name": "statsGraphMode",
+              "lines": [
+                2803,
+                2923,
+                3306,
+                3363,
+                9411,
+                9423
+              ]
+            },
+            {
+              "name": "setStatsGraphMode",
+              "lines": [
+                2862,
+                9412
+              ]
+            },
+            {
+              "name": "burnoutData",
+              "lines": [
+                2803,
+                2924,
+                4478,
+                4493,
+                4498,
+                5604,
+                5615,
+                5618,
+                5628
+              ]
+            },
+            {
+              "name": "setBurnoutData",
+              "lines": [
+                1700,
+                2862,
+                4376,
+                4379,
+                4390,
+                4397,
+                4434,
+                4440,
+                4444,
+                6253,
+                8656
+              ]
+            },
+            {
+              "name": "burnoutLoading",
+              "lines": [
+                2803,
+                2925,
+                9452
+              ]
+            },
+            {
+              "name": "setBurnoutLoading",
+              "lines": [
+                1702,
+                2862,
+                4376,
+                4381,
+                4385,
+                4392,
+                4399,
+                4413,
+                4448
+              ]
+            },
+            {
+              "name": "burnoutError",
+              "lines": [
+                2803,
+                2926,
+                9453
+              ]
+            },
+            {
+              "name": "setBurnoutError",
+              "lines": [
+                1701,
+                2862,
+                4376,
+                4380,
+                4386,
+                4391,
+                4398,
+                4414,
+                4439,
+                4443
+              ]
+            },
+            {
+              "name": "burnoutAssigneeFilter",
+              "lines": [
+                2803,
+                2927,
+                3307,
+                3364,
+                4480,
+                4485,
+                4488,
+                4493,
+                4498,
+                4507,
+                5619,
+                5629,
+                9445
+              ]
+            },
+            {
+              "name": "setBurnoutAssigneeFilter",
+              "lines": [
+                2862,
+                4481,
+                4491,
+                9446
+              ]
+            },
+            {
+              "name": "burndownMetric",
+              "lines": [
+                2803,
+                2928,
+                3308,
+                3365,
+                5624,
+                5634,
+                5646,
+                9448
+              ]
+            },
+            {
+              "name": "setBurndownMetric",
+              "lines": [
+                2862,
+                9449
+              ]
+            },
+            {
+              "name": "cohortData",
+              "lines": [
+                2803,
+                2929,
+                4595,
+                4596,
+                4617,
+                4618,
+                4619,
+                4653,
+                4655
+              ]
+            },
+            {
+              "name": "setCohortData",
+              "lines": [
+                1704,
+                2862,
+                4511,
+                4515,
+                4522,
+                4561,
+                4571,
+                6253,
+                8656
+              ]
+            },
+            {
+              "name": "cohortLoading",
+              "lines": [
+                2803,
+                2930,
+                10077,
+                10078,
+                10079,
+                10087
+              ]
+            },
+            {
+              "name": "setCohortLoading",
+              "lines": [
+                1706,
+                2862,
+                4511,
+                4517,
+                4524,
+                4538,
+                4574
+              ]
+            },
+            {
+              "name": "cohortError",
+              "lines": [
+                2803,
+                2931,
+                10078,
+                10079,
+                10087
+              ]
+            },
+            {
+              "name": "setCohortError",
+              "lines": [
+                1705,
+                2862,
+                4511,
+                4516,
+                4523,
+                4539,
+                4562,
+                4567,
+                4569
+              ]
+            },
+            {
+              "name": "cohortStartQuarter",
+              "lines": [
+                2803,
+                2932,
+                3309,
+                3366,
+                4368,
+                4372,
+                4512,
+                4589,
+                9944,
+                9953,
+                10056,
+                10118
+              ]
+            },
+            {
+              "name": "setCohortStartQuarter",
+              "lines": [
+                2862,
+                9947,
+                9953
+              ]
+            },
+            {
+              "name": "cohortEndQuarter",
+              "lines": [
+                2803,
+                2933,
+                3310,
+                3367,
+                4369,
+                4372,
+                4513,
+                4589,
+                9945,
+                9948,
+                10057,
+                10119
+              ]
+            },
+            {
+              "name": "setCohortEndQuarter",
+              "lines": [
+                2862,
+                9948,
+                9952
+              ]
+            },
+            {
+              "name": "cohortGroupBy",
+              "lines": [
+                2803,
+                2934,
+                3311,
+                3368,
+                4615,
+                4616,
+                4619,
+                4621,
+                4623,
+                4625,
+                4627,
+                9963,
+                10120
+              ]
+            },
+            {
+              "name": "setCohortGroupBy",
+              "lines": [
+                2862,
+                9964
+              ]
+            },
+            {
+              "name": "cohortProjectFilter",
+              "lines": [
+                2803,
+                2935,
+                3312,
+                3369,
+                4599,
+                4600,
+                4601,
+                4605,
+                4611,
+                4670,
+                4671,
+                4673,
+                9973,
+                10122
+              ]
+            },
+            {
+              "name": "setCohortProjectFilter",
+              "lines": [
+                2862,
+                4672,
+                9975
+              ]
+            },
+            {
+              "name": "cohortAssigneeFilter",
+              "lines": [
+                2803,
+                2936,
+                3313,
+                3370,
+                4606,
+                4611,
+                4676,
+                4677,
+                4679,
+                9989,
+                10125
+              ]
+            },
+            {
+              "name": "setCohortAssigneeFilter",
+              "lines": [
+                2862,
+                4678,
+                9991
+              ]
+            },
+            {
+              "name": "cohortExcludeAdHoc",
+              "lines": [
+                2803,
+                2937,
+                3314,
+                3371,
+                4607,
+                4611,
+                10009
+              ]
+            },
+            {
+              "name": "setCohortExcludeAdHoc",
+              "lines": [
+                2862,
+                10010
+              ]
+            },
+            {
+              "name": "cohortExcludeCapacity",
+              "lines": [
+                2803,
+                2938,
+                3315,
+                3372,
+                4608,
+                4611,
+                10018
+              ]
+            },
+            {
+              "name": "setCohortExcludeCapacity",
+              "lines": [
+                2862,
+                10019
+              ]
+            },
+            {
+              "name": "cohortStatusToggles",
+              "lines": [
+                2803,
+                2939,
+                3316,
+                3373,
+                4609,
+                4611,
+                10031
+              ]
+            },
+            {
+              "name": "setCohortStatusToggles",
+              "lines": [
+                2862,
+                10033
+              ]
+            },
+            {
+              "name": "cohortSelectedRow",
+              "lines": [
+                2803,
+                2940,
+                4622,
+                4623,
+                4626,
+                4627,
+                4664,
+                4665,
+                4666,
+                4667,
+                4682,
+                4683,
+                4687,
+                10107,
+                10121
+              ]
+            },
+            {
+              "name": "setCohortSelectedRow",
+              "lines": [
+                1707,
+                2862,
+                4685,
+                9949,
+                9954,
+                9964,
+                9976,
+                9992,
+                10010,
+                10019,
+                10037,
+                10098,
+                10109
+              ]
+            },
+            {
+              "name": "excludedCapacityData",
+              "lines": [
+                4922,
+                4923,
+                5166,
+                5168,
+                9609,
+                9713
+              ]
+            },
+            {
+              "name": "setExcludedCapacityData",
+              "lines": [
+                1708,
+                4771,
+                4775,
+                4781,
+                4787,
+                4799,
+                4863,
+                4878,
+                4888,
+                6253,
+                6255,
+                8597,
+                8656
+              ]
+            },
+            {
+              "name": "excludedCapacityLoading",
+              "lines": [
+                9607,
+                9622,
+                9711,
+                9719
+              ]
+            },
+            {
+              "name": "setExcludedCapacityLoading",
+              "lines": [
+                1710,
+                4771,
+                4777,
+                4783,
+                4789,
+                4801,
+                4854,
+                4891
+              ]
+            },
+            {
+              "name": "excludedCapacityError",
+              "lines": [
+                9612,
+                9613,
+                9615,
+                9622,
+                9625,
+                9716,
+                9717,
+                9719,
+                9722
+              ]
+            },
+            {
+              "name": "setExcludedCapacityError",
+              "lines": [
+                1709,
+                4771,
+                4776,
+                4782,
+                4788,
+                4800,
+                4855,
+                4884,
+                4886,
+                8598
+              ]
+            },
+            {
+              "name": "excludedCapacityStartSprintId",
+              "lines": [
+                1592,
+                3317,
+                3374,
+                4698,
+                4699,
+                4704,
+                4713,
+                4719,
+                4722,
+                9473,
+                9680,
+                9782
+              ]
+            },
+            {
+              "name": "setExcludedCapacityStartSprintId",
+              "lines": [
+                1610,
+                4705,
+                9475,
+                9682,
+                9784
+              ]
+            },
+            {
+              "name": "excludedCapacityEndSprintId",
+              "lines": [
+                1593,
+                3318,
+                3375,
+                4701,
+                4702,
+                4707,
+                4714,
+                4720,
+                4722,
+                9474,
+                9681,
+                9783
+              ]
+            },
+            {
+              "name": "setExcludedCapacityEndSprintId",
+              "lines": [
+                1611,
+                4708,
+                9476,
+                9683,
+                9785
+              ]
+            },
+            {
+              "name": "excludedCapacitySelectedEpicKeys",
+              "lines": [
+                3319,
+                3376,
+                5060,
+                5063,
+                5066,
+                5068,
+                5069,
+                5072,
+                5074,
+                5075,
+                5076
+              ]
+            },
+            {
+              "name": "setExcludedCapacitySelectedEpicKeys",
+              "lines": [
+                5061,
+                5070,
+                5188,
+                5197,
+                5200
+              ]
+            },
+            {
+              "name": "excludedCapacityChartMode",
+              "lines": [
+                3320,
+                3377,
+                5122,
+                5131,
+                5170,
+                5179,
+                9547
+              ]
+            },
+            {
+              "name": "setExcludedCapacityChartMode",
+              "lines": [
+                9554
+              ]
+            },
+            {
+              "name": "excludedCapacityMetric",
+              "lines": [
+                3321,
+                3378,
+                9563,
+                9637,
+                9659
+              ]
+            },
+            {
+              "name": "setExcludedCapacityMetric",
+              "lines": [
+                9569
+              ]
+            },
+            {
+              "name": "effortSplitVisibleBuckets",
+              "lines": [
+                9638
+              ]
+            },
+            {
+              "name": "setEffortSplitVisibleBuckets",
+              "lines": [
+                5203
+              ]
+            },
+            {
+              "name": "excludedCapacityIsolatedTeam",
+              "lines": [
+                5170,
+                5174,
+                5176,
+                5179,
+                9661,
+                9763
+              ]
+            },
+            {
+              "name": "setExcludedCapacityIsolatedTeam",
+              "lines": [
+                5171,
+                5177,
+                9662,
+                9764
+              ]
+            },
+            {
+              "name": "excludedCapacityEpicDropdownOpen",
+              "lines": [
+                5209,
+                5218,
+                9484,
+                9487,
+                9494
+              ]
+            },
+            {
+              "name": "setExcludedCapacityEpicDropdownOpen",
+              "lines": [
+                5213,
+                9485
+              ]
+            },
+            {
+              "name": "excludedCapacityRefreshNonce",
+              "lines": [
+                4917
+              ]
+            },
+            {
+              "name": "setExcludedCapacityRefreshNonce",
+              "lines": [
+                1612,
+                6253,
+                6255,
+                8599
+              ]
+            },
+            {
+              "name": "issuePeopleStatsRevision",
+              "lines": [
+                4474,
+                4589
+              ]
+            },
+            {
+              "name": "setIssuePeopleStatsRevision",
+              "lines": [
+                6253
+              ]
+            },
+            {
+              "name": "excludedCapacityEpicDropdownRef",
+              "lines": [
+                5211,
+                9479
+              ]
+            },
+            {
+              "name": "projectTrackCapacitySide",
+              "lines": [
+                3322,
+                4931,
+                4940,
+                9793
+              ]
+            },
+            {
+              "name": "setProjectTrackCapacitySide",
+              "lines": [
+                9800
+              ]
+            },
+            {
+              "name": "projectTrackMode",
+              "lines": [
+                3323,
+                4932,
+                4941,
+                4962,
+                4964,
+                4978,
+                4980,
+                4983,
+                5041,
+                9849,
+                9867,
+                9886,
+                9894,
+                9903
+              ]
+            },
+            {
+              "name": "setProjectTrackMode",
+              "lines": [
+                9856
+              ]
+            },
+            {
+              "name": "projectTrackExcludeAdHoc",
+              "lines": [
+                3324,
+                4933,
+                4942,
+                9814
+              ]
+            },
+            {
+              "name": "setProjectTrackExcludeAdHoc",
+              "lines": [
+                9822
+              ]
+            },
+            {
+              "name": "projectTrackExcludeExcludedCapacity",
+              "lines": [
+                3325,
+                4934,
+                4943,
+                9830
+              ]
+            },
+            {
+              "name": "setProjectTrackExcludeExcludedCapacity",
+              "lines": [
+                9838
+              ]
+            },
+            {
+              "name": "projectTrackPhaseData",
+              "lines": [
+                5045,
+                5046,
+                9914,
+                9916
+              ]
+            },
+            {
+              "name": "setProjectTrackPhaseData",
+              "lines": [
+                4987,
+                4994,
+                5021,
+                5027
+              ]
+            },
+            {
+              "name": "projectTrackPhaseLoading",
+              "lines": [
+                9906,
+                9909,
+                9912
+              ]
+            },
+            {
+              "name": "setProjectTrackPhaseLoading",
+              "lines": [
+                4989,
+                4996,
+                5006,
+                5029
+              ]
+            },
+            {
+              "name": "projectTrackPhaseError",
+              "lines": [
+                9909,
+                9910,
+                9912
+              ]
+            },
+            {
+              "name": "setProjectTrackPhaseError",
+              "lines": [
+                4988,
+                4995,
+                5007,
+                5022,
+                5026
+              ]
+            },
+            {
+              "name": "projectTrackPhaseCacheRef",
+              "lines": [
+                4992,
+                5020
+              ]
+            },
+            {
+              "name": "projectTrackPhaseAbortRef",
+              "lines": [
+                4999,
+                5000,
+                5003
+              ]
+            },
+            {
+              "name": "burnoutTaskFilter",
+              "lines": [
+                5411,
+                5415,
+                5420,
+                5764,
+                5765,
+                7420,
+                9460
+              ]
+            },
+            {
+              "name": "setBurnoutTaskFilter",
+              "lines": [
+                1703,
+                4502,
+                4506,
+                7629,
+                7661,
+                9461
+              ]
+            },
+            {
+              "name": "burnoutCacheRef",
+              "lines": [
+                1699,
+                4395,
+                4433,
+                6253,
+                8593,
+                8655
+              ]
+            },
+            {
+              "name": "cohortCacheRef",
+              "lines": [
+                1699,
+                4520,
+                4560,
+                6253,
+                8593,
+                8655
+              ]
+            },
+            {
+              "name": "excludedCapacityCacheRef",
+              "lines": [
+                1699,
+                4797,
+                4810,
+                4837,
+                4877,
+                6161,
+                6253,
+                6255,
+                8593,
+                8655
+              ]
+            },
+            {
+              "name": "excludedCapacityForceRefreshRef",
+              "lines": [
+                1609,
+                4792,
+                4794,
+                8596
+              ]
+            }
+          ],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "stats.useStatsData",
+      "path": "frontend/src/stats/useStatsData.js",
+      "features": [
+        "stats"
+      ],
+      "exports": [
+        "useStatsDerivedA",
+        "useStatsDerivedB",
+        "useStatsDerivedC"
+      ],
+      "lineCount": 1290,
+      "lineCeiling": 1290,
+      "interfaces": [
+        {
+          "exportName": "useStatsDerivedA",
+          "inputNames": [
+            "BACKEND_URL",
+            "activeGroupMissingComponents",
+            "activeGroupTeamIds",
+            "activeGroupTeamSet",
+            "burnoutAssigneeFilter",
+            "burnoutCacheRef",
+            "burnoutData",
+            "cohortEndQuarter",
+            "cohortStartQuarter",
+            "getTeamInfo",
+            "groupPreferences",
+            "isCompletedSprintSelected",
+            "issueEditStateRef",
+            "issuePeopleStatsRevision",
+            "normalizeEpicKey",
+            "normalizeStatus",
+            "perfCountersRef",
+            "perfEnabled",
+            "scope",
+            "setBurnoutAssigneeFilter",
+            "setBurnoutData",
+            "setBurnoutError",
+            "setBurnoutLoading",
+            "showStats",
+            "statsView",
+            "tasksFetched"
+          ],
+          "returnNames": [
+            "burnoutIssueWeightByKey",
+            "burnoutQueryKey",
+            "burnoutScopedTeamIds",
+            "burnoutScopedTeamSignature",
+            "burnoutTaskStatusByIssueKey",
+            "burnoutTaskTeamByIssueKey",
+            "cohortQueryKey",
+            "cohortScopedTeamSignature",
+            "effectiveStatsData"
+          ],
+          "propNames": [],
+          "expandedInputNames": [
+            "BACKEND_URL",
+            "activeGroupMissingComponents",
+            "activeGroupMissingComponents.slice",
+            "activeGroupTeamIds",
+            "activeGroupTeamIds.length",
+            "activeGroupTeamSet",
+            "activeGroupTeamSet.has",
+            "burnoutAssigneeFilter",
+            "burnoutCacheRef",
+            "burnoutCacheRef.current",
+            "burnoutCacheRef.current[burnoutQueryKey]",
+            "burnoutData",
+            "burnoutData.assignees",
+            "cohortEndQuarter",
+            "cohortStartQuarter",
+            "getTeamInfo",
+            "groupPreferences",
+            "groupPreferences.onboardingRequired",
+            "isCompletedSprintSelected",
+            "issueEditStateRef",
+            "issueEditStateRef.current",
+            "issueEditStateRef.current.beginRead",
+            "issueEditStateRef.current.finishRead",
+            "issueEditStateRef.current.isCurrentAggregateRead",
+            "issuePeopleStatsRevision",
+            "normalizeEpicKey",
+            "normalizeStatus",
+            "perfCountersRef",
+            "perfCountersRef.current",
+            "perfCountersRef.current.statsBuild",
+            "perfEnabled",
+            "scope",
+            "scope.adHocEpicSet",
+            "scope.adHocEpicSignature",
+            "scope.capacityTasks",
+            "scope.excludedEpicSet",
+            "scope.isAllTeamsSelected",
+            "scope.selectedSprintInfo",
+            "scope.selectedTeamSet",
+            "scope.techProjectKeys",
+            "setBurnoutAssigneeFilter",
+            "setBurnoutData",
+            "setBurnoutError",
+            "setBurnoutLoading",
+            "showStats",
+            "statsView",
+            "tasksFetched"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 47,
+          "returnCount": 9,
+          "propCount": 0,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 47,
+          "returnCeiling": 9,
+          "propCeiling": 0,
+          "unresolved": [
+            "forwarded input BACKEND_URL",
+            "bag burnoutCacheRef member alias cached",
+            "bag burnoutCacheRef dynamic deep member"
+          ],
+          "inventory": {
+            "source": "frontend/src/stats/useStatsData.js:12",
+            "sourceDigest": "fe55a6920e7f446e576ccf56ee5cd831942928faae5c82f88a40bd5ae5de81d2",
+            "reviewed": true,
+            "memberNames": [
+              "BACKEND_URL",
+              "activeGroupMissingComponents",
+              "activeGroupMissingComponents.slice",
+              "activeGroupTeamIds",
+              "activeGroupTeamIds.length",
+              "activeGroupTeamSet",
+              "activeGroupTeamSet.has",
+              "burnoutAssigneeFilter",
+              "burnoutCacheRef",
+              "burnoutCacheRef.current",
+              "burnoutCacheRef.current[burnoutQueryKey]",
+              "burnoutData",
+              "burnoutData.assignees",
+              "cohortEndQuarter",
+              "cohortStartQuarter",
+              "getTeamInfo",
+              "groupPreferences",
+              "groupPreferences.onboardingRequired",
+              "isCompletedSprintSelected",
+              "issueEditStateRef",
+              "issueEditStateRef.current",
+              "issueEditStateRef.current.beginRead",
+              "issueEditStateRef.current.finishRead",
+              "issueEditStateRef.current.isCurrentAggregateRead",
+              "issuePeopleStatsRevision",
+              "normalizeEpicKey",
+              "normalizeStatus",
+              "perfCountersRef",
+              "perfCountersRef.current",
+              "perfCountersRef.current.statsBuild",
+              "perfEnabled",
+              "scope",
+              "scope.adHocEpicSet",
+              "scope.adHocEpicSignature",
+              "scope.capacityTasks",
+              "scope.excludedEpicSet",
+              "scope.isAllTeamsSelected",
+              "scope.selectedSprintInfo",
+              "scope.selectedTeamSet",
+              "scope.techProjectKeys",
+              "setBurnoutAssigneeFilter",
+              "setBurnoutData",
+              "setBurnoutError",
+              "setBurnoutLoading",
+              "showStats",
+              "statsView",
+              "tasksFetched"
+            ],
+            "rationale": "BACKEND_URL is forwarded only as the existing API wrapper base URL. burnoutCacheRef.current indexes burnoutQueryKey; cached is the stored Stats payload tested for presence and passed unchanged to setBurnoutData. No dynamic callback or getter is supplied. issueEditStateRef aggregate read methods keep the same captured token and deferred timing. Task 3 reviewed change: unchanged bindings/aliases except removal of panel-owned burnoutChartRef/pointer and exact scroll effect; retained memo/fetch/cache ownership unchanged."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "useStatsDerivedA",
+              "line": 4190,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [
+            {
+              "name": "effectiveStatsData",
+              "lines": [
+                4460
+              ]
+            },
+            {
+              "name": "burnoutTaskTeamByIssueKey",
+              "lines": [
+                4459
+              ]
+            },
+            {
+              "name": "burnoutTaskStatusByIssueKey",
+              "lines": [
+                4459
+              ]
+            },
+            {
+              "name": "burnoutIssueWeightByKey",
+              "lines": [
+                4459
+              ]
+            },
+            {
+              "name": "burnoutScopedTeamIds",
+              "lines": [
+                4217,
+                8229
+              ]
+            },
+            {
+              "name": "burnoutScopedTeamSignature",
+              "lines": [
+                4217
+              ]
+            },
+            {
+              "name": "cohortScopedTeamSignature",
+              "lines": [
+                4219
+              ]
+            },
+            {
+              "name": "burnoutQueryKey",
+              "lines": [
+                4216
+              ]
+            },
+            {
+              "name": "cohortQueryKey",
+              "lines": [
+                4219
+              ]
+            }
+          ],
+          "getters": []
+        },
+        {
+          "exportName": "useStatsDerivedB",
+          "inputNames": [
+            "BACKEND_URL",
+            "EMPTY_ARRAY",
+            "EXCLUDED_CAPACITY_STATS_SOURCE_CONCURRENCY",
+            "activeGroup",
+            "activeGroupAdHocCapacityEpics",
+            "activeGroupMissingComponents",
+            "activeGroupTeamIds",
+            "adminSettingsGate",
+            "availableSprints",
+            "burnoutAssigneeFilter",
+            "burnoutQueryKey",
+            "burnoutScopedTeamIds",
+            "burnoutScopedTeamSignature",
+            "cohortAssigneeFilter",
+            "cohortCacheRef",
+            "cohortData",
+            "cohortEndQuarter",
+            "cohortExcludeAdHoc",
+            "cohortExcludeCapacity",
+            "cohortGroupBy",
+            "cohortProjectFilter",
+            "cohortQueryKey",
+            "cohortScopedTeamSignature",
+            "cohortSelectedRow",
+            "cohortStartQuarter",
+            "cohortStatusToggles",
+            "excludedCapacityCacheRef",
+            "excludedCapacityChartMode",
+            "excludedCapacityData",
+            "excludedCapacityEndSprintId",
+            "excludedCapacityEpicDropdownOpen",
+            "excludedCapacityEpicDropdownRef",
+            "excludedCapacityForceRefreshRef",
+            "excludedCapacityIsolatedTeam",
+            "excludedCapacityRefreshNonce",
+            "excludedCapacitySelectedEpicKeys",
+            "excludedCapacityStartSprintId",
+            "groupPreferences",
+            "issueEditStateRef",
+            "issuePeopleStatsRevision",
+            "projectTrackCapacitySide",
+            "projectTrackExcludeAdHoc",
+            "projectTrackExcludeExcludedCapacity",
+            "projectTrackMode",
+            "projectTrackPhaseAbortRef",
+            "projectTrackPhaseCacheRef",
+            "projectTrackPhaseData",
+            "scope",
+            "setBurnoutTaskFilter",
+            "setCohortAssigneeFilter",
+            "setCohortData",
+            "setCohortError",
+            "setCohortLoading",
+            "setCohortProjectFilter",
+            "setCohortSelectedRow",
+            "setEffortSplitVisibleBuckets",
+            "setExcludedCapacityData",
+            "setExcludedCapacityEndSprintId",
+            "setExcludedCapacityEpicDropdownOpen",
+            "setExcludedCapacityError",
+            "setExcludedCapacityIsolatedTeam",
+            "setExcludedCapacityLoading",
+            "setExcludedCapacitySelectedEpicKeys",
+            "setExcludedCapacityStartSprintId",
+            "setProjectTrackPhaseData",
+            "setProjectTrackPhaseError",
+            "setProjectTrackPhaseLoading",
+            "showStats",
+            "statsView",
+            "trackApiResult"
+          ],
+          "returnNames": [
+            "clearExcludedCapacityEpicSelection",
+            "cohortAssigneeOptions",
+            "cohortAverageLeadDays",
+            "cohortCompletedBars",
+            "cohortGridModel",
+            "cohortMedianLeadDays",
+            "cohortOpenBars",
+            "cohortProjectOptions",
+            "cohortQuarterOptions",
+            "cohortSelectedRowLabel",
+            "cohortStatusControls",
+            "cohortSummary",
+            "cohortWarnings",
+            "cohortWorkflowStatusTotal",
+            "effortSplitRows",
+            "effortSplitSprintLabel",
+            "effortSplitTotals",
+            "excludedCapacityEffectiveFilters",
+            "excludedCapacityEpicCatalog",
+            "excludedCapacityEpicOptions",
+            "excludedCapacityFilterLabel",
+            "excludedCapacityLineSeries",
+            "excludedCapacityModeOverall",
+            "excludedCapacityModeSprintRows",
+            "excludedCapacityModeTeamLineSeries",
+            "excludedCapacityRows",
+            "excludedCapacitySprintOptions",
+            "excludedCapacitySprintRange",
+            "excludedCapacityWarnings",
+            "formatExcludedPoints",
+            "projectTrackBreakdown",
+            "projectTrackColumnSplit",
+            "projectTrackPhaseEpics",
+            "projectTrackPhaseSummary",
+            "projectTrackRangeLabel",
+            "projectTrackSeries",
+            "projectTrackTotals",
+            "selectAllExcludedCapacityEpics",
+            "toggleEffortSplitBucket",
+            "toggleExcludedCapacityEpicKey"
+          ],
+          "propNames": [],
+          "expandedInputNames": [
+            "BACKEND_URL",
+            "EMPTY_ARRAY",
+            "EXCLUDED_CAPACITY_STATS_SOURCE_CONCURRENCY",
+            "activeGroup",
+            "activeGroup.board",
+            "activeGroup.board.columns",
+            "activeGroup.name",
+            "activeGroupAdHocCapacityEpics",
+            "activeGroupMissingComponents",
+            "activeGroupTeamIds",
+            "activeGroupTeamIds.length",
+            "adminSettingsGate",
+            "adminSettingsGate.status",
+            "availableSprints",
+            "burnoutAssigneeFilter",
+            "burnoutQueryKey",
+            "burnoutScopedTeamIds",
+            "burnoutScopedTeamSignature",
+            "cohortAssigneeFilter",
+            "cohortCacheRef",
+            "cohortCacheRef.current",
+            "cohortCacheRef.current[cohortQueryKey]",
+            "cohortData",
+            "cohortData.issues",
+            "cohortData.meta",
+            "cohortData.meta.warnings",
+            "cohortData.range",
+            "cohortData.range.endDate",
+            "cohortData.range.startDate",
+            "cohortEndQuarter",
+            "cohortExcludeAdHoc",
+            "cohortExcludeCapacity",
+            "cohortGroupBy",
+            "cohortProjectFilter",
+            "cohortQueryKey",
+            "cohortScopedTeamSignature",
+            "cohortSelectedRow",
+            "cohortStartQuarter",
+            "cohortStatusToggles",
+            "excludedCapacityCacheRef",
+            "excludedCapacityCacheRef.current",
+            "excludedCapacityCacheRef.current[rangeCacheKey]",
+            "excludedCapacityCacheRef.current[sprintCacheKey]",
+            "excludedCapacityChartMode",
+            "excludedCapacityData",
+            "excludedCapacityData.issues",
+            "excludedCapacityData.meta",
+            "excludedCapacityData.meta.warnings",
+            "excludedCapacityEndSprintId",
+            "excludedCapacityEpicDropdownOpen",
+            "excludedCapacityEpicDropdownRef",
+            "excludedCapacityEpicDropdownRef.current",
+            "excludedCapacityEpicDropdownRef.current.contains",
+            "excludedCapacityForceRefreshRef",
+            "excludedCapacityForceRefreshRef.current",
+            "excludedCapacityIsolatedTeam",
+            "excludedCapacityRefreshNonce",
+            "excludedCapacitySelectedEpicKeys",
+            "excludedCapacitySelectedEpicKeys.filter",
+            "excludedCapacitySelectedEpicKeys.length",
+            "excludedCapacityStartSprintId",
+            "groupPreferences",
+            "groupPreferences.onboardingRequired",
+            "issueEditStateRef",
+            "issueEditStateRef.current",
+            "issueEditStateRef.current.beginRead",
+            "issueEditStateRef.current.finishRead",
+            "issueEditStateRef.current.isCurrentAggregateRead",
+            "issuePeopleStatsRevision",
+            "projectTrackCapacitySide",
+            "projectTrackExcludeAdHoc",
+            "projectTrackExcludeExcludedCapacity",
+            "projectTrackMode",
+            "projectTrackPhaseAbortRef",
+            "projectTrackPhaseAbortRef.current",
+            "projectTrackPhaseAbortRef.current.abort",
+            "projectTrackPhaseCacheRef",
+            "projectTrackPhaseCacheRef.current",
+            "projectTrackPhaseCacheRef.current[projectTrackPhaseSignature]",
+            "projectTrackPhaseData",
+            "projectTrackPhaseData.epics",
+            "scope",
+            "scope.activeGroupId",
+            "scope.adHocEpicSet",
+            "scope.adHocEpicSignature",
+            "scope.excludedEpicSet",
+            "scope.isAllTeamsSelected",
+            "scope.selectedSprint",
+            "scope.selectedSprintInfo",
+            "scope.selectedTeamSet",
+            "scope.teamNameById",
+            "scope.teamOptions",
+            "scope.techProjectKeys",
+            "setBurnoutTaskFilter",
+            "setCohortAssigneeFilter",
+            "setCohortData",
+            "setCohortError",
+            "setCohortLoading",
+            "setCohortProjectFilter",
+            "setCohortSelectedRow",
+            "setEffortSplitVisibleBuckets",
+            "setExcludedCapacityData",
+            "setExcludedCapacityEndSprintId",
+            "setExcludedCapacityEpicDropdownOpen",
+            "setExcludedCapacityError",
+            "setExcludedCapacityIsolatedTeam",
+            "setExcludedCapacityLoading",
+            "setExcludedCapacitySelectedEpicKeys",
+            "setExcludedCapacityStartSprintId",
+            "setProjectTrackPhaseData",
+            "setProjectTrackPhaseError",
+            "setProjectTrackPhaseLoading",
+            "showStats",
+            "statsView",
+            "trackApiResult"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 115,
+          "returnCount": 40,
+          "propCount": 0,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 115,
+          "returnCeiling": 40,
+          "propCeiling": 0,
+          "unresolved": [
+            "forwarded input BACKEND_URL",
+            "bag cohortCacheRef member alias cached",
+            "bag cohortCacheRef dynamic deep member",
+            "bag excludedCapacityCacheRef member alias cached",
+            "bag excludedCapacityCacheRef dynamic deep member",
+            "bag excludedCapacityCacheRef member alias cachedSprint",
+            "forwarded input excludedCapacityEndSprintId",
+            "bag excludedCapacityEpicDropdownRef member alias node",
+            "bag excludedCapacityForceRefreshRef member alias forceRefresh",
+            "forwarded input excludedCapacityIsolatedTeam",
+            "forwarded input excludedCapacitySelectedEpicKeys",
+            "forwarded input excludedCapacityStartSprintId",
+            "bag projectTrackPhaseCacheRef member alias cached",
+            "bag projectTrackPhaseCacheRef dynamic deep member"
+          ],
+          "inventory": {
+            "source": "frontend/src/stats/useStatsData.js:277",
+            "sourceDigest": "fe55a6920e7f446e576ccf56ee5cd831942928faae5c82f88a40bd5ae5de81d2",
+            "reviewed": true,
+            "memberNames": [
+              "BACKEND_URL",
+              "EMPTY_ARRAY",
+              "EXCLUDED_CAPACITY_STATS_SOURCE_CONCURRENCY",
+              "activeGroup",
+              "activeGroup.board",
+              "activeGroup.board.columns",
+              "activeGroup.name",
+              "activeGroupAdHocCapacityEpics",
+              "activeGroupMissingComponents",
+              "activeGroupTeamIds",
+              "activeGroupTeamIds.length",
+              "adminSettingsGate",
+              "adminSettingsGate.status",
+              "availableSprints",
+              "burnoutAssigneeFilter",
+              "burnoutQueryKey",
+              "burnoutScopedTeamIds",
+              "burnoutScopedTeamSignature",
+              "cohortAssigneeFilter",
+              "cohortCacheRef",
+              "cohortCacheRef.current",
+              "cohortCacheRef.current[cohortQueryKey]",
+              "cohortData",
+              "cohortData.issues",
+              "cohortData.meta",
+              "cohortData.meta.warnings",
+              "cohortData.range",
+              "cohortData.range.endDate",
+              "cohortData.range.startDate",
+              "cohortEndQuarter",
+              "cohortExcludeAdHoc",
+              "cohortExcludeCapacity",
+              "cohortGroupBy",
+              "cohortProjectFilter",
+              "cohortQueryKey",
+              "cohortScopedTeamSignature",
+              "cohortSelectedRow",
+              "cohortStartQuarter",
+              "cohortStatusToggles",
+              "excludedCapacityCacheRef",
+              "excludedCapacityCacheRef.current",
+              "excludedCapacityCacheRef.current[rangeCacheKey]",
+              "excludedCapacityCacheRef.current[sprintCacheKey]",
+              "excludedCapacityChartMode",
+              "excludedCapacityData",
+              "excludedCapacityData.issues",
+              "excludedCapacityData.meta",
+              "excludedCapacityData.meta.warnings",
+              "excludedCapacityEndSprintId",
+              "excludedCapacityEpicDropdownOpen",
+              "excludedCapacityEpicDropdownRef",
+              "excludedCapacityEpicDropdownRef.current",
+              "excludedCapacityEpicDropdownRef.current.contains",
+              "excludedCapacityForceRefreshRef",
+              "excludedCapacityForceRefreshRef.current",
+              "excludedCapacityIsolatedTeam",
+              "excludedCapacityRefreshNonce",
+              "excludedCapacitySelectedEpicKeys",
+              "excludedCapacitySelectedEpicKeys.filter",
+              "excludedCapacitySelectedEpicKeys.length",
+              "excludedCapacityStartSprintId",
+              "groupPreferences",
+              "groupPreferences.onboardingRequired",
+              "issueEditStateRef",
+              "issueEditStateRef.current",
+              "issueEditStateRef.current.beginRead",
+              "issueEditStateRef.current.finishRead",
+              "issueEditStateRef.current.isCurrentAggregateRead",
+              "issuePeopleStatsRevision",
+              "projectTrackCapacitySide",
+              "projectTrackExcludeAdHoc",
+              "projectTrackExcludeExcludedCapacity",
+              "projectTrackMode",
+              "projectTrackPhaseAbortRef",
+              "projectTrackPhaseAbortRef.current",
+              "projectTrackPhaseAbortRef.current.abort",
+              "projectTrackPhaseCacheRef",
+              "projectTrackPhaseCacheRef.current",
+              "projectTrackPhaseCacheRef.current[projectTrackPhaseSignature]",
+              "projectTrackPhaseData",
+              "projectTrackPhaseData.epics",
+              "scope",
+              "scope.activeGroupId",
+              "scope.adHocEpicSet",
+              "scope.adHocEpicSignature",
+              "scope.excludedEpicSet",
+              "scope.isAllTeamsSelected",
+              "scope.selectedSprint",
+              "scope.selectedSprintInfo",
+              "scope.selectedTeamSet",
+              "scope.teamNameById",
+              "scope.teamOptions",
+              "scope.techProjectKeys",
+              "setBurnoutTaskFilter",
+              "setCohortAssigneeFilter",
+              "setCohortData",
+              "setCohortError",
+              "setCohortLoading",
+              "setCohortProjectFilter",
+              "setCohortSelectedRow",
+              "setEffortSplitVisibleBuckets",
+              "setExcludedCapacityData",
+              "setExcludedCapacityEndSprintId",
+              "setExcludedCapacityEpicDropdownOpen",
+              "setExcludedCapacityError",
+              "setExcludedCapacityIsolatedTeam",
+              "setExcludedCapacityLoading",
+              "setExcludedCapacitySelectedEpicKeys",
+              "setExcludedCapacityStartSprintId",
+              "setProjectTrackPhaseData",
+              "setProjectTrackPhaseError",
+              "setProjectTrackPhaseLoading",
+              "showStats",
+              "statsView",
+              "trackApiResult"
+            ],
+            "rationale": "BACKEND_URL is forwarded only as the existing API wrapper base URL. cohortCacheRef.current indexes cohortQueryKey; excludedCapacityCacheRef.current indexes progressive scoped sprint keys; projectTrackPhaseCacheRef.current indexes projectTrackPhaseSignature. Cached payload aliases are checked for presence and passed unchanged to existing setters or merge helpers. node aliases the dropdown DOM ref and only calls contains(event.target); forceRefresh aliases a boolean ref. Forwarded sprint ids, isolated team and selected epic keys retain the existing helper argument and setter contracts. All asynchronous callbacks and abort/generation guards are unchanged. Task 3 reviewed change: unchanged bindings/aliases except removal of panel-owned burnoutChartRef/pointer and exact scroll effect; retained memo/fetch/cache ownership unchanged."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "useStatsDerivedB",
+              "line": 4213,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [
+            {
+              "name": "cohortQuarterOptions",
+              "lines": [
+                8196
+              ]
+            },
+            {
+              "name": "cohortProjectOptions",
+              "lines": [
+                8206
+              ]
+            },
+            {
+              "name": "cohortAssigneeOptions",
+              "lines": [
+                8209
+              ]
+            },
+            {
+              "name": "cohortSummary",
+              "lines": [
+                8217
+              ]
+            },
+            {
+              "name": "cohortWorkflowStatusTotal",
+              "lines": [
+                8218
+              ]
+            },
+            {
+              "name": "cohortGridModel",
+              "lines": [
+                8225
+              ]
+            },
+            {
+              "name": "cohortOpenBars",
+              "lines": [
+                8227
+              ]
+            },
+            {
+              "name": "cohortCompletedBars",
+              "lines": [
+                8228
+              ]
+            },
+            {
+              "name": "cohortAverageLeadDays",
+              "lines": [
+                8219
+              ]
+            },
+            {
+              "name": "cohortMedianLeadDays",
+              "lines": [
+                8220
+              ]
+            },
+            {
+              "name": "cohortWarnings",
+              "lines": [
+                8223
+              ]
+            },
+            {
+              "name": "cohortStatusControls",
+              "lines": [
+                8214
+              ]
+            },
+            {
+              "name": "cohortSelectedRowLabel",
+              "lines": [
+                8224
+              ]
+            },
+            {
+              "name": "excludedCapacitySprintOptions",
+              "lines": [
+                8141
+              ]
+            },
+            {
+              "name": "excludedCapacitySprintRange",
+              "lines": [
+                8174
+              ]
+            },
+            {
+              "name": "effortSplitSprintLabel",
+              "lines": [
+                8165
+              ]
+            },
+            {
+              "name": "excludedCapacityEpicOptions",
+              "lines": [
+                8169
+              ]
+            },
+            {
+              "name": "projectTrackSeries",
+              "lines": [
+                8187
+              ]
+            },
+            {
+              "name": "projectTrackTotals",
+              "lines": [
+                8186
+              ]
+            },
+            {
+              "name": "projectTrackBreakdown",
+              "lines": [
+                8190
+              ]
+            },
+            {
+              "name": "projectTrackColumnSplit",
+              "lines": [
+                8189
+              ]
+            },
+            {
+              "name": "projectTrackRangeLabel",
+              "lines": [
+                8188
+              ]
+            },
+            {
+              "name": "projectTrackPhaseEpics",
+              "lines": [
+                8195
+              ]
+            },
+            {
+              "name": "projectTrackPhaseSummary",
+              "lines": [
+                8194
+              ]
+            },
+            {
+              "name": "excludedCapacityEpicCatalog",
+              "lines": [
+                8152
+              ]
+            },
+            {
+              "name": "excludedCapacityEffectiveFilters",
+              "lines": [
+                8153
+              ]
+            },
+            {
+              "name": "excludedCapacityFilterLabel",
+              "lines": [
+                8149
+              ]
+            },
+            {
+              "name": "effortSplitRows",
+              "lines": [
+                8166
+              ]
+            },
+            {
+              "name": "excludedCapacityRows",
+              "lines": [
+                8170
+              ]
+            },
+            {
+              "name": "excludedCapacityLineSeries",
+              "lines": [
+                8171
+              ]
+            },
+            {
+              "name": "excludedCapacityModeOverall",
+              "lines": [
+                8175
+              ]
+            },
+            {
+              "name": "excludedCapacityModeSprintRows",
+              "lines": [
+                8176
+              ]
+            },
+            {
+              "name": "excludedCapacityModeTeamLineSeries",
+              "lines": [
+                8177
+              ]
+            },
+            {
+              "name": "effortSplitTotals",
+              "lines": [
+                8160
+              ]
+            },
+            {
+              "name": "excludedCapacityWarnings",
+              "lines": [
+                8164
+              ]
+            },
+            {
+              "name": "formatExcludedPoints",
+              "lines": [
+                8159
+              ]
+            },
+            {
+              "name": "toggleExcludedCapacityEpicKey",
+              "lines": [
+                8154
+              ]
+            },
+            {
+              "name": "clearExcludedCapacityEpicSelection",
+              "lines": [
+                8151
+              ]
+            },
+            {
+              "name": "selectAllExcludedCapacityEpics",
+              "lines": [
+                8150
+              ]
+            },
+            {
+              "name": "toggleEffortSplitBucket",
+              "lines": [
+                8168
+              ]
+            }
+          ],
+          "getters": []
+        },
+        {
+          "exportName": "useStatsDerivedC",
+          "inputNames": [
+            "burndownMetric",
+            "burnoutAssigneeFilter",
+            "burnoutData",
+            "burnoutIssueWeightByKey",
+            "burnoutTaskStatusByIssueKey",
+            "burnoutTaskTeamByIssueKey",
+            "effectivePriorityWeightMap",
+            "effectiveStatsData",
+            "isBurnoutClosedStatus",
+            "isCompletedSprintSelected",
+            "priorityAxis",
+            "priorityOrder",
+            "resolveStatsTeamColor",
+            "scope",
+            "showStats",
+            "statsView"
+          ],
+          "returnNames": [
+            "buildBurnoutTaskFilter",
+            "burndownMetricIsStoryPoints",
+            "burnoutAssigneeOptions",
+            "burnoutChartModel",
+            "burnoutTotals",
+            "canRenderStatsPanel",
+            "formatBurndownValue",
+            "isLeadTimesFocusMode",
+            "priorityRadar",
+            "priorityRows",
+            "priorityTeamIds",
+            "statsBarColumns",
+            "statsTeamRows",
+            "statsTotals"
+          ],
+          "propNames": [],
+          "expandedInputNames": [
+            "burndownMetric",
+            "burnoutAssigneeFilter",
+            "burnoutData",
+            "burnoutData.assignees",
+            "burnoutIssueWeightByKey",
+            "burnoutTaskStatusByIssueKey",
+            "burnoutTaskTeamByIssueKey",
+            "effectivePriorityWeightMap",
+            "effectiveStatsData",
+            "effectiveStatsData.teams",
+            "isBurnoutClosedStatus",
+            "isCompletedSprintSelected",
+            "priorityAxis",
+            "priorityAxis.map",
+            "priorityOrder",
+            "priorityOrder[a.name]",
+            "priorityOrder[b.name]",
+            "resolveStatsTeamColor",
+            "scope",
+            "scope.isAllTeamsSelected",
+            "scope.selectedTeamSet",
+            "scope.teamNameById",
+            "scope.teamOptions",
+            "showStats",
+            "statsView"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 25,
+          "returnCount": 14,
+          "propCount": 0,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 25,
+          "returnCeiling": 14,
+          "propCeiling": 0,
+          "unresolved": [
+            "forwarded input effectivePriorityWeightMap",
+            "forwarded input effectiveStatsData",
+            "bag priorityOrder dynamic member",
+            "bag priorityOrder dynamic deep member"
+          ],
+          "inventory": {
+            "source": "frontend/src/stats/useStatsData.js:1035",
+            "sourceDigest": "fe55a6920e7f446e576ccf56ee5cd831942928faae5c82f88a40bd5ae5de81d2",
+            "reviewed": true,
+            "memberNames": [
+              "burndownMetric",
+              "burnoutAssigneeFilter",
+              "burnoutData",
+              "burnoutData.assignees",
+              "burnoutIssueWeightByKey",
+              "burnoutTaskStatusByIssueKey",
+              "burnoutTaskTeamByIssueKey",
+              "effectivePriorityWeightMap",
+              "effectiveStatsData",
+              "effectiveStatsData.teams",
+              "isBurnoutClosedStatus",
+              "isCompletedSprintSelected",
+              "priorityAxis",
+              "priorityAxis.map",
+              "priorityOrder",
+              "priorityOrder[a.name]",
+              "priorityOrder[b.name]",
+              "resolveStatsTeamColor",
+              "scope",
+              "scope.isAllTeamsSelected",
+              "scope.selectedTeamSet",
+              "scope.teamNameById",
+              "scope.teamOptions",
+              "showStats",
+              "statsView"
+            ],
+            "rationale": "chart aliases burnoutChartRef.current in the retained pointer callback and scroll effect. The pointer callback calls getBoundingClientRect() to translate pointer coordinates; the scroll effect reads clientWidth and scrollWidth and writes scrollLeft only. effectivePriorityWeightMap and effectiveStatsData are forwarded unchanged to existing model helpers; priorityOrder is indexed by priority name solely for numeric sorting. No getter, new dependency or delayed interface is added. Task 3 reviewed change: unchanged bindings/aliases except removal of panel-owned burnoutChartRef/pointer and exact scroll effect; retained memo/fetch/cache ownership unchanged."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "useStatsDerivedC",
+              "line": 4457,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [
+            {
+              "name": "priorityTeamIds",
+              "lines": [
+                5632
+              ]
+            },
+            {
+              "name": "priorityRows",
+              "lines": [
+                8127
+              ]
+            },
+            {
+              "name": "priorityRadar",
+              "lines": [
+                8126
+              ]
+            },
+            {
+              "name": "statsTeamRows",
+              "lines": [
+                8124
+              ]
+            },
+            {
+              "name": "statsBarColumns",
+              "lines": [
+                8125
+              ]
+            },
+            {
+              "name": "statsTotals",
+              "lines": [
+                8123
+              ]
+            },
+            {
+              "name": "burnoutAssigneeOptions",
+              "lines": [
+                8130
+              ]
+            },
+            {
+              "name": "burnoutChartModel",
+              "lines": [
+                8137
+              ]
+            },
+            {
+              "name": "burnoutTotals",
+              "lines": [
+                8134
+              ]
+            },
+            {
+              "name": "burndownMetricIsStoryPoints",
+              "lines": [
+                8133
+              ]
+            },
+            {
+              "name": "formatBurndownValue",
+              "lines": [
+                8139
+              ]
+            },
+            {
+              "name": "buildBurnoutTaskFilter",
+              "lines": [
+                8140
+              ]
+            },
+            {
+              "name": "canRenderStatsPanel",
+              "lines": [
+                8118
+              ]
+            },
+            {
+              "name": "isLeadTimesFocusMode",
+              "lines": [
+                8283
+              ]
+            }
+          ],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "stats.StatsPanel",
+      "path": "frontend/src/stats/StatsPanel.jsx",
+      "features": [
+        "stats"
+      ],
+      "exports": [
+        "StatsPanel",
+        "default"
+      ],
+      "lineCount": 959,
+      "lineCeiling": 959,
+      "interfaces": [
+        {
+          "exportName": "StatsPanel",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "activeGroupMissingComponents",
+            "analytics",
+            "jiraUrl",
+            "links",
+            "onSelectBurnoutTask",
+            "priorityAxis",
+            "resolveStatsTeamColor",
+            "showStats",
+            "stats"
+          ],
+          "expandedInputNames": [
+            "activeGroupMissingComponents",
+            "analytics",
+            "analytics.trackStatsAction",
+            "analytics.trackStatsAnalyticsAction",
+            "jiraUrl",
+            "links",
+            "links.buildPriorityStatLink",
+            "links.buildStatLink",
+            "onSelectBurnoutTask",
+            "priorityAxis",
+            "resolveStatsTeamColor",
+            "showStats",
+            "stats",
+            "stats.buildBurnoutTaskFilter",
+            "stats.burndownMetric",
+            "stats.burndownMetricIsStoryPoints",
+            "stats.burnoutAssigneeFilter",
+            "stats.burnoutAssigneeOptions",
+            "stats.burnoutChartModel",
+            "stats.burnoutData",
+            "stats.burnoutError",
+            "stats.burnoutLoading",
+            "stats.burnoutScopedTeamIds",
+            "stats.burnoutTaskFilter",
+            "stats.burnoutTotals",
+            "stats.canRenderStatsPanel",
+            "stats.clearExcludedCapacityEpicSelection",
+            "stats.cohortAssigneeFilter",
+            "stats.cohortAssigneeOptions",
+            "stats.cohortAverageLeadDays",
+            "stats.cohortCompletedBars",
+            "stats.cohortEndQuarter",
+            "stats.cohortError",
+            "stats.cohortExcludeAdHoc",
+            "stats.cohortExcludeCapacity",
+            "stats.cohortGridModel",
+            "stats.cohortGroupBy",
+            "stats.cohortLoading",
+            "stats.cohortMedianLeadDays",
+            "stats.cohortOpenBars",
+            "stats.cohortProjectFilter",
+            "stats.cohortProjectOptions",
+            "stats.cohortQuarterOptions",
+            "stats.cohortSelectedRow",
+            "stats.cohortSelectedRowLabel",
+            "stats.cohortStartQuarter",
+            "stats.cohortStatusControls",
+            "stats.cohortStatusToggles",
+            "stats.cohortSummary",
+            "stats.cohortWarnings",
+            "stats.cohortWorkflowStatusTotal",
+            "stats.effortSplitRows",
+            "stats.effortSplitSprintLabel",
+            "stats.effortSplitTotals",
+            "stats.effortSplitVisibleBuckets",
+            "stats.excludedCapacityChartMode",
+            "stats.excludedCapacityData",
+            "stats.excludedCapacityEffectiveFilters",
+            "stats.excludedCapacityEndSprintId",
+            "stats.excludedCapacityEpicCatalog",
+            "stats.excludedCapacityEpicDropdownOpen",
+            "stats.excludedCapacityEpicDropdownRef",
+            "stats.excludedCapacityEpicOptions",
+            "stats.excludedCapacityError",
+            "stats.excludedCapacityFilterLabel",
+            "stats.excludedCapacityIsolatedTeam",
+            "stats.excludedCapacityLineSeries",
+            "stats.excludedCapacityLoading",
+            "stats.excludedCapacityMetric",
+            "stats.excludedCapacityModeOverall",
+            "stats.excludedCapacityModeSprintRows",
+            "stats.excludedCapacityModeTeamLineSeries",
+            "stats.excludedCapacityRows",
+            "stats.excludedCapacitySprintOptions",
+            "stats.excludedCapacitySprintRange",
+            "stats.excludedCapacityStartSprintId",
+            "stats.excludedCapacityWarnings",
+            "stats.formatBurndownValue",
+            "stats.formatExcludedPoints",
+            "stats.priorityRadar",
+            "stats.priorityRows",
+            "stats.projectTrackBreakdown",
+            "stats.projectTrackCapacitySide",
+            "stats.projectTrackColumnSplit",
+            "stats.projectTrackExcludeAdHoc",
+            "stats.projectTrackExcludeExcludedCapacity",
+            "stats.projectTrackMode",
+            "stats.projectTrackPhaseData",
+            "stats.projectTrackPhaseEpics",
+            "stats.projectTrackPhaseError",
+            "stats.projectTrackPhaseLoading",
+            "stats.projectTrackPhaseSummary",
+            "stats.projectTrackRangeLabel",
+            "stats.projectTrackSeries",
+            "stats.projectTrackTotals",
+            "stats.selectAllExcludedCapacityEpics",
+            "stats.setBurndownMetric",
+            "stats.setBurnoutAssigneeFilter",
+            "stats.setCohortAssigneeFilter",
+            "stats.setCohortEndQuarter",
+            "stats.setCohortExcludeAdHoc",
+            "stats.setCohortExcludeCapacity",
+            "stats.setCohortGroupBy",
+            "stats.setCohortProjectFilter",
+            "stats.setCohortSelectedRow",
+            "stats.setCohortStartQuarter",
+            "stats.setCohortStatusToggles",
+            "stats.setExcludedCapacityChartMode",
+            "stats.setExcludedCapacityEndSprintId",
+            "stats.setExcludedCapacityEpicDropdownOpen",
+            "stats.setExcludedCapacityIsolatedTeam",
+            "stats.setExcludedCapacityMetric",
+            "stats.setExcludedCapacityStartSprintId",
+            "stats.setProjectTrackCapacitySide",
+            "stats.setProjectTrackExcludeAdHoc",
+            "stats.setProjectTrackExcludeExcludedCapacity",
+            "stats.setProjectTrackMode",
+            "stats.setStatsGraphMode",
+            "stats.setStatsView",
+            "stats.statsBarColumns",
+            "stats.statsGraphMode",
+            "stats.statsTeamRows",
+            "stats.statsTotals",
+            "stats.statsView",
+            "stats.toggleEffortSplitBucket",
+            "stats.toggleExcludedCapacityEpicKey"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 126,
+          "returnCount": 0,
+          "propCount": 9,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 126,
+          "returnCeiling": 0,
+          "propCeiling": 9,
+          "unresolved": [],
+          "inventory": {
+            "source": "frontend/src/stats/StatsPanel.jsx:21",
+            "sourceDigest": "cb3727cd7e4205a17b86bc2b8576d5658a4a55929b768e2e59f92ebddd4d0617"
+          },
+          "callers": [],
+          "remainingAppReaders": [],
+          "getters": []
+        },
+        {
+          "exportName": "default",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "activeGroupMissingComponents",
+            "analytics",
+            "jiraUrl",
+            "links",
+            "onSelectBurnoutTask",
+            "priorityAxis",
+            "resolveStatsTeamColor",
+            "showStats",
+            "stats"
+          ],
+          "expandedInputNames": [
+            "activeGroupMissingComponents",
+            "analytics",
+            "analytics.trackStatsAction",
+            "analytics.trackStatsAnalyticsAction",
+            "jiraUrl",
+            "links",
+            "links.buildPriorityStatLink",
+            "links.buildStatLink",
+            "onSelectBurnoutTask",
+            "priorityAxis",
+            "resolveStatsTeamColor",
+            "showStats",
+            "stats",
+            "stats.buildBurnoutTaskFilter",
+            "stats.burndownMetric",
+            "stats.burndownMetricIsStoryPoints",
+            "stats.burnoutAssigneeFilter",
+            "stats.burnoutAssigneeOptions",
+            "stats.burnoutChartModel",
+            "stats.burnoutData",
+            "stats.burnoutError",
+            "stats.burnoutLoading",
+            "stats.burnoutScopedTeamIds",
+            "stats.burnoutTaskFilter",
+            "stats.burnoutTotals",
+            "stats.canRenderStatsPanel",
+            "stats.clearExcludedCapacityEpicSelection",
+            "stats.cohortAssigneeFilter",
+            "stats.cohortAssigneeOptions",
+            "stats.cohortAverageLeadDays",
+            "stats.cohortCompletedBars",
+            "stats.cohortEndQuarter",
+            "stats.cohortError",
+            "stats.cohortExcludeAdHoc",
+            "stats.cohortExcludeCapacity",
+            "stats.cohortGridModel",
+            "stats.cohortGroupBy",
+            "stats.cohortLoading",
+            "stats.cohortMedianLeadDays",
+            "stats.cohortOpenBars",
+            "stats.cohortProjectFilter",
+            "stats.cohortProjectOptions",
+            "stats.cohortQuarterOptions",
+            "stats.cohortSelectedRow",
+            "stats.cohortSelectedRowLabel",
+            "stats.cohortStartQuarter",
+            "stats.cohortStatusControls",
+            "stats.cohortStatusToggles",
+            "stats.cohortSummary",
+            "stats.cohortWarnings",
+            "stats.cohortWorkflowStatusTotal",
+            "stats.effortSplitRows",
+            "stats.effortSplitSprintLabel",
+            "stats.effortSplitTotals",
+            "stats.effortSplitVisibleBuckets",
+            "stats.excludedCapacityChartMode",
+            "stats.excludedCapacityData",
+            "stats.excludedCapacityEffectiveFilters",
+            "stats.excludedCapacityEndSprintId",
+            "stats.excludedCapacityEpicCatalog",
+            "stats.excludedCapacityEpicDropdownOpen",
+            "stats.excludedCapacityEpicDropdownRef",
+            "stats.excludedCapacityEpicOptions",
+            "stats.excludedCapacityError",
+            "stats.excludedCapacityFilterLabel",
+            "stats.excludedCapacityIsolatedTeam",
+            "stats.excludedCapacityLineSeries",
+            "stats.excludedCapacityLoading",
+            "stats.excludedCapacityMetric",
+            "stats.excludedCapacityModeOverall",
+            "stats.excludedCapacityModeSprintRows",
+            "stats.excludedCapacityModeTeamLineSeries",
+            "stats.excludedCapacityRows",
+            "stats.excludedCapacitySprintOptions",
+            "stats.excludedCapacitySprintRange",
+            "stats.excludedCapacityStartSprintId",
+            "stats.excludedCapacityWarnings",
+            "stats.formatBurndownValue",
+            "stats.formatExcludedPoints",
+            "stats.priorityRadar",
+            "stats.priorityRows",
+            "stats.projectTrackBreakdown",
+            "stats.projectTrackCapacitySide",
+            "stats.projectTrackColumnSplit",
+            "stats.projectTrackExcludeAdHoc",
+            "stats.projectTrackExcludeExcludedCapacity",
+            "stats.projectTrackMode",
+            "stats.projectTrackPhaseData",
+            "stats.projectTrackPhaseEpics",
+            "stats.projectTrackPhaseError",
+            "stats.projectTrackPhaseLoading",
+            "stats.projectTrackPhaseSummary",
+            "stats.projectTrackRangeLabel",
+            "stats.projectTrackSeries",
+            "stats.projectTrackTotals",
+            "stats.selectAllExcludedCapacityEpics",
+            "stats.setBurndownMetric",
+            "stats.setBurnoutAssigneeFilter",
+            "stats.setCohortAssigneeFilter",
+            "stats.setCohortEndQuarter",
+            "stats.setCohortExcludeAdHoc",
+            "stats.setCohortExcludeCapacity",
+            "stats.setCohortGroupBy",
+            "stats.setCohortProjectFilter",
+            "stats.setCohortSelectedRow",
+            "stats.setCohortStartQuarter",
+            "stats.setCohortStatusToggles",
+            "stats.setExcludedCapacityChartMode",
+            "stats.setExcludedCapacityEndSprintId",
+            "stats.setExcludedCapacityEpicDropdownOpen",
+            "stats.setExcludedCapacityIsolatedTeam",
+            "stats.setExcludedCapacityMetric",
+            "stats.setExcludedCapacityStartSprintId",
+            "stats.setProjectTrackCapacitySide",
+            "stats.setProjectTrackExcludeAdHoc",
+            "stats.setProjectTrackExcludeExcludedCapacity",
+            "stats.setProjectTrackMode",
+            "stats.setStatsGraphMode",
+            "stats.setStatsView",
+            "stats.statsBarColumns",
+            "stats.statsGraphMode",
+            "stats.statsTeamRows",
+            "stats.statsTotals",
+            "stats.statsView",
+            "stats.toggleEffortSplitBucket",
+            "stats.toggleExcludedCapacityEpicKey"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 126,
+          "returnCount": 0,
+          "propCount": 9,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 126,
+          "returnCeiling": 0,
+          "propCeiling": 9,
+          "unresolved": [],
+          "inventory": {
+            "source": "frontend/src/stats/StatsPanel.jsx:21",
+            "sourceDigest": "9b809ffba6c72084aab78f0c3407ce93fd5fb8d67253be390430e962126dd172"
+          },
+          "callers": [],
+          "remainingAppReaders": [],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "eng.useEngAlerts",
+      "path": "frontend/src/eng/useEngAlerts.js",
+      "features": [
+        "eng"
+      ],
+      "exports": [
+        "useEngAlerts"
+      ],
+      "lineCount": 475,
+      "lineCeiling": 475,
+      "interfaces": [
+        {
+          "exportName": "useEngAlerts",
+          "inputNames": [
+            "activeGroupTeamLabels",
+            "alertScopeTooLarge",
+            "backlogProductEpics",
+            "backlogTechEpics",
+            "burnoutTaskFilter",
+            "dismissedAlertKeys",
+            "dismissedStoryRequirementIds",
+            "engCatchUpFilters",
+            "engWorkHierarchy",
+            "epicDetails",
+            "epicsInScope",
+            "getTeamInfo",
+            "hasStoryPoints",
+            "isExcludedStatus",
+            "isFutureSprintSelected",
+            "isTaskInSelectedSprint",
+            "missingPlanningInfoTasks",
+            "normalizeStatus",
+            "priorityOrder",
+            "readyToCloseEpicsInScope",
+            "readyToCloseTasks",
+            "resolveTeamName",
+            "scope",
+            "searchQuery",
+            "selectedSprintState",
+            "selectionTasks",
+            "tasks",
+            "visibleTasks",
+            "visibleTasksForList"
+          ],
+          "returnNames": [
+            "alertCounts",
+            "alertItemCount",
+            "analysisEpicTeams",
+            "backlogEpicTeams",
+            "blockedAlertKeySet",
+            "blockedAlertTeams",
+            "doneAlertKeySet",
+            "doneEpicTeams",
+            "emptyAlertKeySet",
+            "emptyEpicTeams",
+            "missingAlertKeySet",
+            "missingAlertTeams",
+            "missingLabelEpicTeams",
+            "missingTeamEpicTeams",
+            "needsStoriesAlertKeySet",
+            "needsStoriesTeams",
+            "postponedAlertKeySet",
+            "postponedAlertTeams",
+            "postponedEpicTeams",
+            "visibleAlertCollections",
+            "waitingAlertKeySet"
+          ],
+          "propNames": [],
+          "expandedInputNames": [
+            "activeGroupTeamLabels",
+            "alertScopeTooLarge",
+            "backlogProductEpics",
+            "backlogTechEpics",
+            "burnoutTaskFilter",
+            "dismissedAlertKeys",
+            "dismissedStoryRequirementIds",
+            "engCatchUpFilters",
+            "engWorkHierarchy",
+            "engWorkHierarchy.alertTargets",
+            "epicDetails",
+            "epicsInScope",
+            "getTeamInfo",
+            "hasStoryPoints",
+            "isExcludedStatus",
+            "isFutureSprintSelected",
+            "isTaskInSelectedSprint",
+            "missingPlanningInfoTasks",
+            "normalizeStatus",
+            "priorityOrder",
+            "priorityOrder[a.fields.priority?.name]",
+            "priorityOrder[a.task.fields.priority?.name]",
+            "priorityOrder[b.fields.priority?.name]",
+            "priorityOrder[b.task.fields.priority?.name]",
+            "readyToCloseEpicsInScope",
+            "readyToCloseEpicsInScope.filter",
+            "readyToCloseTasks",
+            "readyToCloseTasks.filter",
+            "resolveTeamName",
+            "scope",
+            "scope.isAllTeamsSelected",
+            "scope.selectedSprint",
+            "scope.selectedSprintInfo",
+            "scope.selectedTeamSet",
+            "scope.teamNameById",
+            "scope.techProjectKeys",
+            "searchQuery",
+            "selectedSprintState",
+            "selectionTasks",
+            "selectionTasks.forEach",
+            "tasks",
+            "tasks.filter",
+            "tasks.forEach",
+            "visibleTasks",
+            "visibleTasks.filter",
+            "visibleTasks.forEach",
+            "visibleTasksForList"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 47,
+          "returnCount": 21,
+          "propCount": 0,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 47,
+          "returnCeiling": 21,
+          "propCeiling": 0,
+          "unresolved": [
+            "bag priorityOrder dynamic member",
+            "bag priorityOrder dynamic deep member",
+            "spread input backlogProductEpics",
+            "spread input backlogTechEpics",
+            "spread input readyToCloseEpicsInScope",
+            "forwarded input burnoutTaskFilter"
+          ],
+          "inventory": {
+            "source": "frontend/src/eng/useEngAlerts.js:9",
+            "sourceDigest": "97b85dd1062b4b0126d411fdcc80647a8f92564990920dee1ebfc4d31c59ec55",
+            "reviewed": true,
+            "memberNames": [
+              "activeGroupTeamLabels",
+              "alertScopeTooLarge",
+              "backlogProductEpics",
+              "backlogTechEpics",
+              "burnoutTaskFilter",
+              "dismissedAlertKeys",
+              "dismissedStoryRequirementIds",
+              "engCatchUpFilters",
+              "engWorkHierarchy",
+              "engWorkHierarchy.alertTargets",
+              "epicDetails",
+              "epicsInScope",
+              "getTeamInfo",
+              "hasStoryPoints",
+              "isExcludedStatus",
+              "isFutureSprintSelected",
+              "isTaskInSelectedSprint",
+              "missingPlanningInfoTasks",
+              "normalizeStatus",
+              "priorityOrder",
+              "priorityOrder[a.fields.priority?.name]",
+              "priorityOrder[a.task.fields.priority?.name]",
+              "priorityOrder[b.fields.priority?.name]",
+              "priorityOrder[b.task.fields.priority?.name]",
+              "readyToCloseEpicsInScope",
+              "readyToCloseEpicsInScope.filter",
+              "readyToCloseTasks",
+              "readyToCloseTasks.filter",
+              "resolveTeamName",
+              "scope",
+              "scope.isAllTeamsSelected",
+              "scope.selectedSprint",
+              "scope.selectedSprintInfo",
+              "scope.selectedTeamSet",
+              "scope.teamNameById",
+              "scope.techProjectKeys",
+              "searchQuery",
+              "selectedSprintState",
+              "selectionTasks",
+              "selectionTasks.forEach",
+              "tasks",
+              "tasks.filter",
+              "tasks.forEach",
+              "visibleTasks",
+              "visibleTasks.filter",
+              "visibleTasks.forEach",
+              "visibleTasksForList"
+            ],
+            "rationale": "Reviewed exact Task 4 immutable closure ledger: priorityOrder aliases PRIORITY_ORDER and is indexed only by task priority names for numeric sorting (fallback 999); member paths name both consolidated item.task and task sort comparators. Spread backlogProductEpics/backlogTechEpics are the existing remote Backlog Epic arrays; readyToCloseEpicsInScope is the existing independently loaded ready-to-close Epic array. Each spread is iterated only as Epic metadata with existing key/status/team predicates. burnoutTaskFilter is converted only by Boolean() to the unchanged focusedFilterActive argument of useEngAlertFilters; no member or callback invocation. All six scope aliases are destructured directly and explicit App helpers remain synchronous predicates, with deferred dismissAlertItem/celebration callbacks staying App-owned."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "useEngAlerts",
+              "line": 5723,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [
+            {
+              "name": "visibleAlertCollections",
+              "lines": [
+                7888,
+                7890,
+                7893,
+                7896,
+                7898,
+                7899,
+                7900,
+                7911,
+                7913,
+                7914,
+                7915,
+                7919,
+                7940
+              ]
+            },
+            {
+              "name": "missingAlertKeySet",
+              "lines": [
+                4716
+              ]
+            },
+            {
+              "name": "blockedAlertKeySet",
+              "lines": [
+                4717
+              ]
+            },
+            {
+              "name": "postponedAlertKeySet",
+              "lines": [
+                4718
+              ]
+            },
+            {
+              "name": "needsStoriesAlertKeySet",
+              "lines": [
+                4719
+              ]
+            },
+            {
+              "name": "waitingAlertKeySet",
+              "lines": [
+                4720
+              ]
+            },
+            {
+              "name": "emptyAlertKeySet",
+              "lines": [
+                4721
+              ]
+            },
+            {
+              "name": "doneAlertKeySet",
+              "lines": [
+                4722
+              ]
+            },
+            {
+              "name": "alertCounts",
+              "lines": [
+                7880
+              ]
+            },
+            {
+              "name": "alertItemCount",
+              "lines": [
+                7879
+              ]
+            },
+            {
+              "name": "missingAlertTeams",
+              "lines": [
+                7909
+              ]
+            },
+            {
+              "name": "blockedAlertTeams",
+              "lines": [
+                7889
+              ]
+            },
+            {
+              "name": "doneEpicTeams",
+              "lines": [
+                7895
+              ]
+            },
+            {
+              "name": "postponedAlertTeams",
+              "lines": [
+                7917
+              ]
+            },
+            {
+              "name": "postponedEpicTeams",
+              "lines": [
+                7918
+              ]
+            },
+            {
+              "name": "emptyEpicTeams",
+              "lines": [
+                7897
+              ]
+            },
+            {
+              "name": "analysisEpicTeams",
+              "lines": [
+                7886
+              ]
+            },
+            {
+              "name": "backlogEpicTeams",
+              "lines": [
+                7887
+              ]
+            },
+            {
+              "name": "missingTeamEpicTeams",
+              "lines": [
+                7912
+              ]
+            },
+            {
+              "name": "missingLabelEpicTeams",
+              "lines": [
+                7910
+              ]
+            },
+            {
+              "name": "needsStoriesTeams",
+              "lines": [
+                7916
+              ]
+            }
+          ],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "eng.useEngCapacity",
+      "path": "frontend/src/eng/useEngCapacity.js",
+      "features": [
+        "eng"
+      ],
+      "exports": [
+        "useEngCapacity",
+        "useEngCapacityState"
+      ],
+      "lineCount": 394,
+      "lineCeiling": 394,
+      "interfaces": [
+        {
+          "exportName": "useEngCapacity",
+          "inputNames": [
+            "BACKEND_URL",
+            "activeCapacityScopeRef",
+            "capacityEnabled",
+            "capacityReadAbortRef",
+            "capacityReadGenerationRef",
+            "capacityReadModelRef",
+            "capacityRefreshNonce",
+            "capacityScopeHoldRef",
+            "capacityScopeKeyRef",
+            "capacityScopePinRef",
+            "capacityState",
+            "capacityStateRef",
+            "epicGroups",
+            "epicRefMap",
+            "getTeamInfo",
+            "loadEpochRef",
+            "normalizeEpicKey",
+            "normalizeStatus",
+            "scope",
+            "selectedPlanningTasksList",
+            "selectedSP",
+            "selectedTasksList",
+            "setCapacityDataStale",
+            "setCapacityLoading",
+            "setCapacityReadError",
+            "setCapacityReadRevision",
+            "setCapacityRefreshNonce",
+            "setCapacityState",
+            "showPlanning",
+            "showProduct",
+            "showTech"
+          ],
+          "returnNames": [
+            "capacityMutationEnabled",
+            "capacityScopeSignature",
+            "capacityShareLabel",
+            "capacitySummary",
+            "capacityTeamIds",
+            "capacityTotals",
+            "displayedTeamCapacityEntries",
+            "effectiveCapacityState",
+            "estimatedCapacityAdjusted",
+            "excludedCapacityAdjusted",
+            "excludedProjectStats",
+            "formatCapacityValue",
+            "handleCapacitySaved",
+            "retryCapacity",
+            "selectedAdHocProductSP",
+            "selectedProjectEntries",
+            "selectedTeamEntries",
+            "showTotalsRow",
+            "teamCapacityEntries",
+            "totalCapacityAdjusted"
+          ],
+          "propNames": [],
+          "expandedInputNames": [
+            "BACKEND_URL",
+            "activeCapacityScopeRef",
+            "activeCapacityScopeRef.current",
+            "capacityEnabled",
+            "capacityReadAbortRef",
+            "capacityReadAbortRef.current",
+            "capacityReadAbortRef.current.signal",
+            "capacityReadGenerationRef",
+            "capacityReadModelRef",
+            "capacityReadModelRef.current",
+            "capacityRefreshNonce",
+            "capacityScopeHoldRef",
+            "capacityScopeHoldRef.current",
+            "capacityScopeKeyRef",
+            "capacityScopeKeyRef.current",
+            "capacityScopePinRef",
+            "capacityScopePinRef.current",
+            "capacityScopePinRef.current.signature",
+            "capacityState",
+            "capacityState.scopeSignature",
+            "capacityStateRef",
+            "capacityStateRef.current",
+            "epicGroups",
+            "epicGroups.find",
+            "epicRefMap",
+            "epicRefMap.current",
+            "epicRefMap.current.get",
+            "getTeamInfo",
+            "loadEpochRef",
+            "loadEpochRef.current",
+            "normalizeEpicKey",
+            "normalizeStatus",
+            "scope",
+            "scope.activeGroupId",
+            "scope.adHocEpicSet",
+            "scope.adHocEpicSignature",
+            "scope.capacityTasks",
+            "scope.excludedEpicSet",
+            "scope.isAllTeamsSelected",
+            "scope.selectedSprintInfo",
+            "scope.selectedTeamSet",
+            "scope.teamOptions",
+            "scope.techProjectKeys",
+            "selectedPlanningTasksList",
+            "selectedPlanningTasksList.reduce",
+            "selectedSP",
+            "selectedTasksList",
+            "setCapacityDataStale",
+            "setCapacityLoading",
+            "setCapacityReadError",
+            "setCapacityReadRevision",
+            "setCapacityRefreshNonce",
+            "setCapacityState",
+            "showPlanning",
+            "showProduct",
+            "showTech"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 56,
+          "returnCount": 20,
+          "propCount": 0,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 56,
+          "returnCeiling": 20,
+          "propCeiling": 0,
+          "unresolved": [
+            "forwarded input selectedTasksList",
+            "forwarded input selectedPlanningTasksList",
+            "forwarded input selectedSP",
+            "forwarded input getTeamInfo",
+            "forwarded input normalizeEpicKey",
+            "forwarded input BACKEND_URL"
+          ],
+          "inventory": {
+            "source": "frontend/src/eng/useEngCapacity.js:53",
+            "sourceDigest": "53bc72994b02ba83fa9a3efd36fdd0eb7ebe2387d0a70910e4752fc3ef9fb9b7",
+            "reviewed": true,
+            "memberNames": [
+              "BACKEND_URL",
+              "activeCapacityScopeRef",
+              "activeCapacityScopeRef.current",
+              "capacityEnabled",
+              "capacityReadAbortRef",
+              "capacityReadAbortRef.current",
+              "capacityReadAbortRef.current.signal",
+              "capacityReadGenerationRef",
+              "capacityReadModelRef",
+              "capacityReadModelRef.current",
+              "capacityRefreshNonce",
+              "capacityScopeHoldRef",
+              "capacityScopeHoldRef.current",
+              "capacityScopeKeyRef",
+              "capacityScopeKeyRef.current",
+              "capacityScopePinRef",
+              "capacityScopePinRef.current",
+              "capacityScopePinRef.current.signature",
+              "capacityState",
+              "capacityState.scopeSignature",
+              "capacityStateRef",
+              "capacityStateRef.current",
+              "epicGroups",
+              "epicGroups.find",
+              "epicRefMap",
+              "epicRefMap.current",
+              "epicRefMap.current.get",
+              "getTeamInfo",
+              "loadEpochRef",
+              "loadEpochRef.current",
+              "normalizeEpicKey",
+              "normalizeStatus",
+              "scope",
+              "scope.activeGroupId",
+              "scope.adHocEpicSet",
+              "scope.adHocEpicSignature",
+              "scope.capacityTasks",
+              "scope.excludedEpicSet",
+              "scope.isAllTeamsSelected",
+              "scope.selectedSprintInfo",
+              "scope.selectedTeamSet",
+              "scope.teamOptions",
+              "scope.techProjectKeys",
+              "selectedPlanningTasksList",
+              "selectedPlanningTasksList.reduce",
+              "selectedSP",
+              "selectedTasksList",
+              "setCapacityDataStale",
+              "setCapacityLoading",
+              "setCapacityReadError",
+              "setCapacityReadRevision",
+              "setCapacityRefreshNonce",
+              "setCapacityState",
+              "showPlanning",
+              "showProduct",
+              "showTech"
+            ],
+            "rationale": "Reviewed accepted Task 4 closure ledger: selectedTasksList and selectedPlanningTasksList are the existing selected Story arrays passed unchanged to planningSelectionStats helpers. selectedSP is the selected numeric Story Point total passed to getCapacityStatus. getTeamInfo and normalizeEpicKey are existing synchronous task/identity helpers, forwarded unchanged; BACKEND_URL is passed only to the existing Capacity GET API wrapper. Scope aliases, render-time state/read refs, held signature pin and unused scroll closure retain the exact prior reads. No deferred getter, mutation transport or dependency change."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "useEngCapacity",
+              "line": 5109,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [
+            {
+              "name": "selectedAdHocProductSP",
+              "lines": [
+                6769
+              ]
+            },
+            {
+              "name": "excludedProjectStats",
+              "lines": [
+                6768
+              ]
+            },
+            {
+              "name": "capacityShareLabel",
+              "lines": [
+                6757
+              ]
+            },
+            {
+              "name": "teamCapacityEntries",
+              "lines": [
+                5556
+              ]
+            },
+            {
+              "name": "displayedTeamCapacityEntries",
+              "lines": [
+                6978,
+                7160,
+                7338,
+                7342
+              ]
+            },
+            {
+              "name": "capacityScopeSignature",
+              "lines": [
+                6751
+              ]
+            },
+            {
+              "name": "effectiveCapacityState",
+              "lines": [
+                6756
+              ]
+            },
+            {
+              "name": "capacityMutationEnabled",
+              "lines": [
+                6748
+              ]
+            },
+            {
+              "name": "handleCapacitySaved",
+              "lines": [
+                6760
+              ]
+            },
+            {
+              "name": "retryCapacity",
+              "lines": [
+                6761
+              ]
+            },
+            {
+              "name": "capacityTeamIds",
+              "lines": [
+                7168,
+                7171,
+                7187,
+                7190,
+                7206,
+                7209,
+                7226,
+                7229,
+                7245,
+                7248,
+                7264,
+                7267,
+                7284,
+                7287,
+                7303,
+                7306,
+                7322,
+                7325
+              ]
+            },
+            {
+              "name": "totalCapacityAdjusted",
+              "lines": [
+                5556,
+                6737
+              ]
+            },
+            {
+              "name": "estimatedCapacityAdjusted",
+              "lines": [
+                6738
+              ]
+            },
+            {
+              "name": "excludedCapacityAdjusted",
+              "lines": [
+                6739
+              ]
+            },
+            {
+              "name": "capacitySummary",
+              "lines": [
+                6742
+              ]
+            },
+            {
+              "name": "selectedProjectEntries",
+              "lines": [
+                6767
+              ]
+            },
+            {
+              "name": "selectedTeamEntries",
+              "lines": [
+                5556,
+                6745
+              ]
+            },
+            {
+              "name": "capacityTotals",
+              "lines": [
+                7165,
+                7166,
+                7185,
+                7203,
+                7204,
+                7223,
+                7224,
+                7243,
+                7261,
+                7262,
+                7281,
+                7282,
+                7301,
+                7319,
+                7320
+              ]
+            },
+            {
+              "name": "showTotalsRow",
+              "lines": [
+                7160
+              ]
+            },
+            {
+              "name": "formatCapacityValue",
+              "lines": [
+                6988,
+                7007,
+                7026,
+                7046,
+                7065,
+                7084,
+                7104,
+                7123,
+                7142,
+                7166,
+                7185,
+                7204,
+                7224,
+                7243,
+                7262,
+                7282,
+                7301,
+                7320
+              ]
+            }
+          ],
+          "getters": []
+        },
+        {
+          "exportName": "useEngCapacityState",
+          "inputNames": [],
+          "returnNames": [
+            "activeCapacityScopeRef",
+            "capacityDataStale",
+            "capacityLoading",
+            "capacityReadAbortRef",
+            "capacityReadError",
+            "capacityReadGenerationRef",
+            "capacityReadModelRef",
+            "capacityReadRevision",
+            "capacityRefreshNonce",
+            "capacityScopeHoldRef",
+            "capacityScopeKeyRef",
+            "capacityScopePinRef",
+            "capacityState",
+            "capacityStateRef",
+            "setCapacityDataStale",
+            "setCapacityLoading",
+            "setCapacityReadError",
+            "setCapacityReadRevision",
+            "setCapacityRefreshNonce",
+            "setCapacityState"
+          ],
+          "propNames": [],
+          "expandedInputNames": [],
+          "outerParameterCount": 0,
+          "expandedInputCount": 0,
+          "returnCount": 20,
+          "propCount": 0,
+          "outerParameterCeiling": 0,
+          "expandedInputCeiling": 0,
+          "returnCeiling": 20,
+          "propCeiling": 0,
+          "unresolved": [],
+          "inventory": {
+            "source": "frontend/src/eng/useEngCapacity.js:28",
+            "sourceDigest": "53bc72994b02ba83fa9a3efd36fdd0eb7ebe2387d0a70910e4752fc3ef9fb9b7"
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "useEngCapacityState",
+              "line": 916,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [
+            {
+              "name": "capacityState",
+              "lines": [
+                5114
+              ]
+            },
+            {
+              "name": "setCapacityState",
+              "lines": [
+                1616,
+                5115
+              ]
+            },
+            {
+              "name": "capacityStateRef",
+              "lines": [
+                5114
+              ]
+            },
+            {
+              "name": "capacityLoading",
+              "lines": [
+                6753
+              ]
+            },
+            {
+              "name": "setCapacityLoading",
+              "lines": [
+                1617,
+                5115
+              ]
+            },
+            {
+              "name": "capacityReadRevision",
+              "lines": [
+                6752
+              ]
+            },
+            {
+              "name": "setCapacityReadRevision",
+              "lines": [
+                5115
+              ]
+            },
+            {
+              "name": "capacityReadError",
+              "lines": [
+                6703,
+                6754
+              ]
+            },
+            {
+              "name": "setCapacityReadError",
+              "lines": [
+                1618,
+                5115
+              ]
+            },
+            {
+              "name": "capacityDataStale",
+              "lines": [
+                6703,
+                6755
+              ]
+            },
+            {
+              "name": "setCapacityDataStale",
+              "lines": [
+                1619,
+                5116
+              ]
+            },
+            {
+              "name": "capacityReadModelRef",
+              "lines": [
+                5116
+              ]
+            },
+            {
+              "name": "capacityRefreshNonce",
+              "lines": [
+                5116
+              ]
+            },
+            {
+              "name": "setCapacityRefreshNonce",
+              "lines": [
+                5116,
+                6555
+              ]
+            },
+            {
+              "name": "capacityReadGenerationRef",
+              "lines": [
+                5117
+              ]
+            },
+            {
+              "name": "capacityReadAbortRef",
+              "lines": [
+                5117
+              ]
+            },
+            {
+              "name": "activeCapacityScopeRef",
+              "lines": [
+                5117
+              ]
+            },
+            {
+              "name": "capacityScopeHoldRef",
+              "lines": [
+                5117,
+                6630
+              ]
+            },
+            {
+              "name": "capacityScopePinRef",
+              "lines": [
+                5118
+              ]
+            },
+            {
+              "name": "capacityScopeKeyRef",
+              "lines": [
+                5118
+              ]
+            }
+          ],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "eng.EngControls",
+      "path": "frontend/src/eng/EngControls.jsx",
+      "features": [
+        "eng"
+      ],
+      "exports": [
+        "GroupControl",
+        "SearchControl",
+        "SprintControl",
+        "TeamControl",
+        "ViewSwitch"
+      ],
+      "lineCount": 469,
+      "lineCeiling": 469,
+      "interfaces": [
+        {
+          "exportName": "GroupControl",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "activeControlSurface",
+            "activeGroup",
+            "applyExclusiveDropdownState",
+            "currentDashboardView",
+            "filteredControlGroups",
+            "groupDropdownQuery",
+            "groupDropdownRefs",
+            "groupPreferences",
+            "groupsConfig",
+            "groupsLoading",
+            "setActiveGroupId",
+            "setGroupDropdownQuery",
+            "setShowGroupDropdown",
+            "showGroupControl",
+            "showGroupDropdown",
+            "surface",
+            "trackFilterChanged",
+            "visibleControlGroups"
+          ],
+          "expandedInputNames": [
+            "activeControlSurface",
+            "activeGroup",
+            "activeGroup.name",
+            "applyExclusiveDropdownState",
+            "currentDashboardView",
+            "filteredControlGroups",
+            "filteredControlGroups.length",
+            "filteredControlGroups.map",
+            "groupDropdownQuery",
+            "groupDropdownRefs",
+            "groupDropdownRefs.current",
+            "groupDropdownRefs.current[surface]",
+            "groupPreferences",
+            "groupPreferences.activeGroupId",
+            "groupsConfig",
+            "groupsConfig.defaultGroupId",
+            "groupsConfig.source",
+            "groupsLoading",
+            "setActiveGroupId",
+            "setGroupDropdownQuery",
+            "setShowGroupDropdown",
+            "showGroupControl",
+            "showGroupDropdown",
+            "surface",
+            "trackFilterChanged",
+            "visibleControlGroups"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 26,
+          "returnCount": 0,
+          "propCount": 18,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 26,
+          "returnCeiling": 0,
+          "propCeiling": 18,
+          "unresolved": [
+            "bag groupDropdownRefs dynamic deep member",
+            "forwarded input showGroupDropdown"
+          ],
+          "inventory": {
+            "source": "frontend/src/eng/EngControls.jsx:263",
+            "sourceDigest": "5364845594255ce4fefbbffe27a7a4b8e96872e93d1af357e99ec11acd121343",
+            "reviewed": true,
+            "memberNames": [
+              "activeControlSurface",
+              "activeGroup",
+              "activeGroup.name",
+              "applyExclusiveDropdownState",
+              "currentDashboardView",
+              "filteredControlGroups",
+              "filteredControlGroups.length",
+              "filteredControlGroups.map",
+              "groupDropdownQuery",
+              "groupDropdownRefs",
+              "groupDropdownRefs.current",
+              "groupDropdownRefs.current[surface]",
+              "groupPreferences",
+              "groupPreferences.activeGroupId",
+              "groupsConfig",
+              "groupsConfig.defaultGroupId",
+              "groupsConfig.source",
+              "groupsLoading",
+              "setActiveGroupId",
+              "setGroupDropdownQuery",
+              "setShowGroupDropdown",
+              "showGroupControl",
+              "showGroupDropdown",
+              "surface",
+              "trackFilterChanged",
+              "visibleControlGroups"
+            ],
+            "rationale": "The shared group dropdown state remains App-owned; showGroupDropdown is forwarded unchanged to applyExclusiveDropdownState. groupDropdownRefs.current[surface] stores only the mounted main/compact DOM node for the existing outside-click lifecycle. Favorite/default config branches and analytics order are identical."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "GroupControl",
+              "line": 5754,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        },
+        {
+          "exportName": "SearchControl",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "extraClassName",
+            "searchActive",
+            "searchInput",
+            "searchInputRef",
+            "setSearchFocused",
+            "setSearchInput",
+            "surface"
+          ],
+          "expandedInputNames": [
+            "extraClassName",
+            "searchActive",
+            "searchInput",
+            "searchInputRef",
+            "setSearchFocused",
+            "setSearchInput",
+            "surface"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 7,
+          "returnCount": 0,
+          "propCount": 7,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 7,
+          "returnCeiling": 0,
+          "propCeiling": 7,
+          "unresolved": [],
+          "inventory": {
+            "source": "frontend/src/eng/EngControls.jsx:6",
+            "sourceDigest": "5364845594255ce4fefbbffe27a7a4b8e96872e93d1af357e99ec11acd121343"
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "SearchControl",
+              "line": 5627,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        },
+        {
+          "exportName": "SprintControl",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "activeControlSurface",
+            "availableSprints",
+            "boardStrictScope",
+            "closeSprintSelector",
+            "commitSprintSelectorOption",
+            "engSprintSelectorState",
+            "engWorkspaceConfigured",
+            "getSprintSelectorOptions",
+            "openSprintSelector",
+            "selectedSprint",
+            "selectedView",
+            "setShowSprintDropdown",
+            "setSprintActiveOptionIndex",
+            "setSprintSearch",
+            "showBoard",
+            "showSprintDropdown",
+            "sprintActiveOptionIndex",
+            "sprintDropdownRefs",
+            "sprintName",
+            "sprintOptionDomId",
+            "sprintSearch",
+            "sprintSelectorOriginRef",
+            "sprintTriggerRefs",
+            "sprintsLoading",
+            "surface"
+          ],
+          "expandedInputNames": [
+            "activeControlSurface",
+            "availableSprints",
+            "availableSprints.length",
+            "boardStrictScope",
+            "closeSprintSelector",
+            "commitSprintSelectorOption",
+            "engSprintSelectorState",
+            "engSprintSelectorState.ordinarySelectable",
+            "engWorkspaceConfigured",
+            "getSprintSelectorOptions",
+            "openSprintSelector",
+            "selectedSprint",
+            "selectedView",
+            "setShowSprintDropdown",
+            "setSprintActiveOptionIndex",
+            "setSprintSearch",
+            "showBoard",
+            "showSprintDropdown",
+            "sprintActiveOptionIndex",
+            "sprintDropdownRefs",
+            "sprintDropdownRefs.current",
+            "sprintDropdownRefs.current[surface]",
+            "sprintName",
+            "sprintOptionDomId",
+            "sprintSearch",
+            "sprintSelectorOriginRef",
+            "sprintSelectorOriginRef.current",
+            "sprintTriggerRefs",
+            "sprintTriggerRefs.current",
+            "sprintTriggerRefs.current[surface]",
+            "sprintsLoading",
+            "surface"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 32,
+          "returnCount": 0,
+          "propCount": 25,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 32,
+          "returnCeiling": 0,
+          "propCeiling": 25,
+          "unresolved": [
+            "forwarded input surface",
+            "bag engSprintSelectorState member alias canOpen",
+            "forwarded input selectedSprint",
+            "forwarded input sprintActiveOptionIndex",
+            "bag sprintDropdownRefs dynamic deep member",
+            "bag sprintTriggerRefs dynamic deep member"
+          ],
+          "inventory": {
+            "source": "frontend/src/eng/EngControls.jsx:69",
+            "sourceDigest": "5364845594255ce4fefbbffe27a7a4b8e96872e93d1af357e99ec11acd121343",
+            "reviewed": true,
+            "memberNames": [
+              "activeControlSurface",
+              "availableSprints",
+              "availableSprints.length",
+              "boardStrictScope",
+              "closeSprintSelector",
+              "commitSprintSelectorOption",
+              "engSprintSelectorState",
+              "engSprintSelectorState.ordinarySelectable",
+              "engWorkspaceConfigured",
+              "getSprintSelectorOptions",
+              "openSprintSelector",
+              "selectedSprint",
+              "selectedView",
+              "setShowSprintDropdown",
+              "setSprintActiveOptionIndex",
+              "setSprintSearch",
+              "showBoard",
+              "showSprintDropdown",
+              "sprintActiveOptionIndex",
+              "sprintDropdownRefs",
+              "sprintDropdownRefs.current",
+              "sprintDropdownRefs.current[surface]",
+              "sprintName",
+              "sprintOptionDomId",
+              "sprintSearch",
+              "sprintSelectorOriginRef",
+              "sprintSelectorOriginRef.current",
+              "sprintTriggerRefs",
+              "sprintTriggerRefs.current",
+              "sprintTriggerRefs.current[surface]",
+              "sprintsLoading",
+              "surface"
+            ],
+            "rationale": "surface remains the old main/compact argument forwarded unchanged to sprintOptionDomId/openSprintSelector. selectedSprint/sprintActiveOptionIndex are forwarded only to existing String/Math helpers. canOpen aliases engSprintSelectorState.ordinarySelectable. sprintDropdownRefs/sprintTriggerRefs.current[surface] preserve the two mounted DOM-node slots, and sprintSelectorOriginRef retains the unchanged deferred Tab reset. No state, effect, getter or scope ownership moves."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "SprintControl",
+              "line": 5724,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        },
+        {
+          "exportName": "TeamControl",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "activeControlSurface",
+            "applyExclusiveDropdownState",
+            "filteredTeamOptions",
+            "isAllTeamsSelected",
+            "loading",
+            "longestTeamOptionLabel",
+            "selectedTeamSet",
+            "selectedTeamsLabel",
+            "setShowTeamDropdown",
+            "setTeamDropdownQuery",
+            "showTeamDropdown",
+            "surface",
+            "tasks",
+            "teamDropdownQuery",
+            "teamDropdownRefs",
+            "toggleTeamSelection"
+          ],
+          "expandedInputNames": [
+            "activeControlSurface",
+            "applyExclusiveDropdownState",
+            "filteredTeamOptions",
+            "filteredTeamOptions.length",
+            "filteredTeamOptions.map",
+            "isAllTeamsSelected",
+            "loading",
+            "longestTeamOptionLabel",
+            "selectedTeamSet",
+            "selectedTeamSet.has",
+            "selectedTeamsLabel",
+            "setShowTeamDropdown",
+            "setTeamDropdownQuery",
+            "showTeamDropdown",
+            "surface",
+            "tasks",
+            "tasks.length",
+            "teamDropdownQuery",
+            "teamDropdownQuery.trim",
+            "teamDropdownRefs",
+            "teamDropdownRefs.current",
+            "teamDropdownRefs.current[surface]",
+            "toggleTeamSelection"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 23,
+          "returnCount": 0,
+          "propCount": 16,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 23,
+          "returnCeiling": 0,
+          "propCeiling": 16,
+          "unresolved": [
+            "bag teamDropdownRefs dynamic deep member",
+            "forwarded input showTeamDropdown"
+          ],
+          "inventory": {
+            "source": "frontend/src/eng/EngControls.jsx:379",
+            "sourceDigest": "5364845594255ce4fefbbffe27a7a4b8e96872e93d1af357e99ec11acd121343",
+            "reviewed": true,
+            "memberNames": [
+              "activeControlSurface",
+              "applyExclusiveDropdownState",
+              "filteredTeamOptions",
+              "filteredTeamOptions.length",
+              "filteredTeamOptions.map",
+              "isAllTeamsSelected",
+              "loading",
+              "longestTeamOptionLabel",
+              "selectedTeamSet",
+              "selectedTeamSet.has",
+              "selectedTeamsLabel",
+              "setShowTeamDropdown",
+              "setTeamDropdownQuery",
+              "showTeamDropdown",
+              "surface",
+              "tasks",
+              "tasks.length",
+              "teamDropdownQuery",
+              "teamDropdownQuery.trim",
+              "teamDropdownRefs",
+              "teamDropdownRefs.current",
+              "teamDropdownRefs.current[surface]",
+              "toggleTeamSelection"
+            ],
+            "rationale": "showTeamDropdown is the unchanged boolean argument to applyExclusiveDropdownState. teamDropdownRefs.current[surface] stores the mounted main/compact DOM node. Existing set membership, checkbox selection and hidden width-label fields retain their old contracts; no new reads or callback timing."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "TeamControl",
+              "line": 5777,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        },
+        {
+          "exportName": "ViewSwitch",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "currentDashboardView",
+            "selectedView",
+            "setSelectedView",
+            "showEpmNavigation",
+            "trackSelectContent"
+          ],
+          "expandedInputNames": [
+            "currentDashboardView",
+            "selectedView",
+            "setSelectedView",
+            "showEpmNavigation",
+            "trackSelectContent"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 5,
+          "returnCount": 0,
+          "propCount": 5,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 5,
+          "returnCeiling": 0,
+          "propCeiling": 5,
+          "unresolved": [],
+          "inventory": {
+            "source": "frontend/src/eng/EngControls.jsx:44",
+            "sourceDigest": "5364845594255ce4fefbbffe27a7a4b8e96872e93d1af357e99ec11acd121343"
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "ViewSwitch",
+              "line": 5639,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "eng.EpicBlock",
+      "path": "frontend/src/eng/EpicBlock.jsx",
+      "features": [
+        "eng"
+      ],
+      "exports": [
+        "EpicBlock"
+      ],
+      "lineCount": 405,
+      "lineCeiling": 405,
+      "interfaces": [
+        {
+          "exportName": "EpicBlock",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "canEditSharedConfiguration",
+            "canToggleSharedGroupExcludedCapacity",
+            "closePriorityControl",
+            "closeProjectTrackControl",
+            "closeSingleIssueStatusControl",
+            "epicGroup",
+            "epicRefMap",
+            "epicRefresh",
+            "excludedEpicSet",
+            "getTeamInfo",
+            "handleOnboardingPreviewLifecycleChange",
+            "handleSubmitStatusTransition",
+            "isEpicRefreshMode",
+            "isGroupDraftDirty",
+            "issueDependencyContext",
+            "issueFieldEdits",
+            "issueFieldEditsEnabled",
+            "jiraUrl",
+            "normalizeEpicKey",
+            "onboardingPreviewSession",
+            "openPriorityControl",
+            "openProjectTrackControl",
+            "openSingleIssueStatusControl",
+            "pendingPriorityIssueKeys",
+            "pendingProjectTrackIssueKeys",
+            "pendingStatusIssueKeys",
+            "prefetchSingleIssueStatusOptions",
+            "priorityError",
+            "priorityOptions",
+            "priorityOptionsLoading",
+            "priorityResult",
+            "prioritySubmitting",
+            "priorityTransitionActiveKey",
+            "priorityTransitionEnabled",
+            "projectTrackError",
+            "projectTrackOptions",
+            "projectTrackOptionsLoading",
+            "projectTrackResult",
+            "projectTrackSubmitting",
+            "projectTrackTransitionActiveKey",
+            "projectTrackTransitionEnabled",
+            "removeTask",
+            "renderPriorityIcon",
+            "retryStorySubtasks",
+            "selectedTasks",
+            "shouldRenderIssueDependencies",
+            "showGroupManage",
+            "showPlanning",
+            "showStats",
+            "statusTransitionActiveKey",
+            "statusTransitionEnabled",
+            "statusTransitionSourceSurface",
+            "statusTransitionSubmitting",
+            "statusTransitionTargetsCount",
+            "stickyEpicFocusKey",
+            "storySubtasksByKey",
+            "submitPriorityChange",
+            "submitProjectTrackChange",
+            "toggleSharedGroupExcludedCapacityEpic",
+            "toggleStorySubtasks",
+            "toggleTaskSelection",
+            "transitionError",
+            "transitionErrorCode",
+            "transitionOptions",
+            "transitionOptionsLoading",
+            "transitionResult"
+          ],
+          "expandedInputNames": [
+            "canEditSharedConfiguration",
+            "canToggleSharedGroupExcludedCapacity",
+            "closePriorityControl",
+            "closeProjectTrackControl",
+            "closeSingleIssueStatusControl",
+            "epicGroup",
+            "epicGroup.epic",
+            "epicGroup.epic.assignee.displayName",
+            "epicGroup.epic.priority.name",
+            "epicGroup.epic.projectTrack",
+            "epicGroup.epic.status.name",
+            "epicGroup.epic.summary",
+            "epicGroup.hasNoChildStories",
+            "epicGroup.key",
+            "epicGroup.parentSummary",
+            "epicGroup.rows",
+            "epicGroup.rows[].id",
+            "epicGroup.rows[].kind",
+            "epicGroup.rows[].task",
+            "epicGroup.storyPoints",
+            "epicGroup.tasks",
+            "epicGroup.tasks.map",
+            "epicGroup.tasks[].fields.status.name",
+            "epicGroup.tasks[].key",
+            "epicRefMap",
+            "epicRefMap.current",
+            "epicRefMap.current.delete",
+            "epicRefMap.current.set",
+            "epicRefresh",
+            "epicRefresh.epicStates",
+            "epicRefresh.epicStates[epicGroup.key]",
+            "epicRefresh.leavingKeys",
+            "epicRefresh.leavingKeys.has",
+            "epicRefresh.refreshEpic",
+            "excludedEpicSet",
+            "excludedEpicSet.has",
+            "getTeamInfo",
+            "handleOnboardingPreviewLifecycleChange",
+            "handleSubmitStatusTransition",
+            "isEpicRefreshMode",
+            "isGroupDraftDirty",
+            "issueDependencyContext",
+            "issueFieldEdits",
+            "issueFieldEdits.activeEditor",
+            "issueFieldEdits.activeEditor.field",
+            "issueFieldEdits.activeEditor.issueKey",
+            "issueFieldEdits.checkJira",
+            "issueFieldEdits.closeEditor",
+            "issueFieldEdits.errorMessage",
+            "issueFieldEdits.metadata",
+            "issueFieldEdits.openEditor",
+            "issueFieldEdits.outcome",
+            "issueFieldEdits.outcome.configurationChanged",
+            "issueFieldEdits.outcome.status",
+            "issueFieldEdits.pendingIssueKeys",
+            "issueFieldEdits.pendingIssueKeys.has",
+            "issueFieldEdits.reload",
+            "issueFieldEdits.search",
+            "issueFieldEdits.searchQuery",
+            "issueFieldEdits.searching",
+            "issueFieldEdits.status",
+            "issueFieldEdits.submit",
+            "issueFieldEdits.suggestions",
+            "issueFieldEditsEnabled",
+            "jiraUrl",
+            "normalizeEpicKey",
+            "onboardingPreviewSession",
+            "openPriorityControl",
+            "openProjectTrackControl",
+            "openSingleIssueStatusControl",
+            "pendingPriorityIssueKeys",
+            "pendingPriorityIssueKeys.has",
+            "pendingProjectTrackIssueKeys",
+            "pendingProjectTrackIssueKeys.has",
+            "pendingStatusIssueKeys",
+            "pendingStatusIssueKeys.has",
+            "prefetchSingleIssueStatusOptions",
+            "priorityError",
+            "priorityOptions",
+            "priorityOptionsLoading",
+            "priorityResult",
+            "prioritySubmitting",
+            "priorityTransitionActiveKey",
+            "priorityTransitionEnabled",
+            "projectTrackError",
+            "projectTrackOptions",
+            "projectTrackOptionsLoading",
+            "projectTrackResult",
+            "projectTrackSubmitting",
+            "projectTrackTransitionActiveKey",
+            "projectTrackTransitionEnabled",
+            "removeTask",
+            "renderPriorityIcon",
+            "retryStorySubtasks",
+            "selectedTasks",
+            "selectedTasks[task.key]",
+            "shouldRenderIssueDependencies",
+            "showGroupManage",
+            "showPlanning",
+            "showStats",
+            "statusTransitionActiveKey",
+            "statusTransitionEnabled",
+            "statusTransitionSourceSurface",
+            "statusTransitionSubmitting",
+            "statusTransitionTargetsCount",
+            "stickyEpicFocusKey",
+            "storySubtasksByKey",
+            "storySubtasksByKey[task.key]",
+            "submitPriorityChange",
+            "submitProjectTrackChange",
+            "toggleSharedGroupExcludedCapacityEpic",
+            "toggleStorySubtasks",
+            "toggleTaskSelection",
+            "transitionError",
+            "transitionErrorCode",
+            "transitionOptions",
+            "transitionOptionsLoading",
+            "transitionResult"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 118,
+          "returnCount": 0,
+          "propCount": 66,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 118,
+          "returnCeiling": 0,
+          "propCeiling": 66,
+          "unresolved": [
+            "bag epicGroup member alias epicInfo",
+            "forwarded input epicGroup",
+            "bag epicRefresh dynamic deep member",
+            "bag selectedTasks dynamic member",
+            "bag selectedTasks dynamic deep member",
+            "bag storySubtasksByKey dynamic member",
+            "bag storySubtasksByKey dynamic deep member"
+          ],
+          "inventory": {
+            "source": "frontend/src/eng/EpicBlock.jsx:14",
+            "sourceDigest": "57e43a2da5e1ce7bf9248931fdd7f9dc2eb6becfd25ba6527823170363952dfe",
+            "reviewed": true,
+            "memberNames": [
+              "canEditSharedConfiguration",
+              "canToggleSharedGroupExcludedCapacity",
+              "closePriorityControl",
+              "closeProjectTrackControl",
+              "closeSingleIssueStatusControl",
+              "epicGroup",
+              "epicGroup.epic",
+              "epicGroup.epic.assignee.displayName",
+              "epicGroup.epic.priority.name",
+              "epicGroup.epic.projectTrack",
+              "epicGroup.epic.status.name",
+              "epicGroup.epic.summary",
+              "epicGroup.hasNoChildStories",
+              "epicGroup.key",
+              "epicGroup.parentSummary",
+              "epicGroup.rows",
+              "epicGroup.rows[].id",
+              "epicGroup.rows[].kind",
+              "epicGroup.rows[].task",
+              "epicGroup.storyPoints",
+              "epicGroup.tasks",
+              "epicGroup.tasks.map",
+              "epicGroup.tasks[].fields.status.name",
+              "epicGroup.tasks[].key",
+              "epicRefMap",
+              "epicRefMap.current",
+              "epicRefMap.current.delete",
+              "epicRefMap.current.set",
+              "epicRefresh",
+              "epicRefresh.epicStates",
+              "epicRefresh.epicStates[epicGroup.key]",
+              "epicRefresh.leavingKeys",
+              "epicRefresh.leavingKeys.has",
+              "epicRefresh.refreshEpic",
+              "excludedEpicSet",
+              "excludedEpicSet.has",
+              "getTeamInfo",
+              "handleOnboardingPreviewLifecycleChange",
+              "handleSubmitStatusTransition",
+              "isEpicRefreshMode",
+              "isGroupDraftDirty",
+              "issueDependencyContext",
+              "issueFieldEdits",
+              "issueFieldEdits.activeEditor",
+              "issueFieldEdits.activeEditor.field",
+              "issueFieldEdits.activeEditor.issueKey",
+              "issueFieldEdits.checkJira",
+              "issueFieldEdits.closeEditor",
+              "issueFieldEdits.errorMessage",
+              "issueFieldEdits.metadata",
+              "issueFieldEdits.openEditor",
+              "issueFieldEdits.outcome",
+              "issueFieldEdits.outcome.configurationChanged",
+              "issueFieldEdits.outcome.status",
+              "issueFieldEdits.pendingIssueKeys",
+              "issueFieldEdits.pendingIssueKeys.has",
+              "issueFieldEdits.reload",
+              "issueFieldEdits.search",
+              "issueFieldEdits.searchQuery",
+              "issueFieldEdits.searching",
+              "issueFieldEdits.status",
+              "issueFieldEdits.submit",
+              "issueFieldEdits.suggestions",
+              "issueFieldEditsEnabled",
+              "jiraUrl",
+              "normalizeEpicKey",
+              "onboardingPreviewSession",
+              "openPriorityControl",
+              "openProjectTrackControl",
+              "openSingleIssueStatusControl",
+              "pendingPriorityIssueKeys",
+              "pendingPriorityIssueKeys.has",
+              "pendingProjectTrackIssueKeys",
+              "pendingProjectTrackIssueKeys.has",
+              "pendingStatusIssueKeys",
+              "pendingStatusIssueKeys.has",
+              "prefetchSingleIssueStatusOptions",
+              "priorityError",
+              "priorityOptions",
+              "priorityOptionsLoading",
+              "priorityResult",
+              "prioritySubmitting",
+              "priorityTransitionActiveKey",
+              "priorityTransitionEnabled",
+              "projectTrackError",
+              "projectTrackOptions",
+              "projectTrackOptionsLoading",
+              "projectTrackResult",
+              "projectTrackSubmitting",
+              "projectTrackTransitionActiveKey",
+              "projectTrackTransitionEnabled",
+              "removeTask",
+              "renderPriorityIcon",
+              "retryStorySubtasks",
+              "selectedTasks",
+              "selectedTasks[task.key]",
+              "shouldRenderIssueDependencies",
+              "showGroupManage",
+              "showPlanning",
+              "showStats",
+              "statusTransitionActiveKey",
+              "statusTransitionEnabled",
+              "statusTransitionSourceSurface",
+              "statusTransitionSubmitting",
+              "statusTransitionTargetsCount",
+              "stickyEpicFocusKey",
+              "storySubtasksByKey",
+              "storySubtasksByKey[task.key]",
+              "submitPriorityChange",
+              "submitProjectTrackChange",
+              "toggleSharedGroupExcludedCapacityEpic",
+              "toggleStorySubtasks",
+              "toggleTaskSelection",
+              "transitionError",
+              "transitionErrorCode",
+              "transitionOptions",
+              "transitionOptionsLoading",
+              "transitionResult"
+            ],
+            "rationale": "epicInfo aliases epicGroup.epic; status/priority accept their existing string-or-name-object forms and person values expose existing displayName. Rows/tasks remain synthetic-or-loaded hierarchy records passed unchanged to StoryRequirementCard/IssueCard. epicRefresh.epicStates is indexed only by epicGroup.key; leavingKeys.has uses task.key and refreshEpic remains the current callback. selectedTasks and storySubtasksByKey retain task-key indexing. Every App binding is passed explicitly in the frozen 65-binding ledger; epicBlockProps is initialized after epicRefresh before render, while its retained renderer invokes it only later. No getter or state ownership changes."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "EpicBlock",
+              "line": 5890,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "eng.useEngScope",
+      "path": "frontend/src/eng/useEngScope.js",
+      "features": [
+        "eng"
+      ],
+      "exports": [
+        "useEngScope"
+      ],
+      "lineCount": 9,
+      "lineCeiling": 9,
+      "interfaces": [
+        {
+          "exportName": "useEngScope",
+          "inputNames": [
+            "activeGroupId",
+            "adHocEpicSet",
+            "adHocEpicSignature",
+            "capacityTasks",
+            "excludedEpicSet",
+            "isAllTeamsSelected",
+            "selectedSprint",
+            "selectedSprintInfo",
+            "selectedTeamSet",
+            "teamNameById",
+            "teamOptions",
+            "techProjectKeys"
+          ],
+          "returnNames": [],
+          "propNames": [],
+          "expandedInputNames": [
+            "activeGroupId",
+            "adHocEpicSet",
+            "adHocEpicSignature",
+            "capacityTasks",
+            "excludedEpicSet",
+            "isAllTeamsSelected",
+            "selectedSprint",
+            "selectedSprintInfo",
+            "selectedTeamSet",
+            "teamNameById",
+            "teamOptions",
+            "techProjectKeys"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 12,
+          "returnCount": 0,
+          "propCount": 0,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 12,
+          "returnCeiling": 0,
+          "propCeiling": 0,
+          "unresolved": [
+            "return spread/dynamic"
+          ],
+          "inventory": {
+            "source": "frontend/src/eng/useEngScope.js:3",
+            "sourceDigest": "af2257e8171d647b69da1060e47b9e4c904ee221c37896c5b8596be9ffa750f7",
+            "reviewed": true,
+            "memberNames": [
+              "activeGroupId",
+              "adHocEpicSet",
+              "adHocEpicSignature",
+              "capacityTasks",
+              "excludedEpicSet",
+              "isAllTeamsSelected",
+              "selectedSprint",
+              "selectedSprintInfo",
+              "selectedTeamSet",
+              "teamNameById",
+              "teamOptions",
+              "techProjectKeys"
+            ],
+            "memoReturnNames": [
+              "activeGroupId",
+              "selectedSprint",
+              "selectedSprintInfo",
+              "isAllTeamsSelected",
+              "selectedTeamSet",
+              "teamNameById",
+              "teamOptions",
+              "capacityTasks",
+              "techProjectKeys",
+              "excludedEpicSet",
+              "adHocEpicSet",
+              "adHocEpicSignature"
+            ],
+            "rationale": "The literal twelve-property useMemo return and dependency list are moved verbatim from App. The checker cannot expand memo-return expressions; tests/test_use_eng_scope.js freezes ordered twelve keys, scalar values and input references, and the mounted smoke fixture proves unrelated-render identity and selectedSprint invalidation. No additional state/effects/requests/storage or feature-only bindings. All five existing consumer hooks receive the same object at unchanged call positions."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "useEngScope",
+              "line": 4150,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [
+            {
+              "name": "scope",
+              "lines": [
+                1435,
+                1444,
+                1450,
+                1469,
+                1471,
+                1473,
+                1475,
+                1477,
+                1524,
+                1533,
+                4158,
+                4181,
+                4425,
+                4988,
+                5012,
+                5035,
+                5108,
+                5389,
+                5959
+              ]
+            }
+          ],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "components.LazyViewBoundary",
+      "path": "frontend/src/components/LazyViewBoundary.jsx",
+      "features": [
+        "scenario",
+        "settings",
+        "stats"
+      ],
+      "exports": [
+        "default"
+      ],
+      "lineCount": 56,
+      "lineCeiling": 56,
+      "interfaces": [
+        {
+          "exportName": "default",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "children",
+            "fallback",
+            "load"
+          ],
+          "expandedInputNames": [
+            "children",
+            "fallback",
+            "load"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 3,
+          "returnCount": 0,
+          "propCount": 3,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 3,
+          "returnCeiling": 0,
+          "propCeiling": 3,
+          "unresolved": [
+            "forwarded input load"
+          ],
+          "inventory": {
+            "source": "frontend/src/components/LazyViewBoundary.jsx:48",
+            "sourceDigest": "68460988deaf31e943d4516b11c4dbbc868859024b01f50ef9439af3b0f27e2d",
+            "reviewed": true,
+            "memberNames": [
+              "children",
+              "fallback",
+              "load"
+            ],
+            "rationale": "load is the stable lazy loader function: it only keys the module-level lazy view cache and is called with the attempt number; children and fallback are render props/elements. It is not a dependency bag."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "LazyViewBoundary",
+              "line": 6816,
+              "phase": "render"
+            },
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "LazyViewBoundary",
+              "line": 6946,
+              "phase": "render"
+            },
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "LazyViewBoundary",
+              "line": 7127,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "components.lazyViewLoaders",
+      "path": "frontend/src/components/lazyViewLoaders.js",
+      "features": [
+        "scenario",
+        "settings",
+        "stats"
+      ],
+      "exports": [
+        "STALE_LAZY_BUILD_CODE",
+        "createLazyViewLoader",
+        "isLazyLoadFailure",
+        "validateLazyViewManifest"
+      ],
+      "lineCount": 96,
+      "lineCeiling": 96,
+      "interfaces": []
     }
   ],
   "aggregates": {
     "scenario": {
-      "measured": 5614,
-      "ceiling": 5614
+      "measured": 5766,
+      "ceiling": 5766
     },
     "settings": {
-      "measured": 16338,
-      "ceiling": 16338
+      "measured": 16490,
+      "ceiling": 16490
+    },
+    "stats": {
+      "measured": 2683,
+      "ceiling": 2683
+    },
+    "eng": {
+      "measured": 1752,
+      "ceiling": 1752
     },
     "uniqueOwners": {
-      "measured": 21952,
-      "ceiling": 21952
+      "measured": 26387,
+      "ceiling": 26387
     },
     "appPlusOwners": {
-      "measured": 32807,
-      "ceiling": 32807
+      "measured": 34003,
+      "ceiling": 34003
     }
   },
   "transfer": {

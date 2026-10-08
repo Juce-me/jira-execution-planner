@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { readOwnerSource } = require('./frontend_source_helpers');
 
 const repoRoot = path.join(__dirname, '..');
 const helperPath = path.join(repoRoot, 'frontend', 'src', 'issues', 'subtaskProgressUtils.js');
@@ -141,13 +142,15 @@ test('ENG sprint data delegates auth recovery to the shared typed boundary', () 
 
 test('dashboard wires story subtask hook without owning endpoint literals', () => {
     const source = readSource(dashboardPath);
+    const epicBlockSource = readOwnerSource(['frontend/src/eng/EpicBlock.jsx'], { anchor: 'export function EpicBlock(' });
 
     assert.ok(source.includes("import { useStorySubtasks } from './issues/useStorySubtasks.js';"));
     assert.equal(source.includes('/api/issues/subtasks'), false);
+    assert.equal(epicBlockSource.includes('/api/issues/subtasks'), false);
     assert.ok(source.includes('clearStorySubtasks();'));
-    assert.ok(source.includes('subtaskState={storySubtasksByKey[task.key] || null}'));
-    assert.ok(source.includes('onToggleSubtasks={toggleStorySubtasks}'));
-    assert.ok(source.includes('onRetrySubtasks={retryStorySubtasks}'));
+    assert.ok(epicBlockSource.includes('subtaskState={storySubtasksByKey[task.key] || null}'));
+    assert.ok(epicBlockSource.includes('onToggleSubtasks={toggleStorySubtasks}'));
+    assert.ok(epicBlockSource.includes('onRetrySubtasks={retryStorySubtasks}'));
 });
 
 function loadInvalidationHelper() {

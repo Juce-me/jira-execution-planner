@@ -45,14 +45,16 @@ state scoped to the selected sprint, team group, view, and EPM project scope.
     encrypted token storage, config repositories, and migrations.
 - Frontend entrypoint: `jira-dashboard.html`
   - HTML-first shell that loads `/frontend/dist/dashboard.css` and
-    `frontend/dist/dashboard.js`.
+    `frontend/dist/dashboard.js` (an ES module entry, `#dashboard-entry`).
   - Includes a small auth-refresh script before the bundled app.
 - Frontend source: `frontend/src/dashboard.jsx`
   - Large React app shell that still owns cross-view state and orchestration.
   - Imports extracted feature modules from `api/`, `eng/`, `epm/`, `settings/`,
     `scenario/`, `stats/`, `issues/`, `ui/`, and `cohort/`.
 - Build pipeline: `package.json`
-  - React 19 bundled with esbuild as an IIFE.
+  - React 19 bundled with esbuild (`scripts/build_dashboard.mjs`) as an ES module entry. Statistics,
+    Scenario and Settings are lazy chunks under `frontend/dist/chunks/`, and a
+    `lazy-views-<buildId>.json` manifest supports the one bounded retry of a failed chunk.
   - No Babel runtime.
   - `frontend/dist/` is committed output; rebuild it from `frontend/src/`.
 

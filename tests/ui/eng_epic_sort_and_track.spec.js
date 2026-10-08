@@ -71,7 +71,7 @@ const flexStory = story('FLEX-2', 'To Do', 'Low priority flexible story', {
 const commitEpic = epic('COMMIT-1', 'Committed epic', { projectTrack: 'Committed' });
 const flexEpic = epic('FLEX-1', 'Flexible epic', { projectTrack: 'Flexible' });
 
-async function installTrackFixture(page) {
+async function installTrackFixture(page, grouped = false) {
     await installDashboardShell(page);
     await page.route('**/api/**', route => {
         const request = route.request();
@@ -107,7 +107,7 @@ async function installTrackFixture(page) {
                     name: 'Default',
                     teamIds: groupTeamIds,
                     teamLabels: { 'team-alpha': 'Alpha Team' },
-                }],
+                }, { id: 'grp-second', name: 'Second synthetic group', teamIds: groupTeamIds, teamLabels: { 'team-alpha': 'Alpha Team' } }],
                 defaultGroupId: 'grp-default',
                 source: 'test',
             });
@@ -125,8 +125,8 @@ async function installTrackFixture(page) {
             return json({
                 issues: [commitStory, flexStory],
                 epics: {
-                    'COMMIT-1': commitEpic,
-                    'FLEX-1': flexEpic,
+                    'COMMIT-1': grouped ? { ...commitEpic, initiative: { key: 'INIT-1', summary: 'Synthetic initiative' } } : commitEpic,
+                    'FLEX-1': grouped ? { ...flexEpic, initiative: { key: 'INIT-1', summary: 'Synthetic initiative' } } : flexEpic,
                 },
                 epicsInScope: [commitEpic, flexEpic],
                 names: {},
@@ -144,7 +144,7 @@ async function installTrackFixture(page) {
 
 async function openEng(page, viewport, prefOverrides = {}) {
     await page.setViewportSize(viewport);
-    await installTrackFixture(page);
+    await installTrackFixture(page, prefOverrides.groupByInitiative === true);
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
@@ -194,3 +194,68 @@ test('Sort dropdown reorders epics by Product Track (committed first)', async ({
 
     await page.screenshot({ path: `${screenshotDir}/sort-track-committed-first.png`, fullPage: false });
 });
+
+// Opt-in local synthetic before/after proof; the fixture never reads a real Jira site.
+test('ENG renderer extraction settled synthetic visual parity', async ({ page }) => {
+    test.skip(!process.env.JEP_ENG_RENDERER_CAPTURE_DIR, 'local before/after capture only');
+    const directory = path.resolve(process.env.JEP_ENG_RENDERER_CAPTURE_DIR);
+    fs.mkdirSync(directory, { recursive: true });
+    const capture = async (name, locator) => {
+        await page.addStyleTag({ content: '*, *::before, *::after { animation: none !important; transition: none !important; caret-color: transparent !important; }' });
+        await page.mouse.move(1, 1);
+        await page.screenshot({ path: path.join(directory, `${name}.png`), animations: 'disabled' });
+        fs.writeFileSync(path.join(directory, `${name}.html`), await locator.evaluate(node => node.outerHTML));
+    };
+    await openEng(page, { width: 1280, height: 900 });
+    await capture('direct-header', page.locator('[data-epic-key="COMMIT-1"] .epic-header'));
+    for (const [name, trigger] of [['sprint', '[aria-label="Select sprint"]'], ['group', '[aria-label="Select group"]'], ['team', '[aria-label="Filter teams"]']]) {
+        await page.locator(`header ${trigger}`).click();
+        await capture(`main-${name}`, page.locator('header'));
+        await page.locator('.search-input').first().click();
+    }
+    await page.evaluate(() => { document.body.style.minHeight = '2200px'; window.scrollTo(0, 500); });
+    const compact = page.locator('.compact-sticky-header');
+    await expect(compact).toHaveClass(/is-visible/);
+    for (const [name, trigger] of [['sprint', '[aria-label="Select sprint"]'], ['group', '[aria-label="Select group"]'], ['team', '[aria-label="Filter teams"]']]) {
+        await compact.locator(trigger).click();
+        await capture(`compact-${name}`, compact);
+        await compact.locator('.search-input').click();
+    }
+    await openEng(page, { width: 1280, height: 900 }, { groupByInitiative: true });
+    await expect(page.locator('.initiative-body .epic-block')).toHaveCount(2);
+    await capture('initiative-header', page.locator('.initiative-body [data-epic-key="COMMIT-1"] .epic-header'));
+});
+
+for (const grouped of [false, true]) {
+    test(`keyed Epic identity survives actual reversal and sibling filtering ${grouped ? 'initiative-grouped' : 'direct'}`, async ({ page }) => {
+        await openEng(page, { width: 1280, height: 900 }, { groupByInitiative: grouped });
+        if (grouped) await expect(page.locator('.initiative-body .epic-block')).toHaveCount(2);
+        const blocks = page.locator('.task-list .epic-block');
+        const originalKeys = await blocks.evaluateAll(nodes => nodes.map(node => node.dataset.epicKey));
+        expect(originalKeys).toEqual(['COMMIT-1', 'FLEX-1']);
+        const survivor = page.locator('[data-epic-key="COMMIT-1"]');
+        const originalNode = await survivor.elementHandle();
+        const originalLink = await survivor.locator('.epic-link').elementHandle();
+        await page.locator('.eng-epic-sort-dropdown .sprint-dropdown-toggle').click();
+        await page.locator('.eng-epic-sort-dropdown .sprint-dropdown-option', { hasText: 'Flexible ⬇' }).click();
+        await expect.poll(() => blocks.evaluateAll(nodes => nodes.map(node => node.dataset.epicKey))).toEqual(['FLEX-1', 'COMMIT-1']);
+        expect(await survivor.evaluate((node, previous) => node.isSameNode(previous), originalNode)).toBe(true);
+        expect(await survivor.locator('.epic-link').evaluate((node, previous) => node.isSameNode(previous), originalLink)).toBe(true);
+        await originalLink.focus();
+        expect(await originalLink.evaluate(node => document.activeElement === node)).toBe(true);
+        await page.locator('header .search-input').fill('High priority committed story');
+        await expect(blocks).toHaveCount(1);
+        await expect(survivor).toBeVisible();
+        expect(await survivor.evaluate((node, previous) => node.isSameNode(previous), originalNode)).toBe(true);
+        await originalLink.focus();
+        expect(await originalLink.evaluate(node => document.activeElement === node && node.isConnected)).toBe(true);
+        // Sticky focus reads App's epicRefMap. Tall synthetic content makes that positive
+        // path observable after the sibling was removed; stale ref deletion loses the class.
+        await page.addStyleTag({ content: '.task-list .epic-block { min-height: 700px; } body { min-height: 2400px; }' });
+        await survivor.evaluate(node => window.scrollTo(0, node.getBoundingClientRect().top + window.scrollY + 40));
+        await expect(survivor).toHaveClass(/epic-block-sticky-focus/);
+        await expect(page.locator('.epic-block-sticky-focus')).toHaveCount(1);
+        await originalNode.dispose();
+        await originalLink.dispose();
+    });
+}

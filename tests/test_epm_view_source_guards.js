@@ -330,9 +330,10 @@ test('dashboard source keeps the ENG and EPM switch contract', () => {
 });
 
 test('dashboard source renders mutually exclusive view controls and delegates EPM tab controls', () => {
+    const engControlsSource = readOwnerSource(['frontend/src/eng/EngControls.jsx'], { anchor: 'export function ViewSwitch(' });
     assert.ok(fs.existsSync(epmControlsPath), 'Expected EPM controls component');
-    assert.ok(dashboardSource.includes('<SegmentedControl'), 'Expected dashboard selectors to use the shared segmented primitive');
-    assert.ok(dashboardSource.includes('className="view-mode-control"'), 'Expected ENG/EPM selector to keep the view-mode-control class');
+    assert.ok(engControlsSource.includes('<SegmentedControl'), 'Expected dashboard selectors to use the shared segmented primitive');
+    assert.ok(engControlsSource.includes('className="view-mode-control"'), 'Expected ENG/EPM selector to keep the view-mode-control class');
     assert.ok(dashboardSource.includes("import { EpmControls } from './epm/EpmControls.jsx';"), 'Expected dashboard to import EpmControls');
     assert.ok(dashboardSource.includes('<EpmControls'), 'Expected dashboard to render EpmControls');
     assert.ok(!dashboardSource.includes('const renderEpmTabs = () =>'), 'Expected dashboard not to own EPM tabs renderer');
@@ -360,6 +361,8 @@ test('dashboard source renders mutually exclusive view controls and delegates EP
 });
 
 test('dashboard source uses shared basic UI primitives for representative controls and states', () => {
+    const engControlsSource = readOwnerSource(['frontend/src/eng/EngControls.jsx'], { anchor: 'export function ViewSwitch(' });
+    assert.ok(engControlsSource.includes('export function SearchControl('), 'Expected the ENG search control owner');
     assert.ok(fs.existsSync(epmControlsPath), 'Expected EPM controls component');
     assert.ok(fs.existsSync(epmViewPath), 'Expected EPM view component');
     assert.ok(fs.existsSync(segmentedControlPath), 'Expected shared SegmentedControl primitive');
@@ -368,15 +371,15 @@ test('dashboard source uses shared basic UI primitives for representative contro
     assert.ok(fs.existsSync(loadingRowsPath), 'Expected shared LoadingRows primitive');
     assert.ok(fs.existsSync(loadingStatePath), 'Expected shared LoadingState primitive');
     assert.ok(fs.existsSync(emptyStatePath), 'Expected shared EmptyState primitive');
-    assert.ok(dashboardSource.includes("import SegmentedControl from './ui/SegmentedControl.jsx';"), 'Expected dashboard to import SegmentedControl');
-    assert.ok(dashboardSource.includes("import ControlField from './ui/ControlField.jsx';"), 'Expected dashboard to import ControlField');
+    assert.ok(engControlsSource.includes("import SegmentedControl from '../ui/SegmentedControl.jsx';"), 'Expected ENG controls to import SegmentedControl');
+    assert.ok(engControlsSource.includes("import ControlField from '../ui/ControlField.jsx';"), 'Expected ENG controls to import ControlField');
     assert.ok(dashboardSource.includes("import IconButton from './ui/IconButton.jsx';"), 'Expected dashboard to import IconButton');
     assert.ok(epmSettingsTabSource.includes("import LoadingRows from '../ui/LoadingRows.jsx';"), 'Expected the EPM tab container to import LoadingRows');
     assert.ok(epmViewSource.includes("import LoadingState from '../ui/LoadingState.jsx';"), 'Expected EPM view to import LoadingState');
     assert.ok(engViewSource.includes("import LoadingState from '../ui/LoadingState.jsx';"), 'Expected ENG view to import LoadingState');
     assert.ok(dashboardSource.includes("import EmptyState from './ui/EmptyState.jsx';"), 'Expected dashboard to import EmptyState');
-    assert.ok(dashboardSource.includes('<SegmentedControl') && dashboardSource.includes('className="view-mode-control"'), 'Expected ENG/EPM selector to use SegmentedControl');
-    assert.ok(dashboardSource.includes('<ControlField') && dashboardSource.includes('label="Search"'), 'Expected header search control to use ControlField');
+    assert.ok(engControlsSource.includes('<SegmentedControl') && engControlsSource.includes('className="view-mode-control"'), 'Expected ENG/EPM selector to use SegmentedControl');
+    assert.ok(engControlsSource.includes('<ControlField') && engControlsSource.includes('label="Search"'), 'Expected header search control to use ControlField');
     assert.ok(dashboardSource.includes('<IconButton') && dashboardSource.includes('className="header-icon-button refresh-icon"'), 'Expected compact refresh action to use the shared header IconButton geometry');
     assert.ok(epmSettingsTabSource.includes('<LoadingRows') && epmSettingsTabSource.includes('className="epm-project-skeleton-list"'), 'Expected EPM project loading rows to use LoadingRows');
     assert.ok(loadingStateSource.includes('epm-burst.svg'), 'Expected LoadingState to use the EPM burst asset');

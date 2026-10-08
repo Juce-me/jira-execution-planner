@@ -4,7 +4,14 @@ const path = require('node:path');
 const { readOwnerSource, repoRoot } = require('./frontend_source_helpers');
 
 const source = fs.readFileSync('frontend/src/dashboard.jsx', 'utf8');
-const ownerPaths = ['frontend/src/dashboard.jsx', 'frontend/src/scenario', 'frontend/src/settings'];
+const ownerPaths = [
+  'frontend/src/dashboard.jsx', 'frontend/src/scenario', 'frontend/src/settings',
+  // Owners that received code moved out of dashboard.jsx by the App decomposition.
+  'frontend/src/stats/statsGroupState.js', 'frontend/src/stats/useStatsState.js', 'frontend/src/stats/useStatsData.js',
+  'frontend/src/stats/StatsPanel.jsx', 'frontend/src/eng/useEngAlerts.js', 'frontend/src/eng/useEngCapacity.js',
+  'frontend/src/eng/useEngScope.js', 'frontend/src/eng/EngControls.jsx', 'frontend/src/eng/EpicBlock.jsx',
+  'frontend/src/components/LazyViewBoundary.jsx', 'frontend/src/components/lazyViewLoaders.js',
+];
 const ownerSource = readOwnerSource(ownerPaths, { anchor: 'readPendingAuthenticationRequired' });
 const gateSource = fs.readFileSync('frontend/src/components/AuthRequiredGate.jsx', 'utf8');
 const authRequiredSource = fs.readFileSync('frontend/src/api/authRequired.js', 'utf8');

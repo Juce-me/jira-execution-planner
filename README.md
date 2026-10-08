@@ -85,7 +85,7 @@ If you want the fastest setup with no frontend build step:
 3. Configure `.env` from `.env.example`.
 4. Install backend deps: `chmod +x scripts/install.sh && ./scripts/install.sh`
 5. Start the backend: `.venv/bin/python jira_server.py`
-6. Open `jira-dashboard.html` in your browser (or visit `http://localhost:5050/`).
+6. Visit `http://localhost:5050/` with the backend running. Direct `file://` opening of `jira-dashboard.html` is unsupported.
 
 The server binds to `127.0.0.1` by default. Use `APP_BIND_HOST=0.0.0.0` only for intentional network exposure, with `ALLOW_NETWORK_BIND=true`; Basic auth network exposure also requires `ALLOW_BASIC_AUTH_ON_NETWORK=true` and `APP_ENVIRONMENT_KEY=local`. Dev diagnostics require `ALLOW_DEV_DIAGNOSTIC_ENDPOINTS=true` and loopback access.
 
@@ -197,7 +197,7 @@ GA4_USER_ID_PEPPER=<deployment-secret>
 
 ### Step 5: Open the dashboard
 
-Open `jira-dashboard.html` in your browser (or visit `http://localhost:5050/`).
+Visit `http://localhost:5050/` with the backend running. Direct `file://` opening of `jira-dashboard.html` is unsupported.
 
 On first launch (or when local config files do not exist), open **Dashboard Settings** and configure:
 

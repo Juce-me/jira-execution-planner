@@ -141,7 +141,7 @@ When none apply, the move is mechanical: verify what you can locally, make the s
 - Backend: Python 3.10+ + Flask + Flask-Cors; use a Python runtime linked against OpenSSL 1.1.1+, not LibreSSL
 - Frontend: React 19 + esbuild with a Node 20.x toolchain
 - Package management: Python dependencies in `requirements.txt`; frontend dependencies in `package-lock.json`
-- Runtime: local Flask server on port `5050` by default; dashboard served by Flask or opened via `jira-dashboard.html`
+- Runtime: local Flask server on port `5050` by default; dashboard served by Flask at `http://localhost:5050/`; direct `file://` opening of `jira-dashboard.html` is unsupported
 
 ### Commands
 - Install backend deps: `.venv/bin/python -m pip install -r requirements.txt && .venv/bin/python -m pip install -e .`

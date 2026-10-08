@@ -496,7 +496,11 @@ test('a long-absence return re-runs the active view fetches on the fresh dashboa
     // Poll for the specific proof-of-refetch pathname rather than a bare length increase:
     // the sprints/product/tech fetches fire together but land in `calls` at slightly
     // different times, so "length grew by 1" can be true before the tech fetch lands.
-    await expect.poll(() => calls.slice(callsBefore).some(call => call.pathname === '/api/tasks-with-team-name')).toBe(true);
+    await expect.poll(() => {
+        const refreshCalls = calls.slice(callsBefore);
+        return refreshCalls.some(call => call.pathname === '/api/tasks-with-team-name')
+            && refreshCalls.some(call => call.pathname === '/api/sprints');
+    }).toBe(true);
     const newCalls = calls.slice(callsBefore);
     expect(newCalls.some(call => call.pathname === '/api/sprints')).toBe(true);
     expect(newCalls.some(call => call.pathname === '/api/tasks-with-team-name')).toBe(true);

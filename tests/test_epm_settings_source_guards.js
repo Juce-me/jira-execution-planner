@@ -162,14 +162,14 @@ test('settings modal shell and tab bodies are extracted while dashboard keeps se
     assert.ok(fs.existsSync(settingsModalPath), 'Expected extracted SettingsModal shell component');
     assert.ok(settingsModalSource.includes('export default function SettingsModal'), 'Expected SettingsModal default component export');
     assert.ok(settingsModalContainerSource.includes("import SettingsModal from './SettingsModal.jsx';"), 'Expected the container to import the extracted SettingsModal shell');
-    assert.ok(dashboardSource.includes("import SettingsModalContainer from './settings/SettingsModalContainer.jsx';") && !dashboardSource.includes("import SettingsModal from './settings/SettingsModal.jsx';"), 'Expected dashboard to reach the SettingsModal shell only through its container');
+    assert.ok(dashboardSource.includes("initialLoad: () => import('./settings/SettingsModalContainer.jsx')") && !dashboardSource.includes("import SettingsModal from './settings/SettingsModal.jsx';"), 'Expected dashboard to reach the SettingsModal shell only through its container');
     assert.ok(containerCallSource.includes('<SettingsModalContainer') && !/useState\(|useEffect\(|useRef\(|useMemo\(|useCallback\(/.test(settingsModalContainerSource), 'SettingsModalContainer must stay stateless');
     assert.deepStrictEqual(
         extractJsxAttributeNames(containerCallSource),
         extractParameterDestructureProps(settingsModalContainerSource).filter((name) => name !== 'children'),
         'Expected the props dashboard passes to SettingsModalContainer to match the props it destructures exactly'
     );
-    assert.ok(/\{showGroupManage && \(\s*<SettingsModalContainer/.test(dashboardSource), 'Expected the open-state conditional to stay in dashboard so closed Settings build no tab bodies');
+    assert.ok(/\{showGroupManage && \(\s*<LazyViewBoundary load=\{loadSettingsView\} fallback=\{settingsLoadingFallback\}>\s*\{SettingsModalContainer => <SettingsModalContainer/.test(dashboardSource), 'Expected the open-state conditional to stay in dashboard so closed Settings build no tab bodies');
     assert.ok(settingsModalCallSource.includes('activeTab={activeSettingsModalTab}'), 'Expected dashboard to pass grouped active settings tab into SettingsModal');
     assert.ok(settingsModalCallSource.includes('tabs={settingsModalTabs}'), 'Expected dashboard to pass tab descriptors into SettingsModal');
     assert.ok(settingsModalCallSource.includes("isDirty={groupManageTab !== 'connections' && isGroupDraftDirty}"), 'Expected dashboard to pass dirty state into SettingsModal');
@@ -497,15 +497,16 @@ test('the group-board props are derived inside the Departments container from sa
 });
 
 test('EPM settings source uses shared basic UI primitives for representative rows and states', () => {
+    const engControlsSource = readOwnerSource(['frontend/src/eng/EngControls.jsx'], { anchor: 'export function SearchControl(' });
     assert.ok(fs.existsSync(controlFieldPath), 'Expected shared ControlField primitive');
     assert.ok(fs.existsSync(iconButtonPath), 'Expected shared IconButton primitive');
     assert.ok(fs.existsSync(loadingRowsPath), 'Expected shared LoadingRows primitive');
     assert.ok(fs.existsSync(emptyStatePath), 'Expected shared EmptyState primitive');
-    assert.ok(dashboardSource.includes("import ControlField from './ui/ControlField.jsx';"), 'Expected dashboard to import ControlField');
+    assert.ok(engControlsSource.includes("import ControlField from '../ui/ControlField.jsx';"), 'Expected ENG controls to import ControlField');
     assert.ok(dashboardSource.includes("import IconButton from './ui/IconButton.jsx';"), 'Expected dashboard to import IconButton');
     assert.ok(epmSettingsTabSource.includes("import LoadingRows from '../ui/LoadingRows.jsx';"), 'Expected the EPM tab container to import LoadingRows');
     assert.ok(dashboardSource.includes("import EmptyState from './ui/EmptyState.jsx';"), 'Expected dashboard to import EmptyState');
-    assert.ok(dashboardSource.includes('<ControlField label="Search"'), 'Expected header search control to use ControlField');
+    assert.ok(engControlsSource.includes('<ControlField label="Search"'), 'Expected header search control to use ControlField');
     assert.ok(epmControlsSource.includes('<ControlField label="Project"'), 'Expected EPM project picker control to use ControlField');
     assert.ok(epmSettingsUiSource.includes('<IconButton') && epmSettingsUiSource.includes('className="epm-label-change-shortcut"'), 'Expected selected-label change action to use IconButton');
     assert.ok(epmSettingsUiSource.includes('<IconButton') && epmSettingsUiSource.includes('className="epm-project-home-shortcut"'), 'Expected Home project shortcut to use IconButton');

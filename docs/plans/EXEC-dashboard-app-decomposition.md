@@ -1,29 +1,29 @@
 # Dashboard App Decomposition Implementation Plan
 
-> **Status:** Planned (2026-10-07). Not started. Follows the closed [#220 extraction plan](DONE-dashboard-scenario-settings-state-extraction.md). Revalidated on 2026-10-07 against `origin/main` at `cd2ae405`; the line anchors below are from that revision.
-> **Branch:** `improvement/dashboard-app-decomposition`, which must contain current `origin/main` (Task 0 Step 1 creates or updates it). One PR at the end; separate commits inside it.
+> **Status:** Planned; implementation-ready after revision and three independent re-reviews on 2026-10-08. Not started. The [readiness review and resolution map](#implementation-readiness-review-2026-10-08) records the original findings and their task-level corrections. Follows the closed [#220 extraction plan](DONE-dashboard-scenario-settings-state-extraction.md). Historical line anchors use `cd2ae405`; Task 0 records the actual synchronized base and must pass its preflight before any extraction.
+> **Branch:** `improvement/dashboard-app-decomposition` in the active checkout. One PR at the end; separate commits inside it. This document prepares implementation; it does not authorize publication.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Shrink `App()` in `frontend/src/dashboard.jsx` by moving Statistics, Alerts derivation and Capacity ownership into feature modules, turning the closure renderers into components, naming the shared scope, and lazy-loading the Stats, Scenario and Settings views, without changing behavior, data requests or analytics.
 
-**Architecture:** Follow the proven #220 pattern. State that the group bootstrap reads and writes stays in a state-container hook called from `App()` with the same flat interface, beside a pure per-group seam module. Memos and effects move into hooks called at their original positions so effect order is unchanged. Views become stateless components that own only transient UI. The shared scope is first an inline memoized object in `App()` and is hoisted into `useEngScope()` only after Stats, Alerts and Capacity all consume it.
+**Architecture:** Follow the proven #220 pattern. State read or written by the group bootstrap stays in containers called from `App()` with flat interfaces. Derivation and data effects retain their logical call positions. `StatsPanel` owns chart hover state and the two explicitly characterized chart effects; other views retain their existing state owners. Alerts derives, filters and groups in one composite hook. Capacity has separate state and lifecycle exports in one file. A small memoized shared scope is hoisted only after its real consumers exist. Lazy views use stable loaders and a manifest for the mounted build when retrying failed chunks.
 
 **Tech Stack:** React 19, esbuild 0.27, Node 20 `node --test`, Playwright (Chromium), Python `unittest`, `scripts/extraction_lint`.
 
 ## Global Constraints
 
-- Behavior-preserving. No new user-visible feature, no new request, no changed request body, no changed analytics event. Analytics impact review: none; allowlist reason is "pure refactor, every `trigger`, `event_name`, `feature_name` and param stays byte-identical" and is proven by `tests/test_analytics_source_guards.js` plus `tests/test_extraction_quirk_pins.js`.
+- Preserve application behavior, API requests/bodies and analytics for the same scope and interaction. Chunk and retry-manifest requests are static assets, outside the API request ledger. Analytics allowlist reason: pure refactor with unchanged canonical events and typed params; Task 0 adds positive Stats pins and a synthetic dataLayer baseline, and Task 3 compares them. No new app event is added for chunk retries.
 - One PR, published once at the end through the section 10 publication transaction in `AGENTS.md`. Never merge feature work into local `main`.
-- The only operator stop is before the PR, after the full Chromium `tests/ui` run. Between commits the automated per-commit gate below is the only gate. A task whose gate is not green after two attempts stops the run: report the evidence, leave its uncommitted changes in place for the operator, and do not start the next task. Task 3 Step 3 (Gate 1) must pass before Task 4 starts.
+- Task commits require an approved execution/publication contract and section 10 checks before the first commit; this planning request grants neither commit nor push/PR authority. Task 9 is the final push/PR stop. Any strategic deviation, uncertain user edit or failed gate still stops under `AGENTS.md`. After two failed attempts on one issue, report the evidence and leave the affected uncommitted changes for the operator. Task 3 Gate 1 must pass before Task 4 starts.
 - Out of scope (own plan later): group state and config bootstrap (`buildDefaultGroupState`, `buildGroupStateSnapshot`, `applyGroupState`, `groupStateSnapshot`, `resetSprintScopedState`, `loadConfig`), the Sprint catalog and its cache-first startup, the task-loading pipeline, and Scenario history/save/rollback (issue #230). Also out of scope: extracting Basic auth (operator direction 2026-10-07: the app will rely only on OAuth; its own plan later). This plan acts on one consequence only, the end of direct `file://` open (Task 8).
 - Persisted per-group state stays in `App()` through a container hook. Moving it into a component that unmounts is forbidden: `applyGroupState` writes it on every group switch.
-- Caches and selections survive closing Stats. Only chart hover state, which `StatsPanel` owns, resets with the view. The excluded-capacity epic dropdown state, its ref and its outside-click effect stay with the Stats state and data hooks, so their behavior does not change.
+- Caches and selections survive closing Stats. Chart hover state resets with the view. `StatsPanel` also owns `burnoutChartRef`, `resolveBurnoutPointer` and scroll-to-today, so chart DOM effects run when the view actually mounts. The excluded-capacity dropdown state, ref and outside-click effect stay in the mounted state/data hooks. `hideExcludedStats` stays in `App()` at its existing Stats–Scenario bootstrap insertion point.
 - No new dependency. Opening `jira-dashboard.html` from `file://` is not supported (operator decision, 2026-10-07: Basic auth will be extracted and the app will rely only on OAuth). The app is always served from localhost by Flask, which is why Task 8 may emit ES modules and chunk files.
 - Do not hand-edit `frontend/dist/`; rebuild with `npm run build` and commit the output because `.github/workflows/verify-frontend-build.yml` requires a clean post-build diff.
 - No Co-Authored-By or agent branding in commits, branch names or the PR. Commit as the noreply identity with one-shot `-c user.email=` flags; never commit the personal address.
-- Use `.venv/bin/python`; in this worktree there is no `.venv`, so export `JEP_TEST_PYTHON` to an existing interpreter before any Python or Flask-backed spec.
-- Run `npm ci` in a fresh worktree before `npm run build` (a build that resolves `node_modules` from an ancestor embeds wrong paths in `dashboard.js.map`).
+- Use the active checkout's `.venv/bin/python` and export `JEP_TEST_PYTHON="$PWD/.venv/bin/python"` for Flask-backed specs. If it is absent, select an existing approved Python 3.10+ runtime before running those checks; never claim them passed without one.
+- Stay in the checkout the operator is viewing. Run `npm ci` there in Task 0 under Node 20; do not create or switch to another worktree. Reinstall only if the lockfile or dependency installation changes.
 - Reuse existing classes and components. `SegmentedControl` keeps `eng-mode-control`; dropdowns keep `team-dropdown-*` / `sprint-dropdown-*`; no new global-button overrides.
 - Before the task that needs them, read the postmortems in `docs/postmortem/`: MRT009 (sticky layering; Tasks 3 and 6), MRT010 (no fetch unification; Task 2), MRT016 (File Map drift; every commit), MRT017 and MRT018 (chart hover readouts, Stats panel overflow; Task 3), MRT020 and MRT021 (shared controls) and MRT028 (epic-header layout instructions) for Task 6, MRT007 (bundled frontend regression; Task 8), MRT022 (branch names; Task 0), MRT024 (head-stamped schema drift; Task 9 server check) and MRT025 (publication transaction; Task 9).
 - The File Map is a contract: before each commit compare `git diff --name-status` with it and record any divergence in this plan.
@@ -40,7 +40,7 @@
 | Stats hover state | 887, 959, 960 | `priorityHoverIndex`, `burnoutHoverPoint`, `burnoutHoverTeamKey`; no group-bootstrap readers; the only Stats cells free to move into the panel. `burnoutHoverPoint` and `burnoutHoverTeamKey` are read by the render block (9509, 9511) and reset by the effect at 4546-4549 (deps `[burnoutData, burnoutAssigneeFilter, statsView]`), which moves into `StatsPanel` with them in Task 3; `priorityHoverIndex` is also in the `?perf` snapshot object and dependency array (1938, 1975), which Task 3 edits |
 | Stats readers outside Stats ranges | group bootstrap 2729-2756 (defaults), 2811-2831 (snapshot), 2888-2915 (apply), 2973-2993 (snapshot dependencies), 3356-3431 (clusters at 3356-3367, 3378, 3413-3424, 3431); cache clears 1680-1682, 6304, 8644-8649; `isStatsSourceOnlyStatsView` at 3611, 3696, 3726, 3728, 5786, 8648; `burnoutTaskFilter` at 5462-5471, 5815-5816 and 7471 (filters the visible task list and feeds the Alerts `focusedFilterActive`); `projectTrackSprintId` at 1569-1574 (reads `showStats` and `statsView`) | These are why Stats state cannot leave `App()` |
 | Alerts derivation | 7038 to about 7485 (the Task 4 inventory fixes the end); `triggerAlertCelebration` is defined at 7486 and called at 6045, `alertCelebrationPieces` is state at 1016, cleared by the group bootstrap at 2928, set at 7521-7536 and rendered at 10253 | Toggles `show*Alert`, `showAlertsPanel`, `dismissedAlertKeys` are read and written by the group bootstrap (`showAlertsPanel` at 2767, 2842, 2926, 3389, 3442; `dismissedAlertKeys` at 2768, 2843, 2927, 3004; the `show*Alert` toggles beside them) and stay in `App()` |
-| Capacity | state 977-993, derivation and fetch 6453-6774 | `fetchCapacity` at 6592; `handleCapacitySaved` at 6573 (passed to Settings as `onCapacitySaved` at 8847) |
+| Capacity | state 977-993, derivation and fetch 6453-6774 | `fetchCapacity` at 6592; `handleCapacitySaved` at 6573, passed to `PlanningTeamCapacityCards` as `onCapacitySaved`. `capacityEnabled` and `searchInputRef` stay in App; group-reset setters, Refresh's nonce setter and Epic refresh's `capacityScopeHoldRef` remain externally available |
 | Closure renderers | 7714-8589 | `renderSearchControl` (7714), `renderViewSwitch` (7742), `renderEngModeControl` (7768), `renderEpmControls` (7783), `renderSprintControl` (7836), `renderGroupControl` (8003), `renderTeamControl` (8100), `renderPlanningReviewFieldEditor` (8189), `renderEpicBlock` (8265, about 325 lines). The controls are called on two surfaces, `'main'` (8883-8967) and `'compact'` (8991-9004); `EngView.jsx` already receives `renderEpicBlock` as a prop (`EngView.jsx:25,143,147,152`) |
 | Out of scope bootstrap | 2665-3734 | Listed in Global Constraints |
 
@@ -57,18 +57,21 @@ Existing infrastructure this plan reuses:
 
 | File | Responsibility |
 | --- | --- |
-| `frontend/src/stats/statsGroupState.js` | Pure per-group seam: ordered keys, defaults from saved prefs, snapshot builder, ordered setter application, transient-ref and cache resets |
+| `frontend/src/stats/statsGroupState.js` | Pure per-group seam for the contiguous main Stats keys; leaves `hideExcludedStats` in App after Scenario; defaults, snapshots, setters and cache resets |
 | `frontend/src/stats/useStatsState.js` | State container called in `App()`; no effects, no getters; returns the same flat names `App()` uses today |
 | `frontend/src/stats/useStatsData.js` | Layered hooks for Stats derivation memos and fetch effects, each called at its original effect position |
-| `frontend/src/stats/StatsPanel.jsx` | Stats view; owns only chart hover state (`priorityHoverIndex`, `burnoutHoverPoint`, `burnoutHoverTeamKey`) and the effect that resets the burnout hover cells, and receives everything else as props |
-| `frontend/src/eng/useEngAlerts.js` | Pure alert derivation: epic lists, team lists, counts |
-| `frontend/src/eng/useEngCapacity.js` | Capacity read lifecycle and totals |
+| `frontend/src/stats/StatsPanel.jsx` | Stats view; owns chart hover cells, chart DOM ref/pointer callback, hover-reset and scroll-to-today effects |
+| `frontend/src/eng/useEngAlerts.js` | Composite derivation, unchanged `useEngAlertFilters` call, then filtered team lists/counts; no state or effects |
+| `frontend/src/eng/useEngCapacity.js` | `useEngCapacityState` container plus `useEngCapacity` read lifecycle/totals |
 | `frontend/src/eng/EngControls.jsx` | `SprintControl`, `GroupControl`, `TeamControl`, `SearchControl`, `ViewSwitch` components (`renderEngModeControl`, `renderEpmControls` and `renderPlanningReviewFieldEditor` stay in `App()`; see Task 6) |
 | `frontend/src/eng/EpicBlock.jsx` | `renderEpicBlock` as a component |
 | `frontend/src/eng/useEngScope.js` | Hoisted scope object (Task 7 only) |
-| `frontend/src/components/LazyViewBoundary.jsx` | Suspense plus retry boundary for lazy views (Task 8) |
+| `frontend/src/components/LazyViewBoundary.jsx` | Owns stable lazy identity between attempts, Suspense, keyed error boundary and one explicit retry (Task 8) |
+| `frontend/src/components/lazyViewLoaders.js` | Literal first-load imports, mounted-build manifest validation and cache-busted retry imports (Task 8) |
+| `scripts/build_dashboard.mjs` | Deterministic split build/manifest and serialized watch rebuilds using the existing esbuild dependency (Task 8) |
 | `tests/ui/runtime_probe_helpers.js` | `buildRuntimeProbeBundle`, `readAppRenderCount` for the `?perf` counter |
 | `tests/test_stats_group_state.js`, `tests/test_use_stats_state.js`, `tests/test_use_stats_data.js`, `tests/test_stats_panel.js`, `tests/test_use_eng_alerts.js`, `tests/test_use_eng_capacity.js`, `tests/test_eng_controls.js`, `tests/test_use_eng_scope.js`, `tests/test_lazy_view_boundary.js` | Node contracts per module |
+| `tests/test_lazy_view_loaders.js`, `tests/test_dashboard_split_build.js` | Retry-manifest validation and deterministic build/watch contracts (Task 8) |
 
 **Modify**
 
@@ -76,46 +79,68 @@ Existing infrastructure this plan reuses:
 | --- | --- |
 | `frontend/src/dashboard.jsx` | Remove moved ranges, add imports and call sites |
 | `tests/ui/codebase_structure_smoke.spec.js` | Add the three gate tests and the `runtimeProbe` option to `installApiMocks` (Task 0), DOM-parity capture calls (Task 3) and the chunk-failure tests (Task 8) |
-| `tests/ui/epm_home_token_fixture.js` | Serve `**/frontend/dist/chunks/*` from disk beside the committed entry in `installDashboardShell` (Task 8) |
+| `tests/ui/epm_home_token_fixture.js` | Serve committed chunks and `lazy-views-*.json`; use URL pathname for disk lookup so retry queries work (Task 8) |
+| `tests/ui/eng_epic_sort_and_track.spec.js` | Keyed Epic identity across real sort reversal and sibling filtering, direct and initiative-grouped (Task 6) |
 | `backend/routes/performance_routes.py` | Only if the Task 8 fingerprint rule shows the entry hash ignoring chunk changes |
 | `scripts/extraction_lint/owner_budgets.json`, `tests/test_codebase_structure_budgets.py`, `scripts/extraction_lint/check_hook_interfaces.mjs`, `scripts/extraction_lint/tooling_controls.mjs` | Add `stats` and `eng` as owner features for the new files |
+| `scripts/extraction_lint/check_move_conservation.mjs`, `scripts/extraction_lint/tooling_controls.mjs` | Explicit pure/component owner coverage and two exact effect-relocation allowances with negative controls (Task 0) |
 | `tests/test_stats_module_extraction_source_guards.js`, `tests/test_stats_controls_source_guards.js`, `tests/test_excluded_capacity_stats_source_guards.js`, `tests/test_cohort_grid_source_guards.js`, `tests/test_dashboard_alert_source_guards.js`, `tests/test_dashboard_missing_labels_source_guards.js`, `tests/test_dashboard_epic_alert_team_links.js`, `tests/test_extraction_quirk_pins.js`, `tests/test_auth_isolation_source_guard.js` | Re-point source reads from `dashboard.jsx` to the new owner files via `readOwnerSource`; never weaken an assertion. A scan at `cd2ae405` also flags `tests/test_epic_refresh_source_guards.js`, `tests/test_epm_shell_source_guards.js`, `tests/test_epm_view_source_guards.js`, `tests/test_first_run_group_configuration.js`, `tests/test_frontend_api_source_guards.js`, `tests/test_planning_action_source_guards.js` and `tests/test_use_shared_config_save.js` as possible readers of moved code; re-point one only when its guard fails after a move |
-| `package.json` | ES module build with code splitting into `frontend/dist/chunks/`, plus `prebuild:js` and `prewatch:js` cleanup of that directory (Task 8 only) |
+| `tests/test_analytics_source_guards.js`, `tests/test_extraction_quirk_pins.js` | Re-point moved positive anchors, retain exclusions, add frozen Stats event-call pins (Tasks 0/3) |
+| `tests/test_load_performance.py` | Only if the Task 8 entry-fingerprint check requires a backend fingerprint change |
+| `package.json` | `build:js`/`watch:js` call the split-build helper; auth/CSS scripts keep their existing behavior (Task 8) |
 | `jira-dashboard.html` | Entry script tag for the split build (Task 8 only) |
 | `tests/test_codebase_structure_budgets.py`, `scripts/extraction_lint/run.sh` | Ratchet the `dashboard.jsx` ceiling and `MAX_WARNINGS` in every commit that lowers them; exact final values in Task 9 |
 | `docs/ontology.md` (every commit that moves an owner), `docs/plans/README.md`, `docs/features/statistics.md`, `README.md` (lines 88 and 200), `AGENTS.md` (section 10 runtime line), this plan | Documentation; the `file://` wording changes in Task 8, the rest closes out in Task 9 |
+| `frontend/dist/dashboard.js`, `frontend/dist/dashboard.js.map`, `frontend/dist/chunks/*`, `frontend/dist/lazy-views-*.json` | Generated output only, including removal of stale chunks/manifests |
 
-**Forbidden regressions:** any added or removed API request on cold load or on reopening Stats; changed analytics counts; Stats selections or caches lost on group switch, sprint change or closing Stats; changed effect order; a chart hover re-rendering `App()`; any Stats, Alerts or Capacity visual change; a lazy view mounted outside `<StatusColourProvider>`; stale chunk files left in `frontend/dist`.
+**Forbidden regressions:** added/removed API calls or changed bodies relative to each mode's own baseline; changed analytics; lost Stats selections/caches; unapproved effect reordering; hover re-rendering `App()`; visual changes; lost Epic list identity; a lazy view outside `<StatusColourProvider>`; loading another deployment's lazy graph; stale generated chunks/manifests. The two Task 3 chart-effect relocations are the only effect-order exceptions.
 
 ## Per-Commit Gate
 
-Run all of these before every commit and read the summary lines. A gate that cannot run is reported as not run, never as passed.
+Run these before each authorized task commit. Task 0 installs dependencies once and records the baseline. A gate that cannot run is reported as not run, never as passed. Commit steps require execution-time authorization and the section 10 history/scope transaction checks; push/PR always require the final operator confirmation.
 
 ```bash
-export JEP_TEST_PYTHON=<path to an existing python3.10+ interpreter>
-npm ci
-node --test tests/test_*.js
-$JEP_TEST_PYTHON -m unittest discover -s tests
-npm run build && git status --short frontend/dist   # dist must be exactly the committed build
-bash scripts/extraction_lint/run.sh
-npx playwright test tests/ui/codebase_structure_smoke.spec.js --browser=chromium --workers=4 -g "Statistics|Project Track|Lead Times|Excluded Capacity|Catch Up, Planning"
+export JEP_TEST_PYTHON="$PWD/.venv/bin/python"
+fnm exec --using 20 node --test tests/test_*.js
+JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile "$JEP_TEST_PYTHON" -m unittest discover -s tests
+fnm exec --using 20 npm run build
+git status --short frontend/dist
+fnm exec --using 20 bash scripts/extraction_lint/run.sh
+fnm exec --using 20 npx playwright test tests/ui/codebase_structure_smoke.spec.js --browser=chromium --workers=4 -g "Statistics|Project Track|Lead Times|Excluded Capacity|Catch Up, Planning"
 ```
 
-Plus, for every commit that moves code: `node scripts/extraction_lint/check_move_conservation.mjs --base <previous commit> --created-hook <each new owner file> [--deleted-hook <file>] <existing affected hook files>` (usage is in the first lines of the script), which fails on effect-order change and prints residual statements for human review; a zero exit does not approve the residuals. Record each residual group in the Ledger with a one-line disposition (moved verbatim, signature-only, or explained); an unexplained residual stops the task. Then Gate A from the global instructions: `git show --stat HEAD` and `git status`, read both, confirm the intended files and content (a rename shows `| 0`).
+For code-moving commits, use `fnm exec --using 20 node tmp/lint/check_move_conservation.mjs --base "$TASK_START_SHA"` with the task's explicit created/existing owners and pure/component symbols under the contract below. `run.sh` must run first so the copied checker resolves its pinned parser. Review every residual and record its disposition in the Ledger; zero exit alone does not approve a source rewrite. Snapshot the complete generated file list and bytes after one build, rebuild, then compare the second snapshot byte-for-byte, including new/deleted chunks and manifests. A changed `git status` against the previous commit is expected before committing new output. After the authorized commit, rebuild and run `make verify-dist-clean`; it must pass at that exact committed head. Then run `git show --stat HEAD` and `git status` and confirm the intended content and a clean worktree.
 
-The Playwright line must run at least the number of tests recorded in the Baseline Log (9 at `cd2ae405`; confirm with the same command plus `--list`); fewer, or zero, is a failed gate. Run Node commands under the pinned Node 20 (`.nvmrc`; `fnm exec --using 20 <command>` where the system Node is newer).
+The Playwright command must select all original 9 baseline cases plus `Statistics preserves per-mode cold-load request contracts and cached reopen`, `Statistics preserves group state across A B A`, and `Statistics preserves analytics event contracts`. Check the selected titles with `--list`, not just a minimum count. Gate 1 and render measurement remain opt-in under `JEP_RUNTIME_PROBE=1`; Gate 1 is knowingly red until Task 3 and is mandatory thereafter. Under Task 8 also select all `Statistics lazy` tests explicitly. Fewer required titles or zero tests is a failed gate.
 
 In the same commit, ratchet the `dashboard.jsx` line ceiling (`tests/test_codebase_structure_budgets.py` `LEGACY_ENTRYPOINT_LINE_BUDGETS`, and `owner_budgets.json` `dashboard.lineCount` and `lineCeiling`) and `run.sh` `MAX_WARNINGS` to the measured values (`validate_owner_budgets` fails unless every line count, interface count and aggregate equals the measured value), update the `docs/ontology.md` entries of every concept that moved (root `AGENTS.md` section 1), and compare `git diff --name-status` with the File Map.
+
+### Conservation and binding contracts
+
+Task 0 extends the existing checker before any move. Preserve current hook flags and strict created/deleted/base-file validation. Add `--owner-function FILE#SYMBOL` for named top-level pure functions/components; a pure owner must name every moved exported function. Include those bodies in statement accounting, reject missing/ambiguous symbols and do not silently enumerate unrelated functions. Preserve recursive hook effect-order checking. Component effects are tracked under their named component owner, separately from App's lifecycle.
+
+Add `--allow-effect-move FROM_FILE#OWNER=>TO_FILE#OWNER@TOKEN_SHA256`. It requires one exact source occurrence before, none there after, no destination occurrence before, one unchanged occurrence after, and an identical token signature including hook kind, callback and dependencies. Remove only that explicitly relocated occurrence before comparing retained effect order; any duplicate, stale allowance, wrong owner, changed callback/dependencies or additional unapproved effect fails. Only Task 3 uses allowances:
+
+| Effect | Source owner at Task 3 base | Destination | Token-signature SHA256 at `1f161a29` |
+| --- | --- | --- | --- |
+| Hover reset | `frontend/src/dashboard.jsx#App` | `frontend/src/stats/StatsPanel.jsx#StatsPanel` | `020d7cc238f50f3d5caf741768a0d01d73100e3d9a3ebe313f1cb7a95547685c` |
+| Scroll-to-today | `frontend/src/stats/useStatsData.js#useStatsDerivedC` | `frontend/src/stats/StatsPanel.jsx#StatsPanel` | `d102b57c272da087edd05d3877fc7e8b16887697e34acf4fbc4b8072897d49b4` |
+
+Recompute each digest from the Task 3 base using the checker's token-signature algorithm; a source change requires review of the changed effect, not an automatic allowance update. Task 0's negative controls cover named pure/component bodies, omitted ownership, missing symbols, duplicate effects, changed callbacks/dependencies, wrong destinations, stale allowances and unapproved reordering, while retaining every existing control. Task 3 must print exactly these two approved relocations and zero unexplained effects.
+
+Before extracting a closure, make a binding ledger by reading its declaration and using `rg` to trace each identifier's declaration and external consumers. Classify locals, imports/platform globals and App-owned bindings; record each external input and returned value with caller lines. JSX attribute/property names are not identifier references. Check declaration availability at each proposed call position and deferred callback timing. Existing imports and platform globals are allowed; owners may never import/re-export `dashboard.jsx`. After owner interfaces exist, use `node tmp/lint/check_hook_interfaces.mjs --write-inventory tmp/stats-inventory.json --manifest scripts/extraction_lint/owner_budgets.json frontend/src/dashboard.jsx` to validate declared inputs/returns. It does not discover pre-extraction closure free variables.
+
+SSR probes reuse `tests/test_use_capacity_mapping_settings.js`: esbuild to CommonJS with React external, then `renderToString` a probe component. These tests prove initial values and return contracts only; browser tests prove effects, retries, mounted identity and dirty/conflict/auth flows. Freeze synthetic expected values in tests rather than deriving them from the post-move implementation.
 
 ## Task 0: Safety net, baselines and tooling
 
 Commit message: `Add render-isolation and request baselines for the App decomposition`
 
-**Files:** Create `tests/ui/runtime_probe_helpers.js`. Modify `docs/ontology.md` (re-stamp the `App()` inventory baseline), `tests/ui/codebase_structure_smoke.spec.js`, `scripts/extraction_lint/owner_budgets.json`, `tests/test_codebase_structure_budgets.py`, `scripts/extraction_lint/check_hook_interfaces.mjs`, `scripts/extraction_lint/tooling_controls.mjs`.
+**Files:** Create `tests/ui/runtime_probe_helpers.js`. Modify `docs/ontology.md`, `tests/ui/codebase_structure_smoke.spec.js`, `tests/test_extraction_quirk_pins.js`, `tests/test_analytics_source_guards.js`, `scripts/extraction_lint/owner_budgets.json`, `tests/test_codebase_structure_budgets.py`, `scripts/extraction_lint/check_hook_interfaces.mjs`, `scripts/extraction_lint/check_move_conservation.mjs`, `scripts/extraction_lint/tooling_controls.mjs`.
 
-**Produces:** a red gate-1 test on current code, a green request-count test, and owner tooling that accepts `stats` and `eng` features.
+**Produces:** a red Gate 1, green per-mode API/analytics/group-state baselines, and tested tooling for Stats/ENG pure, hook and component owners. State-restoration and event tests must pass on the unchanged baseline before extraction.
 
-- [ ] **Step 1: Startup checks, branch, base and numbers.** Read `docs/plans/AGENTS.md`, the postmortems named in Global Constraints, and run the startup gate sweep (`rg --files docs/plans | rg '/GATE-'`). At `cd2ae405` the only gate is `GATE-05-home-write-capability.md`, next review 2026-10-12, which states that the extraction does not depend on it; record its `Checked on` and `Next review` values and that it is unaffected, and do not modify it. Run `git fetch origin` and `git branch --show-current`. Execute on `improvement/dashboard-app-decomposition`, never on an agent-generated name such as `cld/*` (MRT022). That branch already exists (at `cd2ae405` it sits at the plan commit `dc95f051` in its own worktree), so do not recreate it or rename around it: work in its worktree, merge `origin/main` into it, and bring this revised plan over from the review branch (cherry-pick or merge) before the first edit. Confirm `git merge-base --is-ancestor origin/main HEAD`. Record `git rev-parse --short origin/main` as the **Task 0 base** and `wc -l frontend/src/dashboard.jsx` in the Baseline Log. Run the full per-commit gate once and write the pass counts, including the Playwright `--list` count, into the Baseline Log, and re-stamp the `App()` inventory entry in `docs/ontology.md` (line 133 at `cd2ae405` still says `da17de89`, 10,851 lines, `App()` from line 308) with these measurements. Any failure on unmodified code is reported to the operator before continuing.
+- [ ] **Step 1: Startup checks, branch, base and numbers.** Read the instruction chain and named postmortems. Record `git status --short`, branch, HEAD and fetched `origin/main` SHAs. Preserve these plan revisions and other user changes; never stash, discard or switch checkouts implicitly. Integrate `origin/main` into the dedicated branch only under the execution-time Git authorization, then confirm `git merge-base --is-ancestor origin/main HEAD`. If integration cannot be performed safely, stop before implementation and report the required base sync. Record `TASK_START_SHA=$(git rev-parse HEAD)` and the Task 0 base, source line/hook counts, installed Python/Node versions and initial bundle raw/gzip bytes. Run `fnm exec --using 20 npm ci`, then the unmodified baseline checks. Re-stamp the relevant ontology measurements. List gates; GATE-05 is unrelated to this read-only extraction and not due until 2026-10-12, so record its existing dates without modifying or probing it. Reassess only if execution happens on or after that review date. Baseline failures stop before a move.
 
 - [ ] **Step 2: Create the probe helper.**
 
@@ -216,143 +241,283 @@ The series polygons are the only `polygon` elements with a `fill-opacity` attrib
 
 - [ ] **Step 5: Run it and confirm it fails.**
 
-Run: `JEP_RUNTIME_PROBE=1 npx playwright test tests/ui/codebase_structure_smoke.spec.js -g "Stats chart hover" --browser=chromium`
+Run: `JEP_RUNTIME_PROBE=1 fnm exec --using 20 npx playwright test tests/ui/codebase_structure_smoke.spec.js -g "Stats chart hover" --browser=chromium`
 Expected: FAIL on the equality assertion because the hover increments the count today. Keep the failing output in the Baseline Log.
 
-- [ ] **Step 6: Write the request-count and reopen test (must pass now).** Same fixture, `useCommittedDist: true`. Record the sorted set of `pathname + method` pairs on cold load into a constant, then: open Stats on Burndown, switch to Catch Up and back, and assert `callsFor(calls, '/api/stats/burnout', 'POST').length` is still 1 and no `/api/stats/*` call count increased. Add a second assertion that the cold-load pair set for Catch Up, Planning and Stats equals the recorded constant, and a third that Burndown is still the selected Stats view after the Catch Up round trip (selections survive closing Stats). Run it and record it green.
+- [ ] **Step 6: Write `Statistics preserves per-mode cold-load request contracts and cached reopen` (green on the baseline).** Parameterize fresh browser contexts for Catch Up, Planning and each Stats subview. Freeze a separate sorted request multiset per mode after that mode's known task/alert/readiness/Stats responses settle. Reuse the fixture's `method`, `pathname`, `params`, `headers` and parsed `body` fields. Recursively sort object keys, preserve array order and all semantic query/body values, and remove only the existing timestamp cache-busters (`t`/`_ts`) and explicitly fixture-volatile transport identifiers; list every excluded field in the test. Include requested-with/CSRF behavior where applicable; never capture credential headers. Assert each mode against its own literal baseline. Then warm Burndown, switch to Catch Up and back, assert Burndown remains selected and its POST count remains 1 with zero additional Stats requests. Keep the exact cold-load expectations unchanged during extraction.
+
+```js
+function canonical(value) {
+    if (Array.isArray(value)) return value.map(canonical);
+    if (value && typeof value === 'object') return Object.fromEntries(
+        Object.keys(value).sort().map(key => [key, canonical(value[key])])
+    );
+    return value;
+}
+function requestContract(call) {
+    const params = { ...call.params };
+    delete params.t;
+    delete params._ts;
+    return canonical({ method: call.method, pathname: call.pathname, params,
+        body: call.body, requestedWith: call.headers['x-requested-with'] || null,
+        csrf: call.headers['x-csrf-token'] ? 'present' : 'absent' });
+}
+const requestMultiset = calls => calls.map(call => JSON.stringify(requestContract(call))).sort();
+```
+
+- [ ] **Step 6a: Write `Statistics preserves group state across A B A` (green on the baseline).** Use two synthetic groups with distinct Team sets and valid assignees. In A select Burndown/Issue Count and a valid assignee, configure a distinct Lead Times quarter range/grouping, then return to Burndown. Set different values in B. Switch A → B → A through the existing group selector, waiting for scoped data and persistence each time; assert each group's view, metric, assignee and cohort controls restore. Freeze scope-specific request bodies/counts from the original behavior; group switches may clear caches, so compare against that baseline rather than assuming zero requests across groups. A close/reopen in the same warmed scope adds zero Stats calls. Include one real Burndown point click that filters the external task list and Clear that restores it.
+
+- [ ] **Step 6c: Write `Statistics preserves analytics event contracts` (green on the baseline).** Enable analytics only in the synthetic `/api/analytics/context` mock with no external GTM container, collect `window.dataLayer`, and freeze app-owned `userevent`/`pageview` records after startup and a view change, graph-mode change, effort-split chart action and exclusion filter action. Keep canonical event names, event type, feature/page names and typed params; exclude only named wall-clock/session transport values. Assert the no-event Lead Times exclusion case. In `test_extraction_quirk_pins.js`, freeze the tokenized Stats analytics call expressions from the baseline, including `trackStatsAction` and `trackStatsAnalyticsAction`, and read the later Stats owner files through positive anchors. Do not derive expectations from the post-move source. Run these tests before any move; preserve their assertions throughout.
 
 - [ ] **Step 6b: Add the render-count measurement (gate 3).** Add an opt-in test `App render counts for common interactions` (skipped unless `JEP_RUNTIME_PROBE=1`) that, on the same fixture, reads `readAppRenderCount` before and after (a) toggling one Team in the Teams dropdown and (b) switching the Stats view from Teams to Priority, and attaches the two deltas with `testInfo.annotations.push({ type: 'app-renders', description: JSON.stringify({ filterChange, statsViewSwitch }) })`. It asserts nothing about the numbers; Task 9 compares them. Run it three times and record the min and max for each delta in the Baseline Log, because render counts vary with timers.
 
-- [ ] **Step 7: Extend the owner tooling.** In `tests/test_codebase_structure_budgets.py` allow `"stats"` and `"eng"` in the feature check (line 257, currently `set(module["features"]) - {"scenario", "settings"}`), seed both in `totals` (line 231) and require matching `aggregates`. In `check_hook_interfaces.mjs` replace the feature inference at lines 376-383 with a directory map (`scenario` and `settings` unchanged; the default `ownerRoots` is `['scenario', 'settings', 'epm']` and `epm` files are labelled `settings` today and stay so; `stats` and `eng` new) and extend the totals at line 428. Register new files only by explicit module entries; do **not** add `stats` or `eng` to `ownerRoots`, so existing files in those directories stay unregistered. Add a seeded failure for each new feature in `tooling_controls.mjs`.
+- [ ] **Step 7: Extend the owner tooling.** In `tests/test_codebase_structure_budgets.py` allow `"stats"` and `"eng"` in the feature check, seed both in `totals` and require matching `aggregates`. In `check_hook_interfaces.mjs`, read the selected manifest before call-site enforcement. Measure the deduplicated union of root-discovered files and explicit `manifest.modules[].path` files; include explicit registered files in `owned()` so their hook/component contracts are enforced. Registered outside-root paths must be normalized repo-relative JS/JSX/MJS files inside `frontend/src`, excluding generated/test files; reject missing/duplicate/escaping paths rather than dropping them. Replace the blanket outside-root rejection with this explicit-registration rule. Infer features for existing roots as before (`epm` stays `settings`); use each explicit module's frozen `features` for outside-root modules, and extend aggregate totals for Stats/ENG. Register only the new owners from the File Map, including Task 8's shared boundary/loader under `['scenario', 'settings', 'stats']`; do **not** add whole Stats/ENG/components directories to `ownerRoots`, so existing files there remain outside ownership budgets. Inventory output must include explicit modules/interfaces/callers exactly once. Add seeded controls for both new features, valid outside-root measurement/enforcement, escaping/missing paths, duplicate registration, changed exports and stale interface counts. Preserve the old root-discovery/unregistered-source controls.
+
+- [ ] **Step 7a: Extend conservation before relying on it.** Implement the named-owner and exact effect-relocation contract above in `check_move_conservation.mjs`. Use synthetic App/pure/component copies under ignored `tmp/` to prove an unchanged move passes and every listed defect fails for its intended reason. Preserve old CLI behavior and every existing negative control. The actual effect bodies/digests above remain unchanged; a third relocated effect must fail. Run the negative-control suite before any feature extraction.
 
 - [ ] **Step 8: Verify the tooling.** Run `bash scripts/extraction_lint/run.sh` and `bash scripts/extraction_lint/negative_controls.sh` with `JEP_TEST_PYTHON` exported (`run.sh` falls back to `.venv/bin/python`). Expected at `cd2ae405`: `run.sh` exits 0 with `106 problems (0 errors, 106 warnings)`, `owner budgets: 69 modules; problems: 0` and `checked 36 destructure sites in 69 modules; enforced problems: 0; informational: 34; baselined: 0`; `negative_controls.sh` exits 0 and ends with `tooling controls passed: 66` and `negative controls failed: 0`. After this step the module count stays 69 and the passed-controls count rises by exactly the new seeded failures; record every summary line in the Baseline Log.
 
-- [ ] **Step 9: Gate and commit.** Run the per-commit gate (the gate-1 test is excluded from it because it is opt-in and red). Commit with the message above; no trailer. Run Gate A.
+- [ ] **Step 9: Gate and authorized commit.** Run the per-commit gate (the gate-1 test is excluded from it because it is opt-in and red). Follow the section 10 scope/history checks and commit only under the approved execution contract, with the message above and no trailer. Rebuild and require the post-commit dist-clean check.
 
 ## Task 1: Stats state container and per-group seam
 
 Commit message: `Extract the Statistics state container and per-group seam`
 
-**Files:** Create `frontend/src/stats/statsGroupState.js`, `frontend/src/stats/useStatsState.js`, `tests/test_stats_group_state.js`, `tests/test_use_stats_state.js`. Modify `frontend/src/dashboard.jsx`, `scripts/extraction_lint/owner_budgets.json`, the Stats source-guard tests listed in the File Map.
+**Files:** Create `frontend/src/stats/statsGroupState.js`, `frontend/src/stats/useStatsState.js`, `tests/test_stats_group_state.js`, `tests/test_use_stats_state.js`. Modify `frontend/src/dashboard.jsx`, `scripts/extraction_lint/owner_budgets.json` and the mapped Stats source guards.
 
-**Interfaces**
+**Interfaces:** the pure seam exports `STATS_GROUP_STATE_KEYS`, `buildDefaultStatsGroupState(savedPrefs, resolvers)`, `snapshotStatsGroupState(values)`, `applyStatsGroupState(nextState, setters, resolvers)` and `resetStatsTransientRefs(refs)`. The ordered key literal is:
 
-- Produces `statsGroupState.js`: `STATS_GROUP_STATE_KEYS` (ordered array equal to the key order of `buildGroupStateSnapshot` for the Stats keys), `buildDefaultStatsGroupState(savedPrefs, resolvers)`, `snapshotStatsGroupState(values)`, `applyStatsGroupState(nextState, setters, resolvers)`, `resetStatsTransientRefs(refs)`.
-- Produces `useStatsState(inputs)`: returns an object with exactly today's names and setters for the cells at `dashboard.jsx:885-966` and `1001`, plus the cache refs, including `excludedCapacityEpicDropdownOpen` and `excludedCapacityEpicDropdownRef` (their outside-click effect moves in Task 2) and `burnoutTaskFilter`. It excludes the three chart-hover cells (`priorityHoverIndex`, `burnoutHoverPoint`, `burnoutHoverTeamKey`), which stay in `App()` until Task 3 moves them into `StatsPanel`, `isStatsSourceOnlyStatsView` (940) and the non-Stats lines 941-945. No effects, no getters.
-- Consumed by `App()` at the earliest former Stats cell (line 881). `buildDefaultGroupState`, `buildGroupStateSnapshot`, `applyGroupState` and `clearEngGroupScopeData` call the seam instead of inlining the Stats keys; their other keys and their order are untouched.
+```js
+const STATS_GROUP_STATE_KEYS = [
+    'statsView', 'statsGraphMode', 'burnoutData', 'burnoutLoading', 'burnoutError',
+    'burnoutAssigneeFilter', 'burndownMetric', 'cohortData', 'cohortLoading',
+    'cohortError', 'cohortStartQuarter', 'cohortEndQuarter', 'cohortGroupBy',
+    'cohortProjectFilter', 'cohortAssigneeFilter', 'cohortExcludeAdHoc',
+    'cohortExcludeCapacity', 'cohortStatusToggles', 'cohortSelectedRow'
+];
+```
 
-- [ ] **Step 1: Re-measure and write the inventory.** Run `node scripts/extraction_lint/check_hook_interfaces.mjs --write-inventory tmp/stats-inventory.json --manifest scripts/extraction_lint/owner_budgets.json frontend/src/dashboard.jsx` after Task 0, and record in this plan's Ledger section: every Stats cell with its line, whether the group seam reads it, and every reader outside Stats ranges. Use plain `node` scripts for any line counting; macOS `awk` does not support `\<`.
-- [ ] **Step 2: Write the pure seam test first.** `tests/test_stats_group_state.js` asserts: `STATS_GROUP_STATE_KEYS` equals the order of the Stats keys extracted from `buildGroupStateSnapshot` in the dashboard source; the default builder reproduces the values at `dashboard.jsx:2729-2756` for a synthetic saved-prefs object (empty, partial, invalid `statsView`); `applyStatsGroupState` calls setters in the same order as `applyGroupState` at 2888-2915 (record the call order with stub setters); `resetStatsTransientRefs` empties `burnoutCacheRef`, `cohortCacheRef` and `excludedCapacityCacheRef` as `clearEngGroupScopeData` does at 1680-1682 (the same three assignments also sit at 6304 and 8644-8646; `excludedCapacityForceRefreshRef` is set only at 1590 and 8649 and is not part of the seam). Run it and confirm it fails because the module does not exist.
-- [ ] **Step 3: Implement the seam by moving, not rewriting.** Cut the Stats lines out of the four bootstrap functions into `statsGroupState.js` verbatim and call it from the same positions. Run the new test and expect pass.
-- [ ] **Step 4: Write `test_use_stats_state.js`.** Server-render the hook inside a probe component and assert the returned name set equals the measured Step 1 list and contains no `use*` effects (source scan: no `useEffect` in `useStatsState.js`). Confirm it fails, then implement by moving the `useState`/`useRef` lines 885-966 (minus the excluded cells above) and 1001 verbatim, keeping the same initializers that read `savedPrefsRef.current`.
-- [ ] **Step 5: Wire and ratchet.** Replace the moved lines with one `useStatsState(...)` destructure. Register both new files in `owner_budgets.json` with the measured line counts as ceilings and their interface counts; set the transfer checkpoint using the current-base measurement (the ceiling is net scaffolding only, no transfer credit).
-- [ ] **Step 6: Re-point source guards.** Update the Stats source-guard tests to read the moved lines through `readOwnerSource` with a positive anchor. Run each one; every assertion must still exist.
-- [ ] **Step 7: Gate and commit.** Per-commit gate plus the conservation check with `--created-hook frontend/src/stats/useStatsState.js --created-hook frontend/src/stats/statsGroupState.js`. Commit, run Gate A.
+`useStatsState({ savedPrefsRef, resolveStatsView, resolveStatsGraphMode, resolveBurndownMetric, resolveCohortGroupBy })` moves the existing Stats cells/refs, with their exact initializers and flat names. Include excluded-capacity, Project Track, effort-split state, cache/force-refresh refs, dropdown state/ref, `burnoutTaskFilter`, and `issuePeopleStatsRevision`/its setter. The latter's external invalidation setter stays wired in App. Exclude `hideExcludedStats`/its setter; three chart-hover cells; `burnoutChartRef`; `isStatsSourceOnlyStatsView`; and the interleaved Catch Up/Board declarations. State container owns no effects/getters.
+
+Import the existing `getCurrentQuarterLabel` from `cohortUtils.js` in the state/seam owners where their unchanged initializers/fallbacks need it; do not invent a new resolver or change evaluation timing.
+
+- [ ] **Step 1: Freeze the binding ledger.** Read the state declarations and all bootstrap/cache/invalidation consumers, recording each moved cell/setter/ref and every external reader. Split combined declarations mechanically where required. Verify the state hook call at the first former Stats state declaration has every input available. `issuePeopleStatsRevision` remains exposed for `invalidateEngIssueFieldSources`.
+- [ ] **Step 2: Write the pure seam tests and run red.** Freeze the 19-key literal above, original empty/partial/invalid saved-pref results, falsy fallbacks and ordered stub-setter calls. Test all three cache clears. Pin the complete composed defaults/snapshot/setter sequence: main Stats → unchanged Scenario → unchanged `hideExcludedStats`. Do not extract expected keys from a source block that the move removes.
+- [ ] **Step 3: Move only the contiguous main Stats blocks.** Delegate defaults/snapshot/application at those original insertion points. Leave Scenario and following `hideExcludedStats` statements untouched; move only the existing three cache-ref assignments into `resetStatsTransientRefs`. Keep force-refresh assignment behavior unchanged. Run the seam tests green and verify each key still receives its actual App value/setter.
+- [ ] **Step 4: Test and move the state container.** Use the established esbuild/SSR probe to assert the frozen return-name set and initializers; add a source assertion for no `useEffect`/getters. Move declarations verbatim, destructure the flat names in App, and keep `isStatsSourceOnlyStatsView` immediately after the destructure. Confirm the group round-trip, same-scope reopen and external point-filter tests remain green.
+- [ ] **Step 5: Migrate source-guard ownership.** Existing render/pure Stats modules retain the request/storage ban. State is now owned by `useStatsState`; orchestration remains App until Task 2. Preserve positive anchors and every negative assertion, changing the explicit owner contract where ownership transfers. Never grant the whole Stats directory blanket request/storage rights.
+- [ ] **Step 6: Register, ratchet, gate and commit.** Register measured owners and interfaces, update ontology and run the per-commit gate. Conservation uses `--created-hook frontend/src/stats/useStatsState.js --created-hook frontend/src/stats/statsGroupState.js` plus repeated `--owner-function` for the four seam functions (`buildDefaultStatsGroupState`, `snapshotStatsGroupState`, `applyStatsGroupState`, `resetStatsTransientRefs`). `STATS_GROUP_STATE_KEYS` is a constant export, not a function owner. Review residuals; run the post-commit clean-build check only after an authorized commit.
 
 ## Task 2: Stats derivation and fetch effects
 
 Commit message: `Move Statistics derivation and fetch effects into useStatsData`
 
-**Files:** Create `frontend/src/stats/useStatsData.js`, `tests/test_use_stats_data.js`. Modify `dashboard.jsx`, `owner_budgets.json`, Stats source-guard tests.
+**Files:** Create `frontend/src/stats/useStatsData.js`, `tests/test_use_stats_data.js`. Modify `frontend/src/dashboard.jsx`, `scripts/extraction_lint/owner_budgets.json` and mapped Stats guards.
 
-**Interfaces**
+**Shared scope:** construct this memo immediately before the first Stats layer, preserving scalar dependency arrays. All members are already declared there and consumed by Stats plus an existing Alerts/Capacity consumer:
 
-- Consumes the inline `scope` object defined in this task (memoized in `App()` directly above the first Stats call): `{ activeGroup, selectedSprintInfo, selectedTeams, scopedTasks, statsTaskList inputs, techProjectKeys, adHocEpicSet, excludedEpicSet, config }`. The exact member list is the measured input set from the inventory; no renames.
-- Produces layered hooks in `useStatsData.js`, each taking one object and returning an object literal: `useStatsDerivedA` (derivations in 4300-5270), `useStatsFetchEffects` (the effects at their original positions, including the excluded-capacity dropdown outside-click effect at 5259-5270, which reads state and a ref owned by `useStatsState`), `useStatsDerivedB` (5489-5782, including `canRenderStatsPanel` and `isLeadTimesFocusMode`; `App()` still reads the latter at 10228, so it is part of the returned object). If an effect depends on a non-Stats effect between two layers, split into more layers so every Stats effect keeps its position relative to every non-Stats effect.
+```js
+const scope = React.useMemo(() => ({
+    activeGroupId, selectedSprint, selectedSprintInfo, isAllTeamsSelected,
+    selectedTeamSet, teamNameById, teamOptions, capacityTasks, techProjectKeys,
+    excludedEpicSet, adHocEpicSet, adHocEpicSignature
+}), [activeGroupId, selectedSprint, selectedSprintInfo, isAllTeamsSelected,
+    selectedTeamSet, teamNameById, teamOptions, capacityTasks, techProjectKeys,
+    excludedEpicSet, adHocEpicSet, adHocEpicSignature]);
+```
 
-- [ ] **Step 1: Classify every effect.** In the Ledger, list the 17 effects in the Stats ranges plus the neighbours at 5314 and 5333 with their dependency arrays and mark any non-Stats effect that sits between them. This list is the contract for layer boundaries. The hover-reset effect at 4546-4549 stays in `App()` at its position through this task (it writes the hover cells that Task 3 moves), so split the layers around it: `useStatsData` holds 16 effects and the Step 2 source scan expects 16.
-- [ ] **Step 2: Write `test_use_stats_data.js`.** Server-render each layer with synthetic scope and state and assert the output keys equal the measured list; add a source scan that the layered hooks contain the same number of `useEffect` calls as the ledger and that no layer calls another layer.
-- [ ] **Step 3: Move by ranges.** Cut the ranges verbatim into the hooks, keep the `perfEnabled` and `perfCountersRef.current.statsBuild` counters, and add one call per layer at the first former line of its range. Do not reorder or merge effects.
-- [ ] **Step 4: Verify effect order.** Run `check_move_conservation.mjs`; it must report no effect-order change. Read the residual output and record it in the Ledger.
-- [ ] **Step 5: Cold-load requests unchanged.** Run the Task 0 request-count test; expect green with the identical pair set.
-- [ ] **Step 6: Gate, register owners, commit, Gate A.**
+State/helpers/gates and feature-only metadata remain explicit inputs. Do not add `statsTaskList`, generic `config`, later `visibleTasks`, or `scopedTasks`, which these Stats layers do not consume; do not replace an existing effect dependency array with `[scope]`.
 
-## Task 3: StatsPanel view and transient state
+**Layer contract** (historical `cd2ae405` anchors; remeasure by symbol):
 
-Commit message: `Render Statistics through a stateless StatsPanel and fix chart hover re-renders`
+| Export | Range | Task 2 effects | Call position |
+| --- | --- | ---: | --- |
+| `useStatsDerivedA` | 4300–4544 | 2 | Former `statsTaskList` declaration |
+| Retained hover-reset | 4546–4549 | 1 in App | Between A and B, untouched until Task 3 |
+| `useStatsDerivedB` | 4551–5270 | 13 | Immediately after the retained hover-reset |
+| Scenario/non-Stats code | 5271–5488 | unchanged | Neither layer crosses it |
+| `useStatsDerivedC` | 5489–5782 | 1 | Former `statsTeams` declaration |
 
-**Files:** Create `frontend/src/stats/StatsPanel.jsx`, `tests/test_stats_panel.js`. Modify `dashboard.jsx`, `owner_budgets.json`, the Stats source-guard tests, `tests/ui/codebase_structure_smoke.spec.js` (DOM-parity capture calls).
+Each layer takes one object, returns an object literal and never calls another layer. The verified flat input sets and returns are in the [Stats interface ledger](#stats-interface-ledger). Scope members are destructured to their existing local names; remaining names are explicit feature inputs. A's outputs feed B/C where listed. Keep `EXCLUDED_CAPACITY_STATS_SOURCE_CONCURRENCY` as an explicit input from its existing owner in this task.
 
-**Interfaces**
+- [ ] **Step 1: Freeze effect and binding ledgers.** List all 17 Stats effects plus neighboring effects with dependencies/callback tokens, and verify layer boundaries against current code. Record the two chart effects destined for the panel but keep them in their original App/hook positions through Task 2. Revalidate input declaration timing, counters and deferred callbacks.
+- [ ] **Step 2: Write SSR/interface and source tests; run red.** Probe each layer with synthetic scope/state; assert the frozen returned keys. Source scan expects 16 data-hook effects and no layer calling another. SSR does not prove fetch behavior: use Task 0's per-mode body/count ledger for that.
+- [ ] **Step 3: Move the three ranges verbatim.** Keep original dependency arrays, request payloads, cancellation/generation guards and `perfCountersRef.current.statsBuild`. Call each layer at its original first declaration and destructure exact names; do not cross the retained hover or Scenario/non-Stats code.
+- [ ] **Step 4: Migrate orchestration guards.** Only `useStatsData.js` may call the existing `statsApi` wrappers. It still must not own direct `fetch`, browser storage, credentials or auth/CSRF headers. Presentation/pure helpers retain their original ban; App delegates requests instead of retaining their implementation text. Preserve positive guards for wrapper calls and request bodies.
+- [ ] **Step 5: Prove preserved ordering and reads.** Run the copied conservation checker with all created/affected hooks and no effect allowances. Expect retained effect order identical; explain every statement residual. Run the exact per-mode request, cached reopen, group-state and analytics baseline tests.
+- [ ] **Step 6: Register, ratchet, update ontology, gate and commit.** Apply measured owner/interface budgets and the normal post-commit clean-build check.
 
-- `StatsPanel` takes `{ stats, scope, links, analytics, onSelectBurnoutTask }`: `stats` is the `useStatsState` plus `useStatsData` output the panel reads; `links` carries `buildStatLink`, `buildPriorityStatLink`, `buildStatLink`-family builders; `analytics` carries `trackStatsAction` and `trackStatsAnalyticsAction`. It renders the `.stats-panel` subtree unchanged and owns only `priorityHoverIndex`, `burnoutHoverPoint` and `burnoutHoverTeamKey` internally, plus the effect that resets the two burnout cells (moved from 4546-4549 with the same dependencies, which arrive through `stats`). The excluded-capacity epic dropdown state, ref and outside-click effect stay in `useStatsState` and `useStatsData` and arrive through `stats`, as does `canRenderStatsPanel`, because the panel gate and its `stats-note` fallback (9438-9441) are inside the moved block.
-- `burnoutTaskFilter` stays outside the panel because `visibleTasks` filters on it (`dashboard.jsx:5462-5471`, also read at 5815-5816 and 7471); the panel receives its setter through `onSelectBurnoutTask`.
+## Task 3: StatsPanel view and chart DOM lifecycle
 
-- [ ] **Step 0: Capture the DOM before moving anything.** `captureDomParity` (`tests/ui/dom_parity_helpers.js`) writes only when `JEP_DOM_PARITY_DIR` is set and refuses a nonempty directory. Add `await captureDomParity(page, '<view>', '.stats-panel.open')` calls to the existing smoke tests where each of the seven views (`teams`, `priority`, `burnout`, `cohort`, `excludedCapacity`, `monoCrossShare`, `projectTrack`) is open (find them with `rg -n "statsView|Statistics view" tests/ui/codebase_structure_smoke.spec.js`); without the variable they are no-ops. On the unchanged Task 2 tree run those tests with `JEP_DOM_PARITY_DIR=tmp/dom-parity-before` (`tmp/` is gitignored) and confirm the directory holds 7 files.
-- [ ] **Step 1: Write `test_stats_panel.js`.** Server-render `StatsPanel` for each `statsView` value (`teams`, `priority`, `burnout`, `cohort`, `excludedCapacity`, `monoCrossShare`, `projectTrack`) and assert one `.stats-panel` root, the seven-option `SegmentedControl` with class `eng-mode-control stats-view-toggle`, and that no hover state is read from props. Confirm it fails.
-- [ ] **Step 2: Move the render.** Cut the JSX at `dashboard.jsx:9436-10186` into the component verbatim, keep every `className`, delete the three chart-hover cells from `App()` and recreate them in the component with `useState`. Remove `priorityHoverIndex` from the `?perf` snapshot object and its dependency array (`dashboard.jsx:1938`, `1975`) in the same commit: it is a diagnostic-only key under `perfEnabled`, the state no longer lives in `App()`, and `rg -n priorityHoverIndex frontend/src/dashboard.jsx` must return nothing afterwards. Move the hover-reset effect (`dashboard.jsx:4546-4549`) into the component with the same dependency array. Replace the block with one mount under the unchanged `selectedView === 'eng' && showStats && engWorkspaceConfigured` condition.
-- [ ] **Step 3: Gate 1 turns green.** Run `JEP_RUNTIME_PROBE=1 npx playwright test tests/ui/codebase_structure_smoke.spec.js -g "Stats chart hover" --browser=chromium`. Expected: PASS. Record before and after counts in the Baseline Log. If it fails, stop; Task 4 does not start.
-- [ ] **Step 4: DOM parity and screenshots.** Run the Step 0 capture again into `tmp/dom-parity-after`; `diff -r tmp/dom-parity-before tmp/dom-parity-after` must be empty and both directories must hold exactly 7 files. Take screenshots of Teams, Burndown, Lead Times and Project Track at 1280px and 375px from the smoke spec's existing capture helper and compare; wait for animations to settle first.
-- [ ] **Step 5: Analytics unchanged.** `node --test tests/test_analytics_source_guards.js tests/test_extraction_quirk_pins.js`; update only the source path the guards read, never a count.
-- [ ] **Step 6: Gate, register, commit, Gate A.**
+Commit message: `Render Statistics through StatsPanel and isolate chart hover`
 
-## Task 4: Alerts derivation hook
+**Files:** Create `frontend/src/stats/StatsPanel.jsx`, `tests/test_stats_panel.js`. Modify `frontend/src/dashboard.jsx`, `frontend/src/stats/useStatsData.js`, owner budgets, mapped Stats/analytics guards and `tests/ui/codebase_structure_smoke.spec.js`.
+
+**Interface:**
+
+```jsx
+StatsPanel({ stats, scope, links, analytics, onSelectBurnoutTask,
+    showStats, jiraUrl, activeGroupMissingComponents, priorityAxis,
+    resolveStatsTeamColor })
+```
+
+`stats` combines only the state/data outputs the JSX reads; `links` contains `buildStatLink` and `buildPriorityStatLink`; `analytics` contains `trackStatsAction` and `trackStatsAnalyticsAction`. `onSelectBurnoutTask` is the existing state setter and supports functional updates. Internally alias it as `setBurnoutTaskFilter` for the unchanged child props.
+
+The panel owns `priorityHoverIndex`, `burnoutHoverPoint`, `burnoutHoverTeamKey`, `burnoutChartRef`, `resolveBurnoutPointer`, hover-reset and scroll-to-today. The ref has only panel/pointer/scroll readers. Dropdown state/ref/outside-click effects and `burnoutTaskFilter` stay in App's state/data composition. `canRenderStatsPanel` and its fallback remain inside the moved JSX. After this task C drops the chart ref/pointer callback and has zero effects; data layers have 15 effects, the panel has exactly two.
+
+- [ ] **Step 0: Capture before DOM and screenshots.** Import existing `captureDomParity` from `tests/ui/dom_parity_helpers.js` and add opt-in calls once per view (`teams`, `priority`, `burnout`, `cohort`, `excludedCapacity`, `monoCrossShare`, `projectTrack`) in the smoke campaign, targeting `.stats-panel`. Run with `JEP_DOM_PARITY_DIR=tmp/dom-parity-before`; the directory must be fresh. Require seven unique files and settled transitions. Capture Teams/Burndown/Lead Times/Project Track at 1280px and 375px using synthetic fixtures.
+- [ ] **Step 1: Test the panel contract; run red.** SSR each view, assert one panel root, the seven-option `SegmentedControl` with `eng-mode-control stats-view-toggle`, and no hover/ref/pointer values arriving as props. Freeze the existing positive Stats/analytics source anchors under the new owner.
+- [ ] **Step 2: Move JSX and chart-owned declarations verbatim.** Keep classes, child props and the existing mount condition inside `StatusColourProvider`. Move both chart effects with unchanged bodies/dependencies and the local ref/pointer callback. Keep `buildBurnoutTaskFilter` in C. Remove `priorityHoverIndex` from the diagnostic perf snapshot/dependency list; no App reader remains. Apply the two exact conservation allowances; retained App/hook effect order must remain identical and no third exception is permitted.
+- [ ] **Step 3: Gate 1 turns green.** Run `JEP_RUNTIME_PROBE=1 fnm exec --using 20 npx playwright test tests/ui/codebase_structure_smoke.spec.js -g "Stats chart hover" --browser=chromium`. Record before/after render counts; Task 4 cannot start until this passes. Point-click filtering, hover readouts and group restoration must also stay green.
+- [ ] **Step 4: DOM, screenshots and analytics parity.** Capture seven after files with `JEP_DOM_PARITY_DIR=tmp/dom-parity-after` in a separate fresh directory; `git diff --no-index tmp/dom-parity-before tmp/dom-parity-after` must be empty. Inspect before/after screenshots at both widths. Run the positive Stats call pins, `test_analytics_source_guards.js`, quirk pins and the `Statistics preserves analytics event contracts` browser test; preserve frozen baseline events/params. Re-point the Lead Times guard to `StatsPanel` without dropping its no-event assertion.
+- [ ] **Step 5: Register, ratchet, gate and commit.** Record two approved effect relocations separately from residual statements, update the ontology and run the ordinary gate/clean-build sequence. Task 8 adds the delayed-chunk mount proof for the scroll effect.
+
+## Task 4: Composite Alerts derivation/filter/grouping hook
 
 Commit message: `Extract Alerts derivation into useEngAlerts`
 
-**Files:** Create `frontend/src/eng/useEngAlerts.js`, `tests/test_use_eng_alerts.js`. Modify `dashboard.jsx`, `owner_budgets.json`, `tests/test_dashboard_alert_source_guards.js`, `tests/test_dashboard_missing_labels_source_guards.js`, `tests/test_dashboard_epic_alert_team_links.js`.
+**Files:** Create `frontend/src/eng/useEngAlerts.js`, `tests/test_use_eng_alerts.js`. Modify `frontend/src/dashboard.jsx`, owner budgets and the three mapped Alert source guards.
 
-**Interfaces**
+**Interface:** `useEngAlerts({ scope, ...explicitAppBindings })` derives the current raw collections, calls unchanged `useEngAlertFilters` at the same logical position, then groups its filtered collections. Own no state, refs or effects; keep existing memos/callbacks and predicate order. Alert toggles, `showAlertsPanel`, dismissals, celebration state/callback and bootstrap handling stay App-owned. Do not add a toggles input: the moved producer range does not read it. The exact external bindings are traced under the common binding-ledger procedure before editing. Return only the 21 actual App-consumed names:
 
-- `useEngAlerts({ scope, toggles, dismissedAlertSet, ... })` returns the alert lists, team lists, counts and `consolidatedMissingStories`. It owns no state. The `show*Alert` toggles, `showAlertsPanel` and `dismissedAlertKeys` stay in `App()` because the group bootstrap persists them.
-- `triggerAlertCelebration` (defined at 7486, called at 6045 outside the Alerts block) and `alertCelebrationPieces` (state at 1016, cleared by the group bootstrap at 2928, set at 7521-7536, rendered at 10253) stay in `App()`: the bootstrap writes the state and a caller sits outside the derivation. List them in the Ledger.
-- Existing modules stay as they are: `frontend/src/eng/useEngAlertFilters.js` and `engAlertFilters.js` keep filtering the derived collections and `epicRefreshAlerts.js` is untouched; `useEngAlerts` only produces the collections they consume.
+```text
+visibleAlertCollections
+missingAlertKeySet blockedAlertKeySet postponedAlertKeySet needsStoriesAlertKeySet
+waitingAlertKeySet emptyAlertKeySet doneAlertKeySet alertCounts alertItemCount
+missingAlertTeams blockedAlertTeams doneEpicTeams postponedAlertTeams
+postponedEpicTeams emptyEpicTeams analysisEpicTeams backlogEpicTeams
+missingTeamEpicTeams missingLabelEpicTeams needsStoriesTeams
+```
 
-- [ ] **Step 1: Inventory and test first.** Measure the exact input set with the interface tool. Write `test_use_eng_alerts.js` with synthetic Epics and Stories covering one fixture per alert category (missing Story Points, blocked, postponed, backlog, missing Team, missing labels, needs Stories, waiting, empty Epic, done Epic) plus a dismissed key, asserting the derived lists and team groupings equal expected literals. Run it, confirm failure.
-- [ ] **Step 2: Move 7038 to about 7485 verbatim; the Step 1 inventory fixes the exact end.** Keep predicate order and the existing alert producer as a fallback exactly as today; no data-source change.
-- [ ] **Step 3: Gates.** Run the alert specs `tests/ui/eng_alert_loading_order.spec.js`, `tests/ui/eng_alerts_panel_summary.spec.js`, `tests/ui/eng_missing_story_ghosts.spec.js` plus the per-commit gate; commit; Gate A.
+Raw `consolidatedMissingStories` and other collections stay internal. Preserve the existing internal `backlogAlertKeySet` destructure; do not expose extra outputs just to test them. Existing `engAlertFilters.js` and `epicRefreshAlerts.js` remain unchanged.
 
-## Task 5: Capacity hook
+- [ ] **Step 1: Freeze bindings and write SSR tests; run red.** Assert the exact 21 returns. Synthetic fixtures cover missing SP, blocked, postponed, backlog, missing Team/labels, needs Stories, waiting, empty and done Epics, dismissed keys/requirement IDs, fallback sources, and strict absent/nonzero `openChildCount` rejection. Narrow search/Status/Priority/Project Track/focused-Stats filters and assert visible collections, team lists, keysets and counts agree.
+- [ ] **Step 2: Move the composite range verbatim.** Move the producer through the final `needsStoriesTeams` declaration, stopping before `triggerAlertCelebration`. Keep the nested filter call and post-filter grouping in order. App continues passing unchanged toggles/dismissals and the 21 returned values to the existing alert view.
+- [ ] **Step 3: Verify, register, ratchet and commit.** Run `tests/ui/eng_alert_loading_order.spec.js`, `eng_alerts_panel_summary.spec.js`, `eng_missing_story_ghosts.spec.js`, the per-commit gate and conservation with the new hook. Preserve fallback until replacement success for the same scope; no source or endpoint change.
+
+## Task 5: Capacity state and read lifecycle
 
 Commit message: `Extract Capacity read lifecycle and totals into useEngCapacity`
 
-**Files:** Create `frontend/src/eng/useEngCapacity.js`, `tests/test_use_eng_capacity.js`. Modify `dashboard.jsx`, `owner_budgets.json`, capacity source-guard tests found with `rg -l "fetchCapacity|capacityState" tests`.
+**Files:** Create `frontend/src/eng/useEngCapacity.js`, `tests/test_use_eng_capacity.js`. Modify `frontend/src/dashboard.jsx`, owner budgets and `tests/test_planning_action_source_guards.js` when re-pointing Capacity-owned positive anchors. Other readers require a reviewed File Map update before editing.
 
-- [ ] **Step 1: Re-measure** state 977-993 and derivation 6453-6774. `handleCapacitySaved` (6573) is defined inside the range and moves with the hook, which returns it so `App()` keeps passing it to Settings (`onCapacitySaved`, 8847). Record every other reader outside the range (planning panel, capacity bars) in the Ledger.
-- [ ] **Step 2: Write `test_use_eng_capacity.js`** for the totals math (`capacityTotalsSummary`, `getTeamNetCapacity`, `excludedCapacityByTeamId`) with synthetic teams, then move the code verbatim, keeping `fetchCapacity` abort and generation-ref semantics.
-- [ ] **Step 3: Gates.** `tests/ui/planning_capacity_editing.spec.js`, `tests/ui/adhoc_capacity_visual_proof.spec.js` plus the per-commit gate; commit; Gate A.
+**Interfaces:** export `useEngCapacityState()` at the old state position and `useEngCapacity({ scope, ...explicitAppBindings })` at the old derivation position. `capacityEnabled`/its setter and `searchInputRef` stay App-owned. Move the existing render-time ref assignments with their state owner. State returns exactly:
 
-## Task 6: Closure renderers become components
+```text
+capacityState setCapacityState capacityStateRef capacityLoading setCapacityLoading
+capacityReadRevision setCapacityReadRevision capacityReadError setCapacityReadError
+capacityDataStale setCapacityDataStale capacityReadModelRef capacityRefreshNonce
+setCapacityRefreshNonce capacityReadGenerationRef capacityReadAbortRef
+activeCapacityScopeRef capacityScopeHoldRef capacityScopePinRef capacityScopeKeyRef
+```
+
+The lifecycle/derivation export returns exactly:
+
+```text
+selectedAdHocProductSP excludedProjectStats capacityShareLabel teamCapacityEntries
+ displayedTeamCapacityEntries capacityScopeSignature effectiveCapacityState
+capacityMutationEnabled handleCapacitySaved retryCapacity capacityTeamIds
+ totalCapacityAdjusted estimatedCapacityAdjusted excludedCapacityAdjusted
+capacitySummary selectedProjectEntries selectedTeamEntries capacityTotals
+showTotalsRow formatCapacityValue
+```
+
+`handleCapacitySaved` reconciles `PlanningTeamCapacityCards` saves. Keep group-reset setters, Refresh's `setCapacityRefreshNonce`, config's `setCapacityEnabled`, and Epic refresh's `capacityScopeHoldRef` wired under their current names. Settings capacity mapping is a separate owner. Internal math helpers remain private.
+
+- [ ] **Step 1: Freeze the caller and binding ledger.** Trace all state-reset, refresh, panel and Epic-refresh consumers, including the no-request-context-free frontend callbacks. Keep state and lifecycle calls at their separate original positions; do not move read effects upward with the state container.
+- [ ] **Step 2: Write SSR probes; run red.** Assert both 20-name interfaces, initial values and synthetic adjusted totals/selected Team entries. Reuse existing `planningCapacityUtils` test fixtures for internal math rather than exposing helpers only for tests. SSR does not run the lifecycle effects.
+- [ ] **Step 3: Move state and lifecycle verbatim.** Preserve scope signatures, abort/generation checks, read revision, stale flags, hold-window behavior, retry and save reconciliation. APIs/CSRF/global-401 handling remain in `capacityApi.js`/HTTP owners.
+- [ ] **Step 4: Browser/conservation gates and commit.** Run full `planning_capacity_editing.spec.js`, `adhoc_capacity_visual_proof.spec.js`, and focused `eng_epic_refresh.spec.js` cases 60/61/70/71 covering held scope, stale settlement and global Refresh. Confirm those case titles with `--list`. Run the per-commit gate and conservation for both exported hooks, update measured budgets/ontology, and use the ordinary authorized commit/clean-build sequence.
+
+## Task 6: Closure renderers become keyed components
 
 Commit message: `Turn ENG control and Epic renderers into components`
 
-**Files:** Create `frontend/src/eng/EngControls.jsx`, `frontend/src/eng/EpicBlock.jsx`, `tests/test_eng_controls.js`. Modify `dashboard.jsx`, `owner_budgets.json`. `EngView.jsx` is not modified: it already receives `renderEpicBlock` as a prop (`EngView.jsx:25,143,147,152`), and `App()` keeps passing a `renderEpicBlock(epicGroup)` function that now returns `<EpicBlock ... />`.
+**Files:** Create `frontend/src/eng/EngControls.jsx`, `frontend/src/eng/EpicBlock.jsx`, `tests/test_eng_controls.js`. Modify `frontend/src/dashboard.jsx`, owner budgets and `tests/ui/eng_epic_sort_and_track.spec.js`. `EngView.jsx` already consumes the renderer prop and is unchanged.
 
-- [ ] **Step 1: Test the contract.** Server-render each component, `EpicBlock` included, with synthetic props (both the `'main'` and `'compact'` surface where the control takes one) and assert the root element, shared class hooks (`eng-mode-control`, `team-dropdown-*`, `sprint-dropdown-*`) and that no component reads module globals. Confirm failure.
-- [ ] **Step 2: Move the renderers one at a time** (run the focused specs after each; the task is one commit), in this order: `renderSearchControl`, `renderViewSwitch`, `renderSprintControl`, `renderGroupControl`, `renderTeamControl`, then `renderEpicBlock`. `renderEngModeControl` (it only binds props and onboarding callbacks to the existing `EngModeControl.jsx`), `renderEpmControls` and `renderPlanningReviewFieldEditor` stay in `App()` and are listed in the Task 9 remaining-`App()` inventory. The controls render on two surfaces, `'main'` and `'compact'` (call sites 8883-9004), so each component keeps the closure's own arguments as props: `surface`, plus `extraClassName` for the search control (9004); `renderViewSwitch` takes none. Props are explicit names from the closure's actual free variables, listed by the interface tool. Do not add `React.memo` in this plan: none exists today, and memoization changes the render behavior that Gate 3 measures.
-- [ ] **Step 3: Geometry and layering.** Per the project learnings, run the header-dropdown and sticky specs: `tests/ui/codebase_structure_smoke.spec.js -g "header dropdown|Catch Up, Planning|multiple groups"` and `tests/ui/eng_sticky_stack_helpers.js` consumers, plus a normal (non-forced) click on each dropdown option. Epic headers must hold on both direct task-list epics and initiative-grouped epics nested under `.initiative-body`: run every spec that mentions `.epic-header` (`rg -l "epic-header" tests/ui`, 13 files at `cd2ae405`, one of them a helper), and if none asserts the Catch Up epic-header text geometry (title, key, status, SP and assignee on one row) in both layouts, add that assertion before moving `renderEpicBlock`.
-- [ ] **Step 4: Gate, register, commit, Gate A.**
+- [ ] **Step 1: Freeze bindings and test contracts; run red.** Inventory each closure's real free bindings using the common ledger procedure. SSR every new export, EpicBlock included, and both main/compact surfaces where supported. Assert root/shared classes and explicit App-owned props. Imports/platform globals remain allowed; owners never import/re-export dashboard. Add an AST/source assertion that App's returned `EpicBlock` carries `key={epicGroup.key}`.
+- [ ] **Step 2: Move one renderer at a time.** Order: SearchControl, ViewSwitch, SprintControl, GroupControl, TeamControl, EpicBlock. Keep each existing `surface` argument and SearchControl's `extraClassName`; ViewSwitch takes no old renderer arguments but still receives explicit closure props. Keep `renderEngModeControl`, `renderEpmControls` and `renderPlanningReviewFieldEditor` in App. Preserve current-base StatusPill props and provider context. The retained renderer returns a keyed component:
 
-## Task 7: Hoist the scope object into `useEngScope`
+```jsx
+const renderEpicBlock = epicGroup => (
+    <EpicBlock key={epicGroup.key} epicGroup={epicGroup} {...epicBlockProps} />
+);
+```
+
+`epicBlockProps` is a local object containing only the named bindings frozen in Step 1; destructure those names explicitly in the component. No `React.memo` is added. Register every new exported component as an explicit conservation owner, not a hook.
+
+- [ ] **Step 3: Identity, geometry and layering.** Extend `eng_epic_sort_and_track.spec.js` with a real order reversal and `isSameNode` for the same keyed Epic, then filter a sibling and verify surviving Epic identity/focus/ref mapping. Cover direct and initiative-grouped Epics with at least two siblings. Run existing header dropdown/sticky tests and normal non-forced option clicks; `eng_group_board_card.spec.js:557-768` already covers both header layouts and Planning include/exclude geometry. Also run specs selected by `rg -l "epic-header" tests/ui` and exclude helper-only modules from the executable list. Inspect settled synthetic screenshots for main/compact menus and both header layouts.
+- [ ] **Step 4: Register, ratchet, gate and commit.** Check statement residuals for all five control exports and EpicBlock, retain all other effect-order checks, update ontology and run the normal gate/clean-build sequence.
+
+## Task 7: Hoist the existing shared scope
 
 Commit message: `Hoist the shared ENG scope into useEngScope`
 
-**Files:** Create `frontend/src/eng/useEngScope.js`, `tests/test_use_eng_scope.js`. Modify `dashboard.jsx`, `owner_budgets.json`.
+**Files:** Create `frontend/src/eng/useEngScope.js`, `tests/test_use_eng_scope.js`. Modify `frontend/src/dashboard.jsx`, owner budgets, ontology, `tests/ui/runtime_probe_helpers.js` and `tests/ui/codebase_structure_smoke.spec.js`.
 
-- [ ] **Step 1: Freeze the interface from real use.** List the union of members the Stats, Alerts, Capacity and control consumers read from the inline `scope` object (from the Ledger). The hook returns exactly that set; any member consumed by only one feature stays with that feature.
-- [ ] **Step 2: Test, then move.** `test_use_eng_scope.js` server-renders the hook with synthetic inputs and asserts the returned member set. Move the inline construction and call `useEngScope` at the same position.
-- [ ] **Step 3: Gate, register, commit, Gate A.**
+**Interface:** `useEngScope(inputs)` returns the same 12-member memoized object introduced in Task 2. Each member is a current shared input, never a new source of state, fetching or storage. Feature-only helpers/state remain explicit feature inputs. Consumers destructure existing names and keep original scalar effect dependencies.
 
-## Task 8: Lazy-load Stats, Scenario and Settings
+- [ ] **Step 1: Freeze real consumers.** Check the 12 members against Stats/Alerts/Capacity and controls. Record every consuming symbol in the Ledger; do not add speculative members. A changed shared member set requires explaining actual consumers and updating its frozen test before hoisting.
+- [ ] **Step 2: Test and move.** SSR the hook and assert the exact 12-key contract. Move the Task 2 `useMemo` construction into the hook verbatim and call it at the same position. Add `Statistics shared scope preserves identity across mounted renders` in the smoke spec. The helper builds a small test-only React/createRoot IIFE importing the real hook, with stable synthetic values for all 12 inputs, a button that changes unrelated probe state, and a button that changes `selectedSprint`. Serve it on a synthetic routed page; expose only its returned object to the test. Assert the same object after the unrelated render and a new object with the new sprint after the member change. This fixture adds no production globals or test hooks. SSR alone cannot prove identity across renders.
+- [ ] **Step 3: Register, ratchet, gate and commit.** Run normal conservation and all per-mode/group/event baselines. No request, effect or bootstrap owner changes in this task.
 
-Commit message: `Lazy-load the Statistics, Scenario and Settings views`
+## Task 8: Lazy-load Stats, Scenario and Settings with real retry
 
-**Files:** Create `frontend/src/components/LazyViewBoundary.jsx`, `tests/test_lazy_view_boundary.js`. Modify `package.json`, `jira-dashboard.html`, `dashboard.jsx`, `tests/ui/codebase_structure_smoke.spec.js`, `tests/ui/epm_home_token_fixture.js`, `README.md` and `AGENTS.md` (the `file://` wording), and `backend/routes/performance_routes.py` only under the binary rule in Step 6.
+Commit message: `Lazy-load Statistics, Scenario and Settings with bounded recovery`
 
-**Operator decision (2026-10-07):** the app will rely only on OAuth (Basic auth is extracted in its own later plan), so opening `jira-dashboard.html` from `file://` is no longer supported. That is what allows `<script type="module">` and chunk files here. `frontend/src/api/backendUrl.js` keeps its non-http fallback in this PR; it becomes dead code and is listed in Task 9 Step 3.
+**Files:** Create `frontend/src/components/LazyViewBoundary.jsx`, `frontend/src/components/lazyViewLoaders.js`, `scripts/build_dashboard.mjs`, `tests/test_lazy_view_boundary.js`, `tests/test_lazy_view_loaders.js`, `tests/test_dashboard_split_build.js`. Modify `package.json`, `jira-dashboard.html`, `frontend/src/dashboard.jsx`, `tests/ui/codebase_structure_smoke.spec.js`, `tests/ui/epm_home_token_fixture.js`, generated dist, `README.md` and the approved runtime wording in `AGENTS.md`. Modify `backend/routes/performance_routes.py` and `tests/test_load_performance.py` only if the fingerprint check fails.
 
-**Interfaces**
+**Serving decision:** direct `file://` open ends under the recorded OAuth-only direction. This task does not implement Basic-auth extraction; keep `api/backendUrl.js` unchanged and list its fallback for follow-up. All three mounts stay inside `StatusColourProvider`. Hooks stay in the main composition; their data request behavior is compared against each mode's existing baseline.
 
-- `LazyViewBoundary({ load, fallback, children })`: renders `fallback` (the existing `.stats-note` copy) while the chunk loads; on failure renders a message and a native `<button>` Retry that re-invokes `load`; after a second consecutive failure the message becomes "Reload the page to get the latest version" with no automatic reload.
-- Each lazy view mounts at its current JSX position inside `<StatusColourProvider>` (opened at `dashboard.jsx:8860`); do not hoist `Suspense` or the boundary above it.
+**Build interface:** `node scripts/build_dashboard.mjs` builds once; `node scripts/build_dashboard.mjs --watch` serializes/debounces fresh builds. Preserve production build's minify/production define and watch's unminified/development define, with sourcemaps and the empty CSS loader in both. Add `format: 'esm'`, `splitting: true`, `outdir: 'frontend/dist'`, `chunkNames: 'chunks/[name]-[hash]'`, `metafile: true`, `write: false`. Keep dashboard as the single entry; its literal dynamic imports create the three hashed view chunks. Capture frontend source bytes once per generation. Compute `buildId` as SHA256 over the effective build mode/options, sorted repo-relative source paths plus those captured bytes, `package.json`, `package-lock.json`, and the helper's bytes; delimit path/content records and include no time or absolute path. Compile frontend JS/JSX/MJS/JSON through an esbuild `onLoad` plugin serving that same immutable snapshot with the original loader/resolve directory; never reread a source from disk under the captured ID. Keep CSS empty and dependencies resolved through the installed pinned packages. A frontend path outside the snapshot is an error, never an implicit disk fallback. Production and watch get different IDs even with identical source inputs. Define `__JEP_DASHBOARD_BUILD_ID__` into the bundle. The source loader uses `typeof __JEP_DASHBOARD_BUILD_ID__ === 'string' ? __JEP_DASHBOARD_BUILD_ID__ : 'source-probe'`, keeping existing IIFE fixtures executable.
 
-- [ ] **Step 1: Inventory every consumer of the bundle.** Run `rg -l "dist/dashboard.js" tests scripts backend .github Dockerfile README.md` and `rg -l "format: 'iife'" tests`, and record both lists. At `cd2ae405`: 26 `tests/ui` files rebuild the bundle in memory as a single `iife`, in which esbuild inlines dynamic imports; they stay unchanged because they test behavior, not chunking. `tests/ui/epm_home_token_fixture.js` is different: `installDashboardShell` (called from 37 files) reads the committed `frontend/dist/dashboard.js` and serves it for `**/frontend/dist/dashboard.js`, and the `useCommittedDist` smoke tests rely on that. With `--splitting` the entry statically imports shared chunks (`chunks/chunk-*.js`), so the fixture must also serve `**/frontend/dist/chunks/*` from disk; add that route in Step 3. `tests/endpoint_security_samples.py` only names the route sample, and `tests/test_dashboard_css_extraction.py` fetches `dashboard.js.map`, which the entry still emits. Packaging already ships the whole `frontend/dist` directory (`Dockerfile` copies it from the build stage; `.github/workflows/release-latest.yml` keeps `frontend/dist`), so `frontend/dist/chunks/` ships without a change. Any other consumer found is handled before Step 3.
-- [ ] **Step 2: Failing boundary test.** `test_lazy_view_boundary.js` renders the boundary with a `load` that rejects once then resolves, asserts the Retry button, then rejects twice and asserts the reload message and no `location.reload` call.
-- [ ] **Step 3: Build config.** Change `build:js` to `--format=esm --splitting --outdir=frontend/dist --chunk-names=chunks/[name]-[hash]` (keep `--bundle`, `--minify`, `--sourcemap`, the `.css` loader and the `define`), apply the same change to `watch:js`, and add `prebuild:js` and `prewatch:js` scripts that remove `frontend/dist/chunks` (`node -e "require('fs').rmSync('frontend/dist/chunks',{recursive:true,force:true})"`) so stale hashed chunks never stay in the committed `dist`. Change `jira-dashboard.html:21` to `<script type="module" src="frontend/dist/dashboard.js"></script>`. Verify: `npm run build` run twice leaves `git status --short frontend/dist` unchanged between runs; edit one line in a lazy view, rebuild, and confirm the old chunk file is gone and exactly one new chunk appears; the existing `useCommittedDist: true` smoke tests boot against the module build; and, in the Browser pane, a chunk URL under `/frontend/dist/chunks/` is served with `200`. Add the `**/frontend/dist/chunks/*` route to `installDashboardShell` in `tests/ui/epm_home_token_fixture.js` in this step.
-- [ ] **Step 4: Wrap the three views** with `React.lazy(() => import(...))` inside `LazyViewBoundary`; the hooks stay in the main bundle.
-- [ ] **Step 5: Failure test.** In the smoke spec use `useCommittedDist: true` (the default route swaps in an in-memory single-file bundle that makes no chunk requests, so an abort test there would pass vacuously), abort the first request for the lazy Stats chunk (`**/frontend/dist/chunks/StatsPanel-*.js`; lazy chunks are named after their module, while shared code sits in `chunks/chunk-*.js`, which the entry imports statically, so aborting one of those stops the app from mounting at all and proves nothing about the boundary), and assert that the abort was observed, the Retry button appears, the rest of the app stays interactive, and a successful retry renders the view. Add a second test that aborts twice and asserts the reload message.
-- [ ] **Step 6: Measure.** Record `dashboard.js` raw and gzip bytes at the Task 0 base build and now, the first-open chunk sizes, and confirm zero new `/api` requests on first Stats open. Hard gate: the initial JavaScript, meaning the entry `dashboard.js` plus every chunk it imports statically (follow the `from"./chunks/..."` specifiers transitively), raw and gzip, must be strictly smaller than the single `dashboard.js` at the base; if it is not, stop and report, because the split bought nothing. Fingerprint rule: `backend/routes/performance_routes.py:43` hashes only `dashboard.js`, and with hashed chunk names the entry embeds each chunk file name, so a chunk change must change the entry bytes. Edit one line in a lazy view, rebuild and compare `shasum -a 256 frontend/dist/dashboard.js`: if it changed, leave `performance_routes.py` untouched; if it did not, add `frontend/dist/chunks/*` to the fingerprint with a unit test.
-- [ ] **Step 7: Docs, dist check, commit.** Change `README.md` lines 88 and 200 (`Open jira-dashboard.html in your browser (or visit http://localhost:5050/)`) and the `AGENTS.md` section 10 runtime line (`dashboard served by Flask or opened via jira-dashboard.html`) so they say to visit `http://localhost:5050/` and that opening the file directly is not supported. The `AGENTS.md` change touches a preserved section, so it is listed again at the Task 9 operator stop for confirmation. Re-run the CI dist check (`make verify-dist-clean`). The per-commit subset does not exercise the fixture-served specs, so run the full Chromium `tests/ui` suite once here (about 8 minutes) before committing the new `frontend/dist` files. Gate, commit, Gate A.
+From esbuild's metafile, require exactly one JS output for each expected dynamic entry and emit a manifest:
+
+```json
+{
+  "schemaVersion": 1,
+  "buildId": "the-computed-sha256",
+  "views": {
+    "stats": { "path": "chunks/StatsPanel-HASH.js", "exportName": "default" },
+    "scenario": { "path": "chunks/ScenarioView-HASH.js", "exportName": "ScenarioView" },
+    "settings": { "path": "chunks/SettingsModalContainer-HASH.js", "exportName": "default" }
+  }
+}
+```
+
+Here the ID and hashes are generated fields, not hand-authored literals. The filename is `frontend/dist/lazy-views-${buildId}.json`. Before any output write, recheck generation inputs and the dirty-generation counter; discard in-memory outputs and rerun if either changed during compilation. After a successful unchanged generation, write new chunks/maps and that manifest, then the entry/map; remove stale chunks/manifests as part of this successful publication of local build output. Never delete auth/CSS output. Failed builds retain the previous working output. Watch mode uses native Node file watching and fresh esbuild calls, recomputing the snapshot/ID/options on every rebuild; do not capture a fixed define once in `context.watch()`. Coalesce changes while building and rerun once after the current build if dirty. Changing helper/package inputs requires restarting watch; source edits are watched recursively. No build dependency is added.
+
+**Loader interface:** `createLazyViewLoader({ viewId, initialLoad })` returns a stable `load(attempt)` function. Define the three functions at module scope in dashboard:
+
+```js
+const loadStatsView = createLazyViewLoader({ viewId: 'stats',
+    initialLoad: () => import('./stats/StatsPanel.jsx') });
+const loadScenarioView = createLazyViewLoader({ viewId: 'scenario',
+    initialLoad: () => import('./scenario/ScenarioView.jsx').then(
+        module => ({ default: module.ScenarioView })) });
+const loadSettingsView = createLazyViewLoader({ viewId: 'settings',
+    initialLoad: () => import('./settings/SettingsModalContainer.jsx') });
+```
+
+Attempt 0 uses that statically analyzable import. Cache a successfully resolved module in the stable loader, so later reopen does not revisit a previously failed original URL. For the single explicit retry, fetch only the mounted build's versioned manifest relative to the entry script (`id="dashboard-entry"`); cache its successful result. Validate schema, exact mounted ID, fixed view/export allowlists and the generated `chunks/<expected-view-name>-<hash>.js` same-origin path, rejecting traversal, absolute/external URLs and query/fragment content. Import the validated URL with a monotonically increasing `jep_retry` query using native `import(variableUrl)`, map the named Scenario export to default, and leave its relative shared-chunk imports unmodified. Missing or mismatched manifests are stale-build failures: show reload guidance and never fetch a latest manifest or import another deployment's graph. Keep raw asset `fetch` here; do not introduce an application API route/event. Pure manifest validation is exported for Node tests; actual import/error-boundary lifecycle is tested in Playwright.
+
+**Boundary interface:** `LazyViewBoundary({ load, fallback, children })` receives a render function `children(View)`. It owns an attempt counter and memoizes `React.lazy(() => load(attempt))` by the stable loader/attempt, with a keyed inner class error boundary. Retry increments the attempt, replaces the lazy identity and remounts that error boundary; ordinary parent renders retain identity. Suspense renders the existing note-style fallback. The first retryable failure offers a native Retry button; the second failure or a stale-build error offers a sanitized “Reload the page to get the latest version” message. Never reload automatically. Preserve root state/interactivity and global auth-lock precedence.
+
+```jsx
+<LazyViewBoundary load={loadStatsView} fallback={statsLoadingFallback}>
+    {View => <View {...statsPanelProps} />}
+</LazyViewBoundary>
+```
+
+`statsLoadingFallback` reuses existing note markup; `statsPanelProps` is the explicit Task 3 contract. Scenario and Settings pass their existing props/children through the same render-function pattern at their current mount positions. No hook or draft owner moves into Suspense. Add a scoped Retry-button class in the existing component stylesheet only if required by the global button hover rules; if added, first add that stylesheet to the File Map and a settled hover-contrast assertion.
+
+- [ ] **Step 1: Inventory consumers and write unit/build tests; run red.** Scan committed-entry users, in-memory IIFE builds, packaging and fingerprinting. The IIFE fixtures keep normal initial imports inlined; only committed-build tests prove chunk behavior. Node tests prove manifest validation, original/default and named-export mapping, success caching, and stale-build failure. Boundary Node tests pin exported structure/attempt ownership and fallback markup; effects/errors are not tested by SSR alone. Build tests use a tiny synthetic project under ignored tmp and spawn the helper with that fixture as cwd: assert all three entries are mapped, stable bytes/ID across two identical builds, distinct production/watch IDs, changed ID/entry hash/manifest after a lazy source edit, cleanup, failed-build retention and serialized watch rebuilds. A deterministic build-module test holds compilation through a deferred injected build function, edits a lazy source, then releases it: no output for the stale generation is written, the next generation publishes the matching ID/graph, and concurrent builds never overlap. Export the build coordinator for this test and retain the normal CLI entry; no timing-based sleeps or production pause flags.
+- [ ] **Step 2: Implement builder and loader.** Set `build:js` to `node scripts/build_dashboard.mjs` and `watch:js` to `node scripts/build_dashboard.mjs --watch`; preserve auth/CSS scripts. Add the three literal loaders above, builder ID define and generated manifest. Set HTML to `<script id="dashboard-entry" type="module" src="frontend/dist/dashboard.js"></script>`. Route committed chunks and manifests from disk in `installDashboardShell`; strip query via URL pathname before validating/resolving a filename within dist. Browser fetch of a generated asset returns 200 through Flask's existing generic static route.
+- [ ] **Step 3: Implement boundary and wrap views.** Keep the loader functions stable outside App and default/named export mapping exact. Render each view through its boundary inside the provider, with state hooks still mounted above. Verify source-probe IIFE smoke tests still boot and committed ESM views actually request chunks.
+- [ ] **Step 4: Prove bounded recovery with committed assets.** Add `Statistics lazy Retry refetches its chunk after one abort`: intercept the actual StatsPanel chunk, observe one failed original request, one manifest read and a second chunk request carrying `jep_retry`; successful retry renders the panel and preserves a preexisting root Team selection/interactivity. Add `Statistics lazy failure twice offers reload guidance`: abort original and retry, observe both requests and no automatic reload/third request. Add `Statistics lazy recovery rejects a different build manifest`: return a mismatched ID/path and prove no newer graph is imported. Add malformed/path-traversal manifest negatives and a preserved root auth-lock case. These tests must use `useCommittedDist: true`; a single IIFE bundle cannot prove them.
+- [ ] **Step 5: Prove delayed DOM attachment.** Add `Statistics lazy Burndown mounts after data and scrolls to today`. Hold the Stats chunk until the synthetic Burndown response/model is ready, freeze the date inside the fixture sprint and release the chunk. Use an explicit test-only wide SVG fixture to ensure `scrollWidth > clientWidth + 2`, then assert a positive clamped scroll target `min(scrollWidth-clientWidth, max(0, todayX-clientWidth*0.6))`. Test-only geometry applies before chart attachment; production CSS stays unchanged. This proves the relocated DOM effect runs on mount rather than passing vacuously at zero.
+- [ ] **Step 6: Measure and verify fingerprinting.** Compare the Task 0 single-bundle raw/gzip bytes with the entry plus all transitively statically imported JS chunks at head; both totals must be smaller. Record first-open asset sizes separately. Compare API multiset/event baselines for the same modes/transitions; first-open Stats may retain its original API calls but splitting adds none. Change a lazy-view source in the synthetic build fixture and assert the mounted build ID, manifest filename and dashboard entry SHA all change. The ID is embedded in the entry, so the existing backend fingerprint should remain valid. If actual entry bytes fail to change, stop and add the narrowly scoped backend fingerprint fix plus `test_load_performance.py` coverage before continuing.
+- [ ] **Step 7: Register, docs, full browser gate and authorized commit.** Register the shared boundary/loader in the measured owner manifest through Task 0's explicit-file mechanism and update ontology. Update README's serving instructions. The runtime wording in preserved `AGENTS.md` section 10 needs prior operator authorization unless already granted during execution; present the exact one-line change, then apply it. Build twice and compare file lists/bytes before commit; inspect generated changes and run the full Chromium tests/ui campaign, including the explicit lazy tests. After the authorized generated-output commit, rebuild and require `make verify-dist-clean` to pass. The post-commit check must never be placed before the new dist is committed.
 
 ## Task 9: Close-out
 
@@ -362,19 +527,21 @@ Commit message: `Close the App decomposition plan and update the ontology`
 - [ ] **Step 2: Documentation.** Per-commit ontology updates already landed; finish `docs/ontology.md` (Statistics, Dashboard feature ownership, extraction verification, new owners with verified dates, coverage line), `docs/features/statistics.md` and `docs/plans/README.md` (the status stays `EXEC-` until the PR merges; the `DONE-` rename follows in a docs-only change, as #240 did for #220). Check every ontology path and symbol resolves.
 - [ ] **Step 3: Remaining-App inventory.** Record what `App()` still owns (bootstrap, Sprint catalog, task loading, auth recovery, alert toggles) and the follow-up plan list: Basic-auth extraction (operator direction 2026-10-07), the now-unused non-http fallback in `frontend/src/api/backendUrl.js`, and the `renderEngModeControl`, EPM controls and Planning review field editor renderers left in `App()`.
 - [ ] **Step 3b: Gate 3 comparison.** Re-run the `App render counts for common interactions` test three times at head and record min and max deltas next to the Task 0 baseline. Report them as numbers only.
-- [ ] **Step 4: Full verification, as the section 10 gate requires.** `node --test tests/test_*.js`; `$JEP_TEST_PYTHON -m unittest discover -s tests`; `npm run build` plus clean dist; `bash scripts/extraction_lint/run.sh`; full `npx playwright test tests/ui --browser=chromium --workers=4` (about 8 minutes); the three gate tests with `JEP_RUNTIME_PROBE=1`; launch the server (`.venv/bin/python jira_server.py`, or `$JEP_TEST_PYTHON jira_server.py` in a worktree) and verify `/api/test` with no dependency warning before the banner. `jira_server.py` reads only `<checkout>/.env`, so a worktree needs the main checkout's gitignored `.env` and `dashboard-config.json` linked in (never copied) and, when `CONFIG_STORAGE_BACKEND=db`, the local Postgres running with `alembic -c backend/db/alembic.ini current` equal to `heads`; do not upgrade the operator's database without approval. If that environment cannot be provided, report `/api/test` as not run, never as passed.
-- [ ] **Step 5: Operator stop.** Present the Baseline Log, the three gate results, the render-count before and after, request-count equality, screenshots, `git log --oneline origin/main..HEAD` and `git diff --name-status origin/main...HEAD`. Also list the `AGENTS.md` section 10 runtime-line change (a preserved section) and the end of `file://` direct open for explicit confirmation. Wait for explicit confirmation.
-- [ ] **Step 6: Publication transaction** per `AGENTS.md` section 10 and MRT025: fetch base, record SHAs, compare commit list and paths with this plan, rerun verification at the exact head, send the PR body through `gh pr create --body-file -` on stdin, read back the rendered body, verify the remote head and changed files, and report real CI state. PR notes include screenshots and no secrets or real issue keys.
+- [ ] **Step 4: Final verification.** Run the per-commit Node/Python/build/lint checks under Node 20 and the active checkout's Python. Compare two pre-commit builds byte-for-byte. Run `fnm exec --using 20 npx playwright test tests/ui --browser=chromium --workers=4` (about 8 minutes); run the opt-in hover/render probes with `JEP_RUNTIME_PROBE=1` and explicitly select all per-mode/group/event, scope-identity and `Statistics lazy` titles. List the selected tests before running; zero/missing required tests fails. Launch `.venv/bin/python jira_server.py` in this checkout and verify `/api/test`, with no dependency warning before the startup banner. When the existing environment uses DB storage, local Postgres must already be running and `alembic -c backend/db/alembic.ini current` must equal `heads`; do not upgrade the database without approval. If prerequisites are unavailable, report the server check as not run. Follow the authorized commit with a fresh build and `make verify-dist-clean`; record the exact verified head.
+- [ ] **Step 5: Operator stop before push/PR.** Present Baseline Log and Gates 1–3, same-mode request multiset/event equality, raw/gzip initial-JS totals, retry outcomes, screenshots, `git log --oneline origin/main..HEAD` and `git diff --name-status origin/main...HEAD`. Record the already approved `AGENTS.md` runtime-line change and the end of `file://` direct open. Wait for explicit publication confirmation; approval must cover the exact commit list/count and paths.
+- [ ] **Step 6: Publication transaction** per `AGENTS.md` section 10 and MRT025: fetch base, record base/head SHAs, compare the complete commit list/count and paths with the approved contract, and build/verify the exact proposed committed head. A changed base/head invalidates the prior evidence until rechecked. Push/create the PR only after confirmation, send the body through `gh pr create --body-file -` on stdin, read back the rendered body, visually inspect GitHub, prove remote head equality and changed-file/commit-count equality, and report actual CI state. PR notes include screenshots and no secrets, local paths or real issue keys. A failed post-publication check stops for operator direction.
 
 ## Acceptance Checklist
 
 - [ ] Gate 1: `Stats chart hover does not re-render App` fails at the Task 0 commit and passes at head.
-- [ ] Gate 2: cold-load request pair set is identical for Catch Up, Planning and Stats; reopening Stats adds zero requests.
+- [ ] Gate 2: each Catch Up, Planning and Stats-subview cold-load request multiset equals that mode's Task 0 baseline, including multiplicity and normalized bodies/query/header behavior. Same-scope warmed Stats reopening adds zero Stats requests. Group A → B → A restores its selections and preserves scope-specific baseline requests.
 - [ ] Gate 3: before and after `App()` render counts reported as numbers for a filter change and a Stats view switch; no speed claim beyond them.
-- [ ] Lazy-load: Retry works for a transient failure and the reload message appears after two failures; first Stats open adds no `/api` request; the initial JavaScript (entry plus statically imported chunks) is smaller than the single bundle at the Task 0 base; `npm run build` run twice is idempotent and leaves no stale chunk.
-- [ ] Analytics guards and quirk pins pass with only source paths changed.
+- [ ] Lazy-load: committed-ESM tests observe the failed original chunk, one mounted-build manifest request and a successful cache-busted retry with a fresh lazy identity. Two failures or a stale/malformed manifest show sanitized reload guidance; no automatic reload, extra API call/event or cross-build graph import occurs. Root selections/auth lock survive. Delayed Burndown attachment runs scroll-to-today on the synthetic overflowing chart.
+- [ ] Initial JavaScript raw and gzip totals (entry plus transitively static JS imports, counted once) are both smaller than Task 0's single bundle. Builds have identical generated file lists/bytes when inputs match, lazy edits change the ID/entry fingerprint, failed builds preserve prior output and watch recomputes IDs. Post-commit rebuild passes `make verify-dist-clean` at the recorded head.
+- [ ] Analytics guards, frozen positive Stats call pins and synthetic dataLayer event contracts pass. Designated orchestration source guards transfer ownership without permitting direct fetch/storage/credential ownership in Stats presentation or pure modules.
+- [ ] Chart effects are the only two approved relocations; all other retained effect ordering passes conservation. The composite Alerts/Capacity return sets, explicit closure bindings, keyed Epic identity and 12-member scope identity are verified.
 - [ ] Owner budgets, interface counts and aggregates equal measured values; `dashboard.jsx` ceiling ratcheted.
-- [ ] Ontology (updated in every owner-moving commit), plan README, statistics feature doc, and the `file://` wording in `README.md` and `AGENTS.md` section 10 (confirmed at the operator stop) updated and verified.
+- [ ] Ontology (updated in every owner-moving commit), plan README, statistics feature doc, and the `file://` wording in `README.md` and `AGENTS.md` section 10 (approved before Task 8 edit) updated and verified.
 - [ ] The File Map matches `git diff --name-status origin/main...HEAD`, or this plan records each divergence.
 
 ## Risks and Open Items
@@ -382,9 +549,102 @@ Commit message: `Close the App decomposition plan and update the ontology`
 - **Effect order.** 90 effects; Stats effects interleave with non-Stats effects. Mitigation: Task 2 Step 1 ledger, layered hooks, conservation check.
 - **Alerts and Stats coupling to the bootstrap** is intentional and recorded; the bootstrap plan owns the final move.
 - **`burnoutTaskFilter` filters the visible task list**, so Stats and the task pipeline stay coupled through one setter.
-- **Retry cannot fix a stale tab after a deploy** (the old chunk no longer exists); the second-failure reload message covers it.
+- **Retry is bounded.** Native imports cache failures by URL, and React.lazy caches rejected promises; both identities change on Retry. Missing shared chunks or a removed mounted-build manifest require reload. The loader never substitutes a newer graph; committed-build failure/stale tests prove this boundary.
+- **Static build writes are ordered, not a deployment mechanism.** A view open during a local rebuild may still encounter an old removed asset; reload guidance covers that case. Retaining multiple releases or atomic hosting deployment is outside this localhost build task.
 - **`file://` ends.** Operator decision 2026-10-07 (OAuth-only direction). `README.md` and `AGENTS.md` section 10 change in Task 8; `resolveBackendUrl`'s non-http fallback stays and is listed for the follow-up plan. Basic-auth extraction is its own plan and is not started here: 117 files mention `JIRA_AUTH_MODE`, `jira_basic` or `home_townsquare_basic` at `cd2ae405`, 33 of them plans.
 - **Line ranges drift** with every commit; re-measure at each task start.
+
+## Stats interface ledger
+
+Verified against the reviewed App ranges on 2026-10-08. These are identifier contracts, not an invitation to simplify expressions. Revalidate declarations and consumers at the synchronized Task 0 base. Imported React/model/API helpers remain imports; the sets below cover App/module-local free inputs. The 12 shared-scope members are supplied through `scope`, destructured under their existing names, and omitted as duplicate top-level props. Other inputs remain flat. Return keys must not be widened for testing.
+
+### Layer A
+
+Free inputs:
+
+```text
+BACKEND_URL activeGroupMissingComponents activeGroupTeamIds activeGroupTeamSet
+adHocEpicSet adHocEpicSignature burnoutAssigneeFilter burnoutCacheRef burnoutData
+capacityTasks cohortEndQuarter cohortStartQuarter excludedEpicSet getTeamInfo
+groupPreferences isAllTeamsSelected isCompletedSprintSelected issueEditStateRef
+issuePeopleStatsRevision normalizeEpicKey normalizeStatus perfCountersRef perfEnabled
+selectedSprintInfo selectedTeamSet setBurnoutAssigneeFilter setBurnoutData
+setBurnoutError setBurnoutLoading showStats statsView tasksFetched techProjectKeys
+```
+
+Returns:
+
+```text
+effectiveStatsData burnoutTaskTeamByIssueKey burnoutTaskStatusByIssueKey
+burnoutIssueWeightByKey burnoutScopedTeamIds burnoutScopedTeamSignature
+cohortScopedTeamSignature burnoutQueryKey cohortQueryKey
+```
+
+`statsTaskList` stays private to A. B consumes A's `burnoutQueryKey`, `burnoutScopedTeamIds`, `burnoutScopedTeamSignature`, `cohortQueryKey` and `cohortScopedTeamSignature`; C consumes the effective Stats data and the three issue maps.
+
+### Layer B
+
+Free inputs:
+
+```text
+BACKEND_URL EMPTY_ARRAY EXCLUDED_CAPACITY_STATS_SOURCE_CONCURRENCY activeGroup
+activeGroupAdHocCapacityEpics activeGroupId activeGroupMissingComponents
+activeGroupTeamIds adHocEpicSet adHocEpicSignature adminSettingsGate availableSprints
+burnoutAssigneeFilter burnoutQueryKey burnoutScopedTeamIds burnoutScopedTeamSignature
+cohortAssigneeFilter cohortCacheRef cohortData cohortEndQuarter cohortExcludeAdHoc
+cohortExcludeCapacity cohortGroupBy cohortProjectFilter cohortQueryKey cohortScopedTeamSignature
+cohortSelectedRow cohortStartQuarter cohortStatusToggles excludedCapacityCacheRef
+excludedCapacityChartMode excludedCapacityData excludedCapacityEndSprintId
+excludedCapacityEpicDropdownOpen excludedCapacityEpicDropdownRef excludedCapacityForceRefreshRef
+excludedCapacityIsolatedTeam excludedCapacityRefreshNonce excludedCapacitySelectedEpicKeys
+excludedCapacityStartSprintId excludedEpicSet groupPreferences isAllTeamsSelected
+issueEditStateRef issuePeopleStatsRevision projectTrackCapacitySide projectTrackExcludeAdHoc
+projectTrackExcludeExcludedCapacity projectTrackMode projectTrackPhaseAbortRef
+projectTrackPhaseCacheRef projectTrackPhaseData selectedSprint selectedSprintInfo selectedTeamSet
+setBurnoutTaskFilter setCohortAssigneeFilter setCohortData setCohortError setCohortLoading
+setCohortProjectFilter setCohortSelectedRow setEffortSplitVisibleBuckets setExcludedCapacityData
+setExcludedCapacityEndSprintId setExcludedCapacityEpicDropdownOpen setExcludedCapacityError
+setExcludedCapacityIsolatedTeam setExcludedCapacityLoading setExcludedCapacitySelectedEpicKeys
+setExcludedCapacityStartSprintId setProjectTrackPhaseData setProjectTrackPhaseError
+setProjectTrackPhaseLoading showStats statsView teamNameById teamOptions techProjectKeys trackApiResult
+```
+
+Returns:
+
+```text
+cohortQuarterOptions cohortProjectOptions cohortAssigneeOptions cohortSummary
+cohortWorkflowStatusTotal cohortGridModel cohortOpenBars cohortCompletedBars
+cohortAverageLeadDays cohortMedianLeadDays cohortWarnings cohortStatusControls cohortSelectedRowLabel
+excludedCapacitySprintOptions excludedCapacitySprintRange effortSplitSprintLabel
+excludedCapacityEpicOptions projectTrackSeries projectTrackTotals projectTrackBreakdown
+projectTrackColumnSplit projectTrackRangeLabel projectTrackPhaseEpics projectTrackPhaseSummary
+excludedCapacityEpicCatalog excludedCapacityEffectiveFilters excludedCapacityFilterLabel
+effortSplitRows excludedCapacityRows excludedCapacityLineSeries excludedCapacityModeOverall
+excludedCapacityModeSprintRows excludedCapacityModeTeamLineSeries effortSplitTotals
+excludedCapacityWarnings formatExcludedPoints toggleExcludedCapacityEpicKey
+clearExcludedCapacityEpicSelection selectAllExcludedCapacityEpics toggleEffortSplitBucket
+```
+
+### Layer C
+
+Task 2 free inputs:
+
+```text
+burndownMetric burnoutAssigneeFilter burnoutChartRef burnoutData burnoutIssueWeightByKey
+burnoutTaskStatusByIssueKey burnoutTaskTeamByIssueKey effectivePriorityWeightMap effectiveStatsData
+isAllTeamsSelected isBurnoutClosedStatus isCompletedSprintSelected priorityAxis priorityOrder
+resolveStatsTeamColor selectedTeamSet showStats statsView teamNameById teamOptions
+```
+
+Task 2 returns:
+
+```text
+priorityTeamIds priorityRows priorityRadar statsTeamRows statsBarColumns statsTotals
+burnoutAssigneeOptions burnoutChartModel burnoutTotals burndownMetricIsStoryPoints
+formatBurndownValue resolveBurnoutPointer buildBurnoutTaskFilter canRenderStatsPanel isLeadTimesFocusMode
+```
+
+In Task 3 remove only `burnoutChartRef` from C's inputs and `resolveBurnoutPointer` from its returns when their ownership moves to the panel; the scroll effect leaves C at the same time. `priorityTeamIds` remains exposed to the Jira-link builder. `isLeadTimesFocusMode` remains exposed to the outer task-list rendering. `buildBurnoutTaskFilter` remains in C and feeds the external filter setter through the panel.
 
 ## Baseline Log
 
@@ -395,3 +655,68 @@ Pre-recorded at plan revalidation (2026-10-07, `origin/main` `cd2ae405`, run und
 ## Ledger
 
 _Filled during Tasks 1, 2, 4, 5 and 7: measured inventories, effect classifications, interface tables and conservation residuals._
+
+## Implementation Readiness Review (2026-10-08)
+
+**Initial verdict:** Required corrections before execution. Three independent reviewers checked Statistics/state/scope, ENG Alerts/Capacity/renderers, and lazy-loading/tooling/verification; their findings were checked against source. The revised tasks below close those contract gaps; implementation and its gates remain unexecuted. The resolution map distinguishes plan corrections from implementation proof.
+
+**Final plan verdict (2026-10-08):** Ready to begin Task 0. The same three review scopes were rechecked against the revised contracts and current source; no remaining implementation-contract blockers were found. Re-review corrected an inaccurate `scopedTasks` description, explicit outside-root owner measurement/enforcement, production/watch ID separation, and the source-edit-during-build race. Task 0 base sync/baselines/tooling controls, all feature/browser/build gates and publication authorization remain required; this verdict does not claim implementation success.
+
+**Reviewed revisions:** clean branch head `a9e46501`, whose application baseline is `da17de89`; fetched `origin/main` is `1f161a29`. Source line references below use the reviewed checkout unless another revision is named. Relevant current-main changes include `StatusColourProvider`; its existing plan constraint remains required. Task 0 must refresh measurements after integrating the intended base. Historical worktree/interpreter instructions must be checked against the active checkout, which currently has `.venv`.
+
+### Resolution map
+
+| Original finding | Revised execution contract |
+| --- | --- |
+| 1. Conservation cannot cover pure/components or moved effects | Task 0 implements explicit named owners and strict effect allowances before extraction; Task 3 names only the two chart relocations; copied parser-resolving command replaces the broken direct invocation |
+| 2. Retry reuses rejected lazy/native-import identities | Task 8 creates a fresh lazy/error-boundary attempt and imports a query-distinct URL from the mounted build's versioned manifest; committed-ESM abort/retry/stale tests prove actual requests |
+| 3. Cross-mode request set cannot establish parity | Task 0 freezes each mode/subview's own multiset, bodies/query/header behavior and same-scope cached reopening; those exact titles are in every gate |
+| 4. Dist-clean check precedes generated commit | Two-build byte/file-list comparison precedes authorized commit; fresh build plus `make verify-dist-clean` follows it at the recorded head |
+| 5. Chart scroll precedes lazy DOM attachment | Task 3 transfers chart DOM/ref/pointer/effect ownership together; Task 8 delays the chunk and proves a positive scroll target on a synthetic overflowing chart |
+| 6. Epic component lacks sibling key | Task 6 puts `key={epicGroup.key}` on the returned component and proves identity after real reorder/filter on both layouts |
+| 7. Source guards conflict with transferred ownership | Tasks 1–3 define a narrow data-owner exception, retain direct fetch/storage/credential bans, and include the analytics guard in the File Map |
+| 8. Stats bootstrap keys span Scenario | Task 1 extracts only the contiguous 19-key seam and leaves `hideExcludedStats` at its original position; Task 0 freezes A → B → A and composed-key order |
+| 9. Alert raw/post-filter outputs conflict | Task 4 nests unchanged filtering between production and grouping and freezes the 21 consumed outputs |
+| 10. Capacity consumer/external interface is wrong | Task 5 names PlanningTeamCapacityCards, separate state/lifecycle call positions, both 20-name return sets and reset/refresh/hold consumers |
+| 11. Interface checker cannot inventory free variables | Common binding-ledger procedure precedes each move; exact Stats inputs/returns are recorded above; interface tooling validates declarations after extraction |
+| 12. Existing analytics checks lack Stats positive proof | Task 0 freezes Stats call expressions and synthetic dataLayer events; Task 3 transfers positive anchors and preserves Lead Times' no-event exclusion |
+
+### Original findings (historical line references)
+
+The findings below describe the pre-revision plan; their required changes are now incorporated through the resolution map. They are retained as audit evidence, not additional unresolved tasks.
+
+1. **Blocker — The conservation gate cannot validate the planned owners.** The per-commit command (line 104) and Task 1 Step 7 (line 250) invoke the checker from `scripts/extraction_lint/` and pass pure `statsGroupState.js` as `--created-hook`. The parser is installed under `tmp/lint`, and [`run.sh:26-28`](../../scripts/extraction_lint/run.sh) copies the checkers there. The prescribed direct command fails with `ERR_MODULE_NOT_FOUND` for `espree`. Even from the configured directory, [`check_move_conservation.mjs:90-94`](../../scripts/extraction_lint/check_move_conservation.mjs) rejects owners without a `use*` function, including the pure seam and new components. Its effect traversal at lines 111-127 follows hook calls, not JSX; moving the hover-reset effect into `StatsPanel` also violates its identical-effect-sequence check at lines 150-159. **Required change:** use the configured checker path and define a checked procedure for pure functions and component moves before Task 1. Characterize intentional parent-to-child effect relocation explicitly. Add any checker changes and seeded negative controls to the File Map; omitting owners or ignoring unexplained differences is insufficient.
+
+2. **Blocker — Retry has no defined way to reset a rejected lazy view.** Task 8's interface and Steps 2/4/5 (lines 346, 350, 352-353) promise that re-invoking `load` recovers a `React.lazy` child. React retains the rejection on that lazy identity ([installed React implementation, lines 460-513](../../node_modules/react/cjs/react.development.js)). A Node 20 probe confirmed that a successful second loader invocation leaves the original lazy identity throwing the same failure; a fresh lazy identity resolves. **Required change:** specify ownership and replacement of the lazy identity and reset of the error boundary, with stable identity between attempts. Prove actual browser module retry through the committed ESM build, including one-failure recovery and two-failure guidance; a synthetic Promise test alone is insufficient. Name the supported test harness for the boundary's interactive lifecycle.
+
+3. **Blocker — Gate 2 requires an invalid cross-mode request baseline.** Task 0 Step 6 (line 222) and acceptance line 372 require one cold-load request set for Catch Up, Planning and Stats. [`dashboard.jsx:3937-3965`](../../frontend/src/dashboard.jsx) intentionally runs alert, missing-info and ready-to-close reads only in Catch Up; readiness is mode-gated at lines 3840-3855, and Burndown fetches are Stats-specific at lines 4424-4474. A unique method/path set also cannot detect duplicate requests or changed payloads. **Required change:** record separate baselines for each mode/subview and compare each before/after, including multiplicity and normalized query/body values. Define "no new requests" in Task 8 relative to the same baseline transition, rather than banning the existing first-open Stats reads. Give the new request test a name and explicitly include it in the per-commit command so the current `-g` regex cannot exclude it.
+
+4. **Blocker — The clean-dist check runs before the state it requires exists.** Task 8 Step 7 (line 355) requires `make verify-dist-clean` before committing newly generated entry/chunk files. [`Makefile:28-34`](../../Makefile) fails on both modified and untracked dist output, which is the expected state then. The per-commit line 99 comment similarly conflates reproducibility with committed cleanliness. **Required change:** compare generated file lists and bytes across builds before commit; commit the verified generated output, then rebuild/check cleanliness at the exact committed head under the publication contract.
+
+5. **P1 — Lazy Stats mounting can lose Burndown scroll positioning.** Tasks 2/8 retain data effects in `App()` while deferring the chart's mount. [`dashboard.jsx:5764-5779`](../../frontend/src/dashboard.jsx) reads `burnoutChartRef.current`, returns if absent, and depends only on `[burnoutChartModel, statsView]` (current-main lines 5765-5780). If data arrives before the chunk, the effect exits and child-only lazy resolution does not rerun it. **Required change:** specify a mount-aware handoff for this DOM effect, record the resulting effect-lifecycle exception, and add a committed-build test that delays the Stats chunk until data is ready and checks scroll-to-today on an overflowing chart.
+
+6. **P1 — The new Epic component needs the existing list identity.** Task 6 (line 319) replaces the renderer's return with `<EpicBlock ... />`. Today [`dashboard.jsx:8322`](../../frontend/src/dashboard.jsx) keys the returned root, and [`EngView.jsx:143,147,152`](../../frontend/src/eng/EngView.jsx) inserts those returns directly into lists. A key left on an internal div cannot identify sibling components. **Required change:** explicitly return `<EpicBlock key={epicGroup.key} ... />` and verify filtering/reordering preserves the correct Epic's editor/readout and ref-map identity.
+
+7. **P2 — Source-guard migration requires contract changes and one missing file.** The path-only migration rule (lines 82, 249, 256) cannot satisfy [`test_stats_module_extraction_source_guards.js:52-80`](../../tests/test_stats_module_extraction_source_guards.js): it bans `BACKEND_URL` in every Stats file and requires dashboard-owned request/cache symbols that Task 2 moves. Also, [`test_analytics_source_guards.js:231-245`](../../tests/test_analytics_source_guards.js) directly reads the Lead Times JSX that Task 3 moves; that file is absent from the explicit modify map. **Required change:** retain presentation/pure-helper prohibitions, explicitly permit orchestration only in the designated data owner through `statsApi`, and preserve negative guards against direct fetch, storage and credential/header ownership. Add the analytics guard to the modify map and migrate its positive owner anchor without dropping assertions.
+
+8. **P2 — One Stats seam cannot preserve the promised interleaved bootstrap order.** Task 1 (lines 240-246) combines the main Stats keys and `hideExcludedStats` while requiring other keys/order to remain untouched. Scenario separates them in [`dashboard.jsx:2753-2755,2828-2830,2912-2914`](../../frontend/src/dashboard.jsx). **Required change:** preserve both insertion points or retain `hideExcludedStats` at its original position; pin the complete composed key/setter order. Add a synthetic Group A → Group B → Group A case with distinct Stats selections and expected request counts, since the planned relative-key/SSR checks do not prove restoration. No runtime defect from setter reordering alone was established.
+
+9. **P2 — The Alert producer/filter interface contradicts the moved range.** Task 4 (lines 297-302) says the new hook only produces collections consumed by the existing filter hook, but also returns team lists/counts and moves the whole range. [`dashboard.jsx:7450-7471`](../../frontend/src/dashboard.jsx) calls `useEngAlertFilters`; the team groupings at lines 7473-7483 consume its filtered collections. **Required change:** specify the actual call composition and return set, choosing an unchanged nested filter call or explicit raw/post-filter layers. Pin call order and test narrowed filters against both team lists and counts.
+
+10. **P2 — Capacity's documented consumer and external interface are incomplete.** The inventory (line 43) and Task 5 Step 1 (line 311) identify Settings as the `handleCapacitySaved` consumer. Its consumer is [`PlanningTeamCapacityCards` at dashboard.jsx:8829-8845](../../frontend/src/dashboard.jsx). External dependencies also include the reset setters at lines 1693-1696, config's `setCapacityEnabled` at 3549, and `capacityScopeHoldRef` supplied to `useEpicRefresh` at 8715. **Required change:** correct the consumer and freeze these external names in the hook interface. Keep Settings' capacity-mapping lifecycle distinct. The corresponding ontology consumer has been corrected during this review.
+
+11. **P2 — The named interface tool does not inventory closure free variables.** Task 4 Step 1 and Task 6 Step 2 (lines 301, 322) rely on it to discover the current closures' dependencies. [`check_hook_interfaces.mjs:43-62`](../../scripts/extraction_lint/check_hook_interfaces.mjs) resolves top-level functions; its owner inventories measure declared inputs/returns, not the free variables of render closures inside `App()`. **Required change:** name a manual or explicit AST free-variable/caller inventory procedure before extraction, then validate the resulting owner interfaces with the existing checker.
+
+12. **P2 — The stated analytics proof does not pin all moved Stats events.** The global analytics claim (line 16) relies on two tests. [`test_extraction_quirk_pins.js:5-13`](../../tests/test_extraction_quirk_pins.js) pins Scenario/Settings call counts; the analytics guards cover specific allowlists and exclusions, not every moved Stats trigger and payload. **Required change:** add positive Stats owner pins and before/after event assertions for representative view/filter/chart interactions, preserving canonical names and typed params. Keep the pure-refactor no-new-event allowlist reason; do not treat existing green tests as proof of full Stats event parity.
+
+### Checked contracts and verification
+
+- **Ownership and state:** the state-container approach is supported. Group-owned Stats cells, caches and excluded-dropdown state must stay mounted; only the identified chart hover cells are transient. Alerts toggles/dismissals remain in the bootstrap. Existing Capacity browser tests cover dirty drafts, conflicts, stale GET/PATCH settlements, aborts, retries and terminal auth recovery. Epic-header geometry coverage already exists for direct and initiative-grouped layouts in `tests/ui/eng_group_board_card.spec.js:557-768`.
+- **Endpoint contracts:** this plan introduces no application API route or storage migration. Stats POST wrappers remain in `statsApi.js` with requested-with/tracked-fetch behavior; Capacity GET and user-OAuth PATCH remain in `capacityApi.js`, with CSRF on PATCH and global API-401 handling. The new chunk requests use the existing static `GET /frontend/dist/<path:filename>` route: JavaScript on 200 or an ordinary asset-load failure on a missing chunk. API auth, workspace boundaries, save/conflict payloads and request bodies must remain unchanged.
+- **Gate scope:** `GATE-05-home-write-capability.md` remains blocked, checked 2026-10-05, next review 2026-10-12 (Europe/Berlin). This extraction adds no Home write path and does not depend on it; no mutation probe or gate edit was performed.
+- **Actual checks:** Node 20 analytics/quirk tests passed 30/30; the ENG reviewer's focused capacity/alert/planning-action baseline passed 92/92; `.venv/bin/python tests/test_codebase_structure_budgets.py --manifest scripts/extraction_lint/owner_budgets.json` reported 0 problems; the prescribed smoke `--list` selected 9 tests. Direct conservation invocation failed on parser resolution; `node tmp/lint/check_move_conservation.mjs --base HEAD` passed the unchanged baseline with 861 statements, zero residuals and 90 identical effects. The read-only React probe demonstrated the cached rejection.
+- **Revision validation:** reran the Node 20 analytics/quirk pair (30/30), owner budgets (0 problems) and smoke title listing (9 existing cases). `git diff --check` passed. All 34 concrete Modify paths exist, Create paths have no collisions, and the plan's local links resolve. The Statistics re-review independently verified the layer effect counts and both recorded effect digests against source. These checks validate the current baseline and document; proposed module tests remain execution work.
+
+**Additional feasibility evidence:** an isolated synthetic Chromium module-import probe completed on 2026-10-08. The first URL failed, retrying the same URL failed without a second network request, and a query-distinct URL loaded successfully (`requests: 2`, exported synthetic value: 42). This supports the URL-change requirement; it does not prove the planned application boundary/manifest implementation. The earlier sandbox launch failure is superseded by this completed probe.
+
+**Residual execution risks:** proposed files and migration tests do not yet exist, and current-main integration has not been performed. Full build, full Python/Node suites, application retry behavior and visual parity remain execution-time gates; they are not claimed as passed here. Bundle-size reduction and request/render preservation must be measured at the Task 0 base and final head. Base/source drift requires revalidation before moving code, and publication requires its separate authorization.

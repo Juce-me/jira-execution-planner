@@ -425,7 +425,9 @@ test('Planning mutation re-arms deferred alerts for the next Catch Up entry', as
     await page.locator('.status-transition-menu[data-issue-key="PROD-1"]')
         .getByRole('menuitem', { name: 'In Progress' }).click();
     await waitForCallCount(calls, call => call.pathname === '/api/issues/transitions' && call.method === 'POST', 1);
-    await waitForCallCount(calls, call => call.pathname === '/api/tasks-with-team-name' && !call.params.purpose, 4);
+    // A Story pill changes only its own issue: the local patch replaces any task-list refetch.
+    await expect(statusTrigger).toHaveText(/In Progress/);
+    expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name' && !call.params.purpose)).toHaveLength(2);
     expect(calls.filter(isAlertCall)).toHaveLength(5);
 
     await selectEngMode(page, 'Catch Up');

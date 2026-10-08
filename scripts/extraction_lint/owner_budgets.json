@@ -19,8 +19,8 @@
   },
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
-    "lineCount": 7616,
-    "lineCeiling": 7616
+    "lineCount": 7594,
+    "lineCeiling": 7594
   },
   "modules": [
     {
@@ -18438,8 +18438,8 @@
       "exports": [
         "EpicBlock"
       ],
-      "lineCount": 405,
-      "lineCeiling": 405,
+      "lineCount": 403,
+      "lineCeiling": 403,
       "interfaces": [
         {
           "exportName": "EpicBlock",
@@ -18499,7 +18499,6 @@
             "statusTransitionEnabled",
             "statusTransitionSourceSurface",
             "statusTransitionSubmitting",
-            "statusTransitionTargetsCount",
             "stickyEpicFocusKey",
             "storySubtasksByKey",
             "submitPriorityChange",
@@ -18618,7 +18617,6 @@
             "statusTransitionEnabled",
             "statusTransitionSourceSurface",
             "statusTransitionSubmitting",
-            "statusTransitionTargetsCount",
             "stickyEpicFocusKey",
             "storySubtasksByKey",
             "storySubtasksByKey[task.key]",
@@ -18634,13 +18632,13 @@
             "transitionResult"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 118,
+          "expandedInputCount": 117,
           "returnCount": 0,
-          "propCount": 66,
+          "propCount": 65,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 118,
+          "expandedInputCeiling": 117,
           "returnCeiling": 0,
-          "propCeiling": 66,
+          "propCeiling": 65,
           "unresolved": [
             "bag epicGroup member alias epicInfo",
             "forwarded input epicGroup",
@@ -18652,7 +18650,7 @@
           ],
           "inventory": {
             "source": "frontend/src/eng/EpicBlock.jsx:14",
-            "sourceDigest": "57e43a2da5e1ce7bf9248931fdd7f9dc2eb6becfd25ba6527823170363952dfe",
+            "sourceDigest": "3e13593c357445d35ac959816a579ef8475b69fb8f7944ed66cc309d3e7ff1cf",
             "reviewed": true,
             "memberNames": [
               "canEditSharedConfiguration",
@@ -18759,7 +18757,6 @@
               "statusTransitionEnabled",
               "statusTransitionSourceSurface",
               "statusTransitionSubmitting",
-              "statusTransitionTargetsCount",
               "stickyEpicFocusKey",
               "storySubtasksByKey",
               "storySubtasksByKey[task.key]",
@@ -19024,16 +19021,16 @@
       "ceiling": 2683
     },
     "eng": {
-      "measured": 1752,
-      "ceiling": 1752
+      "measured": 1750,
+      "ceiling": 1750
     },
     "uniqueOwners": {
-      "measured": 26387,
-      "ceiling": 26387
+      "measured": 26385,
+      "ceiling": 26385
     },
     "appPlusOwners": {
-      "measured": 34003,
-      "ceiling": 34003
+      "measured": 33979,
+      "ceiling": 33979
     }
   },
   "transfer": {

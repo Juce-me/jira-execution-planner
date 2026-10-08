@@ -7,6 +7,8 @@ const { pathToFileURL } = require('node:url');
 const repo = path.resolve(__dirname, '..');
 const helper = path.join(repo, 'scripts/build_dashboard.mjs');
 function fixture(t) {
+    // tmp/ is gitignored, so a fresh checkout (CI) has none.
+    fs.mkdirSync(path.join(repo, 'tmp'), { recursive: true });
     const root = fs.mkdtempSync(path.join(repo, 'tmp/dashboard-split-'));
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));
     const put = (name, body) => { fs.mkdirSync(path.dirname(path.join(root, name)), { recursive: true }); fs.writeFileSync(path.join(root, name), body); };

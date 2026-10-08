@@ -49,6 +49,10 @@ jobs:
             exit 1
           fi
 
+      - name: Ensure dist has no untracked output (defensive)
+        # git diff ignores untracked files; the split build emits new hashed chunk and manifest files.
+        run: make verify-dist-clean
+
       - name: Write release info
         run: |
           echo "{\"hash\":\"$(git rev-parse HEAD)\",\"tag\":\"latest\",\"builtAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"source\":\"release\"}" > release-info.json

@@ -68,7 +68,9 @@ test('the epic-refresh request goes through the API module with its own surface'
 
 test('the dashboard mounts the per-epic refresh in Catch Up without touching the alert re-arm paths', () => {
     const source = read('dashboard.jsx');
-    for (const token of ['useEpicRefresh(', 'EpicRefreshButton', 'isLeaving={', 'loadEpochRef', 'alertCohortRef', 'data-epic-refresh-status']) {
+    const epicSource = read('eng/EpicBlock.jsx');
+    for (const token of ['EpicRefreshButton', 'isLeaving={']) assert.ok(epicSource.includes(token), `EpicBlock.jsx must contain ${token}`);
+    for (const token of ['useEpicRefresh(', 'loadEpochRef', 'alertCohortRef', 'data-epic-refresh-status']) {
         assert.ok(source.includes(token), `dashboard.jsx must contain ${token}`);
     }
     // Task 13b: assignee, Story Points, the global Refresh and the request-free fallback of invalidateAlertsAfterEdit.
@@ -83,7 +85,7 @@ test('the dashboard mounts the per-epic refresh in Catch Up without touching the
     const hookCall = source.indexOf('const epicRefresh = useEpicRefresh(');
     assert.ok(hookCall > source.indexOf('window.addEventListener(AUTH_LONG_ABSENCE_EVENT'), 'the hook call must follow the long-absence effect so every input is declared');
     assert.ok(hookCall > source.indexOf('const manualRefreshDisabled ='));
-    assert.match(source, /\{isEpicRefreshMode && epicGroup\.key !== 'NO_EPIC' && \(\s*<EpicRefreshButton/, 'the button mounts in Catch Up and Planning only');
+    assert.match(epicSource, /\{isEpicRefreshMode && epicGroup\.key !== 'NO_EPIC' && \(\s*<EpicRefreshButton/, 'the button mounts in Catch Up and Planning only');
     assert.equal((source.match(/data-epic-refresh-status/g) || []).length, 1, 'one status region');
     assert.equal(source.includes('aria-live="polite" data-epic-refresh-status'), false);
     assert.equal(source.includes('data-epic-refresh-status key='), false, 'the live region stays mounted; a keyed remount is skipped by screen readers');

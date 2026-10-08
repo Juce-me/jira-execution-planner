@@ -262,7 +262,7 @@ test('personal group favorite analytics omit identity and retain existing event 
     for (const forbidden of ['favorite_group_id', 'group_id', 'group_name']) {
         assert.equal(preferencesSource.includes(forbidden), false, `favorite analytics must omit ${forbidden}`);
     }
-    assert.match(dashboardSource, /trackFilterChanged\('group'/);
+    assert.match(readOwnerSource(['frontend/src/eng/EngControls.jsx'], { anchor: 'export function GroupControl(' }), /trackFilterChanged\('group'/);
     assert.doesNotMatch(preferencesSource, /trackSettingsAction\([^\n]*star/);
     assert.doesNotMatch(firstRunPickerSource, /trackSettingsAction|trackEvent|fetch\(/);
     assert.doesNotMatch(firstRunChoiceSource, /trackSettingsAction|trackEvent|fetch\(/);

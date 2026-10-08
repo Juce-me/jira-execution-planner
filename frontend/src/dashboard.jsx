@@ -1,3 +1,5 @@
+import { SearchControl, ViewSwitch, SprintControl, GroupControl, TeamControl } from './eng/EngControls.jsx';
+import { EpicBlock } from './eng/EpicBlock.jsx';
 import { StatsPanel } from './stats/StatsPanel.jsx';
 import { useStatsDerivedA, useStatsDerivedB, useStatsDerivedC } from './stats/useStatsData.js';
 import { useStatsState } from './stats/useStatsState.js';
@@ -12,12 +14,9 @@ import { normalizeScenarioDraftOverrides } from './scenario/scenarioDraftOverrid
 
 import { ScenarioView } from './scenario/ScenarioView.jsx';
 
-import SegmentedControl from './ui/SegmentedControl.jsx';
-import ControlField from './ui/ControlField.jsx';
 import IconButton from './ui/IconButton.jsx';
 import EmptyState from './ui/EmptyState.jsx';
 import LoadingState from './ui/LoadingState.jsx';
-import StatusPill from './ui/StatusPill.jsx';
 import JiraExportButton from './components/JiraExportButton.jsx';
 import ServerUnavailableBanner from './components/ServerUnavailableBanner.jsx';
 import { createSprintCatalogController, createSprintCatalogState, getCookie, getCurrentQuarter, isActiveHomeTokenConnection, loadCachedSprintCatalog, loadUiPrefs, saveUiPrefs, setCookie, shouldReconcileSprintCatalogSource, sprintCatalogSourcesEqual, sprintCatalogValidationKey } from './dashboardRuntime.js';
@@ -32,19 +31,17 @@ import { completeAuthRecovery, getAuthRecoveryStores } from './api/authRecoveryC
 import { clearAuthResumeState, getAuthResumeStorage, readAuthResumeState, writeAuthResumeState } from './api/authResumeState.js';
 import { connectionRecoveryPrincipalFromConfig } from './api/connectionRecoveryState.js';
 import { buildConnectionRecoveryShellState, buildConnectionRecoverySnapshot, useConnectionRecovery } from './api/useConnectionRecovery.js';
-import IssueCard, { IssueCardContext } from './issues/IssueCard.jsx';
+import { IssueCardContext } from './issues/IssueCard.jsx';
 import { buildDependencyFocusPayload, buildDependencyFocusWithScreenState, buildDependencyKeySignature, buildIssueByKey } from './issues/dependencyFocusUtils.js';
-import { formatPriorityShort, getIssueStatusClassName, getIssueTeamLabel } from './issues/issueViewUtils.js';
+import { formatPriorityShort, getIssueStatusClassName } from './issues/issueViewUtils.js';
 import { useStorySubtasks } from './issues/useStorySubtasks.js';
 import EngView from './eng/EngView.jsx';
 import EngFilterControls from './eng/EngFilterControls.jsx';
 import EngBoardView from './eng/EngBoardView.jsx';
 import EngAlertsPanel from './eng/EngAlertsPanel.jsx';
-import StoryRequirementCard from './eng/StoryRequirementCard.jsx';
 import EngModeControl from './eng/EngModeControl.jsx';
 import { resolveEngSprintSelectorState } from './eng/engSprintSelectorState.js';
 import EpicHeaderValueReadout from './eng/EpicHeaderValueReadout.jsx';
-import EpicRefreshButton from './ui/EpicRefreshButton.jsx';
 import { useEpicRefresh } from './eng/useEpicRefresh.js';
 import { mergeEpicStories } from './eng/epicRefreshPatch.js';
 import { createDependencySkip } from './eng/epicRefreshDependencySkip.js';
@@ -80,7 +77,7 @@ import IssueSummaryEditor from './issues/IssueSummaryEditor.jsx';
 import IssueTeamEditor from './issues/IssueTeamEditor.jsx';
 import StoryPointsEditor from './issues/StoryPointsEditor.jsx';
 import { DEFAULT_ENG_STATUS_FILTER, buildEngCatchUpFacetModel, isEngClosedWorkStatus, migrateEngCatchUpFilters, readEngCatchUpFilterState, resolveEngCatchUpFilters } from './eng/engCatchUpFilters.js';
-import { PRIORITY_ORDER, getTaskTeamInfo, groupTasksByTeam, matchesEngTaskSearch, resetEngFacetFilters, resetEngFilters, getEpicEffectivePriority, getProjectTrackEmoji, getProjectTrackLabel, normalizeEngEpicSort, DEFAULT_ENG_EPIC_SORT, sortEpicGroups } from './eng/engTaskUtils.js';
+import { PRIORITY_ORDER, getTaskTeamInfo, groupTasksByTeam, matchesEngTaskSearch, resetEngFacetFilters, resetEngFilters, normalizeEngEpicSort, DEFAULT_ENG_EPIC_SORT, sortEpicGroups } from './eng/engTaskUtils.js';
 import { createPlanningSelectionHandlers, persistPlanningSelectionState, resolvePlanningAuthResume, resolvePlanningSelectionForDashboard, selectedTaskKeysFromMap, selectedTaskMapFromKeys } from './eng/planningSelectionActions.js';
 import { useEngCapacityState, useEngCapacity } from './eng/useEngCapacity.js';
 import { getTeamCapacityMeta } from './eng/planningCapacityUtils.js';
@@ -5627,51 +5624,26 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
             const clearEngFilters = React.useCallback(() => resetEngFilters({ setSearchInput, setSearchQuery, setSelectedTeams, setEngStatusFilter, setEngPriorityFilter, setEngProjectTrackFilter, defaultEngStatusFilter: DEFAULT_ENG_STATUS_FILTER, setShowTech, setShowProduct, setGroupByInitiativeChoice, setBurnoutTaskFilter, setShowTeamDropdown, setShowGroupDropdown, setShowSprintDropdown, trackFilterChanged, visibleCountBucket: bucketCount(visibleTasksForList.length) }), [trackFilterChanged, visibleTasksForList.length]);
             const trackStatsAnalyticsAction = (eventName, params = {}) => trackStatsAction(eventName, statsView, params);
             const renderSearchControl = (surface, extraClassName = '') => (
-                <ControlField label="Search" className={`control-search ${searchActive ? 'active-filter applied-filter' : ''} ${extraClassName}`.trim()}>
-                    <div className="search-wrap">
-                        <input
-                            data-onboarding-target="search"
-                            data-onboarding-surface={surface}
-                            type="text"
-                            className="search-input"
-                            placeholder="Search tickets..."
-                            value={searchInput}
-                            onChange={(e) => setSearchInput(e.target.value)} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)}
-                            ref={searchInputRef}
-                        />
-                        {searchInput && (
-                            <button
-                                className="search-clear"
-                                onClick={() => setSearchInput('')}
-                                title="Clear search"
-                                aria-label="Clear search"
-                                type="button"
-                            >
-                                ×
-                            </button>
-                        )}
-                    </div>
-                </ControlField>
+                <SearchControl
+                    surface={surface}
+                    extraClassName={extraClassName}
+                    searchActive={searchActive}
+                    searchInput={searchInput}
+                    setSearchInput={setSearchInput}
+                    setSearchFocused={setSearchFocused}
+                    searchInputRef={searchInputRef}
+                />
             );
 
-            const renderViewSwitch = () => {
-                if (!showEpmNavigation) return null;
-                return (
-                    <SegmentedControl
-                        className="view-mode-control"
-                        ariaLabel="Dashboard view"
-                        value={selectedView}
-                        onChange={(nextView) => {
-                            trackSelectContent('dashboard_view', nextView, { from_view: currentDashboardView() });
-                            setSelectedView(nextView);
-                        }}
-                        options={[
-                            { value: 'eng', label: 'ENG' },
-                            { value: 'epm', label: 'EPM' },
-                        ]}
-                    />
-                );
-            };
+            const renderViewSwitch = () => (
+                <ViewSwitch
+                    showEpmNavigation={showEpmNavigation}
+                    selectedView={selectedView}
+                    trackSelectContent={trackSelectContent}
+                    currentDashboardView={currentDashboardView}
+                    setSelectedView={setSelectedView}
+                />
+            );
 
             const { activeEngMode, applyEngMode } = useEngModeState({
                 showPlanning, setShowPlanning,
@@ -5748,341 +5720,78 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 <EpmProjectCollapseAllButton label={epmProjectCollapseAllLabel} onClick={toggleAllVisibleEpmProjectsCollapsed} pressed={allVisibleEpmProjectsCollapsed} />
             ) : null;
 
-            const renderSprintControl = (surface) => {
-                const boardScopeControl = selectedView === 'eng' && showBoard;
-                const canOpen = engSprintSelectorState.ordinarySelectable;
-                const displayedSprint = boardScopeControl && boardStrictScope
-                    ? (boardStrictScope === 'component' ? 'Component' : 'All work')
-                    : (sprintName || (!selectedSprint && sprintsLoading && engWorkspaceConfigured ? 'Loading…' : 'Sprint'));
-                const options = getSprintSelectorOptions(boardScopeControl);
-                const activeIndex = options.length
-                    ? Math.min(Math.max(sprintActiveOptionIndex, 0), options.length - 1)
-                    : -1;
-                const listboxId = `sprint-${surface}-listbox`;
-                const isActiveOpen = showSprintDropdown && surface === activeControlSurface;
-                const handleFilterKeyDown = (event) => {
-                    event.stopPropagation();
-                    if (event.key === 'Escape') {
-                        event.preventDefault();
-                        closeSprintSelector({ restoreFocus: true });
-                        return;
-                    }
-                    if (event.key === 'Tab') {
-                        window.setTimeout(() => {
-                            setShowSprintDropdown(false);
-                            setSprintActiveOptionIndex(0);
-                            sprintSelectorOriginRef.current = null;
-                        }, 0);
-                        return;
-                    }
-                    if (!options.length) return;
-                    if (event.key === 'ArrowDown') {
-                        event.preventDefault();
-                        setSprintActiveOptionIndex(Math.min(activeIndex + 1, options.length - 1));
-                        return;
-                    }
-                    if (event.key === 'ArrowUp') {
-                        event.preventDefault();
-                        setSprintActiveOptionIndex(Math.max(activeIndex - 1, 0));
-                        return;
-                    }
-                    if (event.key === 'Home') {
-                        event.preventDefault();
-                        setSprintActiveOptionIndex(0);
-                        return;
-                    }
-                    if (event.key === 'End') {
-                        event.preventDefault();
-                        setSprintActiveOptionIndex(options.length - 1);
-                        return;
-                    }
-                    if (event.key === 'Enter') {
-                        event.preventDefault();
-                        commitSprintSelectorOption(options[activeIndex], boardScopeControl);
-                    }
-                };
-                return (<ControlField label="Sprint">
-                    <div className={`sprint-dropdown sprint-selector-control${selectedView === 'eng' ? ' header-filter-dropdown header-filter-dropdown--sprint' : ''}`} ref={(node) => { sprintDropdownRefs.current[surface] = node; }}>
-                        {isActiveOpen ? (
-                            <div
-                                className="sprint-dropdown-toggle open"
-                                data-onboarding-target="sprint"
-                                data-onboarding-surface={surface}
-                            >
-                                <input
-                                    type="text"
-                                    className="dropdown-toggle-filter-input"
-                                    value={sprintSearch}
-                                    onChange={(event) => {
-                                        setSprintSearch(event.target.value);
-                                        setSprintActiveOptionIndex(0);
-                                    }}
-                                    onClick={(event) => event.stopPropagation()}
-                                    onKeyDown={handleFilterKeyDown}
-                                    placeholder={displayedSprint}
-                                    aria-label="Filter sprints"
-                                    role="combobox"
-                                    aria-autocomplete="list"
-                                    aria-expanded="true"
-                                    aria-controls={listboxId}
-                                    aria-activedescendant={activeIndex >= 0
-                                        ? sprintOptionDomId(surface, options[activeIndex])
-                                        : undefined}
-                                    autoFocus
-                                />
-                                <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
-                                    <path d="M6 9L1 4h10z"/>
-                                </svg>
-                            </div>
-                        ) : (
-                            <button
-                                ref={(node) => { sprintTriggerRefs.current[surface] = node; }}
-                                type="button"
-                                className="sprint-dropdown-toggle"
-                                aria-label="Select sprint"
-                                aria-haspopup="listbox"
-                                aria-expanded="false"
-                                aria-controls={listboxId}
-                                aria-disabled={!canOpen}
-                                disabled={!canOpen}
-                                tabIndex={canOpen ? 0 : -1}
-                                onClick={() => {
-                                    if (!canOpen) return;
-                                    openSprintSelector(surface, options);
-                                }}
-                                data-onboarding-target="sprint"
-                                data-onboarding-surface={surface}
-                            >
-                                <span>{displayedSprint}</span>
-                                <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
-                                    <path d="M6 9L1 4h10z"/>
-                                </svg>
-                            </button>
-                        )}
-                        {isActiveOpen && (
-                            <div className="sprint-dropdown-panel">
-                                <div className="sprint-dropdown-list" id={listboxId} role="listbox" aria-label="Sprint options">
-                                    {sprintsLoading && options.length === 0 ? (
-                                        <div className="dropdown-filter-empty" role="status" aria-label="Sprint options status">Loading sprints...</div>
-                                    ) : availableSprints.length === 0 && options.length === 0 ? (
-                                        <div className="dropdown-filter-empty" role="status" aria-label="Sprint options status">No sprints available</div>
-                                    ) : options.length === 0 ? (
-                                        <div className="dropdown-filter-empty" role="status" aria-label="Sprint options status">No matching sprints</div>
-                                    ) : (
-                                        options.map((option, optionIndex) => {
-                                            const selected = option.kind === 'scope'
-                                                ? boardStrictScope === option.scope
-                                                : !boardStrictScope && String(option.sprint.id) === String(selectedSprint);
-                                            const state = option.kind === 'sprint'
-                                                ? (option.sprint.state || '').toLowerCase()
-                                                : '';
-                                            const marker = state === 'closed' ? '[C]' : state === 'active' ? '[A]' : '[F]';
-                                            const readinessText = option.kind === 'scope'
-                                                ? (option.readiness === 'ready' ? 'Ready'
-                                                    : ['loading', 'catalog_pending'].includes(option.readiness)
-                                                        ? 'Loading configuration'
-                                                        : 'Setup needed')
-                                                : '';
-                                            const descriptionId = option.kind === 'scope'
-                                                ? `${sprintOptionDomId(surface, option)}-readiness`
-                                                : undefined;
-                                            return (
-                                                <button
-                                                    key={option.kind === 'scope' ? option.scope : option.sprint.id}
-                                                    id={sprintOptionDomId(surface, option)}
-                                                    type="button"
-                                                    role="option"
-                                                    tabIndex={-1}
-                                                    aria-label={option.label}
-                                                    aria-selected={selected}
-                                                    aria-describedby={descriptionId}
-                                                    className={`sprint-dropdown-option${selected ? ' selected' : ''}${optionIndex === activeIndex ? ' is-active' : ''}`}
-                                                    data-sprint-id={option.kind === 'sprint' ? option.sprint.id : undefined}
-                                                    onMouseMove={() => setSprintActiveOptionIndex(optionIndex)}
-                                                    onClick={() => commitSprintSelectorOption(option, boardScopeControl)}
-                                                >
-                                                    <span>{option.kind === 'sprint' ? `${marker} ${option.label}` : option.label}</span>
-                                                    {option.kind === 'scope' && (
-                                                        <span id={descriptionId} className="sprint-option-readiness">{readinessText}</span>
-                                                    )}
-                                                </button>
-                                            );
-                                        })
-                                    )}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                </ControlField>); };
+            const renderSprintControl = (surface) => (
+                <SprintControl
+                    surface={surface}
+                    selectedView={selectedView}
+                    showBoard={showBoard}
+                    engSprintSelectorState={engSprintSelectorState}
+                    boardStrictScope={boardStrictScope}
+                    sprintName={sprintName}
+                    selectedSprint={selectedSprint}
+                    sprintsLoading={sprintsLoading}
+                    engWorkspaceConfigured={engWorkspaceConfigured}
+                    getSprintSelectorOptions={getSprintSelectorOptions}
+                    sprintActiveOptionIndex={sprintActiveOptionIndex}
+                    showSprintDropdown={showSprintDropdown}
+                    activeControlSurface={activeControlSurface}
+                    closeSprintSelector={closeSprintSelector}
+                    setShowSprintDropdown={setShowSprintDropdown}
+                    setSprintActiveOptionIndex={setSprintActiveOptionIndex}
+                    sprintSelectorOriginRef={sprintSelectorOriginRef}
+                    commitSprintSelectorOption={commitSprintSelectorOption}
+                    sprintDropdownRefs={sprintDropdownRefs}
+                    sprintSearch={sprintSearch}
+                    setSprintSearch={setSprintSearch}
+                    sprintOptionDomId={sprintOptionDomId}
+                    sprintTriggerRefs={sprintTriggerRefs}
+                    openSprintSelector={openSprintSelector}
+                    availableSprints={availableSprints}
+                />
+            );
 
-            const renderGroupControl = (surface) => {
-                if (!showGroupControl) return null;
-                return (
-                    <div className="group-control">
-                        <ControlField label="Group">
-                            <div className="group-dropdown header-filter-dropdown header-filter-dropdown--group" ref={(node) => { groupDropdownRefs.current[surface] = node; }}>
-                                <div
-                                    className={`group-dropdown-toggle ${showGroupDropdown ? 'open' : ''}`}
-                                    role={showGroupDropdown ? undefined : 'button'}
-                                    aria-label={showGroupDropdown ? undefined : 'Select group'}
-                                    tabIndex={showGroupDropdown ? undefined : (groupsLoading ? -1 : 0)}
-                                    onClick={() => {
-                                        if (showGroupDropdown) return;
-                                        if (groupsLoading) return;
-                                        applyExclusiveDropdownState('group', showGroupDropdown);
-                                    }}
-                                    onKeyDown={(event) => {
-                                        if (showGroupDropdown) return;
-                                        if (groupsLoading) return;
-                                        if (event.key === 'Enter' || event.key === ' ') {
-                                            event.preventDefault();
-                                            applyExclusiveDropdownState('group', showGroupDropdown);
-                                        }
-                                    }}
-                                    aria-disabled={groupsLoading}
-                                    data-onboarding-target="group"
-                                    data-onboarding-surface={surface}
-                                >
-                                    {showGroupDropdown ? (
-                                        <input
-                                            type="text"
-                                            className="dropdown-toggle-filter-input"
-                                            value={groupDropdownQuery}
-                                            onChange={(event) => setGroupDropdownQuery(event.target.value)}
-                                            onClick={(event) => event.stopPropagation()}
-                                            onKeyDown={(event) => {
-                                                event.stopPropagation();
-                                                if (event.key === 'Escape') {
-                                                    event.preventDefault();
-                                                    setShowGroupDropdown(false);
-                                                }
-                                            }}
-                                            placeholder={activeGroup?.name || 'Group'}
-                                            aria-label="Filter groups"
-                                            autoFocus={surface === activeControlSurface}
-                                        />
-                                    ) : (
-                                        <span>{activeGroup?.name || (groupsLoading ? 'Loading...' : 'Group')}</span>
-                                    )}
-                                    <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
-                                        <path d="M6 9L1 4h10z"/>
-                                    </svg>
-                                </div>
-                                {showGroupDropdown && surface === activeControlSurface && (
-                                    <div className="group-dropdown-panel">
-                                        {groupsLoading ? (
-                                            <div className="group-dropdown-option">Loading groups...</div>
-                                        ) : (visibleControlGroups || []).length === 0 ? (
-                                            <div className="group-dropdown-option">No groups yet</div>
-                                        ) : filteredControlGroups.length === 0 ? (
-                                            <div className="dropdown-filter-empty" role="status">No matching groups</div>
-                                        ) : (
-                                            filteredControlGroups.map(group => (
-                                                <div
-                                                    key={group.id}
-                                                    className="group-dropdown-option"
-                                                    onClick={() => {
-                                                        trackFilterChanged('group', { group_count_bucket: bucketCount(group?.teamIds?.length || 0), scope_type: currentDashboardView() });
-                                                        setActiveGroupId(group.id);
-                                                        setShowGroupDropdown(false);
-                                                    }}
-                                                >
-                                                    <span>{group.name}</span>
-                                                    <div className="group-option-tags">
-                                                        {(groupsConfig.source === 'workspace_db'
-                                                            ? groupPreferences.activeGroupId === group.id
-                                                            : groupsConfig.defaultGroupId === group.id) && (
-                                                            <span
-                                                                className="group-option-default"
-                                                                title={groupsConfig.source === 'workspace_db' ? 'My favorite group' : 'Default group'}
-                                                            >★</span>
-                                                        )}
-                                                        <span className="group-option-meta">
-                                                            {group.teamIds?.length || 0} teams
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                            ))
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-                        </ControlField>
-                    </div>
-                );
-            };
+            const renderGroupControl = (surface) => (
+                <GroupControl
+                    surface={surface}
+                    showGroupControl={showGroupControl}
+                    groupDropdownRefs={groupDropdownRefs}
+                    showGroupDropdown={showGroupDropdown}
+                    groupsLoading={groupsLoading}
+                    applyExclusiveDropdownState={applyExclusiveDropdownState}
+                    groupDropdownQuery={groupDropdownQuery}
+                    setGroupDropdownQuery={setGroupDropdownQuery}
+                    setShowGroupDropdown={setShowGroupDropdown}
+                    activeGroup={activeGroup}
+                    activeControlSurface={activeControlSurface}
+                    visibleControlGroups={visibleControlGroups}
+                    filteredControlGroups={filteredControlGroups}
+                    trackFilterChanged={trackFilterChanged}
+                    currentDashboardView={currentDashboardView}
+                    setActiveGroupId={setActiveGroupId}
+                    groupsConfig={groupsConfig}
+                    groupPreferences={groupPreferences}
+                />
+            );
 
             const renderTeamControl = (surface) => (
-                <ControlField label="Teams">
-                    <div className="team-dropdown header-filter-dropdown header-filter-dropdown--team" ref={(node) => { teamDropdownRefs.current[surface] = node; }}>
-                        <div
-                            className={`team-dropdown-toggle ${showTeamDropdown ? 'open' : ''} ${!isAllTeamsSelected ? 'active-filter applied-filter' : ''}`}
-                            role={showTeamDropdown ? undefined : 'button'}
-                            aria-label={showTeamDropdown ? undefined : 'Filter teams'}
-                            tabIndex={showTeamDropdown ? undefined : (tasks.length === 0 && loading ? -1 : 0)}
-                            onClick={() => {
-                                if (showTeamDropdown) return;
-                                if (tasks.length === 0 && loading) return;
-                                applyExclusiveDropdownState('team', showTeamDropdown);
-                            }}
-                            onKeyDown={(event) => {
-                                if (showTeamDropdown) return;
-                                if (tasks.length === 0 && loading) return;
-                                if (event.key === 'Enter' || event.key === ' ') {
-                                    event.preventDefault();
-                                    applyExclusiveDropdownState('team', showTeamDropdown);
-                                }
-                            }}
-                            aria-disabled={tasks.length === 0 && loading}
-                            data-onboarding-target="teams"
-                            data-onboarding-surface={surface}
-                        >
-                            {showTeamDropdown ? (
-                                <input
-                                    type="text"
-                                    className="dropdown-toggle-filter-input"
-                                    value={teamDropdownQuery}
-                                    onChange={(event) => setTeamDropdownQuery(event.target.value)}
-                                    onClick={(event) => event.stopPropagation()}
-                                    onKeyDown={(event) => {
-                                        event.stopPropagation();
-                                        if (event.key === 'Escape') {
-                                            event.preventDefault();
-                                            setShowTeamDropdown(false);
-                                        }
-                                    }}
-                                    placeholder={selectedTeamsLabel}
-                                    aria-label="Filter teams"
-                                    autoFocus={surface === activeControlSurface}
-                                />
-                            ) : (
-                                <span style={{flex: 1, display: 'grid', textAlign: 'left', minWidth: 0}}>
-                                    <span className="team-dropdown-selection-label" style={{gridArea: '1/1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>{selectedTeamsLabel}</span>
-                                    <span className="team-dropdown-width-label" style={{gridArea: '1/1', visibility: 'hidden', pointerEvents: 'none', whiteSpace: 'nowrap'}} aria-hidden="true">{longestTeamOptionLabel}</span>
-                                </span>
-                            )}
-                            <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
-                                <path d="M6 9L1 4h10z"/>
-                            </svg>
-                        </div>
-                        {showTeamDropdown && surface === activeControlSurface && (
-                            <div className="team-dropdown-panel">
-                                {filteredTeamOptions.length === 0 && teamDropdownQuery.trim() ? (
-                                    <div className="dropdown-filter-empty" role="status">No matching teams</div>
-                                ) : filteredTeamOptions.map(team => (
-                                    <label key={team.id} className="team-dropdown-option">
-                                        <input
-                                            type="checkbox"
-                                            checked={team.id === 'all' ? isAllTeamsSelected : selectedTeamSet.has(team.id)}
-                                            onChange={() => toggleTeamSelection(team.id)}
-                                        />
-                                        <span>{team.name}</span>
-                                    </label>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                </ControlField>
+                <TeamControl
+                    surface={surface}
+                    teamDropdownRefs={teamDropdownRefs}
+                    showTeamDropdown={showTeamDropdown}
+                    isAllTeamsSelected={isAllTeamsSelected}
+                    tasks={tasks}
+                    loading={loading}
+                    applyExclusiveDropdownState={applyExclusiveDropdownState}
+                    teamDropdownQuery={teamDropdownQuery}
+                    setTeamDropdownQuery={setTeamDropdownQuery}
+                    setShowTeamDropdown={setShowTeamDropdown}
+                    selectedTeamsLabel={selectedTeamsLabel}
+                    activeControlSurface={activeControlSurface}
+                    longestTeamOptionLabel={longestTeamOptionLabel}
+                    filteredTeamOptions={filteredTeamOptions}
+                    selectedTeamSet={selectedTeamSet}
+                    toggleTeamSelection={toggleTeamSelection}
+                />
             );
 
             const shouldRenderIssueDependencies = (selectedView === 'eng' || selectedView === 'epm') && showDependencies;
@@ -6177,331 +5886,9 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 });
             };
 
-            const renderEpicBlock = (epicGroup) => {
-                        const epicInfo = epicGroup.epic;
-                        const epicTitle = epicInfo?.summary || epicGroup.parentSummary ||
-                            (epicGroup.key === 'NO_EPIC' ? 'No Epic Linked' : epicGroup.key);
-                        const epicTotalSp = epicGroup.storyPoints || 0;
-                        const epicStatus = typeof epicInfo?.status === 'string'
-                            ? epicInfo.status
-                            : epicInfo?.status?.name || '';
-                        const epicStatusClassName = epicStatus
-                            ? getIssueStatusClassName(epicStatus, 'epic-status-pill')
-                            : '';
-                        const effectivePriority = getEpicEffectivePriority(epicGroup);
-                        // The header icon shows the derived (most-urgent child) priority, but the
-                        // priority menu edits the Epic's OWN priority field; normalize it to a name
-                        // the same way epicStatus is handled above.
-                        const epicOwnPriority = typeof epicInfo?.priority === 'string'
-                            ? epicInfo.priority
-                            : epicInfo?.priority?.name || '';
-                        const projectTrackValue = epicInfo?.projectTrack || '';
-                        const projectTrackEmoji = getProjectTrackEmoji(projectTrackValue);
-                        const epicInteractionActive = statusTransitionActiveKey === epicGroup.key
-                            || priorityTransitionActiveKey === epicGroup.key
-                            || projectTrackTransitionActiveKey === epicGroup.key
-                            || issueFieldEdits.activeEditor?.issueKey === epicGroup.key;
-                        const renderEpicPersonEditor = (field, label, value) => {
-                            const editableEpic = issueFieldEditsEnabled && epicGroup.key !== 'NO_EPIC' && Boolean(epicInfo), active = editableEpic && issueFieldEdits.activeEditor?.issueKey === epicGroup.key && issueFieldEdits.activeEditor.field === field;
-                            const displayName = value?.displayName || (field === 'deliveryOwner' ? 'Not set' : 'Unassigned');
-                            if (!editableEpic) {
-                                return (
-                                    <EpicHeaderValueReadout value={displayName} suppressed={epicInteractionActive}>
-                                        {({ discoveryProps }) => (
-                                            <span {...discoveryProps} className="epic-full-value-trigger epic-assignee-value">
-                                                {displayName}
-                                            </span>
-                                        )}
-                                    </EpicHeaderValueReadout>
-                                );
-                            }
-                            return (
-                                <EpicHeaderValueReadout
-                                    value={displayName}
-                                    suppressed={epicInteractionActive}
-                                    measureSelector="[data-issue-person-editor-trigger]"
-                                    nativeSelector="[data-issue-person-editor-trigger]"
-                                >
-                                    {({ triggerRef, pointerProps, focusProps }) => (
-                                        <span ref={triggerRef} {...pointerProps} {...focusProps} className="epic-full-value-trigger epic-assignee-value">
-                                            <IssuePersonEditor issueKey={epicGroup.key} field={field} fieldLabel={label} currentValue={value} isOpen={active} metadata={active ? issueFieldEdits.metadata : null}
-                                                suggestions={active ? issueFieldEdits.suggestions : []} query={active ? issueFieldEdits.searchQuery : ''} loading={active && issueFieldEdits.status === 'loading'} searching={active && issueFieldEdits.searching}
-                                                submitting={active && ['queued', 'saving'].includes(issueFieldEdits.status)} pending={issueFieldEdits.pendingIssueKeys.has(epicGroup.key)} error={active ? issueFieldEdits.errorMessage : ''} statusMessage={active && issueFieldEdits.status === 'confirmed' ? 'Saved in Jira.' : active && issueFieldEdits.outcome?.status === 'observed' ? 'Current value loaded from Jira.' : ''} recoveryMode={active && issueFieldEdits.status === 'conflict' ? 'reload' : active && issueFieldEdits.status === 'unknown' ? 'check_jira' : ''} configurationChanged={active && issueFieldEdits.outcome?.configurationChanged === true} jiraUrl={jiraUrl}
-                                                onOpen={() => issueFieldEdits.openEditor({ issueKey: epicGroup.key, field, issueKind: 'epic', sourceSurface: statusTransitionSourceSurface })} onClose={issueFieldEdits.closeEditor} onSearch={issueFieldEdits.search} onSelect={issueFieldEdits.submit} onReload={issueFieldEdits.reload} onCheckJira={issueFieldEdits.checkJira} />
-                                        </span>
-                                    )}
-                                </EpicHeaderValueReadout>
-                            );
-                        };
-                        return (
-                            <div
-                                key={epicGroup.key}
-                                className={`epic-block ${epicGroup.hasNoChildStories ? 'epic-block-no-child-stories' : ''} ${excludedEpicSet.has(normalizeEpicKey(epicGroup.key)) ? 'epic-excluded' : ''} ${stickyEpicFocusKey === epicGroup.key ? 'epic-block-sticky-focus' : ''}`}
-                                data-onboarding-target="hierarchy-epic"
-                                data-epic-key={epicGroup.key}
-                                ref={(node) => {
-                                    if (!node) {
-                                        epicRefMap.current.delete(epicGroup.key);
-                                        return;
-                                    }
-                                    epicRefMap.current.set(epicGroup.key, node);
-                                }}
-                            >
-	                                <div className="epic-header">
-                                        <div className="epic-title">
-	                                        <div className="epic-title-row">
-                                            <span className="epic-icon" aria-hidden="true" title="EPIC">
-                                                <svg viewBox="0 0 16 16" fill="none">
-                                                    <path
-                                                        clipRule="evenodd"
-                                                        d="m10.271.050656c.2887.111871.479.38969.479.699344v4.63515l3.1471.62941c.2652.05303.4812.24469.5655.50161s.0238.53933-.1584.73914l-7.74997 8.49999c-.20863.2288-.53644.3059-.82517.194-.28874-.1118-.47905-.3896-.47905-.6993v-4.6351l-3.14708-.62947c-.26515-.05303-.48123-.24468-.56553-.5016-.08431-.25692-.02379-.53933.1584-.73915l7.75-8.499996c.20863-.2288201.53643-.305899.8252-.194028zm-6.57276 8.724134 3.05177.61036v3.92915l5.55179-6.08909-3.05179-.61036v-3.9291z"
-                                                        fill="#bf63f3"
-                                                        fillRule="evenodd"
-                                                    />
-                                                </svg>
-                                            </span>
-                                            {effectivePriority.name && (
-                                                (priorityTransitionEnabled && epicGroup.key !== 'NO_EPIC') ? (
-                                                    <PriorityTransitionMenu
-                                                        issue={{ key: epicGroup.key, priority: epicOwnPriority, summary: epicTitle }}
-                                                        fallbackIssueType="Epic"
-                                                        priorityLabel={effectivePriority.name}
-                                                        currentPriorityLabel={epicOwnPriority}
-                                                        renderPriorityIcon={renderPriorityIcon}
-                                                        isOpen={priorityTransitionActiveKey === epicGroup.key}
-                                                        options={priorityOptions}
-                                                        optionsLoading={priorityOptionsLoading}
-                                                        submitting={prioritySubmitting || pendingPriorityIssueKeys.has(epicGroup.key)}
-                                                        error={priorityError}
-                                                        result={priorityResult}
-                                                        onOpen={openPriorityControl}
-                                                        onClose={closePriorityControl}
-                                                        onSubmit={submitPriorityChange}
-                                                        previewOnly={onboardingPreviewSession}
-                                                        onPreviewLifecycleChange={handleOnboardingPreviewLifecycleChange}
-                                                    />
-                                                ) : (
-                                                    renderPriorityIcon(effectivePriority.name, epicGroup.key)
-                                                )
-                                            )}
-                                            {epicGroup.key !== 'NO_EPIC' && (
-                                                projectTrackTransitionEnabled ? (
-                                                    <ProjectTrackTransitionMenu
-                                                        epicKey={epicGroup.key}
-                                                        currentTrack={projectTrackValue}
-                                                        isOpen={projectTrackTransitionActiveKey === epicGroup.key}
-                                                        options={projectTrackOptions}
-                                                        optionsLoading={projectTrackOptionsLoading}
-                                                        submitting={projectTrackSubmitting || pendingProjectTrackIssueKeys.has(epicGroup.key)}
-                                                        error={projectTrackError}
-                                                        result={projectTrackResult}
-                                                        onOpen={openProjectTrackControl}
-                                                        onClose={closeProjectTrackControl}
-                                                        onSubmit={submitProjectTrackChange}
-                                                        previewOnly={onboardingPreviewSession}
-                                                        onPreviewLifecycleChange={handleOnboardingPreviewLifecycleChange}
-                                                    />
-                                                ) : (
-                                                    <span
-                                                        className="epic-track-indicator"
-                                                        title={`Project Track: ${getProjectTrackLabel(projectTrackValue)}`}
-                                                        aria-label={`Project Track: ${getProjectTrackLabel(projectTrackValue)}`}
-                                                    >
-                                                        {projectTrackEmoji}
-                                                    </span>
-                                                )
-                                            )}
-                                            {epicGroup.key !== 'NO_EPIC' ? (
-                                                <EpicHeaderValueReadout
-                                                    value={epicTitle}
-                                                    suppressed={epicInteractionActive}
-                                                    measureSelector=".epic-name"
-                                                >
-                                                    {({ triggerRef, describedBy, pointerProps, focusProps }) => (
-                                                        <a
-                                                            ref={triggerRef}
-                                                            className="epic-link epic-full-value-trigger"
-                                                            href={jiraUrl ? `${jiraUrl}/browse/${epicGroup.key}` : '#'}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            aria-label={epicTitle}
-                                                            aria-describedby={describedBy}
-                                                            {...pointerProps}
-                                                            {...focusProps}
-                                                        >
-                                                            <span className="epic-name">{epicTitle}</span>
-                                                            <span className="epic-key">{epicGroup.key}</span>
-                                                        </a>
-                                                    )}
-                                                </EpicHeaderValueReadout>
-                                            ) : (
-                                                <>
-                                                    <EpicHeaderValueReadout value={epicTitle} suppressed={epicInteractionActive}>
-                                                        {({ discoveryProps }) => (
-                                                            <span {...discoveryProps} className="epic-name epic-full-value-trigger">{epicTitle}</span>
-                                                        )}
-                                                    </EpicHeaderValueReadout>
-                                                    <span className="epic-key">Unassigned</span>
-                                                </>
-                                            )}
-                                            {(showStats || showPlanning) && (
-                                                <button
-                                                    className={`epic-stat-toggle ${excludedEpicSet.has(normalizeEpicKey(epicGroup.key)) ? '' : 'active'}`}
-                                                    onClick={() => toggleSharedGroupExcludedCapacityEpic(epicGroup.key)}
-                                                    disabled={!canToggleSharedGroupExcludedCapacity}
-                                                    title={!canEditSharedConfiguration
-                                                        ? 'You do not have permission to edit shared group capacity settings'
-                                                        : (showGroupManage && isGroupDraftDirty)
-                                                            ? 'Save or discard open Department settings changes before changing excluded capacity'
-                                                            : 'Include/exclude this epic in shared group capacity and reporting'}
-                                                >
-                                                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                                        <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" />
-                                                        <path d="M12 6v6l4 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                                                    </svg>
-                                                    {excludedEpicSet.has(normalizeEpicKey(epicGroup.key)) ? 'Excluded' : 'Included'}
-                                                </button>
-                                            )}
-                                        </div>
-	                                    </div>
-	                                    <div className="epic-meta">
-                                            {epicStatus && (
-                                                <EpicHeaderValueReadout
-                                                    value={epicStatus}
-                                                    suppressed={epicInteractionActive}
-                                                    measureSelector=".status-pill"
-                                                    nativeSelector={statusTransitionEnabled && epicGroup.key !== 'NO_EPIC' ? '.status-pill' : ''}
-                                                >
-                                                    {statusTransitionEnabled && epicGroup.key !== 'NO_EPIC' ? (
-                                                        ({ triggerRef, pointerProps, focusProps }) => (
-                                                            <span ref={triggerRef} {...pointerProps} {...focusProps} className="epic-full-value-trigger epic-status-readout-target">
-                                                                <StatusTransitionMenu
-                                                                    issue={{ key: epicGroup.key, status: epicStatus, summary: epicTitle }}
-                                                                    fallbackIssueType="Epic"
-                                                                    statusLabel={epicStatus}
-                                                                    statusClassName={epicStatusClassName}
-                                                                    sourceSurface={statusTransitionSourceSurface}
-                                                                    isOpen={statusTransitionActiveKey === epicGroup.key}
-                                                                    options={transitionOptions}
-                                                                    optionsLoading={transitionOptionsLoading}
-                                                                    submitting={statusTransitionSubmitting || pendingStatusIssueKeys.has(epicGroup.key)}
-                                                                    error={transitionError}
-                                                                    errorCode={transitionErrorCode}
-                                                                    result={transitionResult}
-                                                                    onOpen={openSingleIssueStatusControl} onPrefetch={prefetchSingleIssueStatusOptions}
-                                                                    onClose={closeSingleIssueStatusControl}
-                                                                    onSubmit={(targetStatus) => handleSubmitStatusTransition(targetStatus, { key: epicGroup.key }, { singleIssue: true })}
-                                                                    previewOnly={onboardingPreviewSession}
-                                                                    onPreviewLifecycleChange={handleOnboardingPreviewLifecycleChange}
-                                                                />
-                                                            </span>
-                                                        )
-                                                    ) : (
-                                                        ({ triggerRef, truncated, describedBy, pointerProps, focusProps }) => (
-                                                            <span
-                                                                ref={triggerRef}
-                                                                {...pointerProps}
-                                                                {...focusProps}
-                                                                className="epic-full-value-trigger epic-status-readout-target"
-                                                                tabIndex={truncated ? 0 : undefined}
-                                                                aria-label={epicStatus}
-                                                                aria-describedby={describedBy}
-                                                            >
-                                                                <StatusPill
-                                                                    className={`${epicStatusClassName} epic-status-value`}
-                                                                    label={epicStatus}
-                                                                    status={epicStatus}
-                                                                />
-                                                            </span>
-                                                        )
-                                                    )}
-                                                </EpicHeaderValueReadout>
-                                            )}
-	                                        <span className="epic-story-points">SP: {epicTotalSp.toFixed(1)}</span>
-	                                        {(epicInfo?.assignee?.displayName || (issueFieldEditsEnabled && epicGroup.key !== 'NO_EPIC' && epicInfo)) && (
-	                                            <span className="task-assignee epic-assignee">
-	                                                <span className="task-assignee-icon" aria-hidden="true">
-	                                                    <svg viewBox="0 0 24 24" fill="none">
-	                                                        <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4z" stroke="currentColor" strokeWidth="2" />
-	                                                        <path d="M4 20c0-3.31 3.58-6 8-6s8 2.69 8 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-	                                                    </svg>
-	                                                </span>
-	                                                {renderEpicPersonEditor('assignee', 'Assignee', epicInfo?.assignee)}
-	                                            </span>
-	                                        )}
-	                                    </div>
-                                    {isEpicRefreshMode && epicGroup.key !== 'NO_EPIC' && (
-                                        <EpicRefreshButton epicKey={epicGroup.key} epicName={epicTitle} state={epicRefresh.epicStates[epicGroup.key] || 'idle'} onRefresh={epicRefresh.refreshEpic} />
-                                    )}
-	                                </div>
-                                {(epicGroup.rows || epicGroup.tasks.map(task => ({ kind: 'story', id: task.key, task }))).map(row => {
-                                    if (row.kind === 'story_requirement') {
-                                        return (
-                                            <StoryRequirementCard
-                                                key={row.id}
-                                                requirement={row}
-                                                jiraUrl={jiraUrl}
-                                                sourceSurface={showPlanning ? 'planning' : 'catch_up'}
-                                            />
-                                        );
-                                    }
-                                    const task = row.task;
-                                    const teamInfo = getTeamInfo(task);
-                                    const teamLabel = getIssueTeamLabel(teamInfo);
-                                    const statusClassName = getIssueStatusClassName(task.fields.status?.name);
-                                    return (
-                                        <IssueCard
-                                            key={task.key}
-                                            task={task}
-                                            jiraUrl={jiraUrl}
-                                            teamInfo={teamInfo}
-                                            teamLabel={teamLabel}
-                                            statusClassName={statusClassName}
-                                            renderPriorityIcon={renderPriorityIcon}
-                                            showPlanning={showPlanning}
-                                            isSelected={!!selectedTasks[task.key]}
-                                            onToggleSelection={toggleTaskSelection}
-                                            onRemove={removeTask}
-                                            isLeaving={epicRefresh.leavingKeys.has(task.key)}
-                                            shouldRenderIssueDependencies={shouldRenderIssueDependencies}
-                                            dependencyContext={issueDependencyContext}
-                                            subtaskState={storySubtasksByKey[task.key] || null}
-                                            onToggleSubtasks={toggleStorySubtasks}
-                                            onRetrySubtasks={retryStorySubtasks}
-                                            statusTransitionEnabled={statusTransitionEnabled}
-                                            statusTransitionSourceSurface={statusTransitionSourceSurface}
-                                            statusTransitionActiveKey={statusTransitionActiveKey}
-                                            statusTransitionOptions={transitionOptions}
-                                            statusTransitionOptionsLoading={transitionOptionsLoading}
-                                            statusTransitionSubmitting={statusTransitionSubmitting}
-                                            statusTransitionError={transitionError}
-                                            statusTransitionErrorCode={transitionErrorCode}
-                                            statusTransitionResult={transitionResult}
-                                            statusTransitionTargetsCount={statusTransitionTargetsCount}
-                                            statusTransitionPendingIssueKeys={pendingStatusIssueKeys}
-                                            onOpenStatusTransition={openSingleIssueStatusControl} onPrefetchStatusTransition={prefetchSingleIssueStatusOptions}
-                                            onCloseStatusTransition={closeSingleIssueStatusControl}
-                                            onSubmitStatusTransition={handleSubmitStatusTransition}
-                                            priorityTransitionEnabled={priorityTransitionEnabled}
-                                            priorityTransitionActiveKey={priorityTransitionActiveKey}
-                                            priorityTransitionOptions={priorityOptions}
-                                            priorityTransitionOptionsLoading={priorityOptionsLoading}
-                                            priorityTransitionSubmitting={prioritySubmitting}
-                                            priorityTransitionError={priorityError}
-                                            priorityTransitionResult={priorityResult}
-                                            priorityTransitionPendingIssueKeys={pendingPriorityIssueKeys}
-                                            onOpenPriorityTransition={openPriorityControl}
-                                            onClosePriorityTransition={closePriorityControl}
-                                            onSubmitPriorityTransition={submitPriorityChange}
-                                            onboardingPreviewSession={onboardingPreviewSession}
-                                            onPreviewLifecycleChange={handleOnboardingPreviewLifecycleChange}
-                                            issueFieldEdits={issueFieldEditsEnabled ? issueFieldEdits : null}
-                                        />
-                                    );
-                                })}
-                            </div>
-                        );
-            };
+            const renderEpicBlock = (epicGroup) => (
+                <EpicBlock key={epicGroup.key} epicGroup={epicGroup} {...epicBlockProps} />
+            );
 
             const settingsHeaderAction = onboardingAvailable
                 && groupPreferences.onboardingRequired === false
@@ -6769,7 +6156,75 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                             adHocProductSP={selectedAdHocProductSP}
                         />}
                     />
-            ); return (
+            );
+            const epicBlockProps = {
+                statusTransitionActiveKey,
+                priorityTransitionActiveKey,
+                projectTrackTransitionActiveKey,
+                issueFieldEdits,
+                issueFieldEditsEnabled,
+                jiraUrl,
+                statusTransitionSourceSurface,
+                excludedEpicSet,
+                normalizeEpicKey,
+                stickyEpicFocusKey,
+                epicRefMap,
+                priorityTransitionEnabled,
+                renderPriorityIcon,
+                priorityOptions,
+                priorityOptionsLoading,
+                prioritySubmitting,
+                pendingPriorityIssueKeys,
+                priorityError,
+                priorityResult,
+                openPriorityControl,
+                closePriorityControl,
+                submitPriorityChange,
+                onboardingPreviewSession,
+                handleOnboardingPreviewLifecycleChange,
+                projectTrackTransitionEnabled,
+                projectTrackOptions,
+                projectTrackOptionsLoading,
+                projectTrackSubmitting,
+                pendingProjectTrackIssueKeys,
+                projectTrackError,
+                projectTrackResult,
+                openProjectTrackControl,
+                closeProjectTrackControl,
+                submitProjectTrackChange,
+                showStats,
+                showPlanning,
+                toggleSharedGroupExcludedCapacityEpic,
+                canToggleSharedGroupExcludedCapacity,
+                canEditSharedConfiguration,
+                showGroupManage,
+                isGroupDraftDirty,
+                statusTransitionEnabled,
+                transitionOptions,
+                transitionOptionsLoading,
+                statusTransitionSubmitting,
+                pendingStatusIssueKeys,
+                transitionError,
+                transitionErrorCode,
+                transitionResult,
+                openSingleIssueStatusControl,
+                prefetchSingleIssueStatusOptions,
+                closeSingleIssueStatusControl,
+                handleSubmitStatusTransition,
+                isEpicRefreshMode,
+                epicRefresh,
+                getTeamInfo,
+                selectedTasks,
+                toggleTaskSelection,
+                removeTask,
+                shouldRenderIssueDependencies,
+                issueDependencyContext,
+                storySubtasksByKey,
+                toggleStorySubtasks,
+                retryStorySubtasks,
+                statusTransitionTargetsCount
+            };
+            return (
                 <StatusColourProvider columns={activeGroup?.board?.columns} enabled={selectedView === 'eng' && activeGroup?.board?.inheritColumnColours === true}>
                 <div className="container" style={containerStyle}>
                     <PlanningReviewScopeDialog review={planningReview} />

@@ -497,15 +497,16 @@ test('the group-board props are derived inside the Departments container from sa
 });
 
 test('EPM settings source uses shared basic UI primitives for representative rows and states', () => {
+    const engControlsSource = readOwnerSource(['frontend/src/eng/EngControls.jsx'], { anchor: 'export function SearchControl(' });
     assert.ok(fs.existsSync(controlFieldPath), 'Expected shared ControlField primitive');
     assert.ok(fs.existsSync(iconButtonPath), 'Expected shared IconButton primitive');
     assert.ok(fs.existsSync(loadingRowsPath), 'Expected shared LoadingRows primitive');
     assert.ok(fs.existsSync(emptyStatePath), 'Expected shared EmptyState primitive');
-    assert.ok(dashboardSource.includes("import ControlField from './ui/ControlField.jsx';"), 'Expected dashboard to import ControlField');
+    assert.ok(engControlsSource.includes("import ControlField from '../ui/ControlField.jsx';"), 'Expected ENG controls to import ControlField');
     assert.ok(dashboardSource.includes("import IconButton from './ui/IconButton.jsx';"), 'Expected dashboard to import IconButton');
     assert.ok(epmSettingsTabSource.includes("import LoadingRows from '../ui/LoadingRows.jsx';"), 'Expected the EPM tab container to import LoadingRows');
     assert.ok(dashboardSource.includes("import EmptyState from './ui/EmptyState.jsx';"), 'Expected dashboard to import EmptyState');
-    assert.ok(dashboardSource.includes('<ControlField label="Search"'), 'Expected header search control to use ControlField');
+    assert.ok(engControlsSource.includes('<ControlField label="Search"'), 'Expected header search control to use ControlField');
     assert.ok(epmControlsSource.includes('<ControlField label="Project"'), 'Expected EPM project picker control to use ControlField');
     assert.ok(epmSettingsUiSource.includes('<IconButton') && epmSettingsUiSource.includes('className="epm-label-change-shortcut"'), 'Expected selected-label change action to use IconButton');
     assert.ok(epmSettingsUiSource.includes('<IconButton') && epmSettingsUiSource.includes('className="epm-project-home-shortcut"'), 'Expected Home project shortcut to use IconButton');

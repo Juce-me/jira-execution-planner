@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { readOwnerSource } = require('./frontend_source_helpers');
 
 test('dashboard epic headers use the purple 16x16 epic svg icon', () => {
     const dashboardSource = fs.readFileSync(
@@ -12,7 +13,8 @@ test('dashboard epic headers use the purple 16x16 epic svg icon', () => {
         path.join(__dirname, '..', 'frontend', 'src', 'epm', 'EpmRollupPanel.jsx'),
         'utf8'
     );
-    const source = `${dashboardSource}\n${epmRollupSource}`;
+    const epicBlockSource = readOwnerSource(['frontend/src/eng/EpicBlock.jsx'], { anchor: 'export function EpicBlock(' });
+    const source = `${dashboardSource}\n${epicBlockSource}\n${epmRollupSource}`;
 
     const iconViewBoxMatches = source.match(/<svg viewBox="0 0 16 16" fill="none">/g) || [];
     const iconFillMatches = source.match(/fill="#bf63f3"/g) || [];

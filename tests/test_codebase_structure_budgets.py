@@ -228,7 +228,7 @@ def validate_owner_budgets(manifest, repo_root=REPO_ROOT):
     if not isinstance(modules, list):
         return failures + ["modules must be an array"]
     ids, paths, physical_paths = set(), set(), set()
-    totals = {"scenario": 0, "settings": 0, "uniqueOwners": 0}
+    totals = {"scenario": 0, "settings": 0, "stats": 0, "eng": 0, "uniqueOwners": 0}
     for module in modules:
         if not isinstance(module, dict) or not {"id", "path", "features", "exports", "lineCount", "lineCeiling", "interfaces"} <= module.keys():
             failures.append("module missing required schema fields")
@@ -247,6 +247,13 @@ def validate_owner_budgets(manifest, repo_root=REPO_ROOT):
             failures.append(f"invalid repository-relative path: {name}")
             continue
         file = repo_root / relative
+        source_directory = (repo_root / "frontend/src").resolve()
+        if (file.suffix not in {".js", ".jsx", ".mjs"}
+                or not file.resolve().is_relative_to(source_directory)
+                or any(part in {"tests", "__tests__", "dist"} for part in relative.parts)
+                or ".test." in file.name or ".spec." in file.name):
+            failures.append(f"invalid owner source path: {name}")
+            continue
         if file.resolve() in physical_paths:
             failures.append(f"duplicate physical owner file: {name}")
             continue
@@ -254,7 +261,7 @@ def validate_owner_budgets(manifest, repo_root=REPO_ROOT):
         if not file.is_file():
             failures.append(f"missing owner file: {name}")
             continue
-        if not isinstance(module["features"], list) or not module["features"] or set(module["features"]) - {"scenario", "settings"}:
+        if not isinstance(module["features"], list) or not module["features"] or set(module["features"]) - {"scenario", "settings", "stats", "eng"}:
             failures.append(f"invalid feature membership: {name}")
             continue
         actual = _line_count(file)

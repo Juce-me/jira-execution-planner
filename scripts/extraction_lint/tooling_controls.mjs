@@ -5,8 +5,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import crypto from 'node:crypto';
+import { createRequire } from 'node:module';
 
 const toolDir = path.resolve(process.env.EXTRACTION_TOOL_DIR ?? path.dirname(fileURLToPath(import.meta.url)));
+const espree = createRequire(path.join(toolDir, 'package.json'))('espree');
 const root = path.resolve(process.env.EXTRACTION_CONTROL_ROOT ?? 'tmp/negative-controls/tooling');
 fs.rmSync(root, { recursive: true, force: true });
 fs.mkdirSync(root, { recursive: true });
@@ -52,6 +55,12 @@ const planner = write('conservation/scenario/usePlanner.js', fs.readFileSync(bef
 const conserveArgs = ['--base-file', beforeDashboard, '--dashboard', afterDashboard, '--base-hook', `${planner}=${beforePlanner}`, planner];
 const conserve = (name, status, patterns, extra = []) => run(name, 'check_move_conservation.mjs', [...conserveArgs, ...extra], status, patterns);
 conserve('existing-hook-clean', 0, [/removed and not found in a hook: 0; new statements: 0/, /identical \(2 top-level effects\)/]);
+const originalPlanner = fs.readFileSync(beforePlanner, 'utf8');
+fs.writeFileSync(beforePlanner, originalPlanner + 'export function helper() { return 1; }\n');
+fs.writeFileSync(planner, fs.readFileSync(beforePlanner, 'utf8'));
+conserve('existing-hook-exported-helper-compatible', 0, [/removed and not found in a hook: 0; new statements: 0/, /effect order: identical/]);
+fs.writeFileSync(beforePlanner, originalPlanner);
+
 fs.writeFileSync(planner, 'export function usePlanner() { useEffect(() => first(), []); useEffect(() => second(), []); return {}; }\n');
 conserve('existing-hook-dropped-statement-reported', 0, [/removed and not found in a hook: 1; new statements: 0/, /retain\(\);/]);
 fs.writeFileSync(planner, 'export function usePlanner() { retain(); retain(); useEffect(() => first(), []); useEffect(() => second(), []); return {}; }\n');
@@ -86,7 +95,7 @@ const budgetManifest = () => ({
         { id: 'owner', path: `${sourceRoot}/scenario/useOwner.js`, features: ['scenario'], exports: ['useOwner'], lineCount: 3, lineCeiling: 3, interfaces: [] },
         { id: 'helper', path: `${sourceRoot}/settings/helper.js`, features: ['scenario', 'settings'], exports: ['shared'], lineCount: 1, lineCeiling: 1, interfaces: [] },
     ],
-    aggregates: { scenario: { measured: 4, ceiling: 4 }, settings: { measured: 1, ceiling: 1 }, uniqueOwners: { measured: 4, ceiling: 4 }, appPlusOwners: { measured: 7, ceiling: 7 } },
+    aggregates: { stats: { measured: 0, ceiling: 0 }, eng: { measured: 0, ceiling: 0 }, scenario: { measured: 4, ceiling: 4 }, settings: { measured: 1, ceiling: 1 }, uniqueOwners: { measured: 4, ceiling: 4 }, appPlusOwners: { measured: 7, ceiling: 7 } },
     transfer: { incomingRanges: [], scaffoldingAllowance: 0 },
 });
 function budget(name, manifest, status, pattern) {
@@ -98,6 +107,14 @@ function budget(name, manifest, status, pattern) {
     console.log(`ok    ${name}`); passed += 1;
 }
 budget('owner-budget-clean-shared-helper-unique', budgetManifest(), 0, /owner budgets: 0 problems/);
+for (const feature of ['stats', 'eng']) {
+    const featureManifest = budgetManifest(); featureManifest.modules[0].features = [feature];
+    featureManifest.aggregates.scenario = { measured: 1, ceiling: 1 };
+    featureManifest.aggregates[feature] = { measured: 3, ceiling: 3 };
+    budget(`${feature}-feature-budget-clean`, featureManifest, 0, /owner budgets: 0 problems/);
+    delete featureManifest.aggregates[feature];
+    budget(`${feature}-missing-aggregate-fails`, featureManifest, 1, new RegExp(`missing aggregate: ${feature}`));
+}
 let manifest = budgetManifest(); manifest.modules[0].lineCeiling = 2;
 budget('oversized-owner-fails', manifest, 1, /exceeds owner ceiling/);
 manifest = budgetManifest(); manifest.modules.pop();
@@ -271,4 +288,90 @@ write('timing/useInner.js', 'export function useInner() { return { value: 1 }; }
 timing('nested-useMemo-later-hook-result-strict-scan', 'import React from \"react\"; import { useInner } from \"./useInner.js\"; export function useOuter() { const getter = () => laterResult; const earlier = React.useMemo(() => getter(), []); const laterResult = useInner(); return { earlier, laterResult }; }\n', 'laterResult');
 timing('nested-deferred-effect-later-hook-result-strict-scan', 'import React from \"react\"; import { useInner } from \"./useInner.js\"; export function useOuter() { const getter = () => laterResult; React.useEffect(() => { getter(); }, []); const laterResult = useInner(); return { laterResult }; }\n', 'laterResult');
 timing('strict-scan-fatal-diagnostic-blocks', 'export function broken( {\n', null, true);
+// Explicit pure/component owners and digest-specific relocation contracts.
+const effect = 'useEffect(() => { reset(value); }, [value]);';
+const effectAst = espree.parse(effect, { ecmaVersion: 'latest', tokens: true, range: true });
+const effectDigest = crypto.createHash('sha256').update(JSON.stringify(effectAst.tokens.map(token => [token.type, effect.slice(...token.range)]))).digest('hex');
+const pureBase = write('named/base.jsx', `function App() { const moved = 1; ${effect} useEffect(() => tail(), []); }\n`);
+const pureApp = write('named/dashboard.jsx', 'function App() { useEffect(() => tail(), []); }\n');
+const pureOwner = write('named/owners.jsx', `export function helper() { const moved = 1; } export function Panel() { ${effect} return null; }\n`);
+const namedArgs = ['--base-file', pureBase, '--dashboard', pureApp, '--created-hook', pureOwner, '--owner-function', `${pureOwner}#helper`, '--owner-function', `${pureOwner}#Panel`];
+const allowance = `${pureApp}#App=>${pureOwner}#Panel@${effectDigest}`;
+const named = (name, status, patterns, extra = ['--allow-effect-move', allowance]) => run(name, 'check_move_conservation.mjs', [...namedArgs, ...extra], status, patterns);
+named('named-pure-component-unchanged-move-clean', 0, [/removed and not found in a hook: 0; new statements: 1/, /approved effect relocation:/, /effect order: identical/]);
+run('omitted-pure-owner-fails', 'check_move_conservation.mjs', namedArgs.filter((value, index) => index !== 6 && index !== 7), 2, [/omitted exported owner function/]);
+named('missing-named-symbol-fails', 2, [/missing owner symbol/], ['--owner-function', `${pureOwner}#missing`]);
+named('duplicate-named-symbol-fails', 2, [/duplicate owner function/], ['--owner-function', `${pureOwner}#Panel`]);
+named('unapproved-component-effect-fails', 1, [/effect order: DIFFERS/], []);
+named('wrong-effect-destination-fails', 2, [/invalid effect relocation/], ['--allow-effect-move', `${pureApp}#App=>${pureOwner}#helper@${effectDigest}`]);
+named('stale-effect-allowance-fails', 2, [/invalid effect relocation/], ['--allow-effect-move', `${pureApp}#App=>${pureOwner}#Panel@${'0'.repeat(64)}`]);
+for (const [name, changed] of [['duplicate', `${effect} ${effect}`], ['callback', effect.replace('reset(value)', 'reset(other)')], ['dependencies', effect.replace('[value]', '[other]')]]) {
+    fs.writeFileSync(pureOwner, `export function helper() { const moved = 1; } export function Panel() { ${changed} return null; }\n`);
+    named(`${name}-relocated-effect-fails`, 2, [/invalid effect relocation/]);
+}
+fs.writeFileSync(pureOwner, `export function helper() { const moved = 1; } export function Panel() { ${effect} useEffect(() => third(), []); return null; }\n`);
+named('third-unapproved-effect-fails', 1, [/effect order: DIFFERS/]);
+fs.writeFileSync(pureOwner, `export function helper() { const moved = 1; } export function Panel() { ${effect} return null; }\n`);
+fs.writeFileSync(pureApp, 'function App() { useEffect(() => tail(), []); useEffect(() => head(), []); }\n');
+fs.writeFileSync(pureBase, `function App() { const moved = 1; useEffect(() => head(), []); ${effect} useEffect(() => tail(), []); }\n`);
+named('retained-effect-reordering-fails', 1, [/effect order: DIFFERS/]);
+
+const mixedBase = write('mixed/base.jsx', 'function App() { const moved = 1; }\n');
+const mixedApp = write('mixed/dashboard.jsx', 'import { useOwner } from "./owner.js"; function App() { useOwner(); }\n');
+const mixedOwner = write('mixed/owner.js', 'export function useOwner() { return {}; } export function movedHelper() { const moved = 1; }\n');
+const mixedArgs = ['--base-file', mixedBase, '--dashboard', mixedApp, '--created-hook', mixedOwner];
+run('mixed-created-hook-pure-omission-fails', 'check_move_conservation.mjs', mixedArgs, 2, [/omitted exported owner function.*movedHelper/]);
+run('mixed-created-hook-pure-explicit-clean', 'check_move_conservation.mjs', [...mixedArgs, '--owner-function', `${mixedOwner}#movedHelper`], 0, [/removed and not found in a hook: 0/, /effect order: identical/]);
+fs.writeFileSync(mixedOwner, 'export function useOwner() { return {}; } function movedHelper() { const moved = 1; } export { movedHelper };\n');
+run('mixed-export-list-pure-omission-fails', 'check_move_conservation.mjs', mixedArgs, 2, [/omitted exported owner function.*movedHelper/]);
+run('mixed-export-list-pure-explicit-clean', 'check_move_conservation.mjs', [...mixedArgs, '--owner-function', `${mixedOwner}#movedHelper`], 0, [/removed and not found in a hook: 0/, /effect order: identical/]);
+
+run('dashboard-missing-named-symbol-fails', 'check_move_conservation.mjs', ['--base-file', mixedBase, '--dashboard', mixedApp, '--owner-function', `${mixedApp}#Missing`], 2, [/missing owner symbol/]);
+const namedDashboardBase = write('named-dashboard/base.jsx', 'function helper() { const moved = 1; } function App() {}\n');
+const namedDashboard = write('named-dashboard/dashboard.jsx', 'function helper() { const moved = 2; } function App() {}\n');
+run('dashboard-named-function-accounted', 'check_move_conservation.mjs', ['--base-file', namedDashboardBase, '--dashboard', namedDashboard, '--owner-function', `${namedDashboard}#helper`], 0, [/removed and not found in a hook: 1; new statements: 1/]);
+const convergeBase = write('converge/base.jsx', `import { useOwner } from "./owner.js"; function App() { ${effect} useOwner(); }\n`);
+const convergeApp = write('converge/dashboard.jsx', 'import { useOwner } from "./owner.js"; function App() { useOwner(); }\n');
+const convergeHookBase = write('converge/base-owner.js', `export function useOwner() { ${effect} }\n`);
+const convergeHook = write('converge/owner.js', 'export function useOwner() {}\n');
+const convergePanel = write('converge/Panel.jsx', `export function Panel() { ${effect} return null; }\n`);
+run('converging-effect-allowances-fail', 'check_move_conservation.mjs', ['--base-file', convergeBase, '--dashboard', convergeApp, '--base-hook', `${convergeHook}=${convergeHookBase}`, convergeHook, '--created-hook', convergePanel, '--owner-function', `${convergePanel}#Panel`, '--allow-effect-move', `${convergeApp}#App=>${convergePanel}#Panel@${effectDigest}`, '--allow-effect-move', `${convergeHook}#useOwner=>${convergePanel}#Panel@${effectDigest}`], 2, [/effect relocation occurrence reused/]);
+
+// An explicit outside-root module is measured once and its call contracts enforced.
+const outsideRoot = path.join(root, 'outside');
+const outsideApp = write('outside/frontend/src/dashboard.jsx', 'import { useStats } from "./stats/useStats.js"; function App() { const { value } = useStats({ value: 1 }); return value; }\n');
+const outsideOwner = write('outside/frontend/src/stats/useStats.js', 'export function useStats({ value }) { return { value }; }\n');
+write('outside/frontend/src/eng/helper.js', 'export const helper = 1;\n');
+fs.mkdirSync(path.join(outsideRoot, 'frontend/src/scenario'), { recursive: true });
+const outsideManifest = path.join(outsideRoot, 'manifest.json');
+const seed = { schemaVersion: 1, baseSha: 'synthetic', checkpointId: 'synthetic', ownerRoots: ['scenario'], modules: [
+    { id: 'stats', path: 'frontend/src/stats/useStats.js', features: ['stats'], exports: ['useStats'], interfaces: [] },
+    { id: 'eng', path: 'frontend/src/eng/helper.js', features: ['eng'], exports: ['helper'], interfaces: [] },
+] };
+fs.writeFileSync(outsideManifest, JSON.stringify(seed));
+run('outside-root-inventory-generation', 'check_hook_interfaces.mjs', ['--repo-root', outsideRoot, '--manifest', outsideManifest, '--write-inventory', outsideManifest, outsideApp], 1, [/owner inventory written: 2 modules/, /unregistered owner interface/]);
+const outsideFrozen = JSON.parse(fs.readFileSync(outsideManifest, 'utf8'));
+assert.equal(outsideFrozen.modules.length, 2);
+assert.equal(outsideFrozen.aggregates.stats.measured, 1);
+assert.equal(outsideFrozen.aggregates.eng.measured, 1);
+assert.equal(outsideFrozen.modules.find(item => item.id === 'stats.useStats').interfaces[0].callers.length, 1);
+const outside = (name, status, patterns) => run(name, 'check_hook_interfaces.mjs', ['--repo-root', outsideRoot, '--manifest', outsideManifest, outsideApp], status, patterns);
+const resetOutside = () => fs.writeFileSync(outsideManifest, JSON.stringify(outsideFrozen));
+outside('outside-root-measurement-contract-clean', 0, [/owner budgets: 2 modules; problems: 0/]);
+fs.writeFileSync(outsideApp, 'import { useStats } from "./stats/useStats.js"; function App() { const { missing } = useStats({}); return missing; }\n');
+outside('outside-root-call-contract-enforced', 1, [/destructured but not returned/, /required input not passed/]);
+fs.writeFileSync(outsideApp, 'import { useStats } from "./stats/useStats.js"; function App() { const { value } = useStats({ value: 1 }); return value; }\n');
+for (const [name, edit, pattern] of [
+    ['escaping', m => { m.modules[0].path = '../escape.js'; }, /invalid registered owner path/],
+    ['missing', m => { m.modules[0].path = 'frontend/src/stats/missing.js'; }, /missing or escaping module/],
+    ['unnormalized', m => { m.modules[0].path = 'frontend/src/stats/./useStats.js'; }, /invalid registered owner path/],
+    ['generated', m => { m.modules[0].path = 'frontend/dist/owner.js'; }, /invalid registered owner path/],
+    ['duplicate', m => { m.modules.push({...m.modules[0]}); }, /duplicate module id\/path/],
+    ['exports', m => { m.modules[0].exports = ['changed']; }, /exports changed/],
+    ['stale-count', m => { const c = m.modules.find(item => item.interfaces.length).interfaces[0]; c.returnCount = 9; }, /stale interface measurement/],
+]) {
+    const altered = structuredClone(outsideFrozen); edit(altered); fs.writeFileSync(outsideManifest, JSON.stringify(altered));
+    outside(`outside-root-${name}-fails`, 1, [pattern]);
+}
+resetOutside();
 console.log(`tooling controls passed: ${passed}`);

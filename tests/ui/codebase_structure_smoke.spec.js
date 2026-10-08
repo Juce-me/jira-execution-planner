@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
+const { buildRuntimeProbeBundle, readAppRenderCount } = require('./runtime_probe_helpers');
 const { installDashboardShell } = require('./epm_home_token_fixture');
 
 const repoRoot = path.join(__dirname, '..', '..');
@@ -17,6 +18,7 @@ const headerLongSprintEastName = '2026Q3 Sprint 43 — International Platform Re
 const headerLongSprintWestName = '2026Q3 Sprint 44 — International Platform Reliability and Migration — West';
 const groupTeamIds = ['team-alpha', 'team-beta'];
 let dashboardJs;
+let runtimeProbeBundle;
 let statsUtils;
 
 // Reuse the app's single Project Track color source in assertions. statsUtils.js is ESM
@@ -64,6 +66,7 @@ test.beforeAll(() => {
     });
     dashboardJs = result.outputFiles[0].text;
     statsUtils = loadStatsUtils();
+    if (process.env.JEP_RUNTIME_PROBE === '1') runtimeProbeBundle = buildRuntimeProbeBundle();
 });
 
 function epmProject(tab, index = 1) {
@@ -799,9 +802,21 @@ async function expectArchivedMetadataOnlyStickyContract(page) {
     await expect(page.locator('.epm-portfolio-board .epic-header')).toHaveCount(0);
 }
 
+// Keep repeated values in their original per-key order; singleton baseline values stay strings.
+function captureQueryParams(searchParams) {
+    return Object.fromEntries([...new Set(searchParams.keys())].map(key => {
+        const values = searchParams.getAll(key);
+        return [key, values.length === 1 ? values[0] : values];
+    }));
+}
+
 async function installApiMocks(page, calls, options = {}) {
     await installDashboardShell(page);
-    if (!options.useCommittedDist) {
+    if (options.runtimeProbe) {
+        await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({
+            status: 200, contentType: 'application/javascript', body: runtimeProbeBundle,
+        }));
+    } else if (!options.useCommittedDist) {
         await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({
             status: 200,
             contentType: 'application/javascript',
@@ -825,7 +840,7 @@ async function installApiMocks(page, calls, options = {}) {
             method: request.method(),
             pathname: url.pathname,
             search: url.search,
-            params: Object.fromEntries(url.searchParams.entries()),
+            params: captureQueryParams(url.searchParams),
             headers: request.headers(),
             body: requestBody(request),
         });
@@ -3562,3 +3577,1840 @@ test('EPM all-project board can collapse and expand all visible projects', async
     await expect(collapseAllButton).toBeVisible();
     expect(apiMocks.unexpectedCalls).toEqual([]);
 });
+
+test('Stats chart hover does not re-render App', async ({ page }) => {
+    test.skip(process.env.JEP_RUNTIME_PROBE !== '1', 'opt-in runtime probe');
+    const calls = [];
+    await installApiMocks(page, calls, { excludedCapacityEpics: ['BAU-EPIC'], runtimeProbe: true });
+    await page.setViewportSize({ width: 1280, height: 760 });
+    await page.addInitScript((prefs) => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
+    }, { selectedView: 'eng', planningLayout: 'list', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
+         activeGroupId: 'grp-default', selectedTeams: ['all'], showPlanning: false, showScenario: false,
+         showStats: true, statsView: 'priority' });
+    await page.addInitScript(() => window.history.replaceState(null, '', '/?perf=1'));
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await waitForCallCount(calls, isTaskListRequest, 2);
+    const tabs = page.locator('.stats-panel.open .stats-view-toggle');
+
+    const radarPolygons = page.locator('.stats-view.open .priority-radar polygon[fill-opacity]');
+    const radarSeries = radarPolygons.last();
+    await expect(radarSeries).toBeVisible();
+    const beforePriority = await readAppRenderCount(page);
+    await radarSeries.hover();
+    // Prove both handlers still produce the visible active/dimmed series state.
+    await expect(radarSeries).toHaveAttribute('fill-opacity', '0.18');
+    await expect(radarPolygons.first()).toHaveAttribute('fill-opacity', '0.04');
+    await page.locator('.stats-view.open .priority-legend > span').first().hover();
+    await expect(radarPolygons.first()).toHaveAttribute('fill-opacity', '0.18');
+    await expect(radarSeries).toHaveAttribute('fill-opacity', '0.04');
+    expect(await readAppRenderCount(page)).toBe(beforePriority);
+
+    await tabs.getByRole('radio', { name: 'Burndown' }).click();
+    await waitForCallCount(calls, call => call.pathname === '/api/stats/burnout', 1);
+    const capture = page.locator('.stats-view.open .burnout-hover-capture');
+    await expect(capture).toBeVisible();
+    const box = await capture.boundingBox();
+    const beforeBurnout = await readAppRenderCount(page);
+    await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.5);
+    await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.5);
+    await expect(page.locator('.burnout-hover-bubble')).toBeVisible();
+    expect(await readAppRenderCount(page)).toBe(beforeBurnout);
+});
+
+// Contract exclusions: query t/_ts are timestamp cache busters. Credentials are never
+// serialized; requested-with and CSRF presence retain the browser transport contract.
+function canonicalContract(value) {
+    if (Array.isArray(value)) return value.map(canonicalContract);
+    if (value && typeof value === 'object') return Object.fromEntries(
+        Object.keys(value).sort().map(key => [key, canonicalContract(value[key])])
+    );
+    return value;
+}
+function requestContract(call) {
+    const params = { ...call.params };
+    delete params.t;
+    delete params._ts;
+    return canonicalContract({ method: call.method, pathname: call.pathname, params,
+        body: call.body, requestedWith: call.headers['x-requested-with'] || null,
+        csrf: call.headers['x-csrf-token'] ? 'present' : 'absent' });
+}
+const requestMultiset = calls => calls.map(call => JSON.stringify(requestContract(call))).sort();
+async function seedStatsContractPrefs(page, overrides = {}) {
+    await seedEngPrefs(page, { showStats: true, statsView: 'teams',
+        cohortStartQuarter: '2026Q1', cohortEndQuarter: '2026Q2',
+        excludedCapacityStartSprintId: String(selectedSprintId),
+        excludedCapacityEndSprintId: String(selectedSprintId), ...overrides });
+}
+async function settleContract(page) {
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(350);
+}
+
+test('App render counts for common interactions', async ({ page }, testInfo) => {
+    test.skip(process.env.JEP_RUNTIME_PROBE !== '1', 'opt-in runtime probe');
+    const calls = [];
+    await installApiMocks(page, calls, { runtimeProbe: true, excludedCapacityEpics: ['BAU-EPIC'] });
+    await seedStatsContractPrefs(page);
+    await page.addInitScript(() => window.history.replaceState(null, '', '/?perf=1'));
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await expect(page.locator('.stats-view.open .stats-bars')).toBeVisible();
+    await settleContract(page);
+    const beforeFilter = await readAppRenderCount(page);
+    const teams = page.locator('.view-selector .team-dropdown').first();
+    await teams.locator('.team-dropdown-toggle').click();
+    await teams.locator('.team-dropdown-option', { hasText: 'Alpha Team' }).locator('input').check();
+    await page.mouse.click(8, 8);
+    await settleContract(page);
+    const filterChange = await readAppRenderCount(page) - beforeFilter;
+    const beforeSwitch = await readAppRenderCount(page);
+    await page.locator('.stats-panel.open .stats-view-toggle').getByRole('radio', { name: 'Priority' }).click();
+    await expect(page.locator('.stats-view.open .priority-radar')).toBeVisible();
+    await settleContract(page);
+    const statsViewSwitch = await readAppRenderCount(page) - beforeSwitch;
+    testInfo.annotations.push({ type: 'app-renders', description: JSON.stringify({ filterChange, statsViewSwitch }) });
+    console.log('APP_RENDER_MEASUREMENT', JSON.stringify({ filterChange, statsViewSwitch }));
+});
+
+test('Statistics preserves per-mode cold-load request contracts and cached reopen', async ({ browser }) => {
+    test.setTimeout(60000);
+    const repeatedQueryContract = query => requestContract({ method: 'GET', pathname: '/api/tasks',
+        params: captureQueryParams(new URLSearchParams(query)), body: null, headers: {} });
+    expect(repeatedQueryContract('team=alpha&team=beta&scope=sprint').params).toEqual({
+        scope: 'sprint', team: ['alpha', 'beta'],
+    });
+    expect(repeatedQueryContract('team=alpha&team=beta&scope=sprint')).not.toEqual(
+        repeatedQueryContract('team=beta&scope=sprint'));
+    expect(repeatedQueryContract('team=alpha&team=beta&scope=sprint')).not.toEqual(
+        repeatedQueryContract('team=beta&team=alpha&scope=sprint'));
+    for (const mode of ['catch-up', 'planning', 'teams', 'priority', 'burnout', 'cohort', 'excludedCapacity', 'monoCrossShare', 'projectTrack']) {
+        const context = await browser.newContext();
+        const page = await context.newPage();
+        const calls = [];
+        await installApiMocks(page, calls, { excludedCapacityEpics: ['BAU-EPIC'] });
+        await seedStatsContractPrefs(page, { showStats: !['catch-up', 'planning'].includes(mode),
+            showPlanning: mode === 'planning', statsView: ['catch-up', 'planning'].includes(mode) ? 'teams' : mode });
+        await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+        if (!['excludedCapacity', 'monoCrossShare', 'projectTrack'].includes(mode)) await waitForCallCount(calls, isTaskListRequest, 2);
+        await settleContract(page);
+        expect(requestMultiset(calls)).toEqual(coldModeRequestContracts[mode].map(call => JSON.stringify(call)).sort());
+        const statsBeforeReopen = requestMultiset(calls.filter(call => call.pathname.startsWith('/api/stats/')));
+        if (mode === 'burnout') {
+            const tabs = page.locator('.view-selector .eng-mode-control');
+            await tabs.getByRole('radio', { name: 'Catch Up', exact: true }).click();
+            await tabs.getByRole('radio', { name: 'Statistics', exact: true }).click();
+            await expect(page.locator('.stats-panel.open .stats-view-toggle').getByRole('radio', { name: 'Burndown' })).toHaveAttribute('aria-checked', 'true');
+            await settleContract(page);
+            expect(callsFor(calls, '/api/stats/burnout', 'POST')).toHaveLength(1);
+            expect(requestMultiset(calls.filter(call => call.pathname.startsWith('/api/stats/')))).toEqual(statsBeforeReopen);
+        }
+        await context.close();
+    }
+});
+
+
+test('Statistics preserves analytics event contracts', async ({ page }) => {
+    // Only this synthetic context fixes the API measurement clock. Preserve the literal
+    // duration_bucket contract without depending on browser/host scheduling delays.
+    await page.addInitScript(() => Object.defineProperty(performance, 'now', { value: () => 100 }));
+    const calls = [];
+    await installApiMocks(page, calls, { authMode: 'basic', analyticsContext: { enabled: true }, excludedCapacityEpics: ['BAU-EPIC'] });
+    await seedStatsContractPrefs(page);
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await settleContract(page);
+    // duration_ms is the only excluded wall-clock measurement. Keep its typed bucket.
+    const events = () => page.evaluate(() => window.dataLayer.filter(entry => ['userevent', 'pageview'].includes(entry.event)).map(({ duration_ms, ...entry }) => entry));
+    const sortedEvents = rows => rows.map(row => JSON.stringify(canonicalContract(row))).sort();
+    expect(sortedEvents(await events())).toEqual(sortedEvents(statsAnalyticsBaseline.start));
+    const beforeGraphMode = await events();
+    await page.getByRole('button', { name: /Weighted Rate/ }).click();
+    await settleContract(page);
+    expect(await events()).toEqual(beforeGraphMode);
+    const tabs = page.locator('.stats-panel.open .stats-view-toggle');
+    await tabs.getByRole('radio', { name: 'Mono vs Cross', exact: true }).click();
+    await settleContract(page);
+    await page.locator('.stats-view.open .excluded-capacity-line-legend-item').first().click();
+    await tabs.getByRole('radio', { name: 'Project Track', exact: true }).click();
+    await settleContract(page);
+    await page.locator('.stats-view.open').getByRole('radiogroup', { name: 'Capacity side', exact: true }).getByRole('radio', { name: 'Tech', exact: true }).click();
+    await page.locator('.stats-view.open').getByText('Exclude Ad Hoc', { exact: true }).click();
+    await settleContract(page);
+    expect(sortedEvents(await events())).toEqual(sortedEvents(statsAnalyticsBaseline.actions));
+    await tabs.getByRole('radio', { name: 'Lead Times', exact: true }).click();
+    await settleContract(page);
+    const before = await events();
+    await page.locator('.stats-view.open').getByRole('checkbox', { name: 'Exclude Ad Hoc', exact: true }).check();
+    await settleContract(page);
+    expect(await events()).toEqual(before);
+});
+
+test('Statistics preserves group state across A B A', async ({ page }) => {
+    test.setTimeout(60000);
+    const calls = [];
+    await installApiMocks(page, calls, { excludedCapacityEpics: ['BAU-EPIC'], groups: [
+        { id: 'grp-default', name: 'Group A', teamIds: ['team-alpha'], teamLabels: { 'team-alpha': 'alpha_label' }, excludedCapacityEpics: ['BAU-EPIC'] },
+        { id: 'grp-second', name: 'Group B', teamIds: ['team-beta'], teamLabels: { 'team-beta': 'beta_label' }, excludedCapacityEpics: ['BAU-EPIC'] },
+    ] });
+    await seedStatsContractPrefs(page, { statsView: 'burnout' });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    const tabs = page.locator('.stats-panel.open .stats-view-toggle');
+    const metric = () => page.locator('.stats-view.open .stats-control-group', { hasText: 'Metric' }).locator('select');
+    const assignee = () => page.locator('.stats-view.open .stats-control-group', { hasText: 'Assignee' }).locator('select');
+    const switchGroup = async name => {
+        await page.evaluate(() => window.scrollTo(0, 0));
+        await settleContract(page);
+        await page.locator('.view-selector .group-dropdown-toggle').click();
+        await page.locator('.view-selector .group-dropdown-option', { hasText: name }).click();
+        await settleContract(page);
+        await expect(page.locator('.view-selector .group-dropdown-toggle')).toContainText(name);
+        await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('jira_dashboard_ui_prefs_v1')).activeGroupId)).toBe(name === 'Group A' ? 'grp-default' : 'grp-second');
+    };
+    const quarterRange = () => page.locator('.stats-view.open [data-stats-range="lead-times-quarter"]');
+    const configureCohort = async (start, end, grouping) => {
+        await tabs.getByRole('radio', { name: 'Lead Times' }).click();
+        await settleContract(page);
+        for (const [endpoint, quarter] of [['End', end], ['Start', start]]) {
+            await quarterRange().getByRole('button', { name: `${endpoint} quarter`, exact: true }).click();
+            await quarterRange().getByRole('listbox', { name: `${endpoint} quarter`, exact: true }).getByRole('option', { name: quarter, exact: true }).click();
+            await settleContract(page);
+        }
+        await page.locator('.stats-view.open .stats-control-group', { hasText: 'Group By' }).getByRole('radio', { name: grouping, exact: true }).click();
+        await settleContract(page);
+    };
+    const assertCohort = async (start, end, grouping) => {
+        await tabs.getByRole('radio', { name: 'Lead Times' }).click();
+        await settleContract(page);
+        await expect(quarterRange().getByRole('button', { name: 'Start quarter', exact: true })).toContainText(start);
+        await expect(quarterRange().getByRole('button', { name: 'End quarter', exact: true })).toContainText(end);
+        await expect(page.locator('.stats-view.open .stats-control-group', { hasText: 'Group By' }).getByRole('radio', { name: grouping, exact: true })).toHaveAttribute('aria-checked', 'true');
+        await tabs.getByRole('radio', { name: 'Burndown' }).click();
+        await settleContract(page);
+    };
+    await expect(metric()).toBeVisible();
+    await metric().selectOption('issueCount');
+    await assignee().selectOption('alpha-owner');
+    await expect(assignee()).toHaveValue('alpha-owner');
+    await configureCohort('2026Q1', '2026Q3', 'Month');
+    await tabs.getByRole('radio', { name: 'Burndown' }).click();
+    await settleContract(page);
+    await expect(assignee()).toHaveValue('alpha-owner');
+    await switchGroup('Group B');
+    await tabs.getByRole('radio', { name: 'Burndown' }).click();
+    await settleContract(page);
+    await metric().selectOption('storyPoints');
+    await assignee().selectOption('beta-owner');
+    await expect(assignee()).toHaveValue('beta-owner');
+    await configureCohort('2026Q2', '2026Q4', 'Quarter');
+    await tabs.getByRole('radio', { name: 'Burndown' }).click();
+    await settleContract(page);
+    await expect(assignee()).toHaveValue('beta-owner');
+    await switchGroup('Group A');
+    await expect(tabs.getByRole('radio', { name: 'Burndown' })).toHaveAttribute('aria-checked', 'true');
+    await expect(metric()).toHaveValue('issueCount');
+    // Original App at d0f8bc79 resets a valid saved assignee while scoped data reloads.
+    // Preserve this explicitly approved baseline quirk, rather than fixing it during extraction.
+    await expect(assignee()).toHaveValue('all');
+    await assertCohort('2026Q1', '2026Q3', 'Month');
+    const taskKeys = () => page.locator('.task-item').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-task-key')).sort());
+    const beforeTasks = await taskKeys();
+    expect(beforeTasks.length).toBeGreaterThan(2);
+    const capture = page.locator('.stats-view.open .burnout-hover-capture');
+    const bounds = await capture.boundingBox();
+    // The fixture spans April 1–15. Its midpoint is April 8, after both Alpha
+    // stories were created; the bottom of the stacked area selects Alpha. Offset
+    // from the row's exact x so its hover line does not intercept the click.
+    await capture.click({ position: { x: bounds.width / 2 + 6, y: bounds.height - 2 } });
+    await expect(page.locator('.stats-view.open')).toContainText('Task list filter: Alpha Team open on 2026-04-08 (2)');
+    await expect.poll(taskKeys).toEqual(['PROD-2', 'TECH-2']);
+    await page.locator('.stats-view.open').getByRole('button', { name: 'Clear', exact: true }).click();
+    await expect(page.locator('.stats-view.open')).not.toContainText('Task list filter:');
+    await expect.poll(taskKeys).toEqual(beforeTasks);
+    await switchGroup('Group B');
+    await expect(tabs.getByRole('radio', { name: 'Burndown' })).toHaveAttribute('aria-checked', 'true');
+    await expect(metric()).toHaveValue('storyPoints');
+    await expect(assignee()).toHaveValue('all');
+    await assertCohort('2026Q2', '2026Q4', 'Quarter');
+    const statsBeforeReopen = requestMultiset(calls.filter(call => call.pathname.startsWith('/api/stats/')));
+    await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Catch Up', exact: true }).click();
+    await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Statistics', exact: true }).click();
+    await settleContract(page);
+    await expect(tabs.getByRole('radio', { name: 'Burndown' })).toHaveAttribute('aria-checked', 'true');
+    expect(requestMultiset(calls.filter(call => call.pathname.startsWith('/api/stats/')))).toEqual(statsBeforeReopen);
+    expect(requestMultiset(calls.filter(call => call.pathname.startsWith('/api/stats/')))).toEqual(groupReturnRequestContract.map(call => JSON.stringify(call)).sort());
+});
+
+// Frozen from original App at d0f8bc79 before extraction; each mode has its own ledger.
+const coldModeRequestContracts = {
+    "catch-up": [
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {
+                "epicKeys": "PROD-EPIC",
+                "groupId": "grp-default",
+                "project": "product",
+                "purpose": "ready-to-close",
+                "sprint": "",
+                "sprintName": "2026Q2 Sprint 42",
+                "team": "all",
+                "teamIds": "team-alpha,team-beta",
+                "teamLabels": "alpha_label,beta_label"
+            },
+            "pathname": "/api/tasks-with-team-name",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {
+                "epicKeys": "TECH-EPIC",
+                "groupId": "grp-default",
+                "project": "tech",
+                "purpose": "ready-to-close",
+                "sprint": "",
+                "sprintName": "2026Q2 Sprint 42",
+                "team": "all",
+                "teamIds": "team-alpha,team-beta",
+                "teamLabels": "alpha_label,beta_label"
+            },
+            "pathname": "/api/tasks-with-team-name",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {
+                "groupId": "grp-default",
+                "project": "product",
+                "purpose": "alerts",
+                "sprint": "34625",
+                "sprintName": "2026Q2 Sprint 42",
+                "team": "all",
+                "teamIds": "team-alpha,team-beta",
+                "teamLabels": "alpha_label,beta_label"
+            },
+            "pathname": "/api/tasks-with-team-name",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {
+                "groupId": "grp-default",
+                "project": "product",
+                "sprint": "34625",
+                "sprintName": "2026Q2 Sprint 42",
+                "team": "all",
+                "teamIds": "team-alpha,team-beta",
+                "teamLabels": "alpha_label,beta_label"
+            },
+            "pathname": "/api/tasks-with-team-name",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {
+                "groupId": "grp-default",
+                "project": "tech",
+                "purpose": "alerts",
+                "sprint": "34625",
+                "sprintName": "2026Q2 Sprint 42",
+                "team": "all",
+                "teamIds": "team-alpha,team-beta",
+                "teamLabels": "alpha_label,beta_label"
+            },
+            "pathname": "/api/tasks-with-team-name",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {
+                "groupId": "grp-default",
+                "project": "tech",
+                "sprint": "34625",
+                "sprintName": "2026Q2 Sprint 42",
+                "team": "all",
+                "teamIds": "team-alpha,team-beta",
+                "teamLabels": "alpha_label,beta_label"
+            },
+            "pathname": "/api/tasks-with-team-name",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {
+                "groupId": "grp-default",
+                "sprint": "34625",
+                "sprintName": "2026Q2 Sprint 42",
+                "sprintState": "active"
+            },
+            "pathname": "/api/eng/story-readiness",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {
+                "includeViewConfig": "true"
+            },
+            "pathname": "/api/config",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {
+                "sprint": "34625",
+                "teamIds": "team-alpha,team-beta"
+            },
+            "pathname": "/api/missing-info",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/groups-config",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/me/connections/home-token",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/projects/selected",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/sprints",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/stats/priority-weights-config",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/version",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "POST",
+            "params": {},
+            "pathname": "/api/auth/refresh",
+            "requestedWith": "jira-execution-planner"
+        },
+        {
+            "body": {
+                "keys": [
+                    "PROD-1",
+                    "PROD-10",
+                    "PROD-11",
+                    "PROD-12",
+                    "PROD-2",
+                    "PROD-3",
+                    "PROD-4",
+                    "PROD-5",
+                    "PROD-6",
+                    "PROD-7",
+                    "PROD-8",
+                    "PROD-9",
+                    "TECH-1",
+                    "TECH-10",
+                    "TECH-11",
+                    "TECH-12",
+                    "TECH-2",
+                    "TECH-3",
+                    "TECH-4",
+                    "TECH-5",
+                    "TECH-6",
+                    "TECH-7",
+                    "TECH-8",
+                    "TECH-9"
+                ]
+            },
+            "csrf": "absent",
+            "method": "POST",
+            "params": {},
+            "pathname": "/api/dependencies",
+            "requestedWith": "jira-execution-planner"
+        }
+    ],
+    "planning": [
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {
+                "groupId": "grp-default",
+                "project": "product",
+                "sprint": "34625",
+                "sprintName": "2026Q2 Sprint 42",
+                "team": "all",
+                "teamIds": "team-alpha,team-beta",
+                "teamLabels": "alpha_label,beta_label"
+            },
+            "pathname": "/api/tasks-with-team-name",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {
+                "groupId": "grp-default",
+                "project": "tech",
+                "sprint": "34625",
+                "sprintName": "2026Q2 Sprint 42",
+                "team": "all",
+                "teamIds": "team-alpha,team-beta",
+                "teamLabels": "alpha_label,beta_label"
+            },
+            "pathname": "/api/tasks-with-team-name",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {
+                "groupId": "grp-default",
+                "sprint": "34625",
+                "sprintName": "2026Q2 Sprint 42",
+                "sprintState": "active"
+            },
+            "pathname": "/api/eng/story-readiness",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {
+                "includeViewConfig": "true"
+            },
+            "pathname": "/api/config",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/groups-config",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/me/connections/home-token",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/projects/selected",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/sprints",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/stats/priority-weights-config",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/version",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "POST",
+            "params": {},
+            "pathname": "/api/auth/refresh",
+            "requestedWith": "jira-execution-planner"
+        },
+        {
+            "body": {
+                "keys": [
+                    "PROD-1",
+                    "PROD-10",
+                    "PROD-11",
+                    "PROD-12",
+                    "PROD-2",
+                    "PROD-3",
+                    "PROD-4",
+                    "PROD-5",
+                    "PROD-6",
+                    "PROD-7",
+                    "PROD-8",
+                    "PROD-9",
+                    "TECH-1",
+                    "TECH-10",
+                    "TECH-11",
+                    "TECH-12",
+                    "TECH-2",
+                    "TECH-3",
+                    "TECH-4",
+                    "TECH-5",
+                    "TECH-6",
+                    "TECH-7",
+                    "TECH-8",
+                    "TECH-9"
+                ]
+            },
+            "csrf": "absent",
+            "method": "POST",
+            "params": {},
+            "pathname": "/api/dependencies",
+            "requestedWith": "jira-execution-planner"
+        }
+    ],
+    "teams": [
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {
+                "groupId": "grp-default",
+                "project": "product",
+                "sprint": "34625",
+                "sprintName": "2026Q2 Sprint 42",
+                "team": "all",
+                "teamIds": "team-alpha,team-beta",
+                "teamLabels": "alpha_label,beta_label"
+            },
+            "pathname": "/api/tasks-with-team-name",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {
+                "groupId": "grp-default",
+                "project": "tech",
+                "sprint": "34625",
+                "sprintName": "2026Q2 Sprint 42",
+                "team": "all",
+                "teamIds": "team-alpha,team-beta",
+                "teamLabels": "alpha_label,beta_label"
+            },
+            "pathname": "/api/tasks-with-team-name",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {
+                "includeViewConfig": "true"
+            },
+            "pathname": "/api/config",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/groups-config",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/me/connections/home-token",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/projects/selected",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/sprints",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/stats/priority-weights-config",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/version",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "POST",
+            "params": {},
+            "pathname": "/api/auth/refresh",
+            "requestedWith": "jira-execution-planner"
+        },
+        {
+            "body": {
+                "keys": [
+                    "PROD-1",
+                    "PROD-10",
+                    "PROD-11",
+                    "PROD-12",
+                    "PROD-2",
+                    "PROD-3",
+                    "PROD-4",
+                    "PROD-5",
+                    "PROD-6",
+                    "PROD-7",
+                    "PROD-8",
+                    "PROD-9",
+                    "TECH-1",
+                    "TECH-10",
+                    "TECH-11",
+                    "TECH-12",
+                    "TECH-2",
+                    "TECH-3",
+                    "TECH-4",
+                    "TECH-5",
+                    "TECH-6",
+                    "TECH-7",
+                    "TECH-8",
+                    "TECH-9"
+                ]
+            },
+            "csrf": "absent",
+            "method": "POST",
+            "params": {},
+            "pathname": "/api/dependencies",
+            "requestedWith": "jira-execution-planner"
+        }
+    ],
+    "priority": [
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {
+                "groupId": "grp-default",
+                "project": "product",
+                "sprint": "34625",
+                "sprintName": "2026Q2 Sprint 42",
+                "team": "all",
+                "teamIds": "team-alpha,team-beta",
+                "teamLabels": "alpha_label,beta_label"
+            },
+            "pathname": "/api/tasks-with-team-name",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {
+                "groupId": "grp-default",
+                "project": "tech",
+                "sprint": "34625",
+                "sprintName": "2026Q2 Sprint 42",
+                "team": "all",
+                "teamIds": "team-alpha,team-beta",
+                "teamLabels": "alpha_label,beta_label"
+            },
+            "pathname": "/api/tasks-with-team-name",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {
+                "includeViewConfig": "true"
+            },
+            "pathname": "/api/config",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/groups-config",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/me/connections/home-token",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/projects/selected",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/sprints",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/stats/priority-weights-config",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/version",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "POST",
+            "params": {},
+            "pathname": "/api/auth/refresh",
+            "requestedWith": "jira-execution-planner"
+        },
+        {
+            "body": {
+                "keys": [
+                    "PROD-1",
+                    "PROD-10",
+                    "PROD-11",
+                    "PROD-12",
+                    "PROD-2",
+                    "PROD-3",
+                    "PROD-4",
+                    "PROD-5",
+                    "PROD-6",
+                    "PROD-7",
+                    "PROD-8",
+                    "PROD-9",
+                    "TECH-1",
+                    "TECH-10",
+                    "TECH-11",
+                    "TECH-12",
+                    "TECH-2",
+                    "TECH-3",
+                    "TECH-4",
+                    "TECH-5",
+                    "TECH-6",
+                    "TECH-7",
+                    "TECH-8",
+                    "TECH-9"
+                ]
+            },
+            "csrf": "absent",
+            "method": "POST",
+            "params": {},
+            "pathname": "/api/dependencies",
+            "requestedWith": "jira-execution-planner"
+        }
+    ],
+    "burnout": [
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {
+                "groupId": "grp-default",
+                "project": "product",
+                "sprint": "34625",
+                "sprintName": "2026Q2 Sprint 42",
+                "team": "all",
+                "teamIds": "team-alpha,team-beta",
+                "teamLabels": "alpha_label,beta_label"
+            },
+            "pathname": "/api/tasks-with-team-name",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {
+                "groupId": "grp-default",
+                "project": "tech",
+                "sprint": "34625",
+                "sprintName": "2026Q2 Sprint 42",
+                "team": "all",
+                "teamIds": "team-alpha,team-beta",
+                "teamLabels": "alpha_label,beta_label"
+            },
+            "pathname": "/api/tasks-with-team-name",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {
+                "includeViewConfig": "true"
+            },
+            "pathname": "/api/config",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/groups-config",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/me/connections/home-token",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/projects/selected",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/sprints",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/stats/priority-weights-config",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/version",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "POST",
+            "params": {},
+            "pathname": "/api/auth/refresh",
+            "requestedWith": "jira-execution-planner"
+        },
+        {
+            "body": {
+                "includePostSprintClosures": false,
+                "issueKeys": [
+                    "PROD-3",
+                    "PROD-6",
+                    "PROD-9",
+                    "PROD-12",
+                    "PROD-1",
+                    "PROD-2",
+                    "PROD-4",
+                    "PROD-5",
+                    "PROD-7",
+                    "PROD-8",
+                    "PROD-10",
+                    "PROD-11",
+                    "TECH-3",
+                    "TECH-6",
+                    "TECH-9",
+                    "TECH-12",
+                    "TECH-1",
+                    "TECH-2",
+                    "TECH-4",
+                    "TECH-5",
+                    "TECH-7",
+                    "TECH-8",
+                    "TECH-10",
+                    "TECH-11"
+                ],
+                "sprint": "2026Q2 Sprint 42",
+                "teamIds": [
+                    "team-alpha",
+                    "team-beta"
+                ]
+            },
+            "csrf": "absent",
+            "method": "POST",
+            "params": {},
+            "pathname": "/api/stats/burnout",
+            "requestedWith": "jira-execution-planner"
+        },
+        {
+            "body": {
+                "keys": [
+                    "PROD-1",
+                    "PROD-10",
+                    "PROD-11",
+                    "PROD-12",
+                    "PROD-2",
+                    "PROD-3",
+                    "PROD-4",
+                    "PROD-5",
+                    "PROD-6",
+                    "PROD-7",
+                    "PROD-8",
+                    "PROD-9",
+                    "TECH-1",
+                    "TECH-10",
+                    "TECH-11",
+                    "TECH-12",
+                    "TECH-2",
+                    "TECH-3",
+                    "TECH-4",
+                    "TECH-5",
+                    "TECH-6",
+                    "TECH-7",
+                    "TECH-8",
+                    "TECH-9"
+                ]
+            },
+            "csrf": "absent",
+            "method": "POST",
+            "params": {},
+            "pathname": "/api/dependencies",
+            "requestedWith": "jira-execution-planner"
+        }
+    ],
+    "cohort": [
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {
+                "groupId": "grp-default",
+                "project": "product",
+                "sprint": "34625",
+                "sprintName": "2026Q2 Sprint 42",
+                "team": "all",
+                "teamIds": "team-alpha,team-beta",
+                "teamLabels": "alpha_label,beta_label"
+            },
+            "pathname": "/api/tasks-with-team-name",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {
+                "groupId": "grp-default",
+                "project": "tech",
+                "sprint": "34625",
+                "sprintName": "2026Q2 Sprint 42",
+                "team": "all",
+                "teamIds": "team-alpha,team-beta",
+                "teamLabels": "alpha_label,beta_label"
+            },
+            "pathname": "/api/tasks-with-team-name",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {
+                "includeViewConfig": "true"
+            },
+            "pathname": "/api/config",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/groups-config",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/me/connections/home-token",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/projects/selected",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/sprints",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/stats/priority-weights-config",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/version",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "POST",
+            "params": {},
+            "pathname": "/api/auth/refresh",
+            "requestedWith": "jira-execution-planner"
+        },
+        {
+            "body": {
+                "adHocCapacityEpics": [],
+                "components": [],
+                "endQuarter": "2026Q2",
+                "refresh": false,
+                "startQuarter": "2026Q1",
+                "teamIds": [
+                    "team-alpha",
+                    "team-beta"
+                ]
+            },
+            "csrf": "absent",
+            "method": "POST",
+            "params": {},
+            "pathname": "/api/stats/epic-cohort",
+            "requestedWith": "jira-execution-planner"
+        },
+        {
+            "body": {
+                "keys": [
+                    "PROD-1",
+                    "PROD-10",
+                    "PROD-11",
+                    "PROD-12",
+                    "PROD-2",
+                    "PROD-3",
+                    "PROD-4",
+                    "PROD-5",
+                    "PROD-6",
+                    "PROD-7",
+                    "PROD-8",
+                    "PROD-9",
+                    "TECH-1",
+                    "TECH-10",
+                    "TECH-11",
+                    "TECH-12",
+                    "TECH-2",
+                    "TECH-3",
+                    "TECH-4",
+                    "TECH-5",
+                    "TECH-6",
+                    "TECH-7",
+                    "TECH-8",
+                    "TECH-9"
+                ]
+            },
+            "csrf": "absent",
+            "method": "POST",
+            "params": {},
+            "pathname": "/api/dependencies",
+            "requestedWith": "jira-execution-planner"
+        }
+    ],
+    "excludedCapacity": [
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {
+                "includeViewConfig": "true"
+            },
+            "pathname": "/api/config",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/groups-config",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/me/connections/home-token",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/projects/selected",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/sprints",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/stats/priority-weights-config",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/version",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "POST",
+            "params": {},
+            "pathname": "/api/auth/refresh",
+            "requestedWith": "jira-execution-planner"
+        },
+        {
+            "body": {
+                "sprintIds": [
+                    "34625"
+                ],
+                "teamIds": [
+                    "team-alpha",
+                    "team-beta"
+                ]
+            },
+            "csrf": "absent",
+            "method": "POST",
+            "params": {},
+            "pathname": "/api/stats/excluded-capacity-source",
+            "requestedWith": "jira-execution-planner"
+        }
+    ],
+    "monoCrossShare": [
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {
+                "includeViewConfig": "true"
+            },
+            "pathname": "/api/config",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/groups-config",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/me/connections/home-token",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/projects/selected",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/sprints",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/stats/priority-weights-config",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/version",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "POST",
+            "params": {},
+            "pathname": "/api/auth/refresh",
+            "requestedWith": "jira-execution-planner"
+        },
+        {
+            "body": {
+                "sprintIds": [
+                    "34625"
+                ],
+                "teamIds": [
+                    "team-alpha",
+                    "team-beta"
+                ]
+            },
+            "csrf": "absent",
+            "method": "POST",
+            "params": {},
+            "pathname": "/api/stats/excluded-capacity-source",
+            "requestedWith": "jira-execution-planner"
+        }
+    ],
+    "projectTrack": [
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {
+                "includeViewConfig": "true"
+            },
+            "pathname": "/api/config",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/groups-config",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/me/connections/home-token",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/projects/selected",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/sprints",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/stats/priority-weights-config",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/version",
+            "requestedWith": null
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "POST",
+            "params": {},
+            "pathname": "/api/auth/refresh",
+            "requestedWith": "jira-execution-planner"
+        },
+        {
+            "body": {
+                "epicKeys": [
+                    "BAU-EPIC",
+                    "PROD-EPIC"
+                ]
+            },
+            "csrf": "absent",
+            "method": "POST",
+            "params": {},
+            "pathname": "/api/stats/project-track-phase-durations",
+            "requestedWith": "jira-execution-planner"
+        },
+        {
+            "body": {
+                "sprintIds": [
+                    "34625"
+                ],
+                "teamIds": [
+                    "team-alpha",
+                    "team-beta"
+                ]
+            },
+            "csrf": "absent",
+            "method": "POST",
+            "params": {},
+            "pathname": "/api/stats/excluded-capacity-source",
+            "requestedWith": "jira-execution-planner"
+        }
+    ]
+};
+
+// Positive app-owned dataLayer records captured before source moves.
+const statsAnalyticsBaseline = {
+    "start": [
+        {
+            "event": "pageview",
+            "trigger": "pageview",
+            "event_type": "pageview",
+            "event_name": "page_view",
+            "dashboard_view": "eng",
+            "auth_mode": "basic",
+            "source_surface": "dashboard",
+            "eng_mode": "statistics",
+            "page_name": "dashboard"
+        },
+        {
+            "event": "userevent",
+            "trigger": "userevent",
+            "event_type": "event",
+            "event_name": "api_result",
+            "feature_name": "eng",
+            "api_surface": "eng_tasks",
+            "method": "GET",
+            "status_bucket": "2xx",
+            "result": "success",
+            "duration_bucket": "under_1s",
+            "cache_state": "unknown"
+        },
+        {
+            "event": "userevent",
+            "trigger": "userevent",
+            "event_type": "event",
+            "event_name": "api_result",
+            "feature_name": "eng",
+            "api_surface": "eng_tasks",
+            "method": "GET",
+            "status_bucket": "2xx",
+            "result": "success",
+            "duration_bucket": "under_1s",
+            "cache_state": "unknown"
+        }
+    ],
+    "actions": [
+        {
+            "event": "pageview",
+            "trigger": "pageview",
+            "event_type": "pageview",
+            "event_name": "page_view",
+            "dashboard_view": "eng",
+            "auth_mode": "basic",
+            "source_surface": "dashboard",
+            "eng_mode": "statistics",
+            "page_name": "dashboard"
+        },
+        {
+            "event": "userevent",
+            "trigger": "userevent",
+            "event_type": "event",
+            "event_name": "api_result",
+            "feature_name": "eng",
+            "api_surface": "eng_tasks",
+            "method": "GET",
+            "status_bucket": "2xx",
+            "result": "success",
+            "duration_bucket": "under_1s",
+            "cache_state": "unknown"
+        },
+        {
+            "event": "userevent",
+            "trigger": "userevent",
+            "event_type": "event",
+            "event_name": "api_result",
+            "feature_name": "eng",
+            "api_surface": "eng_tasks",
+            "method": "GET",
+            "status_bucket": "2xx",
+            "result": "success",
+            "duration_bucket": "under_1s",
+            "cache_state": "unknown"
+        },
+        {
+            "event": "userevent",
+            "trigger": "userevent",
+            "event_type": "event",
+            "event_name": "stats_action",
+            "feature_name": "stats",
+            "stats_view": "monocrossshare",
+            "source_surface": "stats",
+            "workflow_action": "view_change"
+        },
+        {
+            "event": "userevent",
+            "trigger": "userevent",
+            "event_type": "event",
+            "event_name": "api_result",
+            "feature_name": "stats",
+            "api_surface": "stats_source",
+            "method": "POST",
+            "status_bucket": "2xx",
+            "result": "success",
+            "duration_bucket": "under_1s",
+            "cache_state": "unknown"
+        },
+        {
+            "event": "userevent",
+            "trigger": "userevent",
+            "event_type": "event",
+            "event_name": "chart_action",
+            "feature_name": "stats",
+            "stats_view": "monocrossshare",
+            "source_surface": "stats",
+            "workflow_action": "isolate_series",
+            "chart_id": "excluded_capacity",
+            "series_type": "team"
+        },
+        {
+            "event": "userevent",
+            "trigger": "userevent",
+            "event_type": "event",
+            "event_name": "stats_action",
+            "feature_name": "stats",
+            "stats_view": "projecttrack",
+            "source_surface": "stats",
+            "workflow_action": "view_change"
+        },
+        {
+            "event": "userevent",
+            "trigger": "userevent",
+            "event_type": "event",
+            "event_name": "api_result",
+            "feature_name": "stats",
+            "api_surface": "stats_source",
+            "method": "POST",
+            "status_bucket": "2xx",
+            "result": "success",
+            "duration_bucket": "under_1s",
+            "cache_state": "unknown"
+        },
+        {
+            "event": "userevent",
+            "trigger": "userevent",
+            "event_type": "event",
+            "event_name": "chart_action",
+            "feature_name": "stats",
+            "stats_view": "projecttrack",
+            "source_surface": "stats",
+            "workflow_action": "capacity_side_change",
+            "chart_id": "project_track",
+            "capacity_side": "tech"
+        },
+        {
+            "event": "userevent",
+            "trigger": "userevent",
+            "event_type": "event",
+            "event_name": "filter_changed",
+            "feature_name": "stats",
+            "stats_view": "projecttrack",
+            "source_surface": "stats",
+            "filter_type": "exclude_ad_hoc",
+            "chart_id": "project_track",
+            "value_state": "on"
+        },
+        {
+            "event": "userevent",
+            "trigger": "userevent",
+            "event_type": "event",
+            "event_name": "api_result",
+            "feature_name": "stats",
+            "api_surface": "stats_source",
+            "method": "POST",
+            "status_bucket": "2xx",
+            "result": "success",
+            "duration_bucket": "under_1s",
+            "cache_state": "unknown"
+        }
+    ]
+};
+
+// Frozen from original App at d0f8bc79: complete A → B → A → B flow, including
+// both quarter endpoints, chart filtering/Clear and warmed same-scope reopen.
+const groupReturnRequestContract = [
+    {
+        "body": null,
+        "csrf": "absent",
+        "method": "GET",
+        "params": {},
+        "pathname": "/api/stats/priority-weights-config",
+        "requestedWith": null
+    },
+    {
+        "body": {
+            "includePostSprintClosures": false,
+            "issueKeys": [
+                "PROD-6",
+                "PROD-12",
+                "PROD-2",
+                "PROD-4",
+                "PROD-8",
+                "PROD-10",
+                "TECH-6",
+                "TECH-12",
+                "TECH-2",
+                "TECH-4",
+                "TECH-8",
+                "TECH-10"
+            ],
+            "sprint": "2026Q2 Sprint 42",
+            "teamIds": [
+                "team-alpha"
+            ]
+        },
+        "csrf": "absent",
+        "method": "POST",
+        "params": {},
+        "pathname": "/api/stats/burnout",
+        "requestedWith": "jira-execution-planner"
+    },
+    {
+        "body": {
+            "adHocCapacityEpics": [],
+            "components": [],
+            "endQuarter": "2026Q2",
+            "refresh": false,
+            "startQuarter": "2026Q1",
+            "teamIds": [
+                "team-alpha"
+            ]
+        },
+        "csrf": "absent",
+        "method": "POST",
+        "params": {},
+        "pathname": "/api/stats/epic-cohort",
+        "requestedWith": "jira-execution-planner"
+    },
+    {
+        "body": {
+            "adHocCapacityEpics": [],
+            "components": [],
+            "endQuarter": "2026Q3",
+            "refresh": false,
+            "startQuarter": "2026Q1",
+            "teamIds": [
+                "team-alpha"
+            ]
+        },
+        "csrf": "absent",
+        "method": "POST",
+        "params": {},
+        "pathname": "/api/stats/epic-cohort",
+        "requestedWith": "jira-execution-planner"
+    },
+    {
+        "body": {
+            "includePostSprintClosures": false,
+            "issueKeys": [
+                "PROD-3",
+                "PROD-9",
+                "PROD-1",
+                "PROD-5",
+                "PROD-7",
+                "PROD-11",
+                "TECH-3",
+                "TECH-9",
+                "TECH-1",
+                "TECH-5",
+                "TECH-7",
+                "TECH-11"
+            ],
+            "sprint": "2026Q2 Sprint 42",
+            "teamIds": [
+                "team-beta"
+            ]
+        },
+        "csrf": "absent",
+        "method": "POST",
+        "params": {},
+        "pathname": "/api/stats/burnout",
+        "requestedWith": "jira-execution-planner"
+    },
+    {
+        "body": {
+            "adHocCapacityEpics": [],
+            "components": [],
+            "endQuarter": "2026Q2",
+            "refresh": false,
+            "startQuarter": "2026Q1",
+            "teamIds": [
+                "team-beta"
+            ]
+        },
+        "csrf": "absent",
+        "method": "POST",
+        "params": {},
+        "pathname": "/api/stats/epic-cohort",
+        "requestedWith": "jira-execution-planner"
+    },
+    {
+        "body": {
+            "adHocCapacityEpics": [],
+            "components": [],
+            "endQuarter": "2026Q4",
+            "refresh": false,
+            "startQuarter": "2026Q1",
+            "teamIds": [
+                "team-beta"
+            ]
+        },
+        "csrf": "absent",
+        "method": "POST",
+        "params": {},
+        "pathname": "/api/stats/epic-cohort",
+        "requestedWith": "jira-execution-planner"
+    },
+    {
+        "body": {
+            "adHocCapacityEpics": [],
+            "components": [],
+            "endQuarter": "2026Q4",
+            "refresh": false,
+            "startQuarter": "2026Q2",
+            "teamIds": [
+                "team-beta"
+            ]
+        },
+        "csrf": "absent",
+        "method": "POST",
+        "params": {},
+        "pathname": "/api/stats/epic-cohort",
+        "requestedWith": "jira-execution-planner"
+    }
+];

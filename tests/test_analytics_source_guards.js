@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { readOwnerSource } = require('./frontend_source_helpers');
 
 const repoRoot = path.resolve(__dirname, '..');
 const analyticsFiles = [
@@ -229,7 +230,14 @@ test('effort split chart_action sends only the safe series_type enum token, neve
 });
 
 test('Lead Times capacity exclusions change local state without an app-owned event', () => {
-    const source = read('frontend/src/dashboard.jsx');
+    const owners = [['frontend/src/dashboard.jsx', 'function App(']];
+    const panel = 'frontend/src/stats/StatsPanel.jsx';
+    if (fs.existsSync(path.join(repoRoot, panel))) owners.push([panel, 'function StatsPanel(']);
+    const sources = owners.map(([file, anchor]) => readOwnerSource([file], { anchor }));
+    const capacitySources = sources.filter(source => source.includes('data-stats-capacity-filters'));
+    assert.equal(capacitySources.length, 1, 'Exactly one planned Stats owner must contain the Lead Times controls');
+    const source = capacitySources[0];
+    assert.equal(source.split('data-stats-capacity-filters').length - 1, 1);
     const start = source.indexOf('data-stats-capacity-filters');
     const end = source.indexOf('<div className="stats-actions cohort-status-actions">', start);
     assert.ok(start >= 0 && end > start, 'Expected the Lead Times capacity checkbox block');
@@ -241,7 +249,7 @@ test('Lead Times capacity exclusions change local state without an app-owned eve
     assert.ok(capacityControls.includes('<span>Ad Hoc</span>'));
     assert.ok(capacityControls.includes('<span>Excluded Capacity</span>'));
     assert.equal(capacityControls.includes('setCohortCapacityFilter'), false);
-    assert.equal(/trackFilterChanged|trackStatsAnalyticsAction|trackEvent/.test(capacityControls), false);
+    assert.equal(/trackFilterChanged|trackStatsAction|trackStatsAnalyticsAction|trackEvent/.test(capacityControls), false);
     assert.ok(read('docs/README_ANALYTICS.md').includes('Lead Times capacity cohort filter'));
 });
 

@@ -1,13 +1,11 @@
 import * as React from 'react';
 import StatusPill from '../ui/StatusPill.jsx';
 import IssueFieldOptionMenu from './IssueFieldOptionMenu.jsx';
-import { MAX_STATUS_TRANSITION_ISSUES } from '../eng/engStatusTransitionUtils.js';
 import { getIssueStatusClassName, normalizeIssueStatus } from './issueViewUtils.js';
 import { useStatusColourStyle } from './StatusColourContext.jsx';
 
-// Shared ENG status-transition control used by Catch Up (single issue) and Planning for
-// Epic, Story, and Subtask status pills. In Planning a Story pill applies to every selected
-// Story (the batch); Epic and Subtask pills change only their own issue. It is presentational:
+// Shared ENG status-transition control used by Catch Up, Planning and Board for Epic, Story, and
+// Subtask status pills. Every pill changes only its own issue. It is presentational:
 // all transition state and handlers arrive as props from the dashboard hook wiring,
 // so this file never imports the transition API or hook. It is only rendered when the
 // ENG status-transition surface is enabled; passive surfaces (EPM, Stats, Scenario,
@@ -108,8 +106,6 @@ export default function StatusTransitionMenu({
     error = '',
     errorCode = '',
     result = null,
-    targetsCount = 0,
-    actsOnSelection = true,
     onOpen,
     onPrefetch,
     onClose,
@@ -132,28 +128,14 @@ export default function StatusTransitionMenu({
         : null;
 
     const isServerTooMany = errorCode === 'too_many_issues';
-    // Only a Planning Story pill applies to the selected Stories; Epic and Subtask pills act on
-    // themselves, so they behave like Catch Up and never show the batch count or cap. A Planning
-    // Table row pill also acts on its own row, so it opts out with actsOnSelection={false}.
-    const isPlanning = actsOnSelection && sourceSurface === 'planning' && String(fallbackIssueType || '').toLowerCase() === 'story';
-    // Client-side over-cap: the composed Planning batch exceeds the shared cap. Unlike a
-    // server too_many_issues (options failed, so no valid statuses), the cached status
-    // options are still visible but disabled so a >50 mutation can never be sent.
-    const isOverCap = isPlanning && targetsCount > MAX_STATUS_TRANSITION_ISSUES;
-    const showTooManyMessage = isServerTooMany || isOverCap;
     const currentStatusName = normalizeIssueStatus(statusLabel);
     const targetStatuses = sortTargetStatuses(resolveTargetStatuses(options)
         .filter((entry) => normalizeIssueStatus(entry.name) !== currentStatusName));
     const optionDisabled = (
         optionsLoading ||
         submitting ||
-        isServerTooMany ||
-        isOverCap ||
-        (isPlanning ? targetsCount === 0 : false)
+        isServerTooMany
     );
-    const submitLabel = isPlanning
-        ? `Apply to selected ${targetsCount === 1 ? 'target' : 'targets'} (${targetsCount})`
-        : 'Apply';
 
     // Warm the options before the click lands: a mouse that rests on the pill for the dwell is about
     // to open it. Pressing cancels the dwell, so a click never races its own prefetch. The hook skips
@@ -214,11 +196,11 @@ export default function StatusTransitionMenu({
                 <IssueFieldOptionMenu
                     blockClass="status-transition"
                     issueKey={issueKey}
-                    menuLabel={submitLabel}
+                    menuLabel="Apply"
                     loading={optionsLoading}
                     loadingLabel="Loading status options..."
-                    error={showTooManyMessage ? TOO_MANY_ISSUES_MESSAGE : (error || '')}
-                    errorTooMany={showTooManyMessage}
+                    error={isServerTooMany ? TOO_MANY_ISSUES_MESSAGE : (error || '')}
+                    errorTooMany={isServerTooMany}
                     showEmpty={!isServerTooMany && targetStatuses.length === 0}
                     emptyLabel="No available transitions."
                     options={isServerTooMany ? [] : targetStatuses}

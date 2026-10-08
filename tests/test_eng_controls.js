@@ -234,7 +234,6 @@ const expectedProps = {
         "statusTransitionEnabled",
         "statusTransitionSourceSurface",
         "statusTransitionSubmitting",
-        "statusTransitionTargetsCount",
         "stickyEpicFocusKey",
         "storySubtasksByKey",
         "submitPriorityChange",

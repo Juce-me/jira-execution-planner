@@ -78,10 +78,10 @@ function makeStory(key, status, sprintId, sprintName, epicKey = 'PROD-EPIC') {
     };
 }
 
-function makeEpic(sprintId, sprintName) {
+function makeEpic(sprintId, sprintName, key = 'PROD-EPIC') {
     return {
-        key: 'PROD-EPIC',
-        summary: 'Synthetic product epic',
+        key,
+        summary: key === 'PROD-EPIC' ? 'Synthetic product epic' : `Synthetic product epic ${key}`,
         status: { name: 'In Progress' },
         assignee: { displayName: 'Alpha Lead' },
         teamId: 'team-alpha',
@@ -159,6 +159,7 @@ async function installEngStatusFixture(page, {
     transitions = successTransition,
     transitionDelayMs = 0,
     stories = null,
+    epicKeys = ['PROD-EPIC'],
 } = {}) {
     const calls = [];
     const transitionState = { inFlight: 0, maxInFlight: 0 };
@@ -231,11 +232,11 @@ async function installEngStatusFixture(page, {
                 ? [makeStory('PROD-1', 'To Do', sprint, sprintName), makeStory('PROD-2', 'To Do', sprint, sprintName)]
                 : [];
             const issues = (stories && project === 'product' && !purpose) ? stories : defaultIssues;
-            const epic = makeEpic(sprint, sprintName);
+            const epics = epicKeys.map(key => makeEpic(sprint, sprintName, key));
             return json(route, {
                 issues,
-                epics: { [epic.key]: epic },
-                epicsInScope: project === 'product' ? [epic] : [],
+                epics: Object.fromEntries(epics.map(epic => [epic.key, epic])),
+                epicsInScope: project === 'product' ? epics : [],
                 names: {},
             });
         }
@@ -530,6 +531,48 @@ test('Catch Up status change sends exactly one issue key in the mutation body', 
     expect(mutation.body.targetStatus).toBe('In Progress');
 });
 
+test('Catch Up Epic status change updates only the chosen Epic', async ({ page }) => {
+    await setPrefs(page, catchUpPrefs());
+    const { calls } = await installEngStatusFixture(page, {
+        epicKeys: ['PROD-EPIC', 'PROD-EPIC-2'],
+        stories: [
+            makeStory('PROD-1', 'To Do', activeSprintId, activeSprintName, 'PROD-EPIC'),
+            makeStory('PROD-2', 'To Do', activeSprintId, activeSprintName, 'PROD-EPIC-2'),
+        ],
+    });
+    await page.goto(appBaseUrl);
+
+    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+    await expect(trigger(page, 'epic', 'PROD-EPIC')).toHaveText(/In Progress/);
+    await expect(trigger(page, 'epic', 'PROD-EPIC-2')).toHaveText(/In Progress/);
+
+    await trigger(page, 'epic', 'PROD-EPIC').click();
+    await menu(page, 'PROD-EPIC').getByRole('menuitem', { name: 'Done' }).click();
+
+    await expect(trigger(page, 'epic', 'PROD-EPIC')).toHaveText(/Done/);
+    await expect(trigger(page, 'epic', 'PROD-EPIC-2')).toHaveText(/In Progress/);
+    await expect(trigger(page, 'story', 'PROD-1')).toHaveText(/To Do/);
+    await expect(trigger(page, 'story', 'PROD-2')).toHaveText(/To Do/);
+    expect(transitionCalls(calls)).toHaveLength(1);
+    expect(transitionCalls(calls)[0].body.issueKeys).toEqual(['PROD-EPIC']);
+});
+
+test('Catch Up Story status change updates only the chosen Story', async ({ page }) => {
+    await setPrefs(page, catchUpPrefs());
+    const { calls } = await installEngStatusFixture(page);
+    await page.goto(appBaseUrl);
+
+    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+    await trigger(page, 'story', 'PROD-1').click();
+    await menu(page, 'PROD-1').getByRole('menuitem', { name: 'Accepted' }).click();
+
+    await expect(trigger(page, 'story', 'PROD-1')).toHaveText(/Accepted/);
+    await expect(trigger(page, 'story', 'PROD-2')).toHaveText(/To Do/);
+    await expect(trigger(page, 'epic', 'PROD-EPIC')).toHaveText(/In Progress/);
+    expect(transitionCalls(calls)).toHaveLength(1);
+    expect(transitionCalls(calls)[0].body.issueKeys).toEqual(['PROD-1']);
+});
+
 test('Catch Up status menu reuses fetched options and changes status on option click', async ({ page }) => {
     await setPrefs(page, catchUpPrefs());
     const { calls } = await installEngStatusFixture(page);
@@ -724,34 +767,33 @@ test('outside-card click dismisses the status menu; Escape and trigger toggle un
     await expect(storyTrigger).toBeFocused();
 });
 
-test('Planning action bar shows target count feedback and adds no status-change button', async ({ page }) => {
+test('Planning action bar adds no status-change button and no status-target count', async ({ page }) => {
     await setPrefs(page, catchUpPrefs({ selectedSprint: futureSprintId, sprintName: futureSprintName }));
     await installEngStatusFixture(page);
     await page.goto(appBaseUrl);
     await openPlanning(page);
 
-    // Two stories default-selected -> composed target count of 2, surfaced in the action bar.
-    await expect(page.locator('.planning-actions .planning-status-feedback')).toContainText('2 status targets selected');
-    // The action bar keeps its existing controls and adds no status-change button.
+    await expect(page.locator('.planning-actions .planning-status-feedback')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Select All' })).toBeVisible();
     await expect(page.locator('.planning-actions').getByRole('button', { name: /change status/i })).toHaveCount(0);
 });
 
-test('Planning Story pill applies the status to every selected Story in one body', async ({ page }) => {
+test('Planning Story pill changes only that Story even when every Story is selected', async ({ page }) => {
     await setPrefs(page, catchUpPrefs({ selectedSprint: futureSprintId, sprintName: futureSprintName }));
     const { calls } = await installEngStatusFixture(page);
     await page.goto(appBaseUrl);
-    await openPlanning(page);
+    await openPlanning(page); // PROD-1 and PROD-2 both selected
 
     await trigger(page, 'story', 'PROD-1').click();
     const storyMenu = menu(page, 'PROD-1');
-    await expect(storyMenu.locator('[aria-label="Apply to selected targets (2)"]')).toHaveCount(1);
+    await expect(storyMenu.locator('[aria-label^="Apply to selected"]')).toHaveCount(0);
     await storyMenu.getByRole('menuitem', { name: 'Accepted' }).click();
 
     await expect.poll(() => transitionCalls(calls).length).toBe(1);
-    const mutation = transitionCalls(calls)[0];
-    expect([...mutation.body.issueKeys].sort()).toEqual(['PROD-1', 'PROD-2']);
-    expect(mutation.body.targetStatus).toBe('Accepted');
+    expect(transitionCalls(calls)[0].body.issueKeys).toEqual(['PROD-1']);
+    await expect(trigger(page, 'story', 'PROD-1')).toHaveText(/Accepted/);
+    await expect(trigger(page, 'story', 'PROD-2')).toHaveText(/To Do/);
+    await expect(page.locator('.planning-panel.open .planning-stat-value').first()).toContainText('2 · 2.0 SP');
 });
 
 test('Planning Epic pill changes only that Epic and offers no batch controls', async ({ page }) => {
@@ -775,7 +817,7 @@ test('Planning Epic pill changes only that Epic and offers no batch controls', a
     expect(mutation.body.issueKeys).toEqual(['PROD-EPIC']);
     expect(mutation.body.targetStatus).toBe('Done');
     // The selected Stories are untouched and excluded capacity is not flipped or persisted.
-    await expect(page.locator('.planning-actions .planning-status-feedback')).toContainText(/(2 status targets selected|Status updated for 1 issue)/);
+    await expect(page.locator('.planning-actions .planning-status-feedback')).toContainText('Status updated for 1 issue');
     await expect(epicBlock.getByRole('button', { name: /Included/ })).toBeVisible();
     expect(calls.filter(c => c.method === 'POST' && c.pathname === '/api/groups-config')).toHaveLength(0);
 });
@@ -819,68 +861,6 @@ test('Planning Epic pill stays usable when no Story is selected', async ({ page 
     await epicOption.click();
     await expect.poll(() => transitionCalls(calls).length).toBe(1);
     expect(transitionCalls(calls)[0].body.issueKeys).toEqual(['PROD-EPIC']);
-});
-
-test('Planning partial success shows a result summary and keeps failed targets selected', async ({ page }) => {
-    await setPrefs(page, catchUpPrefs({ selectedSprint: futureSprintId, sprintName: futureSprintName }));
-    const { calls } = await installEngStatusFixture(page, { transitions: partialTransition });
-    await page.goto(appBaseUrl);
-    await openPlanning(page);
-
-    await trigger(page, 'story', 'PROD-1').click();
-    const storyMenu = menu(page, 'PROD-1');
-    await storyMenu.getByRole('menuitem', { name: 'Accepted' }).click();
-
-    await expect.poll(() => transitionCalls(calls).length).toBe(1);
-    await expect(storyMenu.locator('.status-transition-menu-result')).toContainText('1 failed');
-    // The action bar reports the partial result, and the selection stays intact for retry.
-    await expect(page.locator('.planning-actions .planning-status-feedback')).toContainText('1 failed');
-    await expect(page.locator('.planning-panel.open .planning-stat-value').first()).toContainText('2 · 2.0 SP');
-});
-
-test('Planning over-cap batch disables apply, shows a recoverable message, and sends no mutation', async ({ page }) => {
-    // With 51 Stories the first Story's status trigger sits at y~733, below the default 720px fold
-    // and under the open Planning panel and epic header once scrolled; WebKit and Firefox scroll
-    // it beneath that sticky stack (Chromium happens not to). A taller viewport needs no scroll.
-    await page.setViewportSize({ width: 1280, height: 1000 });
-    await setPrefs(page, catchUpPrefs({ selectedSprint: futureSprintId, sprintName: futureSprintName }));
-    // 51 selected Stories drives the composed target count past the cap of 50, exercising
-    // the real client-side guard (not a faked options 400 the server can never return here).
-    const overCapStories = Array.from({ length: 51 }, (_, i) => makeStory(`PROD-${i + 1}`, 'To Do', futureSprintId, futureSprintName));
-    const { calls } = await installEngStatusFixture(page, { stories: overCapStories });
-    await page.goto(appBaseUrl);
-
-    await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Planning' }).click();
-    await expect(page.locator('.planning-panel.open')).toBeVisible();
-    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
-    await page.getByRole('button', { name: 'Select All' }).click();
-    await expect(page.locator('.planning-actions .planning-status-feedback')).toContainText('51 status targets selected');
-
-    await trigger(page, 'story', 'PROD-1').click();
-    const storyMenu = menu(page, 'PROD-1');
-    // Recoverable over-cap message uses the same rendering as the server too_many_issues code.
-    await expect(storyMenu.locator('.status-transition-menu-error.is-too-many')).toContainText('Narrow your selection');
-    const inProgressOption = storyMenu.getByRole('menuitem', { name: 'In Progress' });
-    await expect(inProgressOption).toBeDisabled();
-    await inProgressOption.click({ force: true }).catch(() => {});
-    await page.waitForTimeout(150);
-    expect(transitionCalls(calls)).toHaveLength(0);
-});
-
-test('Planning status option applies to selected targets in one click', async ({ page }) => {
-    await setPrefs(page, catchUpPrefs({ selectedSprint: futureSprintId, sprintName: futureSprintName }));
-    const { calls } = await installEngStatusFixture(page);
-    await page.goto(appBaseUrl);
-    await openPlanning(page); // selects PROD-1 + PROD-2 -> composed target count 2
-
-    await trigger(page, 'story', 'PROD-1').click();
-    const storyMenu = menu(page, 'PROD-1');
-    await storyMenu.getByRole('menuitem', { name: 'In Progress' }).click();
-
-    await expect.poll(() => transitionCalls(calls).length).toBe(1);
-    const mutation = transitionCalls(calls)[0];
-    expect(mutation.body.issueKeys).toEqual(['PROD-1', 'PROD-2']);
-    expect(mutation.body.targetStatus).toBe('In Progress');
 });
 
 test('Subtask status change patches the expanded row without a follow-up fetch', async ({ page }) => {
@@ -1112,12 +1092,14 @@ test('Planning Table Story status rolls back and reports a failed change', async
 
 test('a disabled status option keeps readable colors under the pointer', async ({ page }) => {
     await setPrefs(page, catchUpPrefs({ selectedSprint: futureSprintId, sprintName: futureSprintName }));
-    await installEngStatusFixture(page);
+    const { transitionState } = await installEngStatusFixture(page, { transitionDelayMs: 1500 });
     await page.goto(appBaseUrl);
     await openPlanning(page);
-    await page.getByRole('button', { name: 'Clear Selected' }).click();
 
+    // While the write is in flight every option of the open menu is disabled.
     await trigger(page, 'story', 'PROD-1').click();
+    await menu(page, 'PROD-1').getByRole('menuitem', { name: 'In Progress' }).click();
+    await expect.poll(() => transitionState.inFlight).toBe(1);
     const option = menu(page, 'PROD-1').getByRole('menuitem', { name: 'Accepted' });
     await expect(option).toBeDisabled();
     await option.hover({ force: true });

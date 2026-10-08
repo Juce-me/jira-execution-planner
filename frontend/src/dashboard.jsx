@@ -67,7 +67,7 @@ import { createEngIssueEditState, patchEngIssueList, patchEngLoadedState } from 
 import { navigateToAlertStory } from './eng/alertStoryNavigation.js';
 import { navigateToStoryRequirement } from './eng/alertEpicNavigation.js';
 import { useEngAlerts } from './eng/useEngAlerts.js';
-import { isStatusTransitionSurfaceEnabled, buildEngStatusTargets, resolveSubtaskParentStoryKeys } from './eng/engStatusTransitionUtils.js';
+import { isStatusTransitionSurfaceEnabled, resolveSubtaskParentStoryKeys } from './eng/engStatusTransitionUtils.js';
 import { deriveActiveEngMode, useEngModeState } from './eng/engModeState.js';
 import StatusTransitionMenu from './issues/StatusTransitionMenu.jsx';
 import { StatusColourProvider } from './issues/StatusColourContext.jsx';
@@ -5066,15 +5066,6 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 ));
             }, [closePriorityControl, closeProjectTrackControl, closeSingleIssueStatusControl, onboardingPreviewDescriptorMatches, onboardingPreviewSession]);
 
-            // Planning composed target list (the selected Stories) drives the "Apply to selected
-            // targets (N)" count and the action bar feedback. Catch Up acts on one explicit
-            // issue, so its count stays 0.
-            const planningStatusTargets = React.useMemo(() => {
-                if (statusTransitionSourceSurface !== 'planning') return [];
-                return buildEngStatusTargets({ selectedTasksList });
-            }, [statusTransitionSourceSurface, selectedTasksList]);
-            const statusTransitionTargetsCount = planningStatusTargets.length;
-
             // The hook clears status options on sprint change but not on group change; close
             // the open menus here so a group switch never carries a stale one.
             React.useEffect(() => {
@@ -5083,26 +5074,16 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 closeProjectTrackControl();
             }, [activeGroupId, closeSingleIssueStatusControl, closePriorityControl, closeProjectTrackControl]);
 
-            // The hook exposes no submitting flag; track it around the awaited submit so
-            // the menu can disable its action and show an in-flight state.
-            // `singleIssue` marks an Epic or Subtask pill: in Planning it changes only that issue,
-            // whereas a Story pill applies to the selected Stories.
-            const handleSubmitStatusTransition = React.useCallback(async (targetStatus, issue, { singleIssue = false } = {}) => {
-                if (statusTransitionSourceSurface === 'catch_up' || (singleIssue && issue?.key)) {
-                    return submitStatusTransition(targetStatus, issue?.key);
-                }
-                // Board acts on ONE explicit issue, like Catch Up. Without a key the hook falls
-                // through to Planning's composed target set — the Planning selection — which is a
-                // silent no-op at best and a write to issues the user never touched at worst. A
-                // dragged card is the first caller whose issue is not a menu argument, so refuse.
-                if (statusTransitionSourceSurface === 'board' && !issue?.key) return null;
+            // Every status pill acts on its own issue: a key is required, and the Planning
+            // selection never widens the write. Board additionally holds one write at a time;
+            // the flag lets its menus disable their action and show an in-flight state.
+            const handleSubmitStatusTransition = React.useCallback(async (targetStatus, issue) => {
+                if (!issue?.key) return null;
+                if (statusTransitionSourceSurface !== 'board') return submitStatusTransition(targetStatus, issue.key);
                 if (statusTransitionSubmitting) return null;
                 setStatusTransitionSubmitting(true);
                 try {
-                    return await submitStatusTransition(
-                        targetStatus,
-                        statusTransitionSourceSurface === 'board' || singleIssue ? issue?.key : undefined,
-                    );
+                    return await submitStatusTransition(targetStatus, issue.key);
                 } finally {
                     setStatusTransitionSubmitting(false);
                 }
@@ -5835,8 +5816,8 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                     issue={{ key: row.key, status: row.status, summary: row.summary }} fallbackIssueType={row.rowKind === 'epic' ? 'Epic' : 'Story'}
                     statusLabel={row.status} statusClassName={getIssueStatusClassName(row.status)} sourceSurface="planning" isOpen={statusTransitionActiveKey === row.key}
                     options={transitionOptions} optionsLoading={transitionOptionsLoading} submitting={statusTransitionSubmitting || pendingStatusIssueKeys.has(row.key)}
-                    error={transitionError} errorCode={transitionErrorCode} result={transitionResult} actsOnSelection={false}
-                    onOpen={openSingleIssueStatusControl} onPrefetch={prefetchSingleIssueStatusOptions} onClose={closeSingleIssueStatusControl} onSubmit={(targetStatus) => handleSubmitStatusTransition(targetStatus, { key: row.key }, { singleIssue: true })} />;
+                    error={transitionError} errorCode={transitionErrorCode} result={transitionResult}
+                    onOpen={openSingleIssueStatusControl} onPrefetch={prefetchSingleIssueStatusOptions} onClose={closeSingleIssueStatusControl} onSubmit={(targetStatus) => handleSubmitStatusTransition(targetStatus, { key: row.key })} />;
                 if (field === 'priority') return <PriorityTransitionMenu
                     issue={{ key: row.key, priority: row.priority, summary: row.summary }} fallbackIssueType={row.rowKind === 'epic' ? 'Epic' : 'Story'}
                     priorityLabel={row.priority} currentPriorityLabel={row.priority} renderPriorityIcon={renderPriorityIcon}
@@ -6124,8 +6105,6 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                             onOpenSelectedInJira={openSelectedInJira}
                             planningLayout={planningLayout}
                             onTogglePlanningLayout={() => { const next = planningLayout === 'table' ? 'list' : 'table'; setPlanningLayout(next); trackPlanningReviewAction(`layout_${next}`); }}
-                            statusTransitionTargetsCount={statusTransitionTargetsCount}
-                            statusTransitionSubmitting={statusTransitionSubmitting}
                             statusTransitionError={transitionError}
                             statusTransitionErrorCode={transitionErrorCode}
                             statusTransitionResult={transitionResult}
@@ -6232,8 +6211,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 issueDependencyContext,
                 storySubtasksByKey,
                 toggleStorySubtasks,
-                retryStorySubtasks,
-                statusTransitionTargetsCount
+                retryStorySubtasks
             };
             return (
                 <StatusColourProvider columns={activeGroup?.board?.columns} enabled={selectedView === 'eng' && activeGroup?.board?.inheritColumnColours === true}>

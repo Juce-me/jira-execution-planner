@@ -419,4 +419,6 @@ When the user corrects your approach, append a one-line rule here before ending 
 
 - Keyboard-only accessibility is deprioritized: park findings in `docs/TODO.md` (Deferred) instead of building them; touch support is still required, so every action must work by tap and none may require dragging.
 
+- Every ENG status pill, in every view, writes only its own issue key; never let the Planning selection or any default selection widen a status write.
+
 - When using live data from the running app, keep it read-only and transient: prefer numbers-only probes, never save or publish screenshots of it (delete any taken), keep only obfuscated aggregates, and let the user sign in themselves.

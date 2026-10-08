@@ -77,7 +77,6 @@ export function EpicBlock({
     storySubtasksByKey,
     toggleStorySubtasks,
     retryStorySubtasks,
-    statusTransitionTargetsCount,
 }) {
     const epicInfo = epicGroup.epic;
     const epicTitle = epicInfo?.summary || epicGroup.parentSummary ||
@@ -291,7 +290,7 @@ export function EpicBlock({
                                                 result={transitionResult}
                                                 onOpen={openSingleIssueStatusControl} onPrefetch={prefetchSingleIssueStatusOptions}
                                                 onClose={closeSingleIssueStatusControl}
-                                                onSubmit={(targetStatus) => handleSubmitStatusTransition(targetStatus, { key: epicGroup.key }, { singleIssue: true })}
+                                                onSubmit={(targetStatus) => handleSubmitStatusTransition(targetStatus, { key: epicGroup.key })}
                                                 previewOnly={onboardingPreviewSession}
                                                 onPreviewLifecycleChange={handleOnboardingPreviewLifecycleChange}
                                             />
@@ -378,7 +377,6 @@ export function EpicBlock({
                         statusTransitionError={transitionError}
                         statusTransitionErrorCode={transitionErrorCode}
                         statusTransitionResult={transitionResult}
-                        statusTransitionTargetsCount={statusTransitionTargetsCount}
                         statusTransitionPendingIssueKeys={pendingStatusIssueKeys}
                         onOpenStatusTransition={openSingleIssueStatusControl} onPrefetchStatusTransition={prefetchSingleIssueStatusOptions}
                         onCloseStatusTransition={closeSingleIssueStatusControl}

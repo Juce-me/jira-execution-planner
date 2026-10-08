@@ -73,6 +73,41 @@ test('lazy retry caches only a validated mounted manifest and uses its versioned
     }
     assert.deepEqual(requests, [`https://app.example/frontend/dist/lazy-views-${buildId}.json`]);
 });
+test('every load failure is tagged so the boundary can tell it from a view render error', async () => {
+    const { createLazyViewLoader, isLazyLoadFailure, STALE_LAZY_BUILD_CODE } = load();
+    const settled = loader => loader.then(() => null, error => error);
+    const failing = createLazyViewLoader({ viewId: 'stats', initialLoad: async () => { throw new Error('asset failed'); } });
+    assert.equal(isLazyLoadFailure(await settled(failing(0))), true);
+    const stale = await settled(failing(1));
+    assert.equal(isLazyLoadFailure(stale), true);
+    assert.equal(stale.code, STALE_LAZY_BUILD_CODE);
+    assert.equal(isLazyLoadFailure(await settled(createLazyViewLoader({ viewId: 'stats', initialLoad: async () => ({}) })(0))), true);
+    const plain = await settled(createLazyViewLoader({ viewId: 'stats', initialLoad: async () => { throw 'plain'; } })(0));
+    assert.equal(isLazyLoadFailure(plain), true);
+    assert.ok(plain instanceof Error);
+    assert.equal(isLazyLoadFailure(new Error('render bug')), false);
+});
+
+test('concurrent retries share one manifest read', async () => {
+    let requests = 0;
+    const { createLazyViewLoader } = load({
+        document: { baseURI: 'https://app.example/', getElementById: () => ({ src: 'https://app.example/frontend/dist/dashboard.js' }) },
+        window: { location: { origin: 'https://app.example' } },
+        fetch: async () => { requests += 1; await new Promise(resolve => setTimeout(resolve, 0)); return { ok: true, json: async () => manifest() }; },
+    }, buildId);
+    const loaders = ['stats', 'scenario', 'settings'].map(viewId => createLazyViewLoader({ viewId, initialLoad: async () => { throw new Error('original failed'); } }));
+    await Promise.all(loaders.map(loader => loader(1).catch(() => null)));
+    assert.equal(requests, 1);
+});
+
+test('the committed manifest passes the runtime validator', () => {
+    const dist = path.join(__dirname, '../frontend/dist');
+    const names = fs.readdirSync(dist).filter(file => /^lazy-views-[a-f0-9]{64}\.json$/.test(file));
+    assert.equal(names.length, 1);
+    const id = names[0].slice('lazy-views-'.length, -'.json'.length);
+    const { validateLazyViewManifest } = load();
+    assert.equal(validateLazyViewManifest(JSON.parse(fs.readFileSync(path.join(dist, names[0]), 'utf8')), id).buildId, id);
+});
 test('missing or mismatched manifests fail stale without importing a newer graph', async () => {
     for (const response of [{ ok: false }, { ok: true, json: async () => ({ ...manifest(), buildId: 'b'.repeat(64) }) }]) {
         let requests = 0;

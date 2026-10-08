@@ -18927,8 +18927,8 @@
       "exports": [
         "default"
       ],
-      "lineCount": 30,
-      "lineCeiling": 30,
+      "lineCount": 56,
+      "lineCeiling": 56,
       "interfaces": [
         {
           "exportName": "default",
@@ -18952,10 +18952,19 @@
           "expandedInputCeiling": 3,
           "returnCeiling": 0,
           "propCeiling": 3,
-          "unresolved": [],
+          "unresolved": [
+            "forwarded input load"
+          ],
           "inventory": {
-            "source": "frontend/src/components/LazyViewBoundary.jsx:22",
-            "sourceDigest": "0ed90c8ba34cb44b92411be46fa231b7f12440fc5d452030c1184a4ee2b742ad"
+            "source": "frontend/src/components/LazyViewBoundary.jsx:48",
+            "sourceDigest": "68460988deaf31e943d4516b11c4dbbc868859024b01f50ef9439af3b0f27e2d",
+            "reviewed": true,
+            "memberNames": [
+              "children",
+              "fallback",
+              "load"
+            ],
+            "rationale": "load is the stable lazy loader function: it only keys the module-level lazy view cache and is called with the attempt number; children and fallback are render props/elements. It is not a dependency bag."
           },
           "callers": [
             {
@@ -18991,38 +19000,40 @@
         "stats"
       ],
       "exports": [
+        "STALE_LAZY_BUILD_CODE",
         "createLazyViewLoader",
+        "isLazyLoadFailure",
         "validateLazyViewManifest"
       ],
-      "lineCount": 71,
-      "lineCeiling": 71,
+      "lineCount": 96,
+      "lineCeiling": 96,
       "interfaces": []
     }
   ],
   "aggregates": {
     "scenario": {
-      "measured": 5715,
-      "ceiling": 5715
+      "measured": 5766,
+      "ceiling": 5766
     },
     "settings": {
-      "measured": 16439,
-      "ceiling": 16439
+      "measured": 16490,
+      "ceiling": 16490
     },
     "stats": {
-      "measured": 2632,
-      "ceiling": 2632
+      "measured": 2683,
+      "ceiling": 2683
     },
     "eng": {
       "measured": 1752,
       "ceiling": 1752
     },
     "uniqueOwners": {
-      "measured": 26336,
-      "ceiling": 26336
+      "measured": 26387,
+      "ceiling": 26387
     },
     "appPlusOwners": {
-      "measured": 33952,
-      "ceiling": 33952
+      "measured": 34003,
+      "ceiling": 34003
     }
   },
   "transfer": {

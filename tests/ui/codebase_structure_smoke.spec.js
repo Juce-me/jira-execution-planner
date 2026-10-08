@@ -5494,6 +5494,16 @@ function lazyManifest() {
     expect(files).toHaveLength(1);
     return JSON.parse(fs.readFileSync(path.join(dist, files[0]), 'utf8'));
 }
+// Records whether a node containing `text` is ever added; a later reopen must not suspend again.
+async function watchLazyFallback(page, text) {
+    await page.evaluate(text => {
+        window.__lazyFallbackSeen = false;
+        new MutationObserver(records => {
+            if (records.some(record => [...record.addedNodes].some(node => (node.textContent || '').includes(text)))) window.__lazyFallbackSeen = true;
+        }).observe(document.body, { childList: true, subtree: true });
+    }, text);
+}
+const lazyFallbackSeen = page => page.evaluate(() => window.__lazyFallbackSeen);
 async function installLazyStatsProbe(page, { abortRetry = false, mutateManifest } = {}) {
     const manifest = lazyManifest();
     const requests = { chunks: [], manifests: [], documents: [] };
@@ -5545,8 +5555,10 @@ test('Statistics lazy Retry refetches its chunk after one abort', async ({ page 
     await expect(page.locator('.team-dropdown-selection-label').first()).toHaveText('Alpha Team');
     const modes = page.locator('.view-selector .eng-mode-control');
     await modes.getByRole('radio', { name: 'Catch Up', exact: true }).click();
+    await watchLazyFallback(page, 'Loading Statistics…');
     await modes.getByRole('radio', { name: 'Statistics', exact: true }).click();
     await expect(page.locator('.stats-panel.open')).toBeVisible();
+    expect(await lazyFallbackSeen(page)).toBe(false);
     expect(requests.chunks).toHaveLength(2);
     await page.getByRole('button', { name: 'Filter teams', exact: true }).click();
     await expect(page.locator('.team-dropdown-panel').getByLabel('Alpha Team', { exact: true })).toBeChecked();
@@ -5651,4 +5663,35 @@ test('Statistics lazy sibling Scenario and Settings retain named and default exp
     await expect(page.locator('.group-modal')).toBeVisible();
     expect(requested).toContain(`/frontend/dist/${manifest.views.settings.path}`);
     expect(requested).not.toContain(`/frontend/dist/${manifest.views.stats.path}`);
+});
+
+test('Statistics lazy cached reopen never shows the loading fallback', async ({ page }) => {
+    await installApiMocks(page, [], { useCommittedDist: true });
+    await seedStatsContractPrefs(page, { showStats: false });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    const modes = page.locator('.view-selector .eng-mode-control');
+    await modes.getByRole('radio', { name: 'Statistics', exact: true }).click();
+    await expect(page.locator('.stats-panel.open')).toBeVisible();
+    await modes.getByRole('radio', { name: 'Catch Up', exact: true }).click();
+    await watchLazyFallback(page, 'Loading Statistics…');
+    await modes.getByRole('radio', { name: 'Statistics', exact: true }).click();
+    await expect(page.locator('.stats-panel.open')).toBeVisible();
+    expect(await lazyFallbackSeen(page)).toBe(false);
+});
+
+test('Statistics lazy render exception is not reported as a chunk load failure', async ({ page }) => {
+    await installApiMocks(page, [], { useCommittedDist: true });
+    await seedStatsContractPrefs(page);
+    const manifest = lazyManifest();
+    await page.route(`**/frontend/dist/${manifest.views.stats.path}`, route => route.fulfill({
+        status: 200, contentType: 'application/javascript',
+        body: 'export default function BrokenStats() { throw new Error("synthetic render failure"); }',
+    }));
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await expect.poll(() => errors.join('\n')).toContain('synthetic render failure');
+    await expect(page.getByRole('button', { name: 'Retry', exact: true })).toHaveCount(0);
+    await expect(page.getByText('This view could not be loaded.')).toHaveCount(0);
+    await expect(page.getByText('Reload the page to get the latest version')).toHaveCount(0);
 });

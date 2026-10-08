@@ -212,16 +212,16 @@ function withoutMountedManifestFetch(source) {
     for (const pin of [
         'export function validateLazyViewManifest(manifest, buildId)',
         'export function createLazyViewLoader({ viewId, initialLoad })',
-        'async function loadMountedManifest()',
+        'async function readMountedManifest()',
         "const mountedBuildId = typeof __JEP_DASHBOARD_BUILD_ID__ === 'string' ? __JEP_DASHBOARD_BUILD_ID__ : 'source-probe';",
         "document.getElementById('dashboard-entry')",
-        'if (!script || !/^[a-f0-9]{64}$/.test(mountedBuildId)) throw staleBuild();',
+        'if (!script || !/^[a-f0-9]{64}$/.test(mountedBuildId)) throw createStaleBuildError();',
         'const entryUrl = new URL(script.src, document.baseURI);',
-        'if (entryUrl.origin !== window.location.origin) throw staleBuild();',
+        'if (entryUrl.origin !== window.location.origin) throw createStaleBuildError();',
         'const manifestUrl = new URL(`lazy-views-${mountedBuildId}.json`, entryUrl);',
         'manifest.schemaVersion !== 1 || manifest.buildId !== buildId',
         'manifest = validateLazyViewManifest(await response.json(), mountedBuildId);',
-        'if (url.origin !== entryUrl.origin) throw staleBuild();',
+        'if (url.origin !== entryUrl.origin) throw createStaleBuildError();',
     ]) {
         assert.ok(source.includes(pin), `Mounted static manifest contract is missing: ${pin}`);
     }
@@ -252,7 +252,7 @@ test('static manifest fetch classification rejects extra fetches and changed ass
         source.replace(mountedManifestFetch, "fetch(entryUrl.href, { cache: 'no-store' })"),
         source + "\nconst endpoint = '/api/example';",
         source.replace('lazy-views-${mountedBuildId}.json', 'lazy-views-latest.json'),
-        source.replace('if (entryUrl.origin !== window.location.origin) throw staleBuild();', ''),
+        source.replace('if (entryUrl.origin !== window.location.origin) throw createStaleBuildError();', ''),
         source.replace('manifest.schemaVersion !== 1 || manifest.buildId !== buildId', 'manifest.schemaVersion !== 1'),
     ];
     for (const mutatedSource of mutations) {

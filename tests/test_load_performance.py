@@ -341,10 +341,12 @@ class LoadPerformanceTests(unittest.TestCase):
         performance.validate_load(payload)
 
     def test_mixed_measurement_cohorts_do_not_produce_combined_percentiles(self):
-        self.save(board_observation(800), now=datetime(2026, 9, 7, 10, 0, tzinfo=timezone.utc))
+        # Relative to now: the report only keeps RETENTION_DAYS of samples, so fixed dates age out.
+        recorded = datetime.now(timezone.utc) - timedelta(days=2)
+        self.save(board_observation(800), now=recorded)
         changed = board_observation(1500)
         changed['scopeCohortDigest'] = 'b' * 64
-        self.save(changed, now=datetime(2026, 9, 8, 10, 0, tzinfo=timezone.utc))
+        self.save(changed, now=recorded + timedelta(days=1))
         report = performance.load_report(self.session, 'workspace-a', {'surface': 'eng_board'})
         summary = report['summary']
         self.assertTrue(summary['mixedCohorts'])

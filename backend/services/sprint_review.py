@@ -187,7 +187,8 @@ def apply_layouts(layouts, columns, changes):
         kind = row_kind(change.get('rowKind'))
         custom = {c['id'] for c in columns if c['rowKind'] == kind}
         allowed = REVIEW_LAYOUT_BUILTINS[kind] | custom
-        hideable = {'accepted', 'assignee', 'components', 'project', 'capacity', 'projectTrack'} | custom | ({'team'} if kind == 'epic' else set())
+        # Every column but the pinned Summary can be hidden; Key is pinned first, so it hides but is never part of the order.
+        hideable = allowed | {'key'}
         for field, accepted in (('order', allowed), ('hidden', hideable)):
             ids = change.get(field, [])
             if not isinstance(ids, list) or len(ids) > 254 or any(not isinstance(i, str) for i in ids) or len(ids) != len(set(ids)) or not set(ids) <= accepted:

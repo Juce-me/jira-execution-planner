@@ -29,7 +29,7 @@ function Harness() {
     // that gate the same way, deriving errors from `board` instead of a composer callback.
     const { errors } = validateComposerBoard(board?.columns || []);
 
-    window.__groupBoardHarness = { board, errors };
+    window.__groupBoardHarness = { board, errors, setBoard };
 
     return (
         <>

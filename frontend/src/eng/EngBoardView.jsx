@@ -25,6 +25,7 @@ import EngBoardHelp from './EngBoardHelp.jsx';
 import EngFilterBar from './EngFilterBar.jsx';
 import IssueFieldOptionMenu from '../issues/IssueFieldOptionMenu.jsx';
 import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
+import { useStatusColourStyle } from '../issues/StatusColourContext.jsx';
 import EmptyState from '../ui/EmptyState.jsx';
 import LoadingState from '../ui/LoadingState.jsx';
 
@@ -78,6 +79,7 @@ export default function EngBoardView({
     strictColumns = null, authorityPending = false, stale = false,
     onResolvedFocusChange,
 }) {
+    const statusStyle = useStatusColourStyle();
     const columns = React.useMemo(
         () => {
             if (!Array.isArray(strictColumns)) {
@@ -1105,14 +1107,19 @@ export default function EngBoardView({
                         options={dropOptions}
                         optionKey={(option) => option.id}
                         optionLabel={(option) => option.label}
-                        renderMarker={(option) => (
-                            <span
-                                className={option.status && !option.warn
-                                    ? getIssueStatusClassName(option.status, 'status-transition-option-marker')
-                                    : `task-status status-transition-option-marker eng-board-drop-marker${option.warn ? ' is-warn' : ''}`}
-                                aria-hidden="true"
-                            />
-                        )}
+                        renderMarker={(option) => {
+                            const isStatus = option.status && !option.warn;
+                            const background = isStatus ? statusStyle(option.status)?.background : undefined;
+                            return (
+                                <span
+                                    className={isStatus
+                                        ? getIssueStatusClassName(option.status, 'status-transition-option-marker')
+                                        : `task-status status-transition-option-marker eng-board-drop-marker${option.warn ? ' is-warn' : ''}`}
+                                    style={background ? { background } : undefined}
+                                    aria-hidden="true"
+                                />
+                            );
+                        }}
                         onSelect={(option) => {
                             if (option.cancel) {
                                 closeDropMenu();

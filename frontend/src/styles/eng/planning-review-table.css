@@ -7,7 +7,7 @@
 .planning-review-guidance, .planning-review-state-note { color: var(--text-secondary); font-size: 0.75rem; }
 .planning-review-guidance { margin-block: 0.5rem; }
 .planning-review-state-cluster { display: inline-flex; align-items: center; gap: 0.5rem; margin-left: auto; }
-.planning-review-scroll { overflow-x: auto; max-width: 100%; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); }
+.planning-review-scroll { overflow-x: auto; width: fit-content; max-width: 100%; margin-inline: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); }
 .planning-review-table { width: max-content; border-collapse: separate; border-spacing: 0; font-size: 0.75rem; color: var(--text-primary, #334155); }
 .planning-review-table th, .planning-review-table td { padding: 5px 7px; text-align: left; vertical-align: middle; border-bottom: 1px solid var(--border); background: var(--bg-secondary); white-space: nowrap; height: 32px; box-sizing: border-box; }
 .planning-review-table th, .planning-review-table tfoot td { background: var(--bg-primary); }
@@ -33,6 +33,7 @@
 .planning-review-dialog h3 { margin-top: 0; }
 .planning-review-dialog-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 @media (min-width: 1000px) { .planning-review-table .planning-review-summary { position: sticky; left: 142px; z-index: 2; box-shadow: 1px 0 0 var(--border); } }
+@media (min-width: 1000px) { .planning-review-table.planning-review-key-hidden .planning-review-summary { left: 46px; } }
 @media (max-width: 600px) { .planning-review-region { width: calc(100vw - 2rem); max-width: calc(100vw - 2rem); margin-left: calc((100% - (100vw - 2rem)) / 2); } .planning-review-table .planning-review-summary { min-width: 180px; width: 220px; } }
 
 .planning-review-table thead th { position: sticky; top: 0; z-index: 4; }
@@ -102,6 +103,8 @@
 .planning-review-boundary-dot { display: grid; place-items: center; width: 16px; height: 16px; margin: 4px 0; border-radius: 50%; background: #3b82f6; color: #fff; font: 700 12px/1 'IBM Plex Mono', monospace; letter-spacing: 0; }
 /* Corner "+" in the pinned select header cell; absolute so the header row stays 32px. */
 .planning-review-corner { position: absolute; top: calc(50% - 12px); left: calc(50% - 12px); border-color: var(--border); border-radius: 50%; color: var(--text-primary); }
+/* Key is a fixed 96px pinned cell with no lane: its chevron sits inside the heading's right edge instead of beside it. */
+.planning-review-table th.planning-review-key .planning-review-head .planning-review-colmenu { left: auto; right: 0; }
 /* The boundary + owns the cell edge while it shows, even when focus-within or an open menu would reveal the chevron. */
 .planning-review-table th.planning-review-boundary-hot .planning-review-colmenu { opacity: 0; pointer-events: none; }
 @media (hover: none) {
@@ -113,8 +116,11 @@
     .planning-review-boundary { display: none; }
 }
 
-.planning-review-summary .issue-summary-editor-inline { display: flex; flex-direction: column; width: 100%; min-width: 0; }
-.planning-review-summary textarea.issue-summary-editor-input { display: block; box-sizing: border-box; width: 100%; min-width: 0; min-height: 28px; resize: none; overflow: hidden; padding: 3px 5px; margin: 0; border: 1px solid var(--border); border-radius: 4px; background: #fff; color: #334155; font: inherit; line-height: 1.4; letter-spacing: normal; }
+.planning-review-summary .issue-summary-editor-inline { position: relative; display: flex; flex-direction: column; width: 100%; min-width: 0; }
+/* Loading and saving show a spinner inside the input's right edge, so the row never grows for a status line. */
+.planning-review-summary .issue-summary-editor-busy { position: absolute; top: 3px; right: 6px; display: inline-flex; pointer-events: none; }
+.planning-review-summary .issue-summary-editor-inline:has(.issue-summary-editor-busy) textarea.issue-summary-editor-input { padding-right: 26px; }
+.planning-review-summary textarea.issue-summary-editor-input { display: block; box-sizing: border-box; width: 100%; min-width: 0; min-height: 22px; resize: none; overflow: hidden; padding: 2px 5px; margin: 0; border: 1px solid var(--border); border-radius: 4px; background: #fff; color: #334155; font: inherit; line-height: 1.4; letter-spacing: normal; }
 .planning-review-summary textarea.issue-summary-editor-input:focus { outline: 2px solid #93c5fd; outline-offset: 0; box-shadow: none; }
 
 .planning-panel-collapse { flex-shrink: 0; }
@@ -175,3 +181,11 @@
 .planning-review-table input.issue-person-editor-trigger, .planning-review-table button.issue-person-editor-trigger { color: var(--text-primary); font-weight: 400; }
 .planning-review-table input.issue-person-editor-trigger:hover, .planning-review-table button.issue-person-editor-trigger:hover,
 .planning-review-table input.issue-person-editor-trigger:focus-visible, .planning-review-table button.issue-person-editor-trigger:focus-visible { color: #d48806; }
+
+/* Every pill in the table (Status, awaited Stories) shares the Catch Up and filter typography: Plex Mono capitals. Passive spans and the editing button read identically. */
+.planning-review-table .status-pill { font-family: 'IBM Plex Mono', monospace; font-size: 0.5rem; text-transform: uppercase; letter-spacing: 0.1em; }
+
+/* Key stands in for itself as a Jira icon in the Summary cell while the Key column is hidden. */
+.planning-review-jira-link { display: inline-flex; flex: 0 0 auto; align-items: center; color: #0052cc; }
+.planning-review-jira-link svg { width: 14px; height: 14px; fill: currentColor; stroke: none; }
+.planning-review-jira-link:hover, .planning-review-jira-link:focus-visible { color: #d48806; }

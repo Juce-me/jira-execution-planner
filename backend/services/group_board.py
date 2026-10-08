@@ -140,6 +140,10 @@ def normalize_group_board(raw):
     else:
         retention_days = raw_retention
 
+    inherit_column_colours = raw.get('inheritColumnColours') is True
+    if 'inheritColumnColours' in raw and not isinstance(raw.get('inheritColumnColours'), bool):
+        warnings.append('board.inheritColumnColours must be true or false; treating it as off.')
+
     raw_columns = raw.get('columns')
     if raw_columns is None:
         raw_columns = []
@@ -252,7 +256,10 @@ def normalize_group_board(raw):
         if not had_any_status and index != len(normalized_columns) - 1:
             errors.append(f'board column {_column_label(column["name"], column["id"], index)} has no statuses.')
 
-    return {
+    normalized = {
         'columns': normalized_columns,
         'doneEpicRetentionDays': retention_days,
-    }, errors, warnings
+    }
+    if inherit_column_colours:
+        normalized['inheritColumnColours'] = True
+    return normalized, errors, warnings

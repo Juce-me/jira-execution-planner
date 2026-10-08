@@ -206,7 +206,7 @@ export default function EngBoardEpicPanel({
         const name = task?.fields?.status?.name || 'Unknown';
         const className = getIssueStatusClassName(name);
         if (!transitionsEnabled || !statusTransitions) {
-            return <StatusPill className={className} label={name} />;
+            return <StatusPill className={className} label={name} status={name} />;
         }
         return (
             <StatusTransitionMenu
@@ -358,7 +358,7 @@ export default function EngBoardEpicPanel({
                                 portalTarget={panelRef.current}
                             />
                         ) : (
-                            <StatusPill className={getIssueStatusClassName(statusLabel)} label={statusLabel} />
+                            <StatusPill className={getIssueStatusClassName(statusLabel)} label={statusLabel} status={statusLabel} />
                         )}
                         <span className="m-sp">
                             {incomplete ? (loading ? `Loading ${workItemLabel}…` : `${workItemLabel} incomplete`)

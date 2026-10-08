@@ -192,22 +192,80 @@ class SharedGroupConfigRouteTests(unittest.TestCase):
 
     def test_post_groups_config_allows_user_write_and_rejects_stale_revision(self):
         loaded = self._get_groups_config().get_json()
+        board = {
+            'columns': [{
+                'id': 'col-00000001',
+                'name': 'To do',
+                'statuses': ['To Do'],
+                'colour': '#8c8c8c',
+                'star': False,
+                'min': None,
+                'max': None,
+            }],
+            'doneEpicRetentionDays': 28,
+            'inheritColumnColours': True,
+        }
         payload = {
             'version': 1,
             'baseRevision': loaded['configRevision'],
-            'groups': [{'id': 'platform', 'name': 'Platform', 'teamIds': ['team-a', 'team-b']}],
+            'groups': [{'id': 'platform', 'name': 'Platform', 'teamIds': ['team-a', 'team-b'], 'board': board}],
             'defaultGroupId': 'platform',
         }
-        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+        with self._env_patch(), \
+             patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.object(jira_server, 'SETTINGS_ADMIN_ONLY', True):
+            with self.factory() as session:
+                self.assertEqual('user', session.get(models.User, self.user_id).account_type)
+            missing_requested_with = self.client.post(
+                '/api/groups-config',
+                json=payload,
+                headers={'X-CSRF-Token': self._csrf_headers()['X-CSRF-Token']},
+            )
             saved = self.client.post('/api/groups-config', json=payload, headers=self._csrf_headers())
             stale = self.client.post('/api/groups-config', json=payload, headers=self._csrf_headers())
 
+        self.assertEqual(missing_requested_with.status_code, 403, missing_requested_with.get_data(as_text=True))
         self.assertEqual(saved.status_code, 200, saved.get_data(as_text=True))
         self.assertEqual(saved.get_json()['configRevision'], loaded['configRevision'] + 1)
+        self.assertIs(True, saved.get_json()['groups'][0]['board']['inheritColumnColours'])
         self.assertEqual(stale.status_code, 409, stale.get_data(as_text=True))
         self.assertEqual(stale.get_json()['error'], 'group_config_conflict')
         self.assertIn('current', stale.get_json())
         self.assertEqual(stale.get_json()['current']['groups'][0]['adHocCapacityEpics'], [])
+        self.assertIs(True, stale.get_json()['current']['groups'][0]['board']['inheritColumnColours'])
+
+        read_back = self._get_groups_config(fallback={'version': 1}).get_json()
+        self.assertIs(True, read_back['groups'][0]['board']['inheritColumnColours'])
+
+        _, _, other_workspace_connection_id = self._seed_user(
+            'account-3',
+            site_url='https://other.example.atlassian.net',
+            cloud_id='cloud-2',
+        )
+        self._install_session(
+            'session-3',
+            'account-3',
+            other_workspace_connection_id,
+            site_url='https://other.example.atlassian.net',
+            cloud_id='cloud-2',
+        )
+        other_workspace = self._get_groups_config(fallback=self._legacy_config()).get_json()
+        self.assertNotIn('inheritColumnColours', other_workspace['groups'][0].get('board') or {})
+
+        self._install_session('session-1', 'account-1', self.connection_id)
+        bad_payload = {
+            **payload,
+            'baseRevision': loaded['configRevision'] + 1,
+            'groups': [{**payload['groups'][0], 'board': {**board, 'inheritColumnColours': 'yes'}}],
+        }
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+            warned = self.client.post('/api/groups-config', json=bad_payload, headers=self._csrf_headers())
+        self.assertEqual(warned.status_code, 200, warned.get_data(as_text=True))
+        self.assertNotIn('inheritColumnColours', warned.get_json()['groups'][0]['board'])
+        self.assertEqual(
+            ['Group "Platform" board.inheritColumnColours must be true or false; treating it as off.'],
+            warned.get_json()['warnings'],
+        )
 
     def test_post_groups_config_persists_excluded_capacity_epics_as_shared_catalog(self):
         loaded = self._get_groups_config().get_json()

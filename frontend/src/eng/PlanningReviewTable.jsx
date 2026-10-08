@@ -2,6 +2,7 @@ import * as React from 'react';
 import { createPortal } from 'react-dom';
 import useIssueFieldPopover from '../issues/useIssueFieldPopover.js';
 import TrackedExternalLink from '../components/TrackedExternalLink.jsx';
+import JiraMarkIcon from '../ui/JiraMarkIcon.jsx';
 import { buildJiraBrowseLinkAnalytics } from '../analytics/externalLinks.js';
 import { reviewCellKey, newReviewColumnId, formatReviewDisplay, insertColumnId, DEFAULT_REVIEW_HIDDEN_COLUMNS } from './planningReviewTableModel.js';
 import SegmentedControl from '../ui/SegmentedControl.jsx';
@@ -111,6 +112,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
     const allColumns = buildPlanningReviewColumns({ rows, mode, customColumns: review.columns, admittedTeamCount, admittedProjectCount, layout: review.layouts?.[mode] });
     const layoutColumns = buildPlanningReviewColumns({ rows, mode, customColumns: review.columns, admittedTeamCount: 2, admittedProjectCount: 2, layout: review.layouts?.[mode] });
     const columns = allColumns.filter(column => column.required || !hidden.has(column.id));
+    const keyHidden = !columns.some(column => column.id === 'key');
     const columnSignature = columns.map(column => `${column.id}:${column.type}`).join(',');
     React.useLayoutEffect(() => {
         const node = scroller.current, table = node.querySelector('table');
@@ -156,8 +158,10 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
     const summaryCell = row => {
         const title = <TrimmedValue value={row.summary}>{field(row, 'summary', row.summary)}</TrimmedValue>;
         const awaited = row.rowKind === 'epic' ? row.requirements?.length || 0 : 0;
-        if (!awaited) return title;
-        return <span className="planning-review-summary-line">{title}<StatusPill className={getIssueStatusClassName('Pending', 'planning-review-awaiting')} label={`${awaited} ${awaited === 1 ? 'Story' : 'Stories'} awaited`} /></span>;
+        // Without the Key column the Summary still reaches Jira: an icon link stands in for the key.
+        const jiraLink = keyHidden && !row.synthetic ? <TrackedExternalLink href={`${jiraUrl.replace(/\/+$/, '')}/browse/${encodeURIComponent(row.key)}`} className="planning-review-jira-link" target="_blank" rel="noopener noreferrer" aria-label={`Open ${row.key} in Jira`} title={`Open ${row.key} in Jira`} analyticsMeta={buildJiraBrowseLinkAnalytics({ issueKind: row.rowKind, sourceSurface: 'planning' })}><JiraMarkIcon /></TrackedExternalLink> : null;
+        if (!awaited && !jiraLink) return title;
+        return <span className="planning-review-summary-line">{jiraLink}{title}{awaited ? <StatusPill className={getIssueStatusClassName('Pending', 'planning-review-awaiting')} label={`${awaited} ${awaited === 1 ? 'Story' : 'Stories'} awaited`} /> : null}</span>;
     };
     const field = (row, fieldName, fallback) => !row.synthetic && renderFieldEditor ? (renderFieldEditor({ row, field: fieldName, value: fallback }) ?? fallback) : fallback;
     const changeMode = next => { if (editing) document.activeElement?.blur(); setEditing(null); setMode(next); setNewColumnId(''); trackedAction('row_mode_changed', { mode: next }); };
@@ -184,7 +188,9 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
     const setColumnVisible = (columnId, visible, afterId = null) => {
         const next = new Set(hidden);
         if (visible) next.delete(columnId); else next.add(columnId);
-        if (updateLayout(afterId ? insertColumnId(movableIds(), columnId, afterId) : movableIds(), [...next])) trackedAction('column_visibility_changed');
+        // Key is pinned first and never part of the saved order; a hidden column cannot keep sorting rows.
+        const order = afterId && columnId !== 'key' ? insertColumnId(movableIds(), columnId, afterId) : movableIds();
+        if (updateLayout(order, [...next])) { if (!visible) setSort(current => current.filter(item => item.columnId !== columnId)); trackedAction('column_visibility_changed'); }
     };
     const movableIds = () => layoutColumns.filter(column => !['key', 'summary'].includes(column.id)).map(column => column.id);
     const moveColumn = (source, target, after = false) => {
@@ -247,7 +253,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
             onDragStart={event => { draggedColumn.current = column.id; setDragging(true); event.dataTransfer.setData('text/plain', column.id); event.dataTransfer.effectAllowed = 'move'; }} onDragEnd={() => { draggedColumn.current = null; setDropColumn(null); setDragging(false); }}
             onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); reorder(column, event.key === 'ArrowLeft' ? -1 : 1); } }}>⠿</button>;
         const index = visibleMovable.indexOf(column.id);
-        const menu = index >= 0 && <ReviewColumnPopover open={openMenu === column.id && interactive} onClose={() => { setOpenMenu(null); setFormError(''); }} label={`${column.label} column options`} error={openMenu === column.id ? formError : ''}
+        const menu = (index >= 0 || column.id === 'key') && <ReviewColumnPopover open={openMenu === column.id && interactive} onClose={() => { setOpenMenu(null); setFormError(''); }} label={`${column.label} column options`} error={openMenu === column.id ? formError : ''}
             trigger={<IconButton size="sm" className="planning-review-column-action planning-review-colmenu" tabIndex={docked ? -1 : undefined} aria-hidden={docked ? true : undefined} disabled={!editable} aria-label={`${column.label} column options`}
                 onClick={() => { const open = openMenu !== column.id; setOpenMenu(open ? column.id : null); if (open) { setFormError(''); trackedAction('columns_opened'); } }}>
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4" /></svg>
@@ -278,7 +284,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
     const dockedTable = (kind, content, ref) => <div ref={ref} aria-hidden={kind === 'footer' ? true : undefined}
         onScroll={event => { scroller.current.scrollLeft = event.currentTarget.scrollLeft; }}
         onWheel={event => { if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) { scroller.current.scrollLeft += event.deltaX; } }} className={`planning-review-docked-${kind}`} style={{ left: dock.left, top: kind === 'header' ? dock.top : undefined, bottom: kind === 'footer' ? 0 : undefined, width: dock.width }}>
-        <table className="planning-review-table planning-review-docked-table" role="presentation" style={{ width: dock.widths.reduce((sum, width) => sum + width, 0) }}>
+        <table className={`planning-review-table planning-review-docked-table${keyHidden ? ' planning-review-key-hidden' : ''}`} role="presentation" style={{ width: dock.widths.reduce((sum, width) => sum + width, 0) }}>
             <colgroup>{dock.widths.map((width, index) => <col key={index} style={{ width }} />)}</colgroup>{content}
         </table>
     </div>;
@@ -291,7 +297,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
         {(review.conflict || review.unconfirmed) && <div className="planning-review-recovery"><span>Your draft stays local until you choose a recovery action.</span><button type="button" className="planning-action-button" disabled={review.loading || review.saving} onClick={() => { void review.loadCurrent(); trackedAction('load_current_review'); }}>Load current and discard draft</button><button type="button" className="planning-action-button" disabled={review.loading || review.saving} onClick={() => { void review.reapply(); trackedAction('reapply_review'); }}>Refresh and reapply draft</button></div>}
         {formError && !openMenu && <p role="alert" className="planning-review-guidance">{formError}</p>}
         <div ref={scroller} className="planning-review-scroll" tabIndex={0} aria-label="Planning review spreadsheet">
-            <table className={`planning-review-table${dock?.header ? ' planning-review-header-docked' : ''}${dock?.footer ? ' planning-review-footer-docked' : ''}`}>{header()}
+            <table className={`planning-review-table${keyHidden ? ' planning-review-key-hidden' : ''}${dock?.header ? ' planning-review-header-docked' : ''}${dock?.footer ? ' planning-review-footer-docked' : ''}`}>{header()}
             <tbody>{displayed.map(row => <tr key={`${row.rowKind}:${row.id || row.key}`} className={row.synthetic ? 'planning-review-synthetic' : hasZeroStoryPoints(row) ? 'planning-review-zero-sp' : ''}>
                 <td className="planning-review-selection"><Selection row={row} selectedKeys={selectedStoryKeys} onToggleStory={onToggleStory} onSelectStories={onSelectStories} /></td>
                 {columns.map(column => <td key={column.id} className={`planning-review-${column.id}${column.custom ? ' planning-review-custom' : ''} planning-review-${column.type === 'number' ? 'numeric' : 'text'}${movable(column)}`}>
@@ -307,7 +313,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
                         : column.id === 'capacity' ? (row.synthetic ? '—' : field(row, 'inclusion', excludedEpicSet.has(String(row.rowKind === 'epic' ? row.key : row.epicKey || '').toUpperCase()) ? 'Excluded' : 'Included'))
                         : column.id === 'projectTrack' ? field(row, 'projectTrack', row.projectTrack || '—')
                         : column.id === 'assignee' ? (row.synthetic ? '—' : field(row, 'assignee', row.assignee || 'Unassigned'))
-                        : column.id === 'status' ? (row.rowKind === 'requirement' ? 'Awaiting creation' : field(row, 'status', <StatusPill label={row.status || '—'} className={getIssueStatusClassName(row.status)} />)) : reviewValue(row, column, review.cells) || '—'}
+                        : column.id === 'status' ? (row.rowKind === 'requirement' ? 'Awaiting creation' : field(row, 'status', <StatusPill label={row.status || '—'} className={getIssueStatusClassName(row.status)} status={row.status} />)) : reviewValue(row, column, review.cells) || '—'}
                 </td>)}
 
             </tr>)}</tbody>{footer}</table>

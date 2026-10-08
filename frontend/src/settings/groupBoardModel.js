@@ -363,7 +363,7 @@ function coerceColour(value) {
     return BOARD_COLUMN_COLOURS.includes(value) ? value : DEFAULT_COLUMN_COLOUR;
 }
 
-export function toStoredBoard(columns = [], doneEpicRetentionDays = DEFAULT_DONE_EPIC_RETENTION_DAYS) {
+export function toStoredBoard(columns = [], doneEpicRetentionDays = DEFAULT_DONE_EPIC_RETENTION_DAYS, inheritColumnColours = false) {
     return {
         columns: columns.map((column) => ({
             id: column.id,
@@ -375,6 +375,7 @@ export function toStoredBoard(columns = [], doneEpicRetentionDays = DEFAULT_DONE
             max: normalizeBound(column.max),
         })),
         doneEpicRetentionDays,
+        ...(inheritColumnColours === true ? { inheritColumnColours: true } : {}),
     };
 }
 
@@ -392,6 +393,10 @@ export function retentionDaysFromStoredBoard(board) {
         : DEFAULT_DONE_EPIC_RETENTION_DAYS;
 }
 
+export function inheritColumnColoursFromStoredBoard(board) {
+    return board?.inheritColumnColours === true;
+}
+
 export function normalizeStoredBoard(board) {
     const stored = Array.isArray(board?.columns) ? board.columns.slice() : [];
     const retentionPresent = Object.prototype.hasOwnProperty.call(board || {}, 'doneEpicRetentionDays');
@@ -407,6 +412,7 @@ export function normalizeStoredBoard(board) {
     return {
         columns: stored,
         doneEpicRetentionDays: retentionDaysFromStoredBoard(board),
+        ...(inheritColumnColoursFromStoredBoard(board) ? { inheritColumnColours: true } : {}),
     };
 }
 

@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Board column status colours</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@300;400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Synthetic data only. Tokens verbatim from frontend/src/styles/shared/shell.css; the pill box model is verbatim
+   from frontend/src/styles/eng/epics.css (.task-status); the tint formula is verbatim from
+   frontend/src/styles/eng/filter-bar.css (.popover .task-status.eng-filter-status-pill). Pill font size is the
+   one approximation: the app inherits it from the surrounding meta row. */
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg-primary:#f8f7f4;--bg-secondary:#ffffff;--text-primary:#1a1a1a;--text-secondary:#666666;--border:#e0ddd7}
+body{font-family:'Crimson Pro',serif;background:var(--bg-primary);color:var(--text-primary);line-height:1.6}
+.wrap{max-width:1040px;margin:0 auto;padding:1.2rem 1.5rem 3rem}
+h1{font-size:1.5rem;font-weight:600;margin-bottom:.2rem}
+p.lead{color:var(--text-secondary);margin-bottom:1rem;max-width:62ch}
+h2{font-family:'IBM Plex Mono',monospace;font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--text-secondary);margin:1.4rem 0 .5rem}
+.panel{background:var(--bg-secondary);border:1px solid var(--border);padding:.9rem 1rem}
+table{border-collapse:collapse;width:100%}
+th{font-family:'IBM Plex Mono',monospace;font-size:.62rem;letter-spacing:.1em;text-transform:uppercase;color:var(--text-secondary);text-align:left;padding:.3rem .5rem .5rem;font-weight:500}
+td{padding:.32rem .5rem;border-top:1px solid var(--border);vertical-align:middle}
+.col{display:flex;align-items:center;gap:.45rem;font-family:'IBM Plex Mono',monospace;font-size:.7rem}
+.dot{width:.7rem;height:.7rem;border-radius:3px}
+.ratio{font-family:'IBM Plex Mono',monospace;font-size:.58rem;color:var(--text-secondary);margin-left:.4rem}
+/* verbatim .task-status box model */
+.task-status{display:inline-block;padding:.2rem .6rem;border-radius:8px;font-weight:500;white-space:nowrap;font-family:'IBM Plex Mono',monospace;font-size:.7rem}
+.today{color:#fff}
+.solid{color:#141414}
+.tint{color:var(--text-primary)}
+.row{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;padding:.5rem 0;border-top:1px solid var(--border)}
+.row:first-child{border-top:0}
+.label{font-family:'IBM Plex Mono',monospace;font-size:.62rem;letter-spacing:.08em;text-transform:uppercase;color:var(--text-secondary);width:7rem}
+.card{border:1px solid var(--border);border-left:4px solid #52c41a;background:#f6ffed;padding:.55rem .75rem;display:flex;gap:.6rem;align-items:center;margin-top:.4rem}
+.card b{font-weight:600}
+.note{font-size:.85rem;color:var(--text-secondary);margin-top:.6rem;max-width:70ch}
+.pop{width:348px;max-width:100%;background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;box-shadow:0 12px 28px rgba(22,22,22,.16);padding:.4rem}
+.pop-opt{display:grid;grid-template-columns:13px 1fr auto;align-items:center;gap:.55rem;padding:.3rem .35rem;border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:.7rem}
+.pop-opt i{width:13px;height:13px;border:1.5px solid var(--text-secondary);border-radius:3px;display:block}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Board column status colours</h1>
+  <p class="lead">One Department board with the seven allowed column colours. Three ways to paint a status pill whose status a column holds. Ratios are WCAG contrast of the pill's text on its own fill, computed live.</p>
+
+  <h2>All seven colours, three treatments</h2>
+  <div class="panel">
+    <table id="grid">
+      <thead><tr><th>Column colour</th><th>Today (white on fill)</th><th>A. Solid fill, dark text</th><th>B. Soft tint, dark text</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <p class="note">Approved look (operator, 2026-10-07): the <b>Today (white on fill)</b> column, white text on the solid column colour exactly as today's pills, accepting the ratios shown. A (solid fill, dark text) and B (soft tint, dark text) were the rejected alternatives; B is also the look the filter-bar Status popover already has (28% of the column colour mixed into the white surface), which stays as it is in both checkbox states. Today's pills fail 4.5:1 on every colour; A and B pass on all seven. This page has no hover state: compare hover against today's pills (the existing brightness(0.94) filter).</p>
+
+  <h2>The same Done / In Progress / Blocked set across surfaces</h2>
+  <div class="panel" id="surfaces"></div>
+
+  <h2>Filter-bar Status popover (already tinted today)</h2>
+  <div class="pop" id="pop"></div>
+</div>
+<script>
+const COLOURS=[['grey','#8c8c8c'],['violet','#b37feb'],['blue','#597ef7'],['teal','#13c2c2'],['green','#52c41a'],['amber','#e8a11d'],['red','#ff4d4f']];
+const lin=c=>{c/=255;return c<=0.03928?c/12.92:Math.pow((c+0.055)/1.055,2.4)};
+const rgb=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));
+const lum=a=>0.2126*lin(a[0])+0.7152*lin(a[1])+0.0722*lin(a[2]);
+const ratio=(a,b)=>{let x=lum(a),y=lum(b);if(x<y)[x,y]=[y,x];return (x+.05)/(y+.05)};
+const mix=(c,pct)=>{const s=rgb(c),w=[255,255,255];return s.map((v,i)=>Math.round(v*pct+w[i]*(1-pct)))};
+const hex=a=>'#'+a.map(v=>v.toString(16).padStart(2,'0')).join('');
+function pill(label,kind,colour){
+  const fill=kind==='tint'?hex(mix(colour,.28)):colour;
+  const text=kind==='today'?'#ffffff':kind==='solid'?'#141414':'#1a1a1a';
+  return {html:`<span class="task-status ${kind}" style="background:${fill}">${label}</span>`,ratio:ratio(rgb(text),rgb(fill))};
+}
+const tbody=document.querySelector('#grid tbody');
+COLOURS.forEach(([n,c])=>{
+  const cells=['today','solid','tint'].map(k=>{const p=pill('In Progress',k,c);return `<td>${p.html}<span class="ratio">${p.ratio.toFixed(2)}:1</span></td>`}).join('');
+  tbody.insertAdjacentHTML('beforeend',`<tr><td><div class="col"><span class="dot" style="background:${c}"></span>${n} ${c}</div></td>${cells}</tr>`);
+});
+const SET=[['To Do','#8c8c8c'],['In Progress','#597ef7'],['In Review','#b37feb'],['Blocked','#ff4d4f'],['Done','#52c41a']];
+const surf=document.getElementById('surfaces');
+[['today','Today'],['solid','A. Solid'],['tint','B. Tint']].forEach(([k,l])=>{
+  surf.insertAdjacentHTML('beforeend',`<div class="row"><span class="label">${l}</span>${SET.map(([s,c])=>pill(s,k,c).html).join('')}</div>`);
+});
+surf.insertAdjacentHTML('beforeend',`<div class="note">Story card with a Done pill when the Done column is violet (card tint is hard-coded green and is left alone):</div>
+ <div class="card"><b>PROJ-123</b> Example Story ${pill('Done','solid','#b37feb').html}</div>
+ <div class="card"><b>PROJ-123</b> Example Story ${pill('Done','tint','#b37feb').html}</div>`);
+const pop=document.getElementById('pop');
+SET.forEach(([s,c])=>pop.insertAdjacentHTML('beforeend',`<div class="pop-opt"><i></i>${pill(s,'tint',c).html}<span>12</span></div>`));
+</script>
+</body>
+</html>

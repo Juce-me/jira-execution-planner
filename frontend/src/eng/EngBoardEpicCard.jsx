@@ -94,7 +94,7 @@ export default function EngBoardEpicCard({
                         {getProjectTrackEmoji(track)}
                     </span>
                 )}
-                <StatusPill className={getIssueStatusClassName(status)} label={status || 'Unknown'} />
+                <StatusPill className={getIssueStatusClassName(status)} label={status || 'Unknown'} status={status} />
                 <span className="etitle">{summary}</span>
                 <span className="ekey">{key}</span>
             </div>

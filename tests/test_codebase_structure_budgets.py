@@ -192,6 +192,10 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # Merge of origin/main into feature/217-sprint-review-table: main's 18307 plus this branch's Planning table lines (+9 Planned Teams Effort strip, the rest as itemized above); the merged file is 18434 lines.
     # Issue #220 SC2 R5 ratchets to the validated planner-hook checkpoint.
     # Issue #220 SC4 R5 ratchets to the validated ScenarioView checkpoint (the Scenario JSX moved out).
+    # Issue #244 Board column status colours consumes the saved Department flag: StatusColourProvider
+    # import (+1), the provider open and close tags (+2) and the Epic-header pill's status= (+1).
+    # The resolver, context and StatusPill support live in frontend/src/issues/ and ui/ (+4 in total,
+    # inside the 4 lines of slack the R5 ratchet left, so the budget itself is unchanged).
     "frontend/src/dashboard.jsx": 10855,
 }
 

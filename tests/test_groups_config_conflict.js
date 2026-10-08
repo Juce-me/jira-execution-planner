@@ -112,6 +112,13 @@ test('boardDraftIsDirty is true only when a board actually differs from the base
     assert.equal(boardDraftIsDirty(null, baseline), false);
 });
 
+test('boardDraftIsDirty treats a flag-only difference as dirty', () => {
+    const { boardDraftIsDirty } = loadGroupsConfigConflict();
+    const baseline = [{ id: 'platform', board: { columns: [{ id: 'c1', name: 'A' }] } }];
+    const flagged = { groups: [{ id: 'platform', board: { columns: [{ id: 'c1', name: 'A' }], inheritColumnColours: true } }] };
+    assert.equal(boardDraftIsDirty(flagged, baseline), true);
+});
+
 test('rebasing takes the revision from the server config and nothing else', () => {
     const { rebaseSharedGroupsPayload } = loadGroupsConfigConflict();
     const payload = {

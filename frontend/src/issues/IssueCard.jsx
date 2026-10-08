@@ -295,6 +295,7 @@ export default function IssueCard({
                         <StatusPill
                             className={statusClassName || getIssueStatusClassName(statusName)}
                             label={statusName}
+                            status={statusName}
                         />
                     )}
                     <span className="task-team">{teamLabel || getIssueTeamLabel(teamInfo)}</span>
@@ -401,6 +402,7 @@ export default function IssueCard({
                                         <StatusPill
                                             className={getIssueStatusClassName(subtask.status?.name)}
                                             label={subtask.status?.name || 'Unknown'}
+                                            status={subtask.status?.name}
                                         />
                                     )}
                                     <span className="story-subtask-assignee">{subtask.assignee?.displayName || 'Unassigned'}</span>

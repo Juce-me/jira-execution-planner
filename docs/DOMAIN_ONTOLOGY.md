@@ -38,8 +38,11 @@ field ownership to the Story: it follows `Story -> parent Epic -> Epic field`.
 
 A Department is the application scope that groups Teams and owns shared ENG board configuration.
 Its board columns classify Epics by Epic status; an Epic status no column holds lands in the first
-(To Do) column, so there is no Unmapped column. Department selection controls which configured
-Teams and board rules are in scope; it does not own Jira issue fields.
+(To Do) column, so there is no Unmapped column. With the Department's optional "Use column colours
+for statuses" flag on, a column's colour is also applied to the status pill of any issue (Epic, Story,
+or Subtask) whose status name the column holds; a status no column holds keeps its usual colours, and
+the flag does not change which column an Epic is placed in. Department selection controls which
+configured Teams and board rules are in scope; it does not own Jira issue fields.
 
 ### Team
 

@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { readOwnerSource } = require('./frontend_source_helpers');
 
 const frontendSrcPath = path.join(__dirname, '..', 'frontend', 'src');
 const read = (...segments) => fs.readFileSync(path.join(frontendSrcPath, ...segments), 'utf8');
@@ -128,10 +129,11 @@ test('Planning enablement: one mode gate, the Planning surface, and the capacity
     assert.ok(guards.includes('!isEpicRefreshMode') && !guards.includes('!isCatchUpMode'), 'the click guard allows Planning');
     assert.ok(source.includes("sourceSurface: isCatchUpMode ? 'catch_up' : 'planning'"), 'the analytics surface follows the mode');
     assert.ok(source.includes('capacityScopeHoldRef,'), 'the hook receives the hold ref');
+    const capacitySource = readOwnerSource(['frontend/src/eng/useEngCapacity.js'], { anchor: 'export function useEngCapacity(' });
     // The signature is pinned while the hold is set and released only by a user scope change or a department reload.
-    assert.match(source, /if \(showPlanning && capacityScopeHoldRef\.current && activeCapacityScopeRef\.current && !capacityScopePinRef\.current\) capacityScopePinRef\.current = \{ key: capacityScopeKey, signature: activeCapacityScopeRef\.current \};/);
-    assert.match(source, /const capacityScopeSignature = capacityScopePinRef\.current \? capacityScopePinRef\.current\.signature : buildCapacityScopeSignature\(/);
-    assert.ok(/const capacityScopeKey = \[[^\]]*loadEpochRef\.current[^\]]*isAllTeamsSelected[^\]]*selectedTeamSet/.test(source), 'the pin key covers the sprint, group, team scope and the department load epoch');
+    assert.match(capacitySource, /if \(showPlanning && capacityScopeHoldRef\.current && activeCapacityScopeRef\.current && !capacityScopePinRef\.current\) capacityScopePinRef\.current = \{ key: capacityScopeKey, signature: activeCapacityScopeRef\.current \};/);
+    assert.match(capacitySource, /const capacityScopeSignature = capacityScopePinRef\.current \? capacityScopePinRef\.current\.signature : buildCapacityScopeSignature\(/);
+    assert.ok(/const capacityScopeKey = \[[^\]]*loadEpochRef\.current[^\]]*isAllTeamsSelected[^\]]*selectedTeamSet/.test(capacitySource), 'the pin key covers the sprint, group, team scope and the department load epoch');
     const hook = read('eng', 'useEpicRefresh.js');
     const apply = hook.slice(hook.indexOf('const apply = async update'), hook.indexOf('const setEpicState'));
     assert.ok(apply.indexOf('capacityScopeHoldRef.current = true') > -1 && apply.indexOf('capacityScopeHoldRef.current = true') < apply.indexOf('flushSync(() => {'), 'the hold is set before the merge');

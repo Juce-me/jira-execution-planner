@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "baseSha": "d754f1cb48c02d581d6ffd4c667c2c4ebf1183b1",
-  "checkpointId": "dashboard-decomposition-Task4",
+  "baseSha": "2c7e4bb32514152b131a0af55cfabddf90c26fa1",
+  "checkpointId": "dashboard-decomposition-Task5",
   "sourceRoot": "frontend/src",
   "ownerRoots": [
     "scenario",
@@ -19,8 +19,8 @@
   },
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
-    "lineCount": 8477,
-    "lineCeiling": 8477
+    "lineCount": 8144,
+    "lineCeiling": 8144
   },
   "modules": [
     {
@@ -17264,6 +17264,582 @@
           "getters": []
         }
       ]
+    },
+    {
+      "id": "eng.useEngCapacity",
+      "path": "frontend/src/eng/useEngCapacity.js",
+      "features": [
+        "eng"
+      ],
+      "exports": [
+        "useEngCapacity",
+        "useEngCapacityState"
+      ],
+      "lineCount": 394,
+      "lineCeiling": 394,
+      "interfaces": [
+        {
+          "exportName": "useEngCapacity",
+          "inputNames": [
+            "BACKEND_URL",
+            "activeCapacityScopeRef",
+            "capacityEnabled",
+            "capacityReadAbortRef",
+            "capacityReadGenerationRef",
+            "capacityReadModelRef",
+            "capacityRefreshNonce",
+            "capacityScopeHoldRef",
+            "capacityScopeKeyRef",
+            "capacityScopePinRef",
+            "capacityState",
+            "capacityStateRef",
+            "epicGroups",
+            "epicRefMap",
+            "getTeamInfo",
+            "loadEpochRef",
+            "normalizeEpicKey",
+            "normalizeStatus",
+            "scope",
+            "selectedPlanningTasksList",
+            "selectedSP",
+            "selectedTasksList",
+            "setCapacityDataStale",
+            "setCapacityLoading",
+            "setCapacityReadError",
+            "setCapacityReadRevision",
+            "setCapacityRefreshNonce",
+            "setCapacityState",
+            "showPlanning",
+            "showProduct",
+            "showTech"
+          ],
+          "returnNames": [
+            "capacityMutationEnabled",
+            "capacityScopeSignature",
+            "capacityShareLabel",
+            "capacitySummary",
+            "capacityTeamIds",
+            "capacityTotals",
+            "displayedTeamCapacityEntries",
+            "effectiveCapacityState",
+            "estimatedCapacityAdjusted",
+            "excludedCapacityAdjusted",
+            "excludedProjectStats",
+            "formatCapacityValue",
+            "handleCapacitySaved",
+            "retryCapacity",
+            "selectedAdHocProductSP",
+            "selectedProjectEntries",
+            "selectedTeamEntries",
+            "showTotalsRow",
+            "teamCapacityEntries",
+            "totalCapacityAdjusted"
+          ],
+          "propNames": [],
+          "expandedInputNames": [
+            "BACKEND_URL",
+            "activeCapacityScopeRef",
+            "activeCapacityScopeRef.current",
+            "capacityEnabled",
+            "capacityReadAbortRef",
+            "capacityReadAbortRef.current",
+            "capacityReadAbortRef.current.signal",
+            "capacityReadGenerationRef",
+            "capacityReadModelRef",
+            "capacityReadModelRef.current",
+            "capacityRefreshNonce",
+            "capacityScopeHoldRef",
+            "capacityScopeHoldRef.current",
+            "capacityScopeKeyRef",
+            "capacityScopeKeyRef.current",
+            "capacityScopePinRef",
+            "capacityScopePinRef.current",
+            "capacityScopePinRef.current.signature",
+            "capacityState",
+            "capacityState.scopeSignature",
+            "capacityStateRef",
+            "capacityStateRef.current",
+            "epicGroups",
+            "epicGroups.find",
+            "epicRefMap",
+            "epicRefMap.current",
+            "epicRefMap.current.get",
+            "getTeamInfo",
+            "loadEpochRef",
+            "loadEpochRef.current",
+            "normalizeEpicKey",
+            "normalizeStatus",
+            "scope",
+            "scope.activeGroupId",
+            "scope.adHocEpicSet",
+            "scope.adHocEpicSignature",
+            "scope.capacityTasks",
+            "scope.excludedEpicSet",
+            "scope.isAllTeamsSelected",
+            "scope.selectedSprintInfo",
+            "scope.selectedTeamSet",
+            "scope.teamOptions",
+            "scope.techProjectKeys",
+            "selectedPlanningTasksList",
+            "selectedPlanningTasksList.reduce",
+            "selectedSP",
+            "selectedTasksList",
+            "setCapacityDataStale",
+            "setCapacityLoading",
+            "setCapacityReadError",
+            "setCapacityReadRevision",
+            "setCapacityRefreshNonce",
+            "setCapacityState",
+            "showPlanning",
+            "showProduct",
+            "showTech"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 56,
+          "returnCount": 20,
+          "propCount": 0,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 56,
+          "returnCeiling": 20,
+          "propCeiling": 0,
+          "unresolved": [
+            "forwarded input selectedTasksList",
+            "forwarded input selectedPlanningTasksList",
+            "forwarded input selectedSP",
+            "forwarded input getTeamInfo",
+            "forwarded input normalizeEpicKey",
+            "forwarded input BACKEND_URL"
+          ],
+          "inventory": {
+            "source": "frontend/src/eng/useEngCapacity.js:53",
+            "sourceDigest": "53bc72994b02ba83fa9a3efd36fdd0eb7ebe2387d0a70910e4752fc3ef9fb9b7",
+            "reviewed": true,
+            "memberNames": [
+              "BACKEND_URL",
+              "activeCapacityScopeRef",
+              "activeCapacityScopeRef.current",
+              "capacityEnabled",
+              "capacityReadAbortRef",
+              "capacityReadAbortRef.current",
+              "capacityReadAbortRef.current.signal",
+              "capacityReadGenerationRef",
+              "capacityReadModelRef",
+              "capacityReadModelRef.current",
+              "capacityRefreshNonce",
+              "capacityScopeHoldRef",
+              "capacityScopeHoldRef.current",
+              "capacityScopeKeyRef",
+              "capacityScopeKeyRef.current",
+              "capacityScopePinRef",
+              "capacityScopePinRef.current",
+              "capacityScopePinRef.current.signature",
+              "capacityState",
+              "capacityState.scopeSignature",
+              "capacityStateRef",
+              "capacityStateRef.current",
+              "epicGroups",
+              "epicGroups.find",
+              "epicRefMap",
+              "epicRefMap.current",
+              "epicRefMap.current.get",
+              "getTeamInfo",
+              "loadEpochRef",
+              "loadEpochRef.current",
+              "normalizeEpicKey",
+              "normalizeStatus",
+              "scope",
+              "scope.activeGroupId",
+              "scope.adHocEpicSet",
+              "scope.adHocEpicSignature",
+              "scope.capacityTasks",
+              "scope.excludedEpicSet",
+              "scope.isAllTeamsSelected",
+              "scope.selectedSprintInfo",
+              "scope.selectedTeamSet",
+              "scope.teamOptions",
+              "scope.techProjectKeys",
+              "selectedPlanningTasksList",
+              "selectedPlanningTasksList.reduce",
+              "selectedSP",
+              "selectedTasksList",
+              "setCapacityDataStale",
+              "setCapacityLoading",
+              "setCapacityReadError",
+              "setCapacityReadRevision",
+              "setCapacityRefreshNonce",
+              "setCapacityState",
+              "showPlanning",
+              "showProduct",
+              "showTech"
+            ],
+            "rationale": "Reviewed accepted Task 4 closure ledger: selectedTasksList and selectedPlanningTasksList are the existing selected Story arrays passed unchanged to planningSelectionStats helpers. selectedSP is the selected numeric Story Point total passed to getCapacityStatus. getTeamInfo and normalizeEpicKey are existing synchronous task/identity helpers, forwarded unchanged; BACKEND_URL is passed only to the existing Capacity GET API wrapper. Scope aliases, render-time state/read refs, held signature pin and unused scroll closure retain the exact prior reads. No deferred getter, mutation transport or dependency change."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "useEngCapacity",
+              "line": 5109,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [
+            {
+              "name": "selectedAdHocProductSP",
+              "lines": [
+                6769
+              ]
+            },
+            {
+              "name": "excludedProjectStats",
+              "lines": [
+                6768
+              ]
+            },
+            {
+              "name": "capacityShareLabel",
+              "lines": [
+                6757
+              ]
+            },
+            {
+              "name": "teamCapacityEntries",
+              "lines": [
+                5556
+              ]
+            },
+            {
+              "name": "displayedTeamCapacityEntries",
+              "lines": [
+                6978,
+                7160,
+                7338,
+                7342
+              ]
+            },
+            {
+              "name": "capacityScopeSignature",
+              "lines": [
+                6751
+              ]
+            },
+            {
+              "name": "effectiveCapacityState",
+              "lines": [
+                6756
+              ]
+            },
+            {
+              "name": "capacityMutationEnabled",
+              "lines": [
+                6748
+              ]
+            },
+            {
+              "name": "handleCapacitySaved",
+              "lines": [
+                6760
+              ]
+            },
+            {
+              "name": "retryCapacity",
+              "lines": [
+                6761
+              ]
+            },
+            {
+              "name": "capacityTeamIds",
+              "lines": [
+                7168,
+                7171,
+                7187,
+                7190,
+                7206,
+                7209,
+                7226,
+                7229,
+                7245,
+                7248,
+                7264,
+                7267,
+                7284,
+                7287,
+                7303,
+                7306,
+                7322,
+                7325
+              ]
+            },
+            {
+              "name": "totalCapacityAdjusted",
+              "lines": [
+                5556,
+                6737
+              ]
+            },
+            {
+              "name": "estimatedCapacityAdjusted",
+              "lines": [
+                6738
+              ]
+            },
+            {
+              "name": "excludedCapacityAdjusted",
+              "lines": [
+                6739
+              ]
+            },
+            {
+              "name": "capacitySummary",
+              "lines": [
+                6742
+              ]
+            },
+            {
+              "name": "selectedProjectEntries",
+              "lines": [
+                6767
+              ]
+            },
+            {
+              "name": "selectedTeamEntries",
+              "lines": [
+                5556,
+                6745
+              ]
+            },
+            {
+              "name": "capacityTotals",
+              "lines": [
+                7165,
+                7166,
+                7185,
+                7203,
+                7204,
+                7223,
+                7224,
+                7243,
+                7261,
+                7262,
+                7281,
+                7282,
+                7301,
+                7319,
+                7320
+              ]
+            },
+            {
+              "name": "showTotalsRow",
+              "lines": [
+                7160
+              ]
+            },
+            {
+              "name": "formatCapacityValue",
+              "lines": [
+                6988,
+                7007,
+                7026,
+                7046,
+                7065,
+                7084,
+                7104,
+                7123,
+                7142,
+                7166,
+                7185,
+                7204,
+                7224,
+                7243,
+                7262,
+                7282,
+                7301,
+                7320
+              ]
+            }
+          ],
+          "getters": []
+        },
+        {
+          "exportName": "useEngCapacityState",
+          "inputNames": [],
+          "returnNames": [
+            "activeCapacityScopeRef",
+            "capacityDataStale",
+            "capacityLoading",
+            "capacityReadAbortRef",
+            "capacityReadError",
+            "capacityReadGenerationRef",
+            "capacityReadModelRef",
+            "capacityReadRevision",
+            "capacityRefreshNonce",
+            "capacityScopeHoldRef",
+            "capacityScopeKeyRef",
+            "capacityScopePinRef",
+            "capacityState",
+            "capacityStateRef",
+            "setCapacityDataStale",
+            "setCapacityLoading",
+            "setCapacityReadError",
+            "setCapacityReadRevision",
+            "setCapacityRefreshNonce",
+            "setCapacityState"
+          ],
+          "propNames": [],
+          "expandedInputNames": [],
+          "outerParameterCount": 0,
+          "expandedInputCount": 0,
+          "returnCount": 20,
+          "propCount": 0,
+          "outerParameterCeiling": 0,
+          "expandedInputCeiling": 0,
+          "returnCeiling": 20,
+          "propCeiling": 0,
+          "unresolved": [],
+          "inventory": {
+            "source": "frontend/src/eng/useEngCapacity.js:28",
+            "sourceDigest": "53bc72994b02ba83fa9a3efd36fdd0eb7ebe2387d0a70910e4752fc3ef9fb9b7"
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "useEngCapacityState",
+              "line": 916,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [
+            {
+              "name": "capacityState",
+              "lines": [
+                5114
+              ]
+            },
+            {
+              "name": "setCapacityState",
+              "lines": [
+                1616,
+                5115
+              ]
+            },
+            {
+              "name": "capacityStateRef",
+              "lines": [
+                5114
+              ]
+            },
+            {
+              "name": "capacityLoading",
+              "lines": [
+                6753
+              ]
+            },
+            {
+              "name": "setCapacityLoading",
+              "lines": [
+                1617,
+                5115
+              ]
+            },
+            {
+              "name": "capacityReadRevision",
+              "lines": [
+                6752
+              ]
+            },
+            {
+              "name": "setCapacityReadRevision",
+              "lines": [
+                5115
+              ]
+            },
+            {
+              "name": "capacityReadError",
+              "lines": [
+                6703,
+                6754
+              ]
+            },
+            {
+              "name": "setCapacityReadError",
+              "lines": [
+                1618,
+                5115
+              ]
+            },
+            {
+              "name": "capacityDataStale",
+              "lines": [
+                6703,
+                6755
+              ]
+            },
+            {
+              "name": "setCapacityDataStale",
+              "lines": [
+                1619,
+                5116
+              ]
+            },
+            {
+              "name": "capacityReadModelRef",
+              "lines": [
+                5116
+              ]
+            },
+            {
+              "name": "capacityRefreshNonce",
+              "lines": [
+                5116
+              ]
+            },
+            {
+              "name": "setCapacityRefreshNonce",
+              "lines": [
+                5116,
+                6555
+              ]
+            },
+            {
+              "name": "capacityReadGenerationRef",
+              "lines": [
+                5117
+              ]
+            },
+            {
+              "name": "capacityReadAbortRef",
+              "lines": [
+                5117
+              ]
+            },
+            {
+              "name": "activeCapacityScopeRef",
+              "lines": [
+                5117
+              ]
+            },
+            {
+              "name": "capacityScopeHoldRef",
+              "lines": [
+                5117,
+                6630
+              ]
+            },
+            {
+              "name": "capacityScopePinRef",
+              "lines": [
+                5118
+              ]
+            },
+            {
+              "name": "capacityScopeKeyRef",
+              "lines": [
+                5118
+              ]
+            }
+          ],
+          "getters": []
+        }
+      ]
     }
   ],
   "aggregates": {
@@ -17280,16 +17856,16 @@
       "ceiling": 2529
     },
     "eng": {
-      "measured": 475,
-      "ceiling": 475
+      "measured": 869,
+      "ceiling": 869
     },
     "uniqueOwners": {
-      "measured": 24956,
-      "ceiling": 24956
+      "measured": 25350,
+      "ceiling": 25350
     },
     "appPlusOwners": {
-      "measured": 33433,
-      "ceiling": 33433
+      "measured": 33494,
+      "ceiling": 33494
     }
   },
   "transfer": {

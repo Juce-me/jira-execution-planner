@@ -8,6 +8,7 @@ const { readDashboardCssSource } = require('./css_source_helpers');
 const repoRoot = path.join(__dirname, '..');
 const dashboardSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', 'dashboard.jsx'), 'utf8');
 const statsPanelSource = readOwnerSource(['frontend/src/stats/StatsPanel.jsx'], { anchor: 'export function StatsPanel(' });
+const capacitySource = readOwnerSource(['frontend/src/eng/useEngCapacity.js'], { anchor: 'export function useEngCapacity(' });
 const statsDataSource = readOwnerSource(['frontend/src/stats/useStatsData.js'], { anchor: 'export function useStatsDerivedB(' });
 const cssSource = readDashboardCssSource(repoRoot);
 const lineChartSource = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', 'stats', 'ExcludedCapacityLineChart.jsx'), 'utf8');
@@ -737,11 +738,11 @@ test('Ad Hoc capacity is derived from the saved active group, separate from excl
 
 test('Ad Hoc set threads only into classification/reporting helpers, never excluded math', () => {
     assert.ok(
-        dashboardSource.includes('buildSelectedProjectStats(selectedPlanningTasksList, techProjectKeys, adHocEpicSet)'),
+        capacitySource.includes('buildSelectedProjectStats(selectedPlanningTasksList, techProjectKeys, adHocEpicSet)'),
         'Expected Planning selected project stats to receive the Ad Hoc set'
     );
     assert.ok(
-        dashboardSource.includes('buildSelectedTeamProjectStats(selectedPlanningTasksList, getTeamInfo, techProjectKeys, adHocEpicSet)'),
+        capacitySource.includes('buildSelectedTeamProjectStats(selectedPlanningTasksList, getTeamInfo, techProjectKeys, adHocEpicSet)'),
         'Expected Planning selected team project stats to receive the Ad Hoc set'
     );
     assert.match(
@@ -750,21 +751,23 @@ test('Ad Hoc set threads only into classification/reporting helpers, never exclu
         'Expected the local stats build to receive the Ad Hoc set'
     );
     assert.match(
-        dashboardSource,
+        capacitySource,
         /buildTeamCapacityStats\(\{[\s\S]*adHocEpicSet[\s\S]*\}\);/,
         'Expected team capacity stats to receive the Ad Hoc set'
     );
-    // Excluded-capacity math must never receive the Ad Hoc set.
-    assert.doesNotMatch(
-        dashboardSource,
-        /buildExcludedProjectStats\([^)]*adHocEpicSet/,
-        'buildExcludedProjectStats must not receive the Ad Hoc set'
-    );
-    assert.doesNotMatch(
-        dashboardSource,
-        /buildExcludedCapacityByTeamId\(\{[^}]*adHocEpicSet/,
-        'buildExcludedCapacityByTeamId must not receive the Ad Hoc set'
-    );
+    // Check both the App boundary and the moved math owner, so absence in App cannot make the pin vacuous.
+    for (const source of [dashboardSource, capacitySource]) {
+        assert.doesNotMatch(
+            source,
+            /buildExcludedProjectStats\([^)]*adHocEpicSet/,
+            'buildExcludedProjectStats must not receive the Ad Hoc set'
+        );
+        assert.doesNotMatch(
+            source,
+            /buildExcludedCapacityByTeamId\(\{[^}]*adHocEpicSet/,
+            'buildExcludedCapacityByTeamId must not receive the Ad Hoc set'
+        );
+    }
 });
 
 test('Planning split bar reports Ad Hoc as included Product capacity', () => {

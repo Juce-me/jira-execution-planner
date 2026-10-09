@@ -150,6 +150,61 @@ test('Board priority success still refreshes the scope once and Catch Up never d
     }
 });
 
+test('choosing an option closes that issue\'s popup on every surface, still invalidates alerts, and leaves a locked field\'s popup open to say why', async () => {
+    for (const surface of ['planning', 'catch_up', 'board']) {
+        const priority = priorityHarness(surface);
+        const { submitted } = await openAndSubmitPriority(priority, 'PROD-1');
+        priority.mounted.render();
+        assert.equal(priority.mounted.result.activePriorityTarget, null, `${surface}: the priority popup closes as soon as a priority is chosen`);
+        priority.api.writes[0].resolve(priorityResponse('PROD-1'));
+        await submitted;
+        assert.deepEqual(priority.seen.invalidated, [{ keys: ['PROD-1'] }], `${surface}: closing the popup does not skip the alert invalidation`);
+        priority.mounted.unmount();
+
+        const status = await registryStatusHarness(surface);
+        const sent = await submitStatus(status, 'PROD-1');
+        status.mounted.render();
+        assert.equal(status.mounted.result.activeSingleIssueTarget, null, `${surface}: the status popup closes as soon as a status is chosen`);
+        status.api.transitions[0].resolve(transitionResponse('PROD-1'));
+        await sent.submitted;
+        assert.deepEqual(status.seen.invalidated, [{ keys: ['PROD-1'] }], `${surface}: closing the popup does not skip the alert invalidation`);
+        status.mounted.render();
+        assert.equal(status.mounted.result.transitionResult?.succeeded, 1, `${surface}: the outcome still reaches the hook state (the Planning bar shows it) with no popup open`);
+        status.mounted.unmount();
+    }
+
+    // Another issue's popup is left alone (a Board drop submits a key with no popup of its own).
+    const other = await registryStatusHarness('board');
+    other.mounted.render();
+    other.mounted.result.openSingleIssueStatusControl({ key: 'PROD-2', fields: { status: { name: 'To Do' }, issuetype: { name: 'Story' } } }, 'Story');
+    await flush();
+    other.mounted.render();
+    const dropped = other.mounted.result.submitStatusTransition('In Progress', 'PROD-1');
+    await flush();
+    other.mounted.render();
+    assert.equal(other.mounted.result.activeSingleIssueTarget?.key, 'PROD-2', 'a write for a different key does not close the open popup');
+    other.api.transitions[0].resolve(transitionResponse('PROD-1'));
+    await dropped;
+    other.mounted.render();
+    assert.equal(other.mounted.result.transitionResult, null, 'its outcome is never written into the other issue\'s open popup');
+    other.mounted.unmount();
+
+    // A refused (locked) edit keeps the popup open so the reason is visible.
+    const locked = await registryStatusHarness('planning');
+    const first = await submitStatus(locked, 'PROD-1');
+    locked.api.transitions[0].resolve({ requested: 1, succeeded: 0, failed: 1, targetStatus: 'In Progress', results: [{ key: 'PROD-1', result: 'failure', error: 'transition_failed' }] });
+    await first.submitted;
+    locked.mounted.render();
+    locked.mounted.result.openSingleIssueStatusControl({ key: 'PROD-1', fields: { status: { name: 'To Do' }, issuetype: { name: 'Story' } } }, 'Story');
+    await flush();
+    locked.mounted.render();
+    assert.equal(await locked.mounted.result.submitStatusTransition('Done', 'PROD-1'), null);
+    locked.mounted.render();
+    assert.equal(locked.mounted.result.activeSingleIssueTarget?.key, 'PROD-1', 'the refused edit leaves its popup open');
+    assert.equal(locked.mounted.result.transitionErrorCode, 'write_unconfirmed');
+    locked.mounted.unmount();
+});
+
 test('only a confirmed Planning priority edit asks for a re-sort of its lane', async () => {
     for (const [surface, reorder] of [['planning', true], ['catch_up', false], ['board', false]]) {
         const harness = priorityHarness(surface);
@@ -292,9 +347,10 @@ test('every ambiguous outcome locks the field, shows the prior as provisional an
         assert.equal(harness.editState.planningPhase('PROD-1', 'priority'), 'locked', label);
         assert.deepEqual(lastApplied(harness).slice(0, 2), ['PROD-1', { name: 'Medium' }], `${label}: provisional prior`);
         assert.equal(lastApplied(harness)[2].phase, 'provisional', label);
-        assert.equal(harness.mounted.result.priorityErrorCode, 'write_unconfirmed', label);
+        assert.equal(harness.mounted.result.activePriorityTarget, null, `${label}: the popup closed when the choice was made`);
+        assert.equal(harness.mounted.result.priorityErrorCode, 'write_unconfirmed', `${label}: the outcome is still reported in the hook state`);
         assert.deepEqual(harness.seen.refreshes, [], label);
-        // Closing the menu does not erase the lock: another edit of that field is refused with a message.
+        // The lock outlives the closed popup: reopening it and editing that field again is refused with a message.
         harness.mounted.result.openPriorityControl(storyIssue('PROD-1', 'Medium'), 'Story');
         await flush();
         harness.mounted.render();
@@ -468,8 +524,14 @@ test('an ambiguous status outcome locks the field and a second edit is refused w
 
         assert.equal(harness.editState.planningPhase('PROD-1', 'status'), 'locked');
         assert.deepEqual(harness.seen.applied.at(-1), ['PROD-1', 'To Do', { phase: 'provisional', expected: 'In Progress' }]);
-        assert.equal(harness.mounted.result.transitionErrorCode, 'write_unconfirmed');
+        assert.equal(harness.mounted.result.activeSingleIssueTarget, null, 'the popup closed when the choice was made');
+        assert.equal(harness.mounted.result.transitionErrorCode, 'write_unconfirmed', 'the outcome is still reported (the Planning bar shows it)');
+        harness.mounted.result.openSingleIssueStatusControl({ key: 'PROD-1', fields: { status: { name: 'To Do' }, issuetype: { name: 'Story' } } }, 'Story');
+        await flush();
+        harness.mounted.render();
         assert.equal(await harness.mounted.result.submitStatusTransition('Done', 'PROD-1'), null);
+        harness.mounted.render();
+        assert.equal(harness.mounted.result.transitionErrorCode, 'write_unconfirmed', 'the lock explains itself when the popup is reopened');
         assert.equal(harness.api.transitions.length, 1, 'no second write while locked');
         assert.equal(harness.seen.events.at(-1)[1].result, 'unknown');
         harness.mounted.unmount();

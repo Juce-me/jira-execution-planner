@@ -307,7 +307,12 @@ export function useEngStatusTransitions({
             }
             return null;
         }
-        const isCurrentVisit = () => scopeVisitRef.current === visit && activeSingleIssueTargetRef.current?.key === singleIssueKey;
+        // The choice is made: the popup has done its job. The new value shows at once and the outcome settles by key, so it closes now
+        // (only when it is this issue's popup; a Board drop has none). A locked field above keeps it open to show why.
+        if (activeSingleIssueTargetRef.current?.key === singleIssueKey) closeSingleIssueStatusControl();
+        const sameVisit = () => scopeVisitRef.current === visit;
+        // Feedback state (result, error) is set while no popup is open (the Planning bar reads it) or this issue's popup is, never into another issue's open popup.
+        const isCurrentVisit = () => sameVisit() && (!activeSingleIssueTargetRef.current || activeSingleIssueTargetRef.current.key === singleIssueKey);
         setTransitionError('');
         setTransitionErrorCode('');
         pendingMutationKeysRef.current.add(singleIssueKey);
@@ -406,7 +411,7 @@ export function useEngStatusTransitions({
                     }
                 }
                 const affectedSubtaskStoryKeys = resolveSubtaskParentStoryKeys(succeededKeys, storySubtasksByKey);
-                if (current && entryResult === 'success') onAlertDataInvalidated?.({ keys: [singleIssueKey] });
+                if (sameVisit() && entryResult === 'success') onAlertDataInvalidated?.({ keys: [singleIssueKey] });
                 if (sourceSurface === 'board') {
                     await onTransitionSuccessRefresh?.({ affectedSubtaskStoryKeys });
                 }
@@ -459,6 +464,7 @@ export function useEngStatusTransitions({
         onAuthRecoveryRequired,
         mutationCoordinator,
         editState,
+        closeSingleIssueStatusControl,
     ]);
 
     return {

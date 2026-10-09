@@ -1149,11 +1149,8 @@ async function confirmStatusChange(page, ctx, { kind, key, target }) {
     await statusTrigger(page, kind, key).click();
     await statusMenu(page, key).getByRole('menuitem', { name: target }).click();
     await expect.poll(() => ctx.calls.slice(since).filter(call => call.method === 'POST' && call.pathname === '/api/issues/transitions').length).toBe(1);
-    await expect(statusMenu(page, key).locator('.status-transition-menu-result')).toContainText('Updated 1 issue');
+    await expect(statusMenu(page, key), 'the popup closes when the status is chosen').toHaveCount(0);
     await expect(statusTrigger(page, kind, key)).toHaveText(target);
-    const size = page.viewportSize();
-    await page.mouse.click(2, size.height - 2); // an outside click closes the menu
-    await expect(statusMenu(page, key)).toHaveCount(0);
 }
 
 test('15a. a story status change confirmed while the epic fetch is pending is kept', async ({ page }) => {
@@ -3089,9 +3086,7 @@ async function changePriority(page, ctx, { kind, key, target }) {
     await priorityTrigger(page, kind, key).click();
     await priorityOption(page, key, target).click();
     await expect.poll(() => priorityWrites(ctx.calls.slice(since)).length).toBe(1);
-    await expect(priorityMenu(page, key).locator('.priority-transition-menu-result')).toContainText('Updated 1 issue');
-    await page.mouse.click(2, page.viewportSize().height - 2);
-    await expect(priorityMenu(page, key)).toHaveCount(0);
+    await expect(priorityMenu(page, key), 'the popup closes when the priority is chosen').toHaveCount(0);
 }
 
 // The listed epics are empty in the department scope while their stories are Blocked, so the Empty Epic alert lists them.

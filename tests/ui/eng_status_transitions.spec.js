@@ -663,8 +663,7 @@ test('Catch Up applies rapid Story status changes optimistically without task-li
     await expect.poll(() => transitionState.inFlight).toBe(1);
     expect(await trigger(page, 'story', 'PROD-1').innerText()).toContain('IN PROGRESS');
 
-    await page.locator('.subtitle-secondary').click();
-    await expect(menu(page, 'PROD-1')).toHaveCount(0);
+    await expect(menu(page, 'PROD-1'), 'the popup closed when the status was chosen').toHaveCount(0);
     await expect(trigger(page, 'story', 'PROD-1')).toBeDisabled();
     await expect(trigger(page, 'story', 'PROD-2')).toBeEnabled();
     await trigger(page, 'story', 'PROD-2').click();
@@ -675,7 +674,7 @@ test('Catch Up applies rapid Story status changes optimistically without task-li
     await expect.poll(() => transitionCalls(calls).length).toBe(2);
     expect(await trigger(page, 'story', 'PROD-2').innerText()).toContain('ACCEPTED');
     await expect.poll(() => transitionState.inFlight).toBe(0);
-    await expect(menu(page, 'PROD-2').locator('.status-transition-menu-result')).toContainText('Updated 1 issue');
+    await expect(menu(page, 'PROD-2')).toHaveCount(0);
 
     expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name' && !call.params.purpose)).toHaveLength(initialTaskRequests);
 });
@@ -704,7 +703,8 @@ test('Catch Up rolls back a failed optimistic status change without refetching t
     expect(await trigger(page, 'story', 'PROD-1').innerText()).toContain('IN PROGRESS');
 
     await expect.poll(() => transitionState.inFlight).toBe(0);
-    await expect(menu(page, 'PROD-1').locator('.status-transition-menu-result')).toContainText('No issues updated');
+    // The popup closed on the click, so a rejection is shown only by the value returning.
+    await expect(menu(page, 'PROD-1')).toHaveCount(0);
     await expect(trigger(page, 'story', 'PROD-1')).toContainText('To Do');
     expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name' && !call.params.purpose)).toHaveLength(initialTaskRequests);
 });
@@ -1161,21 +1161,21 @@ test('Planning Table Story status rolls back and reports a failed change', async
     // Table pills render in capitals, so innerText carries the transformed case.
     expect((await trigger(page, 'story', 'PROD-1').innerText()).toLowerCase()).toContain('in progress');
     await expect.poll(() => transitionState.inFlight).toBe(0);
-    await expect(menu(page, 'PROD-1').locator('.status-transition-menu-result')).toContainText('No issues updated');
+    await expect(menu(page, 'PROD-1')).toHaveCount(0);
     await expect(trigger(page, 'story', 'PROD-1')).toContainText('To Do');
 });
 
 test('a disabled status option keeps readable colors under the pointer', async ({ page }) => {
     await setPrefs(page, catchUpPrefs({ selectedSprint: futureSprintId, sprintName: futureSprintName }));
-    const { transitionState } = await installEngStatusFixture(page, { transitionDelayMs: 1500 });
+    await installEngStatusFixture(page);
     await page.goto(appBaseUrl);
     await openPlanning(page);
 
-    // While the write is in flight every option of the open menu is disabled.
+    // The popup closes when a status is chosen, so the app no longer shows a disabled option while a write is in flight;
+    // the disabled style still applies while options load, so force the state on an open menu and check the style itself.
     await trigger(page, 'story', 'PROD-1').click();
-    await menu(page, 'PROD-1').getByRole('menuitem', { name: 'In Progress' }).click();
-    await expect.poll(() => transitionState.inFlight).toBe(1);
     const option = menu(page, 'PROD-1').getByRole('menuitem', { name: 'Accepted' });
+    await option.evaluate((node) => { node.disabled = true; });
     await expect(option).toBeDisabled();
     await option.hover({ force: true });
     await page.waitForTimeout(400);

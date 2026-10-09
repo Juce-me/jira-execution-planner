@@ -461,9 +461,9 @@ test('ENG status and priority hooks invalidate alert data after successful mutat
     const prioritySuccess = prioritySource.slice(prioritySuccessStart, prioritySource.indexOf('return response;', prioritySuccessStart));
 
     assert.match(statusSource, /onAlertDataInvalidated,/);
-    assert.match(statusSuccess, /if \(current && entryResult === 'success'\) onAlertDataInvalidated\?\.\(\{ keys: \[singleIssueKey\] \}\);/, 'already_in_status keys are not passed to the alert invalidation');
+    assert.match(statusSuccess, /if \(sameVisit\(\) && entryResult === 'success'\) onAlertDataInvalidated\?\.\(\{ keys: \[singleIssueKey\] \}\);/, 'already_in_status keys are not passed to the alert invalidation');
     assert.match(prioritySource, /onAlertDataInvalidated,/);
-    assert.match(prioritySuccess, /if \(current && findIssueResult\(response, key\)\.entry\?\.result === 'success'\) onAlertDataInvalidated\?\.\(\{ keys: \[key\] \}\);/, 'already_in_priority keys are not passed to the alert invalidation');
+    assert.match(prioritySuccess, /if \(sameVisit\(\) && findIssueResult\(response, key\)\.entry\?\.result === 'success'\) onAlertDataInvalidated\?\.\(\{ keys: \[key\] \}\);/, 'already_in_priority keys are not passed to the alert invalidation');
 });
 
 test('ENG status transition hook never mutates Planning selectedTasks for Epics or Subtasks', () => {

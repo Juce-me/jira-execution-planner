@@ -206,7 +206,12 @@ export function useEngPriorityTransitions({
             // priority's rank -> low-cardinality bucket. No raw id/name leaves this builder.
             priorityOptions: priorityOptions?.priorities,
         });
-        const isCurrentVisit = () => scopeVisitRef.current === visit && activePriorityTargetRef.current?.key === key;
+        // The choice is made: the popup has done its job. The new value shows at once and the outcome settles by key, so it closes now
+        // (only when it is this issue's popup; a Board drop has none). A locked field above keeps it open to show why.
+        if (activePriorityTargetRef.current?.key === key) closePriorityControl();
+        const sameVisit = () => scopeVisitRef.current === visit;
+        // Feedback state (result, error) is set while no popup is open (the Planning bar reads it) or this issue's popup is, never into another issue's open popup.
+        const isCurrentVisit = () => sameVisit() && (!activePriorityTargetRef.current || activePriorityTargetRef.current.key === key);
 
         setPriorityError('');
         setPriorityErrorCode('');
@@ -266,7 +271,7 @@ export function useEngPriorityTransitions({
                 ...analyticsBaseParams,
                 result: classified.outcome === 'confirmed' ? 'success' : classified.outcome === 'rejected' ? 'failure' : 'unknown',
             });
-            if (current && findIssueResult(response, key).entry?.result === 'success') onAlertDataInvalidated?.({ keys: [key] });
+            if (sameVisit() && findIssueResult(response, key).entry?.result === 'success') onAlertDataInvalidated?.({ keys: [key] });
             if (classified.outcome === 'confirmed' && sourceSurface === 'board') {
                 await onPrioritySuccessRefresh?.({ affectedSubtaskStoryKeys: [] });
             }
@@ -308,7 +313,7 @@ export function useEngPriorityTransitions({
                 });
             }
         }
-    }, [activePriorityTarget, priorityOptions, sourceSurface, mutationScopeKey, backendUrl, trackIssuePriorityAction, onApplyLocalPriority, onAlertDataInvalidated, onPrioritySuccessRefresh, onAuthRecoveryRequired, mutationCoordinator, editState]);
+    }, [activePriorityTarget, priorityOptions, closePriorityControl, sourceSurface, mutationScopeKey, backendUrl, trackIssuePriorityAction, onApplyLocalPriority, onAlertDataInvalidated, onPrioritySuccessRefresh, onAuthRecoveryRequired, mutationCoordinator, editState]);
 
     return {
         activePriorityTarget,

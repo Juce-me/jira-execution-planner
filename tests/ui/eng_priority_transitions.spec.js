@@ -370,8 +370,9 @@ test('priority option click changes the clicked issue priority in one action', a
     const mutation = priorityWriteCalls(calls)[0];
     expect(mutation.body.issueKeys).toEqual(['PROD-1']);
     expect(mutation.body.targetPriorityId).toBe('4');
-    // The inline result note appears without any extra step.
-    await expect(menu1.locator('.priority-transition-menu-result')).toContainText('Updated 1 issue');
+    // The popup has done its job once the option is chosen: it closes at once and the icon shows the new priority.
+    await expect(menu1).toHaveCount(0);
+    await expect(priorityTrigger(page, 'story', 'PROD-1')).toHaveAttribute('data-priority', 'Major');
 });
 
 test('Catch Up applies rapid Story priority changes optimistically without task-list refetches', async ({ page }) => {
@@ -386,9 +387,7 @@ test('Catch Up applies rapid Story priority changes optimistically without task-
     await priorityMenu(page, 'PROD-1').getByRole('menuitem', { name: 'Major' }).click();
     await expect.poll(() => priorityState.inFlight).toBe(1);
     await expect(priorityTrigger(page, 'story', 'PROD-1')).toHaveAttribute('data-priority', 'Major');
-
-    await page.locator('.subtitle-secondary').click();
-    await expect(priorityMenu(page, 'PROD-1')).toHaveCount(0);
+    await expect(priorityMenu(page, 'PROD-1'), 'the popup closed when the option was chosen').toHaveCount(0);
     await expect(priorityTrigger(page, 'story', 'PROD-1')).toBeDisabled();
     await expect(priorityTrigger(page, 'story', 'PROD-2')).toBeEnabled();
     await priorityTrigger(page, 'story', 'PROD-2').click();
@@ -399,7 +398,7 @@ test('Catch Up applies rapid Story priority changes optimistically without task-
     await expect.poll(() => priorityWriteCalls(calls).length).toBe(2);
     await expect(priorityTrigger(page, 'story', 'PROD-2')).toHaveAttribute('data-priority', 'High');
     await expect.poll(() => priorityState.inFlight).toBe(0);
-    await expect(priorityMenu(page, 'PROD-2').locator('.priority-transition-menu-result')).toContainText('Updated 1 issue');
+    await expect(priorityMenu(page, 'PROD-2')).toHaveCount(0);
 
     expect(taskListRequests(calls)).toHaveLength(initialTaskRequests);
 });
@@ -428,7 +427,8 @@ test('Catch Up rolls back a failed optimistic priority change without refetching
     await expect(priorityTrigger(page, 'story', 'PROD-1')).toHaveAttribute('data-priority', 'Major');
 
     await expect.poll(() => priorityState.inFlight).toBe(0);
-    await expect(priorityMenu(page, 'PROD-1').locator('.priority-transition-menu-result')).toContainText('No issues updated');
+    // The popup closed on the click, so a rejection is shown only by the value returning.
+    await expect(priorityMenu(page, 'PROD-1')).toHaveCount(0);
     await expect(priorityTrigger(page, 'story', 'PROD-1')).toHaveAttribute('data-priority', 'Medium');
     expect(taskListRequests(calls)).toHaveLength(initialTaskRequests);
 });
@@ -555,11 +555,12 @@ test('outside-card click dismisses the priority menu; Escape, trigger toggle, an
     await expect(menu).toHaveCount(0);
     await expect(trigger).toBeFocused();
 
-    // A click INSIDE the menu (an option) is not treated as outside: it still submits.
+    // A click INSIDE the menu (an option) is not treated as outside: it still submits, and the popup then closes.
     await trigger.click();
     await expect(menu).toBeVisible();
     await menu.getByRole('menuitem', { name: 'Major' }).click();
-    await expect(menu.locator('.priority-transition-menu-result')).toContainText('Updated 1 issue');
+    await expect(trigger).toHaveAttribute('data-priority', 'Major');
+    await expect(menu).toHaveCount(0);
 });
 
 test('EPM issue boards render inert priority icons and never call priority APIs', async ({ page }) => {
@@ -683,7 +684,7 @@ test('Planning List rolls back a rejected priority change without any other read
     await expect.poll(() => priorityState.inFlight).toBe(1);
     await expect(priorityTrigger(page, 'story', 'PROD-1')).toHaveAttribute('data-priority', 'Major');
     await expect.poll(() => priorityState.inFlight).toBe(0);
-    await expect(priorityMenu(page, 'PROD-1').locator('.priority-transition-menu-result')).toContainText('No issues updated');
+    await expect(priorityMenu(page, 'PROD-1')).toHaveCount(0);
     await expect(priorityTrigger(page, 'story', 'PROD-1')).toHaveAttribute('data-priority', 'Medium');
     await page.waitForLoadState('networkidle');
     expect(unexpectedCallsSince(calls, mark)).toEqual([]);

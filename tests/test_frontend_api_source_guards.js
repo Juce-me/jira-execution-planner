@@ -205,12 +205,59 @@ test('frontend API endpoint literals live in api modules or approved transitiona
     assert.deepEqual(violations, []);
 });
 
+const lazyLoaderOwner = 'frontend/src/components/lazyViewLoaders.js';
+const mountedManifestFetch = "fetch(manifestUrl.href, { cache: 'no-store' })";
+
+function withoutMountedManifestFetch(source) {
+    for (const pin of [
+        'export function validateLazyViewManifest(manifest, buildId)',
+        'export function createLazyViewLoader({ viewId, initialLoad })',
+        'async function readMountedManifest()',
+        "const mountedBuildId = typeof __JEP_DASHBOARD_BUILD_ID__ === 'string' ? __JEP_DASHBOARD_BUILD_ID__ : 'source-probe';",
+        "document.getElementById('dashboard-entry')",
+        'if (!script || !/^[a-f0-9]{64}$/.test(mountedBuildId)) throw createStaleBuildError();',
+        'const entryUrl = new URL(script.src, document.baseURI);',
+        'if (entryUrl.origin !== window.location.origin) throw createStaleBuildError();',
+        'const manifestUrl = new URL(`lazy-views-${mountedBuildId}.json`, entryUrl);',
+        'manifest.schemaVersion !== 1 || manifest.buildId !== buildId',
+        'manifest = validateLazyViewManifest(await response.json(), mountedBuildId);',
+        'if (url.origin !== entryUrl.origin) throw createStaleBuildError();',
+    ]) {
+        assert.ok(source.includes(pin), `Mounted static manifest contract is missing: ${pin}`);
+    }
+    assert.doesNotMatch(source, /\/api\//, 'Lazy asset recovery must not own application API endpoints');
+    assert.equal(source.split(mountedManifestFetch).length - 1, 1, 'Expected exactly one approved static manifest fetch');
+    const remainingSource = source.replace(mountedManifestFetch, '');
+    assert.doesNotMatch(remainingSource, /\bfetch\s*\(/, 'Lazy asset recovery must not add native fetch calls');
+    return remainingSource;
+}
+
 test('native application API fetch is owned only by the shared HTTP boundary', () => {
+    const loaderSource = readOwnerSource([lazyLoaderOwner], { anchor: 'export function validateLazyViewManifest' });
+    const loaderWithoutStaticFetch = withoutMountedManifestFetch(loaderSource);
     const violations = listSourceFiles(frontendSrcPath)
-        .filter((filePath) => readSource(filePath).includes('fetch('))
+        .filter((filePath) => (relativeFile(filePath) === lazyLoaderOwner ? loaderWithoutStaticFetch : readSource(filePath)).includes('fetch('))
         .filter((filePath) => relativeFile(filePath) !== 'frontend/src/api/http.js')
         .map(relativeFile);
     assert.deepEqual(violations, []);
+});
+
+test('static manifest fetch classification rejects extra fetches and changed asset contracts', () => {
+    const source = readOwnerSource([lazyLoaderOwner], { anchor: 'export function createLazyViewLoader' });
+    const mutations = [
+        source + "\nfetch('/unexpected');",
+        source + "\nfetch ('/unexpected');",
+        source + `\n${mountedManifestFetch};`,
+        source.replace(mountedManifestFetch, "fetch(manifestUrl.href, { cache: 'no-cache' })"),
+        source.replace(mountedManifestFetch, "fetch(entryUrl.href, { cache: 'no-store' })"),
+        source + "\nconst endpoint = '/api/example';",
+        source.replace('lazy-views-${mountedBuildId}.json', 'lazy-views-latest.json'),
+        source.replace('if (entryUrl.origin !== window.location.origin) throw createStaleBuildError();', ''),
+        source.replace('manifest.schemaVersion !== 1 || manifest.buildId !== buildId', 'manifest.schemaVersion !== 1'),
+    ];
+    for (const mutatedSource of mutations) {
+        assert.throws(() => withoutMountedManifestFetch(mutatedSource), assert.AssertionError);
+    }
 });
 
 test('ENG startup uses cached task data unless the user explicitly refreshes', () => {
@@ -1563,7 +1610,9 @@ test('Stats and issues API modules own dashboard stats and lookup endpoints', ()
     assert.ok(statsApiSource.includes('/api/stats/epic-cohort'), 'Expected epic cohort URL construction in statsApi.js');
     assert.ok(statsApiSource.includes('/api/stats/project-track-phase-durations'), 'Expected Project Track phase URL construction in statsApi.js');
     assert.ok(issuesApiSource.includes('/api/issues/lookup?keys='), 'Expected issue lookup URL construction in issuesApi.js');
-    assert.ok(dashboardSource.includes("from './api/statsApi.js'"), 'Expected dashboard to import stats API wrappers');
+    const statsDataSource = readSource(path.join(frontendSrcPath, 'stats', 'useStatsData.js'));
+    assert.ok(statsDataSource.includes("from '../api/statsApi.js'"), 'Expected Stats data owner to import stats API wrappers');
+    assert.equal(/(^|[^.])\/api\/stats/.test(statsDataSource), false, 'Stats data owner must not own endpoint literals');
     assert.ok(dashboardSource.includes("from './api/issuesApi.js'"), 'Expected dashboard to import issue lookup API wrapper');
     assert.equal(/(^|[^.])\/api\/stats/.test(dashboardSource), false, 'dashboard.jsx must not own stats endpoint literals');
     assert.equal(/(^|[^.])\/api\/issues/.test(dashboardSource), false, 'dashboard.jsx must not own issue lookup endpoint literals');

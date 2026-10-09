@@ -1,13 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
+const { readOwnerSource } = require('./frontend_source_helpers');
 
 test('missing-label rule requires epic to match the selected sprint', () => {
-    const source = fs.readFileSync(
-        path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx'),
-        'utf8'
-    );
+    const source = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/eng/useEngAlerts.js'], { anchor: 'export function useEngAlerts' });
 
     assert.equal(
         source.includes('if (!epicMatchesPlanningSprintValue(epic)) return false;'),
@@ -16,10 +12,7 @@ test('missing-label rule requires epic to match the selected sprint', () => {
 });
 
 test('missing-label rule passes the Team half when any alias of the resolved Team is present', () => {
-    const source = fs.readFileSync(
-        path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx'),
-        'utf8'
-    );
+    const source = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/eng/useEngAlerts.js'], { anchor: 'export function useEngAlerts' });
     const start = source.indexOf('const missingLabelEpics = React.useMemo(');
     assert.notEqual(start, -1);
     const block = source.slice(start, source.indexOf('const missingLabelEpicKeySet', start));
@@ -35,10 +28,7 @@ test('missing-label rule passes the Team half when any alias of the resolved Tea
 });
 
 test('active group Team labels normalize through the shared alias helper', () => {
-    const source = fs.readFileSync(
-        path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx'),
-        'utf8'
-    );
+    const source = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/eng/useEngAlerts.js'], { anchor: 'export function useEngAlerts' });
     const start = source.indexOf('const normalizedActiveGroupTeamLabels = React.useMemo(');
     assert.notEqual(start, -1);
     const block = source.slice(start, source.indexOf('}, [activeGroupTeamLabels]);', start));

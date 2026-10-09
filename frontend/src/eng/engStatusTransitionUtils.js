@@ -1,10 +1,6 @@
 import { bucketCount } from '../analytics/dashboardAnalytics.js';
 import { sumPlanningStoryPoints } from './planningSelectionStats.js';
 
-// Client-side cap for a single status-transition batch. Must match backend
-// backend/services/jira_issue_transitions.py MAX_STATUS_TRANSITION_ISSUES.
-export const MAX_STATUS_TRANSITION_ISSUES = 50;
-
 // Target shape shared by the hook and UI. `summary` is for UI display only —
 // never put summary/key/URL/team/sprint/JQL into an analytics payload builder.
 // { key, issueType, currentStatus, summary }
@@ -97,23 +93,6 @@ export function resolveSubtaskParentStoryKeys(subtaskKeys, storySubtasksByKey) {
         }
     }
     return Array.from(storyKeys);
-}
-
-// Collapses repeated issue keys so a target is sent once; the last occurrence wins.
-function dedupeStatusTargetsByKey(targets) {
-    const byKey = new Map();
-    (targets || []).forEach((target) => {
-        if (!target?.key) return;
-        byKey.set(normalizeStatusTargetKey(target.key), target);
-    });
-    return Array.from(byKey.values());
-}
-
-// Composes the Planning batch status-target set: the selected Stories from selectedTasksList.
-// Epic and Subtask status pills act on their own issue only, so they are never part of it.
-export function buildEngStatusTargets({ selectedTasksList = [] } = {}) {
-    return dedupeStatusTargetsByKey((selectedTasksList || [])
-        .map((task) => buildCatchUpStatusTargets(task, 'Story')));
 }
 
 function classifyIssueTypeToken(issueType) {

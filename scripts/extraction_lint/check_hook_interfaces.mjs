@@ -104,7 +104,35 @@ if (printReturns !== -1) {
 }
 const entry = path.resolve(args[0]);
 const sourceRoot = path.dirname(entry);
-const owned = (file) => OWNER_DIRS.test(path.relative(sourceRoot, file));
+const canonicalManifest = path.resolve('scripts/extraction_lint/owner_budgets.json');
+const manifestPath = manifestFile ? path.resolve(manifestFile) : entry === path.resolve('frontend/src/dashboard.jsx') && fs.existsSync(canonicalManifest) ? canonicalManifest : null;
+const manifest = manifestPath ? JSON.parse(fs.readFileSync(manifestPath, 'utf8')) : null;
+const registrationProblems = [];
+const explicitModules = new Map();
+const registeredIds = new Set();
+const registeredPhysicalPaths = new Set();
+for (const item of manifest?.modules ?? []) {
+    const relative = item.path;
+    const absolute = typeof relative === 'string' ? path.resolve(repoRoot, relative) : '';
+    const normalized = typeof relative === 'string' && relative === path.posix.normalize(relative) && !relative.includes('\\') && !path.isAbsolute(relative);
+    const sourceRelative = path.relative(path.resolve(repoRoot, 'frontend/src'), absolute);
+    if (!normalized || sourceRelative.startsWith('..') || path.isAbsolute(sourceRelative) || !/\.(jsx?|mjs)$/.test(relative) || /(^|\/)(dist|tests|__tests__)(\/|$)|\.(test|spec)\./.test(relative)) {
+        registrationProblems.push(`invalid registered owner path ${relative}`); continue;
+    }
+    if (explicitModules.has(absolute) || registeredIds.has(item.id)) { registrationProblems.push(`duplicate module id/path ${item.id}`); continue; }
+    registeredIds.add(item.id);
+    if (!fs.existsSync(absolute) || !fs.statSync(absolute).isFile() || !fs.realpathSync(absolute).startsWith(`${path.resolve(repoRoot, 'frontend/src')}${path.sep}`)) {
+        registrationProblems.push(`missing or escaping module ${relative}`); continue;
+    }
+    const physicalPath = fs.realpathSync(absolute);
+    if (registeredPhysicalPaths.has(physicalPath)) { registrationProblems.push(`duplicate physical owner path ${relative}`); continue; }
+    registeredPhysicalPaths.add(physicalPath);
+    if (!Array.isArray(item.features) || !item.features.length || item.features.some(feature => !['scenario','settings','stats','eng'].includes(feature))) {
+        registrationProblems.push(`invalid feature membership ${relative}`); continue;
+    }
+    explicitModules.set(absolute, item);
+}
+const owned = (file) => OWNER_DIRS.test(path.relative(sourceRoot, file)) || explicitModules.has(file);
 const enforcedProblems = [];
 const informational = [];
 let checked = 0;
@@ -181,7 +209,7 @@ function lexicalScopes(ast, file) {
     }
     return { scopes, lookup, resultAlias };
 }
-const queue = [entry];
+const queue = [entry, ...explicitModules.keys()];
 const visited = new Set();
 while (queue.length) {
     const file = queue.shift();
@@ -369,15 +397,12 @@ function contractOf(file, exportName) {
         callers: [], remainingAppReaders: [], getters: [],
     };
 }
-const canonicalManifest = path.resolve('scripts/extraction_lint/owner_budgets.json');
-const manifestPath = manifestFile ? path.resolve(manifestFile) : entry === path.resolve('frontend/src/dashboard.jsx') && fs.existsSync(canonicalManifest) ? canonicalManifest : null;
 if (manifestPath || writeInventory) {
-    const manifest = manifestPath ? JSON.parse(fs.readFileSync(manifestPath, 'utf8')) : null;
     const roots = manifest?.ownerRoots ?? ['scenario', 'settings', 'epm'];
-    const files = [...new Set(roots.flatMap(root => sourceFiles(path.resolve(sourceRoot, root))))].sort();
+    const files = [...new Set([...roots.flatMap(root => sourceFiles(path.resolve(sourceRoot, root))), ...explicitModules.keys()])].sort();
     const measured = files.map(file => {
         const relative = path.relative(repoRoot, file).split(path.sep).join('/');
-        const features = /^scenario\//.test(path.relative(sourceRoot, file)) ? ['scenario'] : ['settings'];
+        const features = OWNER_DIRS.test(path.relative(sourceRoot, file)) ? (/^scenario\//.test(path.relative(sourceRoot, file)) ? ['scenario'] : ['settings']) : explicitModules.get(file).features;
         const exports = exportsOf(file);
         const lineCount = fs.readFileSync(file, 'utf8').split('\n').length - (fs.readFileSync(file, 'utf8').endsWith('\n') ? 1 : 0);
         return { id: path.relative(sourceRoot, file).replace(/\.(jsx?|mjs)$/, '').replaceAll('/', '.'), path: relative, features,
@@ -425,7 +450,7 @@ if (manifestPath || writeInventory) {
     }
     if (writeInventory) {
         const dashboardLines = fs.readFileSync(entry, 'utf8').split('\n').length - 1;
-        const totals = { scenario: measured.filter(m => m.features.includes('scenario')).reduce((n,m) => n+m.lineCount,0), settings: measured.filter(m => m.features.includes('settings')).reduce((n,m) => n+m.lineCount,0) };
+        const totals = Object.fromEntries(['scenario','settings','stats','eng'].map(feature => [feature, measured.filter(m => m.features.includes(feature)).reduce((n,m) => n+m.lineCount,0)]));
         totals.uniqueOwners = measured.reduce((n,m) => n+m.lineCount,0); totals.appPlusOwners = dashboardLines + totals.uniqueOwners;
         fs.writeFileSync(writeInventory, JSON.stringify({ schemaVersion: 1, baseSha: 'REQUIRES_VERIFIED_BASE', checkpointId: 'PR0-current-base', sourceRoot: path.relative(repoRoot, sourceRoot), ownerRoots: roots,
             exclusions: { generated: ['frontend/dist'], tests: ['tests'], sharedImports: 'Imported files outside owner roots excluded' },
@@ -434,7 +459,7 @@ if (manifestPath || writeInventory) {
         console.log(`owner inventory written: ${measured.length} modules`);
     }
     if (manifest) {
-        const problems = [];
+        const problems = [...registrationProblems];
         const bad = message => problems.push(message);
         if (manifest.schemaVersion !== 1 || !manifest.baseSha || !manifest.checkpointId) bad('invalid manifest schema/header');
         const ids = new Set(), paths = new Set();
@@ -502,7 +527,6 @@ if (manifestPath || writeInventory) {
                 }
             }
         }
-        for (const registered of manifest.modules ?? []) if (!measured.some(module => path.resolve(repoRoot, module.path) === path.resolve(repoRoot, registered.path))) bad(`registered module outside owner roots ${registered.path}`);
         problems.forEach(message => enforcedProblems.push(`owner budget: ${message}`));
         console.log(`owner budgets: ${measured.length} modules; problems: ${problems.length}`);
     }

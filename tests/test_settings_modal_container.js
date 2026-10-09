@@ -186,7 +186,7 @@ test('validationActions: workspace Use latest/Keep mine, group Discard mine/Keep
 test('dashboard call site: the open-state conditional stays in the app, props are explicit name={name} attributes matching the destructure, children are the tab bodies', () => {
     const open = dashboardSource.indexOf('<SettingsModalContainer');
     assert.notStrictEqual(open, -1);
-    assert.ok(/\{showGroupManage && \(\s*<SettingsModalContainer/.test(dashboardSource));
+    assert.ok(/\{showGroupManage && \(\s*<LazyViewBoundary load=\{loadSettingsView\} fallback=\{settingsLoadingFallback\}>\s*\{SettingsModalContainer => <SettingsModalContainer/.test(dashboardSource));
     const openTagEnd = dashboardSource.indexOf('\n                        >', open);
     const call = dashboardSource.slice(open, openTagEnd);
     const passed = call.split('\n').map((line) => line.trim().match(/^([A-Za-z_$][\w$]*)=\{([A-Za-z_$][\w$]*)\}$/)).filter(Boolean);
@@ -196,5 +196,5 @@ test('dashboard call site: the open-state conditional stays in the app, props ar
     const children = dashboardSource.slice(openTagEnd, dashboardSource.indexOf('</SettingsModalContainer>', openTagEnd));
     for (const marker of ["groupManageTab === 'connections'", '<UserConnectionsSettings', '<AdminSettingsContainer', "groupManageTab === 'epm'", '<EpmSettingsTab', '<DepartmentsSettingsTab']) assert.ok(children.includes(marker), marker);
     assert.equal(dashboardSource.includes('<SettingsModal\n'), false, 'the dashboard reaches the shell only through the container');
-    assert.ok(dashboardSource.includes("import SettingsModalContainer from './settings/SettingsModalContainer.jsx';"));
+    assert.ok(dashboardSource.includes("initialLoad: () => import('./settings/SettingsModalContainer.jsx')"));
 });

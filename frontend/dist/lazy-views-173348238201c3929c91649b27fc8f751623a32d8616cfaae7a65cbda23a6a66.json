@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "buildId": "173348238201c3929c91649b27fc8f751623a32d8616cfaae7a65cbda23a6a66",
+  "views": {
+    "stats": {
+      "path": "chunks/StatsPanel-3SFFCNP2.js",
+      "exportName": "default"
+    },
+    "scenario": {
+      "path": "chunks/ScenarioView-5BELY4VJ.js",
+      "exportName": "ScenarioView"
+    },
+    "settings": {
+      "path": "chunks/SettingsModalContainer-5YBFAQ5U.js",
+      "exportName": "default"
+    }
+  }
+}

@@ -83,7 +83,7 @@ function epicPayload() {
     return epics;
 }
 
-function storyPayload() {
+function storyPayload(extraPlat1Statuses = []) {
     const stories = [];
     EPIC_SPECS.forEach(([epicKey, , total, done]) => {
         for (let index = 0; index < total; index += 1) {
@@ -107,6 +107,29 @@ function storyPayload() {
                 },
             });
         }
+        if (epicKey === 'PLAT-1') {
+            extraPlat1Statuses.forEach((statusName, extraIndex) => {
+                stories.push({
+                    id: `${epicKey}-x${extraIndex}`,
+                    key: `${epicKey}-x${extraIndex}`,
+                    fields: {
+                        summary: `${epicKey} extra story ${extraIndex}`,
+                        status: { name: statusName },
+                        priority: { name: 'Major' },
+                        issuetype: { name: 'Story' },
+                        assignee: null,
+                        updated: '2026-07-28T00:00:00.000+0000',
+                        customfield_10004: 2,
+                        epicKey,
+                        parentSummary: `${epicKey} epic summary`,
+                        projectKey: 'PLAT',
+                        teamId: 'team-alpha',
+                        teamName: 'Alpha Team',
+                        sprint: [{ id: selectedSprintId, name: selectedSprintName, state: 'active' }],
+                    },
+                });
+            });
+        }
     });
     return stories;
 }
@@ -119,6 +142,7 @@ async function installBoardFixture(page, calls, {
     transitionGate = null,
     optionsGate = null,
     transitionFails = false,
+    extraPlat1Statuses = [],
 } = {}) {
     await installDashboardShell(page);
     await page.route('**/api/**', async (route) => {
@@ -181,7 +205,7 @@ async function installBoardFixture(page, calls, {
                 return json({ issues: [], epics: {}, epicsInScope: [], names: {} });
             }
             const epics = epicPayload();
-            return json({ issues: storyPayload(), epics, epicsInScope: Object.values(epics), names: {} });
+            return json({ issues: storyPayload(extraPlat1Statuses), epics, epicsInScope: Object.values(epics), names: {} });
         }
         if (url.pathname === '/api/issues/statuses/catalog') return json({ statuses: statusCatalog });
         if (url.pathname === '/api/issues/transitions/options') {
@@ -627,6 +651,18 @@ test('a resolution status with open stories confirms once, inside the same menu'
     await expect.poll(() => transitionCalls(calls).length).toBe(1);
     expect(transitionCalls(calls)[0].body).toEqual({ issueKeys: ['PLAT-1'], targetStatus: 'Done' });
     await expect(dropMenu(page)).toHaveCount(0);
+});
+
+test('Killed and Incomplete stories are not counted as open in the confirmation (issue #253)', async ({ page }) => {
+    const calls = [];
+    await openBoard(page, calls, { extraPlat1Statuses: ['Killed', 'Incomplete'] });
+
+    await dragCard(page, 'PLAT-1', 'col-done');
+    await menuOptions(page).filter({ hasText: 'Done' }).click();
+
+    // PLAT-1 keeps its three To Do stories open; Killed is off the total and Incomplete is done.
+    await expect(page.locator('.eng-board-drop-warn')).toHaveText('PLAT-1 has 3 open stories');
+    expect(transitionCalls(calls)).toHaveLength(0);
 });
 
 test('the confirmation defaults to Keep it where it is, never the destructive answer', async ({ page }) => {

@@ -52,13 +52,13 @@ test('planning action row exposes undo for bulk selection changes', () => {
     assert.match(componentSource, />\s*Undo\s*</);
 });
 
-test('planning action bar shows status-target feedback but adds no status-change control', () => {
+test('planning action bar shows status result feedback but adds no status-change control or target count', () => {
     const componentPath = path.resolve(__dirname, '../frontend/src/eng/PlanningActionBar.jsx');
     const componentSource = fs.readFileSync(componentPath, 'utf8');
 
     // Feedback-only props are accepted and surfaced.
-    assert.match(componentSource, /statusTransitionTargetsCount/);
-    assert.match(componentSource, /statusTransitionSubmitting/);
+    assert.doesNotMatch(componentSource, /statusTransitionTargetsCount/, 'a status pill never acts on the selection, so no target count is shown');
+    assert.doesNotMatch(componentSource, /statusTransitionSubmitting/, 'a Planning status pill acts on one issue; there is no batch in flight to announce');
     assert.match(componentSource, /statusTransitionError/);
     assert.match(componentSource, /statusTransitionResult/);
     assert.match(componentSource, /planning-status-feedback/);
@@ -162,7 +162,7 @@ test('dashboard imports planning selection stat helpers from ENG module', () => 
 });
 
 test('dashboard imports planning capacity aggregate helpers from ENG module', () => {
-    const sourcePath = path.resolve(__dirname, '../frontend/src/dashboard.jsx');
+    const sourcePath = path.resolve(__dirname, '../frontend/src/eng/useEngCapacity.js');
     const source = fs.readFileSync(sourcePath, 'utf8');
 
     assert.match(source, /buildTeamCapacityStats/);
@@ -173,11 +173,13 @@ test('dashboard imports planning capacity aggregate helpers from ENG module', ()
 test('dashboard delegates capacity API and state shaping without owning editor UI', () => {
     const source = fs.readFileSync(path.resolve(__dirname, '../frontend/src/dashboard.jsx'), 'utf8');
 
-    assert.match(source, /import \{ fetchCapacity as requestCapacity, updateCapacity \} from '\.\/api\/capacityApi\.js';/);
-    assert.match(source, /reduceCapacityReadLifecycle/);
-    assert.match(source, /applyCapacitySaveResultForScope/);
-    assert.match(source, /resolveUniqueCapacityValue/);
-    assert.match(source, /requestCapacity\(BACKEND_URL,/);
+    const ownerSource = fs.readFileSync(path.resolve(__dirname, '../frontend/src/eng/useEngCapacity.js'), 'utf8');
+    assert.match(source, /import \{ updateCapacity \} from '\.\/api\/capacityApi\.js';/);
+    assert.match(ownerSource, /import \{ fetchCapacity as requestCapacity \} from '\.\.\/api\/capacityApi\.js';/);
+    assert.match(ownerSource, /reduceCapacityReadLifecycle/);
+    assert.match(ownerSource, /applyCapacitySaveResultForScope/);
+    assert.match(ownerSource, /resolveUniqueCapacityValue/);
+    assert.match(ownerSource, /requestCapacity\(BACKEND_URL,/);
     assert.doesNotMatch(source, /const normalizeCapacityKey =/);
     assert.doesNotMatch(source, /const toCapacityShortName =/);
     assert.doesNotMatch(source, /className="capacity-editor/);
@@ -266,7 +268,8 @@ test('the Jira mark paths have one shared JSX owner', () => {
 });
 
 test('capacity read state is atomic, scope-tagged, and advances revision only after HTTP success', () => {
-    const source = fs.readFileSync(path.resolve(__dirname, '../frontend/src/dashboard.jsx'), 'utf8');
+    const dashboardSource = fs.readFileSync(path.resolve(__dirname, '../frontend/src/dashboard.jsx'), 'utf8');
+    const source = fs.readFileSync(path.resolve(__dirname, '../frontend/src/eng/useEngCapacity.js'), 'utf8');
 
     assert.match(source, /const \[capacityState, setCapacityState\] = useState/);
     assert.match(source, /capacityByTeam:\s*\{\},\s*capacityTargetsByTeam:\s*\{\},\s*capacityIssueCount:\s*null,\s*mutationEnabled:\s*false,\s*scopeSignature:\s*''/);
@@ -277,15 +280,15 @@ test('capacity read state is atomic, scope-tagged, and advances revision only af
     assert.match(source, /const capacityMutationEnabled = effectiveCapacityState\.mutationEnabled === true/);
     const saveHookSource = fs.readFileSync(path.resolve(__dirname, '../frontend/src/settings/useSharedConfigSave.js'), 'utf8');
     const capacityEnabledSites = /setCapacityEnabled\(Boolean\([^)]*capacityConfigRequiresResolution[^)]*\)\)/g;
-    assert.equal((source.match(capacityEnabledSites) || []).length, 1, 'loadConfig keeps one capacity-enabled write');
+    assert.equal((dashboardSource.match(capacityEnabledSites) || []).length, 1, 'loadConfig keeps one capacity-enabled write');
     assert.equal((saveHookSource.match(capacityEnabledSites) || []).length, 1, 'the post-save refresh keeps the other');
-    assert.equal((source.match(capacityEnabledSites) || []).length + (saveHookSource.match(capacityEnabledSites) || []).length, 2);
+    assert.equal((dashboardSource.match(capacityEnabledSites) || []).length + (saveHookSource.match(capacityEnabledSites) || []).length, 2);
     assert.match(source, /commitCapacityReadLifecycle\(\{ type: 'success', scopeSignature, payload: data \}\)/);
     assert.doesNotMatch(source, /handleCapacitySaved[\s\S]{0,800}setCapacityReadRevision/);
 });
 
 test('capacity request orchestration delegates ownership and collision-proof scope identity', () => {
-    const source = fs.readFileSync(path.resolve(__dirname, '../frontend/src/dashboard.jsx'), 'utf8');
+    const source = fs.readFileSync(path.resolve(__dirname, '../frontend/src/eng/useEngCapacity.js'), 'utf8');
     const effectStart = source.indexOf('const capacityScopeSignature =');
     const effectEnd = source.indexOf('const capacityTeamIds =', effectStart);
     const effect = source.slice(effectStart, effectEnd);
@@ -302,7 +305,7 @@ test('capacity request orchestration delegates ownership and collision-proof sco
 });
 
 test('capacity gates, success, and failure use the executable lifecycle reducer', () => {
-    const source = fs.readFileSync(path.resolve(__dirname, '../frontend/src/dashboard.jsx'), 'utf8');
+    const source = fs.readFileSync(path.resolve(__dirname, '../frontend/src/eng/useEngCapacity.js'), 'utf8');
     const effectStart = source.indexOf('const capacityScopeSignature =');
     const effectEnd = source.indexOf('const capacityTeamIds =', effectStart);
     const effect = source.slice(effectStart, effectEnd);
@@ -314,7 +317,7 @@ test('capacity gates, success, and failure use the executable lifecycle reducer'
 });
 
 test('capacity scope refresh and save reconciliation stay scoped without extra card requests', () => {
-    const source = fs.readFileSync(path.resolve(__dirname, '../frontend/src/dashboard.jsx'), 'utf8');
+    const source = fs.readFileSync(path.resolve(__dirname, '../frontend/src/eng/useEngCapacity.js'), 'utf8');
 
     assert.match(source, /const \[capacityRefreshNonce, setCapacityRefreshNonce\] = useState\(0\)/);
     assert.match(source, /setCapacityRefreshNonce\(previous => previous \+ 1\)/);
@@ -323,7 +326,8 @@ test('capacity scope refresh and save reconciliation stay scoped without extra c
     assert.match(source, /if \(result\.scopeSignature !== activeCapacityScopeRef\.current\) return;/);
     assert.match(source, /const nextState = applyCapacitySaveResultForScope\([\s\S]{0,180}previous,[\s\S]{0,180}result,[\s\S]{0,180}activeCapacityScopeRef\.current/);
     assert.equal((source.match(/requestCapacity\(BACKEND_URL,/g) || []).length, 1);
-    assert.doesNotMatch(source, /onMouse(?:Enter|Over)=[^\n]*fetchCapacity/);
+    const dashboardSource = fs.readFileSync(path.resolve(__dirname, '../frontend/src/dashboard.jsx'), 'utf8');
+    assert.doesNotMatch(dashboardSource, /onMouse(?:Enter|Over)=[^\n]*fetchCapacity/);
 });
 
 test('dashboard imports dependency focus helpers from issues module', () => {
@@ -415,7 +419,7 @@ test('ENG status transition hook tracks status_change_submit before mutating and
     assert.notEqual(mutationIndex, -1, 'Expected the transitionIssues mutation call');
     assert.ok(submitIndex < mutationIndex, 'Expected status_change_submit to be tracked before the mutation call');
 
-    assert.match(hookSource, /sourceSurface === 'catch_up'/);
+    assert.match(hookSource, /if \(!explicitKey\) return null;/);
     // source_surface threading now goes through the shared buildStatusActionAnalyticsParams
     // helper (frontend/src/eng/engStatusTransitionUtils.js) instead of an inline object
     // literal, so both status_options_open and status_change_submit hand their real
@@ -437,10 +441,10 @@ test('ENG status transition hook refreshes only after at least one issue succeed
     // guard block. Widened again (3000 -> 3200) for the keys argument of the alert invalidation call (Task 13b).
     const guardBody = hookSource.slice(guardIndex, guardIndex + 3200);
     assert.match(guardBody, /onTransitionSuccessRefresh\?\.\(\{ affectedSubtaskStoryKeys \}\)/);
-    // Planning and Board invoke the supplied refresh callback after a successful write. The Board
+    // Board invokes the supplied refresh callback after a successful write. The Board
     // integration callback selects the strict owner or legacy loader according to capability.
-    assert.match(guardBody, /if \(!isSingleIssueSurface \|\| sourceSurface === 'board'\) \{\s*await onTransitionSuccessRefresh/,
-        'Planning and Board must await their supplied post-write refresh');
+    assert.match(guardBody, /if \(sourceSurface === 'board'\) \{\s*await onTransitionSuccessRefresh/,
+        'Board must await its supplied post-write refresh');
 });
 
 test('ENG status and priority hooks invalidate alert data after successful mutations on every surface', () => {

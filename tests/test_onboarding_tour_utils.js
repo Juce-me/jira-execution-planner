@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
+const { readOwnerSource } = require('./frontend_source_helpers');
 
 async function loadModule() {
     return import('../frontend/src/onboarding/onboardingSteps.js');
@@ -235,7 +236,8 @@ test('contextual destination source contracts preserve native controls', () => {
     assert.match(engModeControl, /containerProps=\{\{\s*'data-onboarding-target': 'eng-mode-control'\s*\}\}/);
     assert.equal((engModeControl.match(/planning-launcher|board-launcher|statistics-launcher/g) || []).length, 0);
     assert.ok(dashboard.includes('data-onboarding-target="planning-overview"'));
-    assert.ok(dashboard.includes("'data-onboarding-target': 'statistics-overview'"));
+    const statsPanel = readOwnerSource(['frontend/src/stats/StatsPanel.jsx'], { anchor: 'export function StatsPanel(' });
+    assert.ok(statsPanel.includes("'data-onboarding-target': 'statistics-overview'"));
 });
 
 test('dashboard wires canonical module persistence and requests only real supported surfaces', () => {

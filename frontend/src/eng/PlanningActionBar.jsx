@@ -34,8 +34,6 @@ export default function PlanningActionBar({
     planningLayout = 'list',
     onTogglePlanningLayout,
     panelControl = null,
-    statusTransitionTargetsCount = 0,
-    statusTransitionSubmitting = false,
     statusTransitionError = '',
     statusTransitionErrorCode = '',
     statusTransitionResult = null,
@@ -43,10 +41,6 @@ export default function PlanningActionBar({
     // Feedback only: the status change itself is triggered from the clicked status
     // pill/menu, never from a button in this action bar.
     const statusFeedback = (() => {
-        if (statusTransitionErrorCode === 'too_many_issues') {
-            return 'Too many status targets selected. Narrow your selection, then try again.';
-        }
-        if (statusTransitionSubmitting) return 'Applying status changes...';
         if (statusTransitionResult) {
             const { succeeded = 0, failed = 0 } = statusTransitionResult;
             const noun = (count) => (count === 1 ? 'issue' : 'issues');
@@ -55,9 +49,6 @@ export default function PlanningActionBar({
             return `Status updated for ${succeeded}, ${failed} failed.`;
         }
         if (statusTransitionError) return statusTransitionError;
-        if (statusTransitionTargetsCount > 0) {
-            return `${statusTransitionTargetsCount} status ${statusTransitionTargetsCount === 1 ? 'target' : 'targets'} selected`;
-        }
         return '';
     })();
     const statusFeedbackIsError = Boolean(statusTransitionErrorCode || statusTransitionError);

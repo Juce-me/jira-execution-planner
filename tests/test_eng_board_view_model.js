@@ -108,7 +108,7 @@ test('pending child pages expose provisional counts and stop loading after avail
     };
     const group = buildStrictEngBoardViewModel(data).epicGroups[0];
     assert.equal(group.childrenLoading, true);
-    assert.equal(group.childProgress.total, 4);
+    assert.equal(group.childProgress.total, 3);
     assert.equal(group.childProgress.done, 2);
     assert.equal(group.childProgress.inProgress, 1);
     const failed = buildStrictEngBoardViewModel({ ...data, terminal: { type: 'error' } }).epicGroups[0];

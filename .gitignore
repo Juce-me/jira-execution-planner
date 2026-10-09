@@ -80,3 +80,5 @@ tests/debug_scenario_aleksandr.py
 # Throwaway agent probe/scratch workspace
 tmp/
 .playwright-mcp/
+# Staging directory of scripts/build_dashboard.mjs; a killed build can leave it behind
+frontend/.dashboard-build-*/

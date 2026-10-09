@@ -124,3 +124,11 @@ Important behavior:
 - Mono vs Cross reuses the cached progressive stats-source data and the same sprint range
 - Project Track reuses that same cached stats-source data and sprint range (no second fetch); only its time-in-phase section makes a separate, bounded, client-cached changelog request per distinct in-scope epic set
 - changing UI-only controls such as row selection or view grouping does not refetch the lead-time dataset
+
+## Implementation ownership
+
+Verified on 2026-10-08 against App decomposition Task 8 and post-review corrections `055d8bbf`. [`App`](../../frontend/src/dashboard.jsx) keeps [`useStatsState`](../../frontend/src/stats/useStatsState.js), the per-group [`statsGroupState`](../../frontend/src/stats/statsGroupState.js) seam and the three [`useStatsData`](../../frontend/src/stats/useStatsData.js) layers mounted, consuming the memoized [`useEngScope`](../../frontend/src/eng/useEngScope.js). Caches and selections survive closing Statistics. [`StatsPanel`](../../frontend/src/stats/StatsPanel.jsx) owns chart hover state, pointer handling and chart DOM effects, including scroll-to-today when Burndown mounts.
+
+The panel loads through [`LazyViewBoundary`](../../frontend/src/components/LazyViewBoundary.jsx). Once loaded, reopening the panel renders without suspending or showing the loading fallback. A failed chunk load offers one explicit Retry through [`createLazyViewLoader`](../../frontend/src/components/lazyViewLoaders.js), using only the mounted build's validated versioned manifest. The boundary handles only tagged load failures; view render errors propagate to the app as before. A second failure or stale/malformed manifest shows reload guidance; selections stay mounted and terminal authentication recovery takes precedence. The dashboard is served by Flask using the split ESM output from [`build_dashboard.mjs`](../../scripts/build_dashboard.mjs); direct file-scheme opening is unsupported. [Ownership and verification contracts](../ontology.md#remaining-app-responsibilities) include committed-asset recovery coverage.
+
+Analytics impact: this is a pure refactor with unchanged canonical events and typed parameters; no new event is needed for static chunk or manifest retries.

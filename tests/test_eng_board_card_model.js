@@ -80,28 +80,71 @@ test('computeEpicStoryProgress: counts done/in-progress via the shared status ph
     assert.equal(progress.waiting, 1);
 });
 
-// Deliberate decision (not the DEFAULT_STATUS_PHASE_RANKS default): a killed story is abandoned,
-// not delivered, so it must not fill the "done" segment of a percent-complete bar. This mirrors
-// the app's own analogous story-subtask progress bar (backend/services/eng_subtasks.py:
-// DONE_STATUSES = {"done"}, EXCLUDED_STATUSES = {"killed"}), which already draws this line.
-// Cancelled/rejected/won't-do are the same kind of abandonment as Killed (DEFAULT_STATUS_PHASE_RANKS
-// groups all four in its "done" phase for SORT order) and are treated the same way here, so a
-// future status among the four cannot silently count as done while Killed does not.
-test('computeEpicStoryProgress: Killed does not count as done — it is abandoned, not delivered', async () => {
+// Issue #253 reverses the earlier decision that Killed is abandoned work kept in the total:
+// Killed is taken off the total (like the story-subtask bar's EXCLUDED_STATUSES) and Incomplete
+// counts as done. Cancelled/Rejected/Won't do stay inside the total as not done.
+const progressFor = (names) => names.map((name) => ({ fields: { status: { name } } }));
+
+test('computeEpicStoryProgress: Incomplete counts as done and Killed leaves the total', async () => {
     const { computeEpicStoryProgress } = await import('../frontend/src/eng/engBoardCardModel.js');
-    const tasks = [
-        { fields: { status: { name: 'Done' } } },
-        { fields: { status: { name: 'Killed' } } },
-        { fields: { status: { name: 'Cancelled' } } },
-        { fields: { status: { name: 'In Progress' } } },
-    ];
-    const progress = computeEpicStoryProgress(tasks);
-    // Killed and its siblings stay IN the total (an epic's "n of m stories" counts every story)
-    // but land in `waiting`, buildStorySubtaskProgress's residual bucket — not `done`.
+    const progress = computeEpicStoryProgress(progressFor(['Done', 'Killed', 'Incomplete', 'In Progress', 'To Do']));
     assert.equal(progress.total, 4);
-    assert.equal(progress.done, 1);
+    assert.equal(progress.done, 2);
     assert.equal(progress.inProgress, 1);
-    assert.equal(progress.waiting, 2);
+    assert.equal(progress.waiting, 1);
+    assert.equal(progress.doneWidth, '50%');
+    assert.equal(progress.inProgressWidth, '25%');
+});
+
+test('computeEpicStoryProgress: Done plus Killed is fully done; only Killed is no stories', async () => {
+    const { computeEpicStoryProgress } = await import('../frontend/src/eng/engBoardCardModel.js');
+    const fullyDone = computeEpicStoryProgress(progressFor(['Done', 'Killed']));
+    assert.equal(fullyDone.total, 1);
+    assert.equal(fullyDone.done, 1);
+    assert.equal(fullyDone.doneWidth, '100%');
+    const onlyKilled = computeEpicStoryProgress(progressFor(['Killed', 'Killed']));
+    assert.equal(onlyKilled.total, 0);
+    assert.equal(onlyKilled.done, 0);
+    assert.equal(onlyKilled.hasProgress, false);
+    assert.equal(onlyKilled.percentLabel, '0%');
+});
+
+test('computeEpicStoryProgress: Cancelled, Rejected and Won\'t do stay inside the total but not done', async () => {
+    const { computeEpicStoryProgress } = await import('../frontend/src/eng/engBoardCardModel.js');
+    const progress = computeEpicStoryProgress(progressFor(['Done', 'Cancelled', 'Canceled', 'Rejected', "Won't do"]));
+    assert.equal(progress.total, 5);
+    assert.equal(progress.done, 1);
+    assert.equal(progress.inProgress, 0);
+    assert.equal(progress.waiting, 4);
+});
+
+test('computeEpicStoryProgress: status matching ignores case and surrounding whitespace', async () => {
+    const { computeEpicStoryProgress } = await import('../frontend/src/eng/engBoardCardModel.js');
+    const progress = computeEpicStoryProgress(progressFor([' KILLED ', 'incomplete', ' Incomplete ']));
+    assert.equal(progress.total, 2);
+    assert.equal(progress.done, 2);
+});
+
+test('computeEpicStatusCountProgress: server status counts apply the same rules', async () => {
+    const { computeEpicStatusCountProgress } = await import('../frontend/src/eng/engBoardCardModel.js');
+    const progress = computeEpicStatusCountProgress(
+        { Done: 2, Killed: 1, Incomplete: 1, 'In Progress': 1, Cancelled: 1, 'To Do': 2 }, 8,
+    );
+    assert.equal(progress.total, 7);
+    assert.equal(progress.done, 3);
+    assert.equal(progress.inProgress, 1);
+    assert.equal(progress.waiting, 3);
+});
+
+test('drop gate: Killed and Incomplete children are no longer open stories', async () => {
+    const { computeEpicStoryProgress } = await import('../frontend/src/eng/engBoardCardModel.js');
+    const { openStoryCount, needsOpenStoryConfirmation } = await import('../frontend/src/eng/engBoardDrop.js');
+    const resolved = computeEpicStoryProgress(progressFor(['Done', 'Killed', 'Incomplete']));
+    assert.equal(openStoryCount(resolved), 0);
+    assert.equal(needsOpenStoryConfirmation({ status: 'Done', progress: resolved }), false);
+    const withOpen = computeEpicStoryProgress(progressFor(['Done', 'Killed', 'To Do']));
+    assert.equal(openStoryCount(withOpen), 1);
+    assert.equal(needsOpenStoryConfirmation({ status: 'Done', progress: withOpen }), true);
 });
 
 test('computeEpicStoryProgress: no stories -> zeroed, no throw', async () => {

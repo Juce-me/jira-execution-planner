@@ -1178,7 +1178,7 @@ async function installProductionOnboardingFixture(page, {
         showAlertsPanel: false,
     });
     await page.goto(`${productionFixtureUrl}/`, { waitUntil: 'domcontentloaded' });
-    await expect(page.getByRole('radio', { name: 'Catch Up' })).toBeVisible({ timeout: 15000 });
+    await expect(engModeButton(page, 'Catch Up')).toBeVisible({ timeout: 15000 });
     return { calls, releaseGroupSave, releaseOnboardingReset };
 }
 

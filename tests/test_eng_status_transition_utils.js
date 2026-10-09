@@ -77,50 +77,6 @@ test('buildCatchUpStatusTargets is total: missing key returns null, missing stat
     });
 });
 
-test('buildEngStatusTargets returns selected Planning Story targets from selectedTasksList', async () => {
-    const { buildEngStatusTargets } = await loadUtils();
-
-    const targets = buildEngStatusTargets({
-        selectedTasksList: [
-            task('PROD-1', { status: { name: 'To Do' }, issuetype: { name: 'Story' }, summary: 'Story one', customfield_10004: '3' }),
-            task('PROD-2', { status: { name: 'Accepted' }, issuetype: { name: 'Story' }, summary: 'Story two', customfield_10004: '5' })
-        ]
-    });
-
-    assert.deepEqual(targets, [
-        { key: 'PROD-1', issueType: 'Story', currentStatus: 'To Do', summary: 'Story one' },
-        { key: 'PROD-2', issueType: 'Story', currentStatus: 'Accepted', summary: 'Story two' }
-    ]);
-});
-
-test('buildEngStatusTargets is the selected Stories only and ignores Epic and Subtask inputs', async () => {
-    const { buildEngStatusTargets } = await loadUtils();
-
-    const targets = buildEngStatusTargets({
-        selectedTasksList: [task('PROD-1', { status: { name: 'To Do' }, issuetype: { name: 'Story' }, summary: 'Story one', customfield_10004: '3' })],
-        selectedEpicKeys: ['PROD-EPIC-1'],
-        selectedSubtaskKeys: ['TECH-22'],
-        epicGroups: [{ key: 'PROD-EPIC-1', epic: { status: { name: 'In Progress' }, summary: 'Epic summary' }, tasks: [] }],
-        storySubtasksByKey: { 'PROD-1': { items: [{ key: 'TECH-22', status: { name: 'Analysis' }, summary: 'Subtask summary' }] } }
-    });
-
-    assert.deepEqual(targets, [{ key: 'PROD-1', issueType: 'Story', currentStatus: 'To Do', summary: 'Story one' }]);
-});
-
-test('buildEngStatusTargets sends a repeated Story key once', async () => {
-    const { buildEngStatusTargets } = await loadUtils();
-
-    const targets = buildEngStatusTargets({
-        selectedTasksList: [
-            task('DUP-1', { status: { name: 'To Do' }, issuetype: { name: 'Story' }, summary: 'First', customfield_10004: '1' }),
-            task('dup-1', { status: { name: 'Accepted' }, issuetype: { name: 'Story' }, summary: 'Second', customfield_10004: '2' })
-        ]
-    });
-
-    assert.equal(targets.length, 1);
-    assert.equal(targets[0].summary, 'Second');
-});
-
 test('summarizeIssueTypeMix returns stories, epics, subtasks, or mixed', async () => {
     const { summarizeIssueTypeMix } = await loadUtils();
 
@@ -244,11 +200,6 @@ test('status target bucket helpers never receive or return raw issue identifiers
     // is always one of the documented low-cardinality tokens, never the raw string itself.
     assert.notEqual(utils.buildStatusBucket('PROD-1'), 'PROD-1');
     assert.equal(utils.buildStatusBucket('PROD-1'), 'other');
-});
-
-test('MAX_STATUS_TRANSITION_ISSUES matches the backend cap of 50', async () => {
-    const { MAX_STATUS_TRANSITION_ISSUES } = await loadUtils();
-    assert.equal(MAX_STATUS_TRANSITION_ISSUES, 50);
 });
 
 test('resolveSubtaskParentStoryKeys returns only stories whose subtask list contains a changed key', async () => {

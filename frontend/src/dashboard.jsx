@@ -1,3 +1,11 @@
+import { useEngScope } from './eng/useEngScope.js';
+import { SearchControl, ViewSwitch, SprintControl, GroupControl, TeamControl } from './eng/EngControls.jsx';
+import { EpicBlock } from './eng/EpicBlock.jsx';
+import LazyViewBoundary from './components/LazyViewBoundary.jsx';
+import { createLazyViewLoader } from './components/lazyViewLoaders.js';
+import { useStatsDerivedA, useStatsDerivedB, useStatsDerivedC } from './stats/useStatsData.js';
+import { useStatsState } from './stats/useStatsState.js';
+import { buildDefaultStatsGroupState, snapshotStatsGroupState, applyStatsGroupState, resetStatsTransientRefs } from './stats/statsGroupState.js';
 import { useScenarioPlanner } from './scenario/useScenarioPlanner.js';
 import { useScenarioState } from './scenario/useScenarioState.js';
 import { buildDefaultScenarioGroupState, applyScenarioGroupState, resetScenarioTransientRefs } from './scenario/scenarioGroupState.js';
@@ -6,17 +14,10 @@ import { createRoot } from 'react-dom/client';
 import './styles/dashboard.css';
 import { normalizeScenarioDraftOverrides } from './scenario/scenarioDraftOverrides.js';
 
-import { ScenarioView } from './scenario/ScenarioView.jsx';
 
-import CohortGrid from './cohort/CohortGrid.jsx';
-import LeadTimesEpicCharts from './cohort/LeadTimesEpicCharts.jsx';
-import LeadTimesWorkflowStatusCard from './cohort/LeadTimesWorkflowStatusCard.jsx';
-import SegmentedControl from './ui/SegmentedControl.jsx';
-import ControlField from './ui/ControlField.jsx';
 import IconButton from './ui/IconButton.jsx';
 import EmptyState from './ui/EmptyState.jsx';
 import LoadingState from './ui/LoadingState.jsx';
-import StatusPill from './ui/StatusPill.jsx';
 import JiraExportButton from './components/JiraExportButton.jsx';
 import ServerUnavailableBanner from './components/ServerUnavailableBanner.jsx';
 import { createSprintCatalogController, createSprintCatalogState, getCookie, getCurrentQuarter, isActiveHomeTokenConnection, loadCachedSprintCatalog, loadUiPrefs, saveUiPrefs, setCookie, shouldReconcileSprintCatalogSource, sprintCatalogSourcesEqual, sprintCatalogValidationKey } from './dashboardRuntime.js';
@@ -31,19 +32,17 @@ import { completeAuthRecovery, getAuthRecoveryStores } from './api/authRecoveryC
 import { clearAuthResumeState, getAuthResumeStorage, readAuthResumeState, writeAuthResumeState } from './api/authResumeState.js';
 import { connectionRecoveryPrincipalFromConfig } from './api/connectionRecoveryState.js';
 import { buildConnectionRecoveryShellState, buildConnectionRecoverySnapshot, useConnectionRecovery } from './api/useConnectionRecovery.js';
-import IssueCard, { IssueCardContext } from './issues/IssueCard.jsx';
+import { IssueCardContext } from './issues/IssueCard.jsx';
 import { buildDependencyFocusPayload, buildDependencyFocusWithScreenState, buildDependencyKeySignature, buildIssueByKey } from './issues/dependencyFocusUtils.js';
-import { formatPriorityShort, getIssueStatusClassName, getIssueTeamLabel } from './issues/issueViewUtils.js';
+import { formatPriorityShort, getIssueStatusClassName } from './issues/issueViewUtils.js';
 import { useStorySubtasks } from './issues/useStorySubtasks.js';
 import EngView from './eng/EngView.jsx';
 import EngFilterControls from './eng/EngFilterControls.jsx';
 import EngBoardView from './eng/EngBoardView.jsx';
 import EngAlertsPanel from './eng/EngAlertsPanel.jsx';
-import StoryRequirementCard from './eng/StoryRequirementCard.jsx';
 import EngModeControl from './eng/EngModeControl.jsx';
 import { resolveEngSprintSelectorState } from './eng/engSprintSelectorState.js';
 import EpicHeaderValueReadout from './eng/EpicHeaderValueReadout.jsx';
-import EpicRefreshButton from './ui/EpicRefreshButton.jsx';
 import { useEpicRefresh } from './eng/useEpicRefresh.js';
 import { mergeEpicStories } from './eng/epicRefreshPatch.js';
 import { createDependencySkip } from './eng/epicRefreshDependencySkip.js';
@@ -57,7 +56,7 @@ import PlanningProjectSplitBar from './eng/PlanningProjectSplitBar.jsx';
 import PlanningTeamCapacityCards from './eng/PlanningTeamCapacityCards.jsx';
 import { ENG_TASK_LOAD_OUTCOME, useEngSprintData } from './eng/useEngSprintData.js';
 import { useStoryReadiness } from './eng/useStoryReadiness.js';
-import { buildStoryReadinessAlertModel, storyReadinessStatusMessage, useEngWorkHierarchy } from './eng/useEngWorkHierarchy.js';
+import { storyReadinessStatusMessage, useEngWorkHierarchy } from './eng/useEngWorkHierarchy.js';
 import { strictEngBoardMutationProps, strictEngBoardViewProps, useStrictEngBoardOwner, useStrictEngBoardPresentation } from './eng/useStrictEngBoardIntegration.js';
 import { useEngStatusTransitions } from './eng/useEngStatusTransitions.js';
 import { useEngPriorityTransitions } from './eng/useEngPriorityTransitions.js';
@@ -67,8 +66,8 @@ import { applyLocalEpicDetailsFieldUpdate } from './eng/engIssueLocalUpdates.js'
 import { createEngIssueEditState, patchEngIssueList, patchEngLoadedState } from './eng/engIssueEditState.js';
 import { navigateToAlertStory } from './eng/alertStoryNavigation.js';
 import { navigateToStoryRequirement } from './eng/alertEpicNavigation.js';
-import { useEngAlertFilters } from './eng/useEngAlertFilters.js';
-import { isStatusTransitionSurfaceEnabled, buildEngStatusTargets, resolveSubtaskParentStoryKeys } from './eng/engStatusTransitionUtils.js';
+import { useEngAlerts } from './eng/useEngAlerts.js';
+import { isStatusTransitionSurfaceEnabled, resolveSubtaskParentStoryKeys } from './eng/engStatusTransitionUtils.js';
 import { deriveActiveEngMode, useEngModeState } from './eng/engModeState.js';
 import StatusTransitionMenu from './issues/StatusTransitionMenu.jsx';
 import { StatusColourProvider } from './issues/StatusColourContext.jsx';
@@ -79,100 +78,20 @@ import IssueSummaryEditor from './issues/IssueSummaryEditor.jsx';
 import IssueTeamEditor from './issues/IssueTeamEditor.jsx';
 import StoryPointsEditor from './issues/StoryPointsEditor.jsx';
 import { DEFAULT_ENG_STATUS_FILTER, buildEngCatchUpFacetModel, isEngClosedWorkStatus, migrateEngCatchUpFilters, readEngCatchUpFilterState, resolveEngCatchUpFilters } from './eng/engCatchUpFilters.js';
-import { PRIORITY_ORDER, getEpicTeamInfo, getTaskTeamInfo, groupTasksByTeam, matchesEngTaskSearch, resetEngFacetFilters, resetEngFilters, getEpicEffectivePriority, getProjectTrackEmoji, getProjectTrackLabel, normalizeEngEpicSort, DEFAULT_ENG_EPIC_SORT, sortEpicGroups } from './eng/engTaskUtils.js';
+import { PRIORITY_ORDER, getTaskTeamInfo, groupTasksByTeam, matchesEngTaskSearch, resetEngFacetFilters, resetEngFilters, normalizeEngEpicSort, DEFAULT_ENG_EPIC_SORT, sortEpicGroups } from './eng/engTaskUtils.js';
 import { createPlanningSelectionHandlers, persistPlanningSelectionState, resolvePlanningAuthResume, resolvePlanningSelectionForDashboard, selectedTaskKeysFromMap, selectedTaskMapFromKeys } from './eng/planningSelectionActions.js';
-import {
-    applyCapacitySaveResultForScope,
-    beginCapacityReadOwnership,
-    buildCapacityScopeSignature,
-    buildCapacityTotals,
-    buildCapacityTotalsSummary,
-    buildDisplayedTeamOptions,
-    buildExcludedCapacityByTeamId,
-    buildProjectCapacity,
-    buildSelectedProjectEntries,
-    buildSelectedTeamEntries,
-    buildTeamCapacityEntries,
-    buildTeamCapacityStats,
-    buildTeamSpTotals,
-    getCapacityShareLabel,
-    getCapacityStatus,
-    getTeamCapacityMeta,
-    normalizeCapacityKey,
-    normalizeCapacityTeamName,
-    reduceCapacityReadLifecycle,
-    resolveUniqueCapacityValue,
-} from './eng/planningCapacityUtils.js';
-import { buildExcludedProjectStats, buildSelectedPlanningTasksList, buildSelectedProjectStats, buildSelectedTeamProjectStats, buildSelectedTeamStats, sumPlanningStoryPoints } from './eng/planningSelectionStats.js';
-import { classifyCapacityIssue } from './capacityClassification.mjs';
-import {
-    aggregateCohortSummary,
-    buildCohortGridModel,
-    buildCompletedEpicsBars,
-    buildOpenEpicsBars,
-    buildQuarterOptions,
-    compareQuarterLabels,
-    deriveAssigneeOptions,
-    deriveProjectOptions,
-    filterCohortIssues,
-    getCurrentQuarterLabel,
-    normalizeCohortStatus
-} from './cohort/cohortUtils.js';
-import {
-    buildDefaultExcludedCapacityRange,
-    buildEpicTeamCrossShareLineSeries,
-    buildEpicTeamModeOverall,
-    buildEpicTeamModeSprintRows,
-    buildEffortTypeSplitRows,
-    buildExcludedCapacityLineSeries,
-    buildExcludedCapacityTimeSeries,
-    buildExcludedEpicCatalog,
-    compareSprintsChronologically,
-    getSprintRange,
-    getSprintQuarterLabel,
-    loadExcludedCapacityStatsSourceChunks,
-    mergeExcludedCapacityStatsSourceChunks,
-    summarizeEffortTypeSplitTotals
-} from './stats/excludedCapacityStats.js';
+import { useEngCapacityState, useEngCapacity } from './eng/useEngCapacity.js';
+import { getTeamCapacityMeta } from './eng/planningCapacityUtils.js';
+import { buildSelectedPlanningTasksList, sumPlanningStoryPoints } from './eng/planningSelectionStats.js';
+import { getSprintQuarterLabel } from './stats/excludedCapacityStats.js';
 import { PRIORITY_AXIS } from './stats/statsConstants.js';
 import { buildPriorityWeightMap } from './stats/priorityWeights.js';
-import { buildBurnoutChartModel } from './stats/burnoutChartUtils.js';
-import {
-    buildLocalStatsFromTasks,
-    buildRadarPoints,
-    buildTeamColorMap,
-    computePriorityWeighted,
-    computeRate,
-    formatPercent,
-    getPriorityLabel,
-    getRateClass,
-    resolveTeamColor,
-    resolveProjectTrackColor,
-} from './stats/statsUtils.js';
-import StatsDeliverySummary from './stats/StatsDeliverySummary.jsx';
-import StatsPriorityView from './stats/StatsPriorityView.jsx';
-import StatsTeamsView from './stats/StatsTeamsView.jsx';
-import BurnoutChart from './stats/BurnoutChart.jsx';
-import ExcludedCapacityLineChart from './stats/ExcludedCapacityLineChart.jsx';
-import EffortTypeSplitChart from './stats/EffortTypeSplitChart.jsx';
-import ProjectTrackTotalsBar from './stats/ProjectTrackTotalsBar.jsx';
-import ProjectTrackSprintChart from './stats/ProjectTrackSprintChart.jsx';
-import ProjectTrackBreakdownChart from './stats/ProjectTrackBreakdownChart.jsx';
-import ProjectTrackPhaseChart from './stats/ProjectTrackPhaseChart.jsx';
-import StatsRangeControl from './stats/StatsRangeControl.jsx';
-import { buildProjectTrackSprintSeries, summarizeProjectTrackTotals, buildProjectTrackBreakdownRows, buildProjectTrackColumnSplit, inScopeEpicKeys as projectTrackInScopeEpicKeys } from './stats/projectTrackStats.js';
-import { summarizeTrackPhaseDurations } from './stats/projectTrackPhaseStats.js';
-import { epicHasExplicitlyEmptySprintValue, epicHasSelectedSprintLabel, epicMatchesSelectedSprint, filterExplicitBacklogEpics, issueMatchesSelectedSprint } from './backlogAlertSprintUtils.mjs';
+import { buildTeamColorMap, resolveTeamColor } from './stats/statsUtils.js';
+import { epicHasExplicitlyEmptySprintValue, issueMatchesSelectedSprint } from './backlogAlertSprintUtils.mjs';
 import { getNextExclusiveDropdownState } from './controlDropdownUtils.mjs';
 import { getFuturePlanningNeedsStoriesReasonText } from './futurePlanningNeedsStories.mjs';
-import { epicHasFuturePlanningTeamLabel, epicMatchesFuturePlanningTeamSelection, getFuturePlanningEpicTeamInfos } from './futurePlanningTeamUtils.mjs';
-import {
-    fetchMissingPlanningInfo as requestMissingPlanningInfo,
-    fetchSprints as requestSprints,
-    fetchDependencies as requestDependencies,
-    fetchExcludedCapacityStatsSource as requestExcludedCapacityStatsSource,
-} from './api/engApi.js';
-import { fetchCapacity as requestCapacity, updateCapacity } from './api/capacityApi.js';
+import { fetchMissingPlanningInfo as requestMissingPlanningInfo, fetchSprints as requestSprints, fetchDependencies as requestDependencies } from './api/engApi.js';
+import { updateCapacity } from './api/capacityApi.js';
 import { resolveBackendUrl } from './api/backendUrl.js';
 import {
     fetchBootstrapConfig,
@@ -195,7 +114,6 @@ import { buildPendingFirstRunGroupPreferencesDraft } from './settings/firstRunGr
 import { useFirstRunConfiguration, useFirstRunConfigurationState } from './settings/useFirstRunConfiguration.js';
 import {
     normalizeGroupsConfig,
-    normalizeTeamLabelAliases,
     resolveInitialGroupId
 } from './settings/groupConfigUtils.js';
 import { saveSharedExcludedCapacityToggle } from './settings/sharedExcludedCapacityToggle.js';
@@ -209,13 +127,11 @@ import useTeamCatalogLifecycle from './settings/useTeamCatalogLifecycle.js';
 import { buildSharedGroupsPayload } from './settings/groupVisibilityUtils.js';
 import { ADMIN_SETTINGS_TAB_IDS, DEPARTMENT_SETTINGS_TAB_IDS } from './settings/settingsTabIds.js';
 
-import { fetchBurnoutStats as requestBurnoutStats, fetchEpicCohortStats as requestEpicCohortStats, fetchProjectTrackPhaseDurations as requestProjectTrackPhaseDurations } from './api/statsApi.js';
 import { fetchIssuesLookup as requestIssuesLookup } from './api/issuesApi.js';
 import { EpmControls } from './epm/EpmControls.jsx';
 import EpmProjectCollapseAllButton from './epm/EpmProjectCollapseAllButton.jsx';
 import { EpmView } from './epm/EpmView.jsx';
 import EpmSettingsTab from './epm/EpmSettingsTab.jsx';
-import SettingsModalContainer from './settings/SettingsModalContainer.jsx';
 import DepartmentsSettingsTab from './settings/DepartmentsSettingsTab.jsx';
 import { createSettingsDraftReadGuard, useSettingsConfigBaselineRevision } from './settings/settingsConfigReadState.js';
 import { useSettingsPermissions } from './settings/useSettingsPermissions.js';
@@ -261,6 +177,17 @@ import {
     selectedTeamSelectionsEqual
 } from './teamSelectionUtils.mjs';
 import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTasks, normalizeJiraExportKeys, openJiraIssueSearch } from './jiraExportUtils.mjs';
+
+const loadStatsView = createLazyViewLoader({ viewId: 'stats',
+    initialLoad: () => import('./stats/StatsPanel.jsx') });
+const loadScenarioView = createLazyViewLoader({ viewId: 'scenario',
+    initialLoad: () => import('./scenario/ScenarioView.jsx').then(
+        module => ({ default: module.ScenarioView })) });
+const loadSettingsView = createLazyViewLoader({ viewId: 'settings',
+    initialLoad: () => import('./settings/SettingsModalContainer.jsx') });
+const statsLoadingFallback = <div className="stats-note">Loading Statistics…</div>;
+const scenarioLoadingFallback = <div className="stats-note">Loading Scenario…</div>;
+const settingsLoadingFallback = <div className="stats-note">Loading Settings…</div>;
 
         const { useState, useEffect, useRef } = React;
         const EMPTY_ARRAY = Object.freeze([]);
@@ -882,88 +809,101 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
             const resolveStatsGraphMode = (value) => (value === 'weighted' || value === 'absolute') ? value : 'weighted';
             const resolveBurndownMetric = (value) => (value === 'issueCount' || value === 'storyPoints') ? value : 'storyPoints';
             const resolveCohortGroupBy = (value) => (value === 'month' || value === 'quarter') ? value : 'quarter';
-            const [statsView, setStatsView] = useState(resolveStatsView(savedPrefsRef.current.statsView));
-            const [statsGraphMode, setStatsGraphMode] = useState(resolveStatsGraphMode(savedPrefsRef.current.statsGraphMode));
-            const [priorityHoverIndex, setPriorityHoverIndex] = useState(null);
-            const [burnoutData, setBurnoutData] = useState(null);
-            const [burnoutLoading, setBurnoutLoading] = useState(false);
-            const [burnoutError, setBurnoutError] = useState('');
-            const [burnoutAssigneeFilter, setBurnoutAssigneeFilter] = useState(savedPrefsRef.current.burnoutAssigneeFilter || 'all');
-            const [burndownMetric, setBurndownMetric] = useState(resolveBurndownMetric(savedPrefsRef.current.burndownMetric));
-            const [cohortData, setCohortData] = useState(null);
-            const [cohortLoading, setCohortLoading] = useState(false);
-            const [cohortError, setCohortError] = useState('');
-            const [cohortStartQuarter, setCohortStartQuarter] = useState(savedPrefsRef.current.cohortStartQuarter || getCurrentQuarterLabel());
-            const [cohortEndQuarter, setCohortEndQuarter] = useState(savedPrefsRef.current.cohortEndQuarter || getCurrentQuarterLabel());
-            const [cohortGroupBy, setCohortGroupBy] = useState(resolveCohortGroupBy(savedPrefsRef.current.cohortGroupBy));
-            const [cohortProjectFilter, setCohortProjectFilter] = useState(savedPrefsRef.current.cohortProjectFilter || 'all');
-            const [cohortAssigneeFilter, setCohortAssigneeFilter] = useState(savedPrefsRef.current.cohortAssigneeFilter || 'all');
-            const [cohortExcludeAdHoc, setCohortExcludeAdHoc] = useState(Boolean(savedPrefsRef.current.cohortExcludeAdHoc));
-            const [cohortExcludeCapacity, setCohortExcludeCapacity] = useState(savedPrefsRef.current.cohortExcludeCapacity ?? true);
-            const [cohortStatusToggles, setCohortStatusToggles] = useState(() => ({
-                done: true,
-                open: true,
-                killed: false,
-                incomplete: false,
-                postponed: false,
-                ...(savedPrefsRef.current.cohortStatusToggles || {})
-            }));
-            const [cohortSelectedRow, setCohortSelectedRow] = useState(null);
-            const [excludedCapacityData, setExcludedCapacityData] = useState(null);
-            const [excludedCapacityLoading, setExcludedCapacityLoading] = useState(false);
-            const [excludedCapacityError, setExcludedCapacityError] = useState('');
-            const [excludedCapacityStartSprintId, setExcludedCapacityStartSprintId] = useState(savedPrefsRef.current.excludedCapacityStartSprintId || '');
-            const [excludedCapacityEndSprintId, setExcludedCapacityEndSprintId] = useState(savedPrefsRef.current.excludedCapacityEndSprintId || '');
-            const [excludedCapacitySelectedEpicKeys, setExcludedCapacitySelectedEpicKeys] = useState(() => {
-                const saved = savedPrefsRef.current.excludedCapacitySelectedEpicKeys;
-                if (Array.isArray(saved)) {
-                    return saved.map(key => String(key || '').trim().toUpperCase()).filter(Boolean);
-                }
-                return null;
-            });
-            const [excludedCapacityChartMode, setExcludedCapacityChartMode] = useState(
-                savedPrefsRef.current.excludedCapacityChartMode === 'group' ? 'group' : 'teams'
-            );
-            const [excludedCapacityMetric, setExcludedCapacityMetric] = useState(
-                savedPrefsRef.current.excludedCapacityMetric === 'storyPoints' ? 'storyPoints' : 'percent'
-            );
-            const [effortSplitVisibleBuckets, setEffortSplitVisibleBuckets] = useState({
-                excludedCapacity: true,
-                adHoc: true,
-                product: true,
-                tech: true
-            });
-            const [excludedCapacityIsolatedTeam, setExcludedCapacityIsolatedTeam] = useState(null);
-            const [excludedCapacityEpicDropdownOpen, setExcludedCapacityEpicDropdownOpen] = useState(false);
-            const [excludedCapacityRefreshNonce, setExcludedCapacityRefreshNonce] = useState(0), [issuePeopleStatsRevision, setIssuePeopleStatsRevision] = useState(0);
-            const excludedCapacityEpicDropdownRef = useRef(null);
+            const {
+                statsView,
+                setStatsView,
+                statsGraphMode,
+                setStatsGraphMode,
+                burnoutData,
+                setBurnoutData,
+                burnoutLoading,
+                setBurnoutLoading,
+                burnoutError,
+                setBurnoutError,
+                burnoutAssigneeFilter,
+                setBurnoutAssigneeFilter,
+                burndownMetric,
+                setBurndownMetric,
+                cohortData,
+                setCohortData,
+                cohortLoading,
+                setCohortLoading,
+                cohortError,
+                setCohortError,
+                cohortStartQuarter,
+                setCohortStartQuarter,
+                cohortEndQuarter,
+                setCohortEndQuarter,
+                cohortGroupBy,
+                setCohortGroupBy,
+                cohortProjectFilter,
+                setCohortProjectFilter,
+                cohortAssigneeFilter,
+                setCohortAssigneeFilter,
+                cohortExcludeAdHoc,
+                setCohortExcludeAdHoc,
+                cohortExcludeCapacity,
+                setCohortExcludeCapacity,
+                cohortStatusToggles,
+                setCohortStatusToggles,
+                cohortSelectedRow,
+                setCohortSelectedRow,
+                excludedCapacityData,
+                setExcludedCapacityData,
+                excludedCapacityLoading,
+                setExcludedCapacityLoading,
+                excludedCapacityError,
+                setExcludedCapacityError,
+                excludedCapacityStartSprintId,
+                setExcludedCapacityStartSprintId,
+                excludedCapacityEndSprintId,
+                setExcludedCapacityEndSprintId,
+                excludedCapacitySelectedEpicKeys,
+                setExcludedCapacitySelectedEpicKeys,
+                excludedCapacityChartMode,
+                setExcludedCapacityChartMode,
+                excludedCapacityMetric,
+                setExcludedCapacityMetric,
+                effortSplitVisibleBuckets,
+                setEffortSplitVisibleBuckets,
+                excludedCapacityIsolatedTeam,
+                setExcludedCapacityIsolatedTeam,
+                excludedCapacityEpicDropdownOpen,
+                setExcludedCapacityEpicDropdownOpen,
+                excludedCapacityRefreshNonce,
+                setExcludedCapacityRefreshNonce,
+                issuePeopleStatsRevision,
+                setIssuePeopleStatsRevision,
+                excludedCapacityEpicDropdownRef,
+                projectTrackCapacitySide,
+                setProjectTrackCapacitySide,
+                projectTrackMode,
+                setProjectTrackMode,
+                projectTrackExcludeAdHoc,
+                setProjectTrackExcludeAdHoc,
+                projectTrackExcludeExcludedCapacity,
+                setProjectTrackExcludeExcludedCapacity,
+                projectTrackPhaseData,
+                setProjectTrackPhaseData,
+                projectTrackPhaseLoading,
+                setProjectTrackPhaseLoading,
+                projectTrackPhaseError,
+                setProjectTrackPhaseError,
+                projectTrackPhaseCacheRef,
+                projectTrackPhaseAbortRef,
+                burnoutTaskFilter,
+                setBurnoutTaskFilter,
+                burnoutCacheRef,
+                cohortCacheRef,
+                excludedCapacityCacheRef,
+                excludedCapacityForceRefreshRef,
+            } = useStatsState({ savedPrefsRef, resolveStatsView, resolveStatsGraphMode, resolveBurndownMetric, resolveCohortGroupBy });
             const isStatsSourceOnlyStatsView = showStats && (statsView === 'excludedCapacity' || statsView === 'monoCrossShare' || statsView === 'projectTrack');
             const isCatchUpMode = selectedView === 'eng' && !showPlanning && !showStats && !showScenario && !showBoard;
             const isEpicRefreshMode = selectedView === 'eng' && !showStats && !showScenario && !showBoard;
             const boardScopeRequested = selectedView === 'eng' && showBoard && ['component', 'all_work'].includes(boardStrictScope)
                 && adminSettingsGate.status !== 'missing';
             useEffect(() => { if (selectedView !== 'eng' || !showBoard) setBoardStrictScope(''); }, [selectedView, showBoard]);
-            const [projectTrackCapacitySide, setProjectTrackCapacitySide] = useState(
-                ['product', 'tech', 'both'].includes(savedPrefsRef.current.projectTrackCapacitySide) ? savedPrefsRef.current.projectTrackCapacitySide : 'product'
-            );
-            const [projectTrackMode, setProjectTrackMode] = useState(
-                savedPrefsRef.current.projectTrackMode === 'team' ? 'team' : 'epic'
-            );
-            const [projectTrackExcludeAdHoc, setProjectTrackExcludeAdHoc] = useState(Boolean(savedPrefsRef.current.projectTrackExcludeAdHoc));
-            const [projectTrackExcludeExcludedCapacity, setProjectTrackExcludeExcludedCapacity] = useState(Boolean(savedPrefsRef.current.projectTrackExcludeExcludedCapacity));
-            const [projectTrackPhaseData, setProjectTrackPhaseData] = useState(null);
-            const [projectTrackPhaseLoading, setProjectTrackPhaseLoading] = useState(false);
-            const [projectTrackPhaseError, setProjectTrackPhaseError] = useState('');
-            const projectTrackPhaseCacheRef = useRef({});
-            const projectTrackPhaseAbortRef = useRef(null);
-            const [burnoutHoverPoint, setBurnoutHoverPoint] = useState(null);
-            const [burnoutHoverTeamKey, setBurnoutHoverTeamKey] = useState(null);
-            const [burnoutTaskFilter, setBurnoutTaskFilter] = useState(null);
-            const burnoutCacheRef = useRef({});
-            const cohortCacheRef = useRef({});
-            const excludedCapacityCacheRef = useRef({});
-            const excludedCapacityForceRefreshRef = useRef(false);
-            const burnoutChartRef = useRef(null);
             const [showTeamDropdown, setShowTeamDropdown] = useState(false);
             const [teamDropdownQuery, setTeamDropdownQuery] = useState('');
             const teamDropdownRefs = useRef({ main: null, compact: null });
@@ -975,21 +915,13 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
             const sprintSelectorOriginRef = useRef(null);
             const boardScopeRetryRef = useRef(null);
             const [capacityEnabled, setCapacityEnabled] = useState(false);
-            const [capacityState, setCapacityState] = useState(() => ({ capacityByTeam: {}, capacityTargetsByTeam: {}, capacityIssueCount: null, mutationEnabled: false, scopeSignature: '' }));
-            const capacityStateRef = useRef(capacityState);
-            capacityStateRef.current = capacityState;
-            const [capacityLoading, setCapacityLoading] = useState(false);
-            const [capacityReadRevision, setCapacityReadRevision] = useState(0);
-            const [capacityReadError, setCapacityReadError] = useState('');
-            const [capacityDataStale, setCapacityDataStale] = useState(false);
-            const capacityReadModelRef = useRef(null);
-            capacityReadModelRef.current = {
-                capacityState, capacityLoading, capacityReadRevision, capacityReadError, capacityDataStale,
-            };
-            const [capacityRefreshNonce, setCapacityRefreshNonce] = useState(0);
-            const capacityReadGenerationRef = useRef(0);
-            const capacityReadAbortRef = useRef(null);
-            const activeCapacityScopeRef = useRef(''), capacityScopeHoldRef = useRef(false), capacityScopePinRef = useRef(null), capacityScopeKeyRef = useRef(null);
+            const {
+                capacityState, setCapacityState, capacityStateRef, capacityLoading,
+                setCapacityLoading, capacityReadRevision, setCapacityReadRevision, capacityReadError,
+                setCapacityReadError, capacityDataStale, setCapacityDataStale, capacityReadModelRef,
+                capacityRefreshNonce, setCapacityRefreshNonce, capacityReadGenerationRef, capacityReadAbortRef,
+                activeCapacityScopeRef, capacityScopeHoldRef, capacityScopePinRef, capacityScopeKeyRef,
+            } = useEngCapacityState();
             const searchInputRef = useRef(null);
 
 
@@ -1677,9 +1609,7 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 setBacklogTechEpics([]);
                 setDependencyData({});
                 clearStorySubtasks();
-                burnoutCacheRef.current = {};
-                cohortCacheRef.current = {};
-                excludedCapacityCacheRef.current = {};
+                resetStatsTransientRefs({ burnoutCacheRef, cohortCacheRef, excludedCapacityCacheRef });
                 setBurnoutData(null);
                 setBurnoutError('');
                 setBurnoutLoading(false);
@@ -1935,7 +1865,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                     showGroupManage,
                     groupSaving,
                     sprintSearch,
-                    priorityHoverIndex
                 };
                 const prev = perfStateRef.current || {};
                 const counts = perfStateCountsRef.current || {};
@@ -1972,7 +1901,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 showGroupManage,
                 groupSaving,
                 sprintSearch,
-                priorityHoverIndex
             ]);
 
             const normalizeStatus = (status) => {
@@ -2726,32 +2654,7 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                     engBoardFilterSelection: {},
                     showDependencies: true,
                     epicDetails: {},
-                    statsView: resolveStatsView(savedPrefsRef.current.statsView),
-                    statsGraphMode: resolveStatsGraphMode(savedPrefsRef.current.statsGraphMode),
-                    burnoutData: null,
-                    burnoutLoading: false,
-                    burnoutError: '',
-                    burnoutAssigneeFilter: savedPrefsRef.current.burnoutAssigneeFilter || 'all',
-                    burndownMetric: resolveBurndownMetric(savedPrefsRef.current.burndownMetric),
-                    cohortData: null,
-                    cohortLoading: false,
-                    cohortError: '',
-                    cohortStartQuarter: savedPrefsRef.current.cohortStartQuarter || getCurrentQuarterLabel(),
-                    cohortEndQuarter: savedPrefsRef.current.cohortEndQuarter || getCurrentQuarterLabel(),
-                    cohortGroupBy: resolveCohortGroupBy(savedPrefsRef.current.cohortGroupBy),
-                    cohortProjectFilter: savedPrefsRef.current.cohortProjectFilter || 'all',
-                    cohortAssigneeFilter: savedPrefsRef.current.cohortAssigneeFilter || 'all',
-                    cohortExcludeAdHoc: Boolean(savedPrefsRef.current.cohortExcludeAdHoc),
-                    cohortExcludeCapacity: savedPrefsRef.current.cohortExcludeCapacity ?? true,
-                    cohortStatusToggles: {
-                        done: true,
-                        open: true,
-                        killed: false,
-                        incomplete: false,
-                        postponed: false,
-                        ...(savedPrefsRef.current.cohortStatusToggles || {})
-                    },
-                    cohortSelectedRow: null,
+                    ...buildDefaultStatsGroupState(savedPrefsRef.current, { resolveStatsView, resolveStatsGraphMode, resolveBurndownMetric, resolveCohortGroupBy }),
                     ...buildDefaultScenarioGroupState(savedPrefsRef.current.scenarioLaneMode),
                     hideExcludedStats: savedPrefsRef.current.hideExcludedStats ?? true,
                     showMissingAlert: savedPrefsRef.current.showMissingAlert ?? true,
@@ -2808,25 +2711,7 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 engBoardFilterSelection,
                 showDependencies,
                 epicDetails,
-                statsView,
-                statsGraphMode,
-                burnoutData,
-                burnoutLoading,
-                burnoutError,
-                burnoutAssigneeFilter,
-                burndownMetric,
-                cohortData,
-                cohortLoading,
-                cohortError,
-                cohortStartQuarter,
-                cohortEndQuarter,
-                cohortGroupBy,
-                cohortProjectFilter,
-                cohortAssigneeFilter,
-                cohortExcludeAdHoc,
-                cohortExcludeCapacity,
-                cohortStatusToggles,
-                cohortSelectedRow,
+                ...snapshotStatsGroupState({ statsView, statsGraphMode, burnoutData, burnoutLoading, burnoutError, burnoutAssigneeFilter, burndownMetric, cohortData, cohortLoading, cohortError, cohortStartQuarter, cohortEndQuarter, cohortGroupBy, cohortProjectFilter, cohortAssigneeFilter, cohortExcludeAdHoc, cohortExcludeCapacity, cohortStatusToggles, cohortSelectedRow }),
                 ...scenarioGroupValues,
                 hideExcludedStats,
                 showMissingAlert,
@@ -2885,32 +2770,7 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 setEngBoardFilterSelection(nextState.engBoardFilterSelection ?? {});
                 setShowDependencies(true);
                 setEpicDetails(nextState.epicDetails || {});
-                setStatsView(resolveStatsView(nextState.statsView));
-                setStatsGraphMode(resolveStatsGraphMode(nextState.statsGraphMode));
-                setBurnoutData(nextState.burnoutData || null);
-                setBurnoutLoading(false);
-                setBurnoutError(nextState.burnoutError || '');
-                setBurnoutAssigneeFilter(nextState.burnoutAssigneeFilter || 'all');
-                setBurndownMetric(resolveBurndownMetric(nextState.burndownMetric));
-                setCohortData(nextState.cohortData || null);
-                setCohortLoading(false);
-                setCohortError(nextState.cohortError || '');
-                setCohortStartQuarter(nextState.cohortStartQuarter || getCurrentQuarterLabel());
-                setCohortEndQuarter(nextState.cohortEndQuarter || getCurrentQuarterLabel());
-                setCohortGroupBy(resolveCohortGroupBy(nextState.cohortGroupBy));
-                setCohortProjectFilter(nextState.cohortProjectFilter || 'all');
-                setCohortAssigneeFilter(nextState.cohortAssigneeFilter || 'all');
-                setCohortExcludeAdHoc(Boolean(nextState.cohortExcludeAdHoc));
-                setCohortExcludeCapacity(nextState.cohortExcludeCapacity ?? true);
-                setCohortStatusToggles({
-                    done: true,
-                    open: true,
-                    killed: false,
-                    incomplete: false,
-                    postponed: false,
-                    ...(nextState.cohortStatusToggles || {})
-                });
-                setCohortSelectedRow(nextState.cohortSelectedRow || null);
+                applyStatsGroupState(nextState, { setStatsView, setStatsGraphMode, setBurnoutData, setBurnoutLoading, setBurnoutError, setBurnoutAssigneeFilter, setBurndownMetric, setCohortData, setCohortLoading, setCohortError, setCohortStartQuarter, setCohortEndQuarter, setCohortGroupBy, setCohortProjectFilter, setCohortAssigneeFilter, setCohortExcludeAdHoc, setCohortExcludeCapacity, setCohortStatusToggles, setCohortSelectedRow }, { resolveStatsView, resolveStatsGraphMode, resolveBurndownMetric, resolveCohortGroupBy });
                 applyScenarioGroupState({ setScenarioData, setScenarioError, setScenarioLaneMode, setScenarioCollapsedLanes, setScenarioEpicFocus, setScenarioRangeOverride, setScenarioScrollTop, setScenarioScrollLeft, setScenarioViewportHeight, setScenarioHoverKey, setScenarioFlashKey, setScenarioLayout, setScenarioEdgeRender, setScenarioTooltip, setScenarioLoading }, nextState);
                 setHideExcludedStats(nextState.hideExcludedStats ?? true);
                 setShowMissingAlert(nextState.showMissingAlert ?? true);
@@ -4297,976 +4157,56 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 () => Array.from(adHocEpicSet).sort().join('|'),
                 [adHocEpicSet]
             );
-            const statsTaskList = React.useMemo(() => {
-                if (!capacityTasks.length) return [];
-                return capacityTasks.filter(task => {
-                    const epicKey = normalizeEpicKey(task.fields?.epicKey || 'NO_EPIC');
-                    return !excludedEpicSet.has(epicKey);
-                });
-            }, [capacityTasks, excludedEpicSet]);
-            const localStatsData = React.useMemo(() => {
-                if (!showStats) return null;
-                if (!statsTaskList.length) return null;
-                if (perfEnabled) {
-                    perfCountersRef.current.statsBuild = (perfCountersRef.current.statsBuild || 0) + 1;
-                    performance.mark('localStatsBuild:start');
-                }
-                const result = buildLocalStatsFromTasks(statsTaskList, {
-                    excludedSet: new Set(),
-                    normalizeStatus,
-                    getTeamInfo,
-                    techProjectKeys,
-                    adHocEpicSet,
-                    sprintName: selectedSprintInfo?.name || ''
-                });
-                if (perfEnabled) {
-                    performance.mark('localStatsBuild:end');
-                    performance.measure('localStatsBuild', 'localStatsBuild:start', 'localStatsBuild:end');
-                    performance.clearMarks('localStatsBuild:start');
-                    performance.clearMarks('localStatsBuild:end');
-                    performance.clearMeasures('localStatsBuild');
-                }
-                return result;
-            }, [statsTaskList, selectedSprintInfo?.name, showStats, perfEnabled, techProjectKeys, adHocEpicSet, adHocEpicSignature]);
+            const scope = useEngScope({
+                activeGroupId, selectedSprint, selectedSprintInfo, isAllTeamsSelected, selectedTeamSet, teamNameById, teamOptions, capacityTasks, techProjectKeys, excludedEpicSet, adHocEpicSet, adHocEpicSignature
+            });
+            const {
+                effectiveStatsData, burnoutTaskTeamByIssueKey, burnoutTaskStatusByIssueKey, burnoutIssueWeightByKey,
+                burnoutScopedTeamIds, burnoutScopedTeamSignature, cohortScopedTeamSignature, burnoutQueryKey,
+                cohortQueryKey
+            } = useStatsDerivedA({
+                scope, BACKEND_URL, activeGroupMissingComponents, activeGroupTeamIds,
+                activeGroupTeamSet, burnoutAssigneeFilter, burnoutCacheRef, burnoutData,
+                cohortEndQuarter, cohortStartQuarter, getTeamInfo, groupPreferences,
+                isCompletedSprintSelected, issueEditStateRef, issuePeopleStatsRevision, normalizeEpicKey,
+                normalizeStatus, perfCountersRef, perfEnabled, setBurnoutAssigneeFilter,
+                setBurnoutData, setBurnoutError, setBurnoutLoading, showStats,
+                statsView, tasksFetched
+            });
 
-            const effectiveStatsData = localStatsData;
-            const burnoutTaskTeamByIssueKey = React.useMemo(() => {
-                const byIssue = new Map();
-                (statsTaskList || []).forEach((task) => {
-                    const issueKey = String(task?.key || '').trim().toUpperCase();
-                    if (!issueKey) return;
-                    const teamInfo = getTeamInfo(task);
-                    const teamId = teamInfo?.id && teamInfo.id !== 'unknown' ? String(teamInfo.id) : null;
-                    const teamName = String(teamInfo?.name || '').trim();
-                    if (!teamId && !teamName) return;
-                    byIssue.set(issueKey, {
-                        id: teamId,
-                        name: teamName || 'Unknown Team'
-                    });
-                });
-                return byIssue;
-            }, [statsTaskList, getTeamInfo]);
-            const burnoutTaskStatusByIssueKey = React.useMemo(() => {
-                const byIssue = new Map();
-                (statsTaskList || []).forEach((task) => {
-                    const issueKey = String(task?.key || '').trim().toUpperCase();
-                    if (!issueKey) return;
-                    byIssue.set(issueKey, normalizeStatus(task?.fields?.status?.name || ''));
-                });
-                return byIssue;
-            }, [statsTaskList]);
-            const burnoutIssueWeightByKey = React.useMemo(() => {
-                const byIssue = new Map();
-                (statsTaskList || []).forEach((task) => {
-                    const issueKey = String(task?.key || '').trim().toUpperCase();
-                    if (!issueKey) return;
-                    const raw = parseFloat(task?.fields?.customfield_10004 || 0);
-                    const sp = Number.isFinite(raw) ? Math.max(0, raw) : 0;
-                    byIssue.set(issueKey, sp);
-                });
-                return byIssue;
-            }, [statsTaskList]);
-            const burnoutIssueKeys = React.useMemo(() => {
-                const keys = [];
-                const seen = new Set();
-                (statsTaskList || []).forEach((task) => {
-                    if (!task?.key) return;
-                    const teamInfo = getTeamInfo(task);
-                    if (isAllTeamsSelected) {
-                        if (activeGroupTeamIds.length && !activeGroupTeamSet.has(teamInfo.id)) {
-                            return;
-                        }
-                    } else if (!selectedTeamSet.has(teamInfo.id)) {
-                        return;
-                    }
-                    const key = String(task.key || '').trim().toUpperCase();
-                    if (!key || seen.has(key)) return;
-                    seen.add(key);
-                    keys.push(key);
-                });
-                return keys;
-            }, [statsTaskList, isAllTeamsSelected, selectedTeamSet, activeGroupTeamIds, activeGroupTeamSet, getTeamInfo]);
-            const burnoutScopedTeamIds = React.useMemo(() => {
-                if (isAllTeamsSelected) {
-                    return Array.from(new Set((activeGroupTeamIds || []).map((id) => String(id || '').trim()).filter(Boolean))).sort();
-                }
-                return Array.from(selectedTeamSet).filter(Boolean).sort();
-            }, [isAllTeamsSelected, selectedTeamSet, activeGroupTeamIds]);
-            const burnoutScopedTeamSignature = React.useMemo(
-                () => burnoutScopedTeamIds.join(','),
-                [burnoutScopedTeamIds]
-            );
-            const cohortScopedComponentsSignature = React.useMemo(
-                () => activeGroupMissingComponents.slice().sort((a, b) => a.localeCompare(b)).join(','),
-                [activeGroupMissingComponents]
-            );
-            const cohortScopedTeamSignature = React.useMemo(() => {
-                const teamPart = burnoutScopedTeamSignature || 'group-empty';
-                const componentPart = cohortScopedComponentsSignature || 'no-components';
-                return `${teamPart}::${componentPart}`;
-            }, [burnoutScopedTeamSignature, cohortScopedComponentsSignature]);
-            const burnoutIssueKeysSignature = React.useMemo(
-                () => burnoutIssueKeys.join(','),
-                [burnoutIssueKeys]
-            );
-            const burnoutClosureScopeKey = isCompletedSprintSelected ? 'post' : 'inSprint';
-            const burnoutQueryKey = React.useMemo(() => {
-                const sprintLabel = selectedSprintInfo?.name || '';
-                if (!sprintLabel) return '';
-                return `${sprintLabel}::${burnoutClosureScopeKey}::${burnoutScopedTeamSignature || 'all'}::${burnoutIssueKeysSignature}`;
-            }, [selectedSprintInfo?.name, burnoutClosureScopeKey, burnoutScopedTeamSignature, burnoutIssueKeysSignature]);
-            const cohortQueryKey = React.useMemo(() => {
-                const startQuarter = String(cohortStartQuarter || '').trim();
-                const endQuarter = String(cohortEndQuarter || '').trim();
-                if (!startQuarter || !endQuarter) return '';
-                return `${startQuarter}::${endQuarter}::${cohortScopedTeamSignature}::${adHocEpicSignature || 'no-adhoc'}`;
-            }, [cohortStartQuarter, cohortEndQuarter, cohortScopedTeamSignature, adHocEpicSignature]);
 
-            useEffect(() => {
-                if (!showStats || statsView !== 'burnout') return;
-                if (groupPreferences.onboardingRequired) { setBurnoutData(null); setBurnoutError(''); setBurnoutLoading(false); return; }
-                const sprintLabel = selectedSprintInfo?.name || '';
-                if (!sprintLabel) {
-                    setBurnoutData(null);
-                    setBurnoutError('');
-                    setBurnoutLoading(false);
-                    return;
-                }
-                if (!tasksFetched) {
-                    setBurnoutLoading(true);
-                    setBurnoutError('');
-                    return;
-                }
-                if (!burnoutIssueKeys.length) {
-                    setBurnoutData(null);
-                    setBurnoutError('No scoped tasks available for burndown in the current filters.');
-                    setBurnoutLoading(false);
-                    return;
-                }
-                const cached = burnoutCacheRef.current[burnoutQueryKey];
-                if (cached) {
-                    setBurnoutData(cached);
-                    setBurnoutError('');
-                    setBurnoutLoading(false);
-                    return;
-                }
 
-                const controller = new AbortController();
-                const timeoutId = window.setTimeout(() => {
-                    try {
-                        controller.abort();
-                    } catch (err) {
-                        // ignore abort errors
-                    }
-                }, 30000);
-                let cancelled = false;
-                const fetchBurnout = async () => {
-                    const readToken = issueEditStateRef.current.beginRead({ aggregate: true }); setBurnoutLoading(true);
-                    setBurnoutError('');
-                    try {
-                        const response = await requestBurnoutStats(
-                            BACKEND_URL,
-                            {
-                                sprint: sprintLabel,
-                                teamIds: burnoutScopedTeamIds,
-                                issueKeys: burnoutIssueKeys,
-                                includePostSprintClosures: isCompletedSprintSelected
-                            },
-                            { signal: controller.signal }
-                        );
-                        if (!response.ok) {
-                            const err = await response.json().catch(() => ({}));
-                            throw new Error(err.error || err.message || `Burndown fetch failed (${response.status})`);
-                        }
-                        const payload = await response.json();
-                        if (cancelled || !issueEditStateRef.current.isCurrentAggregateRead(readToken)) return;
-                        const data = payload?.data || null;
-                        burnoutCacheRef.current[burnoutQueryKey] = data;
-                        setBurnoutData(data);
-                    } catch (err) {
-                        if (cancelled) return;
-                        if (isAuthenticationRequiredError(err)) return;
-                        if (err.name === 'AbortError') {
-                            setBurnoutError('Burndown request timed out (30s). Narrow scope with team or assignee filter.');
-                            setBurnoutData(null);
-                            return;
-                        }
-                        setBurnoutError(String(err.message || err));
-                        setBurnoutData(null);
-                    } finally {
-                        issueEditStateRef.current.finishRead(readToken); window.clearTimeout(timeoutId);
-                        if (!cancelled) {
-                            setBurnoutLoading(false);
-                        }
-                    }
-                };
-                const debounceId = window.setTimeout(() => {
-                    fetchBurnout();
-                }, 120);
-                return () => {
-                    cancelled = true;
-                    window.clearTimeout(debounceId);
-                    window.clearTimeout(timeoutId);
-                    try {
-                        controller.abort();
-                    } catch (err) {
-                        // ignore abort errors
-                    }
-                };
-            }, [
-                showStats,
-                statsView,
-                selectedSprintInfo?.name,
-                tasksFetched,
-                burnoutQueryKey,
-                burnoutScopedTeamSignature,
-                burnoutIssueKeysSignature,
-                isCompletedSprintSelected,
-                groupPreferences.onboardingRequired, issuePeopleStatsRevision
-            ]);
-
-            useEffect(() => {
-                const available = burnoutData?.assignees || [];
-                if (!available.length) {
-                    if (burnoutAssigneeFilter !== 'all') {
-                        setBurnoutAssigneeFilter('all');
-                    }
-                    return;
-                }
-                if (burnoutAssigneeFilter === 'all') return;
-                const exists = available.some((item) => {
-                    const id = item?.id || item?.name || 'unassigned';
-                    return id === burnoutAssigneeFilter;
-                });
-                if (!exists) {
-                    setBurnoutAssigneeFilter('all');
-                }
-            }, [burnoutData, burnoutAssigneeFilter]);
-
-            useEffect(() => {
-                setBurnoutHoverPoint(null);
-                setBurnoutHoverTeamKey(null);
-            }, [burnoutData, burnoutAssigneeFilter, statsView]);
-
-            useEffect(() => {
-                if (showStats && statsView === 'burnout') return;
-                setBurnoutTaskFilter(null);
-            }, [showStats, statsView]);
-
-            useEffect(() => {
-                setBurnoutTaskFilter(null);
-            }, [selectedSprintInfo?.name, burnoutAssigneeFilter, burnoutQueryKey]);
-
-            useEffect(() => {
-                if (!showStats || statsView !== 'cohort') return;
-                if (groupPreferences.onboardingRequired || adminSettingsGate.status !== 'clear') { setCohortData(null); setCohortError(''); setCohortLoading(false); return; }
-                const startQuarter = String(cohortStartQuarter || '').trim();
-                const endQuarter = String(cohortEndQuarter || '').trim();
-                if (!startQuarter || !endQuarter) {
-                    setCohortData(null);
-                    setCohortError('Start and end quarter are required.');
-                    setCohortLoading(false);
-                    return;
-                }
-                const cached = cohortCacheRef.current[cohortQueryKey];
-                if (cached) {
-                    setCohortData(cached);
-                    setCohortError('');
-                    setCohortLoading(false);
-                    return;
-                }
-
-                const controller = new AbortController();
-                const timeoutId = window.setTimeout(() => {
-                    try {
-                        controller.abort();
-                    } catch (err) {
-                        // ignore abort errors
-                    }
-                }, 30000);
-                let cancelled = false;
-                const fetchCohort = async () => {
-                    const readToken = issueEditStateRef.current.beginRead({ aggregate: true }); setCohortLoading(true);
-                    setCohortError('');
-                    try {
-                        const response = await requestEpicCohortStats(
-                            BACKEND_URL,
-                            {
-                                startQuarter,
-                                endQuarter,
-                                teamIds: burnoutScopedTeamIds,
-                                components: activeGroupMissingComponents,
-                                adHocCapacityEpics: activeGroupAdHocCapacityEpics,
-                                refresh: false
-                            },
-                            { signal: controller.signal }
-                        );
-                        if (!response.ok) {
-                            const err = await response.json().catch(() => ({}));
-                            throw new Error(err.error || err.message || `Lead times fetch failed (${response.status})`);
-                        }
-                        const payload = await response.json();
-                        if (cancelled || !issueEditStateRef.current.isCurrentAggregateRead(readToken)) return;
-                        const data = payload?.data || null;
-                        cohortCacheRef.current[cohortQueryKey] = data;
-                        setCohortData(data);
-                        setCohortError('');
-                    } catch (err) {
-                        if (cancelled) return;
-                        if (isAuthenticationRequiredError(err)) return;
-                        if (err?.name === 'AbortError') {
-                            setCohortError('Lead times request timed out (30s). Narrow scope with team filters.');
-                        } else {
-                            setCohortError(String(err?.message || err || 'Failed to load lead times data.'));
-                        }
-                        setCohortData(null);
-                    } finally {
-                        issueEditStateRef.current.finishRead(readToken); window.clearTimeout(timeoutId);
-                        if (!cancelled) setCohortLoading(false);
-                    }
-                };
-
-                const debounceId = window.setTimeout(fetchCohort, 120);
-                return () => {
-                    cancelled = true;
-                    window.clearTimeout(debounceId);
-                    window.clearTimeout(timeoutId);
-                    try {
-                        controller.abort();
-                    } catch (err) {
-                        // ignore abort errors
-                    }
-                };
-            }, [showStats, statsView, cohortStartQuarter, cohortEndQuarter, cohortQueryKey, cohortScopedTeamSignature, burnoutScopedTeamSignature, activeGroupMissingComponents, adHocEpicSignature, groupPreferences.onboardingRequired, adminSettingsGate.status, issuePeopleStatsRevision]);
-
-            const cohortQuarterOptions = React.useMemo(() => {
-                return buildQuarterOptions(getCurrentQuarterLabel(), 16);
-            }, []);
-            const cohortIssues = React.useMemo(() => {
-                return Array.isArray(cohortData?.issues) ? cohortData.issues : [];
-            }, [cohortData]);
-            const cohortProjectOptions = React.useMemo(() => deriveProjectOptions(cohortIssues), [cohortIssues]);
-            const cohortAssigneeSourceIssues = React.useMemo(() => {
-                if (cohortProjectFilter === 'all') return cohortIssues;
-                return cohortIssues.filter((issue) => String(issue?.projectKey || '') === cohortProjectFilter);
-            }, [cohortIssues, cohortProjectFilter]);
-            const cohortAssigneeOptions = React.useMemo(() => deriveAssigneeOptions(cohortAssigneeSourceIssues), [cohortAssigneeSourceIssues]);
-            const cohortFilteredIssues = React.useMemo(() => {
-                return filterCohortIssues(cohortIssues, {
-                    projectKey: cohortProjectFilter,
-                    assigneeKey: cohortAssigneeFilter,
-                    excludeAdHoc: cohortExcludeAdHoc,
-                    excludeEpicKeys: cohortExcludeCapacity ? excludedEpicSet : EMPTY_ARRAY,
-                    statusToggles: cohortStatusToggles
-                });
-            }, [cohortIssues, cohortProjectFilter, cohortAssigneeFilter, cohortExcludeAdHoc, cohortExcludeCapacity, cohortStatusToggles, excludedEpicSet]);
-            const cohortSummary = React.useMemo(() => aggregateCohortSummary(cohortFilteredIssues), [cohortFilteredIssues]);
-            const cohortWorkflowStatusTotal = (cohortSummary.inProgress || 0) + (cohortSummary.postponed || 0) + (cohortSummary.awaitingValidation || 0);
-            const cohortGridModel = React.useMemo(() => buildCohortGridModel(cohortFilteredIssues, {
-                groupBy: cohortGroupBy,
-                maxColumns: cohortGroupBy === 'month' ? 24 : 12,
-                rangeStartDate: cohortData?.range?.startDate,
-                rangeEndDate: cohortData?.range?.endDate
-            }), [cohortFilteredIssues, cohortGroupBy, cohortData?.range?.startDate, cohortData?.range?.endDate]);
-            const cohortOpenBars = React.useMemo(() => buildOpenEpicsBars(cohortFilteredIssues, {
-                groupBy: cohortGroupBy,
-                rowKey: cohortSelectedRow
-            }), [cohortFilteredIssues, cohortGroupBy, cohortSelectedRow]);
-            const cohortCompletedBars = React.useMemo(() => buildCompletedEpicsBars(cohortFilteredIssues, {
-                groupBy: cohortGroupBy,
-                rowKey: cohortSelectedRow
-            }), [cohortFilteredIssues, cohortGroupBy, cohortSelectedRow]);
-            const cohortAverageLeadDays = React.useMemo(() => {
-                const resolved = cohortFilteredIssues.filter((issue) => {
-                    const statusKey = normalizeCohortStatus(issue?.status);
-                    if (statusKey === 'open') return false;
-                    return Number.isFinite(Number(issue?.leadTimeDays));
-                });
-                if (!resolved.length) return null;
-                const total = resolved.reduce((sum, issue) => sum + Number(issue?.leadTimeDays || 0), 0);
-                return total / resolved.length;
-            }, [cohortFilteredIssues]);
-            const cohortMedianLeadDays = React.useMemo(() => {
-                const values = cohortFilteredIssues
-                    .filter((issue) => {
-                        const statusKey = normalizeCohortStatus(issue?.status);
-                        if (statusKey === 'open') return false;
-                        return Number.isFinite(Number(issue?.leadTimeDays));
-                    })
-                    .map((issue) => Number(issue?.leadTimeDays || 0))
-                    .sort((a, b) => a - b);
-                if (!values.length) return null;
-                const middle = Math.floor(values.length / 2);
-                if (values.length % 2 === 1) return values[middle];
-                return (values[middle - 1] + values[middle]) / 2;
-            }, [cohortFilteredIssues]);
-            const cohortWarnings = React.useMemo(() => {
-                const warnings = cohortData?.meta?.warnings;
-                return Array.isArray(warnings) ? warnings : [];
-            }, [cohortData]);
-            const cohortStatusControls = React.useMemo(() => ([
-                { key: 'done', label: 'Done' },
-                { key: 'open', label: 'In Progress' },
-                { key: 'killed', label: 'Killed' },
-                { key: 'incomplete', label: 'Incomplete' },
-                { key: 'postponed', label: 'Postponed' }
-            ]), []);
-            const cohortSelectedRowLabel = React.useMemo(() => {
-                if (!cohortSelectedRow) return '';
-                const row = (cohortGridModel?.rows || []).find((item) => item.key === cohortSelectedRow);
-                return row?.label || cohortSelectedRow;
-            }, [cohortGridModel, cohortSelectedRow]);
-
-            useEffect(() => {
-                if (cohortProjectFilter === 'all') return;
-                const exists = cohortProjectOptions.some((item) => item.value === cohortProjectFilter);
-                if (!exists) setCohortProjectFilter('all');
-            }, [cohortProjectFilter, cohortProjectOptions]);
-
-            useEffect(() => {
-                if (cohortAssigneeFilter === 'all') return;
-                const exists = cohortAssigneeOptions.some((item) => item.value === cohortAssigneeFilter);
-                if (!exists) setCohortAssigneeFilter('all');
-            }, [cohortAssigneeFilter, cohortAssigneeOptions]);
-
-            useEffect(() => {
-                if (!cohortSelectedRow) return;
-                const exists = (cohortGridModel?.rows || []).some((row) => row.key === cohortSelectedRow);
-                if (!exists) {
-                    setCohortSelectedRow(null);
-                }
-            }, [cohortGridModel, cohortSelectedRow]);
-
-            const excludedCapacitySprintOptions = React.useMemo(() => {
-                return (availableSprints || []).slice().sort(compareSprintsChronologically);
-            }, [availableSprints]);
-            const excludedCapacityDefaultRange = React.useMemo(() => {
-                return buildDefaultExcludedCapacityRange(excludedCapacitySprintOptions, selectedSprint);
-            }, [excludedCapacitySprintOptions, selectedSprint]);
-            useEffect(() => {
-                if (!excludedCapacitySprintOptions.length) return;
-                const validIds = new Set(excludedCapacitySprintOptions.map(sprint => String(sprint.id)));
-                const nextStart = validIds.has(String(excludedCapacityStartSprintId))
-                    ? excludedCapacityStartSprintId
-                    : excludedCapacityDefaultRange.startSprintId;
-                const nextEnd = validIds.has(String(excludedCapacityEndSprintId))
-                    ? excludedCapacityEndSprintId
-                    : excludedCapacityDefaultRange.endSprintId;
-                if (nextStart && nextStart !== excludedCapacityStartSprintId) {
-                    setExcludedCapacityStartSprintId(nextStart);
-                }
-                if (nextEnd && nextEnd !== excludedCapacityEndSprintId) {
-                    setExcludedCapacityEndSprintId(nextEnd);
-                }
-            }, [
-                excludedCapacitySprintOptions,
-                excludedCapacityDefaultRange,
-                excludedCapacityStartSprintId,
-                excludedCapacityEndSprintId
-            ]);
-            const excludedCapacitySprintRange = React.useMemo(() => {
-                return getSprintRange(
-                    excludedCapacitySprintOptions,
-                    excludedCapacityStartSprintId,
-                    excludedCapacityEndSprintId
-                );
-            }, [excludedCapacitySprintOptions, excludedCapacityStartSprintId, excludedCapacityEndSprintId]);
-            const excludedCapacitySprintIds = React.useMemo(() => {
-                return excludedCapacitySprintRange.map(sprint => String(sprint.id)).filter(Boolean);
-            }, [excludedCapacitySprintRange]);
-            const excludedCapacitySprintIdsSignature = React.useMemo(
-                () => excludedCapacitySprintIds.join(','),
-                [excludedCapacitySprintIds]
-            );
-            const effortSplitSprintLabel = React.useMemo(() => {
-                if (!excludedCapacitySprintRange.length) return 'No sprint range selected';
-                const first = excludedCapacitySprintRange[0];
-                const last = excludedCapacitySprintRange[excludedCapacitySprintRange.length - 1];
-                const firstLabel = first?.name || first?.id || 'Start sprint';
-                const lastLabel = last?.name || last?.id || 'End sprint';
-                return String(first?.id) === String(last?.id)
-                    ? String(firstLabel)
-                    : `${firstLabel} - ${lastLabel}`;
-            }, [excludedCapacitySprintRange]);
-            const excludedCapacityEpicOptions = React.useMemo(() => {
-                return Array.from(excludedEpicSet)
-                    .filter(key => key && key !== 'NO_EPIC')
-                    .sort((a, b) => a.localeCompare(b));
-            }, [excludedEpicSet]);
-            const excludedCapacityScopedTeamIds = React.useMemo(() => {
-                if (isAllTeamsSelected) {
-                    return Array.from(new Set((activeGroupTeamIds || []).map(id => String(id || '').trim()).filter(Boolean))).sort();
-                }
-                return Array.from(selectedTeamSet).filter(Boolean).sort();
-            }, [isAllTeamsSelected, activeGroupTeamIds, selectedTeamSet]);
-            const excludedCapacityScopedTeamSignature = React.useMemo(
-                () => excludedCapacityScopedTeamIds.join(','),
-                [excludedCapacityScopedTeamIds]
-            );
-            const excludedCapacityTeams = React.useMemo(() => {
-                const scoped = excludedCapacityScopedTeamIds.map(teamId => ({
-                    id: teamId,
-                    name: teamNameById.get(teamId) || teamId
-                }));
-                if (scoped.length) return scoped;
-                return teamOptions
-                    .filter(team => team.id && team.id !== 'all')
-                    .map(team => ({ id: team.id, name: team.name || team.id }));
-            }, [excludedCapacityScopedTeamIds, teamNameById, teamOptions]);
-            const excludedCapacityQueryKey = React.useMemo(() => {
-                if (!excludedCapacitySprintIds.length) return '';
-                return `${excludedCapacitySprintIdsSignature}::${excludedCapacityScopedTeamSignature || 'all'}`;
-            }, [excludedCapacitySprintIds.length, excludedCapacitySprintIdsSignature, excludedCapacityScopedTeamSignature]);
-            useEffect(() => {
-                if (!showStats || (statsView !== 'excludedCapacity' && statsView !== 'monoCrossShare' && statsView !== 'projectTrack')) return;
-                if (groupPreferences.onboardingRequired || adminSettingsGate.status !== 'clear') { setExcludedCapacityData(null); setExcludedCapacityError(''); setExcludedCapacityLoading(false); return; }
-                // The capacity-mix source loads when EITHER excluded capacity OR Ad Hoc
-                // epics are configured: Ad Hoc-only groups still get the effort split.
-                if (statsView === 'excludedCapacity' && !excludedCapacityEpicOptions.length && adHocEpicSet.size === 0) {
-                    setExcludedCapacityData(null);
-                    setExcludedCapacityError('No excluded capacity or Ad Hoc epics are configured for this team group.');
-                    setExcludedCapacityLoading(false);
-                    return;
-                }
-                if (!excludedCapacitySprintIds.length) {
-                    setExcludedCapacityData(null);
-                    setExcludedCapacityError('Select a sprint range for excluded capacity analytics.');
-                    setExcludedCapacityLoading(false);
-                    return;
-                }
-                if (activeGroupId && activeGroupTeamIds.length === 0) {
-                    setExcludedCapacityData(null);
-                    setExcludedCapacityError('No teams are configured for this team group.');
-                    setExcludedCapacityLoading(false);
-                    return;
-                }
-                const forceRefresh = excludedCapacityForceRefreshRef.current;
-                if (forceRefresh) {
-                    excludedCapacityForceRefreshRef.current = false;
-                }
-                const rangeCacheKey = `range::${excludedCapacityQueryKey}`;
-                const cached = excludedCapacityCacheRef.current[rangeCacheKey];
-                if (!forceRefresh && cached) {
-                    setExcludedCapacityData(cached);
-                    setExcludedCapacityError('');
-                    setExcludedCapacityLoading(false);
-                    return;
-                }
-
-                let cancelled = false, readToken;
-                const controllers = new Set();
-                const sprintCacheKeyFor = (sprintId) => `sprint::${String(sprintId || '').trim()}::${excludedCapacityScopedTeamSignature || 'all'}`;
-                const fetchSprintChunk = async (sprintId) => {
-                    const sprintCacheKey = sprintCacheKeyFor(sprintId);
-                    const cachedSprint = excludedCapacityCacheRef.current[sprintCacheKey];
-                    if (!forceRefresh && cachedSprint) return cachedSprint;
-                    const controller = new AbortController();
-                    controllers.add(controller);
-                    let timedOut = false;
-                    const timeoutId = window.setTimeout(() => {
-                        timedOut = true;
-                        try {
-                            controller.abort();
-                        } catch (err) {
-                            // ignore abort errors
-                        }
-                    }, 30000);
-                    try {
-                        const response = await requestExcludedCapacityStatsSource(BACKEND_URL, {
-                            sprintIds: [sprintId],
-                            teamIds: excludedCapacityScopedTeamIds,
-                            refresh: forceRefresh,
-                            signal: controller.signal
-                        });
-                        if (!response.ok) {
-                            const err = await response.json().catch(() => ({}));
-                            throw new Error(err.error || err.message || `Excluded capacity fetch failed (${response.status})`);
-                        }
-                        const payload = await response.json();
-                        const data = payload?.data || null;
-                        if (data && issueEditStateRef.current.isCurrentAggregateRead(readToken)) {
-                            excludedCapacityCacheRef.current[sprintCacheKey] = data;
-                        }
-                        return data;
-                    } catch (err) {
-                        if (isAuthenticationRequiredError(err)) throw err;
-                        if (err?.name === 'AbortError' && timedOut) {
-                            const timeoutError = new Error('request timed out after 30s');
-                            timeoutError.name = 'ExcludedCapacitySprintTimeout';
-                            throw timeoutError;
-                        }
-                        throw err;
-                    } finally {
-                        window.clearTimeout(timeoutId);
-                        controllers.delete(controller);
-                    }
-                };
-                const loadExcludedCapacity = async () => {
-                    readToken = issueEditStateRef.current.beginRead({ aggregate: true }); setExcludedCapacityLoading(true);
-                    setExcludedCapacityError('');
-                    const analyticsStartedAt = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
-                    try {
-                        const result = await loadExcludedCapacityStatsSourceChunks(excludedCapacitySprintIds, fetchSprintChunk, {
-                            maxConcurrent: EXCLUDED_CAPACITY_STATS_SOURCE_CONCURRENCY,
-                            isCancelled: () => cancelled,
-                            onProgress: (chunks, progressMeta) => {
-                                if (cancelled || !issueEditStateRef.current.isCurrentAggregateRead(readToken)) return;
-                                setExcludedCapacityData(mergeExcludedCapacityStatsSourceChunks(chunks, {
-                                    loadedSprintCount: progressMeta.loadedSprintCount,
-                                    totalSprintCount: progressMeta.totalSprintCount
-                                }));
-                            }
-                        });
-                        if (cancelled || !issueEditStateRef.current.isCurrentAggregateRead(readToken)) return;
-                        if (result.errors.length === excludedCapacitySprintIds.length) {
-                            throw new Error('Excluded capacity source failed for all selected sprints.');
-                        }
-                        const data = mergeExcludedCapacityStatsSourceChunks(result.chunks, {
-                            loadedSprintCount: result.chunks.length,
-                            totalSprintCount: excludedCapacitySprintIds.length
-                        });
-                        excludedCapacityCacheRef.current[rangeCacheKey] = data;
-                        setExcludedCapacityData(data);
-                        trackApiResult('stats_source', { featureName: 'stats', method: 'POST', status: 200, durationMs: (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now()) - analyticsStartedAt, cacheState: forceRefresh ? 'refresh' : 'unknown' });
-                    } catch (err) {
-                        if (cancelled) return;
-                        if (isAuthenticationRequiredError(err)) return;
-                        if (err?.name === 'AbortError') {
-                            setExcludedCapacityError('Excluded capacity sprint request timed out (30s). Narrow the sprint range or team filter.');
-                        } else {
-                            setExcludedCapacityError(String(err?.message || err || 'Failed to load excluded capacity data.'));
-                        }
-                        setExcludedCapacityData(null);
-                        trackApiResult('stats_source', { featureName: 'stats', method: 'POST', status: 500, durationMs: (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now()) - analyticsStartedAt, cacheState: forceRefresh ? 'refresh' : 'unknown' });
-                    } finally {
-                        issueEditStateRef.current.finishRead(readToken); if (!cancelled) setExcludedCapacityLoading(false);
-                    }
-                };
-                const debounceId = window.setTimeout(loadExcludedCapacity, 120);
-                return () => {
-                    cancelled = true;
-                    window.clearTimeout(debounceId);
-                    controllers.forEach(controller => {
-                        try {
-                            controller.abort();
-                        } catch (err) {
-                            // ignore abort errors
-                        }
-                    });
-                    controllers.clear();
-                };
-            }, [
-                showStats,
-                statsView,
-                excludedCapacityQueryKey,
-                excludedCapacitySprintIdsSignature,
-                excludedCapacityScopedTeamSignature,
-                excludedCapacityEpicOptions,
-                adHocEpicSignature,
-                activeGroupId,
-                activeGroupTeamIds.length,
-                excludedCapacityRefreshNonce,
-                groupPreferences.onboardingRequired,
-                adminSettingsGate.status
-            ]);
-            const excludedCapacityIssues = React.useMemo(() => {
-                return Array.isArray(excludedCapacityData?.issues) ? excludedCapacityData.issues : [];
-            }, [excludedCapacityData]);
-            // Project Track reuses the already-loaded stats-source stories and the shared
-            // Excluded Capacity sprint range; no new fetch. Logic lives in projectTrackStats.js.
-            const projectTrackSprintOrder = React.useMemo(
-                () => excludedCapacitySprintRange.map((sprint) => String(sprint.id)),
-                [excludedCapacitySprintRange]
-            );
-            const projectTrackOpts = React.useMemo(() => ({
-                capacitySide: projectTrackCapacitySide,
-                mode: projectTrackMode,
-                excludeAdHoc: projectTrackExcludeAdHoc,
-                excludeExcludedCapacity: projectTrackExcludeExcludedCapacity,
-                techProjectKeys,
-                adHocEpicSet,
-                excludedEpicSet,
-                sprintOrder: projectTrackSprintOrder
-            }), [
-                projectTrackCapacitySide,
-                projectTrackMode,
-                projectTrackExcludeAdHoc,
-                projectTrackExcludeExcludedCapacity,
-                techProjectKeys,
-                adHocEpicSet,
-                excludedEpicSet,
-                projectTrackSprintOrder
-            ]);
-            const projectTrackSeries = React.useMemo(
-                () => buildProjectTrackSprintSeries(excludedCapacityIssues, projectTrackOpts),
-                [excludedCapacityIssues, projectTrackOpts]
-            );
-            const projectTrackTotals = React.useMemo(
-                () => summarizeProjectTrackTotals(projectTrackSeries),
-                [projectTrackSeries]
-            );
-            const projectTrackBreakdown = React.useMemo(
-                () => buildProjectTrackBreakdownRows(excludedCapacityIssues, projectTrackOpts),
-                [excludedCapacityIssues, projectTrackOpts]
-            );
-            const projectTrackBoardColumns = activeGroup?.board?.columns;
-            const projectTrackColumnSplit = React.useMemo(() => (projectTrackMode === 'team'
-                ? buildProjectTrackColumnSplit(excludedCapacityIssues, projectTrackOpts, projectTrackBoardColumns) : null
-            ), [projectTrackMode, excludedCapacityIssues, projectTrackOpts, projectTrackBoardColumns]);
-            const projectTrackRangeLabel = React.useMemo(() => {
-                const range = excludedCapacitySprintRange;
-                if (!range.length) return '';
-                const first = range[0];
-                const last = range[range.length - 1];
-                const firstName = first.name || String(first.id);
-                const lastName = last.name || String(last.id);
-                return range.length === 1 ? firstName : `${firstName} – ${lastName}`;
-            }, [excludedCapacitySprintRange]);
-            // Epic key set for the time-in-phase section (Epic mode only).
-            // Uses inScopeEpicKeys which calls withAllowed(opts) internally so the
-            // sprint-range guard is applied (allowedSprintIds derived from sprintOrder).
-            const projectTrackPhaseEpicKeys = React.useMemo(() => {
-                if (projectTrackMode !== 'epic') return [];
-                return projectTrackInScopeEpicKeys(excludedCapacityIssues, projectTrackOpts).sort();
-            }, [projectTrackMode, excludedCapacityIssues, projectTrackOpts]);
-            const projectTrackPhaseSignature = projectTrackPhaseEpicKeys.join(',');
-            useEffect(() => {
-                if (!showStats || statsView !== 'projectTrack' || projectTrackMode !== 'epic') {
-                    return;
-                }
-                if (!projectTrackPhaseEpicKeys.length) {
-                    setProjectTrackPhaseData(null);
-                    setProjectTrackPhaseError('');
-                    setProjectTrackPhaseLoading(false);
-                    return;
-                }
-                const cached = projectTrackPhaseCacheRef.current[projectTrackPhaseSignature];
-                if (cached) {
-                    setProjectTrackPhaseData(cached);
-                    setProjectTrackPhaseError('');
-                    setProjectTrackPhaseLoading(false);
-                    return;
-                }
-                if (projectTrackPhaseAbortRef.current) {
-                    try { projectTrackPhaseAbortRef.current.abort(); } catch (_) { /* ignore */ }
-                }
-                const controller = new AbortController();
-                projectTrackPhaseAbortRef.current = controller;
-                let cancelled = false;
-                const load = async () => {
-                    setProjectTrackPhaseLoading(true);
-                    setProjectTrackPhaseError('');
-                    try {
-                        const response = await requestProjectTrackPhaseDurations(BACKEND_URL, {
-                            epicKeys: projectTrackPhaseEpicKeys,
-                            signal: controller.signal,
-                        });
-                        if (cancelled) return;
-                        if (!response.ok) {
-                            const err = await response.json().catch(() => ({}));
-                            throw new Error(err.error || err.message || `Phase durations fetch failed (${response.status})`);
-                        }
-                        const payload = await response.json();
-                        if (cancelled) return;
-                        projectTrackPhaseCacheRef.current[projectTrackPhaseSignature] = payload;
-                        setProjectTrackPhaseData(payload);
-                        setProjectTrackPhaseError('');
-                    } catch (err) {
-                        if (cancelled || err?.name === 'AbortError') return;
-                        if (isAuthenticationRequiredError(err)) return;
-                        setProjectTrackPhaseError(String(err?.message || err || 'Failed to load phase duration data.'));
-                        setProjectTrackPhaseData(null);
-                    } finally {
-                        if (!cancelled) setProjectTrackPhaseLoading(false);
-                    }
-                };
-                const debounceId = window.setTimeout(load, 120);
-                return () => {
-                    cancelled = true;
-                    window.clearTimeout(debounceId);
-                    try { controller.abort(); } catch (_) { /* ignore */ }
-                };
-            }, [
-                showStats,
-                statsView,
-                projectTrackMode,
-                projectTrackPhaseSignature,
-            ]);
-            const projectTrackPhaseEpics = React.useMemo(
-                () => Array.isArray(projectTrackPhaseData?.epics) ? projectTrackPhaseData.epics : [],
-                [projectTrackPhaseData]
-            );
-            const projectTrackPhaseSummary = React.useMemo(
-                () => summarizeTrackPhaseDurations(projectTrackPhaseEpics),
-                [projectTrackPhaseEpics]
-            );
-            const excludedCapacityEpicCatalog = React.useMemo(() => {
-                return buildExcludedEpicCatalog(excludedCapacityIssues, {
-                    excludedEpicKeys: excludedCapacityEpicOptions
-                });
-            }, [excludedCapacityIssues, excludedCapacityEpicOptions]);
-            // Preference migration: a null saved value (no prior selection, or the
-            // removed BAU/ad-hoc preset) defaults to ALL configured excluded epics.
-            useEffect(() => {
-                if (excludedCapacitySelectedEpicKeys === null && excludedCapacityEpicOptions.length) {
-                    setExcludedCapacitySelectedEpicKeys(excludedCapacityEpicOptions.slice());
-                }
-            }, [excludedCapacitySelectedEpicKeys, excludedCapacityEpicOptions]);
-            useEffect(() => {
-                // Drop only excluded keys no longer in the catalog; keep valid ones.
-                if (!Array.isArray(excludedCapacitySelectedEpicKeys)) return;
-                const valid = new Set(excludedCapacityEpicOptions);
-                const filtered = excludedCapacitySelectedEpicKeys.filter(key => valid.has(key));
-                if (filtered.length !== excludedCapacitySelectedEpicKeys.length) {
-                    setExcludedCapacitySelectedEpicKeys(filtered);
-                }
-            }, [excludedCapacitySelectedEpicKeys, excludedCapacityEpicOptions]);
-            const excludedCapacityEffectiveFilters = React.useMemo(() => {
-                if (!Array.isArray(excludedCapacitySelectedEpicKeys)) return [];
-                return excludedCapacitySelectedEpicKeys.filter(key => excludedCapacityEpicOptions.includes(key));
-            }, [excludedCapacitySelectedEpicKeys, excludedCapacityEpicOptions]);
-            const excludedCapacityFilterLabel = React.useMemo(() => {
-                if (excludedCapacityEffectiveFilters.length === 0) {
-                    return `Filter: All configured (${excludedCapacityEpicOptions.length})`;
-                }
-                return `Filter: ${excludedCapacityEffectiveFilters.length} of ${excludedCapacityEpicOptions.length} selected`;
-            }, [excludedCapacityEffectiveFilters, excludedCapacityEpicOptions]);
-            const excludedCapacityActiveFilters = excludedCapacityEffectiveFilters.length
-                ? excludedCapacityEffectiveFilters
-                : excludedCapacityEpicOptions;
-            const effortSplitRows = React.useMemo(() => {
-                return buildEffortTypeSplitRows(excludedCapacityIssues, excludedCapacitySprintRange, {
-                    excludedEpicKeys: excludedCapacityEpicOptions,
-                    excludedEpicKeyFilters: excludedCapacityActiveFilters,
-                    adHocEpicKeys: Array.from(adHocEpicSet),
-                    teams: excludedCapacityTeams,
-                    techProjectKeys: Array.from(techProjectKeys)
-                });
-            }, [
-                excludedCapacityIssues,
-                excludedCapacitySprintRange,
-                excludedCapacityEpicOptions,
-                excludedCapacityActiveFilters,
-                adHocEpicSet,
-                adHocEpicSignature,
-                excludedCapacityTeams,
-                techProjectKeys
-            ]);
-            const excludedCapacityRows = React.useMemo(() => {
-                return buildExcludedCapacityTimeSeries(excludedCapacityIssues, excludedCapacitySprintRange, {
-                    excludedEpicKeys: excludedCapacityEpicOptions,
-                    excludedEpicKeyFilters: excludedCapacityActiveFilters,
-                    teams: excludedCapacityTeams
-                });
-            }, [
-                excludedCapacityIssues,
-                excludedCapacitySprintRange,
-                excludedCapacityEpicOptions,
-                excludedCapacityActiveFilters,
-                excludedCapacityTeams
-            ]);
-            const excludedCapacityLineSeries = React.useMemo(() => {
-                return buildExcludedCapacityLineSeries(excludedCapacityIssues, excludedCapacitySprintRange, {
-                    excludedEpicKeys: excludedCapacityEpicOptions,
-                    excludedEpicKeyFilters: excludedCapacityActiveFilters,
-                    teams: excludedCapacityTeams,
-                    mode: excludedCapacityChartMode,
-                    groupName: activeGroup?.name || 'Group'
-                });
-            }, [
-                excludedCapacityIssues,
-                excludedCapacitySprintRange,
-                excludedCapacityEpicOptions,
-                excludedCapacityActiveFilters,
-                excludedCapacityTeams,
-                excludedCapacityChartMode,
-                activeGroup?.name
-            ]);
-            const excludedCapacityModeOverall = React.useMemo(() => {
-                return buildEpicTeamModeOverall(excludedCapacityIssues, {
-                    includeAllEpics: true,
-                    sprints: excludedCapacitySprintRange,
-                    teams: excludedCapacityTeams
-                });
-            }, [
-                excludedCapacityIssues,
-                excludedCapacitySprintRange,
-                excludedCapacityTeams
-            ]);
-            const excludedCapacityModeSprintRows = React.useMemo(() => {
-                return buildEpicTeamModeSprintRows(excludedCapacityIssues, {
-                    includeAllEpics: true,
-                    sprints: excludedCapacitySprintRange
-                });
-            }, [
-                excludedCapacityIssues,
-                excludedCapacitySprintRange
-            ]);
-            const excludedCapacityModeTeamLineSeries = React.useMemo(() => {
-                return buildEpicTeamCrossShareLineSeries(excludedCapacityIssues, excludedCapacitySprintRange, {
-                    teams: excludedCapacityTeams
-                });
-            }, [
-                excludedCapacityIssues,
-                excludedCapacitySprintRange,
-                excludedCapacityTeams
-            ]);
-            const excludedCapacityIsolatedSeries = statsView === 'monoCrossShare' ? excludedCapacityModeTeamLineSeries.series : excludedCapacityLineSeries.series;
-            const effortSplitTotals = React.useMemo(() => summarizeEffortTypeSplitTotals(effortSplitRows), [effortSplitRows]);
-            const excludedCapacityWarnings = React.useMemo(() => {
-                const warnings = excludedCapacityData?.meta?.warnings;
-                return Array.isArray(warnings) ? warnings : [];
-            }, [excludedCapacityData]);
-            useEffect(() => {
-                if (statsView === 'excludedCapacity' && excludedCapacityChartMode !== 'teams' && excludedCapacityIsolatedTeam) {
-                    setExcludedCapacityIsolatedTeam(null);
-                    return;
-                }
-                if (!excludedCapacityIsolatedTeam) return;
-                const known = new Set((excludedCapacityIsolatedSeries || []).map(item => item.seriesId));
-                if (!known.has(excludedCapacityIsolatedTeam)) {
-                    setExcludedCapacityIsolatedTeam(null);
-                }
-            }, [statsView, excludedCapacityChartMode, excludedCapacityIsolatedTeam, excludedCapacityIsolatedSeries]);
-            const formatExcludedPoints = (value) => {
-                const numeric = Number(value || 0);
-                if (!Number.isFinite(numeric)) return '0.0';
-                return numeric.toFixed(1);
-            };
-            const toggleExcludedCapacityEpicKey = (epicKey) => {
-                const normalized = String(epicKey || '').trim().toUpperCase();
-                if (!normalized) return;
-                setExcludedCapacitySelectedEpicKeys(prev => {
-                    const base = Array.isArray(prev) ? prev.slice() : [];
-                    const index = base.indexOf(normalized);
-                    if (index >= 0) base.splice(index, 1);
-                    else base.push(normalized);
-                    return base;
-                });
-            };
-            const clearExcludedCapacityEpicSelection = () => {
-                setExcludedCapacitySelectedEpicKeys([]);
-            };
-            const selectAllExcludedCapacityEpics = () => {
-                setExcludedCapacitySelectedEpicKeys(excludedCapacityEpicOptions.slice());
-            };
-            const toggleEffortSplitBucket = (bucketKey) => {
-                setEffortSplitVisibleBuckets(prev => ({
-                    ...prev,
-                    [bucketKey]: prev[bucketKey] === false
-                }));
-            };
-            useEffect(() => {
-                if (!excludedCapacityEpicDropdownOpen) return;
-                const handleClickOutside = (event) => {
-                    const node = excludedCapacityEpicDropdownRef.current;
-                    if (node && !node.contains(event.target)) {
-                        setExcludedCapacityEpicDropdownOpen(false);
-                    }
-                };
-                document.addEventListener('mousedown', handleClickOutside);
-                return () => document.removeEventListener('mousedown', handleClickOutside);
-            }, [excludedCapacityEpicDropdownOpen]);
+            const {
+                cohortQuarterOptions, cohortProjectOptions, cohortAssigneeOptions, cohortSummary,
+                cohortWorkflowStatusTotal, cohortGridModel, cohortOpenBars, cohortCompletedBars,
+                cohortAverageLeadDays, cohortMedianLeadDays, cohortWarnings, cohortStatusControls,
+                cohortSelectedRowLabel, excludedCapacitySprintOptions, excludedCapacitySprintRange, effortSplitSprintLabel,
+                excludedCapacityEpicOptions, projectTrackSeries, projectTrackTotals, projectTrackBreakdown,
+                projectTrackColumnSplit, projectTrackRangeLabel, projectTrackPhaseEpics, projectTrackPhaseSummary,
+                excludedCapacityEpicCatalog, excludedCapacityEffectiveFilters, excludedCapacityFilterLabel, effortSplitRows,
+                excludedCapacityRows, excludedCapacityLineSeries, excludedCapacityModeOverall, excludedCapacityModeSprintRows,
+                excludedCapacityModeTeamLineSeries, effortSplitTotals, excludedCapacityWarnings, formatExcludedPoints,
+                toggleExcludedCapacityEpicKey, clearExcludedCapacityEpicSelection, selectAllExcludedCapacityEpics, toggleEffortSplitBucket
+            } = useStatsDerivedB({
+                scope, BACKEND_URL, EMPTY_ARRAY, EXCLUDED_CAPACITY_STATS_SOURCE_CONCURRENCY,
+                activeGroup, activeGroupAdHocCapacityEpics, activeGroupMissingComponents, activeGroupTeamIds,
+                adminSettingsGate, availableSprints, burnoutAssigneeFilter, burnoutQueryKey,
+                burnoutScopedTeamIds, burnoutScopedTeamSignature, cohortAssigneeFilter, cohortCacheRef,
+                cohortData, cohortEndQuarter, cohortExcludeAdHoc, cohortExcludeCapacity,
+                cohortGroupBy, cohortProjectFilter, cohortQueryKey, cohortScopedTeamSignature,
+                cohortSelectedRow, cohortStartQuarter, cohortStatusToggles, excludedCapacityCacheRef,
+                excludedCapacityChartMode, excludedCapacityData, excludedCapacityEndSprintId, excludedCapacityEpicDropdownOpen,
+                excludedCapacityEpicDropdownRef, excludedCapacityForceRefreshRef, excludedCapacityIsolatedTeam, excludedCapacityRefreshNonce,
+                excludedCapacitySelectedEpicKeys, excludedCapacityStartSprintId, groupPreferences, issueEditStateRef,
+                issuePeopleStatsRevision, projectTrackCapacitySide, projectTrackExcludeAdHoc, projectTrackExcludeExcludedCapacity,
+                projectTrackMode, projectTrackPhaseAbortRef, projectTrackPhaseCacheRef, projectTrackPhaseData,
+                setBurnoutTaskFilter, setCohortAssigneeFilter, setCohortData, setCohortError,
+                setCohortLoading, setCohortProjectFilter, setCohortSelectedRow, setEffortSplitVisibleBuckets,
+                setExcludedCapacityData, setExcludedCapacityEndSprintId, setExcludedCapacityEpicDropdownOpen, setExcludedCapacityError,
+                setExcludedCapacityIsolatedTeam, setExcludedCapacityLoading, setExcludedCapacitySelectedEpicKeys, setExcludedCapacityStartSprintId,
+                setProjectTrackPhaseData, setProjectTrackPhaseError, setProjectTrackPhaseLoading, showStats,
+                statsView, trackApiResult
+            });
 
             const scenario = useScenarioPlanner({
                 scenarioState,
@@ -5486,300 +4426,18 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 });
                 return keys;
             }, [visibleTasks]);
-            const statsTeams = effectiveStatsData?.teams || [];
-            const allowedStatsTeamIds = React.useMemo(() => {
-                if (!isAllTeamsSelected) {
-                    return new Set(Array.from(selectedTeamSet));
-                }
-                return null;
-            }, [isAllTeamsSelected, selectedTeamSet]);
-
-            const filteredStatsTeams = statsTeams.filter(team => {
-                if (!allowedStatsTeamIds) return true;
-                const id = team.id || team.name || 'unknown';
-                return allowedStatsTeamIds.has(id);
+            const {
+                priorityTeamIds, priorityRows, priorityRadar, statsTeamRows,
+                statsBarColumns, statsTotals, burnoutAssigneeOptions, burnoutChartModel,
+                burnoutTotals, burndownMetricIsStoryPoints, formatBurndownValue,
+                buildBurnoutTaskFilter, canRenderStatsPanel, isLeadTimesFocusMode
+            } = useStatsDerivedC({
+                scope, burndownMetric, burnoutAssigneeFilter,
+                burnoutData, burnoutIssueWeightByKey, burnoutTaskStatusByIssueKey, burnoutTaskTeamByIssueKey,
+                effectivePriorityWeightMap, effectiveStatsData, isBurnoutClosedStatus, isCompletedSprintSelected,
+                priorityAxis, priorityOrder, resolveStatsTeamColor, showStats,
+                statsView
             });
-
-            const priorityTeamIds = React.useMemo(() => {
-                if (!isAllTeamsSelected) {
-                    return Array.from(selectedTeamSet);
-                }
-                return teamOptions
-                    .map(team => team.id)
-                    .filter(id => id && id !== 'all');
-            }, [isAllTeamsSelected, selectedTeamSet, teamOptions]);
-
-            const getStatsTeamLabel = (team) => {
-                if (!team) return 'Unknown Team';
-                if (!isAllTeamsSelected && team.id && teamNameById.has(team.id)) {
-                    return teamNameById.get(team.id);
-                }
-                return team.name || team.id || 'Unknown Team';
-            };
-
-            const priorityRows = React.useMemo(() => {
-                const totals = {};
-                const pointsTotals = {};
-                (filteredStatsTeams || []).forEach(team => {
-                    Object.entries(team.priorities || {}).forEach(([priorityName, counts]) => {
-                        const label = getPriorityLabel(priorityName);
-                        if (!totals[label]) {
-                            totals[label] = { done: 0, incomplete: 0, killed: 0 };
-                        }
-                        totals[label].done += counts.done || 0;
-                        totals[label].incomplete += counts.incomplete || 0;
-                        totals[label].killed += counts.killed || 0;
-                    });
-                    Object.entries(team.priorityPoints || {}).forEach(([priorityName, points]) => {
-                        const label = getPriorityLabel(priorityName);
-                        pointsTotals[label] = (pointsTotals[label] || 0) + (points || 0);
-                    });
-                });
-                return Object.entries(totals)
-                    .map(([name, counts]) => ({
-                        name,
-                        done: counts.done,
-                        incomplete: counts.incomplete,
-                        killed: counts.killed,
-                        rate: computeRate(counts),
-                        points: pointsTotals[name] || 0
-                    }))
-                    .sort((a, b) => {
-                        const orderA = priorityOrder[a.name] || 999;
-                        const orderB = priorityOrder[b.name] || 999;
-                        if (orderA !== orderB) return orderA - orderB;
-                        return String(a.name || '').localeCompare(String(b.name || ''));
-                    });
-            }, [filteredStatsTeams, priorityOrder]);
-
-            const priorityRadar = React.useMemo(() => {
-                const series = (filteredStatsTeams || []).map(team => {
-                    const pointsByPriority = {};
-                    Object.entries(team.priorityPoints || {}).forEach(([priorityName, points]) => {
-                        const label = getPriorityLabel(priorityName);
-                        pointsByPriority[label] = (pointsByPriority[label] || 0) + (points || 0);
-                    });
-                    return {
-                        id: team.id || team.name || 'unknown',
-                        name: getStatsTeamLabel(team),
-                        pointsByPriority
-                    };
-                });
-                const maxValue = Math.max(
-                    1,
-                    ...series.flatMap(item => priorityAxis.map(axis => item.pointsByPriority[axis] || 0))
-                );
-                return { series, maxValue };
-            }, [filteredStatsTeams, getStatsTeamLabel, priorityAxis]);
-
-            const getTeamScopedMetrics = (team, projectKey = 'all') => {
-                if (!team) {
-                    return { done: 0, incomplete: 0, killed: 0, priorities: {} };
-                }
-                if (projectKey === 'all') {
-                    return {
-                        done: team.done || 0,
-                        incomplete: team.incomplete || 0,
-                        killed: team.killed || 0,
-                        priorities: team.priorities || {}
-                    };
-                }
-                const projectScope = team.projects?.[projectKey];
-                return {
-                    done: projectScope?.done || 0,
-                    incomplete: projectScope?.incomplete || 0,
-                    killed: projectScope?.killed || 0,
-                    priorities: projectScope?.priorities || {}
-                };
-            };
-
-            const statsTeamRows = filteredStatsTeams.map(team => {
-                const scoped = getTeamScopedMetrics(team);
-                const scopedProduct = getTeamScopedMetrics(team, 'product');
-                const scopedTech = getTeamScopedMetrics(team, 'tech');
-                const weighted = computePriorityWeighted(scoped.priorities, effectivePriorityWeightMap);
-                const weightedProduct = computePriorityWeighted(scopedProduct.priorities, effectivePriorityWeightMap);
-                const weightedTech = computePriorityWeighted(scopedTech.priorities, effectivePriorityWeightMap);
-                const straightRate = computeRate(scoped);
-                const weightedRate = computeRate(weighted);
-                return {
-                    id: team.id || team.name || 'unknown',
-                    name: getStatsTeamLabel(team),
-                    straight: scoped,
-                    product: scopedProduct,
-                    tech: scopedTech,
-                    weighted,
-                    weightedProduct,
-                    weightedTech,
-                    straightRate,
-                    weightedRate,
-                    priorityPoints: team.priorityPoints || {}
-                };
-            });
-            const statsBarColumns = (() => {
-                const teamCount = statsTeamRows.length;
-                if (teamCount <= 0) return 1;
-                if (teamCount > 8) return 6;
-                return teamCount;
-            })();
-
-            const statsTotals = statsTeamRows.reduce((acc, row) => {
-                acc.straight.done += row.straight.done;
-                acc.straight.incomplete += row.straight.incomplete;
-                acc.straight.killed += row.straight.killed;
-                acc.product.done += row.product.done;
-                acc.product.incomplete += row.product.incomplete;
-                acc.product.killed += row.product.killed;
-                acc.tech.done += row.tech.done;
-                acc.tech.incomplete += row.tech.incomplete;
-                acc.tech.killed += row.tech.killed;
-                acc.weighted.done += row.weighted.done;
-                acc.weighted.incomplete += row.weighted.incomplete;
-                acc.weighted.killed += row.weighted.killed;
-                acc.weightedProduct.done += row.weightedProduct.done;
-                acc.weightedProduct.incomplete += row.weightedProduct.incomplete;
-                acc.weightedProduct.killed += row.weightedProduct.killed;
-                acc.weightedTech.done += row.weightedTech.done;
-                acc.weightedTech.incomplete += row.weightedTech.incomplete;
-                acc.weightedTech.killed += row.weightedTech.killed;
-                return acc;
-            }, {
-                straight: { done: 0, incomplete: 0, killed: 0 },
-                product: { done: 0, incomplete: 0, killed: 0 },
-                tech: { done: 0, incomplete: 0, killed: 0 },
-                weighted: { done: 0, incomplete: 0, killed: 0 },
-                weightedProduct: { done: 0, incomplete: 0, killed: 0 },
-                weightedTech: { done: 0, incomplete: 0, killed: 0 }
-            });
-            const burnoutAssigneeOptions = React.useMemo(() => {
-                const source = burnoutData?.assignees || [];
-                const rows = source.map((item) => {
-                    const value = item?.id || item?.name || 'unassigned';
-                    const label = item?.name || 'Unassigned';
-                    return {
-                        value,
-                        label,
-                        events: Number(item?.events || 0)
-                    };
-                });
-                return [{ value: 'all', label: 'All Assignees', events: 0 }, ...rows];
-            }, [burnoutData]);
-
-            const burnoutChartModel = React.useMemo(() => buildBurnoutChartModel({
-                burnoutData,
-                assigneeFilter: burnoutAssigneeFilter,
-                taskTeamByIssueKey: burnoutTaskTeamByIssueKey,
-                taskStatusByIssueKey: burnoutTaskStatusByIssueKey,
-                issueWeightByKey: burnoutIssueWeightByKey,
-                isCompletedSprintSelected,
-                metric: burndownMetric,
-                resolveTeamColor: resolveStatsTeamColor,
-                isClosedStatus: isBurnoutClosedStatus
-            }), [
-                burnoutData,
-                burnoutAssigneeFilter,
-                burnoutTaskTeamByIssueKey,
-                burnoutTaskStatusByIssueKey,
-                burnoutIssueWeightByKey,
-                isCompletedSprintSelected,
-                burndownMetric,
-                isBurnoutClosedStatus,
-                resolveStatsTeamColor
-            ]);
-
-            const burnoutTotals = burnoutChartModel?.summary || {
-                start: 0,
-                added: 0,
-                closed: 0,
-                remaining: 0,
-                closureBuckets: { done: 0, killed: 0, incomplete: 0 }
-            };
-            const burndownMetricIsStoryPoints = burndownMetric === 'storyPoints';
-            const formatBurndownValue = React.useCallback((value) => {
-                const numeric = Number(value || 0);
-                if (!Number.isFinite(numeric)) return burndownMetricIsStoryPoints ? '0.0' : '0';
-                return burndownMetricIsStoryPoints ? numeric.toFixed(1) : String(Math.round(numeric));
-            }, [burndownMetricIsStoryPoints]);
-            const resolveBurnoutPointer = React.useCallback((event) => {
-                if (!burnoutChartModel) return null;
-                const chart = burnoutChartRef.current;
-                const rect = chart?.getBoundingClientRect();
-                if (!rect) return null;
-                const viewportX = event.clientX - rect.left;
-                const viewportY = event.clientY - rect.top;
-                const contentWidth = Math.max(chart.scrollWidth || rect.width, 1);
-                const ratioX = burnoutChartModel.width / contentWidth;
-                const localX = (viewportX + (chart.scrollLeft || 0)) * ratioX;
-                const localY = viewportY * (burnoutChartModel.height / rect.height);
-                const clampedX = Math.max(
-                    burnoutChartModel.padding.left,
-                    Math.min(burnoutChartModel.width - burnoutChartModel.padding.right, localX)
-                );
-                const relative = clampedX - burnoutChartModel.padding.left;
-                const rawIndex = burnoutChartModel.rows.length <= 1
-                    ? 0
-                    : Math.round(relative / Math.max(1, burnoutChartModel.xStep));
-                const index = Math.max(0, Math.min(burnoutChartModel.rows.length - 1, rawIndex));
-                const row = burnoutChartModel.rows[index];
-                if (!row) return null;
-                let hoveredTeamKey = null;
-                for (let i = burnoutChartModel.teams.length - 1; i >= 0; i -= 1) {
-                    const team = burnoutChartModel.teams[i];
-                    const stack = row.stacks?.[team.key];
-                    if (!stack) continue;
-                    if ((stack.value || 0) <= 0) continue;
-                    if (localY >= stack.yTop && localY <= stack.yBottom) {
-                        hoveredTeamKey = team.key;
-                        break;
-                    }
-                }
-                return {
-                    row,
-                    hoveredTeamKey,
-                    viewportX,
-                    bubbleX: Math.max(180, Math.min(rect.width - 180, viewportX))
-                };
-            }, [burnoutChartModel]);
-            const buildBurnoutTaskFilter = React.useCallback((dateKey, teamKey = null) => {
-                if (!burnoutChartModel || !dateKey) return null;
-                const snapshots = Array.isArray(burnoutChartModel.issueSnapshots) ? burnoutChartModel.issueSnapshots : [];
-                const issueKeys = [];
-                snapshots.forEach((snapshot) => {
-                    const issueKey = String(snapshot?.issueKey || '').trim().toUpperCase();
-                    if (!issueKey) return;
-                    const createdDateKey = String(snapshot?.createdDateKey || '').trim();
-                    const closureDateKey = String(snapshot?.closureDateKey || '').trim();
-                    if (!createdDateKey || createdDateKey > dateKey) return;
-                    if (closureDateKey && closureDateKey <= dateKey) return;
-                    if (teamKey && snapshot?.openTeamKey !== teamKey) return;
-                    issueKeys.push(issueKey);
-                });
-                const teamName = teamKey ? (burnoutChartModel.teamNameByKey?.[teamKey] || 'Unknown Team') : 'All teams';
-                return {
-                    dateKey,
-                    teamKey: teamKey || null,
-                    teamName,
-                    issueKeys
-                };
-            }, [burnoutChartModel]);
-            useEffect(() => {
-                if (!burnoutChartModel || statsView !== 'burnout') return;
-                const chart = burnoutChartRef.current;
-                if (!chart) return;
-                if ((chart.scrollWidth || 0) <= (chart.clientWidth || 0) + 2) {
-                    chart.scrollLeft = 0;
-                    return;
-                }
-                const todayX = Number(burnoutChartModel.todayX);
-                if (!Number.isFinite(todayX)) {
-                    chart.scrollLeft = 0;
-                    return;
-                }
-                const target = Math.max(0, todayX - (chart.clientWidth * 0.6));
-                chart.scrollLeft = target;
-            }, [burnoutChartModel, statsView]);
-            const canRenderStatsPanel = Boolean(effectiveStatsData) || statsView === 'burnout' || statsView === 'cohort' || statsView === 'excludedCapacity' || statsView === 'monoCrossShare' || statsView === 'projectTrack';
-            const isLeadTimesFocusMode = showStats && statsView === 'cohort';
             // Catch Up is the all-false fallthrough of the ENG mode booleans, so Board has to opt
             // out here explicitly or the whole task list renders underneath the board.
             const engWorkspaceConfigured = adminSettingsGate.status !== 'missing';
@@ -6301,7 +4959,7 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
             }, [onboardingPreviewDescriptorMatches]);
             const invalidateEngIssueFieldSources = ({ field }) => {
                 if (field === 'assignee') {
-                    burnoutCacheRef.current = {}; cohortCacheRef.current = {}; excludedCapacityCacheRef.current = {}; setBurnoutData(null); setCohortData(null); setExcludedCapacityData(null); setIssuePeopleStatsRevision(value => value + 1); setExcludedCapacityRefreshNonce(value => value + 1); rearmCatchUpAlerts();
+                    resetStatsTransientRefs({ burnoutCacheRef, cohortCacheRef, excludedCapacityCacheRef }); setBurnoutData(null); setCohortData(null); setExcludedCapacityData(null); setIssuePeopleStatsRevision(value => value + 1); setExcludedCapacityRefreshNonce(value => value + 1); rearmCatchUpAlerts();
                 } else if (field === 'customfield_10004' || field === 'storyPoints') {
                     excludedCapacityCacheRef.current = {}; setExcludedCapacityData(null); setDependencyData({}); setDependencyLookupCache({}); setDependencyRefreshNonce(value => value + 1); setExcludedCapacityRefreshNonce(value => value + 1); rearmCatchUpAlerts();
                 }
@@ -6408,15 +5066,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 ));
             }, [closePriorityControl, closeProjectTrackControl, closeSingleIssueStatusControl, onboardingPreviewDescriptorMatches, onboardingPreviewSession]);
 
-            // Planning composed target list (the selected Stories) drives the "Apply to selected
-            // targets (N)" count and the action bar feedback. Catch Up acts on one explicit
-            // issue, so its count stays 0.
-            const planningStatusTargets = React.useMemo(() => {
-                if (statusTransitionSourceSurface !== 'planning') return [];
-                return buildEngStatusTargets({ selectedTasksList });
-            }, [statusTransitionSourceSurface, selectedTasksList]);
-            const statusTransitionTargetsCount = planningStatusTargets.length;
-
             // The hook clears status options on sprint change but not on group change; close
             // the open menus here so a group switch never carries a stale one.
             React.useEffect(() => {
@@ -6425,352 +5074,38 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 closeProjectTrackControl();
             }, [activeGroupId, closeSingleIssueStatusControl, closePriorityControl, closeProjectTrackControl]);
 
-            // The hook exposes no submitting flag; track it around the awaited submit so
-            // the menu can disable its action and show an in-flight state.
-            // `singleIssue` marks an Epic or Subtask pill: in Planning it changes only that issue,
-            // whereas a Story pill applies to the selected Stories.
-            const handleSubmitStatusTransition = React.useCallback(async (targetStatus, issue, { singleIssue = false } = {}) => {
-                if (statusTransitionSourceSurface === 'catch_up' || (singleIssue && issue?.key)) {
-                    return submitStatusTransition(targetStatus, issue?.key);
-                }
-                // Board acts on ONE explicit issue, like Catch Up. Without a key the hook falls
-                // through to Planning's composed target set — the Planning selection — which is a
-                // silent no-op at best and a write to issues the user never touched at worst. A
-                // dragged card is the first caller whose issue is not a menu argument, so refuse.
-                if (statusTransitionSourceSurface === 'board' && !issue?.key) return null;
+            // Every status pill acts on its own issue: a key is required, and the Planning
+            // selection never widens the write. Board additionally holds one write at a time;
+            // the flag lets its menus disable their action and show an in-flight state.
+            const handleSubmitStatusTransition = React.useCallback(async (targetStatus, issue) => {
+                if (!issue?.key) return null;
+                if (statusTransitionSourceSurface !== 'board') return submitStatusTransition(targetStatus, issue.key);
                 if (statusTransitionSubmitting) return null;
                 setStatusTransitionSubmitting(true);
                 try {
-                    return await submitStatusTransition(
-                        targetStatus,
-                        statusTransitionSourceSurface === 'board' || singleIssue ? issue?.key : undefined,
-                    );
+                    return await submitStatusTransition(targetStatus, issue.key);
                 } finally {
                     setStatusTransitionSubmitting(false);
                 }
             }, [statusTransitionSubmitting, statusTransitionSourceSurface, submitStatusTransition]);
 
-            const selectedTeamStats = React.useMemo(() => {
-                if (!showPlanning) return {};
-                return buildSelectedTeamStats(selectedTasksList, getTeamInfo);
-            }, [showPlanning, selectedTasksList]);
-
-            const selectedProjectStats = React.useMemo(() => {
-                if (!showPlanning) return {};
-                return buildSelectedProjectStats(selectedPlanningTasksList, techProjectKeys, adHocEpicSet);
-            }, [showPlanning, selectedPlanningTasksList, techProjectKeys, adHocEpicSet, adHocEpicSignature]);
-
-            const selectedTeamProjectStats = React.useMemo(() => {
-                if (!showPlanning) return {};
-                return buildSelectedTeamProjectStats(selectedPlanningTasksList, getTeamInfo, techProjectKeys, adHocEpicSet);
-            }, [showPlanning, selectedPlanningTasksList, techProjectKeys, adHocEpicSet, adHocEpicSignature]);
-
-            // Ad Hoc story points already counted inside the PRODUCT bucket, surfaced
-            // separately so the split bar can report the Product Ad Hoc portion.
-            const selectedAdHocProductSP = React.useMemo(() => {
-                if (!showPlanning || adHocEpicSet.size === 0) return 0;
-                return selectedPlanningTasksList.reduce((sum, task) => {
-                    if (classifyCapacityIssue(task, { techProjectKeys, adHocEpicSet }).capacityType !== 'ad_hoc') {
-                        return sum;
-                    }
-                    const sp = parseFloat(task.fields?.customfield_10004 || 0);
-                    return Number.isNaN(sp) ? sum : sum + sp;
-                }, 0);
-            }, [showPlanning, selectedPlanningTasksList, techProjectKeys, adHocEpicSet, adHocEpicSignature]);
-
-            const excludedProjectStats = React.useMemo(() => {
-                if (!showPlanning) return {};
-                return buildExcludedProjectStats(selectedTasksList, excludedEpicSet, techProjectKeys, normalizeEpicKey);
-            }, [showPlanning, selectedTasksList, excludedEpicSet, techProjectKeys]);
-
-            const capacitySplit = React.useMemo(() => ({ product: 0.7, tech: 0.3 }), []);
-            const capacityMultiplier = showProduct && showTech
-                ? 1
-                : showProduct
-                    ? capacitySplit.product
-                    : showTech
-                        ? capacitySplit.tech
-                        : 1;
-            const capacityShareLabel = getCapacityShareLabel({ showProduct, showTech, capacitySplit });
-
-            const teamCapacityStats = React.useMemo(() => {
-                return buildTeamCapacityStats({
-                    showPlanning,
-                    capacityEnabled,
-                    capacityTasks,
-                    normalizeStatus,
-                    getTeamInfo,
-                    techProjectKeys,
-                    adHocEpicSet
-                });
-            }, [showPlanning, capacityEnabled, capacityTasks, techProjectKeys, adHocEpicSet, adHocEpicSignature]);
-
-            const teamCapacityEntries = React.useMemo(() => {
-                return buildTeamCapacityEntries(teamCapacityStats);
-            }, [teamCapacityStats]);
-
-            const displayedTeamCapacityEntries = React.useMemo(() => {
-                return !isAllTeamsSelected
-                    ? teamCapacityEntries.filter(entry => selectedTeamSet.has(entry.id))
-                    : teamCapacityEntries;
-            }, [teamCapacityEntries, isAllTeamsSelected, selectedTeamSet]);
-
-            const teamSpTotals = React.useMemo(() => {
-                return buildTeamSpTotals(capacityTasks, getTeamInfo);
-            }, [capacityTasks]);
-
-            const displayedTeamOptions = React.useMemo(() => {
-                return buildDisplayedTeamOptions({
-                    teamOptions,
-                    isAllTeamsSelected,
-                    selectedTeamSet,
-                    teamSpTotals
-                });
-            }, [teamOptions, isAllTeamsSelected, selectedTeamSet, teamSpTotals]);
-
-            const capacityTeamNames = React.useMemo(() => {
-                if (!showPlanning || !capacityEnabled) return [];
-                const teamsByKey = new Map();
-                for (const team of displayedTeamOptions) {
-                    const teamName = normalizeCapacityTeamName(team.name);
-                    const key = normalizeCapacityKey(teamName);
-                    if (key && !teamsByKey.has(key)) teamsByKey.set(key, teamName);
-                }
-                return Array.from(teamsByKey.entries())
-                    .sort(([left], [right]) => left.localeCompare(right))
-                    .map(([, teamName]) => teamName);
-            }, [showPlanning, capacityEnabled, displayedTeamOptions]);
-
-            // A per-epic refresh (#213) pins the previous signature until the scope changes or a department load bumps loadEpochRef (read during render on purpose: loads set state, so a render follows); the trade-off is that a team crossing zero Story Points is not reread until then.
-            const capacityScopeKey = [selectedSprintInfo?.name, activeGroupId, showPlanning, capacityEnabled, loadEpochRef.current, isAllTeamsSelected, [...selectedTeamSet].sort().join(',')].join('|');
-            if (capacityScopeKeyRef.current !== capacityScopeKey) { capacityScopeKeyRef.current = capacityScopeKey; capacityScopePinRef.current = null; activeCapacityScopeRef.current = ''; }
-            if (showPlanning && capacityScopeHoldRef.current && activeCapacityScopeRef.current && !capacityScopePinRef.current) capacityScopePinRef.current = { key: capacityScopeKey, signature: activeCapacityScopeRef.current };
-            const capacityScopeSignature = capacityScopePinRef.current ? capacityScopePinRef.current.signature : buildCapacityScopeSignature(
-                selectedSprintInfo?.name || '',
-                capacityTeamNames,
-            );
-            activeCapacityScopeRef.current = capacityScopeSignature;
-
-            const commitCapacityReadLifecycle = (event) => {
-                const nextModel = reduceCapacityReadLifecycle(capacityReadModelRef.current, event);
-                capacityReadModelRef.current = nextModel;
-                capacityStateRef.current = nextModel.capacityState;
-                setCapacityState(nextModel.capacityState);
-                setCapacityLoading(nextModel.capacityLoading);
-                setCapacityReadRevision(nextModel.capacityReadRevision);
-                setCapacityReadError(nextModel.capacityReadError);
-                setCapacityDataStale(nextModel.capacityDataStale);
-            };
-
-            const effectiveCapacityState = React.useMemo(() => (
-                capacityState.scopeSignature === capacityScopeSignature
-                    ? capacityState
-                    : { capacityByTeam: {}, capacityTargetsByTeam: {}, capacityIssueCount: null, mutationEnabled: false, scopeSignature: capacityScopeSignature }
-            ), [capacityState, capacityScopeSignature]);
-            const { capacityByTeam, capacityTargetsByTeam } = effectiveCapacityState;
-            const capacityMutationEnabled = effectiveCapacityState.mutationEnabled === true;
-
-            const handleCapacitySaved = React.useCallback((result) => {
-                if (result.scopeSignature !== activeCapacityScopeRef.current) return;
-                setCapacityState((previous) => {
-                    const nextState = applyCapacitySaveResultForScope(
-                        previous,
-                        result,
-                        activeCapacityScopeRef.current,
-                    );
-                    capacityStateRef.current = nextState;
-                    capacityReadModelRef.current = {
-                        ...capacityReadModelRef.current,
-                        capacityState: nextState,
-                    };
-                    return nextState;
-                });
-            }, []);
-            const retryCapacity = React.useCallback(() => {
-                setCapacityRefreshNonce(previous => previous + 1);
-            }, []);
-            const fetchCapacity = async ({ sprintName, teams, signal, scopeSignature, ownership }) => {
-                try {
-                    const response = await requestCapacity(BACKEND_URL, { sprintName, teams, signal });
-                    if (!response.ok) throw new Error(`capacity_read_${response.status}`);
-                    const data = await response.json();
-                    if (!ownership.isCurrent()) return;
-                    commitCapacityReadLifecycle({ type: 'success', scopeSignature, payload: data });
-                } catch (error) {
-                    if (error?.name === 'AbortError' || !ownership.isCurrent()) return;
-                    commitCapacityReadLifecycle({ type: 'failure', scopeSignature });
-                } finally {
-                    if (!ownership.isCurrent()) return;
-                    if (capacityReadAbortRef.current?.signal === signal) capacityReadAbortRef.current = null;
-                }
-            };
-
-            useEffect(() => {
-                const scopeSignature = capacityScopeSignature;
-                const sprintName = selectedSprintInfo?.name || '';
-                const ownership = beginCapacityReadOwnership({
-                    generationRef: capacityReadGenerationRef,
-                    abortRef: capacityReadAbortRef,
-                    activeScopeRef: activeCapacityScopeRef,
-                    scopeSignature,
-                    capacityEnabled,
-                    showPlanning,
-                    sprintName,
-                    teams: capacityTeamNames,
-                });
-
-                if (!ownership.shouldFetch) {
-                    if (ownership.isCurrent()) {
-                        commitCapacityReadLifecycle({ type: 'gate', scopeSignature });
-                    }
-                } else {
-                    if (ownership.isCurrent()) {
-                        commitCapacityReadLifecycle({ type: 'start', scopeSignature });
-                    }
-                    void fetchCapacity({
-                        sprintName,
-                        teams: capacityTeamNames,
-                        signal: ownership.controller.signal,
-                        scopeSignature,
-                        ownership,
-                    });
-                }
-
-                return ownership.cleanup;
-            }, [capacityEnabled, showPlanning, capacityScopeSignature, capacityRefreshNonce]);
-
-            const capacityTeamIds = React.useMemo(() => {
-                return !isAllTeamsSelected
-                    ? Array.from(selectedTeamSet)
-                    : teamCapacityEntries.map(entry => entry.id);
-            }, [isAllTeamsSelected, selectedTeamSet, teamCapacityEntries]);
-
-            const getTeamCapacity = (teamName) => {
-                if (!capacityEnabled) return 0;
-                const resolved = resolveUniqueCapacityValue(capacityByTeam, teamName);
-                return resolved.matched ? resolved.value : 0;
-            };
-
-            const excludedCapacityByTeamId = React.useMemo(() => {
-                return buildExcludedCapacityByTeamId({
-                    capacityEnabled,
-                    showPlanning,
-                    capacityTasks,
-                    excludedEpicSet,
-                    normalizeEpicKey,
-                    getTeamInfo
-                });
-            }, [capacityEnabled, showPlanning, capacityTasks, excludedEpicSet]);
-
-            const getTeamNetCapacity = (team) => {
-                if (!capacityEnabled) return 0;
-                const base = getTeamCapacity(team.name);
-                const excluded = excludedCapacityByTeamId[team.id] || 0;
-                return Math.max(0, base - excluded);
-            };
-
-            const capacityTotalsSummary = React.useMemo(() => {
-                return buildCapacityTotalsSummary({
-                    capacityEnabled,
-                    displayedTeamOptions,
-                    getTeamCapacity,
-                    excludedCapacityByTeamId,
-                    capacityMultiplier
-                });
-            }, [capacityEnabled, displayedTeamOptions, excludedCapacityByTeamId, capacityMultiplier, capacityByTeam]);
-            const totalCapacityBase = capacityTotalsSummary.totalCapacityBase;
-            const excludedCapacityTotal = capacityTotalsSummary.excludedCapacityTotal;
-            const estimatedCapacityRaw = capacityTotalsSummary.estimatedCapacityRaw;
-            const totalCapacityAdjusted = capacityTotalsSummary.totalCapacityAdjusted;
-            const estimatedCapacityAdjusted = capacityTotalsSummary.estimatedCapacityAdjusted;
-            const excludedCapacityAdjusted = capacityTotalsSummary.excludedCapacityAdjusted;
-            const capacitySummary = getCapacityStatus(selectedSP, totalCapacityAdjusted);
-            const scrollToFirstExcludedEpic = (projectType = 'any') => {
-                const firstExcluded = epicGroups.find((epic) => {
-                    if (!excludedEpicSet.has(normalizeEpicKey(epic.key))) return false;
-                    if (projectType === 'any') return true;
-                    const hasTech = (epic.tasks || []).some(task => techProjectKeys.has(String(task.fields?.projectKey || String(task.key || '').split('-')[0]).toUpperCase()));
-                    const hasProduct = (epic.tasks || []).some(task => !techProjectKeys.has(String(task.fields?.projectKey || String(task.key || '').split('-')[0]).toUpperCase()));
-                    return projectType === 'tech' ? hasTech : hasProduct;
-                });
-                if (!firstExcluded) return;
-                const node = epicRefMap.current.get(firstExcluded.key);
-                if (!node) return;
-                node.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                node.classList.remove('epic-flash');
-                void node.offsetWidth;
-                node.classList.add('epic-flash');
-            };
-
-            const projectCapacity = React.useMemo(() => {
-                return buildProjectCapacity({
-                    showPlanning,
-                    capacityEnabled,
-                    displayedTeamOptions,
-                    selectedTeamProjectStats,
-                    getTeamNetCapacity,
-                    capacitySplit,
-                    showProduct,
-                    showTech
-                });
-            }, [
-                showPlanning,
-                capacityEnabled,
-                displayedTeamOptions,
-                selectedTeamProjectStats,
-                showProduct,
-                showTech,
-                capacitySplit,
-                capacityByTeam,
-                excludedCapacityByTeamId
-            ]);
-
-            const selectedProjectEntries = React.useMemo(() => {
-                return buildSelectedProjectEntries({
-                    showPlanning,
-                    selectedProjectStats,
-                    capacityEnabled,
-                    projectCapacity
-                });
-            }, [showPlanning, selectedProjectStats, capacityEnabled, projectCapacity]);
-
-            const selectedTeamEntries = React.useMemo(() => {
-                return buildSelectedTeamEntries({
-                    showPlanning,
-                    displayedTeamOptions,
-                    selectedTeamStats,
-                    capacityEnabled,
-                    capacityByTeam,
-                    capacityTargetsByTeam,
-                    getTeamCapacity,
-                    getTeamNetCapacity,
-                    capacityMultiplier
-                });
-            }, [
-                showPlanning,
-                displayedTeamOptions,
-                selectedTeamStats,
-                capacityEnabled,
-                capacityMultiplier,
-                capacityByTeam,
-                capacityTargetsByTeam,
-                excludedCapacityByTeamId
-            ]);
-
-            const capacityTotals = React.useMemo(() => {
-                return buildCapacityTotals({
-                    showPlanning,
-                    capacityEnabled,
-                    displayedTeamCapacityEntries
-                });
-            }, [showPlanning, capacityEnabled, displayedTeamCapacityEntries]);
-
-            const showTotalsRow = displayedTeamCapacityEntries.length > 1;
-
-            const formatCapacityValue = (value) => {
-                const num = Number(value || 0);
-                return num.toFixed(1);
-            };
+            const {
+                selectedAdHocProductSP, excludedProjectStats, capacityShareLabel, teamCapacityEntries,
+                displayedTeamCapacityEntries, capacityScopeSignature, effectiveCapacityState, capacityMutationEnabled,
+                handleCapacitySaved, retryCapacity, capacityTeamIds, totalCapacityAdjusted,
+                estimatedCapacityAdjusted, excludedCapacityAdjusted, capacitySummary, selectedProjectEntries,
+                selectedTeamEntries, capacityTotals, showTotalsRow, formatCapacityValue,
+            } = useEngCapacity({
+                scope,
+                showPlanning, capacityEnabled, showProduct, showTech,
+                selectedTasksList, selectedPlanningTasksList, selectedSP, getTeamInfo,
+                normalizeStatus, normalizeEpicKey, BACKEND_URL, loadEpochRef,
+                epicGroups, epicRefMap, capacityState, capacityStateRef,
+                setCapacityState, setCapacityLoading, setCapacityReadRevision, setCapacityReadError,
+                setCapacityDataStale, capacityReadModelRef, capacityRefreshNonce, setCapacityRefreshNonce,
+                capacityReadGenerationRef, capacityReadAbortRef, activeCapacityScopeRef, capacityScopeHoldRef,
+                capacityScopePinRef, capacityScopeKeyRef,
+            });
 
             const renderPriorityIcon = (priority, idSeed) => {
                 const name = String(priority || '').toLowerCase();
@@ -7035,453 +5370,22 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 const blockersDone = entries.every(dep => resolveDependencyStatus(dep) === 'done');
                 return blockersDone ? 'Unblocked' : baseLabel;
             };
-            const dismissedAlertSet = React.useMemo(() => new Set(dismissedAlertKeys || []), [dismissedAlertKeys]);
-
-            const blockedTasks = visibleTasks.filter(task => {
-                const status = normalizeStatus(task.fields.status?.name);
-                if (!status) return false;
-                if (isExcludedStatus(status)) return false;
-                if (dismissedAlertSet.has(task.key)) return false;
-                return status.includes('blocked');
-            });
-
-            const consolidatedMissingStories = React.useMemo(() => {
-                const byKey = new Map();
-                const shouldIncludeUnknownTeam = (task, missing) => {
-                    const teamMissing = !task?.fields?.teamId && !task?.fields?.teamName;
-                    if (!teamMissing) return true;
-                    return true;
-                };
-
-                const shouldIncludeByTeam = (task) => {
-                    if (isAllTeamsSelected) return true;
-                    const teamId = task?.fields?.teamId;
-                    const teamName = task?.fields?.teamName;
-                    if (!teamId && !teamName) {
-                        return true; // can't filter reliably, keep it visible
-                    }
-                    return selectedTeamSet.has(getTeamInfo(task).id);
-                };
-
-                const excluded = (task) => {
-                    if (!task?.key) return true;
-                    if (dismissedAlertSet.has(task.key)) return true;
-                    const status = normalizeStatus(task.fields.status?.name);
-                    return status === 'killed' || status === 'done' || status === 'postponed';
-                };
-
-                // Start with server-provided missing info, but only keep items in the selected sprint.
-                (missingPlanningInfoTasks || []).forEach((task) => {
-                    if (!task?.key || excluded(task) || !shouldIncludeByTeam(task)) return;
-                    if (!isTaskInSelectedSprint(task)) return;
-                    const missing = new Set(task.fields?.missingFields || []);
-                    if (!shouldIncludeUnknownTeam(task, missing)) return;
-                    if (missing.size === 0) return;
-                    byKey.set(task.key, { task, missing });
-                });
-
-                // Merge client-side checks (covers missing Story Points / Epic / Team)
-                visibleTasks.forEach((task) => {
-                    if (!task?.key || excluded(task) || !shouldIncludeByTeam(task)) return;
-                    const current = byKey.get(task.key) || { task, missing: new Set() };
-
-                    if (!hasStoryPoints(task)) current.missing.add('Story Points');
-                    if (!task.fields?.epicKey) current.missing.add('Epic');
-                    if (!task.fields?.teamId && !task.fields?.teamName) current.missing.add('Team');
-                    if (!shouldIncludeUnknownTeam(task, current.missing)) return;
-
-                    if (current.missing.size > 0) {
-                        // Prefer the server task object if present (may carry extra fields)
-                        current.task = current.task || task;
-                        byKey.set(task.key, current);
-                    }
-                });
-
-                return [...byKey.values()]
-                    .map(({ task, missing }) => ({ task, missingFields: [...missing] }))
-                    .sort((a, b) => {
-                        const diff = b.missingFields.length - a.missingFields.length;
-                        if (diff !== 0) return diff;
-                        const priorityA = priorityOrder[a.task.fields.priority?.name] || 999;
-                        const priorityB = priorityOrder[b.task.fields.priority?.name] || 999;
-                        if (priorityA !== priorityB) return priorityA - priorityB;
-                        return (a.task.fields.summary || '').localeCompare(b.task.fields.summary || '');
-                    });
-            }, [
-                missingPlanningInfoTasks,
-                visibleTasks,
-                isAllTeamsSelected,
-                selectedTeamSet,
-                dismissedAlertKeys,
-                selectedSprint,
-                selectedSprintInfo?.name
-            ]);
-
-            const normalizedActiveGroupTeamLabels = React.useMemo(() => {
-                const entries = Object.entries(activeGroupTeamLabels || {})
-                    .map(([teamId, aliases]) => [String(teamId || '').trim(), normalizeTeamLabelAliases(aliases)])
-                    .filter(([teamId, aliases]) => teamId && aliases.length);
-                return Object.fromEntries(entries);
-            }, [activeGroupTeamLabels]);
-            const getFuturePlanningTeamInfos = React.useCallback((epic) => {
-                return getFuturePlanningEpicTeamInfos(epic, {
-                    selectedTeamSet,
-                    teamLabels: normalizedActiveGroupTeamLabels,
-                    resolveTeamName,
-                    fallbackSelectedTeamName: selectedTeamSet.size === 1 ? (teamNameById.get(Array.from(selectedTeamSet)[0]) || '') : '',
-                    teamNameById
-                });
-            }, [selectedTeamSet, normalizedActiveGroupTeamLabels, resolveTeamName, teamNameById]);
-            const storiesByEpicKey = React.useMemo(() => {
-                const map = new Map();
-                tasks.forEach((task) => {
-                    const epicKey = task.fields?.epicKey;
-                    if (!epicKey) return;
-                    if (!isAllTeamsSelected && !selectedTeamSet.has(getTeamInfo(task).id)) return;
-                    const list = map.get(epicKey) || [];
-                    list.push(task);
-                    map.set(epicKey, list);
-                });
-                return map;
-            }, [tasks, isAllTeamsSelected, selectedTeamSet]);
-            const epicMatchesPlanningSprintValue = React.useCallback((epic) => {
-                return epicMatchesSelectedSprint(epic, {
-                    selectedSprint,
-                    selectedSprintName: selectedSprintInfo?.name || ''
-                });
-            }, [selectedSprint, selectedSprintInfo?.name]);
-            const epicHasPlanningSprintLabel = React.useCallback((epic) => {
-                return epicHasSelectedSprintLabel(epic, selectedSprintInfo?.name || '');
-            }, [selectedSprintInfo?.name]);
-            // While the Department is too large for Epic alerts, epicsInScope holds only the primary load's
-            // first page; no alert may be derived from it. Separate sources (remote Backlog, sprint Stories,
-            // ready-to-close Epics, Story readiness) are unaffected.
-            const alertEpicsInScope = React.useMemo(
-                () => (alertScopeTooLarge ? [] : epicsInScope),
-                [alertScopeTooLarge, epicsInScope]
-            );
-            const planningCandidateEpics = React.useMemo(() => {
-                return alertEpicsInScope.filter((epic) => {
-                    if (!epic?.key) return false;
-                    if (dismissedAlertSet.has(epic.key)) return false;
-                    const status = normalizeStatus(epic.status?.name);
-                    if (!status || status === 'done' || status === 'killed' || status === 'incomplete') return false;
-                    if (!epicMatchesFuturePlanningTeamSelection(epic, {
-                        isAllTeamsSelected,
-                        selectedTeamSet,
-                        teamLabels: normalizedActiveGroupTeamLabels
-                    })) return false;
-                    return true;
-                });
-            }, [alertEpicsInScope, dismissedAlertSet, isAllTeamsSelected, selectedTeamSet, normalizedActiveGroupTeamLabels]);
-            const backlogEpics = React.useMemo(() => {
-                if (!isFutureSprintSelected) return [];
-                const seen = new Set();
-                const selectedSprintScope = { selectedSprint, selectedSprintName: selectedSprintInfo?.name || '' };
-                const remoteBacklog = filterExplicitBacklogEpics([...backlogProductEpics, ...backlogTechEpics], selectedSprintScope);
-                const sprintValueBacklog = filterExplicitBacklogEpics(planningCandidateEpics, selectedSprintScope);
-                return [...remoteBacklog, ...sprintValueBacklog].filter((epic) => {
-                    if (!epic?.key || seen.has(epic.key)) return false;
-                    seen.add(epic.key);
-                    if (dismissedAlertSet.has(epic.key)) return false;
-                    if (!epicMatchesFuturePlanningTeamSelection(epic, {
-                        isAllTeamsSelected,
-                        selectedTeamSet,
-                        teamLabels: normalizedActiveGroupTeamLabels
-                    })) return false;
-                    const status = normalizeStatus(epic.status?.name);
-                    if (!status || status === 'done' || status === 'killed' || status === 'incomplete') return false;
-                    return true;
-                });
-            }, [isFutureSprintSelected, backlogProductEpics, backlogTechEpics, planningCandidateEpics, dismissedAlertSet, isAllTeamsSelected, selectedTeamSet, normalizedActiveGroupTeamLabels, selectedSprint, selectedSprintInfo?.name]);
-            const backlogEpicKeySet = React.useMemo(
-                () => new Set(backlogEpics.map(epic => epic.key).filter(Boolean)),
-                [backlogEpics]
-            );
-            const missingTeamEpics = React.useMemo(() => {
-                if (!isFutureSprintSelected) return [];
-                return planningCandidateEpics.filter((epic) => {
-                    if (backlogEpicKeySet.has(epic.key)) return false;
-                    const teamId = String(epic.teamId || '').trim();
-                    const teamName = String(epic.teamName || '').trim().toLowerCase();
-                    return !teamId || !teamName || teamName === 'unknown team';
-                });
-            }, [isFutureSprintSelected, planningCandidateEpics, backlogEpicKeySet]);
-            const missingTeamEpicKeySet = React.useMemo(
-                () => new Set(missingTeamEpics.map(epic => epic.key).filter(Boolean)),
-                [missingTeamEpics]
-            );
-            const missingLabelEpics = React.useMemo(() => {
-                if (!isFutureSprintSelected) return [];
-                return planningCandidateEpics.filter((epic) => {
-                    if (backlogEpicKeySet.has(epic.key) || missingTeamEpicKeySet.has(epic.key)) return false;
-                    if (!epicMatchesPlanningSprintValue(epic)) return false;
-                    return !epicHasPlanningSprintLabel(epic) || !epicHasFuturePlanningTeamLabel(epic, {
-                        selectedTeamSet,
-                        teamLabels: normalizedActiveGroupTeamLabels
-                    });
-                });
-            }, [isFutureSprintSelected, planningCandidateEpics, backlogEpicKeySet, missingTeamEpicKeySet, selectedTeamSet, normalizedActiveGroupTeamLabels, epicMatchesPlanningSprintValue, epicHasPlanningSprintLabel]);
-            const missingLabelEpicKeySet = React.useMemo(
-                () => new Set(missingLabelEpics.map(epic => epic.key).filter(Boolean)),
-                [missingLabelEpics]
-            );
-            const storyReadinessAlerts = React.useMemo(() => buildStoryReadinessAlertModel({
-                selectedSprintState, dismissedIds: dismissedStoryRequirementIds,
-                alertTargets: engWorkHierarchy.alertTargets || [], isFutureSprintSelected,
-                backlogEpicKeys: backlogEpicKeySet, missingTeamEpicKeys: missingTeamEpicKeySet,
-                missingLabelEpicKeys: missingLabelEpicKeySet, normalizeStatus,
-            }), [selectedSprintState, dismissedStoryRequirementIds, engWorkHierarchy.alertTargets, isFutureSprintSelected, backlogEpicKeySet, missingTeamEpicKeySet, missingLabelEpicKeySet]);
-            const needsStoriesEntries = storyReadinessAlerts.entries;
-            const needsStoriesEpics = storyReadinessAlerts.epics;
-            const storyReadinessEpicKeySet = storyReadinessAlerts.epicKeySet;
-
-            const emptyEpics = alertEpicsInScope
-                .filter(epic => {
-                    const status = normalizeStatus(epic.status?.name);
-                    if (status === 'killed' || status === 'done' || status === 'incomplete' || status === 'in progress') return false;
-                    if (!isAllTeamsSelected && epic.teamId && !selectedTeamSet.has(epic.teamId)) return false;
-                    return true;
-                })
-                .filter(epic => typeof epic.totalStories === 'number' && epic.totalStories === 0)
-                .filter(epic => !dismissedAlertSet.has(epic.key));
-            const futureRoutedEpics = React.useMemo(() => {
-                return emptyEpics.filter(epic => {
-                    const selectedStories = Number(epic.selectedStories || 0);
-                    const futureOpenStories = Number(epic.futureOpenStories || 0);
-                    return selectedStories === 0 && futureOpenStories > 0;
-                });
-            }, [emptyEpics]);
-
-            const readyToCloseStoryStatuses = new Set(['done', 'killed', 'incomplete']);
-            const readyToCloseEpicStatuses = new Set(['in progress', 'accepted']);
-            const matchesSelectedSprint = epicMatchesPlanningSprintValue;
-            const epicHasStoryInSelectedSprint = (epicStories) => {
-                if (!epicStories || epicStories.length === 0) return false;
-                return epicStories.some(task => isTaskInSelectedSprint(task));
-            };
-            const epicOrStoriesMatchSelectedSprint = (epic, epicStories) => {
-                if (matchesSelectedSprint(epic)) return true;
-                return epicHasStoryInSelectedSprint(epicStories);
-            };
-
-            const doneStoryEpics = readyToCloseEpicsInScope
-                .filter(epic => {
-                    const status = normalizeStatus(epic.status?.name);
-                    if (!readyToCloseEpicStatuses.has(status)) return false;
-                    if (!isAllTeamsSelected && epic.teamId && !selectedTeamSet.has(epic.teamId)) return false;
-                    return true;
-                })
-                .filter(epic => {
-                    const epicStories = tasks.filter(task => {
-                        if (!task.fields?.epicKey) return false;
-                        if (task.fields.epicKey !== epic.key) return false;
-                        if (!isAllTeamsSelected && !selectedTeamSet.has(getTeamInfo(task).id)) return false;
-                        return true;
-                    });
-                    if (epicStories.length === 0) return false;
-                    if (!epicOrStoriesMatchSelectedSprint(epic, epicStories)) return false;
-                    // Authoritative, truncation-free signal from the backend: ready to
-                    // close only when the epic has zero open (non-terminal) children
-                    // across all sprints. Fail closed when the count is missing/unloaded
-                    // so a still-open future-sprint story is never read as "all done".
-                    return epic.openChildCount === 0;
-                })
-                .filter(epic => !dismissedAlertSet.has(epic.key));
-
-            const analysisEpicsSource = React.useMemo(() => {
-                const seen = new Set();
-                const merged = [...readyToCloseEpicsInScope, ...alertEpicsInScope].filter(epic => {
-                    if (!epic?.key) return false;
-                    if (seen.has(epic.key)) return false;
-                    seen.add(epic.key);
-                    return true;
-                });
-                return merged;
-            }, [readyToCloseEpicsInScope, alertEpicsInScope]);
-
-            const sortByPriorityThenSummary = (a, b) => {
-                const priorityA = priorityOrder[a.fields.priority?.name] || 999;
-                const priorityB = priorityOrder[b.fields.priority?.name] || 999;
-                if (priorityA !== priorityB) return priorityA - priorityB;
-                return (a.fields.summary || '').localeCompare(b.fields.summary || '');
-            };
-
-            const groupAlertsByTeam = (items, resolveTeam, sortItems) => {
-                const groups = new Map();
-                (items || []).forEach(item => {
-                    const teams = [].concat(resolveTeam(item) || []).filter(Boolean);
-                    if (!teams.length) teams.push({ id: 'unknown', name: 'Unknown Team' });
-                    const seenTeamIds = new Set();
-                    teams.forEach((team) => {
-                        const id = team.id || team.name || 'unknown';
-                        if (seenTeamIds.has(id)) return;
-                        seenTeamIds.add(id);
-                        const entry = groups.get(id) || { id, name: team.name || 'Unknown Team', items: [] };
-                        entry.items.push(item);
-                        groups.set(id, entry);
-                    });
-                });
-                const list = Array.from(groups.values());
-                list.forEach(group => sortItems && group.items.sort(sortItems));
-                return list.sort((a, b) => a.name.localeCompare(b.name));
-            };
-
-            const postponedTasks = React.useMemo(() => {
-                return tasks.filter(task => {
-                    if (!task?.key) return false;
-                    if (dismissedAlertSet.has(task.key)) return false;
-                    const status = normalizeStatus(task.fields.status?.name);
-                    if (status !== 'postponed') return false;
-                    if (!isAllTeamsSelected && !selectedTeamSet.has(getTeamInfo(task).id)) return false;
-                    return true;
-                });
-            }, [tasks, dismissedAlertSet, isAllTeamsSelected, selectedTeamSet]);
-
-            const analysisWaitingEpics = React.useMemo(() => {
-                return analysisEpicsSource.filter(epic => {
-                    if (!epic?.key) return false;
-                    if (dismissedAlertSet.has(epic.key)) return false;
-                    const status = normalizeStatus(epic.status?.name);
-                    if (readyToCloseEpicStatuses.has(status)) return false;
-                    if (status === 'killed' || status === 'done' || status === 'incomplete') return false;
-                    if (!isAllTeamsSelected && epic.teamId && !selectedTeamSet.has(epic.teamId)) return false;
-                    const selectedSprintEpicStories = tasks.filter(task => {
-                        if (!task.fields?.epicKey) return false;
-                        if (task.fields.epicKey !== epic.key) return false;
-                        if (!isAllTeamsSelected && !selectedTeamSet.has(getTeamInfo(task).id)) return false;
-                        return true;
-                    });
-                    // Waiting for Stories must only surface epics that belong to the currently selected sprint.
-                    if (!epicOrStoriesMatchSelectedSprint(epic, selectedSprintEpicStories)) return false;
-                    const epicStories = readyToCloseTasks.filter(task => {
-                        if (!task.fields?.epicKey) return false;
-                        if (task.fields.epicKey !== epic.key) return false;
-                        if (!isAllTeamsSelected && !selectedTeamSet.has(getTeamInfo(task).id)) return false;
-                        return true;
-                    });
-                    if (epicStories.length === 0) return false;
-                    return epicStories.every(task => readyToCloseStoryStatuses.has(normalizeStatus(task.fields.status?.name)));
-                });
-            }, [
-                analysisEpicsSource,
-                dismissedAlertSet,
-                isAllTeamsSelected,
-                selectedTeamSet,
-                tasks,
-                readyToCloseTasks,
-                readyToCloseStoryStatuses,
-                readyToCloseEpicStatuses,
-                selectedSprint,
-                selectedSprintInfo?.name
-            ]);
-
-            const postponedEmptyEpics = React.useMemo(() => {
-                return emptyEpics.filter(epic => {
-                    const status = normalizeStatus(epic.status?.name);
-                    if (status !== 'postponed') return false;
-                    if (!isFutureSprintSelected) return false;
-                    return matchesSelectedSprint(epic);
-                });
-            }, [emptyEpics, isFutureSprintSelected, selectedSprint, selectedSprintInfo?.name]);
-            const epicsWithActionableStoriesInSelectedSprint = React.useMemo(() => {
-                const storiesByEpic = new Map();
-                selectionTasks.forEach(task => {
-                    const epicKey = task.fields?.epicKey;
-                    if (!epicKey) return;
-                    const status = normalizeStatus(task.fields.status?.name);
-                    if (!status) return;
-                    if (status.includes('blocked')) return;
-                    if (status === 'killed' || status === 'done' || status === 'incomplete') return;
-                    const list = storiesByEpic.get(epicKey) || [];
-                    list.push(task);
-                    storiesByEpic.set(epicKey, list);
-                });
-                const epicKeys = new Set();
-                emptyEpics.forEach(epic => {
-                    if (!epic?.key) return;
-                    const epicStories = storiesByEpic.get(epic.key) || [];
-                    if (!epicStories.length) return;
-                    if (matchesSelectedSprint(epic) || epicHasStoryInSelectedSprint(epicStories)) {
-                        epicKeys.add(epic.key);
-                    }
-                });
-                return epicKeys;
-            }, [selectionTasks, emptyEpics, selectedSprint, selectedSprintInfo?.name]);
-
-            const emptyEpicsForAlert = React.useMemo(() => {
-                if (isFutureSprintSelected) return [];
-                const futureRoutedEpicKeys = new Set(futureRoutedEpics.map(epic => epic.key).filter(Boolean));
-                return emptyEpics.filter(epic => {
-                    if (!epic?.key) return false;
-                    if (storyReadinessEpicKeySet.has(epic.key)) return false;
-                    if (Number(epic.selectedActionableStories || 0) > 0) return false;
-                    if (epicsWithActionableStoriesInSelectedSprint.has(epic.key)) return false;
-                    if (futureRoutedEpicKeys.has(epic.key)) return false;
-                    return true;
-                });
-            }, [isFutureSprintSelected, emptyEpics, epicsWithActionableStoriesInSelectedSprint, futureRoutedEpics, storyReadinessEpicKeySet]);
-            const waitingForStoriesEpics = React.useMemo(() => {
-                if (isFutureSprintSelected) {
-                    return [];
-                }
-                const seen = new Set();
-                const merged = [...analysisWaitingEpics, ...postponedEmptyEpics].filter(epic => {
-                    if (!epic?.key) return false;
-                    if (storyReadinessEpicKeySet.has(epic.key)) return false;
-                    if (seen.has(epic.key)) return false;
-                    seen.add(epic.key);
-                    return true;
-                });
-                return merged;
-            }, [isFutureSprintSelected, analysisWaitingEpics, postponedEmptyEpics, storyReadinessEpicKeySet]);
-
             const {
-                visibleAlertCollections,
-                missingAlertKeySet,
-                blockedAlertKeySet,
-                postponedAlertKeySet,
-                backlogAlertKeySet,
-                needsStoriesAlertKeySet,
-                waitingAlertKeySet,
-                emptyAlertKeySet,
-                doneAlertKeySet,
-                alertCounts,
-                alertItemCount,
-            } = useEngAlertFilters({
-                collections: {
-                    consolidatedMissingStories,
-                    blockedTasks,
-                    postponedTasks,
-                    futureRoutedEpics,
-                    backlogEpics,
-                    missingTeamEpics,
-                    missingLabelEpics,
-                    needsStoriesEntries,
-                    needsStoriesEpics,
-                    waitingForStoriesEpics,
-                    emptyEpicsForAlert,
-                    doneStoryEpics,
-                },
-                visibleTasks: visibleTasksForList,
-                searchQuery,
-                epicDetails,
-                filters: engCatchUpFilters,
-                techProjectKeys,
-                focusedFilterActive: Boolean(burnoutTaskFilter),
+                visibleAlertCollections, missingAlertKeySet, blockedAlertKeySet, postponedAlertKeySet,
+                needsStoriesAlertKeySet, waitingAlertKeySet, emptyAlertKeySet, doneAlertKeySet, alertCounts,
+                alertItemCount, missingAlertTeams, blockedAlertTeams, doneEpicTeams, postponedAlertTeams,
+                postponedEpicTeams, emptyEpicTeams, analysisEpicTeams, backlogEpicTeams, missingTeamEpicTeams,
+                missingLabelEpicTeams, needsStoriesTeams
+            } = useEngAlerts({
+                scope,
+                dismissedAlertKeys, visibleTasks, normalizeStatus, isExcludedStatus, getTeamInfo,
+                missingPlanningInfoTasks, isTaskInSelectedSprint, hasStoryPoints, priorityOrder,
+                activeGroupTeamLabels, resolveTeamName, tasks, alertScopeTooLarge, epicsInScope,
+                isFutureSprintSelected, backlogProductEpics, backlogTechEpics, selectedSprintState,
+                dismissedStoryRequirementIds, engWorkHierarchy, readyToCloseEpicsInScope, readyToCloseTasks,
+                selectionTasks, visibleTasksForList, searchQuery, epicDetails, engCatchUpFilters,
+                burnoutTaskFilter
             });
-
-            const missingAlertTeams = groupAlertsByTeam(visibleAlertCollections.consolidatedMissingStories, (item) => getTeamInfo(item.task));
-            const blockedAlertTeams = groupAlertsByTeam(visibleAlertCollections.blockedTasks, (task) => getTeamInfo(task), sortByPriorityThenSummary);
-            const doneEpicTeams = groupAlertsByTeam(visibleAlertCollections.doneStoryEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
-            const postponedAlertTeams = groupAlertsByTeam(visibleAlertCollections.postponedTasks, (task) => getTeamInfo(task), sortByPriorityThenSummary);
-            const postponedEpicTeams = groupAlertsByTeam(visibleAlertCollections.futureRoutedEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
-            const emptyEpicTeams = groupAlertsByTeam(visibleAlertCollections.emptyEpicsForAlert, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
-            const analysisEpicTeams = groupAlertsByTeam(visibleAlertCollections.waitingForStoriesEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
-            const backlogEpicTeams = groupAlertsByTeam(visibleAlertCollections.backlogEpics, (epic) => isFutureSprintSelected ? getFuturePlanningTeamInfos(epic) : getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
-            const missingTeamEpicTeams = groupAlertsByTeam(visibleAlertCollections.missingTeamEpics, (epic) => getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
-            const missingLabelEpicTeams = groupAlertsByTeam(visibleAlertCollections.missingLabelEpics, (epic) => isFutureSprintSelected ? getFuturePlanningTeamInfos(epic) : getEpicTeamInfo(epic), (a, b) => (a.summary || '').localeCompare(b.summary || ''));
-            const needsStoriesTeams = groupAlertsByTeam(visibleAlertCollections.needsStoriesEntries, (entry) => entry.team, (a, b) => (a.epic.summary || '').localeCompare(b.epic.summary || ''));
 
             const triggerAlertCelebration = React.useCallback((options = {}) => {
                 if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -7712,51 +5616,26 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
             const clearEngFilters = React.useCallback(() => resetEngFilters({ setSearchInput, setSearchQuery, setSelectedTeams, setEngStatusFilter, setEngPriorityFilter, setEngProjectTrackFilter, defaultEngStatusFilter: DEFAULT_ENG_STATUS_FILTER, setShowTech, setShowProduct, setGroupByInitiativeChoice, setBurnoutTaskFilter, setShowTeamDropdown, setShowGroupDropdown, setShowSprintDropdown, trackFilterChanged, visibleCountBucket: bucketCount(visibleTasksForList.length) }), [trackFilterChanged, visibleTasksForList.length]);
             const trackStatsAnalyticsAction = (eventName, params = {}) => trackStatsAction(eventName, statsView, params);
             const renderSearchControl = (surface, extraClassName = '') => (
-                <ControlField label="Search" className={`control-search ${searchActive ? 'active-filter applied-filter' : ''} ${extraClassName}`.trim()}>
-                    <div className="search-wrap">
-                        <input
-                            data-onboarding-target="search"
-                            data-onboarding-surface={surface}
-                            type="text"
-                            className="search-input"
-                            placeholder="Search tickets..."
-                            value={searchInput}
-                            onChange={(e) => setSearchInput(e.target.value)} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)}
-                            ref={searchInputRef}
-                        />
-                        {searchInput && (
-                            <button
-                                className="search-clear"
-                                onClick={() => setSearchInput('')}
-                                title="Clear search"
-                                aria-label="Clear search"
-                                type="button"
-                            >
-                                ×
-                            </button>
-                        )}
-                    </div>
-                </ControlField>
+                <SearchControl
+                    surface={surface}
+                    extraClassName={extraClassName}
+                    searchActive={searchActive}
+                    searchInput={searchInput}
+                    setSearchInput={setSearchInput}
+                    setSearchFocused={setSearchFocused}
+                    searchInputRef={searchInputRef}
+                />
             );
 
-            const renderViewSwitch = () => {
-                if (!showEpmNavigation) return null;
-                return (
-                    <SegmentedControl
-                        className="view-mode-control"
-                        ariaLabel="Dashboard view"
-                        value={selectedView}
-                        onChange={(nextView) => {
-                            trackSelectContent('dashboard_view', nextView, { from_view: currentDashboardView() });
-                            setSelectedView(nextView);
-                        }}
-                        options={[
-                            { value: 'eng', label: 'ENG' },
-                            { value: 'epm', label: 'EPM' },
-                        ]}
-                    />
-                );
-            };
+            const renderViewSwitch = () => (
+                <ViewSwitch
+                    showEpmNavigation={showEpmNavigation}
+                    selectedView={selectedView}
+                    trackSelectContent={trackSelectContent}
+                    currentDashboardView={currentDashboardView}
+                    setSelectedView={setSelectedView}
+                />
+            );
 
             const { activeEngMode, applyEngMode } = useEngModeState({
                 showPlanning, setShowPlanning,
@@ -7833,341 +5712,78 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 <EpmProjectCollapseAllButton label={epmProjectCollapseAllLabel} onClick={toggleAllVisibleEpmProjectsCollapsed} pressed={allVisibleEpmProjectsCollapsed} />
             ) : null;
 
-            const renderSprintControl = (surface) => {
-                const boardScopeControl = selectedView === 'eng' && showBoard;
-                const canOpen = engSprintSelectorState.ordinarySelectable;
-                const displayedSprint = boardScopeControl && boardStrictScope
-                    ? (boardStrictScope === 'component' ? 'Component' : 'All work')
-                    : (sprintName || (!selectedSprint && sprintsLoading && engWorkspaceConfigured ? 'Loading…' : 'Sprint'));
-                const options = getSprintSelectorOptions(boardScopeControl);
-                const activeIndex = options.length
-                    ? Math.min(Math.max(sprintActiveOptionIndex, 0), options.length - 1)
-                    : -1;
-                const listboxId = `sprint-${surface}-listbox`;
-                const isActiveOpen = showSprintDropdown && surface === activeControlSurface;
-                const handleFilterKeyDown = (event) => {
-                    event.stopPropagation();
-                    if (event.key === 'Escape') {
-                        event.preventDefault();
-                        closeSprintSelector({ restoreFocus: true });
-                        return;
-                    }
-                    if (event.key === 'Tab') {
-                        window.setTimeout(() => {
-                            setShowSprintDropdown(false);
-                            setSprintActiveOptionIndex(0);
-                            sprintSelectorOriginRef.current = null;
-                        }, 0);
-                        return;
-                    }
-                    if (!options.length) return;
-                    if (event.key === 'ArrowDown') {
-                        event.preventDefault();
-                        setSprintActiveOptionIndex(Math.min(activeIndex + 1, options.length - 1));
-                        return;
-                    }
-                    if (event.key === 'ArrowUp') {
-                        event.preventDefault();
-                        setSprintActiveOptionIndex(Math.max(activeIndex - 1, 0));
-                        return;
-                    }
-                    if (event.key === 'Home') {
-                        event.preventDefault();
-                        setSprintActiveOptionIndex(0);
-                        return;
-                    }
-                    if (event.key === 'End') {
-                        event.preventDefault();
-                        setSprintActiveOptionIndex(options.length - 1);
-                        return;
-                    }
-                    if (event.key === 'Enter') {
-                        event.preventDefault();
-                        commitSprintSelectorOption(options[activeIndex], boardScopeControl);
-                    }
-                };
-                return (<ControlField label="Sprint">
-                    <div className={`sprint-dropdown sprint-selector-control${selectedView === 'eng' ? ' header-filter-dropdown header-filter-dropdown--sprint' : ''}`} ref={(node) => { sprintDropdownRefs.current[surface] = node; }}>
-                        {isActiveOpen ? (
-                            <div
-                                className="sprint-dropdown-toggle open"
-                                data-onboarding-target="sprint"
-                                data-onboarding-surface={surface}
-                            >
-                                <input
-                                    type="text"
-                                    className="dropdown-toggle-filter-input"
-                                    value={sprintSearch}
-                                    onChange={(event) => {
-                                        setSprintSearch(event.target.value);
-                                        setSprintActiveOptionIndex(0);
-                                    }}
-                                    onClick={(event) => event.stopPropagation()}
-                                    onKeyDown={handleFilterKeyDown}
-                                    placeholder={displayedSprint}
-                                    aria-label="Filter sprints"
-                                    role="combobox"
-                                    aria-autocomplete="list"
-                                    aria-expanded="true"
-                                    aria-controls={listboxId}
-                                    aria-activedescendant={activeIndex >= 0
-                                        ? sprintOptionDomId(surface, options[activeIndex])
-                                        : undefined}
-                                    autoFocus
-                                />
-                                <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
-                                    <path d="M6 9L1 4h10z"/>
-                                </svg>
-                            </div>
-                        ) : (
-                            <button
-                                ref={(node) => { sprintTriggerRefs.current[surface] = node; }}
-                                type="button"
-                                className="sprint-dropdown-toggle"
-                                aria-label="Select sprint"
-                                aria-haspopup="listbox"
-                                aria-expanded="false"
-                                aria-controls={listboxId}
-                                aria-disabled={!canOpen}
-                                disabled={!canOpen}
-                                tabIndex={canOpen ? 0 : -1}
-                                onClick={() => {
-                                    if (!canOpen) return;
-                                    openSprintSelector(surface, options);
-                                }}
-                                data-onboarding-target="sprint"
-                                data-onboarding-surface={surface}
-                            >
-                                <span>{displayedSprint}</span>
-                                <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
-                                    <path d="M6 9L1 4h10z"/>
-                                </svg>
-                            </button>
-                        )}
-                        {isActiveOpen && (
-                            <div className="sprint-dropdown-panel">
-                                <div className="sprint-dropdown-list" id={listboxId} role="listbox" aria-label="Sprint options">
-                                    {sprintsLoading && options.length === 0 ? (
-                                        <div className="dropdown-filter-empty" role="status" aria-label="Sprint options status">Loading sprints...</div>
-                                    ) : availableSprints.length === 0 && options.length === 0 ? (
-                                        <div className="dropdown-filter-empty" role="status" aria-label="Sprint options status">No sprints available</div>
-                                    ) : options.length === 0 ? (
-                                        <div className="dropdown-filter-empty" role="status" aria-label="Sprint options status">No matching sprints</div>
-                                    ) : (
-                                        options.map((option, optionIndex) => {
-                                            const selected = option.kind === 'scope'
-                                                ? boardStrictScope === option.scope
-                                                : !boardStrictScope && String(option.sprint.id) === String(selectedSprint);
-                                            const state = option.kind === 'sprint'
-                                                ? (option.sprint.state || '').toLowerCase()
-                                                : '';
-                                            const marker = state === 'closed' ? '[C]' : state === 'active' ? '[A]' : '[F]';
-                                            const readinessText = option.kind === 'scope'
-                                                ? (option.readiness === 'ready' ? 'Ready'
-                                                    : ['loading', 'catalog_pending'].includes(option.readiness)
-                                                        ? 'Loading configuration'
-                                                        : 'Setup needed')
-                                                : '';
-                                            const descriptionId = option.kind === 'scope'
-                                                ? `${sprintOptionDomId(surface, option)}-readiness`
-                                                : undefined;
-                                            return (
-                                                <button
-                                                    key={option.kind === 'scope' ? option.scope : option.sprint.id}
-                                                    id={sprintOptionDomId(surface, option)}
-                                                    type="button"
-                                                    role="option"
-                                                    tabIndex={-1}
-                                                    aria-label={option.label}
-                                                    aria-selected={selected}
-                                                    aria-describedby={descriptionId}
-                                                    className={`sprint-dropdown-option${selected ? ' selected' : ''}${optionIndex === activeIndex ? ' is-active' : ''}`}
-                                                    data-sprint-id={option.kind === 'sprint' ? option.sprint.id : undefined}
-                                                    onMouseMove={() => setSprintActiveOptionIndex(optionIndex)}
-                                                    onClick={() => commitSprintSelectorOption(option, boardScopeControl)}
-                                                >
-                                                    <span>{option.kind === 'sprint' ? `${marker} ${option.label}` : option.label}</span>
-                                                    {option.kind === 'scope' && (
-                                                        <span id={descriptionId} className="sprint-option-readiness">{readinessText}</span>
-                                                    )}
-                                                </button>
-                                            );
-                                        })
-                                    )}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                </ControlField>); };
+            const renderSprintControl = (surface) => (
+                <SprintControl
+                    surface={surface}
+                    selectedView={selectedView}
+                    showBoard={showBoard}
+                    engSprintSelectorState={engSprintSelectorState}
+                    boardStrictScope={boardStrictScope}
+                    sprintName={sprintName}
+                    selectedSprint={selectedSprint}
+                    sprintsLoading={sprintsLoading}
+                    engWorkspaceConfigured={engWorkspaceConfigured}
+                    getSprintSelectorOptions={getSprintSelectorOptions}
+                    sprintActiveOptionIndex={sprintActiveOptionIndex}
+                    showSprintDropdown={showSprintDropdown}
+                    activeControlSurface={activeControlSurface}
+                    closeSprintSelector={closeSprintSelector}
+                    setShowSprintDropdown={setShowSprintDropdown}
+                    setSprintActiveOptionIndex={setSprintActiveOptionIndex}
+                    sprintSelectorOriginRef={sprintSelectorOriginRef}
+                    commitSprintSelectorOption={commitSprintSelectorOption}
+                    sprintDropdownRefs={sprintDropdownRefs}
+                    sprintSearch={sprintSearch}
+                    setSprintSearch={setSprintSearch}
+                    sprintOptionDomId={sprintOptionDomId}
+                    sprintTriggerRefs={sprintTriggerRefs}
+                    openSprintSelector={openSprintSelector}
+                    availableSprints={availableSprints}
+                />
+            );
 
-            const renderGroupControl = (surface) => {
-                if (!showGroupControl) return null;
-                return (
-                    <div className="group-control">
-                        <ControlField label="Group">
-                            <div className="group-dropdown header-filter-dropdown header-filter-dropdown--group" ref={(node) => { groupDropdownRefs.current[surface] = node; }}>
-                                <div
-                                    className={`group-dropdown-toggle ${showGroupDropdown ? 'open' : ''}`}
-                                    role={showGroupDropdown ? undefined : 'button'}
-                                    aria-label={showGroupDropdown ? undefined : 'Select group'}
-                                    tabIndex={showGroupDropdown ? undefined : (groupsLoading ? -1 : 0)}
-                                    onClick={() => {
-                                        if (showGroupDropdown) return;
-                                        if (groupsLoading) return;
-                                        applyExclusiveDropdownState('group', showGroupDropdown);
-                                    }}
-                                    onKeyDown={(event) => {
-                                        if (showGroupDropdown) return;
-                                        if (groupsLoading) return;
-                                        if (event.key === 'Enter' || event.key === ' ') {
-                                            event.preventDefault();
-                                            applyExclusiveDropdownState('group', showGroupDropdown);
-                                        }
-                                    }}
-                                    aria-disabled={groupsLoading}
-                                    data-onboarding-target="group"
-                                    data-onboarding-surface={surface}
-                                >
-                                    {showGroupDropdown ? (
-                                        <input
-                                            type="text"
-                                            className="dropdown-toggle-filter-input"
-                                            value={groupDropdownQuery}
-                                            onChange={(event) => setGroupDropdownQuery(event.target.value)}
-                                            onClick={(event) => event.stopPropagation()}
-                                            onKeyDown={(event) => {
-                                                event.stopPropagation();
-                                                if (event.key === 'Escape') {
-                                                    event.preventDefault();
-                                                    setShowGroupDropdown(false);
-                                                }
-                                            }}
-                                            placeholder={activeGroup?.name || 'Group'}
-                                            aria-label="Filter groups"
-                                            autoFocus={surface === activeControlSurface}
-                                        />
-                                    ) : (
-                                        <span>{activeGroup?.name || (groupsLoading ? 'Loading...' : 'Group')}</span>
-                                    )}
-                                    <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
-                                        <path d="M6 9L1 4h10z"/>
-                                    </svg>
-                                </div>
-                                {showGroupDropdown && surface === activeControlSurface && (
-                                    <div className="group-dropdown-panel">
-                                        {groupsLoading ? (
-                                            <div className="group-dropdown-option">Loading groups...</div>
-                                        ) : (visibleControlGroups || []).length === 0 ? (
-                                            <div className="group-dropdown-option">No groups yet</div>
-                                        ) : filteredControlGroups.length === 0 ? (
-                                            <div className="dropdown-filter-empty" role="status">No matching groups</div>
-                                        ) : (
-                                            filteredControlGroups.map(group => (
-                                                <div
-                                                    key={group.id}
-                                                    className="group-dropdown-option"
-                                                    onClick={() => {
-                                                        trackFilterChanged('group', { group_count_bucket: bucketCount(group?.teamIds?.length || 0), scope_type: currentDashboardView() });
-                                                        setActiveGroupId(group.id);
-                                                        setShowGroupDropdown(false);
-                                                    }}
-                                                >
-                                                    <span>{group.name}</span>
-                                                    <div className="group-option-tags">
-                                                        {(groupsConfig.source === 'workspace_db'
-                                                            ? groupPreferences.activeGroupId === group.id
-                                                            : groupsConfig.defaultGroupId === group.id) && (
-                                                            <span
-                                                                className="group-option-default"
-                                                                title={groupsConfig.source === 'workspace_db' ? 'My favorite group' : 'Default group'}
-                                                            >★</span>
-                                                        )}
-                                                        <span className="group-option-meta">
-                                                            {group.teamIds?.length || 0} teams
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                            ))
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-                        </ControlField>
-                    </div>
-                );
-            };
+            const renderGroupControl = (surface) => (
+                <GroupControl
+                    surface={surface}
+                    showGroupControl={showGroupControl}
+                    groupDropdownRefs={groupDropdownRefs}
+                    showGroupDropdown={showGroupDropdown}
+                    groupsLoading={groupsLoading}
+                    applyExclusiveDropdownState={applyExclusiveDropdownState}
+                    groupDropdownQuery={groupDropdownQuery}
+                    setGroupDropdownQuery={setGroupDropdownQuery}
+                    setShowGroupDropdown={setShowGroupDropdown}
+                    activeGroup={activeGroup}
+                    activeControlSurface={activeControlSurface}
+                    visibleControlGroups={visibleControlGroups}
+                    filteredControlGroups={filteredControlGroups}
+                    trackFilterChanged={trackFilterChanged}
+                    currentDashboardView={currentDashboardView}
+                    setActiveGroupId={setActiveGroupId}
+                    groupsConfig={groupsConfig}
+                    groupPreferences={groupPreferences}
+                />
+            );
 
             const renderTeamControl = (surface) => (
-                <ControlField label="Teams">
-                    <div className="team-dropdown header-filter-dropdown header-filter-dropdown--team" ref={(node) => { teamDropdownRefs.current[surface] = node; }}>
-                        <div
-                            className={`team-dropdown-toggle ${showTeamDropdown ? 'open' : ''} ${!isAllTeamsSelected ? 'active-filter applied-filter' : ''}`}
-                            role={showTeamDropdown ? undefined : 'button'}
-                            aria-label={showTeamDropdown ? undefined : 'Filter teams'}
-                            tabIndex={showTeamDropdown ? undefined : (tasks.length === 0 && loading ? -1 : 0)}
-                            onClick={() => {
-                                if (showTeamDropdown) return;
-                                if (tasks.length === 0 && loading) return;
-                                applyExclusiveDropdownState('team', showTeamDropdown);
-                            }}
-                            onKeyDown={(event) => {
-                                if (showTeamDropdown) return;
-                                if (tasks.length === 0 && loading) return;
-                                if (event.key === 'Enter' || event.key === ' ') {
-                                    event.preventDefault();
-                                    applyExclusiveDropdownState('team', showTeamDropdown);
-                                }
-                            }}
-                            aria-disabled={tasks.length === 0 && loading}
-                            data-onboarding-target="teams"
-                            data-onboarding-surface={surface}
-                        >
-                            {showTeamDropdown ? (
-                                <input
-                                    type="text"
-                                    className="dropdown-toggle-filter-input"
-                                    value={teamDropdownQuery}
-                                    onChange={(event) => setTeamDropdownQuery(event.target.value)}
-                                    onClick={(event) => event.stopPropagation()}
-                                    onKeyDown={(event) => {
-                                        event.stopPropagation();
-                                        if (event.key === 'Escape') {
-                                            event.preventDefault();
-                                            setShowTeamDropdown(false);
-                                        }
-                                    }}
-                                    placeholder={selectedTeamsLabel}
-                                    aria-label="Filter teams"
-                                    autoFocus={surface === activeControlSurface}
-                                />
-                            ) : (
-                                <span style={{flex: 1, display: 'grid', textAlign: 'left', minWidth: 0}}>
-                                    <span className="team-dropdown-selection-label" style={{gridArea: '1/1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>{selectedTeamsLabel}</span>
-                                    <span className="team-dropdown-width-label" style={{gridArea: '1/1', visibility: 'hidden', pointerEvents: 'none', whiteSpace: 'nowrap'}} aria-hidden="true">{longestTeamOptionLabel}</span>
-                                </span>
-                            )}
-                            <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
-                                <path d="M6 9L1 4h10z"/>
-                            </svg>
-                        </div>
-                        {showTeamDropdown && surface === activeControlSurface && (
-                            <div className="team-dropdown-panel">
-                                {filteredTeamOptions.length === 0 && teamDropdownQuery.trim() ? (
-                                    <div className="dropdown-filter-empty" role="status">No matching teams</div>
-                                ) : filteredTeamOptions.map(team => (
-                                    <label key={team.id} className="team-dropdown-option">
-                                        <input
-                                            type="checkbox"
-                                            checked={team.id === 'all' ? isAllTeamsSelected : selectedTeamSet.has(team.id)}
-                                            onChange={() => toggleTeamSelection(team.id)}
-                                        />
-                                        <span>{team.name}</span>
-                                    </label>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                </ControlField>
+                <TeamControl
+                    surface={surface}
+                    teamDropdownRefs={teamDropdownRefs}
+                    showTeamDropdown={showTeamDropdown}
+                    isAllTeamsSelected={isAllTeamsSelected}
+                    tasks={tasks}
+                    loading={loading}
+                    applyExclusiveDropdownState={applyExclusiveDropdownState}
+                    teamDropdownQuery={teamDropdownQuery}
+                    setTeamDropdownQuery={setTeamDropdownQuery}
+                    setShowTeamDropdown={setShowTeamDropdown}
+                    selectedTeamsLabel={selectedTeamsLabel}
+                    activeControlSurface={activeControlSurface}
+                    longestTeamOptionLabel={longestTeamOptionLabel}
+                    filteredTeamOptions={filteredTeamOptions}
+                    selectedTeamSet={selectedTeamSet}
+                    toggleTeamSelection={toggleTeamSelection}
+                />
             );
 
             const shouldRenderIssueDependencies = (selectedView === 'eng' || selectedView === 'epm') && showDependencies;
@@ -8200,8 +5816,8 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                     issue={{ key: row.key, status: row.status, summary: row.summary }} fallbackIssueType={row.rowKind === 'epic' ? 'Epic' : 'Story'}
                     statusLabel={row.status} statusClassName={getIssueStatusClassName(row.status)} sourceSurface="planning" isOpen={statusTransitionActiveKey === row.key}
                     options={transitionOptions} optionsLoading={transitionOptionsLoading} submitting={statusTransitionSubmitting || pendingStatusIssueKeys.has(row.key)}
-                    error={transitionError} errorCode={transitionErrorCode} result={transitionResult} actsOnSelection={false}
-                    onOpen={openSingleIssueStatusControl} onPrefetch={prefetchSingleIssueStatusOptions} onClose={closeSingleIssueStatusControl} onSubmit={(targetStatus) => handleSubmitStatusTransition(targetStatus, { key: row.key }, { singleIssue: true })} />;
+                    error={transitionError} errorCode={transitionErrorCode} result={transitionResult}
+                    onOpen={openSingleIssueStatusControl} onPrefetch={prefetchSingleIssueStatusOptions} onClose={closeSingleIssueStatusControl} onSubmit={(targetStatus) => handleSubmitStatusTransition(targetStatus, { key: row.key })} />;
                 if (field === 'priority') return <PriorityTransitionMenu
                     issue={{ key: row.key, priority: row.priority, summary: row.summary }} fallbackIssueType={row.rowKind === 'epic' ? 'Epic' : 'Story'}
                     priorityLabel={row.priority} currentPriorityLabel={row.priority} renderPriorityIcon={renderPriorityIcon}
@@ -8262,331 +5878,9 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 });
             };
 
-            const renderEpicBlock = (epicGroup) => {
-                        const epicInfo = epicGroup.epic;
-                        const epicTitle = epicInfo?.summary || epicGroup.parentSummary ||
-                            (epicGroup.key === 'NO_EPIC' ? 'No Epic Linked' : epicGroup.key);
-                        const epicTotalSp = epicGroup.storyPoints || 0;
-                        const epicStatus = typeof epicInfo?.status === 'string'
-                            ? epicInfo.status
-                            : epicInfo?.status?.name || '';
-                        const epicStatusClassName = epicStatus
-                            ? getIssueStatusClassName(epicStatus, 'epic-status-pill')
-                            : '';
-                        const effectivePriority = getEpicEffectivePriority(epicGroup);
-                        // The header icon shows the derived (most-urgent child) priority, but the
-                        // priority menu edits the Epic's OWN priority field; normalize it to a name
-                        // the same way epicStatus is handled above.
-                        const epicOwnPriority = typeof epicInfo?.priority === 'string'
-                            ? epicInfo.priority
-                            : epicInfo?.priority?.name || '';
-                        const projectTrackValue = epicInfo?.projectTrack || '';
-                        const projectTrackEmoji = getProjectTrackEmoji(projectTrackValue);
-                        const epicInteractionActive = statusTransitionActiveKey === epicGroup.key
-                            || priorityTransitionActiveKey === epicGroup.key
-                            || projectTrackTransitionActiveKey === epicGroup.key
-                            || issueFieldEdits.activeEditor?.issueKey === epicGroup.key;
-                        const renderEpicPersonEditor = (field, label, value) => {
-                            const editableEpic = issueFieldEditsEnabled && epicGroup.key !== 'NO_EPIC' && Boolean(epicInfo), active = editableEpic && issueFieldEdits.activeEditor?.issueKey === epicGroup.key && issueFieldEdits.activeEditor.field === field;
-                            const displayName = value?.displayName || (field === 'deliveryOwner' ? 'Not set' : 'Unassigned');
-                            if (!editableEpic) {
-                                return (
-                                    <EpicHeaderValueReadout value={displayName} suppressed={epicInteractionActive}>
-                                        {({ discoveryProps }) => (
-                                            <span {...discoveryProps} className="epic-full-value-trigger epic-assignee-value">
-                                                {displayName}
-                                            </span>
-                                        )}
-                                    </EpicHeaderValueReadout>
-                                );
-                            }
-                            return (
-                                <EpicHeaderValueReadout
-                                    value={displayName}
-                                    suppressed={epicInteractionActive}
-                                    measureSelector="[data-issue-person-editor-trigger]"
-                                    nativeSelector="[data-issue-person-editor-trigger]"
-                                >
-                                    {({ triggerRef, pointerProps, focusProps }) => (
-                                        <span ref={triggerRef} {...pointerProps} {...focusProps} className="epic-full-value-trigger epic-assignee-value">
-                                            <IssuePersonEditor issueKey={epicGroup.key} field={field} fieldLabel={label} currentValue={value} isOpen={active} metadata={active ? issueFieldEdits.metadata : null}
-                                                suggestions={active ? issueFieldEdits.suggestions : []} query={active ? issueFieldEdits.searchQuery : ''} loading={active && issueFieldEdits.status === 'loading'} searching={active && issueFieldEdits.searching}
-                                                submitting={active && ['queued', 'saving'].includes(issueFieldEdits.status)} pending={issueFieldEdits.pendingIssueKeys.has(epicGroup.key)} error={active ? issueFieldEdits.errorMessage : ''} statusMessage={active && issueFieldEdits.status === 'confirmed' ? 'Saved in Jira.' : active && issueFieldEdits.outcome?.status === 'observed' ? 'Current value loaded from Jira.' : ''} recoveryMode={active && issueFieldEdits.status === 'conflict' ? 'reload' : active && issueFieldEdits.status === 'unknown' ? 'check_jira' : ''} configurationChanged={active && issueFieldEdits.outcome?.configurationChanged === true} jiraUrl={jiraUrl}
-                                                onOpen={() => issueFieldEdits.openEditor({ issueKey: epicGroup.key, field, issueKind: 'epic', sourceSurface: statusTransitionSourceSurface })} onClose={issueFieldEdits.closeEditor} onSearch={issueFieldEdits.search} onSelect={issueFieldEdits.submit} onReload={issueFieldEdits.reload} onCheckJira={issueFieldEdits.checkJira} />
-                                        </span>
-                                    )}
-                                </EpicHeaderValueReadout>
-                            );
-                        };
-                        return (
-                            <div
-                                key={epicGroup.key}
-                                className={`epic-block ${epicGroup.hasNoChildStories ? 'epic-block-no-child-stories' : ''} ${excludedEpicSet.has(normalizeEpicKey(epicGroup.key)) ? 'epic-excluded' : ''} ${stickyEpicFocusKey === epicGroup.key ? 'epic-block-sticky-focus' : ''}`}
-                                data-onboarding-target="hierarchy-epic"
-                                data-epic-key={epicGroup.key}
-                                ref={(node) => {
-                                    if (!node) {
-                                        epicRefMap.current.delete(epicGroup.key);
-                                        return;
-                                    }
-                                    epicRefMap.current.set(epicGroup.key, node);
-                                }}
-                            >
-	                                <div className="epic-header">
-                                        <div className="epic-title">
-	                                        <div className="epic-title-row">
-                                            <span className="epic-icon" aria-hidden="true" title="EPIC">
-                                                <svg viewBox="0 0 16 16" fill="none">
-                                                    <path
-                                                        clipRule="evenodd"
-                                                        d="m10.271.050656c.2887.111871.479.38969.479.699344v4.63515l3.1471.62941c.2652.05303.4812.24469.5655.50161s.0238.53933-.1584.73914l-7.74997 8.49999c-.20863.2288-.53644.3059-.82517.194-.28874-.1118-.47905-.3896-.47905-.6993v-4.6351l-3.14708-.62947c-.26515-.05303-.48123-.24468-.56553-.5016-.08431-.25692-.02379-.53933.1584-.73915l7.75-8.499996c.20863-.2288201.53643-.305899.8252-.194028zm-6.57276 8.724134 3.05177.61036v3.92915l5.55179-6.08909-3.05179-.61036v-3.9291z"
-                                                        fill="#bf63f3"
-                                                        fillRule="evenodd"
-                                                    />
-                                                </svg>
-                                            </span>
-                                            {effectivePriority.name && (
-                                                (priorityTransitionEnabled && epicGroup.key !== 'NO_EPIC') ? (
-                                                    <PriorityTransitionMenu
-                                                        issue={{ key: epicGroup.key, priority: epicOwnPriority, summary: epicTitle }}
-                                                        fallbackIssueType="Epic"
-                                                        priorityLabel={effectivePriority.name}
-                                                        currentPriorityLabel={epicOwnPriority}
-                                                        renderPriorityIcon={renderPriorityIcon}
-                                                        isOpen={priorityTransitionActiveKey === epicGroup.key}
-                                                        options={priorityOptions}
-                                                        optionsLoading={priorityOptionsLoading}
-                                                        submitting={prioritySubmitting || pendingPriorityIssueKeys.has(epicGroup.key)}
-                                                        error={priorityError}
-                                                        result={priorityResult}
-                                                        onOpen={openPriorityControl}
-                                                        onClose={closePriorityControl}
-                                                        onSubmit={submitPriorityChange}
-                                                        previewOnly={onboardingPreviewSession}
-                                                        onPreviewLifecycleChange={handleOnboardingPreviewLifecycleChange}
-                                                    />
-                                                ) : (
-                                                    renderPriorityIcon(effectivePriority.name, epicGroup.key)
-                                                )
-                                            )}
-                                            {epicGroup.key !== 'NO_EPIC' && (
-                                                projectTrackTransitionEnabled ? (
-                                                    <ProjectTrackTransitionMenu
-                                                        epicKey={epicGroup.key}
-                                                        currentTrack={projectTrackValue}
-                                                        isOpen={projectTrackTransitionActiveKey === epicGroup.key}
-                                                        options={projectTrackOptions}
-                                                        optionsLoading={projectTrackOptionsLoading}
-                                                        submitting={projectTrackSubmitting || pendingProjectTrackIssueKeys.has(epicGroup.key)}
-                                                        error={projectTrackError}
-                                                        result={projectTrackResult}
-                                                        onOpen={openProjectTrackControl}
-                                                        onClose={closeProjectTrackControl}
-                                                        onSubmit={submitProjectTrackChange}
-                                                        previewOnly={onboardingPreviewSession}
-                                                        onPreviewLifecycleChange={handleOnboardingPreviewLifecycleChange}
-                                                    />
-                                                ) : (
-                                                    <span
-                                                        className="epic-track-indicator"
-                                                        title={`Project Track: ${getProjectTrackLabel(projectTrackValue)}`}
-                                                        aria-label={`Project Track: ${getProjectTrackLabel(projectTrackValue)}`}
-                                                    >
-                                                        {projectTrackEmoji}
-                                                    </span>
-                                                )
-                                            )}
-                                            {epicGroup.key !== 'NO_EPIC' ? (
-                                                <EpicHeaderValueReadout
-                                                    value={epicTitle}
-                                                    suppressed={epicInteractionActive}
-                                                    measureSelector=".epic-name"
-                                                >
-                                                    {({ triggerRef, describedBy, pointerProps, focusProps }) => (
-                                                        <a
-                                                            ref={triggerRef}
-                                                            className="epic-link epic-full-value-trigger"
-                                                            href={jiraUrl ? `${jiraUrl}/browse/${epicGroup.key}` : '#'}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            aria-label={epicTitle}
-                                                            aria-describedby={describedBy}
-                                                            {...pointerProps}
-                                                            {...focusProps}
-                                                        >
-                                                            <span className="epic-name">{epicTitle}</span>
-                                                            <span className="epic-key">{epicGroup.key}</span>
-                                                        </a>
-                                                    )}
-                                                </EpicHeaderValueReadout>
-                                            ) : (
-                                                <>
-                                                    <EpicHeaderValueReadout value={epicTitle} suppressed={epicInteractionActive}>
-                                                        {({ discoveryProps }) => (
-                                                            <span {...discoveryProps} className="epic-name epic-full-value-trigger">{epicTitle}</span>
-                                                        )}
-                                                    </EpicHeaderValueReadout>
-                                                    <span className="epic-key">Unassigned</span>
-                                                </>
-                                            )}
-                                            {(showStats || showPlanning) && (
-                                                <button
-                                                    className={`epic-stat-toggle ${excludedEpicSet.has(normalizeEpicKey(epicGroup.key)) ? '' : 'active'}`}
-                                                    onClick={() => toggleSharedGroupExcludedCapacityEpic(epicGroup.key)}
-                                                    disabled={!canToggleSharedGroupExcludedCapacity}
-                                                    title={!canEditSharedConfiguration
-                                                        ? 'You do not have permission to edit shared group capacity settings'
-                                                        : (showGroupManage && isGroupDraftDirty)
-                                                            ? 'Save or discard open Department settings changes before changing excluded capacity'
-                                                            : 'Include/exclude this epic in shared group capacity and reporting'}
-                                                >
-                                                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                                        <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" />
-                                                        <path d="M12 6v6l4 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                                                    </svg>
-                                                    {excludedEpicSet.has(normalizeEpicKey(epicGroup.key)) ? 'Excluded' : 'Included'}
-                                                </button>
-                                            )}
-                                        </div>
-	                                    </div>
-	                                    <div className="epic-meta">
-                                            {epicStatus && (
-                                                <EpicHeaderValueReadout
-                                                    value={epicStatus}
-                                                    suppressed={epicInteractionActive}
-                                                    measureSelector=".status-pill"
-                                                    nativeSelector={statusTransitionEnabled && epicGroup.key !== 'NO_EPIC' ? '.status-pill' : ''}
-                                                >
-                                                    {statusTransitionEnabled && epicGroup.key !== 'NO_EPIC' ? (
-                                                        ({ triggerRef, pointerProps, focusProps }) => (
-                                                            <span ref={triggerRef} {...pointerProps} {...focusProps} className="epic-full-value-trigger epic-status-readout-target">
-                                                                <StatusTransitionMenu
-                                                                    issue={{ key: epicGroup.key, status: epicStatus, summary: epicTitle }}
-                                                                    fallbackIssueType="Epic"
-                                                                    statusLabel={epicStatus}
-                                                                    statusClassName={epicStatusClassName}
-                                                                    sourceSurface={statusTransitionSourceSurface}
-                                                                    isOpen={statusTransitionActiveKey === epicGroup.key}
-                                                                    options={transitionOptions}
-                                                                    optionsLoading={transitionOptionsLoading}
-                                                                    submitting={statusTransitionSubmitting || pendingStatusIssueKeys.has(epicGroup.key)}
-                                                                    error={transitionError}
-                                                                    errorCode={transitionErrorCode}
-                                                                    result={transitionResult}
-                                                                    onOpen={openSingleIssueStatusControl} onPrefetch={prefetchSingleIssueStatusOptions}
-                                                                    onClose={closeSingleIssueStatusControl}
-                                                                    onSubmit={(targetStatus) => handleSubmitStatusTransition(targetStatus, { key: epicGroup.key }, { singleIssue: true })}
-                                                                    previewOnly={onboardingPreviewSession}
-                                                                    onPreviewLifecycleChange={handleOnboardingPreviewLifecycleChange}
-                                                                />
-                                                            </span>
-                                                        )
-                                                    ) : (
-                                                        ({ triggerRef, truncated, describedBy, pointerProps, focusProps }) => (
-                                                            <span
-                                                                ref={triggerRef}
-                                                                {...pointerProps}
-                                                                {...focusProps}
-                                                                className="epic-full-value-trigger epic-status-readout-target"
-                                                                tabIndex={truncated ? 0 : undefined}
-                                                                aria-label={epicStatus}
-                                                                aria-describedby={describedBy}
-                                                            >
-                                                                <StatusPill
-                                                                    className={`${epicStatusClassName} epic-status-value`}
-                                                                    label={epicStatus}
-                                                                    status={epicStatus}
-                                                                />
-                                                            </span>
-                                                        )
-                                                    )}
-                                                </EpicHeaderValueReadout>
-                                            )}
-	                                        <span className="epic-story-points">SP: {epicTotalSp.toFixed(1)}</span>
-	                                        {(epicInfo?.assignee?.displayName || (issueFieldEditsEnabled && epicGroup.key !== 'NO_EPIC' && epicInfo)) && (
-	                                            <span className="task-assignee epic-assignee">
-	                                                <span className="task-assignee-icon" aria-hidden="true">
-	                                                    <svg viewBox="0 0 24 24" fill="none">
-	                                                        <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4z" stroke="currentColor" strokeWidth="2" />
-	                                                        <path d="M4 20c0-3.31 3.58-6 8-6s8 2.69 8 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-	                                                    </svg>
-	                                                </span>
-	                                                {renderEpicPersonEditor('assignee', 'Assignee', epicInfo?.assignee)}
-	                                            </span>
-	                                        )}
-	                                    </div>
-                                    {isEpicRefreshMode && epicGroup.key !== 'NO_EPIC' && (
-                                        <EpicRefreshButton epicKey={epicGroup.key} epicName={epicTitle} state={epicRefresh.epicStates[epicGroup.key] || 'idle'} onRefresh={epicRefresh.refreshEpic} />
-                                    )}
-	                                </div>
-                                {(epicGroup.rows || epicGroup.tasks.map(task => ({ kind: 'story', id: task.key, task }))).map(row => {
-                                    if (row.kind === 'story_requirement') {
-                                        return (
-                                            <StoryRequirementCard
-                                                key={row.id}
-                                                requirement={row}
-                                                jiraUrl={jiraUrl}
-                                                sourceSurface={showPlanning ? 'planning' : 'catch_up'}
-                                            />
-                                        );
-                                    }
-                                    const task = row.task;
-                                    const teamInfo = getTeamInfo(task);
-                                    const teamLabel = getIssueTeamLabel(teamInfo);
-                                    const statusClassName = getIssueStatusClassName(task.fields.status?.name);
-                                    return (
-                                        <IssueCard
-                                            key={task.key}
-                                            task={task}
-                                            jiraUrl={jiraUrl}
-                                            teamInfo={teamInfo}
-                                            teamLabel={teamLabel}
-                                            statusClassName={statusClassName}
-                                            renderPriorityIcon={renderPriorityIcon}
-                                            showPlanning={showPlanning}
-                                            isSelected={!!selectedTasks[task.key]}
-                                            onToggleSelection={toggleTaskSelection}
-                                            onRemove={removeTask}
-                                            isLeaving={epicRefresh.leavingKeys.has(task.key)}
-                                            shouldRenderIssueDependencies={shouldRenderIssueDependencies}
-                                            dependencyContext={issueDependencyContext}
-                                            subtaskState={storySubtasksByKey[task.key] || null}
-                                            onToggleSubtasks={toggleStorySubtasks}
-                                            onRetrySubtasks={retryStorySubtasks}
-                                            statusTransitionEnabled={statusTransitionEnabled}
-                                            statusTransitionSourceSurface={statusTransitionSourceSurface}
-                                            statusTransitionActiveKey={statusTransitionActiveKey}
-                                            statusTransitionOptions={transitionOptions}
-                                            statusTransitionOptionsLoading={transitionOptionsLoading}
-                                            statusTransitionSubmitting={statusTransitionSubmitting}
-                                            statusTransitionError={transitionError}
-                                            statusTransitionErrorCode={transitionErrorCode}
-                                            statusTransitionResult={transitionResult}
-                                            statusTransitionTargetsCount={statusTransitionTargetsCount}
-                                            statusTransitionPendingIssueKeys={pendingStatusIssueKeys}
-                                            onOpenStatusTransition={openSingleIssueStatusControl} onPrefetchStatusTransition={prefetchSingleIssueStatusOptions}
-                                            onCloseStatusTransition={closeSingleIssueStatusControl}
-                                            onSubmitStatusTransition={handleSubmitStatusTransition}
-                                            priorityTransitionEnabled={priorityTransitionEnabled}
-                                            priorityTransitionActiveKey={priorityTransitionActiveKey}
-                                            priorityTransitionOptions={priorityOptions}
-                                            priorityTransitionOptionsLoading={priorityOptionsLoading}
-                                            priorityTransitionSubmitting={prioritySubmitting}
-                                            priorityTransitionError={priorityError}
-                                            priorityTransitionResult={priorityResult}
-                                            priorityTransitionPendingIssueKeys={pendingPriorityIssueKeys}
-                                            onOpenPriorityTransition={openPriorityControl}
-                                            onClosePriorityTransition={closePriorityControl}
-                                            onSubmitPriorityTransition={submitPriorityChange}
-                                            onboardingPreviewSession={onboardingPreviewSession}
-                                            onPreviewLifecycleChange={handleOnboardingPreviewLifecycleChange}
-                                            issueFieldEdits={issueFieldEditsEnabled ? issueFieldEdits : null}
-                                        />
-                                    );
-                                })}
-                            </div>
-                        );
-            };
+            const renderEpicBlock = (epicGroup) => (
+                <EpicBlock key={epicGroup.key} epicGroup={epicGroup} {...epicBlockProps} />
+            );
 
             const settingsHeaderAction = onboardingAvailable
                 && groupPreferences.onboardingRequired === false
@@ -8641,9 +5935,7 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                     // A review that is loading or saving is already current (the old Refresh review button was disabled then too).
                     if (planningLayout === 'table' && !planningReview.loading && !planningReview.saving) void planningReview.refresh();
                 }
-                burnoutCacheRef.current = {};
-                cohortCacheRef.current = {};
-                excludedCapacityCacheRef.current = {};
+                resetStatsTransientRefs({ burnoutCacheRef, cohortCacheRef, excludedCapacityCacheRef });
                 loadSprints(true, { queueIfBusy: true });
                 if (isStatsSourceOnlyStatsView) {
                     excludedCapacityForceRefreshRef.current = true;
@@ -8705,7 +5997,7 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                 getViewport: () => ({ top: epicStickyTop + (document.querySelector('.epic-block .epic-header')?.offsetHeight || 0), bottom: window.innerHeight }),
                 priorityOrder,
                 clearAggregateSources: () => {
-                    burnoutCacheRef.current = {}; cohortCacheRef.current = {}; excludedCapacityCacheRef.current = {};
+                    resetStatsTransientRefs({ burnoutCacheRef, cohortCacheRef, excludedCapacityCacheRef });
                     setBurnoutData(null); setCohortData(null); setExcludedCapacityData(null);
                 },
                 afterApply: (update) => {
@@ -8813,8 +6105,6 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                             onOpenSelectedInJira={openSelectedInJira}
                             planningLayout={planningLayout}
                             onTogglePlanningLayout={() => { const next = planningLayout === 'table' ? 'list' : 'table'; setPlanningLayout(next); trackPlanningReviewAction(`layout_${next}`); }}
-                            statusTransitionTargetsCount={statusTransitionTargetsCount}
-                            statusTransitionSubmitting={statusTransitionSubmitting}
                             statusTransitionError={transitionError}
                             statusTransitionErrorCode={transitionErrorCode}
                             statusTransitionResult={transitionResult}
@@ -8856,7 +6146,74 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                             adHocProductSP={selectedAdHocProductSP}
                         />}
                     />
-            ); return (
+            );
+            const epicBlockProps = {
+                statusTransitionActiveKey,
+                priorityTransitionActiveKey,
+                projectTrackTransitionActiveKey,
+                issueFieldEdits,
+                issueFieldEditsEnabled,
+                jiraUrl,
+                statusTransitionSourceSurface,
+                excludedEpicSet,
+                normalizeEpicKey,
+                stickyEpicFocusKey,
+                epicRefMap,
+                priorityTransitionEnabled,
+                renderPriorityIcon,
+                priorityOptions,
+                priorityOptionsLoading,
+                prioritySubmitting,
+                pendingPriorityIssueKeys,
+                priorityError,
+                priorityResult,
+                openPriorityControl,
+                closePriorityControl,
+                submitPriorityChange,
+                onboardingPreviewSession,
+                handleOnboardingPreviewLifecycleChange,
+                projectTrackTransitionEnabled,
+                projectTrackOptions,
+                projectTrackOptionsLoading,
+                projectTrackSubmitting,
+                pendingProjectTrackIssueKeys,
+                projectTrackError,
+                projectTrackResult,
+                openProjectTrackControl,
+                closeProjectTrackControl,
+                submitProjectTrackChange,
+                showStats,
+                showPlanning,
+                toggleSharedGroupExcludedCapacityEpic,
+                canToggleSharedGroupExcludedCapacity,
+                canEditSharedConfiguration,
+                showGroupManage,
+                isGroupDraftDirty,
+                statusTransitionEnabled,
+                transitionOptions,
+                transitionOptionsLoading,
+                statusTransitionSubmitting,
+                pendingStatusIssueKeys,
+                transitionError,
+                transitionErrorCode,
+                transitionResult,
+                openSingleIssueStatusControl,
+                prefetchSingleIssueStatusOptions,
+                closeSingleIssueStatusControl,
+                handleSubmitStatusTransition,
+                isEpicRefreshMode,
+                epicRefresh,
+                getTeamInfo,
+                selectedTasks,
+                toggleTaskSelection,
+                removeTask,
+                shouldRenderIssueDependencies,
+                issueDependencyContext,
+                storySubtasksByKey,
+                toggleStorySubtasks,
+                retryStorySubtasks
+            };
+            return (
                 <StatusColourProvider columns={activeGroup?.board?.columns} enabled={selectedView === 'eng' && activeGroup?.board?.inheritColumnColours === true}>
                 <div className="container" style={containerStyle}>
                     <PlanningReviewScopeDialog review={planningReview} />
@@ -9434,765 +6791,145 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                     )}
 
                     {selectedView === 'eng' && showStats && engWorkspaceConfigured && (
-                    <div className={`stats-panel ${showStats ? 'open' : ''}`}>
-                        {showStats && !canRenderStatsPanel && (
-                            <div className="stats-note">Load stats for the selected sprint.</div>
-                        )}
-                        {canRenderStatsPanel && (
-                            <>
-                                <SegmentedControl
-                                    className="eng-mode-control stats-view-toggle"
-                                    ariaLabel="Statistics view" containerProps={{ 'data-onboarding-target': 'statistics-overview', tabIndex: -1 }}
-                                    value={statsView}
-                                    onChange={(nextView) => {
-                                        trackStatsAction('stats_action', nextView, { workflow_action: 'view_change' });
-                                        setStatsView(nextView);
-                                    }}
-                                    options={[
-                                        { value: 'teams', label: 'Teams' },
-                                        { value: 'priority', label: 'Priority' },
-                                        { value: 'burnout', label: 'Burndown' },
-                                        { value: 'cohort', label: 'Lead Times' },
-                                        { value: 'excludedCapacity', label: 'Excluded Capacity' },
-                                        { value: 'monoCrossShare', label: 'Mono vs Cross' },
-                                        { value: 'projectTrack', label: 'Project Track' }
-                                    ]}
-                                />
-
-                                {statsView !== 'cohort' && statsView !== 'excludedCapacity' && statsView !== 'monoCrossShare' && statsView !== 'projectTrack' && (
-                                    <StatsDeliverySummary
-                                        statsGraphMode={statsGraphMode}
-                                        setStatsGraphMode={setStatsGraphMode}
-                                        statsTotals={statsTotals}
-                                        computeRate={computeRate}
-                                        formatPercent={formatPercent}
-                                    />
-                                )}
-
-                                <StatsTeamsView
-                                    open={statsView === 'teams'}
-                                    statsTeamRows={statsTeamRows}
-                                    statsBarColumns={statsBarColumns}
-                                    statsGraphMode={statsGraphMode}
-                                    buildStatLink={buildStatLink}
-                                    computeRate={computeRate}
-                                    formatPercent={formatPercent}
-                                    getRateClass={getRateClass}
-                                />
-
-                                <StatsPriorityView
-                                    open={statsView === 'priority'}
-                                    priorityAxis={priorityAxis}
-                                    priorityHoverIndex={priorityHoverIndex}
-                                    setPriorityHoverIndex={setPriorityHoverIndex}
-                                    priorityRadar={priorityRadar}
-                                    priorityRows={priorityRows}
-                                    buildRadarPoints={buildRadarPoints}
-                                    buildPriorityStatLink={buildPriorityStatLink}
-                                    formatPercent={formatPercent}
-                                    resolveTeamColor={resolveStatsTeamColor}
-                                />
-
-                                <BurnoutChart
-                                    open={statsView === 'burnout'}
-                                    burnoutAssigneeFilter={burnoutAssigneeFilter}
-                                    setBurnoutAssigneeFilter={setBurnoutAssigneeFilter}
-                                    burnoutAssigneeOptions={burnoutAssigneeOptions}
-                                    burndownMetric={burndownMetric}
-                                    setBurndownMetric={setBurndownMetric}
-                                    burndownMetricIsStoryPoints={burndownMetricIsStoryPoints}
-                                    burnoutTotals={burnoutTotals}
-                                    burnoutLoading={burnoutLoading}
-                                    burnoutError={burnoutError}
-                                    burnoutChartModel={burnoutChartModel}
-                                    burnoutChartRef={burnoutChartRef}
-                                    burnoutHoverPoint={burnoutHoverPoint}
-                                    setBurnoutHoverPoint={setBurnoutHoverPoint}
-                                    burnoutHoverTeamKey={burnoutHoverTeamKey}
-                                    setBurnoutHoverTeamKey={setBurnoutHoverTeamKey}
-                                    burnoutTaskFilter={burnoutTaskFilter}
-                                    setBurnoutTaskFilter={setBurnoutTaskFilter}
-                                    formatBurndownValue={formatBurndownValue}
-                                    resolveBurnoutPointer={resolveBurnoutPointer}
-                                    buildBurnoutTaskFilter={buildBurnoutTaskFilter}
-                                    onAnalyticsAction={trackStatsAnalyticsAction}
-                                />
-                                <div className={`stats-view ${statsView === 'excludedCapacity' ? 'open' : ''}`}>
-                                    <div className="stats-controls excluded-capacity-controls excluded-capacity-filter-controls">
-                                        <StatsRangeControl
-                                            idPrefix="excluded-capacity-sprint"
-                                            kindLabel="Sprint"
-                                            options={excludedCapacitySprintOptions.map((sprint) => ({ value: String(sprint.id), label: sprint.name || String(sprint.id) }))}
-                                            startValue={excludedCapacityStartSprintId}
-                                            endValue={excludedCapacityEndSprintId}
-                                            onStartChange={setExcludedCapacityStartSprintId}
-                                            onEndChange={setExcludedCapacityEndSprintId}
-                                            active={statsView === 'excludedCapacity'}
-                                        />
-                                        <div className="stats-control-group excluded-capacity-epic-filter" ref={excludedCapacityEpicDropdownRef}>
-                                            <label>Excluded Epics</label>
-                                            <div className="team-dropdown excluded-capacity-epic-dropdown">
-                                                <button
-                                                    type="button"
-                                                    className={`team-dropdown-toggle ${excludedCapacityEpicDropdownOpen ? 'open' : ''}`}
-                                                    onClick={() => setExcludedCapacityEpicDropdownOpen(prev => !prev)}
-                                                    aria-haspopup="listbox"
-                                                    aria-expanded={excludedCapacityEpicDropdownOpen}
-                                                >
-                                                    <span>{excludedCapacityFilterLabel}</span>
-                                                    <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
-                                                        <path d="M6 9L1 4h10z" />
-                                                    </svg>
-                                                </button>
-                                                {excludedCapacityEpicDropdownOpen && (
-                                                    <div className="team-dropdown-panel excluded-capacity-epic-panel" role="listbox" aria-multiselectable="true">
-                                                        <div className="sprint-dropdown-list">
-                                                            <div
-                                                                className="sprint-dropdown-option"
-                                                                role="button"
-                                                                tabIndex={0}
-                                                                onClick={selectAllExcludedCapacityEpics}
-                                                            >
-                                                                All configured
-                                                            </div>
-                                                            <div
-                                                                className="sprint-dropdown-option"
-                                                                role="button"
-                                                                tabIndex={0}
-                                                                onClick={clearExcludedCapacityEpicSelection}
-                                                            >
-                                                                Clear
-                                                            </div>
-                                                        </div>
-                                                        {excludedCapacityEpicCatalog.length === 0 ? (
-                                                            <div className="sprint-dropdown-option">No excluded epics configured.</div>
-                                                        ) : (
-                                                            excludedCapacityEpicCatalog.map((entry) => {
-                                                                const checked = excludedCapacityEffectiveFilters.includes(entry.key);
-                                                                const primary = entry.summary || entry.key;
-                                                                return (
-                                                                    <label
-                                                                        key={entry.key}
-                                                                        className="team-dropdown-option"
-                                                                        role="option"
-                                                                        aria-selected={checked}
-                                                                    >
-                                                                        <input
-                                                                            type="checkbox"
-                                                                            checked={checked}
-                                                                            onChange={() => toggleExcludedCapacityEpicKey(entry.key)}
-                                                                        />
-                                                                        <span>
-                                                                            {primary}
-                                                                            <span className="component-result-meta"> · {entry.key}</span>
-                                                                        </span>
-                                                                    </label>
-                                                                );
-                                                            })
-                                                        )}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                        <div className="excluded-capacity-actions">
-                                            <SegmentedControl
-                                                ariaLabel="Series mode"
-                                                value={excludedCapacityChartMode}
-                                                onChange={(nextMode) => {
-                                                    trackStatsAnalyticsAction('chart_action', {
-                                                        workflow_action: 'mode_change',
-                                                        chart_id: 'excluded_capacity',
-                                                        series_type: analyticsToken(nextMode)
-                                                    });
-                                                    setExcludedCapacityChartMode(nextMode);
-                                                }}
-                                                options={[
-                                                    { value: 'teams', label: 'Teams' },
-                                                    { value: 'group', label: 'Group' }
-                                                ]}
-                                            />
-                                            <SegmentedControl
-                                                ariaLabel="Metric"
-                                                value={excludedCapacityMetric}
-                                                onChange={(nextMetric) => {
-                                                    trackStatsAnalyticsAction('stats_action', {
-                                                        workflow_action: 'metric_change',
-                                                        metric: nextMetric === 'storyPoints' ? 'story_points' : 'percent'
-                                                    });
-                                                    setExcludedCapacityMetric(nextMetric);
-                                                }}
-                                                options={[
-                                                    { value: 'percent', label: 'Percentage' },
-                                                    { value: 'storyPoints', label: 'Story Points' }
-                                                ]}
-                                            />
-                                        </div>
-                                    </div>
-
-                                    <div className="stats-summary excluded-capacity-summary">
-                                        <div className="stats-card">
-                                            <h4>Excluded SP</h4>
-                                            <div className="stat-value">{formatExcludedPoints(effortSplitTotals.excludedCapacityPoints)}</div>
-                                            <div className="stats-note">Out of {formatExcludedPoints(effortSplitTotals.totalPoints)} scoped SP</div>
-                                        </div>
-                                        <div className="stats-card">
-                                            <h4>Excluded Share</h4>
-                                            <div className="stat-value">{formatPercent(effortSplitTotals.excludedCapacityPercent)}</div>
-                                            <div className="stats-note">Approximate, story-point based</div>
-                                        </div>
-                                        <div className="stats-card">
-                                            <h4>Ad Hoc Share</h4>
-                                            <div className="stat-value">{formatPercent(effortSplitTotals.adHocPercent)}</div>
-                                            <div className="stats-note">Included in Product capacity</div>
-                                        </div>
-                                        <div className="stats-card">
-                                            <h4>Product total</h4>
-                                            <div className="stat-value">{formatPercent(effortSplitTotals.productTotalPercent)}</div>
-                                            <div className="stats-note">Product including Ad Hoc</div>
-                                        </div>
-                                        <div className="stats-card">
-                                            <h4>Tech Share</h4>
-                                            <div className="stat-value">{formatPercent(effortSplitTotals.techPercent)}</div>
-                                            <div className="stats-note">Approximate, story-point based</div>
-                                        </div>
-                                    </div>
-
-                                    {excludedCapacityLoading && (
-                                        <div className="stats-note">
-                                            Loading excluded capacity analytics{excludedCapacityData?.meta?.totalSprintCount ? ` (${excludedCapacityData?.meta?.loadedSprintCount || 0}/${excludedCapacityData.meta.totalSprintCount} sprints)` : '...'}
-                                        </div>
-                                    )}
-                                    {excludedCapacityError && effortSplitTotals.totalPoints === 0 && (
-                                        <div className="stats-note cohort-error">{excludedCapacityError}</div>
-                                    )}
-                                    {!excludedCapacityError && excludedCapacityWarnings.length > 0 && (
-                                        <div className="cohort-warnings">
-                                            {excludedCapacityWarnings.map((warning, index) => (
-                                                <div key={`${warning}-${index}`}>- {warning}</div>
-                                            ))}
-                                        </div>
-                                    )}
-                                    {!excludedCapacityLoading && !excludedCapacityError && effortSplitTotals.totalPoints === 0 && (
-                                        <div className="cohort-empty">No capacity-mix stories found in the selected sprint range.</div>
-                                    )}
-                                    {!excludedCapacityError && effortSplitTotals.totalPoints > 0 && (
-                                        <div className="excluded-capacity-panel">
-                                            <div className="cohort-section cohort-section-fullbleed">
-                                                <div className="cohort-section-title">Effort Split</div>
-                                                <div className="cohort-section-subtitle">
-                                                    Selected sprint-range story points by Excluded Capacity, Ad Hoc, Product, and Tech.
-                                                </div>
-                                                <div className="cohort-section-subtitle">
-                                                    Sprint range: {effortSplitSprintLabel}
-                                                </div>
-                                                <EffortTypeSplitChart
-                                                    rows={effortSplitRows}
-                                                    metric={excludedCapacityMetric}
-                                                    visibleBuckets={effortSplitVisibleBuckets}
-                                                    onToggleBucket={toggleEffortSplitBucket}
-                                                    onAnalyticsAction={trackStatsAnalyticsAction}
-                                                    formatExcludedPoints={formatExcludedPoints}
-                                                    formatPercent={formatPercent}
-                                                />
-                                            </div>
-                                            <div className="cohort-section cohort-section-fullbleed">
-                                                <div className="cohort-section-title">Excluded Capacity by Team and Sprint</div>
-                                                {excludedCapacityEpicOptions.length === 0 ? (
-                                                    <div className="cohort-empty excluded-capacity-line-empty">
-                                                        No excluded capacity epics are configured for this team group. This chart tracks excluded capacity only; Ad Hoc is reported in the Effort Split above.
-                                                    </div>
-                                                ) : excludedCapacityRows.length === 0 ? (
-                                                    <div className="cohort-empty excluded-capacity-line-empty">
-                                                        No excluded capacity stories found in the selected sprint range.
-                                                    </div>
-                                                ) : (
-                                                    <ExcludedCapacityLineChart
-                                                        series={excludedCapacityLineSeries.series}
-                                                        sprints={excludedCapacityLineSeries.sprints}
-                                                        metric={excludedCapacityMetric}
-                                                        mode={excludedCapacityLineSeries.mode}
-                                                        isolatedSeriesId={excludedCapacityIsolatedTeam}
-                                                        onSelectSeries={setExcludedCapacityIsolatedTeam}
-                                                        onAnalyticsAction={trackStatsAnalyticsAction}
-                                                        resolveTeamColor={resolveStatsTeamColor}
-                                                        formatExcludedPoints={formatExcludedPoints}
-                                                        formatPercent={formatPercent}
-                                                    />
-                                                )}
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-
-                                <div className={`stats-view ${statsView === 'monoCrossShare' ? 'open' : ''}`}>
-                                    <div className="stats-controls excluded-capacity-controls">
-                                        <StatsRangeControl
-                                            idPrefix="mono-cross-sprint"
-                                            kindLabel="Sprint"
-                                            options={excludedCapacitySprintOptions.map((sprint) => ({ value: String(sprint.id), label: sprint.name || String(sprint.id) }))}
-                                            startValue={excludedCapacityStartSprintId}
-                                            endValue={excludedCapacityEndSprintId}
-                                            onStartChange={setExcludedCapacityStartSprintId}
-                                            onEndChange={setExcludedCapacityEndSprintId}
-                                            active={statsView === 'monoCrossShare'}
-                                        />
-                                    </div>
-
-                                    <div className="stats-summary excluded-capacity-summary">
-                                        <div className="stats-card">
-                                            <h4>Range</h4>
-                                            <div className="stat-value">{excludedCapacitySprintRange.length}</div>
-                                            <div className="stats-note">Selected Jira sprints</div>
-                                        </div>
-                                        <div className="stats-card">
-                                            <h4>Cross Epic SP</h4>
-                                            <div className="stat-value">{formatExcludedPoints(excludedCapacityModeOverall.crossPoints)}</div>
-                                            <div className="stats-note">In multi-team epic/sprint buckets</div>
-                                        </div>
-                                        <div className="stats-card">
-                                            <h4>Total SP</h4>
-                                            <div className="stat-value">{formatExcludedPoints(excludedCapacityModeOverall.sharedPoints)}</div>
-                                            <div className="stats-note">Total scoped epic/sprint SP</div>
-                                        </div>
-                                        <div className="stats-card">
-                                            <h4>Cross Share</h4>
-                                            <div className="stat-value">{formatPercent(excludedCapacityModeOverall.crossPercent)}</div>
-                                            <div className="stats-note">Cross SP / total SP</div>
-                                        </div>
-                                    </div>
-
-                                    {excludedCapacityLoading && (
-                                        <div className="stats-note">
-                                            Loading mono vs cross share{excludedCapacityData?.meta?.totalSprintCount ? ` (${excludedCapacityData?.meta?.loadedSprintCount || 0}/${excludedCapacityData.meta.totalSprintCount} sprints)` : '...'}
-                                        </div>
-                                    )}
-                                    {excludedCapacityError && excludedCapacityModeOverall.totalPoints === 0 && (
-                                        <div className="stats-note cohort-error">{excludedCapacityError}</div>
-                                    )}
-                                    {!excludedCapacityLoading && !excludedCapacityError && excludedCapacityModeOverall.totalPoints === 0 && (
-                                        <div className="cohort-empty">No epic share available for the current selection.</div>
-                                    )}
-                                    {!excludedCapacityError && excludedCapacityModeOverall.totalPoints > 0 && (
-                                        <div className="excluded-capacity-panel">
-                                            <div className="cohort-section">
-                                                <div className="cohort-section-title">Cross-Team Epic Footprint</div>
-                                                <div className="cohort-section-subtitle">
-                                                    Cross = an epic has stories from more than one team in the same sprint.
-                                                </div>
-                                                <div className="epic-mode-bars" role="img" aria-label="Cross-team epic share by sprint">
-                                                    {[
-                                                        { ...excludedCapacityModeOverall, sprintName: 'Total', sprintId: 'overall' },
-                                                        ...excludedCapacityModeSprintRows
-                                                    ].map(row => (
-                                                        <div className="epic-mode-row" key={row.sprintId || row.sprintName}>
-                                                            <div className="epic-mode-label">{row.sprintName}</div>
-                                                            <div className="epic-mode-track">
-                                                                <div
-                                                                    className="epic-mode-fill cross"
-                                                                    style={{ width: `${Math.max(0, Math.min(100, row.crossPercent * 100))}%` }}
-                                                                    title={`${row.sprintName}: ${formatExcludedPoints(row.crossPoints)} cross SP of ${formatExcludedPoints(row.sharedPoints)} total SP`}
-                                                                />
-                                                            </div>
-                                                            <div className="epic-mode-values">
-                                                                <span>{formatExcludedPoints(row.crossPoints)} cross</span>
-                                                                <span>{formatExcludedPoints(row.sharedPoints)} total</span>
-                                                                <span>{formatPercent(row.crossPercent)}</span>
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-
-                                            <div className="cohort-section">
-                                                <div className="cohort-section-title">Team Cross Share</div>
-                                                <div className="cohort-section-subtitle">
-                                                    Percentage = team cross SP / total team story points in each sprint.
-                                                </div>
-                                                <ExcludedCapacityLineChart
-                                                    series={excludedCapacityModeTeamLineSeries.series}
-                                                    sprints={excludedCapacityModeTeamLineSeries.sprints}
-                                                    metric="percent"
-                                                    mode="teams"
-                                                    isolatedSeriesId={excludedCapacityIsolatedTeam}
-                                                    onSelectSeries={setExcludedCapacityIsolatedTeam}
-                                                    onAnalyticsAction={trackStatsAnalyticsAction}
-                                                    resolveTeamColor={resolveStatsTeamColor}
-                                                    formatExcludedPoints={formatExcludedPoints}
-                                                    formatPercent={formatPercent}
-                                                    ariaLabel="Team cross share per sprint"
-                                                />
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-
-                                <div className={`stats-view ${statsView === 'projectTrack' ? 'open' : ''}`}>
-                                    <div className="stats-controls project-track-controls">
-                                        <StatsRangeControl
-                                            idPrefix="project-track-sprint"
-                                            kindLabel="Sprint"
-                                            options={excludedCapacitySprintOptions.map((sprint) => ({ value: String(sprint.id), label: sprint.name || String(sprint.id) }))}
-                                            startValue={excludedCapacityStartSprintId}
-                                            endValue={excludedCapacityEndSprintId}
-                                            onStartChange={setExcludedCapacityStartSprintId}
-                                            onEndChange={setExcludedCapacityEndSprintId}
-                                            active={statsView === 'projectTrack'}
-                                        />
-                                        <div className="stats-control-group">
-                                            <label>Capacity side</label>
-                                            <SegmentedControl
-                                                className="eng-mode-control"
-                                                ariaLabel="Capacity side"
-                                                value={projectTrackCapacitySide}
-                                                onChange={(nextSide) => {
-                                                    trackStatsAnalyticsAction('chart_action', {
-                                                        workflow_action: 'capacity_side_change',
-                                                        chart_id: 'project_track',
-                                                        capacity_side: analyticsToken(nextSide)
-                                                    });
-                                                    setProjectTrackCapacitySide(nextSide);
-                                                }}
-                                                options={[
-                                                    { value: 'product', label: 'Product' },
-                                                    { value: 'tech', label: 'Tech' },
-                                                    { value: 'both', label: 'Tech + Product' }
-                                                ]}
-                                            />
-                                        </div>
-                                        <div className="stats-control-group project-track-exclusions">
-                                            <label>Exclusions</label>
-                                            <label className="project-track-checkbox">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={projectTrackExcludeAdHoc}
-                                                    onChange={(event) => {
-                                                        const checked = event.target.checked;
-                                                        trackStatsAnalyticsAction('filter_changed', {
-                                                            filter_type: 'exclude_ad_hoc',
-                                                            chart_id: 'project_track',
-                                                            value_state: checked ? 'on' : 'off'
-                                                        });
-                                                        setProjectTrackExcludeAdHoc(checked);
-                                                    }}
-                                                />
-                                                <span>Exclude Ad Hoc</span>
-                                            </label>
-                                            <label className="project-track-checkbox">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={projectTrackExcludeExcludedCapacity}
-                                                    onChange={(event) => {
-                                                        const checked = event.target.checked;
-                                                        trackStatsAnalyticsAction('filter_changed', {
-                                                            filter_type: 'exclude_excluded_capacity',
-                                                            chart_id: 'project_track',
-                                                            value_state: checked ? 'on' : 'off'
-                                                        });
-                                                        setProjectTrackExcludeExcludedCapacity(checked);
-                                                    }}
-                                                />
-                                                <span>Exclude Excluded Capacity</span>
-                                            </label>
-                                        </div>
-                                        <div className="stats-control-group">
-                                            <label>Mode</label>
-                                            <SegmentedControl
-                                                className="eng-mode-control"
-                                                ariaLabel="Mode"
-                                                value={projectTrackMode}
-                                                onChange={(nextMode) => {
-                                                    trackStatsAnalyticsAction('stats_action', {
-                                                        workflow_action: 'mode_change',
-                                                        chart_id: 'project_track',
-                                                        mode: analyticsToken(nextMode)
-                                                    });
-                                                    setProjectTrackMode(nextMode);
-                                                }}
-                                                options={[
-                                                    { value: 'epic', label: 'Epic' },
-                                                    { value: 'team', label: 'Team' }
-                                                ]}
-                                            />
-                                        </div>
-                                    </div>
-
-                                    <div className="project-track-mode-title">
-                                        {projectTrackMode === 'team' ? 'TEAM MODE' : 'EPIC MODE'}
-                                    </div>
-
-                                    <div className="stats-card project-track-card">
-                                        <ProjectTrackTotalsBar
-                                            byTrack={projectTrackTotals.byTrack}
-                                            tracks={projectTrackSeries.tracks}
-                                            resolveColor={resolveProjectTrackColor}
-                                            rangeLabel={projectTrackRangeLabel}
-                                            columnSplit={projectTrackColumnSplit}
-                                        />
-                                    </div>
-
-                                    {projectTrackSeries.sprints.length > 1 && (
-                                        <div className="stats-card project-track-card">
-                                            <h4>Story points per sprint</h4>
-                                            <ProjectTrackSprintChart
-                                                series={projectTrackSeries}
-                                                resolveColor={resolveProjectTrackColor}
-                                                caption={projectTrackMode === 'epic'
-                                                    ? 'Each epic is attributed to its dominant sprint; all of its story points land in that sprint.'
-                                                    : ''}
-                                            />
-                                        </div>
-                                    )}
-
-                                    <div className="stats-card project-track-card">
-                                        <h4>{projectTrackMode === 'team' ? 'By team' : 'By assignee'}</h4>
-                                        <ProjectTrackBreakdownChart
-                                            data={projectTrackBreakdown}
-                                            resolveColor={resolveProjectTrackColor}
-                                            jiraUrl={jiraUrl}
-                                            columnSplit={projectTrackColumnSplit}
-                                        />
-                                    </div>
-
-                                    {projectTrackMode === 'epic' && (
-                                        <div className="stats-card project-track-card project-track-phase-section">
-                                            <h4>Time in Project Track phase</h4>
-                                            {projectTrackPhaseLoading && (
-                                                <div className="project-track-phase-loading">Loading phase data…</div>
-                                            )}
-                                            {!projectTrackPhaseLoading && projectTrackPhaseError && (
-                                                <div className="project-track-phase-error">{projectTrackPhaseError}</div>
-                                            )}
-                                            {!projectTrackPhaseLoading && !projectTrackPhaseError && (
-                                                <>
-                                                    {projectTrackPhaseData?.meta?.truncated && (
-                                                        <div className="project-track-phase-truncated">
-                                                            Showing first {projectTrackPhaseData.meta.processedEpicCount} epics (truncated).
-                                                        </div>
-                                                    )}
-                                                    <div className="project-track-phase-summary">
-                                                        {projectTrackPhaseSummary.avgDaysToFirstTrack > 0 && (
-                                                            <span>Avg days to first track: <strong>{projectTrackPhaseSummary.avgDaysToFirstTrack}d</strong></span>
-                                                        )}
-                                                        {projectTrackPhaseSummary.avgDaysToCommitted != null && (
-                                                            <span>Avg days to Committed: <strong>{projectTrackPhaseSummary.avgDaysToCommitted}d</strong></span>
-                                                        )}
-                                                    </div>
-                                                    <ProjectTrackPhaseChart
-                                                        rows={projectTrackPhaseEpics}
-                                                        resolveColor={resolveProjectTrackColor}
-                                                        jiraUrl={jiraUrl}
-                                                    />
-                                                </>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-
-                                <div className={`stats-view ${statsView === 'cohort' ? 'open' : ''}`}>
-                                    <div className="stats-controls cohort-controls">
-                                        <StatsRangeControl
-                                            idPrefix="lead-times-quarter"
-                                            kindLabel="Quarter"
-                                            options={cohortQuarterOptions.map((quarter) => ({ value: quarter, label: quarter }))}
-                                            startValue={cohortStartQuarter}
-                                            endValue={cohortEndQuarter}
-                                            onStartChange={(nextStart) => {
-                                                setCohortStartQuarter(nextStart);
-                                                if (compareQuarterLabels(nextStart, cohortEndQuarter) > 0) setCohortEndQuarter(nextStart);
-                                                setCohortSelectedRow(null);
-                                            }}
-                                            onEndChange={(nextEnd) => {
-                                                setCohortEndQuarter(nextEnd);
-                                                if (compareQuarterLabels(cohortStartQuarter, nextEnd) > 0) setCohortStartQuarter(nextEnd);
-                                                setCohortSelectedRow(null);
-                                            }}
-                                            active={statsView === 'cohort'}
-                                        />
-                                        <div className="stats-control-group">
-                                            <div className="controls-label">Group By</div>
-                                            <SegmentedControl
-                                                className="eng-mode-control"
-                                                ariaLabel="Group by"
-                                                value={cohortGroupBy}
-                                                onChange={(next) => { setCohortGroupBy(next === 'month' ? 'month' : 'quarter'); setCohortSelectedRow(null); }}
-                                                options={[{ value: 'quarter', label: 'Quarter' }, { value: 'month', label: 'Month' }]}
-                                            />
-                                        </div>
-                                        <div className="stats-control-group">
-                                            <div className="controls-label">Project</div>
-                                            <select
-                                                className="scenario-input"
-                                                aria-label="Project"
-                                                value={cohortProjectFilter}
-                                                onChange={(event) => {
-                                                    setCohortProjectFilter(event.target.value);
-                                                    setCohortSelectedRow(null);
-                                                }}
-                                            >
-                                                {cohortProjectOptions.map((item) => (
-                                                    <option key={item.value} value={item.value}>{item.label}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                        <div className="stats-control-group">
-                                            <div className="controls-label">Assignee</div>
-                                            <select
-                                                className="scenario-input"
-                                                aria-label="Assignee"
-                                                value={cohortAssigneeFilter}
-                                                onChange={(event) => {
-                                                    setCohortAssigneeFilter(event.target.value);
-                                                    setCohortSelectedRow(null);
-                                                }}
-                                            >
-                                                {cohortAssigneeOptions.map((item) => (
-                                                    <option key={item.value} value={item.value}>
-                                                        {item.label}{item.value !== 'all' ? ` (${item.count})` : ''}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                        <div className="stats-control-group project-track-exclusions" data-stats-capacity-filters>
-                                            <div className="controls-label">Exclude</div>
-                                            <div className="cohort-exclusion-options">
-                                                <label className="project-track-checkbox">
-                                                    <input
-                                                        type="checkbox"
-                                                        aria-label="Exclude Ad Hoc"
-                                                        checked={cohortExcludeAdHoc}
-                                                        onChange={(e) => { setCohortExcludeAdHoc(e.target.checked); setCohortSelectedRow(null); }}
-                                                    />
-                                                    <span>Ad Hoc</span>
-                                                </label>
-                                                <label className="project-track-checkbox">
-                                                    <input
-                                                        type="checkbox"
-                                                        aria-label="Exclude Excluded Capacity"
-                                                        checked={cohortExcludeCapacity}
-                                                        onChange={(e) => { setCohortExcludeCapacity(e.target.checked); setCohortSelectedRow(null); }}
-                                                    />
-                                                    <span>Excluded Capacity</span>
-                                                </label>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div className="stats-actions cohort-status-actions">
-                                        {cohortStatusControls.map((item) => (
-                                            <button
-                                                key={item.key}
-                                                className={`stats-toggle ${cohortStatusToggles[item.key] ? 'active' : ''}`}
-                                                onClick={() => {
-                                                    setCohortStatusToggles((prev) => ({
-                                                        ...prev,
-                                                        [item.key]: !prev[item.key]
-                                                    }));
-                                                    setCohortSelectedRow(null);
-                                                }}
-                                                type="button"
-                                            >
-                                                {item.label}
-                                            </button>
-                                        ))}
-                                    </div>
-
-                                    <div className="stats-summary cohort-summary">
-                                        <div className="stats-card">
-                                            <h4>Epics Overview</h4>
-                                            <div className="stat-value">{cohortSummary.total}</div>
-                                            <div className="stats-note">
-                                                {cohortSummary.done} done · {cohortSummary.killed} killed · {cohortSummary.incomplete} incomplete
-                                            </div>
-                                        </div>
-                                        <LeadTimesWorkflowStatusCard
-                                            jiraUrl={jiraUrl}
-                                            cohortStartQuarter={cohortStartQuarter}
-                                            cohortEndQuarter={cohortEndQuarter}
-                                            cohortSummary={cohortSummary}
-                                            cohortWorkflowStatusTotal={cohortWorkflowStatusTotal}
-                                        />
-                                        <div className="stats-card">
-                                            <h4>Avg Lead Time</h4>
-                                            <div className="stat-value">
-                                                {cohortAverageLeadDays === null ? '—' : `${cohortAverageLeadDays.toFixed(1)}d`}
-                                            </div>
-                                            <div className="stats-note">Terminal epics with lead time</div>
-                                        </div>
-                                        <div className="stats-card">
-                                            <h4>Median Lead Time</h4>
-                                            <div className="stat-value">
-                                                {cohortMedianLeadDays === null ? '—' : `${cohortMedianLeadDays.toFixed(1)}d`}
-                                            </div>
-                                            <div className="stats-note">Middle terminal lead time</div>
-                                        </div>
-                                    </div>
-
-                                    {cohortLoading && <div className="stats-note">Loading lead time cohorts…</div>}
-                                    {!cohortLoading && cohortError && <div className="stats-note cohort-error">{cohortError}</div>}
-                                    {!cohortLoading && !cohortError && cohortWarnings.length > 0 && (
-                                        <div className="cohort-warnings">
-                                            {cohortWarnings.map((warning, index) => (
-                                                <div key={`${warning}-${index}`}>• {warning}</div>
-                                            ))}
-                                        </div>
-                                    )}
-
-                                    {!cohortLoading && !cohortError && (
-                                        <div className="cohort-panel">
-                                            <div className="cohort-section cohort-section-fullbleed">
-                                                <div className="cohort-section-title">
-                                                    Cohort Heatmap
-                                                    {cohortSelectedRowLabel && (
-                                                        <span className="cohort-selected-chip">
-                                                            Row: {cohortSelectedRowLabel}
-                                                            <button
-                                                                type="button"
-                                                                className="cohort-clear-row"
-                                                                onClick={() => setCohortSelectedRow(null)}
-                                                            >
-                                                                Clear
-                                                            </button>
-                                                        </span>
-                                                    )}
-                                                </div>
-                                                <CohortGrid
-                                                    model={cohortGridModel}
-                                                    selectedRowKey={cohortSelectedRow}
-                                                    onSelectRow={(rowKey) => {
-                                                        setCohortSelectedRow((prev) => (prev === rowKey ? null : rowKey));
-                                                    }}
-                                                />
-                                            </div>
-                                            <LeadTimesEpicCharts
-                                                cohortOpenBars={cohortOpenBars}
-                                                cohortCompletedBars={cohortCompletedBars}
-                                                cohortSelectedRowLabel={cohortSelectedRowLabel}
-                                                jiraUrl={jiraUrl}
-                                                cohortStartQuarter={cohortStartQuarter}
-                                                cohortEndQuarter={cohortEndQuarter}
-                                                cohortGroupBy={cohortGroupBy}
-                                                cohortSelectedRow={cohortSelectedRow}
-                                                cohortProjectFilter={cohortProjectFilter}
-                                                activeGroupMissingComponents={activeGroupMissingComponents}
-                                                burnoutScopedTeamIds={burnoutScopedTeamIds}
-                                                cohortAssigneeFilter={cohortAssigneeFilter}
-                                            />
-                                        </div>
-                                    )}
-                                </div>
-                            </>
-                        )}
-                    </div>
+                    <LazyViewBoundary load={loadStatsView} fallback={statsLoadingFallback}>
+                    {StatsPanel => <StatsPanel
+                        stats={{
+                            canRenderStatsPanel,
+                            statsView,
+                            setStatsView,
+                            statsGraphMode,
+                            setStatsGraphMode,
+                            statsTotals,
+                            statsTeamRows,
+                            statsBarColumns,
+                            priorityRadar,
+                            priorityRows,
+                            burnoutAssigneeFilter,
+                            setBurnoutAssigneeFilter,
+                            burnoutAssigneeOptions,
+                            burndownMetric,
+                            setBurndownMetric,
+                            burndownMetricIsStoryPoints,
+                            burnoutTotals,
+                            burnoutLoading,
+                            burnoutError,
+                            burnoutChartModel,
+                            burnoutTaskFilter,
+                            formatBurndownValue,
+                            buildBurnoutTaskFilter,
+                            excludedCapacitySprintOptions,
+                            excludedCapacityStartSprintId,
+                            excludedCapacityEndSprintId,
+                            setExcludedCapacityStartSprintId,
+                            setExcludedCapacityEndSprintId,
+                            excludedCapacityEpicDropdownRef,
+                            excludedCapacityEpicDropdownOpen,
+                            setExcludedCapacityEpicDropdownOpen,
+                            excludedCapacityFilterLabel,
+                            selectAllExcludedCapacityEpics,
+                            clearExcludedCapacityEpicSelection,
+                            excludedCapacityEpicCatalog,
+                            excludedCapacityEffectiveFilters,
+                            toggleExcludedCapacityEpicKey,
+                            excludedCapacityChartMode,
+                            setExcludedCapacityChartMode,
+                            excludedCapacityMetric,
+                            setExcludedCapacityMetric,
+                            formatExcludedPoints,
+                            effortSplitTotals,
+                            excludedCapacityLoading,
+                            excludedCapacityData,
+                            excludedCapacityError,
+                            excludedCapacityWarnings,
+                            effortSplitSprintLabel,
+                            effortSplitRows,
+                            effortSplitVisibleBuckets,
+                            toggleEffortSplitBucket,
+                            excludedCapacityEpicOptions,
+                            excludedCapacityRows,
+                            excludedCapacityLineSeries,
+                            excludedCapacityIsolatedTeam,
+                            setExcludedCapacityIsolatedTeam,
+                            excludedCapacitySprintRange,
+                            excludedCapacityModeOverall,
+                            excludedCapacityModeSprintRows,
+                            excludedCapacityModeTeamLineSeries,
+                            projectTrackCapacitySide,
+                            setProjectTrackCapacitySide,
+                            projectTrackExcludeAdHoc,
+                            setProjectTrackExcludeAdHoc,
+                            projectTrackExcludeExcludedCapacity,
+                            setProjectTrackExcludeExcludedCapacity,
+                            projectTrackMode,
+                            setProjectTrackMode,
+                            projectTrackTotals,
+                            projectTrackSeries,
+                            projectTrackRangeLabel,
+                            projectTrackColumnSplit,
+                            projectTrackBreakdown,
+                            projectTrackPhaseLoading,
+                            projectTrackPhaseError,
+                            projectTrackPhaseData,
+                            projectTrackPhaseSummary,
+                            projectTrackPhaseEpics,
+                            cohortQuarterOptions,
+                            cohortStartQuarter,
+                            cohortEndQuarter,
+                            setCohortStartQuarter,
+                            setCohortEndQuarter,
+                            setCohortSelectedRow,
+                            cohortGroupBy,
+                            setCohortGroupBy,
+                            cohortProjectFilter,
+                            setCohortProjectFilter,
+                            cohortProjectOptions,
+                            cohortAssigneeFilter,
+                            setCohortAssigneeFilter,
+                            cohortAssigneeOptions,
+                            cohortExcludeAdHoc,
+                            setCohortExcludeAdHoc,
+                            cohortExcludeCapacity,
+                            setCohortExcludeCapacity,
+                            cohortStatusControls,
+                            cohortStatusToggles,
+                            setCohortStatusToggles,
+                            cohortSummary,
+                            cohortWorkflowStatusTotal,
+                            cohortAverageLeadDays,
+                            cohortMedianLeadDays,
+                            cohortLoading,
+                            cohortError,
+                            cohortWarnings,
+                            cohortSelectedRowLabel,
+                            cohortGridModel,
+                            cohortSelectedRow,
+                            cohortOpenBars,
+                            cohortCompletedBars,
+                            burnoutScopedTeamIds,
+                            burnoutData,
+                        }}
+                        links={{ buildStatLink, buildPriorityStatLink }}
+                        analytics={{ trackStatsAction, trackStatsAnalyticsAction }}
+                        onSelectBurnoutTask={setBurnoutTaskFilter}
+                        showStats={showStats}
+                        jiraUrl={jiraUrl}
+                        activeGroupMissingComponents={activeGroupMissingComponents}
+                        priorityAxis={priorityAxis}
+                        resolveStatsTeamColor={resolveStatsTeamColor}
+                    />}
+                    </LazyViewBoundary>
                     )}
 
                     {selectedView === 'eng' && showScenario && engWorkspaceConfigured && (
-                        <ScenarioView
+                        <LazyViewBoundary load={loadScenarioView} fallback={scenarioLoadingFallback}>
+                        {ScenarioView => <ScenarioView
                             scenario={scenario}
                             scenarioState={scenarioState}
                             selectedSprint={selectedSprint}
                             normalizeEpicKey={normalizeEpicKey}
                             excludedEpicSet={excludedEpicSet}
-                        />
+                        />}
+                        </LazyViewBoundary>
                     )}
 
                     {selectedView === 'eng' && showBoard && engWorkspaceConfigured && (
@@ -10365,7 +7102,8 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                     )}
 
                     {showGroupManage && (
-                        <SettingsModalContainer
+                        <LazyViewBoundary load={loadSettingsView} fallback={settingsLoadingFallback}>
+                        {SettingsModalContainer => <SettingsModalContainer
                             activeSettingsModalTab={activeSettingsModalTab}
                             canEditEpmConfiguration={canEditEpmConfiguration}
                             cancelFirstRunConfiguration={cancelFirstRunConfiguration}
@@ -10779,7 +7517,8 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
                                     visibleGroupDraftIds={visibleGroupDraftIds}
                                 />
                                 )}
-                        </SettingsModalContainer>
+                        </SettingsModalContainer>}
+                        </LazyViewBoundary>
                     )}
                     {groupPreferences.onboardingRequired && !showGroupManage && (
                         <FirstRunConfigurationContainer
@@ -10852,4 +7591,4 @@ import { collectJiraExportKeysFromEpmRollupBoards, collectJiraExportKeysFromTask
             const root = createRoot(rootElement);
             root.render(<AuthRequiredGate><App /></AuthRequiredGate>);
         }
-    
+

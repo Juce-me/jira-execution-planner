@@ -243,6 +243,15 @@ async function installDashboardFixture(page, options = {}) {
 }
 
 async function installDashboardShell(page) {
+    await page.route('**/frontend/dist/**', async route => {
+        const pathname = new URL(route.request().url()).pathname;
+        const relative = pathname.slice('/frontend/dist/'.length);
+        if (!/^(?:chunks\/[A-Za-z0-9_-]+\.js|lazy-views-[a-f0-9]{64}\.json)$/.test(relative)) return route.fallback();
+        const dist = path.resolve(__dirname, '../../frontend/dist');
+        const filename = path.resolve(dist, relative);
+        if (!filename.startsWith(dist + path.sep) || !fs.existsSync(filename)) return route.fulfill({ status: 404, body: '' });
+        return route.fulfill({ status: 200, contentType: relative.endsWith('.json') ? 'application/json' : 'application/javascript', body: fs.readFileSync(filename) });
+    });
     await page.route(/https?:\/\/[^/]+\/$/, route => route.fulfill({
         status: 200,
         contentType: 'text/html',

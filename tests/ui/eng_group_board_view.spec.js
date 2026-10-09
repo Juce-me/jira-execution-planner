@@ -5407,7 +5407,10 @@ test('All work preserves bounded partial cards after a hard limit and retries on
     await send(3, { type: 'progress', columnId: 'active', loadedChildren: 4,
         byEpic: [{ epicKey: 'EXAMPLE-1', loadedChildren: 4, statusCounts: { Done: 2, 'In Progress': 1, Killed: 1 } }] });
     await send(4, { type: 'column', columnId: 'done', epics: [], children: [], authoritative: true });
-    await expect(card).toContainText('2 of 4+ work items');
+    // Killed leaves the total (issue #253): Done 2 and In Progress 1 of the 3 that remain.
+    await expect(card).toContainText('2 of 3+ work items');
+    expect(await card.locator('.story-subtasks-progress-done').evaluate((el) => el.style.width)).toBe('66.667%');
+    expect(await card.locator('.story-subtasks-progress-in-progress').evaluate((el) => el.style.width)).toBe('33.333%');
     await expect(page.getByRole('button', { name: 'Filters', exact: false }).first()).toBeDisabled();
     await page.screenshot({ path: path.join(screenshotDir, 'progressive-epic-stats.png'), animations: 'disabled' });
     await send(5, { type: 'error', code: 'scope_too_large' });

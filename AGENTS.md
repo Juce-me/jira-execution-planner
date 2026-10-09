@@ -141,7 +141,7 @@ When none apply, the move is mechanical: verify what you can locally, make the s
 - Backend: Python 3.10+ + Flask + Flask-Cors; use a Python runtime linked against OpenSSL 1.1.1+, not LibreSSL
 - Frontend: React 19 + esbuild with a Node 20.x toolchain
 - Package management: Python dependencies in `requirements.txt`; frontend dependencies in `package-lock.json`
-- Runtime: local Flask server on port `5050` by default; dashboard served by Flask or opened via `jira-dashboard.html`
+- Runtime: local Flask server on port `5050` by default; dashboard served by Flask at `http://localhost:5050/`; direct `file://` opening of `jira-dashboard.html` is unsupported
 
 ### Commands
 - Install backend deps: `.venv/bin/python -m pip install -r requirements.txt && .venv/bin/python -m pip install -e .`
@@ -418,5 +418,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Planning tables must use document vertical scrolling and retain only horizontal table scrolling; dock headers below the measured controls stack and synchronize headers/totals with the body rather than creating a second vertical scroller.
 
 - Keyboard-only accessibility is deprioritized: park findings in `docs/TODO.md` (Deferred) instead of building them; touch support is still required, so every action must work by tap and none may require dragging.
+
+- Every ENG status pill, in every view, writes only its own issue key; never let the Planning selection or any default selection widen a status write.
 
 - When using live data from the running app, keep it read-only and transient: prefer numbers-only probes, never save or publish screenshots of it (delete any taken), keep only obfuscated aggregates, and let the user sign in themselves.

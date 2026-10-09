@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { readOwnerSource } = require('./frontend_source_helpers');
 
 const dashboardPath = path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx');
 const issueCardPath = path.join(__dirname, '..', 'frontend', 'src', 'issues', 'IssueCard.jsx');
@@ -227,7 +228,7 @@ test('deferred alert execution plan contains no agent or tool-branded worker boi
 });
 
 test('ready-to-close alert treats only done killed and incomplete stories as closed', () => {
-    const source = fs.readFileSync(dashboardPath, 'utf8');
+    const source = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/eng/useEngAlerts.js'], { anchor: 'export function useEngAlerts' });
 
     assert.match(
         source,
@@ -246,13 +247,14 @@ test('backlog alert header chip links to the backlog epic key list in Jira', () 
 });
 
 test('Story readiness alerts use the authoritative composite Team requirements', () => {
-    const source = fs.readFileSync(dashboardPath, 'utf8');
+    const source = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/eng/useEngAlerts.js'], { anchor: 'export function useEngAlerts' });
     const hierarchySource = fs.readFileSync(engWorkHierarchyPath, 'utf8');
 
     assert.match(
         source,
-        /import \{ epicHasExplicitlyEmptySprintValue, epicHasSelectedSprintLabel, epicMatchesSelectedSprint, filterExplicitBacklogEpics, issueMatchesSelectedSprint \}/
+        /import \{ epicHasExplicitlyEmptySprintValue, issueMatchesSelectedSprint \}/
     );
+    assert.match(source, /import \{ epicHasSelectedSprintLabel, epicMatchesSelectedSprint, filterExplicitBacklogEpics \}/);
     assert.match(
         source,
         /const getFuturePlanningTeamInfos = React\.useCallback/
@@ -498,19 +500,22 @@ test('ENG sprint data hook preserves startup request sequencing markers', () => 
 
 test('dashboard task display uses shared issue view helpers', () => {
     const source = fs.readFileSync(dashboardPath, 'utf8');
+    const epicBlockSource = readOwnerSource(['frontend/src/eng/EpicBlock.jsx'], { anchor: 'export function EpicBlock(' });
     const issueCardSource = fs.existsSync(issueCardPath) ? fs.readFileSync(issueCardPath, 'utf8') : '';
     const helperSource = fs.existsSync(issueViewUtilsPath) ? fs.readFileSync(issueViewUtilsPath, 'utf8') : '';
 
     assert.equal(fs.existsSync(issueCardPath), true, 'Expected shared IssueCard component module');
     assert.equal(fs.existsSync(issueViewUtilsPath), true, 'Expected shared issueViewUtils helper module');
-    assert.match(source, /import IssueCard, \{ IssueCardContext \} from '\.\/issues\/IssueCard\.jsx';/);
-    assert.match(source, /<IssueCard/);
-    assert.match(source, /import \{\s*formatPriorityShort,\s*getIssueStatusClassName,\s*getIssueTeamLabel\s*\} from '\.\/issues\/issueViewUtils\.js';/);
+    assert.match(source, /import \{ IssueCardContext \} from '\.\/issues\/IssueCard\.jsx';/);
+    assert.match(epicBlockSource, /import IssueCard from '\.\.\/issues\/IssueCard\.jsx';/);
+    assert.match(epicBlockSource, /<IssueCard/);
+    assert.match(source, /import \{\s*formatPriorityShort,\s*getIssueStatusClassName\s*\} from '\.\/issues\/issueViewUtils\.js';/);
+    assert.match(epicBlockSource, /import \{\s*getIssueStatusClassName,\s*getIssueTeamLabel\s*\} from '\.\.\/issues\/issueViewUtils\.js';/);
     assert.match(source, /formatPriorityShort\(priority\)/);
     assert.match(issueCardSource, /import StatusPill from '\.\.\/ui\/StatusPill\.jsx';/);
     assert.match(issueCardSource, /<StatusPill/);
-    assert.match(source, /getIssueStatusClassName\(task\.fields\.status\?\.name\)/);
-    assert.match(source, /getIssueTeamLabel\(teamInfo\)/);
+    assert.match(epicBlockSource, /getIssueStatusClassName\(task\.fields\.status\?\.name\)/);
+    assert.match(epicBlockSource, /getIssueTeamLabel\(teamInfo\)/);
     assert.match(helperSource, /export function formatPriorityShort/);
     assert.match(helperSource, /export function getIssueStatusClassName/);
     assert.match(helperSource, /export function getIssueTeamLabel/);
@@ -590,9 +595,10 @@ test('dashboard late writers use issue edit generations in addition to scope gua
     assert.match(dashboardSource, /fetchMissingPlanningInfo[\s\S]*beginRead\(\)[\s\S]*reconcileIssues[\s\S]*finishRead/);
     assert.match(dashboardSource, /fetchDependencies[\s\S]*beginRead\(\{ aggregate: true \}\)[\s\S]*isCurrentAggregateRead/);
     assert.match(dashboardSource, /loadBacklog[\s\S]*beginRead\(\)[\s\S]*reconcileIssues[\s\S]*finishRead/);
-    assert.match(dashboardSource, /fetchBurnout[\s\S]*beginRead\(\{ aggregate: true \}\)[\s\S]*isCurrentAggregateRead/);
-    assert.match(dashboardSource, /fetchCohort[\s\S]*beginRead\(\{ aggregate: true \}\)[\s\S]*isCurrentAggregateRead/);
-    assert.match(dashboardSource, /loadExcludedCapacity[\s\S]*beginRead\(\{ aggregate: true \}\)[\s\S]*isCurrentAggregateRead/);
+    const statsDataSource = readOwnerSource(['frontend/src/stats/useStatsData.js'], { anchor: 'useStatsDerivedA' });
+    assert.match(statsDataSource, /fetchBurnout[\s\S]*beginRead\(\{ aggregate: true \}\)[\s\S]*isCurrentAggregateRead/);
+    assert.match(statsDataSource, /fetchCohort[\s\S]*beginRead\(\{ aggregate: true \}\)[\s\S]*isCurrentAggregateRead/);
+    assert.match(statsDataSource, /loadExcludedCapacity[\s\S]*beginRead\(\{ aggregate: true \}\)[\s\S]*isCurrentAggregateRead/);
     assert.match(dashboardSource, /groupStateRef\.current\.set\(activeGroupId, issueEditStateRef\.current\.reconcileSnapshot\(groupStateSnapshot\)\)/);
     assert.match(dashboardSource, /applyGroupState\(issueEditStateRef\.current\.reconcileSnapshot\(cached\)\)/);
     assert.doesNotMatch(dashboardSource, /projectTrackPhaseCacheRef\.current = \{\};/);
@@ -633,7 +639,7 @@ test('oversized alert scope is reported per project and kept out of generic task
 });
 
 test('oversized alert scope gates alert-purpose epicsInScope once and stays scope-guarded', () => {
-    const dashboardSource = fs.readFileSync(dashboardPath, 'utf8');
+    const dashboardSource = readOwnerSource(['frontend/src/dashboard.jsx', 'frontend/src/eng/useEngAlerts.js'], { anchor: 'export function useEngAlerts' });
     const alertLoadEffectStart = dashboardSource.indexOf('const alertLoadSignature =');
     const alertLoadEffect = dashboardSource.slice(alertLoadEffectStart, dashboardSource.indexOf('}, [', alertLoadEffectStart));
     assert.match(

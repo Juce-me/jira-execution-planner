@@ -19,7 +19,8 @@ const count = (source, pattern) => (source.match(pattern) || []).length;
 //   direct-style - the Settings composer passes the same style straight from its local draft (Decision 9).
 //   excluded    - not an in-scope Jira status pill; the reason is the Excluded table in the plan.
 const SITES = {
-    'dashboard.jsx': { kind: 'inherits', calls: 3, pills: 1, menus: 2, statusAttrs: 2, taskStatus: 0, note: 'statusAttrs: the Epic-header pill plus the unrelated connection-recovery banner status=' },
+    'dashboard.jsx': { kind: 'inherits', calls: 1, pills: 0, menus: 1, statusAttrs: 1, taskStatus: 0, note: 'statusAttrs: the unrelated connection-recovery banner status=' },
+    'eng/EpicBlock.jsx': { kind: 'inherits', calls: 2, pills: 1, menus: 1, statusAttrs: 1, taskStatus: 0 },
     'eng/EngBoardEpicCard.jsx': { kind: 'inherits', calls: 1, pills: 1, menus: 0, statusAttrs: 1, taskStatus: 0 },
     'eng/EngBoardEpicPanel.jsx': { kind: 'inherits', calls: 3, pills: 2, menus: 2, statusAttrs: 2, taskStatus: 0 },
     'eng/EngBoardView.jsx': { kind: 'inherits', calls: 1, pills: 0, menus: 0, statusAttrs: 0, taskStatus: 1, hook: true },
@@ -108,7 +109,7 @@ test('the dashboard mounts the provider but never calls the hook, and the hook s
 });
 
 test('the Epic header passes status= like every other site and the header class builders stay unedited', () => {
-    const dashboard = read('dashboard.jsx');
+    const dashboard = read('eng/EpicBlock.jsx');
     assert.match(dashboard, /label=\{epicStatus\}\s+status=\{epicStatus\}/);
     assert.match(dashboard, /getIssueStatusClassName\(epicStatus, 'epic-status-pill'\)/);
 });

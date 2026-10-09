@@ -240,6 +240,8 @@ async function installEngStatusFixture(page, {
                 names: {},
             });
         }
+        const editableMatch = url.pathname.match(/^\/api\/issues\/([^/]+)\/editable-fields$/);
+        if (editableMatch) return json(route, { issueKey: editableMatch[1], field: 'storyPoints', editable: true, currentValue: 1, baseUpdated: '2026-05-01T00:00:00.000+0000', mappingRevision: 'synthetic-story-points', me: null });
         if (url.pathname === '/api/issues/subtasks') {
             const payload = subtaskPayload(Number(url.searchParams.get('sprint')) || activeSprintId);
             payload.subtasks = payload.subtasks.map((subtask) => (
@@ -661,8 +663,7 @@ test('Catch Up applies rapid Story status changes optimistically without task-li
     await expect.poll(() => transitionState.inFlight).toBe(1);
     expect(await trigger(page, 'story', 'PROD-1').innerText()).toContain('IN PROGRESS');
 
-    await page.locator('.subtitle-secondary').click();
-    await expect(menu(page, 'PROD-1')).toHaveCount(0);
+    await expect(menu(page, 'PROD-1'), 'the popup closed when the status was chosen').toHaveCount(0);
     await expect(trigger(page, 'story', 'PROD-1')).toBeDisabled();
     await expect(trigger(page, 'story', 'PROD-2')).toBeEnabled();
     await trigger(page, 'story', 'PROD-2').click();
@@ -673,7 +674,7 @@ test('Catch Up applies rapid Story status changes optimistically without task-li
     await expect.poll(() => transitionCalls(calls).length).toBe(2);
     expect(await trigger(page, 'story', 'PROD-2').innerText()).toContain('ACCEPTED');
     await expect.poll(() => transitionState.inFlight).toBe(0);
-    await expect(menu(page, 'PROD-2').locator('.status-transition-menu-result')).toContainText('Updated 1 issue');
+    await expect(menu(page, 'PROD-2')).toHaveCount(0);
 
     expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name' && !call.params.purpose)).toHaveLength(initialTaskRequests);
 });
@@ -702,7 +703,8 @@ test('Catch Up rolls back a failed optimistic status change without refetching t
     expect(await trigger(page, 'story', 'PROD-1').innerText()).toContain('IN PROGRESS');
 
     await expect.poll(() => transitionState.inFlight).toBe(0);
-    await expect(menu(page, 'PROD-1').locator('.status-transition-menu-result')).toContainText('No issues updated');
+    // The popup closed on the click, so a rejection is shown only by the value returning.
+    await expect(menu(page, 'PROD-1')).toHaveCount(0);
     await expect(trigger(page, 'story', 'PROD-1')).toContainText('To Do');
     expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name' && !call.params.purpose)).toHaveLength(initialTaskRequests);
 });
@@ -794,6 +796,79 @@ test('Planning Story pill changes only that Story even when every Story is selec
     await expect(trigger(page, 'story', 'PROD-1')).toHaveText(/Accepted/);
     await expect(trigger(page, 'story', 'PROD-2')).toHaveText(/To Do/);
     await expect(page.locator('.planning-panel.open .planning-stat-value').first()).toContainText('2 · 2.0 SP');
+});
+
+const killedFailure = body => ({
+    requested: 1,
+    succeeded: 0,
+    failed: 1,
+    targetStatus: body.targetStatus,
+    results: [{ key: body.issueKeys[0], result: 'failure', error: 'transition_not_available', currentStatus: 'To Do' }],
+});
+
+// Killed is hidden from the Planning pool by default, so it is the status whose confirmation must prune the selection like a reload.
+for (const outcome of ['confirmed', 'rejected']) {
+    test(`Planning keeps a selected Story selected and listed while its move to Killed is pending, then ${outcome === 'confirmed' ? 'drops it like a reload once Jira confirms' : 'keeps it when Jira rejects'}`, async ({ page }) => {
+        await setPrefs(page, catchUpPrefs({ selectedSprint: futureSprintId, sprintName: futureSprintName }));
+        const { calls, transitionState } = await installEngStatusFixture(page, {
+            transitionDelayMs: 1200,
+            transitions: outcome === 'rejected' ? killedFailure : successTransition,
+            optionsBody: { ...defaultOptionsBody, targetStatuses: [{ name: 'Killed', availableCount: 1, blockedCount: 0 }] },
+        });
+        await page.goto(appBaseUrl);
+        await openPlanning(page); // PROD-1 and PROD-2 both selected
+        const selectedStat = page.locator('.planning-panel.open .planning-stat-value').first();
+        const mark = calls.length;
+
+        await trigger(page, 'story', 'PROD-1').click();
+        await menu(page, 'PROD-1').getByRole('menuitem', { name: 'Killed' }).click();
+        await expect.poll(() => transitionState.inFlight).toBe(1);
+        await expect(trigger(page, 'story', 'PROD-1')).toHaveText(/Killed/);
+        await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+        await expect(selectedStat, 'a pending optimistic Killed never prunes the selection').toContainText('2 · 2.0 SP');
+
+        await expect.poll(() => transitionState.inFlight).toBe(0);
+        await page.waitForLoadState('networkidle');
+        if (outcome === 'confirmed') {
+            await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toHaveCount(0);
+            await expect(selectedStat).toContainText('1 · 1.0 SP');
+        } else {
+            await expect(trigger(page, 'story', 'PROD-1')).toHaveText(/To Do/);
+            await expect(selectedStat).toContainText('2 · 2.0 SP');
+        }
+        expect(calls.slice(mark).filter(call => call.pathname === '/api/tasks-with-team-name'), 'one status edit never refetches the board').toEqual([]);
+    });
+}
+
+test('Planning keeps a Story mounted under its open editor after a confirmed status leaves the pool, then drops it when the editor closes', async ({ page }) => {
+    await setPrefs(page, catchUpPrefs({ selectedSprint: futureSprintId, sprintName: futureSprintName }));
+    const { transitionState } = await installEngStatusFixture(page, {
+        transitionDelayMs: 1200,
+        optionsBody: { ...defaultOptionsBody, targetStatuses: [{ name: 'Killed', availableCount: 1, blockedCount: 0 }] },
+    });
+    await page.goto(appBaseUrl);
+    await openPlanning(page); // PROD-1 and PROD-2 both selected
+    const story = page.locator('.task-item[data-task-key="PROD-1"]');
+    const points = story.getByRole('textbox', { name: 'Story Points' });
+
+    await trigger(page, 'story', 'PROD-1').click();
+    await menu(page, 'PROD-1').getByRole('menuitem', { name: 'Killed' }).click();
+    await expect.poll(() => transitionState.inFlight).toBe(1);
+    await points.click();
+    await expect(points).toBeEditable();
+    await points.fill('7');
+
+    await expect.poll(() => transitionState.inFlight).toBe(0);
+    await page.waitForLoadState('networkidle');
+    await expect(story, 'the confirmed Killed Story is kept under its open editor').toBeVisible();
+    await expect(trigger(page, 'story', 'PROD-1')).toHaveText(/Killed/);
+    await expect(points).toBeFocused();
+    await expect(points).toHaveValue('7');
+    await expect(page.locator('.planning-panel.open .planning-stat-value').first()).toContainText('2 · 2.0 SP');
+
+    await points.press('Escape');
+    await expect(story).toHaveCount(0);
+    await expect(page.locator('.planning-panel.open .planning-stat-value').first()).toContainText('1 · 1.0 SP');
 });
 
 test('Planning Epic pill changes only that Epic and offers no batch controls', async ({ page }) => {
@@ -1086,21 +1161,21 @@ test('Planning Table Story status rolls back and reports a failed change', async
     // Table pills render in capitals, so innerText carries the transformed case.
     expect((await trigger(page, 'story', 'PROD-1').innerText()).toLowerCase()).toContain('in progress');
     await expect.poll(() => transitionState.inFlight).toBe(0);
-    await expect(menu(page, 'PROD-1').locator('.status-transition-menu-result')).toContainText('No issues updated');
+    await expect(menu(page, 'PROD-1')).toHaveCount(0);
     await expect(trigger(page, 'story', 'PROD-1')).toContainText('To Do');
 });
 
 test('a disabled status option keeps readable colors under the pointer', async ({ page }) => {
     await setPrefs(page, catchUpPrefs({ selectedSprint: futureSprintId, sprintName: futureSprintName }));
-    const { transitionState } = await installEngStatusFixture(page, { transitionDelayMs: 1500 });
+    await installEngStatusFixture(page);
     await page.goto(appBaseUrl);
     await openPlanning(page);
 
-    // While the write is in flight every option of the open menu is disabled.
+    // The popup closes when a status is chosen, so the app no longer shows a disabled option while a write is in flight;
+    // the disabled style still applies while options load, so force the state on an open menu and check the style itself.
     await trigger(page, 'story', 'PROD-1').click();
-    await menu(page, 'PROD-1').getByRole('menuitem', { name: 'In Progress' }).click();
-    await expect.poll(() => transitionState.inFlight).toBe(1);
     const option = menu(page, 'PROD-1').getByRole('menuitem', { name: 'Accepted' });
+    await option.evaluate((node) => { node.disabled = true; });
     await expect(option).toBeDisabled();
     await option.hover({ force: true });
     await page.waitForTimeout(400);
@@ -1111,3 +1186,36 @@ test('a disabled status option keeps readable colors under the pointer', async (
     expect(style.background).not.toBe('rgb(47, 47, 47)');
     expect(style.transform).toBe('none');
 });
+
+// A Planning status edit may issue only its own option read, the one write and the CSRF token read:
+// any other call after the click is a mutation-triggered read of the board, readiness or reviews.
+const PLANNING_STATUS_EDIT_CALLS = new Set(['/api/issues/transitions/options', '/api/issues/transitions', '/api/auth/csrf']);
+
+function unexpectedCallsSince(calls, index) {
+    return calls.slice(index).filter(call => !PLANNING_STATUS_EDIT_CALLS.has(call.pathname)).map(call => `${call.method} ${call.pathname}`);
+}
+
+for (const layout of ['List', 'Table']) {
+    test(`Planning ${layout} Story status change shows at once and makes no other read`, async ({ page }) => {
+        await setPrefs(page, catchUpPrefs({ selectedSprint: futureSprintId, sprintName: futureSprintName }));
+        const { calls, transitionState } = await installEngStatusFixture(page, { transitionDelayMs: 800 });
+        await page.goto(appBaseUrl);
+        if (layout === 'Table') await openPlanningTable(page);
+        else await openPlanning(page);
+        await page.waitForLoadState('networkidle');
+        const mark = calls.length;
+
+        await trigger(page, 'story', 'PROD-1').click();
+        await menu(page, 'PROD-1').getByRole('menuitem', { name: 'In Progress' }).click();
+        await expect.poll(() => transitionState.inFlight).toBe(1);
+        // Table pills render in capitals, so innerText carries the transformed case.
+        expect((await trigger(page, 'story', 'PROD-1').innerText()).toLowerCase()).toContain('in progress');
+        await expect.poll(() => transitionState.inFlight).toBe(0);
+        await page.waitForLoadState('networkidle');
+
+        expect(transitionCalls(calls)).toHaveLength(1);
+        expect(transitionCalls(calls)[0].body.issueKeys).toEqual(['PROD-1']);
+        expect(unexpectedCallsSince(calls, mark)).toEqual([]);
+        expect((await trigger(page, 'story', 'PROD-1').innerText()).toLowerCase()).toContain('in progress');
+    });
+}

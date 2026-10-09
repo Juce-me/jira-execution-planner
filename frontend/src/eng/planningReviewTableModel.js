@@ -161,21 +161,27 @@ export function buildPlanningReviewColumns({ rows = [], mode = 'epic', customCol
     return [...pinned, ...movable].filter(column => column.required || !hidden.has(column.id));
 }
 
-export function reviewValue(row, column, cells = {}) {
+// `originals` (the registry's planningOriginals()) makes a row with a pending status/priority edit sort by its
+// pre-edit value; the cell still renders the new one, and the row moves only once the edit is confirmed.
+export function reviewValue(row, column, cells = {}, originals) {
     if (column.custom) return row.synthetic || !row.issueId ? null : cells[reviewCellKey(row.rowKind, row.issueId, column.id)]?.value ?? null;
+    if (originals?.size && (column.id === 'status' || column.id === 'priority')) {
+        const original = originals.get(String(row.key || '').trim().toUpperCase())?.[column.id];
+        if (original !== undefined) return typeof original === 'string' ? original : original?.name ?? null;
+    }
     if (column.id === 'team') return row.team?.name || 'Unknown Team';
     if (column.id === 'teamsInScope') return (row.teamsInScope || []).join(', ');
     return row[column.id] ?? null;
 }
 
-export function sortPlanningReviewRows(rows, criteria = [], columns = [], cells = {}) {
+export function sortPlanningReviewRows(rows, criteria = [], columns = [], cells = {}, originals) {
     if (criteria.length > 5) throw new Error('Use at most five sort criteria.');
     const byId = new Map(columns.map(column => [column.id, column]));
     return [...rows].sort((a, b) => {
         for (const criterion of criteria) {
             const column = byId.get(criterion.columnId);
             if (!column) continue;
-            const av = reviewValue(a, column, cells), bv = reviewValue(b, column, cells);
+            const av = reviewValue(a, column, cells, originals), bv = reviewValue(b, column, cells, originals);
             const ab = av == null || av === '', bb = bv == null || bv === '';
             if (ab !== bb) return ab ? 1 : -1;
             if (ab) continue;

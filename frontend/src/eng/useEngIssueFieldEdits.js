@@ -79,8 +79,11 @@ export function createEngIssueFieldEditController(options = {}) {
     };
 
     const publish = patch => {
+        const previousEditor = state.activeEditor;
         state = { ...state, ...patch };
         listeners.forEach(listener => listener());
+        // Every open, close, context clear and auth clear passes through here; consumers that must hold a row while it is edited listen to this.
+        if (state.activeEditor !== previousEditor) runtimeOptions.onActiveEditorChange?.(state.activeEditor);
     };
     const isCurrentEditor = id => state.activeEditor?.id === id;
     const peopleScopeKey = editor => `${getContextKey()}::${String(editor?.field || '')}`;

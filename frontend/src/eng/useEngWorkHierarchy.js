@@ -46,6 +46,7 @@ export function useEngWorkHierarchy({
     admitsEpicProjectTrack,
     engEpicSort = 'priority',
     groupByInitiativeChoice = null,
+    planningOriginals = null,
 } = {}) {
     const groupTasks = React.useCallback(
         taskList => groupTasksByEpic(taskList, epicDetails),
@@ -85,11 +86,12 @@ export function useEngWorkHierarchy({
         },
         sort: engEpicSort,
         groupByInitiative,
+        planningOriginals,
     }), [
         showPlanning, selectedSprint, selectedSprintName, selectedSprintState, storyEpicGroups,
         readinessSnapshot, readinessStatus, activeGroupId, selectedTeams, isAllTeamsSelected,
         showTech, showProduct, searchQuery, statusNeutral, priorityNeutral, admitsEpicProjectTrack,
-        engEpicSort, groupByInitiative,
+        engEpicSort, groupByInitiative, planningOriginals,
     ]);
     return {
         hierarchy,

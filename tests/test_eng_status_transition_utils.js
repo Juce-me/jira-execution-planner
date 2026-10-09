@@ -144,41 +144,42 @@ test('selected_count_bucket and selected_sp_bucket helpers reuse the shared buck
     assert.equal(buildSelectedSpBucket(8), bucketCount(8));
 });
 
-test('buildStatusActionAnalyticsParams omits selected_sp_bucket for Catch Up but includes it for Planning', async () => {
+test('buildStatusActionAnalyticsParams reports the submitted Story\'s points for Planning only, and never for a Subtask, an Epic or Catch Up', async () => {
     const { buildStatusActionAnalyticsParams } = await loadUtils();
-    const { sumPlanningStoryPoints } = await import('../frontend/src/eng/planningSelectionStats.js');
     const { bucketCount } = await import('../frontend/src/analytics/dashboardAnalytics.js');
 
-    const selectedStories = [task('PROD-1', { customfield_10004: '5' })];
-    const targets = [{ key: 'TECH-22', issueType: 'Subtask', currentStatus: 'Analysis', summary: 'Subtask' }];
+    const subtask = [{ key: 'TECH-22', issueType: 'Subtask', currentStatus: 'Analysis', summary: 'Subtask', storyPoints: 5 }];
+    const story = [{ key: 'PROD-1', issueType: 'Story', currentStatus: 'To Do', summary: 'Story', storyPoints: '5' }];
 
-    const catchUpParams = buildStatusActionAnalyticsParams({
-        sourceSurface: 'catch_up',
-        targets,
-        selectedStories,
-        status: 'Accepted',
-    });
+    const catchUpParams = buildStatusActionAnalyticsParams({ sourceSurface: 'catch_up', targets: story, status: 'Accepted' });
     assert.deepEqual(catchUpParams, {
         source_surface: 'catch_up',
         status_bucket: 'accepted',
-        issue_type_mix: 'subtasks',
+        issue_type_mix: 'stories',
         selected_count_bucket: '1_5',
     });
-    assert.equal('selected_sp_bucket' in catchUpParams, false, 'Catch Up must never report unrelated Planning-selection story points');
+    assert.equal('selected_sp_bucket' in catchUpParams, false, 'Catch Up never reports Story points');
 
-    const planningParams = buildStatusActionAnalyticsParams({
-        sourceSurface: 'planning',
-        targets,
-        selectedStories,
-        status: 'Accepted',
-    });
+    const planningParams = buildStatusActionAnalyticsParams({ sourceSurface: 'planning', targets: story, status: 'Accepted' });
     assert.deepEqual(planningParams, {
         source_surface: 'planning',
         status_bucket: 'accepted',
-        issue_type_mix: 'subtasks',
+        issue_type_mix: 'stories',
         selected_count_bucket: '1_5',
-        selected_sp_bucket: bucketCount(sumPlanningStoryPoints(selectedStories)),
+        selected_sp_bucket: bucketCount(5),
     });
+
+    const subtaskParams = buildStatusActionAnalyticsParams({ sourceSurface: 'planning', targets: subtask, status: 'Accepted' });
+    assert.equal('selected_sp_bucket' in subtaskParams, false, 'a Subtask-only action omits the parameter');
+    const epicParams = buildStatusActionAnalyticsParams({ sourceSurface: 'planning', targets: [{ key: 'PROD-9', issueType: 'Epic' }], status: 'Accepted' });
+    assert.equal('selected_sp_bucket' in epicParams, false, 'an Epic-only action omits the parameter');
+});
+
+test('buildCatchUpStatusTargets carries a Story\'s loaded points, nested or flat, and nothing when the issue has none', async () => {
+    const { buildCatchUpStatusTargets } = await loadUtils();
+    assert.equal(buildCatchUpStatusTargets({ key: 'PROD-1', fields: { customfield_10004: 8 } }).storyPoints, 8);
+    assert.equal(buildCatchUpStatusTargets({ key: 'PROD-1', storyPoints: 3 }).storyPoints, 3);
+    assert.equal('storyPoints' in buildCatchUpStatusTargets({ key: 'PROD-1', status: 'To Do' }), false);
 });
 
 test('buildStatusActionAnalyticsParams omits status_bucket when no target status has been chosen yet', async () => {
@@ -187,7 +188,6 @@ test('buildStatusActionAnalyticsParams omits status_bucket when no target status
     const params = buildStatusActionAnalyticsParams({
         sourceSurface: 'catch_up',
         targets: [{ key: 'PROD-1', issueType: 'Story' }],
-        selectedStories: [],
     });
     assert.equal('status_bucket' in params, false, 'status_options_open has no target status yet');
 });
@@ -230,7 +230,6 @@ test('buildStatusActionAnalyticsParams reports board and omits Planning-selectio
     const params = buildStatusActionAnalyticsParams({
         sourceSurface: 'board',
         targets: [{ key: 'PROD-1', issueType: 'Epic', currentStatus: 'To Do', summary: 'Epic' }],
-        selectedStories: [task('PROD-9', { customfield_10004: '8' })],
         status: 'Done',
     });
     assert.deepEqual(params, {
@@ -240,4 +239,63 @@ test('buildStatusActionAnalyticsParams reports board and omits Planning-selectio
         selected_count_bucket: '1_5',
     });
     assert.equal('selected_sp_bucket' in params, false, 'Board acts on one epic, not the Planning selection');
+});
+
+// ---- outcome classification (issue #250) -------------------------------------------------------
+const statusResponse = (entry, extra = {}) => ({ requested: 1, succeeded: 0, failed: 0, targetStatus: 'In Progress', results: [{ key: 'DEMO-1', ...entry }], ...extra });
+
+test('classifyWriteError: only the enumerated HTTP status/code pairs are rejections, everything else is unconfirmed', async () => {
+    const { classifyWriteError } = await loadUtils();
+    const definitive = [
+        [400, 'invalid_json'], [400, 'issue_keys_required'], [400, 'invalid_issue_key'], [400, 'too_many_issues'],
+        [400, 'target_status_required'], [400, 'target_priority_required'], [400, 'invalid_priority_id'],
+        [403, 'csrf_required'], [403, 'jira_oauth_required'], [503, 'config_storage_unavailable'],
+    ];
+    definitive.forEach(([status, code]) => assert.equal(classifyWriteError({ status, code }), 'rejected', `${status} ${code}`));
+    assert.equal(classifyWriteError({ name: 'AbortError' }), 'rejected', 'a queued job cancelled before dispatch');
+
+    const unconfirmed = [
+        [502, 'jira_transition_failed'], [502, 'jira_priority_update_failed'], [500, 'internal_error'], [403, 'something_else'],
+        [400, 'unlisted_code'], [503, 'service_unavailable'], [undefined, undefined], [429, 'rate_limited'],
+    ];
+    unconfirmed.forEach(([status, code]) => assert.equal(classifyWriteError({ status, code }), 'unconfirmed', `${status} ${code}`));
+    assert.equal(classifyWriteError(new Error('network down')), 'unconfirmed');
+    assert.equal(classifyWriteError(null), 'unconfirmed');
+});
+
+test('classifyStatusResult confirms only a matching success and treats every definitive code as a rejection', async () => {
+    const { classifyStatusResult } = await loadUtils();
+
+    assert.deepEqual(classifyStatusResult(statusResponse({ result: 'success', toStatus: 'In Progress' }), 'demo-1'), { outcome: 'confirmed', value: { name: 'In Progress' } });
+    assert.deepEqual(classifyStatusResult(statusResponse({ result: 'success' }), 'DEMO-1').value, { name: 'In Progress' }, 'falls back to the response target');
+    assert.equal(classifyStatusResult(statusResponse({ result: 'already_in_status', currentStatus: 'In Progress' }), 'DEMO-1').outcome, 'confirmed');
+
+    const definitive = ['transition_not_available', 'transitions_unavailable', 'invalid_transition', 'transition_forbidden', 'transition_conflict', 'jira_auth_error', 'issue_not_found'];
+    definitive.forEach(code => {
+        const outcome = classifyStatusResult(statusResponse({ result: 'failure', error: code, currentStatus: 'To Do' }), 'DEMO-1');
+        assert.equal(outcome.outcome, 'rejected', code);
+        assert.equal(outcome.currentStatus, 'To Do');
+    });
+    ['transition_failed', 'transition_timeout', 'something_new', undefined].forEach(code => {
+        assert.equal(classifyStatusResult(statusResponse({ result: 'failure', error: code }), 'DEMO-1').outcome, 'unconfirmed', String(code));
+    });
+});
+
+test('classifyStatusResult never trusts counts: missing, duplicate, mismatched or unusable results are unconfirmed', async () => {
+    const { classifyStatusResult } = await loadUtils();
+
+    assert.deepEqual(classifyStatusResult({ succeeded: 1, results: [] }, 'DEMO-1'), { outcome: 'unconfirmed', code: 'missing_result' });
+    assert.deepEqual(classifyStatusResult({ succeeded: 1, results: [{ key: 'DEMO-2', result: 'success' }] }, 'DEMO-1'), { outcome: 'unconfirmed', code: 'missing_result' });
+    assert.deepEqual(classifyStatusResult({ succeeded: 2, results: [{ key: 'DEMO-1', result: 'success' }, { key: 'demo-1', result: 'success' }] }, 'DEMO-1'), { outcome: 'unconfirmed', code: 'duplicate_result' });
+    assert.equal(classifyStatusResult(statusResponse({ result: 'queued' }), 'DEMO-1').code, 'unknown_result');
+    assert.equal(classifyStatusResult({ results: [{ key: 'DEMO-1', result: 'success' }] }, 'DEMO-1').code, 'unusable_value', 'a success with no usable status');
+    assert.equal(classifyStatusResult(null, 'DEMO-1').code, 'missing_result');
+});
+
+test('already_in_status is unconfirmed when this session wrote the issue since the last evidenced read', async () => {
+    const { classifyStatusResult } = await loadUtils();
+    const response = statusResponse({ result: 'already_in_status', currentStatus: 'To Do' });
+
+    assert.equal(classifyStatusResult(response, 'DEMO-1', { staleAlreadyIn: false }).outcome, 'confirmed');
+    assert.deepEqual(classifyStatusResult(response, 'DEMO-1', { staleAlreadyIn: true }), { outcome: 'unconfirmed', code: 'stale_already_in' });
 });

@@ -1241,10 +1241,10 @@ test('dashboard Sprint authority subscribes global auth and guards manual work e
     const dashboard = readSource(path.join(frontendSrcPath, 'dashboard.jsx'));
     assert.match(dashboard, /addEventListener\(AUTH_REQUIRED_EVENT,\s*handleAuthenticationRequired\)/);
     assert.match(dashboard, /handleAuthenticationRequired\s*=\s*\(\)\s*=>\s*sprintCatalogControllerRef\.current\.authLock\(\)/);
-    const refreshStart = dashboard.indexOf('const refreshActiveViewFromJira = () =>');
+    const refreshStart = dashboard.indexOf('const refreshActiveViewFromJira = (');
     const refreshEnd = dashboard.indexOf('const manualRefreshDisabled', refreshStart);
     const refreshSource = dashboard.slice(refreshStart, refreshEnd);
-    assert.ok(refreshSource.indexOf('if (!sprintCatalogReady)') < refreshSource.indexOf('loadMeasuredGroupTasks({ forceRefresh: true })'));
+    assert.ok(refreshSource.indexOf('if (!sprintCatalogReady)') < refreshSource.indexOf('loadMeasuredGroupTasks({ forceRefresh: true'));
 });
 
 test('dashboard Sprint authority reconciles slow config and fences every Board-affecting save attempt', () => {

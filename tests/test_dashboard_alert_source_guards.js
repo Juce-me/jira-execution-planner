@@ -140,22 +140,25 @@ test('ENG alert loading is deferred until visible tasks finish and gated to Catc
     );
     assert.match(
         dashboardSource,
-        /const rearmCatchUpAlerts = \(\) => \{\s*catchUpAlertLoadRef\.current = '';\s*catchUpAlertForceRefreshRef\.current = true;\s*catchUpAlertVersionRef\.current \+= 1;\s*setCatchUpAlertRefreshNonce\(value => value \+ 1\);\s*\};/
+        /const rearmCatchUpAlerts = \(\) => \{\s*planningAlertsDirtyRef\.current = false;\s*catchUpAlertLoadRef\.current = '';\s*catchUpAlertForceRefreshRef\.current = true;\s*catchUpAlertVersionRef\.current \+= 1;\s*setCatchUpAlertRefreshNonce\(value => value \+ 1\);\s*\};/
     );
-    // Call sites: assignee, Story Points, the global Refresh and the one request-free fallback inside invalidateAlertsAfterEdit.
-    assert.equal((dashboardSource.match(/rearmCatchUpAlerts\(\);/g) || []).length, 4);
+    // Call sites: assignee, Story Points, the global Refresh, the one request-free fallback inside invalidateAlertsAfterEdit and the
+    // one-shot consumption of the Planning dirty marker when Catch Up opens.
+    assert.equal((dashboardSource.match(/rearmCatchUpAlerts\(\);/g) || []).length, 5);
     // Status and priority edits no longer hand the department rearm to the hooks; one function picks the scoped re-check or the rearm.
     assert.equal((dashboardSource.match(/onAlertDataInvalidated: rearmCatchUpAlerts/g) || []).length, 0);
     assert.equal(dashboardSource.split("onAlertDataInvalidated: ({ keys } = {}) => invalidateAlertsAfterEdit({ keys, field: 'status' }),").length - 1, 1);
     assert.equal(dashboardSource.split("onAlertDataInvalidated: ({ keys } = {}) => invalidateAlertsAfterEdit({ keys, field: 'priority' }),").length - 1, 1);
     assert.match(
         dashboardSource,
-        /const invalidateAlertsAfterEdit = \(\{ keys, field \}\) => \{\s*if \(!keys\?\.length\) return;\s*if \(!epicRefresh\.recheckAlertsForEdit\(\{ keys, field \}\)\.handled\) rearmCatchUpAlerts\(\);\s*\};/,
-        'an edit with no succeeded key does nothing; Catch Up status and priority edits take the scoped re-check; every other case invalidates the department request-free in every ENG mode'
+        /const invalidateAlertsAfterEdit = \(\{ keys, field \}\) => \{\s*if \(!keys\?\.length\) return;\s*if \(statusTransitionSourceSurface === 'planning'\) \{ if \(field === 'status'\) planningAlertsDirtyRef\.current = true; return; \}\s*if \(!epicRefresh\.recheckAlertsForEdit\(\{ keys, field \}\)\.handled\) rearmCatchUpAlerts\(\);\s*\};/,
+        'an edit with no succeeded key does nothing; a Planning edit only records the dirty marker (status) or nothing (priority) and never bumps the fetch-driving nonce; Catch Up status and priority edits take the scoped re-check; every other case invalidates the department request-free'
     );
     // A Catch Up/Planning priority edit patches a readiness-only epic in the held Stories Required snapshot locally (no request, no reload).
     assert.equal(dashboardSource.split("storyReadiness.patchEpic(issueKey, 'priority', priorityPatch);").length - 1, 1);
-    assert.ok(dashboardSource.indexOf("applyLocalEngIssueField(issueKey, 'priority', priorityPatch);") < dashboardSource.indexOf("storyReadiness.patchEpic(issueKey, 'priority', priorityPatch);"));
+    assert.ok(dashboardSource.indexOf("applyLocalEngIssueField(issueKey, 'priority', priorityPatch, meta);") < dashboardSource.indexOf("storyReadiness.patchEpic(issueKey, 'priority', priorityPatch);"));
+    // A status edit patches a readiness-only epic the same way, so removing the Planning rearm reload loses nothing.
+    assert.equal(dashboardSource.split("storyReadiness.patchEpic(issueKey, 'status', { name: statusName });").length - 1, 1);
     assert.equal((dashboardSource.match(/notifyAlertCohortSettle\(\{ aborted: false \}\)/g) || []).length, 1, 'the cohort settle handler notifies waiting re-checks');
     assert.equal((dashboardSource.match(/notifyAlertCohortSettle\(\{ aborted: true \}\)/g) || []).length, 1, 'the cohort effect cleanup notifies after the cohort ref is cleared');
     assert.match(
@@ -207,10 +210,10 @@ test('primary ENG loads reject stale group scope completions', () => {
         /const groupLoadVersion = \+\+groupLoadVersionRef\.current;[\s\S]*const shouldApplyGroupLoadResult = \(\) => groupLoadVersionRef\.current === groupLoadVersion;[\s\S]*loadMeasuredGroupTasks\(\{ shouldApplyResult: shouldApplyGroupLoadResult \}\);/
     );
     assert.match(dashboardSource, /groupLoadVersionRef\.current \+= 1;[\s\S]*abortSprintFetches\(\);/);
-    assert.match(sprintDataSource, /const loadProductTasks = async \(\{ forceRefresh = false, shouldApplyResult, measurement \} = \{\}\)/);
-    assert.match(sprintDataSource, /const loadTechTasks = async \(\{ forceRefresh = false, shouldApplyResult, measurement \} = \{\}\)/);
-    assert.match(sprintDataSource, /fetchTasks\('product', \{ forceRefresh, shouldApplyResult, measurement \}\)/);
-    assert.match(sprintDataSource, /fetchTasks\('tech', \{ forceRefresh, shouldApplyResult, measurement \}\)/);
+    assert.match(sprintDataSource, /const loadProductTasks = async \(\{ forceRefresh = false, shouldApplyResult, measurement, operatorRefresh \} = \{\}\)/);
+    assert.match(sprintDataSource, /const loadTechTasks = async \(\{ forceRefresh = false, shouldApplyResult, measurement, operatorRefresh \} = \{\}\)/);
+    assert.match(sprintDataSource, /fetchTasks\('product', \{ forceRefresh, shouldApplyResult, measurement, operatorRefresh \}\)/);
+    assert.match(sprintDataSource, /fetchTasks\('tech', \{ forceRefresh, shouldApplyResult, measurement, operatorRefresh \}\)/);
     assert.match(
         sprintDataSource,
         /catch \(err\) \{[\s\S]*if \(options\.shouldApplyResult\?\.\(\) === false\) return IGNORED_RESULT;[\s\S]*finally \{[\s\S]*if \(useLoading && options\.shouldApplyResult\?\.\(\) !== false\)/
@@ -491,8 +494,8 @@ test('ENG sprint data hook preserves startup request sequencing markers', () => 
     assert.notEqual(readyToCloseIndex, -1, 'Expected deferred ready-to-close loader in ENG data hook');
     assert.ok(loadProductIndex < readyToCloseIndex, 'Expected visible sprint task loaders before ready-to-close alert loaders');
 
-    assert.match(source, /const data = await fetchTasks\('product', \{ forceRefresh, shouldApplyResult, measurement \}\);/);
-    assert.match(source, /const data = await fetchTasks\('tech', \{ forceRefresh, shouldApplyResult, measurement \}\);/);
+    assert.match(source, /const data = await fetchTasks\('product', \{ forceRefresh, shouldApplyResult, measurement, operatorRefresh \}\);/);
+    assert.match(source, /const data = await fetchTasks\('tech', \{ forceRefresh, shouldApplyResult, measurement, operatorRefresh \}\);/);
     assert.match(source, /sprintOverride: '',\s*purpose: 'ready-to-close'/);
     assert.match(source, /fetchBacklogEpics = async \(project, \{ signal \} = \{\}\) =>/);
     assert.match(source, /activeGroupId && activeGroupTeamIds\.length === 0/);
@@ -599,8 +602,8 @@ test('dashboard late writers use issue edit generations in addition to scope gua
     assert.match(statsDataSource, /fetchBurnout[\s\S]*beginRead\(\{ aggregate: true \}\)[\s\S]*isCurrentAggregateRead/);
     assert.match(statsDataSource, /fetchCohort[\s\S]*beginRead\(\{ aggregate: true \}\)[\s\S]*isCurrentAggregateRead/);
     assert.match(statsDataSource, /loadExcludedCapacity[\s\S]*beginRead\(\{ aggregate: true \}\)[\s\S]*isCurrentAggregateRead/);
-    assert.match(dashboardSource, /groupStateRef\.current\.set\(activeGroupId, issueEditStateRef\.current\.reconcileSnapshot\(groupStateSnapshot\)\)/);
-    assert.match(dashboardSource, /applyGroupState\(issueEditStateRef\.current\.reconcileSnapshot\(cached\)\)/);
+    assert.match(dashboardSource, /groupStateRef\.current\.set\(activeGroupId, stripPendingOverlays\(issueEditStateRef\.current\.reconcileSnapshot\(groupStateSnapshot\), issueEditStateRef\.current\.planningEntries\(\)\)\)/);
+    assert.match(dashboardSource, /applyGroupState\(overlaySnapshot\(issueEditStateRef\.current\.reconcileSnapshot\(cached\), issueEditStateRef\.current\.planningEntries\(\)\)\)/);
     assert.doesNotMatch(dashboardSource, /projectTrackPhaseCacheRef\.current = \{\};/);
 });
 

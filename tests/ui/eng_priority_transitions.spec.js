@@ -99,9 +99,9 @@ function makeStory(
     };
 }
 
-function makeEpic(sprintId, sprintName, priority = 'High') {
+function makeEpic(sprintId, sprintName, priority = 'High', key = 'PROD-EPIC') {
     return {
-        key: 'PROD-EPIC',
+        key,
         summary: 'Synthetic product epic',
         status: { name: 'In Progress' },
         priority: priority ? { name: priority } : null,
@@ -161,9 +161,13 @@ async function installEngPriorityFixture(page, {
     priorityWrite = priorityWriteResponse,
     omitSelectedTeamAfterPriority = false,
     epicPriority = 'High',
+    extraEpicKeys = [],
+    otherSprint = null,
+    statefulWrites = false,
 } = {}) {
     const calls = [];
     const priorityState = { inFlight: 0, maxInFlight: 0, successfulWrite: false };
+    const appliedPriority = new Map(); // statefulWrites: what Jira would now return for a key whose write was applied
     const groupsConfigPayload = {
         version: 1,
         configRevision: 1,
@@ -215,7 +219,7 @@ async function installEngPriorityFixture(page, {
         if (url.pathname === '/api/stats/priority-weights-config') return json(route, { weights: [], source: 'test' });
         if (url.pathname === '/api/sprints') {
             return json(route, {
-                sprints: [{ id: activeSprintId, name: activeSprintName, state: 'active', startDate: '2026-05-01' }],
+                sprints: [{ id: activeSprintId, name: activeSprintName, state: 'active', startDate: '2026-05-01' }, ...(otherSprint ? [{ id: otherSprint.id, name: otherSprint.name, state: 'active', startDate: '2026-05-15' }] : [])],
             });
         }
         if (url.pathname === '/api/tasks-with-team-name') {
@@ -230,15 +234,20 @@ async function installEngPriorityFixture(page, {
                     makeStory('PROD-2', activeSprintId, activeSprintName),
                 ])
                 : [];
-            const issues = (stories && project === 'product' && !purpose) ? stories : defaultIssues;
+            const onOtherSprint = otherSprint && String(url.searchParams.get('sprint')) === String(otherSprint.id);
+            const listed = onOtherSprint ? (project === 'product' && !purpose ? [makeStory('PROD-B-1', otherSprint.id, otherSprint.name)] : []) : (stories && project === 'product' && !purpose) ? stories : defaultIssues;
+            const issues = listed.map(issue => (appliedPriority.has(issue.key) ? { ...issue, fields: { ...issue.fields, priority: { name: appliedPriority.get(issue.key) } } } : issue));
             const epic = makeEpic(activeSprintId, activeSprintName, epicPriority);
+            const epics = [epic, ...extraEpicKeys.map(key => makeEpic(activeSprintId, activeSprintName, epicPriority, key))];
             return json(route, {
                 issues,
-                epics: { [epic.key]: epic },
-                epicsInScope: project === 'product' ? [epic] : [],
+                epics: Object.fromEntries(epics.map(item => [item.key, item])),
+                epicsInScope: project === 'product' ? epics : [],
                 names: {},
             });
         }
+        const editableMatch = url.pathname.match(/^\/api\/issues\/([^/]+)\/editable-fields$/);
+        if (editableMatch) return json(route, { issueKey: editableMatch[1], field: 'storyPoints', editable: true, currentValue: 1, baseUpdated: '2026-05-01T00:00:00.000+0000', mappingRevision: 'synthetic-story-points', me: null });
         if (url.pathname === '/api/issues/subtasks') return json(route, { parentKey: '', sprint: '', cached: false, summary: null, subtasks: [] });
         if (url.pathname === '/api/missing-info') return json(route, { issues: [], epics: [], count: 0, epicCount: 0 });
         if (url.pathname === '/api/backlog-epics') return json(route, { epics: [] });
@@ -254,6 +263,7 @@ async function installEngPriorityFixture(page, {
                 }
                 const responseBody = priorityWrite(body);
                 if (responseBody?.succeeded > 0) priorityState.successfulWrite = true;
+                if (statefulWrites && responseBody?.succeeded > 0) (body?.issueKeys || []).forEach(key => appliedPriority.set(key, responseBody.targetPriority?.name || 'Major'));
                 return json(route, responseBody);
             } finally {
                 priorityState.inFlight -= 1;
@@ -360,8 +370,9 @@ test('priority option click changes the clicked issue priority in one action', a
     const mutation = priorityWriteCalls(calls)[0];
     expect(mutation.body.issueKeys).toEqual(['PROD-1']);
     expect(mutation.body.targetPriorityId).toBe('4');
-    // The inline result note appears without any extra step.
-    await expect(menu1.locator('.priority-transition-menu-result')).toContainText('Updated 1 issue');
+    // The popup has done its job once the option is chosen: it closes at once and the icon shows the new priority.
+    await expect(menu1).toHaveCount(0);
+    await expect(priorityTrigger(page, 'story', 'PROD-1')).toHaveAttribute('data-priority', 'Major');
 });
 
 test('Catch Up applies rapid Story priority changes optimistically without task-list refetches', async ({ page }) => {
@@ -376,9 +387,7 @@ test('Catch Up applies rapid Story priority changes optimistically without task-
     await priorityMenu(page, 'PROD-1').getByRole('menuitem', { name: 'Major' }).click();
     await expect.poll(() => priorityState.inFlight).toBe(1);
     await expect(priorityTrigger(page, 'story', 'PROD-1')).toHaveAttribute('data-priority', 'Major');
-
-    await page.locator('.subtitle-secondary').click();
-    await expect(priorityMenu(page, 'PROD-1')).toHaveCount(0);
+    await expect(priorityMenu(page, 'PROD-1'), 'the popup closed when the option was chosen').toHaveCount(0);
     await expect(priorityTrigger(page, 'story', 'PROD-1')).toBeDisabled();
     await expect(priorityTrigger(page, 'story', 'PROD-2')).toBeEnabled();
     await priorityTrigger(page, 'story', 'PROD-2').click();
@@ -389,7 +398,7 @@ test('Catch Up applies rapid Story priority changes optimistically without task-
     await expect.poll(() => priorityWriteCalls(calls).length).toBe(2);
     await expect(priorityTrigger(page, 'story', 'PROD-2')).toHaveAttribute('data-priority', 'High');
     await expect.poll(() => priorityState.inFlight).toBe(0);
-    await expect(priorityMenu(page, 'PROD-2').locator('.priority-transition-menu-result')).toContainText('Updated 1 issue');
+    await expect(priorityMenu(page, 'PROD-2')).toHaveCount(0);
 
     expect(taskListRequests(calls)).toHaveLength(initialTaskRequests);
 });
@@ -401,7 +410,7 @@ test('Catch Up rolls back a failed optimistic priority change without refetching
         succeeded: 0,
         failed: 1,
         targetPriority: { id: body.targetPriorityId, name: 'Major' },
-        results: [{ key: body.issueKeys[0], result: 'failure', error: 'priority_update_forbidden' }],
+        results: [{ key: body.issueKeys[0], result: 'failure', error: 'priority_forbidden' }],
     });
     const { calls, priorityState } = await installEngPriorityFixture(page, {
         priorityDelayMs: 500,
@@ -418,7 +427,8 @@ test('Catch Up rolls back a failed optimistic priority change without refetching
     await expect(priorityTrigger(page, 'story', 'PROD-1')).toHaveAttribute('data-priority', 'Major');
 
     await expect.poll(() => priorityState.inFlight).toBe(0);
-    await expect(priorityMenu(page, 'PROD-1').locator('.priority-transition-menu-result')).toContainText('No issues updated');
+    // The popup closed on the click, so a rejection is shown only by the value returning.
+    await expect(priorityMenu(page, 'PROD-1')).toHaveCount(0);
     await expect(priorityTrigger(page, 'story', 'PROD-1')).toHaveAttribute('data-priority', 'Medium');
     expect(taskListRequests(calls)).toHaveLength(initialTaskRequests);
 });
@@ -545,11 +555,12 @@ test('outside-card click dismisses the priority menu; Escape, trigger toggle, an
     await expect(menu).toHaveCount(0);
     await expect(trigger).toBeFocused();
 
-    // A click INSIDE the menu (an option) is not treated as outside: it still submits.
+    // A click INSIDE the menu (an option) is not treated as outside: it still submits, and the popup then closes.
     await trigger.click();
     await expect(menu).toBeVisible();
     await menu.getByRole('menuitem', { name: 'Major' }).click();
-    await expect(menu.locator('.priority-transition-menu-result')).toContainText('Updated 1 issue');
+    await expect(trigger).toHaveAttribute('data-priority', 'Major');
+    await expect(menu).toHaveCount(0);
 });
 
 test('EPM issue boards render inert priority icons and never call priority APIs', async ({ page }) => {
@@ -589,7 +600,376 @@ test('EPM issue boards render inert priority icons and never call priority APIs'
     expect(calls.filter(c => c.pathname.startsWith('/api/issues/priorities'))).toHaveLength(0);
 });
 
-test('Planning priority refresh preserves a configured single-team filter when refreshed tasks omit that team', async ({ page }) => {
+// A Planning edit may issue only its own option read and the one write (plus the CSRF token read):
+// any other call after the click is a mutation-triggered read of the board, readiness or reviews.
+const PLANNING_EDIT_CALLS = new Set(['/api/issues/priorities/options', '/api/issues/priorities', '/api/auth/csrf']);
+const EDITOR_CALL = /^\/api\/issues\/[^/]+\/editable-fields$/;
+
+function unexpectedCallsSince(calls, index) {
+    return calls.slice(index).filter(call => !PLANNING_EDIT_CALLS.has(call.pathname)).map(call => `${call.method} ${call.pathname}`);
+}
+
+async function openPlanningTable(page) {
+    await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Planning' }).click();
+    await expect(page.locator('.planning-panel.open')).toBeVisible();
+    await page.getByRole('button', { name: 'Show Planning table', exact: true }).click();
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await expect(priorityTrigger(page, 'story', 'PROD-1')).toBeVisible();
+}
+
+const failedPriorityWrite = body => ({
+    requested: 1,
+    succeeded: 0,
+    failed: 1,
+    targetPriority: { id: body.targetPriorityId, name: 'Major' },
+    results: [{ key: body.issueKeys[0], result: 'failure', error: 'priority_conflict' }],
+});
+
+test('Planning List priority change shows at once, sends one key and makes no other read', async ({ page }) => {
+    await setPrefs(page, catchUpPrefs({ showPlanning: true }));
+    const { calls, priorityState } = await installEngPriorityFixture(page, { priorityDelayMs: 800 });
+    await page.goto(appBaseUrl);
+    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+    await page.waitForLoadState('networkidle');
+    const mark = calls.length;
+
+    await priorityTrigger(page, 'story', 'PROD-1').click();
+    await priorityMenu(page, 'PROD-1').getByRole('menuitem', { name: 'Major' }).click();
+    await expect.poll(() => priorityState.inFlight).toBe(1);
+    await expect(priorityTrigger(page, 'story', 'PROD-1')).toHaveAttribute('data-priority', 'Major');
+    await expect.poll(() => priorityState.inFlight).toBe(0);
+    await page.waitForLoadState('networkidle');
+
+    expect(priorityWriteCalls(calls)).toHaveLength(1);
+    expect(priorityWriteCalls(calls)[0].body.issueKeys).toEqual(['PROD-1']);
+    expect(unexpectedCallsSince(calls, mark)).toEqual([]);
+    await expect(priorityTrigger(page, 'story', 'PROD-1')).toHaveAttribute('data-priority', 'Major');
+});
+
+test('Planning Table priority change shows at once, sends one key and makes no other read', async ({ page }) => {
+    await setPrefs(page, catchUpPrefs());
+    const { calls, priorityState } = await installEngPriorityFixture(page, { priorityDelayMs: 800 });
+    await page.goto(appBaseUrl);
+    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+    await openPlanningTable(page);
+    await page.waitForLoadState('networkidle');
+    const mark = calls.length;
+
+    await priorityTrigger(page, 'story', 'PROD-1').click();
+    await priorityMenu(page, 'PROD-1').getByRole('menuitem', { name: 'Major' }).click();
+    await expect.poll(() => priorityState.inFlight).toBe(1);
+    await expect(priorityTrigger(page, 'story', 'PROD-1')).toHaveAttribute('data-priority', 'Major');
+    await expect.poll(() => priorityState.inFlight).toBe(0);
+    await page.waitForLoadState('networkidle');
+
+    expect(priorityWriteCalls(calls)).toHaveLength(1);
+    expect(priorityWriteCalls(calls)[0].body.issueKeys).toEqual(['PROD-1']);
+    expect(unexpectedCallsSince(calls, mark)).toEqual([]);
+    await expect(priorityTrigger(page, 'story', 'PROD-1')).toHaveAttribute('data-priority', 'Major');
+});
+
+test('Planning List rolls back a rejected priority change without any other read', async ({ page }) => {
+    await setPrefs(page, catchUpPrefs({ showPlanning: true }));
+    const { calls, priorityState } = await installEngPriorityFixture(page, {
+        priorityDelayMs: 500,
+        priorityWrite: failedPriorityWrite,
+    });
+    await page.goto(appBaseUrl);
+    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+    await page.waitForLoadState('networkidle');
+    const mark = calls.length;
+
+    await priorityTrigger(page, 'story', 'PROD-1').click();
+    await priorityMenu(page, 'PROD-1').getByRole('menuitem', { name: 'Major' }).click();
+    await expect.poll(() => priorityState.inFlight).toBe(1);
+    await expect(priorityTrigger(page, 'story', 'PROD-1')).toHaveAttribute('data-priority', 'Major');
+    await expect.poll(() => priorityState.inFlight).toBe(0);
+    await expect(priorityMenu(page, 'PROD-1')).toHaveCount(0);
+    await expect(priorityTrigger(page, 'story', 'PROD-1')).toHaveAttribute('data-priority', 'Medium');
+    await page.waitForLoadState('networkidle');
+    expect(unexpectedCallsSince(calls, mark)).toEqual([]);
+});
+
+test('Planning Table rolls back a rejected priority change without any other read', async ({ page }) => {
+    await setPrefs(page, catchUpPrefs());
+    const { calls, priorityState } = await installEngPriorityFixture(page, {
+        priorityDelayMs: 500,
+        priorityWrite: failedPriorityWrite,
+    });
+    await page.goto(appBaseUrl);
+    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+    await openPlanningTable(page);
+    await page.waitForLoadState('networkidle');
+    const mark = calls.length;
+
+    await priorityTrigger(page, 'story', 'PROD-1').click();
+    await priorityMenu(page, 'PROD-1').getByRole('menuitem', { name: 'Major' }).click();
+    await expect.poll(() => priorityState.inFlight).toBe(1);
+    await expect(priorityTrigger(page, 'story', 'PROD-1')).toHaveAttribute('data-priority', 'Major');
+    await expect.poll(() => priorityState.inFlight).toBe(0);
+    await expect(priorityTrigger(page, 'story', 'PROD-1')).toHaveAttribute('data-priority', 'Medium');
+    await page.waitForLoadState('networkidle');
+    expect(unexpectedCallsSince(calls, mark)).toEqual([]);
+});
+
+test('Planning applies rapid independent Story priority changes without refetching', async ({ page }) => {
+    await setPrefs(page, catchUpPrefs({ showPlanning: true }));
+    const { calls, priorityState } = await installEngPriorityFixture(page, { priorityDelayMs: 1000 });
+    await page.goto(appBaseUrl);
+    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+    await page.waitForLoadState('networkidle');
+    const mark = calls.length;
+
+    await priorityTrigger(page, 'story', 'PROD-1').click();
+    await priorityMenu(page, 'PROD-1').getByRole('menuitem', { name: 'Major' }).click();
+    await expect.poll(() => priorityState.inFlight).toBe(1);
+    await expect(priorityTrigger(page, 'story', 'PROD-1')).toHaveAttribute('data-priority', 'Major');
+    await page.locator('.subtitle-secondary').click();
+    await expect(priorityMenu(page, 'PROD-1')).toHaveCount(0);
+    await expect(priorityTrigger(page, 'story', 'PROD-1')).toBeDisabled();
+    await expect(priorityTrigger(page, 'story', 'PROD-2')).toBeEnabled();
+
+    await priorityTrigger(page, 'story', 'PROD-2').click();
+    const secondOption = priorityMenu(page, 'PROD-2').getByText('High', { exact: true }).locator('..');
+    await expect(secondOption).toBeEnabled();
+    await secondOption.click();
+    await expect(priorityTrigger(page, 'story', 'PROD-2')).toHaveAttribute('data-priority', 'High');
+    await expect.poll(() => priorityWriteCalls(calls).length).toBe(2);
+    await expect.poll(() => priorityState.inFlight).toBe(0);
+    await page.waitForLoadState('networkidle');
+
+    expect(priorityWriteCalls(calls).map(call => call.body.issueKeys)).toEqual([['PROD-1'], ['PROD-2']]);
+    expect(unexpectedCallsSince(calls, mark)).toEqual([]);
+});
+
+const planningStoryOrder = page => page.locator('[data-priority-transition-trigger][data-issue-kind="story"]')
+    .evaluateAll(triggers => triggers.map(trigger => trigger.dataset.issueKey));
+
+for (const layout of ['List', 'Table']) {
+    for (const outcome of ['confirmed', 'rejected']) {
+        test(`Planning ${layout} keeps a Story in place while its priority is pending and ${outcome === 'confirmed' ? 'moves it to its sorted place once Jira confirms' : 'never moves it when Jira rejects'}`, async ({ page }) => {
+            await setPrefs(page, catchUpPrefs(layout === 'List' ? { showPlanning: true } : {}));
+            const { calls, priorityState } = await installEngPriorityFixture(page, {
+                priorityDelayMs: 900,
+                priorityWrite: outcome === 'rejected' ? failedPriorityWrite : priorityWriteResponse,
+                stories: ['PROD-1', 'PROD-2', 'PROD-3'].map(key => makeStory(key, activeSprintId, activeSprintName)),
+            });
+            await page.goto(appBaseUrl);
+            await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+            if (layout === 'Table') {
+                await openPlanningTable(page);
+                // The Table orders rows by the reviewer's sort; without one it is key order, which a priority edit never changes.
+                await page.locator('.planning-review-heading').filter({ hasText: 'Priority' }).first().click();
+            }
+            await page.waitForLoadState('networkidle');
+            expect(await planningStoryOrder(page)).toEqual(['PROD-1', 'PROD-2', 'PROD-3']);
+            const mark = calls.length;
+
+            // PROD-3 goes from Medium to Major, which sorts above its Medium siblings.
+            await priorityTrigger(page, 'story', 'PROD-3').click();
+            await priorityMenu(page, 'PROD-3').getByRole('menuitem', { name: 'Major' }).click();
+            await expect.poll(() => priorityState.inFlight).toBe(1);
+            await expect(priorityTrigger(page, 'story', 'PROD-3')).toHaveAttribute('data-priority', 'Major');
+            expect(await planningStoryOrder(page), 'the Story shows the new priority at once but stays where it is').toEqual(['PROD-1', 'PROD-2', 'PROD-3']);
+
+            await expect.poll(() => priorityState.inFlight).toBe(0);
+            await page.waitForLoadState('networkidle');
+            if (outcome === 'confirmed') {
+                await expect.poll(() => planningStoryOrder(page)).toEqual(['PROD-3', 'PROD-1', 'PROD-2']);
+                await expect(priorityTrigger(page, 'story', 'PROD-3')).toHaveAttribute('data-priority', 'Major');
+            } else {
+                await expect(priorityTrigger(page, 'story', 'PROD-3')).toHaveAttribute('data-priority', 'Medium');
+                expect(await planningStoryOrder(page)).toEqual(['PROD-1', 'PROD-2', 'PROD-3']);
+            }
+            expect(unexpectedCallsSince(calls, mark)).toEqual([]);
+        });
+    }
+}
+
+test('Planning List holds the order while an editor is open and settles it when the editor closes', async ({ page }) => {
+    await setPrefs(page, catchUpPrefs({ showPlanning: true }));
+    const { calls, priorityState } = await installEngPriorityFixture(page, {
+        priorityDelayMs: 1200,
+        stories: ['PROD-1', 'PROD-2', 'PROD-3'].map(key => makeStory(key, activeSprintId, activeSprintName)),
+    });
+    await page.goto(appBaseUrl);
+    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+    await page.waitForLoadState('networkidle');
+    const points = page.locator('.task-item[data-task-key="PROD-1"]').getByRole('textbox', { name: 'Story Points' });
+    const mark = calls.length;
+
+    await priorityTrigger(page, 'story', 'PROD-3').click();
+    await priorityMenu(page, 'PROD-3').getByRole('menuitem', { name: 'Major' }).click();
+    await expect.poll(() => priorityState.inFlight).toBe(1);
+    // A sibling's editor opens while PROD-3's priority is still on the wire.
+    await points.click();
+    await expect(points).toBeEditable();
+    await points.fill('7');
+
+    await expect.poll(() => priorityState.inFlight).toBe(0);
+    await page.waitForLoadState('networkidle');
+    await expect(priorityTrigger(page, 'story', 'PROD-3')).toHaveAttribute('data-priority', 'Major');
+    expect(await planningStoryOrder(page), 'a confirmed edit never re-sorts under an open editor').toEqual(['PROD-1', 'PROD-2', 'PROD-3']);
+    await expect(points).toBeFocused();
+    await expect(points).toHaveValue('7');
+
+    await points.press('Escape');
+    await expect.poll(() => planningStoryOrder(page)).toEqual(['PROD-3', 'PROD-1', 'PROD-2']);
+    expect(calls.slice(mark).filter(call => !PLANNING_EDIT_CALLS.has(call.pathname) && !EDITOR_CALL.test(call.pathname)).map(call => `${call.method} ${call.pathname}`)).toEqual([]);
+});
+
+const epicsCss = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', 'styles', 'eng', 'epics.css'), 'utf8');
+
+test('Planning List blinks a confirmed Story and scrolls to it only when it moved out of view and the user has not scrolled', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 1100 });
+    await setPrefs(page, catchUpPrefs({ showPlanning: true }));
+    const stories = Array.from({ length: 40 }, (_, index) => makeStory(`PROD-${index + 1}`, activeSprintId, activeSprintName));
+    const { priorityState } = await installEngPriorityFixture(page, { priorityDelayMs: 600, stories });
+    await page.goto(appBaseUrl);
+    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+    await page.addStyleTag({ content: epicsCss });
+    await page.waitForLoadState('networkidle');
+    const card = key => page.locator(`.task-item[data-task-key="${key}"]`);
+    const inView = key => card(key).evaluate((element) => { const rect = element.getBoundingClientRect(); return rect.top >= 0 && rect.bottom <= window.innerHeight + 1; });
+    const edit = async (key) => {
+        await priorityTrigger(page, 'story', key).click();
+        await priorityMenu(page, key).getByRole('menuitem', { name: 'Major' }).click();
+        await expect.poll(() => priorityState.inFlight).toBe(1);
+    };
+
+    // Moving within view: the card blinks with the shared tint and the page stays put.
+    await edit('PROD-2');
+    const resting = await page.evaluate(() => window.scrollY);
+    await expect.poll(() => priorityState.inFlight).toBe(0);
+    await expect(card('PROD-2')).toHaveClass(/epic-flash/);
+    expect(await page.evaluate(() => document.getAnimations().some(animation => animation.animationName === 'epicFlash'))).toBe(true);
+    expect(await page.evaluate(() => window.scrollY), 'a card that stays in view does not move the page').toBe(resting);
+    await expect(card('PROD-2')).not.toHaveClass(/epic-flash/);
+
+    // At the bottom, the card jumps to the top: the page follows it.
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await expect(card('PROD-40')).toBeVisible();
+    const bottom = await page.evaluate(() => window.scrollY);
+    await edit('PROD-40');
+    await expect.poll(() => priorityState.inFlight).toBe(0);
+    await expect.poll(() => inView('PROD-40')).toBe(true);
+    expect(await page.evaluate(() => window.scrollY)).toBeLessThan(bottom);
+
+    // The reader scrolls away after the click: the card blinks, the page stays where the reader left it.
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await expect(card('PROD-39')).toBeVisible();
+    await edit('PROD-39');
+    await page.evaluate(() => window.scrollBy(0, -300));
+    // The card the reader is looking at: it must stay exactly where it is on screen, whatever moves above it.
+    const watched = await page.evaluate(() => {
+        const element = Array.from(document.querySelectorAll('.task-item[data-task-key]')).find(candidate => candidate.getBoundingClientRect().top > 200);
+        return { key: element.dataset.taskKey, top: element.getBoundingClientRect().top };
+    });
+    await expect.poll(() => priorityState.inFlight).toBe(0);
+    await expect(card('PROD-39')).toHaveClass(/epic-flash/);
+    await page.waitForTimeout(500);
+    // One moved card is ~85px tall; the few pixels left are the edited card's own menu settling above, not a reorder shift.
+    expect(Math.abs(await card(watched.key).evaluate(element => element.getBoundingClientRect().top) - watched.top)).toBeLessThanOrEqual(8);
+});
+
+test.describe('touch', () => {
+    test.use({ hasTouch: true });
+    test('a Planning Table priority edit works by tap alone and the confirmed row blinks and moves into place', async ({ page, browserName }) => {
+        test.skip(browserName === 'firefox', 'Firefox does not support touch emulation');
+        await setPrefs(page, catchUpPrefs());
+        const { priorityState } = await installEngPriorityFixture(page, {
+            priorityDelayMs: 600,
+            stories: ['PROD-1', 'PROD-2', 'PROD-3'].map(key => makeStory(key, activeSprintId, activeSprintName)),
+        });
+        await page.goto(appBaseUrl);
+        await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+        await openPlanningTable(page);
+        await page.locator('.planning-review-heading').filter({ hasText: 'Priority' }).first().tap();
+        await expect.poll(() => planningStoryOrder(page)).toEqual(['PROD-1', 'PROD-2', 'PROD-3']);
+
+        await priorityTrigger(page, 'story', 'PROD-3').tap();
+        await priorityMenu(page, 'PROD-3').getByRole('menuitem', { name: 'Major' }).tap();
+        await expect.poll(() => priorityState.inFlight).toBe(1);
+        expect(await planningStoryOrder(page)).toEqual(['PROD-1', 'PROD-2', 'PROD-3']);
+        await expect.poll(() => priorityState.inFlight).toBe(0);
+        await expect.poll(() => planningStoryOrder(page)).toEqual(['PROD-3', 'PROD-1', 'PROD-2']);
+        await expect(page.locator('tbody tr[data-issue-key="PROD-3"]')).toHaveClass(/planning-review-confirmed/);
+    });
+});
+
+test('Planning keeps a pending priority edit through a Sprint switch away and back, and shows the confirmed value on every return', async ({ page }) => {
+    const otherSprint = { id: 3002, name: '2026Q2 Sprint 43' };
+    await setPrefs(page, catchUpPrefs({ showPlanning: true }));
+    const { calls, priorityState } = await installEngPriorityFixture(page, { priorityDelayMs: 2000, otherSprint, statefulWrites: true });
+    await page.goto(appBaseUrl);
+    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+    await page.waitForLoadState('networkidle');
+    const choose = async (name) => {
+        const toggle = page.locator('.sprint-dropdown').first().locator('.sprint-dropdown-toggle');
+        await expect(toggle).toHaveAttribute('aria-disabled', 'false');
+        await toggle.click();
+        await page.locator('.sprint-dropdown-option', { hasText: name }).click();
+    };
+
+    await priorityTrigger(page, 'story', 'PROD-1').click();
+    await priorityMenu(page, 'PROD-1').getByRole('menuitem', { name: 'Major' }).click();
+    await expect.poll(() => priorityState.inFlight).toBe(1);
+    await page.locator('.subtitle-secondary').click();
+    await expect(priorityMenu(page, 'PROD-1')).toHaveCount(0);
+
+    // A -> B -> A while the write is still on the wire.
+    await choose(otherSprint.name);
+    await expect(page.locator('.task-item[data-task-key="PROD-B-1"]')).toBeVisible();
+    await choose(activeSprintName);
+    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+    await expect(priorityTrigger(page, 'story', 'PROD-1'), 'the pending value is still shown after returning').toHaveAttribute('data-priority', 'Major');
+    expect(priorityWriteCalls(calls)).toHaveLength(1);
+
+    // The write confirms while A is mounted again: the confirmed value stays, nothing is re-sent.
+    await expect.poll(() => priorityState.inFlight).toBe(0);
+    await page.waitForLoadState('networkidle');
+    await expect(priorityTrigger(page, 'story', 'PROD-1')).toHaveAttribute('data-priority', 'Major');
+    expect(priorityWriteCalls(calls)).toHaveLength(1);
+
+    // Away and back once more: the cached Sprint shows the confirmed value, never the stale Medium.
+    await choose(otherSprint.name);
+    await expect(page.locator('.task-item[data-task-key="PROD-B-1"]')).toBeVisible();
+    await choose(activeSprintName);
+    await expect(priorityTrigger(page, 'story', 'PROD-1')).toHaveAttribute('data-priority', 'Major');
+});
+
+test('Planning List moves an Epic to its sorted place only once a Story priority edit is confirmed', async ({ page }) => {
+    await setPrefs(page, catchUpPrefs({ showPlanning: true }));
+    // Neither Epic has its own priority, so each sorts by its most urgent child: both Medium, ordered by load order.
+    const { calls, priorityState } = await installEngPriorityFixture(page, {
+        priorityDelayMs: 900,
+        epicPriority: null,
+        extraEpicKeys: ['PROD-EPIC-2'],
+        stories: [
+            makeStory('PROD-1', activeSprintId, activeSprintName, 'PROD-EPIC'),
+            makeStory('PROD-2', activeSprintId, activeSprintName, 'PROD-EPIC-2'),
+        ],
+    });
+    await page.goto(appBaseUrl);
+    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+    await page.waitForLoadState('networkidle');
+    const epicOrder = () => page.locator('[data-epic-key]').evaluateAll(blocks => blocks.map(block => block.dataset.epicKey));
+    expect(await epicOrder()).toEqual(['PROD-EPIC', 'PROD-EPIC-2']);
+    const mark = calls.length;
+
+    await priorityTrigger(page, 'story', 'PROD-2').click();
+    await priorityMenu(page, 'PROD-2').getByRole('menuitem', { name: 'Major' }).click();
+    await expect.poll(() => priorityState.inFlight).toBe(1);
+    await expect(priorityTrigger(page, 'story', 'PROD-2')).toHaveAttribute('data-priority', 'Major');
+    expect(await epicOrder(), 'the Epic stays put while the edit is pending').toEqual(['PROD-EPIC', 'PROD-EPIC-2']);
+
+    await expect.poll(() => priorityState.inFlight).toBe(0);
+    await page.waitForLoadState('networkidle');
+    await expect.poll(epicOrder).toEqual(['PROD-EPIC-2', 'PROD-EPIC']);
+    expect(unexpectedCallsSince(calls, mark)).toEqual([]);
+});
+
+test('Planning priority edit keeps a configured single-team filter, and an explicit Refresh that omits that team preserves it too', async ({ page }) => {
     await setPrefs(page, catchUpPrefs({ showPlanning: true, selectedTeams: ['team-alpha'] }));
     await page.addInitScript(({ scopeKey }) => {
         window.localStorage.setItem('jira_dashboard_team_selection_state_v1', JSON.stringify({
@@ -615,6 +995,15 @@ test('Planning priority refresh preserves a configured single-team filter when r
     await priorityTrigger(page, 'story', 'PROD-1').click();
     await priorityMenu(page, 'PROD-1').getByRole('menuitem', { name: 'Major' }).click();
 
+    // The edit itself never reloads the board: PROD-1 stays, shows its new priority and the filter holds.
+    await expect(priorityTrigger(page, 'story', 'PROD-1')).toHaveAttribute('data-priority', 'Major');
+    await expect.poll(() => priorityWriteCalls(calls).length).toBe(1);
+    await page.waitForLoadState('networkidle');
+    expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name')).toHaveLength(initialTaskRequestCount);
+    await expect(teamLabel).toHaveText('Alpha Team');
+
+    // An explicit Refresh reloads the board, and the refreshed payload omits the selected team.
+    await page.locator('[aria-label="Refresh tasks and sprints from Jira"]').click();
     await expect.poll(() => calls.filter(call => call.pathname === '/api/tasks-with-team-name').length)
         .toBeGreaterThan(initialTaskRequestCount);
     // The refreshed payload drops PROD-1 (Alpha) and returns only a Beta story, so proving the

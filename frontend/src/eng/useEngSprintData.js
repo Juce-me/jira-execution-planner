@@ -180,18 +180,33 @@ export function useEngSprintData({
                 performance.now() - startedAt, new TextEncoder().encode(text).byteLength));
             console.log('Success! Received data:', data);
 
-            // Sort by priority
+            // Raw read, before any reconcile, sort or overlay. The base of an open Planning edit and a write's
+            // evidence both come from this raw result, never from an overlaid or projected array.
+            const epicEntries = Object.entries(data.epics || {}).map(([key, epic]) => ({ ...epic, key: epic?.key || key }));
+            const rawPlanningRead = [...(data.issues || []), ...(data.epicsInScope || []), ...epicEntries];
+            issueEditState?.capturePlanningBases(rawPlanningRead, readToken);
+            if (options.shouldApplyResult?.() === false) return IGNORED_RESULT;
+            issueEditState?.notePlanningRawRead(rawPlanningRead, readToken);
+            // Only an explicit operator Refresh may release an unconfirmed lock, and only from this lane's own raw
+            // evidence for the lock's own scope. Done before the overlay so a released key shows what Jira returned.
+            if (options.operatorRefresh) {
+                issueEditState?.releasePlanningLocks({ scope: options.operatorRefresh.scope, evidence: issueEditState.planningEvidence(rawPlanningRead) });
+            }
+
+            // Sort by priority; the overlay of pending edits goes on AFTER the sort so a read that lands while an edit is pending
+            // never moves the pending Story.
             const reconcile = issues => issueEditState?.reconcileIssues(issues, readToken) || issues;
-            const sortedTasks = sortTasksByPriority(reconcile(data.issues || []), priorityOrder);
+            const overlay = issues => issueEditState?.overlayPlanningIssues(issues) || issues;
+            const sortedTasks = overlay(sortTasksByPriority(reconcile(data.issues || []), priorityOrder));
 
             const filteredTasks = filterTasksForTeamSet(sortedTasks, activeGroupTeamIds, activeGroupTeamSet);
             const filteredEpicsInScope = filterEpicsInScopeForTeamSet(
-                reconcile(data.epicsInScope || []),
+                overlay(reconcile(data.epicsInScope || [])),
                 activeGroupTeamIds,
                 activeGroupTeamSet,
                 activeGroupTeamLabels
             );
-            const reconciledEpicEntries = reconcile(Object.entries(data.epics || {}).map(([key, epic]) => ({ ...epic, key: epic?.key || key })));
+            const reconciledEpicEntries = overlay(reconcile(epicEntries));
             const filteredEpics = filterEpicsByTaskEpicKeys(Object.fromEntries(reconciledEpicEntries.map(epic => [epic.key, epic])), filteredTasks);
             if (options.shouldApplyResult?.() === false) return IGNORED_RESULT;
 
@@ -253,7 +268,7 @@ export function useEngSprintData({
         return Array.isArray(payload.epics) ? payload.epics : [];
     };
 
-    const loadProductTasks = async ({ forceRefresh = false, shouldApplyResult, measurement } = {}) => {
+    const loadProductTasks = async ({ forceRefresh = false, shouldApplyResult, measurement, operatorRefresh } = {}) => {
         if (strictBoardActive) return ENG_TASK_LOAD_OUTCOME.IGNORED;
         const sprintId = selectedSprint;
         setProductTasksLoading(true);
@@ -275,7 +290,7 @@ export function useEngSprintData({
                 }
                 return ENG_TASK_LOAD_OUTCOME.APPLIED;
             }
-            const data = await fetchTasks('product', { forceRefresh, shouldApplyResult, measurement });
+            const data = await fetchTasks('product', { forceRefresh, shouldApplyResult, measurement, operatorRefresh });
             const readToken = data?.[ISSUE_EDIT_READ_TOKEN]; retainedReadToken = readToken;
             if (data === AUTHENTICATION_REQUIRED_RESULT) return ENG_TASK_LOAD_OUTCOME.AUTH_REQUIRED;
             if (data === NON_AUTH_FAILURE_RESULT) return ENG_TASK_LOAD_OUTCOME.NON_AUTH_FAILURE;
@@ -304,7 +319,7 @@ export function useEngSprintData({
         }
     };
 
-    const loadTechTasks = async ({ forceRefresh = false, shouldApplyResult, measurement } = {}) => {
+    const loadTechTasks = async ({ forceRefresh = false, shouldApplyResult, measurement, operatorRefresh } = {}) => {
         if (strictBoardActive) return ENG_TASK_LOAD_OUTCOME.IGNORED;
         const sprintId = selectedSprint;
         setTechTasksLoading(true);
@@ -327,7 +342,7 @@ export function useEngSprintData({
                 }
                 return ENG_TASK_LOAD_OUTCOME.APPLIED;
             }
-            const data = await fetchTasks('tech', { forceRefresh, shouldApplyResult, measurement });
+            const data = await fetchTasks('tech', { forceRefresh, shouldApplyResult, measurement, operatorRefresh });
             const readToken = data?.[ISSUE_EDIT_READ_TOKEN]; retainedReadToken = readToken;
             if (data === AUTHENTICATION_REQUIRED_RESULT) return ENG_TASK_LOAD_OUTCOME.AUTH_REQUIRED;
             if (data === NON_AUTH_FAILURE_RESULT) return ENG_TASK_LOAD_OUTCOME.NON_AUTH_FAILURE;

@@ -19,6 +19,7 @@ export function useEngModeState({
     showScenario, setShowScenario,
     showBoard, setShowBoard,
     trackSelectContent,
+    onEnterCatchUp,
 }) {
     React.useEffect(() => {
         if (showPlanning) {
@@ -57,11 +58,13 @@ export function useEngModeState({
     const applyEngMode = React.useCallback((mode) => {
         const nextMode = String(mode || 'catch-up');
         trackSelectContent('eng_mode', nextMode, { from_mode: analyticsToken(activeEngMode), dashboard_view: 'eng' });
+        // Same batch as the mode change, so the alert effect and readiness each load once when Catch Up opens.
+        if (nextMode === 'catch-up') onEnterCatchUp?.();
         setShowPlanning(nextMode === 'planning');
         setShowStats(nextMode === 'statistics');
         setShowScenario(nextMode === 'scenario');
         setShowBoard(nextMode === 'board');
-    }, [activeEngMode, trackSelectContent, setShowPlanning, setShowStats, setShowScenario, setShowBoard]);
+    }, [activeEngMode, trackSelectContent, onEnterCatchUp, setShowPlanning, setShowStats, setShowScenario, setShowBoard]);
 
     return { activeEngMode, applyEngMode };
 }

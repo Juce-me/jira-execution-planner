@@ -1,4 +1,4 @@
-import { buildSelectedCountBucket, summarizeIssueTypeMix } from './engStatusTransitionUtils.js';
+import { buildSelectedCountBucket, findIssueResult, summarizeIssueTypeMix } from './engStatusTransitionUtils.js';
 
 // Target shape shared by the hook and UI. `summary` is for UI display only —
 // never put summary/key/URL/team/sprint/JQL into an analytics payload builder.
@@ -154,4 +154,27 @@ export function buildPriorityActionAnalyticsParams({
         ...(priorityId === undefined ? {} : { priority_bucket: buildPriorityBucket(resolvePriorityRank(priorityOptions, priorityId)) }),
         ...(result === undefined ? {} : { result }),
     };
+}
+
+const PRIORITY_DEFINITIVE_ERRORS = Object.freeze(['priority_conflict', 'priority_forbidden', 'issue_not_found']);
+
+// Priority counterpart of classifyStatusResult. Confirmed needs the response's targetPriority.id to
+// equal the requested id; the display name falls back to the options-catalog entry because the
+// service can return an empty name when catalog resolution fails (and `already_in_priority` has no
+// `toPriority`), so a missing name alone must not roll back a write Jira applied.
+export function classifyPriorityResult(response, key, { requestedPriorityId, selectedPriority, staleAlreadyIn = false } = {}) {
+    const found = findIssueResult(response, key);
+    if (found.problem) return { outcome: 'unconfirmed', code: found.problem };
+    const { entry } = found;
+    if (entry.result === 'failure') {
+        return PRIORITY_DEFINITIVE_ERRORS.includes(entry.error)
+            ? { outcome: 'rejected', code: entry.error }
+            : { outcome: 'unconfirmed', code: entry.error || 'priority_update_failed' };
+    }
+    if (entry.result !== 'success' && entry.result !== 'already_in_priority') return { outcome: 'unconfirmed', code: 'unknown_result' };
+    if (String(response?.targetPriority?.id ?? '') !== String(requestedPriorityId ?? '')) return { outcome: 'unconfirmed', code: 'target_mismatch' };
+    if (entry.result === 'already_in_priority' && staleAlreadyIn) return { outcome: 'unconfirmed', code: 'stale_already_in' };
+    const name = response.targetPriority.name || selectedPriority?.name || '';
+    if (!name) return { outcome: 'unconfirmed', code: 'unusable_value' };
+    return { outcome: 'confirmed', value: { ...(selectedPriority || {}), ...(response.targetPriority.name ? response.targetPriority : {}), name } };
 }

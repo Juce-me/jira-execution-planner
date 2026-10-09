@@ -20,13 +20,15 @@ function findStoryRequirement(requirementId) {
         .find(element => element.getAttribute('data-story-requirement-id') === normalizedId) || null;
 }
 
-function stickyBottom() {
-    const selectors = [
-        '.compact-sticky-header.is-visible',
-        '.planning-panel.open',
-        '.eng-filter-bar',
-        '.epic-header',
-    ];
+const STICKY_STACK_SELECTORS = [
+    '.compact-sticky-header.is-visible',
+    '.planning-panel.open',
+    '.eng-filter-bar',
+    '.epic-header',
+];
+
+// Bottom edge of the sticky stack (compact header, Planning panel, filter bar, Epic header, plus any extra tiers the caller names).
+export function measureStickyBottom(selectors = STICKY_STACK_SELECTORS) {
     return selectors.reduce((bottom, selector) => {
         document.querySelectorAll(selector).forEach((element) => {
             const style = window.getComputedStyle(element);
@@ -38,6 +40,10 @@ function stickyBottom() {
         });
         return bottom;
     }, 0);
+}
+
+function stickyBottom() {
+    return measureStickyBottom();
 }
 
 function revealStoryRequirement(requirementId, { reducedMotion = false } = {}) {

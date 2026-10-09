@@ -37,6 +37,7 @@ BACKEND_SECURITY_POLICY_PATH = REPO_ROOT / "backend" / "security" / "policy.py"
 BACKEND_EPM_PATH = REPO_ROOT / "backend" / "epm"
 BACKEND_EPM_HOME_PATH = BACKEND_EPM_PATH / "home.py"
 BACKEND_JIRA_ISSUE_TRANSITIONS_PATH = REPO_ROOT / "backend" / "services" / "jira_issue_transitions.py"
+BACKEND_JIRA_ISSUE_PRIORITIES_PATH = REPO_ROOT / "backend" / "services" / "jira_issue_priorities.py"
 APP_ROUTE_EPM_PATTERN = re.compile(
     r"@app\.(?:route|get|post|put|patch|delete)\(\s*['\"]\/api\/epm(?:\/|['\"])",
     re.MULTILINE,
@@ -466,6 +467,34 @@ class BackendRouteSourceGuardTests(unittest.TestCase):
             "build_jira_headers(",
             source,
             "backend/services/jira_issue_transitions.py must not call build_jira_headers()",
+        )
+
+    def test_jira_issue_priorities_service_has_no_forbidden_imports_or_calls(self):
+        # Same AST guard as the transitions service: parse real import statements so the
+        # module's own docstring cannot false-positive, and require the dependency-injected
+        # shape (no direct Jira/Home credential helpers) for the priority write path too.
+        source = BACKEND_JIRA_ISSUE_PRIORITIES_PATH.read_text(encoding="utf8")
+        tree = ast.parse(source)
+        imported_modules = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported_modules.extend(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imported_modules.append(node.module)
+
+        forbidden_modules = [
+            name for name in imported_modules
+            if name == "requests" or name.startswith("backend.epm") or "service_integration" in name
+        ]
+        self.assertEqual(
+            forbidden_modules,
+            [],
+            "backend/services/jira_issue_priorities.py must stay dependency-injected and avoid direct Jira/Home credential helpers",
+        )
+        self.assertNotIn(
+            "build_jira_headers(",
+            source,
+            "backend/services/jira_issue_priorities.py must not call build_jira_headers()",
         )
 
     def test_security_policy_has_exact_issue_transition_endpoint_policies(self):

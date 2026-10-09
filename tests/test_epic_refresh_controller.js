@@ -204,6 +204,7 @@ async function runLoader(respond, { strictBoardActive = false } = {}) {
                 beginRead: () => { const token = { id: probe.started.length }; probe.started.push(token); return token; },
                 finishRead: token => { if (token) probe.finished.push(token); },
                 reconcileIssues: issues => issues,
+                capturePlanningBases: () => {}, notePlanningRawRead: () => {}, overlayPlanningIssues: issues => issues,
             },
         });
         probe.lanes = await api.loadEpicRefresh({ epicKey: 'EPIC-1', shouldApplyResult: () => true });

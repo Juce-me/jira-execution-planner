@@ -202,3 +202,48 @@ test('priority bucket helpers never receive or return raw issue identifiers or p
     assert.equal(utils.resolvePriorityRank([{ id: 'PROD-1', rank: 10 }], 'PROD-1'), 10, 'id lookup is exact-match only, never echoes the id back as a bucket');
     assert.notEqual(utils.buildPriorityBucket('PROD-1'), 'PROD-1');
 });
+
+// ---- outcome classification (issue #250) -------------------------------------------------------
+const MAJOR_OPTION = { id: '4', name: 'Major', iconUrl: 'https://jira.example/p4.svg', rank: 40 };
+const priorityResponse = (entry, target = { id: '4', name: 'Major' }) => ({ requested: 1, succeeded: 0, failed: 0, targetPriority: target, results: [{ key: 'DEMO-1', ...entry }] });
+
+test('classifyPriorityResult confirms on the requested target id and merges the catalog entry', async () => {
+    const { classifyPriorityResult } = await loadUtils();
+    const ctx = { requestedPriorityId: '4', selectedPriority: MAJOR_OPTION };
+
+    const confirmed = classifyPriorityResult(priorityResponse({ result: 'success', toPriority: 'Major' }), 'demo-1', ctx);
+    assert.equal(confirmed.outcome, 'confirmed');
+    assert.deepEqual(confirmed.value, { ...MAJOR_OPTION, id: '4', name: 'Major' });
+
+    const emptyName = classifyPriorityResult(priorityResponse({ result: 'success' }, { id: '4', name: '' }), 'DEMO-1', ctx);
+    assert.equal(emptyName.outcome, 'confirmed', 'an empty target name must not roll back a write Jira applied');
+    assert.equal(emptyName.value.name, 'Major');
+    assert.equal(classifyPriorityResult(priorityResponse({ result: 'already_in_priority' }), 'DEMO-1', ctx).outcome, 'confirmed', 'already_in_priority has no toPriority');
+});
+
+test('classifyPriorityResult: id mismatch, unusable value and ambiguous results are unconfirmed; definitive codes are rejections', async () => {
+    const { classifyPriorityResult } = await loadUtils();
+    const ctx = { requestedPriorityId: '4', selectedPriority: MAJOR_OPTION };
+
+    assert.equal(classifyPriorityResult(priorityResponse({ result: 'success' }, { id: '5', name: 'Low' }), 'DEMO-1', ctx).code, 'target_mismatch');
+    assert.equal(classifyPriorityResult(priorityResponse({ result: 'success' }, { id: '4', name: '' }), 'DEMO-1', { requestedPriorityId: '4' }).code, 'unusable_value');
+    assert.equal(classifyPriorityResult({ results: [] }, 'DEMO-1', ctx).code, 'missing_result');
+    assert.equal(classifyPriorityResult({ results: [{ key: 'DEMO-1', result: 'success' }, { key: 'DEMO-1', result: 'success' }] }, 'DEMO-1', ctx).code, 'duplicate_result');
+    assert.equal(classifyPriorityResult(priorityResponse({ result: 'queued' }), 'DEMO-1', ctx).code, 'unknown_result');
+
+    ['priority_conflict', 'priority_forbidden', 'issue_not_found'].forEach(code => {
+        assert.equal(classifyPriorityResult(priorityResponse({ result: 'failure', error: code }), 'DEMO-1', ctx).outcome, 'rejected', code);
+    });
+    ['priority_update_failed', 'priority_update_timeout', 'something_new', undefined].forEach(code => {
+        assert.equal(classifyPriorityResult(priorityResponse({ result: 'failure', error: code }), 'DEMO-1', ctx).outcome, 'unconfirmed', String(code));
+    });
+});
+
+test('already_in_priority is unconfirmed when this session wrote the issue since the last evidenced read', async () => {
+    const { classifyPriorityResult } = await loadUtils();
+    const ctx = { requestedPriorityId: '4', selectedPriority: MAJOR_OPTION };
+    const response = priorityResponse({ result: 'already_in_priority' });
+
+    assert.equal(classifyPriorityResult(response, 'DEMO-1', ctx).outcome, 'confirmed');
+    assert.deepEqual(classifyPriorityResult(response, 'DEMO-1', { ...ctx, staleAlreadyIn: true }), { outcome: 'unconfirmed', code: 'stale_already_in' });
+});

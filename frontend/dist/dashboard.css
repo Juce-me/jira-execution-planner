@@ -9295,6 +9295,46 @@ input.story-points-editor.story-points-alert-highlight {
 .planning-review-jira-link:focus-visible {
   color: #d48806;
 }
+.planning-review-table tr.planning-review-moving td {
+  position: relative;
+  z-index: 4;
+}
+.planning-review-table tr.planning-review-moving td.planning-review-selection,
+.planning-review-table tr.planning-review-moving td.planning-review-key {
+  position: sticky;
+  z-index: 5;
+}
+@media (min-width: 1000px) {
+  .planning-review-table tr.planning-review-moving td.planning-review-summary {
+    position: sticky;
+    z-index: 5;
+  }
+}
+.planning-review-table tr.planning-review-confirmed td {
+  position: relative;
+}
+.planning-review-table tr.planning-review-confirmed td.planning-review-selection,
+.planning-review-table tr.planning-review-confirmed td.planning-review-key {
+  position: sticky;
+}
+@media (min-width: 1000px) {
+  .planning-review-table tr.planning-review-confirmed td.planning-review-summary {
+    position: sticky;
+  }
+}
+.planning-review-table tr.planning-review-confirmed td::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  animation: epicFlash 1.1s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .planning-review-table tr.planning-review-confirmed td::after {
+    animation: none;
+    background: rgba(255, 255, 0, 0.25);
+  }
+}
 
 /* frontend/src/styles/eng.css */
 

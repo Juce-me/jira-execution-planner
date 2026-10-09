@@ -3256,7 +3256,7 @@ test('83. a re-check dropped because the cohort was cancelled leaves no stale al
 });
 
 for (const field of ['status', 'priority']) {
-    test(`84-${field}. a Planning ${field} edit issues no scoped loader call and no department alert request, and Catch Up reloads its cohort with a forced refresh on return`, async ({ page }) => {
+    test(`84-${field}. a Planning ${field} edit issues no scoped loader call and no department alert request, and Catch Up reloads its cohort on return ${field === 'status' ? 'with a forced refresh' : 'without forcing it (priority feeds no alert)'}`, async ({ page }) => {
         const ctx = await mockDashboard(page);
         serveStatusTargets(ctx);
         servePriority(ctx);
@@ -3295,7 +3295,8 @@ for (const field of ['status', 'priority']) {
         const sinceReturn = ctx.calls.length;
         await modeRadio(page, 'Catch Up').click();
         await expect.poll(() => departmentAlertCalls(ctx.calls.slice(sinceReturn)).length).toBe(2);
-        expect(forced(ctx.calls.slice(sinceReturn)), 'the edit invalidated the cohort: both lanes reload with the forced refresh').toHaveLength(2);
+        if (field === 'status') expect(forced(ctx.calls.slice(sinceReturn)), 'the edit invalidated the cohort: both lanes reload with the forced refresh').toHaveLength(2);
+        else expect(forced(ctx.calls.slice(sinceReturn)), 'a priority edit invalidates nothing: the return reloads the cohort as it would after no edit').toEqual([]);
         expect(epicAlertCalls(ctx.calls.slice(since))).toEqual([]);
     });
 }

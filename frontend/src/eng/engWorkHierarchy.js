@@ -1,4 +1,5 @@
 import { matchesEngEpicSearch, sortEpicGroups } from './engTaskUtils.js';
+import { projectPlanningOriginals } from './engIssueEditState.js';
 import { buildStoryRequirementId } from './alertEpicNavigation.js';
 import { shouldHideReadinessGhost } from './epicRefreshAlerts.js';
 
@@ -217,6 +218,22 @@ function groupByInitiative(epicGroups, diagnostics) {
     return result;
 }
 
+// Epic order reads the ORIGINAL status/priority of every pending edit (the Epic's own and its children's), so
+// a pending edit never reorders the groups; the groups themselves keep their display (optimistic) values.
+function sortEpicGroupsByOriginals(groups, sort, originals) {
+    if (!originals?.size) return sortEpicGroups(groups, sort);
+    const view = groups.map((group) => {
+        const original = originals.get(text(group.key).toUpperCase());
+        return {
+            ...group,
+            epic: group.epic && original ? { ...group.epic, ...original } : group.epic,
+            tasks: projectPlanningOriginals(group.tasks, originals),
+        };
+    });
+    const byKey = new Map(groups.map(group => [group.key, group]));
+    return sortEpicGroups(view, sort).map(group => byKey.get(group.key));
+}
+
 export function buildEngWorkHierarchy({
     mode = 'catch_up',
     sprint = {},
@@ -226,6 +243,7 @@ export function buildEngWorkHierarchy({
     filters = {},
     sort = 'priority',
     groupByInitiative: shouldGroupByInitiative = false,
+    planningOriginals = null,
 } = {}) {
     const diagnostics = [];
     const scope = sprintScope(sprint, filters);
@@ -306,7 +324,7 @@ export function buildEngWorkHierarchy({
             : [...taskRows, ...requirementRows];
         return { ...group, requirements, rows };
     });
-    epicGroups = sortEpicGroups(epicGroups, sort);
+    epicGroups = sortEpicGroupsByOriginals(epicGroups, sort, planningOriginals);
     if (mode === 'planning') {
         epicGroups = partitionRequirementsFirst(epicGroups, group => group.requirements.length > 0);
     }

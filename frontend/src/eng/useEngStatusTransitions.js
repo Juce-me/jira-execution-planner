@@ -2,9 +2,14 @@ import * as React from 'react';
 import { isAuthenticationRequiredError, readPendingAuthenticationRequired } from '../api/authRequired.js';
 import { fetchIssueTransitionOptions, transitionIssues } from '../api/jiraIssueApi.js';
 import { enqueueEngIssueMutation, enqueueEngIssueMutations } from './engIssueMutationQueue.js';
+import { createEngIssueEditState } from './engIssueEditState.js';
 import {
+    UNCONFIRMED_WRITE_MESSAGE,
     buildCatchUpStatusTargets,
     buildStatusActionAnalyticsParams,
+    classifyStatusResult,
+    classifyWriteError,
+    findIssueResult,
     resolveSubtaskParentStoryKeys,
     summarizeTransitionResults,
 } from './engStatusTransitionUtils.js';
@@ -92,11 +97,9 @@ export function clearTransitionOptionsCache() {
 
 // React state for ENG single-issue status changes (every Story, Epic and Subtask pill on Catch
 // Up, Planning and Board), option loading, mutation submission, auth recovery, and result
-// state. A submit always acts on one explicit issue key; the Planning selection
-// (`selectedStories`) feeds analytics only and never widens the write.
+// state. A submit always acts on one explicit issue key; the Planning selection never widens the write.
 export function useEngStatusTransitions({
     backendUrl,
-    selectedStories,
     storySubtasksByKey,
     selectedSprint,
     sourceSurface,
@@ -107,6 +110,7 @@ export function useEngStatusTransitions({
     onAlertDataInvalidated,
     onTransitionSuccessRefresh,
     mutationCoordinator = null,
+    issueEditState = null,
 }) {
     const [activeSingleIssueTarget, setActiveSingleIssueTarget] = React.useState(null);
     const [transitionOptions, setTransitionOptions] = React.useState(null);
@@ -121,6 +125,14 @@ export function useEngStatusTransitions({
     mutationScopeRef.current = mutationScopeKey;
     const pendingMutationKeysRef = React.useRef(new Set());
     const queuedMutationControllersRef = React.useRef(new Set());
+    // Reservations, overlays, bases and locks live in the shared edit state (App passes it so Catch Up,
+    // Planning and Board see the same open edits); a private one keeps the hook usable on its own.
+    const fallbackEditStateRef = React.useRef(null);
+    if (!issueEditState && !fallbackEditStateRef.current) fallbackEditStateRef.current = createEngIssueEditState();
+    const editState = issueEditState || fallbackEditStateRef.current;
+    // Counts scope changes, so a response that arrives after A -> B -> A can never revive the feedback
+    // of the earlier visit. Value settlement is by issue key instead.
+    const scopeVisitRef = React.useRef(0);
 
     const abortInFlightOptionsRequest = React.useCallback(() => {
         optionsRequestRef.current.controller?.abort();
@@ -130,6 +142,7 @@ export function useEngStatusTransitions({
     // Any open menu/options/result is scoped to one sprint and Catch Up/Planning surface. In-flight writes keep their own scope token so a late
     // response cannot patch a newly selected sprint or group.
     React.useEffect(() => {
+        scopeVisitRef.current += 1;
         setActiveSingleIssueTarget(null);
         activeSingleIssueTargetRef.current = null;
         abortInFlightOptionsRequest();
@@ -175,7 +188,6 @@ export function useEngStatusTransitions({
         const trackOptionsOpen = () => trackIssueStatusAction('status_options_open', buildStatusActionAnalyticsParams({
             sourceSurface,
             targets: list,
-            selectedStories,
         }));
 
         if (transitionOptionsCache.has(signature)) {
@@ -225,7 +237,7 @@ export function useEngStatusTransitions({
                 setTransitionOptionsLoading(false);
             }
         }
-    }, [backendUrl, sourceSurface, selectedStories, trackIssueStatusAction, onAuthRecoveryRequired]);
+    }, [backendUrl, sourceSurface, trackIssueStatusAction, onAuthRecoveryRequired]);
 
     const openSingleIssueStatusControl = React.useCallback((issue, fallbackIssueType) => {
         const target = buildCatchUpStatusTargets(issue, fallbackIssueType);
@@ -269,13 +281,8 @@ export function useEngStatusTransitions({
         const analyticsBaseParams = buildStatusActionAnalyticsParams({
             sourceSurface,
             targets,
-            selectedStories,
             status,
         });
-
-        trackIssueStatusAction('status_change_submit', analyticsBaseParams);
-        setTransitionError('');
-        setTransitionErrorCode('');
 
         // One explicit issue on every surface: take the optimistic local patch + per-key pending
         // set rather than a full scope refetch. On Board a dragged card waiting for a refetch
@@ -285,18 +292,56 @@ export function useEngStatusTransitions({
         const singleIssueKey = singleIssueTarget.key;
         if (pendingMutationKeysRef.current.has(singleIssueKey)) return null;
         const mutationScope = mutationScopeKey;
+        const visit = scopeVisitRef.current;
+        const prior = { name: singleIssueTarget.currentStatus || '' };
+
+        // One open edit per issue/field across every surface. A pending or unconfirmed (locked) edit
+        // refuses another one, so a second action can never start from a stale base.
+        const token = editState.reservePlanningEdit({
+            issueKey: singleIssueKey, field: 'status', prior, optimistic: { name: status }, scope: mutationScope,
+        });
+        if (!token) {
+            if (editState.planningPhase(singleIssueKey, 'status') === 'locked' && activeSingleIssueTargetRef.current?.key === singleIssueKey) {
+                setTransitionError(UNCONFIRMED_WRITE_MESSAGE);
+                setTransitionErrorCode('write_unconfirmed');
+            }
+            return null;
+        }
+        const isCurrentVisit = () => scopeVisitRef.current === visit && activeSingleIssueTargetRef.current?.key === singleIssueKey;
+        setTransitionError('');
+        setTransitionErrorCode('');
         pendingMutationKeysRef.current.add(singleIssueKey);
-        onApplyLocalStatus?.(singleIssueKey, status);
+        onApplyLocalStatus?.(singleIssueKey, status, { phase: 'optimistic', reveal: sourceSurface === 'planning' });
         setPendingIssueKeys((prev) => new Set(prev).add(singleIssueKey));
 
+        // Applies a settled outcome to the issue by KEY, whichever scope is mounted now: a confirmed value
+        // is published everywhere, a rejection returns to Jira's current status (or the base) only where
+        // the optimistic value still shows, and an unconfirmed edit shows its prior behind a lock.
+        const settle = (outcome, value, currentStatus) => {
+            if (outcome === 'confirmed') {
+                editState.settlePlanningConfirmed(token, value);
+                onApplyLocalStatus?.(singleIssueKey, value.name, { phase: 'confirmed', reveal: sourceSurface === 'planning' });
+            } else if (outcome === 'rejected') {
+                const settled = editState.settlePlanningRejected(token);
+                if (settled) onApplyLocalStatus?.(singleIssueKey, currentStatus || settled.base?.name || '', { phase: 'rejected', expected: status });
+            } else if (editState.settlePlanningUnconfirmed(token)) {
+                onApplyLocalStatus?.(singleIssueKey, prior.name, { phase: 'provisional', expected: status });
+            }
+        };
+
         let queueController = null;
+        let started = false;
         try {
             queueController = new AbortController();
             queuedMutationControllersRef.current.add(queueController);
-            const runMutation = () => transitionIssues(backendUrl, {
-                issueKeys: targets.map((target) => target.key),
-                targetStatus: status,
-            });
+            const runMutation = () => {
+                started = true;
+                trackIssueStatusAction('status_change_submit', analyticsBaseParams);
+                return transitionIssues(backendUrl, {
+                    issueKeys: targets.map((target) => target.key),
+                    targetStatus: status,
+                });
+            };
             const runQueuedMutation = async () => await enqueueEngIssueMutations(
                 targets.map(target => target.key),
                 runMutation,
@@ -314,36 +359,31 @@ export function useEngStatusTransitions({
                 ? enqueueCoordinatedMutation(singleIssueKey, runQueuedMutation)
                 : runQueuedMutation());
             const summary = summarizeTransitionResults(response?.results);
-            const isCurrentMutation = mutationScopeRef.current === mutationScope;
-            if (isCurrentMutation && activeSingleIssueTargetRef.current?.key === singleIssueKey) {
-                setTransitionResult({ ...summary, targetStatus: status });
+            const classified = classifyStatusResult(response, singleIssueKey, {
+                staleAlreadyIn: editState.hasUnevidencedPlanningWrite(singleIssueKey, 'status'),
+            });
+            const entryResult = findIssueResult(response, singleIssueKey).entry?.result;
+            settle(classified.outcome, classified.value, classified.currentStatus);
+            const current = isCurrentVisit();
+            if (current && classified.outcome !== 'unconfirmed') setTransitionResult({ ...summary, targetStatus: status });
+            if (current && classified.outcome === 'unconfirmed') {
+                setTransitionError(UNCONFIRMED_WRITE_MESSAGE);
+                setTransitionErrorCode('write_unconfirmed');
             }
-            trackIssueStatusAction('status_change_result', { ...analyticsBaseParams, result: summary.result });
-            const issueResult = (response?.results || []).find(entry => entry?.key === singleIssueKey);
-            const succeeded = issueResult?.result === 'success' || issueResult?.result === 'already_in_status';
-            if (isCurrentMutation) {
-                onApplyLocalStatus?.(
-                    singleIssueKey,
-                    succeeded
-                        ? (issueResult?.toStatus || response?.targetStatus || status)
-                        : (issueResult?.currentStatus || singleIssueTarget.currentStatus || ''),
-                );
-            }
-            if (summary.succeeded > 0) {
+            trackIssueStatusAction('status_change_result', {
+                ...analyticsBaseParams,
+                result: classified.outcome === 'confirmed' ? 'success' : classified.outcome === 'rejected' ? 'failure' : 'unknown',
+            });
+            if (classified.outcome === 'confirmed') {
                 // Report which stories had a subtask succeed so the caller can refresh
                 // only those expanded subtask rows (not a full reload). Raw keys stay
                 // local here; they never reach an analytics payload.
-                const succeededKeys = (response?.results || [])
-                    .filter((entry) => entry?.result === 'success' || entry?.result === 'already_in_status')
-                    .map((entry) => entry?.key)
-                    .filter(Boolean);
+                const succeededKeys = [singleIssueKey];
                 // Invalidate cached options responses that involved one of the
-                // project/issueType/old-status tuples that just changed status, including
-                // batch entries that combined a succeeded target with other still-unchanged
-                // targets. Uses the pre-transition targets' currentStatus (unchanged by the
-                // mutation response) via the same tuple derivation as transitionOptionCacheKey.
-                const succeededKeySet = new Set(succeededKeys);
-                const succeededTargets = targets.filter((target) => succeededKeySet.has(target.key));
+                // project/issueType/old-status tuples that just changed status. Uses the
+                // pre-transition targets' currentStatus (unchanged by the mutation response)
+                // via the same tuple derivation as transitionOptionCacheKey.
+                const succeededTargets = targets.filter((target) => target.key === singleIssueKey);
                 if (succeededTargets.some((target) => !target.issueType && !target.currentStatus)) {
                     // Submit's explicit-key fallback target carries only an issue key, so
                     // the tuple entries that covered that issue (cached by the open path
@@ -366,29 +406,39 @@ export function useEngStatusTransitions({
                     }
                 }
                 const affectedSubtaskStoryKeys = resolveSubtaskParentStoryKeys(succeededKeys, storySubtasksByKey);
-                if (isCurrentMutation) onAlertDataInvalidated?.({ keys: (response?.results || []).filter((entry) => entry?.result === 'success').map((entry) => entry?.key).filter(Boolean) });
+                if (current && entryResult === 'success') onAlertDataInvalidated?.({ keys: [singleIssueKey] });
                 if (sourceSurface === 'board') {
                     await onTransitionSuccessRefresh?.({ affectedSubtaskStoryKeys });
                 }
             }
             return response;
         } catch (err) {
-            if (err?.name === 'AbortError') return null;
-            if (isAuthenticationRequiredError(err)) return null;
-            if (mutationScopeRef.current === mutationScope) {
-                onApplyLocalStatus?.(singleIssueKey, singleIssueTarget.currentStatus || '');
+            // A terminal 401 (including the auth lock that aborts queued jobs) abandons the edit: no
+            // rollback, no lock, no cache write, no replay. The projection stays frozen until the page
+            // navigates, so the selection cannot be pruned for an optimistic value.
+            if (isAuthenticationRequiredError(err) || (err?.name === 'AbortError' && readPendingAuthenticationRequired())) {
+                editState.abandonPlanningEdit(token);
+                if (started) trackIssueStatusAction('status_change_result', { ...analyticsBaseParams, result: 'unknown' });
+                return null;
             }
-            if (mutationScopeRef.current === mutationScope && activeSingleIssueTargetRef.current?.key === singleIssueKey) {
+            const outcome = classifyWriteError(err);
+            settle(outcome);
+            if (outcome === 'unconfirmed' && isCurrentVisit()) {
+                setTransitionError(UNCONFIRMED_WRITE_MESSAGE);
+                setTransitionErrorCode('write_unconfirmed');
+            } else if (outcome === 'rejected' && started && isCurrentVisit()) {
                 setTransitionError(err?.message || 'Failed to change status.');
                 setTransitionErrorCode(err?.code || '');
             }
-            trackIssueStatusAction('status_change_result', { ...analyticsBaseParams, result: 'failure' });
+            if (started) {
+                trackIssueStatusAction('status_change_result', { ...analyticsBaseParams, result: outcome === 'rejected' ? 'failure' : 'unknown' });
+            }
             return null;
         } finally {
             mutationCoordinator?.complete();
             if (queueController) queuedMutationControllersRef.current.delete(queueController);
-            if (mutationScopeRef.current === mutationScope) {
-                pendingMutationKeysRef.current.delete(singleIssueKey);
+            pendingMutationKeysRef.current.delete(singleIssueKey);
+            if (scopeVisitRef.current === visit) {
                 setPendingIssueKeys((prev) => {
                     const next = new Set(prev);
                     next.delete(singleIssueKey);
@@ -399,7 +449,6 @@ export function useEngStatusTransitions({
     }, [
         sourceSurface,
         activeSingleIssueTarget,
-        selectedStories,
         storySubtasksByKey,
         mutationScopeKey,
         trackIssueStatusAction,
@@ -409,6 +458,7 @@ export function useEngStatusTransitions({
         onTransitionSuccessRefresh,
         onAuthRecoveryRequired,
         mutationCoordinator,
+        editState,
     ]);
 
     return {

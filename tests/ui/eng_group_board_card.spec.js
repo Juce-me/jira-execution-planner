@@ -74,7 +74,7 @@ function epicPayload(firstEpicAssignee = 'Alice Adams', firstEpicStatus = null, 
     return epics;
 }
 
-function storyPayload(firstStoryAssignee = 'Planner', firstEpicStoryPoints = null, firstEpicKey = 'PLAT-1', includeNoEpic = false) {
+function storyPayload(firstStoryAssignee = 'Planner', firstEpicStoryPoints = null, firstEpicKey = 'PLAT-1', includeNoEpic = false, extraFirstEpicStatuses = []) {
     // PLAT-1 gets two stories (one Done, one In Progress) to exercise the progress bar; every
     // other epic gets exactly one story, just enough for groupTasksByEpic to produce a group.
     // PLAT-4's points are deliberately fractional (Fix 6) — a column whose epics sum to a
@@ -125,6 +125,27 @@ function storyPayload(firstStoryAssignee = 'Planner', firstEpicStoryPoints = nul
                     sprint: [{ id: selectedSprintId, name: selectedSprintName, state: 'active' }],
                 },
             });
+            extraFirstEpicStatuses.forEach((statusName, extraIndex) => {
+                rows.push({
+                    id: `${actualKey}-${extraIndex + 3}`,
+                    key: `${actualKey}-${extraIndex + 3}`,
+                    fields: {
+                        summary: `${key} story ${extraIndex + 3}`,
+                        status: { name: statusName },
+                        priority: { name: 'Major' },
+                        issuetype: { name: 'Story' },
+                        assignee: { displayName: 'Planner' },
+                        updated: '2026-07-28T00:00:00.000+0000',
+                        customfield_10004: 0,
+                        epicKey: actualKey,
+                        parentSummary: `${key} epic summary`,
+                        projectKey: 'PLAT',
+                        teamId: 'team-alpha',
+                        teamName: 'Alpha Team',
+                        sprint: [{ id: selectedSprintId, name: selectedSprintName, state: 'active' }],
+                    },
+                });
+            });
         }
     });
     if (includeNoEpic) {
@@ -158,6 +179,7 @@ async function installBoardFixture(page, fieldCalls = [], {
     includeNoEpic = false,
     settingsAdminOnly = false,
     excludedCapacityEpics = [],
+    extraFirstEpicStatuses = [],
 } = {}) {
     await installDashboardShell(page);
     await page.route('**/api/**', (route) => {
@@ -239,7 +261,7 @@ async function installBoardFixture(page, fieldCalls = [], {
                 omitFirstEpicAssignee,
             });
             return json({
-                issues: storyPayload(storyAssigneeName, firstEpicStoryPoints, firstEpicKey, includeNoEpic),
+                issues: storyPayload(storyAssigneeName, firstEpicStoryPoints, firstEpicKey, includeNoEpic, extraFirstEpicStatuses),
                 epics,
                 epicsInScope: Object.values(epics),
                 names: {},
@@ -272,6 +294,7 @@ async function openBoard(page, {
     includeNoEpic = false,
     settingsAdminOnly = false,
     excludedCapacityEpics = [],
+    extraFirstEpicStatuses = [],
 } = {}) {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.setViewportSize({ width, height });
@@ -291,6 +314,7 @@ async function openBoard(page, {
         includeNoEpic,
         settingsAdminOnly,
         excludedCapacityEpics,
+        extraFirstEpicStatuses,
     });
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
@@ -445,6 +469,32 @@ test('the card renders its three rows, and the track glyph only when set', async
     await expect(withoutTrack.locator('.epic-track-indicator')).toHaveCount(0);
     // PLAT-1 has 2 stories, one Done: row 2 states the fraction.
     await expect(withoutTrack.locator('.erow2')).toContainText('1 of 2 stories');
+});
+
+test('Incomplete fills the green done segment and Killed leaves the total (issue #253)', async ({ page }) => {
+    // PLAT-1 already has Done + In Progress; add Killed, Incomplete and Cancelled (stays in the total, not done).
+    await openBoard(page, { extraFirstEpicStatuses: ['Killed', 'Incomplete', 'Cancelled'] });
+    const card = col(page, 'col-1a2b3c4d').locator('.ecard[data-epic-key="PLAT-1"]');
+    await expect(card).toBeVisible();
+    // Captured before any assertion so a failing run against the old bundle still leaves the "before" image.
+    await card.screenshot({ path: path.join(screenshotDir, 'killed-incomplete-done-segment.png'), animations: 'disabled' });
+    // Five children, Killed off the total: Done + Incomplete done, In Progress, Cancelled waiting.
+    await expect(card.locator('.erow2')).toContainText('2 of 4 stories');
+
+    const track = card.locator('.story-subtasks-progress-track');
+    const done = card.locator('.story-subtasks-progress-done');
+    const inProgress = card.locator('.story-subtasks-progress-in-progress');
+    // Painted geometry (the segment's share of the track), not only the inline style.
+    const share = async (segment) => (await segment.boundingBox()).width / (await track.boundingBox()).width;
+    expect(await share(done)).toBeCloseTo(0.5, 1);
+    expect(await share(inProgress)).toBeCloseTo(0.25, 1);
+    expect(await done.evaluate((el) => el.style.width)).toBe('50%');
+    // The segment is the app's existing green, not a new colour.
+    expect(await done.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe('rgb(82, 196, 26)');
+
+    await card.locator('.ecard-open').click();
+    await expect(page.getByRole('dialog')).toContainText('2 of 4 stories done');
+    await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click();
 });
 
 test('Delivery owner shows "Not set" when the epic has none', async ({ page }) => {

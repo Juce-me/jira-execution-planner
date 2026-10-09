@@ -234,5 +234,5 @@ test('story readiness hook sends no per-epic request unless the department load 
     assert.match(source, /const shouldLoad = Boolean\(enabled && primaryReady && scopeKey\)/);
     assert.match(loadEpic, /if \(!shouldLoad \|\| !storyReadinessScopeKey\(requested\)\) return \{ status: 'ignored' \}/);
     assert.ok(loadEpic.indexOf('!shouldLoad') < loadEpic.indexOf('requestEpicReadiness('));
-    assert.match(loadEpic, /\[shouldLoad, backendUrl, requestEpicReadiness\]/);
+    assert.match(loadEpic, /\[shouldLoad, backendUrl, requestEpicReadiness, issueEditState\]/);
 });

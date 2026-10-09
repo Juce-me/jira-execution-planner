@@ -16,20 +16,25 @@ test.beforeAll(() => {
         const columns=Array.from({length:8},(_,i)=>({id:'cost'+i,rowKind:'story',label:'Cost '+i,type:'number',aggregation:'sum',archived:false,order:i}));
         let saveCount=0; let savedSchema={schemaRevision:1,columns,layouts:{},capabilities:{canRead:true,canSave:true}};
         const controller=createPlanningSprintReviewController({fetchSchema:async()=>savedSchema,readValues:async(_,__,body)=>({cells:body.issueIds.flatMap(id=>columns.map(column=>({issueId:id,rowKind:body.rowKind,columnId:column.id,value:id==='1'?'2.000':'10.000',revision:1})))}),saveReview:async(_,__,payload)=>{saveCount++; savedSchema={...savedSchema,schemaRevision:savedSchema.schemaRevision+1,columns:controller.getState().columns,layouts:controller.getState().layouts}; return {...savedSchema,cells:payload.cellChanges.map(cell=>({...cell,revision:2}))}}});
-        window.reviewActions=[]; window.harness={state:()=>controller.getState(),saveCount:()=>saveCount,reload:()=>controller.refresh(),actions:()=>window.reviewActions};
+        window.reviewActions=[]; window.holdCalls=[]; window.harness={state:()=>controller.getState(),saveCount:()=>saveCount,reload:()=>controller.refresh(),actions:()=>window.reviewActions};
         function App(){
             const state=React.useSyncExternalStore(controller.subscribe,controller.getState,controller.getState);
             const [selected,setSelected]=React.useState(new Set());
             const [visible,setVisible]=React.useState(true);
+            // Stand-in for the App: a priority edit is pending (originals project the old value) until confirm() commits the new one and raises the confirmed-edit event.
+            const [prio,setPrio]=React.useState({});const [pending,setPending]=React.useState(new Map());const [confirmed,setConfirmed]=React.useState(null);
+            React.useEffect(()=>{window.heldRows=0;window.priorityEdit={start:(key,name)=>{setPending(map=>new Map(map).set(key,{priority:{name:'High'}}));setPrio(map=>({...map,[key]:name}))},confirm:(key,scrolled=false)=>{setPending(map=>{const next=new Map(map);next.delete(key);return next});setConfirmed(event=>({keys:[...new Set([...(event?.keys||[]),key])],latest:key,scrolled:new Set([...(event?.scrolled||[]),...(scrolled?[key]:[])])}))}}},[]);
+            const withPrio=task=>prio[task.key]?{...task,fields:{...task.fields,priority:{name:prio[task.key]}}}:task;
+            const shown=stories.map(withPrio);const shownEpics=epics.map(group=>({...group,tasks:group.tasks.map(withPrio)}));
             React.useEffect(()=>{controller.setScope({sprintId:'100',contextKey:'actor',active:true,rows:[...stories.map(task=>({issueId:task.id,rowKind:'story'})),...epics.map(group=>({issueId:group.epic.id,rowKind:'epic'}))]});},[]);
-            return <div className="container"><div id="reference">Header reference</div><button id="layout" onClick={()=>setVisible(!visible)}>Layout</button>{visible&&<PlanningReviewTable epicGroups={epics} visibleTasks={stories} selectedStoryKeys={selected} onToggleStory={task=>setSelected(previous=>{const next=new Set(previous);if(next.has(task.key))next.delete(task.key);else next.add(task.key);return next})} onSelectStories={(tasks,on)=>setSelected(previous=>{const next=new Set(previous);tasks.forEach(task=>on?next.add(task.key):next.delete(task.key));return next})} jiraUrl="https://jira.example" review={{...state,...controller}} onReviewAction={action=>window.reviewActions.push(action)} admittedTeamCount={2} admittedProjectCount={2} renderFieldEditor={({row,field,value})=>field==='assignee'?<input className="issue-person-editor-trigger" aria-label={'assignee for '+row.key} defaultValue={String(value)} />:field==='team'||field==='inclusion'?<button className={field==='inclusion'?'epic-stat-toggle '+(row.key==='DEMO-2'?'':'active'):'planning-action-button'} aria-label={field+' for '+row.key}>{field==='inclusion'?(row.key==='DEMO-2'?'Excluded':'Included'):row.team?.name||'Unknown Team'}</button>:value}/>}<PlanningReviewScopeDialog review={{...state,...controller}}/></div>
+            return <div className="container"><div id="reference">Header reference</div><button id="layout" onClick={()=>setVisible(!visible)}>Layout</button>{visible&&<PlanningReviewTable epicGroups={shownEpics} visibleTasks={shown} pendingOriginals={pending} confirmedEdit={confirmed} onConfirmedEditHandled={handled=>setConfirmed(event=>{const left=(event?.keys||[]).filter(key=>!handled.includes(key));return left.length?{...event,keys:left}:null})} isRowHeld={()=>window.heldRows>0} selectedStoryKeys={selected} onToggleStory={task=>setSelected(previous=>{const next=new Set(previous);if(next.has(task.key))next.delete(task.key);else next.add(task.key);return next})} onSelectStories={(tasks,on)=>setSelected(previous=>{const next=new Set(previous);tasks.forEach(task=>on?next.add(task.key):next.delete(task.key));return next})} jiraUrl="https://jira.example" review={{...state,...controller}} onReviewAction={action=>window.reviewActions.push(action)} onHoldRow={key=>window.holdCalls.push(key)} admittedTeamCount={2} admittedProjectCount={2} renderFieldEditor={({row,field,value})=>field==='assignee'?<input className="issue-person-editor-trigger" aria-label={'assignee for '+row.key} defaultValue={String(value)} />:field==='team'||field==='inclusion'?<button className={field==='inclusion'?'epic-stat-toggle '+(row.key==='DEMO-2'?'':'active'):'planning-action-button'} aria-label={field+' for '+row.key}>{field==='inclusion'?(row.key==='DEMO-2'?'Excluded':'Included'):row.team?.name||'Unknown Team'}</button>:value}/>}<PlanningReviewScopeDialog review={{...state,...controller}}/></div>
         }
         createRoot(document.getElementById('root')).render(<App/>);
     ` }, bundle: true, write: false, format: 'iife', define: { 'process.env.NODE_ENV': '"test"' } }).outputFiles[0].text;
     css = esbuild.buildSync({ entryPoints: [path.join(root, 'frontend/src/styles/dashboard.css')], bundle: true, write: false }).outputFiles[0].text;
 });
-async function install(page, longReview = false, longNames = false, zeroStory = false) {
-    await page.setContent(`<meta name="viewport" content="width=device-width, initial-scale=1"><style>${css} *,*::before,*::after{animation:none!important;transition:none!important}</style><div id="root"></div>`);
+async function install(page, longReview = false, longNames = false, zeroStory = false, motion = false) {
+    await page.setContent(`<meta name="viewport" content="width=device-width, initial-scale=1"><style>${css} ${motion ? '' : '*,*::before,*::after{animation:none!important;transition:none!important}'}</style><div id="root"></div>`);
     await page.evaluate(({longReview,longNames,zeroStory}) => {window.longReview=longReview;window.longNames=longNames;window.zeroStory=zeroStory},{longReview,longNames,zeroStory});
     await page.addScriptTag({ content: js });
     await expect(page.getByRole('region', { name: 'Planning Sprint review' })).toBeVisible();
@@ -851,6 +856,188 @@ for (const mode of ['Epics', 'Stories']) test(`grip and chevron sit side by side
         expect(Math.abs(lane.chevronDy), note).toBeLessThan(1);
         expect(lane.clipped, note).toBe(false);
     }
+});
+
+// Confirmed Planning edits (issue #250): the explicit confirmed-edit event, not an order change, drives the slide, the blink and the reveal.
+const reviewOrder = page => page.locator('tbody tr[data-issue-key]').evaluateAll(rows => rows.map(row => row.dataset.issueKey));
+async function sortedByPriority(page, longReview = false, motion = true) {
+    await install(page, longReview, false, false, motion);
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await page.locator('.planning-review-heading').filter({ hasText: 'Priority' }).first().click();
+}
+// Confirms in the page and reports, two frames later, what the Table did with it.
+const confirmAndProbe = (page, keys, scrolled = false) => page.evaluate(({ keys, scrolled }) => new Promise((resolve) => {
+    keys.forEach(key => window.priorityEdit.confirm(key, scrolled));
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+        const animations = document.getAnimations();
+        const slid = animations.filter(a => a.effect?.getKeyframes?.().some(frame => frame.transform && frame.transform !== 'none'));
+        const row = key => document.querySelector(`tbody tr[data-issue-key="${key}"]`);
+        resolve({
+            slidRows: [...new Set(slid.map(a => a.effect.target.closest('tr')?.dataset.issueKey))].sort(),
+            blinking: animations.filter(a => a.animationName === 'epicFlash').length,
+            blinkRows: keys.filter(key => row(key)?.classList.contains('planning-review-confirmed')),
+            raised: keys.map(key => {
+                if (!row(key)) return null; // a key with no row on screen
+                const cell = selector => getComputedStyle(row(key).querySelector(selector));
+                return { moving: row(key)?.classList.contains('planning-review-moving'), cell: [cell('.planning-review-priority').zIndex, cell('.planning-review-priority').position], pinned: [cell('.planning-review-key').zIndex, cell('.planning-review-key').position] };
+            }),
+        });
+    }));
+}), { keys, scrolled });
+
+test('a confirmed edit slides the displaced rows, raises and blinks the edited row, and a pending edit moves nothing', async ({ page }) => {
+    await sortedByPriority(page);
+    expect(await reviewOrder(page)).toEqual(['DEMO-1', 'DEMO-2', 'DEMO-3']);
+    await page.evaluate(() => window.priorityEdit.start('DEMO-3', 'Highest'));
+    expect(await reviewOrder(page), 'pending: the row keeps its place').toEqual(['DEMO-1', 'DEMO-2', 'DEMO-3']);
+    await page.locator('.planning-review-scroll').screenshot({ path: path.join(root, 'tmp/217-ui/confirmed-edit-pending.png') });
+
+    const probe = await confirmAndProbe(page, ['DEMO-3']);
+    expect(await reviewOrder(page)).toEqual(['DEMO-3', 'DEMO-1', 'DEMO-2']);
+    expect(probe.slidRows, 'the edited row and the rows it displaced slide, as cells').toEqual(['DEMO-1', 'DEMO-2', 'DEMO-3']);
+    expect(probe.blinkRows).toEqual(['DEMO-3']);
+    expect(probe.blinking, 'the shared epicFlash tint is actually running on the edited row').toBeGreaterThan(0);
+    expect(probe.raised[0], 'the edited cells sit above the rows they pass, the pinned ones above the rest').toEqual({ moving: true, cell: ['4', 'relative'], pinned: ['5', 'sticky'] });
+    await expect(page.locator('tbody tr[data-issue-key="DEMO-3"]')).not.toHaveClass(/planning-review-moving/);
+    await expect(page.locator('tbody tr[data-issue-key="DEMO-3"]')).not.toHaveClass(/planning-review-confirmed/);
+    await page.locator('.planning-review-scroll').screenshot({ path: path.join(root, 'tmp/217-ui/confirmed-edit-settled.png') });
+});
+
+test('mid-slide, every cell of the edited row is displaced together by its Story\'s distance and the pinned cells stay pinned', async ({ page }) => {
+    await page.setViewportSize({ width: 700, height: 800 });
+    await sortedByPriority(page);
+    await page.evaluate(() => { document.querySelector('.planning-review-scroll').scrollLeft = 120; window.priorityEdit.start('DEMO-3', 'Highest'); });
+    const scrollLeft = await page.evaluate(() => document.querySelector('.planning-review-scroll').scrollLeft);
+    const sample = await page.evaluate(() => new Promise((resolve) => {
+        window.priorityEdit.confirm('DEMO-3');
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+            const slides = document.getAnimations().filter(a => a.effect?.getKeyframes?.().some(frame => frame.transform && frame.transform !== 'none'));
+            slides.forEach((animation) => { animation.pause(); animation.currentTime = 100; });
+            const rowOf = key => document.querySelector(`tbody tr[data-issue-key="${key}"]`);
+            const lift = (cell, row) => ({ shift: Math.round((cell.getBoundingClientRect().top - row.getBoundingClientRect().top) * 10) / 10, transform: getComputedStyle(cell).transform });
+            const edited = rowOf('DEMO-3');
+            const key = edited.querySelector('.planning-review-key');
+            const scroller = document.querySelector('.planning-review-scroll').getBoundingClientRect();
+            resolve({
+                edited: Array.from(edited.cells, cell => lift(cell, edited)),
+                displaced: Array.from(rowOf('DEMO-1').cells, cell => lift(cell, rowOf('DEMO-1'))),
+                pinnedLeft: Math.round(key.getBoundingClientRect().left - scroller.left),
+                pinnedZ: getComputedStyle(key).zIndex,
+            });
+        }));
+    }));
+    expect(new Set(sample.edited.map(cell => cell.shift)).size, 'the whole edited row is displaced by one distance').toBe(1);
+    expect(new Set(sample.displaced.map(cell => cell.shift)).size, 'and so is each displaced row').toBe(1);
+    expect(sample.edited[0].shift, 'the edited row is still coming up from below its final place').toBeGreaterThan(0);
+    expect(sample.displaced[0].shift, 'the displaced row is still going down').toBeLessThan(0);
+    expect(sample.edited[0].transform).not.toBe('none');
+    expect(scrollLeft, 'the table was scrolled sideways for this check').toBeGreaterThan(0);
+    expect(sample.pinnedLeft, 'the pinned Key cell keeps its sticky position (selection column plus the sheet border) while the row slides').toBeGreaterThanOrEqual(46);
+    expect(sample.pinnedLeft).toBeLessThanOrEqual(48);
+    expect(sample.pinnedZ).toBe('5');
+    await page.evaluate(() => document.getAnimations().forEach(animation => animation.finish()));
+    expect(await reviewOrder(page)).toEqual(['DEMO-3', 'DEMO-1', 'DEMO-2']);
+});
+
+test('consecutive confirmations supersede earlier motion, and an edit for a row that is not shown is handled and forgotten', async ({ page }) => {
+    await sortedByPriority(page);
+    await page.evaluate(() => { window.priorityEdit.start('DEMO-3', 'Highest'); window.priorityEdit.start('DEMO-2', 'Highest'); });
+    await confirmAndProbe(page, ['DEMO-3']);
+    const second = await confirmAndProbe(page, ['DEMO-2']);
+    expect(second.blinkRows).toEqual(['DEMO-2']);
+    await expect.poll(() => page.evaluate(() => document.getAnimations().filter(a => a.effect?.getKeyframes?.().some(frame => frame.transform && frame.transform !== 'none')).length)).toBe(0);
+    expect(await reviewOrder(page)).toEqual(['DEMO-2', 'DEMO-3', 'DEMO-1']);
+    expect(await page.locator('tbody td').evaluateAll(cells => cells.map(cell => getComputedStyle(cell).transform).filter(transform => transform !== 'none'))).toEqual([]);
+
+    const unknown = await confirmAndProbe(page, ['NOT-SHOWN-1']);
+    expect(unknown.blinkRows).toEqual([]);
+    expect(unknown.slidRows).toEqual([]);
+    await page.evaluate(() => window.priorityEdit.start('DEMO-1', 'Highest'));
+    expect((await confirmAndProbe(page, ['DEMO-1'])).blinkRows, 'the next real confirmation is still handled').toEqual(['DEMO-1']);
+});
+
+test('reduced motion jumps to the final order with a brief static tint and no sliding', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await sortedByPriority(page);
+    await page.evaluate(() => window.priorityEdit.start('DEMO-3', 'Highest'));
+    const probe = await confirmAndProbe(page, ['DEMO-3']);
+    expect(await reviewOrder(page)).toEqual(['DEMO-3', 'DEMO-1', 'DEMO-2']);
+    expect(probe.slidRows).toEqual([]);
+    expect(probe.blinkRows).toEqual(['DEMO-3']);
+    const tint = await page.locator('tbody tr[data-issue-key="DEMO-3"] td').first().evaluate(cell => ({ name: getComputedStyle(cell, '::after').animationName, background: getComputedStyle(cell, '::after').backgroundColor }));
+    expect(tint).toEqual({ name: 'none', background: 'rgba(255, 255, 0, 0.25)' });
+});
+
+test('an open editor skips the slide, the blink and the reveal instead of deferring them', async ({ page }) => {
+    await sortedByPriority(page);
+    await page.evaluate(() => { window.heldRows = 1; window.priorityEdit.start('DEMO-3', 'Highest'); });
+    const probe = await confirmAndProbe(page, ['DEMO-3']);
+    expect(await reviewOrder(page)).toEqual(['DEMO-3', 'DEMO-1', 'DEMO-2']);
+    expect(probe.slidRows).toEqual([]);
+    expect(probe.blinkRows).toEqual([]);
+});
+
+test('the page scrolls to a moved row only when it would be off-screen, never after the user scrolled, and only for the latest edit', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 700 });
+    await sortedByPriority(page, true, false);
+    const visible = key => page.locator(`tbody tr[data-issue-key="${key}"]`).evaluate((row) => {
+        const rect = row.getBoundingClientRect();
+        const header = document.querySelector('.planning-review-docked-header')?.getBoundingClientRect().bottom || 0;
+        return rect.top >= header - 1 && rect.bottom <= window.innerHeight + 1;
+    });
+
+    // Already visible: edit a row near the top while the page is at the top. The page does not move.
+    await page.evaluate(() => { window.scrollTo(0, 0); window.priorityEdit.start('DEMO-3', 'Highest'); });
+    await confirmAndProbe(page, ['DEMO-3']);
+    expect(await page.evaluate(() => window.scrollY)).toBe(0);
+
+    // Off-screen: the page is at the bottom and the edited row jumps to the top of the table.
+    await page.evaluate(() => { window.scrollTo(0, document.body.scrollHeight); window.priorityEdit.start('DEMO-60', 'Highest'); });
+    const before = await page.evaluate(() => window.scrollY);
+    expect(await visible('DEMO-60')).toBe(true);
+    await confirmAndProbe(page, ['DEMO-60']);
+    await expect.poll(() => visible('DEMO-60')).toBe(true);
+    expect(await page.evaluate(() => window.scrollY), 'the page moved up to the row').toBeLessThan(before);
+
+    // The user scrolled since the click: the row blinks but the page stays where the user left it.
+    await page.evaluate(() => { window.scrollTo(0, document.body.scrollHeight); window.priorityEdit.start('DEMO-59', 'Highest'); });
+    const stay = await page.evaluate(() => window.scrollY);
+    const probe = await confirmAndProbe(page, ['DEMO-59'], true);
+    expect(probe.blinkRows).toEqual(['DEMO-59']);
+    await page.waitForTimeout(400);
+    expect(await page.evaluate(() => window.scrollY)).toBe(stay);
+
+    // Rapid edits: both blink, only the latest is scrolled to.
+    await page.evaluate(() => { window.scrollTo(0, document.body.scrollHeight); window.priorityEdit.start('DEMO-58', 'Highest'); window.priorityEdit.start('DEMO-57', 'Highest'); });
+    const rapid = await confirmAndProbe(page, ['DEMO-58', 'DEMO-57']);
+    expect(rapid.blinkRows.sort()).toEqual(['DEMO-57', 'DEMO-58']);
+    await expect.poll(() => visible('DEMO-57')).toBe(true);
+});
+
+// A focused review cell holds its row so an App-level reorder or filter change cannot unmount the input; blur (valid or not) and unmount release it.
+test('a focused review cell holds its row and releases it on blur, on an invalid blur and when the table unmounts', async ({ page }) => {
+    await install(page);
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await page.getByRole('button', { name: '+ Add column', exact: true }).click();
+    await page.getByLabel('Column name', { exact: true }).fill('Effort');
+    await page.getByRole('dialog', { name: 'Add review column', exact: true }).getByRole('radio', { name: 'Number', exact: true }).click();
+    await page.getByRole('button', { name: 'Add column', exact: true }).click();
+    const input = key => page.getByRole('textbox', { name: `Effort for ${key}`, exact: true });
+    const holds = () => page.evaluate(() => window.holdCalls.slice());
+
+    await input('DEMO-1').focus();
+    expect(await holds()).toEqual(['DEMO-1']);
+    await input('DEMO-1').blur();
+    expect(await holds()).toEqual(['DEMO-1', null]);
+
+    await input('DEMO-2').focus();
+    await input('DEMO-2').fill('not a number');
+    await input('DEMO-2').blur();
+    expect((await holds()).slice(-2), 'an invalid draft does not keep the row held').toEqual(['DEMO-2', null]);
+
+    await input('DEMO-3').focus();
+    await page.locator('#layout').evaluate(button => button.click());
+    expect((await holds()).slice(-2), 'unmounting a focused cell releases its hold').toEqual(['DEMO-3', null]);
 });
 
 // Review (custom) columns: Rename, Show total and Archive live in the same header menu.

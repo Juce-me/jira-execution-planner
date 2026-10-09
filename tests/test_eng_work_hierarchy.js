@@ -214,3 +214,38 @@ test('alert projection preserves precedence, composite dismissal, unique Epic co
     assert.equal(storyReadinessStatusMessage('ready'), '');
     assert.equal(storyReadinessStatusMessage('unavailable', 'Navigation failed.'), 'Navigation failed.');
 });
+
+// ---- pending edits do not reorder Epic groups before Jira confirms (issue #250 Task 6) --------
+
+test('a pending child priority edit leaves the Epic order alone; the confirmed value reorders it', async () => {
+    const { buildEngWorkHierarchy } = await loadModule();
+    // EPIC-2's best child is Medium; EPIC-1's only child is Low, so EPIC-2 sorts first by priority.
+    const groups = [
+        group('EPIC-1', { tasks: [task('EPIC-1-S1', 'EPIC-1', 'Low')] }),
+        group('EPIC-2', { tasks: [task('EPIC-2-S1', 'EPIC-2', 'Medium')] }),
+    ];
+    // The Story in EPIC-1 is optimistically raised to Highest.
+    const raised = [
+        { ...groups[0], tasks: [task('EPIC-1-S1', 'EPIC-1', 'Highest')] },
+        groups[1],
+    ];
+    const originals = new Map([['EPIC-1-S1', { priority: { name: 'Low' } }]]);
+
+    const pending = buildEngWorkHierarchy({ sprint: SPRINT, storyEpicGroups: raised, sort: 'priority', planningOriginals: originals });
+    assert.deepEqual(pending.epicGroups.map(item => item.key), ['EPIC-2', 'EPIC-1'], 'pending: sorted by the original priority');
+    assert.equal(pending.epicGroups[1].tasks[0].fields.priority.name, 'Highest', 'but the group still carries the display value');
+
+    const confirmed = buildEngWorkHierarchy({ sprint: SPRINT, storyEpicGroups: raised, sort: 'priority', planningOriginals: new Map() });
+    assert.deepEqual(confirmed.epicGroups.map(item => item.key), ['EPIC-1', 'EPIC-2'], 'confirmed: the new priority reorders the groups');
+});
+
+test('a pending Epic priority edit is sorted by its original value too', async () => {
+    const { buildEngWorkHierarchy } = await loadModule();
+    const groups = [group('EPIC-1', { priority: 'Low' }), group('EPIC-2', { priority: 'Medium' })];
+    groups[0].epic.priority = { name: 'Highest' };   // optimistic display value of the Epic itself
+    const originals = new Map([['EPIC-1', { priority: { name: 'Low' } }]]);
+
+    const pending = buildEngWorkHierarchy({ sprint: SPRINT, storyEpicGroups: groups, sort: 'priority', planningOriginals: originals });
+    assert.deepEqual(pending.epicGroups.map(item => item.key), ['EPIC-2', 'EPIC-1']);
+    assert.equal(pending.epicGroups[1].epic.priority.name, 'Highest');
+});

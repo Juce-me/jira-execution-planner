@@ -65,7 +65,7 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # Merge of origin/main into feature/217-sprint-review-table: both lines above are additive; the merged file is 6487 lines.
     "jira_server.py": 6487,
     # App decomposition ratchets the entrypoint to its exact measured size.
-    "frontend/src/dashboard.jsx": 7616,
+    "frontend/src/dashboard.jsx": 7525,
 }
 
 

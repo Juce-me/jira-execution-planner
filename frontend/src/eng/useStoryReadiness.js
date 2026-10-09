@@ -71,6 +71,21 @@ export function classifyStoryReadinessError(error = {}) {
     return { status: STORY_READINESS_STATUS.UNAVAILABLE, code: 'story_readiness_unavailable', canRetry: true };
 }
 
+// Fences the raw epics of a readiness read with the Planning edit state, exactly as the task loaders fence theirs: the read's own
+// values supply the base and the evidence of an open edit, then a confirmed edit newer than the read and every pending edit's
+// optimistic value go back on top, so a read that started before an edit cannot erase it. Fields an epic does not carry are not invented.
+export function fenceReadinessEpics(issueEditState, epics, readToken) {
+    if (!issueEditState || !readToken || !Array.isArray(epics)) return epics;
+    issueEditState.capturePlanningBases(epics, readToken);
+    issueEditState.notePlanningRawRead(epics, readToken);
+    return issueEditState.overlayPlanningIssues(issueEditState.reconcilePlanningFields(epics, readToken));
+}
+
+function fencedSnapshot(issueEditState, snapshot, readToken) {
+    const epics = fenceReadinessEpics(issueEditState, snapshot?.epics, readToken);
+    return epics === snapshot?.epics ? snapshot : { ...snapshot, epics };
+}
+
 function idleState() {
     return { status: STORY_READINESS_STATUS.IDLE, snapshot: null, error: null, canRetry: false };
 }
@@ -99,6 +114,7 @@ export function useStoryReadiness({
     authRevision = '',
     configRevision = '',
     refreshRevision = 0,
+    issueEditState = null,
     requestStoryReadiness = fetchStoryReadiness,
     requestEpicReadiness = fetchEpicReadiness,
 } = {}) {
@@ -123,6 +139,9 @@ export function useStoryReadiness({
         let current = true;
         const requestRefresh = Number(refreshRevision) !== 0
             && refreshRevision !== completedRefreshRevisionRef.current;
+        // The read token is finished exactly once, on commit, failure, abort or an ignored result.
+        const readToken = issueEditState?.beginRead();
+        const finishRead = () => issueEditState?.finishRead(readToken);
         setState({ status: STORY_READINESS_STATUS.LOADING, snapshot: null, error: null, canRetry: false });
 
         void requestStoryReadiness(backendUrl, {
@@ -145,13 +164,13 @@ export function useStoryReadiness({
                 return;
             }
             completedRefreshRevisionRef.current = refreshRevision;
-            setState({ status: STORY_READINESS_STATUS.READY, snapshot, error: null, canRetry: false });
+            setState({ status: STORY_READINESS_STATUS.READY, snapshot: fencedSnapshot(issueEditState, snapshot, readToken), error: null, canRetry: false });
         }).catch((error) => {
             if (!current || controller.signal.aborted || error?.name === 'AbortError') return;
             const classified = classifyStoryReadinessError(error);
             if (!classified.canRetry) completedRefreshRevisionRef.current = refreshRevision;
             setState({ ...classified, snapshot: null, error: { code: classified.code, recoveryUrl: classified.recoveryUrl } });
-        });
+        }).finally(finishRead);
 
         return () => {
             current = false;
@@ -181,14 +200,15 @@ export function useStoryReadiness({
 
     // Per-epic refresh (issue #213): upsert or delete one epic in the held snapshot. Unlike the department load it never blanks the
     // snapshot, so the other epics' ghosts stay put; it is a no-op unless the department snapshot is READY for the same scope.
-    const mergeEpic = React.useCallback((epicKey, payload, { epicDetails } = {}) => {
+    const mergeEpic = React.useCallback((epicKey, payload, { epicDetails, readToken } = {}) => {
         if (payload && !storyReadinessScopeMatches(payload, scopeRef.current)) return;
+        const epicPayload = payload && readToken ? fencedSnapshot(issueEditState, payload, readToken) : payload;
         setState((prev) => {
             if (prev.status !== STORY_READINESS_STATUS.READY || !prev.snapshot) return prev;
-            const snapshot = mergeReadinessEpic({ snapshot: prev.snapshot, epicPayload: payload, epicKey, epicDetails });
+            const snapshot = mergeReadinessEpic({ snapshot: prev.snapshot, epicPayload, epicKey, epicDetails });
             return snapshot === prev.snapshot ? prev : { ...prev, snapshot };
         });
-    }, []);
+    }, [issueEditState]);
 
     // Local field patch of one epic in the held snapshot (an inline edit of a Stories Required epic that has no sprint stories). Makes no
     // request, never blanks the snapshot and never changes the status; a no-op for an unknown epic or a snapshot that is not READY.
@@ -200,10 +220,14 @@ export function useStoryReadiness({
         });
     }, []);
 
-    // One epic's readiness for the current scope: { status: 'ok', payload } or a status that changes nothing (failures are silent).
+    // One epic's readiness for the current scope: { status: 'ok', payload, readToken, release } or a status that changes nothing (failures are
+    // silent). An 'ok' answer retains its edit-state read until the consumer calls `release()` after merging or discarding it; every other
+    // answer has already finished its read.
     const loadEpic = React.useCallback(async (epicKey, { signal } = {}) => {
         const requested = scopeRef.current;
         if (!shouldLoad || !storyReadinessScopeKey(requested)) return { status: 'ignored' };
+        const readToken = issueEditState?.beginRead();
+        let retained = false;
         try {
             const payload = await requestEpicReadiness(backendUrl, {
                 sprint: requested.sprintId,
@@ -213,11 +237,15 @@ export function useStoryReadiness({
                 epicKey,
                 signal,
             });
-            return storyReadinessScopeMatches(payload, requested) ? { status: 'ok', payload } : { status: 'failed' };
+            if (!storyReadinessScopeMatches(payload, requested)) return { status: 'failed' };
+            retained = true;
+            return { status: 'ok', payload, readToken, release: () => issueEditState?.finishRead(readToken) };
         } catch (error) {
             return { status: error?.name === 'AbortError' ? 'ignored' : 'failed' };
+        } finally {
+            if (!retained) issueEditState?.finishRead(readToken);
         }
-    }, [shouldLoad, backendUrl, requestEpicReadiness]);
+    }, [shouldLoad, backendUrl, requestEpicReadiness, issueEditState]);
 
     return { ...state, scope, scopeKey, retry, applyIssueField, mergeEpic, patchEpic, loadEpic };
 }

@@ -87,8 +87,10 @@ test('planning panel no longer renders capacity bar footer rows', () => {
 test('planning selection persistence effect is declared after selectionTasks', () => {
     const sourcePath = path.resolve(__dirname, '../frontend/src/dashboard.jsx');
     const source = fs.readFileSync(sourcePath, 'utf8');
+    // The effect lives in usePlanningSelectionSync, which App calls at the original effect's site.
+    const hookSource = fs.readFileSync(path.resolve(__dirname, '../frontend/src/eng/usePlanningSelectionSync.js'), 'utf8');
     const selectionTasksIndex = source.indexOf('const selectionTasks = baseFilteredTasks;');
-    const effectIndex = source.indexOf('persistPlanningSelectionState({ storage: window.localStorage, scopeKey: planningScopeKey');
+    const effectIndex = source.indexOf('usePlanningSelectionSync({');
 
     assert.notEqual(selectionTasksIndex, -1);
     assert.notEqual(effectIndex, -1);
@@ -96,6 +98,8 @@ test('planning selection persistence effect is declared after selectionTasks', (
         effectIndex > selectionTasksIndex,
         'savePlanningState effect should appear after selectionTasks is declared'
     );
+    assert.match(hookSource, /persistPlanningSelectionState\(\{ storage: window\.localStorage, scopeKey: planningScopeKey/);
+    assert.match(source, /usePlanningSelectionSync\(\{[^}]*\bselectionTasks\b[^}]*\}\)/);
 });
 
 test('sprint dropdown keeps selected option visible without using document scrollIntoView', () => {
@@ -432,13 +436,14 @@ test('ENG status transition hook refreshes only after at least one issue succeed
     const hookPath = path.resolve(__dirname, '../frontend/src/eng/useEngStatusTransitions.js');
     const hookSource = fs.readFileSync(hookPath, 'utf8');
 
-    const guardIndex = hookSource.indexOf('if (summary.succeeded > 0) {');
-    assert.notEqual(guardIndex, -1, 'Expected an explicit succeeded > 0 guard');
-    // The refresh now carries the affected story keys so only those expanded subtask rows
+    // A write is judged by its matching per-key result (never by HTTP 200 or aggregate counts); only a
+    // confirmed outcome may refresh. The refresh now carries the affected story keys so only those expanded subtask rows
     // re-fetch (Fix wave 1); it still fires only inside the succeeded > 0 block. The window
     // widened past 1000 chars to also cover the tuple/per-key transitionOptionsCache
     // invalidation (Step 3.4 + degenerate-signature fix) that now runs earlier in the same
     // guard block. Widened again (3000 -> 3200) for the keys argument of the alert invalidation call (Task 13b).
+    const guardIndex = hookSource.indexOf("if (classified.outcome === 'confirmed') {");
+    assert.notEqual(guardIndex, -1, 'Expected an explicit confirmed-outcome guard');
     const guardBody = hookSource.slice(guardIndex, guardIndex + 3200);
     assert.match(guardBody, /onTransitionSuccessRefresh\?\.\(\{ affectedSubtaskStoryKeys \}\)/);
     // Board invokes the supplied refresh callback after a successful write. The Board
@@ -450,17 +455,15 @@ test('ENG status transition hook refreshes only after at least one issue succeed
 test('ENG status and priority hooks invalidate alert data after successful mutations on every surface', () => {
     const statusSource = fs.readFileSync(path.resolve(__dirname, '../frontend/src/eng/useEngStatusTransitions.js'), 'utf8');
     const prioritySource = fs.readFileSync(path.resolve(__dirname, '../frontend/src/eng/useEngPriorityTransitions.js'), 'utf8');
-    const statusSuccessStart = statusSource.indexOf('if (summary.succeeded > 0) {');
+    const statusSuccessStart = statusSource.indexOf("if (classified.outcome === 'confirmed') {");
     const prioritySuccessStart = prioritySource.indexOf("trackIssuePriorityAction('priority_change_result'");
     const statusSuccess = statusSource.slice(statusSuccessStart, statusSource.indexOf('return response;', statusSuccessStart));
     const prioritySuccess = prioritySource.slice(prioritySuccessStart, prioritySource.indexOf('return response;', prioritySuccessStart));
 
     assert.match(statusSource, /onAlertDataInvalidated,/);
-    assert.match(statusSuccess, /if \(isCurrentMutation\) onAlertDataInvalidated\?\.\(\{ keys: \(response\?\.results \|\| \[\]\)\.filter\(\(entry\) => entry\?\.result === 'success'\)\.map\(\(entry\) => entry\?\.key\)\.filter\(Boolean\) \}\);/, 'already_in_status keys are not passed to the alert invalidation');
+    assert.match(statusSuccess, /if \(sameVisit\(\) && entryResult === 'success'\) onAlertDataInvalidated\?\.\(\{ keys: \[singleIssueKey\] \}\);/, 'already_in_status keys are not passed to the alert invalidation');
     assert.match(prioritySource, /onAlertDataInvalidated,/);
-    assert.match(prioritySuccess, /if \(summary\.succeeded > 0 && isCurrentMutation\) onAlertDataInvalidated\?\.\(\{ keys: \(response\?\.results \|\| \[\]\)\.filter\(entry => entry\?\.result === 'success'\)\.map\(entry => entry\?\.key\)\.filter\(Boolean\) \}\);/, 'already_in_priority keys are not passed to the alert invalidation');
-    assert.doesNotMatch(statusSuccess, /if \(!isSingleIssueSurface\) \{\s*onAlertDataInvalidated/);
-    assert.doesNotMatch(prioritySuccess, /else if \(summary\.succeeded > 0\) \{[\s\S]*onAlertDataInvalidated/);
+    assert.match(prioritySuccess, /if \(sameVisit\(\) && findIssueResult\(response, key\)\.entry\?\.result === 'success'\) onAlertDataInvalidated\?\.\(\{ keys: \[key\] \}\);/, 'already_in_priority keys are not passed to the alert invalidation');
 });
 
 test('ENG status transition hook never mutates Planning selectedTasks for Epics or Subtasks', () => {
@@ -524,8 +527,8 @@ test('ENG status transition submit invalidation covers degenerate and per-key ca
     const hookPath = path.resolve(__dirname, '../frontend/src/eng/useEngStatusTransitions.js');
     const hookSource = fs.readFileSync(hookPath, 'utf8');
 
-    const guardIndex = hookSource.indexOf('if (summary.succeeded > 0) {');
-    assert.notEqual(guardIndex, -1, 'Expected an explicit succeeded > 0 guard');
+    const guardIndex = hookSource.indexOf("if (classified.outcome === 'confirmed') {");
+    assert.notEqual(guardIndex, -1, 'Expected an explicit confirmed-outcome guard');
     const guardBody = hookSource.slice(guardIndex, guardIndex + 3000);
 
     // Fallback-submit targets ({key, issueType:'', currentStatus:''}) carry no workflow

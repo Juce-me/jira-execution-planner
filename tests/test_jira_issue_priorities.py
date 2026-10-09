@@ -1,5 +1,11 @@
+import threading
 import unittest
+from unittest.mock import patch
 
+from flask import has_request_context
+
+import jira_server
+from backend.auth.context import RequestAuthContext
 from backend.services.jira_issue_priorities import (
     IssuePriorityInputError,
     IssuePriorityServiceError,
@@ -288,3 +294,105 @@ class LoadPriorityOptionsForIssueTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NoRequestContextRealAuthWrapperTests(unittest.TestCase):
+    """Priority options and write flows run outside any Flask request context with the REAL
+    current_jira_request/current_jira_search injected, patched only at the lowest HTTP transport
+    layer. They must send the OAuth bearer token derived from the passed context and never fall
+    back to Basic/service credentials. (The route-level tests that patch current_jira_request
+    cannot prove this: they replace the very wrapper that picks the credentials.)
+    """
+
+    def setUp(self):
+        self.session_id = "session-priorities"
+        jira_server.OAUTH_TOKEN_STORE[self.session_id] = {
+            "access_token": "access-123",
+            "refresh_token": "refresh-123",
+            "expires_at": 9999999999,
+            "cloudid": "cloud-123",
+            "site_url": "https://example.atlassian.net",
+            "account_id": "account-123",
+            "stored_at": 9999999999,
+        }
+        jira_server.OAUTH_REFRESH_LOCKS.setdefault(self.session_id, threading.Lock())
+
+    def tearDown(self):
+        jira_server.OAUTH_TOKEN_STORE.clear()
+        jira_server.OAUTH_REFRESH_LOCKS.clear()
+
+    def _context(self):
+        return RequestAuthContext(
+            auth_mode="atlassian_oauth",
+            user_id="local-oauth-user:account-123",
+            stable_subject="account-123",
+            atlassian_account_id="account-123",
+            workspace_id="workspace-1",
+            auth_connection_id=f"local-oauth-connection:{self.session_id}",
+            cloud_id="cloud-123",
+            site_url="https://example.atlassian.net",
+            token_version="1",
+            account_status="active",
+            is_admin=True,
+        )
+
+    def _assert_bearer_only(self, header_sets):
+        self.assertTrue(header_sets)
+        for headers in header_sets:
+            self.assertEqual(headers.get("Authorization"), "Bearer access-123")
+            self.assertFalse(str(headers.get("Authorization", "")).startswith("Basic "))
+
+    def test_options_flow_uses_oauth_bearer_from_context(self):
+        request_headers = []
+
+        def fake_http_request(method, url, **kwargs):
+            request_headers.append(kwargs.get("headers", {}))
+            if url.endswith("/editmeta"):
+                return FakeResponse(200, {"fields": {"priority": {"allowedValues": [{"id": "3", "name": "Medium"}]}}})
+            return FakeResponse(200, [{"id": "3", "name": "Medium", "statusColor": "#E97F33", "iconUrl": "https://jira.example/p3.svg"}])
+
+        self.assertFalse(has_request_context())
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server.HTTP_SESSION, "request", side_effect=fake_http_request):
+            result = load_priority_options_for_issue(
+                "PROD-1", jira_request=jira_server.current_jira_request, context=self._context(),
+            )
+
+        self.assertEqual([option["id"] for option in result["priorities"]], ["3"])
+        self.assertEqual(len(request_headers), 2)
+        self._assert_bearer_only(request_headers)
+
+    def test_write_flow_uses_oauth_bearer_from_context(self):
+        search_headers = []
+        request_headers = []
+
+        def fake_resilient_get(url, **kwargs):
+            search_headers.append(kwargs.get("headers", {}))
+            return FakeResponse(200, {"issues": [
+                {"key": "PROD-1", "fields": {"priority": {"id": "3", "name": "Medium"}}},
+            ]})
+
+        def fake_http_request(method, url, **kwargs):
+            request_headers.append((method, kwargs.get("headers", {})))
+            if method == "GET":
+                return FakeResponse(200, [{"id": "4", "name": "Major"}])
+            return FakeResponse(204, {})
+
+        self.assertFalse(has_request_context())
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "resilient_jira_get", side_effect=fake_resilient_get), \
+             patch.object(jira_server.HTTP_SESSION, "request", side_effect=fake_http_request):
+            result = update_issue_priorities(
+                ["PROD-1"],
+                "4",
+                jira_request=jira_server.current_jira_request,
+                search_request=jira_server.current_jira_search,
+                context=self._context(),
+            )
+
+        self.assertEqual(result["succeeded"], 1)
+        methods = [method for method, _ in request_headers]
+        self.assertIn("GET", methods)
+        self.assertIn("PUT", methods)
+        self._assert_bearer_only(search_headers)
+        self._assert_bearer_only([headers for _method, headers in request_headers])

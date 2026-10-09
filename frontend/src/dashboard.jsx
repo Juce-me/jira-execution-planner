@@ -63,7 +63,9 @@ import { useEngPriorityTransitions } from './eng/useEngPriorityTransitions.js';
 import { useEngProjectTrackTransitions } from './eng/useEngProjectTrackTransitions.js';
 import { useEngIssueFieldEdits } from './eng/useEngIssueFieldEdits.js';
 import { applyLocalEpicDetailsFieldUpdate } from './eng/engIssueLocalUpdates.js';
-import { createEngIssueEditState, patchEngIssueList, patchEngLoadedState } from './eng/engIssueEditState.js';
+import { buildMutationScopeKey, createEngIssueEditState, overlaySnapshot, patchEngIssueList, patchEngLoadedState, projectPlanningOriginals, reorderSettledSnapshot, restorePlanningDisplay, sortLaneForSettledKey, stripPendingOverlays } from './eng/engIssueEditState.js';
+import { usePlanningIssueEdits } from './eng/usePlanningIssueEdits.js';
+import { usePlanningListConfirmedEdit } from './eng/usePlanningRowMotion.js';
 import { navigateToAlertStory } from './eng/alertStoryNavigation.js';
 import { navigateToStoryRequirement } from './eng/alertEpicNavigation.js';
 import { useEngAlerts } from './eng/useEngAlerts.js';
@@ -79,7 +81,8 @@ import IssueTeamEditor from './issues/IssueTeamEditor.jsx';
 import StoryPointsEditor from './issues/StoryPointsEditor.jsx';
 import { DEFAULT_ENG_STATUS_FILTER, buildEngCatchUpFacetModel, isEngClosedWorkStatus, migrateEngCatchUpFilters, readEngCatchUpFilterState, resolveEngCatchUpFilters } from './eng/engCatchUpFilters.js';
 import { PRIORITY_ORDER, getTaskTeamInfo, groupTasksByTeam, matchesEngTaskSearch, resetEngFacetFilters, resetEngFilters, normalizeEngEpicSort, DEFAULT_ENG_EPIC_SORT, sortEpicGroups } from './eng/engTaskUtils.js';
-import { createPlanningSelectionHandlers, persistPlanningSelectionState, resolvePlanningAuthResume, resolvePlanningSelectionForDashboard, selectedTaskKeysFromMap, selectedTaskMapFromKeys } from './eng/planningSelectionActions.js';
+import { createPlanningSelectionHandlers, persistPlanningSelectionState, selectedTaskKeysFromMap, selectedTaskMapFromKeys } from './eng/planningSelectionActions.js';
+import { usePlanningSelectionSync } from './eng/usePlanningSelectionSync.js';
 import { useEngCapacityState, useEngCapacity } from './eng/useEngCapacity.js';
 import { getTeamCapacityMeta } from './eng/planningCapacityUtils.js';
 import { buildSelectedPlanningTasksList, sumPlanningStoryPoints } from './eng/planningSelectionStats.js';
@@ -959,7 +962,8 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
             const [stickyEpicFocusKey, setStickyEpicFocusKey] = useState(null);
             const epicRefMap = useRef(new Map());
             const stickyEpicFrameRef = useRef(null);
-            const groupStateRef = useRef(new Map()), issueEditStateRef = useRef(createEngIssueEditState());
+            const groupStateRef = useRef(new Map()), issueEditStateRef = useRef(createEngIssueEditState()), mutationScopeRef = useRef('');
+            const { planningOriginals, holdEditor, deferReorder, isHeld, confirmedEdit, noteEditStart, noteConfirmed, ackConfirmed } = usePlanningIssueEdits({ issueEditState: issueEditStateRef.current, onReorderReleased: key => reorderLanesFor(key) });
             const restoringGroupRef = useRef(false);
             const activeGroupRef = useRef(null);
             const sprintFetchControllersRef = useRef(new Set());
@@ -968,10 +972,12 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
             const [catchUpAlertRefreshNonce, setCatchUpAlertRefreshNonce] = useState(0);
             const catchUpAlertLoadRef = useRef('');
             const catchUpAlertForceRefreshRef = useRef(false);
+            const operatorRefreshIdRef = useRef(0); // the latest explicit Refresh-button load; an older one no longer applies
+            const planningAlertsDirtyRef = useRef(false); // a Planning status edit left Catch Up alerts/readiness stale; consumed once on entering Catch Up
             const catchUpAlertVersionRef = useRef(0);
             const loadEpochRef = useRef(0); const alertCohortRef = useRef(null); const dependencySkipRef = useRef(createDependencySkip()); const recentEditKeysRef = useRef(new Map());
             const groupLoadVersionRef = useRef(0);
-            const rearmCatchUpAlerts = () => { catchUpAlertLoadRef.current = ''; catchUpAlertForceRefreshRef.current = true; catchUpAlertVersionRef.current += 1; setCatchUpAlertRefreshNonce(value => value + 1); };
+            const rearmCatchUpAlerts = () => { planningAlertsDirtyRef.current = false; catchUpAlertLoadRef.current = ''; catchUpAlertForceRefreshRef.current = true; catchUpAlertVersionRef.current += 1; setCatchUpAlertRefreshNonce(value => value + 1); };
             const alertCohortListenersRef = useRef(new Set()); const notifyAlertCohortSettle = outcome => [...alertCohortListenersRef.current].forEach(listener => listener(outcome));
             const subscribeAlertCohortSettle = listener => { alertCohortListenersRef.current.add(listener); return () => { alertCohortListenersRef.current.delete(listener); }; };
             const storyRequirementScopeRef = useRef('');
@@ -2872,7 +2878,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 if (!activeGroupId) return;
                 if (activeGroupRef.current !== activeGroupId) return;
                 if (planningScopeKey && planningHydratedScopeRef.current !== planningScopeKey) return;
-                groupStateRef.current.set(activeGroupId, issueEditStateRef.current.reconcileSnapshot(groupStateSnapshot));
+                groupStateRef.current.set(activeGroupId, stripPendingOverlays(issueEditStateRef.current.reconcileSnapshot(groupStateSnapshot), issueEditStateRef.current.planningEntries()));
             }, [activeGroupId, groupStateSnapshot, planningScopeKey]);
 
             useEffect(() => {
@@ -2885,7 +2891,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                     cached.sprintId === selectedSprint &&
                     cached.teamIdsSignature === activeGroupTeamIds.join('|');
                 if (matchesScope) {
-                    applyGroupState(issueEditStateRef.current.reconcileSnapshot(cached));
+                    applyGroupState(overlaySnapshot(issueEditStateRef.current.reconcileSnapshot(cached), issueEditStateRef.current.planningEntries()));
                 } else {
                     const fallback = buildDefaultGroupState(activeGroupId);
                     groupStateRef.current.set(activeGroupId, fallback);
@@ -3713,6 +3719,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 authRevision: authResumeStagedRevision,
                 configRevision: `${sharedConfigRevision}:${configRefreshNonce}`,
                 refreshRevision: catchUpAlertRefreshNonce,
+                issueEditState: issueEditStateRef.current,
             });
             const strictBoard = useStrictEngBoardOwner({ active: strictBoardOwnerActive, backendUrl: BACKEND_URL, departmentId: activeGroupId, sprintId: selectedSprint, groupRevision: acceptedStrictBoardRevision, resolvedFocusColumnId: boardView?.focusedId || null, performanceGate, strictScope: boardStrictScope, trackApiResult, onAuthRequired: () => trackAppError('auth', 'session_recovery', 'reauth') });
             const strictBoardData = strictBoard.data; const refreshAfterStrictBoardMutation = strictBoard.refresh; const refreshLegacyBoardTasks = () => loadMeasuredGroupTasks({ forceRefresh: true });
@@ -3736,6 +3743,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 backendUrl: BACKEND_URL,
                 selectedSprint,
                 onAuthRecoveryRequired: () => trackAppError('auth', 'session_recovery', 'reauth'),
+                issueEditState: issueEditStateRef.current, getMutationScope: () => mutationScopeRef.current,
             });
 
             const fetchDependencies = async (keys) => {
@@ -3984,7 +3992,9 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 // predicate for it, rather than losing every story under a delivery-owner-only match
                 // upstream, before groupTasksByEpic ever sees that epic.
                 const query = showBoard ? '' : searchQuery.trim().toLowerCase();
-                return capacityTasks.filter(task => {
+                // While a Planning status/priority edit is pending the issue is counted, filtered and selected by its ORIGINAL value, so it
+                // neither leaves the list nor drops out of the selection before Jira confirms; `visibleTasks` maps back to the display issue.
+                return (showPlanning ? projectPlanningOriginals(capacityTasks, planningOriginals) : capacityTasks).filter(task => {
                     if (!matchesEngTaskSearch(task, query, epicDetails)) {
                         return false;
                     }
@@ -4002,7 +4012,9 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 epicDetails,
                 isAllTeamsSelected,
                 selectedTeamSet,
-                showBoard
+                showBoard,
+                showPlanning,
+                planningOriginals
             ]);
             // O6: counts recompute on scope change only, never on a facet tick.
             const engCatchUpFacetModel = React.useMemo(
@@ -4270,129 +4282,21 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
 
             const selectionTasks = baseFilteredTasks;
 
-            useEffect(() => {
-                const pendingPlanningResume = pendingPlanningAuthResumeRef.current;
-                if (pendingPlanningResume && pendingShellAuthResumeRef.current) return;
-                if (pendingPlanningResume && (!planningScopeKey || pendingPlanningResume.scopeKey !== planningScopeKey)) {
-                    pendingPlanningAuthResumeRef.current = null;
-                    planningAuthResumeLoadRef.current = null;
-                    clearAuthResumeWhenSettled();
-                    return;
-                }
-                if (pendingPlanningResume) {
-                    const recoveryLoad = planningAuthResumeLoadRef.current;
-                    if (!recoveryLoad || recoveryLoad.scopeKey !== planningScopeKey) return;
-                    if (recoveryLoad.outcome === 'pending') return;
-                    if (recoveryLoad.outcome === ENG_TASK_LOAD_OUTCOME.NON_AUTH_FAILURE) {
-                        pendingPlanningAuthResumeRef.current = null;
-                        planningAuthResumeLoadRef.current = null;
-                        clearAuthResumeWhenSettled();
-                        return;
-                    }
-                    if (recoveryLoad.outcome !== ENG_TASK_LOAD_OUTCOME.APPLIED) return;
-                }
-                if (!planningScopeKey || !activeGroupId || selectedSprint === null) return;
-                if (!tasksFetched || productTasksLoading || techTasksLoading) return;
-                if (lastLoadedSprintRef.current !== selectedSprint) return;
-                const hydratedTeamSelection = teamSelectionHydratedSelectionRef.current; if (hydratedTeamSelection?.scopeKey === teamSelectionScopeKey && !selectedTeamSelectionsEqual(selectedTeams, hydratedTeamSelection.selectedTeams)) return;
-                if (hydratedTeamSelection?.scopeKey === teamSelectionScopeKey) teamSelectionHydratedSelectionRef.current = null;
+            usePlanningSelectionSync({
+                pendingPlanningAuthResumeRef, pendingShellAuthResumeRef, planningAuthResumeLoadRef, lastLoadedSprintRef,
+                teamSelectionHydratedSelectionRef, planningAuthResumePersistenceFailedRef, planningLoadedSelectionRef, planningBaselineScopeRef,
+                clearAuthResumeWhenSettled, normalizeSelectedTeams,
+                planningScopeKey, activeGroupId, selectedSprint, teamSelectionScopeKey, isFutureSprintSelected,
+                tasksFetched, productTasksLoading, techTasksLoading, selectionTasks, teamOptions,
+                selectedTasks, selectedTeams, planningSelectionMode, activeGroupTeamIds,
+                authResumeStagedRevision, planningAuthResumeLoadRevision,
+                setSelectedTasks, setSelectedTeams, setPlanningSelectionMode, setCanUndoPlanningSelection,
+            });
 
-                let validTaskKeySet;
-                let nextSelectedTaskKeys;
-                let nextSelectionMode;
-                let nextSelectedTeams;
-                if (pendingPlanningResume) {
-                    validTaskKeySet = new Set(selectionTasks.map(task => String(task?.key || '').trim()).filter(Boolean));
-                    const resumed = resolvePlanningAuthResume({
-                        resume: pendingPlanningResume,
-                        planningScopeKey,
-                        validTaskKeys: validTaskKeySet,
-                        validTeamIds: new Set(teamOptions.map(team => String(team?.id || '').trim()).filter(Boolean)),
-                    });
-                    nextSelectedTaskKeys = resumed.selectedTaskKeys;
-                    nextSelectionMode = resumed.selectionMode;
-                    nextSelectedTeams = resumed.selectedTeams;
-                } else {
-                    ({ validTaskKeySet, nextSelectedTaskKeys, nextSelectionMode, nextSelectedTeams } = resolvePlanningSelectionForDashboard({
-                        selectedTasks,
-                        selectedTeams,
-                        planningSelectionMode,
-                        isFutureSprintSelected,
-                        selectionTasks,
-                        teamOptions,
-                        activeGroupTeamIds,
-                    }));
-                }
-
-                setSelectedTasks(prev => {
-                    const prevKeys = selectedTaskKeysFromMap(prev, validTaskKeySet);
-                    const sameLength = prevKeys.length === nextSelectedTaskKeys.length;
-                    const sameKeys = sameLength && prevKeys.every((key, index) => key === nextSelectedTaskKeys[index]);
-                    return sameKeys ? prev : selectedTaskMapFromKeys(nextSelectedTaskKeys);
-                });
-
-                setSelectedTeams(prev => {
-                    const normalizedPrev = normalizeSelectedTeams(prev);
-                    const sameLength = normalizedPrev.length === nextSelectedTeams.length;
-                    const sameTeams = sameLength && normalizedPrev.every((id, index) => id === nextSelectedTeams[index]);
-                    return sameTeams ? prev : nextSelectedTeams;
-                });
-
-                setPlanningSelectionMode(prev => prev === nextSelectionMode ? prev : nextSelectionMode);
-
-                const persistenceSucceeded = persistPlanningSelectionState({ storage: window.localStorage, scopeKey: planningScopeKey, selectedTasks: selectedTaskMapFromKeys(nextSelectedTaskKeys), selectionMode: nextSelectionMode, selectedTeams: nextSelectedTeams, normalizeSelectedTeams });
-                if (pendingPlanningResume && !persistenceSucceeded) {
-                    planningAuthResumePersistenceFailedRef.current = planningScopeKey;
-                    planningLoadedSelectionRef.current = null;
-                    planningBaselineScopeRef.current = '';
-                    setCanUndoPlanningSelection(false);
-                    pendingPlanningAuthResumeRef.current = null;
-                    planningAuthResumeLoadRef.current = null;
-                    clearAuthResumeWhenSettled();
-                    return;
-                }
-                if (planningAuthResumePersistenceFailedRef.current === planningScopeKey) {
-                    setCanUndoPlanningSelection(false);
-                    return;
-                }
-
-                if (pendingPlanningResume || planningBaselineScopeRef.current !== planningScopeKey) {
-                    planningLoadedSelectionRef.current = {
-                        scopeKey: planningScopeKey,
-                        selectedTasks: selectedTaskMapFromKeys(nextSelectedTaskKeys),
-                        selectionMode: nextSelectionMode
-                    };
-                    planningBaselineScopeRef.current = planningScopeKey;
-                    setCanUndoPlanningSelection(false);
-                }
-                if (pendingPlanningResume) {
-                    pendingPlanningAuthResumeRef.current = null;
-                    planningAuthResumeLoadRef.current = null;
-                    clearAuthResumeWhenSettled();
-                }
-            }, [
-                planningScopeKey,
-                activeGroupId,
-                selectedSprint, teamSelectionScopeKey,
-                isFutureSprintSelected,
-                tasksFetched,
-                productTasksLoading,
-                techTasksLoading,
-                selectionTasks,
-                teamOptions,
-                selectedTasks,
-                selectedTeams,
-                planningSelectionMode,
-                activeGroupTeamIds.join('|'),
-                authResumeStagedRevision,
-                planningAuthResumeLoadRevision,
-                clearAuthResumeWhenSettled,
-            ]);
-
-            const visibleTasks = React.useMemo(() => baseFilteredTasks.filter(task => (
+            const visibleTasks = React.useMemo(() => restorePlanningDisplay(baseFilteredTasks.filter(task => (
                 engCatchUpFilters.admitsStatus(task.fields.status?.name)
                 && engCatchUpFilters.admitsPriority(task.fields.priority?.name)
-            )), [baseFilteredTasks, engCatchUpFilters]);
+            )), capacityTasks, showPlanning ? planningOriginals : null), [baseFilteredTasks, engCatchUpFilters, capacityTasks, showPlanning, planningOriginals]);
             // trackSearch's result count is reported after epicGroups below: Board's subject is
             // epics, not stories (§7.1), and reporting visibleTasks.length while Board is showing
             // would make every search on that surface report the same unsearched story total —
@@ -4474,6 +4378,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 priorityNeutral: showPlanning && planningLayout === 'table' ? true : engCatchUpFilters.facetViews?.[1]?.isNeutral && !burnoutTaskFilter,
                 admitsEpicProjectTrack: engCatchUpFilters.admitsEpicProjectTrack,
                 engEpicSort, groupByInitiativeChoice,
+                planningOriginals: showPlanning ? planningOriginals : null,
             });
             const planningReviewRows = React.useMemo(() => [
                 ...buildPlanningReviewRows({ epicGroups, visibleTasks: visibleTasksForList, mode: 'epic', getTeamInfo }),
@@ -4512,6 +4417,8 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 [boardEpicGroupsFiltered]
             );
             const compactPlanningPanel = showPlanning && planningLayout === 'table' && !planningPanelExpanded;
+            usePlanningListConfirmedEdit({ enabled: showPlanning && planningLayout === 'list', confirmedEdit, ackConfirmed, isHeld });
+            React.useEffect(() => { if (!showPlanning && confirmedEdit) ackConfirmed(confirmedEdit.keys); }, [showPlanning, confirmedEdit, ackConfirmed]); // an edit confirmed after leaving Planning must not blink on the next visit
             const compactStickyTop = compactStickyVisible ? compactHeaderOffset : 0;
             const planningStickyHeight = showPlanning ? planningOffset : 0;
             const filterBarStickyTop = compactStickyTop; const epicStickyTop = compactStickyTop + planningStickyHeight + filterBarHeight;
@@ -4966,40 +4873,58 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
             };
             // Status and priority edits: Catch Up re-checks only the edited epic (priority re-checks none); anything the scoped path cannot
             // handle (other modes, unresolved or NO_EPIC keys) takes the request-free department invalidation; no succeeded key changes nothing.
+            // A Planning edit never bumps the fetch-driving nonce (that reloaded readiness on every edit): a status edit sets a marker that
+            // entering Catch Up consumes once, and a priority edit sets none (priority feeds no alert rule).
             const invalidateAlertsAfterEdit = ({ keys, field }) => {
                 if (!keys?.length) return;
+                if (statusTransitionSourceSurface === 'planning') { if (field === 'status') planningAlertsDirtyRef.current = true; return; }
                 if (!epicRefresh.recheckAlertsForEdit({ keys, field }).handled) rearmCatchUpAlerts();
             };
             issueEditStateRef.current.setInvalidationHandler(invalidateEngIssueFieldSources);
-            const applyLocalEngIssueField = React.useCallback((issueKey, fieldName, fieldValue) => {
+            // `meta` (status/priority edits only): `phase` optimistic/provisional never reaches the group caches, which hold
+            // authoritative values; `expected` guards a rollback so it applies only where the optimistic value still shows.
+            // Re-sorts the Product and Tech lanes (and every cached Department snapshot) holding `issueKey` as a reload would; other pending Stories stay put.
+            const reorderLanesFor = React.useCallback((issueKey) => {
+                const originals = issueEditStateRef.current.planningOriginals();
+                [setProductTasks, setTechTasks].forEach(setter => setter(lane => sortLaneForSettledKey(lane, issueKey, originals, PRIORITY_ORDER)));
+                groupStateRef.current = new Map([...groupStateRef.current].map(([id, snapshot]) => [id, reorderSettledSnapshot(snapshot, issueKey, originals, PRIORITY_ORDER)]));
+            }, []);
+            const applyLocalEngIssueField = React.useCallback((issueKey, fieldName, fieldValue, meta) => {
                 recentEditKeysRef.current.set(issueKey, Date.now());
                 strictBoard.applyIssueField(issueKey, fieldName, fieldValue);
                 storyReadiness.applyIssueField?.(issueKey, fieldName, fieldValue);
-                const patchList = prev => patchEngIssueList(prev, issueKey, fieldName, fieldValue);
+                const patchList = prev => patchEngIssueList(prev, issueKey, fieldName, fieldValue, meta?.expected);
                 [setProductTasks, setTechTasks, setLoadedProductTasks, setLoadedTechTasks, setReadyToCloseProductTasks, setReadyToCloseTechTasks,
                     setProductEpicsInScope, setTechEpicsInScope, setReadyToCloseProductEpicsInScope, setReadyToCloseTechEpicsInScope,
                     setMissingPlanningInfoTasks, setMissingInfoEpics, setBacklogProductEpics, setBacklogTechEpics].forEach(setter => setter(patchList));
-                setEpicDetails(prev => applyLocalEpicDetailsFieldUpdate(prev, issueKey, fieldName, fieldValue));
-                groupStateRef.current = patchEngLoadedState({}, groupStateRef.current, issueKey, fieldName, fieldValue).groups;
+
+                setEpicDetails(prev => applyLocalEpicDetailsFieldUpdate(prev, issueKey, fieldName, fieldValue, meta?.expected));
+                if (meta?.phase !== 'optimistic' && meta?.phase !== 'provisional') groupStateRef.current = patchEngLoadedState({}, groupStateRef.current, issueKey, fieldName, fieldValue, meta?.expected).groups;
+                // A confirmed Planning priority edit moves its Story to where a reload would place it, unless an open editor holds the order.
+                if (meta?.reorder && !deferReorder(issueKey)) reorderLanesFor(issueKey);
+                if (meta?.reveal) { if (meta.phase === 'optimistic') noteEditStart(issueKey); else if (meta.phase === 'confirmed') noteConfirmed(issueKey); }
                 invalidateEngIssueFieldSources({ field: fieldName });
-                applyLocalSubtaskField(issueKey, fieldName, fieldValue);
-            }, [applyLocalSubtaskField, strictBoard, storyReadiness.applyIssueField]);
+                applyLocalSubtaskField(issueKey, fieldName, fieldValue, meta?.expected);
+            }, [applyLocalSubtaskField, strictBoard, storyReadiness.applyIssueField, deferReorder, reorderLanesFor, noteEditStart, noteConfirmed]);
             const strictBoardMutationProps = strictEngBoardMutationProps({ active: boardScopeRequested, coordinator: strictBoard.mutationCoordinator, refresh: refreshAfterStrictBoardMutation, sourceSurface: statusTransitionSourceSurface, loadLegacy: refreshLegacyBoardTasks, retrySubtasks: retryStorySubtasks });
             const issueFieldEdits = useEngIssueFieldEdits({ backendUrl: BACKEND_URL, issueEditState: issueEditStateRef.current, getContextKey: () => `${authMode}|${jiraUrl}|${authResumeStagedRevision}`,
-                onAuthRecoveryRequired: () => trackAppError('auth', 'session_recovery', 'reauth'), onAction: (workflowAction, editor, result) => trackIssueFieldEditAction(workflowAction, { fieldName: editor.field === 'deliveryOwner' ? 'delivery_owner' : editor.field === 'storyPoints' ? 'story_points' : editor.field, issueKind: editor.issueKind, sourceSurface: editor.sourceSurface, result }), onConfirm: ({ issueKey, field, value }) => applyLocalEngIssueField(issueKey, field === 'storyPoints' ? 'customfield_10004' : field, value) });
+                onAuthRecoveryRequired: () => trackAppError('auth', 'session_recovery', 'reauth'), onActiveEditorChange: editor => holdEditor('fields', editor?.issueKey), onAction: (workflowAction, editor, result) => trackIssueFieldEditAction(workflowAction, { fieldName: editor.field === 'deliveryOwner' ? 'delivery_owner' : editor.field === 'storyPoints' ? 'story_points' : editor.field, issueKind: editor.issueKind, sourceSurface: editor.sourceSurface, result }), onConfirm: ({ issueKey, field, value }) => applyLocalEngIssueField(issueKey, field === 'storyPoints' ? 'customfield_10004' : field, value) });
             const issueFieldEditsEnabled = authMode === 'atlassian_oauth' && statusTransitionEnabled; React.useEffect(() => { issueFieldEdits.contextChanged(); }, [selectedSprint, activeGroupId, statusTransitionSourceSurface, issueFieldEditsEnabled]);
+            const engMutationScopeKey = buildMutationScopeKey({ boardScopeType: strictBoardData.scope?.type, boardScopeSprintId: strictBoardData.scope?.sprintId, selectedSprint, activeGroupId, sourceSurface: statusTransitionSourceSurface });
+            mutationScopeRef.current = engMutationScopeKey;
             const statusTransitions = useEngStatusTransitions({
                 backendUrl: BACKEND_URL,
-                selectedStories: selectedTasksList,
                 storySubtasksByKey,
                 selectedSprint,
                 sourceSurface: statusTransitionSourceSurface,
                 ...strictBoardMutationProps.status,
-                mutationScopeKey: `${strictBoardData.scope?.type || ''}|${strictBoardData.scope?.sprintId || selectedSprint || ''}|${activeGroupId || ''}|${statusTransitionSourceSurface}`,
+                mutationScopeKey: engMutationScopeKey,
                 trackIssueStatusAction,
                 onAuthRecoveryRequired: () => trackAppError('auth', 'session_recovery', 'reauth'),
-                onApplyLocalStatus: (issueKey, statusName) => {
-                    applyLocalEngIssueField(issueKey, 'status', { name: statusName });
+                issueEditState: issueEditStateRef.current,
+                onApplyLocalStatus: (issueKey, statusName, meta) => {
+                    applyLocalEngIssueField(issueKey, 'status', { name: statusName }, meta);
+                    storyReadiness.patchEpic(issueKey, 'status', { name: statusName }); // readiness-only epics: no-op for any other key
                 },
                 onAlertDataInvalidated: ({ keys } = {}) => invalidateAlertsAfterEdit({ keys, field: 'status' }),
             });
@@ -5019,11 +4944,12 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 selectedSprint,
                 sourceSurface: statusTransitionSourceSurface,
                 ...strictBoardMutationProps.priority,
-                mutationScopeKey: `${strictBoardData.scope?.type || ''}|${strictBoardData.scope?.sprintId || selectedSprint || ''}|${activeGroupId || ''}|${statusTransitionSourceSurface}`,
+                mutationScopeKey: engMutationScopeKey,
                 trackIssuePriorityAction,
                 onAuthRecoveryRequired: () => trackAppError('auth', 'session_recovery', 'reauth'),
-                onApplyLocalPriority: (issueKey, priorityPatch) => {
-                    applyLocalEngIssueField(issueKey, 'priority', priorityPatch);
+                issueEditState: issueEditStateRef.current,
+                onApplyLocalPriority: (issueKey, priorityPatch, meta) => {
+                    applyLocalEngIssueField(issueKey, 'priority', priorityPatch, meta);
                     storyReadiness.patchEpic(issueKey, 'priority', priorityPatch); // readiness-only epics: no-op for any other key
                 },
                 onAlertDataInvalidated: ({ keys } = {}) => invalidateAlertsAfterEdit({ keys, field: 'priority' }),
@@ -5042,7 +4968,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 selectedSprint,
                 sourceSurface: statusTransitionSourceSurface,
                 ...strictBoardMutationProps.projectTrack,
-                mutationScopeKey: `${strictBoardData.scope?.type || ''}|${strictBoardData.scope?.sprintId || selectedSprint || ''}|${activeGroupId || ''}|${statusTransitionSourceSurface}`,
+                mutationScopeKey: engMutationScopeKey,
                 trackIssueProjectTrackAction,
                 onAuthRecoveryRequired: () => trackAppError('auth', 'session_recovery', 'reauth'),
                 onApplyLocalProjectTrack: (issueKey, value) => applyLocalEngIssueField(issueKey, 'projectTrack', value),
@@ -5643,6 +5569,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 showScenario, setShowScenario,
                 showBoard, setShowBoard,
                 trackSelectContent,
+                onEnterCatchUp: () => { if (planningAlertsDirtyRef.current) rearmCatchUpAlerts(); },
             });
             const renderEngModeControl = () => (
                 <EngModeControl
@@ -5813,7 +5740,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                     onOpen={openProjectTrackControl} onClose={closeProjectTrackControl} onSubmit={submitProjectTrackChange} />;
                 if (!issueFieldEditsEnabled) return null;
                 if (field === 'status') return <StatusTransitionMenu
-                    issue={{ key: row.key, status: row.status, summary: row.summary }} fallbackIssueType={row.rowKind === 'epic' ? 'Epic' : 'Story'}
+                    issue={{ key: row.key, status: row.status, summary: row.summary, storyPoints: row.issue?.fields?.customfield_10004 }} fallbackIssueType={row.rowKind === 'epic' ? 'Epic' : 'Story'}
                     statusLabel={row.status} statusClassName={getIssueStatusClassName(row.status)} sourceSurface="planning" isOpen={statusTransitionActiveKey === row.key}
                     options={transitionOptions} optionsLoading={transitionOptionsLoading} submitting={statusTransitionSubmitting || pendingStatusIssueKeys.has(row.key)}
                     error={transitionError} errorCode={transitionErrorCode} result={transitionResult}
@@ -5913,7 +5840,8 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 boardScopeRetryRef.current = retry;
                 return retry;
             };
-            const refreshActiveViewFromJira = () => {
+            // Only the Refresh button identifies as an operator Refresh (`{ operator: true }`); the long-absence listener calls it bare.
+            const refreshActiveViewFromJira = ({ operator = false } = {}) => {
                 if (selectedView === 'epm') {
                     void refreshEpmView();
                     return;
@@ -5945,7 +5873,8 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                     return;
                 }
                 rearmCatchUpAlerts();
-                loadMeasuredGroupTasks({ forceRefresh: true });
+                const refreshId = operator ? ++operatorRefreshIdRef.current : 0;
+                loadMeasuredGroupTasks({ forceRefresh: true, ...(operator ? { operatorRefresh: { scope: engMutationScopeKey }, shouldApplyResult: () => operatorRefreshIdRef.current === refreshId } : {}) });
             };
             const manualRefreshDisabled = connectionRecoveryBlocksRefresh || (selectedView === 'eng' ? !engWorkspaceConfigured || (strictBoardActive ? strictBoardData.status === 'loading' || strictBoardData.scope?.type === 'uninitialized'
                 : boardScopeRequested ? ['loading', 'catalog_pending', 'unsupported'].includes(selectedScopeReadiness)
@@ -6254,7 +6183,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                                         variant="secondary compact"
                                         className="header-icon-button refresh-icon"
                                         isLoading={selectedView === 'epm' && epmProjectsLoading}
-                                        onClick={refreshActiveViewFromJira}
+                                        onClick={() => refreshActiveViewFromJira({ operator: true })}
                                         disabled={manualRefreshDisabled}
                                         title={selectedView === 'eng' ? 'Refresh tasks and sprints from Jira' : 'Refresh EPM projects and issues from Jira'}
                                         aria-label={selectedView === 'eng' ? 'Refresh tasks and sprints from Jira' : 'Refresh EPM projects and issues from Jira'}
@@ -6981,6 +6910,8 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                                         jiraUrl={jiraUrl} sprintId={selectedSprint} review={planningReview} getTeamInfo={getTeamInfo} excludedEpicSet={excludedEpicSet}
                                         admittedTeamCount={planningReviewAdmittedCounts.teams} admittedProjectCount={planningReviewAdmittedCounts.projects}
                                         renderPriorityIcon={renderPriorityIcon} renderFieldEditor={renderPlanningReviewFieldEditor} onReviewAction={trackPlanningReviewAction}
+                                        pendingOriginals={planningOriginals} onHoldRow={key => holdEditor('table', key)}
+                                        confirmedEdit={confirmedEdit} onConfirmedEditHandled={ackConfirmed} isRowHeld={isHeld}
                                     /> : null}
                                     productTasksLoading={productTasksLoading}
                                     techTasksLoading={techTasksLoading}

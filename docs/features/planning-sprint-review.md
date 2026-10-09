@@ -92,6 +92,12 @@ appear for multiple admitted Teams/projects. Sort epics and Group by Initiative 
 rendered in Table view (they never changed table ordering); List and Catch Up keep them and
 their stored choices.
 
+Priority and status edits made in the Table settle locally (see Planning edits in
+[eng-workflows](eng-workflows.md)): a pending edit does not move its row, a confirmed one re-sorts
+the rows by the active sort, sliding the edited row and the rows it passes by their cells, and blinks
+the edited row. The reveal scrolls the page only when the row would otherwise be off-screen, and a
+focused review cell holds its row so neither the slide nor a filter can unmount the input.
+
 There is no table toolbar tier. The Epics/Stories switch (the shared SegmentedControl in its
 compact form, `eng-mode-control segmented-control-compact`) sits in the Filters row's
 view-controls slot, followed at the right end by Discard and Save, which appear only while

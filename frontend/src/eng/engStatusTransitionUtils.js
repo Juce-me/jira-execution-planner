@@ -75,7 +75,9 @@ export function buildCatchUpStatusTargets(issue, fallbackIssueType = '') {
     const currentStatus = issueStatusName(fields ? fields.status : issue?.status);
     const issueType = String(fields?.issuetype?.name || issue?.issueType || fallbackIssueType || '');
     const summary = String(fields?.summary || issue?.summary || '');
-    return { key, issueType, currentStatus, summary };
+    // Loaded Story Points (nested Jira shape or flat), kept only so analytics can bucket the clicked Story; absent when the issue carries none.
+    const storyPoints = fields ? fields.customfield_10004 : issue?.storyPoints;
+    return { key, issueType, currentStatus, summary, ...(storyPoints === undefined ? {} : { storyPoints }) };
 }
 
 // Maps subtask keys to the parent Story keys whose expanded subtask lists contain them,
@@ -161,24 +163,80 @@ export function buildSelectedSpBucket(storyPoints) {
 // Up reporting Planning's selected_sp_bucket) cannot recur by duplicating this
 // assembly at each call site. `status` is omitted so no status_bucket key is
 // sent for status_options_open, where no target status has been chosen yet.
-// selected_sp_bucket reflects Planning's selected Story points, so ONLY Planning
-// sends it; Catch Up and Board both act on one explicit issue unrelated to the
-// Planning selection and omit it rather than reporting an unrelated bucket. The
-// earlier `!== 'catch_up'` form made that a Catch-Up exemption rather than a
-// Planning property, so the Board surface (§9.5) inherited Planning's bucket.
+// selected_sp_bucket is the bucket of the Story points of the ONE Story the action is
+// for (a Planning status pill writes only its own issue, whatever is selected), so ONLY
+// Planning sends it and only for a Story target; Epic and Subtask actions, Catch Up and
+// Board omit it rather than reporting an unrelated bucket. (Before issue #250 it was
+// the selection's Story points, which are no longer related to the write.)
 export function buildStatusActionAnalyticsParams({
     sourceSurface,
     targets = [],
-    selectedStories = [],
     status,
 } = {}) {
     const list = Array.isArray(targets) ? targets : [];
     const uniqueKeyCount = new Set(list.map((target) => String(target?.key || target || '').trim()).filter(Boolean)).size;
+    const storyTargets = list.filter((target) => classifyIssueTypeToken(target?.issueType) === 'story');
     return {
         source_surface: sourceSurface,
         ...(status === undefined ? {} : { status_bucket: buildStatusBucket(status) }),
         issue_type_mix: summarizeIssueTypeMix(list),
         selected_count_bucket: buildSelectedCountBucket(uniqueKeyCount),
-        ...(sourceSurface === 'planning' ? { selected_sp_bucket: buildSelectedSpBucket(sumPlanningStoryPoints(selectedStories || [])) } : {}),
+        ...(sourceSurface === 'planning' && storyTargets.length ? { selected_sp_bucket: buildSelectedSpBucket(sumPlanningStoryPoints(storyTargets.map(target => ({ key: target.key, fields: { customfield_10004: target.storyPoints } })))) } : {}),
     };
+}
+
+// Shown where a write's outcome could not be confirmed (or the field is locked by one).
+export const UNCONFIRMED_WRITE_MESSAGE = 'The change could not be confirmed. Refresh to check Jira before editing it again.';
+
+// ---- Outcome classification for single-issue status and priority writes (issue #250) ----------
+// A write ends in one of three outcomes. `confirmed`: Jira reported the change. `rejected`: no
+// write was applied, so the display can return to its base. `unconfirmed`: a write may have been
+// applied (or the answer is unusable), so the field stays locked until an explicit Refresh shows
+// Jira's value. HTTP 200 and aggregate counts are never authority: only the matching per-key result.
+// These pairs are raised before a write or reported by Jira as a rejection (verified against the
+// transition and priority services); everything else after the job started is unconfirmed.
+const DEFINITIVE_HTTP_ERRORS = Object.freeze({
+    400: ['invalid_json', 'issue_keys_required', 'invalid_issue_key', 'too_many_issues', 'target_status_required', 'target_priority_required', 'invalid_priority_id'],
+    403: ['csrf_required', 'jira_oauth_required'],
+    503: ['config_storage_unavailable'],
+});
+const STATUS_DEFINITIVE_ERRORS = Object.freeze([
+    'transition_not_available', 'transitions_unavailable', 'invalid_transition', 'transition_forbidden',
+    'transition_conflict', 'jira_auth_error', 'issue_not_found',
+]);
+
+// An error thrown after the job started is unconfirmed unless it carries one of the definitive
+// status/code pairs: the CSRF-token read precedes the POST and nothing marks the send. A queued
+// job cancelled before dispatch is rejected (callers treat an auth-lock abort as an abandon first).
+export function classifyWriteError(error) {
+    if (error?.name === 'AbortError') return 'rejected';
+    const codes = DEFINITIVE_HTTP_ERRORS[Number(error?.status)];
+    return codes && codes.includes(String(error?.code || '')) ? 'rejected' : 'unconfirmed';
+}
+
+const normalizedResultKey = value => String(value || '').trim().toUpperCase();
+
+// Exactly one result must match the requested key; none or several is unconfirmed.
+export function findIssueResult(response, key) {
+    const matches = (Array.isArray(response?.results) ? response.results : [])
+        .filter(entry => normalizedResultKey(entry?.key) === normalizedResultKey(key));
+    if (matches.length === 1) return { entry: matches[0] };
+    return { problem: matches.length ? 'duplicate_result' : 'missing_result' };
+}
+
+export function classifyStatusResult(response, key, { staleAlreadyIn = false } = {}) {
+    const found = findIssueResult(response, key);
+    if (found.problem) return { outcome: 'unconfirmed', code: found.problem };
+    const { entry } = found;
+    if (entry.result === 'failure') {
+        return STATUS_DEFINITIVE_ERRORS.includes(entry.error)
+            ? { outcome: 'rejected', code: entry.error, currentStatus: entry.currentStatus }
+            : { outcome: 'unconfirmed', code: entry.error || 'transition_failed' };
+    }
+    if (entry.result !== 'success' && entry.result !== 'already_in_status') return { outcome: 'unconfirmed', code: 'unknown_result' };
+    if (entry.result === 'already_in_status' && staleAlreadyIn) return { outcome: 'unconfirmed', code: 'stale_already_in' };
+    const name = entry.result === 'success'
+        ? (entry.toStatus || response?.targetStatus)
+        : (entry.currentStatus || entry.toStatus || response?.targetStatus);
+    return name ? { outcome: 'confirmed', value: { name } } : { outcome: 'unconfirmed', code: 'unusable_value' };
 }

@@ -2,6 +2,8 @@
 
 > **Status:** Done. Executed in [PR #100](https://github.com/Juce-me/jira-execution-planner/pull/100). Kept for audit context only.
 
+> **Current accuracy (2026-10-09):** partially superseded. A status pill writes only its own issue on every surface (the "Apply to selected targets" menu and the Planning bulk action described below were removed), a Planning edit settles locally without reloading the scope, and `selected_sp_bucket` is now the clicked Story's own Story Points. See [issue #250](EXEC-planning-local-issue-edits-250.md) and `docs/features/eng-workflows.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Let ENG Catch Up and Planning users change Jira status for Epics, Stories, and Subtasks through signed-in-user Jira OAuth, while keeping EPM Jira/Home-backed issue surfaces view-only.

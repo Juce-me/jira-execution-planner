@@ -425,7 +425,7 @@ test('issue_status_action accepts the eng status transition enum params and reje
         );
     }
 
-    for (const result of ['success', 'partial', 'failure']) {
+    for (const result of ['success', 'partial', 'failure', 'unknown']) {
         assert.deepEqual(
             sanitizeAnalyticsParams({
                 feature_name: 'eng_status_transitions',
@@ -514,7 +514,7 @@ test('issue_priority_action accepts the eng priority transition enum params and 
         );
     }
 
-    for (const result of ['success', 'partial', 'failure']) {
+    for (const result of ['success', 'partial', 'failure', 'unknown']) {
         assert.deepEqual(
             sanitizeAnalyticsParams({
                 feature_name: 'eng_priority_changes',

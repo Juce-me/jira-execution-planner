@@ -12,6 +12,7 @@ import EpicHeaderValueReadout from './EpicHeaderValueReadout.jsx';
 import PlanningReviewBoundaryPlus from './PlanningReviewBoundaryPlus.jsx';
 import PlanningReviewColumnMenu from './PlanningReviewColumnMenu.jsx';
 import PlanningReviewStateCluster from './PlanningReviewStateCluster.jsx';
+import { usePlanningRowMotion } from './usePlanningRowMotion.js';
 import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
 import { buildPlanningReviewRows, buildPlanningReviewColumns, hasZeroStoryPoints, reviewSelectionState, reviewValue, selectedStoryPoints, sortPlanningReviewRows, planningReviewTotals } from './planningReviewTableModel.js';
 
@@ -56,7 +57,7 @@ function Selection({ row, selectedKeys, onToggleStory, onSelectStories }) {
     return <input ref={input} type="checkbox" checked={state.checked} disabled={state.disabled} aria-label={`Select ${row.key || row.summary}`} onChange={event => row.rowKind === 'story' ? onToggleStory?.(row.issue) : onSelectStories?.(state.tasks, event.target.checked)} />;
 }
 
-function CustomCell({ row, column, review, editing, setEditing, focusNew }) {
+function CustomCell({ row, column, review, editing, setEditing, focusNew, onHold }) {
     const stored = reviewValue(row, { ...column, custom: true }, review.cells);
     const value = column.type === 'number' ? formatReviewDisplay(stored) : stored;
     const persistedInput = review.drafts?.[reviewCellKey(row.rowKind, row.issueId, column.id)]?.input;
@@ -65,6 +66,10 @@ function CustomCell({ row, column, review, editing, setEditing, focusNew }) {
     const ref = React.useRef(null);
     const initialInput = React.useRef(persistedInput ?? value ?? '');
     const cancelBlur = React.useRef(false);
+    const holding = React.useRef(false);
+    // The row is held while this input has focus, so a reorder or a filter change cannot unmount it; blur, unmount and row removal release it.
+    const hold = on => { if (holding.current !== on) { holding.current = on; onHold?.(on ? row.key : null); } };
+    React.useEffect(() => () => { if (holding.current) onHold?.(null); }, []);
     React.useEffect(() => { if (document.activeElement !== ref.current) { setDraft(persistedInput ?? value ?? ''); if (persistedInput === undefined) setError(''); } }, [value, editing, persistedInput]);
     React.useEffect(() => { if (focusNew) ref.current?.focus(); }, [focusNew]);
     if (row.synthetic || !row.issueId) return <span aria-label="No review value">—</span>;
@@ -75,7 +80,7 @@ function CustomCell({ row, column, review, editing, setEditing, focusNew }) {
         if (result.valid) setEditing(null);
         return result.valid;
     };
-    return <><input ref={ref} className={`planning-review-input ${error ? 'invalid' : ''}`} type="text" inputMode={column.type === 'number' ? 'decimal' : 'text'} aria-label={`${column.label} for ${row.key}`} aria-invalid={Boolean(error)} maxLength={column.type === 'text' ? 500 : 16} value={draft} disabled={!review.capabilities?.canSave || review.saving} onFocus={() => { initialInput.current = draft; setEditing(row.id); }} onChange={event => { setDraft(event.target.value); const result = review.setCell(row, column, event.target.value); setError(result.error || ''); }} onBlur={commit} onKeyDown={event => { if (event.key === 'Enter') { if (commit()) ref.current.blur(); } else if (event.key === 'Escape') { cancelBlur.current = true; review.setCell(row, column, initialInput.current); setDraft(initialInput.current); setError(''); setEditing(null); ref.current.blur(); } }} />{error && <span className="planning-review-validation" role="alert">{error}</span>}</>;
+    return <><input ref={ref} className={`planning-review-input ${error ? 'invalid' : ''}`} type="text" inputMode={column.type === 'number' ? 'decimal' : 'text'} aria-label={`${column.label} for ${row.key}`} aria-invalid={Boolean(error)} maxLength={column.type === 'text' ? 500 : 16} value={draft} disabled={!review.capabilities?.canSave || review.saving} onFocus={() => { initialInput.current = draft; hold(true); setEditing(row.id); }} onChange={event => { setDraft(event.target.value); const result = review.setCell(row, column, event.target.value); setError(result.error || ''); }} onBlur={() => { hold(false); return commit(); }} onKeyDown={event => { if (event.key === 'Enter') { if (commit()) ref.current.blur(); } else if (event.key === 'Escape') { cancelBlur.current = true; review.setCell(row, column, initialInput.current); setDraft(initialInput.current); setError(''); setEditing(null); ref.current.blur(); } }} />{error && <span className="planning-review-validation" role="alert">{error}</span>}</>;
 }
 
 export function PlanningReviewScopeDialog({ review }) {
@@ -87,7 +92,7 @@ export function PlanningReviewScopeDialog({ review }) {
     </div></div>;
 }
 
-export default function PlanningReviewTable({ epicGroups = [], visibleTasks = [], selectedStoryKeys = new Set(), onToggleStory, onSelectStories, jiraUrl = '', review, getTeamInfo, admittedTeamCount, admittedProjectCount, renderPriorityIcon, renderFieldEditor, onReviewAction, toolbarHost, excludedEpicSet = new Set() }) {
+export default function PlanningReviewTable({ epicGroups = [], visibleTasks = [], selectedStoryKeys = new Set(), onToggleStory, onSelectStories, jiraUrl = '', review, getTeamInfo, admittedTeamCount, admittedProjectCount, renderPriorityIcon, renderFieldEditor, onReviewAction, toolbarHost, excludedEpicSet = new Set(), pendingOriginals = null, onHoldRow, confirmedEdit = null, onConfirmedEditHandled, isRowHeld }) {
     const [mode, setMode] = React.useState('epic');
     const hidden = new Set(review.layouts?.[mode]?.hidden ?? DEFAULT_REVIEW_HIDDEN_COLUMNS);
     const draggedColumn = React.useRef(null);
@@ -148,9 +153,11 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
     // The real header and its docked clone are different elements; a menu left open across the flip would sit on a vanished trigger.
     React.useEffect(() => { setOpenMenu(null); setAddAfter(null); setFormError(''); setDragging(false); }, [dock?.header]);
 
-    const sorted = sortPlanningReviewRows(rows, sort, columns, review.cells);
+    const sorted = sortPlanningReviewRows(rows, sort, columns, review.cells, pendingOriginals);
     if (!editing) stableOrder.current = sorted.map(row => row.id);
     const displayed = editing && stableOrder.current ? [...rows].sort((a, b) => stableOrder.current.indexOf(a.id) - stableOrder.current.indexOf(b.id)) : sorted;
+    const tbodyRef = React.useRef(null);
+    usePlanningRowMotion({ tbodyRef, orderSignature: displayed.map(row => `${row.rowKind}:${row.id || row.key}`).join('|'), pendingCount: pendingOriginals?.size || 0, confirmedEdit, ackConfirmed: onConfirmedEditHandled || (() => {}), isHeld: isRowHeld || (() => false) });
     const totals = planningReviewTotals(rows, columns, review.cells);
     const editable = review.capabilities?.canSave && !review.saving;
     const trackedAction = (action, params = {}) => onReviewAction?.(action, { mode, ...params });
@@ -298,10 +305,10 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
         {formError && !openMenu && <p role="alert" className="planning-review-guidance">{formError}</p>}
         <div ref={scroller} className="planning-review-scroll" tabIndex={0} aria-label="Planning review spreadsheet">
             <table className={`planning-review-table${keyHidden ? ' planning-review-key-hidden' : ''}${dock?.header ? ' planning-review-header-docked' : ''}${dock?.footer ? ' planning-review-footer-docked' : ''}`}>{header()}
-            <tbody>{displayed.map(row => <tr key={`${row.rowKind}:${row.id || row.key}`} className={row.synthetic ? 'planning-review-synthetic' : hasZeroStoryPoints(row) ? 'planning-review-zero-sp' : ''}>
+            <tbody ref={tbodyRef}>{displayed.map(row => <tr key={`${row.rowKind}:${row.id || row.key}`} data-review-row={`${row.rowKind}:${row.id || row.key}`} data-issue-key={row.synthetic ? undefined : row.key} className={row.synthetic ? 'planning-review-synthetic' : hasZeroStoryPoints(row) ? 'planning-review-zero-sp' : ''}>
                 <td className="planning-review-selection"><Selection row={row} selectedKeys={selectedStoryKeys} onToggleStory={onToggleStory} onSelectStories={onSelectStories} /></td>
                 {columns.map(column => <td key={column.id} className={`planning-review-${column.id}${column.custom ? ' planning-review-custom' : ''} planning-review-${column.type === 'number' ? 'numeric' : 'text'}${movable(column)}`}>
-                    {column.custom ? <CustomCell row={row} column={column} review={review} editing={editing === row.id} setEditing={setEditing} focusNew={newColumnId === column.id && row === displayed.find(item => !item.synthetic && item.issueId)} />
+                    {column.custom ? <CustomCell row={row} column={column} review={review} editing={editing === row.id} setEditing={setEditing} onHold={onHoldRow} focusNew={newColumnId === column.id && row === displayed.find(item => !item.synthetic && item.issueId)} />
                         : column.id === 'key' ? (row.synthetic ? row.rowKind === 'requirement' ? 'Not created' : '—' : <TrackedExternalLink href={`${jiraUrl.replace(/\/+$/, '')}/browse/${encodeURIComponent(row.key)}`} className="task-key-link" target="_blank" rel="noopener noreferrer" analyticsMeta={buildJiraBrowseLinkAnalytics({ issueKind: row.rowKind, sourceSurface: 'planning' })}>{row.key}</TrackedExternalLink>)
                         : column.id === 'summary' ? summaryCell(row)
                         : column.id === 'priority' ? field(row, 'priority', <span>{renderPriorityIcon?.(row.priority)} {row.priority || '—'}</span>)

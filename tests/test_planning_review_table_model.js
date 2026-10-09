@@ -178,3 +178,26 @@ test('the Accepted column is a visible-by-default optional number column summed 
     assert.deepEqual(planningReviewTotals([{ accepted: '1.5' }, { accepted: null }, { accepted: '2' }], [accepted]), { accepted: '3.5' });
     assert.deepEqual(planningReviewTotals([{ accepted: null }], [accepted]), { accepted: '0' });
 });
+
+// ---- a pending status/priority edit sorts by its original value (issue #250 Task 6) -------------
+
+test('rows with a pending priority or status edit sort by the original value until it is confirmed', async () => {
+    const { sortPlanningReviewRows } = await model();
+    const columns = [{ id: 'priority', type: 'priority' }, { id: 'status', type: 'text' }, { id: 'summary', type: 'text' }];
+    const rows = [
+        { id: '1', key: 'DEMO-1', rowKind: 'story', priority: 'Highest', status: 'To Do', summary: 'a' },   // optimistic: was Low
+        { id: '2', key: 'DEMO-2', rowKind: 'story', priority: 'High', status: 'To Do', summary: 'b' },
+        { id: '3', key: 'DEMO-3', rowKind: 'story', priority: 'Low', status: 'Done', summary: 'c' },        // optimistic: was To Do
+    ];
+    const originals = new Map([['DEMO-1', { priority: { name: 'Low' } }], ['DEMO-3', { status: { name: 'To Do' } }]]);
+    const byPriority = [{ columnId: 'priority', direction: 'asc' }];
+    const byStatus = [{ columnId: 'status', direction: 'asc' }];
+
+    assert.deepEqual(sortPlanningReviewRows(rows, byPriority, columns, {}, originals).map(row => row.id), ['2', '1', '3'], 'pending: DEMO-1 still sorts as Low, tied with DEMO-3 and ordered by id');
+    assert.deepEqual(sortPlanningReviewRows(rows, byPriority, columns, {}, new Map()).map(row => row.id), ['1', '2', '3'], 'confirmed: it moves to the top');
+    assert.deepEqual(sortPlanningReviewRows(rows, byPriority, columns, {}).map(row => row.id), ['1', '2', '3'], 'no originals: unchanged behavior');
+    assert.deepEqual(sortPlanningReviewRows(rows, byStatus, columns, {}, originals).map(row => row.id), ['1', '2', '3'], 'a pending status sorts by To Do, so DEMO-3 does not jump below Done yet');
+    assert.deepEqual(sortPlanningReviewRows(rows, byStatus, columns, {}).map(row => row.id), ['3', '1', '2'], 'confirmed: Done sorts before To Do');
+    const untouched = sortPlanningReviewRows(rows, [{ columnId: 'summary', direction: 'asc' }], columns, {}, originals);
+    assert.deepEqual(untouched.map(row => row.id), ['1', '2', '3'], 'other columns ignore originals');
+});

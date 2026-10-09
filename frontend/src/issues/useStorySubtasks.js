@@ -22,7 +22,7 @@ export function dropStorySubtaskEntries(state, keys) {
     return { next, reloadKeys };
 }
 
-export function useStorySubtasks({ backendUrl, selectedSprint, onAuthRecoveryRequired } = {}) {
+export function useStorySubtasks({ backendUrl, selectedSprint, onAuthRecoveryRequired, issueEditState = null, getMutationScope } = {}) {
     const [storySubtasksByKey, setStorySubtasksByKey] = React.useState({});
     const storySubtasksByKeyRef = React.useRef(storySubtasksByKey);
     storySubtasksByKeyRef.current = storySubtasksByKey;
@@ -79,6 +79,11 @@ export function useStorySubtasks({ backendUrl, selectedSprint, onAuthRecoveryReq
                 throw error;
             }
             const data = await response.json();
+            // A freshly read (not server-cached) subtask list is the raw evidence that releases a Subtask's unconfirmed status/priority lock
+            // for the scope it was made in; Refresh never reloads subtasks, so nothing else can.
+            if (issueEditState && data.cached !== true) {
+                issueEditState.releasePlanningLocks({ scope: getMutationScope?.() ?? '', evidence: issueEditState.planningEvidence(data.subtasks || []) });
+            }
             setStorySubtasksByKey(prev => ({
                 ...prev,
                 [storyKey]: {
@@ -115,7 +120,7 @@ export function useStorySubtasks({ backendUrl, selectedSprint, onAuthRecoveryReq
                 delete storySubtasksControllerRef.current[storyKey];
             }
         }
-    }, [backendUrl, selectedSprint, onAuthRecoveryRequired]);
+    }, [backendUrl, selectedSprint, onAuthRecoveryRequired, issueEditState, getMutationScope]);
 
     const toggleStorySubtasks = React.useCallback((task) => {
         const storyKey = task?.key;
@@ -152,8 +157,8 @@ export function useStorySubtasks({ backendUrl, selectedSprint, onAuthRecoveryReq
         void loadStorySubtasks(task, { forceRefresh: true });
     }, [loadStorySubtasks]);
 
-    const applyLocalSubtaskField = React.useCallback((issueKey, fieldName, fieldValue) => {
-        setStorySubtasksByKey(prev => applyLocalSubtaskFieldUpdate(prev, issueKey, fieldName, fieldValue));
+    const applyLocalSubtaskField = React.useCallback((issueKey, fieldName, fieldValue, expected) => {
+        setStorySubtasksByKey(prev => applyLocalSubtaskFieldUpdate(prev, issueKey, fieldName, fieldValue, expected));
     }, []);
 
     const invalidateStorySubtasks = React.useCallback((keys) => {

@@ -97,40 +97,45 @@ export function useEpicRefresh(inputs) {
             laneCalls.length ? started.loadEpicAlerts({ epicKey, calls: laneCalls }).catch(() => null) : null,
             wantsReadiness ? started.loadEpicReadiness(epicKey).catch(() => null) : null,
         ]);
-        const { setters, getAlertVersion, readGuards, getProtectedKeys, mergeReadinessEpic, getState } = latest.current;
-        const now = readGuards(epicKey);
-        if (getAlertVersion?.() !== version || now.epoch !== guards.epoch || now.version !== guards.version || now.scopeKey !== guards.scopeKey) return { discarded: true };
-        // The epic's own header entry is kept as held while the user is editing it.
-        const editing = getProtectedKeys(epicKey).has(epicKey);
-        ALERT_LANES.forEach(([lane, title]) => {
-            const { epicAlerts, readyToClose, backlog } = lanes?.[lane] || {};
-            // The alert object's successful empty answer is the only proof the epic left scope: the other endpoints answer an empty list
-            // with 200 when their own epic search fails, and an empty answer must not delete from partial data (MRT019).
-            const outOfScope = epicAlerts?.status === 'ok' && epicAlerts.epicsInScope.length === 0;
-            if (epicAlerts?.status === 'ok' && !editing) {
-                setters[`set${title}EpicsInScope`](prev => mergeEpicScopeEntries({ held: prev, incoming: epicAlerts.epicsInScope, epicKey }));
+        try {
+            const { setters, getAlertVersion, readGuards, getProtectedKeys, mergeReadinessEpic, getState } = latest.current;
+            const now = readGuards(epicKey);
+            if (getAlertVersion?.() !== version || now.epoch !== guards.epoch || now.version !== guards.version || now.scopeKey !== guards.scopeKey) return { discarded: true };
+            // The epic's own header entry is kept as held while the user is editing it.
+            const editing = getProtectedKeys(epicKey).has(epicKey);
+            ALERT_LANES.forEach(([lane, title]) => {
+                const { epicAlerts, readyToClose, backlog } = lanes?.[lane] || {};
+                // The alert object's successful empty answer is the only proof the epic left scope: the other endpoints answer an empty list
+                // with 200 when their own epic search fails, and an empty answer must not delete from partial data (MRT019).
+                const outOfScope = epicAlerts?.status === 'ok' && epicAlerts.epicsInScope.length === 0;
+                if (epicAlerts?.status === 'ok' && !editing) {
+                    setters[`set${title}EpicsInScope`](prev => mergeEpicScopeEntries({ held: prev, incoming: epicAlerts.epicsInScope, epicKey }));
+                }
+                if (readyToClose?.status === 'ok') {
+                    setters[`setReadyToClose${title}Tasks`](prev => replaceEpicStories({ held: prev, incoming: readyToClose.items, epicKey, emptyConfirmed: outOfScope }));
+                    if (!editing) setters[`setReadyToClose${title}EpicsInScope`](prev => mergeEpicScopeEntries({ held: prev, incoming: readyToClose.epicsInScope, epicKey, deleteWhenAbsent: outOfScope }));
+                }
+                if (backlog?.status === 'ok' && !editing) {
+                    setters[`setBacklog${title}Epics`](prev => mergeEpicScopeEntries({ held: prev, incoming: backlog.epics, epicKey, deleteWhenAbsent: outOfScope }));
+                }
+            });
+            const missingInfo = lanes?.missingInfo;
+            if (missingInfo?.status === 'ok') {
+                // The endpoint's epic search answers an error on failure, so an answer without the epic means it left the Missing Info scope.
+                const epicInScope = missingInfo.epics.some(epic => String(epic?.key ?? '') === String(epicKey));
+                setters.setMissingInfoEpics(prev => mergeEpicScopeEntries({ held: prev, incoming: missingInfo.epics, epicKey }));
+                setters.setMissingPlanningInfoTasks(prev => mergeEpicMissingIssues({ held: prev, incoming: missingInfo.issues, epicKey, epicInScope }));
             }
-            if (readyToClose?.status === 'ok') {
-                setters[`setReadyToClose${title}Tasks`](prev => replaceEpicStories({ held: prev, incoming: readyToClose.items, epicKey, emptyConfirmed: outOfScope }));
-                if (!editing) setters[`setReadyToClose${title}EpicsInScope`](prev => mergeEpicScopeEntries({ held: prev, incoming: readyToClose.epicsInScope, epicKey, deleteWhenAbsent: outOfScope }));
-            }
-            if (backlog?.status === 'ok' && !editing) {
-                setters[`setBacklog${title}Epics`](prev => mergeEpicScopeEntries({ held: prev, incoming: backlog.epics, epicKey, deleteWhenAbsent: outOfScope }));
-            }
-        });
-        const missingInfo = lanes?.missingInfo;
-        if (missingInfo?.status === 'ok') {
-            // The endpoint's epic search answers an error on failure, so an answer without the epic means it left the Missing Info scope.
-            const epicInScope = missingInfo.epics.some(epic => String(epic?.key ?? '') === String(epicKey));
-            setters.setMissingInfoEpics(prev => mergeEpicScopeEntries({ held: prev, incoming: missingInfo.epics, epicKey }));
-            setters.setMissingPlanningInfoTasks(prev => mergeEpicMissingIssues({ held: prev, incoming: missingInfo.issues, epicKey, epicInScope }));
+            if (readiness?.status === 'ok') mergeReadinessEpic?.(epicKey, readiness.payload, { epicDetails: getState().epicDetails?.[epicKey], readToken: readiness.readToken });
+            // The epic alert object is the only call with a per-epic limiter; the scheduler retries a limited answer once.
+            const limited = ALERT_LANES.map(([lane]) => lanes?.[lane]?.epicAlerts).filter(result => result?.status === 'rate_limited');
+            if (!limited.length) return {};
+            const waits = limited.map(result => Number(result.retryAfterSeconds)).filter(seconds => Number.isFinite(seconds) && seconds > 0);
+            return { rateLimited: true, ...(waits.length ? { retryAfterSeconds: Math.max(...waits) } : {}) };
+        } finally {
+            // The readiness answer's edit-state read is finished once, whether it was merged, discarded as stale or thrown away by a failure.
+            readiness?.release?.();
         }
-        if (readiness?.status === 'ok') mergeReadinessEpic?.(epicKey, readiness.payload, { epicDetails: getState().epicDetails?.[epicKey] });
-        // The epic alert object is the only call with a per-epic limiter; the scheduler retries a limited answer once.
-        const limited = ALERT_LANES.map(([lane]) => lanes?.[lane]?.epicAlerts).filter(result => result?.status === 'rate_limited');
-        if (!limited.length) return {};
-        const waits = limited.map(result => Number(result.retryAfterSeconds)).filter(seconds => Number.isFinite(seconds) && seconds > 0);
-        return { rateLimited: true, ...(waits.length ? { retryAfterSeconds: Math.max(...waits) } : {}) };
     }, []);
 
     // Every epic-scoped alert re-check (the refresh follow-up and the inline-edit re-check) goes through one per-epic scheduler: one run in

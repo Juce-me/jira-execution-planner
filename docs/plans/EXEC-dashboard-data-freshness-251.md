@@ -1,6 +1,6 @@
 # Dashboard Data Freshness and Reading Continuity Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:executing-plans` to implement this plan task by task. Use `superpowers:subagent-driven-development` only when delegation is authorized. Steps use checkbox (`- [ ]`) syntax for tracking. Work in the checkout the user is viewing; do not create another worktree.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` when the user authorizes delegation (preferred by `docs/AGENTS.md`); otherwise use `superpowers:executing-plans`. Tasks 3–9 share `dashboard.jsx` and exact-count structure budgets, so run tasks strictly in order and delegate only file-disjoint work inside a task. Steps use checkbox (`- [ ]`) syntax for tracking. Work in the checkout the user is viewing; do not create another worktree.
 
 **Goal:** Check the active dashboard's data after a long focused return without background freshness work, lost refresh intent, or displacement of the item being read.
 
@@ -15,9 +15,10 @@ Date: 2026-10-09 (Europe/Berlin)
 Issue: [#251](https://github.com/Juce-me/jira-execution-planner/issues/251)
 Design and Definition of Done: [approved design](SUPPORT-dashboard-data-freshness-design-251.md#definition-of-done)
 Evidence: [source and primary-source research](SUPPORT-data-freshness-research-251.md)
-Recorded source baseline: `fb3593492d52a9f854ba1300c4f21f55476a9f51`, equal to fetched `origin/main` when this plan was prepared.
+Recorded source baseline: `fb3593492d52a9f854ba1300c4f21f55476a9f51`, equal to fetched `origin/main` when this plan was prepared and re-checked after the plan review on 2026-10-09.
 Authorization: the user approved the design and requested a planning commit and this implementation plan on 2026-10-09. This authorizes the documentation commit; executing application changes, pushing, publishing a PR and closing the issue are separate steps.
-Execution prerequisite: Task 0 must pass before application edits. Its remaining validation does not block writing or committing this plan.
+Review: six independent read-only reviews (ENG owner path; Board/Planning/capacity; Stats/EPM/Scenario/status UI/analytics; controller/auth shell/endpoints; design and Definition-of-Done traceability; governance/budgets/commands) were run against current source on 2026-10-09; every accepted finding is folded in below and the adjustments are listed in [Planning review and completion record](#planning-review-and-completion-record).
+Execution prerequisite: Task 0 must pass before application edits, and the decisions below gate the tasks they name. Neither blocks writing or committing this plan.
 
 ## Approved policy and boundaries
 
@@ -25,331 +26,491 @@ Execution prerequisite: Task 0 must pass before application edits. Its remaining
 - Browser focus means `document.visibilityState === 'visible' && document.hasFocus()`. This is distinct from a Board's focused column or an Epic being read. Gate acquisition, commit and follow-ups; abort or retire automatic work on blur/hidden.
 - Preserve one pending intent through bootstrap, onboarding, auth in flight, connection recovery, loading, editors, dirty drafts and saves. No periodic retry loop. Any API `401` keeps the terminal mounted sign-in gate and forbids request/write replay.
 - Compatible Catch Up and Planning scopes check one viewed Epic first, then discover the scope once. Strict Component/All work Board instead uses its existing focused-column-first stream. No offscreen Epic fan-out.
-- Keep canonical remote priority values current while retaining the presented position and Story order of at most one reading Epic. Preserve filters, selection, expansions, drafts and pane positions. Release the exception on deliberate Refresh/sort/scope/surface/navigation changes or user scrolling the anchor out of its container.
+- Keep canonical remote priority values current while retaining the presented position and Story order of at most one reading Epic. Preserve filters, selection, expansions, drafts and pane positions. Release the exception on deliberate Refresh/sort/scope/surface/navigation changes or user scrolling the anchor out of its container; the refresh's own compensation never releases it.
 - Freshness is a source observation. Forced, cached and unknown checks are distinct; coverage is complete, partial or unknown. HTTP success or auth success does not prove complete current Jira membership or indexing consistency.
 - Use current user/workspace/site partitions and current API wrappers. Do not introduce Home writes, Home 3LO migration, Basic/service credentials, token storage, Settings ownership changes or a server scheduler.
 - Event-driven checks provide no maximum data age during uninterrupted focused reading. BFCache restoration is observable; a new/discarded document bootstraps normally. Eventless retained sleep/wake has no guaranteed trigger. Record real lifecycle evidence separately from simulated time.
 
+## Decisions and approvals required before dependent work
+
+Each decision has a recommended default and blocks only the work named. Record the user's answer in the Task 0 validation record; an unanswered decision stops that dependent task, not the rest of the plan.
+
+| ID | Decision (evidence at baseline) | Recommended default | Blocks |
+| --- | --- | --- | --- |
+| D1 | **Strict Board snapshot retention across OAuth token rotation.** The owner keeps its rendered snapshot only when the stream's `scopeVersion` is equal (`useEngBoardData.js` `applyFrame`); the server hashes `tokenVersion` into `scopeVersion` (`backend/services/eng_board.py` `build_scope_version`) and `token_version` increments on every access-token refresh (`backend/auth/db_tokens.py`). A return that crossed token expiry (every 8h/24h case) would therefore delete the rendered Board at the `start` frame. `scopeCohortDigest` is the rotation-stable cohort identity the stream already sends and the client stores but never compares. | (a) Automatic reads keep the rendered snapshot while `scopeCohortDigest`, group revision and scope type match, even when `scopeVersion` differs; the staged slot records the new `scopeVersion`; manual and initial loads keep today's rule. No backend change. Alternative (b): keep `scopeVersion` strictness; automatic strict refresh then retires after rotation, the readout shows `Updates pending`, and gate 7's strict-Board row is accepted as limited to same-token returns. | Task 6 |
+| D2 | **Structure budgets.** `owner_budgets.json` pins `dashboard.jsx` and the registered owners this plan edits (`useStatsData.js`, `useEpmViewData.js`, `useEngCapacity.js`, `EpicBlock.jsx`, and `useEngAlerts.js` if touched) to exact line counts (see [Structure and source-guard gates](#structure-and-source-guard-gates)); the first edit of any of them turns the manifest test red. | Minimize growth; one ordered manifest/test update after the last source edit with explicit numbers presented to the user for approval (precedent: `EXEC-board-column-status-colours.md` Task 6). | Budget update in Task 10 and any commit |
+| D3 | **Literal freshness copy.** The design approved `Checked … ago`, `Updates pending`, `Could not check; showing previous data` and qualifying partial/unknown coverage. `partial results`, `coverage unknown` and `Cached data; check unavailable` are this plan's literal proposals. | Approve or edit at the Task 9 settled-screenshot review. | Task 9 completion |
+| D4 | **Pre-ready legacy branches.** Today a long return before the Sprint catalog is ready runs `loadSprints(true)`, and a Board scope-configuration failure runs `retryBoardScopeConfiguration` (`refreshActiveViewFromJira`). The approved eligibility rule (bootstrap complete) makes these bootstrap/recovery work, not freshness work. | Drop them with the legacy listener; bootstrap, cache-first catalog authority and connection recovery keep their own retry paths. Alternative: keep the legacy branch for those states. | Legacy-listener deletion in Task 9 |
+| D5 | **Commit policy.** The repository requires atomic, honest, green revisions and forbids publishing a red one. | One user-authorized implementation commit after Task 10 (precedent: `EXEC-board-column-status-colours.md` Decision 10); tasks are working-tree checkpoints. Alternative: per-task commits, each passing the full gates (manifest updated in that commit; Task 1 specs annotated `test.fail()` until Tasks 4/5 fix them). | First commit |
+
 ## Verified file map
 
-All Modify and existing Test paths below were resolved at the recorded baseline. Create paths are proposed files. Read the instruction chain again at execution; a new directory instruction may have appeared. The map is an allowlist, not an instruction to change every file.
+All Modify and existing Test paths below were resolved at the recorded baseline. Create paths are proposed files. Read the instruction chain again at execution; a new directory instruction may have appeared. The map is an allowlist, not an instruction to change every file; rows marked *conditional* change only if the named task proves it necessary.
 
 | Action | Path | Responsibility / tasks |
 | --- | --- | --- |
-| Create | `frontend/src/dashboardFreshnessController.js` | Pure intent, generation, source checks and retry controller; Task 2. |
-| Create | `frontend/src/useDashboardFreshness.js` | React/browser lifecycle subscription and adapter dispatch, without feature data ownership; Tasks 2–3, 7–9. |
+| Create | `frontend/src/dashboardFreshnessController.js` | Pure intent, generation, source-check and retry controller; no browser global is read at import; Task 2. |
+| Create | `frontend/src/dashboardFreshnessListeners.js` | `installFreshnessListeners(win, doc, controller)` returns `dispose`; dependency-injected so Node tests use counting fakes; Task 2. |
+| Create | `frontend/src/useDashboardFreshness.js` | React adapter: owns the controller instance, environment refs and `sessionEpoch`; returns `{ state, ownsSurface, supersedeManual, acceptChecks, ownersRef, automaticRefreshRef }` (the current-owners ref `App` assigns and the ref the Stats hooks read); Tasks 2–3, 9. |
+| Create | `frontend/src/dashboardFreshnessAdapters.js` | Plain adapter factories plus the `readEnvironment`/`blocked` composition over a current-owners ref; no hooks; Tasks 4, 6–9. |
+| Create | `frontend/src/dashboardFreshnessSummary.js`, `frontend/src/components/DashboardFreshnessStatus.jsx` | Pure `summarizeFreshness(state, sources, nowMs)` (precedence and copy) and `formatCheckedAge`; the leaf readout component with the single self-rescheduling timer; Task 9. |
 | Create | `frontend/src/eng/engReadingAnchor.js` | Container geometry, movement fence, one-Epic presentation order and departure fallback; Task 5. |
-| Modify | `frontend/src/api/authFocusRefresh.js` | Preserve return intent across auth/connection guards and report auth attempt activity; Task 3. |
-| Modify | `frontend/src/api/authRefreshContract.js` | Side-effect-free additive event contract shared by the separate shell and dashboard bundles; Task 3. |
-| Modify | `frontend/src/dashboard.jsx` | Replace automatic-to-manual coupling, supply existing owner adapters/guards, wire reading projection and freshness copy; Tasks 3–9. |
-| Modify | `frontend/src/eng/useEngSprintData.js` | Silent two-lane collection and guarded source reconciliation; Tasks 4–5. |
-| Modify | `frontend/src/eng/epicRefreshController.js` | Share per-Epic admission/cancellation; manual and automatic presentation modes; Task 4. |
-| Modify | `frontend/src/eng/useEpicRefresh.js` | Silent targeted application, reading capture and guarded follow-ups; Tasks 4–5. |
-| Modify | `frontend/src/eng/epicRefreshPatch.js` | Conservative scope merge using existing per-key edit fences; Tasks 4–5. |
-| Modify | `frontend/src/eng/useEngBoardData.js` | Stage compatible automatic streams instead of publishing empty working snapshots; Task 6. |
-| Modify | `frontend/src/eng/useStrictEngBoardIntegration.js` | Keep transactional issue patches until a current accepted stream reconciles them; Task 6. |
-| Modify | `frontend/src/eng/EngBoardView.jsx` | Preserve open detail, focus/star, expansion and independent pane anchors; Task 6. |
-| Modify | `frontend/src/eng/usePlanningSprintReview.js` | Automatic clean-only read, generation guards and row-signature coalescing; Task 7. |
-| Modify | `frontend/src/eng/useEngCapacity.js` | Hold scope during primary application and run one clean follow-up; Task 7. |
-| Modify | `frontend/src/stats/useStatsData.js` | Active-source automatic refresh with held data, signal and aggregate-read guards; Task 8. |
-| Modify | `frontend/src/epm/useEpmViewData.js` | Staged scoped metadata/rollup reads without selection loss; Task 8. |
-| Modify | `frontend/src/api/epmApi.js` | Pass optional signal and the already-supported metadata `refresh` query; no invented rollup bypass; Task 8. |
-| Modify | `frontend/src/eng/PlanningReviewTable.jsx` | Stable issue/row anchor attributes and local editor eligibility reporting if existing attributes cannot identify the row; Tasks 5, 7. |
-| Modify | `frontend/src/styles/dashboard.css` | Only compact freshness/departing-item styles, using existing tokens; Tasks 5, 9. |
-| Create | `tests/test_dashboard_freshness.js`, `tests/test_eng_reading_anchor.js` | Controller races/source records and anchor/projection rules; Tasks 1–5. |
-| Create | `tests/ui/eng_epic_refresh_fixture.js` | Extract the existing synthetic fixture section verbatim for shared use; Task 1. |
-| Create | `tests/ui/dashboard_data_freshness.spec.js` | Current-source lifecycle, movement, requests and all-surface acceptance; Tasks 1–9. |
-| Modify | `tests/test_auth_focus_refresh.js`, `tests/ui/auth_focus_refresh_counts.spec.js` | Focus, auth activity and retained intent; Tasks 1, 3. |
-| Modify | `tests/test_epic_refresh_controller.js`, `tests/test_epic_refresh_patch.js`, `tests/test_epic_refresh_source_guards.js`, `tests/ui/eng_epic_refresh.spec.js` | Manual compatibility, automatic silence, partial data and local edits; Tasks 1, 4–5. |
-| Modify | `tests/test_eng_board_data.js`, `tests/test_strict_eng_board_integration.js`, `tests/ui/eng_group_board_view.spec.js` | Stream staging, patch ownership and pane/detail continuity; Task 6. |
-| Modify | `tests/test_planning_sprint_review.js`, `tests/test_use_eng_capacity.js`, `tests/ui/planning_review_integration.spec.js`, `tests/ui/planning_capacity_editing.spec.js` | Clean/dirty, revision, save/conflict and capacity isolation; Task 7. |
-| Modify | `tests/test_use_stats_data.js`, `tests/test_epm_view_source_guards.js`, `tests/ui/epm_initial_config_load.spec.js` | Source-specific hooks, no duplicate EPM fan-out and scope retention; Task 8. |
-| Modify | `tests/test_analytics_source_guards.js`, `docs/README_ANALYTICS.md`, `docs/features/eng-workflows.md`, `docs/ontology.md`, `docs/plans/README.md` | Analytics allowlist and verified behavior/status; Task 9. |
+| Create | `tests/test_dashboard_freshness.js`, `tests/test_eng_reading_anchor.js`, `tests/test_eng_sprint_collector.js` | Controller, listeners and adapter sequencing; anchor and projection rules; ENG collector (VM harness modeled on `tests/test_eng_auth_recovery_message.js`); Tasks 1–5. |
+| Create | `tests/ui/eng_epic_refresh_fixture.js`, `tests/ui/dashboard_data_freshness.spec.js` | Extracted synthetic fixture plus lifecycle helper; current-source lifecycle, movement, request and all-surface acceptance; Tasks 1–10. |
+| Modify | `frontend/src/api/authFocusRefresh.js`, `frontend/src/api/authRefreshContract.js` | Keep the earliest absence until a dispatch can happen; additive, side-effect-free events shared by the separate shell and dashboard bundles; Task 3. |
+| Modify | `frontend/src/dashboard.jsx` | Only the handles listed under [Structure and source-guard gates](#structure-and-source-guard-gates); Tasks 3–9. |
+| Modify | `frontend/src/eng/useEngSprintData.js` | `automatic` fetch option, silent two-lane collector, 403/429 classification and `retryAfterSeconds` in the response error; Task 4. |
+| Modify | `frontend/src/eng/epicRefreshController.js`, `useEpicRefresh.js`, `epicRefreshPatch.js` | Shared per-Epic admission/cancellation, automatic mode, scope merge, movement-fenced compensation; Tasks 4–5. |
+| Modify, *conditional* | `frontend/src/eng/useEngAlerts.js` (registered, 475 lines, 29 inputs), `epicRefreshAlerts.js`, `epicRefreshDependencySkip.js`, `frontend/src/issues/useStorySubtasks.js` | Only if the existing alert/dependency/subtask loaders cannot take job signal/guard and the follow-up budget; prefer adapter-side logic, because any line added to `useEngAlerts.js` fails the manifest check; Task 4. |
+| Modify, *conditional* | `frontend/src/api/engApi.js` | `fetchEngTasks` passes `suppressAbortResult` for automatic reads (it passes only `featureName` today, so a blur-abort would log a failed `api_result`); Task 4. |
+| Modify | `frontend/src/eng/useEngWorkHierarchy.js`, `engWorkHierarchy.js`, `EngView.jsx`, `EpicBlock.jsx` (registered, 403 lines), `frontend/src/issues/IssueCard.jsx` | Presentation order, one retained Epic, read-only departing item; Task 5. |
+| Modify | `frontend/src/eng/PlanningReviewTable.jsx` | Stable row attributes, local interaction reporting, sort release; Tasks 5, 7. |
+| Modify, *conditional* | `frontend/src/eng/PlanningTeamCapacityCards.jsx` | Open capacity-editor interaction reporting; Task 7. |
+| Modify | `frontend/src/eng/useEngBoardData.js`, `useStrictEngBoardIntegration.js`, `EngBoardView.jsx` | Staged automatic stream, patch retirement, pane/detail continuity; Task 6. |
+| Modify | `frontend/src/eng/usePlanningSprintReview.js`, `frontend/src/eng/useEngCapacity.js` (registered, 394 lines) | Staged automatic review read; capacity guard and hold; Task 7. |
+| Modify | `frontend/src/stats/useStatsData.js` (registered, 1,290 lines) | Active-source automatic refresh with held data; Task 8. |
+| Modify | `frontend/src/epm/useEpmViewData.js` (registered, 443 lines), `frontend/src/api/epmApi.js` | Staged scoped metadata/rollup reads; signal forwarding, the existing metadata `refresh` query and abort-result suppression; Task 8. |
+| Modify, *conditional* | `frontend/src/api/statsApi.js` | Abort-result suppression for automatic Stats reads only; Task 8. |
+| Modify | `frontend/src/styles/shared/controls.css` (status rule beside `.header-actions-row`), `frontend/src/styles/eng/epics.css` or `eng/issues.css` (departing marker), `frontend/src/styles/eng/board.css`, `frontend/src/styles/eng/planning-review-table.css` | Compact status and departing-item styles using existing tokens; Tasks 5, 9. **Never** `styles/dashboard.css`: it is an 8-line import manifest asserted exactly by `tests/test_dashboard_css_extraction.py`. |
+| Modify | `tests/test_auth_focus_refresh.js` (add `hasFocus` to its fake document), `tests/ui/auth_focus_refresh_counts.spec.js`, `tests/test_frontend_api_source_guards.js`, `tests/test_epic_refresh_source_guards.js` | Focus, auth activity and retained intent; the long-absence/contract source pins; hook-order anchor and new-module guards; Tasks 3–4, 9. |
+| Modify | `tests/test_epic_refresh_controller.js`, `tests/test_epic_refresh_patch.js`, `tests/ui/eng_epic_refresh.spec.js` | Manual compatibility, automatic silence, partial data and local edits; Tasks 1, 4–5. |
+| Modify | `tests/test_eng_board_data.js`, `tests/test_strict_eng_board_integration.js` (regex-pins `dashboard.jsx` literals), `tests/ui/eng_group_board_view.spec.js` | Stream staging, patch ownership and pane/detail continuity; Task 6. |
+| Modify | `tests/test_planning_sprint_review.js`, `tests/test_use_eng_capacity.js` (freezes cells, outputs and the dependency array), `tests/ui/planning_review_integration.spec.js`, `tests/ui/planning_review_table.spec.js`, `tests/ui/planning_capacity_editing.spec.js` | Clean/dirty, revision, save/conflict and capacity isolation; Task 7. |
+| Modify | `tests/test_use_stats_data.js` (freezes effects and dependency arrays), `tests/test_dashboard_alert_source_guards.js`, `tests/test_excluded_capacity_stats_source_guards.js`, `tests/test_epm_view_source_guards.js`, `tests/test_epm_shell_source_guards.js`, `tests/test_epm_settings_source_guards.js`, `tests/ui/epm_initial_config_load.spec.js` | Source-specific hooks, pinned literals, no duplicate EPM fan-out and scope retention; Task 8. |
+| Modify | `tests/ui/codebase_structure_smoke.spec.js` (header geometry), `tests/test_analytics_source_guards.js` | Header readout geometry/layering; analytics allowlist; Task 9. |
+| Modify | `docs/README_ANALYTICS.md`, `docs/features/eng-workflows.md`, `docs/ontology.md`, `docs/plans/README.md`, `docs/TODO.md` (Deferred entry for keyboard-only findings) | Analytics allowlist, verified behavior, status, deferred items; Task 9. `README.md` and `docs/features/{statistics,epm-view,scenario-planner,planning-sprint-review}.md` change only where they describe return/refresh behavior; otherwise record "unchanged because …". |
+| Modify (status table only) | `docs/plans/GATE-05-home-write-capability.md` | Startup gate sweep (`Checked on`, `Last result`, next review); unrelated to this read-only feature; Task 0. |
+| Modify, *conditional* (D2) | `scripts/extraction_lint/owner_budgets.json`, `tests/test_codebase_structure_budgets.py` | One ordered update after the last source edit, with explicit numbers approved by the user; Task 10. |
 | Generated | `frontend/dist/` outputs from `npm run build` | Auth shell, dashboard/chunks/manifests and CSS; Task 10. Never hand-edit. |
 
-Existing fixture consumers: `tests/ui/eng_board_dashboard_fixture.js`, `tests/ui/epm_home_token_fixture.js`. Existing Scenario collaboration/history and backend security/route tests are verification inputs, not modification targets. No backend file is in the application edit map. If Task 0 finds an additive response/stream contract necessary, present the concrete contract and revise the plan with user approval before those edits.
+Fixture providers, not consumers: `tests/ui/eng_board_dashboard_fixture.js` provides `buildDashboardBundle`; `tests/ui/epm_home_token_fixture.js` provides `installDashboardShell`. Nothing imports `eng_epic_refresh.spec.js` today. Existing Scenario collaboration/history tests and the backend security/route tests are verification inputs, not modification targets. No backend file is in the application edit map and `jira_server.py` is exactly at its 6,487-line cap. If Task 0 finds an additive response/stream contract necessary, present the concrete contract and obtain approval; only then add the backend file, its tests and the cap change to this map.
 
-The controller and browser hook are separate so Node tests do not load React or install browser listeners. Keep adapter acquisition/application in the feature owner. Remove the old long-absence listener/ref when wiring the hook; do not leave two schedulers. Preserve the `dashboard.jsx` structure budget of 7,616 lines and existing hook boundaries; do not relax budgets or turn this into an App refactor.
+The controller, listener installer and adapters are separate from the React hook so Node tests load neither React nor browser listeners. The adapters call owner functions through a current-owners ref; acquisition and application stay in the feature owner. Delete the old long-absence ref/listener only through the per-surface hand-over described in Task 3; never leave two schedulers for the same surface.
+
+## Structure and source-guard gates
+
+Four coupled gates are **exact**, not ceilings. Read `tests/test_codebase_structure_budgets.py`, `scripts/extraction_lint/owner_budgets.json` and `scripts/extraction_lint/run.sh` before Task 3.
+
+1. `LEGACY_ENTRYPOINT_LINE_BUDGETS` in the Python test: `dashboard.jsx` 7,616 (7,594 lines at baseline, so 22 spare lines) and `jira_server.py` 6,487 (zero spare).
+2. `test_extraction_owner_checkpoint`: the manifest's `dashboard.lineCount` and `lineCeiling` are both 7,594 and the test fails on any difference from the real file, in either direction. The same holds for every registered owner this plan edits (`stats/useStatsData.js` 1,290; `epm/useEpmViewData.js` 443; `eng/useEngCapacity.js` 394; `eng/EpicBlock.jsx` 403; `eng/useEngAlerts.js` 475 if touched) and for the exact aggregates (`scenario`, `settings`, `stats`, `eng`, `uniqueOwners`, `appPlusOwners`). Headroom below the legacy ceiling does not help: the first added or removed line in a registered file fails until the manifest is updated.
+3. `check_hook_interfaces.mjs` (run by `run.sh`) freezes each registered module's exports and reviewed hook input names/counts/ceilings. A new input on `useStatsDerivedA/B`, `useEngCapacity` or `useEpmViewData`, and any new export from a registered file, fails until the manifest records it.
+4. ESLint `--max-warnings 106` with exactly 106 warnings at baseline: add no warning (an unused import fails) and never raise the limit.
+
+Unregistered files carry no ceiling and are where the logic goes: the new modules, `useEngSprintData.js`, `useEpicRefresh.js`, `epicRefresh*.js`, `usePlanningSprintReview.js`, `useEngBoardData.js`, `useStrictEngBoardIntegration.js`, `EngBoardView.jsx`, `PlanningReviewTable.jsx`. Rules:
+
+- `dashboard.jsx` may gain only: one import; one early `useDashboardFreshness(...)` call (it must precede the Stats hooks, which receive their automatic-refresh handle from it); the assignment of a current-owners ref after the last owner is declared (the pattern the old `longAbsenceRefreshRef` used); the `supersedeManual()` call at the start of `refreshActiveViewFromJira`; pass-through of handles to owners; the status readout; the presentation-projection calls. Environment composition, eligibility predicates and adapter bodies live in `dashboardFreshnessAdapters.js` and the unregistered owners. The only removal is the old long-absence import/ref/listener (about 10 lines) once Task 9 hands the last surface over.
+- Task 0 records the exact baseline numbers above and a per-task net-line and interface-change plan. During Tasks 3–9 record `wc -l` for each registered file and the delta from baseline after each task. The manifest check is red from the first registered-file edit by design; do not hand-update it per task.
+- After the last source edit, perform **one ordered update** with explicit numbers shown to the user for approval (D2): `dashboard.lineCount` and `lineCeiling`; each registered owner's `lineCount`/`lineCeiling`; the aggregates (`measured` and `ceiling`); each changed hook's `inputNames`, `expandedInputNames`, counts and ceilings and any `sourceDigest`; the `LEGACY_ENTRYPOINT_LINE_BUDGETS` value only if the file exceeds 7,616; a `(+N)` comment in the existing style; and the numbers quoted in `docs/ontology.md`. Raise ceilings only to the measured counts. Prove it with `.venv/bin/python tests/test_codebase_structure_budgets.py --manifest scripts/extraction_lint/owner_budgets.json` and `fnm exec --using 20 bash scripts/extraction_lint/run.sh`.
+- Source guards that scan source text apply to the new modules: none may contain the text `/api/` or `fetch(`, even in comments or prose such as "data-fetch" (`tests/test_frontend_api_source_guards.js`). Add a guard that the controller, listener installer, hook, adapters, summary, status component and anchor import none of the write wrappers (`updateCapacity`, `updateIssueField`, `transitionIssues`, `updateIssuePriorities`, `updateIssueProjectTrack`, `saveEpmConfig`, `saveAdminMembership`, `deleteHomeTokenConnection`, the Sprint-review save wrapper) and contain no `setInterval`, `localStorage`, `sessionStorage` or `BroadcastChannel`; the guard lives in `tests/test_dashboard_freshness.js`.
+- Do not introduce the literal `auth_required` into `dashboard.jsx` or the registered Stats/ENG owners (`tests/test_auth_isolation_source_guard.js`): a `401` never yields a freshness descriptor.
+- Guard-test edits listed in the map re-point a pin to the new owner and stay at least as strict. Task 0 runs `rg -l` for each Modify file across `tests/` and adds any further pinning test to the map before it is edited.
+- CSS: new rules go into the partials listed in the map; a new partial would be imported from its area manifest (`eng.css`, `base.css`), never from `dashboard.css`.
 
 ## Controller and owner contracts
 
-New controller export: `createDashboardFreshnessController({ readEnvironment, readAdapter, now, notify, timers })`. `now` defaults to `Date.now`; `notify` informs the hook of state changes; `timers` defaults to `{ setTimeout, clearTimeout }` and is injected by deadline tests. No I/O lives in the controller except calls to the supplied adapter and its single retry deadline.
+New controller export: `createDashboardFreshnessController({ readEnvironment, readAdapter, now, notify, timers })`.
+
+- `now` defaults to `Date.now` and is the only clock: `absenceStartedAtMs`, `requestStartedAtMs`, `completedAtMs` and `retryAtMs` all use it. Owners must not stamp descriptors with `performance.now()`.
+- `notify` informs the hook of state changes.
+- `timers` defaults to wrappers, `{ setTimeout: (callback, ms) => globalThis.setTimeout(callback, ms), clearTimeout: handle => globalThis.clearTimeout(handle) }`: a detached `setTimeout` reference called as `timers.setTimeout(...)` throws `Illegal invocation` in browsers. Deadline tests inject fakes.
+- No I/O lives in the controller except calls to the supplied adapter and its single retry deadline.
 
 ```js
 // readEnvironment() returns a fresh value on every guard check.
-// contextKey is an opaque, in-memory identity; never send it to analytics.
+// contextKey and sessionEpoch are opaque, in-memory identities; never send them to analytics.
 {
-    contextKey: '', // principal/site + accepted config/scope + active source/range
+    surface: '', // catch_up | planning | board | strict_board | stats | epm | scenario; resolved from App state by resolveFreshnessSurface() in the adapters module
+    contextKey: '', // principal/site + accepted config/scope + surface + active source/range
+    sessionEpoch: 0, // counts AUTH_SESSION_REFRESH_EVENT
     focused: false,
     bootstrapReady: false,
     authReady: false,
     connectionOwned: false,
-    blocked: false, // draft/editor/save/drag/owner loading or unsafe review state
+    blocked: false, // user-owned unsafe state only (see below)
+    ownerBusy: false, // an owner is loading/refreshing; admits no NEW job, never vetoes the active job's own apply
     terminalAuth: false,
 }
 ```
 
-Compose `contextKey` from the accepted config/browser context, auth mode/site and `authResumeStagedRevision`, Department and shared-config revision, active surface and its acquisition scope. Strict Board includes accepted stream scope; Stats includes its existing query key/range; EPM includes saved/runtime sub-goal keys, tab, project and Sprint. Use accepted identity values already supplied by config/catalog owners; do not create or persist a new user identity. Display-only facets do not change acquisition scope. Read mutable guards through current refs, not request-start closures.
+Compose `contextKey` from the principal/site refs `dashboard.jsx` already updates when config is accepted (Task 2 names them; they sit beside `authResumeStagedRevision`), `authResumeStagedRevision`, the Department and shared-config revisions (`sharedConfigRevision`, `groupsConfig.configRevision`), the active surface and its acquisition scope. Strict Board includes the accepted stream scope; Stats includes its existing query key/range; EPM includes saved/runtime sub-goal keys, tab, project and Sprint. Use accepted identity values already supplied by config/catalog owners; do not create or persist a new user identity. Display-only facets do not change acquisition scope. `sessionEpoch` is a counter the hook increments on each `AUTH_SESSION_REFRESH_EVENT`, the existing partition boundary for permission-scoped caches (the principal behind the cookie can change under a mounted page): a job started under epoch N cannot apply under N+1, so it retires with its intent kept and runs once under the new epoch. `connectionOwned` is `connectionRecoveryBlocksRefresh || unavailableRef.current` plus the shell's connection-unavailable flag. Read mutable guards through current refs, not request-start closures.
+
+`blocked` is **user-owned** unsafe state only: an open editor/popover, a pending mutation (status, priority, Project Track, field edit, drag/drop), a dirty or saving draft, an unconfirmed save or a conflict. `ownerBusy` carries the owner loading flags (`loading`, `productTasksLoading`, the alert cohort, `review.loading`, strict Board `loading`). A flag the active job raises itself must never discard that job's own result: eligibility to **start** requires `!blocked && !ownerBusy`; eligibility to **apply or continue** requires only `!blocked` plus the other guards.
 
 Public methods:
 
 | Method | Contract |
 | --- | --- |
-| `request({ reason, absenceStartedAtMs })` | Reasons `long_return` / `bfcache`; coalesce one current-context intent and retain the earliest relevant absence. Return the current drain Promise when eligible; otherwise resolve without discarding intent. |
-| `update()` | Reevaluate current environment; retire an incompatible generation, resume eligible pending work once. Call on guard transitions, focus/visibility/pageshow and owner settlement. Repeated calls during the same job cannot duplicate it. |
-| `retire(reason)` | Abort active acquisition, drop staged results and cancel the scheduled retry. Blur/temporary blocks retain pending intent; scope/surface/principal replacement drops the old intent. |
-| `supersedeManual()` | Retire automatic work before a deliberate global Refresh or competing manual per-Epic read. No implicit automatic replay after the manual result. |
-| `acceptChecks(checks)` | Record accepted source observations from automatic or explicit reads. Only an equal-context forced check begun/completed after the absence can satisfy that source's pending intent. |
-| `getState()` | Stable snapshot `{pending, running, retryAtMs, failure, checks}` for the hook; the first two are booleans, deadline/failure nullable, checks are per-source observations. No mutable feature arrays. |
-| `dispose()` | Abort and cancel retry; the hook unsubscribes on unmount and owners release read leases in `finally`. Late results cannot notify or apply. |
+| `request({ reason, absenceStartedAtMs })` | Reasons `long_return` / `bfcache`. Coalesce one pending intent per `contextKey`, keeping per source the earliest absence it still needs (`needsAfterMs`). A source already satisfied by an accepted forced check is not re-requested by a later request unless a newer absence began after that check; then its `needsAfterMs` becomes that newer absence. A request while a drain runs for the same `contextKey` joins it; for a different `contextKey` it queues behind the retired one. Returns the drain Promise when eligible, else resolves without discarding the intent. `bfcache` carries no absence: use `now()`. A shell event without `absenceStartedAtMs` derives it from `observedAtMs - unfocusedMs`, else `now() - unfocusedMs`. |
+| `update()` | Reevaluate the current environment: retire a generation that became incompatible, and start or resume, once, when eligible, a pending intent that has **not settled** (never attempted because the environment was ineligible, or interrupted by blur, a temporary block or an epoch change). Returns the drain Promise (or a resolved one). Call on guard transitions, focus/visibility/pageshow and owner settlement; because guards are read through refs, the hook also calls it from a dependency-less effect whenever `isFreshnessEligible(readEnvironment(), { starting: true })` changes between renders. It never starts a new attempt for a settled one: failed, denied, rate-limited and unverified outcomes stay settled until `request()` or explicit Refresh. Repeated calls during one job cannot duplicate it. |
+| `retire(reason)` | `blur` and `blocked`: keep the intent, mark the attempt interrupted, abort active acquisition, drop staged results, cancel the scheduled retry. `context`, `principal`, `surface`, `terminal_auth`, `manual`: also drop the intent (`terminal_auth` also cancels the retry). |
+| `supersedeManual({ scope })` | Before a deliberate global Refresh (`scope: 'all'`: abort automatic work and drop the pending intent; the owner records the manual result through `acceptChecks`) or before a competing per-Epic read (`scope: 'anchor'`: abort only the anchor stage through `job.anchorSignal`; the scope intent stays pending). No implicit automatic replay after the manual result. |
+| `acceptChecks({ contextKey, completedAtMs, checks })` | Record accepted source observations from automatic jobs and explicit reads (call sites below). Observations for another `contextKey` are discarded. A forced `ok` check whose `requestStartedAtMs >= needsAfterMs` satisfies that source. Cached/unknown observations are recorded and never advance a forced check. |
+| `getState()` | A cached immutable snapshot that changes identity only when its content changes: `{ pending, running, retryAtMs, failure, checks }`. `checks[source] = { lastCheckedAtMs, checkKind, coverage, failure }` with `failure` one of `null`, `'failed'`, `'rate_limited'`, `'unverified'`; `pending` and `failure` are derived summaries (highest-precedence source). No mutable feature arrays. |
+| `dispose()` | Abort and cancel retry; the hook removes its listeners on unmount and owners release read leases in `finally`. Late results cannot notify or apply. |
 
 Automatic job supplied to every adapter:
 
 ```js
 {
-    contextKey: '', generation: 0, signal: new AbortController().signal,
-    shouldApply: () => false, // rereads eligibility + identity + current generation
-    retrySources: null, // source-enum array only on the one permitted retry
+    contextKey: '', sessionEpoch: 0, generation: 0, signal: new AbortController().signal,
+    anchorSignal: new AbortController().signal, // child of signal; aborted alone by supersedeManual({ scope: 'anchor' })
+    shouldApply: () => false, // rereads eligibility (not "starting") + contextKey + sessionEpoch + current generation
+    pendingSources: [], // scope-level source ids still to acquire; on a resume or the one retry, only the unsatisfied/failed-retryable ones
 }
 ```
 
-`shouldApply` is false after blur, blocked state, scope/config/principal/surface change, cancellation, disposal or terminal auth. Check it before dispatch, after awaits, immediately before state/cache writes and before follow-ups. Cancellation alone is insufficient. If a response is `401`, the HTTP owner's terminal auth boundary still runs even when the job is retired; never catch a `401` as an ordinary stale result.
+`shouldApply` is false after blur, blocked state, scope/config/principal/surface/session-epoch change, cancellation, disposal or terminal auth. Check it before dispatch, after awaits, immediately before state/cache writes and before follow-ups. Cancellation alone is insufficient. If a response is `401`, the HTTP owner's terminal auth boundary still runs even when the job is retired; never catch a `401` as an ordinary stale result and never turn it into a descriptor.
 
-Every feature adapter implements the following local interface; unused anchor/follow-up methods return `null` / an empty result and start no request:
+Every feature adapter implements the following local interface; unused methods return `null` / an empty result and start no request:
 
 ```js
 {
+    surface: 'catch_up',
+    sources: () => [], // scope-level source ids this surface needs for the active context
     captureAnchor: () => null,
     refreshAnchor: async (job, anchor) => [],
     refreshScope: async (job, anchor) => [],
-    followUp: async job => [],
+    followUp: async job => [], // secondary reads; their descriptors never satisfy the intent or feed the header
 }
 ```
 
-The `refresh*` methods own the complete collection/guarded-application transaction and return per-source outcome descriptors. They call the existing owner's loader/commit path; the controller never handles feature payloads or invokes a second application. Inside each owner, collection must not mutate rendered lists, loading surfaces, caches, metadata, review revisions or freshness timestamps. Acquire edit-read leases before dispatch and finish each exactly once in `finally` after acceptance or retirement, including failures. Feature caches change only after the application guard passes. Follow-ups cannot run after retirement. Only successfully accepted descriptors become source-check records.
+`readAdapter(surface)` returns the registered adapter or `null`; with `null` the controller starts nothing and `ownsSurface(surface)` is false, so the legacy path applies (Task 3). The `refresh*` methods own the complete collection/guarded-application transaction and return per-source outcome descriptors. They call the existing owner's loader/commit path; the controller never handles feature payloads or invokes a second application. Inside each owner, collection must not mutate rendered lists, loading surfaces, caches, metadata, review revisions or freshness timestamps. Acquire edit-read leases before dispatch and finish each exactly once in `finally` after acceptance or retirement, including failures. Feature caches change only after the application guard passes. Follow-ups cannot run after retirement.
 
 Collected sources use this common metadata; their feature payload stays private:
 
 ```js
 {
     source: 'eng_product', // stable local enum, never a Jira key
-    status: 'ok', // ok | denied | failed | rate_limited | ignored | auth_required
+    status: 'ok', // ok | denied | failed | rate_limited | ignored
     checkKind: 'forced', // forced | cached | unknown
     coverage: 'unknown', // complete | partial | unknown
     requestStartedAtMs: 0,
-    retryAtMs: null,
+    retryAtMs: null, // from a valid Retry-After within the 60 s cap, else null
 }
 ```
 
-Accepted observations store `contextKey`, `source`, `lastCheckedAtMs`, `checkKind` and `coverage`. Partial forced reads can update their own observation without claiming complete scope. Cached/unknown reads cannot satisfy a forced-check intent or advance a forced check timestamp. If an owner cannot prove a forced source read with its current contract, settle the attempt as unverified, retain truthful pending/unknown guidance and wait for a new deliberate trigger; never loop until the contract appears complete.
+Scope-level sources: `eng_product`, `eng_tech`, `eng_board`, the active Stats source ids (Task 8 pins the enum), `epm_projects`, `epm_rollup`. Anchor-stage sources `eng_epic_product` / `eng_epic_tech` are partial observations of one Epic: they are recorded but never satisfy the intent or feed the header. Planning review, capacity, alerts, readiness, dependencies and subtasks are follow-ups (secondary).
 
-Stages are sequential: capture one anchor → `refreshAnchor` → `refreshScope` → surface follow-ups. Each refresh method collects then applies within its own guarded transaction. At most two primary lane requests concurrently and four primary requests without retries. A failed targeted source does not indefinitely block broader discovery. A `429` schedules at most one foreground retry for the failed source(s), not the successful phase; maximum two extra lane calls for that one retry. If a valid `Retry-After` is absent, keep pending intent and expose explicit Refresh; do not invent a hot retry interval. Use one cancellable timeout for a known deadline, rechecking focus/identity before dispatch. A header date is interpreted against the injected clock. Network failure retains content and waits for a later return/explicit action. This retry budget is additional to, and does not enlarge, current server attempt/page/deadline/byte limits.
+**Attempt settlement.** One table decides what each descriptor does; no other path clears or re-arms an intent:
+
+| Descriptor | Effect |
+| --- | --- |
+| `ok` + `forced` with `requestStartedAtMs >= needsAfterMs` | Source satisfied: record `lastCheckedAtMs` (completion time), `coverage`; clear its failure. A source read that began before the absence cannot reflect it, so this is deliberately stricter than the design's "completed after" wording; it can only add a check, never skip one. |
+| `ok` + `forced` with `requestStartedAtMs < needsAfterMs` | A real observation (it may feed the header time) that began before the absence and so cannot reflect it: it does not satisfy the source, which stays pending and unsettled for `update()`/`request()` to check. |
+| `ok` + `cached` or `unknown` | Record only. The attempt settles that source `unverified`: `pending` clears, `failure: 'unverified'` is shown as the cached/unavailable guidance, and nothing retries automatically; a new `request()` or explicit Refresh is required. |
+| `denied` | The lane resolved (the owner already removed inaccessible content). No check recorded; the source settles. |
+| `failed`, or `rate_limited` with no in-cap deadline | Settle with `failure`; `pending` stays true; no automatic retry; the readout offers explicit Refresh. |
+| `rate_limited` with a deadline within 60 s | As above plus one foreground retry for the failed stage's sources (below). |
+| `ignored` | Interrupted by blur/block/scope change: stays resumable; no failure recorded. |
+
+`failure` precedence for the summary is `failed` > `rate_limited` > `unverified`.
+
+`acceptChecks` call sites (the readout and the satisfaction rule need all of them):
+
+| Call site | Source ids | Kind / coverage |
+| --- | --- | --- |
+| The controller, per descriptor of an automatic job | the adapter's | as the owner reports |
+| Explicit header Refresh settlement: `refreshActiveViewFromJira` passes each branch's existing loader promise to `recordExplicitRefresh(surface, promise)` in the adapters module (one changed line per branch, no net growth), which classifies it and calls `acceptChecks` | scope-level ids | `forced` when the owner sent `refresh=true`; coverage only as the response proves (`unknown` for ordinary tasks, `complete` only for a strict Board `complete` frame, `partial` when capped). Where an owner cannot observe the explicit path's success without changing a registered contract, record nothing for it (the readout stays truthful by staying silent) and list it in the Task 0 provenance table. |
+| Manual per-Epic refresh | `eng_epic_product` / `eng_epic_tech` | forced, `partial` when `capped`/`epicKeysMissing`; never feeds the header or satisfies the intent |
+| Bootstrap/initial loads | scope-level ids | `cached`; renders nothing |
+
+The readout renders nothing until the controller has a pending intent, a failure, or at least one forced scope-level check; cached observations alone never render text. Header time is the **oldest** forced scope-level check among the active surface's `sources()`.
+
+Stages are sequential: capture one anchor → `refreshAnchor` → `refreshScope` → surface follow-ups. Each refresh method collects then applies within its own guarded transaction. At most two primary lane requests run concurrently, and an attempt issues at most four primary requests without retries (two anchor-stage lane calls, then two scope-stage lane calls). A resumed attempt requests only still-pending sources and never re-runs a satisfied one. A failed targeted source does not indefinitely block broader discovery, and surface follow-ups run only after at least one scope-level `ok` descriptor was accepted in the attempt.
+
+**Retry.** A `429` settles that source `rate_limited`. When the response carried a deadline within 60 s (`Retry-After` seconds or an HTTP date, parsed by `parseFreshnessRetryAt`; the per-Epic and broad lane builders both carry `retryAfterSeconds`), schedule at most one foreground retry for the failed **scope-stage** sources only (at most two extra lane calls) with one cancellable timeout, rechecking focus/identity before dispatch; blur, a block or a context change retires the timer and keeps the intent. The anchor stage is never retried: the scope stage covers the same Epic and runs regardless of an anchor failure. The retry budget is per pending intent, and the resumed attempt after a blur counts as that retry (no further timer), so a blur/refocus cycle cannot mint a fresh retry. With no valid deadline within the cap, keep the intent pending, record the failure and expose explicit Refresh; do not invent a retry interval. Network failure retains content and waits for a later return/explicit action. Alert and readiness `429` recovery keeps its existing owner (`useEpicRefresh` / `epicRefreshEditRecheck`) outside this budget. This retry budget is additional to, and does not enlarge, current server attempt/page/deadline/byte limits. Automatic reads neither set nor consult the manual 10-second per-Epic cooldown; the server's per-user, per-bucket limiter still applies, so a manual click inside its window shows the existing rate-limited message.
+
+**Follow-up ceilings** (per generation; each gets a per-pathname maximum-count assertion in the browser spec, because browser call counts do not bound Jira work):
+
+| Surface | Ceiling |
+| --- | --- |
+| Catch Up / Planning List | The existing alert and ready-to-close endpoints once each (Catch Up only; the old bundle is held when a replacement lane fails); the anchor Epic's readiness through the existing non-blanking per-Epic pair (one request; Catch Up and Planning); one batched dependencies POST for keys the accepted merge changed; subtasks only for expanded Stories of the anchor Epic whose fields changed, other expanded Stories are invalidated lazily on next expand/interaction (today's `invalidateStorySubtasks` reloads every expanded changed Story one request at a time and must not run unbounded). |
+| Planning Table | The review schema and values batches and one capacity GET, plus the CSRF token GET each values POST already needs; no alerts. |
+| Ordinary Board / Strict Board | None beyond the scope collector / the single stream. |
+| Statistics / EPM | Only the active source's own request(s); EPM one metadata read then one rollup request. |
 
 ## Existing endpoint contract matrix
 
-No route is added or migrated. OAuth reads keep `RequestAuthContext` and current project/site authorization; local supported Basic mode keeps its existing policy. Never use a fallback credential to make a blocked source look successful. GET reads have no body or CSRF token. Unsafe OAuth methods keep `X-Requested-With: jira-execution-planner`; token-bound CSRF additionally applies to the current `user_write`/preview policies. The Stats/dependencies POSTs are `authenticated_read`, while Planning values-read POST is `user_write` by policy despite its read behavior. Keep that distinction.
+No route is added or migrated. OAuth reads keep `RequestAuthContext` and current project/site authorization; local supported Basic mode keeps its existing policy. Never use a fallback credential to make a blocked source look successful. GET reads have no body or CSRF token. Unsafe OAuth methods keep `X-Requested-With: jira-execution-planner`; token-bound CSRF additionally applies to the current `user_write`/preview policies. The Stats/dependencies POSTs are `authenticated_read`, while Planning values-read POST is `user_write` by policy despite its read behavior. Keep that distinction. Policy proofs live in `tests/test_endpoint_policy_inventory.py`, `tests/test_auth_routes.py` and `tests/test_sprint_review_routes.py`; `tests/test_endpoint_security_matrix.py` samples only some routes.
 
 | Existing transport / owner | Request and successful result | Auth/boundary and failure verification |
 | --- | --- | --- |
-| `POST /api/auth/refresh`, `authFocusRefresh.js` | No body, same-origin credentials and requested-with header. Existing `{authenticated, authMode, loginRequired?, expiresAt?, siteUrl?, siteName?}` stays private to auth. | `auth_flow` policy, DB session/token resolver unchanged. `401 {error:'auth_required', loginUrl,...}` terminal; network/other failure preserves return intent. Auth unit/browser cases; endpoint security matrix. |
-| `GET /api/tasks-with-team-name`, `fetchEngTasks` / `fetchEpicRefresh` | Existing `project`, numeric `sprint`, `sprintName`, `groupId`, Team/label scope; forced ordinary query uses `refresh=true`; targeted uses `purpose=epic-refresh`, one `epicKeys`. `{issues, epics, epicsInScope}`, targeted `capped` and `epicKeysMissing` retained. | Existing request auth and lane authorization. Preserve 400 invalid scope, denied-lane behavior, 422 alert scope too large, 429 plus `Retry-After`, and terminal 401. `test_oauth_eng_routes.py`, `test_epic_refresh_purpose.py`, `test_epic_refresh_breaker.py`. Ordinary membership completeness remains unknown. |
-| `GET /api/eng/board`, `streamEngBoard` in `engBoardApi.js` | Department, `scope`, optional `sprintId`, `focusedColumnId`, `refresh=1`; `application/x-ndjson` frames interpreted by existing parser/reducer. | Server-resolved workspace/Department/projects; accepted authority and request/generation/frame ordering mandatory. Keep terminal/error frames and configured budgets. `test_eng_board_routes.py`, `test_eng_board_stream.py`, frontend stream/owner tests. |
-| `GET /api/sprints`, `fetchSprints` | Existing catalog identity/version/completion contract. No forced rediscovery in an ordinary automatic freshness job. | Separate workspace catalog owner; current initial bootstrap and same-attempt publication fence remain. Catalog due check is a non-forced separate job after visible work, never a reason to silently change selected Sprint. `test_workspace_catalog_cache.py`. |
-| `GET /api/eng/story-readiness`, `fetchStoryReadiness` / `fetchEpicReadiness` | Existing group/Sprint/state, optional one-Epic filter and refresh flag; existing `{epics,...}` snapshot. | Same scoped owner; malformed/configuration and incomplete errors remain visible; terminal 401 and stale-response rejection. Existing readiness tests and Epic-refresh browser cases. |
-| `GET /api/missing-info`, task `purpose=epic-alerts` / `ready-to-close`, `loadEpicAlerts` and Catch Up alert owner | Keep the existing affected-Epic or Department payload (`issues`, `epics`, `epicsInScope`) and purpose/scope. No Board/Stats acquisition. | Current lane, group/component and auth guards. Hold old alert bundles on failed replacement, retain 422/429/401 handling. `test_epic_refresh_alerts.js` and `eng_epic_refresh.spec.js`. |
-| `POST /api/dependencies`, `fetchDependencies`; `GET /api/issues/subtasks`, `fetchSubtasks` | Existing `{keys, refresh?}` body for dependencies; existing `parentKey`, Sprint and refresh query for subtasks. Current response parsers remain. | Dependencies POST is authenticated read with requested-with; no new CSRF exemption or mutation. Only relevant accepted keys/expanded children, bounded existing batches; `epicRefreshDependencySkip` must prevent duplicate automatic department load. Existing Epic-refresh dependency/source guards. |
-| `GET /api/eng/sprints/<sprint_id>/review`, `fetchSprintReview` | `{schemaVersion, sprintId, schemaRevision, columns, layouts, capabilities}`. | Workspace/Sprint ownership, same request context; 400/403/413/503 structured errors and 401 boundary. `test_planning_sprint_review.js` and existing backend Sprint-review tests. |
-| `POST /api/eng/sprints/<sprint_id>/review/values/read`, `readSprintReviewValues` | `{issueIds, rowKind}` → `{cells:[{issueId,rowKind,columnId,value,revision}], unavailableIssueIds}`. | Existing user-write policy requires token-bound CSRF plus requested-with. Preserve authorization-filtered unavailable IDs; no widening row admission. PATCH review save and its base revisions/409 conflicts are untouched. Browser review/save/conflict cases and security matrix. |
-| `GET /api/capacity`, `fetchCapacity` | Existing `sprint` name and admitted Team list; current capacity payload/parser. | Current user Jira auth; no PATCH on automatic path. Existing expected-value capacity save/409 recovery remains. `test_oauth_capacity_routes.py`, capacity unit/browser tests. |
-| `POST /api/stats/burnout`, `/api/stats/epic-cohort`, `/api/stats/project-track-phase-durations`, `/api/stats/excluded-capacity-source` | Keep current API wrapper bodies: burnout Sprint/Teams/issues/closure option; cohort existing range/scope; phase `{epicKeys,refresh?}`; excluded `{sprintIds,teamIds,refresh?}`. Existing `{data,...}` and warnings remain. | Authenticated-read POST plus requested-with, aggregate edit-read lease, current range/cache/concurrency/30s deadline. `test_oauth_stats_routes.py`, Stats unit/source guards and active-source browser probes. No new phase per-Epic fan-out. |
-| `GET /api/epm/projects`, `fetchEpmProjects` | `tab`, runtime `subGoalKeys`, optional existing `refresh=true`; `{projects,...}` interpreted by the same owner. Add optional signal forwarding. | Current user's Home token for Home metadata; scoped private EPM config. `home_user_token_required` keeps existing Settings gating; terminal 401 retains precedence. `test_epm_projects_api.py`, `test_epm_home_cache_isolation.py`, EPM browser tests. |
-| `GET /api/epm/projects/<project_id>/rollup` and `/api/epm/projects/rollup/all` | Existing `tab`, selected Sprint for Active, sub-goal scope; same tree/aggregate builders, duplicate/truncation/fallback metadata. Add optional signal forwarding, not an unsupported force flag. | User OAuth Jira plus captured auth/config context in worker threads. Per-project cache hit is real (`Server-Timing: cache;dur=1`); classify check conservatively. `test_epm_rollup_api.py`, EPM ownership/worker isolation tests. No Home mutation or service fallback. |
+| `POST /api/auth/refresh`, `authFocusRefresh.js` | No body, same-origin credentials and requested-with header. OAuth: `{authenticated, authMode, loginRequired?, expiresAt?, siteUrl?, siteName?}`; Basic mode: `{authenticated: true, authMode: 'basic'}`. Stays private to auth. | `auth_flow` policy, DB session/token resolver unchanged. `401 {error:'auth_required', loginUrl,...}` is terminal; `auth_connection_revoked`, `account_disabled` and `auth_connection_stale` are also `401`; network/other failure preserves return intent. Auth unit/browser cases; `test_auth_routes.py`, `test_endpoint_policy_inventory.py`. |
+| `GET /api/tasks-with-team-name`, `fetchEngTasks` / `fetchEpicRefresh` | Existing `project`, numeric `sprint`, `sprintName`, `groupId`, Team/label scope; forced ordinary query uses `refresh=true`; targeted uses `purpose=epic-refresh`, one `epicKeys` that matches the issue-key pattern (the synthetic `NO_EPIC` group is a `400`). `{issues, epics, epicsInScope}`, targeted `capped` and `epicKeysMissing` retained. | Existing request auth and lane authorization: a lane whose project view is not confirmed answers **403** `missing_project_access` with `projectType`, `projectAccessStatus` (`inaccessible` or `unknown`) and `recoveryUrl`. Preserve `400` invalid scope, `422` alert scope too large and terminal `401`. `429` with an integer `Retry-After` header and body `retryAfterSeconds` exists only for `purpose=epic-refresh` and `epic-alerts` (8 s per-user bucket limiter); broad lanes and `ready-to-close` are not limited by it. `test_oauth_eng_routes.py`, `test_epic_refresh_purpose.py`, `test_epic_refresh_breaker.py`. Ordinary membership completeness remains unknown. |
+| `GET /api/eng/board`, `streamEngBoard` in `engBoardApi.js` | Existing `departmentId`, `scope`, optional `sprintId`, `focusedColumnId`, `refresh=1` (parsed; every stream is a forced complete read, `cacheState` is `'miss'`); `application/x-ndjson` frames interpreted by the existing parser/reducer. `start` carries the token-bound `scopeVersion` and the rotation-stable `scopeCohortDigest` (see D1). | Server-resolved workspace/Department/projects; accepted authority and request/generation/frame ordering mandatory. Keep terminal/error frames and configured budgets (client 8/32 MiB, route sequence/index caps, 2,600 pages, request deadline). `test_eng_board_routes.py`, `test_eng_board_stream.py`, frontend stream/owner tests. |
+| `GET /api/sprints`, `fetchSprints` | Existing catalog identity/version/completion contract. No forced rediscovery in an ordinary automatic freshness job. | Separate workspace catalog owner; current initial bootstrap, same-attempt publication fence and the existing BFCache `pageshow` invalidation remain. No catalog freshness job is added unless Task 0 shows the catalog's own metadata marks it due after a long return; then it is a non-forced separate read after visible work, and a changed Sprint never switches silently. `test_workspace_catalog_cache.py`. |
+| `GET /api/eng/story-readiness`, `fetchStoryReadiness` / `fetchEpicReadiness` | Existing group/Sprint/state, optional one-Epic filter and refresh flag; existing `{epics,...}` snapshot. An automatic job uses only the one-Epic form through the existing non-blanking `loadEpic`/`mergeEpic` pair; the department snapshot is held until an explicit Refresh (an accepted limitation for Epics changed elsewhere). | Same scoped owner; malformed/configuration and incomplete errors remain visible; terminal 401 and stale-response rejection. Existing readiness tests and Epic-refresh browser cases. |
+| `GET /api/missing-info`, task `purpose=epic-alerts` / `ready-to-close`, `loadEpicAlerts` and Catch Up alert owner | `/api/missing-info` returns `{issues, epics, count, epicCount}`; the task purposes keep `{issues, epics, epicsInScope}` and their purpose/scope. No Board/Stats acquisition. | Current lane, group/component and auth guards. Hold old alert bundles on failed replacement, retain 422/429/401 handling. `test_epic_refresh_alerts.js` and `eng_epic_refresh.spec.js`. |
+| `POST /api/dependencies`, `fetchDependencies`; `GET /api/issues/subtasks`, `fetchSubtasks` | Existing `{keys, refresh?}` body for dependencies; existing `parentKey`, Sprint and refresh query for subtasks. Current response parsers remain. | Dependencies POST is authenticated read with requested-with; no new CSRF exemption or mutation. Only relevant accepted keys/expanded children within the follow-up ceilings; `epicRefreshDependencySkip` must prevent a duplicate automatic department load. Existing Epic-refresh dependency/source guards. |
+| `GET /api/eng/sprints/<sprint_id>/review`, `fetchSprintReview` | `{schemaVersion, sprintId, schemaRevision, columns, layouts, capabilities}`. | Workspace/Sprint ownership, same request context; 400/403/413/503 structured errors and 401 boundary. The wrapper drops `Retry-After`. `test_planning_sprint_review.js` and existing backend Sprint-review tests. |
+| `POST /api/eng/sprints/<sprint_id>/review/values/read`, `readSprintReviewValues` | `{issueIds, rowKind}` → `{cells:[{issueId,rowKind,columnId,value,revision}], unavailableIssueIds}`. | Existing user-write policy requires token-bound CSRF (an uncached `GET /api/auth/csrf` per call) plus requested-with. Preserve authorization-filtered unavailable IDs; no widening row admission. PATCH review save and its base revisions/409 conflicts are untouched. Browser review/save/conflict cases and `test_sprint_review_routes.py`. |
+| `GET /api/capacity`, `fetchCapacity` | Existing `sprint` name and admitted Team list; current capacity payload/parser. | Current user Jira auth; no PATCH on automatic path. Existing expected-value capacity save/409 recovery remains. The wrapper drops `Retry-After`. `test_oauth_capacity_routes.py`, capacity unit/browser tests. |
+| `POST /api/stats/burnout`, `/api/stats/epic-cohort`, `/api/stats/project-track-phase-durations`, `/api/stats/excluded-capacity-source` | Keep current API wrapper bodies: burnout Sprint/Teams/issues/closure option; cohort existing range/scope; phase `{epicKeys,refresh?}`; excluded `{sprintIds,teamIds,refresh?}`. Existing `{data,...}` and warnings remain. | Authenticated-read POST plus requested-with, aggregate edit-read lease, current range/cache/concurrency/30s deadline. Per-source force/provenance differs (Task 8 table). `test_oauth_stats_routes.py`, Stats unit/source guards and active-source browser probes. No new phase per-Epic fan-out. |
+| `GET /api/epm/projects`, `fetchEpmProjects` | `tab`, runtime `subGoalKeys`, optional `refresh=true` (honored by this route and the settings-preview route only); `{projects,...}` interpreted by the same owner; the payload carries `cacheHit` and `possiblyTruncated`. The wrapper does not forward a signal or `refresh` today. | Current user's Home token for Home metadata; scoped private EPM config. `home_user_token_required` is HTTP **409** and keeps existing Settings gating; terminal 401 retains precedence. `test_epm_projects_api.py`, `test_epm_home_cache_isolation.py`, EPM browser tests. |
+| `GET /api/epm/projects/<project_id>/rollup` and `/api/epm/projects/rollup/all` | Existing `tab`, selected Sprint for Active, sub-goal scope; same tree/aggregate builders, duplicate/truncation/fallback metadata. Neither route has a refresh/bypass parameter; do not invent one. | User OAuth Jira plus captured auth/config context in worker threads. The per-project cache hit sets `Server-Timing: cache;dur=1`, but the wrappers return only the payload (the header is unreachable to the owner) and the aggregate route discards per-project provenance, so every rollup check is `unknown`. `test_epm_rollup_api.py`, EPM ownership/worker isolation tests. No Home mutation or service fallback. |
 
 Task 0 freezes exact wrapper bodies/response fixture fields for the Stats, alert, dependency, capacity and stream parsers against source; this matrix delegates those already-versioned payloads to their existing parser, rather than defining replacement shapes. Any missing provenance is `unknown`, not an inferred new field. Enhanced Jira search remains `nextPageToken` / `isLast`; project search remains `startAt` / `isLast`.
 
-## Task 0: Finish validation and freeze the execution baseline
+## Forbidden regressions and acceptance
 
-**Read:** root and nested instructions, [ontology](../ontology.md), [configuration ownership](../../backend/security/CONFIGURATION_OWNERSHIP.md), design/research, current API owners and the file map. Review [MRT010](../postmortem/MRT010-startup-api-load-fanout-and-overscoped-payloads.md), [MRT023](../postmortem/MRT023-alert-enrichment-blocked-first-screen.md), [MRT014](../postmortem/MRT014-epm-cold-load-cache-race.md) and [MRT015](../postmortem/MRT015-epm-first-load-home-fanout-overfetch.md). Recheck [GATE-05](GATE-05-home-write-capability.md) under its own safety rules; it remains unrelated to this read-only feature.
+**Forbidden regressions.** Each is tied to a named assertion or guard that stays green; the owning task adds it before reporting that task done.
 
-**Update:** this plan's validation record only. Do not edit application source during this task.
+1. *Header geometry (Task 9).* The status readout keeps header height, the sticky-top CSS variables and the Refresh/gear/export control boxes identical at 375, 768 and 1400 px; the longest copy has `scrollWidth <= clientWidth`; no `white-space: nowrap` or magic `min-width` (MRT009, MRT020, MRT021); `.refresh-icon + .group-gear-button` still matches once and every `.header-icon-button` stays 38×38 (`tests/ui/codebase_structure_smoke.spec.js`); a copy change during a refresh moves the anchor by at most 2 px.
+2. *No writes from held items (Tasks 5, 7).* Controls on a held or departing item issue zero non-GET requests; Planning selection is unchanged by any automatic run.
+3. *Alerts stay in Catch Up (Tasks 4, 10).* An automatic return issues zero `/api/missing-info`, `epic-alerts` and `ready-to-close` calls outside Catch Up, no department-wide `story-readiness` call anywhere (only the anchor Epic's per-Epic readiness, in Catch Up and Planning), and the cold-load request multiset equals the Task 0 baseline (MRT010, MRT023).
+4. *Terminal auth (Tasks 3, 4, 6–8).* Any `401`, including one answered to a retired or blurred automatic request, locks the mounted app without replay or local recovery UI (`tests/ui/global_auth_lock.spec.js` plus new cases per owner).
+5. *Planning Table contracts (Tasks 5, 7).* Filters/capacity ordering, one sticky stack, document-only vertical scroll with no second vertical scroller (`planning_review_table.spec.js`), docked headers, Save/Discard only while dirty, readable Capacity chips and row selection (`planning_review_integration.spec.js`).
+6. *Board contracts (Task 6).* Teams selector visible and disabled; no Board-local Sprint control; Catch Up → Board performs no extra selected-sprint data request; strict startup stays cache-first; pane/detail geometry (`eng_group_board_view.spec.js`).
+7. *Manual Epic refresh (Task 4).* The 400 ms floor, busy state, announce/track, 10 s cooldown, two slots, glare, aggregate invalidation and dependency skip are unchanged (`eng_epic_refresh.spec.js`, `test_epic_refresh_*.js`).
+8. *No automatic write path (Tasks 4, 7–9).* An automatic window issues only GETs plus `POST /api/auth/refresh`, `/api/dependencies`, `/api/stats/*` and `…/review/values/read`: zero PATCH/PUT/DELETE and no POST to field, capacity, groups-config or scenario routes. A request-method allowlist case in the browser spec records every request in the window.
+9. *No document request (Tasks 3–4).* Freshness issues no document or static-asset request, no `/api/sprints?refresh=true` for an ordinary check, and a background read never raises the global outage state: its failure path must not start connection recovery, whose recovery path can reload the document.
+10. *Scenario (Task 9).* Freshness never calls `runScenario` or `reloadScenarioDraftFromJira`; overrides, events, presence, locks, the event cursor and scroll are untouched; realtime and lock timers keep running while blurred.
+11. *Live data (Task 10).* Sleep/wake, BFCache and live-cost runs use the user's own signed-in browser, record numbers only, and keep no live screenshot, HAR or Jira content.
+12. *Structure gates (Task 10).* The gates above hold, or are updated once with approval (D2).
+13. *Analytics (Task 9).* An automatic read emits no `epic_refresh_action`; a manual click emits exactly one.
 
-- [ ] Record branch, clean/dirty state, fetched intended base/head and all existing user changes. Resolve every Modify/Test path and symbol in the map. Review incoming changes before updating line references; preserve the approved policy.
-- [ ] Run the existing auth, merge, owner and structure baselines with Node 20 and the repository Python runtime. Build existing source and verify a clean generated diff. Use the existing `.venv` or the documented `JEP_TEST_PYTHON` runtime for browser specs that launch Flask; do not install into host Python or invent credentials.
+**Expected behavior** is the approved policy above and the design's "Proposed behavior". **Acceptance criteria** are the eight Definition of Done gates in the [approved design](SUPPORT-dashboard-data-freshness-design-251.md#definition-of-done) and each task's `Expected:` result, recorded per gate in the [completion record](#planning-review-and-completion-record) and per task in [Execution status](#execution-status).
+
+## Task 0: Finish validation, freeze the execution baseline and close the decisions
+
+**Read:** root and nested instructions (including `docs/plans/AGENTS.md`), [ontology](../ontology.md), [configuration ownership](../../backend/security/CONFIGURATION_OWNERSHIP.md), design/research, current API owners and the file map. Review [MRT009](../postmortem/MRT009-sticky-layering-regressions.md), [MRT010](../postmortem/MRT010-startup-api-load-fanout-and-overscoped-payloads.md), [MRT014](../postmortem/MRT014-epm-cold-load-cache-race.md), [MRT015](../postmortem/MRT015-epm-first-load-home-fanout-overfetch.md), [MRT016](../postmortem/MRT016-exec-02-plan-file-map-drift.md), [MRT019](../postmortem/MRT019-ready-to-close-truncated-child-scan.md) (silent partial scans), [MRT020](../postmortem/MRT020-project-track-filter-bar-bespoke-controls.md), [MRT021](../postmortem/MRT021-project-track-segmented-control-override.md), [MRT023](../postmortem/MRT023-alert-enrichment-blocked-first-screen.md) and [MRT025](../postmortem/MRT025-pr-publication-transaction-failures.md). Run the startup gate sweep for [GATE-05](GATE-05-home-write-capability.md) under its own safety rules (next review 2026-10-12): it stays blocked and unrelated to this read-only feature.
+
+**Update:** the Task 0 validation record below and GATE-05's status table only. Do not edit application source during this task.
+
+- [ ] Record branch, clean/dirty state, fetched intended base/head and all existing user changes. Resolve every Modify/Test path and symbol in the map, run `rg -l` for each Modify file across `tests/`, and add any further pinning test to the map before it is edited. Review incoming changes before updating line references; preserve the approved policy. **Authorship check:** run `git log --format='%h %an <%ae>' origin/main..HEAD`. If a commit carries a personal address instead of the repository's noreply identity (the planning commit did when this plan was written), stop for operator direction before any push; rewriting history needs explicit authorization.
+- [ ] Run the baselines with the repository runtimes: Node 20 through `fnm exec --using 20` (the host `node` differs) and `.venv/bin/python` (bare `python3` has no Flask here). Browser specs that launch Flask use `.venv/bin/python` or `JEP_TEST_PYTHON`; do not install into host Python or invent credentials.
 
 ```bash
 fnm exec --using 20 node --test tests/test_auth_focus_refresh.js tests/test_epic_refresh_controller.js tests/test_epic_refresh_patch.js tests/test_eng_board_data.js tests/test_planning_sprint_review.js tests/test_use_stats_data.js
-python3 -m unittest tests.test_codebase_structure_budgets
+fnm exec --using 20 npm run test:frontend:unit
+make test
+.venv/bin/python -m unittest discover -s tests
+fnm exec --using 20 bash scripts/extraction_lint/run.sh
 fnm exec --using 20 npm run build
-git diff --exit-code -- frontend/dist
+make verify-dist-clean
+git status --porcelain -- frontend/dist
 fnm exec --using 20 npx playwright test tests/ui/auth_focus_refresh_counts.spec.js tests/ui/eng_epic_refresh.spec.js tests/ui/eng_group_board_view.spec.js tests/ui/planning_review_integration.spec.js --browser=chromium --workers=2 --reporter=line
 ```
 
-Expected: existing checks pass and rebuilt source produces no unapproved diff. Record failures/skips as execution blockers; don't weaken assertions to proceed.
+Expected: existing checks pass and the rebuilt source produces no unapproved diff (`make test` is CI's profile, the second command the repository default). **Baseline ledger:** record every failing or skipped test id; Task 10 compares against it. A baseline failure is never silently accepted: it needs a user-approved exception, and a flaky one an isolated-rerun protocol. Also record, per Playwright spec the plan runs, whether it serves the prebuilt `frontend/dist` (it then needs `npm run build` before it exercises changed source, as `eng_epic_refresh.spec.js` and the EPM specs do) or bundles source in memory.
 
-- [ ] Extend the two current-source synthetic probes to Planning List/Table and both Board ownership paths. Measure changed priority, status, membership, height above a mid-Epic anchor, visible-but-unfocused late response, and a busy/onboarding/save return. Distinguish reproduced defects from source-derived risks. Use fixture-side lifecycle/focus/clock overrides; no production test globals.
-- [ ] Pin the exact endpoint/parser ledger, initial and return request counts/bytes, NDJSON budgets and upstream page/attempt measurements available through existing synthetic service diagnostics. Establish measured timing tolerances for the same fixture/scope. Keep unavailable live Jira cost/OS-wake evidence explicitly open; do not fabricate a numeric improvement target.
-- [ ] Record whether each owner can prove a forced source check and complete membership with its current response. Broad tasks are unknown; capped targeted responses are partial. EPM rollup cache hits and missing provenance stay cached/unknown. Do not add a backend bypass or metadata field without presenting the contract for approval.
-- [ ] Close the design checkpoint's remaining validation/file-map checks with evidence. If the campaign requires reducing surface coverage, changing the return policy, adding a backend/stream contract or relaxing a load-bearing budget, stop before dependent code and obtain the specific decision. Otherwise Task 1 may begin when application execution is authorized.
+- [ ] **Structure spike (D2):** record the exact baseline numbers from [Structure and source-guard gates](#structure-and-source-guard-gates) (dashboard, the four registered owners, aggregates, ESLint warning count, hook input inventory) and, from the file map, the expected net-line and registered-interface change per task. No source edit.
+- [ ] Extend the two current-source synthetic probes to Planning List/Table and both Board ownership paths. Measure changed priority, status, membership, height above a mid-Epic anchor, visible-but-unfocused late response, and a busy/onboarding/save return. Distinguish reproduced defects from source-derived risks. Use fixture-side lifecycle/focus/clock overrides; no production test globals. The two original probes were gitignored scratch and are not in the repository: rebuild them in Task 1 from the conditions in the design, keep scratch probes under a gitignored path such as `tmp/`, and record numbers only here.
+- [ ] Pin the exact endpoint/parser ledger, initial and return request counts/bytes, NDJSON budgets and upstream page/attempt measurements available through existing synthetic service diagnostics: the request multiset of a cold load and of one manual Refresh per surface is the "initial counts must not increase" baseline. Establish measured timing tolerances for the same fixture/scope. Keep unavailable live Jira cost/OS-wake evidence explicitly open; do not fabricate a numeric improvement target.
+- [ ] Record, per owner, (a) whether it can prove a forced source check and complete membership with its current response and (b) whether an explicit Refresh settlement is observable without changing a registered contract (for `acceptChecks`). Broad tasks are unknown; capped targeted responses are partial; the strict Board `complete` frame is a forced complete read; EPM rollup cache hits and missing provenance stay cached/unknown; pin the Stats per-source flags (Task 8 table). Do not add a backend bypass or metadata field without presenting the contract for approval.
+- [ ] Record the lifecycle baseline: existing coverage is 11 m / exactly 12 m / 13 m in `auth_focus_refresh_counts.spec.js`; 8 h and 24 h × valid/expired/revoked and `pageshow` have none (Task 3), and real sleep/wake needs the user's browser (Task 10). Record whether the Sprint/Team catalog's own metadata marks it due after a long return (see the `/api/sprints` row).
+- [ ] Close the design checkpoint's remaining validation/file-map checks with evidence. Tick the second item of the design's "Design checkpoint" only after the validation record is complete and the user has recorded acceptance of any scope reduction or contract expansion. **Stop before the dependent task and ask the user** when the campaign requires: reducing surface coverage, changing the return policy, adding a backend/stream/response contract, relaxing a load-bearing budget, a fixed polling interval or complete-scope discovery, a new dependency, or splitting scope. A stop blocks only the dependent task; record the decision and the user as decider in the table. Otherwise Task 1 may begin when application execution is authorized.
+
+**Task 0 validation record** (fill in place; rows 1–2 are the baseline reproductions already measured on 2026-10-09):
+
+| Probe / question | Trigger and surface | Requests by pathname | Offset before → after | Status | Decision / owner |
+| --- | --- | --- | --- | --- | --- |
+| Catch Up reading displacement | remote priority change, real return event | 9 application requests | 499.98 → 830.06 px (330.08), page scroll 232 → 0, DOM replaced | reproduced | Tasks 4–5 |
+| Hidden delayed response applies | hidden + blur, lane responses held then released | — | — | reproduced | Task 4 |
+| Visible-but-unfocused delayed response | `hasFocus() === false`, visible | | | open | |
+| Catch Up status / membership / height variants | | | | open | |
+| Planning List / Planning Table | | | | open | |
+| Ordinary Board / strict Board | | | | open | |
+| Busy / onboarding / save return | | | | open | |
+| Catalog due after a long return? | | | | open | |
+| Provenance and explicit-Refresh observability, per owner | | | | open | |
+| Structure spike (D2) and decisions D1–D5 | | | | open | user |
 
 ## Task 1: Turn the reproduced defects into permanent regression tests
 
 **Create:** `tests/ui/eng_epic_refresh_fixture.js`, `tests/ui/dashboard_data_freshness.spec.js`.
-**Modify:** `tests/ui/eng_epic_refresh.spec.js`, `tests/ui/auth_focus_refresh_counts.spec.js`.
+**Modify:** `tests/ui/eng_epic_refresh.spec.js`.
 
-- [ ] Extract only the existing fixture section through its helpers before `// ---- tests 1-8 ----` into the fixture module. Keep `test.use` and test registrations in the spec; the fixture may import Playwright `expect`. Export `appBaseUrl`, `SPRINT_ID`, `SPRINT_NAME`, `GROUP_ID`, `EPIC_ONE_STORY_COUNT`, `deferred`, `buildStory`, `buildEpic`, `buildScenario`, `storyKeysOf`, `groupsConfigPayload`, `mockDashboard`, `taskPayload`, `catchUpPrefs`, `openCatchUp`, `epicBlock`, `epicHeader`, `refreshButton`, `taskCard`, `statusRegion`, `parkPointer`, `hoverHeader`, `revealRefreshButton`, `epicRefreshCalls` and `assertScopedCalls`; these existing names are used by the current consumer or the new regression. Preserve their internal helper dependencies/constants. Replace the fixture section with imports, preserving every existing test body and payload. No test definitions belong in the shared fixture.
-- [ ] Port the reading probe to the permanent spec using the shared fixture and in-memory current-source bundle. Deliberately read synthetic `E1-S06`, change a different Epic's priority, dispatch the real return event, then assert document count unchanged, anchor DOM identity retained and settled offset within 2 CSS pixels. Add status/removal/height variants after the first regression is red. Capture screenshots after transitions settle.
+- [ ] Extract the existing fixture section (everything between `// ---- fixture ----` and the single `// ---- tests 1-8 ----` marker, plus `appBaseUrl`, which sits just before `test.use`) into the fixture module. Keep `test.use` and the test registrations in each spec; the fixture imports `expect` from Playwright and `installDashboardShell` from `./epm_home_token_fixture`. Export `appBaseUrl`, `SPRINT_ID`, `SPRINT_NAME`, `GROUP_ID`, `EPIC_ONE_STORY_COUNT`, `deferred`, `buildStory`, `buildEpic`, `buildScenario`, `storyKeysOf`, `groupsConfigPayload`, `mockDashboard`, `taskPayload`, `catchUpPrefs`, `openCatchUp`, `epicBlock`, `epicHeader`, `refreshButton`, `taskCard`, `statusRegion`, `parkPointer`, `hoverHeader`, `revealRefreshButton`, `epicRefreshCalls` and `assertScopedCalls`; these existing names are used by the current spec or the new regression. Internal helpers and constants (`LONG_ASSIGNEE`, `sprintRef`, `subtaskPayload`, `defaultResponse`) stay private to the module. Replace the fixture section with imports, preserve every existing test body and payload, and refresh the old spec's stale header comment. The new spec declares its own `test.use` (same reduced-motion and viewport). No test definitions belong in the shared fixture.
+- [ ] Add one fixture-side lifecycle helper, `installLifecycleControl(page)`, to the fixture module. It overrides `document.hasFocus`, `document.visibilityState` and `Date.now` through an init script and exposes in-page setters that dispatch `blur`/`focus`/`visibilitychange`, so a test can mark the page hidden, visible-but-unfocused or focused and advance the clock; it never adds a production global. Model it on the spec-local clock and visibility shims in `auth_focus_refresh_counts.spec.js` (nothing in the application source reads `hasFocus` yet).
+- [ ] Use the **current source**, not the stale dist copy: the new spec builds `dashboard.jsx` with `buildDashboardBundle` from `tests/ui/eng_board_dashboard_fixture.js` and routes it over `**/frontend/dist/dashboard.js` **after** `mockDashboard` (a later route wins, as `auth_focus_refresh_counts.spec.js` does). CSS and the auth shell remain the dist copies, so run `fnm exec --using 20 npm run build` first whenever a task changes CSS or the shell.
+- [ ] Reproduce the reading defect with a witness before asserting. Hold both lane responses with the existing pattern (`const gate = deferred(); ctx.respond(call => …, async () => { await gate.promise; })`), change a **different** Epic's Story priority in the scenario, read synthetic `E1-S06`, dispatch the real return event, release the gate, wait until the other Epic's change is rendered, then assert document count unchanged, anchor DOM identity retained and settled offset within 2 CSS pixels. Add status/removal/height variants after the first regression is red. Capture screenshots after transitions settle.
 
 ```js
-// In a browser test after locating/positioning the synthetic anchor:
-const anchor = page.locator('.task-item[data-task-key="E1-S06"]');
+// Setup, in this order: const lifecycle = await installLifecycleControl(page) (an init script, so it runs before
+// navigation); const ctx = await mockDashboard(page); the current-source route; await openCatchUp(page, ctx);
+// then scroll E1-S06 into the middle of the viewport.
+const anchor = taskCard(page, 'E1-S06');
+const gate = deferred();
+ctx.respond(call => call.pathname === '/api/tasks-with-team-name', async () => { await gate.promise; });
+const since = ctx.calls.length;
+// Remote change on a different Epic: its only Story becomes the highest priority ('Blocker' sorts first; the
+// fixture default is 'Major'), so the priority sort reorders the Epics.
+ctx.scenario.stories.find(story => story.key === 'E3-S01').fields.priority = { name: 'Blocker' };
 const before = await anchor.evaluate(node => {
-    window.__freshnessTestAnchor = node; // fixture-only observation
+    window.__freshnessTestAnchor = node; // fixture-only observation, set from the test side
     return node.getBoundingClientRect().top;
 });
-await page.evaluate(() => window.dispatchEvent(new CustomEvent(
-    'jep:auth-long-absence-return', { detail: { unfocusedMs: 13 * 60 * 1000 } }
-)));
-// Wait for the fixture's expected primary responses and settled layout here,
-// rather than sampling before the automatic request has completed.
-await expect.poll(() => anchor.evaluate(node =>
-    node === window.__freshnessTestAnchor
-)).toBe(true);
-await expect.poll(async () => Math.abs(
-    await anchor.evaluate(node => node.getBoundingClientRect().top) - before
-)).toBeLessThanOrEqual(2);
+await lifecycle.returnAfter(13 * 60 * 1000); // dispatches the event with { unfocusedMs, absenceStartedAtMs, observedAtMs }
+gate.resolve();
+// Witness first: both broad lane requests were recorded and EPIC-3 now renders first.
+await expect.poll(() => ctx.calls.slice(since).filter(call => call.pathname === '/api/tasks-with-team-name').length).toBeGreaterThanOrEqual(2);
+await expect(page.locator('[data-epic-key]').first()).toHaveAttribute('data-epic-key', 'EPIC-3');
+// Only then the assertions that fail at baseline.
+expect(await anchor.evaluate(node => node === window.__freshnessTestAnchor)).toBe(true);
+expect(Math.abs(await anchor.evaluate(node => node.getBoundingClientRect().top) - before)).toBeLessThanOrEqual(2);
 ```
 
+A bare `expect.poll(...).toBe(true)` on identity or offset passes on its first sample, before the response lands, so it can never go red; always gate on a witness that the update was applied. Task 1 confirms the exact witness against the fixture (the 2026-10-09 probe observed the Epic order change after a remote priority increase). The helper's event carries the new detail fields; the hook must also accept the bare `{ unfocusedMs }` detail the old shell sent (Task 3 derives `absenceStartedAtMs`).
+
 - [ ] Port the delayed-response probe with a manually released lane Promise. Mark hidden and `hasFocus() === false` before releasing it; assert the old summary remains, no follow-up requests start and only one current-scope job resumes on refocus. Repeat visible-but-unfocused. Count primary, alert/catalog, document and asset requests independently.
-- [ ] Run only the new movement/hidden-response cases against the recorded baseline with current-source bundling. Expected: the movement assertion and hidden-state assertion fail for the observed defects, not missing fixture imports. Record actual red results in this plan; these tests must be green after Tasks 4–5. Existing manual Epic fixture consumers must remain green.
+- [ ] Run only the new movement/hidden-response cases against the recorded baseline with current-source bundling. Expected: the movement assertion and hidden-state assertion fail for the observed defects, not for missing fixture imports. Record the command and the actual numbers in [Execution status](#execution-status); these tests must be green after Tasks 4–5. Existing manual Epic fixture consumers must remain green. Do not commit or publish an intentionally red revision (D5): leave them uncommitted, or annotate them with Playwright `test.fail()` and flip it in the task that fixes the defect.
 
 ```bash
 fnm exec --using 20 npx playwright test tests/ui/dashboard_data_freshness.spec.js --browser=chromium --workers=1 --reporter=line
+fnm exec --using 20 npm run build
 fnm exec --using 20 npx playwright test tests/ui/eng_epic_refresh.spec.js --browser=chromium --workers=2 --reporter=line
 ```
 
-Expected at this task: the two new known-defect regressions are red; existing manual cases pass. Do not report an intentionally red intermediate revision as feature completion or publish it.
+Expected at this task: the two new known-defect regressions are red; existing manual cases pass.
 
 ## Task 2: Implement the bounded lifecycle controller
 
-**Create:** `frontend/src/dashboardFreshnessController.js`, `frontend/src/useDashboardFreshness.js`, `tests/test_dashboard_freshness.js`.
+**Create:** `frontend/src/dashboardFreshnessController.js`, `frontend/src/dashboardFreshnessListeners.js`, `frontend/src/useDashboardFreshness.js`, `tests/test_dashboard_freshness.js`.
 **Modify:** `tests/ui/dashboard_data_freshness.spec.js` for lifecycle integration.
 
-- [ ] Add VM/esbuild-based Node tests, following `test_auth_focus_refresh.js`, against the public controller methods. Supply a mutable synthetic environment, fake clock and deferred adapters. Test request coalescing, all temporary blocks, late old-context results, dispose, manual supersession, auth lock, cached/partial source checks and the single retry. Include blur between each stage and between response/apply/follow-up. Start with this complete synthetic contract case; add the other transitions as distinct cases, not implementation-line assertions.
+- [ ] Add Node tests against the public controller methods. The controller and the listener installer are pure ES modules: import them directly, as `tests/test_epic_refresh_controller.js` imports its controller (Node 20.20 detects ESM syntax in `.js`). Do not build controller state inside `vm.runInNewContext`: objects created in another realm fail `assert.deepEqual` against literals. Only the shell and the hook, which need `window`/`document`, use the esbuild + VM pattern of `tests/test_auth_focus_refresh.js`. Supply a mutable synthetic environment, a fake clock and deferred adapters. Start with this complete synthetic contract case, then add every other transition as a distinct case, not an implementation-line assertion.
 
 ```js
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const path = require('node:path');
-const vm = require('node:vm');
-const esbuild = require('esbuild');
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createDashboardFreshnessController } from '../frontend/src/dashboardFreshnessController.js';
 
-function loadController() {
-    const bundle = esbuild.buildSync({
-        entryPoints: [path.join(__dirname, '../frontend/src/dashboardFreshnessController.js')],
-        bundle: true, write: false, format: 'cjs', platform: 'node',
-    }).outputFiles[0].text;
-    const context = { module: { exports: {} }, AbortController, setTimeout, clearTimeout };
-    vm.runInNewContext(bundle, context);
-    return context.module.exports.createDashboardFreshnessController;
+function harness({ environment = {}, descriptor = {} } = {}) {
+    const env = {
+        surface: 'catch_up', contextKey: 'synthetic-scope', sessionEpoch: 1, focused: true, bootstrapReady: true,
+        authReady: true, connectionOwned: false, blocked: false, ownerBusy: false, terminalAuth: false,
+        ...environment,
+    };
+    const calls = { scope: 0 };
+    const adapter = {
+        surface: 'catch_up',
+        sources: () => ['eng_product'],
+        captureAnchor: () => null,
+        refreshAnchor: async () => [],
+        refreshScope: async job => {
+            calls.scope += 1;
+            assert.equal(job.shouldApply(), true);
+            return [{ source: 'eng_product', status: 'ok', checkKind: 'forced', coverage: 'unknown',
+                requestStartedAtMs: 2000, retryAtMs: null, ...descriptor }];
+        },
+        followUp: async () => [],
+    };
+    const controller = createDashboardFreshnessController({
+        readEnvironment: () => env, readAdapter: () => adapter, now: () => 3000, notify: () => {},
+    });
+    return { env, calls, controller };
 }
 
-test('blocked returns coalesce until the current owner becomes ready', async () => {
-    const environment = {
-        contextKey: 'synthetic-scope', focused: true, bootstrapReady: true,
-        authReady: true, connectionOwned: false, blocked: true, terminalAuth: false,
-    };
-    let scopeCalls = 0;
-    const controller = loadController()({
-        readEnvironment: () => environment,
-        readAdapter: () => ({
-            captureAnchor: () => null,
-            refreshAnchor: async () => [],
-            refreshScope: async job => {
-                scopeCalls += 1;
-                assert.equal(job.shouldApply(), true);
-                return [{ source: 'eng_product', status: 'ok', checkKind: 'forced',
-                    coverage: 'unknown', requestStartedAtMs: 2000, retryAtMs: null }];
-            },
-            followUp: async () => [],
-        }),
-        now: () => 3000, notify: () => {},
-    });
+test('blocked returns coalesce until the current owner becomes ready, then run once', async () => {
+    const { env, calls, controller } = harness({ environment: { blocked: true } });
     await controller.request({ reason: 'long_return', absenceStartedAtMs: 1000 });
     await controller.request({ reason: 'long_return', absenceStartedAtMs: 1500 });
-    assert.equal(scopeCalls, 0);
+    assert.equal(calls.scope, 0);
     assert.equal(controller.getState().pending, true);
-    environment.blocked = false;
+    env.blocked = false;
     await controller.update();
     await controller.update();
-    assert.equal(scopeCalls, 1);
-    assert.equal(controller.getState().pending, false);
+    assert.equal(calls.scope, 1);
+    const state = controller.getState();
+    assert.equal(state.pending, false);
+    assert.equal(state.checks.eng_product.lastCheckedAtMs, 3000);
+    assert.equal(state.checks.eng_product.checkKind, 'forced');
+    controller.dispose();
+});
+
+test('a failed read settles once: repeated update() calls never start another attempt', async () => {
+    const { calls, controller } = harness({ descriptor: { status: 'failed' } });
+    await controller.request({ reason: 'long_return', absenceStartedAtMs: 1000 });
+    for (let index = 0; index < 5; index += 1) await controller.update();
+    assert.equal(calls.scope, 1);
+    assert.equal(controller.getState().pending, true);
+    assert.equal(controller.getState().checks.eng_product.failure, 'failed');
     controller.dispose();
 });
 ```
-- [ ] Implement the contract above with one pending intent, one active AbortController and one retry handle. Store identity/generation in each job, reread environment at every boundary, and run the phases sequentially. Read-lease/staged-snapshot cleanup belongs in the owner's `finally`; accepted source records change only after guarded application. No `setInterval`, per-Epic loop, persistent key or application data store.
+
+Distinct cases to add: request coalescing and per-source `needsAfterMs` (a source satisfied by a check that began after the absence is not re-requested; a newer absence re-arms it); every temporary block (blur, `blocked`, bootstrap not ready, auth not ready, connection owned) and `ownerBusy` admitting no new job while not vetoing an active job's own apply (a test where the adapter's own follow-up flips `ownerBusy`); late old-context results; `sessionEpoch` change mid-job retires and resumes once; retire reasons (`blur`/`blocked` keep the intent, `context`/`principal`/`surface`/`terminal_auth`/`manual` drop it); dispose; `supersedeManual` with `scope: 'all'` and `scope: 'anchor'`; `request()` joining a running drain for the same context and queuing for another; blur between each stage and between response, apply and follow-up; every row of the attempt-settlement table (forced ok satisfies; cached/unknown settles `unverified` with no re-attempt; denied resolves; failed and out-of-cap `rate_limited` keep `pending` with no retry; in-cap `rate_limited` schedules exactly one retry for the failed stage's sources only, which blur cancels while the intent stays pending); `acceptChecks` discarding another `contextKey` and a cached observation never advancing a forced check; `getState()` returning the same object while content is unchanged; a second `request()` after satisfaction starting no job; a `bfcache` request carrying no absence; the retry timers using wrappers rather than detached globals (assert with injected fakes that `timers.setTimeout` is invoked as a method).
+
+- [ ] Implement the contract above with one pending intent per context, one active AbortController and one retry handle. Store identity/generation in each job, reread the environment at every boundary, run the stages sequentially and apply the settlement table. Read-lease/staged-snapshot cleanup belongs in the owner's `finally`; accepted source records change only after guarded application. No `setInterval`, per-Epic loop, persistent key or application data store.
 
 ```js
-export function isFreshnessEligible(environment) {
-    return environment.focused && environment.bootstrapReady && environment.authReady &&
-        !environment.connectionOwned && !environment.blocked && !environment.terminalAuth;
+export function isFreshnessEligible(environment, { starting = false } = {}) {
+    return Boolean(environment.focused && environment.bootstrapReady && environment.authReady
+        && !environment.connectionOwned && !environment.blocked && !environment.terminalAuth
+        && !(starting && environment.ownerBusy));
 }
 
-export function parseFreshnessRetryAt(value, nowMs) {
+// Retry-After is delta-seconds (digits only) or an IMF-fixdate. Anything else, a non-finite clock or a deadline
+// beyond maxDelayMs yields null: keep the intent pending and expose explicit Refresh, never a hot retry.
+export function parseFreshnessRetryAt(value, nowMs, maxDelayMs = 60 * 1000) {
+    if (!Number.isFinite(nowMs)) return null;
     const text = String(value ?? '').trim();
-    if (!text) return null;
-    const seconds = Number(text);
-    if (Number.isFinite(seconds)) return seconds >= 0 ? nowMs + seconds * 1000 : null;
-    const date = Date.parse(text);
-    return Number.isFinite(date) ? Math.max(nowMs, date) : null;
+    let retryAt = null;
+    if (/^\d+$/.test(text)) {
+        retryAt = nowMs + Number(text) * 1000;
+    } else if (/^[A-Z][a-z]{2}, \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} GMT$/.test(text)) {
+        const date = Date.parse(text);
+        if (Number.isFinite(date)) retryAt = Math.max(nowMs, date);
+    }
+    return retryAt !== null && retryAt - nowMs <= maxDelayMs ? retryAt : null;
 }
 ```
 
-Both exports live beside `createDashboardFreshnessController`; use the factory's `timers` dependency for Node deadline tests. Tests verify deadline/cancellation, not elapsed wall time. A retry when unfocused is retired and its intent remains pending; it cannot use a past deadline to spin on every render. Supply `job.retrySources` to the owner on retry so only failed sources are acquired; the owner must not reapply/refetch already successful lanes.
+Both exports live beside `createDashboardFreshnessController`; use the factory's `timers` dependency for Node deadline tests. Tests verify deadline/cancellation, not elapsed wall time. `parseFreshnessRetryAt` cases: `'0'` gives `nowMs`; `'5'` gives `nowMs + 5000`; `' 7 '` is trimmed; `'61'` (over the cap), `'1e3'`, `'0x10'`, `'5.5'`, `'-1'`, `''`, `undefined`, `'1 2'` and `'abc 1'` give `null`; a past IMF date gives `nowMs`; a future IMF date inside the cap gives that date; a non-finite `nowMs` gives `null`. A retry when unfocused is retired and its intent remains pending; it cannot use a past deadline to spin on every render. Supply `job.pendingSources` so only failed sources are acquired; the owner must not reapply/refetch already successful lanes. `isFreshnessEligible` must return strict booleans.
 
-- [ ] Implement `useDashboardFreshness` as the browser/React adapter to that controller: subscribe/unsubscribe `focus`, `blur`, `visibilitychange`, persisted `pageshow`, the long-absence event, auth/connection events; update current refs for environment and active adapter. Initialize from current terminal-auth/connection/bootstrap state. `pageshow.persisted` requests one check only when current sources are unknown or older than the threshold. Ordinary mount does not duplicate bootstrap. Return `state`, `supersedeManual` and `acceptChecks` to App.
-- [ ] Run Node policy tests red then green; keep UI production bundling free of test clocks/focus overrides. Verify no listener or retry remains after unmount.
+- [ ] Implement `installFreshnessListeners(win, doc, controller)`: subscribe `focus`, `blur`, `visibilitychange`, persisted `pageshow`, the long-absence event (deriving `absenceStartedAtMs` from `observedAtMs - unfocusedMs`, else `now() - unfocusedMs`, when the detail lacks it), the auth activity and session-refresh events and the connection events; handlers call `controller.update()` or `controller.request()`; it returns `dispose`, which removes every listener. Test it with counting fakes modeled on `tests/test_auth_focus_refresh.js`: add and remove counts balance after `dispose()` and no handler reaches the controller afterwards.
+- [ ] Implement `useDashboardFreshness` as the React adapter: create the controller once, install the listeners in an effect and dispose on unmount, keep environment and owners in current refs, bump `sessionEpoch` on each `AUTH_SESSION_REFRESH_EVENT`, derive `authReady` from the existing successful bootstrap and then the activity events, initialize terminal-auth/connection/bootstrap from current state, and return `{ state, ownsSurface, supersedeManual, acceptChecks, ownersRef, automaticRefreshRef }`: `ownersRef` is the current-owners ref `App` assigns after the last owner is declared, and `automaticRefreshRef` is the ref the Stats adapter writes and the Stats hooks read (Task 8). `pageshow.persisted` requests one check only when current sources are unknown or older than the threshold; the existing catalog `pageshow` invalidation is untouched. Ordinary mount does not duplicate bootstrap. The guards the controller reads sit behind refs, so the hook runs a dependency-less effect after each render that compares `isFreshnessEligible(readEnvironment(), { starting: true })` with its previous value and calls `controller.update()` on a change; `readAdapter(surface)` resolves the adapter through `resolveFreshnessSurface(...)` (a pure function in the adapters module mapping `selectedView`, `showPlanning`, `showStats`, `showScenario`, `showBoard` and `strictBoardActive` to a surface id) and returns `null` when none is registered. Name, in this task's record, the exact principal/site refs used for `contextKey`.
+- [ ] Run Node policy tests red then green; keep UI production bundling free of test clocks/focus overrides (a source guard: no new module references `window.__` or an advance-clock helper).
 
 ```bash
 fnm exec --using 20 node --test tests/test_dashboard_freshness.js
-python3 -m unittest tests.test_codebase_structure_budgets
+fnm exec --using 20 bash scripts/extraction_lint/run.sh
 ```
 
-Expected: all controller race/source/deadline cases pass; structure checks remain unchanged.
+Expected: all controller race/source/deadline/settlement cases pass; the new modules are unregistered, so hook interfaces and the budget manifest are unchanged, and ESLint must still report exactly the baseline 106 warnings (the new files are scanned with zero slack, so an unused import or a missing `import React` fails it).
 
-## Task 3: Preserve auth-return intent and remove manual-refresh coupling
+## Task 3: Preserve auth-return intent and hand surfaces over from the legacy listener
 
-**Modify:** `frontend/src/api/authFocusRefresh.js`, `frontend/src/api/authRefreshContract.js`, `frontend/src/dashboard.jsx`, `tests/test_auth_focus_refresh.js`, `tests/ui/auth_focus_refresh_counts.spec.js`.
+**Modify:** `frontend/src/api/authFocusRefresh.js`, `frontend/src/api/authRefreshContract.js`, `frontend/src/useDashboardFreshness.js`, `frontend/src/dashboard.jsx`, `tests/test_auth_focus_refresh.js`, `tests/ui/auth_focus_refresh_counts.spec.js`, `tests/test_frontend_api_source_guards.js`, `tests/test_epic_refresh_source_guards.js`.
 
-- [ ] Add shell regression cases: visible-but-blurred focus; blur while auth POST awaits; long return during an in-flight POST; connection ownership; storage exceptions; failed renewal followed by a short focused return; exactly 12 minutes; late mounted app; BFCache; concurrent-tab attempt timestamps. Assert actual event/request counts without claiming atomic cross-tab exclusion.
-- [ ] Keep the earliest unfocused timestamp and pending long-return intent until a renewal/eligible throttled return can dispatch it. Do not clear intent before in-flight/connection checks. Recheck focus after awaited auth before starting freshness; if focus was lost, preserve intent for the next eligible return. Terminal auth clears executable intent and retains recovery precedence.
-- [ ] Add one side-effect-free event constant for auth attempt activity and additive long-return timestamps. Dispatch activity before a return intent and before calling the network; settle after the request. The hook uses it only to defer/resume checks. Existing `AUTH_SESSION_REFRESH_EVENT` remains the permission-cache invalidation signal, never a broad data-fetch trigger. Shared storage records attempts only.
+- [ ] Add shell regression cases: visible-but-blurred focus; blur while the auth POST awaits; long return during an in-flight POST; connection ownership; storage exceptions; **this tab's own failed renewal followed by a short focused return** (no dispatch and the intent retained; the next return after the 60 s throttle retries the POST); exactly 12 minutes; late mounted app; BFCache; concurrent-tab attempt timestamps (a foreign fresh stamp still dispatches). Assert actual event/request counts without claiming atomic cross-tab exclusion. Add `hasFocus` to the fake document of `tests/test_auth_focus_refresh.js`; the shell will call it.
+- [ ] Change the shell minimally, with no timers (the contract guard bans `setTimeout`): keep a module-level `pendingLongReturn` (the earliest qualifying absence start) beside `unfocusedSince`; `handleVisibleReturn` still nulls `unfocusedSince` but sets `pendingLongReturn ??= since` when the absence exceeded `LONG_ABSENCE_MS`, and passes `longAbsence: pendingLongReturn !== null`. The early returns (connection unavailable, hidden, refresh in flight) now keep it. Dispatch and clear it only at the two dispatch points (a throttled return, a successful POST), after re-checking `document.visibilityState` and, when present, `document.hasFocus()`; if focus was lost, keep it for the next eligible return. Keep it on a non-ok response or an exception, clear it with the shared stamp on `401`. In the throttle branch dispatch only when the stamp belongs to another tab or this tab's last attempt succeeded: this tab's own failed attempt (its stamp is written before the POST) retains the intent. Gate only classification and dispatch on focus; the install-time `handleVisibleReturn()` still renews in a visible-but-unfocused window. Terminal auth clears executable intent and keeps recovery precedence.
+- [ ] Add one side-effect-free activity event and additive long-return fields. Dispatch `refreshing` before a return intent is dispatched and before the network call, then `settled` or `failed`; the hook uses it only to defer and resume checks. The existing `AUTH_SESSION_REFRESH_EVENT` remains the permission-cache invalidation signal and the `sessionEpoch` source, never a broad data-fetch trigger. Shared storage records attempts only.
 
 ```js
 // authRefreshContract.js: additive events contain no token or user data.
 export const AUTH_FOCUS_REFRESH_STATE_EVENT = 'jep:auth-focus-refresh-state';
 // Activity detail: { status: 'refreshing' | 'settled' | 'failed' }.
-// Long-return detail retains unfocusedMs, adding:
+// Long-return detail keeps unfocusedMs and adds:
 // { absenceStartedAtMs: number, observedAtMs: number }.
 ```
 
-Use existing successful bootstrap as the hook's initial auth readiness, then current activity transitions. A failed renewal retains pending intent and does not initiate retries on render; the next independent focused/auth transition may retry through the existing throttle. A throttled attempt in another tab is not proof of renewal; ordinary API auth remains authoritative.
+The hook's `authReady` is false while `refreshing` and true after `settled` and after `failed`: focus renewal is an optimization only (an expired session answers `401` to the first data read, which locks the app), so a failed renewal never blocks acquisition forever and never initiates retries on render; the next independent focused/auth transition retries through the existing throttle. A throttled attempt in another tab is not proof of renewal; ordinary API auth remains authoritative. A late-mounted app starts with the existing successful bootstrap as its auth readiness.
 
-- [ ] Replace `longAbsenceRefreshRef` and its event listener with the freshness hook, initially registering adapters only after their tasks pass. Keep `refreshActiveViewFromJira` as explicit Refresh; call `supersedeManual()` before its existing work. Keep the new feature inactive where its owner adapter is not yet complete; this is an intermediate execution state, not an accepted scope reduction.
-- [ ] Run shell unit/browser cases and the build. Expected: no freshness navigation/asset load, short-return data count zero, delayed hidden/unfocused events do not start automatic acquisition, busy returns retain intent. Adjust only the old browser assertion that explicitly expected the broad manual-refresh coupling; keep its auth/navigation assertions.
+- [ ] Install `useDashboardFreshness` early in `App()` (before the Stats hooks) and register **no adapter yet**. Keep the old long-absence ref/listener but gate it per surface: `longAbsenceRefreshRef.current?.()` runs only while `!freshness.ownsSurface(surface)`. A surface therefore never has two schedulers, and none loses its long-return refresh between this task and the task that registers its adapter (today's behavior continues for surfaces whose adapter has not landed). Tasks 4, 6, 7, 8 and 9 each register their adapter, which flips `ownsSurface` for that surface; Task 9 deletes the legacy import/ref/listener after D4 is answered. `refreshActiveViewFromJira` stays the explicit Refresh: it calls `supersedeManual({ scope: 'all' })` first and hands each branch's existing loader promise to `recordExplicitRefresh(surface, promise)` from the adapters module (one changed line per branch, so no net `dashboard.jsx` growth), which classifies the settlement per surface and calls `acceptChecks`; Tasks 4, 6, 7, 8 and 9 each supply their surface's classification. Where an owner's loader promise cannot report success without changing a registered owner contract (Task 0 records which), `recordExplicitRefresh` records nothing for it and the "explicit Refresh records a forced check" assertion is dropped for that surface and logged in the Task 0 provenance row; never invent a result.
+- [ ] Update the source guards in this task. `tests/test_frontend_api_source_guards.js` still requires `dashboard.jsx` to import `./api/authRefreshContract` and mention `AUTH_LONG_ABSENCE_EVENT` while the legacy gate exists; once Task 9 removes it, re-point the pin to `useDashboardFreshness.js` (imports the event from `authRefreshContract`, never from `authFocusRefresh`) and keep the contract guard, which scans source substrings, so a comment in the contract must not contain a forbidden token. Re-anchor `tests/test_epic_refresh_source_guards.js` on the hook call instead of the removed `addEventListener(AUTH_LONG_ABSENCE_EVENT` text so its order assertion cannot go vacuous.
+- [ ] Add the lifecycle matrix (Gate 2) to `auth_focus_refresh_counts.spec.js`: 11 min / exactly 12 min / 13 min / 8 h / 24 h × valid (`200`), expired (`401 auth_required`) and revoked (`401 auth_connection_revoked` and `account_disabled`) auth, asserting per row the auth POST count, zero document and asset requests, zero data requests at ≤ 12 min, one check above 12 min (for surfaces already owned) and, for `401`, the mounted sign-in gate with zero data requests. Chromium launches with the back/forward cache disabled, so a persisted `pageshow` here is a **simulated** event: say so in the test name and the record; discarded-document bootstrap is a fresh document load. Real BFCache and wake runs belong to Task 10.
+- [ ] Run shell unit/browser cases and the build. Expected: no freshness navigation/asset load; short-return data count zero; delayed hidden/unfocused events start no automatic acquisition; busy returns retain intent; the existing dashboard-wiring case (long return → `/api/tasks-with-team-name` and `/api/sprints`) still passes for the surface that is not yet owned.
 
 ```bash
-fnm exec --using 20 node --test tests/test_auth_focus_refresh.js tests/test_dashboard_freshness.js
+fnm exec --using 20 node --test tests/test_auth_focus_refresh.js tests/test_dashboard_freshness.js tests/test_frontend_api_source_guards.js tests/test_epic_refresh_source_guards.js
 fnm exec --using 20 npm run build
-fnm exec --using 20 npx playwright test tests/ui/auth_focus_refresh_counts.spec.js --browser=chromium --workers=2 --reporter=line
+fnm exec --using 20 npx playwright test tests/ui/auth_focus_refresh_counts.spec.js tests/ui/global_auth_lock.spec.js --browser=chromium --workers=2 --reporter=line
+fnm exec --using 20 bash scripts/extraction_lint/run.sh
 ```
+
+The last command's ESLint and hook-interface parts must pass; its manifest part reports the expected `dashboard.jsx` line difference (red by design until the ordered update). Record `wc -l` and the delta.
 
 ## Task 4: Add silent targeted and scope acquisition to the ENG owner
 
-**Modify:** `useEngSprintData.js`, `epicRefreshController.js`, `useEpicRefresh.js`, `epicRefreshPatch.js` under `frontend/src/eng/`; `frontend/src/dashboard.jsx`; associated Epic/controller tests in the map.
+**Create:** `frontend/src/dashboardFreshnessAdapters.js`, `tests/test_eng_sprint_collector.js`.
+**Modify:** `useEngSprintData.js`, `epicRefreshController.js`, `useEpicRefresh.js`, `epicRefreshPatch.js` under `frontend/src/eng/`; `frontend/src/dashboard.jsx` (handles only); *conditional* `useEngAlerts.js` (registered), `epicRefreshAlerts.js`, `epicRefreshDependencySkip.js`, `frontend/src/issues/useStorySubtasks.js`, `frontend/src/api/engApi.js`; associated Epic/controller tests and the freshness spec in the map.
 
-- [ ] Add meaningful loader/merge cases for two lanes, one failed/denied lane, capped and unknown membership, changed local fields while awaiting, pending write/rollback and late scope generations. Assert that collection invokes zero rendered setters/cache writes, and every read lease is released once. Keep manual cooldown/concurrency/glare/announcement assertions.
-- [ ] Add `collectGroupRefresh(job)` to `useEngSprintData` and expose it alongside existing loaders. Collect the Product and Tech lanes via the same `fetchTasks` normalization/filtering/auth path, with `forceRefresh: true`, `useLoading: false`, `setErrorOnFailure: false`, `updateEpics: false`, no in-scope setter, `signal: job.signal`, `shouldApplyResult: job.shouldApply`. Capture normalized Epic metadata and per-source status locally. Do not consume the page-load cache-bypass flag as a side effect of this collector. Hold `ISSUE_EDIT_READ_TOKEN` leases through apply/disposal.
-- [ ] Extend `createEpicRefreshController.refresh` and `useEpicRefresh.refreshEpic` with an optional second options object. Omitted options preserve current manual behavior. Automatic options use the same admission slots/edit protection and guarded load path but skip the manual 400ms floor, busy UI, glare, announcement, adoption event and unconditional aggregate invalidation.
+- [ ] Add the tests first. `tests/test_eng_sprint_collector.js` uses the `new Function` harness of `tests/test_eng_auth_recovery_message.js` (the only existing host for `useEngSprintData`) and asserts: the collector invokes zero rendered setters and cache writes; it never calls `onServerConnectionFailure` (a network error returns a `failed` descriptor and leaves the global outage state untouched); every read lease is released exactly once; `403 missing_project_access` is classified `denied` with its `projectAccessStatus`, for broad and targeted reads; `429` returns `rate_limited` with `retryAfterSeconds` from the JSON body or the `Retry-After` header; capped and unknown membership; changed local fields while awaiting; pending write/rollback; and a late scope generation, where `shouldApply` includes the department epoch/version that `readGuards` carries. Extend `tests/test_epic_refresh_patch.js` for the merge rules below (including `userRemovedKeys`, access-loss removal, and that capped/`epicKeysMissing`/`5xx`/network never remove). Keep the manual cooldown/concurrency/glare/announcement assertions unchanged.
+- [ ] Add one `automatic` option to `fetchTasks`, distinct from `epicRefresh`. An automatic read returns its normalized issues, `epics` and `epicsInScope` to the caller instead of calling the setters (`updateEpics` and the in-scope setter stay off); it classifies `missing_project_access` as `LANE_DENIED` (carrying `projectAccessStatus`) and rate limiting as `RATE_LIMITED` (carrying `retryAfterSeconds`) exactly as `epicRefresh` does; it **never calls `onServerConnectionFailure`**, because that raises the global outage state whose next-focus recovery can reload the document, and a background read must not; it records a measurement only when the caller supplies one (automatic collectors pass none: `loadPerformance` samples feed the initial-load dataset); it does not touch the page-load cache-bypass flag (never set at baseline, so the old sentence guarded nothing); and `fetchEngTasks` (which `fetchEpicRefresh` also uses) passes `suppressAbortResult` when `automatic`, because it passes only `featureName` today and a blur-abort would log a failed `api_result`. `buildTaskResponseError` (in `useEngSprintData.js`) preserves `retryAfterSeconds` (a number, from the JSON body, else the integer `Retry-After` header) and `projectAccessStatus` on the error it builds; today the header is dropped and the `rate_limited` sentinel carries no seconds. Both the per-Epic and the broad lane builders return `{ status: 'rate_limited', retryAfterSeconds }`, and the adapter turns it into `retryAtMs` with `parseFreshnessRetryAt(String(retryAfterSeconds), now())`.
+- [ ] Add `collectGroupRefresh(job, { sameScope })` to `useEngSprintData` and expose it alongside the existing loaders. It runs the Product and Tech lanes through `fetchTasks` with `automatic: true`, `forceRefresh: true`, `useLoading: false`, `setErrorOnFailure: false`, `signal: job.signal` and `shouldApplyResult: () => job.shouldApply() && sameScope()`. `readGuards` is an `App` closure that `useEngSprintData` cannot see, so the caller injects `sameScope`, which compares the department epoch/version (`loadEpochRef`, `groupLoadVersionRef`) and `scopeKey` against the snapshot taken at the start of the job: a wholesale load that starts during the collection invalidates it. Hold `ISSUE_EDIT_READ_TOKEN` leases through apply/disposal and release each exactly once in `finally`. Do not use `loadMeasuredGroupTasks` (wholesale loading and replacement).
+- [ ] Extend `createEpicRefreshController.refresh` and `useEpicRefresh.refreshEpic` with an optional second options object. Omitted options preserve current manual behavior. Automatic options use the same two-slot admission and edit protection and the guarded load path, but skip the manual 400 ms floor, busy UI, glare, announcement, adoption event, unconditional aggregate invalidation, the 10-second cooldown (set and check) and the existing `window.scrollBy` compensation (Task 5 supplies the movement-fenced one). Skip the targeted stage when the anchor group is `NO_EPIC` or its key does not match the issue-key pattern (the server answers `400` for `epicKeys=NO_EPIC`).
 
 ```js
 // New optional call contract; all existing one-argument manual calls remain valid.
@@ -361,29 +522,35 @@ refreshEpic(epicKey, {
 });
 ```
 
-`source` accepts `manual` / `automatic`; default is `manual`. `deferFollowUps` places alert/dependency/subtask work in the owning adapter's guarded follow-up phase. A competing manual per-Epic click cancels the automatic job before admission; both modes share the existing two-slot limit and scoped cooldown/breaker. The controller returns an accepted-result descriptor, not a fabricated success on ignored/failed lanes.
+`source` accepts `manual` / `automatic`; default is `manual`. `deferFollowUps` places alert/dependency/subtask work in the owning adapter's guarded follow-up phase. A competing manual per-Epic click cancels the automatic anchor stage (`supersedeManual({ scope: 'anchor' })`) before admission. The controller returns an accepted-result descriptor, not a fabricated success on ignored or failed lanes.
 
-- [ ] Extend the pure patch module with `mergeEngScopeSnapshot` using its existing key comparison/edit-protection helpers. Input is held/fetched Product or Tech items, normalized metadata, current protected keys, request snapshot and source coverage. Preserve equal object references, accept new keys, update unprotected fields; remove absent keys only when membership is proven complete. Unknown/capped/failed lanes retain unproven held members. A lane denial cannot be used to display newly unauthorized data; explicit access removal retires that item and falls back to an authorized anchor.
-- [ ] Wire the compatible ENG adapter: one anchor Epic's two targeted calls first, then the collector's two broad calls. Avoid `loadMeasuredGroupTasks` for automatic collection because it uses wholesale loading/replacement. Reuse existing `loadPerformance` observations without inventing GA4 fields. Do not force Sprint discovery, clear mounted arrays, reset unrelated Stats sources, or run alerts before accepted primary data. Record `Retry-After` before the existing response-error conversion loses it; retain current error codes/public array-return contracts for legacy loaders.
-- [ ] Guard the existing dependency/subtask/alert follow-ups with the same job and current source scope. Use the `epicRefreshDependencySkip` mechanism so accepted list changes do not also trigger an unguarded full-department dependency effect. Catch Up follows its existing alert owner; Planning/Board/Stats do not acquire Catch Up bundles. Hold old alerts on partial failure.
+- [ ] Extend the pure patch module with `mergeEngScopeSnapshot` using its existing key comparison and edit-protection helpers. Inputs: held/fetched Product or Tech items, normalized metadata, current protected keys, `userRemovedKeys`, **both** the display list and the loaded list (the display list excludes dismissed cards; without the removed keys "accept new keys" would resurrect every dismissed Story on each check), the request snapshot and per-lane coverage. Preserve equal object references, accept new keys, update unprotected fields; remove absent keys only when membership is proven complete; unknown, capped or failed lanes retain unproven held members. **Access loss** is the one removal that needs no completeness proof: a lane answering `403 missing_project_access` with `projectAccessStatus: 'inaccessible'` removes that lane's held display and loaded Stories for the scope (an anchor in it falls back Story → Epic → nearest surviving item) and does not advance that source's check; `'unknown'`, `5xx`, `429`, network, `capped` and `epicKeysMissing` never remove.
+- [ ] Add the applier that Tasks 6, 8 and 9 reuse. The commit path (setters, synchronous `flushSync` commit, dependency-skip arming, edit fences) lives in `useEpicRefresh.js`, and that hook is inactive outside Catch Up/Planning (`active: isEpicRefreshMode`; its `readGuards` also reject `!isEpicRefreshMode`, `manualRefreshDisabled` and the owner loading flags). Have it return `applyScopeSnapshot(job, merged)`, which applies a `mergeEngScopeSnapshot` result through the same setters and the same `afterApply`, guarded by a new `readScopeGuards()` input instead: `{ blocked, epoch, version, scopeKey }` where `blocked` is user-owned state only (the environment composition below) and **not** `isEpicRefreshMode`, so the Board, Stats and Scenario adapters can apply ENG scope data while the Catch Up list is unmounted. It rechecks `readScopeGuards()` and `job.shouldApply()` immediately before committing and holds `capacityScopeHoldRef` around the apply, as the per-Epic apply does.
+- [ ] Compose the shared environment for every surface in the adapters module (`resolveFreshnessSurface`, `readEnvironment`), from the App-level state the owners already expose. `blocked` (user-owned): `statusTransitionActiveKey`, `priorityTransitionActiveKey`, `projectTrackTransitionActiveKey`, `issueFieldEdits.activeEditor`, the pending status/priority/Project Track/field key sets, an open popover or editor and pending capacity mutations. `ownerBusy`: `loading`, `productTasksLoading`, `techTasksLoading`, `groupsLoading`, the alert cohort (`alertCohortRef`), `onboardingRequired`. `connectionOwned`, `bootstrapReady` (which includes `engWorkspaceConfigured`) and `terminalAuth` come from the connection-recovery, bootstrap and auth-required owners the contract names. Tasks 6, 7 and 9 add only their surface-specific signals (Board drag, Planning review/editors/capacity editor, Scenario/Settings); nothing in them replaces this composition.
+- [ ] Create `dashboardFreshnessAdapters.js` and register the **Catch Up** adapter (`surface: 'catch_up'`; Planning follows in Task 7): `sources()` is `['eng_product', 'eng_tech']`; the anchor stage reports `eng_epic_product` / `eng_epic_tech`. Sequence: capture one anchor → the anchor Epic's two targeted lane calls → the collector's two broad lane calls → `mergeEngScopeSnapshot` and `applyScopeSnapshot` within the guarded transaction. The adapter reuses the existing loaders through the current-owners ref; it does not force Sprint discovery, clear mounted arrays, reset unrelated Stats sources, or run alerts before accepted primary data. Its explicit-Refresh classification for `recordExplicitRefresh` is `forced` with coverage `unknown` for `loadMeasuredGroupTasks({ forceRefresh: true })` (ordinary membership completeness is unknown). The legacy gate from Task 3 then skips the old manual path for Catch Up.
+- [ ] Follow-ups run under the same job and the ceilings in the contract section. Call `loadAlertEpics`, `fetchMissingPlanningInfo` and the `loadReadyToClose*` loaders directly with `job.signal` and `shouldApplyResult` (they already accept both) instead of `rearmCatchUpAlerts()`, an effect with its own controller that cannot see the job (its four call sites are pinned by `tests/test_epic_refresh_source_guards.js`). Keep old alert bundles when a replacement lane fails. Refresh readiness for the **anchor Epic only**, through the existing non-blanking pair `storyReadiness.loadEpic` (it accepts `signal`, fails silently) and `mergeEpic`; never bump `catchUpAlertRefreshNonce`, which blanks the department readiness snapshot to `LOADING` and drives an effect that is not job-guarded. The department readiness snapshot is held until an explicit Refresh, an accepted limitation recorded here: readiness entries of Epics changed elsewhere keep their previous values, in Catch Up and in Planning (which consumes the same snapshot). Arm `epicRefreshDependencySkip` for the broad signature the accepted merge produces so the department dependency effect (byte-pinned in the source guards) does not also fire an unguarded full load; list the pins that change. Catch Up follows its alert owner; Planning, Board and Stats never acquire Catch Up bundles. Subtask reloads follow the ceiling (anchor Epic's expanded changed Stories; others invalidate lazily). Alert/readiness `429` recovery keeps its existing owner. If Task 0 recorded the Sprint/Team catalog as due after a long return, add one non-forced catalog read as a follow-up after visible work (never forcing rediscovery and never switching the selected Sprint silently) with its own test; otherwise record "none due" in the validation record.
+- [ ] Add the browser assertions to `tests/ui/dashboard_data_freshness.spec.js` on a request timeline, because the DoD gate names counts and order: at most four `/api/tasks-with-team-name` calls without retry; the first two have `purpose=epic-refresh` and one `epicKeys` equal to the anchor Epic, and no call names another Epic; at most two in flight; every lane carries `refresh=true`; zero `/api/sprints` reads; per-pathname follow-up maxima from the ceilings; blur at the targeted response, the broad response and the alert follow-up applies nothing and starts no follow-up; one `429` retries only the failed stage once and honors `Retry-After`; alerts are held when a replacement lane fails; a `401` in the second stage applies nothing, replays nothing and locks the app; blur → refocus → explicit Refresh yields no duplicate primary job; a manual per-Epic click aborts the automatic anchor stage; explicit Refresh records a forced check; a `403` (`inaccessible`) after a successful read removes that lane's content while the other lane's DOM identity stays stable, and a `5xx` keeps content; the request-method allowlist case (no PATCH/PUT/DELETE, no POST outside `/api/auth/refresh` and `/api/dependencies`). Rewrite the dashboard-wiring case in `auth_focus_refresh_counts.spec.js` for the owned surface on a group fixture: two `refresh=true` lanes, zero `/api/sprints`, one document request.
 
 ```bash
-fnm exec --using 20 node --test tests/test_epic_refresh_controller.js tests/test_epic_refresh_patch.js tests/test_epic_refresh_alerts.js tests/test_epic_refresh_dependency_skip.js tests/test_epic_refresh_source_guards.js tests/test_dashboard_freshness.js
-fnm exec --using 20 npx playwright test tests/ui/dashboard_data_freshness.spec.js tests/ui/eng_epic_refresh.spec.js --browser=chromium --workers=2 --reporter=line
+fnm exec --using 20 node --test tests/test_eng_sprint_collector.js tests/test_epic_refresh_controller.js tests/test_epic_refresh_patch.js tests/test_epic_refresh_alerts.js tests/test_epic_refresh_dependency_skip.js tests/test_epic_refresh_source_guards.js tests/test_dashboard_freshness.js
+fnm exec --using 20 npm run build
+fnm exec --using 20 npx playwright test tests/ui/dashboard_data_freshness.spec.js tests/ui/eng_epic_refresh.spec.js tests/ui/auth_focus_refresh_counts.spec.js tests/ui/global_auth_lock.spec.js --browser=chromium --workers=2 --reporter=line
+fnm exec --using 20 bash scripts/extraction_lint/run.sh
 ```
 
-Expected: new hidden/late-response regression green, four primary calls maximum without retry, targeted phase before broad, no automatic manual-event/glare. The movement regression closes in Task 5; do not remove it to make this task appear complete.
+Expected: the hidden/late-response regression is green, four primary calls at most without retry, targeted phase before broad, no automatic manual-event/glare, ESLint and hook interfaces pass (the manifest delta is recorded). The movement regression closes in Task 5; do not remove it to make this task appear complete.
 
 ## Task 5: Preserve one reading context and compensate the real container
 
 **Create:** `frontend/src/eng/engReadingAnchor.js`, `tests/test_eng_reading_anchor.js`.
-**Modify:** `dashboard.jsx`, `useEpicRefresh.js`, `PlanningReviewTable.jsx`, `styles/dashboard.css` and the freshness/Epic browser specs from the map.
+**Modify:** `useEpicRefresh.js`, `epicRefreshPatch.js`, `useEngWorkHierarchy.js`, `engWorkHierarchy.js`, `EngView.jsx`, `EpicBlock.jsx`, `frontend/src/issues/IssueCard.jsx`, `PlanningReviewTable.jsx`, `styles/eng/epics.css` or `eng/issues.css`, `styles/eng/planning-review-table.css`, `dashboard.jsx` (projection call only) and the freshness/Epic browser specs from the map.
 
-- [ ] Test pure order projection and movement fences with synthetic keyed Epics/Stories: remote priority change, added/moved/filtered/deleted item, unavailable access, anchor release and a second navigation. Assert canonical arrays/totals/export never receive the presentation-only exception. There can be only one retained Epic and one bounded Story key order.
-- [ ] Implement `captureEngReadingAnchor`, `restoreEngReadingAnchor` and `projectEngReadingOrder` in the new helper. The first two receive DOM/container access and measured visible bounds; the third is pure. Anchor selection is open detail/active interaction, then last deliberate visible interaction, then first real visible Story/Epic below measured sticky tiers. Use existing `data-epic-key` / `data-task-key`; add stable row attributes to the Planning table if needed. Hover is not an intent. Track user movement separately from compensation so internal scrolling cannot release the pin or rewind a new user position.
+- [ ] Test pure order projection and movement fences (direct ESM import) with synthetic keyed Epics/Stories: Epic-level `projectEngEpicOrder([E5, E1, E2, E3, E4], 'E4', 3)` keeps `E4` in slot 3 (`[E5, E1, E2, E4, E3]`) while the others follow canonical order, and an `undefined` or non-integer slot returns the canonical order; Story-level new Stories append after the complete held order; remote priority change, added/moved/filtered/deleted item, unavailable access, anchor release and a second navigation. Assert canonical arrays/totals/export never receive the presentation-only exception. There can be only one retained Epic and one bounded Story key order.
+- [ ] Implement `captureEngReadingAnchor`, `restoreEngReadingAnchor`, `projectEngReadingOrder` (Story level) and `projectEngEpicOrder` (Epic level) in the new helper. The first two receive DOM/container access and measured visible bounds; the projections are pure. The anchor record is `{ surface, scopeKey, kind: 'story' | 'epic' | 'row', key, epicKey, container: 'window' | 'col-body' | 'panel-body' | 'planning-scroll', offsetTop, movementEpoch }`. Anchor selection is open detail/active interaction, then last deliberate visible interaction, then first real visible Story/Epic below measured sticky tiers. Use the existing DOM hooks: `data-epic-key` (`EpicBlock.jsx`) and `data-task-key` (`IssueCard.jsx`). Planning table rows have no DOM identity today (a React key only), so add `data-planning-row-key`, `data-row-kind` and `data-epic-key` (Story → its Epic, Epic → itself, synthetic placeholder → none); do not reuse `data-issue-key`, because existing selectors take the first match. Hover is not an intent. Track user movement separately from compensation so internal scrolling cannot release the pin or rewind a new user position.
 
 ```js
-// Pure projection used only by the render model; source arrays stay canonical.
+// Story level: heldKeys must be the COMPLETE ordered keys (Stories and requirement rows) of the single pinned Epic.
+// Retained items keep their previous order; new items append after them. Source arrays stay canonical.
 export function projectEngReadingOrder(items, heldKeys, keyOf) {
     const rank = new Map(heldKeys.map((key, index) => [key, index]));
     const retained = items.filter(item => rank.has(keyOf(item)))
@@ -391,185 +558,268 @@ export function projectEngReadingOrder(items, heldKeys, keyOf) {
     const additions = items.filter(item => !rank.has(keyOf(item)));
     return [...retained, ...additions];
 }
+
+// Epic level: the pinned Epic keeps its previous slot; every other Epic follows canonical order.
+// Fails safe: without an integer slot the canonical order is returned (a missing slot would otherwise pin the Epic first).
+export function projectEngEpicOrder(items, pinnedKey, previousIndex, keyOf) {
+    const pinned = items.find(item => keyOf(item) === pinnedKey);
+    if (!pinned || !Number.isInteger(previousIndex)) return items;
+    const rest = items.filter(item => item !== pinned);
+    rest.splice(Math.min(Math.max(previousIndex, 0), rest.length), 0, pinned);
+    return rest;
+}
 ```
 
-Use this only for the pinned Epic's Story order. The Epic-level projection keeps that one Epic in its previous slot while other Epics follow canonical order; do not freeze every Epic with the same helper. Explicit sorting clears the exception first. New Stories append within the pinned presentation until release; their source order/priority remains canonical.
+The presentation exception is a record separate from the anchor: `{ epicKey, groupKey, slot, storyKeys }`, captured immediately before the first order-changing commit, where `slot` is the Epic's index inside its Initiative group (or the direct list) and `storyKeys` is the complete ordered key list of that Epic. It feeds `projectEngEpicOrder(items, epicKey, slot, keyOf)` and `projectEngReadingOrder(stories, storyKeys, keyOf)`, and is released with the reading context. Apply the Epic-level projection after the existing `partitionRequirementsFirst`/`groupByInitiative` steps and inside the Initiative group the pinned Epic belongs to (`engWorkHierarchy.js`); do not freeze every Epic with one helper. Explicit sorting clears the exception first: Planning's local sort and editor state live in `PlanningReviewTable.jsx`, so it receives an explicit release callback. New Stories append within the pinned presentation until release; their source order/priority remains canonical.
 
-- [ ] Capture immediately before each synchronous guarded commit, then restore after two settled layout frames only if identity and user-movement epoch still match. Measure the anchor's container-relative offset before/after, apply the delta once, and clamp to the available range. Do not combine independent window and pane compensation. Story → Epic → nearest authorized surviving item → clamped previous offset is the fallback order. Test native browser anchoring to prevent double compensation.
-- [ ] Represent an authoritative filter/scope departure as one clearly marked temporary reading item outside normal scoped arrays. Exclude it from selection, totals, export and write handlers; release when the reading context ends. If access is explicitly unavailable/revoked, remove immediately instead of holding. Unknown broad membership alone does not establish departure. Use existing text/tokens, no extra toolbar or card animation.
-- [ ] Run the red baseline movement case against the new implementation and require ≤2 CSS pixels, stable DOM identity for unchanged rows and no forced restoration after user scroll/navigation during the request. Cover changed height, sticky Planning panels, horizontal sheet scroll and desktop/touch fallback. Capture settled synthetic screenshots and menu/sticky geometry assertions.
+- [ ] Wire the ENG adapter's `captureAnchor` and the automatic apply-time compensation in `useEpicRefresh` to the helper; the manual path keeps its existing compensation unchanged. Capture immediately before each synchronous guarded commit, then restore after two settled layout frames only if identity and user-movement epoch still match. Measure the anchor's container-relative offset before and after, apply the delta once and clamp to the available range. Do not combine independent window and pane compensation. Story → Epic → nearest authorized surviving item → clamped previous offset is the fallback order. Prove idempotence against native scroll anchoring: run the movement case with the default `overflow-anchor` and with `overflow-anchor: none` on the container; WebKit stays a recorded residual when unavailable.
+- [ ] Represent an authoritative filter/scope departure as one clearly marked temporary reading item outside normal scoped arrays. It is read-only (rendered through the shared issue card with write controls disabled: no status pill, field edit or selection checkbox action) and excluded from selection, totals, export and write handlers; it is released when the reading context ends. If access is explicitly unavailable or revoked, remove it immediately instead of holding. Unknown broad membership alone does not establish departure. Use existing text/tokens, no extra toolbar or card animation.
+- [ ] Run the red baseline movement case against the new implementation and require ≤ 2 CSS pixels, stable DOM identity for unchanged rows and no forced restoration after user scroll/navigation during the request, with Catch Up filter, search, Team, expansion, selection and group-by-Initiative assertions. Cover changed height, sticky Planning panels, horizontal sheet scroll and the desktop/touch fallback. Capture settled synthetic screenshots and menu/sticky geometry assertions. When CSS touches emoji or form-control geometry, run the headed Firefox and WebKit glyph guard (`tests/ui/eng_group_board_card.spec.js --headed`) as the repository requires.
 
 ```bash
 fnm exec --using 20 node --test tests/test_eng_reading_anchor.js tests/test_epic_refresh_patch.js
-fnm exec --using 20 npx playwright test tests/ui/dashboard_data_freshness.spec.js tests/ui/eng_epic_refresh.spec.js tests/ui/planning_review_integration.spec.js --browser=chromium --workers=2 --reporter=line
-python3 -m unittest tests.test_codebase_structure_budgets
+fnm exec --using 20 npm run build
+fnm exec --using 20 npx playwright test tests/ui/dashboard_data_freshness.spec.js tests/ui/eng_epic_refresh.spec.js tests/ui/planning_review_integration.spec.js tests/ui/planning_review_table.spec.js --browser=chromium --workers=2 --reporter=line
+fnm exec --using 20 bash scripts/extraction_lint/run.sh
 ```
 
-Expected: both known-defect regressions now green; manual refresh contracts and sticky/selection behavior preserved.
+Expected: both known-defect regressions now green; manual refresh contracts and sticky/selection behavior preserved; the manifest delta recorded.
 
 ## Task 6: Preserve ordinary and strict Board reading state
 
-**Modify:** `useEngBoardData.js`, `useStrictEngBoardIntegration.js`, `EngBoardView.jsx`, `dashboard.jsx`, Board owner/integration/browser tests and the freshness spec.
+**Gate:** obtain decision D1 before editing `useEngBoardData.js`.
+**Modify:** `useEngBoardData.js`, `useStrictEngBoardIntegration.js`, `EngBoardView.jsx`, `styles/eng/board.css` (only if the open panel needs a departing marker), `dashboard.jsx` (handles only), `dashboardFreshnessAdapters.js`, Board owner/integration/browser tests and the freshness spec.
 
-- [ ] Add strict-owner tests that hold each NDJSON frame, blur or change scope/config, then release it. Assert current rendered data unchanged until compatible guarded acceptance, retired measurements not published, old request/frame generations ignored and authority not borrowed from Sprint task data.
-- [ ] Extend the Board owner's existing refresh options with automatic job options; defaults retain manual/initial progressive-loading behavior. For an automatic refresh, retain the compatible rendered snapshot and reduce incoming frames into a staged working projection. Commit authoritative compatible columns without ever exposing an empty read Epic. Abort signal and `shouldApply` gate every frame/cache/publication boundary. When identity is incompatible, retire instead of merging. Keep existing stream/parser/deadline/byte/fan-out limits.
+- [ ] Add strict-owner tests that hold each NDJSON frame, blur or change scope/config, then release it. Assert current rendered data unchanged until compatible guarded acceptance, retired measurements not published, old request/frame generations ignored and authority not borrowed from Sprint task data. Add **one owner test per terminal outcome in automatic mode** (`complete`, `column_error`, `partial_error`, `scope_too_large`, `deadline_exceeded`, `scope_changed`, an auth frame, a network failure, abort/blur), each asserting the snapshot, `status`, `error` and that header Refresh stays enabled. Add the D1 cases: with (a), a token-rotated `scopeVersion` and equal `scopeCohortDigest` keeps the snapshot and the open panel, and a changed cohort discards and retires; with (b), the automatic read retires cleanly and the readout shows `Updates pending`.
+- [ ] Stage automatic refreshes in the owner. The only entry today is `load()` → `start_load`, which sets `status: 'loading'` and `stale: true`: that would disable the header Refresh (so an explicit click could not supersede the job), show the in-flow "Showing last complete Board data" banner, let `retire()` wipe `staleSnapshot`/`working` and surface error frames as banners. The owner already keeps a compatible snapshot until `complete` for manual loads, so the defect to avoid is applying manual-load state to a background read, not an empty working snapshot. Add `start_automatic`, `commit_staged` and `discard_staged` actions that write only a `staged` slot: `status`, `refreshing`, `error`, `staleSnapshot`, `working` and `snapshots` change only at a guarded commit. Abort or `shouldApply() === false` leaves state byte-identical; failures return descriptors, never banners; an auth frame follows the terminal gate. Commit columns atomically in declared order: an Epic whose `columnId` changed leaves its old column and enters the new one in the same commit, with no duplicate or missing card and the open/read Epic never absent. Retention across token rotation follows D1. Keep existing stream/parser/deadline/byte/fan-out limits. `refresh` takes no options today; give it an optional automatic options object and propagate it through `useStrictEngBoardIntegration`:
 
 ```js
-// Existing Board owner refresh gets an optional options argument.
-strictBoardData.refresh({
-    source: 'automatic', signal: job.signal, shouldApply: job.shouldApply,
-    preserveRenderedSnapshot: true,
-});
+strictBoardData.refresh({ source: 'automatic', signal: job.signal, shouldApply: job.shouldApply });
 ```
 
-Propagate these options through `useStrictEngBoardIntegration`; do not bypass its transactional issue patch owner. Successful automatic reads only retire local patches covered by accepted current data; pending/failed/rolled-back writes keep their existing reconciliation. No write is aborted or replayed by freshness.
-
-- [ ] Capture every expanded `.col-body` scroll position plus the open detail Epic/Story anchor, focused/starred column and collapsed set. Restore only unchanged user-movement epochs per pane. Ordinary Sprint Board uses the accepted silent Sprint snapshot from Task 4 and the same view-preservation helper; strict Component/All work uses one focused-column-first stream, zero `purpose=epic-refresh` calls. In touch/document layout use the actual document container.
-- [ ] Require open detail, unchanged card DOM identity, pane offsets ≤2px, no empty detail flash, no column/scope/star reset, and cancellation on every delayed frame. Explicit removal/access denial follows Task 5 fallback. Test user scrolling one pane while another refreshes; compensation must not move that pane back.
+- [ ] Reconcile issue patches only against accepted data. `issuePatchesByKey` is a plain state map that the wrapper clears unconditionally when its `refresh` succeeds; nothing about it is transactional. A successful automatic read retires patch `K.F` only when the accepted value equals the patch value and `K` is not pending (`pendingStatusIssueKeys`, `pendingPriorityIssueKeys`, `pendingProjectTrackIssueKeys`, `issueFieldEdits.pendingIssueKeys`); pending, failed or rolled-back writes keep their existing reconciliation, and the unconditional clear stays on the manual path. Tests: a pending write at completion, an equal value, a differing remote value. No write is aborted or replayed by freshness.
+- [ ] Preserve view state. Capture every expanded `.col-body` scroll position, `.board.scrollLeft` (the `columns`-keyed layout effect re-centres `.board`), the panel `.m-body`, the open detail Epic/Story anchor, the focused/starred column and the collapsed set. Commits happen inside the owner's `emit`, so add owner `beforeCommit`/`afterCommit` options (or capture in `EngBoardView`'s layout effect) and restore only unchanged user-movement epochs per pane. Feed `openEpicGroup` from Task 5's departing-item projection so a refreshed column list never closes the open panel. Report drag/drop/pending-drop to the environment through an `onInteractionChange` callback that writes a ref synchronously in the handlers. In touch/document layout use the actual document container.
+- [ ] Ordinary Sprint Board: in Board mode `isEpicRefreshMode` is false and the task list is unmounted, so there is no targeted stage, no `.task-item` and no per-Epic control. The ordinary Board reuses the already-loaded Catch Up snapshot (Catch Up → Board performs no additional selected-sprint data request), so its adapter runs the scope collector only (at most two primary requests; the loaders return early under `strictBoardActive`), merges through Task 4's `applyScopeSnapshot`, and anchors on `.ecard[data-epic-key]`, the panel's `[data-story-key]`, `.col-body` (a scroller only in pane mode), the panel `.m-body`, otherwise the document. Strict Component/All work uses one focused-column-first stream per generation and zero `purpose=epic-refresh` calls. Register both Board adapters so `ownsSurface('board')` and `ownsSurface('strict_board')` flip. Their explicit-Refresh classification for `recordExplicitRefresh`: the strict Board `refresh()` outcome `'success'` is a `forced` check with coverage `complete` (a `complete` frame), any other outcome records nothing; the ordinary Board uses Catch Up's classification.
+- [ ] Require open detail, unchanged card DOM identity, pane offsets ≤ 2 px, no empty detail flash, no column/scope/star reset, exactly one `/api/eng/board` per generation, and cancellation on every delayed frame. Header Refresh stays enabled during an automatic stream and an explicit click supersedes it. Explicit removal/access denial follows Task 5's fallback. Test user scrolling one pane while another refreshes; compensation must not move that pane back.
 
 ```bash
-fnm exec --using 20 node --test tests/test_eng_board_data.js tests/test_strict_eng_board_integration.js tests/test_eng_board_stream.js tests/test_eng_board_mutation_coordinator.js
-fnm exec --using 20 npx playwright test tests/ui/eng_group_board_view.spec.js tests/ui/eng_board_stream.spec.js tests/ui/dashboard_data_freshness.spec.js --browser=chromium --workers=2 --reporter=line
-python3 -m unittest tests.test_eng_board_routes tests.test_eng_board_stream tests.test_eng_board_service
+fnm exec --using 20 node --test tests/test_eng_board_data.js tests/test_strict_eng_board_integration.js tests/test_eng_board_stream.js tests/test_eng_board_mutation_coordinator.js tests/test_dashboard_freshness.js
+fnm exec --using 20 npm run build
+fnm exec --using 20 npx playwright test tests/ui/eng_group_board_view.spec.js tests/ui/eng_board_stream.spec.js tests/ui/eng_board_progressive_loading.spec.js tests/ui/eng_group_board_panel.spec.js tests/ui/eng_group_board_card.spec.js tests/ui/eng_group_board_drag.spec.js tests/ui/dashboard_data_freshness.spec.js --browser=chromium --workers=2 --reporter=line
+.venv/bin/python -m unittest tests.test_eng_board_routes tests.test_eng_board_stream tests.test_eng_board_service
+fnm exec --using 20 bash scripts/extraction_lint/run.sh
 ```
 
-Expected: existing progressive initial/manual Board behavior remains; automatic strict work is one stream with its current authority, pane/detail assertions pass.
+Expected: existing progressive initial/manual Board behavior remains; automatic strict work is one stream with its current authority; pane/detail assertions pass. `tests/test_strict_eng_board_integration.js` regex-pins `dashboard.jsx` literals; keep each pin meaningful when re-pointing it.
 
 ## Task 7: Protect Planning drafts, review revisions and capacity
 
-**Modify:** `usePlanningSprintReview.js`, `useEngCapacity.js`, `PlanningReviewTable.jsx`, `dashboard.jsx`, mapped review/capacity tests and the freshness spec.
+**Modify:** `usePlanningSprintReview.js`, `useEngCapacity.js`, `PlanningReviewTable.jsx`, *conditional* `PlanningTeamCapacityCards.jsx`, `dashboardFreshnessAdapters.js`, `dashboard.jsx` (handles only), mapped review/capacity tests and the freshness spec.
 
-- [ ] Add controller/browser cases for dirty cells, schema/layout edits, focused local input not yet committed, save in flight, unconfirmed save, 409 conflict, deliberate discard/rebase and row changes after primary reconciliation. The pending freshness intent must survive every temporary block; automatic reads must not update a dirty base revision or save/discard a draft.
-- [ ] Feed concrete eligibility from `planningReview.dirty/loading/saving/conflict/unconfirmed/pendingScopeChange`, local active table editor and existing pending issue/capacity mutations. Add optional automatic options to `planningReview.refresh` and check them around schema and values acquisition/commit. Preserve normal manual/conflict recovery. Do not rely only on App's guard: the owner must reject a newly dirty draft after an awaited response.
+- [ ] Add controller/browser cases for dirty cells, schema/layout edits, a focused local input not yet committed, save in flight, unconfirmed save, `409` conflict, deliberate discard/rebase, an open `pendingScopeChange` dialog, `413` split or `canRead: false`, `429`/network failure on the follow-ups, a `401` during the review or capacity read (locks the app, nothing replays), access removal (`unavailableIssueIds` after acceptance) and row changes after primary reconciliation. The pending freshness intent must survive every temporary block; automatic reads must not update a dirty base revision or save/discard a draft.
+- [ ] Feed the Planning-specific eligibility on top of Task 4's shared composition (which already carries the App-level status/priority/Project Track/field transitions, editors and pending sets). User-owned `blocked`: `planningReview.dirty/saving/conflict/unconfirmed/pendingScopeChange`; the table's local editor/open menu/drag (`PlanningReviewTable` reports `onInteractionChange(editing || openMenu || dragging)` through a ref written synchronously in focus/open handlers; an effect-fed ref lags); and the open capacity editor (`PlanningTeamCapacityCards`). `planningReview.loading` is `ownerBusy`.
 
 ```js
-// Planning automatic admission in the owner and App:
-const blockedReview = review => Boolean(
-    review.dirty || review.loading || review.saving || review.conflict ||
-    review.unconfirmed || review.pendingScopeChange
+// Admission to apply or continue, read from the CURRENT public controller snapshot (not a request-start closure).
+const blockedDuringOwnRead = review => Boolean(
+    review.dirty || review.saving || review.conflict || review.unconfirmed || review.pendingScopeChange
 );
+// Admission to START a job also requires the owner not to be loading already.
+const blockedBeforeStart = review => Boolean(blockedDuringOwnRead(review) || review.loading);
 ```
 
-`review` is the current public controller snapshot, not a captured request-start value. Keep row admission by current `rowKind`, immutable `issueId`, shared workspace/Sprint and capabilities. The existing values-read POST still fetches a CSRF token through `sprintReviewApi`.
+`load()` raises `loading` before its own awaits and keeps it until `finally`, so using `blockedBeforeStart` after an await (or an App `shouldApply` that includes `loading`) would reject the job's own read. Apply the same admission-only rule to strict Board `status === 'loading'` and the App's "owner loading" input.
 
-- [ ] Hold capacity scope while the two primary phases settle; use the existing `capacityScopeHoldRef` and nonce contract. After clean guarded primary acceptance, invoke review once and capacity once. Coalesce the row-signature-triggered review effect with the explicit automatic follow-up; do not double-load or bypass current review read limits. Release the hold in `finally`, including blur/errors. Failed follow-up leaves held values and its own failed check status.
-- [ ] Assert document anchor and `.planning-review` sheet horizontal offset, selected rows, column layout, mounted input value/focus and Save/Discard behavior. Keep Table Filters/capacity ordering, view-controls slot and sticky stack intact. Test a new user scroll during primary or follow-up reads and save conflict/rollback after return.
+- [ ] Add optional automatic options to `planningReview.refresh`. Today `load()` commits per batch, emits `error` (rendered `role="alert"`), shows "Loading…", disables Save and makes `save()` refuse, and returns a boolean that cannot tell ignored from failed. The automatic read stages the schema and every values batch in locals and never emits `loading`, `progress` or `error`; after the last await it rechecks `blockedDuringOwnRead(review)` plus `shouldApply()` against the current snapshot, commits once and returns `{ status: 'ok' | 'ignored' | 'failed' }`. A dirty base is never rewritten: schema and layout stay as saved, and a changed remote revision sets the existing `conflict`. Keep row admission by current `rowKind`, immutable `issueId`, shared workspace/Sprint and capabilities; the values-read POST keeps fetching its CSRF token through `sprintReviewApi`. A `refresh()` during a running load only sets a boolean `loadQueued` and the re-run is a plain `load()`, which would silently turn the forced automatic read into an incremental one: queue `{ force, options }` with `force` OR-ed, or run the follow-up only after the row-signature effect's load settles. One forced read must cover rows added by primary acceptance.
+- [ ] Hold capacity scope while the two primary phases settle and run one clean follow-up. The follow-up today is a nonce bump read by an effect-owned read that commits on ownership alone: it has no signal, `shouldApply` or outcome, so a blur after the bump still applies and a failure sets `capacityDataStale`, which suppresses capacity actions and blocks submit. Add an optional guard ref `{ signal, shouldApply, onSettled }` read at fetch time, never a dependency; an automatic failure must not set stale or error state and the previous values stay held. `capacityScopeHoldRef` is a non-reentrant boolean also toggled by the manual `useEpicRefresh.apply` and by `applyScopeSnapshot`: make it a counter. Decision: **keep the existing pin semantics** (the #213 trade-off documented beside `capacityScopeKey`): the pin set during the hold lasts until `capacityScopeKey` changes or a department load bumps `loadEpochRef`, so the follow-up re-reads the pinned Team set; a Team that newly enters scope is not read until the next explicit Refresh or department load, which this plan records as an accepted limitation. Do not unpin to re-derive Teams: that empties `effectiveCapacityState` and flashes the Capacity chips. After clean guarded primary acceptance invoke review once, then capacity once. Its explicit-Refresh classification for `recordExplicitRefresh` is `forced`, coverage `unknown`, for the review and capacity reads. Update the frozen cell/output/dependency lists in `tests/test_use_eng_capacity.js` deliberately and record the registered-owner interface change (D2). Release the hold in `finally`, including blur/errors.
+- [ ] Register the Planning adapter (List shares Catch Up's primary stages; Table adds the review and capacity follow-ups) so `ownsSurface('planning')` flips. Assert document anchor and `.planning-review-scroll` horizontal offset, selected rows, column layout, mounted input value/focus and Save/Discard behavior; keep Table Filters/capacity ordering, the view-controls slot and the sticky stack intact. Test a new user scroll during primary or follow-up reads, blur between the capacity nonce bump and its response, an open capacity editor deferring the job, and save conflict/rollback after return.
 
 ```bash
-fnm exec --using 20 node --test tests/test_planning_sprint_review.js tests/test_use_eng_capacity.js tests/test_planning_capacity_utils.js
-fnm exec --using 20 npx playwright test tests/ui/planning_review_integration.spec.js tests/ui/planning_capacity_editing.spec.js tests/ui/dashboard_data_freshness.spec.js --browser=chromium --workers=2 --reporter=line
-python3 -m unittest tests.test_oauth_capacity_routes tests.test_endpoint_security_matrix
+fnm exec --using 20 node --test tests/test_planning_sprint_review.js tests/test_use_eng_capacity.js tests/test_planning_capacity_utils.js tests/test_dashboard_freshness.js
+fnm exec --using 20 npm run build
+fnm exec --using 20 npx playwright test tests/ui/planning_review_integration.spec.js tests/ui/planning_review_table.spec.js tests/ui/planning_capacity_editing.spec.js tests/ui/dashboard_data_freshness.spec.js --browser=chromium --workers=2 --reporter=line
+.venv/bin/python -m unittest tests.test_oauth_capacity_routes tests.test_sprint_review_routes tests.test_endpoint_policy_inventory tests.test_endpoint_security_matrix
+fnm exec --using 20 bash scripts/extraction_lint/run.sh
 ```
 
 Expected: clean follow-ups once per generation; no automatic work/write/base-revision changes while dirty/unsafe; existing explicit conflict/save recovery remains green.
 
 ## Task 8: Use active Statistics and EPM owners without broad manual work
 
-**Modify:** `stats/useStatsData.js`, `epm/useEpmViewData.js`, `api/epmApi.js`, `dashboard.jsx`, mapped Stats/EPM tests and the freshness spec.
+**Modify:** `stats/useStatsData.js`, `epm/useEpmViewData.js`, `api/epmApi.js`, *conditional* `api/statsApi.js` (abort suppression only), `dashboard.jsx` (handles only), `dashboardFreshnessAdapters.js`, the mapped Stats/EPM tests and the freshness spec.
 
-- [ ] Add active-source tests for each Stats path: task-derived priority/Team statistics, burnout, cohort, excluded-capacity/mono-cross-share/Project Track and phase durations when currently required. Source-only modes must issue zero task/Catch Up requests; task-derived modes use one silent two-lane scope check with no Epic target. Range/facet/control state, chart nodes and inner scroll remain stable.
-- [ ] Add an optional automatic refresh input to `useStatsDerivedA/B/C` at their existing lifecycle positions, carrying the job and refresh nonce. Keep current query keys/debounce/30s timeout and existing excluded-source concurrency; forward the job signal and aggregate read fence. Automatic source fetches bypass only the relevant existing cache, hold current display and do not clear data on recoverable failure. Guard progressive chunks, cache writes and final setters. Do not reset every Stats cache from a list refresh. Display facets keep client-side regrouping semantics. Preserve the tested existing return-key interfaces.
+- [ ] Add active-source tests per Stats source, from this mode table (Task 0 re-verifies the `statsView` → source mapping against source; `isStatsSourceOnlyStatsView` covers exactly `excludedCapacity`, `monoCrossShare` and `projectTrack`). Principle: an automatic read sends what the same surface's manual Refresh sends and never more load, so ENG lanes and excluded capacity are forced (the manual path forces them) while cohort and EPM stay unforced (the manual path does not); classification always comes from the payload's cache provenance. Stats source ids: `stats_burnout`, `stats_cohort`, `stats_excluded_capacity`; Teams/priority use `eng_product`/`eng_tech` from Task 4; phase durations are not requested.
+
+| Stats source | What it reads at baseline | Automatic job |
+| --- | --- | --- |
+| Teams and priority statistics | `capacityTasks` (ENG scope tasks) only | Task 4's scope collector and `applyScopeSnapshot`; zero Stats requests |
+| Burnout | `capacityTasks` plus `POST /api/stats/burnout` (no `refresh` flag, no provenance field) | scope check first, then one burnout read; classified `unknown` unless Task 0 proves provenance |
+| Epic cohort (lead times) | its own `POST /api/stats/epic-cohort`; the task list is hidden | its source only, unforced like the manual path (the hook sends `refresh: false` and the server caches for 300 s, below the 12-minute threshold, so the read after a long return is real); classify `checkKind` from the payload's `cached` flag |
+| Excluded capacity, mono-vs-cross share, Project Track (source-only) | `POST /api/stats/excluded-capacity-source` (honors `refresh`, returns `cached`) | its source only, zero task/Catch Up calls; the selected-Sprint chunk with `refresh: true`; other chunks of a wide range (up to 24 at concurrency 3) are not re-requested |
+| Project Track phase durations | `POST /api/stats/project-track-phase-durations`: the server ignores `refresh`, fans out to up to 200 Epic and changelog reads, and the client cache survives even a manual Refresh | not requested automatically (it would be the per-Epic fan-out the design forbids); classified `unknown` |
+
+Assert for every mode that source-only views issue zero task/Catch Up requests, range/facet/control state, chart nodes and inner scroll stay stable, automatic mode never sets loading and never nulls held data on a recoverable failure, a retired request that answers `401` locks the app, and a blurred automatic job applies nothing.
+
+- [ ] Plumb the job to the fetching hooks. `useStatsDerivedC` has no effect, query key or fetch; acquisition lives in `useStatsDerivedA` (burnout) and `useStatsDerivedB` (cohort, excluded/mono/track, phase). Add one `automaticRefreshRef` input, read at fetch time and never a dependency; the existing refresh nonces (`issuePeopleStatsRevision`, `excludedCapacityRefreshNonce`) start the effects, so the frozen effect and dependency inventory in `tests/test_use_stats_data.js` stays byte-identical except the reviewed input list (D2). Keep current query keys/debounce, the 30 s timeouts, the aggregate read fence and the excluded-source concurrency; forward the job signal. In automatic mode stage progressive chunks and publish once (today `onProgress` publishes partial merges and failures null held data), send only the force flags the manual path sends, guard chunks, cache writes and final setters with `shouldApply()`, and do not reset every Stats cache from a list refresh. A burnout effect re-fired by an automatic ENG apply (it depends on `burnoutQueryKey`) must also pass `shouldApply()` and `hasFocus()`. Display facets keep client-side regrouping. Preserve the tested return-key interfaces and the pinned literals (`beginRead({ aggregate: true })`, `sprintIds: [sprintId]`).
 
 ```js
-// Optional hook input; absent means the existing initial/manual lifecycle.
-automaticRefresh: { job, nonce }
-// In each active source effect, before acquisition or any cache/data setter:
-if (automaticRefresh && !automaticRefresh.job.shouldApply()) return;
+// Optional hook input; absent means the existing initial/manual lifecycle. Read at fetch time, never a dependency.
+automaticRefreshRef: { current: { job, settle } | null }
+// In each active source effect, before acquisition and before any cache/data setter:
+const automatic = automaticRefreshRef?.current;
+if (automatic && !automatic.job.shouldApply()) {
+    automatic.settle([{ source: 'stats_burnout', status: 'ignored', checkKind: 'unknown', coverage: 'unknown', requestStartedAtMs: 0, retryAtMs: null }]);
+    return;
+}
 ```
 
-`job` is the Task 2 contract; `nonce` changes only for a relevant automatic intent, not every App render. Use current dependency/query-key guards in addition to this check. The effect's cleanup aborts only its read, not any save or collaboration transport.
+`job` is the Task 2 contract; the effect reports its descriptors through `settle` exactly once on every path (success, failure, an early return like the one above, abort and cleanup), and the adapter awaits it while also racing `job.signal`, so a hook that never settles cannot hang the job. The effect's cleanup aborts only its read, not any save or collaboration transport. The explicit-Refresh classification for `recordExplicitRefresh` follows the table: excluded capacity `forced`, cohort from `cached`, burnout `unknown`. Automatic Stats and EPM reads pass the existing `suppressAbortResult` analytics option through their wrappers (`statsApi.js`, `epmApi.js`; the Epic, review and capacity wrappers already do) so a blur-abort never logs a failed `api_result`.
 
-- [ ] For EPM, extend `refreshEpmView` with optional job options; collect metadata for the current lifecycle/sub-goal scope first, then the selected project's rollup or one existing aggregate request. Forward signals in the three API wrappers; the metadata wrapper may use its existing server-supported `refresh=true`. Keep selected project/goal/tab/Sprint and held tree/boards until guarded acceptance. Do not reset selection to All Projects while metadata is pending, including background failures. Coalesce effects triggered by the accepted project array so they cannot add a second rollup.
-- [ ] Classify EPM rollup reuse honestly: current per-project cache can return `Server-Timing: cache;dur=1`, and the wrappers otherwise discard response provenance. Preserve optional provenance locally when collecting or use `checkKind: 'unknown'`; do not promise a forced rollup or add a server bypass. A token-required response keeps the existing Home connection/settings behavior; every 401 is terminal. Metadata-only cards retain their Settings CTA.
-- [ ] EPM browser tests assert held project card/detail, collapsed set, ≤2px Project anchor offset, exact label and selected-Sprint request scope, one metadata-before-rollup sequence and zero per-project client fan-out. Keep Home token/Jira OAuth/current private-view ownership boundaries; no service fallback or migration probe.
+- [ ] For EPM, extend `refreshEpmView` with optional job options: collect metadata for the current lifecycle/sub-goal scope first, then the selected project's rollup or one existing aggregate request. The three wrappers in `epmApi.js` take neither `signal` nor `refresh` today: forward the signal in all three, and the existing `refresh` query only where the backend supports it (`GET /api/epm/projects`; the rollup routes have none and none is invented). Do **not** force metadata in an automatic job: the metadata and rollup caches last five minutes, below the 12-minute threshold, so an unforced read after a long return is already a real read and forcing would add Home GraphQL load that manual Refresh does not. Classify the metadata check from the payload's `cacheHit` (forced only when it missed) and every rollup check as `unknown`: the wrappers return only the payload, so the per-project `Server-Timing: cache;dur=1` header is unreachable (exposing it would change the wrapper return shape and is out of scope) and the aggregate route discards per-project provenance. The explicit-Refresh classification follows the same rules.
+- [ ] Protect held EPM data. `epmJson` turns a body-parse failure or abort into `null`, which the owner would read as `payload.projects` and then empty the list (the non-background `refreshEpmProjects` also empties projects on failure, and a following effect resets selection to All Projects): the automatic path rejects null/aborted payloads before applying and never routes through the non-background path. HTTP `409 home_user_token_required` must not call `markHomeTokenRequired` mid-read (it hides EPM and forces ENG): map it to `denied` and defer that transition to the explicit/Settings flow; every `401` stays terminal. Metadata-only Home projects still render the Home card plus the Settings CTA. Preserve selected goal/project/tab/Sprint, held tree/boards, collapsed/expanded cards and the reading Project anchor; the collapse effect, which re-collapses every visible project whenever the key signature changes, must collapse only unseen keys. Coalesce effects triggered by the accepted project array so they cannot add a second rollup. Three source-guard tests pin `fetchEpmProjects(backendUrl, { tab, subGoalKeys: runtimeEpmSubGoalKeys })` and one pins `await refreshEpmProjects();`: keep those literals byte-identical by giving the automatic path its own call site, or update the tests deliberately (all four are in the map).
+- [ ] Host the EPM cases in `dashboard_data_freshness.spec.js` with `epm_home_token_fixture.js` (`epm_project_progress.spec.js` is rendering-only and `epm_initial_config_load.spec.js` is one case with a hard-coded base URL). Assert held project card/detail, collapsed set, ≤ 2 px Project anchor offset, exact label and selected-Sprint request scope, one metadata-before-rollup sequence and zero per-project client fan-out. Keep the Home token / Jira OAuth / current private-view ownership boundaries; no service fallback or migration probe. Register the Stats and EPM adapters so `ownsSurface('stats')` and `ownsSurface('epm')` flip.
 
 ```bash
-fnm exec --using 20 node --test tests/test_use_stats_data.js tests/test_stats_module_extraction_source_guards.js tests/test_epm_view_source_guards.js tests/test_epm_private_seed_pins.js
+fnm exec --using 20 node --test tests/test_use_stats_data.js tests/test_stats_module_extraction_source_guards.js tests/test_dashboard_alert_source_guards.js tests/test_excluded_capacity_stats_source_guards.js tests/test_epm_view_source_guards.js tests/test_epm_shell_source_guards.js tests/test_epm_settings_source_guards.js tests/test_epm_private_seed_pins.js tests/test_dashboard_freshness.js
+fnm exec --using 20 npm run build
 fnm exec --using 20 npx playwright test tests/ui/epm_initial_config_load.spec.js tests/ui/epm_project_progress.spec.js tests/ui/dashboard_data_freshness.spec.js --browser=chromium --workers=2 --reporter=line
-python3 -m unittest tests.test_oauth_stats_routes tests.test_epm_projects_api tests.test_epm_rollup_api tests.test_epm_home_cache_isolation
+.venv/bin/python -m unittest tests.test_oauth_stats_routes tests.test_epm_projects_api tests.test_epm_rollup_api tests.test_epm_home_cache_isolation
+fnm exec --using 20 bash scripts/extraction_lint/run.sh
 ```
 
-Expected: only active-source reads; source check classifications match evidence; held EPM/Stats UI remains on failures; auth/workspace isolation tests pass.
+Expected: only active-source reads; source check classifications match evidence; held EPM/Stats UI remains on failures; auth/workspace isolation tests pass; the registered-owner interface changes (`useStatsDerivedA/B` inputs) are recorded for D2.
 
-## Task 9: Wire Scenario/Settings eligibility and truthful compact status
+## Task 9: Wire Scenario/Settings eligibility, truthful compact status, analytics and docs
 
-**Modify:** `useDashboardFreshness.js`, `dashboard.jsx`, `styles/dashboard.css`, `tests/ui/dashboard_data_freshness.spec.js`, `tests/test_analytics_source_guards.js` and documentation in the map.
+**Create:** `frontend/src/dashboardFreshnessSummary.js`, `frontend/src/components/DashboardFreshnessStatus.jsx`.
+**Modify:** `useDashboardFreshness.js`, `dashboardFreshnessAdapters.js`, `dashboard.jsx`, `styles/shared/controls.css`, `tests/test_dashboard_freshness.js`, `tests/ui/dashboard_data_freshness.spec.js`, `tests/ui/codebase_structure_smoke.spec.js`, `tests/test_analytics_source_guards.js` and the documentation in the map.
 
-- [ ] Feed current dirty/edit/save/lock eligibility from existing owners: `scenarioHasUnsavedChanges`, the Scenario drag/edit/draft transition cells, `showGroupManage && isGroupDraftDirty`, `anyFieldConfigDirty`, and all open Settings sections' existing dirty/saving state. Audit the actual Settings composer outputs rather than guarding only Department drafts. Refresh must never invoke Save, Discard, publish, recompute/replace Scenario draft/history, renew auth credentials itself, or widen write targets.
-- [ ] Register Scenario's automatic Jira acquisition through the silent task owner when the source scope is eligible and the draft is clean. Preserve Scenario draft/history/selection state and keep its own base-revision/remote-conflict decisions. If any update would change the draft base implicitly, defer that application until the owner explicitly admits it. Leave `useScenarioRealtime` events/presence and `useScenarioDrag` lock renewal outside the scheduler; no global HTTP/fetch focus veto.
-- [ ] Render one compact source-check summary adjacent to the existing header Refresh control. Use a `<span>` in existing header typography; ordinary relative-age display must not issue a network request. Copy states: `Updates pending`, `Could not check; showing previous data`, or `Checked … ago` qualified with `partial results` / `coverage unknown` as appropriate. Cached/unknown provenance must say `Cached data; check unavailable` rather than advancing the last forced-check time. Keep the prior readout if a source fails; don't claim every source checked when one lane failed. No per-Story toast, new toolbar, focus-stealing live announcement or new permission UI.
+- [ ] Feed current dirty/edit/save/lock eligibility from the existing owners. Names verified at baseline: Scenario — `scenarioHasUnsavedChanges`, `scenarioEditMode`, `scenarioDragState` and `scenarioDraftMeta.{saving, loadingActiveDraft, rollingBackVersionNumber, reloadingFromJira, pendingHistoryAction, pendingActiveDraftReload, pendingReloadFromJira, writebackPreviewing, writebackChecking, conflict, staleDraft, pendingScopeChange}` (`useScenarioState.js`); Settings — `showGroupManage && isGroupDraftDirty` (which already folds in `anyFieldConfigDirty`), `groupSaving`, `epmConfigSaving`, `workspaceConfigConflict` and `groupsConfigConflict`, plus an open-but-clean Settings modal and a running onboarding tour as `ownerBusy` (`manualRefreshDisabled` covers `onboardingRequired` only). Audit the actual Settings composer outputs rather than guarding only Department drafts; the Connections-tab token input is local state outside `isGroupDraftDirty`, and an automatic apply never touches it. Refresh must never invoke Save, Discard, publish, recompute/replace Scenario draft/history, renew auth credentials itself, or widen write targets.
+- [ ] Register Scenario's adapter as the Task 4 ENG scope check only, when the draft is clean and the source scope is eligible. Scenario does not read Jira through the ENG task owner: `runScenario` posts `/api/scenario` and resets overrides, events, presence, locks, the event cursor and `scrollTop`. At baseline a long return on Scenario ran the generic ENG reload (`loadMeasuredGroupTasks`), which feeds `teamOptions`, never `runScenario`; the adapter keeps exactly that scope and never calls `runScenario` or `reloadScenarioDraftFromJira`. Its readout says coverage unknown, and its `recordExplicitRefresh` classification is Catch Up's. If any update would change the draft base implicitly, defer applying it until the owner explicitly admits it. Leave `useScenarioRealtime` events/presence and `useScenarioDrag` lock renewal outside the scheduler; no global HTTP/fetch focus veto. Tests: zero `POST /api/scenario`; overrides, scroll position and event cursor unchanged; draft/history/selection preserved; blur during Scenario polling leaves events/presence/lock requests firing; dirty draft, edit and lock transitions defer the job.
+- [ ] After D4 is answered, delete the legacy `AUTH_LONG_ABSENCE_EVENT` import, `longAbsenceRefreshRef` and listener (all seven surfaces are now owned), re-point the source guards as Task 3 specifies and add a guard that `longAbsenceRefreshRef` is gone. The pre-ready branches (`loadSprints(true)` while the catalog is not ready, `retryBoardScopeConfiguration`) disappear with it unless D4 chose to keep them.
+- [ ] Render one compact source-check summary in the header actions row, **immediately before** the Refresh `IconButton`. Never place it between Refresh and the gear: `tests/ui/codebase_structure_smoke.spec.js` asserts `.refresh-icon + .group-gear-button` matches once, every `.header-icon-button` is 38×38 and nothing overflows at its eight viewports. The compact sticky header has no Refresh control and gets no readout. `App` renders only `<DashboardFreshnessStatus freshness={freshness} />`; the leaf component renders the span below, with the existing `.controls-label` typography plus one status rule beside `.header-actions-row` in `styles/shared/controls.css`. No new toolbar, no per-Story toast, no focus-stealing live announcement, no new permission UI.
 
 ```jsx
-<span className="dashboard-freshness-status" data-dashboard-freshness-status>
-    {freshnessSummary}
+<span className="dashboard-freshness-status controls-label" data-dashboard-freshness-status>
+    {summarizeFreshness(freshness.state, sources, nowMs)}
 </span>
 ```
 
-`freshnessSummary` is the hook's projection of active-source records and pending/failure state. It carries no issue identities. Measure header/control geometry at desktop/touch sizes and keep existing Refresh disabled/explicit behavior.
+`summarizeFreshness` (pure, in `dashboardFreshnessSummary.js`) projects the controller state and the active surface's `sources()` into text; it carries no issue identities. Precedence: `running` (keep the previous text) > failure > pending > checks. Copy (literal strings need D3): `Updates pending`; `Could not check; showing previous data`; `Checked … ago` qualified with `partial results` or `coverage unknown`; `Cached data; check unavailable` after an `unverified` attempt, which never advances the last forced-check time. Age is that of the oldest forced scope-level check among the surface's `sources()`. Keep the prior readout if a source fails; do not claim every source checked when one lane failed; render nothing until a pending intent, a failure or a forced scope-level check exists. Age text updates through the leaf component's single self-rescheduling `setTimeout` chain, which runs only while the document is visible and focused, reads `freshness.state` and calls `setState` only, never `request`/`update` and never a fetch wrapper (source-guarded). Unit-test `summarizeFreshness` for every precedence and copy case and the pure `formatCheckedAge(nowMs, lastCheckedAtMs)` at 0 s, 59 s, 60 s, 61 min, 25 h and a future timestamp.
 
-- [ ] Update `docs/README_ANALYTICS.md`: automatic acquisition, age readout and anchor retention use the No-Event Allowlist (`trigger=none`, `event_type=none`, `event_name=none`, `feature_name=data_freshness`, no typed custom params). Existing allowlisted `api_result` enum/bucket telemetry continues. Manual per-Epic `epic_refresh_action` stays `trigger=userevent`, `event_type=event`, `feature_name=epic_refresh`, once per applied manual click; automatic reads emit zero. Add a browser assertion for both event counts and source guard against raw IDs/content/coordinates/timestamps. Keep `GA4_ENABLED` and the two GTM triggers; no new dimensions or GA4 runbook changes.
-- [ ] Update workflow docs, ontology and plan index with implemented behavior and actual remaining gates. Do not mark this plan DONE until final verification and acceptance/merge. Record limitations: continuous focus has no age bound, cached/unknown source coverage and any unmeasured live latency/OS lifecycle case.
+- [ ] Add **unconditional** header assertions to `codebase_structure_smoke.spec.js` for the longest copy at 375, 768 and 1400 px and the eight smoke viewports: header height, sticky-top variables and control boxes unchanged, `scrollWidth <= clientWidth`, no `nowrap` or magic `min-width` (MRT009, MRT020, MRT021), menus layered above it, touch targets unaffected; settled screenshots at desktop and touch widths with animations settled; a copy change during a refresh moves the anchor ≤ 2 px. Add the behavior assertions the design names (D:50, D:54): auth success alone marks nothing fresh; filter/Team/sort/group changes issue zero requests; age rendering issues zero requests across a 61-minute fake-clock advance; each copy state appears for its condition and an explicit Refresh records a forced check and clears `Updates pending`.
+- [ ] Update `docs/README_ANALYTICS.md`. Add one No-Event Allowlist row in its four-column form (Feature action | Primary anchors | Reason | Reviewed on): automatic return acquisition, the age readout and reading-position retention, with `trigger none; event_type=none; event_name=none; feature_name=data_freshness; typed params none` and today's date. Existing allowlisted `api_result` telemetry continues: an automatic read still emits `api_result` with `api_surface=epic_refresh` (the Epic wrappers), which the "ENG Per-Epic Refresh" paragraph calls per-click, so reword it (adoption is measured by `epic_refresh_action`, not by `api_result` counts). Manual per-Epic `epic_refresh_action` stays `trigger=userevent`, `event_type=event`, `feature_name=epic_refresh`, once per applied manual click; automatic reads emit zero. Prove it: the shared fixture answers `/api/analytics/context` with `{ enabled: false }`, which leaves `dataLayer` empty and would make "zero automatic events" pass vacuously, so parameterize that response and include the positive control (a manual click pushes exactly one `epic_refresh_action`; precedent: the `dataLayer` assertions in `eng_group_board_view.spec.js`), then assert that an automatic return pushes `api_result` records only. Extend `tests/test_analytics_source_guards.js` per allowlist row and forbid analytics calls in the new modules; no raw IDs, content, coordinates or timestamps in any parameter (not statically checkable: assert on the recorded `dataLayer`). Keep `GA4_ENABLED` and the two GTM triggers; no new dimensions, `event_group`, `ga4_event_name`, boolean presence dimensions or GA4 runbook changes.
+- [ ] Update workflow docs, ontology (refresh the stale `docs/ontology.md` budget numbers with a verification date), the plan index and `docs/TODO.md` (a Deferred entry for any keyboard-only finding) with implemented behavior and the actual remaining gates; touch `README.md` and the per-feature docs only where they describe return/refresh behavior, otherwise record "unchanged because …". Do not mark this plan DONE until final verification and acceptance/merge. Record limitations: continuous focus has no age bound, cached/unknown source coverage and any unmeasured live latency/OS lifecycle case.
 
 ```bash
-fnm exec --using 20 node --test tests/test_analytics_source_guards.js tests/test_analytics_events.js tests/test_scenario_draft_history_source_guards.js tests/test_dashboard_freshness.js
-fnm exec --using 20 npx playwright test tests/ui/scenario_draft_history.spec.js tests/ui/scenario_draft_collaboration.spec.js tests/ui/dashboard_data_freshness.spec.js --browser=chromium --workers=2 --reporter=line
+fnm exec --using 20 node --test tests/test_analytics_source_guards.js tests/test_analytics_events.js tests/test_scenario_draft_history_source_guards.js tests/test_epic_refresh_controller.js tests/test_dashboard_freshness.js
+fnm exec --using 20 npm run build
+fnm exec --using 20 npx playwright test tests/ui/scenario_draft_history.spec.js tests/ui/scenario_draft_collaboration.spec.js tests/ui/codebase_structure_smoke.spec.js tests/ui/dashboard_data_freshness.spec.js --browser=chromium --workers=2 --reporter=line
+fnm exec --using 20 bash scripts/extraction_lint/run.sh
 ```
 
-Expected: dirty/save/lock intent preservation and existing collaboration pass; automatic manual-event count zero; compact UI has settled screenshots/geometry evidence.
+Expected: dirty/save/lock intent preservation and existing collaboration pass; automatic manual-event count zero with a positive control; the compact UI has settled screenshots and geometry evidence.
 
 ## Task 10: Verify every Definition of Done gate and prepare delivery
 
-**Modify:** generated `frontend/dist/` and the completion record below. Other changes only to fix a failure within the authorized map; scope/contract changes require an explicit plan revision.
+**Modify:** generated `frontend/dist/`, `scripts/extraction_lint/owner_budgets.json` and `tests/test_codebase_structure_budgets.py` (D2) and the completion record below. Other changes only to fix a failure within the authorized map; scope/contract changes require an explicit plan revision.
 
-- [ ] Run the browser matrix for 11m/exactly 12m/13m/8h/24h with valid, expired and revoked auth. Verify actual auth/data/document/asset counts, one pending intent through all blockers, BFCache restoration and fresh-document bootstrap. Exercise retained real sleep/wake separately, record observed lifecycle events and resulting checks. An environment-blocked required lifecycle check remains open; fake time is not substitute evidence.
-- [ ] Complete all seven surface rows in the approved design, including ordinary Sprint Board and strict Component/All work. Require anchor displacement ≤2 CSS pixels after settled layout, no rewind after user movement, stable unchanged DOM/editor identity and preserved vertical/horizontal/pane state. Test filter departure, moved/deleted anchor, explicit access loss, partial/capped data, source failures and all scope/config/principal races.
-- [ ] Repeat the Task 0 synthetic cost campaign on equivalent scopes. Record request/response bytes, application and available upstream page/attempt counts, first anchor application and scope-check timing, initial request count and first useful content. Do not infer Jira cost from browser requests alone or claim unmeasured live improvement. Initial-load counts must not increase; freshness follow-ups cannot gate first content. Server budgets remain unchanged.
-- [ ] Run build, full frontend unit suite, full Python suite and full Chromium UI suite. Required feature cases must not be skipped; record unrelated/environment skips accurately. Inspect complete failures, not only summaries. Use documented Python/runtime selection and no unmanaged installations.
+- [ ] Run the browser matrix for 11 min / exactly 12 min / 13 min / 8 h / 24 h with valid, expired and revoked auth (Task 3's rows, now exercising every owned surface). Verify actual auth/data/document/asset counts, one pending intent through all blockers (loading, onboarding, auth in flight, connection recovery, editors, dirty drafts, saves), the simulated BFCache restoration and fresh-document bootstrap. **Real wake runbook** (the user's signed-in browser; an agent cannot produce it): open the app or an instrumented synthetic page with the lifecycle log enabled in headed Chromium, let the device sleep for a recorded duration, wake it, and record the observed event order and counts (`visibilitychange`, `focus`, `pageshow`, the shell events, requests) and the resulting checks, numbers only, with no live screenshot, HAR or Jira content. An environment-blocked required lifecycle check remains open; fake time is not substitute evidence.
+- [ ] Complete all seven surface rows in the approved design, including ordinary Sprint Board and strict Component/All work. Require anchor displacement ≤ 2 CSS pixels after settled layout, no rewind after user movement, stable unchanged DOM/editor identity and preserved vertical/horizontal/pane state. Test filter departure, moved/deleted anchor, explicit access loss, partial/capped data, source failures and all scope/config/principal/session races.
+- [ ] Repeat the Task 0 synthetic cost campaign on equivalent scopes. Record request/response bytes, application and available upstream page/attempt counts, first anchor application and scope-check timing, initial request count, first useful content and the sunk requests of a blur/refocus cycle. Assert, rather than eyeball, that the cold-load request multiset equals the Task 0 baseline and that a held follow-up never delays the first Story paint. Do not infer Jira cost from browser requests alone or claim unmeasured live improvement. Server budgets remain unchanged.
+- [ ] Perform the ordered budget update from [Structure and source-guard gates](#structure-and-source-guard-gates) with the numbers the user approved (D2), after the last source edit, and prove it with `.venv/bin/python tests/test_codebase_structure_budgets.py --manifest scripts/extraction_lint/owner_budgets.json` and `fnm exec --using 20 bash scripts/extraction_lint/run.sh`.
+- [ ] Run build, the full frontend unit suite, both Python profiles, extraction lint and the full Chromium UI suite. Required feature cases must not be skipped; compare every failure and skip with the Task 0 baseline ledger and record unrelated/environment skips accurately. Inspect complete failures, not only summaries.
 
 ```bash
 fnm exec --using 20 npm run build
 fnm exec --using 20 npm run test:frontend:unit
-python3 -m unittest discover -s tests
+make test
+.venv/bin/python -m unittest discover -s tests
+fnm exec --using 20 bash scripts/extraction_lint/run.sh
 fnm exec --using 20 npx playwright test tests/ui --browser=chromium --workers=4 --reporter=line
 git diff --check
+git diff --check origin/main...HEAD
 ```
 
-Expected: all required checks pass. If shared header/menu geometry changed, include layering/icon/control assertions and settled screenshots. When emoji/form-control geometry is affected, run the repository's headed Firefox/WebKit glyph guard as well. Do not add a CI UI job.
+The plain `git diff --check` covers the working tree and is empty once everything is committed, so the committed range check is the one that proves a committed head. Expected: all required checks pass. The header geometry/layering assertions of Task 9 run in the UI suite; when emoji or form-control geometry is affected also run the repository's headed Firefox and WebKit glyph guard (`tests/ui/eng_group_board_card.spec.js --headed` with `--browser=firefox` and `--browser=webkit`). Do not add a CI UI job.
 
-- [ ] Review code and contracts inline using `docs/plans/AGENTS.md`: old automatic manual listener removed; auth/cache/check meanings distinct; every adapter guards acquisition/commit/follow-up; read leases/cancel handlers closed; no unauthorized content retained; dirty/rollback/conflict/remote-event journeys preserved; no forbidden credential or mutation path. Run existing backend endpoint/security and worker-auth tests; if a backend fix became approved, include real no-request-context wrapper coverage and startup `/api/test` checks before claiming success.
-- [ ] Inspect complete diff against the map and approved policy. Before any separately authorized implementation commit/push/PR, fetch intended base, record exact base/head, inspect `git status --short`, `git log --oneline origin/<base>..HEAD`, `git diff --name-status origin/<base>...HEAD`, commit count and every changed path. Stop on unapproved history/scope. Publication is one blocking transaction under root instructions; do not push until explicit confirmation and required full gates pass.
-- [ ] Rebuild at the exact committed implementation head and require no generated diff. Record evidence per gate below; seek acceptance of the verified result. After acceptance or merge, rename EXEC to DONE and update links/status with execution revision or PR. A docs-only planning commit does not satisfy any feature gate or authorize issue closure.
+- [ ] Review code and contracts inline using `docs/plans/AGENTS.md`: the old automatic manual listener is removed (source guard); auth, cache and check meanings stay distinct; every adapter guards acquisition, commit and follow-up; read leases and cancel handlers are closed; no unauthorized content is retained; dirty/rollback/conflict/remote-event journeys are preserved; the new modules import none of the write wrappers and the request-method allowlist case passes, so no forbidden credential or mutation path exists. Run the existing backend endpoint/security and worker-auth tests; if a backend fix became approved, include real no-request-context wrapper coverage and the startup `/api/test` check before claiming success.
+- [ ] Inspect the complete diff against the map and the approved policy, then run the publication transaction under root instructions (one blocking unit; do not push until the user explicitly confirms and the full gates pass):
+  1. Fetch the intended base and record the exact base and head SHAs.
+  2. Run `git status --short`, `git log --oneline origin/<base>..HEAD` and `git diff --name-status origin/<base>...HEAD`.
+  3. Compare the complete commit list, count and every changed path with this plan: the expected commits are the two planning commits (the original plan and its 2026-10-09 review revision) plus the implementation commit(s) D5 allows. Check authorship with `git log --format='%h %an <%ae>' origin/<base>..HEAD` and stop on a personal address; no agent branding or attribution trailers in any commit message or the PR body. Stop on unapproved history or scope.
+  4. At the exact proposed head run `npm ci`, `npm run build`, `make verify-dist-clean`, `git status --porcelain -- frontend/dist` (it must print nothing; it also catches new hashed chunks and `lazy-views-*.json`) and the gates above.
+  5. Send the sanitized multiline PR body through `gh pr create --body-file -` (or `gh pr edit --body-file -`) on stdin and give the same text in the reply, not a file; no local paths, tokens or real project keys; include the settled screenshots from the gitignored `tmp/`.
+  6. Before reporting success, prove the remote head equals the approved head, read the body back as rendered text, verify the remote changed-file list and commit count, and report the actual CI state.
+  7. If any post-publication check fails, report the publication as malformed and stop for operator direction (MRT025).
+- [ ] Rebuild at the exact committed implementation head and require no generated diff. Record evidence per gate below and seek acceptance of the verified result. After acceptance or merge, rename EXEC to DONE and update links/status with the execution revision or PR. A docs-only planning commit does not satisfy any feature gate or authorize issue closure.
 
 ## State-machine verification ledger
 
 | Transition | Required result / primary task |
 | --- | --- |
-| Hidden or visible-but-unfocused; response arrives | Retire read/staged result/retry; held content untouched; no follow-ups; Tasks 2–6. |
+| Hidden or visible-but-unfocused; response arrives | Retire read/staged result/retry; held content untouched; no follow-ups; Tasks 2–9. |
 | Focus return during bootstrap/loading/onboarding | One pending current-context intent; resume after owner ready without duplicate bootstrap; Tasks 2–3. |
-| Draft dirty, local editor, drag, save, unconfirmed save, conflict | Defer acquisition/application, retain draft/base revisions; Tasks 4, 7, 9. |
+| Auth renewal in flight or failed; 60 s throttle; two tabs | Intent retained; this tab's own failed attempt dispatches nothing, a foreign stamp does; Task 3. |
+| Connection outage/recovery owns the page | Intent retained; no data job; a background read never raises the outage state; Tasks 3–4. |
+| Draft dirty, local editor, drag, save, unconfirmed save, conflict | Defer acquisition/application, retain draft/base revisions; Tasks 4, 6 (Board drag), 7 (Planning), 9 (Scenario/Settings). |
+| Settings modal open (clean) or onboarding tour running | Defer as `ownerBusy`; intent retained; Task 9. |
 | Explicit Refresh/sort/new Epic/scope change | Release reading exception; manual supersedes auto; old context cannot commit; Tasks 3–6. |
+| Config save mid-job; Department or Sprint switch while pending | The context change retires the job and drops the intent; the new scope bootstraps normally; Tasks 2, 4, 6. |
 | User scrolls during fetch or layout settlement | Movement fence prevents rewind; unaffected containers may restore independently; Tasks 5–7. |
 | Network failure / 429 / retry deadline passes while blurred | Retain held data and truthful failed/pending status; one guarded retry at most; Tasks 2, 4, 8. |
 | Pending write succeeds/fails/rolls back; remote revision arrives | Existing mutation coordinator/base revision/conflict decisions prevail; no automatic write/replay; Tasks 4, 6–7, 9. |
-| Auth-required response from any delayed owner | Terminal mounted sign-in screen; no local/raw401 UI, unlock in place or replay; Tasks 2–3, 6, 8–10. |
-| Workspace/site/user/config/surface/range changes | Retire old observations/staged data; no cross-partition application or credential fallback; Tasks 2, 6, 8. |
-| BFCache, retained sleep/wake, discarded/new document | Observed lifecycle check versus ordinary bootstrap recorded separately; Task 10. |
+| Auth-required response from any delayed owner | Terminal mounted sign-in screen; no local/raw 401 UI, unlock in place or replay; Tasks 2–4, 6–8, 10. |
+| Terminal gate → sign-in → new bootstrap | No replay of the failed request or the intent; a fresh bootstrap only; Tasks 3, 10. |
+| Workspace/site/user/session/config/surface/range changes | Retire old observations/staged data; no cross-partition application or credential fallback; Tasks 2–3, 6, 8. |
+| BFCache, retained sleep/wake, discarded/new document | Observed lifecycle check versus ordinary bootstrap recorded separately; Tasks 2–3 (simulated), 10 (real). |
+
+## Execution status
+
+Flip `Status:` at the top to `in-progress` when Task 0 starts, and fill this table in place as work proceeds; it is the per-task record (commit or working-tree state, each command with its actual pass/fail/skip counts, red results, deviations from this plan). Keep secrets, live Jira fixture content, local machine paths and production identifiers out of it.
+
+| Task | Status | Revision / working-tree state | Commands → actual result | Notes / deviations |
+| --- | --- | --- | --- | --- |
+| 0 Validation and baseline | not started | | | |
+| 1 Regression tests | not started | | | |
+| 2 Controller | not started | | | |
+| 3 Auth intent and hand-over | not started | | | |
+| 4 ENG collector | not started | | | |
+| 5 Reading anchor | not started | | | |
+| 6 Board | not started | | | |
+| 7 Planning and capacity | not started | | | |
+| 8 Stats and EPM | not started | | | |
+| 9 Scenario/Settings, status UI, analytics, docs | not started | | | |
+| 10 Verification and delivery | not started | | | |
 
 ## Planning review and completion record
 
-Planning review on 2026-10-09: file map and current entry points traced; no backend contract migration planned; endpoint auth/CSRF distinctions and ownership preserved; strict Board, Planning dirty state, EPM cache provenance, Scenario collaboration and all eight Definition of Done gates assigned concrete tasks. Remaining source/lifecycle measurements are explicit Task 0/10 gates. This is a reviewed plan, not a report of implemented behavior.
+Plan review on 2026-10-09: six independent read-only reviews (ENG owner path; Board/Planning/capacity; Stats/EPM/Scenario/status UI/analytics; controller/auth shell/endpoints; design and Definition-of-Done traceability; governance/budgets/commands) traced the plan against baseline source, the approved design and the repository rules. Material changes made, in order of consequence:
 
-Baseline evidence already obtained: 18 auth-focus Node cases, 53 Epic/Team merge/controller cases and 10 Chromium auth-count cases passed. Two current-source Catch Up synthetic probes reproduced 330.08px reading displacement/remount/scroll reset and hidden response application. These are evidence for the problem, not acceptance of the proposed solution. See the design for exact commands, fixture conditions and limitations.
+1. **Structure budgets.** `dashboard.jsx` and the registered owners the plan edits are pinned to exact line counts by `scripts/extraction_lint/owner_budgets.json`, and hook inputs and exports are frozen; the original plan's "do not relax budgets" was not executable. New section [Structure and source-guard gates](#structure-and-source-guard-gates), adapters in unregistered modules, one approved ordered manifest update (D2).
+2. **Collector safety.** A background read must never raise the global outage state, whose recovery can reload the document; the automatic fetch option, `403`/`429` classification with `retryAfterSeconds`/`projectAccessStatus`, the access-loss trigger and `userRemovedKeys` handling are now specified (Tasks 4–5).
+3. **Board and Planning admission.** Automatic work was specified in a way that would reject its own result (`loading` raised by the job) or apply manual-load state to a background stream (disabled Refresh, banners, wiped snapshot); staged slots and split predicates are now specified (Tasks 6–7). Token rotation would also have dropped the strict Board snapshot: decision D1.
+4. **Source contradictions fixed.** `styles/dashboard.css` is a pinned import manifest; Scenario does not read Jira through the ENG owner; `useStatsDerivedC` has no fetch; EPM wrappers take no `signal`/`refresh`; the page-load flag is never set; the Epic-level projection helper moved the pinned Epic to the front; follow-ups were unbounded; the legacy listener removal broke source guards and left surfaces without long-return behavior.
+5. **Controller semantics.** Attempt-settlement table, per-source `needsAfterMs`, `update()` versus `request()`, `sessionEpoch`, a 60 s retry cap with a corrected `parseFreshnessRetryAt`, wrapper timers, one clock and `acceptChecks` call sites.
+6. **Verification and governance.** `.venv/bin/python` and both Python profiles, a baseline ledger, builds before specs that serve `dist`, extraction lint, the full publication transaction with an authorship check, red-first commit policy (D5), Forbidden regressions, Acceptance, Execution status and a per-gate evidence table were missing or wrong.
 
-| Definition of Done gate | Task coverage | Implementation evidence / result |
-| --- | --- | --- |
-| 1. Unfocused work stops | 1–4, 6–9 | Open; not executed. |
-| 2. Long returns recover without navigation | 2–3, 10 | Open; real lifecycle evidence required. |
-| 3. Reading context stays stable | 1, 4–7, 8–10 | Open; ≤2px and movement-fence cases required. |
-| 4. Relevant bounded acquisition | 2, 4, 6–8, 10 | Open; ordered counts and upstream limits required. |
-| 5. Honest freshness evidence | 0, 2, 4, 8–9 | Open; source provenance/coverage assertions required. |
-| 6. Safe edits/failure recovery | 2–4, 6–9 | Open; dirty/conflict/rollback/auth negatives required. |
-| 7. Every affected surface | 4–9 | Open; all seven surface rows required. |
-| 8. Regression/cost/delivery evidence | 0–1, 9–10 | Open; full verification and acceptance required. |
+Decisions needed from the user: D1 (strict Board snapshot across token rotation) is the only one that changes product behavior; D2–D5 are budget, copy, legacy-branch and commit-policy choices with recommended defaults, each blocking only the task it names.
 
-Execution record must name exact revision, every command's actual pass/fail/skip result, before/after measured values, screenshot references and accepted exceptions. No required skip closes a gate. Keep secrets, live Jira fixture content, local machine paths and production identifiers out of committed evidence. No implementation revision or acceptance has been recorded.
+Design-compatible dispositions the user should be aware of (none changes the approved policy): project-track phase durations are not requested automatically (design forbids per-Epic fan-out; manual Refresh does not bypass them either); Scenario's adapter is the ENG scope check only; automatic reads mirror the manual path's force flags, so EPM metadata and the cohort source are not forced (their caches expire before the threshold); the department readiness snapshot is held until an explicit Refresh (the anchor Epic's readiness refreshes through the existing per-Epic pair); the Planning capacity follow-up re-reads the pinned Team set (the #213 trade-off); an intent is satisfied only by a forced check that **began** at or after the absence (stricter than "completed after"); the pre-ready legacy branches are dropped (D4).
+
+Baseline evidence already obtained: 18 auth-focus Node cases, 53 Epic/Team merge/controller cases and 10 Chromium auth-count cases passed. Two current-source Catch Up synthetic probes reproduced 330.08px reading displacement/remount/scroll reset and hidden response application (gitignored scratch, not in the repository; Task 1 rebuilds them). These are evidence for the problem, not acceptance of the proposed solution. See the design for exact commands, fixture conditions and limitations. This is a reviewed plan, not a report of implemented behavior.
+
+**Completion record** (implementation SHA, base SHA, Node and Python versions: fill in at Task 10).
+
+| Definition of Done gate | Task coverage | Evidence ids | Command → pass/fail/skip n | Before → after | Screenshot ids | Limits / exceptions | Accepted by / date |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1. Unfocused work stops | 1–4, 6–10 | | | | | | |
+| 2. Long returns recover without navigation | 2–4, 10 | | | | | | |
+| 3. Reading context stays stable | 1, 4–10 | | | | | | |
+| 4. Relevant bounded acquisition | 2–4, 6–8, 10 | | | | | | |
+| 5. Honest freshness evidence | 0, 2–4, 6–10 | | | | | | |
+| 6. Safe edits/failure recovery | 2–10 | | | | | | |
+| 7. Every affected surface | 4–10 | | | | | | |
+| 8. Regression/cost/delivery evidence | 0–1, 5, 9–10 | | | | | | |
+
+The execution record must name the exact revision, every command's actual pass/fail/skip result, before/after measured values, screenshot references and accepted exceptions. No required skip closes a gate. Keep secrets, live Jira fixture content, local machine paths and production identifiers out of committed evidence. No implementation revision or acceptance has been recorded.

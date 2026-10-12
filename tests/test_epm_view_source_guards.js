@@ -1080,10 +1080,11 @@ test('EPM auth failures preserve visible projects and rollups and stop chained r
 
 function loadAutomaticEpmOwner() {
     const esbuild = require('esbuild');
-    const setters = []; let stateIndex=0; const fakeReact = { useState(initial) { const index=stateIndex++, value=typeof initial==='function'?initial():initial; return [value, next=>setters.push({index,value:next})]; }, useRef: value=>({current:value}), useMemo: fn=>fn(), useCallback: fn=>fn, useEffect(){} };
+    const setters = [], states = [], refs = []; let stateIndex=0, refIndex=0;
+    const fakeReact = { useState(initial) { const index=stateIndex++; if (!(index in states)) states[index]=typeof initial==='function'?initial():initial; return [states[index], next=>{setters.push({index,value:next});states[index]=typeof next==='function'?next(states[index]):next;}]; }, useRef(value) { const index=refIndex++; return refs[index] ||= {current:value}; }, useMemo: fn=>fn(), useCallback: fn=>fn, useEffect(){} };
     const code=esbuild.buildSync({entryPoints:[epmViewDataPath],bundle:true,write:false,format:'cjs',platform:'node',external:['react']}).outputFiles[0].text;
     const module={exports:{}}; new Function('module','exports','require',code)(module,module.exports,name=>name==='react'?fakeReact:require(name));
-    return {useEpmViewData:module.exports.useEpmViewData,setters};
+    return {useEpmViewData:module.exports.useEpmViewData,setters, render(props) { stateIndex=0;refIndex=0;return module.exports.useEpmViewData(props); }};
 }
 for (const failure of [null, 'null', '500', '409']) test(`EPM automatic transaction is silent and atomic for ${failure || 'success'}`, async () => {
     const {useEpmViewData,setters}=loadAutomaticEpmOwner(); const calls=[]; let home=0, leases=0;
@@ -1140,7 +1141,7 @@ test('EPM automatic All Projects successful empty metadata prevents cached rollu
     } finally {global.fetch=prior;}
 });
 
-test('EPM Project picker names an unavailable selection only once a non-empty Project list has loaded', () => {
+test('EPM Project picker uses accepted scoped metadata in both newly mounted surfaces', () => {
     const esbuild = require('esbuild'), React = require('react'), { renderToString } = require('react-dom/server');
     const code = esbuild.buildSync({ entryPoints: [epmControlsPath], bundle: true, write: false, format: 'cjs', platform: 'node', external: ['react'], loader: { '.jsx': 'jsx' }, jsx: 'transform', jsxFactory: 'React.createElement', jsxFragment: 'React.Fragment' }).outputFiles[0].text;
     const module = { exports: {} }; new Function('module', 'exports', 'require', code)(module, module.exports, require);
@@ -1150,6 +1151,49 @@ test('EPM Project picker names an unavailable selection only once a non-empty Pr
     assert.equal(label({ epmProjectsLoading: true, visibleEpmProjects: loaded }).includes('Project unavailable'), false);
     assert.equal(label({ epmProjectsLoading: false, visibleEpmProjects: [] }).includes('Project unavailable'), false, 'empty list must not flash unavailable');
     assert.ok(label({ epmProjectsLoading: false, visibleEpmProjects: [] }).includes('All projects'));
-    assert.ok(label({ epmProjectsLoading: false, visibleEpmProjects: loaded }).includes('Project unavailable'), 'loaded list without the saved Project names it unavailable');
+    assert.equal(label({ epmProjectsLoading: false, epmProjectsLoaded: false, visibleEpmProjects: loaded }).includes('Project unavailable'), false, 'another scope or a failed read does not establish absence');
+    for (const surface of ['main', 'compact']) {
+        assert.ok(label({ surface, epmProjectsLoading: false, epmProjectsLoaded: true, visibleEpmProjects: [] }).includes('Project unavailable'), 'accepted empty metadata establishes absence even on a fresh picker mount');
+    }
+    assert.ok(label({ epmProjectsLoading: false, epmProjectsLoaded: true, visibleEpmProjects: loaded }).includes('Project unavailable'), 'accepted list without the saved Project names it unavailable');
     assert.ok(label({ epmProjectsLoading: false, epmSelectedProjectId: '', visibleEpmProjects: loaded }).includes('All projects'));
+});
+
+test('EPM metadata acceptance belongs to the current owner scope and survives only background failures', async () => {
+    const { render } = loadAutomaticEpmOwner(), prior = global.fetch;
+    const props = { backendUrl: 'http://synthetic', initialEpmSelectedProjectId: 'synthetic-missing', selectedView: 'epm', epmConfigLoaded: true, hasSavedEpmScope: true, savedEpmSubGoalKeys: ['synthetic-goal-a', 'synthetic-goal-b'], selectedSprint: 'synthetic-sprint', epmProjectSearch: '', epmProjectSort: 'name', searchQuery: '', onServerConnectionFailure: () => true };
+    const job = { shouldApply: () => true, signal: new AbortController().signal, pendingSources: ['epm_projects', 'epm_rollup'] };
+    try {
+        let owner = render(props);
+        assert.equal(owner.epmProjectsLoaded, false);
+        global.fetch = async () => new Response('{}', { status: 500 });
+        await owner.refreshEpmProjects();
+        owner = render(props);
+        assert.equal(owner.epmProjectsLoaded, false, 'failed initial metadata cannot establish membership');
+        global.fetch = async () => new Response(JSON.stringify({ projects: [], cacheHit: false }));
+        await owner.refreshEpmView({ job });
+        owner = render(props);
+        assert.equal(owner.epmProjectsLoaded, true, 'accepted empty metadata is authoritative');
+        global.fetch = async () => new Response('{}', { status: 500 });
+        await owner.refreshEpmView({ job });
+        owner = render(props);
+        assert.equal(owner.epmProjectsLoaded, true, 'failed automatic work preserves accepted metadata');
+        assert.equal(render({ ...props, backendUrl: 'http://synthetic-other' }).epmProjectsLoaded, false);
+        assert.equal(render({ ...props, savedEpmSubGoalKeys: ['synthetic-goal-a'] }).epmProjectsLoaded, false, 'a changed saved scope has no accepted membership yet');
+        owner.setEpmTab('backlog');
+        assert.equal(render(props).epmProjectsLoaded, false, 'another lifecycle has no accepted membership yet');
+        owner.setEpmTab('active');
+        owner.setEpmSelectedSubGoalKeys(['synthetic-goal-a']);
+        assert.equal(render(props).epmProjectsLoaded, false, 'another sub-goal scope has no accepted membership yet');
+        owner.setEpmSelectedSubGoalKeys([]);
+        owner = render(props);
+        await owner.refreshEpmProjects();
+        assert.equal(render(props).epmProjectsLoaded, false, 'foreground failure clears the discarded metadata evidence');
+        global.fetch = async () => new Response(JSON.stringify({ projects: [], cacheHit: false }));
+        await owner.refreshEpmProjects();
+        owner = render(props);
+        assert.equal(owner.epmProjectsLoaded, true, 'foreground success establishes membership too');
+        owner.setEpmProjects([]);
+        assert.equal(render(props).epmProjectsLoaded, false, 'external metadata clearing also clears its evidence');
+    } finally { global.fetch = prior; }
 });

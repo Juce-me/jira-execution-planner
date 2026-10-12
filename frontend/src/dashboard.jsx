@@ -1945,6 +1945,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 setEpmTab,
                 setEpmProjects,
                 epmProjectsLoading,
+                epmProjectsLoaded,
                 setEpmProjectsError,
                 epmSelectedProjectId,
                 setEpmSelectedProjectId,
@@ -5613,6 +5614,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                     showProjectPicker={showProjectPicker}
                     showStateControl={showStateControl}
                     epmProjectsLoading={epmProjectsLoading}
+                    epmProjectsLoaded={epmProjectsLoaded}
                     visibleEpmProjects={visibleEpmProjects}
                     selectedEpmProject={selectedEpmProject}
                     epmSelectedProjectId={epmSelectedProjectId}
@@ -7054,6 +7056,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                                     selectedView={selectedView}
                                     epmConfigLoaded={epmConfigLoaded}
                                     epmProjectsLoading={epmProjectsLoading}
+                                    epmProjectsLoaded={epmProjectsLoaded}
                                     epmRollupBoards={epmRollupBoards}
                                     epmRollupTree={epmRollupTree}
                                     epmSelectedProjectId={epmSelectedProjectId}

@@ -66,8 +66,9 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     "jira_server.py": 6487,
     # App decomposition ratchets the entrypoint to its exact measured size.
     # Issue #251 data freshness adds the lifecycle hook call, owner-ref assignment, handle
-    # pass-through, status readout and projection calls, net of the legacy listener removal (+45).
-    "frontend/src/dashboard.jsx": 7570,
+    # pass-through, status readout, projection calls and shared EPM availability,
+    # net of the legacy listener removal (+48).
+    "frontend/src/dashboard.jsx": 7573,
 }
 
 

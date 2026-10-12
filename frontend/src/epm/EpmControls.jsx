@@ -26,6 +26,7 @@ export function EpmControls({
     showProjectPicker = true,
     showStateControl = true,
     epmProjectsLoading,
+    epmProjectsLoaded = false,
     visibleEpmProjects,
     selectedEpmProject,
     epmSelectedProjectId = '',
@@ -52,9 +53,6 @@ export function EpmControls({
     epmSubGoalFilterDropdownRefs,
     renderEpmProjectCollapseAllButton,
 }) {
-    // A saved Project is unavailable only once a Project read has been observed; before that an empty list means not yet loaded.
-    const projectsSettledRef = React.useRef(false);
-    if (epmProjectsLoading || visibleEpmProjects.length > 0) projectsSettledRef.current = true;
     if (selectedView !== 'epm') return null;
     const savedSubGoalKeys = normalizeEpmScopeSubGoalKeys({ subGoalKeys: savedEpmSubGoalKeys });
     const selectedSubGoalKeys = normalizeEpmScopeSubGoalKeys({ subGoalKeys: selectedEpmSubGoalKeys })
@@ -75,7 +73,7 @@ export function EpmControls({
         const isDisabled = epmProjectsLoading || visibleEpmProjects.length === 0;
         const selectedProjectName = selectedEpmProject
             ? getEpmProjectDisplayName(selectedEpmProject)
-            : epmSelectedProjectId && !epmProjectsLoading && projectsSettledRef.current ? 'Project unavailable' : 'All projects';
+            : epmSelectedProjectId && !epmProjectsLoading && epmProjectsLoaded ? 'Project unavailable' : 'All projects';
         return (
             <ControlField label="Project">
                 <div className="sprint-dropdown epm-project-dropdown" ref={(node) => { epmProjectDropdownRefs.current[surface] = node; }}>

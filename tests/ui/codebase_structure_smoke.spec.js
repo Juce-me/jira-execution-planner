@@ -5712,12 +5712,23 @@ for (const connected of [false, true]) test(`Task9 freshness reserved copy prese
     const setSearchState = async state => { const search = page.locator('.header-actions-row .search-input'); await search.fill(state === 'applied' ? 'synthetic' : ''); if (state === 'focused') await search.focus(); else await search.blur(); await waitForVisualSettled(page); };
     const measure = () => page.locator('.header-actions-row').evaluate(row => {
         const header = row.closest('.subtitle'), status = row.querySelector('[data-dashboard-freshness-status]'), style = getComputedStyle(row.closest('.container'));
+        const documentScroll = document.documentElement.scrollWidth;
+        const tooltips = [...document.querySelectorAll('.initiative-grouping-tooltip')];
+        const tooltipStyles = tooltips.map(node => node.getAttribute('style'));
+        const tooltipHidden = tooltips.every(node => getComputedStyle(node).visibility === 'hidden');
+        let documentWithoutTooltip;
+        try {
+            tooltips.forEach(node => node.style.setProperty('display', 'none', 'important'));
+            documentWithoutTooltip = document.documentElement.scrollWidth;
+        } finally {
+            tooltips.forEach((node, index) => tooltipStyles[index] === null ? node.removeAttribute('style') : node.setAttribute('style', tooltipStyles[index]));
+        }
         return { headerHeight: header.getBoundingClientRect().height, title: (()=>{const node=header.querySelector('.subtitle-main'),range=document.createRange();range.selectNodeContents(node);const box=node.getBoundingClientRect();return {width:box.width,height:box.height,textBoxes:[...range.getClientRects()].map(rect=>({left:rect.left,right:rect.right,top:rect.top,bottom:rect.bottom})),scroll:node.scrollWidth,client:node.clientWidth};})(), searchWidth:row.querySelector('.search-input').getBoundingClientRect().width, rowHeight: row.getBoundingClientRect().height,
             sticky: ['--compact-header-offset','--planning-offset','--planning-sticky-top','--filterbar-sticky-top','--epic-sticky-top','--scenario-sticky-top'].map(key => style.getPropertyValue(key)),
             buttons: [...row.querySelectorAll('.header-icon-button')].map(node => { const box=node.getBoundingClientRect();return {width:box.width,height:box.height}; }),
             slotHeight: row.querySelector('.dashboard-freshness-slot').getBoundingClientRect().height, controlsBounds: [...row.querySelectorAll('.search-input,.header-icon-button,.view-mode-control,[data-dashboard-freshness-status]')].map(node => {const r=node.getBoundingClientRect();return {left:r.left,right:r.right};}),
             status: status ? { scroll:status.scrollWidth,client:status.clientWidth,whiteSpace:getComputedStyle(status).whiteSpace,minWidth:getComputedStyle(status).minWidth,height:status.getBoundingClientRect().height } : null,
-            documentScroll: document.documentElement.scrollWidth, viewport: document.documentElement.clientWidth };
+            documentScroll, documentWithoutTooltip, tooltipHidden, viewport: document.documentElement.clientWidth };
     });
     const before = {};
     const dir = path.join(repoRoot,'tmp/freshness-251/task-9-screenshots'); fs.mkdirSync(dir,{recursive:true});
@@ -5738,8 +5749,13 @@ for (const connected of [false, true]) test(`Task9 freshness reserved copy prese
             const height = await status.evaluate((node, text) => { const previous=node.textContent; node.textContent=text; const height=node.closest('.header-actions-row').getBoundingClientRect().height; node.textContent=previous; return height; }, copy);
             expect.soft(height).toBe(after.rowHeight);
         }
-        // The ENG filter bar's hidden initiative-grouping tooltip already widens the document at some widths (also on main); freshness must add nothing.
-        expect.soft(after.documentScroll).toBeLessThanOrEqual(Math.max(after.viewport, before[key].documentScroll));await expect(page.locator('.refresh-icon + .group-gear-button')).toHaveCount(1);
+        // Approved #251 baseline exception (2026-10-12): only the hidden Initiative tooltip at 755–1023px; no added overflow.
+        const baselineTooltipException = viewport.width >= 755 && viewport.width <= 1023;
+        if (baselineTooltipException) expect.soft(before[key].documentScroll).toBeLessThanOrEqual(after.viewport + 26);
+        expect.soft(after.documentScroll).toBeLessThanOrEqual(baselineTooltipException ? Math.max(after.viewport, before[key].documentScroll) : after.viewport);
+        expect.soft(after.documentWithoutTooltip).toBeLessThanOrEqual(after.viewport);
+        if (after.documentScroll > after.viewport) expect.soft(after.tooltipHidden).toBe(true);
+        await expect(page.locator('.refresh-icon + .group-gear-button')).toHaveCount(1);
         await expect(page.locator('.compact-sticky-header [data-dashboard-freshness-status], .compact-sticky-header .refresh-icon')).toHaveCount(0);
         await page.screenshot({path:path.join(dir,`header-reserved-after-${connected}-${key}.png`),fullPage:false});
         await page.locator('.header-actions-row .search-input').blur(); await waitForVisualSettled(page);

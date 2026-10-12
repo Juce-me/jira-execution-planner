@@ -898,14 +898,41 @@ test('Task9 display-only filter Team sort and Initiative grouping changes acquir
 
 
 
-test('automatic EPM removal retains the selected Project identity and displays unavailable instead of All projects', async ({ page }) => {
+test('saved EPM Project with failed initial metadata never claims Project unavailable', async ({ page }, testInfo) => {
+    const ctx = await installEpmFreshnessFixture(page, { connection: activeHomeTokenConnection() });
+    const gate = deferred(); let metadataReads = 0;
+    await page.route('**/api/epm/projects**', async route => {
+        if (new URL(route.request().url()).pathname !== '/api/epm/projects') return route.fallback();
+        metadataReads++; await gate.promise;
+        return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'upstream_failed' }) });
+    });
+    await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: dashboardBundle }));
+    await page.addInitScript(() => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({ selectedView: 'epm', epmTab: 'active', selectedSprint: 34625, epmSelectedProjectId: 'home-1' })));
+    await page.goto(ctx.appBaseUrl);
+    await page.addStyleTag({ content: '*,*::before,*::after{animation:none!important;transition:none!important}' });
+    await expect.poll(() => metadataReads).toBe(1);
+    const picker = page.locator('header .epm-project-dropdown .sprint-dropdown-toggle');
+    await expect(picker).toContainText('Loading...');
+    await page.screenshot({ path: testInfo.outputPath('epm-initial-metadata-before.png') });
+    gate.resolve(); await settle(page);
+    await expect(picker).not.toContainText('Loading...');
+    await page.screenshot({ path: testInfo.outputPath('epm-initial-metadata-after.png') });
+    await expect(picker).not.toContainText('Project unavailable');
+    await expect(page.getByText('Project unavailable', { exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('jira_dashboard_ui_prefs_v1')).epmSelectedProjectId)).toBe('home-1');
+});
+
+test('automatic EPM removal retains the selected Project identity and displays unavailable instead of All projects', async ({ page }, testInfo) => {
     const { lifecycle } = await setupEpmFreshness(page);
+    await page.addStyleTag({ content: '.container{min-height:2200px}' });
+    await expect(page.locator('.compact-sticky-header .epm-project-dropdown')).toHaveCount(0);
     const picker = page.locator('.epm-project-dropdown').first();
     await expect(picker.locator('.sprint-dropdown-toggle')).toContainText('All projects');
     await picker.locator('.sprint-dropdown-toggle').click();
     await picker.locator('[data-project-id="home-1"]').click();
     await expect(picker.locator('.sprint-dropdown-toggle')).toContainText('Connected Home Project');
     await settle(page);
+    await page.screenshot({ path: testInfo.outputPath('epm-selected-project-before.png') });
     const calls = [];
     await page.route('**/api/epm/projects**', route => {
         calls.push(new URL(route.request().url()).pathname);
@@ -918,6 +945,13 @@ test('automatic EPM removal retains the selected Project identity and displays u
     await settle(page);
     expect(calls).toEqual(['/api/epm/projects']);
     expect(await picker.locator('.sprint-dropdown-toggle').innerText()).not.toContain('All projects');
+    await page.evaluate(() => window.scrollTo(0, 900));
+    const compactPicker = page.locator('.compact-sticky-header.is-visible .epm-project-dropdown .sprint-dropdown-toggle');
+    await expect(compactPicker).toBeInViewport(); await settle(page);
+    await page.screenshot({ path: testInfo.outputPath('epm-late-compact-after-removal.png') });
+    await expect(compactPicker).toContainText('Project unavailable');
+    expect(await compactPicker.innerText()).not.toContain('All projects');
+    expect(calls).toEqual(['/api/epm/projects']);
 });
 
 

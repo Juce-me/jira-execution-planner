@@ -52,7 +52,7 @@ export function useEpmViewData({
     onServerConnectionFailure,
 }) {
     const [epmTab, setEpmTab] = useState(initialEpmTab ?? 'active');
-    const [epmProjects, setEpmProjects] = useState([]);
+    const [epmProjects, setEpmProjectsState] = useState([]);
     const [epmProjectsLoading, setEpmProjectsLoading] = useState(false);
     const [epmProjectsError, setEpmProjectsError] = useState('');
     const [epmSelectedProjectId, setEpmSelectedProjectId] = useState(initialEpmSelectedProjectId ?? '');
@@ -64,6 +64,11 @@ export function useEpmViewData({
     const [epmRollupLoading, setEpmRollupLoading] = useState(false);
     const [epmProjectRollupLoadingIds, setEpmProjectRollupLoadingIds] = useState(() => new Set());
     const [epmSelectedSubGoalKeys, setEpmSelectedSubGoalKeys] = useState([]);
+    const [epmProjectsAcceptedScope, setEpmProjectsAcceptedScope] = useState('');
+    const setEpmProjects = React.useCallback((projects) => {
+        setEpmProjectsState(projects);
+        setEpmProjectsAcceptedScope('');
+    }, []);
     const automaticProjectsRef = useRef(null);
     const automaticRollupScopeRef = useRef('');
     const explicitChecksRef = useRef([]);
@@ -80,6 +85,8 @@ export function useEpmViewData({
         [epmSelectedSubGoalKeys, normalizedSavedEpmSubGoalKeys]
     );
 
+    const epmProjectsScopeKey = JSON.stringify([backendUrl, epmTab, normalizedSavedEpmSubGoalKeys, runtimeEpmSubGoalKeys]);
+    const epmProjectsLoaded = epmConfigLoaded && hasSavedEpmScope && epmProjectsAcceptedScope === epmProjectsScopeKey;
     // filterEpmProjectsForTab owns the `project.tabBucket === epmTab` check.
     const visibleEpmProjects = React.useMemo(() => filterEpmProjectsForTab(epmProjects, epmTab), [epmProjects, epmTab]);
     const selectedEpmProject = visibleEpmProjects.find((project) => getEpmProjectIdentity(project) === epmSelectedProjectId) || null;
@@ -122,6 +129,7 @@ export function useEpmViewData({
             const nextProjects = Array.isArray(payload.projects) ? payload.projects : [];
             explicitChecksRef.current.push({ source: 'epm_projects', status: 'ok', checkKind: payload.cacheHit === false ? 'forced' : payload.cacheHit === true ? 'cached' : 'unknown', coverage: 'unknown', requestStartedAtMs: requestStartedAtMs });
             setEpmProjects(nextProjects);
+            setEpmProjectsAcceptedScope(JSON.stringify([backendUrl, tab, normalizedSavedEpmSubGoalKeys, runtimeEpmSubGoalKeys]));
             return nextProjects;
         } catch (err) {
             if (isAuthenticationRequiredError(err)) throw err;
@@ -148,7 +156,7 @@ export function useEpmViewData({
                 setEpmProjectsLoading(false);
             }
         }
-    }, [backendUrl, epmTab, onHomeTokenRequired, onServerConnectionFailure, runtimeEpmSubGoalKeys]);
+    }, [backendUrl, epmTab, normalizedSavedEpmSubGoalKeys, onHomeTokenRequired, onServerConnectionFailure, runtimeEpmSubGoalKeys, setEpmProjects]);
 
     const refreshEpmRollup = React.useCallback(async (projectOverride = selectedEpmProject, projectIdOverride = epmSelectedProjectId) => {
         const currentProject = projectOverride || null;
@@ -371,7 +379,10 @@ export function useEpmViewData({
                 // Record the accepted array so its selection effect cannot start a duplicate read or reset the held selection.
                 automaticProjectsRef.current = metadata.projects;
                 automaticRollupScopeRef.current = automaticScopeKey;
-                if (job.pendingSources.includes('epm_projects')) setEpmProjects(metadata.projects);
+                if (job.pendingSources.includes('epm_projects')) {
+                    setEpmProjects(metadata.projects);
+                    setEpmProjectsAcceptedScope(epmProjectsScopeKey);
+                }
                 if (job.pendingSources.includes('epm_rollup')) {
                     setEpmRollupTree(tree);
                     setEpmRollupBoards(aggregate ? aggregate.boards : null);
@@ -455,10 +466,11 @@ export function useEpmViewData({
         if (!epmSelectedProjectId) return;
         if (epmProjectsPendingSelectionRef.current) return;
         if (automaticProjectsRef.current === epmProjects) return;
+        if (!epmProjectsLoaded) return;
         if (!selectedEpmProject) {
             setEpmSelectedProjectId('');
         }
-    }, [selectedView, epmSelectedProjectId, selectedEpmProject]);
+    }, [selectedView, epmSelectedProjectId, selectedEpmProject, epmProjectsLoaded]);
 
     useEffect(() => {
         if (automaticProjectsRef.current === epmProjects && automaticRollupScopeRef.current === automaticScopeKey) return;
@@ -478,6 +490,7 @@ export function useEpmViewData({
         epmProjects,
         setEpmProjects,
         epmProjectsLoading,
+        epmProjectsLoaded,
         epmProjectsError,
         setEpmProjectsError,
         epmSelectedProjectId,

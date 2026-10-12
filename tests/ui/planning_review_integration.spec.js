@@ -906,3 +906,29 @@ for (const width of [1280,390]) test(`document scroll docks table headings below
     await page.locator('.compact-sticky-header').getByRole('radio',{name:'Catch Up',exact:true}).click();
     await expect(heading).toHaveCount(0);await expect(page.locator('.planning-review-docked-footer')).toHaveCount(0);
 });
+
+test('the priority menu on the last Planning row overlays the table fully on screen without resizing it', async ({page}) => {
+    await installPlanningFixture(page,{authMode:'atlassian_oauth'});
+    await page.route('**/api/eng/sprints/*/review',route=>json(route,{schemaRevision:0,columns:[],capabilities:{canRead:false,canSave:false}}));
+    const priorities=['Blocker','Critical','Major','Minor','Low','Trivial'].map((name,index)=>({id:String(index+1),name}));
+    await page.route('**/api/issues/priorities/options*',route=>json(route,{priorities}));
+    await openPlanning(page);
+    await page.getByRole('button',{name:'Show Planning table',exact:true}).click();
+    await page.getByRole('radio',{name:'Stories',exact:true}).click();
+    const scroller=page.locator('.planning-review-scroll');
+    const trigger=scroller.locator('tbody tr').last().locator('[data-priority-transition-trigger]');
+    await trigger.scrollIntoViewIfNeeded();
+    const before=await scroller.evaluate(node=>({scrollHeight:node.scrollHeight,clientHeight:node.clientHeight}));
+    await trigger.click();
+    const menu=page.locator('.priority-transition-menu');
+    await expect(menu.getByRole('menuitem')).not.toHaveCount(0);
+    await expect(menu).toHaveClass(/is-portalled/);
+    expect(await menu.evaluate(node=>node.parentElement===document.body)).toBe(true);
+    const box=await menu.boundingBox();
+    const viewport=page.viewportSize();
+    expect(box.y).toBeGreaterThanOrEqual(0);
+    expect(box.y+box.height).toBeLessThanOrEqual(viewport.height);
+    expect(await scroller.evaluate(node=>({scrollHeight:node.scrollHeight,clientHeight:node.clientHeight}))).toEqual(before);
+    await menu.getByRole('menuitem').first().click();
+    await expect(menu).toHaveCount(0);
+});

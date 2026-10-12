@@ -5744,13 +5744,13 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                     statusLabel={row.status} statusClassName={getIssueStatusClassName(row.status)} sourceSurface="planning" isOpen={statusTransitionActiveKey === row.key}
                     options={transitionOptions} optionsLoading={transitionOptionsLoading} submitting={statusTransitionSubmitting || pendingStatusIssueKeys.has(row.key)}
                     error={transitionError} errorCode={transitionErrorCode} result={transitionResult}
-                    onOpen={openSingleIssueStatusControl} onPrefetch={prefetchSingleIssueStatusOptions} onClose={closeSingleIssueStatusControl} onSubmit={(targetStatus) => handleSubmitStatusTransition(targetStatus, { key: row.key })} />;
+                    portalTarget={document.body} onOpen={openSingleIssueStatusControl} onPrefetch={prefetchSingleIssueStatusOptions} onClose={closeSingleIssueStatusControl} onSubmit={(targetStatus) => handleSubmitStatusTransition(targetStatus, { key: row.key })} />;
                 if (field === 'priority') return <PriorityTransitionMenu
                     issue={{ key: row.key, priority: row.priority, summary: row.summary }} fallbackIssueType={row.rowKind === 'epic' ? 'Epic' : 'Story'}
                     priorityLabel={row.priority} currentPriorityLabel={row.priority} renderPriorityIcon={renderPriorityIcon}
                     isOpen={priorityTransitionActiveKey === row.key} options={priorityOptions} optionsLoading={priorityOptionsLoading}
                     submitting={prioritySubmitting || pendingPriorityIssueKeys.has(row.key)} error={priorityError} result={priorityResult}
-                    onOpen={openPriorityControl} onClose={closePriorityControl} onSubmit={submitPriorityChange} />;
+                    portalTarget={document.body} onOpen={openPriorityControl} onClose={closePriorityControl} onSubmit={submitPriorityChange} />;
                 const editorField = field === 'storyPoints' ? 'storyPoints' : field;
                 if (!['summary', 'team', 'assignee', 'storyPoints'].includes(editorField) || (editorField === 'storyPoints' && row.rowKind !== 'story')) return null;
                 const active = issueFieldEdits.activeEditor?.issueKey === row.key && issueFieldEdits.activeEditor?.field === editorField;

@@ -360,3 +360,159 @@ test('isBackendConnectionFailure classifies the config bootstrap timeout but not
     assert.equal(isBackendConnectionFailure(new Error('Config error 503')), false);
     assert.equal(isBackendConnectionFailure(null), false);
 });
+
+
+test('due automatic catalog read preserves a removed selected Sprint; manual Refresh retains normal fallback', async () => {
+    const reads = [];
+    const controller = createSprintCatalogController({
+        initialState: createSprintCatalogState({ savedSprintId: 42 }),
+        now: () => Date.parse('2026-09-16T12:00:30Z'),
+        read: async options => { reads.push(options); return validatedEnvelope({ sprints: reads.length === 1 ? [{ id: 42, name: 'Saved', state: 'active' }] : [{ id: 99, name: 'Next', state: 'active' }] }); },
+    });
+    await controller.readCurrent();
+    await controller.readDue({ selectedSprintId: 42, signal: new AbortController().signal, shouldApply: () => true });
+    assert.equal(reads.length, 2);
+    assert.equal(reads[1].forceRefresh, false);
+    assert.equal(reads[1].automatic, true);
+    assert.equal(controller.getState().selectedSprintId, 42);
+    assert.equal(controller.getState().selectionPreserved, true);
+    assert.equal(controller.getState().availableSprints[0].id, 99);
+    await controller.refresh();
+    assert.equal(controller.getState().selectedSprintId, 99);
+    assert.equal(controller.getState().selectionPreserved, false);
+    controller.dispose();
+});
+
+test('automatic catalog read is absent before due and retains the validated snapshot on failure', async () => {
+    let nowMs = Date.parse('2026-09-14T12:00:31Z'), reads = 0;
+    const controller = createSprintCatalogController({ now: () => nowMs, read: async () => {
+        reads += 1;
+        if (reads > 1) throw new Error('synthetic upstream unavailable');
+        return validatedEnvelope();
+    } });
+    await controller.readCurrent();
+    const held = controller.getState();
+    await controller.readDue({ selectedSprintId: 42, shouldApply: () => true });
+    assert.equal(reads, 1);
+    nowMs += 24 * 60 * 60 * 1000;
+    await controller.readDue({ selectedSprintId: 42, shouldApply: () => true });
+    assert.equal(reads, 2);
+    assert.equal(controller.getState(), held);
+    controller.dispose();
+});
+
+test('retired automatic catalog response cannot apply, but a late401 remains terminal', async () => {
+    for (const authFailure of [false, true]) {
+        let release, calls = 0, current = true;
+        const controller = createSprintCatalogController({ now: () => Date.parse('2026-09-16T12:00:30Z'), read: async () => {
+            calls += 1;
+            if (calls === 1) return validatedEnvelope();
+            return new Promise(resolve => { release = () => resolve(authFailure ? { httpStatus: 401, error: 'auth_required' } : validatedEnvelope({ sprints: [{ id: 99, name: 'Next' }] })); });
+        } });
+        await controller.readCurrent();
+        const held = controller.getState(), abort = new AbortController();
+        const pending = controller.readDue({ selectedSprintId: 42, signal: abort.signal, shouldApply: () => current });
+        await Promise.resolve();
+        current = false; abort.abort(); release(); await pending;
+        if (authFailure) assert.equal(controller.getState().authority, 'auth_locked');
+        else assert.equal(controller.getState(), held);
+        controller.dispose();
+    }
+});
+
+
+test('BFCache catalog invalidation holds selection for display without retaining request authority', async () => {
+    let calls = 0;
+    const controller = createSprintCatalogController({ initialState: createSprintCatalogState({ savedSprintId: 42 }), read: async () => {
+        calls += 1;
+        return validatedEnvelope({ sprints: calls === 1 ? [{ id: 42, name: 'Held' }] : [{ id: 99, name: 'Next' }] });
+    } });
+    await controller.readCurrent();
+    controller.invalidate('pagehide', { preserveSelection: true });
+    controller.invalidate('pageshow', { preserveSelection: true });
+    assert.equal(controller.getState().authority, 'invalid');
+    assert.equal(controller.getState().validatedSnapshot, null);
+    assert.equal(controller.getState().availableSprints[0].id, 42);
+    await controller.readCurrent({ preserveSelection: true, selectedSprintId: 42 });
+    assert.equal(controller.getState().authority, 'validated');
+    assert.equal(controller.getState().selectedSprintId, 42);
+    controller.acceptSource(SOURCE_B);
+    assert.equal(controller.getState().selectionPreserved, false);
+    assert.equal(controller.getState().availableSprints.length, 0);
+    controller.dispose();
+});
+
+test('catalog terminal auth cannot be invalidated or redispatched by pageshow or Refresh', async () => {
+    let calls = 0;
+    const controller = createSprintCatalogController({ read: async () => { calls += 1; return validatedEnvelope(); } });
+    await controller.readCurrent();
+    controller.authLock();
+    const locked = controller.getState();
+    controller.invalidate('pageshow', { preserveSelection: true });
+    controller.acceptSource(SOURCE_B);
+    await controller.readCurrent();
+    await controller.refresh();
+    assert.equal(controller.getState(), locked);
+    assert.equal(calls, 1);
+    controller.dispose();
+});
+
+
+function automaticCatalogClock(read) {
+    let clock = Date.parse('2026-09-16T12:00:30Z'), nextId = 0;
+    const timers = new Map();
+    const controller = createSprintCatalogController({ read, now: () => clock,
+        setTimer: (fn, delay) => { timers.set(++nextId, { fn, delay }); return nextId; },
+        clearTimer: id => timers.delete(id),
+    });
+    return { controller, timers, advance: ms => { clock += ms; }, poll: () => {
+        const entry = [...timers].find(([, timer]) => timer.delay === 1000);
+        assert.ok(entry, 'a current completion owns its polling timer');
+        timers.delete(entry[0]); return entry[1].fn();
+    } };
+}
+const pendingCatalogEnvelope = () => validatedEnvelope({ state: 'refreshing', refreshStatus: 'pending', refreshAttemptId: '11111111-1111-4111-8111-111111111111' });
+
+test('retired catalog completion cannot cancel a replacement observer in the same generation', async () => {
+    let calls = 0, current = true, releaseOld;
+    const fixture = automaticCatalogClock(async () => {
+        calls += 1;
+        if (calls === 1) return validatedEnvelope();
+        if (calls === 3) return new Promise(resolve => { releaseOld = resolve; });
+        return pendingCatalogEnvelope();
+    });
+    await fixture.controller.readCurrent();
+    const abort = new AbortController();
+    const old = fixture.controller.readDue({ selectedSprintId: 42, signal: abort.signal, shouldApply: () => current });
+    await new Promise(resolve => setImmediate(resolve));
+    const oldPoll = fixture.poll();
+    await new Promise(resolve => setImmediate(resolve));
+    current = false; abort.abort(); await old;
+    let replacementSettled = false;
+    const replacement = fixture.controller.readDue({ selectedSprintId: 42, signal: new AbortController().signal, shouldApply: () => true }).then(() => { replacementSettled = true; });
+    await new Promise(resolve => setImmediate(resolve));
+    releaseOld(validatedEnvelope()); await oldPoll;
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(replacementSettled, false);
+    assert.equal([...fixture.timers.values()].filter(timer => timer.delay === 1000).length, 1);
+    fixture.controller.dispose(); await replacement;
+    assert.equal(fixture.timers.size, 0);
+});
+
+test('catalog completion401 remains terminal at the hard deadline', async () => {
+    let calls = 0;
+    const fixture = automaticCatalogClock(async () => {
+        calls += 1;
+        if (calls === 1) return validatedEnvelope();
+        if (calls === 2) return pendingCatalogEnvelope();
+        fixture.advance(75000);
+        return { httpStatus: 401, error: 'auth_required' };
+    });
+    await fixture.controller.readCurrent();
+    const pending = fixture.controller.readDue({ selectedSprintId: 42, signal: new AbortController().signal, shouldApply: () => true });
+    await new Promise(resolve => setImmediate(resolve));
+    await fixture.poll(); await pending;
+    assert.equal(fixture.controller.getState().authority, 'auth_locked');
+    assert.equal(fixture.timers.size, 0);
+    fixture.controller.dispose();
+});

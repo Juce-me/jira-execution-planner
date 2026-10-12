@@ -84,7 +84,7 @@ test('dashboard source wires EPM rollup loading and metadata-only rendering', ()
     assert.ok(epmViewDataSource.includes('const payload = await fetchEpmProjects(backendUrl, { tab, subGoalKeys: runtimeEpmSubGoalKeys });'), 'Expected EPM hook to load EPM projects through tab and sub-goal scoped wrapper');
     assert.ok(epmApiSource.includes('const query = params.toString();'), 'Expected EPM projects wrapper to build tab query string');
     assert.ok(epmApiSource.includes('const url = query ? `${backendUrl}/api/epm/projects?${query}` : `${backendUrl}/api/epm/projects`;'), 'Expected EPM projects wrapper to preserve scoped and unscoped project URLs');
-    assert.ok(epmApiSource.includes("getJson(url, 'EPM projects', {"), 'Expected EPM projects fetch to use the tab-scoped wrapper URL');
+    assert.ok(epmApiSource.includes("getEpmJson(url, 'EPM projects', {"), 'Expected EPM projects fetch to use the tab-scoped wrapper URL');
     assert.ok(epmApiSource.includes("apiSurface: 'epm_projects'"), 'Expected EPM projects fetch to keep analytics scoped to the API wrapper');
     assert.ok(epmApiSource.includes('export function fetchEpmConfigurationProjects(backendUrl, draftConfig, options = {}) {'), 'Expected EPM configuration project loader');
     assert.ok(epmApiSource.includes('const refreshParam = forceRefresh ? \'?refresh=true\' : \'\';'), 'Expected project configuration refresh query support');
@@ -129,7 +129,7 @@ test('dashboard source adds EPM rollup loading state and refresh-button branchin
     assert.ok(epmViewDataSource.includes('setEpmRollupLoading(true);'), 'Expected EPM rollup request start loading state');
     assert.ok(epmViewDataSource.includes('setEpmRollupTree(null);'), 'Expected EPM rollup to clear before reload');
     assert.ok(dashboardSource.includes("if (selectedView === 'epm') {"), 'Expected refresh button EPM branch');
-    assert.ok(dashboardSource.includes('void refreshEpmView();'), 'Expected refresh button to call EPM refresh path');
+    assert.ok(dashboardSource.includes('void recordExplicitRefresh(refreshEpmView());'), 'Expected refresh button to record the EPM refresh path');
     assert.ok(dashboardSource.includes("const manualRefreshDisabled = connectionRecoveryBlocksRefresh || (selectedView === 'eng'")
         && dashboardSource.includes(': loading || groupsLoading || groupPreferences.onboardingRequired)')
         && dashboardSource.includes(': (epmProjectsLoading || epmRollupLoading));'),

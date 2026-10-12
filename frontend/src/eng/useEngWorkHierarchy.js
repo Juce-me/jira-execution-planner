@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { subscribeEngReading, getEngReadingPresentation, releaseEngReadingContext, installEngReadingEvents, markEngReadingDeparture } from './engReadingAnchor.js';
 import { buildEngWorkHierarchy } from './engWorkHierarchy.js';
 export { buildStoryReadinessAlertModel, storyReadinessStatusMessage } from './engWorkHierarchy.js';
 
@@ -47,7 +48,12 @@ export function useEngWorkHierarchy({
     engEpicSort = 'priority',
     groupByInitiativeChoice = null,
     planningOriginals = null,
+    readingScopeKey = '',
 } = {}) {
+    const readingPresentation = React.useSyncExternalStore(subscribeEngReading, getEngReadingPresentation, () => null);
+    const releaseKey = JSON.stringify([readingScopeKey, showPlanning, selectedSprint, activeGroupId, selectedTeams, showTech, showProduct, searchQuery, engEpicSort, groupByInitiativeChoice]);
+    React.useLayoutEffect(() => { releaseEngReadingContext(); }, [releaseKey]);
+    React.useEffect(() => installEngReadingEvents(document, window, () => ({ top: 0, bottom: window.innerHeight })), []);
     const groupTasks = React.useCallback(
         taskList => groupTasksByEpic(taskList, epicDetails),
         [epicDetails],
@@ -86,16 +92,17 @@ export function useEngWorkHierarchy({
         },
         sort: engEpicSort,
         groupByInitiative,
-        planningOriginals,
+        planningOriginals, readingPresentation,
     }), [
         showPlanning, selectedSprint, selectedSprintName, selectedSprintState, storyEpicGroups,
         readinessSnapshot, readinessStatus, activeGroupId, selectedTeams, isAllTeamsSelected,
         showTech, showProduct, searchQuery, statusNeutral, priorityNeutral, admitsEpicProjectTrack,
-        engEpicSort, groupByInitiative, planningOriginals,
+        engEpicSort, groupByInitiative, planningOriginals, readingPresentation,
     ]);
+    React.useLayoutEffect(() => { markEngReadingDeparture(new Set(visibleTasksForList.map(task => task.key)), [], new Set(hierarchy.canonicalEpicGroups.map(group => group.key))); }, [visibleTasksForList, hierarchy.canonicalEpicGroups]);
     return {
         hierarchy,
-        epicGroups: hierarchy.epicGroups,
+        epicGroups: hierarchy.canonicalEpicGroups,
         initiativeGroups: hierarchy.initiativeGroups,
         hasInitiativeData,
         groupByInitiative,

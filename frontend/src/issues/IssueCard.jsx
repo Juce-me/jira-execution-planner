@@ -20,6 +20,7 @@ export default function IssueCard({
     statusClassName,
     renderPriorityIcon = () => null,
     showPlanning = false,
+    readingDeparture = false,
     allowSelection = false,
     isSelected = false,
     onToggleSelection,
@@ -59,11 +60,12 @@ export default function IssueCard({
     onPreviewLifecycleChange,
     issueFieldEdits = null,
 }) {
+    if (readingDeparture) { statusTransitionEnabled = false; priorityTransitionEnabled = false; issueFieldEdits = null; onRemove = null; onToggleSubtasks = null; onRetrySubtasks = null; subtaskState = null; }
     const statusName = task.fields.status?.name;
     const isKilled = statusName === 'Killed';
     const isDone = statusName === 'Done';
     const isIncomplete = normalizeIssueStatus(statusName) === 'incomplete';
-    const canSelect = showPlanning || allowSelection;
+    const canSelect = !readingDeparture && (showPlanning || allowSelection);
     const embeddedSubtaskSummary = task.fields.subtaskSummary || null;
     const activeSubtaskSummary = subtaskState?.summary || embeddedSubtaskSummary;
     const subtaskProgress = buildStorySubtaskProgress(activeSubtaskSummary);
@@ -102,7 +104,7 @@ export default function IssueCard({
             onRemove?.(task);
         }, REMOVE_FADE_MS);
     };
-    const subtaskToggle = showSubtaskControl ? (
+    const subtaskToggle = !readingDeparture && showSubtaskControl ? (
         <button
             type="button"
             className={`story-subtasks-toggle${subtaskState?.expanded ? ' is-expanded' : ''}`}
@@ -200,11 +202,13 @@ export default function IssueCard({
     return (
         <div
             className={`task-item priority-${task.fields.priority?.name.toLowerCase()} ${isDone ? 'status-done' : ''} ${isKilled ? 'status-killed' : ''} ${isIncomplete ? 'status-incomplete' : ''} ${showPlanning ? 'is-planning-selectable' : ''} ${showPlanning && isSelected ? 'is-planning-selected' : ''} ${dependencyModel.isFocusActive && !dependencyModel.isRelated ? 'is-dimmed' : ''} ${dependencyModel.isFocused ? 'is-focused' : ''} ${dependencyModel.isUpstream ? 'is-upstream' : ''} ${dependencyModel.isDownstream ? 'is-downstream' : ''} ${isRemoveFading || isLeaving ? 'is-removing' : ''}`}
+            data-reading-departure={readingDeparture || undefined}
             data-task-key={task.key}
             data-task-id={task.id || task.key}
             data-issue-key={task.key}
             data-onboarding-target="hierarchy-story"
         >
+            {readingDeparture && <div role="status" className="story-readiness-notice">No longer in the current scope. Read-only until you leave this item.</div>}
             <div className="task-header">
                 {onRemove && (
                     <button
@@ -268,7 +272,7 @@ export default function IssueCard({
             </div>
             <div className="task-detail-row">
                 <div className="task-meta">
-                    {statusTransitionEnabled ? (
+                    {readingDeparture ? null : statusTransitionEnabled ? (
                         <StatusTransitionMenu
                             issue={task}
                             fallbackIssueType="Story"
@@ -344,7 +348,7 @@ export default function IssueCard({
                 onHoverEnter={dependencyContext.onHoverEnter}
                 onHoverLeave={dependencyContext.onHoverLeave}
             />
-            {renderSubtaskPanel && (
+            {!readingDeparture && renderSubtaskPanel && (
                 <div id={subtaskPanelId} className={`story-subtasks-panel${isSubtaskPanelClosing ? ' is-closing' : ''}`} aria-live="polite">
                     {subtaskState?.loading ? (
                         <div className="story-subtasks-message">Loading subtasks...</div>
@@ -375,7 +379,7 @@ export default function IssueCard({
                                     >
                                         {subtask.summary || subtask.key}
                                     </a>
-                                    {statusTransitionEnabled ? (
+                                    {readingDeparture ? null : statusTransitionEnabled ? (
                                         <StatusTransitionMenu
                                             issue={subtask}
                                             fallbackIssueType="Subtask"

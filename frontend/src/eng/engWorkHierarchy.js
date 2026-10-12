@@ -1,3 +1,4 @@
+import { projectEngReadingOrder, projectEngEpicOrder } from './engReadingAnchor.js';
 import { matchesEngEpicSearch, sortEpicGroups } from './engTaskUtils.js';
 import { projectPlanningOriginals } from './engIssueEditState.js';
 import { buildStoryRequirementId } from './alertEpicNavigation.js';
@@ -244,6 +245,7 @@ export function buildEngWorkHierarchy({
     sort = 'priority',
     groupByInitiative: shouldGroupByInitiative = false,
     planningOriginals = null,
+    readingPresentation = null,
 } = {}) {
     const diagnostics = [];
     const scope = sprintScope(sprint, filters);
@@ -337,11 +339,22 @@ export function buildEngWorkHierarchy({
         );
     }
 
-    const requirements = epicGroups.flatMap(group => group.requirements);
-    const realStories = epicGroups.reduce((count, group) => count + group.tasks.length, 0);
+    // Counts and contracts use canonical groups; the exception affects rendering only.
+    const canonicalEpicGroups = epicGroups;
+    if (readingPresentation) {
+        const pin = readingPresentation;
+        const projectStories = group => group.key !== pin.epicKey ? group : { ...group,
+            rows: projectEngReadingOrder([...group.rows, ...(pin.departure ? [{ kind: 'story', id: pin.departure.key, task: pin.departure, readingDeparture: true }] : [])], pin.storyKeys, row => row.id) };
+        epicGroups = epicGroups.map(projectStories);
+        if (initiativeGroups) initiativeGroups = initiativeGroups.map(group => ({ ...group, epicGroups: projectEngEpicOrder(group.epicGroups.map(projectStories), (group.initiative?.key ?? null) === (pin.groupKey ?? null) ? pin.epicKey : null, pin.slot) }));
+        else epicGroups = projectEngEpicOrder(epicGroups, pin.epicKey, pin.slot);
+    }
+    const requirements = canonicalEpicGroups.flatMap(group => group.requirements);
+    const realStories = canonicalEpicGroups.reduce((count, group) => count + group.tasks.length, 0);
     const alertTargetById = Object.fromEntries(allRequirements.map(requirement => [requirement.id, requirement]));
     return {
         epicGroups,
+        canonicalEpicGroups,
         initiativeGroups,
         requirements,
         alertTargets: allRequirements,

@@ -12,19 +12,19 @@ export function createEpicRefreshController({
     loadEpicRefresh, readGuards, readHeld, apply, setEpicState, announce, track,
     now = () => Date.now(), sleep = ms => new Promise(resolve => setTimeout(resolve, ms)),
 }) {
-    const inFlight = new Set();
+    const inFlight = new Map();
     const cooldownUntil = new Map();
     const sameScope = (a, b) => a.epoch === b.epoch && a.version === b.version && a.scopeKey === b.scopeKey;
     const cooldownKey = (guards, epicKey) => `${guards.scopeKey}|${epicKey}`;
 
-    async function applyLanes(epicKey, lanes, click) {
+    async function applyLanes(epicKey, lanes, click, options) {
         const statuses = LANES.map(lane => lanes?.[lane]?.status || 'failed');
         if (statuses.includes('auth_required') || statuses.every(status => status === 'ignored')) {
             return { result: EPIC_REFRESH_RESULT.DISCARDED };
         }
         const held = readHeld(epicKey);
         const update = {
-            epicKey, changedKeys: [], silentKeys: [], addedKeys: [], removedKeys: [], changedFieldsByKey: {},
+            epicKey, source: options.source, deferFollowUps: options.deferFollowUps, shouldApply: options.shouldApply, changedKeys: [], silentKeys: [], addedKeys: [], removedKeys: [], changedFieldsByKey: {},
             fetchedStories: [], mergeInputs: [], epicDetailsPatch: null, epicChanged: false, epicSilent: false,
         };
         let failed = false;
@@ -74,40 +74,52 @@ export function createEpicRefreshController({
         return { result, partial: failed && okLanes > 0, changedCount, ...update };
     }
 
-    async function refresh(epicKey) {
+    async function refresh(epicKey, options = {}) {
+        const automatic = options.source === 'automatic';
+        if (automatic && !/^[A-Z][A-Z0-9_]*-\d+$/i.test(epicKey)) return { result: EPIC_REFRESH_RESULT.DISCARDED };
+        if (!automatic && inFlight.get(epicKey)?.automatic) { inFlight.get(epicKey).abort.abort(); inFlight.delete(epicKey); }
         const started = now();
         const clickGuards = readGuards(epicKey);
         const cdKey = cooldownKey(clickGuards, epicKey);
-        if (inFlight.has(epicKey) || inFlight.size >= EPIC_REFRESH.MAX_IN_FLIGHT || (cooldownUntil.get(cdKey) || 0) > started) {
+        if (inFlight.has(epicKey) || inFlight.size >= EPIC_REFRESH.MAX_IN_FLIGHT || (!automatic && (cooldownUntil.get(cdKey) || 0) > started)) {
             return { result: EPIC_REFRESH_RESULT.BLOCKED };
         }
         if (clickGuards.blocked) return { result: EPIC_REFRESH_RESULT.BLOCKED, reason: clickGuards.reason };
         const heldAtClick = readHeld(epicKey);
         const click = { snapshot: heldAtClick.snapshotByKey, epic: heldAtClick.epicDetails?.[epicKey] };
-        inFlight.add(epicKey);
-        setEpicState(epicKey, 'busy');
+        const abort = new AbortController();
+        const entry = { automatic, abort };
+        inFlight.set(epicKey, entry);
+        if (!automatic) setEpicState(epicKey, 'busy');
+        const signal = options.signal ? AbortSignal.any([abort.signal, options.signal]) : abort.signal;
+        const shouldApply = () => !signal.aborted && options.shouldApply?.() !== false
+            && sameScope(readGuards(epicKey), clickGuards) && (!automatic || !readGuards(epicKey).blocked);
         let outcome;
+        let lanes;
         try {
-            const lanes = await loadEpicRefresh({ epicKey, shouldApplyResult: () => sameScope(readGuards(epicKey), clickGuards) });
+            lanes = await loadEpicRefresh({ epicKey, automatic, signal, shouldApplyResult: shouldApply });
             const remaining = Math.max(0, EPIC_REFRESH.MIN_BUSY_MS - (now() - started));
-            if (remaining) await sleep(remaining);
-            outcome = sameScope(readGuards(epicKey), clickGuards)
-                ? await applyLanes(epicKey, lanes, click)
+            if (!automatic && remaining) await sleep(remaining);
+            outcome = shouldApply()
+                ? await applyLanes(epicKey, lanes, click, { ...options, shouldApply })
                 : { result: EPIC_REFRESH_RESULT.DISCARDED };
         } catch (error) {
+            if (automatic) throw error;
             outcome = { result: EPIC_REFRESH_RESULT.FAILURE };
         } finally {
-            inFlight.delete(epicKey);
+            lanes?.release?.();
+            if (inFlight.get(epicKey) === entry) inFlight.delete(epicKey);
         }
-        if (outcome.result !== EPIC_REFRESH_RESULT.FAILURE && outcome.result !== EPIC_REFRESH_RESULT.DISCARDED) {
+        if (!automatic && outcome.result !== EPIC_REFRESH_RESULT.FAILURE && outcome.result !== EPIC_REFRESH_RESULT.DISCARDED) {
             cooldownUntil.set(cdKey, now() + EPIC_REFRESH.COOLDOWN_MS);
         }
+        if (automatic) return { ...outcome, lanes };
         setEpicState(epicKey, outcome.result === EPIC_REFRESH_RESULT.FAILURE ? 'error' : 'idle');
         if (outcome.result !== EPIC_REFRESH_RESULT.DISCARDED) {
             announce(outcome);
             track(outcome);
         }
-        return outcome;
+        return { ...outcome, lanes, requestStartedAtMs: started };
     }
 
     return { refresh };

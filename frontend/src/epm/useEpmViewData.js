@@ -64,6 +64,9 @@ export function useEpmViewData({
     const [epmRollupLoading, setEpmRollupLoading] = useState(false);
     const [epmProjectRollupLoadingIds, setEpmProjectRollupLoadingIds] = useState(() => new Set());
     const [epmSelectedSubGoalKeys, setEpmSelectedSubGoalKeys] = useState([]);
+    const automaticProjectsRef = useRef(null);
+    const automaticRollupScopeRef = useRef('');
+    const explicitChecksRef = useRef([]);
     const epmProjectsPendingSelectionRef = useRef(false);
     const epmProjectsRequestIdRef = useRef(0);
     const epmRollupRequestIdRef = useRef(0);
@@ -100,11 +103,12 @@ export function useEpmViewData({
         setEpmProjectRollupLoadingIds(new Set());
     }, []);
 
+    const automaticScopeKey = JSON.stringify([epmTab, epmSelectedProjectId, selectedSprint, runtimeEpmSubGoalKeys]);
     const refreshEpmProjects = React.useCallback(async (options = {}) => {
         const background = Boolean(options.background);
         const tab = options.tab || epmTab;
         epmProjectsRequestIdRef.current += 1;
-        const requestId = epmProjectsRequestIdRef.current;
+        const requestId = epmProjectsRequestIdRef.current, requestStartedAtMs = Date.now();
         if (!background) {
             epmProjectsPendingSelectionRef.current = true;
         }
@@ -116,6 +120,7 @@ export function useEpmViewData({
                 return [];
             }
             const nextProjects = Array.isArray(payload.projects) ? payload.projects : [];
+            explicitChecksRef.current.push({ source: 'epm_projects', status: 'ok', checkKind: payload.cacheHit === false ? 'forced' : payload.cacheHit === true ? 'cached' : 'unknown', coverage: 'unknown', requestStartedAtMs: requestStartedAtMs });
             setEpmProjects(nextProjects);
             return nextProjects;
         } catch (err) {
@@ -185,7 +190,7 @@ export function useEpmViewData({
         }
         epmRollupRetryAfterProjectsRef.current = false;
         epmRollupRequestIdRef.current += 1;
-        const requestId = epmRollupRequestIdRef.current;
+        const requestId = epmRollupRequestIdRef.current, requestStartedAtMs = Date.now();
         setEpmProjectRollupLoadingIds(new Set());
         if (epmSelectedProjectId === '' && currentProjectId === '') {
             setEpmRollupLoading(true);
@@ -198,6 +203,7 @@ export function useEpmViewData({
                 if (epmRollupRequestIdRef.current !== requestId) {
                     return;
                 }
+                explicitChecksRef.current.push({ source: 'epm_rollup', status: 'ok', checkKind: 'unknown', coverage: 'unknown', requestStartedAtMs });
                 const aggregate = buildAggregateRollupBoards(payload);
                 setEpmRollupTree(null);
                 setEpmRollupBoards(aggregate.boards);
@@ -255,6 +261,7 @@ export function useEpmViewData({
             if (epmRollupRequestIdRef.current !== requestId) {
                 return;
             }
+            explicitChecksRef.current.push({ source: 'epm_rollup', status: 'ok', checkKind: 'unknown', coverage: 'unknown', requestStartedAtMs });
             setEpmRollupTree(buildRollupTree(payload));
             setEpmRollupBoards(null);
             setEpmDuplicates({});
@@ -332,7 +339,57 @@ export function useEpmViewData({
         }
     }, [backendUrl, epmProjectRollupLoadingIds, epmRollupBoards, epmTab, onHomeTokenRequired, onServerConnectionFailure, runtimeEpmSubGoalKeys, selectedSprint]);
 
-    const refreshEpmView = React.useCallback(async () => {
+    const refreshEpmView = React.useCallback(async (options = {}) => {
+        const job = options.job;
+        if (job) {
+            const started = Date.now(), checks = [], editState = options.issueEditState;
+            const token = editState?.beginRead({ aggregate: true });
+            const current = () => job.shouldApply() && !job.signal.aborted && (!editState || editState.isCurrentAggregateRead(token));
+            const check = (source, status, checkKind = 'unknown') => ({ source, status, checkKind, coverage: 'unknown', requestStartedAtMs: started, retryAtMs: null });
+            try {
+                if (!current() || !epmConfigLoaded || !hasSavedEpmScope || (epmTab === 'active' && !selectedSprint)) return job.pendingSources.map(source => check(source, 'ignored'));
+                const requestOptions = { tab: epmTab, subGoalKeys: runtimeEpmSubGoalKeys, signal: job.signal, suppressAbortResult: true };
+                const metadata = job.pendingSources.includes('epm_projects') ? await fetchEpmProjects(backendUrl, requestOptions) : { projects: epmProjects };
+                if (!metadata || !Array.isArray(metadata.projects)) throw new Error('EPM metadata returned no project list');
+                if (!current()) return job.pendingSources.map(source => check(source, 'ignored'));
+                if (job.pendingSources.includes('epm_projects')) checks.push(check('epm_projects', 'ok', metadata.cacheHit === false ? 'forced' : metadata.cacheHit === true ? 'cached' : 'unknown'));
+                const project = filterEpmProjectsForTab(metadata.projects, epmTab).find(value => getEpmProjectIdentity(value) === epmSelectedProjectId);
+                const selectedProjectRemoved = Boolean(epmSelectedProjectId && !project);
+                const payload = job.pendingSources.includes('epm_rollup') && !selectedProjectRemoved
+                    ? epmSelectedProjectId ? await fetchEpmProjectRollup(backendUrl, epmSelectedProjectId, { ...requestOptions, sprint: selectedSprint })
+                        : await fetchEpmAllProjectsRollup(backendUrl, { ...requestOptions, sprint: selectedSprint }) : null;
+                if (job.pendingSources.includes('epm_rollup') && !selectedProjectRemoved && (!payload || typeof payload !== 'object')) throw new Error('EPM rollup returned no data');
+                if (!current()) return job.pendingSources.map(source => check(source, 'ignored'));
+                const aggregate = !epmSelectedProjectId && payload ? buildAggregateRollupBoards(payload) : null;
+                if (aggregate) {
+                    const members = new Map(filterEpmProjectsForTab(metadata.projects, epmTab).map(value => [getEpmProjectIdentity(value), value]));
+                    aggregate.boards = aggregate.boards.filter(board => members.has(getEpmProjectIdentity(board.project))).map(board => ({ ...board, project: members.get(getEpmProjectIdentity(board.project)) }));
+                    aggregate.duplicates = Object.fromEntries(Object.entries(aggregate.duplicates).map(([key, ids]) => [key, Array.isArray(ids) ? ids.filter(id => members.has(String(id))) : []]).filter(([, ids]) => ids.length > 1));
+                }
+                const tree = epmSelectedProjectId && payload ? buildRollupTree(payload) : null;
+                options.beforeCommit?.(aggregate ? aggregate.boards : [{ project, tree }]);
+                // Record the accepted array so its selection effect cannot start a duplicate read or reset the held selection.
+                automaticProjectsRef.current = metadata.projects;
+                automaticRollupScopeRef.current = automaticScopeKey;
+                if (job.pendingSources.includes('epm_projects')) setEpmProjects(metadata.projects);
+                if (job.pendingSources.includes('epm_rollup')) {
+                    setEpmRollupTree(tree);
+                    setEpmRollupBoards(aggregate ? aggregate.boards : null);
+                    setEpmDuplicates(aggregate ? aggregate.duplicates : {});
+                    setEpmAggregateTruncated(Boolean(aggregate?.truncated));
+                    setEpmAggregateFallback(Boolean(aggregate?.fallback));
+                    checks.push(check('epm_rollup', selectedProjectRemoved ? 'denied' : 'ok'));
+                }
+                return checks;
+            } catch (error) {
+                if (isAuthenticationRequiredError(error)) throw error;
+                const status = !current() ? 'ignored' : isHomeTokenRequiredError(error) ? 'denied' : error.status === 429 ? 'rate_limited' : 'failed';
+                // Metadata and rollup are one commit; an unsuccessful stage cannot publish a partial project array.
+                return job.pendingSources.map(source => check(source, status));
+            } finally { if (token) editState.finishRead(token); }
+        }
+        automaticProjectsRef.current = null;
+        explicitChecksRef.current = [];
         if (!epmConfigLoaded) {
             setEpmProjectsLoading(false);
             setEpmRollupLoading(false);
@@ -356,7 +413,7 @@ export function useEpmViewData({
                 throw err;
             }
             await refreshEpmRollup(null, '');
-            return;
+            return explicitChecksRef.current;
         }
         let nextProjects;
         try {
@@ -368,7 +425,8 @@ export function useEpmViewData({
         const nextVisibleProjects = filterEpmProjectsForTab(nextProjects, epmTab);
         const nextSelectedProject = nextVisibleProjects.find((project) => getEpmProjectIdentity(project) === epmSelectedProjectId) || null;
         await refreshEpmRollup(nextSelectedProject, epmSelectedProjectId);
-    }, [epmConfigLoaded, epmSelectedProjectId, epmTab, hasSavedEpmScope, refreshEpmProjects, refreshEpmRollup, runtimeEpmSubGoalKeys]);
+        return explicitChecksRef.current;
+    }, [backendUrl, epmProjects, epmConfigLoaded, epmSelectedProjectId, epmTab, hasSavedEpmScope, refreshEpmProjects, refreshEpmRollup, runtimeEpmSubGoalKeys]);
 
     useEffect(() => {
         setEpmSelectedSubGoalKeys((prev) => {
@@ -388,6 +446,7 @@ export function useEpmViewData({
             setEpmProjects([]);
             return;
         }
+        automaticProjectsRef.current = null;
         void refreshEpmView();
     }, [selectedView, epmConfigLoaded, hasSavedEpmScope, epmSelectedProjectId, epmTab, runtimeEpmSubGoalKeys]);
 
@@ -395,12 +454,14 @@ export function useEpmViewData({
         if (selectedView !== 'epm') return;
         if (!epmSelectedProjectId) return;
         if (epmProjectsPendingSelectionRef.current) return;
+        if (automaticProjectsRef.current === epmProjects) return;
         if (!selectedEpmProject) {
             setEpmSelectedProjectId('');
         }
     }, [selectedView, epmSelectedProjectId, selectedEpmProject]);
 
     useEffect(() => {
+        if (automaticProjectsRef.current === epmProjects && automaticRollupScopeRef.current === automaticScopeKey) return;
         void refreshEpmRollup();
     }, [selectedView, epmConfigLoaded, hasSavedEpmScope, epmSelectedProjectId, selectedEpmProject, epmTab, runtimeEpmSubGoalKeys, selectedSprint]);
 

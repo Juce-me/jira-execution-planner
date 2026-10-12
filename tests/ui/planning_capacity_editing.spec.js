@@ -1785,3 +1785,39 @@ for (const teamCount of [1, 6, 7]) {
         await captureCapacityScreenshot(page, testInfo, `capacity-geometry-${teamCount}-mobile-edit`);
     });
 }
+
+test('automatic Planning capacity editor defers primary work and cancels a late guarded capacity read', async ({ page }) => {
+    const { installLifecycleControl, deferred } = require('./eng_epic_refresh_fixture'); const lifecycle = await installLifecycleControl(page);
+    const { calls, state } = await openPlanning(page, { prefs: { planningLayout: 'table' } });
+    await page.route('**/api/eng/sprints/*/review', route => json(route, { schemaRevision: 1, columns: [], layouts: {}, capabilities: { canRead: true, canSave: true } }));
+    await page.route('**/api/eng/sprints/*/review/values/read', route => json(route, { cells: [], unavailableIssueIds: [] }));
+    await page.waitForLoadState('networkidle');
+    await page.getByRole('button', { name: 'Show panel', exact: true }).click();
+    const card = page.locator('.planning-team-capacity-cards .team-stat-card').filter({ hasText: 'Alpha' });
+    await card.hover();
+    await card.getByRole('button', { name: 'Edit Alpha capacity', exact: true }).click(); const input = card.getByRole('spinbutton', { name: 'Alpha Jira total planned capacity' }); await input.fill('37');
+    await page.screenshot({ path: 'tmp/freshness-251/task-7-capacity-editor-before.png', animations: 'disabled' });
+    const since = calls.length; await lifecycle.returnAfter(13 * 60000); await page.waitForTimeout(200);
+    expect(calls.slice(since).filter(call => call.pathname === '/api/tasks-with-team-name')).toHaveLength(0); await expect(input).toHaveValue('37'); await expect(input).toBeFocused();
+    await page.screenshot({ path: 'tmp/freshness-251/task-7-capacity-editor-held-after.png', animations: 'disabled' });
+    const gate = deferred(); state.capacityGetGate = gate.promise;
+    await card.getByRole('button', { name: 'Cancel Alpha capacity edit', exact: true }).click();
+    await expect.poll(() => capacityCalls(calls.slice(since), 'GET').length).toBe(1);
+    state.capacityPayload.capacities.Alpha = 999; await lifecycle.setState('hidden'); gate.resolve(); await page.waitForTimeout(200);
+    await expect(card).not.toContainText('999'); await expect(card.getByRole('button', { name: 'Edit Alpha capacity', exact: true })).toBeEnabled();
+    expect(capacityCalls(calls.slice(since), 'PATCH')).toHaveLength(0);
+});
+
+for (const status of [429, 500, 401]) test(`automatic Planning capacity ${status} holds clean values and never replays`, async ({ page }) => {
+    const { installLifecycleControl } = require('./eng_epic_refresh_fixture'); const lifecycle = await installLifecycleControl(page);
+    const { calls, state } = await openPlanning(page, { prefs: { planningLayout: 'table' } });
+    await page.route('**/api/eng/sprints/*/review', route => json(route, { schemaRevision: 1, columns: [], layouts: {}, capabilities: { canRead: true, canSave: true } }));
+    await page.route('**/api/eng/sprints/*/review/values/read', route => json(route, { cells: [], unavailableIssueIds: [] }));
+    await page.getByRole('button', { name: 'Show panel', exact: true }).click();
+    const card = page.locator('.planning-team-capacity-cards .team-stat-card').filter({ hasText: 'Alpha' }); await card.hover();
+    await expect(card.getByRole('button', { name: 'Edit Alpha capacity', exact: true })).toBeEnabled(); await page.waitForLoadState('networkidle');
+    state.capacityGetStatus = status; const since = calls.length; await lifecycle.returnAfter(13 * 60000); await expect.poll(() => capacityCalls(calls.slice(since), 'GET').length).toBe(1);
+    if (status === 401) { await expect(page.getByRole('alertdialog').getByRole('link', { name: 'Sign in again', exact: true })).toBeVisible(); await lifecycle.returnAfter(24 * 60 * 60000); await page.waitForTimeout(150); expect(capacityCalls(calls.slice(since), 'GET')).toHaveLength(1); }
+    else { await page.waitForTimeout(150); await expect(card.getByRole('button', { name: 'Edit Alpha capacity', exact: true })).toBeEnabled(); await expect(page.getByText('Capacity could not be refreshed. Retry before editing.', { exact: true })).toHaveCount(0); }
+    expect(capacityCalls(calls.slice(since), 'PATCH')).toHaveLength(0);
+});

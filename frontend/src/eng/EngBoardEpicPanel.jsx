@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { projectEngReadingOrder } from './engReadingAnchor.js';
 import { isAuthenticationRequiredError } from '../api/authRequired.js';
 import StatusPill from '../ui/StatusPill.jsx';
 import StatusTransitionMenu from '../issues/StatusTransitionMenu.jsx';
@@ -54,13 +55,16 @@ export default function EngBoardEpicPanel({
     workItemLabelSingular = 'story',
     onSubmitStatusTransition,
     issueFieldEdits = null,
+    onSortChange,
     onClose,
 }) {
     const epic = (epicGroup && epicGroup.epic) || {};
     const epicKey = (epicGroup && epicGroup.key) || epic.key || '';
     const summary = epic.summary || epicKey;
     const tasks = (epicGroup && epicGroup.tasks) || [];
-    const progress = epicGroup.childProgress || computeEpicStoryProgress(tasks);
+    const privateKeys = epicGroup.readingDepartureKeys;
+    const canonicalTasks = Array.isArray(privateKeys) ? tasks.filter(task => !privateKeys.includes(task.key)) : tasks;
+    const progress = epicGroup.childProgress || computeEpicStoryProgress(canonicalTasks);
     const incomplete = Boolean(epicGroup.childrenIncomplete);
     const loading = Boolean(epicGroup.childrenLoading);
     const storyPoints = (((epicGroup && epicGroup.storyPoints) || 0)).toFixed(1);
@@ -89,8 +93,8 @@ export default function EngBoardEpicPanel({
 
     const statusOrder = React.useMemo(() => buildPanelStatusOrder(columns), [columns]);
     const rows = React.useMemo(
-        () => sortPanelStories(tasks, { sort, statusOrder }),
-        [tasks, sort, statusOrder],
+        () => projectEngReadingOrder(sortPanelStories(tasks, { sort, statusOrder }), epicGroup.readingStoryKeys),
+        [tasks, sort, statusOrder, epicGroup.readingStoryKeys],
     );
 
     // Lazily, one issue per opened panel, through the session cache — so a second open of the
@@ -415,7 +419,7 @@ export default function EngBoardEpicPanel({
                             <span className="m-sec-label">{workItemLabel[0].toUpperCase() + workItemLabel.slice(1)} in scope</span>
                             <span className="m-sec-label">
                                 {incomplete ? (loading ? 'Loading…' : 'Incomplete')
-                                    : `${rows.length} ${rows.length === 1 ? workItemLabelSingular : workItemLabel} · ${storyPoints} sp`}
+                                    : `${canonicalTasks.length} ${canonicalTasks.length === 1 ? workItemLabelSingular : workItemLabel} · ${storyPoints} sp`}
                             </span>
                             <span className="spacer" />
                             <div
@@ -449,12 +453,13 @@ export default function EngBoardEpicPanel({
                                                     className={`sprint-dropdown-option ${sort === option.value ? 'selected' : ''}`}
                                                     role="button"
                                                     tabIndex={0}
-                                                    onClick={() => { setSort(option.value); setSortOpen(false); }}
+                                                    onClick={() => { setSort(option.value); setSortOpen(false); onSortChange?.(); }}
                                                     onKeyDown={(event) => {
                                                         if (event.key === 'Enter' || event.key === ' ') {
                                                             event.preventDefault();
                                                             setSort(option.value);
                                                             setSortOpen(false);
+                                                            onSortChange?.();
                                                         }
                                                     }}
                                                 >
@@ -492,7 +497,7 @@ export default function EngBoardEpicPanel({
                                         target="_blank"
                                         rel="noopener noreferrer"
                                     >
-                                        {task?.fields?.summary || task.key}
+                                        {privateKeys?.includes(task.key) && 'Outside scope · '}{task?.fields?.summary || task.key}
                                     </a>
                                     {renderStoryStatus(task)}
                                     <span className="story-subtask-assignee">{renderPersonEditor(task, 'Story', 'assignee', 'Assignee', task?.fields?.assignee)}</span>

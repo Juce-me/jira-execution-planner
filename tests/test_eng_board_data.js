@@ -1302,3 +1302,229 @@ test('sync throws and rejected promises from every optional Board observer stay 
         }
     }
 });
+
+for (const terminal of ['complete', 'column_error', 'partial_error', 'scope_too_large', 'deadline_exceeded', 'scope_changed', 'network', 'blur']) {
+    test(`automatic Board ${terminal} stages silently and commits only accepted complete data`, async () => {
+        const mod = loadModule();
+        let release, current, call = 0, applicable = true;
+        const owner = mod.createEngBoardDataOwner({ streamBoard: async options => {
+            current = options;
+            const generation = `auto-${++call}`;
+            options.onFrame(start(generation));
+            options.onFrame(frame(generation, 1, 'index', { epics: [epic('SYN-1')], membership: 'candidate' }));
+            if (call > 1) await new Promise(resolve => { release = resolve; });
+            if (call > 1 && terminal === 'network') throw new Error('offline');
+            if (call > 1 && ['scope_too_large', 'deadline_exceeded', 'scope_changed'].includes(terminal)) {
+                options.onFrame(frame(generation, 2, 'error', { code: terminal })); return;
+            }
+            const failed = call > 1 && ['column_error', 'partial_error'].includes(terminal);
+            options.onFrame(frame(generation, 2, failed ? 'column_error' : 'column', failed
+                ? { columnId: 'todo', code: 'jira_unavailable', retryable: true }
+                : { columnId: 'todo', epics: [{ ...epic('SYN-1'), summary: call > 1 ? 'new' : 'held' }], children: [], authoritative: true }));
+            options.onFrame(frame(generation, 3, 'complete', { outcome: failed ? 'partial_error' : 'success', failedColumnIds: failed ? ['todo'] : [], epicCount: 1, childCount: 0 }));
+        } });
+        owner.selectGroup('synthetic', 42, 'r1'); await owner.load();
+        const held = owner.getState();
+        const pending = owner.refresh({ source: 'automatic', shouldApply: () => applicable });
+        assert.equal(owner.getState().status, held.status);
+        assert.equal(owner.getState().error, held.error);
+        assert.equal(owner.getState().working, held.working);
+        assert.equal(owner.getState().staleSnapshot, held.staleSnapshot);
+        if (terminal === 'blur') applicable = false;
+        release(); const outcome = await pending;
+        if (terminal === 'complete') {
+            assert.equal(outcome, 'success'); assert.equal(owner.getState().working.epicsByKey['SYN-1'].summary, 'new');
+        } else {
+            assert.notEqual(outcome, 'success'); assert.deepEqual(owner.getState(), held);
+        }
+        assert.equal(current.refresh, true);
+    });
+}
+
+test('automatic token rotation accepts equal cohort, changed cohort fails without publishing', async () => {
+    const mod = loadModule();
+    const publications = [];
+    let call = 0, changeCohort = false;
+    const owner = mod.createEngBoardDataOwner({ createMeasurement: () => ({ finish: sample => publications.push(sample), retire() {} }),
+        streamBoard: async options => {
+            const generation = `cohort-${++call}`;
+            options.onFrame({ ...start(generation, `token-${call}`), scopeCohortDigest: (changeCohort ? 'b' : 'a').repeat(64) });
+            options.onFrame(frame(generation, 1, 'index', { epics: [epic('SYN-1')], membership: 'candidate' }));
+            options.onFrame(frame(generation, 2, 'column', { columnId: 'todo', epics: [epic('SYN-1')], children: [], authoritative: true }));
+            options.onFrame(frame(generation, 3, 'complete', { outcome: 'success', epicCount: 1, childCount: 0 }));
+        } });
+    owner.selectGroup('synthetic', 42, 'r1'); await owner.load();
+    assert.equal(await owner.refresh({ source: 'automatic' }), 'success');
+    assert.equal(owner.getState().working.scopeVersion, 'token-2');
+    assert.equal(publications.length, 1, 'only the initial manual load records performance');
+    const held = owner.getState(), count = publications.length;
+    changeCohort = true;
+    assert.equal(await owner.refresh({ source: 'automatic' }), 'error');
+    assert.deepEqual(owner.getState(), held);
+    assert.equal(publications.length, count);
+});
+
+for (const retireAt of ['start', 'index', 'progress', 'column', 'complete']) {
+    test(`automatic retirement before delayed ${retireAt} frame preserves snapshot and measurement`, async () => {
+        const mod = loadModule();
+        let call = 0, applicable = true, published = 0;
+        const owner = mod.createEngBoardDataOwner({ createMeasurement: () => ({ finish() { published++; }, retire() {} }),
+            streamBoard: async options => {
+                const generation = `frame-${++call}`;
+                const frames = [start(generation), frame(generation, 1, 'index', { epics: [epic('SYN-1')], membership: 'candidate' }),
+                    frame(generation, 2, 'progress', { columnId: 'todo', loadedChildren: 0, byEpic: [] }),
+                    frame(generation, 3, 'column', { columnId: 'todo', epics: [epic('SYN-1')], children: [], authoritative: true }),
+                    frame(generation, 4, 'complete', { outcome: 'success', epicCount: 1, childCount: 0 })];
+                for (const value of frames) {
+                    if (call > 1 && value.type === retireAt) applicable = false;
+                    await Promise.resolve(); options.onFrame(value);
+                }
+            } });
+        owner.selectGroup('synthetic', 42, 'r1'); await owner.load();
+        const held = owner.getState(), count = published;
+        assert.equal(await owner.refresh({ source: 'automatic', shouldApply: () => applicable }), 'ignored');
+        assert.deepEqual(owner.getState(), held); assert.equal(published, count);
+    });
+}
+
+for (const authMode of ['frame', 'rejected']) {
+    test(`automatic retired ${authMode} authentication remains terminal`, async () => {
+        const mod = loadModule(); let call = 0, applicable = true, terminal = 0;
+        const owner = mod.createEngBoardDataOwner({ onAuthRequired: () => { terminal++; }, streamBoard: async options => {
+            const generation = `auth-${++call}`;
+            options.onFrame(start(generation));
+            if (call > 1) {
+                applicable = false;
+                if (authMode === 'rejected') throw Object.assign(new Error('reauth'), { status: 401 });
+                options.onFrame(frame(generation, 1, 'error', { code: 'auth_required' })); return;
+            }
+            options.onFrame(frame(generation, 1, 'index', { epics: [], membership: 'candidate' }));
+            options.onFrame(frame(generation, 2, 'column', { columnId: 'todo', epics: [], children: [], authoritative: true }));
+            options.onFrame(frame(generation, 3, 'complete', { outcome: 'success', epicCount: 0, childCount: 0 }));
+        } });
+        owner.selectGroup('synthetic', 42, 'r1'); await owner.load();
+        await owner.refresh({ source: 'automatic', shouldApply: () => applicable });
+        assert.equal(terminal, 1); assert.equal(owner.getState().status, 'auth_locked');
+        assert.equal(owner.getState().error.code, 'auth_required');
+        assert.equal(await owner.refresh(), 'ignored');
+    });
+}
+
+test('automatic reads never create a measurement even when their final guard retires', async () => {
+    const mod = loadModule(); let call = 0, applicable = true, retired = 0, published = 0;
+    const owner = mod.createEngBoardDataOwner({ createMeasurement: () => ({ retire() { retired++; }, finish() { published++; } }),
+        streamBoard: async options => {
+            const generation = `late-guard-${++call}`;
+            options.onFrame(start(generation));
+            options.onFrame(frame(generation, 1, 'index', { epics: [], membership: 'candidate' }));
+            options.onFrame(frame(generation, 2, 'column', { columnId: 'todo', epics: [], children: [], authoritative: true }));
+            options.onFrame(frame(generation, 3, 'complete', { outcome: 'success', epicCount: 0, childCount: 0 }));
+            if (call > 1) applicable = false;
+        } });
+    owner.selectGroup('synthetic', 42, 'r1'); await owner.load();
+    const held = owner.getState();
+    assert.equal(await owner.refresh({ source: 'automatic', shouldApply: () => applicable }), 'ignored');
+    assert.deepEqual(owner.getState(), held); assert.equal(published, 1); assert.equal(retired, 0);
+});
+
+test('Board private origins purge cumulative denial and retain actual remaining lane support', () => {
+    const target = path.resolve('frontend/src/eng/EngBoardView.jsx');
+    const bundle = esbuild.buildSync({ entryPoints: [target], bundle: true, write: false, format: 'cjs', platform: 'node', external: ['react', 'react-dom'] });
+    const mod = new Module(target, module); mod.paths = Module._nodeModulePaths(path.dirname(target)); mod._compile(bundle.outputFiles[0].text, target);
+    const reconcile = mod.exports.reconcileBoardReadingSupport;
+    const story = { key: 'SYN-2', fields: { epicKey: 'SYN-1' } };
+    const state = { loadedProductTasks: [story], loadedTechTasks: [story] };
+    let held = reconcile({ group: { key: 'SYN-1', tasks: [story] }, origins: {} }, { state });
+    assert.deepEqual(held.origins['SYN-2'], ['product', 'tech']);
+    held = reconcile(held, { state, deniedLanes: ['product'] });
+    assert.deepEqual(held.origins['SYN-2'], ['tech']);
+    assert.equal(reconcile(held, { state: { loadedProductTasks: [], loadedTechTasks: [] }, deniedLanes: ['tech'] }), null);
+    assert.equal(reconcile({ group: { key: 'SYN-1', tasks: [story] }, origins: {} }, { state: { loadedProductTasks: [story] }, deniedLanes: ['product'] }), null);
+    const restored = reconcile(held, { state: {}, acceptedSourceKeys: { product: ['SYN-1', 'SYN-2'] } });
+    assert.deepEqual(restored.origins['SYN-2'], ['tech', 'product']);
+    const noEpic = { key: 'SYN-3', fields: {} };
+    const group = { key: 'SYN-1', tasks: [noEpic] };
+    const privateStory = reconcile({ group, origins: {} }, { state: { productEpicsInScope: [{ key: 'SYN-1' }], loadedProductTasks: [noEpic] } });
+    assert.equal(reconcile(privateStory, { state: {}, deniedIssueKeys: ['SYN-3'] }).group.tasks.length, 0);
+    assert.equal(reconcile(privateStory, { state: {}, deniedLanes: ['product'] }), null);
+});
+
+test('explicit automatic strict Board permission denial purges data without manual error banners', async () => {
+    const mod = loadModule(); let call = 0;
+    const owner = mod.createEngBoardDataOwner({ streamBoard: async options => {
+        if (++call > 1) throw Object.assign(new Error('denied'), { status: 403, code: 'board_permission_denied' });
+        options.onFrame(start('denied')); options.onFrame(frame('denied', 1, 'index', { epics: [epic('SYN-1')], membership: 'candidate' }));
+        options.onFrame(frame('denied', 2, 'column', { columnId: 'todo', epics: [epic('SYN-1')], children: [], authoritative: true }));
+        options.onFrame(frame('denied', 3, 'complete', { outcome: 'success', epicCount: 1, childCount: 0 }));
+    } });
+    owner.selectGroup('synthetic', 42, 'r1'); await owner.load();
+    assert.equal(await owner.refresh({ source: 'automatic' }), 'denied');
+    assert.deepEqual(owner.getState().working.epicsByKey, {}); assert.deepEqual(owner.getState().snapshots, {});
+    assert.equal(owner.getState().status, 'success'); assert.equal(owner.getState().error, null);
+});
+
+for (const explicit of [true,false]) {
+    test(`automatic ${explicit?'full-scope permission denial':'generic 403'} signals only exact current scope denial`,async()=>{
+        const mod=loadModule();let observation,call=0;
+        const owner=mod.createEngBoardDataOwner({beforeCommit:(_data,_guard,_keys,next)=>{observation=next;},streamBoard:async options=>{
+            if(++call>1)throw Object.assign(new Error('Synthetic denied'),{status:403,code:explicit?'board_permission_denied':'jira_forbidden'});
+            options.onFrame(start('scope-denial'));options.onFrame(frame('scope-denial',1,'index',{epics:[],membership:'authoritative'}));
+            options.onFrame(frame('scope-denial',2,'column',{columnId:'todo',epics:[],children:[],authoritative:true}));
+            options.onFrame(frame('scope-denial',3,'complete',{outcome:'success',epicCount:0,childCount:0}));
+        }});owner.selectGroup('synthetic',42,'r1');await owner.load();
+        await owner.refresh({source:'automatic'});
+        assert.equal(Boolean(observation?.scopeDenied),explicit);
+    });
+}
+
+test('deactivating during automatic Board read resets load eligibility for same-scope return', async () => {
+    const mod = loadModule(); let call = 0, release;
+    const owner = mod.createEngBoardDataOwner({ streamBoard: async options => {
+        const generation = `return-${++call}`;
+        if (call === 2) await new Promise(resolve => { release = resolve; });
+        options.onFrame(start(generation));
+        options.onFrame(frame(generation, 1, 'index', { epics: [], membership: 'candidate' }));
+        options.onFrame(frame(generation, 2, 'column', { columnId: 'todo', epics: [], children: [], authoritative: true }));
+        options.onFrame(frame(generation, 3, 'complete', { outcome: 'success', epicCount: 0, childCount: 0 }));
+    } });
+    owner.selectGroup('synthetic', 42, 'r1'); await owner.load();
+    const pending = owner.refresh({ source: 'automatic' }); owner.retire(); release();
+    assert.equal(await pending, 'ignored');
+    assert.equal(owner.selectGroup('synthetic', 42, 'r1'), false);
+    assert.equal(owner.getState().status, 'idle');
+    assert.equal(await owner.load(), 'success'); assert.equal(call, 3);
+});
+
+test('automatic Board protocol failure settles as error while retaining accepted data', async () => {
+    const mod = loadModule(); let call = 0, measurements = 0;
+    const owner = mod.createEngBoardDataOwner({ createMeasurement: () => { measurements++; return {}; }, streamBoard: async options => {
+        const generation = `protocol-${++call}`; options.onFrame(start(generation));
+        options.onFrame(frame(generation, call > 1 ? 99 : 1, 'index', { epics: [], membership: 'candidate' }));
+        if (call > 1) return;
+        options.onFrame(frame(generation, 2, 'column', { columnId: 'todo', epics: [], children: [], authoritative: true }));
+        options.onFrame(frame(generation, 3, 'complete', { outcome: 'success', epicCount: 0, childCount: 0 }));
+    } });
+    owner.selectGroup('synthetic', 42, 'r1'); await owner.load(); const held = owner.getState();
+    assert.equal(await owner.refresh({ source: 'automatic' }), 'error');
+    assert.deepEqual(owner.getState(), held); assert.equal(measurements, 1);
+});
+
+test('automatic Board read requested during a manual load is ignored and leaves the manual load to finish', async () => {
+    const mod = loadModule(); let call = 0, release;
+    const owner = mod.createEngBoardDataOwner({ streamBoard: async options => {
+        const generation = `manual-${++call}`;
+        if (call === 1) await new Promise(resolve => { release = resolve; });
+        options.onFrame(start(generation));
+        options.onFrame(frame(generation, 1, 'index', { epics: [], membership: 'candidate' }));
+        options.onFrame(frame(generation, 2, 'column', { columnId: 'todo', epics: [], children: [], authoritative: true }));
+        options.onFrame(frame(generation, 3, 'complete', { outcome: 'success', epicCount: 0, childCount: 0 }));
+    } });
+    owner.selectGroup('synthetic', 42, 'r1');
+    const manual = owner.load();
+    assert.equal(owner.getState().status, 'loading');
+    assert.equal(await owner.refresh({ source: 'automatic' }), 'ignored');
+    assert.equal(call, 1, 'automatic read must not start a second stream');
+    release();
+    assert.equal(await manual, 'success');
+    assert.notEqual(owner.getState().status, 'loading');
+});

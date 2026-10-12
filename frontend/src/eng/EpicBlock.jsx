@@ -353,6 +353,7 @@ export function EpicBlock({
                     <IssueCard
                         key={task.key}
                         task={task}
+                        readingDeparture={row.readingDeparture === true}
                         jiraUrl={jiraUrl}
                         teamInfo={teamInfo}
                         teamLabel={teamLabel}

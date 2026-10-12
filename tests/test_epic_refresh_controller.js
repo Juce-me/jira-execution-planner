@@ -260,3 +260,10 @@ test('a strict Board session makes no request and reports both lanes ignored', a
     assert.deepEqual(probe.lanes, { product: { status: 'ignored' }, tech: { status: 'ignored' } });
     assert.equal(probe.started.length, 0);
 });
+test('automatic admission shares slots but has no floor, cooldown, busy, announcement or adoption', async () => {
+    const h = harness();
+    const result = await h.controller.refresh('EPIC-1', { source: 'automatic', shouldApply: () => true, deferFollowUps: true });
+    assert.notEqual(result.result, EPIC_REFRESH_RESULT.BLOCKED);
+    assert.deepEqual(h.calls.states, []); assert.deepEqual(h.calls.announced, []); assert.deepEqual(h.calls.tracked, []);
+    assert.equal((await h.controller.refresh('EPIC-1', { source: 'automatic', shouldApply: () => true })).result === EPIC_REFRESH_RESULT.BLOCKED, false);
+});

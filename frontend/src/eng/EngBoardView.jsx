@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { restoreEngReadingAnchor, projectEngEpicOrder, projectEngReadingOrder } from './engReadingAnchor.js';
 import { isAuthenticationRequiredError } from '../api/authRequired.js';
 import { createPortal } from 'react-dom';
 import {
@@ -69,6 +70,34 @@ function breachText(breach) {
         : `${breach.by} under min ${breach.limit}`;
 }
 
+// Private presentation support comes only from observed lane membership, never issue naming.
+export function reconcileBoardReadingSupport(record, observation) {
+    if (!record || !observation) return record;
+    if (observation.scopeDenied) return null;
+    const support = {};
+    for (const lane of ['product', 'tech']) {
+        const title = lane === 'product' ? 'Product' : 'Tech';
+        support[lane] = new Set([...(observation.state?.[`${lane}Tasks`] || []),
+            ...(observation.state?.[`loaded${title}Tasks`] || []), ...(observation.state?.[`${lane}EpicsInScope`] || [])]
+            .flatMap(item => [item.key, item.fields?.epicKey].filter(Boolean)));
+    }
+    const origins = {}, previousSupport = {};
+    for (const key of [record.group.key, ...(record.group.tasks || []).map(task => task.key)]) {
+        const lanes = new Set(record.origins?.[key] || ['product', 'tech'].filter(lane => support[lane].has(key)));
+        previousSupport[key] = lanes.size;
+        for (const lane of ['product', 'tech']) {
+            if (observation.deniedLanes?.includes(lane)) lanes.delete(lane);
+            else if (support[lane].has(key) || observation.acceptedSourceKeys?.[lane]?.includes(key)) lanes.add(lane);
+        }
+        origins[key] = [...lanes];
+    }
+    if (observation.deniedEpicKeys?.includes(record.group.key) || observation.deniedIssueKeys?.includes(record.group.key)
+        || (previousSupport[record.group.key] && !origins[record.group.key].length)) return null;
+    const tasks = (record.group.tasks || []).filter(task => !observation.deniedIssueKeys?.includes(task.key)
+        && !(previousSupport[task.key] && !origins[task.key].length));
+    return { ...record, group: { ...record.group, tasks }, origins };
+}
+
 export default function EngBoardView({
     board = null, epicGroups = [], view = null, onViewChange, onConfigure, renderPriorityIcon,
     engFilters, onFacetChange, jiraUrl = '', backendUrl = '', transitionsEnabled = false,
@@ -77,16 +106,24 @@ export default function EngBoardView({
     statusTransitionSubmitting = false, onSubmitStatusTransition, onFilterBarHeightChange,
     loading = false, error = null, onRetry,
     strictColumns = null, authorityPending = false, stale = false,
-    onResolvedFocusChange,
+    onResolvedFocusChange, freshnessBridge, onInteractionChange,
 }) {
     const statusStyle = useStatusColourStyle();
+    const boardPresentationRef = React.useRef(null);
+    const [readingRevision, setReadingRevision] = React.useState(0);
+    const projectColumns = values => values.map(column => {
+        const pin = boardPresentationRef.current;
+        if (!pin) return column;
+        return { ...column, epicGroups: projectEngEpicOrder(column.epicGroups.map(group => group.key === pin.epicKey
+            ? { ...group, readingStoryKeys: pin.storyKeys, tasks: projectEngReadingOrder(group.tasks || [], pin.storyKeys) } : group), pin.epicKey, column.id === pin.columnId ? pin.slot : null) };
+    });
     const columns = React.useMemo(
         () => {
             if (!Array.isArray(strictColumns)) {
-                return buildBoardColumns({ columns: board?.columns || [], epicGroups });
+                return projectColumns(buildBoardColumns({ columns: board?.columns || [], epicGroups }));
             }
             const admitted = new Set(epicGroups.map((group) => group.key));
-            return strictColumns.map((column) => {
+            return projectColumns(strictColumns.map((column) => {
                 const visibleGroups = column.epicGroups.filter((group) => admitted.has(group.key));
                 return {
                     ...column,
@@ -96,9 +133,9 @@ export default function EngBoardView({
                         (total, group) => total + (Number(group.storyPoints) || 0), 0,
                     ),
                 };
-            });
+            }));
         },
-        [board, epicGroups, strictColumns],
+        [board, epicGroups, strictColumns, readingRevision],
     );
     const scaleMax = boardScaleMax(columns);
     const configStarredId = React.useMemo(
@@ -132,12 +169,25 @@ export default function EngBoardView({
     // The card that opened it is remembered as a node, because Escape must return focus to it.
     const [openEpicKey, setOpenEpicKey] = React.useState(null);
     const openerRef = React.useRef(null);
-    const openEpicGroup = openEpicKey
-        ? columns.flatMap((column) => column.epicGroups).find((group) => group.key === openEpicKey) || null
-        : null;
+    const departingGroupRef = React.useRef(null);
+    const privateReadingRef = React.useRef(null);
+    const canonicalOpenGroup = openEpicKey ? columns.flatMap(column => column.epicGroups).find(group => group.key === openEpicKey) : null;
+    const retainedTask = boardPresentationRef.current?.task;
+    const storyDeparting = retainedTask && openEpicKey === boardPresentationRef.current?.epicKey
+        && !canonicalOpenGroup?.tasks.some(task => task.key === retainedTask.key);
+    const panelDeparting = Boolean(openEpicKey && (!canonicalOpenGroup || storyDeparting));
+    const openEpicGroup = canonicalOpenGroup && storyDeparting
+        ? { ...canonicalOpenGroup, readingDepartureKeys: [retainedTask.key], tasks: projectEngReadingOrder([...canonicalOpenGroup.tasks, retainedTask], boardPresentationRef.current.storyKeys) }
+        : canonicalOpenGroup || (openEpicKey && departingGroupRef.current ? { ...departingGroupRef.current,
+            readingDepartureKeys: departingGroupRef.current.tasks.map(task => task.key), readingStoryKeys: boardPresentationRef.current?.storyKeys, childProgress: null,
+            childrenIncomplete: false, childrenLoading: false, storyPoints: 0 } : null);
+
+    const [departureTarget, setDepartureTarget] = React.useState(null);
+    React.useLayoutEffect(() => { setDepartureTarget(panelDeparting ? document.querySelector('.epic-panel .m-head') : null); }, [panelDeparting]);
 
     const openPanel = (epicKey) => {
         openerRef.current = document.activeElement;
+        departingGroupRef.current = null;
         setOpenEpicKey(epicKey);
     };
 
@@ -145,6 +195,7 @@ export default function EngBoardView({
         const opener = openerRef.current;
         const key = openEpicKey;
         openerRef.current = null;
+        departingGroupRef.current = null;
         setOpenEpicKey(null);
         // The card can have unmounted while the panel was open (a transition moved the epic into
         // a folded column, a filter narrowed it away), so the stored node is only used while it is
@@ -171,10 +222,19 @@ export default function EngBoardView({
        a batched setState would leave dragover reading a null drag and silently refusing every
        drop. State carries only what has to be painted. */
     const dragRef = React.useRef(null);
-    const [draggingKey, setDraggingKey] = React.useState('');
+    const interactionRef = React.useRef({});
+    const interaction = (kind, value) => { interactionRef.current[kind] = Boolean(value); onInteractionChange?.(Object.values(interactionRef.current).some(Boolean)); };
+    const [draggingKey, updateDraggingKey] = React.useState('');
+    const setDraggingKey = value => { interaction('drag', value); updateDraggingKey(value); };
     const [dropOverId, setDropOverId] = React.useState(null);
     // { epicKey, columnId, point, statuses, confirm: null | { status, open } }
-    const [drop, setDrop] = React.useState(null);
+    const [drop, updateDrop] = React.useState(null);
+    const dropRef = React.useRef(null);
+    const setDrop = React.useCallback(value => {
+        const next = typeof value === 'function' ? value(dropRef.current) : value;
+        dropRef.current = next; interactionRef.current.menu = Boolean(next);
+        onInteractionChange?.(Object.values(interactionRef.current).some(Boolean)); updateDrop(next);
+    }, [onInteractionChange]);
     const [rejectedKey, setRejectedKey] = React.useState('');
     const [announcement, setAnnouncement] = React.useState(null);
 
@@ -231,7 +291,7 @@ export default function EngBoardView({
             if (previous) focusCard(previous.epicKey);
             return null;
         });
-    }, [focusCard, releaseStatusTarget]);
+    }, [focusCard, releaseStatusTarget, setDrop]);
 
     // The transition status catalog, loaded lazily on the FIRST drop and never on a plain board load —
     // initial load is performance-critical and a user who never drags never pays for it. Shared
@@ -305,7 +365,8 @@ export default function EngBoardView({
     // Ask, then commit — and the asking is the hook's, unchanged. A drop asks Jira what this epic
     // can become and waits; only when that settles is the drop resolved, so the drop itself never
     // commits anything. { epicKey, sourceColumnId, columnId, point } while it waits.
-    const [pendingDrop, setPendingDrop] = React.useState(null);
+    const [pendingDrop, updatePendingDrop] = React.useState(null);
+    const setPendingDrop = value => { interaction('pending', value); updatePendingDrop(value); };
     const pendingColumn = pendingDrop ? columns.find((entry) => entry.id === pendingDrop.columnId) : null;
     const optionsTargetKey = statusTransitions?.activeSingleIssueTarget?.key || '';
     const optionsLoading = Boolean(statusTransitions?.transitionOptionsLoading);
@@ -667,6 +728,151 @@ export default function EngBoardView({
         });
     }, [syncBoardChrome]);
 
+    const readingRef = React.useRef({});
+    readingRef.current.openGroup = openEpicGroup; readingRef.current.columns = columns;
+    readingRef.current.scopeKey = freshnessBridge?.current.contextKey || columns.map(column => column.id).join('|');
+    const priorReadingScope = React.useRef(readingRef.current.scopeKey);
+    React.useLayoutEffect(() => {
+        if (priorReadingScope.current !== readingRef.current.scopeKey) { freshnessBridge?.current.release?.(); priorReadingScope.current = readingRef.current.scopeKey; }
+    });
+    const paneEpochsRef = React.useRef(new WeakMap());
+    React.useEffect(() => {
+        if (!freshnessBridge) return undefined;
+        const epochs = paneEpochsRef.current;
+        const settlements = new Set();
+        const cancelSettlements = () => settlements.forEach(cancel => cancel());
+        const releaseReading = () => { const held = boardPresentationRef.current || departingGroupRef.current || privateReadingRef.current; cancelSettlements(); boardPresentationRef.current = null; departingGroupRef.current = null; privateReadingRef.current = null; if (held) setReadingRevision(value => value + 1); };
+        window.addEventListener('blur', cancelSettlements);
+        document.addEventListener('visibilitychange', cancelSettlements);
+        const paneFor = target => {
+            const pane = target?.closest?.('.m-body,.col-body');
+            return pane && ['auto', 'scroll'].includes(getComputedStyle(pane).overflowY) ? pane : window;
+        };
+        const move = event => {
+            if (event.type === 'keydown' && (!['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','PageUp','PageDown','Home','End',' '].includes(event.key)
+                || event.target.closest?.('input,textarea,select,[contenteditable="true"]'))) return;
+            const pane = paneFor(event.target);
+            epochs.set(pane, (epochs.get(pane) || 0) + 1);
+            const board = boardRef.current;
+            if (board && (event.deltaX || event.shiftKey || ['ArrowLeft','ArrowRight'].includes(event.key) || (event.type === 'pointerdown' && event.target === board))) epochs.set(board, (epochs.get(board) || 0) + 1);
+        };
+        const deliberateClick = event => { if (event.target.closest?.('button,a,input,textarea,[role="button"]')) releaseReading(); };
+        document.addEventListener('click', deliberateClick);
+        for (const name of ['wheel', 'touchmove', 'pointerdown', 'keydown']) document.addEventListener(name, move, { passive: true, capture: true });
+        const scroll = event => {
+            const board = boardRef.current;
+            if (event.target === board && board.scrollLeft !== readingRef.current.expectedLeft) epochs.set(board, (epochs.get(board) || 0) + 1);
+            if (readingRef.current.pending) return;
+            const pin = boardPresentationRef.current;
+            if (!pin) return;
+            const node = readingRef.current.openGroup && pin.task
+                ? Array.from(document.querySelectorAll('.epic-panel [data-story-key]')).find(row => row.dataset.storyKey === pin.task.key)
+                : Array.from(board?.querySelectorAll('.ecard') || []).find(card => card.dataset.epicKey === pin.epicKey);
+            const pane = paneFor(node);
+            if (paneFor(event.target) !== pane || (epochs.get(pane) || 0) <= pin.movementEpoch) return;
+            const top = pane === window ? freshnessBridge.current.getViewport?.().top || 0 : pane.getBoundingClientRect().top;
+            const bottom = pane === window ? window.innerHeight : pane.getBoundingClientRect().bottom;
+            const rect = node?.getBoundingClientRect();
+            if (!rect || rect.bottom <= top || rect.top >= bottom) releaseReading();
+        };
+        document.addEventListener('scroll', scroll, true);
+        const beforeCommit = (_data, observation = null, shouldApply = () => true) => {
+            const board = boardRef.current;
+            const containers = [...Array.from(board?.querySelectorAll('.col.is-open .col-body,.col.is-focused .col-body') || []),
+                ...Array.from(document.querySelectorAll('.epic-panel .m-body'))].filter(pane => paneFor(pane) === pane);
+            if (!rootRef.current?.classList.contains('is-pane-mode')) containers.push(window);
+            const panes = containers.map(pane => {
+                const origin = pane === window ? 0 : pane.getBoundingClientRect().top + pane.clientTop;
+                const bottom = pane === window ? window.innerHeight : pane.getBoundingClientRect().bottom;
+                const root = pane === window ? board : pane;
+                const nodes = Array.from(root?.querySelectorAll('.ecard[data-epic-key],[data-story-key]') || []);
+                const visible = item => { const rect = item.getBoundingClientRect(); return rect.bottom > (pane === window ? freshnessBridge.current.getViewport?.().top || 0 : origin) && rect.top < bottom; };
+                const focused = document.activeElement?.closest?.('.ecard[data-epic-key],[data-story-key]');
+                const node = nodes.find(item => item === focused && visible(item)) || nodes.find(visible);
+                return { pane, node, origin, key: node?.dataset.storyKey || node?.dataset.epicKey,
+                    selector: node?.dataset.storyKey ? '[data-story-key]' : '.ecard[data-epic-key]',
+                    top: pane === window ? window.scrollY : pane.scrollTop,
+                    anchor: { container: pane === window ? 'window' : 'pane', offsetTop: node ? node.getBoundingClientRect().top - origin : 0,
+                        movementEpoch: epochs.get(pane) || 0, scopeKey: readingRef.current.scopeKey } };
+            });
+            const previous = { pin: boardPresentationRef.current, departure: departingGroupRef.current, privateReading: privateReadingRef.current };
+            if (observation?.scopeDenied) boardPresentationRef.current = null;
+            const readingKey = readingRef.current.openGroup?.key || panes.find(entry => entry.node)?.node?.dataset.epicKey;
+            const readingColumn = readingRef.current.columns.find(column => column.epicGroups.some(group => group.key === readingKey));
+            const group = readingColumn?.epicGroups.find(group => group.key === readingKey);
+            const storyPane = panes.find(entry => entry.selector === '[data-story-key]');
+            if (group && !boardPresentationRef.current && !observation?.scopeDenied) boardPresentationRef.current = { epicKey: readingKey, columnId: readingColumn.id,
+                slot: readingColumn.epicGroups.indexOf(group), storyKeys: readingRef.current.openGroup
+                    ? Array.from(document.querySelectorAll('.epic-panel [data-story-key]'), node => node.dataset.storyKey) : (group.tasks || []).map(task => task.key),
+                movementEpoch: storyPane?.anchor.movementEpoch ?? panes.find(entry => entry.node?.dataset.epicKey === readingKey)?.anchor.movementEpoch ?? 0,
+                task: group.tasks?.find(task => task.key === storyPane?.key) };
+            if (boardPresentationRef.current) boardPresentationRef.current = { ...boardPresentationRef.current,
+                movementEpoch: storyPane?.anchor.movementEpoch ?? panes.find(entry => entry.node?.dataset.epicKey === readingKey)?.anchor.movementEpoch ?? 0 };
+            const heldGroup = readingRef.current.openGroup;
+            if (heldGroup) privateReadingRef.current = { group: heldGroup, origins: privateReadingRef.current?.group.key === heldGroup.key ? privateReadingRef.current.origins : {} };
+            privateReadingRef.current = reconcileBoardReadingSupport(privateReadingRef.current, observation);
+            departingGroupRef.current = privateReadingRef.current?.group || null;
+            if (observation && heldGroup && !departingGroupRef.current) { boardPresentationRef.current = null; setOpenEpicKey(null); }
+            else if (boardPresentationRef.current?.task && !departingGroupRef.current?.tasks.some(task => task.key === boardPresentationRef.current.task.key)) boardPresentationRef.current = { ...boardPresentationRef.current, task: null };
+            if (boardPresentationRef.current?.task && observation?.deniedIssueKeys?.includes(boardPresentationRef.current.task.key)) boardPresentationRef.current = null;
+            const captured = { previous, observation, panes, shouldApply, horizontalEpoch: epochs.get(board) || 0, left: board?.scrollLeft || 0, board, scopeKey: readingRef.current.scopeKey };
+            readingRef.current.pending = captured;
+            return captured;
+        };
+        const afterCommit = (captured, changes = {}) => new Promise(resolve => {
+            privateReadingRef.current = reconcileBoardReadingSupport(privateReadingRef.current, { ...captured?.observation, ...changes });
+            departingGroupRef.current = privateReadingRef.current?.group || null;
+            if (boardPresentationRef.current?.task && !departingGroupRef.current?.tasks.some(task => task.key === boardPresentationRef.current.task.key)) boardPresentationRef.current = { ...boardPresentationRef.current, task: null };
+            if (changes.deniedIssueKeys?.includes(boardPresentationRef.current?.task?.key)) boardPresentationRef.current = null;
+            if (changes.deniedEpicKeys?.includes(readingRef.current.openGroup?.key) || (!privateReadingRef.current && readingRef.current.openGroup && changes.deniedLanes?.length)) setOpenEpicKey(null);
+            let frame;
+            const cancel = () => { cancelAnimationFrame(frame); settlements.delete(cancel); readingRef.current.pending = null; resolve(); };
+            settlements.add(cancel);
+            frame = requestAnimationFrame(() => { if (!settlements.has(cancel)) return; frame = requestAnimationFrame(() => {
+                let settled = false;
+                try {
+                    if (!captured || !captured.shouldApply() || document.visibilityState !== 'visible' || !document.hasFocus()
+                        || readingRef.current.scopeKey !== captured.scopeKey) return;
+                    if (captured.board?.isConnected && (epochs.get(captured.board) || 0) === captured.horizontalEpoch) { readingRef.current.expectedLeft = captured.left; captured.board.scrollLeft = captured.left; }
+                    for (const entry of captured.panes) {
+                        const { pane, anchor } = entry;
+                        if ((epochs.get(pane) || 0) !== anchor.movementEpoch || (pane !== window && !pane.isConnected)) continue;
+                        const root = pane === window ? boardRef.current : pane;
+                        const nodes = Array.from(root?.querySelectorAll(entry.selector) || []);
+                        const origin = pane === window ? 0 : pane.getBoundingClientRect().top + pane.clientTop;
+                        const node = nodes.find(item => (item.dataset.storyKey || item.dataset.epicKey) === entry.key)
+                            || nodes.sort((a, b) => Math.abs(a.getBoundingClientRect().top - origin - anchor.offsetTop) - Math.abs(b.getBoundingClientRect().top - origin - anchor.offsetTop))[0];
+                        if (node) restoreEngReadingAnchor(anchor, { node, container: pane,
+                            bounds: { top: entry.origin },
+                            movementEpoch: epochs.get(pane) || 0, scopeKey: readingRef.current.scopeKey, win: window });
+                        else if (pane === window) window.scrollTo(window.scrollX, entry.top);
+                        else pane.scrollTop = entry.top;
+                    }
+                    settled = true;
+                } finally {
+                    cancel();
+                    if (settled) for (const entry of captured.panes) {
+                        if ((epochs.get(entry.pane) || 0) !== entry.anchor.movementEpoch) scroll({ target: entry.pane });
+                    }
+                }
+            }); });
+        });
+        const cancelCommit = captured => {
+            if (readingRef.current.pending !== captured) return;
+            boardPresentationRef.current = captured.previous.pin; departingGroupRef.current = captured.previous.departure;
+            privateReadingRef.current = captured.previous.privateReading; readingRef.current.pending = null;
+        };
+        Object.assign(freshnessBridge.current, { beforeCommit, afterCommit, cancelCommit,
+            release: releaseReading });
+        return () => {
+            cancelSettlements(); document.removeEventListener('scroll', scroll, true); window.removeEventListener('blur', cancelSettlements); document.removeEventListener('visibilitychange', cancelSettlements);
+            document.removeEventListener('click', deliberateClick);
+            for (const name of ['wheel', 'touchmove', 'pointerdown', 'keydown']) document.removeEventListener(name, move, true);
+            delete freshnessBridge.current.beforeCommit; delete freshnessBridge.current.afterCommit;
+            delete freshnessBridge.current.release; delete freshnessBridge.current.cancelCommit; onInteractionChange?.(false);
+        };
+    }, [freshnessBridge, onInteractionChange]);
+
     const handleBoardScroll = React.useCallback(() => {
         syncHints();
         scheduleBoardChrome();
@@ -688,7 +894,7 @@ export default function EngBoardView({
             });
             openColumnIdsRef.current = open;
         }
-        applyBoardLayout(smoothRef.current);
+        if (!readingRef.current.pending) applyBoardLayout(smoothRef.current);
         smoothRef.current = false;
         syncHints();
         syncBoardChrome();
@@ -739,7 +945,7 @@ export default function EngBoardView({
         if (typeof ResizeObserver === 'undefined') return undefined;
         const observer = new ResizeObserver(() => {
             syncPaneMode();
-            applyBoardLayout(false);
+            if (!readingRef.current.pending) applyBoardLayout(false);
             syncHints();
             syncBoardChrome();
         });
@@ -1134,6 +1340,7 @@ export default function EngBoardView({
                 document.body,
             )}
 
+            {panelDeparting && departureTarget && createPortal(<div className="board-data-state board-reading-departure" role="status" data-board-reading-departure>{canonicalOpenGroup ? `Story ${retainedTask.key}` : `Epic ${openEpicKey}`} left the current Board scope.</div>, departureTarget)}
             {openEpicGroup && (
                 <EngBoardEpicPanel
                     key={openEpicGroup.key}
@@ -1142,11 +1349,12 @@ export default function EngBoardView({
                     jiraUrl={jiraUrl}
                     backendUrl={backendUrl}
                     renderPriorityIcon={renderPriorityIcon}
-                    transitionsEnabled={transitionsEnabled}
+                    transitionsEnabled={transitionsEnabled && !panelDeparting}
                     statusTransitions={statusTransitions}
                     priorityTransitions={priorityTransitions}
                     projectTrackTransitions={projectTrackTransitions}
-                    issueFieldEdits={issueFieldEdits}
+                    issueFieldEdits={panelDeparting ? null : issueFieldEdits}
+                    onSortChange={() => freshnessBridge?.current.release?.()}
                     statusTransitionSubmitting={statusTransitionSubmitting}
                     workItemLabel={strictWorkItemLabel}
                     workItemLabelSingular={Array.isArray(strictColumns) ? 'work item' : 'story'}

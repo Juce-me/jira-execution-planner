@@ -19,8 +19,8 @@
   },
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
-    "lineCount": 7525,
-    "lineCeiling": 7525
+    "lineCount": 7570,
+    "lineCeiling": 7570
   },
   "modules": [
     {
@@ -32,8 +32,8 @@
       "exports": [
         "EpmControls"
       ],
-      "lineCount": 295,
-      "lineCeiling": 295,
+      "lineCount": 296,
+      "lineCeiling": 296,
       "interfaces": [
         {
           "exportName": "EpmControls",
@@ -46,6 +46,7 @@
             "epmProjectSearch",
             "epmProjectSort",
             "epmProjectsLoading",
+            "epmSelectedProjectId",
             "epmSortDropdownRefs",
             "epmSubGoalFilterDropdownRefs",
             "epmSubGoalOptions",
@@ -81,6 +82,7 @@
             "epmProjectSearch",
             "epmProjectSort",
             "epmProjectsLoading",
+            "epmSelectedProjectId",
             "epmSortDropdownRefs",
             "epmSortDropdownRefs.current",
             "epmSortDropdownRefs.current[surface]",
@@ -118,13 +120,13 @@
             "visibleEpmProjects.length"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 43,
+          "expandedInputCount": 44,
           "returnCount": 0,
-          "propCount": 31,
+          "propCount": 32,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 43,
+          "expandedInputCeiling": 44,
           "returnCeiling": 0,
-          "propCeiling": 31,
+          "propCeiling": 32,
           "unresolved": [
             "forwarded input surface",
             "forwarded input selectedEpmProject",
@@ -138,7 +140,7 @@
           ],
           "inventory": {
             "source": "frontend/src/epm/EpmControls.jsx:21",
-            "sourceDigest": "a7beaebf7dcba0e96f2e6e41fbd40d0222ce6edfdfa1a062cc8e67795fed8181",
+            "sourceDigest": "cab52bd6837edc490013e48779d330b36211ab7dff2e0432295cf756e526b289",
             "reviewed": true,
             "memberNames": [
               "activeControlSurface",
@@ -149,6 +151,7 @@
               "epmProjectSearch",
               "epmProjectSort",
               "epmProjectsLoading",
+              "epmSelectedProjectId",
               "epmSortDropdownRefs",
               "epmSortDropdownRefs.current",
               "epmSortDropdownRefs.current[surface]",
@@ -185,7 +188,7 @@
               "visibleEpmProjects",
               "visibleEpmProjects.length"
             ],
-            "rationale": "surface and sort are strings; dropdown flags booleans; selected project display-name fields come from epmProjectUtils.mjs:getEpmProjectDisplayName; ref.current[surface] entries are DOM nodes, not dependency bags."
+            "rationale": "surface and sort are strings; dropdown flags booleans; selected project display-name fields come from epmProjectUtils.mjs:getEpmProjectDisplayName; ref.current[surface] entries are DOM nodes, not dependency bags. Task 10 (#251) reviewed change: epmSelectedProjectId is the selected Project id string used only to show an unavailable selected Project; no dependency members."
           },
           "callers": [
             {
@@ -1513,8 +1516,8 @@
       "exports": [
         "useEpmViewData"
       ],
-      "lineCount": 443,
-      "lineCeiling": 443,
+      "lineCount": 504,
+      "lineCeiling": 504,
       "interfaces": [
         {
           "exportName": "useEpmViewData",
@@ -1594,7 +1597,7 @@
           ],
           "inventory": {
             "source": "frontend/src/epm/useEpmViewData.js:39",
-            "sourceDigest": "afe4c25b6f806f6bc4a71f3120a3ab44bf4ff72b0459025718f760f1a7f8c7da",
+            "sourceDigest": "314c8cf0af4eced2abf3022e1f49a386c4ae91d3d2442e6398b024813a919598",
             "reviewed": true,
             "memberNames": [
               "backendUrl",
@@ -15658,8 +15661,8 @@
         "useStatsDerivedB",
         "useStatsDerivedC"
       ],
-      "lineCount": 1290,
-      "lineCeiling": 1290,
+      "lineCount": 1396,
+      "lineCeiling": 1396,
       "interfaces": [
         {
           "exportName": "useStatsDerivedA",
@@ -15668,6 +15671,7 @@
             "activeGroupMissingComponents",
             "activeGroupTeamIds",
             "activeGroupTeamSet",
+            "automaticRefreshRef",
             "burnoutAssigneeFilter",
             "burnoutCacheRef",
             "burnoutData",
@@ -15711,6 +15715,9 @@
             "activeGroupTeamIds.length",
             "activeGroupTeamSet",
             "activeGroupTeamSet.has",
+            "automaticRefreshRef",
+            "automaticRefreshRef.createExplicitRecorder",
+            "automaticRefreshRef.current",
             "burnoutAssigneeFilter",
             "burnoutCacheRef",
             "burnoutCacheRef.current",
@@ -15753,21 +15760,22 @@
             "tasksFetched"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 47,
+          "expandedInputCount": 50,
           "returnCount": 9,
           "propCount": 0,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 47,
+          "expandedInputCeiling": 50,
           "returnCeiling": 9,
           "propCeiling": 0,
           "unresolved": [
             "forwarded input BACKEND_URL",
+            "bag burnoutCacheRef dynamic deep member",
             "bag burnoutCacheRef member alias cached",
-            "bag burnoutCacheRef dynamic deep member"
+            "forwarded input issueEditStateRef"
           ],
           "inventory": {
-            "source": "frontend/src/stats/useStatsData.js:12",
-            "sourceDigest": "fe55a6920e7f446e576ccf56ee5cd831942928faae5c82f88a40bd5ae5de81d2",
+            "source": "frontend/src/stats/useStatsData.js:57",
+            "sourceDigest": "13af1ea08e2fe45d7c539c11b4ce2488ec485f45ad997a6ca092a841c8b5fad3",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -15777,6 +15785,9 @@
               "activeGroupTeamIds.length",
               "activeGroupTeamSet",
               "activeGroupTeamSet.has",
+              "automaticRefreshRef",
+              "automaticRefreshRef.createExplicitRecorder",
+              "automaticRefreshRef.current",
               "burnoutAssigneeFilter",
               "burnoutCacheRef",
               "burnoutCacheRef.current",
@@ -15818,7 +15829,7 @@
               "statsView",
               "tasksFetched"
             ],
-            "rationale": "BACKEND_URL is forwarded only as the existing API wrapper base URL. burnoutCacheRef.current indexes burnoutQueryKey; cached is the stored Stats payload tested for presence and passed unchanged to setBurnoutData. No dynamic callback or getter is supplied. issueEditStateRef aggregate read methods keep the same captured token and deferred timing. Task 3 reviewed change: unchanged bindings/aliases except removal of panel-owned burnoutChartRef/pointer and exact scroll effect; retained memo/fetch/cache ownership unchanged."
+            "rationale": "BACKEND_URL is forwarded only as the existing API wrapper base URL. burnoutCacheRef.current indexes burnoutQueryKey; cached is the stored Stats payload tested for presence and passed unchanged to setBurnoutData. No dynamic callback or getter is supplied. issueEditStateRef aggregate read methods keep the same captured token and deferred timing. Task 3 reviewed change: unchanged bindings/aliases except removal of panel-owned burnoutChartRef/pointer and exact scroll effect; retained memo/fetch/cache ownership unchanged. Task 10 (#251) reviewed change: automaticRefreshRef is a ref read at fetch time and never a dependency; it supplies the automatic job (shouldApply) and the explicit-refresh recorder, and held data is kept on failure."
           },
           "callers": [
             {
@@ -15898,6 +15909,7 @@
             "activeGroupMissingComponents",
             "activeGroupTeamIds",
             "adminSettingsGate",
+            "automaticRefreshRef",
             "availableSprints",
             "burnoutAssigneeFilter",
             "burnoutQueryKey",
@@ -16018,6 +16030,11 @@
             "activeGroupTeamIds.length",
             "adminSettingsGate",
             "adminSettingsGate.status",
+            "automaticRefreshRef",
+            "automaticRefreshRef.createExplicitRecorder",
+            "automaticRefreshRef.current",
+            "automaticRefreshRef.current.job",
+            "automaticRefreshRef.current.job.shouldApply",
             "availableSprints",
             "burnoutAssigneeFilter",
             "burnoutQueryKey",
@@ -16122,19 +16139,19 @@
             "trackApiResult"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 115,
+          "expandedInputCount": 120,
           "returnCount": 40,
           "propCount": 0,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 115,
+          "expandedInputCeiling": 120,
           "returnCeiling": 40,
           "propCeiling": 0,
           "unresolved": [
             "forwarded input BACKEND_URL",
-            "bag cohortCacheRef member alias cached",
             "bag cohortCacheRef dynamic deep member",
-            "bag excludedCapacityCacheRef member alias cached",
+            "bag cohortCacheRef member alias cached",
             "bag excludedCapacityCacheRef dynamic deep member",
+            "bag excludedCapacityCacheRef member alias cached",
             "bag excludedCapacityCacheRef member alias cachedSprint",
             "forwarded input excludedCapacityEndSprintId",
             "bag excludedCapacityEpicDropdownRef member alias node",
@@ -16142,12 +16159,13 @@
             "forwarded input excludedCapacityIsolatedTeam",
             "forwarded input excludedCapacitySelectedEpicKeys",
             "forwarded input excludedCapacityStartSprintId",
+            "forwarded input issueEditStateRef",
             "bag projectTrackPhaseCacheRef member alias cached",
             "bag projectTrackPhaseCacheRef dynamic deep member"
           ],
           "inventory": {
-            "source": "frontend/src/stats/useStatsData.js:277",
-            "sourceDigest": "fe55a6920e7f446e576ccf56ee5cd831942928faae5c82f88a40bd5ae5de81d2",
+            "source": "frontend/src/stats/useStatsData.js:335",
+            "sourceDigest": "13af1ea08e2fe45d7c539c11b4ce2488ec485f45ad997a6ca092a841c8b5fad3",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -16163,6 +16181,11 @@
               "activeGroupTeamIds.length",
               "adminSettingsGate",
               "adminSettingsGate.status",
+              "automaticRefreshRef",
+              "automaticRefreshRef.createExplicitRecorder",
+              "automaticRefreshRef.current",
+              "automaticRefreshRef.current.job",
+              "automaticRefreshRef.current.job.shouldApply",
               "availableSprints",
               "burnoutAssigneeFilter",
               "burnoutQueryKey",
@@ -16266,7 +16289,7 @@
               "statsView",
               "trackApiResult"
             ],
-            "rationale": "BACKEND_URL is forwarded only as the existing API wrapper base URL. cohortCacheRef.current indexes cohortQueryKey; excludedCapacityCacheRef.current indexes progressive scoped sprint keys; projectTrackPhaseCacheRef.current indexes projectTrackPhaseSignature. Cached payload aliases are checked for presence and passed unchanged to existing setters or merge helpers. node aliases the dropdown DOM ref and only calls contains(event.target); forceRefresh aliases a boolean ref. Forwarded sprint ids, isolated team and selected epic keys retain the existing helper argument and setter contracts. All asynchronous callbacks and abort/generation guards are unchanged. Task 3 reviewed change: unchanged bindings/aliases except removal of panel-owned burnoutChartRef/pointer and exact scroll effect; retained memo/fetch/cache ownership unchanged."
+            "rationale": "BACKEND_URL is forwarded only as the existing API wrapper base URL. cohortCacheRef.current indexes cohortQueryKey; excludedCapacityCacheRef.current indexes progressive scoped sprint keys; projectTrackPhaseCacheRef.current indexes projectTrackPhaseSignature. Cached payload aliases are checked for presence and passed unchanged to existing setters or merge helpers. node aliases the dropdown DOM ref and only calls contains(event.target); forceRefresh aliases a boolean ref. Forwarded sprint ids, isolated team and selected epic keys retain the existing helper argument and setter contracts. All asynchronous callbacks and abort/generation guards are unchanged. Task 3 reviewed change: unchanged bindings/aliases except removal of panel-owned burnoutChartRef/pointer and exact scroll effect; retained memo/fetch/cache ownership unchanged. Task 10 (#251) reviewed change: automaticRefreshRef is a ref read at fetch time and never a dependency; it supplies the automatic job (job.shouldApply) and the explicit-refresh recorder, and held data is kept on failure."
           },
           "callers": [
             {
@@ -16599,8 +16622,8 @@
             "bag priorityOrder dynamic deep member"
           ],
           "inventory": {
-            "source": "frontend/src/stats/useStatsData.js:1035",
-            "sourceDigest": "fe55a6920e7f446e576ccf56ee5cd831942928faae5c82f88a40bd5ae5de81d2",
+            "source": "frontend/src/stats/useStatsData.js:1141",
+            "sourceDigest": "13af1ea08e2fe45d7c539c11b4ce2488ec485f45ad997a6ca092a841c8b5fad3",
             "reviewed": true,
             "memberNames": [
               "burndownMetric",
@@ -17415,17 +17438,19 @@
         "useEngCapacity",
         "useEngCapacityState"
       ],
-      "lineCount": 394,
-      "lineCeiling": 394,
+      "lineCount": 424,
+      "lineCeiling": 424,
       "interfaces": [
         {
           "exportName": "useEngCapacity",
           "inputNames": [
             "BACKEND_URL",
             "activeCapacityScopeRef",
+            "activeCapacityTeamsRef",
             "capacityEnabled",
             "capacityReadAbortRef",
             "capacityReadGenerationRef",
+            "capacityReadGuardRef",
             "capacityReadModelRef",
             "capacityRefreshNonce",
             "capacityScopeHoldRef",
@@ -17467,6 +17492,7 @@
             "excludedProjectStats",
             "formatCapacityValue",
             "handleCapacitySaved",
+            "refreshCapacity",
             "retryCapacity",
             "selectedAdHocProductSP",
             "selectedProjectEntries",
@@ -17480,11 +17506,20 @@
             "BACKEND_URL",
             "activeCapacityScopeRef",
             "activeCapacityScopeRef.current",
+            "activeCapacityTeamsRef",
+            "activeCapacityTeamsRef.current",
             "capacityEnabled",
             "capacityReadAbortRef",
             "capacityReadAbortRef.current",
             "capacityReadAbortRef.current.signal",
             "capacityReadGenerationRef",
+            "capacityReadGuardRef",
+            "capacityReadGuardRef.current",
+            "capacityReadGuardRef.current.automatic",
+            "capacityReadGuardRef.current.onSettled",
+            "capacityReadGuardRef.current.scopeSignature",
+            "capacityReadGuardRef.current.shouldApply",
+            "capacityReadGuardRef.current.signal",
             "capacityReadModelRef",
             "capacityReadModelRef.current",
             "capacityRefreshNonce",
@@ -17495,6 +17530,7 @@
             "capacityScopePinRef",
             "capacityScopePinRef.current",
             "capacityScopePinRef.current.signature",
+            "capacityScopePinRef.current.teams",
             "capacityState",
             "capacityState.scopeSignature",
             "capacityStateRef",
@@ -17535,12 +17571,12 @@
             "showTech"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 56,
-          "returnCount": 20,
+          "expandedInputCount": 66,
+          "returnCount": 21,
           "propCount": 0,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 56,
-          "returnCeiling": 20,
+          "expandedInputCeiling": 66,
+          "returnCeiling": 21,
           "propCeiling": 0,
           "unresolved": [
             "forwarded input selectedTasksList",
@@ -17548,21 +17584,31 @@
             "forwarded input selectedSP",
             "forwarded input getTeamInfo",
             "forwarded input normalizeEpicKey",
-            "forwarded input BACKEND_URL"
+            "forwarded input BACKEND_URL",
+            "bag capacityReadGuardRef member alias guard"
           ],
           "inventory": {
-            "source": "frontend/src/eng/useEngCapacity.js:53",
-            "sourceDigest": "53bc72994b02ba83fa9a3efd36fdd0eb7ebe2387d0a70910e4752fc3ef9fb9b7",
+            "source": "frontend/src/eng/useEngCapacity.js:55",
+            "sourceDigest": "53c79dafe408428f73158ec64d42f917a14ec8a0163a1e4198a602b71cba4813",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
               "activeCapacityScopeRef",
               "activeCapacityScopeRef.current",
+              "activeCapacityTeamsRef",
+              "activeCapacityTeamsRef.current",
               "capacityEnabled",
               "capacityReadAbortRef",
               "capacityReadAbortRef.current",
               "capacityReadAbortRef.current.signal",
               "capacityReadGenerationRef",
+              "capacityReadGuardRef",
+              "capacityReadGuardRef.current",
+              "capacityReadGuardRef.current.automatic",
+              "capacityReadGuardRef.current.onSettled",
+              "capacityReadGuardRef.current.scopeSignature",
+              "capacityReadGuardRef.current.shouldApply",
+              "capacityReadGuardRef.current.signal",
               "capacityReadModelRef",
               "capacityReadModelRef.current",
               "capacityRefreshNonce",
@@ -17573,6 +17619,7 @@
               "capacityScopePinRef",
               "capacityScopePinRef.current",
               "capacityScopePinRef.current.signature",
+              "capacityScopePinRef.current.teams",
               "capacityState",
               "capacityState.scopeSignature",
               "capacityStateRef",
@@ -17612,7 +17659,7 @@
               "showProduct",
               "showTech"
             ],
-            "rationale": "Reviewed accepted Task 4 closure ledger: selectedTasksList and selectedPlanningTasksList are the existing selected Story arrays passed unchanged to planningSelectionStats helpers. selectedSP is the selected numeric Story Point total passed to getCapacityStatus. getTeamInfo and normalizeEpicKey are existing synchronous task/identity helpers, forwarded unchanged; BACKEND_URL is passed only to the existing Capacity GET API wrapper. Scope aliases, render-time state/read refs, held signature pin and unused scroll closure retain the exact prior reads. No deferred getter, mutation transport or dependency change."
+            "rationale": "Reviewed accepted Task 4 closure ledger: selectedTasksList and selectedPlanningTasksList are the existing selected Story arrays passed unchanged to planningSelectionStats helpers. selectedSP is the selected numeric Story Point total passed to getCapacityStatus. getTeamInfo and normalizeEpicKey are existing synchronous task/identity helpers, forwarded unchanged; BACKEND_URL is passed only to the existing Capacity GET API wrapper. Scope aliases, render-time state/read refs, held signature pin and unused scroll closure retain the exact prior reads. No deferred getter, mutation transport or dependency change. Task 10 (#251) reviewed change: capacityReadGuardRef and activeCapacityTeamsRef are existing-pattern render-time refs created by useEngCapacityState; the guard holds { signal, shouldApply, onSettled, automatic, scopeSignature } read only at effect/fetch time (never a dependency) and settled exactly once; refreshCapacity is the additive explicit/automatic read trigger. No mutation transport, dependency array entry or new getter."
           },
           "callers": [
             {
@@ -17795,6 +17842,13 @@
                 7301,
                 7320
               ]
+            },
+            {
+              "name": "refreshCapacity",
+              "lines": [
+                5879,
+                5956
+              ]
             }
           ],
           "getters": []
@@ -17804,11 +17858,13 @@
           "inputNames": [],
           "returnNames": [
             "activeCapacityScopeRef",
+            "activeCapacityTeamsRef",
             "capacityDataStale",
             "capacityLoading",
             "capacityReadAbortRef",
             "capacityReadError",
             "capacityReadGenerationRef",
+            "capacityReadGuardRef",
             "capacityReadModelRef",
             "capacityReadRevision",
             "capacityRefreshNonce",
@@ -17828,16 +17884,16 @@
           "expandedInputNames": [],
           "outerParameterCount": 0,
           "expandedInputCount": 0,
-          "returnCount": 20,
+          "returnCount": 22,
           "propCount": 0,
           "outerParameterCeiling": 0,
           "expandedInputCeiling": 0,
-          "returnCeiling": 20,
+          "returnCeiling": 22,
           "propCeiling": 0,
           "unresolved": [],
           "inventory": {
-            "source": "frontend/src/eng/useEngCapacity.js:28",
-            "sourceDigest": "53bc72994b02ba83fa9a3efd36fdd0eb7ebe2387d0a70910e4752fc3ef9fb9b7"
+            "source": "frontend/src/eng/useEngCapacity.js:29",
+            "sourceDigest": "53c79dafe408428f73158ec64d42f917a14ec8a0163a1e4198a602b71cba4813"
           },
           "callers": [
             {
@@ -17974,6 +18030,18 @@
               "name": "capacityScopeKeyRef",
               "lines": [
                 5118
+              ]
+            },
+            {
+              "name": "capacityReadGuardRef",
+              "lines": [
+                5048
+              ]
+            },
+            {
+              "name": "activeCapacityTeamsRef",
+              "lines": [
+                5048
               ]
             }
           ],
@@ -18438,8 +18506,8 @@
       "exports": [
         "EpicBlock"
       ],
-      "lineCount": 403,
-      "lineCeiling": 403,
+      "lineCount": 404,
+      "lineCeiling": 404,
       "interfaces": [
         {
           "exportName": "EpicBlock",
@@ -18650,7 +18718,7 @@
           ],
           "inventory": {
             "source": "frontend/src/eng/EpicBlock.jsx:14",
-            "sourceDigest": "3e13593c357445d35ac959816a579ef8475b69fb8f7944ed66cc309d3e7ff1cf",
+            "sourceDigest": "24c0a39c507efb65c6adf60f7e12fac16360d85167290b82bd083290b8a9a7e8",
             "reviewed": true,
             "memberNames": [
               "canEditSharedConfiguration",
@@ -19013,24 +19081,24 @@
       "ceiling": 5766
     },
     "settings": {
-      "measured": 16490,
-      "ceiling": 16490
+      "measured": 16552,
+      "ceiling": 16552
     },
     "stats": {
-      "measured": 2683,
-      "ceiling": 2683
+      "measured": 2789,
+      "ceiling": 2789
     },
     "eng": {
-      "measured": 1750,
-      "ceiling": 1750
+      "measured": 1781,
+      "ceiling": 1781
     },
     "uniqueOwners": {
-      "measured": 26385,
-      "ceiling": 26385
+      "measured": 26584,
+      "ceiling": 26584
     },
     "appPlusOwners": {
-      "measured": 33910,
-      "ceiling": 33910
+      "measured": 34154,
+      "ceiling": 34154
     }
   },
   "transfer": {

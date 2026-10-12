@@ -952,7 +952,7 @@ async function planningSelectionStorage(page) {
     }));
 }
 
-test('automatic Planning preserves a selected disappearing Story until a later manual selection change', async ({ page }, testInfo) => {
+test('automatic Planning keeps a selected Story that left the Sprint until a manual Refresh reconciles it', async ({ page }, testInfo) => {
     const { ctx, lifecycle } = await setup(page, { prefs: { planningLayout: 'list' } });
     await page.getByRole('radiogroup', { name: 'ENG view mode' }).getByRole('radio', { name: 'Planning', exact: true }).click(); await settle(page);
     await page.getByRole('checkbox', { name: 'Select E3-S01 for sprint planning', exact: true }).check();
@@ -965,15 +965,18 @@ test('automatic Planning preserves a selected disappearing Story until a later m
     ctx.scenario.stories.find(story => story.key === 'E2-S01').fields.summary = 'Synthetic accepted disappearance witness';
     await lifecycle.returnAfter(13 * 60000);
     await expect(taskCard(page, 'E2-S01')).toContainText('Synthetic accepted disappearance witness'); await settle(page);
-    await expect(taskCard(page, 'E3-S01')).toHaveCount(0);
+    // Ordinary automatic reads cannot prove complete Sprint membership, so a Story absent from the answer is held, not removed.
+    await expect(taskCard(page, 'E3-S01')).toHaveCount(1);
+    await expect(page.getByRole('checkbox', { name: 'Select E3-S01 for sprint planning', exact: true })).toBeChecked();
     await expect(page.getByRole('checkbox', { name: 'Select E2-S01 for sprint planning', exact: true })).toBeChecked();
     expect(await planningSelectionStorage(page)).toEqual(before);
     expect(ctx.calls.slice(since).filter(call => call.pathname === '/api/tasks-with-team-name' && !call.params.purpose)).toHaveLength(2);
     await task9Screenshot(page, 'planning-disappearing-selected-story');
-    await page.getByRole('checkbox', { name: 'Select E2-S01 for sprint planning', exact: true }).uncheck(); await settle(page);
+    await page.getByRole('button', { name: 'Refresh tasks and sprints from Jira', exact: true }).click(); await settle(page);
+    await expect(taskCard(page, 'E3-S01')).toHaveCount(0);
     const manual = await planningSelectionStorage(page);
     expect(manual.planning.selectedTaskKeys).not.toContain('E3-S01');
-    expect(manual.planning.selectedTaskKeys).not.toContain('E2-S01');
+    expect(manual.planning.selectedTaskKeys).toContain('E2-S01');
     await evidence(testInfo, 'automatic-disappearing-story-selection', { before, automatic: before, manual });
 });
 

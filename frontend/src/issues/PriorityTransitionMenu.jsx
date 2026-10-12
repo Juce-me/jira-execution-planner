@@ -40,6 +40,7 @@ export default function PriorityTransitionMenu({
     onOpen,
     onClose,
     onSubmit,
+    portalTarget = null,
     previewOnly = null,
     onPreviewLifecycleChange,
 }) {
@@ -149,6 +150,7 @@ export default function PriorityTransitionMenu({
                         }
                     }}
                     dismissRef={fieldRef}
+                    portalTarget={portalTarget}
                     previewOnly={previewDescriptor}
                     onPreviewLifecycleChange={onPreviewLifecycleChange}
                 />

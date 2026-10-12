@@ -16,7 +16,10 @@ export function summarizeFreshness(state, sources, nowMs) {
         if (state?.pending) return 'Updates pending';
     }
     const forced = checks.filter(check => check.checkKind === 'forced' && Number.isFinite(check.lastCheckedAtMs));
-    if (!forced.length) return '';
+    if (!forced.length) {
+        const unknown = checks.filter(check => check.checkKind === 'unknown' && Number.isFinite(check.lastCheckedAtMs));
+        return unknown.length ? `Checked ${formatCheckedAge(nowMs, Math.min(...unknown.map(check => check.lastCheckedAtMs)))} ago; freshness unconfirmed` : '';
+    }
     const qualifiers = [];
     if (forced.some(check => check.coverage === 'partial')) qualifiers.push('partial results');
     if (forced.length < sources.length || forced.some(check => !['complete', 'partial'].includes(check.coverage))) qualifiers.push('coverage unknown');

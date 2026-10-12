@@ -879,11 +879,11 @@ test('Task9 enabled analytics proves one manual adoption event before automatic 
     await evidence(testInfo, 'task9-enabled-dataLayer', { manualAdoptionEvents: 1, automaticEntries: entries });
 });
 
-test('Task9 cached or unknown EPM attempt shows unavailable guidance without claiming a check', async ({ page }) => {
+test('Task9 unknown-provenance EPM attempt shows checked-but-unconfirmed copy without claiming forced freshness', async ({ page }) => {
     const { lifecycle } = await setupEpmFreshness(page); await settle(page);
     await expect(page.locator('[data-dashboard-freshness-status]')).toHaveCount(0);
     await lifecycle.advance(1); await lifecycle.returnAfter(13 * 60000);
-    await expect(page.locator('[data-dashboard-freshness-status]')).toHaveText('Cached data; check unavailable');
+    await expect(page.locator('[data-dashboard-freshness-status]')).toHaveText(/^Checked .* ago; freshness unconfirmed$/);
     await task9Screenshot(page, 'status-unverified');
 });
 

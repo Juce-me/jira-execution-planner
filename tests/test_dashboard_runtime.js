@@ -442,6 +442,16 @@ test('BFCache catalog invalidation holds selection for display without retaining
     controller.dispose();
 });
 
+test('BFCache restore with no selection yet falls back to the normal selection instead of leaving the selector empty', async () => {
+    const controller = createSprintCatalogController({ read: async () => validatedEnvelope({ sprints: [{ id: 99, name: 'Next', state: 'active' }] }) });
+    controller.invalidate('pageshow', { preserveSelection: true });
+    await controller.readCurrent({ preserveSelection: true, selectedSprintId: null });
+    assert.equal(controller.getState().authority, 'validated');
+    assert.equal(controller.getState().selectedSprintId, 99);
+    assert.equal(controller.getState().selectionPreserved, false);
+    controller.dispose();
+});
+
 test('catalog terminal auth cannot be invalidated or redispatched by pageshow or Refresh', async () => {
     let calls = 0;
     const controller = createSprintCatalogController({ read: async () => { calls += 1; return validatedEnvelope(); } });

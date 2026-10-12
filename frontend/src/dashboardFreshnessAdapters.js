@@ -20,7 +20,7 @@ export function readFreshnessScopeGuards(input) {
     return { blocked: Boolean(scenario || settings || input.statusTransitionActiveKey || input.priorityTransitionActiveKey || input.projectTrackTransitionActiveKey
         || input.issueFieldEdits?.activeEditor || pending.some(keys => keys?.size) || input.issueEditState?.planningEntries().length
         || review?.dirty || review?.saving || review?.conflict || review?.unconfirmed || review?.pendingScopeChange
-        || (input.showPlanning && (input.planningInteractionRef?.current || input.capacityInteractionRef?.current)) || input.pendingCapacityMutation || input.openPopover || input.isHeld?.() || input.surfaceBlocked || input.boardFreshnessRef?.current.interaction),
+        || (input.showPlanning && (input.planningInteractionRef?.current || input.capacityInteractionRef?.current)) || input.isHeld?.() || input.boardFreshnessRef?.current.interaction),
     epoch: input.loadEpochRef.current, version: input.groupLoadVersionRef.current, scopeKey: `${input.activeGroupId}|${input.selectedSprint}` };
 }
 

@@ -313,3 +313,48 @@ test('automatic read that lands after a completed user save does not regress sav
     assert.equal(state.savedCells[key].value, '5'); assert.equal(state.savedCells[key].revision, 2);
     assert.equal(state.schemaRevision, 2); assert.equal(state.currentSchemaRevision, 2);
 });
+
+async function inFlightAutomaticRead(overrides = {}) {
+    const gate = deferred(); let automatic = false;
+    const c = await fixture({
+        fetchSchema: async () => schema(1),
+        readValues: async (_, __, batch) => { const stale = automatic; if (stale) await gate.promise; return { cells: batch.issueIds.map(issueId => ({ issueId, rowKind: 'story', columnId: 'cost', value: stale ? '9.000' : '1.000', revision: stale ? 7 : 1 })) }; },
+        ...overrides,
+    });
+    await c.setScope(scope()); automatic = true;
+    const pending = c.refresh({ automatic: true, shouldApply: () => true }); await new Promise(resolve => setImmediate(resolve));
+    return { c, gate, pending };
+}
+
+test('automatic read that lands after a user discard is ignored and does not regress saved cells', async () => {
+    const { c, gate, pending } = await inFlightAutomaticRead();
+    c.setCell(row(1), column, '5'); assert.equal(c.getState().dirty, true);
+    assert.equal(c.discard(), true);
+    gate.resolve();
+    assert.deepEqual(await pending, { status: 'ignored' });
+    const state = c.getState(), key = Object.keys(state.savedCells)[0];
+    assert.equal(state.savedCells[key].value, '1.000'); assert.equal(state.savedCells[key].revision, 1);
+    assert.deepEqual(state.drafts, {}); assert.equal(state.dirty, false);
+});
+
+test('automatic read that lands after a user column/layout edit is ignored and keeps the schema draft', async () => {
+    const { c, gate, pending } = await inFlightAutomaticRead();
+    const change = { action: 'layout', rowKind: 'story', order: ['cost'], hidden: [] };
+    assert.equal(c.changeSchema(change), true);
+    gate.resolve();
+    assert.deepEqual(await pending, { status: 'ignored' });
+    const state = c.getState(), key = Object.keys(state.savedCells)[0];
+    assert.deepEqual(state.schemaChanges, [change]); assert.equal(state.dirty, true);
+    assert.equal(state.savedCells[key].value, '1.000'); assert.equal(state.savedCells[key].revision, 1);
+});
+
+test('automatic read that lands after a 409 save conflict is ignored and preserves conflict and drafts', async () => {
+    const conflict = { schemaConflict: false, cellConflicts: [{ issueId: '1', columnId: 'cost', revision: 4, value: '8.000' }] };
+    const { c, gate, pending } = await inFlightAutomaticRead({ saveReview: async () => { const error = new Error('conflict'); error.status = 409; error.conflict = conflict; throw error; } });
+    c.setCell(row(1), column, '5'); assert.equal(await c.save(), false);
+    gate.resolve();
+    assert.deepEqual(await pending, { status: 'ignored' });
+    const state = c.getState(), key = Object.keys(state.savedCells)[0];
+    assert.deepEqual(state.conflict, conflict); assert.equal(Object.values(state.drafts)[0].value, '5');
+    assert.equal(state.savedCells[key].value, '1.000'); assert.equal(state.savedCells[key].revision, 1);
+});

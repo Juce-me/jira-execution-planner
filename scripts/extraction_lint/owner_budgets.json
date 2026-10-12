@@ -32,8 +32,8 @@
       "exports": [
         "EpmControls"
       ],
-      "lineCount": 296,
-      "lineCeiling": 296,
+      "lineCount": 299,
+      "lineCeiling": 299,
       "interfaces": [
         {
           "exportName": "EpmControls",
@@ -140,7 +140,7 @@
           ],
           "inventory": {
             "source": "frontend/src/epm/EpmControls.jsx:21",
-            "sourceDigest": "cab52bd6837edc490013e48779d330b36211ab7dff2e0432295cf756e526b289",
+            "sourceDigest": "89611674100e4a107d40c1b8a05e23c556480022d715152f3fb0accfd8b48d64",
             "reviewed": true,
             "memberNames": [
               "activeControlSurface",
@@ -15661,8 +15661,8 @@
         "useStatsDerivedB",
         "useStatsDerivedC"
       ],
-      "lineCount": 1396,
-      "lineCeiling": 1396,
+      "lineCount": 1395,
+      "lineCeiling": 1395,
       "interfaces": [
         {
           "exportName": "useStatsDerivedA",
@@ -15775,7 +15775,7 @@
           ],
           "inventory": {
             "source": "frontend/src/stats/useStatsData.js:57",
-            "sourceDigest": "13af1ea08e2fe45d7c539c11b4ce2488ec485f45ad997a6ca092a841c8b5fad3",
+            "sourceDigest": "546152e7238b7cc23ee698757f81e27e342562ff080143c757f60b4497f07875",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -16165,7 +16165,7 @@
           ],
           "inventory": {
             "source": "frontend/src/stats/useStatsData.js:335",
-            "sourceDigest": "13af1ea08e2fe45d7c539c11b4ce2488ec485f45ad997a6ca092a841c8b5fad3",
+            "sourceDigest": "546152e7238b7cc23ee698757f81e27e342562ff080143c757f60b4497f07875",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -16622,8 +16622,8 @@
             "bag priorityOrder dynamic deep member"
           ],
           "inventory": {
-            "source": "frontend/src/stats/useStatsData.js:1141",
-            "sourceDigest": "13af1ea08e2fe45d7c539c11b4ce2488ec485f45ad997a6ca092a841c8b5fad3",
+            "source": "frontend/src/stats/useStatsData.js:1140",
+            "sourceDigest": "546152e7238b7cc23ee698757f81e27e342562ff080143c757f60b4497f07875",
             "reviewed": true,
             "memberNames": [
               "burndownMetric",
@@ -19081,24 +19081,24 @@
       "ceiling": 5766
     },
     "settings": {
-      "measured": 16552,
-      "ceiling": 16552
+      "measured": 16555,
+      "ceiling": 16555
     },
     "stats": {
-      "measured": 2789,
-      "ceiling": 2789
+      "measured": 2788,
+      "ceiling": 2788
     },
     "eng": {
       "measured": 1781,
       "ceiling": 1781
     },
     "uniqueOwners": {
-      "measured": 26584,
-      "ceiling": 26584
+      "measured": 26586,
+      "ceiling": 26586
     },
     "appPlusOwners": {
-      "measured": 34154,
-      "ceiling": 34154
+      "measured": 34156,
+      "ceiling": 34156
     }
   },
   "transfer": {

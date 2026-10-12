@@ -354,6 +354,7 @@ async function installDashboardFromSource(page, options = {}) {
     const rollbackPosts = [];
     const unexpectedApiRequests = [];
     const apiRequests = [];
+    const eventSinces = [];
     const apiRequestStartedAt = options.runtimeStartedAt || Date.now();
     unexpectedApiRequestsByPage.set(page, unexpectedApiRequests);
     let csrfCount = 0;
@@ -656,7 +657,8 @@ async function installDashboardFromSource(page, options = {}) {
         const eventsMatch = url.pathname.match(/^\/api\/scenario\/drafts\/([^/]+)\/events$/);
         if (eventsMatch && method === 'GET') {
             const since = Number(url.searchParams.get('since') || 0);
-            return json(route, { events: [], nextSince: since, isLast: true });
+            eventSinces.push(since);
+            return json(route, { events: [], nextSince: Math.max(since, options.eventCursor || 0), isLast: true });
         }
         const presenceMatch = url.pathname.match(/^\/api\/scenario\/drafts\/([^/]+)\/presence$/);
         if (presenceMatch && method === 'POST') {
@@ -693,6 +695,7 @@ async function installDashboardFromSource(page, options = {}) {
 
     return {
         apiRequests,
+        eventSinces,
         unexpectedApiRequests,
         draftPosts,
         rollbackPosts,
@@ -1332,7 +1335,8 @@ test('Scenario runtime-work baseline', async ({ page, browser }, testInfo) => {
 
 test('Task9 clean Scenario return reads only ENG scope and preserves timeline draft history and scroll', async ({ page }, testInfo) => {
     const { installLifecycleControl } = require('./eng_epic_refresh_fixture');
-    const lifecycle = await installLifecycleControl(page), ctx = await installDashboardFromSource(page); await openScenario(page);
+    const lifecycle = await installLifecycleControl(page), ctx = await installDashboardFromSource(page, { eventCursor: 7 }); await openScenario(page);
+    await expect.poll(() => ctx.eventSinces.length, { timeout: 15000 }).toBeGreaterThan(0);
     await page.addStyleTag({content:'*,*::before,*::after{animation:none!important;transition:none!important}'});
     await page.getByRole('button', {name:'History',exact:true}).click(); await expect(page.getByRole('dialog',{name:'Scenario draft history'})).toBeVisible();
     const beforeHistory = await page.getByRole('dialog',{name:'Scenario draft history'}).textContent();
@@ -1340,8 +1344,13 @@ test('Task9 clean Scenario return reads only ENG scope and preserves timeline dr
     const timeline = page.locator('.scenario-timeline');
     await timeline.evaluate(node=>{node.scrollTop=150;node.scrollLeft=180;}); await page.waitForTimeout(200);
     const before = await timeline.evaluate(node=>({top:node.scrollTop,left:node.scrollLeft,bars:[...node.querySelectorAll('.scenario-bar')].map(bar=>({text:bar.textContent,style:bar.getAttribute('style')}))}));
-    const since = ctx.apiRequests.length, computes=ctx.scenarioPosts.length;
+    const readState = () => page.evaluate(() => ({ controls: [...document.querySelectorAll('.sprint-dropdown-toggle, .team-dropdown-toggle')].map(node => node.textContent.trim()), prefs: window.localStorage.getItem('jira_dashboard_ui_prefs_v1'), overrides: document.querySelectorAll('.scenario-dirty-indicator').length }));
+    await expect.poll(() => ctx.eventSinces.at(-1), { timeout: 15000 }).toBe(7);
+    const stateBefore = await readState(); expect(stateBefore.controls.length).toBeGreaterThan(0); expect(stateBefore.overrides).toBe(0);
+    const since = ctx.apiRequests.length, computes=ctx.scenarioPosts.length, pollsBefore = ctx.eventSinces.length;
     await lifecycle.returnAfter(13*60000);await expect(page.locator('[data-dashboard-freshness-status]')).toHaveText(/Checked .* ago; coverage unknown/);
+    await expect.poll(() => ctx.eventSinces.length, { timeout: 15000 }).toBeGreaterThan(pollsBefore);
+    expect(ctx.eventSinces.slice(pollsBefore).every(value => value === 7)).toBe(true); expect(await readState()).toEqual(stateBefore);
     await page.waitForTimeout(200); const calls=ctx.apiRequests.slice(since);expect(calls.filter(call=>call.path==='/api/scenario')).toHaveLength(0);expect(ctx.scenarioPosts.length).toBe(computes);expect(ctx.draftPosts).toHaveLength(0);expect(ctx.rollbackPosts).toHaveLength(0);expect(ctx.versionRequests).toHaveLength(0);
     expect(calls.filter(call=>call.path==='/api/tasks-with-team-name')).toHaveLength(2);
     expect(await timeline.evaluate(node=>({top:node.scrollTop,left:node.scrollLeft,bars:[...node.querySelectorAll('.scenario-bar')].map(bar=>({text:bar.textContent,style:bar.getAttribute('style')}))}))).toEqual(before);
@@ -1354,7 +1363,10 @@ test('Task9 dirty Scenario edit defers one return without discarding override or
     const { installLifecycleControl } = require('./eng_epic_refresh_fixture');
     const lifecycle = await installLifecycleControl(page), ctx = await installDashboardFromSource(page); await openScenarioWithDirtyDraft(page);
     const since=ctx.apiRequests.length, computes=ctx.scenarioPosts.length;await lifecycle.returnAfter(13*60000);
-    await expect(page.locator('[data-dashboard-freshness-status]')).toHaveText('Updates pending');await page.waitForTimeout(250);
-    expect(ctx.apiRequests.slice(since).filter(call=>call.path==='/api/tasks-with-team-name')).toHaveLength(0);expect(ctx.scenarioPosts.length).toBe(computes);expect(ctx.draftPosts).toHaveLength(0);expect(ctx.rollbackPosts).toHaveLength(0);
+    await expect(page.locator('[data-dashboard-freshness-status]')).toHaveText('Updates pending');
+    await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+    await page.evaluate(()=>fetch('/api/scenario/drafts/barrier-sentinel/events?since=0')); // ordered barrier: any read the controller issued before settling reached the route first
+    const afterBarrier=ctx.apiRequests.slice(since),barrierAt=afterBarrier.findIndex(call=>call.path==='/api/scenario/drafts/barrier-sentinel/events');expect(barrierAt).toBeGreaterThanOrEqual(0);
+    expect(afterBarrier.slice(0,barrierAt).filter(call=>call.path==='/api/tasks-with-team-name')).toHaveLength(0);expect(afterBarrier.filter(call=>call.path==='/api/tasks-with-team-name')).toHaveLength(0);expect(ctx.scenarioPosts.length).toBe(computes);expect(ctx.draftPosts).toHaveLength(0);expect(ctx.rollbackPosts).toHaveLength(0);
     await expect(page.locator('.scenario-dirty-indicator',{hasText:'1 override'})).toBeVisible();await expect(page.locator('.scenario-bar.editable').first()).toBeVisible();expect(ctx.unexpectedApiRequests).toEqual([]);
 });

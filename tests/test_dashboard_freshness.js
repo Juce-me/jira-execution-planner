@@ -36,7 +36,35 @@ test('ownerBusy raised by scope and follow-up never vetoes active apply', async 
     let h; h = harness({ refreshScope: async job => { h.env.ownerBusy = true; assert.equal(job.shouldApply(), true); return [{ source: 'eng_product', status: 'ok', checkKind: 'forced', requestStartedAtMs: 2000 }]; }, followUp: async job => { h.env.ownerBusy = true; assert.equal(job.shouldApply(), true); } });
     await request(h); assert.equal(h.calls.follow.length, 1); assert.equal(h.controller.getState().pending, false);
 });
-for (const checkKind of ['cached', 'unknown']) test(`${checkKind} success settles unverified without retries`, async () => { const h = harness({ descriptor: { checkKind } }); await request(h); await h.controller.update(); assert.equal(h.calls.scope.length, 1); assert.equal(h.controller.getState().pending, false); assert.equal(h.controller.getState().failure, 'unverified'); });
+test(`cached success settles unverified without retries`, async () => { const checkKind = 'cached'; const h = harness({ descriptor: { checkKind } }); await request(h); await h.controller.update(); assert.equal(h.calls.scope.length, 1); assert.equal(h.controller.getState().pending, false); assert.equal(h.controller.getState().failure, 'unverified'); });
+test('unknown success settles without failure, records the observation, and never retries', async () => {
+    const h = harness({ descriptor: { checkKind: 'unknown' } }); await request(h); await h.controller.update();
+    const state = h.controller.getState();
+    assert.equal(h.calls.scope.length, 1); assert.equal(state.pending, false); assert.equal(state.failure, null);
+    assert.deepEqual({ ...state.checks.eng_product }, { lastCheckedAtMs: 3000, checkKind: 'unknown', coverage: 'unknown', failure: null });
+});
+test('explicit-refresh acceptChecks of unknown success records the age without forced freshness', async () => {
+    const h = harness(); h.controller.acceptChecks({ contextKey: h.env.contextKey, completedAtMs: 4000, checks: [{ source: 'eng_product', status: 'ok', checkKind: 'unknown' }] });
+    const check = h.controller.getState().checks.eng_product;
+    assert.equal(check.lastCheckedAtMs, 4000); assert.equal(check.checkKind, 'unknown'); assert.equal(h.controller.getState().failure, null);
+});
+test('unknown observation never advances or downgrades a forced check', async () => {
+    const h = harness(); await request(h); h.advance(5000);
+    h.controller.acceptChecks({ contextKey: h.env.contextKey, completedAtMs: 5000, checks: [{ source: 'eng_product', status: 'ok', checkKind: 'unknown' }] });
+    const check = h.controller.getState().checks.eng_product; assert.equal(check.lastCheckedAtMs, 3000); assert.equal(check.checkKind, 'forced');
+});
+test('freshness summary for unknown provenance: unconfirmed copy, never outranks failures, never taints forced', async () => {
+    const { summarizeFreshness } = await import('../frontend/src/dashboardFreshnessSummary.js');
+    const unknown = { checkKind: 'unknown', lastCheckedAtMs: 60000, coverage: 'unknown', failure: null };
+    assert.equal(summarizeFreshness({ pending: false, running: false, checks: { epm_rollup: unknown } }, ['epm_rollup'], 120000), 'Checked 1m ago; freshness unconfirmed');
+    assert.equal(summarizeFreshness({ pending: false, running: true, checks: { epm_rollup: unknown } }, ['epm_rollup'], 120000), 'Checked 1m ago; freshness unconfirmed');
+    assert.equal(summarizeFreshness({ pending: false, running: false, checks: { epm_rollup: { ...unknown, failure: 'failed' } } }, ['epm_rollup'], 120000), 'Could not check; showing previous data');
+    assert.equal(summarizeFreshness({ pending: true, running: false, checks: { epm_rollup: unknown } }, ['epm_rollup'], 120000), 'Updates pending');
+    const mixed = { pending: false, running: false, checks: { eng_product: { checkKind: 'forced', lastCheckedAtMs: 90000, coverage: 'complete', failure: null }, eng_tech: unknown } };
+    assert.equal(summarizeFreshness(mixed, ['eng_product', 'eng_tech'], 120000), 'Checked 30s ago; coverage unknown');
+    assert.equal(summarizeFreshness({ checks: { eng_product: { checkKind: 'cached', lastCheckedAtMs: 60000, failure: 'unverified' } }, pending: false, running: false }, ['eng_product'], 120000), 'Cached data; check unavailable');
+    assert.equal(summarizeFreshness({ checks: { epm_rollup: { checkKind: 'unknown', lastCheckedAtMs: null } } }, ['epm_rollup'], 120000), '');
+});
 test('denied resolves without claiming a check', async () => { const h = harness({ descriptor: { status: 'denied' } }); await request(h); assert.equal(h.controller.getState().pending, false); assert.equal(h.controller.getState().checks.eng_product, undefined); });
 test('forced observation before absence records time but remains resumable', async () => { const h = harness({ descriptor: { requestStartedAtMs: 500 } }); await request(h); assert.equal(h.controller.getState().pending, true); assert.equal(h.controller.getState().checks.eng_product.lastCheckedAtMs, 3000); await h.controller.update(); assert.equal(h.calls.scope.length, 2); });
 test('ignored result is resumable without failure', async () => { const h = harness({ descriptor: { status: 'ignored' } }); await request(h); assert.equal(h.controller.getState().failure, null); await h.controller.update(); assert.equal(h.calls.scope.length, 2); });
@@ -50,9 +78,39 @@ test('one retry acquires only failed sources using bound timer methods', async (
 });
 test('anchor 429 never schedules a retry or blocks scope discovery', async () => { const h = harness({ refreshAnchor: async () => [{ source: 'eng_epic_product', status: 'rate_limited', retryAtMs: 4000 }] }); await request(h); assert.equal(h.calls.scope.length, 1); assert.equal(h.deadlines.size, 0); });
 test('blur cancels scheduled retry but resumes once with consumed budget', async () => {
-    const h = harness({ descriptor: { status: 'rate_limited', retryAtMs: 5000 } }); await request(h); h.env.focused = false; await h.controller.update(); assert.equal(h.deadlines.size, 0); assert.equal(h.controller.getState().pending, true); h.env.focused = true; await h.controller.update(); assert.equal(h.calls.scope.length, 2); assert.equal(h.deadlines.size, 0); await h.controller.update(); assert.equal(h.calls.scope.length, 2);
+    const h = harness({ descriptor: { status: 'rate_limited', retryAtMs: 5000 } }); await request(h); h.env.focused = false; await h.controller.update(); assert.equal(h.deadlines.size, 0); assert.equal(h.controller.getState().pending, true); h.advance(5000); h.env.focused = true; await h.controller.update(); assert.equal(h.calls.scope.length, 2); assert.equal(h.deadlines.size, 0); await h.controller.update(); assert.equal(h.calls.scope.length, 2);
 });
-test('deadline reached while unfocused remains pending without hot retries', async () => { const h = harness({ descriptor: { status: 'rate_limited', retryAtMs: 5000 } }); await request(h); const [handle, timer] = [...h.deadlines][0]; h.deadlines.delete(handle); h.env.focused = false; timer.callback(); assert.equal(h.calls.scope.length, 1); h.env.focused = true; await h.controller.update(); assert.equal(h.calls.scope.length, 2); assert.equal(h.deadlines.size, 0); });
+test('refocus before the Retry-After deadline waits for it as the single retry', async () => {
+    const h = harness({ descriptor: { status: 'rate_limited', retryAtMs: 5000 } }); await request(h);
+    h.env.focused = false; await h.controller.update(); assert.equal(h.deadlines.size, 0);
+    h.advance(4000); h.env.focused = true; await h.controller.update();
+    assert.equal(h.calls.scope.length, 1); assert.equal(h.deadlines.size, 1); assert.equal(h.controller.getState().retryAtMs, 5000);
+    const [handle, timer] = [...h.deadlines][0]; assert.equal(timer.ms, 1000);
+    h.deadlines.delete(handle); h.advance(5000); timer.callback(); await h.controller.update();
+    assert.equal(h.calls.scope.length, 2); assert.equal(h.calls.anchor.length, 1); assert.equal(h.deadlines.size, 0);
+});
+test('a fired retry timer is authoritative: it dispatches even when the clock reads before the deadline', async () => {
+    const h = harness({ descriptor: { status: 'rate_limited', retryAtMs: 5000 } }); await request(h);
+    const [handle, timer] = [...h.deadlines][0]; h.deadlines.delete(handle); timer.callback(); await h.controller.update();
+    assert.equal(h.calls.scope.length, 2); assert.equal(h.deadlines.size, 0);
+});
+test('long Retry-After: pre-deadline refocus does not burn the retry early; blur cancels the resumed wait', async () => {
+    const h = harness({ descriptor: { status: 'rate_limited', retryAtMs: 65000 } }); h.advance(10000); await request(h);
+    h.env.focused = false; await h.controller.update(); h.advance(13000); h.env.focused = true; await h.controller.update();
+    assert.equal(h.calls.scope.length, 1); assert.equal([...h.deadlines.values()][0].ms, 52000);
+    h.env.focused = false; await h.controller.update(); assert.equal(h.deadlines.size, 0); assert.equal(h.controller.getState().pending, true);
+    h.advance(20000); h.env.focused = true; await h.controller.update(); assert.equal(h.calls.scope.length, 1); assert.equal([...h.deadlines.values()][0].ms, 45000);
+    const [handle, timer] = [...h.deadlines][0]; h.deadlines.delete(handle); h.advance(65000); timer.callback(); await h.controller.update();
+    assert.equal(h.calls.scope.length, 2); assert.equal(h.deadlines.size, 0);
+});
+test('refocus after the Retry-After deadline dispatches immediately and mints no second retry', async () => {
+    const h = harness({ descriptor: { status: 'rate_limited', retryAtMs: 5000 } }); await request(h);
+    h.env.focused = false; await h.controller.update(); h.advance(6000); h.env.focused = true; await h.controller.update();
+    assert.equal(h.calls.scope.length, 2); assert.equal(h.deadlines.size, 0);
+    h.env.focused = false; await h.controller.update(); h.env.focused = true; await h.controller.update(); await h.controller.update();
+    assert.equal(h.calls.scope.length, 2); assert.equal(h.deadlines.size, 0);
+});
+test('deadline reached while unfocused remains pending without hot retries', async () => { const h = harness({ descriptor: { status: 'rate_limited', retryAtMs: 5000 } }); await request(h); const [handle, timer] = [...h.deadlines][0]; h.deadlines.delete(handle); h.env.focused = false; h.advance(5000); timer.callback(); assert.equal(h.calls.scope.length, 1); h.env.focused = true; await h.controller.update(); assert.equal(h.calls.scope.length, 2); assert.equal(h.deadlines.size, 0); });
 test('per-source needsAfterMs skips satisfied lanes and newer absence rearms', async () => {
     const h = harness({ sources: ['eng_product', 'eng_tech'], environment: { blocked: true } });
     await request(h); h.controller.acceptChecks({ contextKey: h.env.contextKey, completedAtMs: 2100, checks: [{ source: 'eng_product', status: 'ok', checkKind: 'forced', requestStartedAtMs: 2000 }] });
@@ -163,7 +221,7 @@ test('refocus while retired old drain is unresolved queues exactly one resumed a
 });
 test('retry resumes only its rate-limited subset, leaving unrelated failures settled', async () => {
     const h = harness({ sources: ['eng_product', 'eng_tech'], refreshScope: async job => job.pendingSources.map(source => ({ source, status: source === 'eng_product' ? 'failed' : 'rate_limited', retryAtMs: 5000 })) });
-    await request(h); h.env.focused = false; h.controller.update(); h.env.focused = true; await h.controller.update();
+    await request(h); h.env.focused = false; h.controller.update(); h.advance(5000); h.env.focused = true; await h.controller.update();
     assert.deepEqual(h.calls.scope[1].pendingSources, ['eng_tech']); assert.equal(h.calls.anchor.length, 1); assert.equal(h.controller.getState().checks.eng_product.failure, 'failed');
 });
 test('unregistered surface starts no acquisition and leaves legacy ownership', async () => {
@@ -419,7 +477,7 @@ test('blur during follow-up preserves the reserved rate-limited retry subset', a
     const gate = deferred();
     const h = harness({ sources: ['eng_product', 'eng_tech'], refreshScope: async job => job.pendingSources.map(source => ({ source, status: source === 'eng_product' ? 'ok' : 'rate_limited', checkKind: 'forced', requestStartedAtMs: 2000, retryAtMs: 5000 })), followUp: () => gate.promise });
     const first = request(h); await flush(); assert.equal(h.deadlines.size, 1);
-    h.env.focused = false; h.controller.update(); h.env.focused = true; const resume = h.controller.update();
+    h.env.focused = false; h.controller.update(); h.advance(5000); h.env.focused = true; const resume = h.controller.update();
     gate.resolve([]); await first; await resume;
     assert.equal(h.calls.scope.length, 2); assert.deepEqual(h.calls.scope[1].pendingSources, ['eng_tech']); assert.equal(h.deadlines.size, 0);
 });

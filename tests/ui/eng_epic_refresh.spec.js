@@ -560,7 +560,8 @@ const pseudoAnimation = (page, selector, pseudo) => page.evaluate(({ selector: s
 }, { selector, pseudo });
 
 test.describe('glare', () => {
-    test.use({ viewport: { width: 1400, height: 1300 } });
+    // 1350 keeps cards 1-8 inside and card 9 outside: the reserved freshness row in the header moved every card down by about 20px.
+    test.use({ viewport: { width: 1400, height: 1350 } });
 
     test('9. glare marks changed, mounted, in-viewport cards only and is capped at 8', async ({ page }, testInfo) => {
         const ctx = await mockDashboard(page);
@@ -3159,6 +3160,10 @@ test.describe('refresh icon centering', () => {
         const button = await revealRefreshButton(page, 'EPIC-1');
         await page.mouse.move(5, 5);
         await page.addStyleTag({ content: '.epic-header button.epic-refresh-button { opacity: 1 !important; transition: none !important; }' });
+        // The header's reserved freshness row leaves the button at a fractional y; the clipped capture rounds it, so snap it to a whole pixel first.
+        const top = await button.evaluate(node => node.getBoundingClientRect().top);
+        await page.addStyleTag({ content: `body { padding-top: ${Math.ceil(top) - top}px !important; }` });
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
         const png = await button.screenshot();
         const result = await analysePng(page, png, ({ data, width, height }) => {
             const bgIndex = (6 * width + 6) * 4;

@@ -650,8 +650,7 @@ export function useStatsDerivedB({
             if (automatic.source !== 'stats_excluded_capacity') return;
             if (groupPreferences.onboardingRequired || adminSettingsGate.status !== 'clear' || (statsView === 'excludedCapacity' && !excludedCapacityEpicOptions.length && adHocEpicSet.size === 0) || (activeGroupId && activeGroupTeamIds.length === 0)) { automatic.settle([{ source: 'stats_excluded_capacity', status: 'ignored', checkKind: 'unknown', coverage: 'unknown', requestStartedAtMs: 0 }]); return; }
             const sprintId = String(selectedSprint || '');
-            if (!excludedCapacitySprintIds.includes(sprintId)) { automatic.settle([{ source: 'stats_excluded_capacity', status: 'ignored', checkKind: 'unknown', coverage: 'unknown', requestStartedAtMs: 0 }]); return; } // No unrelated Sprint read while outside-range policy is pending.
-            if (!sprintId || !excludedCapacitySprintIds.length) { automatic.settle([{ source: 'stats_excluded_capacity', status: 'ignored', checkKind: 'unknown', coverage: 'unknown', requestStartedAtMs: 0 }]); return; }
+            if (!excludedCapacitySprintIds.includes(sprintId)) { automatic.settle([{ source: 'stats_excluded_capacity', status: 'denied', checkKind: 'unknown', coverage: 'unknown', requestStartedAtMs: 0 }]); return; } // Outside-range Sprint: deferred by policy; no read, no check, source settles quietly.
             const sprintKey = id => `sprint::${id}::${excludedCapacityScopedTeamSignature || 'all'}`;
             return runAutomaticStatsRead(automatic, 'stats_excluded_capacity', issueEditStateRef,
                 signal => requestExcludedCapacityStatsSource(BACKEND_URL, { sprintIds: [sprintId], teamIds: excludedCapacityScopedTeamIds, refresh: true, signal }),

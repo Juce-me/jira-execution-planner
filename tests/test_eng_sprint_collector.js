@@ -230,3 +230,10 @@ test('automatic subtask settlement preserves a user collapse while the read is h
     assert.equal(mounted.result.storySubtasksByKey['S-1'].expanded, false);
     assert.deepEqual(mounted.result.storySubtasksByKey['S-1'].items, [{ key: 'CHILD-2' }]);
 });
+
+test('freshness blocked guard reads only signals the dashboard supplies', () => {
+    const adapters = fs.readFileSync('frontend/src/dashboardFreshnessAdapters.js', 'utf8');
+    for (const phantom of ['openPopover', 'pendingCapacityMutation', 'surfaceBlocked']) {
+        assert.equal(adapters.includes(phantom), false, `${phantom} is never supplied by dashboard.jsx; capacity editor state is covered by capacityInteractionRef and field popovers by issueFieldEdits.activeEditor`);
+    }
+});

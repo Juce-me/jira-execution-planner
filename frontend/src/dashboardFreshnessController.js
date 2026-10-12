@@ -85,7 +85,9 @@ export function createDashboardFreshnessController({ readEnvironment, readAdapte
             if (status === 'ok') {
                 const forced = checkKind === 'forced';
                 const preserveForced = !forced && old.checkKind === 'forced';
-                checks[source] = Object.freeze({ lastCheckedAtMs: preserveForced ? old.lastCheckedAtMs : completedAtMs, checkKind: preserveForced ? old.checkKind : checkKind, coverage: preserveForced ? old.coverage : coverage, failure: forced ? null : (pending?.pending ? 'unverified' : old.failure) });
+                // Unknown provenance records the observation without claiming forced freshness or a cached-only failure.
+                const unknown = checkKind === 'unknown';
+                checks[source] = Object.freeze({ lastCheckedAtMs: preserveForced ? old.lastCheckedAtMs : completedAtMs, checkKind: preserveForced ? old.checkKind : checkKind, coverage: preserveForced ? old.coverage : coverage, failure: forced || unknown ? null : (pending?.pending ? 'unverified' : old.failure) });
                 if (forced) observations[source] = { requestStartedAtMs, completedAtMs };
                 if (pending) {
                     pending.pending = forced ? !(requestStartedAtMs >= pending.needsAfterMs) : false;
@@ -107,18 +109,23 @@ export function createDashboardFreshnessController({ readEnvironment, readAdapte
         if (!retryable.length) return;
         intent.retryUsed = true;
         intent.retryScopeOnly = true;
-        retrySources = retryable.map(item => item.source);
-        retryAtMs = Math.max(now(), ...retryable.map(item => item.retryAtMs));
+        intent.retryDeadlineMs = Math.max(now(), ...retryable.map(item => item.retryAtMs));
+        armRetry(retryable.map(item => item.source), currentIntent);
+    }
+    // The single cancellable retry timer; also re-armed when a blur-interrupted retry resumes before its Retry-After deadline.
+    function armRetry(names, currentIntent) {
+        retrySources = names;
+        retryAtMs = currentIntent.retryDeadlineMs;
         retryHandle = timers.setTimeout(() => {
             const eligible = isFreshnessEligible(readEnvironment(), { starting: true });
-            retryHandle = null; retryAtMs = null;
+            retryHandle = null; retryAtMs = null; currentIntent.retryDeadlineMs = 0;
             reconcile();
             if (intent !== currentIntent || disposed) return;
-            for (const descriptor of retryable) if (intent.sources[descriptor.source]?.pending) intent.sources[descriptor.source].settled = false;
+            for (const name of names) if (intent.sources[name]?.pending) intent.sources[name].settled = false;
             retrySources = [];
             if (eligible) { if (drain) resumeQueued = true; void update().catch(() => {}); }
             else publish();
-        }, retryAtMs - now());
+        }, Math.max(0, retryAtMs - now()));
         publish();
     }
     function update() {
@@ -132,6 +139,7 @@ export function createDashboardFreshnessController({ readEnvironment, readAdapte
         const pendingSources = intent ? Object.keys(intent.sources).filter(source => intent.sources[source].pending && !intent.sources[source].settled) : [];
         const recoveryOnly = Boolean(adapter && !pendingSources.length && adapter.hasDeferredReads?.(env.contextKey));
         if (!adapter || (!pendingSources.length && !recoveryOnly) || retryHandle !== null || !isFreshnessEligible(env, { starting: true })) return Promise.resolve();
+        if (!recoveryOnly && intent.retryScopeOnly && now() < intent.retryDeadlineMs) { armRetry(pendingSources, intent); return Promise.resolve(); }
         const abort = new AbortController();
         const anchorAbort = new AbortController();
         const currentIntent = intent;

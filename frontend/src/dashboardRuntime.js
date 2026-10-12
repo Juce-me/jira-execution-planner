@@ -182,6 +182,7 @@ export function reduceSprintCatalog(state, event) {
             const browserContextId = cacheSource.browserContextId || state.browserContextId;
             const sourceEstablished = identity !== state.identity || browserContextId !== state.browserContextId;
             const failed = cache.state === 'failed' || cache.refreshStatus === 'failed' || cache.refreshFailed === true;
+            const preserved = event.preserveSelection === true && event.selectedSprintId != null;
             return {
                 ...state,
                 generation: state.generation + (sourceEstablished ? 1 : 0),
@@ -196,10 +197,10 @@ export function reduceSprintCatalog(state, event) {
                     validatedAt: cache.validatedAt || null,
                     sprints,
                 },
-                displaySnapshot: event.preserveSelection ? state.validatedSnapshot || state.displaySnapshot : state.displaySnapshot,
+                displaySnapshot: preserved ? state.validatedSnapshot || state.displaySnapshot : state.displaySnapshot,
                 availableSprints: sprints,
-                selectedSprintId: event.preserveSelection ? event.selectedSprintId : selectSprintId(sprints, state.selectedSprintId ?? state.savedSprintId),
-                selectionPreserved: event.preserveSelection === true,
+                selectedSprintId: preserved ? event.selectedSprintId : selectSprintId(sprints, state.selectedSprintId ?? state.savedSprintId),
+                selectionPreserved: preserved,
                 refreshAttemptId,
                 errorReason: failed ? 'refresh_failed' : '',
             };

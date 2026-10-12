@@ -378,7 +378,7 @@ for (const retired of [false,true]) test(`Excluded automatic selected chunk ${re
     } finally {global.fetch=priorFetch;global.window=priorWindow;}
 });
 
-test('outside-range automatic Stats settles without source/cache writes and preserves pending intent', async () => {
+test('outside-range automatic Stats defers quietly: no read, no check, source settles without pending', async () => {
     const {createStatsFreshnessAdapter}=await import('../frontend/src/dashboardFreshnessAdapters.js'),{createDashboardFreshnessController}=await import('../frontend/src/dashboardFreshnessController.js');
     const effects=[],fakeReact={useMemo:fn=>fn(),useRef:initial=>({current:initial}),useEffect:fn=>effects.push(fn)},hooks=loadHooks({reactRuntime:fakeReact}),value=inputs(),priorFetch=global.fetch;let reads=0,commits=0,nonces=0;
     Object.assign(value,{showStats:true,statsView:'projectTrack',availableSprints:[{id:'s1',name:'Displayed',startDate:'2026-05-01'}],excludedCapacityStartSprintId:'s1',excludedCapacityEndSprintId:'s1',setExcludedCapacityData:()=>commits++});value.scope.selectedSprint='outside';value.automaticRefreshRef={current:null};
@@ -387,7 +387,7 @@ test('outside-range automatic Stats settles without source/cache writes and pres
     const adapter=createStatsFreshnessAdapter(()=>input,{}),controller=createDashboardFreshnessController({readEnvironment:()=>env,readAdapter:()=>adapter,notify(){},now:()=>100});global.fetch=async()=>{reads++;throw new Error('unrelated Sprint must never be acquired');};
     try {
         let ended=false;const pending=controller.request({reason:'long_return',absenceStartedAtMs:0}).then(()=>ended=true);await new Promise(resolve=>setTimeout(resolve,30));
-        assert.equal(ended,true,'no indefinitely running adapter');await pending;assert.equal(controller.getState().running,false);assert.equal(controller.getState().pending,true);assert.deepEqual(controller.getState().checks,{});assert.equal(reads,0);assert.equal(commits,0);assert.deepEqual(value.excludedCapacityCacheRef.current,{});assert.equal(nonces,1);for(let n=0;n<3;n++)await controller.update();assert.equal(nonces,4,'explicit update intentionally retries ignored pending work');assert.equal(reads,0);assert.equal(controller.getState().running,false);assert.equal(controller.getState().pending,true);
+        assert.equal(ended,true,'no indefinitely running adapter');await pending;assert.equal(controller.getState().running,false);assert.equal(controller.getState().pending,false);assert.deepEqual(controller.getState().checks,{});assert.equal(reads,0);assert.equal(commits,0);assert.deepEqual(value.excludedCapacityCacheRef.current,{});assert.equal(nonces,1);for(let n=0;n<3;n++)await controller.update();assert.equal(nonces,1,'a denied (deferred) source stays settled; update never retries it');assert.equal(reads,0);assert.equal(controller.getState().running,false);assert.equal(controller.getState().pending,false);
     } finally {controller.dispose();global.fetch=priorFetch;}
 });
 

@@ -40,6 +40,7 @@ const EXPECTED = {
         "projectTrackTotals",
         "projectTrackBreakdown",
         "projectTrackColumnSplit",
+        "projectTrackSingleTeam",
         "projectTrackRangeLabel",
         "projectTrackPhaseEpics",
         "projectTrackPhaseSummary",
@@ -257,6 +258,22 @@ function renderLayer(layer, value) {
     assert.equal(renderToString(React.createElement(Probe)), '');
     return result;
 }
+
+test('Project Track single-team summary follows header scope rather than populated rows', () => {
+    const value = inputs();
+    value.activeGroupTeamIds = ['team-alpha', 'team-beta'];
+    assert.equal(renderLayer('B', value).projectTrackSingleTeam, false);
+    value.scope.isAllTeamsSelected = false;
+    value.scope.selectedTeamSet = new Set(['team-alpha']);
+    assert.equal(renderLayer('B', value).projectTrackSingleTeam, true);
+    value.scope.selectedTeamSet = new Set(['team-alpha', 'team-beta']);
+    assert.equal(renderLayer('B', value).projectTrackSingleTeam, false);
+    value.scope.selectedTeamSet = new Set();
+    assert.equal(renderLayer('B', value).projectTrackSingleTeam, false);
+    value.scope.isAllTeamsSelected = true;
+    value.activeGroupTeamIds = ['team-alpha'];
+    assert.equal(renderLayer('B', value).projectTrackSingleTeam, true);
+});
 
 test('Statistics layer A derives maps from included scoped tasks and preserves query scope', () => {
     const value = inputs();

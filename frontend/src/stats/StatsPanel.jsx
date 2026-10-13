@@ -94,6 +94,7 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
         projectTrackSeries,
         projectTrackRangeLabel,
         projectTrackColumnSplit,
+        projectTrackSingleTeam,
         projectTrackBreakdown,
         projectTrackPhaseLoading,
         projectTrackPhaseError,
@@ -690,15 +691,17 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                             {projectTrackMode === 'team' ? 'TEAM MODE' : 'EPIC MODE'}
                         </div>
 
-                        <div className="stats-card project-track-card">
-                            <ProjectTrackTotalsBar
-                                byTrack={projectTrackTotals.byTrack}
-                                tracks={projectTrackSeries.tracks}
-                                resolveColor={resolveProjectTrackColor}
-                                rangeLabel={projectTrackRangeLabel}
-                                columnSplit={projectTrackColumnSplit}
-                            />
-                        </div>
+                        {(projectTrackMode !== 'team' || !projectTrackSingleTeam) && (
+                            <div className="stats-card project-track-card">
+                                <ProjectTrackTotalsBar
+                                    byTrack={projectTrackTotals.byTrack}
+                                    tracks={projectTrackSeries.tracks}
+                                    resolveColor={resolveProjectTrackColor}
+                                    rangeLabel={projectTrackRangeLabel}
+                                    columnSplit={projectTrackColumnSplit}
+                                />
+                            </div>
+                        )}
 
                         {projectTrackSeries.sprints.length > 1 && (
                             <div className="stats-card project-track-card">

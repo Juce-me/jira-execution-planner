@@ -5501,11 +5501,11 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 return () => window.removeEventListener('scroll', check);
             }, [compactHeaderOffset, compactStickyVisible, showPlanning, planningLayout, filterBarHeight]);
 
+            const selectedVisiblePlanningJiraKeys = React.useMemo(() => visibleTasksForList
+                .filter(task => selectedTasks[task.key])
+                .map(task => task.key), [visibleTasksForList, selectedTasks]);
             const openSelectedInJira = () => {
-                const keys = capacityTasks
-                    .filter(task => selectedTasks[task.key])
-                    .map(task => task.key);
-                openJiraIssueSearch({ jiraUrl, keys });
+                openJiraIssueSearch({ jiraUrl, keys: selectedVisiblePlanningJiraKeys });
             };
 
             const activeControlSurface = compactStickyVisible ? 'compact' : 'main';
@@ -6066,7 +6066,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                             hasVisiblePlanningTasks={visibleTasksForList.length > 0}
                             hasPostponedTasks={planningPostponedTasks.length > 0}
                             hasAwaitingValidationTasks={planningAwaitingValidationTasks.length > 0}
-                            selectedCount={selectedCount}
+                            selectedCount={selectedCount} selectedVisibleCount={selectedVisiblePlanningJiraKeys.length}
                             jiraUrl={jiraUrl}
                             onToggleAccepted={() => toggleIncludeByStatus(['Accepted', 'In Progress'])}
                             onToggleTodo={() => toggleIncludeByStatus(['To Do', 'Pending'])}

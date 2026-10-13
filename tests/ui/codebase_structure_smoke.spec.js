@@ -1122,7 +1122,9 @@ async function installApiMocks(page, calls, options = {}) {
         if (url.pathname === '/api/stats/excluded-capacity-source') {
             return json({
                 data: {
-                    issues: options.excludedCapacitySourceIssues || excludedCapacitySourceIssues,
+                    issues: typeof options.excludedCapacitySourceIssues === 'function'
+                        ? options.excludedCapacitySourceIssues(request.postDataJSON())
+                        : options.excludedCapacitySourceIssues || excludedCapacitySourceIssues,
                     meta: {
                         warnings: [],
                         queryPages: 1,
@@ -2548,7 +2550,7 @@ test('Project Track excludes closed epics and links No track assignee segments t
     expect(apiMocks.unexpectedCalls).toEqual([]);
 });
 
-// #173: Team mode strips split each track segment by the parent Epic's Board column.
+// #262: Team mode strips split each track segment by Story status using Board columns.
 const stripBoardColumns = Array.from({ length: 12 }, (_, index) => ({
     id: `col-${String(index + 1).padStart(8, '0')}`,
     name: index === 11 ? 'Done' : `Stage ${index + 1}`,
@@ -2565,10 +2567,10 @@ function makeStripTeamIssues() {
         const base = { teamId, teamName, projectKey: 'PROD', epicAssignee: 'Dana Owner' };
         const add = (suffix, points, epicProjectTrack, epicStatus, extra = {}) => issues.push(makeExcludedCapacityIssue({
             ...base, key: `S${team}-${suffix}`, epicKey: extra.noEpic ? null : `E${team}-${suffix}`,
-            epicSummary: `Epic ${team}-${suffix}`, points, epicProjectTrack, epicStatus, status: extra.status,
+            epicSummary: `Epic ${team}-${suffix}`, points, epicProjectTrack, epicStatus, status: extra.status || epicStatus,
         }));
         add('C1', 3 + team * 1.5, 'Committed', `Stage ${(team % 11) + 1}`);
-        add('C2', 2.5, 'Committed', 'Done');
+        add('C2', 2.5, 'Committed', 'Done', { status: 'Stage 2' });
         if (team !== 5) add('F1', team === 1 ? 0.5 : 1 + team / 4, 'Flexible', 'Stage 2');
         if (team % 4 === 0) add('N1', 2, null, 'Stage 3');
     }
@@ -2576,17 +2578,21 @@ function makeStripTeamIssues() {
     issues.push(
         makeExcludedCapacityIssue({ ...alpha, key: 'S1-KILLED', epicKey: 'E1-C1', epicSummary: 'Epic 1-C1', points: 50, epicProjectTrack: 'Committed', epicStatus: 'Stage 2', status: 'Killed' }),
         makeExcludedCapacityIssue({ ...alpha, key: 'S1-KILLED-EPIC', epicKey: 'E1-K', epicSummary: 'Killed epic', points: 40, epicProjectTrack: 'Committed', epicStatus: 'Killed' }),
-        makeExcludedCapacityIssue({ ...alpha, key: 'S1-UNLISTED', epicKey: 'E1-U', epicSummary: 'Unlisted status epic', points: 1, epicProjectTrack: 'Committed', epicStatus: 'Parked' }),
-        makeExcludedCapacityIssue({ ...alpha, key: 'S1-NOEPIC', epicKey: null, epicSummary: '', points: 2, epicProjectTrack: 'Committed' }),
+        makeExcludedCapacityIssue({ ...alpha, key: 'S1-UNLISTED', epicKey: 'E1-U', epicSummary: 'Unlisted status epic', points: 1, epicProjectTrack: 'Committed', epicStatus: 'Done', status: 'Parked' }),
+        makeExcludedCapacityIssue({ ...alpha, key: 'S1-NOEPIC', epicKey: null, epicSummary: '', points: 2, epicProjectTrack: null, status: 'Done' }),
     );
     return issues;
 }
 
-async function openProjectTrackStrips(page, calls, { board = stripBoardColumns, width = 1280 } = {}) {
+async function openProjectTrackStrips(page, calls, { board = stripBoardColumns, width = 1280,
+    issues = makeStripTeamIssues(), teamIds = groupTeamIds, selectedTeams = ['all'], analyticsContext, authMode, sprints } = {}) {
     const apiMocks = await installApiMocks(page, calls, {
-        excludedCapacitySourceIssues: makeStripTeamIssues(),
+        excludedCapacitySourceIssues: issues,
+        analyticsContext,
+        authMode,
+        sprints,
         groups: [{
-            id: 'grp-default', name: 'Default', teamIds: groupTeamIds, teamLabels: {}, excludedCapacityEpics: [],
+            id: 'grp-default', name: 'Default', teamIds, teamLabels: {}, excludedCapacityEpics: [],
             ...(board ? { board: { columns: board } } : {}),
         }],
     });
@@ -2595,7 +2601,7 @@ async function openProjectTrackStrips(page, calls, { board = stripBoardColumns, 
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
         selectedView: 'eng', planningLayout: 'list', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
-        activeGroupId: 'grp-default', selectedTeams: ['all'], showStats: true, statsView: 'projectTrack',
+        activeGroupId: 'grp-default', selectedTeams, showStats: true, statsView: 'projectTrack',
         projectTrackMode: 'team',
         excludedCapacityStartSprintId: String(selectedSprintId), excludedCapacityEndSprintId: String(selectedSprintId),
     });
@@ -2649,21 +2655,21 @@ test('Project Track Team mode strips split each track by Board column with a hov
             });
         }
     }
-    // Team 01 Committed = 4.5 (Stage 2) + 2.5 (Done) + 1 (Parked → first column) + 2 (No Epic) = 10 SP.
+    // Team 01 Committed = 4.5 + 2.5 (Story Stage 2, despite its Done Epic) + 1 (Parked → first column).
     const teamOneCommitted = teamOne.locator('.stacked-bar-strip').first();
     const partWidths = await teamOneCommitted.locator('.stacked-bar-strip-part').evaluateAll((parts) => parts.map((part) => part.getBoundingClientRect().width));
     const contentWidth = await teamOneCommitted.evaluate((node) => node.clientWidth);
-    expect(partWidths.map((width) => Math.round((width / contentWidth) * 100))).toEqual([10, 45, 25, 20]);
+    expect(partWidths.map((width) => Math.round((width / contentWidth) * 100))).toEqual([13, 88]);
 
-    // Hover: title, track line, then one line per Board column (0 SP included) plus No Epic.
+    // Hover: title, track line, then one line per Board column (0 SP included).
     await teamOneCommitted.hover();
     const readout = page.locator('.stacked-bar-readout');
     await expect(readout).toBeVisible();
     await expect(readout.locator('strong')).toHaveText('Team 01');
     const lines = await readout.locator('span').allTextContents();
-    expect(lines[0]).toBe('Committed: 10 SP');
+    expect(lines[0]).toBe('Committed: 8 SP');
     expect(lines.slice(1)).toEqual([
-        'Stage 1 1 SP', 'Stage 2 4.5 SP', ...Array.from({ length: 9 }, (_, i) => `Stage ${i + 3} 0 SP`), 'Done 2.5 SP', 'No Epic 2 SP',
+        'Stage 1 1 SP', 'Stage 2 7 SP', ...Array.from({ length: 9 }, (_, i) => `Stage ${i + 3} 0 SP`), 'Done 0 SP',
     ]);
     const readoutClip = await readout.evaluate((node) => [...node.children].every((child) => child.scrollWidth <= child.clientWidth + 1));
     expect(readoutClip).toBeTruthy();
@@ -2734,8 +2740,12 @@ test('Project Track strips fall back to the default board and stay aligned at 37
     const teamOneCommitted = byTeamCard.locator('.stacked-bar-row', { hasText: 'Team 01' }).locator('.stacked-bar-strip').first();
     await teamOneCommitted.hover();
     const lines = await page.locator('.stacked-bar-readout span').allTextContents();
-    // Stage/Parked statuses → To Do, Done → Done, plus No Epic; no In Progress status is observed.
-    expect(lines).toEqual(['Committed: 10 SP', 'To Do 5.5 SP', 'Done 2.5 SP', 'No Epic 2 SP']);
+    // Stage/Parked Story statuses → To Do; the orphan Story makes Done observable.
+    expect(lines).toEqual(['Committed: 8 SP', 'To Do 8 SP', 'Done 0 SP']);
+    const orphanStrip = byTeamCard.locator('.stacked-bar-row', { hasText: 'Team 01' }).locator('.stacked-bar-strip').last();
+    await orphanStrip.hover();
+    await expect(page.locator('.stacked-bar-readout')).toContainText('No track: 2 SP');
+    await expect(page.locator('.stacked-bar-readout')).toContainText('Done 2 SP');
 
     const rows = await readStripGeometry(byTeamCard);
     for (const row of rows) {
@@ -2750,6 +2760,71 @@ test('Project Track strips fall back to the default board and stay aligned at 37
     await page.mouse.move(0, 0);
     await waitForVisualSettled(page);
     await statsView.screenshot({ path: `${screenshotDir}/statistics-project-track-strips-375.png` });
+    expect(apiMocks.unexpectedCalls).toEqual([]);
+});
+
+for (const width of [1280, 375]) test(`Project Track hides duplicate totals for one selected team at ${width}px`, async ({ page }) => {
+    const calls = [];
+    const sourceIssues = [
+        makeExcludedCapacityIssue({ key: 'DEMO-1', epicKey: 'DEMO-E1', epicSummary: 'Shared Epic', teamId: 'team-alpha', teamName: 'Alpha Team',
+            points: 3, projectKey: 'PROD', epicProjectTrack: 'Committed', epicStatus: 'In Progress', status: 'Done' }),
+        makeExcludedCapacityIssue({ key: 'DEMO-2', epicKey: 'DEMO-E1', epicSummary: 'Shared Epic', teamId: 'team-alpha', teamName: 'Alpha Team',
+            points: 2, projectKey: 'PROD', epicProjectTrack: 'Committed', epicStatus: 'In Progress', status: 'In Progress' }),
+    ];
+    const laterStory = makeExcludedCapacityIssue({ key: 'DEMO-3', epicKey: 'DEMO-E2', epicSummary: 'Later Epic', teamId: 'team-alpha', teamName: 'Alpha Team',
+        points: 3, projectKey: 'PROD', epicProjectTrack: 'Flexible', epicStatus: 'To Do', status: 'To Do' });
+    laterStory.fields.customfield_10101 = [{ id: longSprintId, name: longSprintName }];
+    sourceIssues.push(laterStory);
+    const { apiMocks, statsView } = await openProjectTrackStrips(page, calls, {
+        board: null, width, selectedTeams: ['team-alpha'],
+        issues: scope => sourceIssues.filter(issue => scope.sprintIds.map(String).includes(String(issue.fields.customfield_10101[0].id))
+            && scope.teamIds.includes(issue.fields.teamId)),
+        analyticsContext: { enabled: true }, authMode: 'basic',
+        sprints: [
+            { id: selectedSprintId, name: selectedSprintName, state: 'active' },
+            { id: longSprintId, name: longSprintName, state: 'future' },
+        ],
+    });
+    const byTeamCard = statsView.locator('.project-track-card', { hasText: 'By team' });
+    await expect(byTeamCard.locator('.stacked-bar-row-total')).toHaveText('5 SP');
+    await page.mouse.move(0, 0);
+    await waitForVisualSettled(page);
+    await statsView.screenshot({ path: `${screenshotDir}/statistics-project-track-single-team-${width}.png` });
+    await expect(statsView.locator('.project-track-totals')).toHaveCount(0);
+    const events = () => page.evaluate(() => window.dataLayer.filter(entry => entry.event === 'userevent'));
+    const beforeHover = await events();
+    await byTeamCard.locator('.stacked-bar-strip').first().hover();
+    await expect(page.locator('.stacked-bar-readout span')).toHaveText(['Committed: 5 SP', 'In Progress 2 SP', 'Done 3 SP']);
+    expect(await events()).toEqual(beforeHover);
+
+    // Hiding the duplicate total must preserve a useful multi-sprint chart.
+    const range = statsView.locator('[data-stats-range="project-track-sprint"]');
+    await range.getByRole('button', { name: 'End sprint', exact: true }).click();
+    await range.getByRole('option', { name: longSprintName, exact: true }).click();
+    await expect(statsView.locator('.project-track-sprint-chart')).toBeVisible();
+    await expect(byTeamCard.locator('.stacked-bar-row-total')).toHaveText('8 SP');
+    await expect(statsView.locator('.project-track-totals')).toHaveCount(0);
+    await range.getByRole('button', { name: 'End sprint', exact: true }).click();
+    await range.getByRole('option', { name: selectedSprintName, exact: true }).click();
+    await expect(byTeamCard.locator('.stacked-bar-row-total')).toHaveText('5 SP');
+
+    // Two selected teams still need a summary, even when only one has Story Points.
+    const teams = page.locator('.view-selector .team-dropdown').first();
+    await teams.locator('.team-dropdown-toggle').click();
+    await teams.getByRole('checkbox', { name: 'team-beta', exact: true }).check();
+    await teams.locator('.team-dropdown-toggle').click();
+    await expect(statsView.locator('.project-track-totals .stacked-bar-row-total')).toHaveText('5 SP');
+    await expect(byTeamCard.locator('.stacked-bar-row')).toHaveCount(1);
+    await teams.locator('.team-dropdown-toggle').click();
+    await teams.getByRole('checkbox', { name: 'team-beta', exact: true }).uncheck();
+    await teams.locator('.team-dropdown-toggle').click();
+    await expect(statsView.locator('.project-track-totals')).toHaveCount(0);
+
+    const mode = statsView.getByRole('radiogroup', { name: 'Mode' });
+    await mode.getByRole('radio', { name: 'Epic', exact: true }).click();
+    await expect(statsView.locator('.project-track-totals')).toHaveCount(1);
+    await expect(statsView.locator('.stacked-bar-strip')).toHaveCount(0);
+    expect((await events()).some(entry => entry.event_name === 'stats_action' && entry.workflow_action === 'mode_change')).toBeTruthy();
     expect(apiMocks.unexpectedCalls).toEqual([]);
 });
 
@@ -3183,6 +3258,9 @@ test('multiple groups keep the main controls on one row and settings beside refr
             row.querySelector('.refresh-icon'),
             row.querySelector('.group-gear-button'),
         ];
+        // The reserved freshness slot is its own flex line under the controls; the controls line ends one row gap above it.
+        const slotRect = row.querySelector('.dashboard-freshness-slot').getBoundingClientRect();
+        const controlsBottom = slotRect.top - Number.parseFloat(getComputedStyle(row).rowGap);
         return {
             controlHeight,
             rightOverflow: rowRect.right - headerRect.right,
@@ -3192,7 +3270,7 @@ test('multiple groups keep the main controls on one row and settings beside refr
                 row.querySelector('.jira-export-icon-button'),
                 row.querySelector('.refresh-icon'),
                 row.querySelector('.group-gear-button'),
-            ].map((control) => Math.abs(rowRect.bottom - control.getBoundingClientRect().bottom)),
+            ].map((control) => Math.abs(controlsBottom - control.getBoundingClientRect().bottom)),
             buttons: buttons.map((button) => {
             const rect = button.getBoundingClientRect();
             const iconRect = button.querySelector('svg').getBoundingClientRect();
@@ -5504,7 +5582,7 @@ async function watchLazyFallback(page, text) {
     }, text);
 }
 const lazyFallbackSeen = page => page.evaluate(() => window.__lazyFallbackSeen);
-async function installLazyStatsProbe(page, { abortRetry = false, mutateManifest } = {}) {
+async function installLazyStatsProbe(page, { abortRetry = false, mutateManifest, missingChunk = false, missingManifest = false } = {}) {
     const manifest = lazyManifest();
     const requests = { chunks: [], manifests: [], documents: [] };
     page.on('request', request => {
@@ -5513,11 +5591,13 @@ async function installLazyStatsProbe(page, { abortRetry = false, mutateManifest 
     });
     await page.route(`**/frontend/dist/${manifest.views.stats.path}*`, async route => {
         const url = new URL(route.request().url()); requests.chunks.push(url.href);
+        if (missingChunk) return requests.documents.length > 1 ? route.fallback() : route.fulfill({ status: 404, contentType: 'text/html', body: 'Not found' });
         if (!url.searchParams.has('jep_retry') || abortRetry) return route.abort('failed');
         return route.fallback();
     });
     await page.route('**/frontend/dist/lazy-views-*.json', async route => {
         requests.manifests.push(route.request().url());
+        if (missingManifest) return route.fulfill({ status: 404, contentType: 'text/html', body: 'Not found' });
         if (!mutateManifest) return route.fallback();
         const changed = JSON.parse(JSON.stringify(manifest)); mutateManifest(changed);
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(changed) });
@@ -5570,12 +5650,55 @@ test('Statistics lazy failure twice offers reload guidance', async ({ page }) =>
     const { requests } = await installLazyStatsProbe(page, { abortRetry: true });
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
     await page.getByRole('button', { name: 'Retry', exact: true }).click();
-    await expect(page.getByRole('alert')).toHaveText('Reload the page to get the latest version');
+    await expect(page.getByRole('alert')).toContainText('Reload the page to get the latest version');
+    await expect(page.getByRole('button', { name: 'Reload page', exact: true })).toBeVisible();
     await settleContract(page);
     expect(requests.chunks).toHaveLength(2);
     expect(requests.manifests).toHaveLength(1);
     expect(requests.documents).toEqual(['/']);
     await expect(page.getByRole('button', { name: 'Retry', exact: true })).toHaveCount(0);
+});
+
+test('Statistics missing deployed assets offer a working page reload', async ({ page }, testInfo) => {
+    await installApiMocks(page, [], { useCommittedDist: true, authMode: 'basic', analyticsContext: { enabled: true } });
+    await seedStatsContractPrefs(page);
+    const { requests } = await installLazyStatsProbe(page, { missingChunk: true, missingManifest: true });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await page.addStyleTag({ content: '* { transition: none !important; animation: none !important; }' });
+    const productEvents = () => page.evaluate(() => window.dataLayer.filter(entry => ['userevent', 'pageview'].includes(entry.event)).map(({ duration_ms, ...entry }) => entry));
+    const eventsBeforeRecovery = await productEvents();
+    await page.getByRole('button', { name: 'Retry', exact: true }).click();
+    const notice = page.getByRole('alert');
+    await expect(notice).toContainText('Reload the page to get the latest version');
+    await expect(notice).toContainText('Unsaved changes will be lost');
+    await expect(page.getByText('Loading Statistics…', { exact: true })).toHaveCount(0);
+    await settleContract(page);
+    expect(requests.chunks).toHaveLength(1);
+    expect(requests.manifests).toHaveLength(1);
+    expect(requests.documents).toEqual(['/']);
+    expect(await productEvents()).toEqual(eventsBeforeRecovery);
+    const reload = notice.getByRole('button', { name: 'Reload page', exact: true });
+    await reload.hover();
+    const hover = await reload.evaluate(node => {
+        const style = getComputedStyle(node);
+        return { color: style.color, background: style.backgroundColor, width: node.getBoundingClientRect().width };
+    });
+    expect(hover.color).not.toBe(hover.background);
+    expect(hover.width).toBeGreaterThan(44);
+    await testInfo.attach('lazy-reload-recovery', { body: await page.screenshot({ path: `${screenshotDir}/lazy-reload-recovery.png` }), contentType: 'image/png' });
+    await page.evaluate(() => {
+        window.addEventListener('beforeunload', () => {
+            sessionStorage.setItem('lazy-recovery-events', JSON.stringify(window.dataLayer.filter(entry => ['userevent', 'pageview'].includes(entry.event)).map(({ duration_ms, ...entry }) => entry)));
+        });
+    });
+    await reload.click();
+    await expect(page.locator('.stats-panel.open .stats-view-toggle')).toBeVisible();
+    await page.addStyleTag({ content: '* { transition: none !important; animation: none !important; }' });
+    await settleContract(page);
+    expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem('lazy-recovery-events')))).toEqual(eventsBeforeRecovery);
+    expect(requests.documents).toEqual(['/', '/']);
+    expect(requests.chunks).toHaveLength(2);
+    await testInfo.attach('lazy-reload-restored', { body: await page.screenshot({ path: `${screenshotDir}/lazy-reload-restored.png`, animations: 'disabled' }), contentType: 'image/png' });
 });
 
 for (const [name, mutateManifest] of [
@@ -5590,7 +5713,7 @@ for (const [name, mutateManifest] of [
     page.on('request', request => { if (/StatsPanel.*\.js/.test(request.url())) graphs.push(request.url()); });
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
     await page.getByRole('button', { name: 'Retry', exact: true }).click();
-    await expect(page.getByRole('alert')).toHaveText('Reload the page to get the latest version');
+    await expect(page.getByRole('alert')).toContainText('Reload the page to get the latest version');
     expect(graphs).toHaveLength(1);
     expect(requests.manifests).toHaveLength(1);
     expect(requests.documents).toEqual(['/']);
@@ -5694,4 +5817,75 @@ test('Statistics lazy render exception is not reported as a chunk load failure',
     await expect(page.getByRole('button', { name: 'Retry', exact: true })).toHaveCount(0);
     await expect(page.getByText('This view could not be loaded.')).toHaveCount(0);
     await expect(page.getByText('Reload the page to get the latest version')).toHaveCount(0);
+});
+
+for (const connected of [false, true]) test(`Task9 freshness reserved copy preserves responsive header geometry ${connected ? 'with ENG EPM switch' : 'ENG only'}`, async ({ page }, testInfo) => {
+    const { mockDashboard, openCatchUp, installLifecycleControl, taskPayload } = require('./eng_epic_refresh_fixture');
+    test.setTimeout(120000);
+    const lifecycle = await installLifecycleControl(page), ctx = await mockDashboard(page);
+    if (connected) { const { activeHomeTokenConnection } = require('./epm_home_token_fixture'); ctx.respond('/api/me/connections/home-token', ({json}) => json(activeHomeTokenConnection())); }
+    await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: dashboardJs }));
+    await openCatchUp(page, ctx, { prefs: { groupByInitiativeChoice: false } });
+    await page.addStyleTag({ content: '*,*::before,*::after{animation:none!important;transition:none!important}' });
+    const viewports = [375,698,755,768,999,1000,1010,1023,1400].map(width => ({width,height:900}));
+    const states = ['rest', 'focused', 'applied'];
+    const setSearchState = async state => { const search = page.locator('.header-actions-row .search-input'); await search.fill(state === 'applied' ? 'synthetic' : ''); if (state === 'focused') await search.focus(); else await search.blur(); await waitForVisualSettled(page); };
+    const measure = () => page.locator('.header-actions-row').evaluate(row => {
+        const header = row.closest('.subtitle'), status = row.querySelector('[data-dashboard-freshness-status]'), style = getComputedStyle(row.closest('.container'));
+        const documentScroll = document.documentElement.scrollWidth;
+        const tooltips = [...document.querySelectorAll('.initiative-grouping-tooltip')];
+        const tooltipStyles = tooltips.map(node => node.getAttribute('style'));
+        const tooltipHidden = tooltips.every(node => getComputedStyle(node).visibility === 'hidden');
+        let documentWithoutTooltip;
+        try {
+            tooltips.forEach(node => node.style.setProperty('display', 'none', 'important'));
+            documentWithoutTooltip = document.documentElement.scrollWidth;
+        } finally {
+            tooltips.forEach((node, index) => tooltipStyles[index] === null ? node.removeAttribute('style') : node.setAttribute('style', tooltipStyles[index]));
+        }
+        return { headerHeight: header.getBoundingClientRect().height, title: (()=>{const node=header.querySelector('.subtitle-main'),range=document.createRange();range.selectNodeContents(node);const box=node.getBoundingClientRect();return {width:box.width,height:box.height,textBoxes:[...range.getClientRects()].map(rect=>({left:rect.left,right:rect.right,top:rect.top,bottom:rect.bottom})),scroll:node.scrollWidth,client:node.clientWidth};})(), searchWidth:row.querySelector('.search-input').getBoundingClientRect().width, rowHeight: row.getBoundingClientRect().height,
+            sticky: ['--compact-header-offset','--planning-offset','--planning-sticky-top','--filterbar-sticky-top','--epic-sticky-top','--scenario-sticky-top'].map(key => style.getPropertyValue(key)),
+            buttons: [...row.querySelectorAll('.header-icon-button')].map(node => { const box=node.getBoundingClientRect();return {width:box.width,height:box.height}; }),
+            slotHeight: row.querySelector('.dashboard-freshness-slot').getBoundingClientRect().height, controlsBounds: [...row.querySelectorAll('.search-input,.header-icon-button,.view-mode-control,[data-dashboard-freshness-status]')].map(node => {const r=node.getBoundingClientRect();return {left:r.left,right:r.right};}),
+            status: status ? { scroll:status.scrollWidth,client:status.clientWidth,whiteSpace:getComputedStyle(status).whiteSpace,minWidth:getComputedStyle(status).minWidth,height:status.getBoundingClientRect().height } : null,
+            documentScroll, documentWithoutTooltip, tooltipHidden, viewport: document.documentElement.clientWidth };
+    });
+    const before = {};
+    const dir = path.join(repoRoot,'tmp/freshness-251/task-9-screenshots'); fs.mkdirSync(dir,{recursive:true});
+    for (const viewport of viewports) { await page.setViewportSize(viewport); for (const state of states) { await setSearchState(state); const key = `${viewport.width}-${state}`; before[key]=await measure(); await page.screenshot({path:path.join(dir,`header-reserved-before-${connected}-${key}.png`),fullPage:false}); } }
+    await setSearchState('rest');
+    ctx.respond(call => call.pathname === '/api/tasks-with-team-name' && !call.params.purpose, ({call,json}) => json({ ...taskPayload(call.params,ctx.scenario), ...(call.params.project==='product'?{capped:true}:{}) }));
+    await lifecycle.returnAfter(13*60000);
+    const status = page.locator('[data-dashboard-freshness-status]'); await expect(status).toHaveText(/Checked .* ago; partial results; coverage unknown/);
+    const geometry = {};
+    for (const viewport of viewports) { await page.setViewportSize(viewport); for (const state of states) {
+        await setSearchState(state); const key = `${viewport.width}-${state}`, after=await measure(); geometry[key]={before:before[key],after};
+        console.log(`task9-geometry-${connected}-${key}: ${JSON.stringify(geometry[key])}`);await page.screenshot({path:path.join(dir,`header-reserved-after-${connected}-${key}.png`),fullPage:false});
+        expect.soft(after.headerHeight).toBe(before[key].headerHeight);expect.soft(after.rowHeight).toBe(before[key].rowHeight);expect.soft(after.sticky).toEqual(before[key].sticky);
+        expect.soft(after.buttons).toEqual(before[key].buttons);expect.soft(after.buttons.every(box=>box.width===38&&box.height===38)).toBe(true);
+        expect.soft(after.status.scroll).toBeLessThanOrEqual(after.status.client);expect.soft(after.status.whiteSpace).not.toBe('nowrap');expect.soft(after.status.minWidth).toBe('0px');
+        expect.soft(after.searchWidth).toBe(before[key].searchWidth); expect.soft(after.slotHeight).toBe(before[key].slotHeight); expect.soft(after.controlsBounds.every(box => box.left >= 0 && box.right <= after.viewport + 1)).toBe(true);
+        for (const copy of ['Updates pending', 'Could not check; showing previous data', 'Cached data; check unavailable', 'Checked 24h ago; freshness unconfirmed', 'Checked 24h ago; partial results; coverage unknown']) {
+            const height = await status.evaluate((node, text) => { const previous=node.textContent; node.textContent=text; const height=node.closest('.header-actions-row').getBoundingClientRect().height; node.textContent=previous; return height; }, copy);
+            expect.soft(height).toBe(after.rowHeight);
+        }
+        // Approved #251 baseline exception (2026-10-12): only the hidden Initiative tooltip at 755–1023px; no added overflow.
+        const baselineTooltipException = viewport.width >= 755 && viewport.width <= 1023;
+        if (baselineTooltipException) expect.soft(before[key].documentScroll).toBeLessThanOrEqual(after.viewport + 26);
+        expect.soft(after.documentScroll).toBeLessThanOrEqual(baselineTooltipException ? Math.max(after.viewport, before[key].documentScroll) : after.viewport);
+        expect.soft(after.documentWithoutTooltip).toBeLessThanOrEqual(after.viewport);
+        if (after.documentScroll > after.viewport) expect.soft(after.tooltipHidden).toBe(true);
+        await expect(page.locator('.refresh-icon + .group-gear-button')).toHaveCount(1);
+        await expect(page.locator('.compact-sticky-header [data-dashboard-freshness-status], .compact-sticky-header .refresh-icon')).toHaveCount(0);
+        await page.screenshot({path:path.join(dir,`header-reserved-after-${connected}-${key}.png`),fullPage:false});
+        await page.locator('.header-actions-row .search-input').blur(); await waitForVisualSettled(page);
+        const exportButton = page.getByRole('button',{name:'Open Jira issue menu'}); await exportButton.click();
+        const menu = page.locator('.jira-export-menu'); await expect(menu).toBeVisible();
+        expect.soft(await menu.evaluate(node => {const box=node.getBoundingClientRect();return node.contains(document.elementFromPoint(box.left+box.width/2,box.top+Math.min(15,box.height/2)));})).toBe(true);
+        await exportButton.click();
+    }}
+    await page.setViewportSize({width:1400,height:900});await page.getByRole('button',{name:'Open Jira issue menu'}).click();await expect(page.locator('.jira-export-menu')).toBeVisible();
+    const layered=await page.locator('.jira-export-menu').evaluate(menu=>{const box=menu.getBoundingClientRect();return menu.contains(document.elementFromPoint(box.left+box.width/2,box.top+Math.min(15,box.height/2)));});expect.soft(layered).toBe(true);
+    await page.screenshot({path:path.join(dir,'header-menu-layer.png'),fullPage:false});
+    await testInfo.attach('task9-header-geometry',{body:JSON.stringify(geometry,null,2),contentType:'application/json'});console.log(`task9-header-geometry: ${JSON.stringify(geometry)}`);
 });

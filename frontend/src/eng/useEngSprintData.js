@@ -47,6 +47,10 @@ async function buildTaskResponseError(response) {
     error.loginUrl = errorData.loginUrl;
     error.recoveryUrl = errorData.recoveryUrl;
     error.status = response.status;
+    error.projectAccessStatus = errorData.projectAccessStatus;
+    const headerSeconds = response.headers?.get?.('Retry-After');
+    error.retryAfterSeconds = typeof errorData.retryAfterSeconds === 'number' ? errorData.retryAfterSeconds
+        : (/^\d+$/.test(headerSeconds || '') ? Number(headerSeconds) : undefined);
     return error;
 }
 
@@ -139,7 +143,7 @@ export function useEngSprintData({
             let refresh = false;
             if (pageLoadRefreshRef.current || options.forceRefresh) {
                 refresh = true;
-                pageLoadRefreshRef.current = false;
+                if (!options.automatic && !options.background) pageLoadRefreshRef.current = false;
             }
             const requestTasks = options.epicRefresh
                 ? () => (options.epicRequest || fetchEpicRefresh)(backendUrl, {
@@ -150,7 +154,7 @@ export function useEngSprintData({
                     teamIds: groupTeamIds,
                     teamLabels: groupTeamLabels,
                     epicKey: options.epicKeys[0],
-                    signal: requestSignal,
+                    signal: requestSignal, automatic: options.automatic || options.background,
                 })
                 : () => fetchEngTasks(backendUrl, {
                     project,
@@ -163,7 +167,7 @@ export function useEngSprintData({
                     purpose: options.purpose,
                     epicKeys: options.epicKeys,
                     signal: requestSignal,
-                    debugTimings: measured,
+                    debugTimings: measured, automatic: options.automatic || options.background,
                 });
             const response = await requestTasks();
 
@@ -210,7 +214,7 @@ export function useEngSprintData({
             const filteredEpics = filterEpicsByTaskEpicKeys(Object.fromEntries(reconciledEpicEntries.map(epic => [epic.key, epic])), filteredTasks);
             if (options.shouldApplyResult?.() === false) return IGNORED_RESULT;
 
-            if (options.updateEpics !== false) {
+            if (!options.automatic && options.updateEpics !== false) {
                 setEpicDetails(prev => ({ ...prev, ...filteredEpics }));
                 if (project === 'product') {
                     setProductEpicsInScope(filteredEpicsInScope);
@@ -218,14 +222,15 @@ export function useEngSprintData({
                     setTechEpicsInScope(filteredEpicsInScope);
                 }
             }
-            if (options.epicsInScopeSetter) {
+            if (!options.automatic && options.epicsInScopeSetter) {
                 options.epicsInScopeSetter(filteredEpicsInScope);
             }
             if (readToken) Object.defineProperty(filteredTasks, ISSUE_EDIT_READ_TOKEN, { value: readToken });
-            if (options.epicRefresh) {
+            if (options.epicRefresh || options.automatic) {
                 Object.defineProperty(filteredTasks, EPIC_REFRESH_META, {
                     value: {
                         epics: Object.fromEntries(reconciledEpicEntries.map(epic => [epic.key, epic])),
+                        ...(options.automatic ? { epicsInScope: filteredEpicsInScope, coverage: data.capped === true || data.epicKeysMissing?.length ? 'partial' : 'unknown' } : {}),
                         capped: data.capped === true,
                         epicKeysMissing: Array.isArray(data.epicKeysMissing) ? data.epicKeysMissing : [],
                     },
@@ -238,12 +243,12 @@ export function useEngSprintData({
             if (err.name === 'AbortError') {
                 return IGNORED_RESULT;
             }
-            if (isAuthenticationRequiredError(err)) return AUTHENTICATION_REQUIRED_RESULT;
+            if (isAuthenticationRequiredError(err)) { if (options.automatic || options.background) throw err; return AUTHENTICATION_REQUIRED_RESULT; }
             if (options.shouldApplyResult?.() === false) return IGNORED_RESULT;
             if (options.purpose === 'alerts' && err.code === 'alert_scope_too_large') return ALERT_SCOPE_TOO_LARGE_RESULT;
-            if (options.epicRefresh && err.code === 'missing_project_access') return ENG_TASK_LOAD_OUTCOME.LANE_DENIED;
-            if (options.epicRefresh && err.code === 'epic_refresh_rate_limited') return ENG_TASK_LOAD_OUTCOME.RATE_LIMITED;
-            const handledServerConnection = !(options.epicRefresh && err.status) && onServerConnectionFailure?.(err) === true;
+            if ((options.epicRefresh || options.automatic) && err.code === 'missing_project_access') return { status: 'denied', projectAccessStatus: err.projectAccessStatus };
+            if ((options.epicRefresh || options.automatic) && err.status === 429) return { status: 'rate_limited', retryAfterSeconds: err.retryAfterSeconds };
+            const handledServerConnection = !options.automatic && !options.background && !(options.epicRefresh && err.status) && onServerConnectionFailure?.(err) === true;
             if (setErrors) {
                 setError(handledServerConnection ? '' : taskLoadErrorMessage(err, backendUrl));
             }
@@ -372,19 +377,20 @@ export function useEngSprintData({
         }
     };
 
-    const loadAlertEpics = async ({ forceRefresh = false, shouldApplyResult, signal } = {}) => {
+    const loadAlertEpics = async ({ forceRefresh = false, shouldApplyResult, signal, automatic = false } = {}) => {
         if (strictBoardActive) return ENG_TASK_LOAD_OUTCOME.IGNORED;
+        if (shouldApplyResult?.() === false) return ENG_TASK_LOAD_OUTCOME.IGNORED;
         if (activeGroupId && activeGroupTeamIds.length === 0) {
             return;
         }
-        const results = await Promise.all([
+        const settled = await Promise.allSettled([
             fetchTasks('product', {
                 purpose: 'alerts',
                 useLoading: false,
                 setErrorOnFailure: false,
                 forceRefresh,
                 shouldApplyResult,
-                signal
+                signal, background: automatic
             }),
             fetchTasks('tech', {
                 purpose: 'alerts',
@@ -392,16 +398,20 @@ export function useEngSprintData({
                 setErrorOnFailure: false,
                 forceRefresh,
                 shouldApplyResult,
-                signal
+                signal, background: automatic
             })
         ]);
+        const results = settled.map(result => result.value);
         results.forEach(result => issueEditState?.finishRead(result?.[ISSUE_EDIT_READ_TOKEN]));
+        const rejected = settled.find(result => result.status === 'rejected');
+        if (rejected) throw rejected.reason;
         const toAlertOutcome = result => (typeof result === 'string' ? result : ENG_TASK_LOAD_OUTCOME.APPLIED);
         return { product: toAlertOutcome(results[0]), tech: toAlertOutcome(results[1]) };
     };
 
-    const loadReadyToCloseProductTasks = async ({ forceRefresh = false, shouldApplyResult, signal } = {}) => {
+    const loadReadyToCloseProductTasks = async ({ forceRefresh = false, shouldApplyResult, signal, automatic = false } = {}) => {
         if (strictBoardActive) return ENG_TASK_LOAD_OUTCOME.IGNORED;
+        if (shouldApplyResult?.() === false) return ENG_TASK_LOAD_OUTCOME.IGNORED;
         if (activeGroupId && activeGroupTeamIds.length === 0) {
             setReadyToCloseProductTasks([]);
             setReadyToCloseProductEpicsInScope([]);
@@ -427,7 +437,7 @@ export function useEngSprintData({
             setErrorOnFailure: false,
             forceRefresh,
             shouldApplyResult,
-            signal
+            signal, background: automatic
         });
         const readToken = data?.[ISSUE_EDIT_READ_TOKEN];
         try {
@@ -439,8 +449,9 @@ export function useEngSprintData({
         }
     };
 
-    const loadReadyToCloseTechTasks = async ({ forceRefresh = false, shouldApplyResult, signal } = {}) => {
+    const loadReadyToCloseTechTasks = async ({ forceRefresh = false, shouldApplyResult, signal, automatic = false } = {}) => {
         if (strictBoardActive) return ENG_TASK_LOAD_OUTCOME.IGNORED;
+        if (shouldApplyResult?.() === false) return ENG_TASK_LOAD_OUTCOME.IGNORED;
         if (activeGroupId && activeGroupTeamIds.length === 0) {
             setReadyToCloseTechTasks([]);
             setReadyToCloseTechEpicsInScope([]);
@@ -466,7 +477,7 @@ export function useEngSprintData({
             setErrorOnFailure: false,
             forceRefresh,
             shouldApplyResult,
-            signal
+            signal, background: automatic
         });
         const readToken = data?.[ISSUE_EDIT_READ_TOKEN];
         try {
@@ -543,6 +554,7 @@ export function useEngSprintData({
         const readToken = data?.[ISSUE_EDIT_READ_TOKEN];
         try {
             if (Array.isArray(data)) return { status: 'ok', items: data, epicsInScope };
+            if (data?.status === 'denied' || data?.status === 'rate_limited') return data;
             if (data === ENG_TASK_LOAD_OUTCOME.LANE_DENIED) return { status: 'denied' };
             if (data === ENG_TASK_LOAD_OUTCOME.RATE_LIMITED) return { status: 'rate_limited' };
             if (data === ENG_TASK_LOAD_OUTCOME.AUTH_REQUIRED) return { status: 'auth_required' };
@@ -609,38 +621,46 @@ export function useEngSprintData({
         return lanes;
     };
 
-    // Per-epic refresh (issue #213): both lanes, no loading flag, results handed back for one atomic apply.
-    const loadEpicRefresh = async ({ epicKey, shouldApplyResult, signal } = {}) => {
-        if (strictBoardActive) return { product: { status: 'ignored' }, tech: { status: 'ignored' } };
+    const collectLanes = async ({ epicKey, shouldApplyResult, signal, automatic = false, pendingSources } = {}) => {
+        const retained = [];
+        let released = false;
+        const release = () => { if (!released) { released = true; retained.forEach(token => issueEditState?.finishRead(token)); } };
         const fetchLane = async project => {
+            if (pendingSources && !pendingSources.includes(`eng_${project}`)) return { status: 'ignored' };
             const data = await fetchTasks(project, {
-                epicRefresh: true,
-                epicKeys: [epicKey],
-                updateEpics: false,
-                useLoading: false,
-                setErrorOnFailure: false,
-                forceRefresh: true,
-                shouldApplyResult,
-                signal,
+                ...(epicKey ? { epicRefresh: true, epicKeys: [epicKey] } : {}), automatic,
+                updateEpics: false, useLoading: false, setErrorOnFailure: false, forceRefresh: true,
+                shouldApplyResult, signal,
             });
             const readToken = data?.[ISSUE_EDIT_READ_TOKEN];
-            try {
-                if (Array.isArray(data)) return { status: 'ok', items: data, meta: data[EPIC_REFRESH_META] };
-                if (data === ENG_TASK_LOAD_OUTCOME.LANE_DENIED) return { status: 'denied' };
-                if (data === ENG_TASK_LOAD_OUTCOME.RATE_LIMITED) return { status: 'rate_limited' };
-                if (data === ENG_TASK_LOAD_OUTCOME.AUTH_REQUIRED) return { status: 'auth_required' };
-                if (data === ENG_TASK_LOAD_OUTCOME.IGNORED) return { status: 'ignored' };
-                return { status: 'failed' };
-            } finally {
-                issueEditState?.finishRead(readToken);
-            }
+            if (readToken) retained.push(readToken);
+            if (Array.isArray(data)) return { status: 'ok', items: data, meta: data[EPIC_REFRESH_META], coverage: data[EPIC_REFRESH_META]?.coverage || 'unknown' };
+            if (data?.status) return data;
+            if (data === ENG_TASK_LOAD_OUTCOME.AUTH_REQUIRED) return { status: 'auth_required' };
+            if (data === ENG_TASK_LOAD_OUTCOME.IGNORED) return { status: 'ignored' };
+            return { status: 'failed' };
         };
-        const [product, tech] = await Promise.all([fetchLane('product'), fetchLane('tech')]);
-        return { product, tech };
+        // A rejected lane's peer settles before disposal, so no read lease escapes a terminal boundary.
+        const results = await Promise.allSettled(['product', 'tech'].map(fetchLane));
+        const rejected = results.find(result => result.status === 'rejected');
+        if (rejected) { release(); throw rejected.reason; }
+        const [product, tech] = results.map(result => result.value);
+        if (!automatic) release();
+        return { product, tech, release };
+    };
+    const collectGroupRefresh = (job, { sameScope } = {}) => collectLanes({
+        automatic: true, signal: job.signal, pendingSources: job.pendingSources,
+        shouldApplyResult: () => job.shouldApply() && sameScope(),
+    });
+    // Per-epic refresh (issue #213): both lanes, no loading flag, results handed back for one atomic apply.
+    const loadEpicRefresh = (options = {}) => {
+        if (strictBoardActive) return { product: { status: 'ignored' }, tech: { status: 'ignored' } };
+        return collectLanes(options);
     };
 
     return {
         loadGroupTasks,
+        collectGroupRefresh,
         loadEpicRefresh,
         loadEpicAlerts,
         fetchTasks,

@@ -11,11 +11,11 @@ const statsPostOptions = (payload, signal) => ({
     body: JSON.stringify(payload)
 });
 
-export const fetchBurnoutStats = (backendUrl, payload, { signal } = {}) =>
-    trackedFetch('stats_source', `${backendUrl}/api/stats/burnout`, statsPostOptions(payload, signal), { featureName: 'stats' });
+export const fetchBurnoutStats = (backendUrl, payload, { signal, suppressAbortResult = false } = {}) =>
+    trackedFetch('stats_source', `${backendUrl}/api/stats/burnout`, statsPostOptions(payload, signal), { featureName: 'stats', suppressAbortResult });
 
-export const fetchEpicCohortStats = (backendUrl, payload, { signal } = {}) =>
-    trackedFetch('stats_source', `${backendUrl}/api/stats/epic-cohort`, statsPostOptions(payload, signal), { featureName: 'stats' });
+export const fetchEpicCohortStats = (backendUrl, payload, { signal, suppressAbortResult = false } = {}) =>
+    trackedFetch('stats_source', `${backendUrl}/api/stats/epic-cohort`, statsPostOptions(payload, signal), { featureName: 'stats', suppressAbortResult });
 
 export const fetchProjectTrackPhaseDurations = (backendUrl, { epicKeys = [], refresh = false, signal } = {}) =>
     trackedFetch(

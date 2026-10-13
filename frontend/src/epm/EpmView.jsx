@@ -7,6 +7,7 @@ export function EpmView({
     selectedView,
     epmConfigLoaded,
     epmProjectsLoading,
+    epmProjectsLoaded = false,
     epmRollupBoards,
     epmRollupTree,
     epmSelectedProjectId,
@@ -45,7 +46,7 @@ export function EpmView({
                 />
             )}
 
-            {epmConfigLoaded && epmSelectedProjectId && !epmProjectsLoading && !selectedEpmProject && (
+            {epmConfigLoaded && epmProjectsLoaded && epmSelectedProjectId && !epmProjectsLoading && !selectedEpmProject && (
                 <EmptyState title="Project unavailable">
                     <p>This project is not available in the current EPM tab.</p>
                 </EmptyState>

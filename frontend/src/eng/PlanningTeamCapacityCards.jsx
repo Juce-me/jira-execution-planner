@@ -135,10 +135,11 @@ export default function PlanningTeamCapacityCards({
     onCapacitySaved,
     onCapacityRetry,
     onAnalyticsAction,
+    onInteractionChange,
     resolveTeamColor,
     getTeamCapacityMeta,
 }) {
-    const [editor, setEditor] = React.useState(null);
+    const [editor, updateEditor] = React.useState(null);
     const [invalidTargets, setInvalidTargets] = React.useState(() => new Set());
     const [configEditingSuppressed, setConfigEditingSuppressed] = React.useState(false);
     const inputRef = React.useRef(null);
@@ -155,6 +156,12 @@ export default function PlanningTeamCapacityCards({
     const invalidTargetsRef = React.useRef(invalidTargets);
     const configSuppressedRef = React.useRef(configEditingSuppressed);
     const editorRef = React.useRef(editor);
+
+    const setEditor = value => {
+        const next = typeof value === 'function' ? value(editorRef.current) : value;
+        editorRef.current = next; onInteractionChange?.(Boolean(next)); updateEditor(next);
+    };
+    React.useEffect(() => () => onInteractionChange?.(false), []);
 
     latestScopeRef.current = scopeSignature;
     latestEntriesRef.current = entries;

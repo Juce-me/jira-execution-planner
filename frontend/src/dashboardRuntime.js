@@ -110,6 +110,7 @@ export function createSprintCatalogState({ displaySnapshot = null, savedSprintId
 
 export function reduceSprintCatalog(state, event) {
     if (!state || !event || typeof event !== 'object') return state;
+    if (state.authority === 'auth_locked' && event.type !== 'AUTH_LOCK') return state;
     if (['RESPONSE', 'FAILURE', 'EXHAUSTED', 'FINISH', 'PERSISTED'].includes(event.type)
         && !sameEventGeneration(state, event)) return state;
 
@@ -121,6 +122,7 @@ export function reduceSprintCatalog(state, event) {
             generation: state.generation + 1,
             ...source,
             authority: state.authority === 'display_only' && !state.validatedSnapshot ? 'display_only' : 'invalid',
+            selectionPreserved: false,
             status: 'unknown',
             validatedSnapshot: null,
             availableSprints: [],
@@ -180,6 +182,7 @@ export function reduceSprintCatalog(state, event) {
             const browserContextId = cacheSource.browserContextId || state.browserContextId;
             const sourceEstablished = identity !== state.identity || browserContextId !== state.browserContextId;
             const failed = cache.state === 'failed' || cache.refreshStatus === 'failed' || cache.refreshFailed === true;
+            const preserved = event.preserveSelection === true && event.selectedSprintId != null;
             return {
                 ...state,
                 generation: state.generation + (sourceEstablished ? 1 : 0),
@@ -194,8 +197,10 @@ export function reduceSprintCatalog(state, event) {
                     validatedAt: cache.validatedAt || null,
                     sprints,
                 },
+                displaySnapshot: preserved ? state.validatedSnapshot || state.displaySnapshot : state.displaySnapshot,
                 availableSprints: sprints,
-                selectedSprintId: selectSprintId(sprints, state.selectedSprintId ?? state.savedSprintId),
+                selectedSprintId: preserved ? event.selectedSprintId : selectSprintId(sprints, state.selectedSprintId ?? state.savedSprintId),
+                selectionPreserved: preserved,
                 refreshAttemptId,
                 errorReason: failed ? 'refresh_failed' : '',
             };
@@ -224,14 +229,17 @@ export function reduceSprintCatalog(state, event) {
         return { ...state, status: 'exhausted', refreshAttemptId: null, errorReason: 'refresh_exhausted' };
     }
     if (event.type === 'INVALIDATE') {
+        const preserveSelection = event.preserveSelection === true && (state.authority === 'validated' || state.selectionPreserved);
         return {
             ...state,
             generation: state.generation + 1,
             authority: 'invalid',
             status: 'unknown',
             validatedSnapshot: null,
-            availableSprints: [],
-            selectedSprintId: null,
+            displaySnapshot: preserveSelection ? state.validatedSnapshot || state.displaySnapshot : state.displaySnapshot,
+            availableSprints: preserveSelection ? state.availableSprints : [],
+            selectedSprintId: preserveSelection ? state.selectedSprintId : null,
+            selectionPreserved: preserveSelection,
             refreshAttemptId: null,
             errorReason: String(event.reason || ''),
         };
@@ -298,27 +306,36 @@ export function createSprintCatalogController({
         if (queuedForce) queuedForce.resolve(state);
         queuedForce = null;
     };
-    const scheduleCompletion = (attempt, captured, startedAt, reads = 0) => {
+    const acceptResponse = (envelope, captured, options = {}) => {
+        if (envelope?.httpStatus === 401 || envelope?.error === 'auth_required') return publish({ type: 'AUTH_LOCK' });
+        if (options.shouldApply && !options.shouldApply()) return state;
+        const event = { type: 'RESPONSE', ...captured, envelope, preserveSelection: options.automatic === true || options.preserveSelection === true, selectedSprintId: options.selectedSprintId };
+        const next = reduceSprintCatalog(state, event);
+        if (options.automatic && (next.authority !== 'validated' || next.status === 'error')) return state;
+        return publish(event);
+    };
+    const scheduleCompletion = (attempt, captured, startedAt, reads = 0, options = {}) => {
         if (disposed || !sameEventGeneration(state, captured)) return Promise.resolve(state);
         if (observer?.promise && observer.attemptId === attempt.attemptId && observer.identity === attempt.identity) {
             return observer.promise;
         }
         let settle;
         const promise = new Promise(resolve => { settle = resolve; });
-        observer = { attemptId: attempt.attemptId, identity: attempt.identity, timer: null, abortController: null, promise, settle, startedAt, reads };
+        const entry = observer = { attemptId: attempt.attemptId, identity: attempt.identity, timer: null, abortController: null, promise, settle, startedAt, reads };
+        const cancelEntry = () => { if (observer === entry) cancelObserver(); else settle(state); };
         const run = async () => {
-            if (!observer || disposed || !sameEventGeneration(state, captured)) { settle(state); return; }
+            if (observer !== entry || disposed || !sameEventGeneration(state, captured) || (options.shouldApply && !options.shouldApply())) { cancelEntry(); settle(state); return; }
             const elapsed = now() - startedAt;
-            if (observer.reads >= 16 || elapsed >= 75000) {
+            if (entry.reads >= 16 || elapsed >= 75000) {
                 observer = null;
-                publish({ type: 'EXHAUSTED', ...captured });
+                if (!options.automatic) publish({ type: 'EXHAUSTED', ...captured });
                 settle(state);
                 return;
             }
-            observer.reads += 1;
+            entry.reads += 1;
             const remaining = Math.max(0, 75000 - elapsed);
             const abortController = new AbortController();
-            observer.abortController = abortController;
+            entry.abortController = abortController;
             const abortTimer = setTimer(() => abortController.abort(), Math.min(5000, remaining));
             try {
                 const envelope = await read({
@@ -326,17 +343,23 @@ export function createSprintCatalogController({
                     completionAttemptId: attempt.attemptId,
                     catalogIdentity: attempt.identity,
                     signal: abortController.signal,
+                    automatic: options.automatic === true,
                 });
-                if (!observer || disposed || !sameEventGeneration(state, captured)) { settle(state); return; }
+                if (!disposed && (envelope?.httpStatus === 401 || envelope?.error === 'auth_required')) {
+                    cancelObserver(); publish({ type: 'AUTH_LOCK' }); settle(state); return;
+                }
+                if (observer !== entry || disposed || !sameEventGeneration(state, captured) || (options.shouldApply && !options.shouldApply())) {
+                    cancelEntry(); settle(state); return;
+                }
                 if (now() - startedAt >= 75000) {
                     observer = null;
-                    publish({ type: 'EXHAUSTED', ...captured });
+                    if (!options.automatic) publish({ type: 'EXHAUSTED', ...captured });
                     settle(state);
                     return;
                 }
-                publish({ type: 'RESPONSE', ...captured, envelope });
+                acceptResponse(envelope, captured, options);
                 const nextAttempt = pendingAttempt(envelope);
-                if (!nextAttempt || state.status === 'error' || state.authority === 'auth_locked') {
+                if (!nextAttempt || envelope?.cache?.state === 'failed' || envelope?.cache?.refreshStatus === 'failed' || state.status === 'error' || state.authority === 'auth_locked') {
                     observer = null;
                     settle(state);
                     return;
@@ -348,27 +371,27 @@ export function createSprintCatalogController({
                     settle(state);
                     return;
                 }
-                if (!observer || disposed || !sameEventGeneration(state, captured)) { settle(state); return; }
+                if (observer !== entry || disposed || !sameEventGeneration(state, captured) || (options.shouldApply && !options.shouldApply())) { cancelEntry(); settle(state); return; }
                 if (now() - startedAt >= 75000) {
                     observer = null;
-                    publish({ type: 'EXHAUSTED', ...captured });
+                    if (!options.automatic) publish({ type: 'EXHAUSTED', ...captured });
                     settle(state);
                     return;
                 }
             } finally {
                 clearTimer(abortTimer);
             }
-            if (!observer || disposed || !sameEventGeneration(state, captured)) return;
+            if (observer !== entry || disposed || !sameEventGeneration(state, captured) || (options.shouldApply && !options.shouldApply())) { cancelEntry(); return; }
             const delays = [1000, 2000, 4000];
-            const delay = delays[Math.min(observer.reads - 1, delays.length - 1)] || 5000;
-            const boundedDelay = observer.reads >= 4 ? 5000 : delay;
-            observer.timer = setTimer(run, boundedDelay);
+            const delay = delays[Math.min(entry.reads - 1, delays.length - 1)] || 5000;
+            const boundedDelay = entry.reads >= 4 ? 5000 : delay;
+            entry.timer = setTimer(run, boundedDelay);
         };
-        observer.timer = setTimer(run, 1000);
+        entry.timer = setTimer(run, 1000);
         return promise;
     };
-    const initiate = (forceRefresh) => {
-        if (disposed) return Promise.resolve(state);
+    const initiate = (forceRefresh, options = {}) => {
+        if (disposed || state.authority === 'auth_locked') return Promise.resolve(state);
         if (activeRequest) {
             if (forceRefresh && activeRequestKind === 'ordinary') {
                 if (!queuedForce) {
@@ -383,7 +406,7 @@ export function createSprintCatalogController({
         }
         if (forceRefresh && observer?.promise) return observer.promise;
         if (forceRefresh) cancelObserver();
-        publish({ type: 'START', newGeneration: forceRefresh });
+        if (!options.automatic) publish({ type: 'START', newGeneration: forceRefresh });
         const captured = catalogEventIdentity(state);
         activeRequestKind = forceRefresh ? 'forced' : 'ordinary';
         const requestAbortController = new AbortController();
@@ -393,6 +416,7 @@ export function createSprintCatalogController({
             completionAttemptId: null,
             catalogIdentity: null,
             signal: requestAbortController.signal,
+            automatic: options.automatic === true,
         }));
         let operation;
         operation = requestPromise.then((envelope) => {
@@ -401,15 +425,16 @@ export function createSprintCatalogController({
                 return state;
             }
             if (disposed || !sameEventGeneration(state, captured)) return state;
-            publish({ type: 'RESPONSE', ...captured, envelope });
+            if (options.shouldApply && !options.shouldApply()) return state;
+            acceptResponse(envelope, captured, options);
             const attempt = pendingAttempt(envelope);
-            if (attempt) scheduleCompletion(attempt, catalogEventIdentity(state), now());
+            if (attempt) scheduleCompletion(attempt, catalogEventIdentity(state), now(), 0, options);
             return state;
         }, (error) => {
             if (disposed) return state;
             if (error?.code === 'auth_required' || error?.status === 401) publish({ type: 'AUTH_LOCK' });
             else if (!sameEventGeneration(state, captured)) return state;
-            else publish({ type: 'FAILURE', ...captured, error });
+            else if (!options.automatic) publish({ type: 'FAILURE', ...captured, error });
             return state;
         }).finally(() => {
             if (activeRequest !== operation) return;
@@ -428,7 +453,18 @@ export function createSprintCatalogController({
 
     return {
         getState: () => state,
-        readCurrent: () => initiate(false),
+        readCurrent: (options = {}) => initiate(false, options),
+        async readDue({ selectedSprintId, signal, shouldApply } = {}) {
+            const validatedAt = Date.parse(state.validatedSnapshot?.validatedAt || '');
+            if (!Number.isFinite(validatedAt) || now() - validatedAt < SPRINT_CATALOG_CACHE_TTL_MS
+                || state.authority !== 'validated' || activeRequest || observer || !shouldApply?.() || signal?.aborted) return state;
+            const abort = () => { activeRequestAbortController?.abort(); cancelObserver(); };
+            signal?.addEventListener('abort', abort, { once: true });
+            try {
+                const result = await initiate(false, { automatic: true, selectedSprintId, shouldApply });
+                return observer?.promise ? await observer.promise : result;
+            } finally { signal?.removeEventListener('abort', abort); }
+        },
         refresh: () => initiate(true),
         acceptSource(source) {
             if (disposed) return state;
@@ -442,10 +478,10 @@ export function createSprintCatalogController({
             if (readInFlight) void initiate(false);
             return state;
         },
-        invalidate(reason = '') {
+        invalidate(reason = '', { preserveSelection = false } = {}) {
             if (disposed) return state;
             retire();
-            publish({ type: 'INVALIDATE', reason });
+            publish({ type: 'INVALIDATE', reason, preserveSelection });
             return state;
         },
         authLock() {

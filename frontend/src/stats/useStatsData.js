@@ -9,8 +9,53 @@ import { summarizeTrackPhaseDurations } from './projectTrackPhaseStats.js';
 import { fetchExcludedCapacityStatsSource as requestExcludedCapacityStatsSource } from '../api/engApi.js';
 import { fetchBurnoutStats as requestBurnoutStats, fetchEpicCohortStats as requestEpicCohortStats, fetchProjectTrackPhaseDurations as requestProjectTrackPhaseDurations } from '../api/statsApi.js';
 
+// Automatic acquisitions keep payloads private until the aggregate edit fence and job both accept them.
+const automaticStatsAttempts = new WeakSet();
+function runAutomaticStatsRead(automatic, source, issueEditStateRef, request, commit) {
+    // A dependency replacement retires this attempt; it must not launch a second read under the same adapter promise.
+    if (automaticStatsAttempts.has(automatic)) return () => {};
+    automaticStatsAttempts.add(automatic);
+    const started = Date.now(), controller = new AbortController();
+    let cancelled = false, settled = false;
+    const outcome = (status, checkKind = 'unknown') => [{ source, status, checkKind, coverage: 'unknown', requestStartedAtMs: started, retryAtMs: null }];
+    const settle = (value, error) => { if (!settled) { settled = true; automatic.settle(value, error); } };
+    const abort = () => { controller.abort(); settle(outcome('ignored')); };
+    automatic.job.signal.addEventListener('abort', abort, { once: true });
+    const current = () => !cancelled && !controller.signal.aborted && automatic.job.shouldApply();
+    if (!current()) { abort(); automatic.job.signal.removeEventListener('abort', abort); return () => {}; }
+    const timeout = window.setTimeout(() => controller.abort(), 30000);
+    const debounce = window.setTimeout(async () => {
+        if (!current()) { settle(outcome('ignored')); return; }
+        const readToken = issueEditStateRef.current.beginRead({ aggregate: true });
+        try {
+            const response = await request(controller.signal);
+            if (!response.ok) {
+                const error = new Error(`Statistics source failed (${response.status})`); error.status = response.status; throw error;
+            }
+            const payload = await response.json();
+            if (!payload || !payload.data) throw new Error('Statistics source returned no data');
+            if (!current() || !issueEditStateRef.current.isCurrentAggregateRead(readToken)) { settle(outcome('ignored')); return; }
+            if (commit(payload.data) === false) { settle(outcome('failed')); return; }
+            settle(outcome('ok', source === 'stats_burnout' ? 'unknown' : payload.cached === true ? 'cached' : payload.cached === false ? 'forced' : 'unknown'));
+        } catch (error) {
+            // HTTP publishes the terminal mounted lock before this owner sees the exception.
+            if (isAuthenticationRequiredError(error)) { settle([], error); return; }
+            settle(outcome(cancelled || !automatic.job.shouldApply() || automatic.job.signal.aborted ? 'ignored' : error.status === 429 ? 'rate_limited' : 'failed'));
+        } finally {
+            issueEditStateRef.current.finishRead(readToken);
+            window.clearTimeout(timeout);
+            automatic.job.signal.removeEventListener('abort', abort);
+        }
+    }, 120);
+    return () => {
+        const interrupted = !settled && automatic.job.shouldApply();
+        cancelled = true; window.clearTimeout(debounce); window.clearTimeout(timeout); abort(); automatic.job.signal.removeEventListener('abort', abort);
+        if (interrupted) automatic.job.resumeAfterInterruption?.();
+    };
+}
+
 export function useStatsDerivedA({
-    scope, BACKEND_URL, activeGroupMissingComponents, activeGroupTeamIds,
+    scope, automaticRefreshRef, BACKEND_URL, activeGroupMissingComponents, activeGroupTeamIds,
     activeGroupTeamSet, burnoutAssigneeFilter, burnoutCacheRef, burnoutData,
     cohortEndQuarter, cohortStartQuarter, getTeamInfo, groupPreferences,
     isCompletedSprintSelected, issueEditStateRef, issuePeopleStatsRevision, normalizeEpicKey,
@@ -22,6 +67,7 @@ export function useStatsDerivedA({
         adHocEpicSet, adHocEpicSignature, capacityTasks, excludedEpicSet,
         isAllTeamsSelected, selectedSprintInfo, selectedTeamSet, techProjectKeys
     } = scope;
+    const automaticBurnoutDataRef = React.useRef(null);
     const statsTaskList = React.useMemo(() => {
         if (!capacityTasks.length) return [];
         return capacityTasks.filter(task => {
@@ -149,6 +195,16 @@ export function useStatsDerivedA({
 
     useEffect(() => {
         if (!showStats || statsView !== 'burnout') return;
+        const automatic = automaticRefreshRef?.current;
+        if (automatic && automatic.job.shouldApply()) {
+            if (automatic.source !== 'stats_burnout') return;
+            if (groupPreferences.onboardingRequired || !tasksFetched || !selectedSprintInfo?.name || !burnoutIssueKeys.length) { automatic.settle([{ source: 'stats_burnout', status: 'ignored', checkKind: 'unknown', coverage: 'unknown', requestStartedAtMs: 0 }]); return; }
+            return runAutomaticStatsRead(automatic, 'stats_burnout', issueEditStateRef,
+                signal => requestBurnoutStats(BACKEND_URL, { sprint: selectedSprintInfo.name, teamIds: burnoutScopedTeamIds,
+                    issueKeys: burnoutIssueKeys, includePostSprintClosures: isCompletedSprintSelected }, { signal, suppressAbortResult: true }),
+                data => { automaticBurnoutDataRef.current = data; burnoutCacheRef.current[burnoutQueryKey] = data; setBurnoutData(data); });
+        }
+        automaticBurnoutDataRef.current = null;
         if (groupPreferences.onboardingRequired) { setBurnoutData(null); setBurnoutError(''); setBurnoutLoading(false); return; }
         const sprintLabel = selectedSprintInfo?.name || '';
         if (!sprintLabel) {
@@ -186,7 +242,7 @@ export function useStatsDerivedA({
         }, 30000);
         let cancelled = false;
         const fetchBurnout = async () => {
-            const readToken = issueEditStateRef.current.beginRead({ aggregate: true }); setBurnoutLoading(true);
+            const readToken = issueEditStateRef.current.beginRead({ aggregate: true }), started = Date.now(), recordExplicit = automaticRefreshRef?.createExplicitRecorder?.('stats_burnout'); setBurnoutLoading(true);
             setBurnoutError('');
             try {
                 const response = await requestBurnoutStats(
@@ -208,6 +264,7 @@ export function useStatsDerivedA({
                 const data = payload?.data || null;
                 burnoutCacheRef.current[burnoutQueryKey] = data;
                 setBurnoutData(data);
+                recordExplicit?.(payload, started);
             } catch (err) {
                 if (cancelled) return;
                 if (isAuthenticationRequiredError(err)) return;
@@ -219,7 +276,7 @@ export function useStatsDerivedA({
                 setBurnoutError(String(err.message || err));
                 setBurnoutData(null);
             } finally {
-                issueEditStateRef.current.finishRead(readToken); window.clearTimeout(timeoutId);
+                recordExplicit?.retire(); issueEditStateRef.current.finishRead(readToken); window.clearTimeout(timeoutId);
                 if (!cancelled) {
                     setBurnoutLoading(false);
                 }
@@ -251,6 +308,7 @@ export function useStatsDerivedA({
     ]);
 
     useEffect(() => {
+        if (burnoutData && automaticBurnoutDataRef.current === burnoutData) return;
         const available = burnoutData?.assignees || [];
         if (!available.length) {
             if (burnoutAssigneeFilter !== 'all') {
@@ -275,7 +333,7 @@ export function useStatsDerivedA({
 }
 
 export function useStatsDerivedB({
-    scope, BACKEND_URL, EMPTY_ARRAY, EXCLUDED_CAPACITY_STATS_SOURCE_CONCURRENCY,
+    scope, automaticRefreshRef, BACKEND_URL, EMPTY_ARRAY, EXCLUDED_CAPACITY_STATS_SOURCE_CONCURRENCY,
     activeGroup, activeGroupAdHocCapacityEpics, activeGroupMissingComponents, activeGroupTeamIds,
     adminSettingsGate, availableSprints, burnoutAssigneeFilter, burnoutQueryKey,
     burnoutScopedTeamIds, burnoutScopedTeamSignature, cohortAssigneeFilter, cohortCacheRef,
@@ -299,17 +357,30 @@ export function useStatsDerivedB({
         isAllTeamsSelected, selectedSprint, selectedSprintInfo, selectedTeamSet,
         teamNameById, teamOptions, techProjectKeys
     } = scope;
+    const automaticCohortDataRef = React.useRef(null);
+    const automaticExcludedDataRef = React.useRef(null);
     useEffect(() => {
         if (showStats && statsView === 'burnout') return;
         setBurnoutTaskFilter(null);
     }, [showStats, statsView]);
 
     useEffect(() => {
+        if (automaticRefreshRef?.current?.job.shouldApply()) return;
         setBurnoutTaskFilter(null);
     }, [selectedSprintInfo?.name, burnoutAssigneeFilter, burnoutQueryKey]);
 
     useEffect(() => {
         if (!showStats || statsView !== 'cohort') return;
+        const automatic = automaticRefreshRef?.current;
+        if (automatic && automatic.job.shouldApply()) {
+            if (automatic.source !== 'stats_cohort') return;
+            if (groupPreferences.onboardingRequired || adminSettingsGate.status !== 'clear' || !cohortStartQuarter || !cohortEndQuarter) { automatic.settle([{ source: 'stats_cohort', status: 'ignored', checkKind: 'unknown', coverage: 'unknown', requestStartedAtMs: 0 }]); return; }
+            return runAutomaticStatsRead(automatic, 'stats_cohort', issueEditStateRef,
+                signal => requestEpicCohortStats(BACKEND_URL, { startQuarter: cohortStartQuarter, endQuarter: cohortEndQuarter,
+                    teamIds: burnoutScopedTeamIds, components: activeGroupMissingComponents, adHocCapacityEpics: activeGroupAdHocCapacityEpics, refresh: false }, { signal, suppressAbortResult: true }),
+                data => { automaticCohortDataRef.current = data; cohortCacheRef.current[cohortQueryKey] = data; setCohortData(data); });
+        }
+        automaticCohortDataRef.current = null;
         if (groupPreferences.onboardingRequired || adminSettingsGate.status !== 'clear') { setCohortData(null); setCohortError(''); setCohortLoading(false); return; }
         const startQuarter = String(cohortStartQuarter || '').trim();
         const endQuarter = String(cohortEndQuarter || '').trim();
@@ -337,7 +408,7 @@ export function useStatsDerivedB({
         }, 30000);
         let cancelled = false;
         const fetchCohort = async () => {
-            const readToken = issueEditStateRef.current.beginRead({ aggregate: true }); setCohortLoading(true);
+            const readToken = issueEditStateRef.current.beginRead({ aggregate: true }), started = Date.now(), recordExplicit = automaticRefreshRef?.createExplicitRecorder?.('stats_cohort'); setCohortLoading(true);
             setCohortError('');
             try {
                 const response = await requestEpicCohortStats(
@@ -361,6 +432,7 @@ export function useStatsDerivedB({
                 const data = payload?.data || null;
                 cohortCacheRef.current[cohortQueryKey] = data;
                 setCohortData(data);
+                recordExplicit?.(payload, started);
                 setCohortError('');
             } catch (err) {
                 if (cancelled) return;
@@ -372,7 +444,7 @@ export function useStatsDerivedB({
                 }
                 setCohortData(null);
             } finally {
-                issueEditStateRef.current.finishRead(readToken); window.clearTimeout(timeoutId);
+                recordExplicit?.retire(); issueEditStateRef.current.finishRead(readToken); window.clearTimeout(timeoutId);
                 if (!cancelled) setCohortLoading(false);
             }
         };
@@ -469,18 +541,21 @@ export function useStatsDerivedB({
     }, [cohortGridModel, cohortSelectedRow]);
 
     useEffect(() => {
+        if (cohortData && automaticCohortDataRef.current === cohortData) return;
         if (cohortProjectFilter === 'all') return;
         const exists = cohortProjectOptions.some((item) => item.value === cohortProjectFilter);
         if (!exists) setCohortProjectFilter('all');
     }, [cohortProjectFilter, cohortProjectOptions]);
 
     useEffect(() => {
+        if (cohortData && automaticCohortDataRef.current === cohortData) return;
         if (cohortAssigneeFilter === 'all') return;
         const exists = cohortAssigneeOptions.some((item) => item.value === cohortAssigneeFilter);
         if (!exists) setCohortAssigneeFilter('all');
     }, [cohortAssigneeFilter, cohortAssigneeOptions]);
 
     useEffect(() => {
+        if (cohortData && automaticCohortDataRef.current === cohortData) return;
         if (!cohortSelectedRow) return;
         const exists = (cohortGridModel?.rows || []).some((row) => row.key === cohortSelectedRow);
         if (!exists) {
@@ -570,6 +645,27 @@ export function useStatsDerivedB({
     }, [excludedCapacitySprintIds.length, excludedCapacitySprintIdsSignature, excludedCapacityScopedTeamSignature]);
     useEffect(() => {
         if (!showStats || (statsView !== 'excludedCapacity' && statsView !== 'monoCrossShare' && statsView !== 'projectTrack')) return;
+        const automatic = automaticRefreshRef?.current;
+        if (automatic && automatic.job.shouldApply()) {
+            if (automatic.source !== 'stats_excluded_capacity') return;
+            if (groupPreferences.onboardingRequired || adminSettingsGate.status !== 'clear' || (statsView === 'excludedCapacity' && !excludedCapacityEpicOptions.length && adHocEpicSet.size === 0) || (activeGroupId && activeGroupTeamIds.length === 0)) { automatic.settle([{ source: 'stats_excluded_capacity', status: 'ignored', checkKind: 'unknown', coverage: 'unknown', requestStartedAtMs: 0 }]); return; }
+            const sprintId = String(selectedSprint || '');
+            if (!excludedCapacitySprintIds.includes(sprintId)) { automatic.settle([{ source: 'stats_excluded_capacity', status: 'denied', checkKind: 'unknown', coverage: 'unknown', requestStartedAtMs: 0 }]); return; } // Outside-range Sprint: deferred by policy; no read, no check, source settles quietly.
+            const sprintKey = id => `sprint::${id}::${excludedCapacityScopedTeamSignature || 'all'}`;
+            return runAutomaticStatsRead(automatic, 'stats_excluded_capacity', issueEditStateRef,
+                signal => requestExcludedCapacityStatsSource(BACKEND_URL, { sprintIds: [sprintId], teamIds: excludedCapacityScopedTeamIds, refresh: true, signal }),
+                chunk => {
+                    const chunks = excludedCapacitySprintIds.map(id => id === sprintId ? chunk : excludedCapacityCacheRef.current[sprintKey(id)]);
+                    // A missing untouched chunk is not permission to shrink the held chart.
+                    if (chunks.some(value => !value) || !excludedCapacitySprintIds.includes(sprintId)) return false;
+                    const data = mergeExcludedCapacityStatsSourceChunks(chunks, { loadedSprintCount: chunks.length, totalSprintCount: chunks.length });
+                    automaticExcludedDataRef.current = { data, projectTrackMode, phaseFacets: JSON.stringify([projectTrackCapacitySide, projectTrackExcludeAdHoc, projectTrackExcludeExcludedCapacity]) };
+                    excludedCapacityCacheRef.current[sprintKey(sprintId)] = chunk;
+                    excludedCapacityCacheRef.current[`range::${excludedCapacityQueryKey}`] = data;
+                    setExcludedCapacityData(data);
+                });
+        }
+        automaticExcludedDataRef.current = null;
         if (groupPreferences.onboardingRequired || adminSettingsGate.status !== 'clear') { setExcludedCapacityData(null); setExcludedCapacityError(''); setExcludedCapacityLoading(false); return; }
         // The capacity-mix source loads when EITHER excluded capacity OR Ad Hoc
         // epics are configured: Ad Hoc-only groups still get the effort split.
@@ -605,6 +701,7 @@ export function useStatsDerivedB({
         }
 
         let cancelled = false, readToken;
+        const chunkKinds = [];
         const controllers = new Set();
         const sprintCacheKeyFor = (sprintId) => `sprint::${String(sprintId || '').trim()}::${excludedCapacityScopedTeamSignature || 'all'}`;
         const fetchSprintChunk = async (sprintId) => {
@@ -634,6 +731,7 @@ export function useStatsDerivedB({
                     throw new Error(err.error || err.message || `Excluded capacity fetch failed (${response.status})`);
                 }
                 const payload = await response.json();
+                chunkKinds.push(payload.cached);
                 const data = payload?.data || null;
                 if (data && issueEditStateRef.current.isCurrentAggregateRead(readToken)) {
                     excludedCapacityCacheRef.current[sprintCacheKey] = data;
@@ -653,6 +751,7 @@ export function useStatsDerivedB({
             }
         };
         const loadExcludedCapacity = async () => {
+            const started = Date.now(), recordExplicit = automaticRefreshRef?.createExplicitRecorder?.('stats_excluded_capacity');
             readToken = issueEditStateRef.current.beginRead({ aggregate: true }); setExcludedCapacityLoading(true);
             setExcludedCapacityError('');
             const analyticsStartedAt = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
@@ -678,6 +777,7 @@ export function useStatsDerivedB({
                 });
                 excludedCapacityCacheRef.current[rangeCacheKey] = data;
                 setExcludedCapacityData(data);
+                recordExplicit?.({ cached: chunkKinds.every(value => value === false) ? false : chunkKinds.some(value => value === true) ? true : undefined }, started, result.errors.length ? 'partial' : 'unknown');
                 trackApiResult('stats_source', { featureName: 'stats', method: 'POST', status: 200, durationMs: (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now()) - analyticsStartedAt, cacheState: forceRefresh ? 'refresh' : 'unknown' });
             } catch (err) {
                 if (cancelled) return;
@@ -690,7 +790,7 @@ export function useStatsDerivedB({
                 setExcludedCapacityData(null);
                 trackApiResult('stats_source', { featureName: 'stats', method: 'POST', status: 500, durationMs: (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now()) - analyticsStartedAt, cacheState: forceRefresh ? 'refresh' : 'unknown' });
             } finally {
-                issueEditStateRef.current.finishRead(readToken); if (!cancelled) setExcludedCapacityLoading(false);
+                recordExplicit?.retire(); issueEditStateRef.current.finishRead(readToken); if (!cancelled) setExcludedCapacityLoading(false);
             }
         };
         const debounceId = window.setTimeout(loadExcludedCapacity, 120);
@@ -761,6 +861,7 @@ export function useStatsDerivedB({
         [excludedCapacityIssues, projectTrackOpts]
     );
     const projectTrackBoardColumns = activeGroup?.board?.columns;
+    const projectTrackSingleTeam = excludedCapacityScopedTeamIds.length === 1;
     const projectTrackColumnSplit = React.useMemo(() => (projectTrackMode === 'team'
         ? buildProjectTrackColumnSplit(excludedCapacityIssues, projectTrackOpts, projectTrackBoardColumns) : null
     ), [projectTrackMode, excludedCapacityIssues, projectTrackOpts, projectTrackBoardColumns]);
@@ -782,6 +883,8 @@ export function useStatsDerivedB({
     }, [projectTrackMode, excludedCapacityIssues, projectTrackOpts]);
     const projectTrackPhaseSignature = projectTrackPhaseEpicKeys.join(',');
     useEffect(() => {
+        if (automaticExcludedDataRef.current && (automaticExcludedDataRef.current.projectTrackMode !== projectTrackMode || automaticExcludedDataRef.current.phaseFacets !== JSON.stringify([projectTrackCapacitySide, projectTrackExcludeAdHoc, projectTrackExcludeExcludedCapacity]))) automaticExcludedDataRef.current = null;
+        if (automaticRefreshRef?.current?.job.shouldApply() || (excludedCapacityData && automaticExcludedDataRef.current?.data === excludedCapacityData && automaticExcludedDataRef.current.projectTrackMode === projectTrackMode)) return;
         if (!showStats || statsView !== 'projectTrack' || projectTrackMode !== 'epic') {
             return;
         }
@@ -859,11 +962,13 @@ export function useStatsDerivedB({
     // Preference migration: a null saved value (no prior selection, or the
     // removed BAU/ad-hoc preset) defaults to ALL configured excluded epics.
     useEffect(() => {
+        if (excludedCapacityData && automaticExcludedDataRef.current?.data === excludedCapacityData) return;
         if (excludedCapacitySelectedEpicKeys === null && excludedCapacityEpicOptions.length) {
             setExcludedCapacitySelectedEpicKeys(excludedCapacityEpicOptions.slice());
         }
     }, [excludedCapacitySelectedEpicKeys, excludedCapacityEpicOptions]);
     useEffect(() => {
+        if (excludedCapacityData && automaticExcludedDataRef.current?.data === excludedCapacityData) return;
         // Drop only excluded keys no longer in the catalog; keep valid ones.
         if (!Array.isArray(excludedCapacitySelectedEpicKeys)) return;
         const valid = new Set(excludedCapacityEpicOptions);
@@ -969,6 +1074,7 @@ export function useStatsDerivedB({
         return Array.isArray(warnings) ? warnings : [];
     }, [excludedCapacityData]);
     useEffect(() => {
+        if (excludedCapacityData && automaticExcludedDataRef.current?.data === excludedCapacityData) return;
         if (statsView === 'excludedCapacity' && excludedCapacityChartMode !== 'teams' && excludedCapacityIsolatedTeam) {
             setExcludedCapacityIsolatedTeam(null);
             return;
@@ -1024,7 +1130,7 @@ export function useStatsDerivedB({
         cohortAverageLeadDays, cohortMedianLeadDays, cohortWarnings, cohortStatusControls,
         cohortSelectedRowLabel, excludedCapacitySprintOptions, excludedCapacitySprintRange, effortSplitSprintLabel,
         excludedCapacityEpicOptions, projectTrackSeries, projectTrackTotals, projectTrackBreakdown,
-        projectTrackColumnSplit, projectTrackRangeLabel, projectTrackPhaseEpics, projectTrackPhaseSummary,
+        projectTrackColumnSplit, projectTrackSingleTeam, projectTrackRangeLabel, projectTrackPhaseEpics, projectTrackPhaseSummary,
         excludedCapacityEpicCatalog, excludedCapacityEffectiveFilters, excludedCapacityFilterLabel, effortSplitRows,
         excludedCapacityRows, excludedCapacityLineSeries, excludedCapacityModeOverall, excludedCapacityModeSprintRows,
         excludedCapacityModeTeamLineSeries, effortSplitTotals, excludedCapacityWarnings, formatExcludedPoints,

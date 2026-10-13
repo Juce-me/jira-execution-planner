@@ -252,6 +252,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Line-chart legends and points must use readable in-app hover/readout states; never rely on native `title` tooltips or dark hover pills.
 - In PR descriptions and final summaries, never include secrets, token placeholders, credential env vars, local absolute paths, or real project issue keys; use sanitized placeholders unless the user explicitly asks for real-key evidence.
 - Put PR descriptions directly in the reply body unless the user explicitly asks for a file; do not create temporary PR body files.
+- Use `gh` CLI for GitHub operations and verification; do not open a browser unless the user explicitly requests it.
 - Treat Atlassian account ids only as stable identity keys for tool-local admin roles; never imply Atlassian tenant/admin status grants tool admin access.
 - Redact OAuth callback query strings from logs; never log authorization code or state values.
 - Store implementation plans in `docs/plans/` only.
@@ -383,8 +384,8 @@ When the user corrects your approach, append a one-line rule here before ending 
 - When the user names an existing component as the visual reference, change the compared elements to match that reference; do not restyle the reference component unless explicitly requested.
 - Every transparent or icon `<button>` class must override the global `button:hover` dark surface (`background`, `transform`, `box-shadow`) and the global `letter-spacing` with a readable hover, and get a settled-state hover-contrast assertion in Playwright; a dark-on-dark hover is a recurring defect class, not a one-off (e.g. `.search-clear`, `.scenario-toggle`).
 - Verify a glyph or emoji centred in a hover frame by measuring its painted ink (absolute pixel clip) in headed Firefox and WebKit at 2x, the engines the app is reviewed in; headless runs and Chromium place emoji ink about 2px differently, and the Playwright fixture stubs web fonts, so set the emoji in an emoji font stack rather than tuning padding to one engine's measurement.
-- For Project Track Team mode strips (#173), split each track segment by the parent Epic's Board column (Department `board.columns` order and colours, Board ownership rule, default To Do/In Progress/Done); use the Start–End range, count all non-Killed Epics, show column names only in the hover readout, and never add "left"/remaining values, legend panes, or click actions.
-- Ground Stats UI proposals in the existing header Sprint/Teams controls, chart interactions, source, and repository screenshots; do not introduce a duplicate team picker or access Firefox for this work.
+- For Project Track Team mode (#262), hide duplicate totals when the header scope contains one Team and split each track's Story Points by each Story's own status (Department `board.columns` order and colours, Board ownership rule, default To Do/In Progress/Done); keep Project Track inherited from the Epic, use the Start–End range, count all non-Killed work, and show column names only in the hover readout without "left"/remaining values, legend panes, or click actions.
+- Ground Stats UI proposals in the existing header Sprint/Teams controls, chart interactions, source, and repository screenshots; explain outside-range choices with a concrete chart-range/global-Sprint-selector example, and do not introduce a duplicate team picker or access Firefox for this work.
 - Chart bar segments and strips must not inherit the global button hover lift; override `background`/`transform` and use a soft shadow instead, leaving other controls' existing hover behavior untouched.
 - Build UI mockups from verbatim repository CSS (tokens, fonts, sizes, grid columns, breakpoints) and existing DOM classes; do not approximate styling or add dark modes the app lacks.
 - Keep Planning spreadsheet columns and cell padding compact without stretching a short table; widen only the spreadsheet region and preserve the header, capacity panel, and filters at their original width.
@@ -415,7 +416,9 @@ When the user corrects your approach, append a one-line rule here before ending 
 
 - In Planning tables, align numeric headers, values, editors and totals right; align text columns left.
 
-- Planning tables must use document vertical scrolling and retain only horizontal table scrolling; dock headers below the measured controls stack and synchronize headers/totals with the body rather than creating a second vertical scroller.
+- Planning tables must use document vertical scrolling and retain only horizontal table scrolling; dock headers below the measured controls stack and synchronize headers/totals with the body rather than creating a second vertical scroller. Keep reading-position handling in this shared table/container path and verify it for both Epic and Story rows.
+
+- Automatic background refreshes must preserve loaded content, drafts, selection, expansion, focus and reading position; defer around user edits and keep held data on failure instead of raising manual loading or error UI.
 
 - Keyboard-only accessibility is deprioritized: park findings in `docs/TODO.md` (Deferred) instead of building them; touch support is still required, so every action must work by tap and none may require dragging.
 

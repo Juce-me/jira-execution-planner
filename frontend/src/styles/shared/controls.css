@@ -16,6 +16,7 @@
 
 
         .header-actions {
+            max-inline-size: 100%;
             margin-left: auto;
             display: flex;
             flex-direction: column;
@@ -25,11 +26,40 @@
         }
 
         .header-actions-row {
+            max-inline-size: 100%;
             display: flex;
             align-items: flex-end;
             gap: 0.4rem;
             flex-wrap: wrap;
             justify-content: flex-end;
+        }
+
+        .header-actions-row .control-search {
+            max-inline-size: 100%;
+        }
+
+        .dashboard-freshness-slot {
+            display: grid;
+            flex: 0 0 100%;
+            order: 1;
+            contain: inline-size;
+        }
+
+        .dashboard-freshness-slot > span {
+            grid-area: 1 / 1;
+            min-width: 0;
+            overflow-wrap: anywhere;
+        }
+
+        .dashboard-freshness-size {
+            visibility: hidden;
+        }
+
+        .dashboard-freshness-status {
+            flex: 1 1 auto;
+            min-width: 0;
+            align-self: center;
+            overflow-wrap: anywhere;
         }
 
         .header-actions-row > .group-gear-button,

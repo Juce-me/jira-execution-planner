@@ -75,3 +75,14 @@ test('strict Board errors stay sanitized and never expose terminal diagnostics',
     assert.equal(props.error, 'Board limit reached; this result is incomplete.');
     assert.doesNotMatch(props.error, /index|secret|project query/i);
 });
+
+test('automatic patch reconciliation compares accepted fields independently and rereads pending identity', async () => {
+    const { reconcileStrictBoardPatches } = await import('../frontend/src/eng/useStrictEngBoardIntegration.js');
+    const fields = { summary: 'confirmed', customfield_10004: 8, priority: { id: '2' } };
+    const patches = { 'SYN-1': fields };
+    const accepted = { epicsByKey: {}, childrenByKey: { 'SYN-1': { summary: 'confirmed', storyPoints: 8, priority: { id: '3' } } } };
+    assert.deepEqual(reconcileStrictBoardPatches(patches, accepted, new Set(['SYN-1'])), patches);
+    assert.deepEqual(reconcileStrictBoardPatches(patches, accepted), { 'SYN-1': { priority: { id: '2' } } });
+    assert.deepEqual(reconcileStrictBoardPatches(patches, { epicsByKey: {}, childrenByKey: {} }), patches);
+    assert.deepEqual(reconcileStrictBoardPatches({ 'SYN-1': { customfield_10004: null } }, { childrenByKey: { 'SYN-1': { storyPoints: null } } }), {});
+});

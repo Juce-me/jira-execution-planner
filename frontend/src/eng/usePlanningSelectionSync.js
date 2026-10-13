@@ -12,6 +12,7 @@ export function usePlanningSelectionSync({
     pendingPlanningAuthResumeRef, pendingShellAuthResumeRef, planningAuthResumeLoadRef, lastLoadedSprintRef,
     teamSelectionHydratedSelectionRef, planningAuthResumePersistenceFailedRef, planningLoadedSelectionRef, planningBaselineScopeRef,
     clearAuthResumeWhenSettled, normalizeSelectedTeams,
+    shouldPreserveAutomaticSelection,
     planningScopeKey, activeGroupId, selectedSprint, teamSelectionScopeKey, isFutureSprintSelected,
     tasksFetched, productTasksLoading, techTasksLoading, selectionTasks, teamOptions,
     selectedTasks, selectedTeams, planningSelectionMode, activeGroupTeamIds,
@@ -42,6 +43,7 @@ export function usePlanningSelectionSync({
         if (!planningScopeKey || !activeGroupId || selectedSprint === null) return;
         if (!tasksFetched || productTasksLoading || techTasksLoading) return;
         if (lastLoadedSprintRef.current !== selectedSprint) return;
+        if (!pendingPlanningResume && shouldPreserveAutomaticSelection?.()) return;
         const hydratedTeamSelection = teamSelectionHydratedSelectionRef.current; if (hydratedTeamSelection?.scopeKey === teamSelectionScopeKey && !selectedTeamSelectionsEqual(selectedTeams, hydratedTeamSelection.selectedTeams)) return;
         if (hydratedTeamSelection?.scopeKey === teamSelectionScopeKey) teamSelectionHydratedSelectionRef.current = null;
 

@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { isAuthenticationRequiredError } from '../api/authRequired.js';
 const { useState, useRef, useEffect } = React;
 import {
     applyCapacitySaveResultForScope,
@@ -40,13 +41,14 @@ export function useEngCapacityState() {
     const [capacityRefreshNonce, setCapacityRefreshNonce] = useState(0);
     const capacityReadGenerationRef = useRef(0);
     const capacityReadAbortRef = useRef(null);
-    const activeCapacityScopeRef = useRef(''), capacityScopeHoldRef = useRef(false), capacityScopePinRef = useRef(null), capacityScopeKeyRef = useRef(null);
+    const activeCapacityScopeRef = useRef(''), capacityScopeHoldRef = useRef(0), capacityScopePinRef = useRef(null), capacityScopeKeyRef = useRef(null);
+    const capacityReadGuardRef = useRef(null), activeCapacityTeamsRef = useRef([]);
     return {
         capacityState, setCapacityState, capacityStateRef, capacityLoading,
         setCapacityLoading, capacityReadRevision, setCapacityReadRevision, capacityReadError,
         setCapacityReadError, capacityDataStale, setCapacityDataStale, capacityReadModelRef,
         capacityRefreshNonce, setCapacityRefreshNonce, capacityReadGenerationRef, capacityReadAbortRef,
-        activeCapacityScopeRef, capacityScopeHoldRef, capacityScopePinRef, capacityScopeKeyRef,
+        activeCapacityScopeRef, capacityScopeHoldRef, capacityScopePinRef, capacityScopeKeyRef, capacityReadGuardRef, activeCapacityTeamsRef,
     };
 }
 
@@ -59,7 +61,7 @@ export function useEngCapacity({
     setCapacityState, setCapacityLoading, setCapacityReadRevision, setCapacityReadError,
     setCapacityDataStale, capacityReadModelRef, capacityRefreshNonce, setCapacityRefreshNonce,
     capacityReadGenerationRef, capacityReadAbortRef, activeCapacityScopeRef, capacityScopeHoldRef,
-    capacityScopePinRef, capacityScopeKeyRef,
+    capacityScopePinRef, capacityScopeKeyRef, capacityReadGuardRef, activeCapacityTeamsRef,
 }) {
     const { activeGroupId, selectedSprintInfo, isAllTeamsSelected, selectedTeamSet, teamOptions, capacityTasks, techProjectKeys, excludedEpicSet, adHocEpicSet, adHocEpicSignature } = scope;
     const selectedTeamStats = React.useMemo(() => {
@@ -156,12 +158,14 @@ export function useEngCapacity({
     // A per-epic refresh (#213) pins the previous signature until the scope changes or a department load bumps loadEpochRef (read during render on purpose: loads set state, so a render follows); the trade-off is that a team crossing zero Story Points is not reread until then.
     const capacityScopeKey = [selectedSprintInfo?.name, activeGroupId, showPlanning, capacityEnabled, loadEpochRef.current, isAllTeamsSelected, [...selectedTeamSet].sort().join(',')].join('|');
     if (capacityScopeKeyRef.current !== capacityScopeKey) { capacityScopeKeyRef.current = capacityScopeKey; capacityScopePinRef.current = null; activeCapacityScopeRef.current = ''; }
-    if (showPlanning && capacityScopeHoldRef.current && activeCapacityScopeRef.current && !capacityScopePinRef.current) capacityScopePinRef.current = { key: capacityScopeKey, signature: activeCapacityScopeRef.current };
+    if (showPlanning && capacityScopeHoldRef.current && activeCapacityScopeRef.current && !capacityScopePinRef.current) capacityScopePinRef.current = { key: capacityScopeKey, signature: activeCapacityScopeRef.current, teams: [...activeCapacityTeamsRef.current] };
     const capacityScopeSignature = capacityScopePinRef.current ? capacityScopePinRef.current.signature : buildCapacityScopeSignature(
         selectedSprintInfo?.name || '',
         capacityTeamNames,
     );
+    const requestTeamNames = capacityScopePinRef.current?.teams || capacityTeamNames;
     activeCapacityScopeRef.current = capacityScopeSignature;
+    activeCapacityTeamsRef.current = requestTeamNames;
 
     const commitCapacityReadLifecycle = (event) => {
         const nextModel = reduceCapacityReadLifecycle(capacityReadModelRef.current, event);
@@ -199,26 +203,46 @@ export function useEngCapacity({
         });
     }, []);
     const retryCapacity = React.useCallback(() => {
+        capacityReadGuardRef.current?.onSettled({ status: 'ignored' }); capacityReadGuardRef.current = null;
         setCapacityRefreshNonce(previous => previous + 1);
     }, []);
-    const fetchCapacity = async ({ sprintName, teams, signal, scopeSignature, ownership }) => {
+    const refreshCapacity = React.useCallback(({ signal, shouldApply, automatic = true } = {}) => new Promise((resolve, reject) => {
+        let settled = false;
+        const onSettled = (outcome, error) => { if (settled) return; settled = true; signal?.removeEventListener('abort', abort); if (error) reject(error); else resolve(outcome); };
+        const abort = () => { if (capacityReadGuardRef.current === guard) onSettled({ status: 'ignored' }); };
+        capacityReadGuardRef.current?.onSettled({ status: 'ignored' });
+        const guard = { signal, shouldApply, onSettled, automatic, scopeSignature: activeCapacityScopeRef.current };
+        capacityReadGuardRef.current = guard;
+        signal?.addEventListener('abort', abort, { once: true });
+        if (signal?.aborted) abort();
+        setCapacityRefreshNonce(previous => previous + 1);
+    }), []);
+    const fetchCapacity = async ({ sprintName, teams, signal, scopeSignature, ownership, guard }) => {
+        const current = () => ownership.isCurrent() && !signal.aborted && (!guard || (!guard.signal?.aborted && guard.shouldApply?.() !== false));
+        let outcome = { status: 'ignored' };
         try {
             const response = await requestCapacity(BACKEND_URL, { sprintName, teams, signal });
-            if (!response.ok) throw new Error(`capacity_read_${response.status}`);
+            if (!response.ok) throw Object.assign(new Error(`capacity_read_${response.status}`), { status: response.status });
             const data = await response.json();
-            if (!ownership.isCurrent()) return;
+            if (!current()) return;
+            outcome = { status: 'ok' };
             commitCapacityReadLifecycle({ type: 'success', scopeSignature, payload: data });
         } catch (error) {
-            if (error?.name === 'AbortError' || !ownership.isCurrent()) return;
-            commitCapacityReadLifecycle({ type: 'failure', scopeSignature });
+            if (isAuthenticationRequiredError(error)) { guard?.onSettled(null, error); return; }
+            if (error?.name === 'AbortError' || !current()) return;
+            outcome = { status: 'failed' };
+            if (!guard || guard.automatic === false) commitCapacityReadLifecycle({ type: 'failure', scopeSignature });
         } finally {
-            if (!ownership.isCurrent()) return;
-            if (capacityReadAbortRef.current?.signal === signal) capacityReadAbortRef.current = null;
+            guard?.onSettled(outcome);
+            if (ownership.isCurrent() && capacityReadAbortRef.current?.signal === signal) capacityReadAbortRef.current = null;
         }
     };
 
     useEffect(() => {
+        let guard = capacityReadGuardRef.current;
+        if (capacityReadGuardRef.current === guard) capacityReadGuardRef.current = null;
         const scopeSignature = capacityScopeSignature;
+        if (guard && guard.scopeSignature !== scopeSignature) { guard.onSettled({ status: 'ignored' }); guard = null; }
         const sprintName = selectedSprintInfo?.name || '';
         const ownership = beginCapacityReadOwnership({
             generationRef: capacityReadGenerationRef,
@@ -228,27 +252,33 @@ export function useEngCapacity({
             capacityEnabled,
             showPlanning,
             sprintName,
-            teams: capacityTeamNames,
+            teams: requestTeamNames,
         });
 
-        if (!ownership.shouldFetch) {
-            if (ownership.isCurrent()) {
+        let fetchStarted = false;
+        const abort = () => { ownership.controller?.abort(); };
+        guard?.signal?.addEventListener('abort', abort, { once: true });
+        if (guard && (guard.signal?.aborted || guard.shouldApply?.() === false)) abort();
+        if (!ownership.shouldFetch || guard?.signal?.aborted || guard?.shouldApply?.() === false) {
+            guard?.onSettled({ status: 'ignored' });
+            if ((!guard || guard.automatic === false) && ownership.isCurrent()) {
                 commitCapacityReadLifecycle({ type: 'gate', scopeSignature });
             }
         } else {
-            if (ownership.isCurrent()) {
+            if ((!guard || guard.automatic === false) && ownership.isCurrent()) {
                 commitCapacityReadLifecycle({ type: 'start', scopeSignature });
             }
+            fetchStarted = true;
             void fetchCapacity({
                 sprintName,
-                teams: capacityTeamNames,
+                teams: requestTeamNames,
                 signal: ownership.controller.signal,
                 scopeSignature,
-                ownership,
+                ownership, guard,
             });
         }
 
-        return ownership.cleanup;
+        return () => { guard?.signal?.removeEventListener('abort', abort); ownership.cleanup(); if (!fetchStarted) guard?.onSettled({ status: 'ignored' }); };
     }, [capacityEnabled, showPlanning, capacityScopeSignature, capacityRefreshNonce]);
 
     const capacityTeamIds = React.useMemo(() => {
@@ -387,7 +417,7 @@ export function useEngCapacity({
     return {
         selectedAdHocProductSP, excludedProjectStats, capacityShareLabel, teamCapacityEntries,
         displayedTeamCapacityEntries, capacityScopeSignature, effectiveCapacityState, capacityMutationEnabled,
-        handleCapacitySaved, retryCapacity, capacityTeamIds, totalCapacityAdjusted,
+        handleCapacitySaved, retryCapacity, refreshCapacity, capacityTeamIds, totalCapacityAdjusted,
         estimatedCapacityAdjusted, excludedCapacityAdjusted, capacitySummary, selectedProjectEntries,
         selectedTeamEntries, capacityTotals, showTotalsRow, formatCapacityValue,
     };

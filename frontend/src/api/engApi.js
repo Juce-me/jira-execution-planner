@@ -46,7 +46,7 @@ export const fetchSprints = (backendUrl, {
     });
 };
 
-export const fetchEngTasks = (backendUrl, { project, sprint, sprintName = '', groupId, teamIds = [], teamLabels = [], refresh = false, purpose = '', epicKeys = [], signal, debugTimings = false, apiSurface = 'eng_tasks', featureName = 'eng' } = {}) => {
+export const fetchEngTasks = (backendUrl, { project, sprint, sprintName = '', groupId, teamIds = [], teamLabels = [], refresh = false, purpose = '', epicKeys = [], signal, debugTimings = false, apiSurface = 'eng_tasks', featureName = 'eng', automatic = false } = {}) => {
     const params = new URLSearchParams({
         t: Date.now().toString(),
         sprint,
@@ -84,11 +84,11 @@ export const fetchEngTasks = (backendUrl, { project, sprint, sprintName = '', gr
         },
         cache: 'no-cache',
         signal
-    }, { featureName });
+    }, { featureName, ...(automatic ? { suppressAbortResult: true } : {}) });
 };
 
-export const fetchEpicRefresh = (backendUrl, { project, sprint, sprintName = '', groupId, teamIds = [], teamLabels = [], epicKey, signal } = {}) => fetchEngTasks(backendUrl, {
-    project, sprint, sprintName, groupId, teamIds, teamLabels, refresh: true, purpose: 'epic-refresh', epicKeys: [epicKey], signal,
+export const fetchEpicRefresh = (backendUrl, { project, sprint, sprintName = '', groupId, teamIds = [], teamLabels = [], epicKey, signal, automatic = false } = {}) => fetchEngTasks(backendUrl, {
+    project, sprint, sprintName, groupId, teamIds, teamLabels, refresh: true, purpose: 'epic-refresh', epicKeys: [epicKey], signal, automatic,
     apiSurface: 'epic_refresh', featureName: 'epic_refresh',
 });
 
@@ -177,7 +177,7 @@ export const fetchEpicBacklog = (backendUrl, { project, teamIds = [], epicKey, s
     });
 };
 
-export const fetchStorySubtasks = (backendUrl, { parentKey, sprint, refresh = false, signal } = {}) => {
+export const fetchStorySubtasks = (backendUrl, { parentKey, sprint, refresh = false, signal, automatic = false } = {}) => {
     const params = new URLSearchParams({
         parentKey: String(parentKey || ''),
         sprint: String(sprint || ''),
@@ -191,7 +191,7 @@ export const fetchStorySubtasks = (backendUrl, { parentKey, sprint, refresh = fa
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-cache',
         signal
-    }, { featureName: 'eng' });
+    }, { featureName: 'eng', ...(automatic ? { suppressAbortResult: true } : {}) });
 };
 
 export const fetchBacklogEpics = (backendUrl, { project, teamIds = [], signal } = {}) => {

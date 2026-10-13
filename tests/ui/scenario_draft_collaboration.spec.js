@@ -1176,3 +1176,18 @@ test('global auth lock closes Scenario SSE and suppresses callbacks, polling, an
     await page.waitForTimeout(5200);
     expect(calls.events.length).toBe(pollsAfterLock);
 });
+
+test('Task9 blurred Scenario keeps event cursor polling presence and drag lock renewal outside freshness', async ({ page }, testInfo) => {
+    const { installLifecycleControl } = require('./eng_epic_refresh_fixture');
+    await page.clock.install(); const lifecycle = await installLifecycleControl(page);
+    const calls=await installDashboard(page);await openScenario(page);await page.getByRole('button',{name:'Edit',exact:true}).click();
+    const bar=page.locator('.scenario-bar.editable').first(),box=await bar.boundingBox();expect(box).toBeTruthy();
+    await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await expect.poll(()=>calls.locks.filter(call=>call.body?.action==='acquire').length).toBe(1);
+    await lifecycle.returnAfter(13*60000);await expect(page.locator('[data-dashboard-freshness-status]')).toHaveText('Updates pending');
+    const before={events:calls.events.length,presence:calls.presence.length,locks:calls.locks.length,cursor:calls.events.at(-1)?.since};
+    await lifecycle.setState('blurred');await page.clock.fastForward(26000);
+    await expect.poll(()=>calls.events.length).toBeGreaterThan(before.events);await expect.poll(()=>calls.presence.length).toBeGreaterThan(before.presence);await expect.poll(()=>calls.locks.filter(call=>call.body?.action==='refresh').length).toBeGreaterThan(0);
+    expect(calls.events.slice(before.events).every(call=>call.since===before.cursor)).toBe(true);await expect(page.locator('[data-dashboard-freshness-status]')).toHaveText('Updates pending');
+    await page.mouse.up();expect(calls.unexpected).toEqual([]);
+    await testInfo.attach('task9-scenario-background-owners',{body:JSON.stringify({before,after:{events:calls.events.length,presence:calls.presence.length,locks:calls.locks.length},actions:calls.locks.map(call=>call.body?.action)},null,2),contentType:'application/json'});
+});

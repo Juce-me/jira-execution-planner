@@ -19,8 +19,8 @@
   },
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
-    "lineCount": 7525,
-    "lineCeiling": 7525
+    "lineCount": 7573,
+    "lineCeiling": 7573
   },
   "modules": [
     {
@@ -32,8 +32,8 @@
       "exports": [
         "EpmControls"
       ],
-      "lineCount": 295,
-      "lineCeiling": 295,
+      "lineCount": 297,
+      "lineCeiling": 297,
       "interfaces": [
         {
           "exportName": "EpmControls",
@@ -45,7 +45,9 @@
             "epmProjectDropdownRefs",
             "epmProjectSearch",
             "epmProjectSort",
+            "epmProjectsLoaded",
             "epmProjectsLoading",
+            "epmSelectedProjectId",
             "epmSortDropdownRefs",
             "epmSubGoalFilterDropdownRefs",
             "epmSubGoalOptions",
@@ -80,7 +82,9 @@
             "epmProjectDropdownRefs.current[surface]",
             "epmProjectSearch",
             "epmProjectSort",
+            "epmProjectsLoaded",
             "epmProjectsLoading",
+            "epmSelectedProjectId",
             "epmSortDropdownRefs",
             "epmSortDropdownRefs.current",
             "epmSortDropdownRefs.current[surface]",
@@ -118,13 +122,13 @@
             "visibleEpmProjects.length"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 43,
+          "expandedInputCount": 45,
           "returnCount": 0,
-          "propCount": 31,
+          "propCount": 33,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 43,
+          "expandedInputCeiling": 45,
           "returnCeiling": 0,
-          "propCeiling": 31,
+          "propCeiling": 33,
           "unresolved": [
             "forwarded input surface",
             "forwarded input selectedEpmProject",
@@ -138,7 +142,7 @@
           ],
           "inventory": {
             "source": "frontend/src/epm/EpmControls.jsx:21",
-            "sourceDigest": "a7beaebf7dcba0e96f2e6e41fbd40d0222ce6edfdfa1a062cc8e67795fed8181",
+            "sourceDigest": "d1b10780c11ca73e5f6d985f96d7f75c6f1a84b2da43a90448604918d85a118a",
             "reviewed": true,
             "memberNames": [
               "activeControlSurface",
@@ -148,7 +152,9 @@
               "epmProjectDropdownRefs.current[surface]",
               "epmProjectSearch",
               "epmProjectSort",
+              "epmProjectsLoaded",
               "epmProjectsLoading",
+              "epmSelectedProjectId",
               "epmSortDropdownRefs",
               "epmSortDropdownRefs.current",
               "epmSortDropdownRefs.current[surface]",
@@ -185,13 +191,13 @@
               "visibleEpmProjects",
               "visibleEpmProjects.length"
             ],
-            "rationale": "surface and sort are strings; dropdown flags booleans; selected project display-name fields come from epmProjectUtils.mjs:getEpmProjectDisplayName; ref.current[surface] entries are DOM nodes, not dependency bags."
+            "rationale": "surface and sort are strings; dropdown flags booleans; selected project display-name fields come from epmProjectUtils.mjs:getEpmProjectDisplayName; ref.current[surface] entries are DOM nodes, not dependency bags. Task 10 (#251) reviewed change: epmSelectedProjectId is the selected Project id string used only to show an unavailable selected Project; no dependency members. Reviewed EPM acceptance fix: epmProjectsLoaded is an owner-produced scalar indicating accepted metadata for the current Project-query scope; Controls and EpmView consume it for unavailable-selection guidance, without component-local load history. No new nested protocol or hook inputs."
           },
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "EpmControls",
-              "line": 7787,
+              "line": 5606,
               "phase": "render"
             }
           ],
@@ -1379,8 +1385,8 @@
       "exports": [
         "EpmView"
       ],
-      "lineCount": 77,
-      "lineCeiling": 77,
+      "lineCount": 78,
+      "lineCeiling": 78,
       "interfaces": [
         {
           "exportName": "EpmView",
@@ -1393,6 +1399,7 @@
             "epmConfigLoaded",
             "epmDuplicates",
             "epmProjectRollupLoadingIds",
+            "epmProjectsLoaded",
             "epmProjectsLoading",
             "epmRollupBoards",
             "epmRollupLoading",
@@ -1417,6 +1424,7 @@
             "epmConfigLoaded",
             "epmDuplicates",
             "epmProjectRollupLoadingIds",
+            "epmProjectsLoaded",
             "epmProjectsLoading",
             "epmRollupBoards",
             "epmRollupLoading",
@@ -1435,23 +1443,49 @@
             "visibleEpmRollupBoards"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 22,
+          "expandedInputCount": 23,
           "returnCount": 0,
-          "propCount": 22,
+          "propCount": 23,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 22,
+          "expandedInputCeiling": 23,
           "returnCeiling": 0,
-          "propCeiling": 22,
+          "propCeiling": 23,
           "unresolved": [],
           "inventory": {
             "source": "frontend/src/epm/EpmView.jsx:6",
-            "sourceDigest": "de3dbe24b73537b5bb49ffc64bd2f744cb3ddb17a819475750988c7e5bcfff8c"
+            "sourceDigest": "fe67fc4bd9f0aa0d2201ea128ffff591eda681fa2c38c7cd9eab774c563d0e55",
+            "memberNames": [
+              "InitiativeIcon",
+              "collapsedProjectIds",
+              "epmAggregateTruncated",
+              "epmConfigLoaded",
+              "epmDuplicates",
+              "epmProjectRollupLoadingIds",
+              "epmProjectsLoaded",
+              "epmProjectsLoading",
+              "epmRollupBoards",
+              "epmRollupLoading",
+              "epmRollupTree",
+              "epmSelectedProjectId",
+              "epmTab",
+              "jiraUrl",
+              "loadArchivedEpmProjectRollup",
+              "openEpmSettingsTab",
+              "searchQuery",
+              "selectedEpmProject",
+              "selectedEpmProjectUpdateLine",
+              "selectedSprint",
+              "selectedView",
+              "setCollapsedProjectIds",
+              "visibleEpmRollupBoards"
+            ],
+            "rationale": " Reviewed EPM acceptance fix: epmProjectsLoaded is an owner-produced scalar indicating accepted metadata for the current Project-query scope; Controls and EpmView consume it for unavailable-selection guidance, without component-local load history. No new nested protocol or hook inputs."
           },
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "EpmView",
-              "line": 10340,
+              "line": 7055,
               "phase": "render"
             }
           ],
@@ -1513,8 +1547,8 @@
       "exports": [
         "useEpmViewData"
       ],
-      "lineCount": 443,
-      "lineCeiling": 443,
+      "lineCount": 517,
+      "lineCeiling": 517,
       "interfaces": [
         {
           "exportName": "useEpmViewData",
@@ -1540,6 +1574,7 @@
             "epmProjectRollupLoadingIds",
             "epmProjects",
             "epmProjectsError",
+            "epmProjectsLoaded",
             "epmProjectsLoading",
             "epmRollupBoards",
             "epmRollupLoading",
@@ -1581,11 +1616,11 @@
           ],
           "outerParameterCount": 1,
           "expandedInputCount": 14,
-          "returnCount": 27,
+          "returnCount": 28,
           "propCount": 0,
           "outerParameterCeiling": 1,
           "expandedInputCeiling": 14,
-          "returnCeiling": 27,
+          "returnCeiling": 28,
           "propCeiling": 0,
           "unresolved": [
             "forwarded input backendUrl",
@@ -1594,7 +1629,7 @@
           ],
           "inventory": {
             "source": "frontend/src/epm/useEpmViewData.js:39",
-            "sourceDigest": "afe4c25b6f806f6bc4a71f3120a3ab44bf4ff72b0459025718f760f1a7f8c7da",
+            "sourceDigest": "684784f352702156b2f3fe90f357e10507247007edac86e9455ec68602b9193f",
             "reviewed": true,
             "memberNames": [
               "backendUrl",
@@ -1612,13 +1647,13 @@
               "selectedSprint",
               "selectedView"
             ],
-            "rationale": "backendUrl is an endpoint-base string passed to API wrappers; it has no callable or nested dependency members. epmProjectSort/searchQuery, where present, are strings. All statically read member names are inventoried."
+            "rationale": "backendUrl is an endpoint-base string passed to API wrappers; it has no callable or nested dependency members. epmProjectSort/searchQuery, where present, are strings. All statically read member names are inventoried. Reviewed EPM acceptance fix: epmProjectsLoaded is an owner-produced scalar indicating accepted metadata for the current Project-query scope; Controls and EpmView consume it for unavailable-selection guidance, without component-local load history. No new nested protocol or hook inputs."
           },
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useEpmViewData",
-              "line": 2022,
+              "line": 1968,
               "phase": "hook execution"
             }
           ],
@@ -1626,173 +1661,190 @@
             {
               "name": "epmTab",
               "lines": [
-                2024,
-                2057,
-                2067,
-                3341,
-                3398,
-                7789,
-                8967,
-                8999,
-                10349
+                1970,
+                2004,
+                2014,
+                3216,
+                3273,
+                5608,
+                5969,
+                6299,
+                6331,
+                7065
               ]
             },
             {
               "name": "setEpmTab",
               "lines": [
-                7792
+                5611
               ]
             },
             {
               "name": "setEpmProjects",
               "lines": [
-                1395
+                1344
               ]
             },
             {
               "name": "epmProjectsLoading",
               "lines": [
-                7797,
-                8663,
-                8900,
-                10343
+                5616,
+                5902,
+                5969,
+                6232,
+                7058
+              ]
+            },
+            {
+              "name": "epmProjectsLoaded",
+              "lines": [
+                5617,
+                7059
               ]
             },
             {
               "name": "setEpmProjectsError",
               "lines": [
-                1395
+                1344
               ]
             },
             {
               "name": "epmSelectedProjectId",
               "lines": [
-                2025,
-                2039,
-                2044,
-                2046,
-                2051,
-                2057,
-                3342,
-                3399,
-                10346
+                1971,
+                1986,
+                1991,
+                1993,
+                1998,
+                2004,
+                3217,
+                3274,
+                5620,
+                5969,
+                7062
               ]
             },
             {
               "name": "setEpmSelectedProjectId",
               "lines": [
-                7817
+                5638
               ]
             },
             {
               "name": "visibleEpmProjects",
               "lines": [
-                7798
+                5618
               ]
             },
             {
               "name": "selectedEpmProject",
               "lines": [
-                5908,
-                5910,
-                5990,
-                7799,
-                10347
+                4486,
+                4488,
+                4568,
+                5619,
+                5974,
+                7063
               ]
             },
             {
               "name": "filteredEpmProjects",
               "lines": [
-                7800
+                5621
               ]
             },
             {
               "name": "visibleEpmRollupBoards",
               "lines": [
-                2040,
-                2044,
-                2051,
-                2068,
-                5906,
-                5907,
-                5910,
-                10352
+                1987,
+                1991,
+                1998,
+                2015,
+                4484,
+                4485,
+                4488,
+                5974,
+                7068
               ]
             },
             {
               "name": "epmRollupTree",
               "lines": [
-                5908,
-                5910,
-                10345
+                4486,
+                4488,
+                7061
               ]
             },
             {
               "name": "epmRollupBoards",
               "lines": [
-                10344
+                7060
               ]
             },
             {
               "name": "epmDuplicates",
               "lines": [
-                10353
+                7069
               ]
             },
             {
               "name": "epmAggregateTruncated",
               "lines": [
-                10354
+                7070
               ]
             },
             {
               "name": "epmRollupLoading",
               "lines": [
-                5959,
-                5971,
-                8663,
-                10351
+                4537,
+                4549,
+                5902,
+                5969,
+                7067
               ]
             },
             {
               "name": "epmProjectRollupLoadingIds",
               "lines": [
-                10355
+                7071
               ]
             },
             {
               "name": "epmSelectedSubGoalKeys",
               "lines": [
-                7822
+                5643
               ]
             },
             {
               "name": "setEpmSelectedSubGoalKeys",
               "lines": [
-                7826
+                5647
               ]
             },
             {
               "name": "runtimeEpmSubGoalKeys",
-              "lines": []
+              "lines": [
+                5969
+              ]
             },
             {
               "name": "refreshEpmProjects",
               "lines": [
-                1395
+                1344
               ]
             },
             {
               "name": "refreshEpmView",
               "lines": [
-                8626
+                5865,
+                5969
               ]
             },
             {
               "name": "loadArchivedEpmProjectRollup",
               "lines": [
-                2068,
-                10359
+                2015,
+                7075
               ]
             }
           ],
@@ -15658,8 +15710,8 @@
         "useStatsDerivedB",
         "useStatsDerivedC"
       ],
-      "lineCount": 1290,
-      "lineCeiling": 1290,
+      "lineCount": 1396,
+      "lineCeiling": 1396,
       "interfaces": [
         {
           "exportName": "useStatsDerivedA",
@@ -15668,6 +15720,7 @@
             "activeGroupMissingComponents",
             "activeGroupTeamIds",
             "activeGroupTeamSet",
+            "automaticRefreshRef",
             "burnoutAssigneeFilter",
             "burnoutCacheRef",
             "burnoutData",
@@ -15711,6 +15764,9 @@
             "activeGroupTeamIds.length",
             "activeGroupTeamSet",
             "activeGroupTeamSet.has",
+            "automaticRefreshRef",
+            "automaticRefreshRef.createExplicitRecorder",
+            "automaticRefreshRef.current",
             "burnoutAssigneeFilter",
             "burnoutCacheRef",
             "burnoutCacheRef.current",
@@ -15753,21 +15809,22 @@
             "tasksFetched"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 47,
+          "expandedInputCount": 50,
           "returnCount": 9,
           "propCount": 0,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 47,
+          "expandedInputCeiling": 50,
           "returnCeiling": 9,
           "propCeiling": 0,
           "unresolved": [
             "forwarded input BACKEND_URL",
+            "bag burnoutCacheRef dynamic deep member",
             "bag burnoutCacheRef member alias cached",
-            "bag burnoutCacheRef dynamic deep member"
+            "forwarded input issueEditStateRef"
           ],
           "inventory": {
-            "source": "frontend/src/stats/useStatsData.js:12",
-            "sourceDigest": "fe55a6920e7f446e576ccf56ee5cd831942928faae5c82f88a40bd5ae5de81d2",
+            "source": "frontend/src/stats/useStatsData.js:57",
+            "sourceDigest": "25e3d0f6ccb86988da9016cb977e439953f2dea8ae2646920e49ba440c51a75e",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -15777,6 +15834,9 @@
               "activeGroupTeamIds.length",
               "activeGroupTeamSet",
               "activeGroupTeamSet.has",
+              "automaticRefreshRef",
+              "automaticRefreshRef.createExplicitRecorder",
+              "automaticRefreshRef.current",
               "burnoutAssigneeFilter",
               "burnoutCacheRef",
               "burnoutCacheRef.current",
@@ -15818,7 +15878,7 @@
               "statsView",
               "tasksFetched"
             ],
-            "rationale": "BACKEND_URL is forwarded only as the existing API wrapper base URL. burnoutCacheRef.current indexes burnoutQueryKey; cached is the stored Stats payload tested for presence and passed unchanged to setBurnoutData. No dynamic callback or getter is supplied. issueEditStateRef aggregate read methods keep the same captured token and deferred timing. Task 3 reviewed change: unchanged bindings/aliases except removal of panel-owned burnoutChartRef/pointer and exact scroll effect; retained memo/fetch/cache ownership unchanged."
+            "rationale": "BACKEND_URL is forwarded only as the existing API wrapper base URL. burnoutCacheRef.current indexes burnoutQueryKey; cached is the stored Stats payload tested for presence and passed unchanged to setBurnoutData. No dynamic callback or getter is supplied. issueEditStateRef aggregate read methods keep the same captured token and deferred timing. Task 3 reviewed change: unchanged bindings/aliases except removal of panel-owned burnoutChartRef/pointer and exact scroll effect; retained memo/fetch/cache ownership unchanged. Task 10 (#251) reviewed change: automaticRefreshRef is a ref read at fetch time and never a dependency; it supplies the automatic job (shouldApply) and the explicit-refresh recorder, and held data is kept on failure. Issue #262 reviewed change: single-Team summary derives one boolean from the existing scoped Team ids; cache, forwarded inputs, effects and dynamic-bag reads are unchanged."
           },
           "callers": [
             {
@@ -15898,6 +15958,7 @@
             "activeGroupMissingComponents",
             "activeGroupTeamIds",
             "adminSettingsGate",
+            "automaticRefreshRef",
             "availableSprints",
             "burnoutAssigneeFilter",
             "burnoutQueryKey",
@@ -15998,6 +16059,7 @@
             "projectTrackPhaseSummary",
             "projectTrackRangeLabel",
             "projectTrackSeries",
+            "projectTrackSingleTeam",
             "projectTrackTotals",
             "selectAllExcludedCapacityEpics",
             "toggleEffortSplitBucket",
@@ -16018,6 +16080,11 @@
             "activeGroupTeamIds.length",
             "adminSettingsGate",
             "adminSettingsGate.status",
+            "automaticRefreshRef",
+            "automaticRefreshRef.createExplicitRecorder",
+            "automaticRefreshRef.current",
+            "automaticRefreshRef.current.job",
+            "automaticRefreshRef.current.job.shouldApply",
             "availableSprints",
             "burnoutAssigneeFilter",
             "burnoutQueryKey",
@@ -16122,19 +16189,19 @@
             "trackApiResult"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 115,
-          "returnCount": 40,
+          "expandedInputCount": 120,
+          "returnCount": 41,
           "propCount": 0,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 115,
-          "returnCeiling": 40,
+          "expandedInputCeiling": 120,
+          "returnCeiling": 41,
           "propCeiling": 0,
           "unresolved": [
             "forwarded input BACKEND_URL",
-            "bag cohortCacheRef member alias cached",
             "bag cohortCacheRef dynamic deep member",
-            "bag excludedCapacityCacheRef member alias cached",
+            "bag cohortCacheRef member alias cached",
             "bag excludedCapacityCacheRef dynamic deep member",
+            "bag excludedCapacityCacheRef member alias cached",
             "bag excludedCapacityCacheRef member alias cachedSprint",
             "forwarded input excludedCapacityEndSprintId",
             "bag excludedCapacityEpicDropdownRef member alias node",
@@ -16142,12 +16209,13 @@
             "forwarded input excludedCapacityIsolatedTeam",
             "forwarded input excludedCapacitySelectedEpicKeys",
             "forwarded input excludedCapacityStartSprintId",
+            "forwarded input issueEditStateRef",
             "bag projectTrackPhaseCacheRef member alias cached",
             "bag projectTrackPhaseCacheRef dynamic deep member"
           ],
           "inventory": {
-            "source": "frontend/src/stats/useStatsData.js:277",
-            "sourceDigest": "fe55a6920e7f446e576ccf56ee5cd831942928faae5c82f88a40bd5ae5de81d2",
+            "source": "frontend/src/stats/useStatsData.js:335",
+            "sourceDigest": "25e3d0f6ccb86988da9016cb977e439953f2dea8ae2646920e49ba440c51a75e",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -16163,6 +16231,11 @@
               "activeGroupTeamIds.length",
               "adminSettingsGate",
               "adminSettingsGate.status",
+              "automaticRefreshRef",
+              "automaticRefreshRef.createExplicitRecorder",
+              "automaticRefreshRef.current",
+              "automaticRefreshRef.current.job",
+              "automaticRefreshRef.current.job.shouldApply",
               "availableSprints",
               "burnoutAssigneeFilter",
               "burnoutQueryKey",
@@ -16266,7 +16339,7 @@
               "statsView",
               "trackApiResult"
             ],
-            "rationale": "BACKEND_URL is forwarded only as the existing API wrapper base URL. cohortCacheRef.current indexes cohortQueryKey; excludedCapacityCacheRef.current indexes progressive scoped sprint keys; projectTrackPhaseCacheRef.current indexes projectTrackPhaseSignature. Cached payload aliases are checked for presence and passed unchanged to existing setters or merge helpers. node aliases the dropdown DOM ref and only calls contains(event.target); forceRefresh aliases a boolean ref. Forwarded sprint ids, isolated team and selected epic keys retain the existing helper argument and setter contracts. All asynchronous callbacks and abort/generation guards are unchanged. Task 3 reviewed change: unchanged bindings/aliases except removal of panel-owned burnoutChartRef/pointer and exact scroll effect; retained memo/fetch/cache ownership unchanged."
+            "rationale": "BACKEND_URL is forwarded only as the existing API wrapper base URL. cohortCacheRef.current indexes cohortQueryKey; excludedCapacityCacheRef.current indexes progressive scoped sprint keys; projectTrackPhaseCacheRef.current indexes projectTrackPhaseSignature. Cached payload aliases are checked for presence and passed unchanged to existing setters or merge helpers. node aliases the dropdown DOM ref and only calls contains(event.target); forceRefresh aliases a boolean ref. Forwarded sprint ids, isolated team and selected epic keys retain the existing helper argument and setter contracts. All asynchronous callbacks and abort/generation guards are unchanged. Task 3 reviewed change: unchanged bindings/aliases except removal of panel-owned burnoutChartRef/pointer and exact scroll effect; retained memo/fetch/cache ownership unchanged. Task 10 (#251) reviewed change: automaticRefreshRef is a ref read at fetch time and never a dependency; it supplies the automatic job (job.shouldApply) and the explicit-refresh recorder, and held data is kept on failure. Issue #262 reviewed change: single-Team summary derives one boolean from the existing scoped Team ids; cache, forwarded inputs, effects and dynamic-bag reads are unchanged."
           },
           "callers": [
             {
@@ -16516,6 +16589,12 @@
               "lines": [
                 8168
               ]
+            },
+            {
+              "name": "projectTrackSingleTeam",
+              "lines": [
+                6844
+              ]
             }
           ],
           "getters": []
@@ -16599,8 +16678,8 @@
             "bag priorityOrder dynamic deep member"
           ],
           "inventory": {
-            "source": "frontend/src/stats/useStatsData.js:1035",
-            "sourceDigest": "fe55a6920e7f446e576ccf56ee5cd831942928faae5c82f88a40bd5ae5de81d2",
+            "source": "frontend/src/stats/useStatsData.js:1141",
+            "sourceDigest": "25e3d0f6ccb86988da9016cb977e439953f2dea8ae2646920e49ba440c51a75e",
             "reviewed": true,
             "memberNames": [
               "burndownMetric",
@@ -16629,7 +16708,7 @@
               "showStats",
               "statsView"
             ],
-            "rationale": "chart aliases burnoutChartRef.current in the retained pointer callback and scroll effect. The pointer callback calls getBoundingClientRect() to translate pointer coordinates; the scroll effect reads clientWidth and scrollWidth and writes scrollLeft only. effectivePriorityWeightMap and effectiveStatsData are forwarded unchanged to existing model helpers; priorityOrder is indexed by priority name solely for numeric sorting. No getter, new dependency or delayed interface is added. Task 3 reviewed change: unchanged bindings/aliases except removal of panel-owned burnoutChartRef/pointer and exact scroll effect; retained memo/fetch/cache ownership unchanged."
+            "rationale": "chart aliases burnoutChartRef.current in the retained pointer callback and scroll effect. The pointer callback calls getBoundingClientRect() to translate pointer coordinates; the scroll effect reads clientWidth and scrollWidth and writes scrollLeft only. effectivePriorityWeightMap and effectiveStatsData are forwarded unchanged to existing model helpers; priorityOrder is indexed by priority name solely for numeric sorting. No getter, new dependency or delayed interface is added. Task 3 reviewed change: unchanged bindings/aliases except removal of panel-owned burnoutChartRef/pointer and exact scroll effect; retained memo/fetch/cache ownership unchanged. Issue #262 reviewed change: single-Team summary derives one boolean from the existing scoped Team ids; cache, forwarded inputs, effects and dynamic-bag reads are unchanged."
           },
           "callers": [
             {
@@ -16739,8 +16818,8 @@
         "StatsPanel",
         "default"
       ],
-      "lineCount": 959,
-      "lineCeiling": 959,
+      "lineCount": 962,
+      "lineCeiling": 962,
       "interfaces": [
         {
           "exportName": "StatsPanel",
@@ -16852,6 +16931,7 @@
             "stats.projectTrackPhaseSummary",
             "stats.projectTrackRangeLabel",
             "stats.projectTrackSeries",
+            "stats.projectTrackSingleTeam",
             "stats.projectTrackTotals",
             "stats.selectAllExcludedCapacityEpics",
             "stats.setBurndownMetric",
@@ -16886,17 +16966,17 @@
             "stats.toggleExcludedCapacityEpicKey"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 126,
+          "expandedInputCount": 127,
           "returnCount": 0,
           "propCount": 9,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 126,
+          "expandedInputCeiling": 127,
           "returnCeiling": 0,
           "propCeiling": 9,
           "unresolved": [],
           "inventory": {
             "source": "frontend/src/stats/StatsPanel.jsx:21",
-            "sourceDigest": "cb3727cd7e4205a17b86bc2b8576d5658a4a55929b768e2e59f92ebddd4d0617"
+            "sourceDigest": "ea51b66335cf81701f64f85d2f16d0f2043406f43476787487808779fbb9e9a8"
           },
           "callers": [],
           "remainingAppReaders": [],
@@ -17012,6 +17092,7 @@
             "stats.projectTrackPhaseSummary",
             "stats.projectTrackRangeLabel",
             "stats.projectTrackSeries",
+            "stats.projectTrackSingleTeam",
             "stats.projectTrackTotals",
             "stats.selectAllExcludedCapacityEpics",
             "stats.setBurndownMetric",
@@ -17046,17 +17127,17 @@
             "stats.toggleExcludedCapacityEpicKey"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 126,
+          "expandedInputCount": 127,
           "returnCount": 0,
           "propCount": 9,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 126,
+          "expandedInputCeiling": 127,
           "returnCeiling": 0,
           "propCeiling": 9,
           "unresolved": [],
           "inventory": {
             "source": "frontend/src/stats/StatsPanel.jsx:21",
-            "sourceDigest": "9b809ffba6c72084aab78f0c3407ce93fd5fb8d67253be390430e962126dd172"
+            "sourceDigest": "ea51b66335cf81701f64f85d2f16d0f2043406f43476787487808779fbb9e9a8"
           },
           "callers": [],
           "remainingAppReaders": [],
@@ -17415,17 +17496,19 @@
         "useEngCapacity",
         "useEngCapacityState"
       ],
-      "lineCount": 394,
-      "lineCeiling": 394,
+      "lineCount": 424,
+      "lineCeiling": 424,
       "interfaces": [
         {
           "exportName": "useEngCapacity",
           "inputNames": [
             "BACKEND_URL",
             "activeCapacityScopeRef",
+            "activeCapacityTeamsRef",
             "capacityEnabled",
             "capacityReadAbortRef",
             "capacityReadGenerationRef",
+            "capacityReadGuardRef",
             "capacityReadModelRef",
             "capacityRefreshNonce",
             "capacityScopeHoldRef",
@@ -17467,6 +17550,7 @@
             "excludedProjectStats",
             "formatCapacityValue",
             "handleCapacitySaved",
+            "refreshCapacity",
             "retryCapacity",
             "selectedAdHocProductSP",
             "selectedProjectEntries",
@@ -17480,11 +17564,20 @@
             "BACKEND_URL",
             "activeCapacityScopeRef",
             "activeCapacityScopeRef.current",
+            "activeCapacityTeamsRef",
+            "activeCapacityTeamsRef.current",
             "capacityEnabled",
             "capacityReadAbortRef",
             "capacityReadAbortRef.current",
             "capacityReadAbortRef.current.signal",
             "capacityReadGenerationRef",
+            "capacityReadGuardRef",
+            "capacityReadGuardRef.current",
+            "capacityReadGuardRef.current.automatic",
+            "capacityReadGuardRef.current.onSettled",
+            "capacityReadGuardRef.current.scopeSignature",
+            "capacityReadGuardRef.current.shouldApply",
+            "capacityReadGuardRef.current.signal",
             "capacityReadModelRef",
             "capacityReadModelRef.current",
             "capacityRefreshNonce",
@@ -17495,6 +17588,7 @@
             "capacityScopePinRef",
             "capacityScopePinRef.current",
             "capacityScopePinRef.current.signature",
+            "capacityScopePinRef.current.teams",
             "capacityState",
             "capacityState.scopeSignature",
             "capacityStateRef",
@@ -17535,12 +17629,12 @@
             "showTech"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 56,
-          "returnCount": 20,
+          "expandedInputCount": 66,
+          "returnCount": 21,
           "propCount": 0,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 56,
-          "returnCeiling": 20,
+          "expandedInputCeiling": 66,
+          "returnCeiling": 21,
           "propCeiling": 0,
           "unresolved": [
             "forwarded input selectedTasksList",
@@ -17548,21 +17642,31 @@
             "forwarded input selectedSP",
             "forwarded input getTeamInfo",
             "forwarded input normalizeEpicKey",
-            "forwarded input BACKEND_URL"
+            "forwarded input BACKEND_URL",
+            "bag capacityReadGuardRef member alias guard"
           ],
           "inventory": {
-            "source": "frontend/src/eng/useEngCapacity.js:53",
-            "sourceDigest": "53bc72994b02ba83fa9a3efd36fdd0eb7ebe2387d0a70910e4752fc3ef9fb9b7",
+            "source": "frontend/src/eng/useEngCapacity.js:55",
+            "sourceDigest": "53c79dafe408428f73158ec64d42f917a14ec8a0163a1e4198a602b71cba4813",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
               "activeCapacityScopeRef",
               "activeCapacityScopeRef.current",
+              "activeCapacityTeamsRef",
+              "activeCapacityTeamsRef.current",
               "capacityEnabled",
               "capacityReadAbortRef",
               "capacityReadAbortRef.current",
               "capacityReadAbortRef.current.signal",
               "capacityReadGenerationRef",
+              "capacityReadGuardRef",
+              "capacityReadGuardRef.current",
+              "capacityReadGuardRef.current.automatic",
+              "capacityReadGuardRef.current.onSettled",
+              "capacityReadGuardRef.current.scopeSignature",
+              "capacityReadGuardRef.current.shouldApply",
+              "capacityReadGuardRef.current.signal",
               "capacityReadModelRef",
               "capacityReadModelRef.current",
               "capacityRefreshNonce",
@@ -17573,6 +17677,7 @@
               "capacityScopePinRef",
               "capacityScopePinRef.current",
               "capacityScopePinRef.current.signature",
+              "capacityScopePinRef.current.teams",
               "capacityState",
               "capacityState.scopeSignature",
               "capacityStateRef",
@@ -17612,7 +17717,7 @@
               "showProduct",
               "showTech"
             ],
-            "rationale": "Reviewed accepted Task 4 closure ledger: selectedTasksList and selectedPlanningTasksList are the existing selected Story arrays passed unchanged to planningSelectionStats helpers. selectedSP is the selected numeric Story Point total passed to getCapacityStatus. getTeamInfo and normalizeEpicKey are existing synchronous task/identity helpers, forwarded unchanged; BACKEND_URL is passed only to the existing Capacity GET API wrapper. Scope aliases, render-time state/read refs, held signature pin and unused scroll closure retain the exact prior reads. No deferred getter, mutation transport or dependency change."
+            "rationale": "Reviewed accepted Task 4 closure ledger: selectedTasksList and selectedPlanningTasksList are the existing selected Story arrays passed unchanged to planningSelectionStats helpers. selectedSP is the selected numeric Story Point total passed to getCapacityStatus. getTeamInfo and normalizeEpicKey are existing synchronous task/identity helpers, forwarded unchanged; BACKEND_URL is passed only to the existing Capacity GET API wrapper. Scope aliases, render-time state/read refs, held signature pin and unused scroll closure retain the exact prior reads. No deferred getter, mutation transport or dependency change. Task 10 (#251) reviewed change: capacityReadGuardRef and activeCapacityTeamsRef are existing-pattern render-time refs created by useEngCapacityState; the guard holds { signal, shouldApply, onSettled, automatic, scopeSignature } read only at effect/fetch time (never a dependency) and settled exactly once; refreshCapacity is the additive explicit/automatic read trigger. No mutation transport, dependency array entry or new getter."
           },
           "callers": [
             {
@@ -17795,6 +17900,13 @@
                 7301,
                 7320
               ]
+            },
+            {
+              "name": "refreshCapacity",
+              "lines": [
+                5879,
+                5956
+              ]
             }
           ],
           "getters": []
@@ -17804,11 +17916,13 @@
           "inputNames": [],
           "returnNames": [
             "activeCapacityScopeRef",
+            "activeCapacityTeamsRef",
             "capacityDataStale",
             "capacityLoading",
             "capacityReadAbortRef",
             "capacityReadError",
             "capacityReadGenerationRef",
+            "capacityReadGuardRef",
             "capacityReadModelRef",
             "capacityReadRevision",
             "capacityRefreshNonce",
@@ -17828,16 +17942,16 @@
           "expandedInputNames": [],
           "outerParameterCount": 0,
           "expandedInputCount": 0,
-          "returnCount": 20,
+          "returnCount": 22,
           "propCount": 0,
           "outerParameterCeiling": 0,
           "expandedInputCeiling": 0,
-          "returnCeiling": 20,
+          "returnCeiling": 22,
           "propCeiling": 0,
           "unresolved": [],
           "inventory": {
-            "source": "frontend/src/eng/useEngCapacity.js:28",
-            "sourceDigest": "53bc72994b02ba83fa9a3efd36fdd0eb7ebe2387d0a70910e4752fc3ef9fb9b7"
+            "source": "frontend/src/eng/useEngCapacity.js:29",
+            "sourceDigest": "53c79dafe408428f73158ec64d42f917a14ec8a0163a1e4198a602b71cba4813"
           },
           "callers": [
             {
@@ -17974,6 +18088,18 @@
               "name": "capacityScopeKeyRef",
               "lines": [
                 5118
+              ]
+            },
+            {
+              "name": "capacityReadGuardRef",
+              "lines": [
+                5048
+              ]
+            },
+            {
+              "name": "activeCapacityTeamsRef",
+              "lines": [
+                5048
               ]
             }
           ],
@@ -18438,8 +18564,8 @@
       "exports": [
         "EpicBlock"
       ],
-      "lineCount": 403,
-      "lineCeiling": 403,
+      "lineCount": 404,
+      "lineCeiling": 404,
       "interfaces": [
         {
           "exportName": "EpicBlock",
@@ -18650,7 +18776,7 @@
           ],
           "inventory": {
             "source": "frontend/src/eng/EpicBlock.jsx:14",
-            "sourceDigest": "3e13593c357445d35ac959816a579ef8475b69fb8f7944ed66cc309d3e7ff1cf",
+            "sourceDigest": "24c0a39c507efb65c6adf60f7e12fac16360d85167290b82bd083290b8a9a7e8",
             "reviewed": true,
             "memberNames": [
               "canEditSharedConfiguration",
@@ -18954,7 +19080,7 @@
           ],
           "inventory": {
             "source": "frontend/src/components/LazyViewBoundary.jsx:48",
-            "sourceDigest": "68460988deaf31e943d4516b11c4dbbc868859024b01f50ef9439af3b0f27e2d",
+            "sourceDigest": "221c19a6554188d10fe0ca1e1fe533fe8e72884a27998e5375f5a7fb3515288d",
             "reviewed": true,
             "memberNames": [
               "children",
@@ -19013,24 +19139,24 @@
       "ceiling": 5766
     },
     "settings": {
-      "measured": 16490,
-      "ceiling": 16490
+      "measured": 16567,
+      "ceiling": 16567
     },
     "stats": {
-      "measured": 2683,
-      "ceiling": 2683
+      "measured": 2792,
+      "ceiling": 2792
     },
     "eng": {
-      "measured": 1750,
-      "ceiling": 1750
+      "measured": 1781,
+      "ceiling": 1781
     },
     "uniqueOwners": {
-      "measured": 26385,
-      "ceiling": 26385
+      "measured": 26602,
+      "ceiling": 26602
     },
     "appPlusOwners": {
-      "measured": 33910,
-      "ceiling": 33910
+      "measured": 34175,
+      "ceiling": 34175
     }
   },
   "transfer": {

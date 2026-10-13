@@ -906,3 +906,161 @@ for (const width of [1280,390]) test(`document scroll docks table headings below
     await page.locator('.compact-sticky-header').getByRole('radio',{name:'Catch Up',exact:true}).click();
     await expect(heading).toHaveCount(0);await expect(page.locator('.planning-review-docked-footer')).toHaveCount(0);
 });
+
+async function automaticPlanningFixture(page, { longTable = false } = {}) {
+    const { installLifecycleControl } = require('./eng_epic_refresh_fixture');
+    const lifecycle = await installLifecycleControl(page);
+    const fixture = await installPlanningFixture(page, { longTable });
+    const state = { remote: false, readGate: null, schemaStatus: 200, readStatus: 200, schemaReads: 0, values: [], primary: [], saveCalls: [], saveGate: null, saveStatus: 200, canRead: true, unavailable: [], limit: null };
+    const columns = [{ id: 'cost', rowKind: 'epic', label: 'Cost', type: 'number', aggregation: 'sum', order: 0 }];
+    await page.route('**/api/capacity*', route => json(route, { enabled: false }));
+    await page.route('**/api/eng/sprints/*/review', async route => {
+        if (route.request().method() === 'PATCH') { const payload = requestBody(route.request()); state.saveCalls.push(payload); if (state.saveGate) await state.saveGate; if (state.saveStatus === 'network') return route.abort('failed'); return json(route, state.saveStatus === 409 ? { error: 'review_conflict', schemaConflict: false, cellConflicts: [{ issueId: '7001', columnId: 'cost' }] } : { schemaRevision: 1, columns, layouts: {}, cells: payload.cellChanges.map(cell => ({ ...cell, revision: 2 })) }, state.saveStatus); }
+        state.schemaReads++; return json(route, { schemaRevision: state.remote ? 2 : 1, columns, layouts: {}, capabilities: { canRead: state.canRead, canSave: state.canRead } }, state.schemaStatus);
+    });
+    await page.route('**/api/eng/sprints/*/review/values/read', async route => {
+        const batch = requestBody(route.request()); state.values.push(batch);
+        if (state.readGate) await state.readGate;
+        if (state.limit && batch.issueIds.length > state.limit) return json(route, { error: 'response_limit' }, 413);
+        return json(route, { cells: batch.rowKind === 'epic' ? [{ rowKind: 'epic', issueId: '7001', columnId: 'cost', value: state.remote ? '8' : '1', revision: state.remote ? 2 : 1 }] : [], unavailableIssueIds: state.unavailable }, state.readStatus);
+    });
+    await page.route('**/api/tasks-with-team-name*', route => {
+        const url = new URL(route.request().url());
+        if (!state.remote || url.searchParams.get('purpose')) return route.fallback();
+        state.primary.push(Object.fromEntries(url.searchParams));
+        const product = url.searchParams.get('project') === 'product';
+        const rows = longTable ? Array.from({ length: 61 }, (_, i) => makeStory(`PLAN-${i + 1}`, 'To Do')) : [makeStory('PLAN-1', 'To Do'), makeStory('PLAN-2', 'To Do'), makeStory('PLAN-3', 'To Do'), makeStory('PLAN-4', 'To Do')];
+        const epic = makeEpic(); epic.summary = 'Accepted automatic Epic';
+        return json(route, { issues: product ? rows : [], epics: product ? { [epic.key]: epic } : {}, epicsInScope: product ? [epic] : [], names: {} });
+    });
+    await openPlanning(page); await page.getByRole('button', { name: 'Show Planning table', exact: true }).click();
+    await expect(page.getByRole('textbox', { name: 'Cost for PLAN-EPIC', exact: true })).toBeVisible();
+    await expect(page.locator('.planning-review-state-note', { hasText: 'Loading…' })).toHaveCount(0);
+    await page.waitForLoadState('networkidle');
+    return { lifecycle, fixture, state };
+}
+
+test('automatic Planning current-row reconciliation stages one forced review with no indirect loading', async ({ page }, testInfo) => {
+    const { lifecycle, state } = await automaticPlanningFixture(page);
+    const { deferred } = require('./eng_epic_refresh_fixture'); const gate = deferred();
+    const values = state.values.length, schemas = state.schemaReads; state.remote = true; state.readGate = gate.promise;
+    await page.evaluate(() => { window.reviewLoadingObserved = false; const observer = new MutationObserver(() => { if ([...document.querySelectorAll('.planning-review-state-note')].some(node => /Loading/.test(node.textContent))) window.reviewLoadingObserved = true; }); observer.observe(document.body, { subtree: true, childList: true, characterData: true }); });
+    await page.screenshot({ path: 'tmp/freshness-251/task-7-table-before.png', animations: 'disabled' });
+    await lifecycle.returnAfter(13 * 60000);
+    await expect(page.locator('tbody .planning-review-summary').first()).toContainText('Accepted automatic Epic');
+    await expect.poll(() => state.values.length).toBe(values + 1);
+    await expect(page.locator('.planning-review-state-note', { hasText: 'Loading…' })).toHaveCount(0);
+    gate.resolve(); await expect.poll(() => state.values.length).toBe(values + 2); await page.waitForLoadState('networkidle');
+    expect(state.schemaReads - schemas).toBe(1); expect(state.values.slice(values).map(batch => batch.rowKind)).toEqual(['epic', 'story']);
+    expect(state.values.at(-1).issueIds).toEqual(expect.arrayContaining(['8001', '8002', '8003', '8004'])); expect(state.primary).toHaveLength(2);
+    expect(await page.evaluate(() => window.reviewLoadingObserved)).toBe(false);
+    await page.screenshot({ path: 'tmp/freshness-251/task-7-table-after.png', animations: 'disabled' });
+    await testInfo.attach('current-admitted-review-batches', { body: JSON.stringify(state.values.slice(values)), contentType: 'application/json' });
+});
+
+test('focused clean Planning input defers return, keeps node/value/focus and drains on blur', async ({ page }) => {
+    const { lifecycle, state } = await automaticPlanningFixture(page); const input = page.getByRole('textbox', { name: 'Cost for PLAN-EPIC', exact: true });
+    await input.focus(); const node = await input.elementHandle(), value = await input.inputValue(); state.remote = true;
+    await page.screenshot({ path: 'tmp/freshness-251/task-7-input-before.png', animations: 'disabled' });
+    await lifecycle.returnAfter(13 * 60000); await page.waitForTimeout(200);
+    expect(state.primary).toHaveLength(0); expect(await input.inputValue()).toBe(value); await expect(input).toBeFocused();
+    expect(await input.evaluate((element, prior) => element === prior, node)).toBe(true);
+    await page.screenshot({ path: 'tmp/freshness-251/task-7-input-held-after.png', animations: 'disabled' });
+    await input.evaluate(element => element.blur()); await expect.poll(() => state.primary.length).toBe(2);
+});
+
+test('dirty Planning layout and scope dialog retain one intent through Stay and Discard', async ({ page }) => {
+    const { lifecycle, state } = await automaticPlanningFixture(page);
+    await page.getByRole('button', { name: '+ Add column', exact: true }).click(); await page.getByLabel('Column name', { exact: true }).fill('Local column'); await page.getByRole('button', { name: 'Add column', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Save review', exact: true })).toBeEnabled(); state.remote = true;
+    await lifecycle.returnAfter(13 * 60000); await page.waitForTimeout(150); expect(state.primary).toHaveLength(0);
+    await page.locator('.sprint-dropdown').first().locator('.sprint-dropdown-toggle').click(); await page.locator('.sprint-dropdown-option', { hasText: secondFutureSprintName }).click();
+    await expect(page.getByRole('dialog', { name: 'Save this Sprint review?' })).toBeVisible(); await page.waitForTimeout(100); expect(state.primary).toHaveLength(0);
+    await page.getByRole('button', { name: 'Stay', exact: true }).click(); expect(state.primary).toHaveLength(0);
+    await page.getByRole('button', { name: 'Discard', exact: true }).click(); await expect(page.getByText('Discard unsaved changes?', { exact: true })).toBeVisible(); await page.getByRole('button', { name: 'Discard', exact: true }).click(); await expect.poll(() => state.primary.length).toBe(2);
+    await expect(page.getByRole('textbox', { name: 'Local column for PLAN-EPIC', exact: true })).toHaveCount(0);
+});
+
+for (const status of [429, 500, 401]) test(`automatic Planning review ${status} retains held UI and never replays`, async ({ page }) => {
+    const { lifecycle, state } = await automaticPlanningFixture(page); state.remote = true; state.schemaStatus = status;
+    const before = state.schemaReads; await lifecycle.returnAfter(13 * 60000); await expect.poll(() => state.schemaReads).toBe(before + 1); await page.waitForTimeout(200);
+    if (status === 401) { await expect(page.getByRole('link', { name: 'Sign in again', exact: true })).toBeVisible(); await lifecycle.returnAfter(24 * 60 * 60000); await page.waitForTimeout(100); expect(state.schemaReads).toBe(before + 1); }
+    else { await expect(page.getByRole('textbox', { name: 'Cost for PLAN-EPIC', exact: true })).toBeVisible(); await expect(page.locator('.planning-review-state-note', { hasText: /could not|Loading/ })).toHaveCount(0); }
+});
+
+test('automatic Planning save-in-flight waits for confirmation then checks once without replay', async ({ page }) => {
+    const { lifecycle, state } = await automaticPlanningFixture(page); const { deferred } = require('./eng_epic_refresh_fixture'); const gate = deferred(); state.saveGate = gate.promise;
+    await page.getByRole('textbox', { name: 'Cost for PLAN-EPIC' }).fill('7'); await page.getByRole('button', { name: 'Save review', exact: true }).click();
+    await expect.poll(() => state.saveCalls.length).toBe(1); state.remote = true; await lifecycle.returnAfter(13 * 60000); await page.waitForTimeout(100); expect(state.primary).toHaveLength(0);
+    gate.resolve(); await expect.poll(() => state.primary.length).toBe(2); expect(state.saveCalls).toHaveLength(1); expect(state.saveCalls[0].cellChanges[0].baseRevision).toBe(1);
+});
+for (const failure of [409, 'network']) test(`automatic Planning ${failure} save preserves draft until deliberate recovery`, async ({ page }) => {
+    const { lifecycle, state } = await automaticPlanningFixture(page); await page.getByRole('textbox', { name: 'Cost for PLAN-EPIC' }).fill('7'); state.saveStatus = failure;
+    await page.getByRole('button', { name: 'Save review', exact: true }).click(); await expect(page.getByRole('button', { name: 'Load current and discard draft', exact: true })).toBeVisible();
+    state.remote = true; await lifecycle.returnAfter(13 * 60000); await page.waitForTimeout(100); expect(state.primary).toHaveLength(0); expect(state.saveCalls).toHaveLength(1);
+    await expect(page.getByRole('textbox', { name: 'Cost for PLAN-EPIC' })).toHaveValue('7');
+    await page.getByRole('button', { name: 'Load current and discard draft', exact: true }).click(); await expect.poll(() => state.primary.length).toBe(2); expect(state.saveCalls).toHaveLength(1);
+});
+test('automatic Planning read splits 413 batches with their CSRF reads and no loading surface', async ({ page }) => {
+    const { lifecycle, state } = await automaticPlanningFixture(page); const values = state.values.length; state.remote = true; state.limit = 2;
+    const csrf = []; page.on('request', request => { if (new URL(request.url()).pathname === '/api/auth/csrf') csrf.push(request); });
+    await lifecycle.returnAfter(13 * 60000); await expect.poll(() => state.values.length).toBe(values + 4);
+    expect(state.values.slice(values).map(batch => batch.issueIds.length)).toEqual([1, 4, 2, 2]); expect(csrf).toHaveLength(4);
+    await expect(page.locator('.planning-review-state-note', { hasText: 'Loading…' })).toHaveCount(0);
+});
+for (const access of ['capability', 'issue']) test(`automatic Planning accepted ${access} access removal disables review editing`, async ({ page }) => {
+    const { lifecycle, state } = await automaticPlanningFixture(page); state.remote = true;
+    if (access === 'capability') state.canRead = false; else state.unavailable = ['7001'];
+    await lifecycle.returnAfter(13 * 60000); await expect(page.locator('tbody .planning-review-summary').first()).toContainText('Accepted automatic Epic');
+    if (access === 'capability') await expect(page.getByRole('textbox', { name: 'Cost for PLAN-EPIC' })).toBeDisabled();
+    else { await expect(page.getByRole('textbox', { name: 'Cost for PLAN-EPIC' })).toHaveCount(0); await expect(page.getByLabel('No review value', { exact: true })).toBeVisible(); }
+});
+
+test('automatic Planning table retains document anchor, horizontal offset, selection and deliberate read-time scroll', async ({ page }, testInfo) => {
+    const { lifecycle, state } = await automaticPlanningFixture(page, { longTable: true }); const { deferred } = require('./eng_epic_refresh_fixture');
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await page.locator('tbody tr[data-issue-key="PLAN-1"]').getByRole('checkbox').check();
+    await page.locator('tbody tr[data-issue-key="PLAN-2"]').getByRole('checkbox').uncheck();
+    const row = page.locator('tbody [data-issue-key="PLAN-35"]'); await row.scrollIntoViewIfNeeded();
+    const scroller = page.locator('.planning-review-scroll'); await scroller.evaluate(node => { node.scrollLeft = node.scrollWidth - node.clientWidth; }); await page.waitForTimeout(150);
+    const node = await row.elementHandle(), before = await row.boundingBox(), left = await scroller.evaluate(node => node.scrollLeft), selection = await page.locator('tbody tr[data-issue-key]').evaluateAll(rows => Object.fromEntries(rows.filter(row => row.querySelector('input[type=checkbox]')).map(row => [row.dataset.issueKey, row.querySelector('input[type=checkbox]').checked])));
+    expect(Object.values(selection)).toContain(true); expect(Object.values(selection)).toContain(false);
+    expect(selection['PLAN-1']).toBe(true); expect(selection['PLAN-2']).toBe(false);
+    state.remote = true; const gate = deferred(); state.readGate = gate.promise; const values = state.values.length;
+    await lifecycle.returnAfter(13 * 60000); await expect.poll(() => state.values.length).toBe(values + 1);
+    const afterPrimary = await row.boundingBox(); expect(Math.abs(afterPrimary.y - before.y)).toBeLessThanOrEqual(2); expect(await scroller.evaluate(node => node.scrollLeft)).toBe(left);
+    await page.mouse.move(1100, 650); await page.mouse.wheel(0, 220); await page.waitForTimeout(150); const deliberate = await page.evaluate(() => window.scrollY);
+    await testInfo.attach('planning-table-before-follow-up', { body: await page.screenshot(), contentType: 'image/png' });
+    gate.resolve(); await expect.poll(() => state.values.length).toBe(values + 2); await page.waitForTimeout(150);
+    await testInfo.attach('planning-table-after-follow-up', { body: await page.screenshot(), contentType: 'image/png' });
+    expect(await page.evaluate(() => window.scrollY)).toBe(deliberate); expect(await scroller.evaluate(node => node.scrollLeft)).toBe(left); const retainedSelection = await page.locator('tbody tr[data-issue-key]').evaluateAll(rows => Object.fromEntries(rows.filter(row => row.querySelector('input[type=checkbox]')).map(row => [row.dataset.issueKey, row.querySelector('input[type=checkbox]').checked])));
+    for (const [key, checked] of Object.entries(selection)) expect(retainedSelection[key], `surviving Table row ${key}`).toBe(checked);
+    expect(await row.evaluate((element, prior) => element === prior, node)).toBe(true);
+    await testInfo.attach('planning-table-reading-positions', { body: JSON.stringify({ before: before.y, afterPrimary: afterPrimary.y, left, deliberate, current: await page.evaluate(() => window.scrollY) }), contentType: 'application/json' });
+});
+
+test('the priority menu on the last Planning row overlays the table fully on screen without resizing it', async ({page}) => {
+    await installPlanningFixture(page,{authMode:'atlassian_oauth'});
+    await page.route('**/api/eng/sprints/*/review',route=>json(route,{schemaRevision:0,columns:[],capabilities:{canRead:false,canSave:false}}));
+    const priorities=['Blocker','Critical','Major','Minor','Low','Trivial'].map((name,index)=>({id:String(index+1),name}));
+    await page.route('**/api/issues/priorities/options*',route=>json(route,{priorities}));
+    await openPlanning(page);
+    await page.getByRole('button',{name:'Show Planning table',exact:true}).click();
+    await page.getByRole('radio',{name:'Stories',exact:true}).click();
+    const scroller=page.locator('.planning-review-scroll');
+    const trigger=scroller.locator('tbody tr').last().locator('[data-priority-transition-trigger]');
+    await trigger.scrollIntoViewIfNeeded();
+    const before=await scroller.evaluate(node=>({scrollHeight:node.scrollHeight,clientHeight:node.clientHeight}));
+    await trigger.click();
+    const menu=page.locator('.priority-transition-menu');
+    await expect(menu.getByRole('menuitem')).not.toHaveCount(0);
+    await expect(menu).toHaveClass(/is-portalled/);
+    expect(await menu.evaluate(node=>node.parentElement===document.body)).toBe(true);
+    const box=await menu.boundingBox();
+    const viewport=page.viewportSize();
+    expect(box.y).toBeGreaterThanOrEqual(0);
+    expect(box.y+box.height).toBeLessThanOrEqual(viewport.height);
+    expect(await scroller.evaluate(node=>({scrollHeight:node.scrollHeight,clientHeight:node.clientHeight}))).toEqual(before);
+    await menu.getByRole('menuitem').first().click();
+    await expect(menu).toHaveCount(0);
+});

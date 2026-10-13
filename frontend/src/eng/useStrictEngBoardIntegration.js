@@ -13,8 +13,20 @@ const canonicalKeys = values => [...new Set((values || [])
     .map(value => String(value || '').trim().toUpperCase())
     .filter(value => /^[A-Z][A-Z0-9_]*-\d+$/.test(value)))].sort();
 
+export function reconcileStrictBoardPatches(patches, data, pendingKeys = new Set()) {
+    const accepted = { ...data.epicsByKey, ...data.childrenByKey };
+    return Object.fromEntries(Object.entries(patches).flatMap(([key, fields]) => {
+        if (pendingKeys.has(key) || !accepted[key]) return [[key, fields]];
+        const retained = Object.fromEntries(Object.entries(fields).filter(([field, value]) => {
+            const canonical = accepted[key][field === 'customfield_10004' ? 'storyPoints' : field];
+            return JSON.stringify(canonical) !== JSON.stringify(value);
+        }));
+        return Object.keys(retained).length ? [[key, retained]] : [];
+    }));
+}
+
 export function useStrictEngBoardOwner({ active, backendUrl, departmentId, sprintId, groupRevision, strictScope = null,
-    resolvedFocusColumnId, performanceGate, trackApiResult, onAuthRequired }) {
+    resolvedFocusColumnId, performanceGate, trackApiResult, onAuthRequired, freshnessBridge }) {
     const [issuePatchesByKey, setIssuePatchesByKey] = React.useState({});
     const mutationCoordinatorRef = React.useRef(null);
     if (!mutationCoordinatorRef.current) mutationCoordinatorRef.current = createEngBoardMutationCoordinator();
@@ -31,10 +43,15 @@ export function useStrictEngBoardOwner({ active, backendUrl, departmentId, sprin
         },
     }), [backendUrl, performanceGate, trackApiResult]);
     const data = useEngBoardData({ active, departmentId, inheritedSprintId: sprintId, groupRevision, strictScope,
-        resolvedFocusColumnId, streamBoard, createMeasurement, onAuthRequired });
-    const refresh = React.useCallback(async () => {
-        const outcome = await data.refresh();
-        if (outcome === 'success') setIssuePatchesByKey({});
+        resolvedFocusColumnId, streamBoard, createMeasurement, onAuthRequired,
+        beforeCommit: (data, guard, deniedEpicKeys, observation) => freshnessBridge?.current?.beforeCommit?.(data, deniedEpicKeys || observation ? { deniedEpicKeys, ...observation } : null, guard),
+        afterCommit: (bridge, data) => {
+            setIssuePatchesByKey(previous => reconcileStrictBoardPatches(previous, data, freshnessBridge?.current?.pendingKeys?.()));
+            return freshnessBridge?.current?.afterCommit?.(bridge);
+        } });
+    const refresh = React.useCallback(async options => {
+        const outcome = await data.refresh(options);
+        if (outcome === 'success' && options?.source !== 'automatic') setIssuePatchesByKey({});
         return outcome;
     }, [data.refresh]);
     React.useEffect(() => setIssuePatchesByKey({}),
@@ -42,7 +59,7 @@ export function useStrictEngBoardOwner({ active, backendUrl, departmentId, sprin
     const applyIssueField = React.useCallback((issueKey, fieldName, fieldValue) => {
         if (!active) return false;
         setIssuePatchesByKey(previous => ({ ...previous,
-            [issueKey]: { ...(previous[issueKey] || {}), [fieldName]: fieldValue } }));
+            [issueKey]: { ...(previous[issueKey] || {}), [fieldName === 'customfield_10004' ? 'storyPoints' : fieldName]: fieldValue } }));
         return true;
     }, [active]);
     return { data, issuePatchesByKey, refresh, applyIssueField,

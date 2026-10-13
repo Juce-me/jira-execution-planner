@@ -495,6 +495,7 @@ See the full guide:
 - **Tasks**: Click the refresh button in the header — bypasses server cache and fetches fresh data from Jira (also refreshes sprints and ready-to-close data)
 - **Sprints**: Also refreshed by the header refresh button, or CMD+R/CTRL+R (page reload uses server cache bypass on first load)
 - **Auto-reload**: Tasks reload automatically when you change sprint selection
+- **Return after an absence (#251, in progress)**: The implementation checks the active scope silently after more than 12 minutes away and defers around editing. Source-check text qualifies cached or incomplete coverage. [Behavior and remaining verification gates](docs/features/eng-workflows.md#return-after-an-absence).
 - **Stats**: Teams/Priority update from loaded tasks; Burnout refreshes when sprint/team scope changes and when opening Burnout
 
 ## 📦 Project Structure

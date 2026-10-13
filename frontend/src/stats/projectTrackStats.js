@@ -5,8 +5,6 @@ import { deriveDefaultBoardColumns, resolveBoardColumnOwner } from '../eng/engBo
 import { BOARD_COLUMN_COLOURS, DEFAULT_COLUMN_COLOUR } from '../settings/groupBoardModel.js';
 
 export const NO_TRACK_LABEL = 'No track';
-export const NO_EPIC_COLUMN_ID = 'no-epic';
-const NO_EPIC_COLUMN = Object.freeze({ id: NO_EPIC_COLUMN_ID, name: 'No Epic', colour: '#e8edf7' });
 // Epic mode drops closed Epics (#186); Team mode counts every Epic in the range so capacity does
 // not shrink as Epics close, and drops only Killed work (#173).
 const CLOSED_EPIC_STATUSES = new Set(['done', 'killed', 'incomplete']);
@@ -159,8 +157,8 @@ function teamRowIdentity(task) {
   return task?.fields?.teamId || task?.fields?.teamName || 'unknown';
 }
 
-// Team mode strips (#173): the Department Board's columns in Board order, or the composer's
-// To Do / In Progress / Done default over the observed Epic statuses when no column holds one.
+// Team mode strips: the Department Board's columns in Board order, or the composer's
+// To Do / In Progress / Done default over the observed Story statuses when no column holds one.
 function resolveStripColumns(boardColumns, tasks) {
   const owner = resolveBoardColumnOwner(boardColumns);
   if (owner) {
@@ -168,8 +166,8 @@ function resolveStripColumns(boardColumns, tasks) {
     return { owner, columns: live.map((column) => ({ id: column.id, name: column.name,
       colour: BOARD_COLUMN_COLOURS.includes(column.colour) ? column.colour : DEFAULT_COLUMN_COLOUR })) };
   }
-  const observed = [...new Set(tasks.map((task) => String(task?.fields?.epicStatus || '').trim()).filter(Boolean))].sort();
-  // No observed Epic status at all still needs one column for status-less Epics.
+  const observed = [...new Set(tasks.map((task) => String(task?.fields?.status?.name || '').trim()).filter(Boolean))].sort();
+  // No observed Story status at all still needs one column for status-less Stories.
   const defaults = deriveDefaultBoardColumns((observed.length ? observed : ['To Do']).map((name) => ({ name })))
     .map((column) => ({ ...column, id: DEFAULT_COLUMN_IDS[column.name] }));
   return {
@@ -178,36 +176,33 @@ function resolveStripColumns(boardColumns, tasks) {
   };
 }
 
-// Per team row and per track, Story Points by the parent Epic's Board column. Uses the same
+// Per team row and per track, Story Points by each Story's status column. Uses the same
 // scope, SP and row identity as buildProjectTrackBreakdownRows (Team mode), so every track's
 // column parts sum to that track's segment and `all` sums to the totals bar.
 export function buildProjectTrackColumnSplit(tasks, rawOpts, boardColumns) {
   const opts = withAllowed(rawOpts);
   const scoped = (tasks || []).filter((t) => inScope(t, opts) && storyPointsFor(t) > 0);
   const { owner, columns } = resolveStripColumns(Array.isArray(boardColumns) ? boardColumns : [], scoped);
-  const rows = {}; const all = {}; let hasNoEpic = false;
+  const rows = {}; const all = {};
   const add = (bucket, track, columnId, pts) => {
     if (!bucket[track]) bucket[track] = {};
     bucket[track][columnId] = (bucket[track][columnId] || 0) + pts;
   };
   for (const task of scoped) {
-    const hasEpic = Boolean(String(task?.fields?.epicKey || '').trim());
-    const columnId = hasEpic ? owner(String(task?.fields?.epicStatus || '').trim()) : NO_EPIC_COLUMN_ID;
-    if (columnId === NO_EPIC_COLUMN_ID) hasNoEpic = true;
+    const columnId = owner(String(task?.fields?.status?.name || '').trim());
     const rowId = teamRowIdentity(task);
     if (!rows[rowId]) rows[rowId] = {};
     const track = trackOf(task); const pts = storyPointsFor(task);
     add(rows[rowId], track, columnId, pts);
     add(all, track, columnId, pts);
   }
-  return { columns: hasNoEpic ? [...columns, { ...NO_EPIC_COLUMN }] : columns, rows, all };
+  return { columns, rows, all };
 }
 
-// StackedBar strip parts for one track: every Board column in order (0 SP columns included for
-// the readout), plus No Epic only when that track has some.
+// StackedBar strip parts for one track: every Board column in order (0 SP columns included
+// for the readout). Stories without an Epic still have their own status column.
 export function projectTrackStripParts(split, byTrackColumns, track) {
   const byColumn = byTrackColumns?.[track] || {};
   return split.columns
-    .map((column) => ({ key: column.id, label: column.name, colour: column.colour, value: byColumn[column.id] || 0 }))
-    .filter((part) => part.key !== NO_EPIC_COLUMN_ID || part.value > 0);
+    .map((column) => ({ key: column.id, label: column.name, colour: column.colour, value: byColumn[column.id] || 0 }));
 }

@@ -73,6 +73,7 @@ function createThrowingStorage() {
 // self-installing as a side effect of being loaded.
 function createHarness({
     initialVisibility = 'visible',
+    initialFocus = true,
     initialNow = BASE_NOW,
     fetchImpl,
     storage = createFakeStorage(),
@@ -100,12 +101,15 @@ function createHarness({
         removeEventListener() {},
         dispatchEvent(event) {
             dispatchedEvents.push(event);
+            (windowListeners[event.type] || []).forEach(handler => handler(event));
             return true;
         },
     };
 
     const fakeDocument = {
         visibilityState: initialVisibility,
+        focused: initialFocus,
+        hasFocus() { return this.focused; },
         addEventListener(eventName, handler) {
             documentListeners[eventName] = documentListeners[eventName] || [];
             documentListeners[eventName].push(handler);
@@ -144,6 +148,7 @@ function createHarness({
 
     return {
         exports: sandbox.module.exports,
+        window: fakeWindow,
         location: fakeLocation,
         storage,
         fetchCalls,
@@ -151,6 +156,7 @@ function createHarness({
         registrationCounts,
         setNow(value) { currentNow = value; },
         setVisibility(state) { fakeDocument.visibilityState = state; },
+        setFocus(focused) { fakeDocument.focused = focused; },
         fireWindowEvent(eventName) {
             return (windowListeners[eventName] || []).map((handler) => handler());
         },
@@ -482,4 +488,139 @@ test('calling the installer twice registers each listener once and performs only
     assert.equal(harness.registrationCounts.window.blur, 1);
     assert.equal(harness.registrationCounts.document.visibilitychange, 1);
     assert.equal(harness.fetchCalls.length, 1);
+});
+
+const ACTIVITY_EVENT = 'jep:auth-focus-refresh-state';
+function successfulResponse() { return { status: 200, ok: true, json: async () => ({}) }; }
+function returnAfter(harness, elapsed = LONG_ABSENCE_MS + 1) {
+    harness.fireWindowEvent('blur');
+    harness.setNow(BASE_NOW + elapsed);
+    harness.fireWindowEvent('focus');
+}
+
+test('visible but blurred startup renews auth while classification waits for actual focus', async () => {
+    const harness = createHarness({ initialFocus: false });
+    await flushMicrotasks();
+    assert.equal(harness.fetchCalls.length, 1);
+    harness.fireWindowEvent('blur');
+    harness.setNow(BASE_NOW + LONG_ABSENCE_MS + 1);
+    harness.fireWindowEvent('focus');
+    await flushMicrotasks();
+    assert.equal(longAbsenceEvents(harness).length, 0);
+    harness.setFocus(true);
+    harness.fireWindowEvent('focus');
+    await flushMicrotasks();
+    assert.equal(longAbsenceEvents(harness).length, 1);
+    assert.equal(longAbsenceEvents(harness)[0].detail.absenceStartedAtMs, BASE_NOW);
+    assert.equal(longAbsenceEvents(harness)[0].detail.observedAtMs, BASE_NOW + LONG_ABSENCE_MS + 1);
+});
+
+test('blur during renewal retains intent until a focused return and emits ordered activity', async () => {
+    let resolve;
+    const harness = createHarness({ initialVisibility: 'hidden', fetchImpl: () => new Promise(r => { resolve = r; }) });
+    harness.setVisibility('visible');
+    harness.setNow(BASE_NOW + LONG_ABSENCE_MS + 1);
+    harness.fireWindowEvent('focus');
+    harness.setFocus(false);
+    harness.fireWindowEvent('blur');
+    resolve(successfulResponse());
+    await flushMicrotasks();
+    assert.equal(longAbsenceEvents(harness).length, 0);
+    harness.setFocus(true);
+    harness.fireWindowEvent('focus');
+    await flushMicrotasks();
+    assert.equal(harness.fetchCalls.length, 1);
+    assert.equal(longAbsenceEvents(harness).length, 1);
+    assert.deepEqual(harness.dispatchedEvents.filter(e => e.type === ACTIVITY_EVENT).map(e => e.detail.status), ['refreshing', 'settled', 'refreshing', 'settled']);
+    const dispatchIndex = harness.dispatchedEvents.findIndex(e => e.type === AUTH_LONG_ABSENCE_EVENT);
+    assert.equal(harness.dispatchedEvents[dispatchIndex - 1].detail.status, 'refreshing');
+});
+
+test('a long return during an existing POST dispatches its retained intent once on success', async () => {
+    let resolve;
+    const harness = createHarness({ fetchImpl: () => new Promise(r => { resolve = r; }) });
+    returnAfter(harness);
+    assert.equal(harness.fetchCalls.length, 1);
+    resolve(successfulResponse());
+    await flushMicrotasks();
+    assert.equal(longAbsenceEvents(harness).length, 1);
+});
+
+test('this tab failed renewal retains intent across short throttled return then retries', async () => {
+    let succeeds = false;
+    const harness = createHarness({ initialVisibility: 'hidden', fetchImpl: async () => succeeds ? successfulResponse() : { status: 503, ok: false } });
+    harness.setVisibility('visible');
+    harness.setNow(BASE_NOW + LONG_ABSENCE_MS + 1);
+    harness.fireWindowEvent('focus');
+    await flushMicrotasks();
+    harness.fireWindowEvent('blur');
+    harness.setNow(BASE_NOW + LONG_ABSENCE_MS + 1001);
+    harness.fireWindowEvent('focus');
+    await flushMicrotasks();
+    assert.equal(harness.fetchCalls.length, 1);
+    assert.equal(longAbsenceEvents(harness).length, 0);
+    succeeds = true;
+    harness.setNow(BASE_NOW + LONG_ABSENCE_MS + 1 + AUTH_REFRESH_THROTTLE_MS);
+    harness.fireWindowEvent('focus');
+    await flushMicrotasks();
+    assert.equal(harness.fetchCalls.length, 2);
+    assert.equal(longAbsenceEvents(harness).length, 1);
+    assert.equal(longAbsenceEvents(harness)[0].detail.absenceStartedAtMs, BASE_NOW);
+});
+
+test('connection ownership retains the earliest long return until released', async () => {
+    const harness = createHarness();
+    await flushMicrotasks();
+    harness.fireWindowEvent('jep:connection-unavailable');
+    returnAfter(harness);
+    await flushMicrotasks();
+    assert.equal(harness.fetchCalls.length, 1);
+    harness.fireWindowEvent('jep:connection-available');
+    harness.fireWindowEvent('focus');
+    await flushMicrotasks();
+    assert.equal(harness.fetchCalls.length, 2);
+    assert.equal(longAbsenceEvents(harness).length, 1);
+});
+
+test('a foreign fresh attempt stamp releases retained intent after this tab failed', async () => {
+    const harness = createHarness({ initialVisibility: 'hidden', fetchImpl: async () => { throw new Error('offline'); } });
+    harness.setVisibility('visible');
+    harness.setNow(BASE_NOW + LONG_ABSENCE_MS + 1);
+    harness.fireWindowEvent('focus');
+    await flushMicrotasks();
+    harness.storage.setItem(AUTH_REFRESH_SHARED_STORAGE_KEY, String(BASE_NOW + LONG_ABSENCE_MS + 2));
+    harness.setNow(BASE_NOW + LONG_ABSENCE_MS + 3);
+    harness.fireWindowEvent('focus');
+    await flushMicrotasks();
+    assert.equal(harness.fetchCalls.length, 1);
+    assert.equal(longAbsenceEvents(harness).length, 1);
+});
+
+test('terminal auth clears intent and prevents later focused retries', async () => {
+    const harness = createHarness({ initialVisibility: 'hidden', fetchImpl: async () => ({ status: 401, ok: false, json: async () => ({}) }) });
+    harness.setVisibility('visible');
+    harness.setNow(BASE_NOW + LONG_ABSENCE_MS + 1);
+    harness.fireWindowEvent('focus');
+    await flushMicrotasks();
+    harness.setNow(BASE_NOW + 24 * 60 * 60 * 1000);
+    harness.fireWindowEvent('focus');
+    await flushMicrotasks();
+    assert.equal(harness.fetchCalls.length, 1);
+    assert.equal(longAbsenceEvents(harness).length, 0);
+});
+
+test('long return emitted before App mounts retains only timestamps for subscriber hand-over', async () => {
+    const h = createHarness(); await flushMicrotasks(); returnAfter(h); await flushMicrotasks();
+    assert.equal(longAbsenceEvents(h).length, 1);
+    const retained = h.window.__JEP_PENDING_LONG_RETURN__;
+    assert.deepEqual(Object.keys(retained).sort(), ['absenceStartedAtMs', 'observedAtMs', 'unfocusedMs']);
+    assert.equal(retained, longAbsenceEvents(h)[0].detail);
+    h.fireWindowEvent('focus'); await flushMicrotasks(); assert.equal(longAbsenceEvents(h).length, 1);
+    h.fireWindowEvent(AUTH_REQUIRED_EVENT); assert.equal(h.window.__JEP_PENDING_LONG_RETURN__, undefined);
+});
+test('connection availability delivers shell-held long return without another focus', async () => {
+    const h = createHarness(); await flushMicrotasks(); h.fireWindowEvent('jep:connection-unavailable'); returnAfter(h); await flushMicrotasks();
+    assert.equal(longAbsenceEvents(h).length, 0);
+    h.fireWindowEvent('jep:connection-available'); await flushMicrotasks();
+    assert.equal(longAbsenceEvents(h).length, 1); assert.equal(h.fetchCalls.length, 2);
 });

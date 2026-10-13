@@ -657,3 +657,13 @@ test('Department Board status colours are passive: allowlisted and free of analy
         assert.equal(source.includes('dataLayer.push'), false, `${filePath} must not push analytics`);
     });
 });
+
+test('automatic freshness and its status projection remain passive and analytics-free', () => {
+    const doc = read('docs/README_ANALYTICS.md');
+    assert.ok(doc.includes('Automatic return acquisition, age readout and reading-position retention'));
+    assert.ok(doc.includes('feature_name=data_freshness'));
+    for (const filePath of ['frontend/src/dashboardFreshnessSummary.js', 'frontend/src/components/DashboardFreshnessStatus.jsx', 'frontend/src/dashboardFreshnessAdapters.js', 'frontend/src/useDashboardFreshness.js']) {
+        const source = read(filePath);
+        assert.doesNotMatch(source, /trackEvent|trackProductEvent|trackApiResult|dataLayer|epic_refresh_action|ga4_event_name|event_group/, filePath);
+    }
+});

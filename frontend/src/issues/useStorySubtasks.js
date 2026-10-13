@@ -39,16 +39,17 @@ export function useStorySubtasks({ backendUrl, selectedSprint, onAuthRecoveryReq
         clearStorySubtasks();
     }, [selectedSprint, clearStorySubtasks]);
 
-    const loadStorySubtasks = React.useCallback(async (task, { forceRefresh = false } = {}) => {
+    const loadStorySubtasks = React.useCallback(async (task, { forceRefresh = false, automatic = false, signal, shouldApplyResult } = {}) => {
         const storyKey = task?.key;
         if (!storyKey || !selectedSprint) return;
 
         storySubtasksControllerRef.current[storyKey]?.abort?.();
         const controller = new AbortController();
+        const readToken = automatic ? issueEditState?.beginRead() : undefined;
         storySubtasksControllerRef.current[storyKey] = controller;
 
         const previousEntry = storySubtasksByKeyRef.current[storyKey];
-        setStorySubtasksByKey(prev => {
+        if (!automatic) setStorySubtasksByKey(prev => {
             return ({
             ...prev,
             [storyKey]: {
@@ -68,7 +69,7 @@ export function useStorySubtasks({ backendUrl, selectedSprint, onAuthRecoveryReq
                 parentKey: storyKey,
                 sprint: selectedSprint,
                 refresh: forceRefresh,
-                signal: controller.signal,
+                signal: signal ? AbortSignal.any([controller.signal, signal]) : controller.signal, automatic,
             });
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
@@ -81,23 +82,25 @@ export function useStorySubtasks({ backendUrl, selectedSprint, onAuthRecoveryReq
             const data = await response.json();
             // A freshly read (not server-cached) subtask list is the raw evidence that releases a Subtask's unconfirmed status/priority lock
             // for the scope it was made in; Refresh never reloads subtasks, so nothing else can.
-            if (issueEditState && data.cached !== true) {
+            if (shouldApplyResult?.() === false || controller.signal.aborted) return;
+            if (!automatic && issueEditState && data.cached !== true) {
                 issueEditState.releasePlanningLocks({ scope: getMutationScope?.() ?? '', evidence: issueEditState.planningEvidence(data.subtasks || []) });
             }
             setStorySubtasksByKey(prev => ({
                 ...prev,
                 [storyKey]: {
-                    expanded: true,
+                    expanded: automatic ? Boolean(prev[storyKey]?.expanded) : true,
                     loading: false,
                     error: '',
                     summary: data.summary || EMPTY_SUMMARY,
-                    items: data.subtasks || [],
+                    items: automatic ? (issueEditState?.reconcileIssues(data.subtasks || [], readToken) || data.subtasks || []) : data.subtasks || [],
                     loaded: true,
                 }
             }));
         } catch (err) {
-            if (err.name === 'AbortError') return;
+            if (err.name === 'AbortError' || (automatic && !isAuthenticationRequiredError(err))) return;
             if (isAuthenticationRequiredError(err)) {
+                if (automatic) throw err;
                 setStorySubtasksByKey(prev => {
                     if (previousEntry !== undefined) return { ...prev, [storyKey]: previousEntry };
                     const next = { ...prev };
@@ -116,6 +119,7 @@ export function useStorySubtasks({ backendUrl, selectedSprint, onAuthRecoveryReq
                 }
             }));
         } finally {
+            if (automatic) issueEditState?.finishRead(readToken);
             if (storySubtasksControllerRef.current[storyKey] === controller) {
                 delete storySubtasksControllerRef.current[storyKey];
             }
@@ -161,12 +165,20 @@ export function useStorySubtasks({ backendUrl, selectedSprint, onAuthRecoveryReq
         setStorySubtasksByKey(prev => applyLocalSubtaskFieldUpdate(prev, issueKey, fieldName, fieldValue, expected));
     }, []);
 
-    const invalidateStorySubtasks = React.useCallback((keys) => {
+    const invalidateStorySubtasks = React.useCallback((keys, { job, anchorKeys } = {}) => {
+        if (job && !job.shouldApply()) return;
         const { next, reloadKeys } = dropStorySubtaskEntries(storySubtasksByKeyRef.current, keys);
         if (next === storySubtasksByKeyRef.current) return;
         setStorySubtasksByKey(prev => dropStorySubtaskEntries(prev, keys).next);
+        const reloads = [];
         reloadKeys.forEach((key) => {
-            void loadStorySubtasks({ key }, { forceRefresh: true });
+            if (job) {
+                if (anchorKeys?.has(key)) reloads.push(loadStorySubtasks({ key }, { forceRefresh: true, automatic: true, signal: job.signal, shouldApplyResult: job.shouldApply }));
+            } else void loadStorySubtasks({ key }, { forceRefresh: true });
+        });
+        if (job) return Promise.allSettled(reloads).then(results => {
+            const rejected = results.find(result => result.status === 'rejected');
+            if (rejected) throw rejected.reason;
         });
     }, [loadStorySubtasks]);
 

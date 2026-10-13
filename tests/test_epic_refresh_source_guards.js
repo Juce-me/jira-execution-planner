@@ -49,10 +49,15 @@ test('loadEpicRefresh is a no-loading forced refresh defined after loadGroupTask
     const groupStart = source.indexOf('const loadGroupTasks');
     const refreshStart = source.indexOf('const loadEpicRefresh');
     assert.ok(groupStart > -1 && refreshStart > groupStart, 'loadEpicRefresh must be defined after loadGroupTasks');
-    const body = source.slice(refreshStart, source.indexOf('\n    return {', refreshStart));
+    assert.match(source.slice(refreshStart), /return collectLanes\(options\)/);
+    const collectorStart = source.indexOf('const collectLanes');
+    assert.ok(collectorStart > groupStart && collectorStart < refreshStart, 'the shared collector follows wholesale loading');
+    const body = source.slice(collectorStart, refreshStart);
     assert.match(body, /useLoading: false/);
     assert.match(body, /forceRefresh: true/);
     assert.match(body, /epicRefresh: true/);
+    assert.match(body, /automatic/);
+    assert.match(body, /Promise\.allSettled/);
 });
 
 test('the epic-refresh request goes through the API module with its own surface', () => {
@@ -84,7 +89,8 @@ test('the dashboard mounts the per-epic refresh in Catch Up without touching the
     assert.match(source, /const loadMeasuredGroupTasks = \(options = \{\}\) => \{\s*loadEpochRef\.current \+= 1;/);
     assert.match(source, /const applyLocalEngIssueField = React\.useCallback\(\(issueKey, fieldName, fieldValue, meta\) => \{\s*recentEditKeysRef\.current\.set\(issueKey, Date\.now\(\)\);/);
     const hookCall = source.indexOf('const epicRefresh = useEpicRefresh(');
-    assert.ok(hookCall > source.indexOf('window.addEventListener(AUTH_LONG_ABSENCE_EVENT'), 'the hook call must follow the long-absence effect so every input is declared');
+    const freshnessCall = source.indexOf('const freshness = useDashboardFreshness(');
+    assert.ok(freshnessCall > -1 && hookCall > freshnessCall, 'the epic hook must follow the early freshness hook');
     assert.ok(hookCall > source.indexOf('const manualRefreshDisabled ='));
     assert.match(epicSource, /\{isEpicRefreshMode && epicGroup\.key !== 'NO_EPIC' && \(\s*<EpicRefreshButton/, 'the button mounts in Catch Up and Planning only');
     assert.equal((source.match(/data-epic-refresh-status/g) || []).length, 1, 'one status region');
@@ -134,13 +140,16 @@ test('Planning enablement: one mode gate, the Planning surface, and the capacity
     assert.ok(source.includes('capacityScopeHoldRef,'), 'the hook receives the hold ref');
     const capacitySource = readOwnerSource(['frontend/src/eng/useEngCapacity.js'], { anchor: 'export function useEngCapacity(' });
     // The signature is pinned while the hold is set and released only by a user scope change or a department reload.
-    assert.match(capacitySource, /if \(showPlanning && capacityScopeHoldRef\.current && activeCapacityScopeRef\.current && !capacityScopePinRef\.current\) capacityScopePinRef\.current = \{ key: capacityScopeKey, signature: activeCapacityScopeRef\.current \};/);
+    assert.match(capacitySource, /if \(showPlanning && capacityScopeHoldRef\.current && activeCapacityScopeRef\.current && !capacityScopePinRef\.current\) capacityScopePinRef\.current = \{ key: capacityScopeKey, signature: activeCapacityScopeRef\.current, teams: \[\.\.\.activeCapacityTeamsRef\.current\] \};/);
     assert.match(capacitySource, /const capacityScopeSignature = capacityScopePinRef\.current \? capacityScopePinRef\.current\.signature : buildCapacityScopeSignature\(/);
     assert.ok(/const capacityScopeKey = \[[^\]]*loadEpochRef\.current[^\]]*isAllTeamsSelected[^\]]*selectedTeamSet/.test(capacitySource), 'the pin key covers the sprint, group, team scope and the department load epoch');
     const hook = read('eng', 'useEpicRefresh.js');
-    const apply = hook.slice(hook.indexOf('const apply = async update'), hook.indexOf('const setEpicState'));
-    assert.ok(apply.indexOf('capacityScopeHoldRef.current = true') > -1 && apply.indexOf('capacityScopeHoldRef.current = true') < apply.indexOf('flushSync(() => {'), 'the hold is set before the merge');
-    assert.match(apply, /await twoFrames\(\);\s*\} finally \{\s*if \(capacityScopeHoldRef\) capacityScopeHoldRef\.current = false;/, 'the hold is cleared two frames after the merge, on every path');
+    const apply = hook.slice(hook.indexOf('const header = document.querySelector(headerSelector(epicKey));', hook.indexOf('const apply = async update')), hook.indexOf('const setEpicState'));
+    const automatic = hook.slice(hook.indexOf("if (update.source === 'automatic')"), hook.indexOf('const header = document.querySelector(headerSelector(epicKey));', hook.indexOf('const apply = async update')));
+    assert.match(automatic, /hold\.current \+= 1[\s\S]*flushSync[\s\S]*finally \{ if \(hold\) hold\.current -= 1/);
+    for (const forbidden of ['clearAggregateSources', 'scrollBy', 'playGlare', 'schedulerRef']) assert.equal(automatic.includes(forbidden), false);
+    assert.ok(apply.indexOf('capacityScopeHoldRef.current += 1') > -1 && apply.indexOf('capacityScopeHoldRef.current += 1') < apply.indexOf('flushSync(() => {'), 'the hold is set before the merge');
+    assert.match(apply, /await twoFrames\(\);\s*\} finally \{\s*if \(capacityScopeHoldRef\) capacityScopeHoldRef\.current -= 1;/, 'the hold is cleared two frames after the merge, on every path');
     assert.equal(hook.includes('alertCallsFor({ ...update, epicChangedFields }, { isFutureSprint: latest.current.isFutureSprint === true, isCatchUp: sourceSurface === \'catch_up\' })'), true, 'Planning issues no alert request');
 });
 

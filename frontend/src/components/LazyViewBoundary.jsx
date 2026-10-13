@@ -3,6 +3,8 @@ import { STALE_LAZY_BUILD_CODE, isLazyLoadFailure } from './lazyViewLoaders.js';
 
 // A lazy component outlives the boundary that created it. A view that resolved once renders synchronously when it is
 // reopened; a new React.lazy around an already cached module still suspends and flashed the fallback on every open.
+// Rejections must stay cached too: evicting before React commits the error lets parent updates recreate the loading
+// component forever. Only the explicit Retry switches to a fresh lazy component.
 const lazyViews = new WeakMap();
 
 function lazyViewFor(load, attempt) {
@@ -13,9 +15,6 @@ function lazyViewFor(load, attempt) {
             // The next fresh mount starts at attempt 0, so a successful retry serves it as well.
             attempts.set(0, View);
             return module;
-        }, error => {
-            attempts.delete(attempt);
-            throw error;
         }));
         attempts.set(attempt, View);
     }
@@ -39,7 +38,8 @@ class LazyViewErrorBoundary extends React.Component {
         return (
             <div className="stats-note" role="alert">
                 {canRetry ? <><span>This view could not be loaded. </span><button type="button" className="secondary compact" onClick={this.props.onRetry}>Retry</button></>
-                    : 'Reload the page to get the latest version'}
+                    : <><span>Reload the page to get the latest version. Unsaved changes will be lost. </span>
+                        <button type="button" className="secondary compact" onClick={() => window.location.reload()}>Reload page</button></>}
             </div>
         );
     }

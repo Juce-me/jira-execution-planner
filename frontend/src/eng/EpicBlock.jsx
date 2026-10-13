@@ -290,7 +290,7 @@ export function EpicBlock({
                                                 result={transitionResult}
                                                 onOpen={openSingleIssueStatusControl} onPrefetch={prefetchSingleIssueStatusOptions}
                                                 onClose={closeSingleIssueStatusControl}
-                                                onSubmit={(targetStatus) => handleSubmitStatusTransition(targetStatus, { key: epicGroup.key })}
+                                                onSubmit={handleSubmitStatusTransition}
                                                 previewOnly={onboardingPreviewSession}
                                                 onPreviewLifecycleChange={handleOnboardingPreviewLifecycleChange}
                                             />

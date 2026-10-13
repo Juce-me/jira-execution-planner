@@ -515,7 +515,7 @@
         }
 
         button.alert-story-local-link:focus-visible {
-            outline: 2px solid var(--focus-ring, #2563eb);
+            outline: 2px solid var(--focus-ring-color, #2563eb);
             outline-offset: 3px;
             border-radius: 3px;
         }

@@ -176,6 +176,11 @@ Prefer single-file or single-test runs during iteration. Run the full suite befo
 - Tests use `unittest` in `tests/test_*.py` with `test_*` methods
 - Do not hand-edit `frontend/dist/`; rebuild it from `frontend/src/` with `npm run build`
 - Reusable rules and design guidance belong at the highest applicable `AGENTS.md`; subfolder `AGENTS.md` files are for local constraints only.
+- Look up an element's kind in `docs/design-system.md` and reuse its component and registered class hook; a new class for an existing kind is a review-stop.
+- Hover and focus use the design-system foundation tokens; no transform in `:hover`/`:active` and no `transition: all`. Part 1's generated baseline grandfathers existing declarations until their surface migration.
+- A Jira write element writes only its own issue key; every new write path needs a `docs/design-system.md` contract entry and a call-site pin before implementation.
+- A new font-family, font-size, border-radius value or pill/chip/badge/button class needs a ratchet allowlist entry with a reason; existing baselines are shrink-only and new classes must be registered in the design-system map.
+- Hover and geometry changes ship with settled element-level Playwright assertions for every affected control kind.
 - Keep `AGENTS.md`, `CLAUDE.md`, and `GEMINI.md` aligned at the root and in subfolders; `CLAUDE.md` and `GEMINI.md` should point to the local `AGENTS.md`.
 - Agent work artifacts under `docs/agents/` use `YYYY-MM-DD-status-summary.md` per `docs/AGENTS.md`.
 - Keep `AGENTS.md`, `README.md`, and other contributor docs aligned when workflow or structure changes

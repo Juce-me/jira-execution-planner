@@ -24,6 +24,8 @@ RICE = (Reach x Impact x Confidence) / Effort
 | 25 | Frontend tests | Frontend | 3 | 2 | 50% | 3 | **1.0** |
 
 ## Deferred
+- Design-system PR2 (global button/ring hover correction) and PR3 (per-surface token migration) require separate implementation plans and authorization after Part 1; preserve current hover offenders and reset declarations until then. See [design](plans/SUPPORT-design-system-hover-contract-design.md).
+- Design-system spec #3: shared Button, font-size/radius/spacing scales and JSX inline-style migration; separate follow-up. Keyboard-only focus behavior, keyframe deduplication and entrance animations remain deferred; touch actions stay required.
 - ENG hidden Initiative-grouping tooltip horizontal overflow — pre-existing on `main` at 755–1023 px (about 26 px); deferred under the user-approved #251 baseline exception on 2026-10-12. Freshness may add zero overflow, and the header regression isolates this tooltip while retaining absolute no-overflow checks elsewhere. Fix tooltip containment separately; preserve its visible hover/focus readout and shared filter controls. See `docs/plans/EXEC-dashboard-data-freshness-251.md`.
 - Export improvements (CSV/PDF) — defer until core planning workflows are stable.
 - Scenario planner `Publish to Jira` (write start/end dates back to Jira) — parked until draft/history/rollback flow is stable.

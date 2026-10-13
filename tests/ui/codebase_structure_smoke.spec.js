@@ -5507,7 +5507,7 @@ async function watchLazyFallback(page, text) {
     }, text);
 }
 const lazyFallbackSeen = page => page.evaluate(() => window.__lazyFallbackSeen);
-async function installLazyStatsProbe(page, { abortRetry = false, mutateManifest } = {}) {
+async function installLazyStatsProbe(page, { abortRetry = false, mutateManifest, missingChunk = false, missingManifest = false } = {}) {
     const manifest = lazyManifest();
     const requests = { chunks: [], manifests: [], documents: [] };
     page.on('request', request => {
@@ -5516,11 +5516,13 @@ async function installLazyStatsProbe(page, { abortRetry = false, mutateManifest 
     });
     await page.route(`**/frontend/dist/${manifest.views.stats.path}*`, async route => {
         const url = new URL(route.request().url()); requests.chunks.push(url.href);
+        if (missingChunk) return requests.documents.length > 1 ? route.fallback() : route.fulfill({ status: 404, contentType: 'text/html', body: 'Not found' });
         if (!url.searchParams.has('jep_retry') || abortRetry) return route.abort('failed');
         return route.fallback();
     });
     await page.route('**/frontend/dist/lazy-views-*.json', async route => {
         requests.manifests.push(route.request().url());
+        if (missingManifest) return route.fulfill({ status: 404, contentType: 'text/html', body: 'Not found' });
         if (!mutateManifest) return route.fallback();
         const changed = JSON.parse(JSON.stringify(manifest)); mutateManifest(changed);
         return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(changed) });
@@ -5573,12 +5575,55 @@ test('Statistics lazy failure twice offers reload guidance', async ({ page }) =>
     const { requests } = await installLazyStatsProbe(page, { abortRetry: true });
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
     await page.getByRole('button', { name: 'Retry', exact: true }).click();
-    await expect(page.getByRole('alert')).toHaveText('Reload the page to get the latest version');
+    await expect(page.getByRole('alert')).toContainText('Reload the page to get the latest version');
+    await expect(page.getByRole('button', { name: 'Reload page', exact: true })).toBeVisible();
     await settleContract(page);
     expect(requests.chunks).toHaveLength(2);
     expect(requests.manifests).toHaveLength(1);
     expect(requests.documents).toEqual(['/']);
     await expect(page.getByRole('button', { name: 'Retry', exact: true })).toHaveCount(0);
+});
+
+test('Statistics missing deployed assets offer a working page reload', async ({ page }, testInfo) => {
+    await installApiMocks(page, [], { useCommittedDist: true, authMode: 'basic', analyticsContext: { enabled: true } });
+    await seedStatsContractPrefs(page);
+    const { requests } = await installLazyStatsProbe(page, { missingChunk: true, missingManifest: true });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await page.addStyleTag({ content: '* { transition: none !important; animation: none !important; }' });
+    const productEvents = () => page.evaluate(() => window.dataLayer.filter(entry => ['userevent', 'pageview'].includes(entry.event)).map(({ duration_ms, ...entry }) => entry));
+    const eventsBeforeRecovery = await productEvents();
+    await page.getByRole('button', { name: 'Retry', exact: true }).click();
+    const notice = page.getByRole('alert');
+    await expect(notice).toContainText('Reload the page to get the latest version');
+    await expect(notice).toContainText('Unsaved changes will be lost');
+    await expect(page.getByText('Loading Statistics…', { exact: true })).toHaveCount(0);
+    await settleContract(page);
+    expect(requests.chunks).toHaveLength(1);
+    expect(requests.manifests).toHaveLength(1);
+    expect(requests.documents).toEqual(['/']);
+    expect(await productEvents()).toEqual(eventsBeforeRecovery);
+    const reload = notice.getByRole('button', { name: 'Reload page', exact: true });
+    await reload.hover();
+    const hover = await reload.evaluate(node => {
+        const style = getComputedStyle(node);
+        return { color: style.color, background: style.backgroundColor, width: node.getBoundingClientRect().width };
+    });
+    expect(hover.color).not.toBe(hover.background);
+    expect(hover.width).toBeGreaterThan(44);
+    await testInfo.attach('lazy-reload-recovery', { body: await page.screenshot({ path: `${screenshotDir}/lazy-reload-recovery.png` }), contentType: 'image/png' });
+    await page.evaluate(() => {
+        window.addEventListener('beforeunload', () => {
+            sessionStorage.setItem('lazy-recovery-events', JSON.stringify(window.dataLayer.filter(entry => ['userevent', 'pageview'].includes(entry.event)).map(({ duration_ms, ...entry }) => entry)));
+        });
+    });
+    await reload.click();
+    await expect(page.locator('.stats-panel.open .stats-view-toggle')).toBeVisible();
+    await page.addStyleTag({ content: '* { transition: none !important; animation: none !important; }' });
+    await settleContract(page);
+    expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem('lazy-recovery-events')))).toEqual(eventsBeforeRecovery);
+    expect(requests.documents).toEqual(['/', '/']);
+    expect(requests.chunks).toHaveLength(2);
+    await testInfo.attach('lazy-reload-restored', { body: await page.screenshot({ path: `${screenshotDir}/lazy-reload-restored.png`, animations: 'disabled' }), contentType: 'image/png' });
 });
 
 for (const [name, mutateManifest] of [
@@ -5593,7 +5638,7 @@ for (const [name, mutateManifest] of [
     page.on('request', request => { if (/StatsPanel.*\.js/.test(request.url())) graphs.push(request.url()); });
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
     await page.getByRole('button', { name: 'Retry', exact: true }).click();
-    await expect(page.getByRole('alert')).toHaveText('Reload the page to get the latest version');
+    await expect(page.getByRole('alert')).toContainText('Reload the page to get the latest version');
     expect(graphs).toHaveLength(1);
     expect(requests.manifests).toHaveLength(1);
     expect(requests.documents).toEqual(['/']);

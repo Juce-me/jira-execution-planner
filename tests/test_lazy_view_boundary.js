@@ -33,20 +33,20 @@ test('a resolved lazy view renders on reopen instead of suspending again', async
     assert.equal(calls, 1);
 });
 
-test('a rejected load is evicted so the next open retries it', async () => {
+test('a rejected load stays cached across renders and reopening until explicit retry', async () => {
     const LazyViewBoundary = loadBoundary();
     let calls = 0;
     const load = async () => {
         calls += 1;
-        if (calls === 1) throw new Error('asset failed');
-        return viewModule('view');
+        throw new Error('asset failed');
     };
     assert.match(open(LazyViewBoundary, load), /fallback/);
     await settle();
-    assert.match(open(LazyViewBoundary, load), /fallback/, 'the failed view is not served from the cache');
-    await settle();
-    assert.match(open(LazyViewBoundary, load), /<p>view<\/p>/);
-    assert.equal(calls, 2);
+    for (let render = 0; render < 3; render++) {
+        assert.match(open(LazyViewBoundary, load), /asset failed/);
+        await settle();
+    }
+    assert.equal(calls, 1);
 });
 
 test('each loader keeps its own view', async () => {
@@ -70,5 +70,7 @@ test('lazy boundary keeps one attempt per mount, a keyed error reset and the san
     assert.match(source, /\{children\(View\)\}/);
     assert.match(source, /type="button"[^>]*onClick=\{this\.props\.onRetry\}[^>]*>Retry</);
     assert.match(source, /Reload the page to get the latest version/);
-    assert.doesNotMatch(source, /location\.reload|window\.location|error\.message/);
+    assert.match(source, /Unsaved changes will be lost/);
+    assert.match(source, /onClick=\{\(\) => window\.location\.reload\(\)\}>Reload page/);
+    assert.doesNotMatch(source, /error\.message/);
 });

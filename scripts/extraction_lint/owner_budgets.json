@@ -19071,7 +19071,7 @@
           ],
           "inventory": {
             "source": "frontend/src/components/LazyViewBoundary.jsx:48",
-            "sourceDigest": "68460988deaf31e943d4516b11c4dbbc868859024b01f50ef9439af3b0f27e2d",
+            "sourceDigest": "221c19a6554188d10fe0ca1e1fe533fe8e72884a27998e5375f5a7fb3515288d",
             "reviewed": true,
             "memberNames": [
               "children",

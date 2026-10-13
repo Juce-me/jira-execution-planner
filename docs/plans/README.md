@@ -34,6 +34,10 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 - [Project Track Board-column strips](EXEC-project-track-board-column-strips.md): planned (issue #173); Team mode totals and By team bars get a 7px strip per track split by the parent Epic's Board column, hover-only readout, no "left" values. [Approved UI decision](SUPPORT-project-track-board-column-strips-design.md) and [approved preview](../../assets/mockups/project-track-board-column-strips.html). Supersedes the 2026-09-08 Left capacity plan. No production implementation yet.
 
+## Shareable view links (issue #194)
+
+- [Shareable view links design](SUPPORT-shareable-view-links-design-194.md): proposed 2026-10-13 and awaiting operator review (issue #194). A header Share button copies a readable self-contained URL (`/?v=1&mode=…`) for ENG Catch Up, Planning, Board and Statistics; the recipient's own Jira access and visible groups bound what applies, an OAuth login hop keeps the query through a validated session-cookie stash, and a failed group or sprint applies nothing else. No server-stored token, no new route. Supersedes the "Shareable View Links" section of [FUTURE-db-additional-features.md](FUTURE-db-additional-features.md) for v1. The execution plan `EXEC-shareable-view-links-194.md` is not written yet.
+
 ## Per-epic refresh (issue #213)
 
 - [Per-epic refresh with glare](EXEC-per-epic-refresh-213.md): implemented on `feature/213-per-epic-refresh` (issue #213), awaiting review and merge; an epic-header refresh button that patches one epic in place, re-checks that epic's alerts only, and plays a subtle glare on changed cards. Design: `docs/agents/features/2026-09-29-executed-per-epic-refresh-with-glare.md`.

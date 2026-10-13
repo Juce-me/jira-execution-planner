@@ -17,6 +17,8 @@ This plan depends on:
 
 ### Shareable View Links
 
+> **v1 superseded (2026-10-13):** Issue #194 v1 uses self-contained readable URLs with no stored state; see [`SUPPORT-shareable-view-links-design-194.md`](SUPPORT-shareable-view-links-design-194.md). The server-stored token design below stays deferred for revocation, expiry, short links and "save a copy".
+
 Users should be able to save a view, create a link, paste it into chat, and let another authenticated user open it if their request resolves to the same workspace/site and they can authorize against the configured Jira/Atlassian site.
 
 This plan does not introduce workspace membership or workspace ACLs. Until a separate membership model exists, share-link access is gated by the resolved `workspace_id` / site context from `RequestAuthContext`, optional explicit Atlassian account allowlists, and Jira authorization checks.

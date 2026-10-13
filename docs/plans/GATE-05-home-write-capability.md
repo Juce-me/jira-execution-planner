@@ -1,6 +1,6 @@
 # GATE-05: Home Project Write Capability
 
-**Gate status:** Blocked. Checked on 2026-10-12. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
+**Gate status:** Blocked. Checked on 2026-10-13. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
 
 ## Purpose
 
@@ -15,8 +15,8 @@ Do not implement Home write routes, write buttons, retry UI, or write-route OAut
 | Field | Value |
 | --- | --- |
 | Status | Blocked |
-| Checked on | 2026-10-12 |
-| Last result | Not run — issue #251 continuation sweep on 2026-10-12 found 0 of 4 Home-write probe inputs in the process environment and no approved disposable Home-write target. Previous FAIL insufficient_home_write_probe_input remains unresolved; no PASS evidence. This read-only refresh implementation adds no Home write path or auth migration and does not depend on this gate. |
+| Checked on | 2026-10-13 |
+| Last result | Not run — issue #194 shareable-view-links design sweep on 2026-10-13 found 0 of 4 Home-write probe inputs in the process environment and no approved disposable Home-write target. Previous FAIL insufficient_home_write_probe_input remains unresolved; no PASS evidence. The design adds no Home write path and does not depend on this gate. |
 | Next review | 2026-10-19 (Europe/Berlin) |
 | Blocker | Jira Home/Townsquare project update API capability is not confirmed locally |
 | Dependent work | Home project update route and UI from the deferred DONE-02 write scope |
@@ -130,6 +130,7 @@ Required tests after the gate passes:
 
 ## Last Check Notes
 
+- 2026-10-13: Shareable view links (issue #194) design sweep found none of the four required Home-write probe inputs and no approved disposable Home project. No mutation probe ran; the design changes only the OAuth login return path and ENG view state, adds no Home/Townsquare route or mutation, and does not depend on this gate. Keep blocked with `FAIL insufficient_home_write_probe_input`; the next review stays 2026-10-19.
 - 2026-09-30: Per-epic refresh (issue #213) execution baseline sweep found none of the four required Home-write probe inputs and no approved disposable Home project. No mutation probe ran; the feature is read-only Jira epic and story refresh under the signed-in user's OAuth context and adds no Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-09-23: Candidate-sprint-label execution found none of the four required Home-write probe inputs and no approved disposable Home project. No mutation probe ran; this implementation changes read-only Jira Epic discovery and client classification only. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-09-21: Persistent Sprint/Team catalog Task 0 baseline review found none of the

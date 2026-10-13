@@ -21,6 +21,7 @@ export default function PlanningActionBar({
     hasPostponedTasks,
     hasAwaitingValidationTasks,
     selectedCount,
+    selectedVisibleCount,
     jiraUrl,
     onToggleAccepted,
     onToggleTodo,
@@ -114,8 +115,8 @@ export default function PlanningActionBar({
             <button
                 className="planning-action-button planning-icon-button"
                 onClick={onOpenSelectedInJira}
-                disabled={selectedCount === 0 || !jiraUrl}
-                title="Open selected stories in Jira (tip: bulk move them to Accepted)"
+                disabled={selectedVisibleCount === 0 || !jiraUrl}
+                title="Open selected stories matching the current filters in Jira (tip: bulk move them to Accepted)"
                 aria-label="Open selected stories in Jira"
             >
                 <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">

@@ -93,6 +93,8 @@ const completedStories = [
 ];
 
 async function installPlanningFixture(page, {
+    futureIssues = futureStories,
+    configuredTeamIds = groupTeamIds,
     taskFailureMode = '',
     delayConfig = false,
     shellAuthDependency = '',
@@ -116,7 +118,7 @@ async function installPlanningFixture(page, {
         groups: [{
             id: 'group-alpha',
             name: 'Alpha Department',
-            teamIds: groupTeamIds,
+            teamIds: configuredTeamIds,
             labels: ['alpha_label'],
             excludedCapacityEpics: []
         }],
@@ -244,7 +246,7 @@ async function installPlanningFixture(page, {
             const issues = project === 'product' && !purpose
                 ? (String(sprint) === String(secondFutureSprintId)
                     ? secondFutureStories
-                    : String(sprint) === String(completedSprintId) ? completedStories : futureStories)
+                    : String(sprint) === String(completedSprintId) ? completedStories : futureIssues)
                 : [];
             const epic = String(sprint) === String(secondFutureSprintId)
                 ? makeEpic(secondFutureSprintId, secondFutureSprintName, 'PLAN-EPIC-2')
@@ -456,6 +458,102 @@ test('new future planning sprint defaults to all selected stories', async ({ pag
 
     await expect(selectedStat(page)).toContainText('3 · 3.0 SP');
     await expect(page.getByRole('button', { name: 'Select All' })).toHaveClass(/active/);
+});
+
+test('Planning Jira export intersects selected stories with the active filters', async ({ page }) => {
+    await installPlanningFixture(page);
+    await page.goto(appBaseUrl);
+    await openFuturePlanning(page);
+    await page.evaluate(() => {
+        window.openedPlanningJiraUrls = [];
+        window.open = url => window.openedPlanningJiraUrls.push(String(url));
+    });
+    const exportButton = page.getByRole('button', { name: 'Open selected stories in Jira', exact: true });
+    await page.getByRole('button', { name: 'Filters', exact: true }).click();
+    const statusOptions = page.getByRole('group', { name: 'Status', exact: true });
+    await statusOptions.getByRole('button', { name: /to do/i }).click();
+    await statusOptions.getByRole('button', { name: /pending/i }).click();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.task-item[data-task-key="PLAN-1"]')).toHaveCount(0);
+    await exportButton.click();
+    const jql = await page.evaluate(() => new URL(window.openedPlanningJiraUrls.at(-1)).searchParams.get('jql'));
+    expect(jql).toBe('key in (PLAN-3)');
+    await storyCheckbox(page, 'PLAN-3').uncheck();
+    await expect(exportButton).toBeDisabled();
+});
+
+test('Planning Jira export follows Team, search, priority and Sprint scope without clearing hidden selections', async ({ page }) => {
+    const betaStory = makeStory('PLAN-6', 'To Do');
+    betaStory.fields.teamId = 'team-beta';
+    betaStory.fields.teamName = 'Beta Team';
+    const minorStory = makeStory('PLAN-7', 'To Do');
+    minorStory.fields.priority = { name: 'Minor' };
+    await installPlanningFixture(page, {
+        futureIssues: [...futureStories, betaStory, minorStory],
+        configuredTeamIds: ['team-alpha', 'team-beta'],
+    });
+    await page.goto(appBaseUrl);
+    await openFuturePlanning(page);
+    await page.evaluate(() => {
+        window.openedPlanningJiraUrls = [];
+        window.open = url => window.openedPlanningJiraUrls.push(String(url));
+    });
+    const exportButton = page.getByRole('button', { name: 'Open selected stories in Jira', exact: true });
+    const expectExport = async keys => {
+        await exportButton.click();
+        expect(await page.evaluate(() => new URL(window.openedPlanningJiraUrls.at(-1)).searchParams.get('jql')))
+            .toBe(`key in (${keys.join(', ')})`);
+    };
+    await searchInput(page).fill('PLAN-1');
+    await expect(page.locator('.task-item')).toHaveCount(1);
+    await expectExport(['PLAN-1']);
+    await searchInput(page).fill('no-matching-story');
+    await expect(exportButton).toBeDisabled();
+    await searchInput(page).fill('');
+    await expect(page.locator('.task-item')).toHaveCount(5);
+    await expectExport(['PLAN-1', 'PLAN-2', 'PLAN-3', 'PLAN-6', 'PLAN-7']);
+
+    const teams = page.locator('.team-dropdown').first();
+    await teams.locator('.team-dropdown-toggle').click();
+    await teams.locator('.team-dropdown-option', { hasText: 'Alpha Team' }).locator('input').check();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.task-item[data-task-key="PLAN-6"]')).toHaveCount(0);
+    await expectExport(['PLAN-1', 'PLAN-2', 'PLAN-3', 'PLAN-7']);
+    await page.getByRole('button', { name: 'Filters', exact: true }).click();
+    await page.getByRole('group', { name: 'Priority', exact: true }).getByRole('button', { name: /minor/i }).click();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.task-item[data-task-key="PLAN-7"]')).toHaveCount(0);
+    await expectExport(['PLAN-1', 'PLAN-2', 'PLAN-3']);
+    await storyCheckbox(page, 'PLAN-2').uncheck();
+    await expectExport(['PLAN-1', 'PLAN-3']);
+
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await expect(page.locator('.compact-sticky-header')).not.toHaveClass(/is-visible/);
+    await selectSprint(page, secondFutureSprintName);
+    await expect(page.locator('.task-item[data-task-key="PLAN-4"]')).toBeVisible();
+    await expectExport(['PLAN-4', 'PLAN-5']);
+});
+
+test('Planning Jira export uses filtered Story keys in Table layout', async ({ page }, testInfo) => {
+    await installPlanningFixture(page);
+    await page.goto(appBaseUrl);
+    await openFuturePlanning(page);
+    await page.getByRole('button', { name: 'Show Planning table', exact: true }).click();
+    await page.getByRole('button', { name: 'Show panel', exact: true }).click();
+    await page.evaluate(() => {
+        window.openedPlanningJiraUrls = [];
+        window.open = url => window.openedPlanningJiraUrls.push(String(url));
+    });
+    const exportButton = page.getByRole('button', { name: 'Open selected stories in Jira', exact: true });
+    await searchInput(page).fill('PLAN-2');
+    await expect(page.locator('.filterbar-wrap')).toContainText('1');
+    await exportButton.click();
+    expect(await page.evaluate(() => new URL(window.openedPlanningJiraUrls.at(-1)).searchParams.get('jql')))
+        .toBe('key in (PLAN-2)');
+    await page.locator('.planning-panel.open').screenshot({ path: testInfo.outputPath('filtered-export-enabled.png'), animations: 'disabled' });
+    await searchInput(page).fill('no-matching-story');
+    await expect(exportButton).toBeDisabled();
+    await page.locator('.planning-panel.open').screenshot({ path: testInfo.outputPath('filtered-export-disabled.png'), animations: 'disabled' });
 });
 
 test('auth lock captures only the latest safe dashboard and Planning snapshot', async ({ page }) => {

@@ -9,26 +9,6 @@ const port = 5067;
 const baseUrl = `http://127.0.0.1:${port}`;
 let server;
 
-test.skip(Boolean(pythonMissingReason), pythonMissingReason);
-
-test.beforeAll(async () => {
-  server = spawn(python, ['-c',
-    `import jira_server; jira_server.app.run(host='127.0.0.1', port=${port}, debug=False, use_reloader=False)`], {
-    cwd: root,
-    env: {...process.env, APP_ENVIRONMENT_KEY:'local', ALLOW_DEV_DIAGNOSTIC_ENDPOINTS:'true',
-      JIRA_AUTH_MODE:'basic', CONFIG_STORAGE_BACKEND:'json', DATABASE_URL:''},
-    stdio: 'ignore',
-  });
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    try {
-      const response = await fetch(`${baseUrl}/health`);
-      if (response.ok) return;
-    } catch (_) {}
-    await new Promise(resolve => setTimeout(resolve, 50));
-  }
-  throw new Error('real Flask test server did not become ready');
-});
-
 test.afterAll(() => {
   if (server && !server.killed) server.kill('SIGTERM');
 });
@@ -47,6 +27,30 @@ test('measurement runner is external-script-only and keeps results transient', a
 });
 
 test('runner loads through Flask with production CSP and its external script', async ({ page, request }) => {
+  test.skip(Boolean(pythonMissingReason), pythonMissingReason);
+  let startupError;
+  server = spawn(python, ['-c',
+    `import jira_server; jira_server.app.run(host='127.0.0.1', port=${port}, debug=False, use_reloader=False)`], {
+    cwd: root,
+    env: {...process.env, APP_ENVIRONMENT_KEY:'local', ALLOW_DEV_DIAGNOSTIC_ENDPOINTS:'true',
+      JIRA_AUTH_MODE:'basic', CONFIG_STORAGE_BACKEND:'json', DATABASE_URL:''},
+    stdio: 'ignore',
+  });
+  server.once('error', error => { startupError = error; });
+  const deadline = Date.now() + 20000;
+  let ready = false;
+  while (Date.now() < deadline) {
+    if (startupError) throw new Error(`Flask test process could not start (${startupError.code})`);
+    if (server.exitCode !== null || server.signalCode !== null) {
+      throw new Error(`Flask test process exited before readiness (${server.exitCode ?? server.signalCode})`);
+    }
+    try {
+      const response = await fetch(`${baseUrl}/health`, { signal: AbortSignal.timeout(1000) });
+      if (response.ok) { ready = true; break; }
+    } catch (_) {}
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  if (!ready) throw new Error('real Flask test server did not become ready within 20 seconds');
   const pageErrors = [];
   page.on('pageerror', error => pageErrors.push(error.message));
   await page.addInitScript(() => {

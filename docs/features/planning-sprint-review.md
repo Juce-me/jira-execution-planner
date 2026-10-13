@@ -171,7 +171,7 @@ require Save, Discard or Stay. Browser exit uses the browser's unsaved-change
 prompt. Refresh, including the app-header Refresh, preserves drafts; conflicts offer deliberate Load current or
 Reapply. Unconfirmed writes are never automatically replayed.
 
-The #251 automatic-return checkpoint defers shared review and capacity acquisition while an editor, draft, save, conflict or unconfirmed result is active. Accepted review schema, requested cells and layouts are staged together; automatic capacity reads retain the existing Team scope. This does not authorize saving or replaying mutations. Selection disappearance and the compact-header reading-position case remain open in the [return verification record](eng-workflows.md#return-after-an-absence).
+The #251 automatic-return implementation defers shared review and capacity acquisition while an editor, draft, save, conflict or unconfirmed result is active. Accepted review schema, requested cells and layouts are staged together; automatic capacity reads retain the existing Team scope. Automatic acceptance preserves selections and the shared Epic/Story table reading position, including deliberate movement during a read. This does not authorize saving or replaying mutations. Final suite/publication acceptance and real OS lifecycle/live-cost evidence remain tracked in the [return verification record](eng-workflows.md#return-after-an-absence).
 
 Shared saving requires database-backed OAuth. Other profiles retain the Jira
 spreadsheet with capability guidance. Review routes derive identity from the

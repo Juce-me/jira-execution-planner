@@ -59,11 +59,11 @@ The Jira Team field remains the existing OR alternative to label matching; alias
 
 ## Return after an absence
 
-The #251 working-tree implementation checks the active scope when the dashboard becomes visible and focused after more than 12 minutes away. It keeps loaded content visible while acquiring data and defers around editors, pending mutations, dirty or saving drafts, conflicts, Settings and onboarding. Continuous focus does not trigger periodic acquisition. Deliberate header Refresh supersedes an automatic check.
+The #251 implementation checks the active scope when the dashboard becomes visible and focused after more than 12 minutes away. It keeps loaded content visible while acquiring data and defers around editors, pending mutations, dirty or saving drafts, conflicts, Settings and onboarding. Continuous focus does not trigger periodic acquisition. Deliberate header Refresh supersedes an automatic check.
 
 The header readout describes source observations: `Checked … ago`, with `partial results` or `coverage unknown` when appropriate; `Updates pending` while work is deferred; `Could not check; showing previous data` after failure; or `Cached data; check unavailable` when an observation cannot prove a fresh check. Authentication renewal alone does not advance this time. The age timer renders text only and issues no requests.
 
-Automatic checks use the existing read owners and never save, discard, publish or run a Scenario. Failed checks keep previous loaded data; an authentication failure still opens the mounted sign-in recovery screen. The [execution record](../plans/EXEC-dashboard-data-freshness-251.md) remains in progress: header geometry, selection disappearance, catalog policy, the compact-header reading-position case, final structural budgets and real sleep/wake evidence are unresolved gates. These checkpoints do not establish complete reading-position or live-latency guarantees.
+Automatic checks use the existing read owners and never save, discard, publish or run a Scenario. Failed checks keep previous loaded data; an authentication failure still opens the mounted sign-in recovery screen. The approved implementation reserves header readout space from initial mount, preserves automatic selections, waits for current catalog authority and passes the compact-header reading-position and exact structure-budget checks. The [execution record](../plans/EXEC-dashboard-data-freshness-251.md) tracks final suite/publication acceptance and unverified real OS wake, BFCache/discard and live upstream cost. Synthetic checks do not establish live-latency or real OS-wake guarantees.
 
 ## Refresh one Epic
 

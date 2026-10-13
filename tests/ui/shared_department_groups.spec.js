@@ -2157,12 +2157,12 @@ test('guide 401 yields focus and normal click ownership to the auth recovery lin
     await expect.poll(() => signIn.evaluate(node => node.inert || Boolean(node.closest('[inert]')))).toBe(false);
     await page.keyboard.press('Tab');
     await expect(signIn).toBeFocused();
-    await signIn.evaluate(node => node.addEventListener('click', event => {
-        event.preventDefault();
-        window.__authRecoveryClicks = (window.__authRecoveryClicks || 0) + 1;
+    await page.route(`${baseUrl}/login?reason=session_expired`, route => route.fulfill({
+        status: 200, contentType: 'text/html', body: '<p>Authentication recovery destination</p>',
     }));
     await signIn.click();
-    expect(await page.evaluate(() => window.__authRecoveryClicks)).toBe(1);
+    await expect(page).toHaveURL(`${baseUrl}/login?reason=session_expired`);
+    await expect(page.getByText('Authentication recovery destination', { exact: true })).toBeVisible();
 });
 
 test('teams guide Tab reaches the cached-team search without scripted focus', async ({ page }) => {

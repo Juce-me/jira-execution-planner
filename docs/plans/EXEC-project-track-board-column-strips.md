@@ -2,7 +2,9 @@
 
 > **For agentic workers:** Use `superpowers:executing-plans` (or `superpowers:subagent-driven-development`) to implement this plan task by task. Follow repository publication rules; this plan does not authorize push or PR creation.
 
-**Status:** In progress, 2026-09-29 (issue #173). UI approved. Supersedes the 2026-09-08 "Left capacity" plan, which lived at this path's predecessor `EXEC-project-track-left-capacity.md`.
+**Status:** Historical implementation record, 2026-09-29 (issue #173); superseded in part by #262. This superseded the 2026-09-08 "Left capacity" plan, which lived at this path's predecessor `EXEC-project-track-left-capacity.md`.
+
+**Current accuracy (2026-10-13):** Historical implementation record for #173; all tasks below were completed. Issue #262 supersedes the parent-Epic status calculation, neutral No Epic strip part, and always-visible Team-mode totals card. Current behavior uses each Story's status and hides duplicate totals for one selected Team; see [Statistics](../features/statistics.md#project-track). Do not execute the older requirements below as a new plan.
 
 **Goal:** In Project Track Team mode, add a thin strip under every track segment of the totals and By team bars that splits that track's SP by the parent Epic's current Board column, with a hover-only readout.
 

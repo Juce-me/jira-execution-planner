@@ -1,6 +1,8 @@
 # Project Track Board-Column Strips — Approved UI Decision
 
-Status: approved design, 2026-09-29, issue #173. Production implementation has not started.
+Status: historical approved design, 2026-09-29, issue #173. Implemented; retained for decision history.
+
+Current accuracy (2026-10-13): issue #262 supersedes the parent-Epic status calculation, neutral No Epic strip part, and always-visible Team-mode totals. Strips now use Story statuses, weighted by Story Points, and one selected Team hides duplicate totals. [Statistics](../features/statistics.md#project-track) describes current behavior; the original decision below is historical.
 
 This decision supersedes the 2026-09-08 "Left capacity" decision (story-status Spent / In Progress / To Do strips, selected-sprint scope, and `N SP left` labels). The user reviewed the revised preview in three rounds and dropped the "left" concept: the Board-column split already shows how much of each track is finished.
 

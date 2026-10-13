@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildProjectTrackSprintSeries, summarizeProjectTrackTotals,
   buildProjectTrackBreakdownRows, buildProjectTrackColumnSplit, inScopeEpicKeys, NO_TRACK_LABEL,
-  NO_EPIC_COLUMN_ID } from '../frontend/src/stats/projectTrackStats.js';
+  projectTrackStripParts } from '../frontend/src/stats/projectTrackStats.js';
 
 // id !== name on purpose, to prove the join keys on id, not name.
 const story = (key, sp, track, sprintId, opts = {}) => ({ key, fields: {
@@ -94,26 +94,29 @@ const board = [
 ];
 const close = (a, b) => Math.abs(a - b) < 1e-9;
 
-test('column split sums each team track by the parent epic Board column', () => {
+test('column split sums each team track by Story status even beneath the same Epic', () => {
   const tasks = [
-    story('A-1', 2.5, 'Committed', 10, { teamId: 'team-a', teamName: 'Alpha', epicKey: 'E1', epicStatus: 'In Progress' }),
-    story('A-2', 3, 'Committed', 10, { teamId: 'team-a', teamName: 'Alpha', epicKey: 'E2', epicStatus: 'Done' }),
-    story('A-3', 1.25, 'Flexible', 10, { teamId: 'team-a', teamName: 'Alpha', epicKey: 'E3', epicStatus: 'Unlisted' }),
-    story('A-4', 4, 'Flexible', 10, { teamId: 'team-a', teamName: 'Alpha', epicKey: 'E4', epicStatus: null }),
-    story('B-1', 6, null, 20, { teamId: 'team-b', teamName: 'Beta', epicKey: 'E5', epicStatus: 'Review' }),
-    story('B-2', 1, 'Committed', 20, { teamId: 'team-b', teamName: 'Beta', noEpic: true }),
+    story('A-1', 2.5, 'Committed', 10, { teamId: 'team-a', teamName: 'Alpha', epicKey: 'E1', epicStatus: 'In Progress', status: 'Review' }),
+    story('A-2', 3, 'Committed', 10, { teamId: 'team-a', teamName: 'Alpha', epicKey: 'E1', epicStatus: 'In Progress', status: 'Done' }),
+    story('A-3', 1.25, 'Flexible', 10, { teamId: 'team-a', teamName: 'Alpha', epicKey: 'E3', epicStatus: 'Done', status: 'Unlisted' }),
+    story('A-4', 4, 'Flexible', 10, { teamId: 'team-a', teamName: 'Alpha', epicKey: 'E4', epicStatus: 'Done', status: 'To Do' }),
+    story('B-1', 6, null, 20, { teamId: 'team-b', teamName: 'Beta', epicKey: 'E5', epicStatus: 'Done', status: 'Review' }),
+    story('B-2', 1, null, 20, { teamId: 'team-b', teamName: 'Beta', noEpic: true, status: 'Done' }),
     story('B-3', 0, 'Committed', 20, { teamId: 'team-b', teamName: 'Beta', epicKey: 'E6', epicStatus: 'Done' }),
     story('B-4', 9, 'Committed', 20, { teamId: 'team-b', teamName: 'Beta', epicKey: 'E7', epicStatus: 'Killed' }),
   ];
   const split = buildProjectTrackColumnSplit(tasks, base, board);
 
-  assert.deepEqual(split.columns.map((c) => c.id), ['col-todo', 'col-build', 'col-done', NO_EPIC_COLUMN_ID]);
-  assert.equal(split.columns.at(-1).name, 'No Epic');
+  assert.deepEqual(split.columns.map((c) => c.id), ['col-todo', 'col-build', 'col-done']);
   assert.deepEqual(split.rows['team-a'].Committed, { 'col-build': 2.5, 'col-done': 3 });
   assert.deepEqual(split.rows['team-a'].Flexible, { 'col-todo': 5.25 });
-  assert.deepEqual(split.rows['team-b'][NO_TRACK_LABEL], { 'col-build': 6 });
-  assert.deepEqual(split.rows['team-b'].Committed, { [NO_EPIC_COLUMN_ID]: 1 });
-  assert.deepEqual(split.all.Committed, { 'col-build': 2.5, 'col-done': 3, [NO_EPIC_COLUMN_ID]: 1 });
+  assert.deepEqual(split.rows['team-b'][NO_TRACK_LABEL], { 'col-build': 6, 'col-done': 1 });
+  assert.deepEqual(split.all.Committed, { 'col-build': 2.5, 'col-done': 3 });
+  assert.deepEqual(projectTrackStripParts(split, split.rows['team-b'], NO_TRACK_LABEL), [
+    { key: 'col-todo', label: 'Backlog', colour: '#8c8c8c', value: 0 },
+    { key: 'col-build', label: 'Build', colour: '#597ef7', value: 6 },
+    { key: 'col-done', label: 'Done', colour: '#52c41a', value: 1 },
+  ]);
 
   // Conservation against the existing breakdown and totals helpers.
   const breakdown = buildProjectTrackBreakdownRows(tasks, base);
@@ -129,7 +132,7 @@ test('column split sums each team track by the parent epic Board column', () => 
   }
 });
 
-test('column split omits No Epic when every story has an epic and does not mutate input', () => {
+test('column split does not mutate input', () => {
   const tasks = [story('A-1', 2, 'Committed', 10, { epicStatus: 'Done' })];
   const snapshot = JSON.stringify(tasks);
   const split = buildProjectTrackColumnSplit(tasks, base, board);
@@ -145,9 +148,9 @@ test('column split coerces off-palette colours to the default column colour', ()
 
 test('column split falls back to the default To Do / In Progress / Done board with stable ids', () => {
   const tasks = [
-    story('A-1', 2, 'Committed', 10, { epicStatus: 'In Progress' }),
-    story('A-2', 3, 'Committed', 10, { epicStatus: 'Done' }),
-    story('A-3', 4, 'Flexible', 10, { epicStatus: 'Analysis' }),
+    story('A-1', 2, 'Committed', 10, { epicStatus: 'Done', status: 'In Progress' }),
+    story('A-2', 3, 'Committed', 10, { epicStatus: 'In Progress', status: 'Done' }),
+    story('A-3', 4, 'Flexible', 10, { noEpic: true, status: 'Analysis' }),
   ];
   const first = buildProjectTrackColumnSplit(tasks, base, []);
   const second = buildProjectTrackColumnSplit(tasks, base, [{ id: 'col-a', name: 'A', statuses: [] }]);
@@ -160,7 +163,7 @@ test('column split falls back to the default To Do / In Progress / Done board wi
 });
 
 test('default board keeps only phases that hold an observed status', () => {
-  const split = buildProjectTrackColumnSplit([story('A-1', 2, 'Committed', 10, { epicStatus: 'Done' })], base, null);
+  const split = buildProjectTrackColumnSplit([story('A-1', 2, 'Committed', 10, { epicStatus: 'In Progress', status: 'Done' })], base, null);
   assert.deepEqual(split.columns.map((c) => c.name), ['Done']);
 });
 
@@ -232,8 +235,26 @@ test('Epic-mode assignee rows retain the epic keys behind each Project Track seg
   assert.deepEqual(dana.epicKeysByTrack.Committed, ['E-COMMITTED']);
 });
 
-test('default board places status-less epics in To Do when no epic status is observed', () => {
-  const split = buildProjectTrackColumnSplit([story('A-1', 2, 'Committed', 10, { epicStatus: null })], base, []);
+test('default board places status-less Stories in To Do regardless of Epic status', () => {
+  const task = story('A-1', 2, 'Committed', 10, { epicStatus: 'Done' });
+  task.fields.status = null;
+  const split = buildProjectTrackColumnSplit([task], base, []);
   assert.deepEqual(split.columns.map((c) => c.id), ['default-to-do']);
   assert.deepEqual(split.rows['team-a'].Committed, { 'default-to-do': 2 });
+});
+
+test('Story status strips preserve the range, capacity-side and exclusion scope', () => {
+  const tasks = [
+    story('A-1', 2, 'Committed', 10, { status: 'Done' }),
+    story('A-2', 3, 'Committed', 99, { status: 'Done' }),
+    story('A-3', 4, 'Committed', 10, { status: 'Done', projectKey: 'TECH' }),
+    story('A-4', 5, 'Committed', 10, { status: 'Done', epicKey: 'AD-1' }),
+    story('A-5', 6, 'Committed', 10, { status: 'Done', epicKey: 'EX-1' }),
+    story('A-6', 7, 'Committed', 10, { status: 'Killed' }),
+    story('A-7', 8, 'Committed', 10, { status: 'Done', epicStatus: 'Killed' }),
+    story('A-8', null, 'Committed', 10, { status: 'Done' }),
+  ];
+  const opts = { ...base, excludeAdHoc: true, excludeExcludedCapacity: true,
+    adHocEpicSet: new Set(['AD-1']), excludedEpicSet: new Set(['EX-1']) };
+  assert.deepEqual(buildProjectTrackColumnSplit(tasks, opts, board).all, { Committed: { 'col-done': 2 } });
 });

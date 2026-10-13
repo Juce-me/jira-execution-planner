@@ -31,7 +31,7 @@ export function readFreshnessEnvironment(input) {
         surface, input.activeGroupId, input.selectedSprint, input.activeGroupTeamIds, input.sourceScope,
         ...(surface === 'stats' ? [input.statsView, input.statsQueryScope] : []),
         ...(surface === 'epm' ? [input.savedEpmRootGoalKey, input.savedEpmSubGoalKeys, input.runtimeEpmSubGoalKeys, input.epmTab, input.epmSelectedProjectId] : [])]),
-    bootstrapReady: Boolean(input.sharedConfigReady && input.acceptedBoardConfigRef.current && input.engWorkspaceConfigured),
+    bootstrapReady: Boolean(input.sharedConfigReady && input.acceptedBoardConfigRef.current && input.engWorkspaceConfigured && (input.selectedView !== 'eng' || input.isSprintCatalogValidated?.() !== false)),
     connectionOwned: input.connectionRecoveryBlocksRefresh || input.connectionUnavailableRef.current,
     terminalAuth: Boolean(input.terminalAuth), blocked: readFreshnessScopeGuards(input).blocked,
     ownerBusy: Boolean(input.showGroupManage || input.onboardingActive || (input.showScenario && input.scenarioLoading) || input.loading || input.productTasksLoading || input.techTasksLoading || input.groupsLoading || input.catalogLoading
@@ -269,7 +269,7 @@ export function createDashboardFreshnessOwners(freshness, inputs) {
             if (!job.shouldApply()) return [];
             return [{ source: 'eng_board', status: outcome === 'success' ? 'ok' : outcome === 'ignored' ? 'ignored' : outcome === 'denied' ? 'denied' : 'failed',
                 checkKind: 'forced', coverage: outcome === 'success' ? 'complete' : 'unknown', requestStartedAtMs: started }];
-        } }; 
+        } };
     for (const owner of [adapter, planning, scenario, board, strict, stats, epm]) {
         const followUp = owner.followUp;
         owner.followUp = async job => {

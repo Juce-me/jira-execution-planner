@@ -5949,3 +5949,48 @@ test('Board retires private Story scrolled out while settlement is held without 
     await expect(story).toHaveCount(0);await expect(panel).toBeVisible();
     const scroll=await body.evaluate(node=>({top:node.scrollTop,max:node.scrollHeight-node.clientHeight}));expect(scroll.top).toBeGreaterThanOrEqual(0);expect(scroll.top).toBeLessThanOrEqual(scroll.max);
 });
+
+for (const scope of ['Component', 'All work']) test(`simulated persisted ${scope} Board waits for catalog validation and resumes one silent stream`, async ({ page }, testInfo) => {
+    const { installLifecycleControl, deferred } = require('./eng_epic_refresh_fixture');
+    await installLifecycleControl(page);
+    const requestLog = [], resources = [], gate = deferred(); let holdCatalog = false;
+    page.on('request', request => resources.push({ pathname: new URL(request.url()).pathname, type: request.resourceType() }));
+    await openBoard(page, { strictBoard: true, sourceBundle: true, requestLog,
+        sprintResponder: async () => {
+            if (holdCatalog) await gate.promise;
+            return { body: { sprints: [{ id: selectedSprintId, name: selectedSprintName, state: 'active' }] } };
+        } });
+    const selector = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+    await selector.click(); await page.getByRole('option', { name: scope, exact: true }).click();
+    const card = page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]'); await expect(card).toBeVisible();
+    await card.locator('.ecard-open').click(); const panel = page.locator('.epic-panel'); await expect(panel).toBeVisible();
+    await settle(page);
+    const cardNode = await card.elementHandle(), panelNode = await panel.elementHandle(), panelText = await panel.innerText();
+    const selection = await selector.innerText(), preferences = await page.evaluate(() => localStorage.getItem('jira_dashboard_ui_prefs_v1'));
+    const paneScroll = await panel.locator('.m-body').evaluate(node => ({ left: node.scrollLeft, top: node.scrollTop }));
+    const since = requestLog.length, resourceSince = resources.length; holdCatalog = true;
+    const callsFor = pathname => requestLog.slice(since).filter(call => new URL(call.url).pathname === pathname);
+    await page.evaluate(() => {
+        window.__freshnessLifecycle.advance(13 * 60000);
+        window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+    });
+    await expect.poll(() => callsFor('/api/sprints').length).toBe(1);
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))); await page.waitForTimeout(250);
+    try {
+        expect(callsFor('/api/eng/board')).toHaveLength(0);
+        expect(await card.evaluate((node, prior) => node === prior, cardNode)).toBe(true);
+        expect(await panel.evaluate((node, prior) => node === prior, panelNode)).toBe(true); expect(await panel.innerText()).toBe(panelText);
+    } finally { gate.resolve(); }
+    await expect.poll(() => callsFor('/api/eng/board').length).toBe(1); await settle(page);
+    expect(callsFor('/api/eng/board')).toHaveLength(1); expect(callsFor('/api/sprints')).toHaveLength(1);
+    expect(callsFor('/api/tasks-with-team-name')).toHaveLength(0);
+    expect(requestLog.slice(since).filter(call => call.method !== 'GET')).toEqual([]);
+    expect(callsFor('/api/performance/loads')).toHaveLength(0);
+    expect(resources.slice(resourceSince).filter(request => request.type === 'document' || !request.pathname.startsWith('/api/'))).toEqual([]);
+    expect(await card.evaluate((node, prior) => node === prior, cardNode)).toBe(true);
+    expect(await panel.evaluate((node, prior) => node === prior, panelNode)).toBe(true); expect(await panel.innerText()).toBe(panelText);
+    expect(await panel.locator('.m-body').evaluate(node => ({ left: node.scrollLeft, top: node.scrollTop }))).toEqual(paneScroll);
+    expect(await selector.innerText()).toBe(selection);
+    expect(await page.evaluate(() => localStorage.getItem('jira_dashboard_ui_prefs_v1'))).toBe(preferences);
+    await testInfo.attach('strict-persisted-return', { body: JSON.stringify({ scope, catalogReads: 1, heldBoardReads: 0, acceptedBoardReads: 1, simulated: true, realBFCacheObserved: false }), contentType: 'application/json' });
+});

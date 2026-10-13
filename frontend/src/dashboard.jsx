@@ -3502,20 +3502,10 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                     return;
                 }
 
-                const groupLoadVersion = ++groupLoadVersionRef.current;
-                const shouldApplyGroupLoadResult = () => groupLoadVersionRef.current === groupLoadVersion;
                 const pendingPlanningResume = pendingPlanningAuthResumeRef.current;
                 const recoveryScopeKey = pendingPlanningResume?.scopeKey === planningScopeKey
                     ? planningScopeKey
                     : '';
-                if (recoveryScopeKey) {
-                    planningAuthResumeLoadRef.current = {
-                        scopeKey: recoveryScopeKey,
-                        loadVersion: groupLoadVersion,
-                        outcome: 'pending',
-                    };
-                }
-
                 const forceConfigRefresh =
                     configRefreshNonce !== 0 &&
                     pendingConfigRefreshRef.current === configRefreshNonce;
@@ -3532,6 +3522,16 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
 
                 if (shouldSkipLoad) {
                     return;
+                }
+
+                const groupLoadVersion = ++groupLoadVersionRef.current;
+                const shouldApplyGroupLoadResult = () => groupLoadVersionRef.current === groupLoadVersion;
+                if (recoveryScopeKey) {
+                    planningAuthResumeLoadRef.current = {
+                        scopeKey: recoveryScopeKey,
+                        loadVersion: groupLoadVersion,
+                        outcome: 'pending',
+                    };
                 }
 
                 if (forceConfigRefresh) {
@@ -3571,7 +3571,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                     groupLoadVersionRef.current += 1;
                     abortSprintFetches();
                 };
-            }, [selectedView, isStatsSourceOnlyStatsView, boardScopeRequested, sprintCatalogReady, sprintsLoading, selectedSprint, selectedSprintInfo?.id, activeGroupId, activeGroupTeamIds.join('|'), groupsLoading, groupPreferences.onboardingRequired, configRefreshNonce, authResumeStagedRevision]);
+            }, [selectedView, isStatsSourceOnlyStatsView, boardScopeRequested, sprintCatalogReady || (sprintCatalogState.selectionPreserved && Boolean(selectedSprintInfo)), sprintsLoading, selectedSprint, selectedSprintInfo?.id, activeGroupId, activeGroupTeamIds.join('|'), groupsLoading, groupPreferences.onboardingRequired, configRefreshNonce, authResumeStagedRevision]);
 
             useEffect(() => {
                 if (groupsLoading || !groupPreferences.onboardingRequired) return;
@@ -5762,13 +5762,13 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                     statusLabel={row.status} statusClassName={getIssueStatusClassName(row.status)} sourceSurface="planning" isOpen={statusTransitionActiveKey === row.key}
                     options={transitionOptions} optionsLoading={transitionOptionsLoading} submitting={statusTransitionSubmitting || pendingStatusIssueKeys.has(row.key)}
                     error={transitionError} errorCode={transitionErrorCode} result={transitionResult}
-                    onOpen={openSingleIssueStatusControl} onPrefetch={prefetchSingleIssueStatusOptions} onClose={closeSingleIssueStatusControl} onSubmit={(targetStatus) => handleSubmitStatusTransition(targetStatus, { key: row.key })} />;
+                    portalTarget={document.body} onOpen={openSingleIssueStatusControl} onPrefetch={prefetchSingleIssueStatusOptions} onClose={closeSingleIssueStatusControl} onSubmit={(targetStatus) => handleSubmitStatusTransition(targetStatus, { key: row.key })} />;
                 if (field === 'priority') return <PriorityTransitionMenu
                     issue={{ key: row.key, priority: row.priority, summary: row.summary }} fallbackIssueType={row.rowKind === 'epic' ? 'Epic' : 'Story'}
                     priorityLabel={row.priority} currentPriorityLabel={row.priority} renderPriorityIcon={renderPriorityIcon}
                     isOpen={priorityTransitionActiveKey === row.key} options={priorityOptions} optionsLoading={priorityOptionsLoading}
                     submitting={prioritySubmitting || pendingPriorityIssueKeys.has(row.key)} error={priorityError} result={priorityResult}
-                    onOpen={openPriorityControl} onClose={closePriorityControl} onSubmit={submitPriorityChange} />;
+                    portalTarget={document.body} onOpen={openPriorityControl} onClose={closePriorityControl} onSubmit={submitPriorityChange} />;
                 const editorField = field === 'storyPoints' ? 'storyPoints' : field;
                 if (!['summary', 'team', 'assignee', 'storyPoints'].includes(editorField) || (editorField === 'storyPoints' && row.rowKind !== 'story')) return null;
                 const active = issueFieldEdits.activeEditor?.issueKey === row.key && issueFieldEdits.activeEditor?.field === editorField;
@@ -5955,12 +5955,12 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
 
             boardFreshnessRef.current.getViewport = epicRefresh.getViewport;
             boardFreshnessRef.current.pendingKeys = () => new Set([...pendingStatusIssueKeys, ...pendingPriorityIssueKeys, ...pendingProjectTrackIssueKeys, ...issueFieldEdits.pendingIssueKeys]);
-            freshness.ownersRef.current = createDashboardFreshnessOwners(freshness, { selectedView, showPlanning, showStats, showScenario, showBoard, strictBoardActive, strictBoard, boardFreshnessRef, planningReview, planningLayout, planningInteractionRef, capacityInteractionRef, capacityScopeHoldRef, planningAutomaticReadRef, refreshCapacity, capacityLoading, sourceScope: boardStrictScope, surfaceBusy: strictBoardData.status === 'loading' || (selectedView === 'eng' && !sprintCatalogReady),
+            freshness.ownersRef.current = createDashboardFreshnessOwners(freshness, { selectedView, showPlanning, showStats, showScenario, showBoard, strictBoardActive: strictBoardOwnerActive, strictBoard, boardFreshnessRef, planningReview, planningLayout, planningInteractionRef, capacityInteractionRef, capacityScopeHoldRef, planningAutomaticReadRef, refreshCapacity, capacityLoading, sourceScope: boardStrictScope, surfaceBusy: strictBoardData.status === 'loading' || (selectedView === 'eng' && !sprintCatalogReady),
                 scenarioHasUnsavedChanges, scenarioEditMode, scenarioDraftMeta, scenarioDragState: scenarioState.scenarioDragState, scenarioDragStateRef: scenarioState.scenarioDragStateRef, scenarioLoading: scenarioState.scenarioLoading,
                 showGroupManage, isGroupDraftDirty, groupSaving, epmConfigSaving, groupVisibilitySaving, workspaceConfigConflict, groupsConfigConflict, onboardingActive: onboarding.run || onboarding.pending,
                 sharedConfigReady, acceptedBoardConfigRef, engWorkspaceConfigured, connectionRecoveryBlocksRefresh, connectionUnavailableRef, terminalAuth: readPendingAuthenticationRequired(),
                 authResumePrincipalRef, connectionRecoveryPrincipalRef, jiraUrl, authResumeStagedRevision, sharedConfigRevision, groupsConfig, activeGroupId, selectedSprint, activeGroupTeamIds,
-                loadEpochRef, groupLoadVersionRef, alertCohortRef, loading, productTasksLoading, techTasksLoading, groupsLoading, catalogLoading: catalogAcquiring, onboardingRequired: groupPreferences.onboardingRequired,
+                loadEpochRef, groupLoadVersionRef, alertCohortRef, loading, productTasksLoading, techTasksLoading, groupsLoading, catalogLoading: catalogAcquiring, isSprintCatalogValidated: () => sprintCatalogControllerRef.current.getState().authority === 'validated', onboardingRequired: groupPreferences.onboardingRequired,
                 statusTransitionActiveKey, priorityTransitionActiveKey, projectTrackTransitionActiveKey, pendingStatusIssueKeys, pendingPriorityIssueKeys, pendingProjectTrackIssueKeys, issueFieldEdits,
                 issueEditState: issueEditStateRef.current, isHeld, epicRefresh, collectGroupRefresh, loadAlertEpics, fetchMissingPlanningInfo, loadReadyToCloseProductTasks, loadReadyToCloseTechTasks,
                 refreshDueSprintCatalog: job => sprintCatalogControllerRef.current.readDue({ selectedSprintId: selectedSprintRef.current, signal: job.signal, shouldApply: job.shouldApply }),

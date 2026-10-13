@@ -60,6 +60,69 @@ async function evidence(testInfo, name, value) {
     console.log(`${name}: ${JSON.stringify(value)}`);
 }
 
+// Synthetic persisted event exercises the mounted restore path; it does not establish a real browser BFCache hit.
+for (const surface of ['Sprint Board', 'Teams Statistics', 'Scenario']) test(`simulated persisted pageshow restores ${surface} through exactly one silent scope read`, async ({ page }, testInfo) => {
+    const resources = recordResources(page);
+    let ctx;
+    if (surface === 'Teams Statistics') ({ ctx } = await setupStatsFreshness(page, 'teams'));
+    else {
+        ({ ctx } = await setup(page));
+        await page.getByRole('radiogroup', { name: 'ENG view mode' }).getByRole('radio', { name: surface === 'Sprint Board' ? 'Board' : 'Scenario', exact: true }).click();
+    }
+    const content = surface === 'Sprint Board' ? page.locator('.ecard[data-epic-key="EPIC-1"]')
+        : surface === 'Teams Statistics' ? page.locator('.stats-view.open') : page.getByRole('button', { name: 'Run Scenario', exact: true });
+    await expect(content).toBeVisible(); await settle(page);
+    const identity = await content.elementHandle(), text = await content.innerText();
+    const selection = () => page.evaluate(() => ({
+        controls: [...document.querySelectorAll('.view-selector .sprint-dropdown-toggle, .view-selector .team-dropdown-toggle')].map(node => node.textContent.trim()),
+        preferences: localStorage.getItem('jira_dashboard_ui_prefs_v1'),
+    }));
+    const beforeSelection = await selection(), since = ctx.calls.length, resourceSince = resources.length;
+    await page.evaluate(() => {
+        window.__freshnessLifecycle.advance(13 * 60000);
+        window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+    });
+    await expect.poll(() => ctx.calls.slice(since).filter(call => call.pathname === '/api/tasks-with-team-name' && !call.params.purpose).length).toBeGreaterThanOrEqual(2);
+    await settle(page);
+    const calls = ctx.calls.slice(since), observed = counts(calls, resources.slice(resourceSince));
+    await evidence(testInfo, 'persisted-return-single-scope', { surface, observed, methods: calls.map(call => ({ method: call.method, pathname: call.pathname, purpose: call.params.purpose })) });
+    expect(observed).toMatchObject({ scope: 2, primary: 2, documents: 0, assets: 0 });
+    expect(calls.filter(call => call.method !== 'GET')).toEqual([]);
+    expect(calls.filter(call => call.pathname === '/api/performance/loads')).toEqual([]);
+    expect(await content.evaluate((node, prior) => node === prior, identity)).toBe(true);
+    expect(await content.innerText()).toBe(text);
+    expect(await selection()).toEqual(beforeSelection);
+});
+
+test('simulated persisted Sprint Board return waits for held catalog validation before its one scope read', async ({ page }, testInfo) => {
+    const { ctx, resources } = await setup(page);
+    await page.getByRole('radiogroup', { name: 'ENG view mode' }).getByRole('radio', { name: 'Board', exact: true }).click();
+    const card = page.locator('.ecard[data-epic-key="EPIC-1"]'); await expect(card).toBeVisible(); await settle(page);
+    const node = await card.elementHandle(), text = await card.innerText(), gate = deferred();
+    ctx.respond('/api/sprints', async () => { await gate.promise; }); // Fall through to the existing validated fixture payload after release.
+    const since = ctx.calls.length, resourceSince = resources.length;
+    await page.evaluate(() => {
+        window.__freshnessLifecycle.advance(13 * 60000);
+        window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+    });
+    await expect.poll(() => ctx.calls.slice(since).filter(call => call.pathname === '/api/sprints').length).toBe(1);
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await page.waitForTimeout(250); // Bounded foreground settle; networkidle cannot settle while the catalog response is held.
+    const held = counts(ctx.calls.slice(since), resources.slice(resourceSince));
+    await evidence(testInfo, 'persisted-return-catalog-held', held);
+    try {
+        expect(held).toMatchObject({ catalog: 1, scope: 0, primary: 0, documents: 0, assets: 0 });
+        expect(await card.evaluate((element, prior) => element === prior, node)).toBe(true); expect(await card.innerText()).toBe(text);
+    } finally { gate.resolve(); }
+    await expect.poll(() => ctx.calls.slice(since).filter(call => call.pathname === '/api/tasks-with-team-name' && !call.params.purpose).length).toBeGreaterThanOrEqual(2);
+    await settle(page);
+    const calls = ctx.calls.slice(since), accepted = counts(calls, resources.slice(resourceSince));
+    await evidence(testInfo, 'persisted-return-catalog-accepted', accepted);
+    expect(accepted).toMatchObject({ catalog: 1, scope: 2, primary: 2, documents: 0, assets: 0 });
+    expect(calls.filter(call => call.method !== 'GET' || call.pathname === '/api/performance/loads')).toEqual([]);
+    expect(await card.evaluate((element, prior) => element === prior, node)).toBe(true); expect(await card.innerText()).toBe(text);
+});
+
 test('automatic Catch Up request timeline stays targeted-first, bounded and read-only', async ({ page }, testInfo) => {
     const { lifecycle, resources, ctx } = await setup(page);
     await settle(page);
@@ -1046,4 +1109,52 @@ test('automatic Planning preserves a selected Team after its last Story leaves a
     expect(manual.planning.selectedTeams).toEqual(['team-beta']);
     expect(manual.planning.selectedTaskKeys).not.toContain('E3-S01');
     await evidence(testInfo, 'automatic-disappearing-team-selection', { before, automatic: before, manual });
+});
+
+for (const kind of ['Stories', 'Epics']) test(`Planning Table ${kind} refreshes a selected Team and never restores old Jira fields when Teams change`, async ({ page }, testInfo) => {
+    const { groupsConfigPayload } = require('./eng_epic_refresh_fixture');
+    const scenario = buildScenario();
+    Object.assign(scenario.stories.find(story => story.key === 'E3-S01').fields, { teamId: 'team-beta', teamName: 'Beta Team' });
+    const { ctx, lifecycle } = await setup(page, { scenario,
+        prefs: { planningLayout: 'table' },
+        configure: fixture => fixture.respond('/api/groups-config', ({ json }) => json({
+            ...groupsConfigPayload, groups: groupsConfigPayload.groups.map(group => ({ ...group, teamIds: ['team-alpha', 'team-beta'] })),
+        })),
+    });
+    const toggleTeams = async name => {
+        await page.getByRole('button', { name: 'Filter teams', exact: true }).click();
+        await page.locator('.team-dropdown-panel:visible').getByRole('checkbox', { name, exact: true }).check();
+        await page.locator('.view-selector .controls-label').click();
+    };
+    await page.getByRole('radiogroup', { name: 'ENG view mode' }).getByRole('radio', { name: 'Planning', exact: true }).click();
+    await page.getByRole('radio', { name: kind, exact: true }).click();
+    await toggleTeams('Alpha Team');
+    const key = kind === 'Stories' ? 'E1-S01' : 'EPIC-1';
+    const beforeSummary = kind === 'Stories' ? 'E1-S01 synthetic story' : ctx.scenario.epics['EPIC-1'].summary;
+    const nextSummary = `Synthetic Alpha ${kind} updated after pause`;
+    const row = page.locator(`.planning-review-table tbody tr[data-issue-key="${key}"]`);
+    await expect(row).toContainText(beforeSummary); await settle(page);
+    await expect(page.locator('.team-dropdown-selection-label:visible')).toHaveText('Alpha Team');
+    const since = ctx.calls.length;
+    Object.assign(ctx.scenario.stories.find(story => story.key === 'E1-S01').fields, {
+        summary: nextSummary, customfield_10004: 8,
+    });
+    ctx.scenario.epics['EPIC-1'].summary = nextSummary;
+    await lifecycle.returnAfter(13 * 60000);
+    await expect.poll(() => ctx.calls.slice(since).filter(call => call.pathname === '/api/tasks-with-team-name' && !call.params.purpose).length).toBe(2);
+    await settle(page);
+    await expect(row).toContainText(nextSummary);
+    await page.evaluate(({ key, beforeSummary }) => {
+        window.__planningOldValueFlashes = 0;
+        window.__planningTeamObserver = new MutationObserver(() => {
+            const current = document.querySelector(`.planning-review-table tbody tr[data-issue-key="${key}"]`);
+            if (current?.textContent.includes(beforeSummary)) window.__planningOldValueFlashes++;
+        });
+        window.__planningTeamObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
+    }, { key, beforeSummary });
+    await toggleTeams('All Teams'); await expect(row).toContainText(nextSummary);
+    await toggleTeams('Alpha Team'); await expect(row).toContainText(nextSummary);
+    await settle(page); await expect(row).toContainText(nextSummary);
+    expect(await page.evaluate(() => { window.__planningTeamObserver.disconnect(); return window.__planningOldValueFlashes; })).toBe(0);
+    await evidence(testInfo, 'planning-selected-team-return', { calls: ctx.calls.slice(since).map(call => ({ pathname: call.pathname, purpose: call.params.purpose })), selectedTeam: await page.locator('.team-dropdown-selection-label:visible').innerText() });
 });

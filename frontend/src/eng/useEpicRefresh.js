@@ -2,11 +2,13 @@ import * as React from 'react';
 import { flushSync } from 'react-dom';
 import { REMOVE_FADE_MS } from '../issues/IssueCard.jsx';
 import { sortTasksByPriority } from './engTaskUtils.js';
+import { projectPlanningOriginals, restorePlanningDisplay } from './engIssueEditState.js';
 import { createEpicRefreshController } from './epicRefreshController.js';
 import { alertCallsFor, alertCallsForEdit, mergeEpicMissingIssues, mergeEpicScopeEntries, recomputeMissingPlanningInfo, replaceEpicStories } from './epicRefreshAlerts.js';
 import { createEpicRecheckScheduler, resolveEditEpicKeys } from './epicRefreshEditRecheck.js';
 import { glareDelayMs, playGlare, selectGlareKeys } from './epicRefreshGlare.js';
-import { diffEpic, mergeEpicStories, patchEpicScopeEntries, patchStoryCopies } from './epicRefreshPatch.js';
+import { beginEngReadingCommit, finishEngReadingCommit, captureEngReadingAnchor, setEngReadingViewportReader, recheckEngReadingVisibility, releaseEngReadingContext, updateEngReadingCanonicalItems } from './engReadingAnchor.js';
+import { diffEpic, mergeEpicStories, mergeEngScopeSnapshot, mergeEngScopeEntries, patchEpicScopeEntries, patchStoryCopies } from './epicRefreshPatch.js';
 
 const EPIC_SCOPE_LISTS = ['productEpicsInScope', 'techEpicsInScope', 'readyToCloseProductEpicsInScope', 'readyToCloseTechEpicsInScope'];
 const STORY_COPY_LISTS = ['readyToCloseProductTasks', 'readyToCloseTechTasks'];
@@ -58,8 +60,16 @@ function announcementFor(outcome) {
 export function useEpicRefresh(inputs) {
     const latest = React.useRef(inputs);
     latest.current = inputs;
+    React.useEffect(() => setEngReadingViewportReader(() => latest.current.getViewport?.()), []);
+    const readingViewportRef = React.useRef(null);
+    React.useLayoutEffect(() => {
+        const viewport = latest.current.getViewport?.(), previous = readingViewportRef.current;
+        if (viewport?.top === previous?.top && viewport?.bottom === previous?.bottom) return;
+        readingViewportRef.current = viewport; recheckEngReadingVisibility({ viewport });
+    });
     const overlay = React.useRef({});
     overlay.current = {};
+    const automaticSelectionRef = React.useRef(null);
     const leavingRef = React.useRef(new Set());
     const timersRef = React.useRef(new Set());
     const controllerRef = React.useRef(null);
@@ -159,6 +169,108 @@ export function useEpicRefresh(inputs) {
     }
     const captureRecheckContext = epicKey => ({ alertVersion: latest.current.getAlertVersion?.(), guards: latest.current.readGuards(epicKey) });
 
+    const sortAutomaticItems = items => {
+        const input = latest.current;
+        const originals = input.getPlanningOriginals?.();
+        const sorted = restorePlanningDisplay(sortTasksByPriority(projectPlanningOriginals(items, originals), input.priorityOrder), items, originals);
+        const overlaid = input.overlayPlanningIssues?.(sorted) || sorted;
+        return overlaid.length === items.length && overlaid.every((item, index) => item === items[index]) ? items : overlaid;
+    };
+    const readScopeState = () => ({ ...latest.current.getState(), ...overlay.current });
+    const scopeGuardsMatch = (a, b) => !a.blocked && a.epoch === b.epoch && a.version === b.version && a.scopeKey === b.scopeKey;
+    const markAutomaticSelection = (state, guards, shouldApply) => {
+        const selection = latest.current.getSelectionState?.();
+        automaticSelectionRef.current = selection ? { productTasks: state.productTasks, techTasks: state.techTasks,
+            guards: { ...guards }, shouldApply, selection: { ...selection } } : null;
+    };
+    const shouldPreserveAutomaticSelection = () => {
+        const marker = automaticSelectionRef.current, input = latest.current;
+        if (!marker) return false;
+        const state = readScopeState(), selection = input.getSelectionState?.();
+        if (!selection || marker.shouldApply?.() === false || !scopeGuardsMatch(input.readScopeGuards(), marker.guards)
+            || state.productTasks !== marker.productTasks || state.techTasks !== marker.techTasks
+            || Object.keys(selection).length !== Object.keys(marker.selection).length
+            || Object.keys(marker.selection).some(name => selection[name] !== marker.selection[name])) {
+            automaticSelectionRef.current = null; return false;
+        }
+        return true;
+    };
+    const applyScopeSnapshot = (job, merged) => {
+        const input = latest.current;
+        if (!job.shouldApply() || !scopeGuardsMatch(input.readScopeGuards(), merged.guards)) return null;
+        const state = readScopeState();
+        const protectedKeys = input.getProtectedKeys(merged.epicKey);
+        const changes = { source: 'automatic', epicKey: merged.epicKey, changedKeys: [], addedKeys: [], silentKeys: [], fetchedStories: [], deniedEpicKeys: [], deniedIssueKeys: [], deniedLanes: [] };
+        const next = {};
+        for (const [lane, title] of ALERT_LANES) {
+            const shown = new Set((state[`${lane}Tasks`] || []).map(item => item.key));
+            const loaded = state[`loaded${title}Tasks`] || [];
+            const result = mergeEngScopeSnapshot({ held: state[`${lane}Tasks`], loaded, lane: merged.lanes[lane], protectedKeys,
+                userRemovedKeys: new Set(loaded.filter(item => !shown.has(item.key)).map(item => item.key)), requestSnapshot: merged.requestSnapshot });
+            next[`${lane}Tasks`] = sortAutomaticItems(result.items);
+            next[`loaded${title}Tasks`] = result.loadedItems;
+            const observation = merged.lanes[lane];
+            next[`${lane}EpicsInScope`] = mergeEngScopeEntries({ held: state[`${lane}EpicsInScope`], fetched: observation?.meta?.epicsInScope,
+                lane: observation, protectedKeys, requestSnapshot: merged.scopeSnapshots?.[lane] });
+            if (observation?.status === 'denied' && observation.projectAccessStatus === 'inaccessible') {
+                changes.deniedLanes.push(lane);
+                next[`readyToClose${title}Tasks`] = [];
+                next[`readyToClose${title}EpicsInScope`] = [];
+                if (input.setters[`setBacklog${title}Epics`]) next[`backlog${title}Epics`] = [];
+                const deniedKeys = new Set([...loaded, ...(state[`${lane}EpicsInScope`] || []), ...(state[`readyToClose${title}Tasks`] || [])].map(item => item.key));
+                const other = lane === 'product' ? 'tech' : 'product';
+                const otherTitle = other === 'product' ? 'Product' : 'Tech';
+                const otherDenied = merged.lanes[other]?.status === 'denied' && merged.lanes[other].projectAccessStatus === 'inaccessible';
+                const surviving = new Set(otherDenied ? [] : [...(state[`${other}EpicsInScope`] || []).map(item => item.key), ...(state[`loaded${otherTitle}Tasks`] || []).map(item => item.fields?.epicKey),
+                    ...(merged.lanes[other]?.status === 'ok' ? merged.lanes[other].meta?.epicsInScope || [] : []).map(item => item.key),
+                    ...(merged.lanes[other]?.status === 'ok' ? merged.lanes[other].items || [] : []).map(item => item.fields?.epicKey),
+                    ...(merged.readinessSnapshot?.epics || []).filter(item => item.projectClass === other).map(item => item.key)]);
+                for (const key of surviving) deniedKeys.delete(key);
+                const survivingIssues = otherDenied ? [] : [...(state[`loaded${otherTitle}Tasks`] || []), ...(merged.lanes[other]?.status === 'ok' ? merged.lanes[other].items || [] : [])];
+                for (const item of survivingIssues) deniedKeys.delete(item.key);
+                changes.deniedIssueKeys.push(...deniedKeys);
+                const deniedEpics = new Set([...(state[`${lane}EpicsInScope`] || []).map(item => item.key), ...loaded.map(item => item.fields?.epicKey),
+                    ...(merged.readinessSnapshot?.epics || []).filter(item => item.projectClass === lane).map(item => item.key)].filter(key => key && !surviving.has(key)));
+                changes.deniedEpicKeys.push(...deniedEpics);
+                for (const name of ['missingPlanningInfoTasks', 'missingInfoEpics']) if (Array.isArray(state[name])) {
+                    next[name] = (next[name] || state[name]).filter(item => !deniedKeys.has(item.key) && !deniedEpics.has(item.key) && !deniedEpics.has(item.fields?.epicKey));
+                }
+            }
+            for (const name of ['changedKeys', 'addedKeys', 'silentKeys', 'fetchedStories']) changes[name].push(...result[name]);
+        }
+        if (!job.shouldApply() || !scopeGuardsMatch(latest.current.readScopeGuards(), merged.guards)) return null;
+        input.markDependencySignature?.([...new Set([...next.loadedProductTasks, ...next.loadedTechTasks].map(item => item.key))].filter(Boolean).sort().join('|'), merged.guards.epoch);
+        const hold = input.capacityScopeHoldRef;
+        if (hold) hold.current += 1;
+        const acceptedSourceKeys = Object.fromEntries(ALERT_LANES.map(([lane]) => [lane, merged.lanes[lane]?.status === 'ok' ? [...(merged.lanes[lane].items || []), ...(merged.lanes[lane].meta?.epicsInScope || [])].map(item => item.key) : []]));
+        const readingAnchor = beginEngReadingCommit({ surface: input.sourceSurface, scopeKey: merged.guards.scopeKey, viewport: input.getViewport?.(), state, deniedEpicKeys: changes.deniedEpicKeys, deniedIssueKeys: changes.deniedIssueKeys, deniedLanes: changes.deniedLanes, acceptedSourceKeys });
+        updateEngReadingCanonicalItems([...next.loadedProductTasks, ...next.loadedTechTasks]);
+        markAutomaticSelection(next, merged.guards, job.shouldApply);
+        try {
+            flushSync(() => {
+                if (merged.readinessSnapshot?.complete === true) for (const key of changes.deniedEpicKeys) {
+                    input.mergeReadinessEpic?.(key, { ...merged.readinessSnapshot, epics: [] });
+                }
+                for (const [name, value] of Object.entries(next)) { input.setters[setterName(name)](value); overlay.current[name] = value; }
+                input.setters.setEpicDetails(prev => {
+                    let value = prev;
+                    for (const key of changes.deniedEpicKeys) if (key in value) { value = { ...value }; delete value[key]; }
+                    for (const [lane] of ALERT_LANES) if (merged.lanes[lane]?.status === 'ok') {
+                        for (const [key, incoming] of Object.entries(merged.lanes[lane].meta?.epics || {})) {
+                            const old = merged.epicSnapshot?.[key];
+                            if (protectedKeys.has(key) || (old && !diffEpic(old, prev[key]).equal) || diffEpic(prev[key], incoming).equal) continue;
+                            value = { ...value, [key]: incoming };
+                        }
+                    }
+                    overlay.current.epicDetails = value;
+                    return value;
+                });
+            });
+        } finally { if (hold) hold.current -= 1; }
+        changes.settled = finishEngReadingCommit(readingAnchor, { scopeKey: input.readScopeGuards().scopeKey, viewport: input.getViewport?.(), shouldApply: job.shouldApply, deniedEpicKeys: changes.deniedEpicKeys, deniedIssueKeys: changes.deniedIssueKeys });
+        return changes;
+    };
+
     if (!controllerRef.current) {
         const readState = () => ({ ...latest.current.getState(), ...overlay.current });
         const currentProtected = epicKey => new Set([...latest.current.getProtectedKeys(epicKey), ...leavingRef.current]);
@@ -229,6 +341,34 @@ export function useEpicRefresh(inputs) {
 
         const apply = async update => {
             const { epicKey } = update;
+            if (update.source === 'automatic') {
+                if (update.shouldApply?.() === false) return {};
+                const input = latest.current;
+                const hold = input.capacityScopeHoldRef;
+                if (hold) hold.current += 1;
+                const readingAnchor = beginEngReadingCommit({ surface: input.sourceSurface, scopeKey: input.readScopeGuards().scopeKey, viewport: input.getViewport?.(), state: readScopeState() });
+                markAutomaticSelection(readScopeState(), input.readScopeGuards(), update.shouldApply);
+                try {
+                    flushSync(() => {
+                        update.mergeInputs.forEach(mergeInput => input.setters[setterName(mergeInput.listName)](prev => {
+                            const state = readScopeState();
+                            const shown = new Set((state[`${mergeInput.lane}Tasks`] || []).map(item => item.key));
+                            const loaded = state[`loaded${mergeInput.lane === 'product' ? 'Product' : 'Tech'}Tasks`] || [];
+                            const result = mergeEpicStories({ ...mergeInput, held: prev, protectedKeys: input.getProtectedKeys(epicKey),
+                                userRemovedKeys: mergeInput.listName.startsWith('loaded') ? new Set() : new Set(loaded.filter(item => !shown.has(item.key)).map(item => item.key)) });
+                            const next = sortAutomaticItems(result.items);
+                            overlay.current[mergeInput.listName] = next;
+                            if (automaticSelectionRef.current && ['productTasks', 'techTasks'].includes(mergeInput.listName)) automaticSelectionRef.current[mergeInput.listName] = next;
+                            return next;
+                        }));
+                        updateEngReadingCanonicalItems(update.fetchedStories);
+                        applyCopies(update);
+                    });
+                } finally { if (hold) hold.current -= 1; }
+                await finishEngReadingCommit(readingAnchor, { scopeKey: latest.current.readScopeGuards().scopeKey, viewport: latest.current.getViewport?.(), shouldApply: update.shouldApply });
+                return {};
+            }
+            automaticSelectionRef.current = null;
             const header = document.querySelector(headerSelector(epicKey));
             // The sticky header's own rect is clamped at its sticky offset; the block container is not sticky, so its top is the true anchor.
             const block = header?.closest('[data-epic-key]');
@@ -243,7 +383,7 @@ export function useEpicRefresh(inputs) {
             const keptForDissolve = new Set();
             // Planning's capacity scope signature keeps its previous value while the merge renders (a team crossing zero SP must not reread capacity).
             const { capacityScopeHoldRef } = latest.current;
-            if (capacityScopeHoldRef) capacityScopeHoldRef.current = true;
+            if (capacityScopeHoldRef) capacityScopeHoldRef.current += 1;
             try {
                 flushSync(() => {
                     update.mergeInputs.forEach(input => applyMerge(input, epicKey, keptForDissolve));
@@ -254,7 +394,7 @@ export function useEpicRefresh(inputs) {
                 latest.current.clearAggregateSources();
                 await twoFrames();
             } finally {
-                if (capacityScopeHoldRef) capacityScopeHoldRef.current = false;
+                if (capacityScopeHoldRef) capacityScopeHoldRef.current -= 1;
             }
 
             const newHeader = document.querySelector(headerSelector(epicKey));
@@ -331,7 +471,12 @@ export function useEpicRefresh(inputs) {
         });
     }
 
-    const refreshEpic = React.useCallback(epicKey => controllerRef.current.refresh(epicKey), []);
+    const refreshEpic = React.useCallback((epicKey, options) => {
+        if (options?.source !== 'automatic') { releaseEngReadingContext(); latest.current.supersedeManual?.({ scope: 'anchor' }); }
+        const result = controllerRef.current.refresh(epicKey, options);
+        if (options?.source !== 'automatic') latest.current.recordManualEpicRefresh?.(result);
+        return result;
+    }, []);
     // Inline status and priority edits (Task 13b). Context (alert version and the epic's guards) is captured now, at edit success time, and
     // checked again when the job starts; with an alert cohort in flight the job waits for it, so a stale cohort result never lands after it.
     const recheckAlertsForEdit = React.useCallback(({ keys, field } = {}) => {
@@ -349,5 +494,5 @@ export function useEpicRefresh(inputs) {
         epicKeys.forEach(epicKey => { void schedulerRef.current.request(epicKey, { calls, ctx: captureRecheckContext(epicKey), awaitCohort: true }); });
         return { handled: true, unresolved: [] };
     }, []);
-    return { epicStates, leavingKeys, announcement, announcementId, refreshEpic, recheckEpicAlerts, recheckAlertsForEdit };
+    return { epicStates, leavingKeys, announcement, announcementId, refreshEpic, applyScopeSnapshot, shouldPreserveAutomaticSelection, captureAnchor: () => captureEngReadingAnchor({ surface: latest.current.sourceSurface, scopeKey: latest.current.readScopeGuards().scopeKey, viewport: latest.current.getViewport() }), readState: readScopeState, getViewport: () => latest.current.getViewport(), recheckEpicAlerts, recheckAlertsForEdit };
 }

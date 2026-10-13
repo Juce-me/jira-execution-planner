@@ -120,17 +120,20 @@ const appendEpmSubGoalKeysParam = (params, subGoalKeys) => {
     }
 };
 
-export const fetchEpmProjects = (backendUrl, { tab, subGoalKeys } = {}) => {
+export const fetchEpmProjects = (backendUrl, { tab, subGoalKeys, signal, refresh = false, suppressAbortResult = false } = {}) => {
     const params = new URLSearchParams();
     if (tab) {
         params.set('tab', String(tab));
     }
     appendEpmSubGoalKeysParam(params, subGoalKeys);
+    if (refresh) params.set('refresh', 'true');
     const query = params.toString();
     const url = query ? `${backendUrl}/api/epm/projects?${query}` : `${backendUrl}/api/epm/projects`;
-    return getJson(url, 'EPM projects', {
+    return getEpmJson(url, 'EPM projects', {
         cache: 'no-cache',
+        signal,
         analytics: {
+            suppressAbortResult,
             apiSurface: 'epm_projects',
             featureName: 'epm',
             epmTab: tab || 'active',
@@ -151,7 +154,7 @@ export function fetchEpmConfigurationProjects(backendUrl, draftConfig, options =
     );
 }
 
-export const fetchEpmProjectRollup = (backendUrl, projectId, { tab, sprint, subGoalKeys } = {}) => {
+export const fetchEpmProjectRollup = (backendUrl, projectId, { tab, sprint, subGoalKeys, signal, suppressAbortResult = false } = {}) => {
     const effectiveTab = tab || 'active';
     const params = new URLSearchParams({ tab: effectiveTab });
     if (effectiveTab === 'active' && sprint) {
@@ -160,7 +163,9 @@ export const fetchEpmProjectRollup = (backendUrl, projectId, { tab, sprint, subG
     appendEpmSubGoalKeysParam(params, subGoalKeys);
     return getEpmJson(`${backendUrl}/api/epm/projects/${encodeURIComponent(projectId)}/rollup?${params.toString()}`, 'EPM rollup', {
         cache: 'no-cache',
+        signal,
         analytics: {
+            suppressAbortResult,
             apiSurface: 'epm_rollup',
             featureName: 'epm',
             epmTab: effectiveTab,
@@ -170,7 +175,7 @@ export const fetchEpmProjectRollup = (backendUrl, projectId, { tab, sprint, subG
     });
 };
 
-export const fetchEpmAllProjectsRollup = (backendUrl, { tab, sprint, subGoalKeys } = {}) => {
+export const fetchEpmAllProjectsRollup = (backendUrl, { tab, sprint, subGoalKeys, signal, suppressAbortResult = false } = {}) => {
     const effectiveTab = tab || 'active';
     const params = new URLSearchParams({ tab: effectiveTab });
     if (effectiveTab === 'active' && sprint) {
@@ -179,7 +184,9 @@ export const fetchEpmAllProjectsRollup = (backendUrl, { tab, sprint, subGoalKeys
     appendEpmSubGoalKeysParam(params, subGoalKeys);
     return getEpmJson(`${backendUrl}/api/epm/projects/rollup/all?${params.toString()}`, 'EPM all-projects rollup', {
         cache: 'no-cache',
+        signal,
         analytics: {
+            suppressAbortResult,
             apiSurface: 'epm_rollup',
             featureName: 'epm',
             epmTab: effectiveTab,

@@ -3,16 +3,20 @@ import {
     LONG_ABSENCE_MS,
     AUTH_REFRESH_SHARED_STORAGE_KEY,
     AUTH_LONG_ABSENCE_EVENT,
+    AUTH_LONG_ABSENCE_SLOT,
     AUTH_SESSION_REFRESH_EVENT,
+    AUTH_FOCUS_REFRESH_STATE_EVENT,
     CONNECTION_UNAVAILABLE_EVENT,
     CONNECTION_AVAILABLE_EVENT,
 } from './authRefreshContract.js';
 import { apiFetch } from './http.js';
-import { isAuthenticationRequiredError } from './authRequired.js';
+import { AUTH_REQUIRED_EVENT, isAuthenticationRequiredError, readPendingAuthenticationRequired } from './authRequired.js';
 import { getConnectionRecoveryStorage, readConnectionRecoveryAttempt } from './connectionRecoveryState.js';
 
 let lastAuthRefreshAt = 0;
 let unfocusedSince = null;
+let pendingLongReturn = null;
+let lastAttemptSucceeded = false;
 let refreshInFlight = false;
 let listenersInstalled = false;
 let connectionUnavailable = Boolean(readConnectionRecoveryAttempt(getConnectionRecoveryStorage(window)));
@@ -41,8 +45,27 @@ function clearSharedRefreshAt() {
     }
 }
 
-function dispatchLongAbsenceEvent(unfocusedMs) {
-    window.dispatchEvent(new CustomEvent(AUTH_LONG_ABSENCE_EVENT, { detail: { unfocusedMs } }));
+function isFocused() {
+    return (!document.visibilityState || document.visibilityState === 'visible')
+        && (!document.hasFocus || document.hasFocus());
+}
+
+function dispatchActivity(status) {
+    window.dispatchEvent(new CustomEvent(AUTH_FOCUS_REFRESH_STATE_EVENT, { detail: { status } }));
+}
+
+function dispatchPendingLongReturn() {
+    if (pendingLongReturn === null || !isFocused() || connectionUnavailable || readPendingAuthenticationRequired()) return;
+    const absenceStartedAtMs = pendingLongReturn;
+    const observedAtMs = Date.now();
+    pendingLongReturn = null;
+    const earliest = Math.min(absenceStartedAtMs, window[AUTH_LONG_ABSENCE_SLOT]?.absenceStartedAtMs ?? absenceStartedAtMs);
+    const detail = { unfocusedMs: observedAtMs - earliest, absenceStartedAtMs: earliest, observedAtMs };
+    // Only timestamps are retained until a mounted subscriber owns the intent.
+    window[AUTH_LONG_ABSENCE_SLOT] = detail;
+    window.dispatchEvent(new CustomEvent(AUTH_LONG_ABSENCE_EVENT, {
+        detail,
+    }));
 }
 
 function dispatchAuthSessionRefreshEvent() {
@@ -50,35 +73,52 @@ function dispatchAuthSessionRefreshEvent() {
 }
 
 export async function refreshAuthOnFocus({ longAbsence = false, unfocusedMs = 0 } = {}) {
+    if (readPendingAuthenticationRequired()) { pendingLongReturn = null; delete window[AUTH_LONG_ABSENCE_SLOT]; return; }
+    if (longAbsence && isFocused()) pendingLongReturn ??= Date.now() - unfocusedMs;
     if (connectionUnavailable) return;
     if (document.visibilityState && document.visibilityState !== 'visible') return;
     if (refreshInFlight) return;
     const now = Date.now();
-    const last = Math.max(lastAuthRefreshAt, readSharedRefreshAt());
+    const shared = readSharedRefreshAt();
+    const last = Math.max(lastAuthRefreshAt, shared);
     if (last !== 0 && now - last < AUTH_REFRESH_THROTTLE_MS) {
-        if (longAbsence) dispatchLongAbsenceEvent(unfocusedMs);
+        if (pendingLongReturn !== null && isFocused() && (shared > lastAuthRefreshAt || lastAttemptSucceeded)) {
+            dispatchActivity('refreshing');
+            dispatchPendingLongReturn();
+            dispatchActivity('settled');
+        }
         return;
     }
     lastAuthRefreshAt = now;
+    lastAttemptSucceeded = false;
     writeSharedRefreshAt(now);
     refreshInFlight = true;
+    dispatchActivity('refreshing');
+    let status = 'failed';
     try {
         const response = await apiFetch('/api/auth/refresh', {
             method: 'POST',
             credentials: 'same-origin',
             headers: { 'X-Requested-With': 'jira-execution-planner' },
         });
-        if (response.ok && !connectionUnavailable) {
-            // The Jira principal behind the cookie may have changed since this page loaded.
-            // Permission-scoped client caches use this event as their partition boundary.
-            dispatchAuthSessionRefreshEvent();
-            if (longAbsence) dispatchLongAbsenceEvent(unfocusedMs);
+        if (response.ok && !readPendingAuthenticationRequired()) {
+            lastAttemptSucceeded = true;
+            status = 'settled';
+            if (!connectionUnavailable) {
+                // Permission-scoped caches still partition on the refreshed Jira principal.
+                dispatchAuthSessionRefreshEvent();
+                dispatchPendingLongReturn();
+            }
         }
     } catch (error) {
-        if (isAuthenticationRequiredError(error)) clearSharedRefreshAt();
+        if (isAuthenticationRequiredError(error)) {
+            pendingLongReturn = null;
+            clearSharedRefreshAt();
+        }
         // Leave network failures to the next focused attempt or API request.
     } finally {
         refreshInFlight = false;
+        dispatchActivity(status);
     }
 }
 
@@ -91,10 +131,12 @@ function handleVisibleReturn() {
         noteDashboardUnfocused();
         return;
     }
+    if (!isFocused()) { noteDashboardUnfocused(); refreshAuthOnFocus(); return; }
     const since = unfocusedSince;
     unfocusedSince = null;
     const unfocusedMs = since === null ? 0 : Date.now() - since;
-    refreshAuthOnFocus({ longAbsence: unfocusedMs > LONG_ABSENCE_MS, unfocusedMs });
+    if (since !== null && unfocusedMs > LONG_ABSENCE_MS) pendingLongReturn ??= since;
+    refreshAuthOnFocus({ longAbsence: pendingLongReturn !== null, unfocusedMs });
 }
 
 function handleVisibilityChange() {
@@ -108,6 +150,7 @@ function handleVisibilityChange() {
 export function installAuthFocusRefresh() {
     if (listenersInstalled) return;
     listenersInstalled = true;
+    window.addEventListener(AUTH_REQUIRED_EVENT, () => { pendingLongReturn = null; delete window[AUTH_LONG_ABSENCE_SLOT]; clearSharedRefreshAt(); });
     window.addEventListener('blur', noteDashboardUnfocused);
     window.addEventListener('focus', handleVisibleReturn);
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -116,6 +159,7 @@ export function installAuthFocusRefresh() {
     });
     window.addEventListener(CONNECTION_AVAILABLE_EVENT, () => {
         connectionUnavailable = false;
+        if (pendingLongReturn !== null) void refreshAuthOnFocus();
     });
     handleVisibleReturn();
 }

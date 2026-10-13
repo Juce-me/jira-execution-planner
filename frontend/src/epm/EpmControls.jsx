@@ -26,8 +26,10 @@ export function EpmControls({
     showProjectPicker = true,
     showStateControl = true,
     epmProjectsLoading,
+    epmProjectsLoaded = false,
     visibleEpmProjects,
     selectedEpmProject,
+    epmSelectedProjectId = '',
     filteredEpmProjects,
     showEpmProjectDropdown,
     activeControlSurface,
@@ -71,7 +73,7 @@ export function EpmControls({
         const isDisabled = epmProjectsLoading || visibleEpmProjects.length === 0;
         const selectedProjectName = selectedEpmProject
             ? getEpmProjectDisplayName(selectedEpmProject)
-            : 'All projects';
+            : epmSelectedProjectId && !epmProjectsLoading && epmProjectsLoaded ? 'Project unavailable' : 'All projects';
         return (
             <ControlField label="Project">
                 <div className="sprint-dropdown epm-project-dropdown" ref={(node) => { epmProjectDropdownRefs.current[surface] = node; }}>

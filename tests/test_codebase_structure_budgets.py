@@ -65,7 +65,10 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # Merge of origin/main into feature/217-sprint-review-table: both lines above are additive; the merged file is 6487 lines.
     "jira_server.py": 6487,
     # App decomposition ratchets the entrypoint to its exact measured size.
-    "frontend/src/dashboard.jsx": 7525,
+    # Issue #251 data freshness adds the lifecycle hook call, owner-ref assignment, handle
+    # pass-through, status readout, projection calls and shared EPM availability,
+    # net of the legacy listener removal (+48).
+    "frontend/src/dashboard.jsx": 7573,
 }
 
 

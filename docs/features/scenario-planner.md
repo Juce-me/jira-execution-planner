@@ -86,6 +86,8 @@ When DB-backed storage is disabled, the legacy JSON fallback still persists over
 
 This allows users to preserve manual planning experiments without changing Jira itself. Scenario drafts are local planner state only: they do not write to Jira, do not write to Home/Townsquare, and do not own group membership.
 
+The #251 automatic-return integration checks ENG scope only. It does not run the Scenario, reload a draft from Jira, save or roll back history. Edit mode, dirty drafts, drag locks, pending history actions and conflicts defer the check. Collaboration events, presence and lock renewal retain their existing owners while the tab is blurred. This Task 9 checkpoint is still under verification; see [return behavior and remaining gates](eng-workflows.md#return-after-an-absence).
+
 ## Technical Rules
 
 This section captures the implementation-level invariants behind the planner.

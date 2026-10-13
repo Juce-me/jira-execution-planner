@@ -173,12 +173,13 @@ test('ENG alert loading is deferred until visible tasks finish and gated to Catc
     );
     assert.match(
         sprintDataSource,
-        /if \(options\.shouldApplyResult\?\.\(\) === false\) return IGNORED_RESULT;[\s\S]*if \(options\.updateEpics !== false\)/
+        /if \(options\.shouldApplyResult\?\.\(\) === false\) return IGNORED_RESULT;[\s\S]*if \(!options\.automatic && options\.updateEpics !== false\)/
     );
-    assert.match(sprintDataSource, /const loadAlertEpics = async \(\{ forceRefresh = false, shouldApplyResult, signal \} = \{\}\)/);
+    assert.match(sprintDataSource, /const loadAlertEpics = async \(\{ forceRefresh = false, shouldApplyResult, signal, automatic = false \} = \{\}\)/);
     assert.match(sprintDataSource, /purpose: 'alerts',[\s\S]*shouldApplyResult/);
-    assert.match(sprintDataSource, /const loadReadyToCloseProductTasks = async \(\{ forceRefresh = false, shouldApplyResult, signal \} = \{\}\)/);
-    assert.match(sprintDataSource, /const loadReadyToCloseTechTasks = async \(\{ forceRefresh = false, shouldApplyResult, signal \} = \{\}\)/);
+    assert.match(sprintDataSource, /const loadReadyToCloseProductTasks = async \(\{ forceRefresh = false, shouldApplyResult, signal, automatic = false \} = \{\}\)/);
+    assert.match(sprintDataSource, /const loadReadyToCloseTechTasks = async \(\{ forceRefresh = false, shouldApplyResult, signal, automatic = false \} = \{\}\)/);
+    assert.match(sprintDataSource, /background: automatic/);
     assert.match(sprintDataSource, /AbortSignal\.any\(\[controller\.signal, options\.signal\]\)/);
     assert.match(sprintDataSource, /requestBacklogEpics\(backendUrl, \{ project, teamIds: activeGroupTeamIds, signal \}\)/);
     assert.match(dashboardSource, /const fetchMissingPlanningInfo = async \(sprintId, \{ shouldApplyResult, signal \} = \{\}\)/);

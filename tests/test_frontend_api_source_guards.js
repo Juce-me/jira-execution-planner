@@ -2132,6 +2132,7 @@ test('auth refresh contract module defines exactly the shared refresh constants 
     assert.ok(source.includes('AUTH_REFRESH_SHARED_STORAGE_KEY'), 'Expected AUTH_REFRESH_SHARED_STORAGE_KEY constant');
     assert.ok(source.includes('AUTH_LONG_ABSENCE_EVENT'), 'Expected AUTH_LONG_ABSENCE_EVENT constant');
     assert.ok(source.includes('AUTH_SESSION_REFRESH_EVENT'), 'Expected AUTH_SESSION_REFRESH_EVENT constant');
+    assert.ok(source.includes("AUTH_FOCUS_REFRESH_STATE_EVENT = 'jep:auth-focus-refresh-state'"), 'Expected additive auth activity event');
     assert.ok(source.includes('CONNECTION_UNAVAILABLE_EVENT'), 'Expected connection recovery ownership event');
     assert.ok(source.includes('CONNECTION_AVAILABLE_EVENT'), 'Expected connection recovery release event');
     assert.ok(source.includes("'jep.auth.lastRefreshAt'"), 'Expected the exact shared storage key literal');
@@ -2163,11 +2164,18 @@ test('auth focus refresh module imports the shared contract and keeps the refres
     });
 });
 
-test('dashboard imports the long-absence event name from the contract module and does not import the auth focus refresh shell', () => {
+test('dashboard delegates return events to the freshness hook and does not import the auth focus refresh shell', () => {
     const dashboardSource = readSource(path.join(frontendSrcPath, 'dashboard.jsx'));
 
-    assert.ok(dashboardSource.includes("from './api/authRefreshContract"), 'Expected dashboard.jsx to import from the auth refresh contract module');
-    assert.ok(dashboardSource.includes('AUTH_LONG_ABSENCE_EVENT'), 'Expected dashboard.jsx to reference AUTH_LONG_ABSENCE_EVENT');
+    const hookSource = readSource(path.join(frontendSrcPath, 'useDashboardFreshness.js'));
+    const listenerSource = readSource(path.join(frontendSrcPath, 'dashboardFreshnessListeners.js'));
+    assert.ok(hookSource.includes('installFreshnessListeners('), 'Mounted hook must own lifecycle listener installation');
+    assert.ok(listenerSource.includes('AUTH_LONG_ABSENCE_EVENT'), 'Replacement lifecycle owner must consume the contract event');
+    assert.ok(listenerSource.includes("listen(win, AUTH_LONG_ABSENCE_EVENT"), 'Replacement must register the actual return listener');
+    assert.ok(!dashboardSource.includes('AUTH_LONG_ABSENCE_EVENT'), 'App must not register a competing return scheduler');
+    assert.ok(!dashboardSource.includes('longAbsenceRefreshRef'), 'Legacy refresh ref must be removed');
+    assert.ok(dashboardSource.indexOf('const freshness = useDashboardFreshness(') > -1 && dashboardSource.indexOf('const freshness = useDashboardFreshness(') < dashboardSource.indexOf('} = useStatsState('), 'Freshness hook must be installed before Stats hooks');
+    assert.ok(dashboardSource.includes("if (operator) freshness.supersedeManual({ scope: 'all' })"), 'Explicit operator refresh must supersede automatic work');
     assert.ok(!dashboardSource.includes('authFocusRefresh'), 'dashboard.jsx must not import the self-installing auth focus refresh shell');
 });
 

@@ -302,10 +302,10 @@ test('capacity request orchestration delegates ownership and collision-proof sco
     assert.match(effect, /buildCapacityScopeSignature\(/);
     assert.doesNotMatch(effect, /capacityTeamNames\.join\(/);
     assert.match(effect, /beginCapacityReadOwnership\(\{/);
-    assert.match(effect, /if \(!ownership\.shouldFetch\)/);
+    assert.match(effect, /if \(!ownership\.shouldFetch \|\| guard\?\.signal\?\.aborted \|\| guard\?\.shouldApply\?\.\(\) === false\)/);
     assert.match(effect, /signal: ownership\.controller\.signal/);
     assert.match(effect, /error\?\.name === 'AbortError'/);
-    assert.match(effect, /return ownership\.cleanup;/);
+    assert.match(effect, /return \(\) => \{[\s\S]*ownership\.cleanup\(\);[\s\S]*\};/);
 });
 
 test('capacity gates, success, and failure use the executable lifecycle reducer', () => {

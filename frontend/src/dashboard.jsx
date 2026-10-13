@@ -44,6 +44,7 @@ import EngModeControl from './eng/EngModeControl.jsx';
 import { resolveEngSprintSelectorState } from './eng/engSprintSelectorState.js';
 import EpicHeaderValueReadout from './eng/EpicHeaderValueReadout.jsx';
 import { useEpicRefresh } from './eng/useEpicRefresh.js';
+import { createDashboardFreshnessOwners, readFreshnessScopeGuards } from './dashboardFreshnessAdapters.js';
 import { mergeEpicStories } from './eng/epicRefreshPatch.js';
 import { createDependencySkip } from './eng/epicRefreshDependencySkip.js';
 import PlanningActionBar from './eng/PlanningActionBar.jsx';
@@ -154,13 +155,15 @@ import {
 } from './settings/useEpmSettings.js';
 import UserConnectionsSettings from './settings/UserConnectionsSettings.jsx';
 import { fetchHomeTokenConnection } from './api/authApi.js';
-import { AUTH_LONG_ABSENCE_EVENT } from './api/authRefreshContract.js';
+import { useDashboardFreshness } from './useDashboardFreshness.js';
+import DashboardFreshnessStatus from './components/DashboardFreshnessStatus.jsx';
 import { analyticsToken, buildPlanningReviewAnalyticsParams, bucketCount, exposeAnalyticsForTests, useDashboardAnalytics } from './analytics/dashboardAnalytics.js';
 import { useEpmViewData } from './epm/useEpmViewData.js';
 import {
     DEFAULT_EPM_PROJECT_SORT,
     flattenEpmRollupBoardsForDependencies,
     getEpmProjectDisplayName,
+    getEpmProjectIdentity,
     isEpmProjectsConfigReady,
     normalizeEpmProjectSort,
     shouldUseEpmSprint
@@ -304,6 +307,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 setStatus: setConnectionRecoveryStatus,
                 stagedRevision: connectionRecoveryStagedRevision,
                 status: connectionRecoveryStatus,
+                unavailableRef: connectionUnavailableRef,
             } = useConnectionRecovery({
                 backendUrl: BACKEND_URL,
                 principalRef: connectionRecoveryPrincipalRef,
@@ -371,7 +375,8 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
             const showEpmNavigation = authMode === 'basic' || hasActiveHomeTokenConnection;
             const [sprintName, setSprintName] = useState(savedPrefsRef.current.sprintName || '');
             const selectedSprintRef = useRef(null);
-            const planningReviewGuardRef = useRef(null);
+            const planningReviewGuardRef = useRef(null), planningInteractionRef = useRef(false), capacityInteractionRef = useRef(false), planningAutomaticReadRef = useRef(0);
+            const [, notifyPlanningInteraction] = useState(0);
             const planningReviewBrowserContextRef = useRef('');
             const [selectedSprint, setSelectedSprint] = useState(null);
             selectedSprintRef.current = selectedSprint; // Server-validated Sprint ID
@@ -415,14 +420,14 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
             if (!sprintCatalogControllerRef.current) {
                 sprintCatalogControllerRef.current = createSprintCatalogController({
                     initialState: sprintCatalogInitialStateRef.current,
-                    read: async ({ forceRefresh, completionAttemptId, catalogIdentity, signal }) => {
+                    read: async ({ forceRefresh, completionAttemptId, catalogIdentity, signal, automatic }) => {
                         const response = await requestSprints(BACKEND_URL, {
                             forceRefresh,
                             completionAttemptId,
                             catalogIdentity,
                             signal,
                         }).catch(err => {
-                            reportServerConnectionError(err);
+                            if (!automatic) reportServerConnectionError(err);
                             throw err;
                         });
                         markConnectionBootstrapHealthy('sprints');
@@ -436,6 +441,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                             const current = sprintCatalogControllerRef.current.getState();
                             if (current.authority === 'auth_locked') return;
                             const sprints = current.authority === 'validated' ? current.validatedSnapshot?.sprints || [] : [];
+                            if (current.selectionPreserved) { const held = sprints.find(sprint => String(sprint.id) === String(selectedSprintRef.current)); if (held) setSprintName(held.name); return; }
                             const selected = sprints.find(sprint => String(sprint.id) === String(selectedSprintRef.current))
                                 || sprints.find(sprint => String(sprint.id) === String(current.selectedSprintId));
                             setSelectedSprint(selected?.id ?? null);
@@ -446,7 +452,8 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                             const selected = snapshot.sprints.find(sprint => String(sprint.id) === String(selectedSprintRef.current))
                                 || snapshot.sprints.find(sprint => String(sprint.id) === String(nextState.selectedSprintId));
                             const nextId = selected?.id ?? null;
-                            if (String(selectedSprintRef.current) !== String(nextId) && planningReviewGuardRef.current) void planningReviewGuardRef.current(applyCatalogSelection);
+                            if (nextState.selectionPreserved) applyCatalogSelection();
+                            else if (String(selectedSprintRef.current) !== String(nextId) && planningReviewGuardRef.current) void planningReviewGuardRef.current(applyCatalogSelection);
                             else applyCatalogSelection();
                             const validationKey = sprintCatalogValidationKey(snapshot);
                             if (validationKey && validationKey !== sprintCatalogPersistedValidationRef.current) {
@@ -463,7 +470,8 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                                 saveUiPrefs(savedPrefsRef.current);
                             }
                         } else if (nextState.authority !== 'auth_locked') {
-                            if (selectedSprintRef.current !== null && planningReviewGuardRef.current) void planningReviewGuardRef.current(applyCatalogSelection);
+                            if (nextState.selectionPreserved) applyCatalogSelection();
+                            else if (selectedSprintRef.current !== null && planningReviewGuardRef.current) void planningReviewGuardRef.current(applyCatalogSelection);
                             else applyCatalogSelection();
                         }
                         if (nextState.errorReason === 'sprint_board_required') {
@@ -483,8 +491,9 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 });
             }
             const availableSprints = sprintCatalogState.availableSprints;
-            const sprintsLoading = sprintCatalogState.status === 'loading'
+            const catalogAcquiring = sprintCatalogState.status === 'loading'
                 || (sprintCatalogState.status === 'unknown' && sprintCatalogState.authority !== 'validated');
+            const sprintsLoading = catalogAcquiring && !sprintCatalogState.selectionPreserved;
             const [boardView, setBoardView] = useState(null);
             // Session-scoped, separate from Catch Up's engStatusFilter/engPriorityFilter (D19).
             const [engBoardFilterSelection, setEngBoardFilterSelection] = useState({});
@@ -808,6 +817,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
             const teamSelectionHydratedScopeRef = useRef('');
             const teamSelectionHydratedSelectionRef = useRef(null); const teamSelectionCarryForwardRef = useRef(null);
             const teamSelectionSkipPersistScopeRef = useRef('');
+            const freshness = useDashboardFreshness({ bootstrapReady: sharedConfigReady && acceptedBoardConfigRef.current, terminalAuth: Boolean(readPendingAuthenticationRequired()), connectionOwned: connectionRecoveryBlocksRefresh || connectionUnavailableRef.current });
             const resolveStatsView = (value) => (value === 'teams' || value === 'priority' || value === 'burnout' || value === 'cohort' || value === 'excludedCapacity' || value === 'monoCrossShare' || value === 'projectTrack') ? value : 'teams';
             const resolveStatsGraphMode = (value) => (value === 'weighted' || value === 'absolute') ? value : 'weighted';
             const resolveBurndownMetric = (value) => (value === 'issueCount' || value === 'storyPoints') ? value : 'storyPoints';
@@ -923,7 +933,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 setCapacityLoading, capacityReadRevision, setCapacityReadRevision, capacityReadError,
                 setCapacityReadError, capacityDataStale, setCapacityDataStale, capacityReadModelRef,
                 capacityRefreshNonce, setCapacityRefreshNonce, capacityReadGenerationRef, capacityReadAbortRef,
-                activeCapacityScopeRef, capacityScopeHoldRef, capacityScopePinRef, capacityScopeKeyRef,
+                activeCapacityScopeRef, capacityScopeHoldRef, capacityScopePinRef, capacityScopeKeyRef, capacityReadGuardRef, activeCapacityTeamsRef,
             } = useEngCapacityState();
             const searchInputRef = useRef(null);
 
@@ -1935,6 +1945,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 setEpmTab,
                 setEpmProjects,
                 epmProjectsLoading,
+                epmProjectsLoaded,
                 setEpmProjectsError,
                 epmSelectedProjectId,
                 setEpmSelectedProjectId,
@@ -1969,6 +1980,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 onHomeTokenRequired: markHomeTokenRequired,
                 onServerConnectionFailure: reportServerConnectionError,
             });
+            const epmSeenProjectKeysRef = useRef(new Set());
             const [epmCollapsedProjectIds, setEpmCollapsedProjectIds] = useState(() => new Set());
             const epmVisibleProjectKeys = React.useMemo(() => {
                 if (selectedView !== 'epm' || epmSelectedProjectId) return [];
@@ -1986,7 +1998,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 if (selectedView !== 'epm' || epmSelectedProjectId || !Array.isArray(visibleEpmRollupBoards)) return;
                 setEpmCollapsedProjectIds((prev) => {
                     const next = new Set(prev);
-                    epmVisibleProjectKeys.forEach((key) => next.add(key));
+                    epmVisibleProjectKeys.forEach((key) => { if (!epmSeenProjectKeysRef.current.has(key)) next.add(key); epmSeenProjectKeysRef.current.add(key); });
                     return next;
                 });
             }, [selectedView, epmSelectedProjectId, epmTab, epmVisibleProjectKeysSignature]);
@@ -2455,7 +2467,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
             const strictBoardActive = boardScopeRequested && selectedScopeReadiness === 'ready';
             const acceptedEngSprintSelectorState = React.useMemo(() => resolveEngSprintSelectorState({
                 boardMode: selectedView === 'eng' && showBoard,
-                catalogReady: sprintCatalogReady,
+                catalogReady: sprintCatalogReady || ((sprintCatalogState.authority === 'auth_locked' || sprintCatalogState.selectionPreserved) && [...availableSprints, ...(sprintCatalogState.displaySnapshot?.sprints || [])].some(sprint => String(sprint.id) === String(selectedSprint))),
                 bootstrapStatus: acceptedBoardConfigRef.current ? 'ready' : boardBootstrapStatus,
                 capability: boardAllWorkAvailable,
                 groupsLoading: acceptedGroupsConfigRef.current ? false : groupsLoading,
@@ -2464,7 +2476,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 savedProjects: savedSelectedProjects,
                 savedBoardId,
             }), [
-                selectedView, showBoard, sprintCatalogReady, boardBootstrapStatus,
+                selectedView, showBoard, sprintCatalogReady, sprintCatalogState.authority, sprintCatalogState.selectionPreserved, sprintCatalogState.displaySnapshot, availableSprints, selectedSprint, boardBootstrapStatus,
                 boardAllWorkAvailable, groupsLoading, boardGroupsReadFailed, activeGroup,
                 savedSelectedProjects, savedBoardId,
             ]);
@@ -3490,20 +3502,10 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                     return;
                 }
 
-                const groupLoadVersion = ++groupLoadVersionRef.current;
-                const shouldApplyGroupLoadResult = () => groupLoadVersionRef.current === groupLoadVersion;
                 const pendingPlanningResume = pendingPlanningAuthResumeRef.current;
                 const recoveryScopeKey = pendingPlanningResume?.scopeKey === planningScopeKey
                     ? planningScopeKey
                     : '';
-                if (recoveryScopeKey) {
-                    planningAuthResumeLoadRef.current = {
-                        scopeKey: recoveryScopeKey,
-                        loadVersion: groupLoadVersion,
-                        outcome: 'pending',
-                    };
-                }
-
                 const forceConfigRefresh =
                     configRefreshNonce !== 0 &&
                     pendingConfigRefreshRef.current === configRefreshNonce;
@@ -3520,6 +3522,16 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
 
                 if (shouldSkipLoad) {
                     return;
+                }
+
+                const groupLoadVersion = ++groupLoadVersionRef.current;
+                const shouldApplyGroupLoadResult = () => groupLoadVersionRef.current === groupLoadVersion;
+                if (recoveryScopeKey) {
+                    planningAuthResumeLoadRef.current = {
+                        scopeKey: recoveryScopeKey,
+                        loadVersion: groupLoadVersion,
+                        outcome: 'pending',
+                    };
                 }
 
                 if (forceConfigRefresh) {
@@ -3559,7 +3571,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                     groupLoadVersionRef.current += 1;
                     abortSprintFetches();
                 };
-            }, [selectedView, isStatsSourceOnlyStatsView, boardScopeRequested, sprintCatalogReady, sprintsLoading, selectedSprint, selectedSprintInfo?.id, activeGroupId, activeGroupTeamIds.join('|'), groupsLoading, groupPreferences.onboardingRequired, configRefreshNonce, authResumeStagedRevision]);
+            }, [selectedView, isStatsSourceOnlyStatsView, boardScopeRequested, sprintCatalogReady || (sprintCatalogState.selectionPreserved && Boolean(selectedSprintInfo)), sprintsLoading, selectedSprint, selectedSprintInfo?.id, activeGroupId, activeGroupTeamIds.join('|'), groupsLoading, groupPreferences.onboardingRequired, configRefreshNonce, authResumeStagedRevision]);
 
             useEffect(() => {
                 if (groupsLoading || !groupPreferences.onboardingRequired) return;
@@ -3614,6 +3626,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
 	                    setMissingPlanningInfoTasks(issueEditStateRef.current.reconcileIssues(data.issues || [], readToken));
 	                    setMissingInfoEpics(issueEditStateRef.current.reconcileIssues(data.epics || [], readToken));
 	                } catch (e) {
+                        if (isAuthenticationRequiredError(e)) throw e;
                         if (e.name === 'AbortError') return;
 	                    // ignore (alerts are best-effort)
                 } finally {
@@ -3635,12 +3648,12 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
             );
 
             useEffect(() => {
-                const handlePageHide = () => sprintCatalogControllerRef.current.invalidate('pagehide');
+                const handlePageHide = () => sprintCatalogControllerRef.current.invalidate('pagehide', { preserveSelection: true });
                 const handleAuthenticationRequired = () => sprintCatalogControllerRef.current.authLock();
                 const handlePageShow = event => {
                     if (!event.persisted) return;
-                    sprintCatalogControllerRef.current.invalidate('pageshow');
-                    void sprintCatalogControllerRef.current.readCurrent();
+                    sprintCatalogControllerRef.current.invalidate('pageshow', { preserveSelection: true });
+                    void sprintCatalogControllerRef.current.readCurrent({ preserveSelection: true, selectedSprintId: selectedSprintRef.current });
                 };
                 window.addEventListener('pagehide', handlePageHide);
                 window.addEventListener('pageshow', handlePageShow);
@@ -3665,7 +3678,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 loadAlertEpics,
                 loadReadyToCloseProductTasks,
                 loadReadyToCloseTechTasks,
-                loadEpicRefresh, loadEpicAlerts,
+                loadEpicRefresh, loadEpicAlerts, collectGroupRefresh,
             } = useEngSprintData({
                 backendUrl: BACKEND_URL,
                 performanceGate, issueEditState: issueEditStateRef.current,
@@ -3721,7 +3734,8 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 refreshRevision: catchUpAlertRefreshNonce,
                 issueEditState: issueEditStateRef.current,
             });
-            const strictBoard = useStrictEngBoardOwner({ active: strictBoardOwnerActive, backendUrl: BACKEND_URL, departmentId: activeGroupId, sprintId: selectedSprint, groupRevision: acceptedStrictBoardRevision, resolvedFocusColumnId: boardView?.focusedId || null, performanceGate, strictScope: boardStrictScope, trackApiResult, onAuthRequired: () => trackAppError('auth', 'session_recovery', 'reauth') });
+            const boardFreshnessRef = useRef({ interaction: false }); const onBoardInteractionChange = React.useCallback(active => { if (boardFreshnessRef.current.interaction === Boolean(active)) return; boardFreshnessRef.current.interaction = Boolean(active); notifyPlanningInteraction(previous => previous + 1); }, []);
+            const strictBoard = useStrictEngBoardOwner({ active: strictBoardOwnerActive, backendUrl: BACKEND_URL, departmentId: activeGroupId, sprintId: selectedSprint, groupRevision: acceptedStrictBoardRevision, resolvedFocusColumnId: boardView?.focusedId || null, performanceGate, strictScope: boardStrictScope, freshnessBridge: boardFreshnessRef, trackApiResult, onAuthRequired: () => trackAppError('auth', 'session_recovery', 'reauth') });
             const strictBoardData = strictBoard.data; const refreshAfterStrictBoardMutation = strictBoard.refresh; const refreshLegacyBoardTasks = () => loadMeasuredGroupTasks({ forceRefresh: true });
             const loadMeasuredGroupTasks = (options = {}) => {
                 loadEpochRef.current += 1;
@@ -4050,6 +4064,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
             useEffect(() => {
                 if (!teamSelectionScopeKey || !activeGroupId || selectedSprint === null) return;
                 if (groupsLoading || !tasksFetched) return;
+                if (epicRefresh.shouldPreserveAutomaticSelection()) return;
 
                 const validTeamIds = teamOptions
                     .map(team => String(team?.id || '').trim())
@@ -4177,7 +4192,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 burnoutScopedTeamIds, burnoutScopedTeamSignature, cohortScopedTeamSignature, burnoutQueryKey,
                 cohortQueryKey
             } = useStatsDerivedA({
-                scope, BACKEND_URL, activeGroupMissingComponents, activeGroupTeamIds,
+                scope, automaticRefreshRef: freshness.automaticRefreshRef, BACKEND_URL, activeGroupMissingComponents, activeGroupTeamIds,
                 activeGroupTeamSet, burnoutAssigneeFilter, burnoutCacheRef, burnoutData,
                 cohortEndQuarter, cohortStartQuarter, getTeamInfo, groupPreferences,
                 isCompletedSprintSelected, issueEditStateRef, issuePeopleStatsRevision, normalizeEpicKey,
@@ -4200,7 +4215,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 excludedCapacityModeTeamLineSeries, effortSplitTotals, excludedCapacityWarnings, formatExcludedPoints,
                 toggleExcludedCapacityEpicKey, clearExcludedCapacityEpicSelection, selectAllExcludedCapacityEpics, toggleEffortSplitBucket
             } = useStatsDerivedB({
-                scope, BACKEND_URL, EMPTY_ARRAY, EXCLUDED_CAPACITY_STATS_SOURCE_CONCURRENCY,
+                scope, automaticRefreshRef: freshness.automaticRefreshRef, BACKEND_URL, EMPTY_ARRAY, EXCLUDED_CAPACITY_STATS_SOURCE_CONCURRENCY,
                 activeGroup, activeGroupAdHocCapacityEpics, activeGroupMissingComponents, activeGroupTeamIds,
                 adminSettingsGate, availableSprints, burnoutAssigneeFilter, burnoutQueryKey,
                 burnoutScopedTeamIds, burnoutScopedTeamSignature, cohortAssigneeFilter, cohortCacheRef,
@@ -4283,6 +4298,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
             const selectionTasks = baseFilteredTasks;
 
             usePlanningSelectionSync({
+                shouldPreserveAutomaticSelection: () => epicRefresh.shouldPreserveAutomaticSelection(),
                 pendingPlanningAuthResumeRef, pendingShellAuthResumeRef, planningAuthResumeLoadRef, lastLoadedSprintRef,
                 teamSelectionHydratedSelectionRef, planningAuthResumePersistenceFailedRef, planningLoadedSelectionRef, planningBaselineScopeRef,
                 clearAuthResumeWhenSettled, normalizeSelectedTeams,
@@ -4348,7 +4364,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
             const shouldRenderEngTaskList = selectedView === 'eng' && !showBoard && !isStatsSourceOnlyStatsView && engWorkspaceConfigured;
             const sprintCatalogWarning = sprintError && sprintCatalogState.validatedSnapshot
                 ? sprintError
-                : '';
+                : sprintCatalogState.selectionPreserved && !selectedSprintInfo ? 'Selected Sprint is unavailable. Choose a Sprint or refresh the catalog.' : '';
             const displayedEngError = sprintCatalogWarning ? error : (sprintError || error);
             const storyReadinessMessage = storyReadinessStatusMessage(storyReadiness.status, storyRequirementNavigationError);
             const onboardingEngReadiness = deriveOnboardingEngReadiness({
@@ -4377,7 +4393,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 statusNeutral: showPlanning && planningLayout === 'table' ? true : engCatchUpFilters.facetViews?.[0]?.isNeutral && !burnoutTaskFilter,
                 priorityNeutral: showPlanning && planningLayout === 'table' ? true : engCatchUpFilters.facetViews?.[1]?.isNeutral && !burnoutTaskFilter,
                 admitsEpicProjectTrack: engCatchUpFilters.admitsEpicProjectTrack,
-                engEpicSort, groupByInitiativeChoice,
+                engEpicSort, groupByInitiativeChoice, readingScopeKey: JSON.stringify([selectedView, showBoard, showStats, showScenario, planningLayout, authResumeStagedRevision, loadEpochRef.current, authResumePrincipalRef.current, connectionRecoveryPrincipalRef.current, sharedConfigRevision, groupsConfig?.configRevision, jiraUrl, engStatusFilter, engPriorityFilter, engProjectTrackFilter]),
                 planningOriginals: showPlanning ? planningOriginals : null,
             });
             const planningReviewRows = React.useMemo(() => [
@@ -4396,7 +4412,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
             const planningReview = usePlanningSprintReview({
                 sprintId: selectedSprint, active: selectedView === 'eng' && showPlanning && planningLayout === 'table' && engWorkspaceConfigured,
                 contextKey: `${authMode}|${jiraUrl}|${planningReviewBrowserContextRef.current}|${authResumeStagedRevision}`,
-                backendUrl: BACKEND_URL, rows: planningReviewRows, onReviewAction: trackPlanningReviewAction,
+                backendUrl: BACKEND_URL, rows: planningReviewRows, automaticHoldRef: planningAutomaticReadRef, onReviewAction: trackPlanningReviewAction,
             });
             planningReviewGuardRef.current = planningReview.guardScopeChange;
             const planningReviewAdmittedCounts = React.useMemo(() => planningReviewScopeCounts({
@@ -5018,7 +5034,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
             const {
                 selectedAdHocProductSP, excludedProjectStats, capacityShareLabel, teamCapacityEntries,
                 displayedTeamCapacityEntries, capacityScopeSignature, effectiveCapacityState, capacityMutationEnabled,
-                handleCapacitySaved, retryCapacity, capacityTeamIds, totalCapacityAdjusted,
+                handleCapacitySaved, retryCapacity, refreshCapacity, capacityTeamIds, totalCapacityAdjusted,
                 estimatedCapacityAdjusted, excludedCapacityAdjusted, capacitySummary, selectedProjectEntries,
                 selectedTeamEntries, capacityTotals, showTotalsRow, formatCapacityValue,
             } = useEngCapacity({
@@ -5030,7 +5046,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 setCapacityState, setCapacityLoading, setCapacityReadRevision, setCapacityReadError,
                 setCapacityDataStale, capacityReadModelRef, capacityRefreshNonce, setCapacityRefreshNonce,
                 capacityReadGenerationRef, capacityReadAbortRef, activeCapacityScopeRef, capacityScopeHoldRef,
-                capacityScopePinRef, capacityScopeKeyRef,
+                capacityScopePinRef, capacityScopeKeyRef, capacityReadGuardRef, activeCapacityTeamsRef,
             });
 
             const renderPriorityIcon = (priority, idSeed) => {
@@ -5598,8 +5614,10 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                     showProjectPicker={showProjectPicker}
                     showStateControl={showStateControl}
                     epmProjectsLoading={epmProjectsLoading}
+                    epmProjectsLoaded={epmProjectsLoaded}
                     visibleEpmProjects={visibleEpmProjects}
                     selectedEpmProject={selectedEpmProject}
+                    epmSelectedProjectId={epmSelectedProjectId}
                     filteredEpmProjects={filteredEpmProjects}
                     showEpmProjectDropdown={showEpmProjectDropdown}
                     activeControlSurface={activeControlSurface}
@@ -5831,7 +5849,6 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                     </div>
                 ) : null;
 
-            const longAbsenceRefreshRef = useRef(null);
             const retryBoardScopeConfiguration = () => {
                 if (boardScopeRetryRef.current) return boardScopeRetryRef.current;
                 const retry = Promise.all([loadConfig(), loadGroupsConfig()]).finally(() => {
@@ -5840,32 +5857,35 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 boardScopeRetryRef.current = retry;
                 return retry;
             };
-            // Only the Refresh button identifies as an operator Refresh (`{ operator: true }`); the long-absence listener calls it bare.
+            // Explicit Refresh supersedes the return scheduler before dispatching its existing owners.
             const refreshActiveViewFromJira = ({ operator = false } = {}) => {
+                if (operator) freshness.supersedeManual({ scope: 'all' });
+                const recordExplicitRefresh = promise => { if (operator) freshness.ownersRef.current?.recordExplicitRefresh?.(freshness.ownersRef.current?.resolveFreshnessSurface?.(), promise); return promise; };
                 if (selectedView === 'epm') {
-                    void refreshEpmView();
+                    void recordExplicitRefresh(refreshEpmView());
                     return;
                 }
-                if (strictBoardActive) { void strictBoardData.refresh(); return; }
+                if (strictBoardActive) { void recordExplicitRefresh(strictBoard.refresh()); return; }
                 if (boardScopeRequested) {
-                    if (selectedScopeReadiness !== 'unsupported') void retryBoardScopeConfiguration();
+                    if (selectedScopeReadiness !== 'unsupported') void recordExplicitRefresh(retryBoardScopeConfiguration());
                     return;
                 }
                 if (!sprintCatalogReady) {
-                    void loadSprints(true, { queueIfBusy: true });
+                    void recordExplicitRefresh(loadSprints(true, { queueIfBusy: true }));
                     return;
                 }
                 if (activeGroupId) {
                     groupStateRef.current.delete(activeGroupId);
                 }
                 if (selectedView === 'eng' && showPlanning) {
-                    setCapacityRefreshNonce(previous => previous + 1);
+                    void recordExplicitRefresh({ capacity: refreshCapacity({ automatic: false }) });
                     // A review that is loading or saving is already current (the old Refresh review button was disabled then too).
-                    if (planningLayout === 'table' && !planningReview.loading && !planningReview.saving) void planningReview.refresh();
+                    if (planningLayout === 'table' && !planningReview.loading && !planningReview.saving) void recordExplicitRefresh({ review: planningReview.refresh() });
                 }
                 resetStatsTransientRefs({ burnoutCacheRef, cohortCacheRef, excludedCapacityCacheRef });
                 loadSprints(true, { queueIfBusy: true });
                 if (isStatsSourceOnlyStatsView) {
+                    recordExplicitRefresh({ statsSource: true });
                     excludedCapacityForceRefreshRef.current = true;
                     setExcludedCapacityData(null);
                     setExcludedCapacityError('');
@@ -5874,20 +5894,12 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 }
                 rearmCatchUpAlerts();
                 const refreshId = operator ? ++operatorRefreshIdRef.current : 0;
-                loadMeasuredGroupTasks({ forceRefresh: true, ...(operator ? { operatorRefresh: { scope: engMutationScopeKey }, shouldApplyResult: () => operatorRefreshIdRef.current === refreshId } : {}) });
+                recordExplicitRefresh(loadMeasuredGroupTasks({ forceRefresh: true, ...(operator ? { operatorRefresh: { scope: engMutationScopeKey }, shouldApplyResult: () => operatorRefreshIdRef.current === refreshId } : {}) }));
             };
             const manualRefreshDisabled = connectionRecoveryBlocksRefresh || (selectedView === 'eng' ? !engWorkspaceConfigured || (strictBoardActive ? strictBoardData.status === 'loading' || strictBoardData.scope?.type === 'uninitialized'
                 : boardScopeRequested ? ['loading', 'catalog_pending', 'unsupported'].includes(selectedScopeReadiness)
                 : loading || groupsLoading || groupPreferences.onboardingRequired)
                 : (epmProjectsLoading || epmRollupLoading));
-            longAbsenceRefreshRef.current = manualRefreshDisabled ? null : refreshActiveViewFromJira;
-            useEffect(() => {
-                const handleLongAbsenceReturn = () => {
-                    longAbsenceRefreshRef.current?.();
-                };
-                window.addEventListener(AUTH_LONG_ABSENCE_EVENT, handleLongAbsenceReturn);
-                return () => window.removeEventListener(AUTH_LONG_ABSENCE_EVENT, handleLongAbsenceReturn);
-            }, []);
             const epicInteractionActiveFor = (epicKey) => statusTransitionActiveKey === epicKey || priorityTransitionActiveKey === epicKey
                 || projectTrackTransitionActiveKey === epicKey || issueFieldEdits.activeEditor?.issueKey === epicKey;
             // The merge's flushSync commit runs the dependencies effect before afterApply, so the one-shot skip is armed here, from the
@@ -5909,11 +5921,14 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 return lanes;
             };
             const epicRefresh = useEpicRefresh({
+                getSelectionState: () => ({ selectedTasks, selectedTeams, planningSelectionMode, engStatusFilter, engPriorityFilter, engProjectTrackFilter, showTech, showProduct, activeGroupTeamIds, isFutureSprintSelected }),
                 loadEpicRefresh: loadEpicRefreshWithDependencySkip,
-                getState: () => ({ productTasks, techTasks, loadedProductTasks, loadedTechTasks, epicDetails, readyToCloseProductTasks, readyToCloseTechTasks, missingPlanningInfoTasks,
+                getState: () => ({ productTasks, techTasks, loadedProductTasks, loadedTechTasks, epicDetails, readyToCloseProductTasks, readyToCloseTechTasks, missingPlanningInfoTasks, missingInfoEpics, backlogProductEpics, backlogTechEpics,
                     productEpicsInScope, techEpicsInScope, readyToCloseProductEpicsInScope, readyToCloseTechEpicsInScope }),
                 setters: { setProductTasks, setTechTasks, setLoadedProductTasks, setLoadedTechTasks, setEpicDetails, setReadyToCloseProductTasks, setReadyToCloseTechTasks,
                     setProductEpicsInScope, setTechEpicsInScope, setReadyToCloseProductEpicsInScope, setReadyToCloseTechEpicsInScope, setMissingPlanningInfoTasks, setMissingInfoEpics, setBacklogProductEpics, setBacklogTechEpics },
+                getPlanningOriginals: issueEditStateRef.current.planningOriginals, overlayPlanningIssues: issueEditStateRef.current.overlayPlanningIssues, recordManualEpicRefresh: result => freshness.ownersRef.current.recordManualEpicRefresh(result),
+                readScopeGuards: () => readFreshnessScopeGuards(freshness.ownersRef.current.inputs), supersedeManual: freshness.supersedeManual, markDependencySignature,
                 readGuards: (epicKey) => ({
                     blocked: loading || productTasksLoading || techTasksLoading || manualRefreshDisabled || !tasksFetched
                         || String(lastLoadedSprintRef.current ?? '') !== String(selectedSprint ?? '')
@@ -5938,6 +5953,36 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 alertCohortInFlight: () => alertCohortRef.current !== null, subscribeAlertCohortSettle, loadEpicAlerts, loadEpicReadiness: storyReadiness.loadEpic, mergeReadinessEpic: storyReadiness.mergeEpic, isFutureSprint: isFutureSprintSelected, track: trackEpicRefreshAction, sourceSurface: isCatchUpMode ? 'catch_up' : 'planning', active: isEpicRefreshMode, capacityScopeHoldRef,
             });
 
+            boardFreshnessRef.current.getViewport = epicRefresh.getViewport;
+            boardFreshnessRef.current.pendingKeys = () => new Set([...pendingStatusIssueKeys, ...pendingPriorityIssueKeys, ...pendingProjectTrackIssueKeys, ...issueFieldEdits.pendingIssueKeys]);
+            freshness.ownersRef.current = createDashboardFreshnessOwners(freshness, { selectedView, showPlanning, showStats, showScenario, showBoard, strictBoardActive: strictBoardOwnerActive, strictBoard, boardFreshnessRef, planningReview, planningLayout, planningInteractionRef, capacityInteractionRef, capacityScopeHoldRef, planningAutomaticReadRef, refreshCapacity, capacityLoading, sourceScope: boardStrictScope, surfaceBusy: strictBoardData.status === 'loading' || (selectedView === 'eng' && !sprintCatalogReady),
+                scenarioHasUnsavedChanges, scenarioEditMode, scenarioDraftMeta, scenarioDragState: scenarioState.scenarioDragState, scenarioDragStateRef: scenarioState.scenarioDragStateRef, scenarioLoading: scenarioState.scenarioLoading,
+                showGroupManage, isGroupDraftDirty, groupSaving, epmConfigSaving, groupVisibilitySaving, workspaceConfigConflict, groupsConfigConflict, onboardingActive: onboarding.run || onboarding.pending,
+                sharedConfigReady, acceptedBoardConfigRef, engWorkspaceConfigured, connectionRecoveryBlocksRefresh, connectionUnavailableRef, terminalAuth: readPendingAuthenticationRequired(),
+                authResumePrincipalRef, connectionRecoveryPrincipalRef, jiraUrl, authResumeStagedRevision, sharedConfigRevision, groupsConfig, activeGroupId, selectedSprint, activeGroupTeamIds,
+                loadEpochRef, groupLoadVersionRef, alertCohortRef, loading, productTasksLoading, techTasksLoading, groupsLoading, catalogLoading: catalogAcquiring, isSprintCatalogValidated: () => sprintCatalogControllerRef.current.getState().authority === 'validated', onboardingRequired: groupPreferences.onboardingRequired,
+                statusTransitionActiveKey, priorityTransitionActiveKey, projectTrackTransitionActiveKey, pendingStatusIssueKeys, pendingPriorityIssueKeys, pendingProjectTrackIssueKeys, issueFieldEdits,
+                issueEditState: issueEditStateRef.current, isHeld, epicRefresh, collectGroupRefresh, loadAlertEpics, fetchMissingPlanningInfo, loadReadyToCloseProductTasks, loadReadyToCloseTechTasks,
+                refreshDueSprintCatalog: job => sprintCatalogControllerRef.current.readDue({ selectedSprintId: selectedSprintRef.current, signal: job.signal, shouldApply: job.shouldApply }),
+                statsView, statsQueryScope: [burnoutScopedTeamSignature, cohortStartQuarter, cohortEndQuarter, excludedCapacityStartSprintId, excludedCapacityEndSprintId], statsLoading: burnoutLoading || cohortLoading || excludedCapacityLoading,
+                automaticRefreshRef: freshness.automaticRefreshRef, startStatsRefresh: source => source === 'stats_excluded_capacity' ? setExcludedCapacityRefreshNonce(value => value + 1) : setIssuePeopleStatsRevision(value => value + 1),
+                epmTab, epmSelectedProjectId, savedEpmRootGoalKey, savedEpmSubGoalKeys, runtimeEpmSubGoalKeys, refreshEpmView, epmLoading: epmProjectsLoading || epmRollupLoading,
+                beforeEpmCommit: boards => markDependencySignature(buildDependencyKeySignature(flattenEpmRollupBoardsForDependencies(boards)), loadEpochRef.current),
+                captureEpmAnchor: () => {
+                    const nodes = Array.from(document.querySelectorAll('.epm-project-board'));
+                    const index = nodes.findIndex(node => node.getBoundingClientRect().bottom > epicRefresh.getViewport().top);
+                    return index < 0 ? null : { id: getEpmProjectIdentity(visibleEpmRollupBoards?.[index]?.project || selectedEpmProject), node: nodes[index], top: nodes[index].getBoundingClientRect().top, scrollY: window.scrollY };
+                },
+                restoreEpmAnchor: async (job, anchor) => {
+                    if (!anchor) return;
+                    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+                    if (!job.shouldApply() || !anchor.node.isConnected || Math.abs(window.scrollY - anchor.scrollY) > 2) return;
+                    const delta = anchor.node.getBoundingClientRect().top - anchor.top;
+                    if (Math.abs(delta) > 0.5) window.scrollBy(0, delta);
+                },
+                storyReadiness, showDependencies, showBlockedAlert, setDependencyData, invalidateStorySubtasks, backendUrl: BACKEND_URL, getViewport: epicRefresh.getViewport });
+
+            boardFreshnessRef.current.contextKey = freshness.ownersRef.current.readEnvironment().contextKey;
             const engBoardDataProps = strictEngBoardViewProps({ active: boardScopeRequested, owner: strictBoard, model: strictBoardModel, legacyLoading: sprintsLoading || loading, legacyError: displayedEngError, legacyRetry: retryEngLoad });
             if (strictBoardActive && strictBoardData.error?.code === 'board_config_invalid') {
                 engBoardDataProps.error = 'Board configuration could not be used. Review Board setup and retry.';
@@ -6063,6 +6108,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                             capacityShareLabel={capacityShareLabel}
                             updateCapacityRequest={(issueKey, payload, options) =>
                                 updateCapacity(BACKEND_URL, issueKey, payload, options)}
+                            onInteractionChange={value => { if (capacityInteractionRef.current === Boolean(value)) return; capacityInteractionRef.current = Boolean(value); notifyPlanningInteraction(previous => previous + 1); }}
                             onCapacitySaved={handleCapacitySaved}
                             onCapacityRetry={retryCapacity}
                             onAnalyticsAction={trackPlanningCapacityAction}
@@ -6179,6 +6225,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                                             sourceSurface={selectedView === 'epm' ? 'epm' : (showScenario ? 'scenario' : showStats ? 'stats' : showPlanning ? 'planning' : showBoard ? 'board' : 'catch_up')}
                                         />
                                     )}
+                                    <DashboardFreshnessStatus freshness={freshness} />
                                     <IconButton
                                         variant="secondary compact"
                                         className="header-icon-button refresh-icon"
@@ -6862,11 +6909,12 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                     )}
 
                     {selectedView === 'eng' && showBoard && engWorkspaceConfigured && (
-                        boardScopeRequested && !strictBoardActive ? renderBlockedBoardScope() : (
+                        boardScopeRequested && !strictBoardActive && !((readPendingAuthenticationRequired() || sprintCatalogState.selectionPreserved) && strictBoardOwnerActive) ? renderBlockedBoardScope() : (
                             <EngBoardView
                                 board={activeGroup?.board || null}
                                 epicGroups={boardEpicGroupsFiltered}
                                 {...engBoardDataProps}
+                                freshnessBridge={boardFreshnessRef} onInteractionChange={onBoardInteractionChange}
                                 view={boardView}
                                 onViewChange={setBoardView}
                                 renderPriorityIcon={renderPriorityIcon}
@@ -6903,7 +6951,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                             {shouldRenderEngTaskList && (
                                 <EngView
                                     selectedView={selectedView} sprintCatalogLoading={sprintsLoading} InitiativeIcon={InitiativeIcon}
-                                    planningTable={showPlanning && planningLayout === 'table' ? <PlanningReviewTable toolbarHost={planningToolbarHost}
+                                    planningTable={showPlanning && planningLayout === 'table' ? <PlanningReviewTable toolbarHost={planningToolbarHost} onInteractionChange={value => { if (planningInteractionRef.current === Boolean(value)) return; planningInteractionRef.current = Boolean(value); notifyPlanningInteraction(previous => previous + 1); }}
                                         epicGroups={epicGroups} visibleTasks={visibleTasksForList}
                                         selectedStoryKeys={new Set(Object.keys(selectedTasks).filter(key => selectedTasks[key]))}
                                         onToggleStory={task => toggleTaskSelection(task.key)} onSelectStories={selectPlanningReviewStories}
@@ -6995,7 +7043,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                                     activeDependencyFocus={activeDependencyFocus}
                                     handleDependencyFocusClick={handleDependencyFocusClick}
                                     initiativeGroups={initiativeGroups}
-                                    epicGroups={epicGroups}
+                                    epicGroups={engWorkHierarchy.epicGroups}
                                     renderEpicBlock={renderEpicBlock}
                                     jiraUrl={jiraUrl}
                                     onClearFilters={clearEngFilters}
@@ -7008,6 +7056,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                                     selectedView={selectedView}
                                     epmConfigLoaded={epmConfigLoaded}
                                     epmProjectsLoading={epmProjectsLoading}
+                                    epmProjectsLoaded={epmProjectsLoaded}
                                     epmRollupBoards={epmRollupBoards}
                                     epmRollupTree={epmRollupTree}
                                     epmSelectedProjectId={epmSelectedProjectId}
@@ -7522,4 +7571,3 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
             const root = createRoot(rootElement);
             root.render(<AuthRequiredGate><App /></AuthRequiredGate>);
         }
-

@@ -5557,3 +5557,440 @@ test('All work keeps a complete snapshot through a limited refresh and replaces 
     await expect(page.locator('.ecard[data-epic-key="CHANGED-1"]')).toBeVisible();
     await expect(page.locator('.ecard[data-epic-key="NEW-1"]')).toHaveCount(0);
 });
+
+for (const delayedFrame of ['complete', 'start', 'index', 'progress', 'column', 'blur_complete', 'column_error', 'partial_error', 'scope_too_large', 'deadline_exceeded', 'scope_changed', 'network', 'auth_required', 'manual', 'private_deny', 'private_forbidden', ...['scope','config'].flatMap(kind=>['start','index','progress','column','complete'].map(frame=>kind+'_'+frame))]) {
+    test(`automatic strict Board stages ${delayedFrame} silently and preserves open detail`, async ({ page }, testInfo) => {
+        const { installLifecycleControl } = require('./eng_epic_refresh_fixture');
+        const lifecycle = await installLifecycleControl(page);
+        await page.addInitScript(() => {
+            const original = window.fetch.bind(window);
+            window.syntheticBoardStreams = [];
+            window.fetch = (input, options) => {
+                if (!String(input).includes('/api/eng/board?')) return original(input, options);
+                if(window.syntheticBoardHttpDenial){window.syntheticBoardDeniedRequests=(window.syntheticBoardDeniedRequests||0)+1;return Promise.resolve(new Response(JSON.stringify({error:window.syntheticBoardHttpDenial}),{status:403,headers:{'Content-Type':'application/json'}}));}
+                const entry = { aborted: false, url: String(input) };
+                const body = new ReadableStream({ start(controller) {
+                    entry.send = frame => { if (entry.cancelled) { entry.dropped = (entry.dropped || 0) + 1; return; } controller.enqueue(new TextEncoder().encode(`${JSON.stringify(frame)}\n`)); };
+                    entry.close = () => { if (!entry.cancelled) controller.close(); };
+                    entry.fail = () => { if (!entry.cancelled) controller.error(new Error('Synthetic network loss')); };
+                }, cancel() { entry.cancelled = true; } });
+                options.signal.addEventListener('abort', () => { entry.aborted = true; });
+                window.syntheticBoardStreams.push(entry);
+                return Promise.resolve(new Response(body, { headers: { 'Content-Type': 'application/x-ndjson' } }));
+            };
+        });
+        const performanceLoads=[];
+        await openBoard(page, { strictBoard: true, sourceBundle: true, reducedMotion: true, performanceLoads });
+        await page.getByRole('button', { name: 'Select sprint' }).first().click();
+        await page.getByText('All work', { exact: true }).first().click();
+        await page.waitForFunction(() => window.syntheticBoardStreams.length === 1);
+        const column = { id: 'active', name: 'Active', color: '#597ef7', statusNames: ['In Progress'], terminal: false };
+        const epic = { key: 'SYN-1', summary: 'Synthetic held Board Epic', status: { id: '2', name: 'In Progress' }, priority: null,
+            assignee: null, deliveryOwner: null, projectTrack: null, updated: null, parent: null, columnId: 'active' };
+        const children = Array.from({ length: 12 }, (_, i) => ({ key: `SYN-${i + 2}`, epicKey: 'SYN-1', summary: `Synthetic Story ${i}`, status: { id: '1', name: 'To Do' },
+            priority: null, issueType: { id: '10004', name: 'Story' }, assignee: null, updated: null, storyPoints: 3,
+            team: null, project: { id: '10000', name: 'Synthetic' }, projectClassification: 'product', sprintIds: [] }));
+        const frames = index => [
+            { type: 'start', scope: 'all_work', scopeVersion: `rotated-${index}`, scopeCohortDigest: 'a'.repeat(64), columns: [column] },
+            { type: 'index', epics: [epic], membership: 'authoritative' },
+            { type: 'column', columnId: 'active', epics: [{ ...epic, summary: index ? 'Synthetic accepted Board Epic' : epic.summary }], children, authoritative: true },
+            { type: 'complete', outcome: 'success', authoritative: true, epicCount: 1, childCount: children.length,
+                diagnostics: { indexMs: 1, focusedCompleteMs: 2, durationMs: 3, jiraRequests: 1, jiraPages: 1, jiraRetries: 0, peakChildSearches: 1, cacheState: 'miss', completeness: 'complete' } },
+        ];
+        const send = async (index, sequence, body = frames(index)[sequence]) => page.evaluate(({ index, sequence, body }) => {
+            window.syntheticBoardStreams[index].send({ protocolVersion: 1, generationId: `synthetic-${index}`, sequence, ...body });
+            if (['complete','error'].includes(body.type)) window.syntheticBoardStreams[index].close();
+        }, { index, sequence, body });
+        for (let sequence = 0; sequence < 4; sequence++) await send(0, sequence);
+        const card = page.locator('.ecard[data-epic-key="SYN-1"]');
+        await expect(card).toContainText(epic.summary);
+        await card.locator('.ecard-open').click();
+        const detail = page.locator('.epic-panel [data-story-key="SYN-8"]');
+        await detail.scrollIntoViewIfNeeded();
+        await page.addStyleTag({ content: '*,*::before,*::after{animation:none!important;transition:none!important}' });
+        const before = await detail.boundingBox(), node = await card.elementHandle();
+        await page.screenshot({ path: path.join(screenshotDir, `freshness-${delayedFrame}-before.png`), animations: 'disabled' });
+        await lifecycle.returnAfter(13 * 60 * 1000);
+        await page.waitForFunction(() => window.syntheticBoardStreams.length === 2);
+        const refresh = page.getByRole('button', { name: 'Refresh tasks and sprints from Jira' });
+        await expect(refresh).toBeEnabled();
+        const heldFrame=delayedFrame.replace(/^(scope|config)_/,'');
+        const changingContext=/^(scope|config)_/.test(delayedFrame);
+        const retired=['start','index','progress','column','blur_complete'].includes(delayedFrame);
+        if(heldFrame!=='start') await send(1,0);
+        if(!['start','index'].includes(heldFrame)) await send(1,1,delayedFrame.startsWith('private_')?{type:'index',epics:[],membership:'authoritative'}:frames(1)[1]);
+        if (delayedFrame === 'complete') {
+            await send(1, 2);
+            await expect(card).toContainText(epic.summary);
+            await expect(page.locator('.board-data-state')).toHaveCount(0);
+            await send(1, 3);
+            await expect(card).toContainText('Synthetic accepted Board Epic');
+        } else if(changingContext){
+            if(heldFrame==='complete')await send(1,2);
+            await expect(card).toContainText(epic.summary);await expect(refresh).toBeEnabled();
+            await page.keyboard.press('Escape');
+            if(delayedFrame.startsWith('scope_')){
+                await page.getByRole('button',{name:'Select sprint'}).first().click();
+                await page.getByRole('option',{name:'Component',exact:true}).click();
+            }else{
+                await page.getByRole('button',{name:'Manage team groups',exact:true}).click();
+                const dialog=page.getByRole('dialog').first();await dialog.getByRole('tab',{name:'Boards',exact:true}).click();
+                await dialog.locator('.board-column-name').first().fill('Synthetic accepted configuration');
+                await dialog.getByRole('button',{name:/^Save$/}).click();
+            }
+            await page.waitForFunction(()=>window.syntheticBoardStreams.length===3);
+            await expect.poll(()=>page.evaluate(()=>window.syntheticBoardStreams[1].aborted)).toBe(true);
+            if(heldFrame==='start')await send(1,0);
+            if(['start','index'].includes(heldFrame))await send(1,1);
+            if(heldFrame==='progress')await send(1,2,{type:'progress',columnId:'active',loadedChildren:1,byEpic:[{epicKey:'SYN-1',loadedChildren:1,statusCounts:{'To Do':1}}]});
+            else if(heldFrame!=='complete')await send(1,2);
+            await send(1,3);
+            for(let sequence=0;sequence<4;sequence++){
+                const body=frames(2)[sequence];
+                if(sequence===0){body.scope=delayedFrame.startsWith('scope_')?'component':'all_work';body.scopeCohortDigest='b'.repeat(64);}
+                if(sequence===2)body.epics=[{...epic,summary:'Synthetic current context accepted'}];
+                await send(2,sequence,body);
+            }
+            await expect(card).toContainText('Synthetic current context accepted');await expect(refresh).toBeEnabled();
+            expect(await page.evaluate(()=>window.syntheticBoardStreams.length)).toBe(3);
+            await expect(page.locator('.epic-panel')).toHaveCount(0);
+            if(delayedFrame.startsWith('scope_'))await expect(page.getByRole('button',{name:'Select sprint'}).first()).toContainText('Component');
+            return;
+        } else if(delayedFrame.startsWith('private_')){
+            // Accept actual scope departure before the later whole-Board denial.
+            await send(1,2,{type:'column',columnId:'active',epics:[],children:[],authoritative:true});
+            await send(1,3,{...frames(1)[3],epicCount:0,childCount:0});
+            await expect(card).toHaveCount(0);await expect(page.locator('[data-board-reading-departure]')).toBeVisible();
+            await expect(detail).toBeVisible();
+            await expect(page.getByRole('button',{name:'Open Jira issue menu',exact:true})).toBeDisabled();
+            await expect.poll(()=>performanceLoads.length).toBe(2);await waitTwoFrames(page);
+            await page.evaluate(code=>{window.syntheticBoardHttpDenial=code;},delayedFrame==='private_deny'?'board_permission_denied':'jira_forbidden');
+            await lifecycle.advance(1);await lifecycle.returnAfter(13*60*1000);
+            await expect.poll(()=>page.evaluate(()=>window.syntheticBoardDeniedRequests||0)).toBe(1);
+            if(delayedFrame==='private_deny') await expect(page.locator('.epic-panel')).toHaveCount(0);
+            else await expect(detail).toBeVisible();
+            await expect(refresh).toBeEnabled();expect(await page.evaluate(()=>window.syntheticBoardStreams.length)).toBe(2);
+            return;
+        } else if(retired){
+            if(delayedFrame==='blur_complete') await send(1,2);
+            await lifecycle.setState({ focused: false });
+            if(delayedFrame==='start') await send(1,0);
+            if(['start','index'].includes(delayedFrame)) await send(1,1);
+            if(delayedFrame==='progress') await send(1,2,{type:'progress',columnId:'active',loadedChildren:1,byEpic:[{epicKey:'SYN-1',loadedChildren:1,statusCounts:{'To Do':1}}]});
+            else if(delayedFrame!=='blur_complete') await send(1,2);
+            await send(1,3);
+            await expect(card).toContainText(epic.summary);
+            await expect.poll(() => page.evaluate(() => window.syntheticBoardStreams[1].aborted)).toBe(true);
+        } else if(delayedFrame==='manual'){
+            await page.keyboard.press('Escape');
+            await refresh.click(); await page.waitForFunction(()=>window.syntheticBoardStreams.length===3);
+            await expect.poll(()=>page.evaluate(()=>window.syntheticBoardStreams[1].aborted)).toBe(true);
+            for(let sequence=0;sequence<4;sequence++) await send(2,sequence);
+            await expect(card).toContainText('Synthetic accepted Board Epic');
+            await card.locator('.ecard-open').click();await detail.scrollIntoViewIfNeeded();
+        } else if(delayedFrame==='network'){
+            await page.evaluate(()=>window.syntheticBoardStreams[1].fail());
+        } else if(['column_error','partial_error'].includes(delayedFrame)){
+            await send(1,2,{type:'column_error',columnId:'active',code:'jira_unavailable',retryable:true});
+            await send(1,3,{type:'complete',outcome:'partial_error',authoritative:false,failedColumnIds:['active'],diagnostics:{...frames(1)[3].diagnostics,completeness:'partial'}});
+        } else {
+            await send(1,2,{type:'error',code:delayedFrame});
+        }
+        if(delayedFrame==='auth_required'){
+            await expect(page.getByRole('alertdialog').getByRole('heading',{name:'Sign in required'})).toBeVisible();
+            expect(await page.evaluate(()=>window.syntheticBoardStreams.length)).toBe(2);
+            return;
+        }
+        if(delayedFrame!=='complete' && delayedFrame!=='manual') await expect(card).toContainText(epic.summary);
+        await expect(page.locator('.board-data-state')).toHaveCount(0);
+        await page.waitForTimeout(300);
+        const after = await detail.boundingBox();
+        expect(Math.abs(after.y - before.y)).toBeLessThanOrEqual(2);
+        if(delayedFrame!=='manual') expect(await card.evaluate((current, previous) => current === previous, node)).toBe(true);
+        await expect(page.locator('.epic-panel')).toBeVisible();
+        await expect(refresh).toBeEnabled();
+        expect(await page.evaluate(() => window.syntheticBoardStreams.length)).toBe(delayedFrame==='manual'?3:2);
+        await page.screenshot({ path: path.join(screenshotDir, `freshness-${delayedFrame}-after.png`), animations: 'disabled' });
+        console.log(`strict Board ${delayedFrame}: ${JSON.stringify({ before: before.y, after: after.y, delta: Math.abs(after.y - before.y) })}`);
+    });
+}
+
+async function mountBoardCommitHarness(page, { dual = false, readingDone = false, storyCount = 16, documentShift = false } = {}) {
+    const source = `
+        import React from 'react'; import {createRoot} from 'react-dom/client'; import {flushSync} from 'react-dom';
+        import EngBoardView from './frontend/src/eng/EngBoardView.jsx';
+        import {buildEngBoardFacetModel,resolveEngBoardFilters} from './frontend/src/eng/engBoardFilters.js';
+        const columns=Array.from({length:7},(_,i)=>({id:'col-'+i,name:'Column '+i,statuses:['Status '+i],colour:'#597ef7',star:i===0}));
+        const initial=Array.from({length:36},(_,i)=>({key:'SYN-'+(i+1),epic:{key:'SYN-'+(i+1),summary:'Synthetic Epic '+(i+1),status:{name:'Status '+(i<18?0:1)}},
+            tasks:Array.from({length:i===0?${storyCount}:1},(_,j)=>({key:'WORK-'+(i+1)+'-'+j,fields:{epicKey:'SYN-'+(i+1),summary:'Synthetic Story '+j,status:{name:j===5&&${readingDone}?'Done':'To Do'},issuetype:{name:'Story'},customfield_10004:3}})),storyPoints:${readingDone ? "(i===0?16:1)*3" : "3"}}));
+        const initialTasks=initial.flatMap(group=>group.tasks); const noop=()=>{};const board={columns};
+        function App(){const [groups,setGroups]=React.useState(initial),[view,setView]=React.useState({configStarredId:'col-0',starredId:'col-0',focusedId:'col-1'}),[result,setResult]=React.useState('ready'),[spacer,setSpacer]=React.useState(400);
+            const filters=resolveEngBoardFilters({model:buildEngBoardFacetModel({epicGroups:groups})});
+            const current=React.useRef(groups);current.current=groups;const bridge=React.useRef({getViewport:()=>({top:0,bottom:innerHeight})});
+            React.useEffect(()=>{let phase=0;const run=async event=>{const detail=event.detail||{};const prior=current.current;
+                const state=phase?{loadedProductTasks:[],loadedTechTasks:[]}: {loadedProductTasks:initialTasks,loadedTechTasks:${dual ? 'initialTasks' : '[]'}};
+                const deniedLanes=detail.deny?[detail.deny]:[];
+                const capture=bridge.current.beforeCommit(null,{state,deniedLanes},()=>true);
+                let next=prior;
+                if(detail.depart) next=prior.filter(group=>group.key!=='SYN-1');
+                if(detail.noEpic) next=prior.map(group=>group.key==='SYN-1'?{...group,storyPoints:${readingDone ? '45' : 'group.storyPoints'},tasks:group.tasks.filter(task=>task.key!=='WORK-1-5')}:group);
+                if(detail.grow) next=[{...initial[0],key:'ADDED-1',epic:{...initial[0].epic,key:'ADDED-1',summary:'Synthetic added before anchor'}},...prior];
+                if(detail.reorder) next=prior.map(group=>group.key==='SYN-1'?{...group,tasks:group.tasks.map(task=>task.key==='WORK-1-5'?{...task,fields:{...task.fields,assignee:{displayName:'A synthetic person'},status:{name:'Done'}}}:task)}:group);
+                flushSync(()=>{setGroups(next);if(detail.shift)setSpacer(700);});
+                if(detail.move){setResult('held');await new Promise(resolve=>window.addEventListener('synthetic:board-settle',resolve,{once:true}));}
+                await bridge.current.afterCommit(capture,{deniedLanes});phase++;
+                setResult('settled-'+phase);
+            };window.addEventListener('synthetic:board-commit',run);return()=>window.removeEventListener('synthetic:board-commit',run);},[]);
+            return <>{${documentShift}&&<div style={{height:spacer}}/>}<output data-canonical-count={groups.length} data-canonical-story-count={groups.flatMap(group=>group.tasks).length}>{result}</output><EngBoardView board={board} epicGroups={groups} view={view} onViewChange={setView}
+                engFilters={filters} onFacetChange={noop} freshnessBridge={bridge} onInteractionChange={noop} transitionsEnabled={true} statusTransitions={{pendingIssueKeys:new Set()}}
+                issueFieldEdits={{pendingIssueKeys:new Set()}} jiraUrl="https://jira.example" backendUrl=""/></>;
+        }createRoot(document.getElementById('root')).render(<App/>);`;
+    const bundle = (await esbuild.build({ stdin: { contents: source, resolveDir: path.join(__dirname, '../..'), loader: 'jsx' }, bundle: true, write: false, format: 'iife', loader: { '.css': 'empty' }, define: { 'process.env.NODE_ENV': '"production"' } })).outputFiles[0].text;
+    await installDashboardShell(page);
+    await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({ contentType: 'application/javascript', body: bundle }));
+    await page.route('**/api/**', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ key: 'SYN-1', html: '', isEmpty: true }) }));
+    await page.goto(appBaseUrl, { waitUntil: 'networkidle' });
+    await page.addStyleTag({ content: '*,*::before,*::after{animation:none!important;transition:none!important}' });
+    await expect(page.locator('.ecard[data-epic-key="SYN-1"]')).toBeAttached();
+}
+
+test('Board commit restores one pane while respecting independent user pane and horizontal movement', async ({ page }) => {
+    await page.setViewportSize({ width: 820, height: 900 });
+    await mountBoardCommitHarness(page);
+    const left = page.locator('.col[data-column-id="col-0"] .col-body'), right = page.locator('.col[data-column-id="col-1"] .col-body');
+    await expect(page.locator('.eng-board')).toHaveClass(/is-pane-mode/);
+    await left.evaluate(pane => { pane.scrollTop = 320; }); await right.evaluate(pane => { pane.scrollTop = 280; });
+    const anchorKey=await left.evaluate(pane=>Array.from(pane.querySelectorAll('.ecard')).find(node=>node.getBoundingClientRect().bottom>pane.getBoundingClientRect().top)?.dataset.epicKey);
+    const anchor = left.locator('.ecard[data-epic-key="'+anchorKey+'"]');
+    const before = await anchor.boundingBox();
+    await expect.poll(() => page.locator('.board').evaluate(board => board.scrollWidth - board.clientWidth)).toBeGreaterThan(100);
+    await page.locator('.board').evaluate(board => board.scrollTo({left:40,behavior:'instant'}));
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('synthetic:board-commit', { detail: { grow: true, move: true } })));
+    await expect(page.locator('output')).toHaveText('held');
+    await right.hover(); await page.mouse.wheel(0,90);
+    await expect.poll(()=>right.evaluate(pane=>pane.scrollTop)).toBeGreaterThan(280);
+    await page.mouse.wheel(60,0);
+    await expect.poll(()=>page.locator('.board').evaluate(board=>board.scrollLeft)).toBeGreaterThan(40);
+    await page.waitForTimeout(200);
+    const expected={top:await right.evaluate(pane=>pane.scrollTop),left:await page.locator('.board').evaluate(board=>board.scrollLeft)};
+    await page.evaluate(()=>window.dispatchEvent(new Event('synthetic:board-settle')));
+    await expect(page.locator('output')).toHaveText('settled-1');
+    expect(await right.evaluate(pane => pane.scrollTop)).toBe(expected.top);
+    expect(await page.locator('.board').evaluate(board => board.scrollLeft)).toBe(expected.left);
+    const after = await anchor.boundingBox();
+    expect(Math.abs(after.y - before.y)).toBeLessThanOrEqual(2);
+    console.log(`independent Board movement: ${JSON.stringify({ before: before.y, after: after.y, user: expected })}`);
+});
+
+for (const dual of [false, true]) {
+    test(`departed Board detail ${dual ? 'retains another lane then purges cumulative denial' : 'purges later private source denial'}`, async ({ page }) => {
+        await mountBoardCommitHarness(page, { dual });
+        await page.locator('.ecard[data-epic-key="SYN-1"] .ecard-open').click();
+        const panel = page.locator('.epic-panel');
+        await panel.locator('[data-story-key="WORK-1-5"]').scrollIntoViewIfNeeded();
+        await panel.locator('[data-story-key="WORK-1-5"] a').evaluate(node => node.focus({ preventScroll: true }));
+        const before = await panel.locator('[data-story-key="WORK-1-5"]').boundingBox();
+        await page.screenshot({path:path.join(screenshotDir,`board-departure-${dual?'dual':'single'}-before.png`),animations:'disabled'});
+        const paneBefore=await panel.evaluate(panel=>{const body=panel.querySelector('.m-body');return {scroll:body.scrollTop,max:body.scrollHeight-body.clientHeight,origin:body.getBoundingClientRect().top};});
+        await page.evaluate(() => window.dispatchEvent(new CustomEvent('synthetic:board-commit', { detail: { depart: true } })));
+        await expect(page.locator('output')).toHaveText('settled-1');
+        await expect(panel).toBeVisible(); await expect(page.locator('[data-board-reading-departure]')).toBeVisible();
+        await expect(page.locator('.ecard[data-epic-key="SYN-1"]')).toHaveCount(0);
+        await expect(page.locator('output')).toHaveAttribute('data-canonical-count', '35');
+        await expect(panel.locator('.issue-person-editor-trigger,[data-status-transition-trigger]')).toHaveCount(0);
+        const after = await panel.locator('[data-story-key="WORK-1-5"]').boundingBox();
+        console.log('departed Board geometry',await panel.evaluate(panel=>{const body=panel.querySelector('.m-body');return {scroll:body.scrollTop,max:body.scrollHeight-body.clientHeight,head:panel.querySelector('.m-head').getBoundingClientRect().height,bodyTop:body.getBoundingClientRect().top};}),{before:before.y,after:after.y,paneBefore});
+        expect(Math.abs(after.y - before.y)).toBeLessThanOrEqual(2);
+        await page.screenshot({path:path.join(screenshotDir,`board-departure-${dual?'dual':'single'}-after.png`),animations:'disabled'});
+        await page.evaluate(() => window.dispatchEvent(new CustomEvent('synthetic:board-commit', { detail: { deny: 'product' } })));
+        await expect(page.locator('output')).toHaveText('settled-2');
+        if (dual) {
+            await expect(panel).toBeVisible();
+            await page.evaluate(() => window.dispatchEvent(new CustomEvent('synthetic:board-commit', { detail: { deny: 'tech' } })));
+            await expect(page.locator('output')).toHaveText('settled-3');
+        }
+        await expect(panel).toHaveCount(0); await expect(page.locator('[data-board-reading-departure]')).toHaveCount(0);
+    });
+}
+
+test('Board retains a departed reading Story in its detail slot and purges explicit issue denial', async ({ page }) => {
+    await mountBoardCommitHarness(page);
+    await page.locator('.ecard[data-epic-key="SYN-1"] .ecard-open').click();
+    const story = page.locator('.epic-panel [data-story-key="WORK-1-5"]');
+    await story.scrollIntoViewIfNeeded(); await story.locator('a').evaluate(node => node.focus({ preventScroll: true }));
+    const before = await story.boundingBox();
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('synthetic:board-commit', { detail: { noEpic: true } })));
+    await expect(page.locator('output')).toHaveText('settled-1'); await expect(story).toBeVisible();
+    await expect(page.locator('[data-board-reading-departure]')).toBeVisible();
+    expect(Math.abs((await story.boundingBox()).y - before.y)).toBeLessThanOrEqual(2);
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('synthetic:board-commit', { detail: { deny: 'product' } })));
+    await expect(page.locator('output')).toHaveText('settled-2'); await expect(story).toHaveCount(0);
+});
+
+
+test('held Board reading order releases without suppressing a deliberate other-card click',async({page})=>{
+    await mountBoardCommitHarness(page);
+    const body=page.locator('.col[data-column-id="col-0"] .col-body');
+    await body.evaluate(pane=>{pane.scrollTop=320;});
+    await page.locator('.board').evaluate(board=>board.scrollTo({left:0,behavior:'instant'}));
+    await page.evaluate(()=>window.dispatchEvent(new CustomEvent('synthetic:board-commit',{detail:{grow:true}})));
+    await expect(page.locator('output')).toHaveText('settled-1');
+    await page.locator('.ecard[data-epic-key="SYN-15"] .ecard-open').click();
+    await expect(page.locator('.epic-panel')).toBeVisible();
+    await expect(page.locator('.epic-panel .m-title')).toHaveText('Synthetic Epic 15');
+});
+
+
+for (const whole of [false, true]) {
+test(`departed Board reading ${whole ? 'Epic' : 'Story'} stays outside canonical detail counts and completion progress`,async({page})=>{
+    await mountBoardCommitHarness(page,{readingDone:true});
+    await page.locator('.ecard[data-epic-key="SYN-1"] .ecard-open').click();
+    const panel=page.locator('.epic-panel'),story=panel.locator('[data-story-key="WORK-1-5"]');
+    await expect(panel.locator('.m-sec-head .m-sec-label').last()).toHaveText('16 stories · 48.0 sp');
+    await expect(panel.locator('.m-sp')).toHaveText('48.0 sp · 1 of 16 stories done');
+    await story.scrollIntoViewIfNeeded();await story.locator('a').evaluate(node=>node.focus({preventScroll:true}));
+    await page.screenshot({path:path.join(screenshotDir,`board-canonical-${whole?'epic':'story'}-before.png`),animations:'disabled'});
+    await page.evaluate(whole=>window.dispatchEvent(new CustomEvent('synthetic:board-commit',{detail:whole?{depart:true}:{noEpic:true}})),whole);
+    await expect(page.locator('output')).toHaveText('settled-1');
+    await expect(page.locator('output')).toHaveAttribute('data-canonical-story-count',whole?'35':'50');
+    if(whole) await expect(page.locator('.ecard[data-epic-key="SYN-1"]')).toHaveCount(0);
+    else await expect(page.locator('.ecard[data-epic-key="SYN-1"] .erow2')).toContainText('0 of 15 stories');
+    await expect(story).toBeVisible();
+    await expect(page.locator('[data-board-reading-departure]')).toHaveText(whole?'Epic SYN-1 left the current Board scope.':'Story WORK-1-5 left the current Board scope.');
+    await expect(story.locator('.story-subtask-name')).toContainText('Outside scope · Synthetic Story 5');
+    await expect(panel.locator('.m-sec-head .m-sec-label').last()).toHaveText(whole?'0 stories · 0.0 sp':'15 stories · 45.0 sp');
+    await expect(panel.locator('.m-sp')).toHaveText(whole?'0.0 sp · 0 of 0 stories done':'45.0 sp · 0 of 15 stories done');
+    await expect(panel.locator('.issue-person-editor-trigger,[data-status-transition-trigger]')).toHaveCount(0);
+    await page.screenshot({path:path.join(screenshotDir,`board-canonical-${whole?'epic':'story'}-after.png`),animations:'disabled'});
+});
+}
+
+for(const touch of [false,true]){
+test(`Board ${touch?'touch':'document'} commit performs nonzero window compensation`,async({page,browser})=>{
+    let context;
+    if(touch){context=await browser.newContext({viewport:{width:600,height:800},hasTouch:true});page=await context.newPage();}
+    else await page.setViewportSize({width:600,height:800});
+    try{
+        await mountBoardCommitHarness(page,{documentShift:true});
+        await expect(page.getByRole('region',{name:'Group board',exact:true})).not.toHaveClass(/is-pane-mode/);
+        const card=page.locator('.ecard[data-epic-key="SYN-1"]');await card.scrollIntoViewIfNeeded();
+        await card.locator('.ecard-open').evaluate(node=>node.focus({preventScroll:true}));
+        const offsets=await page.evaluate(async()=>{const values=[];for(let i=0;i<6;i++){await new Promise(requestAnimationFrame);values.push(document.querySelector('.board').scrollLeft);}return values;});
+        expect(new Set(offsets).size).toBe(1);
+        await page.evaluate(()=>{document.documentElement.style.overflowAnchor='none';document.body.style.overflowAnchor='none';});
+        const before=await card.boundingBox(),scrollBefore=await page.evaluate(()=>scrollY),leftBefore=offsets[0];
+        await page.screenshot({path:path.join(screenshotDir,`board-nonzero-${touch?'touch':'document'}-before.png`),animations:'disabled'});
+        await page.evaluate(()=>window.dispatchEvent(new CustomEvent('synthetic:board-commit',{detail:{shift:true}})));
+        await expect(page.locator('output')).toHaveText('settled-1');
+        const after=await card.boundingBox(),scrollAfter=await page.evaluate(()=>scrollY);
+        const leftAfter=await page.locator('.board').evaluate(node=>node.scrollLeft);
+        console.log('nonzero window correction',{touch,before:before.y,after:after.y,scrollBefore,scrollAfter,xBefore:before.x,xAfter:after.x,leftBefore,leftAfter});
+        expect(scrollAfter-scrollBefore).toBeGreaterThan(250);expect(Math.abs(after.y-before.y)).toBeLessThanOrEqual(2);
+        expect(leftAfter).toBe(leftBefore);expect(Math.abs(after.x-before.x)).toBeLessThanOrEqual(2);
+        await page.screenshot({path:path.join(screenshotDir,`board-nonzero-${touch?'touch':'document'}-after.png`),animations:'disabled'});
+    }finally{await context?.close();}
+});}
+
+for(const activation of ['mouse','Enter',' ']){
+test(`Board holds actual displayed panel comparator order until deliberate ${activation==='mouse'?'Sort':`keyboard ${activation===' ' ? 'Space' : activation} Sort`} releases it`,async({page})=>{
+    await mountBoardCommitHarness(page);await page.locator('.ecard[data-epic-key="SYN-1"] .ecard-open').click();
+    const panel=page.locator('.epic-panel'),story=panel.locator('[data-story-key="WORK-1-5"]');
+    await story.scrollIntoViewIfNeeded();await story.locator('a').evaluate(node=>node.focus({preventScroll:true}));
+    const keys=()=>panel.locator('[data-story-key]').evaluateAll(nodes=>nodes.map(node=>node.dataset.storyKey));
+    const beforeKeys=await keys(),before=await story.boundingBox(),node=await story.elementHandle();
+    await page.screenshot({path:path.join(screenshotDir,'board-comparator-before.png'),animations:'disabled'});
+    await page.evaluate(()=>window.dispatchEvent(new CustomEvent('synthetic:board-commit',{detail:{reorder:true}})));
+    await expect(page.locator('output')).toHaveText('settled-1');
+    expect(await keys()).toEqual(beforeKeys);expect(Math.abs((await story.boundingBox()).y-before.y)).toBeLessThanOrEqual(2);
+    expect(await story.evaluate((current,old)=>current===old,node)).toBe(true);await expect(story.locator('a')).toBeFocused();
+    await page.screenshot({path:path.join(screenshotDir,'board-comparator-after.png'),animations:'disabled'});
+    const toggle=panel.getByRole('button',{name:'Sort stories',exact:true}),option=panel.locator('.sprint-dropdown-option').filter({hasText:'Assignee, then status'});
+    if(activation==='mouse'){await toggle.click();await option.click();}
+    else{await toggle.press(activation);await option.press(activation);}
+    await expect.poll(async()=>(await keys())[0]).toBe('WORK-1-5');
+});
+}
+
+for(const whole of [false,true]){
+test(`Board private ${whole?'Epic':'Story'} retires when its actual panel anchor scrolls out`,async({page})=>{
+    await mountBoardCommitHarness(page,{storyCount:60});await page.locator('.ecard[data-epic-key="SYN-1"] .ecard-open').click();
+    const panel=page.locator('.epic-panel'),story=panel.locator('[data-story-key="WORK-1-5"]');
+    await story.scrollIntoViewIfNeeded();await story.locator('a').evaluate(node=>node.focus({preventScroll:true}));
+    await page.evaluate(whole=>window.dispatchEvent(new CustomEvent('synthetic:board-commit',{detail:whole?{depart:true}:{noEpic:true}})),whole);
+    await expect(page.locator('output')).toHaveText('settled-1');await expect(story).toBeVisible();
+    await expect(page.locator('[data-board-reading-departure]')).toBeVisible();
+    await panel.locator('.m-body').hover();await page.mouse.wheel(0,-1200);
+    if(whole)await expect(panel).toHaveCount(0);else{await expect(story).toHaveCount(0);await expect(panel).toBeVisible();}
+    await expect(page.locator('[data-board-reading-departure]')).toHaveCount(0);
+});}
+
+test('Board respects actual panel keyboard movement during held settlement',async({page})=>{
+    await mountBoardCommitHarness(page,{storyCount:60});await page.locator('.ecard[data-epic-key="SYN-1"] .ecard-open').click();
+    const body=page.locator('.epic-panel .m-body'),story=body.locator('[data-story-key="WORK-1-5"]');
+    await story.scrollIntoViewIfNeeded();await story.locator('a').evaluate(node=>node.focus({preventScroll:true}));
+    await page.evaluate(()=>window.dispatchEvent(new CustomEvent('synthetic:board-commit',{detail:{move:true}})));
+    await expect(page.locator('output')).toHaveText('held');const initial=await body.evaluate(node=>node.scrollTop);
+    await page.keyboard.press('End');await expect.poll(()=>body.evaluate(node=>node.scrollTop)).toBeGreaterThan(initial+100);
+    await page.waitForTimeout(200);const desired=await body.evaluate(node=>node.scrollTop);
+    await page.evaluate(()=>window.dispatchEvent(new Event('synthetic:board-settle')));await expect(page.locator('output')).toHaveText('settled-1');
+    expect(await body.evaluate(node=>node.scrollTop)).toBe(desired);
+});
+
+test('Board retires private Story scrolled out while settlement is held without treating correction as movement',async({page})=>{
+    await mountBoardCommitHarness(page,{storyCount:60});await page.locator('.ecard[data-epic-key="SYN-1"] .ecard-open').click();
+    const panel=page.locator('.epic-panel'),body=panel.locator('.m-body'),story=body.locator('[data-story-key="WORK-1-5"]');
+    await story.scrollIntoViewIfNeeded();await story.locator('a').evaluate(node=>node.focus({preventScroll:true}));
+    await page.evaluate(()=>window.dispatchEvent(new CustomEvent('synthetic:board-commit',{detail:{noEpic:true,move:true}})));
+    await expect(page.locator('output')).toHaveText('held');await expect(story).toBeVisible();
+    await body.hover();await page.mouse.wheel(0,-1200);await expect.poll(()=>body.evaluate(node=>node.scrollTop)).toBe(0);
+    const bounds=await story.evaluate(node=>({rowTop:node.getBoundingClientRect().top,paneBottom:node.closest('.m-body').getBoundingClientRect().bottom}));
+    expect(bounds.rowTop).toBeGreaterThan(bounds.paneBottom);await expect(story).toHaveCount(1);
+    await page.evaluate(()=>window.dispatchEvent(new Event('synthetic:board-settle')));await expect(page.locator('output')).toHaveText('settled-1');
+    await expect(story).toHaveCount(0);await expect(panel).toBeVisible();
+    const scroll=await body.evaluate(node=>({top:node.scrollTop,max:node.scrollHeight-node.clientHeight}));expect(scroll.top).toBeGreaterThanOrEqual(0);expect(scroll.top).toBeLessThanOrEqual(scroll.max);
+});
+
+for (const scope of ['Component', 'All work']) test(`simulated persisted ${scope} Board waits for catalog validation and resumes one silent stream`, async ({ page }, testInfo) => {
+    const { installLifecycleControl, deferred } = require('./eng_epic_refresh_fixture');
+    await installLifecycleControl(page);
+    const requestLog = [], resources = [], gate = deferred(); let holdCatalog = false;
+    page.on('request', request => resources.push({ pathname: new URL(request.url()).pathname, type: request.resourceType() }));
+    await openBoard(page, { strictBoard: true, sourceBundle: true, requestLog,
+        sprintResponder: async () => {
+            if (holdCatalog) await gate.promise;
+            return { body: { sprints: [{ id: selectedSprintId, name: selectedSprintName, state: 'active' }] } };
+        } });
+    const selector = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+    await selector.click(); await page.getByRole('option', { name: scope, exact: true }).click();
+    const card = page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]'); await expect(card).toBeVisible();
+    await card.locator('.ecard-open').click(); const panel = page.locator('.epic-panel'); await expect(panel).toBeVisible();
+    await settle(page);
+    const cardNode = await card.elementHandle(), panelNode = await panel.elementHandle(), panelText = await panel.innerText();
+    const selection = await selector.innerText(), preferences = await page.evaluate(() => localStorage.getItem('jira_dashboard_ui_prefs_v1'));
+    const paneScroll = await panel.locator('.m-body').evaluate(node => ({ left: node.scrollLeft, top: node.scrollTop }));
+    const since = requestLog.length, resourceSince = resources.length; holdCatalog = true;
+    const callsFor = pathname => requestLog.slice(since).filter(call => new URL(call.url).pathname === pathname);
+    await page.evaluate(() => {
+        window.__freshnessLifecycle.advance(13 * 60000);
+        window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+    });
+    await expect.poll(() => callsFor('/api/sprints').length).toBe(1);
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))); await page.waitForTimeout(250);
+    try {
+        expect(callsFor('/api/eng/board')).toHaveLength(0);
+        expect(await card.evaluate((node, prior) => node === prior, cardNode)).toBe(true);
+        expect(await panel.evaluate((node, prior) => node === prior, panelNode)).toBe(true); expect(await panel.innerText()).toBe(panelText);
+    } finally { gate.resolve(); }
+    await expect.poll(() => callsFor('/api/eng/board').length).toBe(1); await settle(page);
+    expect(callsFor('/api/eng/board')).toHaveLength(1); expect(callsFor('/api/sprints')).toHaveLength(1);
+    expect(callsFor('/api/tasks-with-team-name')).toHaveLength(0);
+    expect(requestLog.slice(since).filter(call => call.method !== 'GET')).toEqual([]);
+    expect(callsFor('/api/performance/loads')).toHaveLength(0);
+    expect(resources.slice(resourceSince).filter(request => request.type === 'document' || !request.pathname.startsWith('/api/'))).toEqual([]);
+    expect(await card.evaluate((node, prior) => node === prior, cardNode)).toBe(true);
+    expect(await panel.evaluate((node, prior) => node === prior, panelNode)).toBe(true); expect(await panel.innerText()).toBe(panelText);
+    expect(await panel.locator('.m-body').evaluate(node => ({ left: node.scrollLeft, top: node.scrollTop }))).toEqual(paneScroll);
+    expect(await selector.innerText()).toBe(selection);
+    expect(await page.evaluate(() => localStorage.getItem('jira_dashboard_ui_prefs_v1'))).toBe(preferences);
+    await testInfo.attach('strict-persisted-return', { body: JSON.stringify({ scope, catalogReads: 1, heldBoardReads: 0, acceptedBoardReads: 1, simulated: true, realBFCacheObserved: false }), contentType: 'application/json' });
+});

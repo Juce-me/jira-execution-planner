@@ -200,3 +200,29 @@ test('patchStoryCopies patches only keys present in both and keeps identity when
     assert.equal(Object.keys(next[0].fields).sort().join(','), 'epicKey,status');
     assert.equal(next[1], list[1]);
 });
+// Scope membership is independent of transport success: ordinary responses are unknown.
+for (const coverage of ['unknown', 'partial', 'complete']) {
+    test(`scope merge removes absent members only for ${coverage} proof`, async () => {
+        const { mergeEngScopeSnapshot } = await import('../frontend/src/eng/epicRefreshPatch.js');
+        const held = [{ key: 'S-1', fields: { epicKey: 'EPIC-1' } }];
+        const result = mergeEngScopeSnapshot({ held, loaded: held, lane: { status: 'ok', items: [], coverage } });
+        assert.equal(result.items.length, coverage === 'complete' ? 0 : 1);
+    });
+}
+test('scope merge keeps dismissed rows absent, loaded rows current, and equal references stable', async () => {
+    const { mergeEngScopeSnapshot } = await import('../frontend/src/eng/epicRefreshPatch.js');
+    const held = [{ key: 'S-1', fields: { epicKey: 'EPIC-1', summary: 'held' } }];
+    const incoming = [{ ...held[0], fields: { ...held[0].fields } }, { key: 'S-2', fields: { epicKey: 'EPIC-1' } }];
+    const result = mergeEngScopeSnapshot({ held, loaded: held, userRemovedKeys: new Set(['S-2']), lane: { status: 'ok', items: incoming } });
+    assert.equal(result.items[0], held[0]); assert.equal(result.items.length, 1); assert.equal(result.loadedItems.length, 2);
+});
+test('scope merge removes inaccessible lane regardless of coverage but holds unknown access and failures', async () => {
+    const { mergeEngScopeSnapshot } = await import('../frontend/src/eng/epicRefreshPatch.js');
+    const held = [{ key: 'S-1', fields: { epicKey: 'EPIC-1' } }];
+    for (const lane of [{ status: 'denied', projectAccessStatus: 'unknown' }, { status: 'failed' }, { status: 'rate_limited' },
+        { status: 'ok', items: [], coverage: 'complete', meta: { capped: true } }, { status: 'ok', items: [], coverage: 'complete', meta: { epicKeysMissing: ['EPIC-1'] } }]) {
+        assert.equal(mergeEngScopeSnapshot({ held, loaded: held, lane }).items, held);
+    }
+    const result = mergeEngScopeSnapshot({ held, loaded: held, lane: { status: 'denied', projectAccessStatus: 'inaccessible' } });
+    assert.deepEqual(result.items, []); assert.deepEqual(result.loadedItems, []);
+});

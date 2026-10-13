@@ -3183,6 +3183,9 @@ test('multiple groups keep the main controls on one row and settings beside refr
             row.querySelector('.refresh-icon'),
             row.querySelector('.group-gear-button'),
         ];
+        // The reserved freshness slot is its own flex line under the controls; the controls line ends one row gap above it.
+        const slotRect = row.querySelector('.dashboard-freshness-slot').getBoundingClientRect();
+        const controlsBottom = slotRect.top - Number.parseFloat(getComputedStyle(row).rowGap);
         return {
             controlHeight,
             rightOverflow: rowRect.right - headerRect.right,
@@ -3192,7 +3195,7 @@ test('multiple groups keep the main controls on one row and settings beside refr
                 row.querySelector('.jira-export-icon-button'),
                 row.querySelector('.refresh-icon'),
                 row.querySelector('.group-gear-button'),
-            ].map((control) => Math.abs(rowRect.bottom - control.getBoundingClientRect().bottom)),
+            ].map((control) => Math.abs(controlsBottom - control.getBoundingClientRect().bottom)),
             buttons: buttons.map((button) => {
             const rect = button.getBoundingClientRect();
             const iconRect = button.querySelector('svg').getBoundingClientRect();
@@ -5694,4 +5697,75 @@ test('Statistics lazy render exception is not reported as a chunk load failure',
     await expect(page.getByRole('button', { name: 'Retry', exact: true })).toHaveCount(0);
     await expect(page.getByText('This view could not be loaded.')).toHaveCount(0);
     await expect(page.getByText('Reload the page to get the latest version')).toHaveCount(0);
+});
+
+for (const connected of [false, true]) test(`Task9 freshness reserved copy preserves responsive header geometry ${connected ? 'with ENG EPM switch' : 'ENG only'}`, async ({ page }, testInfo) => {
+    const { mockDashboard, openCatchUp, installLifecycleControl, taskPayload } = require('./eng_epic_refresh_fixture');
+    test.setTimeout(120000);
+    const lifecycle = await installLifecycleControl(page), ctx = await mockDashboard(page);
+    if (connected) { const { activeHomeTokenConnection } = require('./epm_home_token_fixture'); ctx.respond('/api/me/connections/home-token', ({json}) => json(activeHomeTokenConnection())); }
+    await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: dashboardJs }));
+    await openCatchUp(page, ctx, { prefs: { groupByInitiativeChoice: false } });
+    await page.addStyleTag({ content: '*,*::before,*::after{animation:none!important;transition:none!important}' });
+    const viewports = [375,698,755,768,999,1000,1010,1023,1400].map(width => ({width,height:900}));
+    const states = ['rest', 'focused', 'applied'];
+    const setSearchState = async state => { const search = page.locator('.header-actions-row .search-input'); await search.fill(state === 'applied' ? 'synthetic' : ''); if (state === 'focused') await search.focus(); else await search.blur(); await waitForVisualSettled(page); };
+    const measure = () => page.locator('.header-actions-row').evaluate(row => {
+        const header = row.closest('.subtitle'), status = row.querySelector('[data-dashboard-freshness-status]'), style = getComputedStyle(row.closest('.container'));
+        const documentScroll = document.documentElement.scrollWidth;
+        const tooltips = [...document.querySelectorAll('.initiative-grouping-tooltip')];
+        const tooltipStyles = tooltips.map(node => node.getAttribute('style'));
+        const tooltipHidden = tooltips.every(node => getComputedStyle(node).visibility === 'hidden');
+        let documentWithoutTooltip;
+        try {
+            tooltips.forEach(node => node.style.setProperty('display', 'none', 'important'));
+            documentWithoutTooltip = document.documentElement.scrollWidth;
+        } finally {
+            tooltips.forEach((node, index) => tooltipStyles[index] === null ? node.removeAttribute('style') : node.setAttribute('style', tooltipStyles[index]));
+        }
+        return { headerHeight: header.getBoundingClientRect().height, title: (()=>{const node=header.querySelector('.subtitle-main'),range=document.createRange();range.selectNodeContents(node);const box=node.getBoundingClientRect();return {width:box.width,height:box.height,textBoxes:[...range.getClientRects()].map(rect=>({left:rect.left,right:rect.right,top:rect.top,bottom:rect.bottom})),scroll:node.scrollWidth,client:node.clientWidth};})(), searchWidth:row.querySelector('.search-input').getBoundingClientRect().width, rowHeight: row.getBoundingClientRect().height,
+            sticky: ['--compact-header-offset','--planning-offset','--planning-sticky-top','--filterbar-sticky-top','--epic-sticky-top','--scenario-sticky-top'].map(key => style.getPropertyValue(key)),
+            buttons: [...row.querySelectorAll('.header-icon-button')].map(node => { const box=node.getBoundingClientRect();return {width:box.width,height:box.height}; }),
+            slotHeight: row.querySelector('.dashboard-freshness-slot').getBoundingClientRect().height, controlsBounds: [...row.querySelectorAll('.search-input,.header-icon-button,.view-mode-control,[data-dashboard-freshness-status]')].map(node => {const r=node.getBoundingClientRect();return {left:r.left,right:r.right};}),
+            status: status ? { scroll:status.scrollWidth,client:status.clientWidth,whiteSpace:getComputedStyle(status).whiteSpace,minWidth:getComputedStyle(status).minWidth,height:status.getBoundingClientRect().height } : null,
+            documentScroll, documentWithoutTooltip, tooltipHidden, viewport: document.documentElement.clientWidth };
+    });
+    const before = {};
+    const dir = path.join(repoRoot,'tmp/freshness-251/task-9-screenshots'); fs.mkdirSync(dir,{recursive:true});
+    for (const viewport of viewports) { await page.setViewportSize(viewport); for (const state of states) { await setSearchState(state); const key = `${viewport.width}-${state}`; before[key]=await measure(); await page.screenshot({path:path.join(dir,`header-reserved-before-${connected}-${key}.png`),fullPage:false}); } }
+    await setSearchState('rest');
+    ctx.respond(call => call.pathname === '/api/tasks-with-team-name' && !call.params.purpose, ({call,json}) => json({ ...taskPayload(call.params,ctx.scenario), ...(call.params.project==='product'?{capped:true}:{}) }));
+    await lifecycle.returnAfter(13*60000);
+    const status = page.locator('[data-dashboard-freshness-status]'); await expect(status).toHaveText(/Checked .* ago; partial results; coverage unknown/);
+    const geometry = {};
+    for (const viewport of viewports) { await page.setViewportSize(viewport); for (const state of states) {
+        await setSearchState(state); const key = `${viewport.width}-${state}`, after=await measure(); geometry[key]={before:before[key],after};
+        console.log(`task9-geometry-${connected}-${key}: ${JSON.stringify(geometry[key])}`);await page.screenshot({path:path.join(dir,`header-reserved-after-${connected}-${key}.png`),fullPage:false});
+        expect.soft(after.headerHeight).toBe(before[key].headerHeight);expect.soft(after.rowHeight).toBe(before[key].rowHeight);expect.soft(after.sticky).toEqual(before[key].sticky);
+        expect.soft(after.buttons).toEqual(before[key].buttons);expect.soft(after.buttons.every(box=>box.width===38&&box.height===38)).toBe(true);
+        expect.soft(after.status.scroll).toBeLessThanOrEqual(after.status.client);expect.soft(after.status.whiteSpace).not.toBe('nowrap');expect.soft(after.status.minWidth).toBe('0px');
+        expect.soft(after.searchWidth).toBe(before[key].searchWidth); expect.soft(after.slotHeight).toBe(before[key].slotHeight); expect.soft(after.controlsBounds.every(box => box.left >= 0 && box.right <= after.viewport + 1)).toBe(true);
+        for (const copy of ['Updates pending', 'Could not check; showing previous data', 'Cached data; check unavailable', 'Checked 24h ago; freshness unconfirmed', 'Checked 24h ago; partial results; coverage unknown']) {
+            const height = await status.evaluate((node, text) => { const previous=node.textContent; node.textContent=text; const height=node.closest('.header-actions-row').getBoundingClientRect().height; node.textContent=previous; return height; }, copy);
+            expect.soft(height).toBe(after.rowHeight);
+        }
+        // Approved #251 baseline exception (2026-10-12): only the hidden Initiative tooltip at 755–1023px; no added overflow.
+        const baselineTooltipException = viewport.width >= 755 && viewport.width <= 1023;
+        if (baselineTooltipException) expect.soft(before[key].documentScroll).toBeLessThanOrEqual(after.viewport + 26);
+        expect.soft(after.documentScroll).toBeLessThanOrEqual(baselineTooltipException ? Math.max(after.viewport, before[key].documentScroll) : after.viewport);
+        expect.soft(after.documentWithoutTooltip).toBeLessThanOrEqual(after.viewport);
+        if (after.documentScroll > after.viewport) expect.soft(after.tooltipHidden).toBe(true);
+        await expect(page.locator('.refresh-icon + .group-gear-button')).toHaveCount(1);
+        await expect(page.locator('.compact-sticky-header [data-dashboard-freshness-status], .compact-sticky-header .refresh-icon')).toHaveCount(0);
+        await page.screenshot({path:path.join(dir,`header-reserved-after-${connected}-${key}.png`),fullPage:false});
+        await page.locator('.header-actions-row .search-input').blur(); await waitForVisualSettled(page);
+        const exportButton = page.getByRole('button',{name:'Open Jira issue menu'}); await exportButton.click();
+        const menu = page.locator('.jira-export-menu'); await expect(menu).toBeVisible();
+        expect.soft(await menu.evaluate(node => {const box=node.getBoundingClientRect();return node.contains(document.elementFromPoint(box.left+box.width/2,box.top+Math.min(15,box.height/2)));})).toBe(true);
+        await exportButton.click();
+    }}
+    await page.setViewportSize({width:1400,height:900});await page.getByRole('button',{name:'Open Jira issue menu'}).click();await expect(page.locator('.jira-export-menu')).toBeVisible();
+    const layered=await page.locator('.jira-export-menu').evaluate(menu=>{const box=menu.getBoundingClientRect();return menu.contains(document.elementFromPoint(box.left+box.width/2,box.top+Math.min(15,box.height/2)));});expect.soft(layered).toBe(true);
+    await page.screenshot({path:path.join(dir,'header-menu-layer.png'),fullPage:false});
+    await testInfo.attach('task9-header-geometry',{body:JSON.stringify(geometry,null,2),contentType:'application/json'});console.log(`task9-header-geometry: ${JSON.stringify(geometry)}`);
 });

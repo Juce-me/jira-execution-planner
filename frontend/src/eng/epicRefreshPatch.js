@@ -118,6 +118,50 @@ export function mergeEpicStories({
     return { items: replaced ? items : held, changedKeys, silentKeys, addedKeys, removedKeys, keptKeys, changedFieldsByKey, changed: replaced };
 }
 
+// A scope response may update known objects without proving that an absent member departed.
+export function mergeEngScopeSnapshot({ held = [], loaded = [], lane = {}, protectedKeys = new Set(),
+    userRemovedKeys = new Set(), requestSnapshot = new Map() }) {
+    if (lane.status === 'denied' && lane.projectAccessStatus === 'inaccessible') {
+        return { items: [], loadedItems: [], changedKeys: [], addedKeys: [], silentKeys: [], removedKeys: held.map(item => item.key), fetchedStories: [], changed: held.length > 0 || loaded.length > 0 };
+    }
+    const meta = lane.meta || {};
+    const complete = lane.coverage === 'complete' && !meta.capped && !meta.epicKeysMissing?.length;
+    const merge = (items, removed) => {
+        if (lane.status !== 'ok') return { items, changedKeys: [], addedKeys: [], removedKeys: [], silentKeys: [], changed: false };
+        const epicKeys = new Set([...items, ...(lane.items || [])].map(item => String(item.fields?.epicKey || '')));
+        let next = items;
+        const result = { changedKeys: [], addedKeys: [], removedKeys: [], silentKeys: [], changed: false };
+        for (const epicKey of epicKeys) {
+            const merged = mergeEpicStories({ held: next, fetched: (lane.items || []).filter(item => String(item.fields?.epicKey || '') === epicKey),
+                epicKey, capped: !complete, protectedKeys, userRemovedKeys: removed, clickSnapshot: requestSnapshot });
+            next = merged.items;
+            for (const name of ['changedKeys', 'addedKeys', 'removedKeys', 'silentKeys']) result[name].push(...merged[name]);
+            result.changed ||= merged.changed;
+        }
+        return { ...result, items: next };
+    };
+    const display = merge(held, userRemovedKeys);
+    const all = merge(loaded, new Set());
+    return { ...display, loadedItems: all.items, changed: display.changed || all.changed, fetchedStories: lane.status === 'ok' ? lane.items || [] : [] };
+}
+
+export function mergeEngScopeEntries({ held = [], fetched = [], lane, protectedKeys = new Set(), requestSnapshot = new Map() }) {
+    if (lane?.status === 'denied' && lane.projectAccessStatus === 'inaccessible') return [];
+    if (lane?.status !== 'ok') return held;
+    const incoming = new Map(fetched.map(item => [item.key, item]));
+    const complete = lane.coverage === 'complete' && !lane.meta?.capped && !lane.meta?.epicKeysMissing?.length;
+    const next = held.flatMap(item => {
+        const snapshot = requestSnapshot.get(item.key);
+        if (protectedKeys.has(item.key) || (snapshot && JSON.stringify(snapshot) !== JSON.stringify(item))) return [item];
+        const replacement = incoming.get(item.key);
+        if (!replacement) return complete ? [] : [item];
+        return [JSON.stringify(item) === JSON.stringify(replacement) ? item : replacement];
+    });
+    const keys = new Set(held.map(item => item.key));
+    next.push(...fetched.filter(item => !keys.has(item.key)));
+    return next.length === held.length && next.every((item, index) => item === held[index]) ? held : next;
+}
+
 export function normalizeEpic(epic) {
     return {
         summary: String(epic?.summary ?? ''),

@@ -1,4 +1,6 @@
+import { getEngReadingPresentation, subscribeEngReading, projectEngTableReadingOrder, setEngReadingTableRows, releaseEngReadingContext } from './engReadingAnchor.js';
 import * as React from 'react';
+import IssueCard from '../issues/IssueCard.jsx';
 import { createPortal } from 'react-dom';
 import useIssueFieldPopover from '../issues/useIssueFieldPopover.js';
 import TrackedExternalLink from '../components/TrackedExternalLink.jsx';
@@ -72,7 +74,7 @@ function CustomCell({ row, column, review, editing, setEditing, focusNew, onHold
     React.useEffect(() => () => { if (holding.current) onHold?.(null); }, []);
     React.useEffect(() => { if (document.activeElement !== ref.current) { setDraft(persistedInput ?? value ?? ''); if (persistedInput === undefined) setError(''); } }, [value, editing, persistedInput]);
     React.useEffect(() => { if (focusNew) ref.current?.focus(); }, [focusNew]);
-    if (row.synthetic || !row.issueId) return <span aria-label="No review value">—</span>;
+    if (row.synthetic || !row.issueId || review.unavailableIssueIds?.includes(row.issueId)) return <span aria-label="No review value">—</span>;
     const commit = () => {
         if (cancelBlur.current) { cancelBlur.current = false; return true; }
         const result = review.setCell(row, column, draft);
@@ -80,7 +82,7 @@ function CustomCell({ row, column, review, editing, setEditing, focusNew, onHold
         if (result.valid) setEditing(null);
         return result.valid;
     };
-    return <><input ref={ref} className={`planning-review-input ${error ? 'invalid' : ''}`} type="text" inputMode={column.type === 'number' ? 'decimal' : 'text'} aria-label={`${column.label} for ${row.key}`} aria-invalid={Boolean(error)} maxLength={column.type === 'text' ? 500 : 16} value={draft} disabled={!review.capabilities?.canSave || review.saving} onFocus={() => { initialInput.current = draft; hold(true); setEditing(row.id); }} onChange={event => { setDraft(event.target.value); const result = review.setCell(row, column, event.target.value); setError(result.error || ''); }} onBlur={() => { hold(false); return commit(); }} onKeyDown={event => { if (event.key === 'Enter') { if (commit()) ref.current.blur(); } else if (event.key === 'Escape') { cancelBlur.current = true; review.setCell(row, column, initialInput.current); setDraft(initialInput.current); setError(''); setEditing(null); ref.current.blur(); } }} />{error && <span className="planning-review-validation" role="alert">{error}</span>}</>;
+    return <><input ref={ref} className={`planning-review-input ${error ? 'invalid' : ''}`} type="text" inputMode={column.type === 'number' ? 'decimal' : 'text'} aria-label={`${column.label} for ${row.key}`} aria-invalid={Boolean(error)} maxLength={column.type === 'text' ? 500 : 16} value={draft} disabled={!review.capabilities?.canSave || review.saving || review.isRowReadable?.(row) === false || review.unavailableIssueIds?.includes(row.issueId)} onFocus={() => { initialInput.current = draft; hold(true); setEditing(row.id); }} onChange={event => { setDraft(event.target.value); const result = review.setCell(row, column, event.target.value); setError(result.error || ''); }} onBlur={() => { hold(false); return commit(); }} onKeyDown={event => { if (event.key === 'Enter') { if (commit()) ref.current.blur(); } else if (event.key === 'Escape') { cancelBlur.current = true; review.setCell(row, column, initialInput.current); setDraft(initialInput.current); setError(''); setEditing(null); ref.current.blur(); } }} />{error && <span className="planning-review-validation" role="alert">{error}</span>}</>;
 }
 
 export function PlanningReviewScopeDialog({ review }) {
@@ -92,16 +94,28 @@ export function PlanningReviewScopeDialog({ review }) {
     </div></div>;
 }
 
-export default function PlanningReviewTable({ epicGroups = [], visibleTasks = [], selectedStoryKeys = new Set(), onToggleStory, onSelectStories, jiraUrl = '', review, getTeamInfo, admittedTeamCount, admittedProjectCount, renderPriorityIcon, renderFieldEditor, onReviewAction, toolbarHost, excludedEpicSet = new Set(), pendingOriginals = null, onHoldRow, confirmedEdit = null, onConfirmedEditHandled, isRowHeld }) {
+export default function PlanningReviewTable({ epicGroups = [], visibleTasks = [], selectedStoryKeys = new Set(), onToggleStory, onSelectStories, jiraUrl = '', review, getTeamInfo, admittedTeamCount, admittedProjectCount, renderPriorityIcon, renderFieldEditor, onReviewAction, toolbarHost, excludedEpicSet = new Set(), pendingOriginals = null, onHoldRow, confirmedEdit = null, onConfirmedEditHandled, isRowHeld, onInteractionChange }) {
     const [mode, setMode] = React.useState('epic');
     const hidden = new Set(review.layouts?.[mode]?.hidden ?? DEFAULT_REVIEW_HIDDEN_COLUMNS);
     const draggedColumn = React.useRef(null);
     const [dropColumn, setDropColumn] = React.useState(null);
     const [sort, setSort] = React.useState([]);
-    const [editing, setEditing] = React.useState(null);
-    const [openMenu, setOpenMenu] = React.useState(null);   // 'add' or a column id
+    const [editing, updateEditing] = React.useState(null);
+    const [openMenu, updateOpenMenu] = React.useState(null);   // 'add' or a column id
     const [addAfter, setAddAfter] = React.useState(null);     // column the Add popover inserts after; null appends (corner)
-    const [dragging, setDragging] = React.useState(false);
+    const [dragging, updateDragging] = React.useState(false);
+    const interactionRef = React.useRef({ editing: null, openMenu: null, dragging: false });
+    const changeInteraction = (key, value, update) => {
+        const wasBlocked = Boolean(interactionRef.current.editing || interactionRef.current.openMenu || interactionRef.current.dragging);
+        interactionRef.current[key] = value;
+        const blocked = Boolean(interactionRef.current.editing || interactionRef.current.openMenu || interactionRef.current.dragging);
+        if (blocked !== wasBlocked) onInteractionChange?.(blocked);
+        update(value);
+    };
+    const setEditing = value => changeInteraction('editing', value, updateEditing);
+    const setOpenMenu = value => changeInteraction('openMenu', value, updateOpenMenu);
+    const setDragging = value => changeInteraction('dragging', value, updateDragging);
+    React.useEffect(() => () => onInteractionChange?.(false), []);
     const [hotBoundary, setHotBoundary] = React.useState(null);
     const [name, setName] = React.useState('');
     const [type, setType] = React.useState('number');
@@ -153,9 +167,14 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
     // The real header and its docked clone are different elements; a menu left open across the flip would sit on a vanished trigger.
     React.useEffect(() => { setOpenMenu(null); setAddAfter(null); setFormError(''); setDragging(false); }, [dock?.header]);
 
+    const readingPresentation = React.useSyncExternalStore(subscribeEngReading, getEngReadingPresentation, () => null);
     const sorted = sortPlanningReviewRows(rows, sort, columns, review.cells, pendingOriginals);
     if (!editing) stableOrder.current = sorted.map(row => row.id);
-    const displayed = editing && stableOrder.current ? [...rows].sort((a, b) => stableOrder.current.indexOf(a.id) - stableOrder.current.indexOf(b.id)) : sorted;
+    const ordered = editing && stableOrder.current ? [...rows].sort((a, b) => stableOrder.current.indexOf(a.id) - stableOrder.current.indexOf(b.id)) : sorted;
+    const displayed = editing || isRowHeld?.() || confirmedEdit?.keys?.length ? ordered : projectEngTableReadingOrder(ordered, readingPresentation, mode);
+    React.useLayoutEffect(() => { setEngReadingTableRows(displayed); }, [displayed]);
+    React.useEffect(() => () => { setEngReadingTableRows([]); releaseEngReadingContext(); }, []);
+    React.useLayoutEffect(() => { if (confirmedEdit?.keys?.length) releaseEngReadingContext(); }, [confirmedEdit]);
     const tbodyRef = React.useRef(null);
     usePlanningRowMotion({ tbodyRef, orderSignature: displayed.map(row => `${row.rowKind}:${row.id || row.key}`).join('|'), pendingCount: pendingOriginals?.size || 0, confirmedEdit, ackConfirmed: onConfirmedEditHandled || (() => {}), isHeld: isRowHeld || (() => false) });
     const totals = planningReviewTotals(rows, columns, review.cells);
@@ -171,14 +190,14 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
         return <span className="planning-review-summary-line">{jiraLink}{title}{awaited ? <StatusPill className={getIssueStatusClassName('Pending', 'planning-review-awaiting')} label={`${awaited} ${awaited === 1 ? 'Story' : 'Stories'} awaited`} /> : null}</span>;
     };
     const field = (row, fieldName, fallback) => !row.synthetic && renderFieldEditor ? (renderFieldEditor({ row, field: fieldName, value: fallback }) ?? fallback) : fallback;
-    const changeMode = next => { if (editing) document.activeElement?.blur(); setEditing(null); setMode(next); setNewColumnId(''); trackedAction('row_mode_changed', { mode: next }); };
+    const changeMode = next => { releaseEngReadingContext(); if (editing) document.activeElement?.blur(); setEditing(null); setMode(next); setNewColumnId(''); trackedAction('row_mode_changed', { mode: next }); };
     const changeSort = (column, additive) => {
         const current = sort.find(item => item.columnId === column.id);
         const direction = !current ? 'asc' : current.direction === 'asc' ? 'desc' : null;   // ascending, descending, off
         const kept = additive ? sort.filter(item => item.columnId !== column.id) : [];
         const next = direction ? [...kept, { columnId: column.id, direction }] : kept;
         if (next.length > 5) { setFormError('Use at most five sort criteria.'); return; }
-        setSort(next); trackedAction('sort_changed', { sortKey: column.custom ? 'custom' : column.id });
+        releaseEngReadingContext(); setSort(next); trackedAction('sort_changed', { sortKey: column.custom ? 'custom' : column.id });
     };
     const addColumn = event => {
         event.preventDefault();
@@ -305,7 +324,8 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
         {formError && !openMenu && <p role="alert" className="planning-review-guidance">{formError}</p>}
         <div ref={scroller} className="planning-review-scroll" tabIndex={0} aria-label="Planning review spreadsheet">
             <table className={`planning-review-table${keyHidden ? ' planning-review-key-hidden' : ''}${dock?.header ? ' planning-review-header-docked' : ''}${dock?.footer ? ' planning-review-footer-docked' : ''}`}>{header()}
-            <tbody ref={tbodyRef}>{displayed.map(row => <tr key={`${row.rowKind}:${row.id || row.key}`} data-review-row={`${row.rowKind}:${row.id || row.key}`} data-issue-key={row.synthetic ? undefined : row.key} className={row.synthetic ? 'planning-review-synthetic' : hasZeroStoryPoints(row) ? 'planning-review-zero-sp' : ''}>
+            <tbody ref={tbodyRef}>{displayed.map(row => <tr key={`${row.rowKind}:${row.id || row.key}`} data-planning-row-key={row.id || row.key} data-row-kind={row.rowKind} data-epic-key={row.synthetic ? undefined : row.rowKind === 'epic' ? row.key : row.epicKey} data-review-row={`${row.rowKind}:${row.id || row.key}`} data-issue-key={row.synthetic ? undefined : row.key} className={row.synthetic ? 'planning-review-synthetic' : hasZeroStoryPoints(row) ? 'planning-review-zero-sp' : ''}>
+                {row.readingDeparture ? <td colSpan={columns.length + 1}><IssueCard task={row.issue} jiraUrl={jiraUrl} teamLabel={row.issue.fields?.teamName || ''} readingDeparture /></td> : <>
                 <td className="planning-review-selection"><Selection row={row} selectedKeys={selectedStoryKeys} onToggleStory={onToggleStory} onSelectStories={onSelectStories} /></td>
                 {columns.map(column => <td key={column.id} className={`planning-review-${column.id}${column.custom ? ' planning-review-custom' : ''} planning-review-${column.type === 'number' ? 'numeric' : 'text'}${movable(column)}`}>
                     {column.custom ? <CustomCell row={row} column={column} review={review} editing={editing === row.id} setEditing={setEditing} onHold={onHoldRow} focusNew={newColumnId === column.id && row === displayed.find(item => !item.synthetic && item.issueId)} />
@@ -322,7 +342,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
                         : column.id === 'assignee' ? (row.synthetic ? '—' : field(row, 'assignee', row.assignee || 'Unassigned'))
                         : column.id === 'status' ? (row.rowKind === 'requirement' ? 'Awaiting creation' : field(row, 'status', <StatusPill label={row.status || '—'} className={getIssueStatusClassName(row.status)} status={row.status} />)) : reviewValue(row, column, review.cells) || '—'}
                 </td>)}
-
+                </>}
             </tr>)}</tbody>{footer}</table>
         </div>
         {dock?.header && createPortal(dockedTable('header', header(true), dockedHeader), document.body)}

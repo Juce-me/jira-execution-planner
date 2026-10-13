@@ -1,4 +1,6 @@
 import * as React from 'react';
+import IssueCard from '../issues/IssueCard.jsx';
+import { subscribeEngReading, getEngReadingPresentation } from './engReadingAnchor.js';
 import EmptyState from '../ui/EmptyState.jsx';
 import LoadingState from '../ui/LoadingState.jsx';
 
@@ -27,6 +29,9 @@ export default function EngView({
     onClearFilters,
     planningTable = null,
 }) {
+    const readingPresentation = React.useSyncExternalStore(subscribeEngReading, getEngReadingPresentation, () => null);
+    const departedTask = readingPresentation?.departure;
+    const detachedDeparture = departedTask && !(planningTable && readingPresentation.rowKey) && (planningTable || !epicGroups.some(group => group.key === readingPresentation.epicKey));
     if (selectedView !== 'eng') {
         return null;
     }
@@ -153,6 +158,8 @@ export default function EngView({
                             )}
                         </div>
                     ))}
+
+                    {detachedDeparture && <IssueCard task={departedTask} jiraUrl={jiraUrl} teamLabel={departedTask.fields?.teamName || ''} readingDeparture />}
 
                     <div style={{marginTop: '3rem', textAlign: 'center'}}>
                         <button onClick={hasNoVisibleTasks && onClearFilters ? onClearFilters : onRetry}>

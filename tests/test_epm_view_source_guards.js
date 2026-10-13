@@ -1077,3 +1077,123 @@ test('EPM auth failures preserve visible projects and rollups and stop chained r
     const projectClear = epmViewDataSource.indexOf('setEpmRollupBoards(null);', projectRequest);
     assert.ok(projectClear > projectRequest, 'selected-project state clears only after a successful response');
 });
+
+function loadAutomaticEpmOwner() {
+    const esbuild = require('esbuild');
+    const setters = [], states = [], refs = []; let stateIndex=0, refIndex=0;
+    const fakeReact = { useState(initial) { const index=stateIndex++; if (!(index in states)) states[index]=typeof initial==='function'?initial():initial; return [states[index], next=>{setters.push({index,value:next});states[index]=typeof next==='function'?next(states[index]):next;}]; }, useRef(value) { const index=refIndex++; return refs[index] ||= {current:value}; }, useMemo: fn=>fn(), useCallback: fn=>fn, useEffect(){} };
+    const code=esbuild.buildSync({entryPoints:[epmViewDataPath],bundle:true,write:false,format:'cjs',platform:'node',external:['react']}).outputFiles[0].text;
+    const module={exports:{}}; new Function('module','exports','require',code)(module,module.exports,name=>name==='react'?fakeReact:require(name));
+    return {useEpmViewData:module.exports.useEpmViewData,setters, render(props) { stateIndex=0;refIndex=0;return module.exports.useEpmViewData(props); }};
+}
+for (const failure of [null, 'null', '500', '409']) test(`EPM automatic transaction is silent and atomic for ${failure || 'success'}`, async () => {
+    const {useEpmViewData,setters}=loadAutomaticEpmOwner(); const calls=[]; let home=0, leases=0;
+    const prior=global.fetch;
+    global.fetch=async (url,options)=>{
+        calls.push({url,options});
+        if(failure==='500')return new Response('{}',{status:500});
+        if(failure==='409')return new Response(JSON.stringify({error:'home_user_token_required'}),{status:409});
+        return new Response(JSON.stringify(url.includes('/rollup')?{projects:[],duplicates:{}}:failure==='null'?null:{projects:[{id:'synthetic',tabBucket:'active',label:'synthetic_label'}],cacheHit:false}),{status:200});
+    };
+    const owner=useEpmViewData({backendUrl:'http://synthetic',selectedView:'epm',epmConfigLoaded:true,hasSavedEpmScope:true,selectedSprint:'synthetic-sprint',epmProjectSearch:'',epmProjectSort:'name',searchQuery:'',onHomeTokenRequired:()=>home++});
+    try {
+        const checks=await owner.refreshEpmView({job:{shouldApply:()=>true,signal:new AbortController().signal,pendingSources:['epm_projects','epm_rollup']},issueEditState:{beginRead(){leases++;return {};},finishRead(){leases--;},isCurrentAggregateRead:()=>true}});
+        assert.ok(Array.isArray(checks)); assert.equal(home,0);assert.equal(leases,0);
+        assert.equal(setters.some(({index})=>[2,3,10,11].includes(index)),false,'no loading/error setters');
+        if(!failure){assert.equal(calls.length,2);assert.ok(calls[0].url.includes('/projects?tab=active'));assert.ok(calls[1].url.includes('/rollup/all?tab=active&sprint=synthetic-sprint'));assert.equal(checks[0].checkKind,'forced');assert.equal(checks[1].checkKind,'unknown');}
+        else {assert.equal(setters.length,0);assert.equal(calls.length,1);assert.equal(checks[0].status,failure==='409'?'denied':'failed');}
+    } finally {global.fetch=prior;}
+});
+
+// Successful metadata is authoritative membership; a retained missing selection cannot authorize a rollup read.
+test('EPM automatic authoritative selected-project removal clears canonical rollup without fallback read', async () => {
+    const {useEpmViewData,setters}=loadAutomaticEpmOwner(), calls=[], prior=global.fetch;
+    global.fetch=async url=>{calls.push(url);return new Response(JSON.stringify({projects:[],cacheHit:false}));};
+    const owner=useEpmViewData({backendUrl:'http://synthetic',initialEpmSelectedProjectId:'synthetic-removed',selectedView:'epm',epmConfigLoaded:true,hasSavedEpmScope:true,selectedSprint:'synthetic-sprint',epmProjectSearch:'',epmProjectSort:'name',searchQuery:''});
+    try {
+        const checks=await owner.refreshEpmView({job:{shouldApply:()=>true,signal:new AbortController().signal,pendingSources:['epm_projects','epm_rollup']}});
+        assert.equal(calls.length,1,'never request removed selected Project or All Projects');
+        assert.deepEqual(setters.find(({index})=>index===1).value,[]);
+        assert.equal(setters.find(({index})=>index===5).value,null);
+        assert.equal(setters.find(({index})=>index===6).value,null);
+        assert.equal(setters.some(({index})=>index===4),false,'retain selected Project id');
+        assert.equal(checks.find(check=>check.source==='epm_rollup').status,'denied');
+    } finally {global.fetch=prior;}
+});
+
+test('EPM automatic current-job retirement rejects staged metadata and rollup and closes lease', async () => {
+    const {useEpmViewData,setters}=loadAutomaticEpmOwner(), prior=global.fetch;let current=true,reads=0,leases=0;
+    global.fetch=async url=>{reads++;if(url.includes('/rollup'))current=false;return new Response(JSON.stringify(url.includes('/rollup')?{projects:[],duplicates:{}}:{projects:[],cacheHit:false}));};
+    const owner=useEpmViewData({backendUrl:'http://synthetic',selectedView:'epm',epmConfigLoaded:true,hasSavedEpmScope:true,selectedSprint:'synthetic-sprint',epmProjectSearch:'',epmProjectSort:'name',searchQuery:''});
+    try {
+        const checks=await owner.refreshEpmView({job:{shouldApply:()=>current,signal:new AbortController().signal,pendingSources:['epm_projects','epm_rollup']},issueEditState:{beginRead(){leases++;return {};},finishRead(){leases--;},isCurrentAggregateRead:()=>true}});
+        assert.equal(reads,2);assert.equal(leases,0);assert.equal(setters.length,0);assert.ok(checks.every(check=>check.status==='ignored'));
+    } finally {global.fetch=prior;}
+});
+
+test('EPM automatic All Projects successful empty metadata prevents cached rollup membership from returning', async () => {
+    const {useEpmViewData,setters}=loadAutomaticEpmOwner(),prior=global.fetch;
+    global.fetch=async url=>new Response(JSON.stringify(url.includes('/rollup')?{projects:[{project:{id:'removed',label:'synthetic_label',tabBucket:'active'},rollup:{initiatives:{},rootEpics:{},orphanStories:[]}}],duplicates:{}}:{projects:[],cacheHit:false}));
+    const owner=useEpmViewData({backendUrl:'http://synthetic',selectedView:'epm',epmConfigLoaded:true,hasSavedEpmScope:true,selectedSprint:'synthetic-sprint',epmProjectSearch:'',epmProjectSort:'name',searchQuery:''});
+    try {
+        const checks=await owner.refreshEpmView({job:{shouldApply:()=>true,signal:new AbortController().signal,pendingSources:['epm_projects','epm_rollup']}});
+        assert.deepEqual(setters.find(({index})=>index===1).value,[]);assert.deepEqual(setters.find(({index})=>index===6).value,[]);assert.equal(setters.find(({index})=>index===5).value,null);assert.ok(checks.every(check=>check.status==='ok'));
+    } finally {global.fetch=prior;}
+});
+
+test('EPM Project picker uses accepted scoped metadata in both newly mounted surfaces', () => {
+    const esbuild = require('esbuild'), React = require('react'), { renderToString } = require('react-dom/server');
+    const code = esbuild.buildSync({ entryPoints: [epmControlsPath], bundle: true, write: false, format: 'cjs', platform: 'node', external: ['react'], loader: { '.jsx': 'jsx' }, jsx: 'transform', jsxFactory: 'React.createElement', jsxFragment: 'React.Fragment' }).outputFiles[0].text;
+    const module = { exports: {} }; new Function('module', 'exports', 'require', code)(module, module.exports, require);
+    const label = props => renderToString(React.createElement(module.exports.EpmControls, { selectedView: 'epm', epmTab: 'active', setEpmTab() {}, epmSelectedProjectId: 'synthetic-missing', selectedEpmProject: null, visibleEpmProjects: [], filteredEpmProjects: [], epmProjectDropdownRefs: { current: {} }, epmSortDropdownRefs: { current: {} }, epmSubGoalFilterDropdownRefs: { current: {} }, ...props }));
+    const loaded = [{ id: 'synthetic-other', name: 'Synthetic Other' }];
+    assert.ok(label({ epmProjectsLoading: true, visibleEpmProjects: loaded }).includes('Loading...'), 'loading shows Loading');
+    assert.equal(label({ epmProjectsLoading: true, visibleEpmProjects: loaded }).includes('Project unavailable'), false);
+    assert.equal(label({ epmProjectsLoading: false, visibleEpmProjects: [] }).includes('Project unavailable'), false, 'empty list must not flash unavailable');
+    assert.ok(label({ epmProjectsLoading: false, visibleEpmProjects: [] }).includes('All projects'));
+    assert.equal(label({ epmProjectsLoading: false, epmProjectsLoaded: false, visibleEpmProjects: loaded }).includes('Project unavailable'), false, 'another scope or a failed read does not establish absence');
+    for (const surface of ['main', 'compact']) {
+        assert.ok(label({ surface, epmProjectsLoading: false, epmProjectsLoaded: true, visibleEpmProjects: [] }).includes('Project unavailable'), 'accepted empty metadata establishes absence even on a fresh picker mount');
+    }
+    assert.ok(label({ epmProjectsLoading: false, epmProjectsLoaded: true, visibleEpmProjects: loaded }).includes('Project unavailable'), 'accepted list without the saved Project names it unavailable');
+    assert.ok(label({ epmProjectsLoading: false, epmSelectedProjectId: '', visibleEpmProjects: loaded }).includes('All projects'));
+});
+
+test('EPM metadata acceptance belongs to the current owner scope and survives only background failures', async () => {
+    const { render } = loadAutomaticEpmOwner(), prior = global.fetch;
+    const props = { backendUrl: 'http://synthetic', initialEpmSelectedProjectId: 'synthetic-missing', selectedView: 'epm', epmConfigLoaded: true, hasSavedEpmScope: true, savedEpmSubGoalKeys: ['synthetic-goal-a', 'synthetic-goal-b'], selectedSprint: 'synthetic-sprint', epmProjectSearch: '', epmProjectSort: 'name', searchQuery: '', onServerConnectionFailure: () => true };
+    const job = { shouldApply: () => true, signal: new AbortController().signal, pendingSources: ['epm_projects', 'epm_rollup'] };
+    try {
+        let owner = render(props);
+        assert.equal(owner.epmProjectsLoaded, false);
+        global.fetch = async () => new Response('{}', { status: 500 });
+        await owner.refreshEpmProjects();
+        owner = render(props);
+        assert.equal(owner.epmProjectsLoaded, false, 'failed initial metadata cannot establish membership');
+        global.fetch = async () => new Response(JSON.stringify({ projects: [], cacheHit: false }));
+        await owner.refreshEpmView({ job });
+        owner = render(props);
+        assert.equal(owner.epmProjectsLoaded, true, 'accepted empty metadata is authoritative');
+        global.fetch = async () => new Response('{}', { status: 500 });
+        await owner.refreshEpmView({ job });
+        owner = render(props);
+        assert.equal(owner.epmProjectsLoaded, true, 'failed automatic work preserves accepted metadata');
+        assert.equal(render({ ...props, backendUrl: 'http://synthetic-other' }).epmProjectsLoaded, false);
+        assert.equal(render({ ...props, savedEpmSubGoalKeys: ['synthetic-goal-a'] }).epmProjectsLoaded, false, 'a changed saved scope has no accepted membership yet');
+        owner.setEpmTab('backlog');
+        assert.equal(render(props).epmProjectsLoaded, false, 'another lifecycle has no accepted membership yet');
+        owner.setEpmTab('active');
+        owner.setEpmSelectedSubGoalKeys(['synthetic-goal-a']);
+        assert.equal(render(props).epmProjectsLoaded, false, 'another sub-goal scope has no accepted membership yet');
+        owner.setEpmSelectedSubGoalKeys([]);
+        owner = render(props);
+        await owner.refreshEpmProjects();
+        assert.equal(render(props).epmProjectsLoaded, false, 'foreground failure clears the discarded metadata evidence');
+        global.fetch = async () => new Response(JSON.stringify({ projects: [], cacheHit: false }));
+        await owner.refreshEpmProjects();
+        owner = render(props);
+        assert.equal(owner.epmProjectsLoaded, true, 'foreground success establishes membership too');
+        owner.setEpmProjects([]);
+        assert.equal(render(props).epmProjectsLoaded, false, 'external metadata clearing also clears its evidence');
+    } finally { global.fetch = prior; }
+});

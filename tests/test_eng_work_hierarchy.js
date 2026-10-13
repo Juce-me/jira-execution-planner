@@ -249,3 +249,26 @@ test('a pending Epic priority edit is sorted by its original value too', async (
     assert.deepEqual(pending.epicGroups.map(item => item.key), ['EPIC-2', 'EPIC-1']);
     assert.equal(pending.epicGroups[1].epic.priority.name, 'Highest');
 });
+
+test('ungrouped presentation holds the pinned Epic slot, Story order and departing row while canonical stays untouched', async () => {
+    const { buildEngWorkHierarchy } = await loadModule();
+    const mk = (key, stories) => group(key, { tasks: stories.map(s => task(s, key)) });
+    const groups = [mk('E5', ['A']), mk('E1', ['B']), mk('E4', ['S2', 'S1'])];
+    const departed = task('S0', 'E4');
+    const model = buildEngWorkHierarchy({
+        sprint: SPRINT, storyEpicGroups: groups, groupByInitiative: false, sort: 'priority',
+        readingPresentation: { epicKey: 'E4', slot: 2, storyKeys: ['S0', 'S1', 'S2'], departure: departed },
+    });
+    assert.equal(model.initiativeGroups, null);
+    assert.equal(model.epicGroups.findIndex(item => item.key === 'E4'), 2);
+    const shown = model.epicGroups.find(item => item.key === 'E4').rows;
+    assert.deepEqual(shown.map(row => row.id), ['S0', 'S1', 'S2']);
+    assert.equal(shown[0].readingDeparture, true);
+    assert.deepEqual(model.canonicalEpicGroups.find(item => item.key === 'E4').rows.map(row => row.id), ['S2', 'S1']);
+    assert.equal(model.counts.realStories, 4);
+});
+
+test('dashboard feeds the projected epic groups, not canonical ones, to EngView', () => {
+    const source = require('node:fs').readFileSync(require('node:path').join(__dirname, '../frontend/src/dashboard.jsx'), 'utf8');
+    assert.match(source, /epicGroups=\{engWorkHierarchy\.epicGroups\}/);
+});

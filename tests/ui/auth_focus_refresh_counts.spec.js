@@ -90,10 +90,12 @@ async function installAuthShell(page) {
 // Counts the three request classes the auth-refresh state machine can affect:
 // the document itself, the auth-shell script, and the throttled refresh POST.
 function attachCounters(page) {
-    const counters = { documents: [], authScripts: [], authPosts: [], pageErrors: [] };
+    const counters = { documents: [], authScripts: [], authPosts: [], assets: [], data: [], pageErrors: [] };
     page.on('request', request => {
         const url = new URL(request.url());
         if (request.resourceType() === 'document') counters.documents.push(url.pathname);
+        if (!url.pathname.startsWith('/api/') && request.resourceType() !== 'document') counters.assets.push(url.pathname);
+        if (url.pathname.startsWith('/api/') && url.pathname !== '/api/auth/refresh') counters.data.push(url.pathname);
         if (url.pathname === '/frontend/dist/auth-focus-refresh.js') counters.authScripts.push(url.pathname);
         if (request.method() === 'POST' && url.pathname === '/api/auth/refresh') counters.authPosts.push(url.pathname);
     });
@@ -124,6 +126,8 @@ async function installClockControl(page) {
 async function installVisibilityControl(page) {
     await page.addInitScript(() => {
         window.__visState = 'visible';
+        window.__focused = true;
+        Object.defineProperty(document, 'hasFocus', { configurable: true, value: () => window.__focused });
         Object.defineProperty(document, 'visibilityState', {
             configurable: true,
             get: () => window.__visState,
@@ -158,11 +162,11 @@ async function longAbsenceEvents(page) {
 }
 
 async function blurWindow(page) {
-    await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+    await page.evaluate(() => { window.__focused = false; window.dispatchEvent(new Event('blur')); });
 }
 
 async function focusWindow(page) {
-    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await page.evaluate(() => { window.__focused = true; window.dispatchEvent(new Event('focus')); });
 }
 
 async function advanceClock(page, ms) {
@@ -493,17 +497,125 @@ test('a long-absence return re-runs the active view fetches on the fresh dashboa
         window.dispatchEvent(new CustomEvent(eventName, { detail: { unfocusedMs: 13 * 60 * 1000 } }));
     }, AUTH_LONG_ABSENCE_EVENT);
 
-    // Poll for the specific proof-of-refetch pathname rather than a bare length increase:
-    // the sprints/product/tech fetches fire together but land in `calls` at slightly
-    // different times, so "length grew by 1" can be true before the tech fetch lands.
-    await expect.poll(() => {
-        const refreshCalls = calls.slice(callsBefore);
-        return refreshCalls.some(call => call.pathname === '/api/tasks-with-team-name')
-            && refreshCalls.some(call => call.pathname === '/api/sprints');
-    }).toBe(true);
+    await expect.poll(() => calls.slice(callsBefore).filter(call => call.pathname === '/api/tasks-with-team-name' && !call.params.purpose)).toHaveLength(2);
     const newCalls = calls.slice(callsBefore);
-    expect(newCalls.some(call => call.pathname === '/api/sprints')).toBe(true);
-    expect(newCalls.some(call => call.pathname === '/api/tasks-with-team-name')).toBe(true);
+    expect(newCalls.filter(call => call.pathname === '/api/sprints')).toHaveLength(0);
+    expect(newCalls.filter(call => call.pathname === '/api/tasks-with-team-name').every(call => call.params.refresh === 'true')).toBe(true);
     expect(documentRequests.filter(pathname => pathname === '/')).toHaveLength(1);
     expect(pageErrors).toEqual([]);
+});
+
+// Owned Catch Up returns collect both forced lanes without resetting mounted data.
+for (const minutes of [11, 12, 13, 8 * 60, 24 * 60]) {
+    for (const auth of ['valid', 'auth_required', 'auth_connection_revoked', 'account_disabled']) {
+        test(`mounted lifecycle ${minutes} minutes / ${auth}`, async ({ page }) => {
+            const { calls } = await installDashboardFixture(page);
+            await installClockControl(page);
+            await installVisibilityControl(page);
+            await installLongAbsenceEventCounter(page);
+            await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: freshDashboardJs }));
+            await page.route('**/frontend/dist/auth-focus-refresh.js', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: authFocusRefreshJs }));
+            let renewalCount = 0;
+            await page.route('**/api/auth/refresh', route => {
+                renewalCount += 1;
+                return route.fulfill({ status: renewalCount === 1 || auth === 'valid' ? 200 : 401, contentType: 'application/json', body: JSON.stringify({ error: auth }) });
+            });
+            const counters = attachCounters(page);
+            await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+            await expect(page.locator('.refresh-icon')).toBeEnabled();
+            const baseline = { documents: counters.documents.length, assets: counters.assets.length, data: counters.data.length, calls: calls.length };
+            await blurWindow(page);
+            await advanceClock(page, minutes * 60 * 1000);
+            await focusWindow(page);
+            await expect.poll(() => counters.authPosts.length).toBe(2);
+            if (auth !== 'valid') {
+                await expect(page.getByRole('alertdialog').getByRole('link', { name: 'Sign in again' })).toBeVisible();
+                expect(counters.data.length - baseline.data).toBe(0);
+                expect(await longAbsenceEvents(page)).toHaveLength(0);
+            } else if (minutes <= 12) {
+                await page.waitForTimeout(100);
+                expect(counters.data.length - baseline.data).toBe(0);
+                expect(await longAbsenceEvents(page)).toHaveLength(0);
+            } else {
+                await expect.poll(() => calls.slice(baseline.calls).filter(call => call.pathname === '/api/tasks-with-team-name' && !call.params.purpose)).toHaveLength(2);
+                expect(calls.slice(baseline.calls).filter(call => call.pathname === '/api/sprints')).toHaveLength(0);
+                expect(await longAbsenceEvents(page)).toHaveLength(1);
+            }
+            await test.info().attach('return-request-counts', { body: Buffer.from(JSON.stringify({ authPosts: counters.authPosts.length - 1, documents: counters.documents.slice(baseline.documents), assets: counters.assets.slice(baseline.assets), data: counters.data.slice(baseline.data) })), contentType: 'application/json' });
+            expect(counters.pageErrors).toEqual([]);
+            expect(counters.documents.length - baseline.documents).toBe(0);
+            expect(counters.assets.slice(baseline.assets)).toEqual([]);
+        });
+    }
+}
+
+test('simulated persisted pageshow keeps the mounted document and starts no auth POST', async ({ page }) => {
+    await installAuthShell(page);
+    await installClockControl(page);
+    await installVisibilityControl(page);
+    const counters = attachCounters(page);
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    const assetsBefore = counters.assets.length;
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
+    await page.waitForTimeout(100);
+    expect(counters.authPosts).toHaveLength(1);
+    expect(counters.documents).toHaveLength(1);
+    expect(counters.assets.length).toBe(assetsBefore);
+});
+
+test('blur during an awaiting auth POST retains one return until focused again', async ({ page }) => {
+    await installAuthShell(page);
+    await installClockControl(page);
+    await installVisibilityControl(page);
+    await installLongAbsenceEventCounter(page);
+    let release;
+    const waiting = new Promise(resolve => { release = resolve; });
+    let attempts = 0;
+    await page.route('**/api/auth/refresh', async route => {
+        attempts += 1;
+        if (attempts > 1) await waiting;
+        await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+    });
+    const counters = attachCounters(page);
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await blurWindow(page);
+    await advanceClock(page, 13 * 60 * 1000);
+    await focusWindow(page);
+    await expect.poll(() => attempts).toBe(2);
+    await blurWindow(page);
+    release();
+    await page.waitForTimeout(100);
+    expect(await longAbsenceEvents(page)).toHaveLength(0);
+    await focusWindow(page);
+    await expect.poll(async () => (await longAbsenceEvents(page)).length).toBe(1);
+    expect(counters.authPosts).toHaveLength(2);
+    expect(counters.documents).toHaveLength(1);
+});
+
+test('failed own renewal retains intent through a short return and retries at sixty seconds', async ({ page }) => {
+    await installAuthShell(page);
+    await installClockControl(page);
+    await installVisibilityControl(page);
+    await installLongAbsenceEventCounter(page);
+    let attempts = 0;
+    await page.route('**/api/auth/refresh', route => {
+        attempts += 1;
+        return route.fulfill({ status: attempts === 2 ? 503 : 200, contentType: 'application/json', body: '{}' });
+    });
+    const counters = attachCounters(page);
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await blurWindow(page);
+    await advanceClock(page, 13 * 60 * 1000);
+    await focusWindow(page);
+    await expect.poll(() => attempts).toBe(2);
+    await page.waitForTimeout(100);
+    await blurWindow(page);
+    await advanceClock(page, 1000);
+    await focusWindow(page);
+    expect(await longAbsenceEvents(page)).toHaveLength(0);
+    expect(counters.authPosts).toHaveLength(2);
+    await advanceClock(page, 59 * 1000);
+    await focusWindow(page);
+    await expect.poll(async () => (await longAbsenceEvents(page)).length).toBe(1);
+    expect(counters.authPosts).toHaveLength(3);
 });

@@ -38,6 +38,7 @@ export function createEngBoardDataState() {
         working: emptyWorking(),
         staleSnapshot: null,
         snapshots: {},
+        staged: null,
     };
 }
 
@@ -379,12 +380,40 @@ export function engBoardDataReducer(state, action) {
                 staleSnapshot: active ? null : state.staleSnapshot,
             };
         }
+        case 'start_automatic': {
+            if (state.authLocked || !state.activeKey) return state;
+            const data = engBoardDataReducer(state, { type: 'start_load', requestId: action.requestId, refresh: true });
+            return { ...state, staged: { requestId: action.requestId, data: { ...data, staged: null } } };
+        }
+        case 'staged_frame': {
+            if (state.staged?.requestId !== action.requestId) return state;
+            let data = state.staged.data;
+            if (action.frame.type === 'start' && data.staleSnapshot
+                && data.staleSnapshot.scopeCohortDigest === action.frame.scopeCohortDigest) {
+                data = { ...data, staleSnapshot: { ...data.staleSnapshot, scopeVersion: action.frame.scopeVersion } };
+            }
+            return { ...state, staged: { ...state.staged, data: applyFrame(data, action.frame) } };
+        }
+        case 'commit_staged': {
+            if (state.staged?.requestId !== action.requestId || state.staged.data.status !== 'success') return state;
+            return { ...state.staged.data, staged: null };
+        }
+        case 'deny_staged': {
+            if (state.staged?.requestId !== action.requestId) return state;
+            const snapshots = { ...state.snapshots }; delete snapshots[state.activeKey];
+            return { ...state, staged: null, snapshots, staleSnapshot: null,
+                working: { ...emptyWorking(), membershipAuthoritative: true, childrenAuthoritative: true },
+                status: 'success', error: null, refreshing: false };
+        }
+        case 'discard_staged':
+            return state.staged?.requestId === action.requestId ? { ...state, staged: null } : state;
         case 'start_load': {
             if (state.authLocked || !state.activeKey) return state;
             const compatible = state.snapshots[state.activeKey] || null;
             return {
                 ...state,
                 requestId: action.requestId,
+                staged: null,
                 generationId: null,
                 status: 'loading',
                 error: null,
@@ -460,6 +489,8 @@ export function createEngBoardDataOwner({
     streamBoard,
     onAuthRequired = () => {},
     createMeasurement = null,
+    beforeCommit = () => {},
+    afterCommit = () => {},
 }) {
     let state = createEngBoardDataState();
     let requestSequence = 0;
@@ -470,8 +501,11 @@ export function createEngBoardDataOwner({
     const emit = action => {
         const next = engBoardDataReducer(state, action);
         if (next === state) return;
+        const committing = ['commit_staged', 'deny_staged'].includes(action.type);
+        const bridge = committing ? beforeCommit(next.working, action.shouldApply, action.deniedEpicKeys, action.scopeDenied ? { scopeDenied: true } : null) : null;
         state = next;
         for (const listener of listeners) listener();
+        if (committing) return afterCommit(bridge, next.working);
     };
 
     const observe = (callback, onSettled = null) => {
@@ -500,21 +534,25 @@ export function createEngBoardDataOwner({
         if (!entry) return;
         entry.controller.abort();
         retireMeasurement(entry);
+        if (entry.automatic) emit({ type: 'discard_staged', requestId: entry.requestId });
         if (activeEntry === entry) activeEntry = null;
     };
 
-    const load = async ({ refresh = false } = {}) => {
+    const load = async ({ refresh = false, source, signal, shouldApply = () => true } = {}) => {
+        const automatic = source === 'automatic';
+        if (automatic && (signal?.aborted || !shouldApply())) return 'ignored';
         if (!state.mounted || state.authLocked || !state.activeGroupId) return 'ignored';
         if (state.scopesByGroup[state.activeGroupId]?.type === 'uninitialized') return 'uninitialized';
+        if (automatic && (state.status === 'loading' || (activeEntry && !activeEntry.automatic))) return 'ignored';
         cancelActive();
         const requestId = ++requestSequence;
         const controller = new AbortController();
-        emit({ type: 'start_load', requestId, refresh });
+        emit({ type: automatic ? 'start_automatic' : 'start_load', requestId, refresh });
         const groupId = state.activeGroupId;
         const scope = state.scopesByGroup[groupId];
         const initialFocus = resolvedFocusColumnId;
         let measurement = null;
-        if (createMeasurement) {
+        if (createMeasurement && !automatic) {
             try {
                 measurement = createMeasurement({
                     groupId,
@@ -526,10 +564,16 @@ export function createEngBoardDataOwner({
             }
         }
         const entry = {
-            requestId, controller, measurement, measurementState: 'active', streamSettled: false,
+            requestId, controller, automatic, measurement, measurementState: 'active', streamSettled: false,
         };
         activeEntry = entry;
+        const current = () => activeEntry === entry && !controller.signal.aborted && state.mounted
+            && !state.authLocked && (!automatic || (shouldApply() && !signal?.aborted && state.staged?.requestId === requestId));
+        const abort = () => { controller.abort(); retireMeasurement(entry); if (automatic) emit({ type: 'discard_staged', requestId }); };
+        signal?.addEventListener('abort', abort, { once: true });
         let measuredFocusColumnId = initialFocus || null;
+        let acceptedTerminal = null;
+        let automaticFailure = false;
         const finishMeasurement = terminal => {
             if (!measurement || entry.measurementState !== 'active' || activeEntry !== entry
                 || !state.mounted || state.authLocked) return;
@@ -548,23 +592,34 @@ export function createEngBoardDataOwner({
                 refresh,
                 signal: controller.signal,
                 onFrame: (nextFrame, frameMeta = {}) => {
-                    if (!state.mounted || state.requestId !== requestId || controller.signal.aborted
-                        || activeEntry !== entry) return;
+                    // Terminal authentication wins even when its request was retired.
+                    if (nextFrame.type === 'error' && nextFrame.code === 'auth_required') {
+                        emit({ type: 'auth_lock' }); onAuthRequired(); retireMeasurement(entry); return;
+                    }
+                    if (!current() || (!automatic && state.requestId !== requestId)) { abort(); return; }
                     observe(() => measurement?.addPayloadBytes?.(frameMeta.payloadBytes));
                     if (nextFrame.type === 'start') {
+                        if (automatic && state.snapshots[state.activeKey]?.scopeCohortDigest
+                            && state.snapshots[state.activeKey].scopeCohortDigest !== nextFrame.scopeCohortDigest) { automaticFailure = true; abort(); return; }
                         observe(() => measurement?.start?.(nextFrame));
                         if (!nextFrame.columns.some(column => column.id === measuredFocusColumnId)) {
                             measuredFocusColumnId = nextFrame.columns[0]?.id || null;
                         }
                     }
+                    if (automatic) emit({ type: 'staged_frame', requestId, frame: nextFrame });
+                    else {
                     emit({ type: 'frame', requestId, frame: nextFrame });
-                    if (state.status === 'error' && state.error?.code === 'invalid_frame') {
+                    }
+                    const frameState = automatic ? state.staged?.data : state;
+                    if (!frameState) return;
+                    if (frameState.status === 'error' && frameState.error?.code === 'invalid_frame') {
+                        automaticFailure = automatic;
                         controller.abort();
-                        finishMeasurement({ outcome: 'error' });
+                        if (automatic) retireMeasurement(entry); else finishMeasurement({ outcome: 'error' });
                         return;
                     }
                     if (nextFrame.type === 'column' && nextFrame.columnId === measuredFocusColumnId
-                        && state.working.columnAuthority[nextFrame.columnId] === true) {
+                        && frameState.working.columnAuthority[nextFrame.columnId] === true) {
                         observe(() => measurement?.focusedContentReady?.());
                     }
                     if (nextFrame.type === 'complete' || nextFrame.type === 'error') {
@@ -574,30 +629,53 @@ export function createEngBoardDataOwner({
                             return;
                         }
                         const success = nextFrame.type === 'complete'
-                            && nextFrame.outcome === 'success' && state.status === 'success';
-                        finishMeasurement({
+                            && nextFrame.outcome === 'success' && frameState.status === 'success';
+                        if (automatic && (!success || !current())) { retireMeasurement(entry); return; }
+                        const terminalSample = {
                             outcome: success ? 'success' : 'error',
                             diagnostics: nextFrame.diagnostics || null,
-                            epicCount: success ? Object.keys(state.working.epicsByKey).length : null,
-                            issueCount: success ? Object.keys(state.working.childrenByKey).length : null,
+                            epicCount: success ? Object.keys(frameState.working.epicsByKey).length : null,
+                            issueCount: success ? Object.keys(frameState.working.childrenByKey).length : null,
                             dependencyDurationMs: null,
-                        });
+                        };
+                        if (automatic) acceptedTerminal = terminalSample;
+                        else finishMeasurement(terminalSample);
                     }
                 },
             });
+            if (automatic) {
+                if (automaticFailure && activeEntry === entry && state.mounted && !state.authLocked && shouldApply() && !signal?.aborted) return 'error';
+                if (!current()) return 'ignored';
+                const outcome = state.staged.data.status;
+                if (outcome === 'success') {
+                    await emit({ type: 'commit_staged', requestId, shouldApply });
+                    if (shouldApply() && !signal?.aborted) finishMeasurement(acceptedTerminal);
+                    else retireMeasurement(entry);
+                }
+                return outcome === 'loading' ? 'error' : outcome;
+            }
             return state.requestId === requestId ? state.status : 'ignored';
         } catch (error) {
-            if (error?.name === 'AbortError' || controller.signal.aborted || state.requestId !== requestId || !state.mounted) return 'ignored';
             if (isAuthError(error)) {
                 emit({ type: 'auth_lock' });
                 onAuthRequired(error);
                 retireMeasurement(entry);
                 return 'auth_locked';
             }
+            if (automaticFailure && activeEntry === entry && state.mounted && !state.authLocked && shouldApply() && !signal?.aborted) return 'error';
+            if (error?.name === 'AbortError' || !current() || (!automatic && state.requestId !== requestId)) return 'ignored';
+            if (automatic && error?.status === 403 && error.code === 'board_permission_denied') {
+                const deniedEpicKeys = Object.keys(state.working.epicsByKey);
+                retireMeasurement(entry); await emit({ type: 'deny_staged', requestId, shouldApply, deniedEpicKeys, scopeDenied: true }); return 'denied';
+            }
+            if (automatic) { retireMeasurement(entry); return 'error'; }
             emit({ type: 'load_failed', requestId, code: error?.code || 'jira_unavailable' });
             finishMeasurement({ outcome: 'error' });
             return 'error';
         } finally {
+            signal?.removeEventListener('abort', abort);
+            if (automatic && entry.measurementState === 'active') retireMeasurement(entry);
+            if (automatic) emit({ type: 'discard_staged', requestId });
             entry.streamSettled = true;
             if (entry.measurementState !== 'finishing' && activeEntry === entry) activeEntry = null;
         }
@@ -633,7 +711,7 @@ export function createEngBoardDataOwner({
             resolvedFocusColumnId = columnId || null;
         },
         load,
-        refresh: () => load({ refresh: true }),
+        refresh: options => load({ ...options, refresh: true }),
         retry: () => load({ refresh: true }),
         changeGroupRevision(groupId, revision) {
             cancelActive();
@@ -664,10 +742,13 @@ export function useEngBoardData({
     onAuthRequired,
     createMeasurement,
     strictScope = null,
+    beforeCommit, afterCommit,
 }) {
+    const commitRef = React.useRef(null); commitRef.current = { beforeCommit, afterCommit };
     const ownerRef = React.useRef(null);
     if (!ownerRef.current) {
-        ownerRef.current = createEngBoardDataOwner({ streamBoard, onAuthRequired, createMeasurement });
+        ownerRef.current = createEngBoardDataOwner({ streamBoard, onAuthRequired, createMeasurement,
+            beforeCommit: (data, guard, deniedKeys, observation) => commitRef.current.beforeCommit?.(data, guard, deniedKeys, observation), afterCommit: (bridge, data) => commitRef.current.afterCommit?.(bridge, data) });
     }
     const owner = ownerRef.current;
     const state = React.useSyncExternalStore(owner.subscribe, owner.getState, owner.getState);

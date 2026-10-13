@@ -15710,8 +15710,8 @@
         "useStatsDerivedB",
         "useStatsDerivedC"
       ],
-      "lineCount": 1395,
-      "lineCeiling": 1395,
+      "lineCount": 1396,
+      "lineCeiling": 1396,
       "interfaces": [
         {
           "exportName": "useStatsDerivedA",
@@ -15824,7 +15824,7 @@
           ],
           "inventory": {
             "source": "frontend/src/stats/useStatsData.js:57",
-            "sourceDigest": "546152e7238b7cc23ee698757f81e27e342562ff080143c757f60b4497f07875",
+            "sourceDigest": "25e3d0f6ccb86988da9016cb977e439953f2dea8ae2646920e49ba440c51a75e",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -15878,7 +15878,7 @@
               "statsView",
               "tasksFetched"
             ],
-            "rationale": "BACKEND_URL is forwarded only as the existing API wrapper base URL. burnoutCacheRef.current indexes burnoutQueryKey; cached is the stored Stats payload tested for presence and passed unchanged to setBurnoutData. No dynamic callback or getter is supplied. issueEditStateRef aggregate read methods keep the same captured token and deferred timing. Task 3 reviewed change: unchanged bindings/aliases except removal of panel-owned burnoutChartRef/pointer and exact scroll effect; retained memo/fetch/cache ownership unchanged. Task 10 (#251) reviewed change: automaticRefreshRef is a ref read at fetch time and never a dependency; it supplies the automatic job (shouldApply) and the explicit-refresh recorder, and held data is kept on failure."
+            "rationale": "BACKEND_URL is forwarded only as the existing API wrapper base URL. burnoutCacheRef.current indexes burnoutQueryKey; cached is the stored Stats payload tested for presence and passed unchanged to setBurnoutData. No dynamic callback or getter is supplied. issueEditStateRef aggregate read methods keep the same captured token and deferred timing. Task 3 reviewed change: unchanged bindings/aliases except removal of panel-owned burnoutChartRef/pointer and exact scroll effect; retained memo/fetch/cache ownership unchanged. Task 10 (#251) reviewed change: automaticRefreshRef is a ref read at fetch time and never a dependency; it supplies the automatic job (shouldApply) and the explicit-refresh recorder, and held data is kept on failure. Issue #262 reviewed change: single-Team summary derives one boolean from the existing scoped Team ids; cache, forwarded inputs, effects and dynamic-bag reads are unchanged."
           },
           "callers": [
             {
@@ -16059,6 +16059,7 @@
             "projectTrackPhaseSummary",
             "projectTrackRangeLabel",
             "projectTrackSeries",
+            "projectTrackSingleTeam",
             "projectTrackTotals",
             "selectAllExcludedCapacityEpics",
             "toggleEffortSplitBucket",
@@ -16189,11 +16190,11 @@
           ],
           "outerParameterCount": 1,
           "expandedInputCount": 120,
-          "returnCount": 40,
+          "returnCount": 41,
           "propCount": 0,
           "outerParameterCeiling": 1,
           "expandedInputCeiling": 120,
-          "returnCeiling": 40,
+          "returnCeiling": 41,
           "propCeiling": 0,
           "unresolved": [
             "forwarded input BACKEND_URL",
@@ -16214,7 +16215,7 @@
           ],
           "inventory": {
             "source": "frontend/src/stats/useStatsData.js:335",
-            "sourceDigest": "546152e7238b7cc23ee698757f81e27e342562ff080143c757f60b4497f07875",
+            "sourceDigest": "25e3d0f6ccb86988da9016cb977e439953f2dea8ae2646920e49ba440c51a75e",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -16338,7 +16339,7 @@
               "statsView",
               "trackApiResult"
             ],
-            "rationale": "BACKEND_URL is forwarded only as the existing API wrapper base URL. cohortCacheRef.current indexes cohortQueryKey; excludedCapacityCacheRef.current indexes progressive scoped sprint keys; projectTrackPhaseCacheRef.current indexes projectTrackPhaseSignature. Cached payload aliases are checked for presence and passed unchanged to existing setters or merge helpers. node aliases the dropdown DOM ref and only calls contains(event.target); forceRefresh aliases a boolean ref. Forwarded sprint ids, isolated team and selected epic keys retain the existing helper argument and setter contracts. All asynchronous callbacks and abort/generation guards are unchanged. Task 3 reviewed change: unchanged bindings/aliases except removal of panel-owned burnoutChartRef/pointer and exact scroll effect; retained memo/fetch/cache ownership unchanged. Task 10 (#251) reviewed change: automaticRefreshRef is a ref read at fetch time and never a dependency; it supplies the automatic job (job.shouldApply) and the explicit-refresh recorder, and held data is kept on failure."
+            "rationale": "BACKEND_URL is forwarded only as the existing API wrapper base URL. cohortCacheRef.current indexes cohortQueryKey; excludedCapacityCacheRef.current indexes progressive scoped sprint keys; projectTrackPhaseCacheRef.current indexes projectTrackPhaseSignature. Cached payload aliases are checked for presence and passed unchanged to existing setters or merge helpers. node aliases the dropdown DOM ref and only calls contains(event.target); forceRefresh aliases a boolean ref. Forwarded sprint ids, isolated team and selected epic keys retain the existing helper argument and setter contracts. All asynchronous callbacks and abort/generation guards are unchanged. Task 3 reviewed change: unchanged bindings/aliases except removal of panel-owned burnoutChartRef/pointer and exact scroll effect; retained memo/fetch/cache ownership unchanged. Task 10 (#251) reviewed change: automaticRefreshRef is a ref read at fetch time and never a dependency; it supplies the automatic job (job.shouldApply) and the explicit-refresh recorder, and held data is kept on failure. Issue #262 reviewed change: single-Team summary derives one boolean from the existing scoped Team ids; cache, forwarded inputs, effects and dynamic-bag reads are unchanged."
           },
           "callers": [
             {
@@ -16588,6 +16589,12 @@
               "lines": [
                 8168
               ]
+            },
+            {
+              "name": "projectTrackSingleTeam",
+              "lines": [
+                6844
+              ]
             }
           ],
           "getters": []
@@ -16671,8 +16678,8 @@
             "bag priorityOrder dynamic deep member"
           ],
           "inventory": {
-            "source": "frontend/src/stats/useStatsData.js:1140",
-            "sourceDigest": "546152e7238b7cc23ee698757f81e27e342562ff080143c757f60b4497f07875",
+            "source": "frontend/src/stats/useStatsData.js:1141",
+            "sourceDigest": "25e3d0f6ccb86988da9016cb977e439953f2dea8ae2646920e49ba440c51a75e",
             "reviewed": true,
             "memberNames": [
               "burndownMetric",
@@ -16701,7 +16708,7 @@
               "showStats",
               "statsView"
             ],
-            "rationale": "chart aliases burnoutChartRef.current in the retained pointer callback and scroll effect. The pointer callback calls getBoundingClientRect() to translate pointer coordinates; the scroll effect reads clientWidth and scrollWidth and writes scrollLeft only. effectivePriorityWeightMap and effectiveStatsData are forwarded unchanged to existing model helpers; priorityOrder is indexed by priority name solely for numeric sorting. No getter, new dependency or delayed interface is added. Task 3 reviewed change: unchanged bindings/aliases except removal of panel-owned burnoutChartRef/pointer and exact scroll effect; retained memo/fetch/cache ownership unchanged."
+            "rationale": "chart aliases burnoutChartRef.current in the retained pointer callback and scroll effect. The pointer callback calls getBoundingClientRect() to translate pointer coordinates; the scroll effect reads clientWidth and scrollWidth and writes scrollLeft only. effectivePriorityWeightMap and effectiveStatsData are forwarded unchanged to existing model helpers; priorityOrder is indexed by priority name solely for numeric sorting. No getter, new dependency or delayed interface is added. Task 3 reviewed change: unchanged bindings/aliases except removal of panel-owned burnoutChartRef/pointer and exact scroll effect; retained memo/fetch/cache ownership unchanged. Issue #262 reviewed change: single-Team summary derives one boolean from the existing scoped Team ids; cache, forwarded inputs, effects and dynamic-bag reads are unchanged."
           },
           "callers": [
             {
@@ -16811,8 +16818,8 @@
         "StatsPanel",
         "default"
       ],
-      "lineCount": 959,
-      "lineCeiling": 959,
+      "lineCount": 962,
+      "lineCeiling": 962,
       "interfaces": [
         {
           "exportName": "StatsPanel",
@@ -16924,6 +16931,7 @@
             "stats.projectTrackPhaseSummary",
             "stats.projectTrackRangeLabel",
             "stats.projectTrackSeries",
+            "stats.projectTrackSingleTeam",
             "stats.projectTrackTotals",
             "stats.selectAllExcludedCapacityEpics",
             "stats.setBurndownMetric",
@@ -16958,17 +16966,17 @@
             "stats.toggleExcludedCapacityEpicKey"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 126,
+          "expandedInputCount": 127,
           "returnCount": 0,
           "propCount": 9,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 126,
+          "expandedInputCeiling": 127,
           "returnCeiling": 0,
           "propCeiling": 9,
           "unresolved": [],
           "inventory": {
             "source": "frontend/src/stats/StatsPanel.jsx:21",
-            "sourceDigest": "cb3727cd7e4205a17b86bc2b8576d5658a4a55929b768e2e59f92ebddd4d0617"
+            "sourceDigest": "ea51b66335cf81701f64f85d2f16d0f2043406f43476787487808779fbb9e9a8"
           },
           "callers": [],
           "remainingAppReaders": [],
@@ -17084,6 +17092,7 @@
             "stats.projectTrackPhaseSummary",
             "stats.projectTrackRangeLabel",
             "stats.projectTrackSeries",
+            "stats.projectTrackSingleTeam",
             "stats.projectTrackTotals",
             "stats.selectAllExcludedCapacityEpics",
             "stats.setBurndownMetric",
@@ -17118,17 +17127,17 @@
             "stats.toggleExcludedCapacityEpicKey"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 126,
+          "expandedInputCount": 127,
           "returnCount": 0,
           "propCount": 9,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 126,
+          "expandedInputCeiling": 127,
           "returnCeiling": 0,
           "propCeiling": 9,
           "unresolved": [],
           "inventory": {
             "source": "frontend/src/stats/StatsPanel.jsx:21",
-            "sourceDigest": "9b809ffba6c72084aab78f0c3407ce93fd5fb8d67253be390430e962126dd172"
+            "sourceDigest": "ea51b66335cf81701f64f85d2f16d0f2043406f43476787487808779fbb9e9a8"
           },
           "callers": [],
           "remainingAppReaders": [],
@@ -19134,20 +19143,20 @@
       "ceiling": 16567
     },
     "stats": {
-      "measured": 2788,
-      "ceiling": 2788
+      "measured": 2792,
+      "ceiling": 2792
     },
     "eng": {
       "measured": 1781,
       "ceiling": 1781
     },
     "uniqueOwners": {
-      "measured": 26598,
-      "ceiling": 26598
+      "measured": 26602,
+      "ceiling": 26602
     },
     "appPlusOwners": {
-      "measured": 34171,
-      "ceiling": 34171
+      "measured": 34175,
+      "ceiling": 34175
     }
   },
   "transfer": {

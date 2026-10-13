@@ -861,6 +861,7 @@ export function useStatsDerivedB({
         [excludedCapacityIssues, projectTrackOpts]
     );
     const projectTrackBoardColumns = activeGroup?.board?.columns;
+    const projectTrackSingleTeam = excludedCapacityScopedTeamIds.length === 1;
     const projectTrackColumnSplit = React.useMemo(() => (projectTrackMode === 'team'
         ? buildProjectTrackColumnSplit(excludedCapacityIssues, projectTrackOpts, projectTrackBoardColumns) : null
     ), [projectTrackMode, excludedCapacityIssues, projectTrackOpts, projectTrackBoardColumns]);
@@ -1129,7 +1130,7 @@ export function useStatsDerivedB({
         cohortAverageLeadDays, cohortMedianLeadDays, cohortWarnings, cohortStatusControls,
         cohortSelectedRowLabel, excludedCapacitySprintOptions, excludedCapacitySprintRange, effortSplitSprintLabel,
         excludedCapacityEpicOptions, projectTrackSeries, projectTrackTotals, projectTrackBreakdown,
-        projectTrackColumnSplit, projectTrackRangeLabel, projectTrackPhaseEpics, projectTrackPhaseSummary,
+        projectTrackColumnSplit, projectTrackSingleTeam, projectTrackRangeLabel, projectTrackPhaseEpics, projectTrackPhaseSummary,
         excludedCapacityEpicCatalog, excludedCapacityEffectiveFilters, excludedCapacityFilterLabel, effortSplitRows,
         excludedCapacityRows, excludedCapacityLineSeries, excludedCapacityModeOverall, excludedCapacityModeSprintRows,
         excludedCapacityModeTeamLineSeries, effortSplitTotals, excludedCapacityWarnings, formatExcludedPoints,

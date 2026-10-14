@@ -58,6 +58,7 @@ Every migration is measured on actual mounted consumers, including shared CSS us
 
 Retained presentation exceptions are explicit:
 
+- Folded ENG Board `.col-strip` retains its chart fill and adds `--hover-ring-inset` without movement. Its centering/breach hint uses `EpicHeaderValueReadout` with `always`, the `board-rail-readout` theme hook and body-portal viewport containment; hover and keyboard focus share Escape dismissal.
 - Board `.ecard` owns its column-border/soft-shadow feedback; `.ecard-open` stays transparent without an inner ring and retains its focus outline and Enter activation.
 - The operator-approved Skip onboarding hover keeps the original darker red `#d9363e`, white ink and token ring only. Resting red and pending/disabled colors stay unchanged; measured hover text is 4.61785:1.
 - Scenario native lane labels retain their operator-approved original blue hover tint and semantic child ink, with the inset ring and no overlay. Green status text retains its existing 3.1621:1 hover contrast instead of degrading under the ordinary overlay; gray metadata remains 5.2434:1. Existing focus paint stays separate.

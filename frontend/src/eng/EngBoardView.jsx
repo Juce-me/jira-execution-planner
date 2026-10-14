@@ -23,6 +23,7 @@ import { trackBoardSmallScreenSupportRequest } from '../analytics/dashboardAnaly
 import EngBoardEpicCard from './EngBoardEpicCard.jsx';
 import EngBoardEpicPanel from './EngBoardEpicPanel.jsx';
 import EngBoardHelp from './EngBoardHelp.jsx';
+import EpicHeaderValueReadout from './EpicHeaderValueReadout.jsx';
 import EngFilterBar from './EngFilterBar.jsx';
 import IssueFieldOptionMenu from '../issues/IssueFieldOptionMenu.jsx';
 import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
@@ -1243,22 +1244,34 @@ export default function EngBoardView({
                                     )}
                                 </div>
 
-                                <button
-                                    type="button"
-                                    className="col-strip"
-                                    title={stripTitle}
-                                    aria-label={`Focus ${column.name}, ${column.epicCount} epics, ${column.epicGroups.some(group => group.childrenIncomplete) ? (column.epicGroups.some(group => group.childrenLoading) ? 'story points pending' : 'story points unavailable') : `${column.storyPoints.toFixed(1)} story points`}`}
-                                    onClick={(event) => focusFoldedRail(event, column.id)}
+                                <EpicHeaderValueReadout
+                                    value={stripTitle}
+                                    always
+                                    suppressed={isFocused || isStarred}
+                                    className="board-rail-readout"
                                 >
-                                    <span
-                                        className="fill"
-                                        style={{ height: `${Math.round((column.epicCount / scaleMax) * 100)}%` }}
-                                    />
-                                    <span className="cap">
-                                        <span className="n">{column.epicCount}</span>
-                                        <span className="vert">{column.name}</span>
-                                    </span>
-                                </button>
+                                    {({ triggerRef, describedBy, pointerProps, focusProps }) => (
+                                        <button
+                                            ref={triggerRef}
+                                            {...pointerProps}
+                                            {...focusProps}
+                                            type="button"
+                                            className="col-strip"
+                                            aria-describedby={describedBy}
+                                            aria-label={`Focus ${column.name}, ${column.epicCount} epics, ${column.epicGroups.some(group => group.childrenIncomplete) ? (column.epicGroups.some(group => group.childrenLoading) ? 'story points pending' : 'story points unavailable') : `${column.storyPoints.toFixed(1)} story points`}`}
+                                            onClick={(event) => focusFoldedRail(event, column.id)}
+                                        >
+                                            <span
+                                                className="fill"
+                                                style={{ height: `${Math.round((column.epicCount / scaleMax) * 100)}%` }}
+                                            />
+                                            <span className="cap">
+                                                <span className="n">{column.epicCount}</span>
+                                                <span className="vert">{column.name}</span>
+                                            </span>
+                                        </button>
+                                    )}
+                                </EpicHeaderValueReadout>
 
                                 <div className="col-body">
                                     {(isFocused || isStarred) && column.epicGroups.map((epicGroup) => (

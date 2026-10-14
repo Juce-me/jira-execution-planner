@@ -4318,7 +4318,11 @@ test('a breach glows and states itself in words in both directions, and a red ac
     // Analysis: 1 epic against min 4.
     const analysis = col(page, 'col-2b3c4d5e');
     await expect(analysis).toHaveClass(/is-breach/);
-    await expect(analysis.locator('.col-strip')).toHaveAttribute('title', /3 under min 4/);
+    await analysis.locator('.col-strip').hover();
+    await expect(page.getByRole('tooltip')).toContainText('3 under min 4');
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('tooltip')).toHaveCount(0);
+    await page.mouse.move(0, 0);
 
     // In progress: 3 epics against max 1. It is the open column, so the words are on the header.
     const inProgress = col(page, 'col-6f708192');
@@ -5994,3 +5998,56 @@ for (const scope of ['Component', 'All work']) test(`simulated persisted ${scope
     expect(await page.evaluate(() => localStorage.getItem('jira_dashboard_ui_prefs_v1'))).toBe(preferences);
     await testInfo.attach('strict-persisted-return', { body: JSON.stringify({ scope, catalogReads: 1, heldBoardReads: 0, acceptedBoardReads: 1, simulated: true, realBFCacheObserved: false }), contentType: 'application/json' });
 });
+
+
+for (const width of [1280, 820]) {
+    test(`folded rail hover and focus use a contained themed hint without changing geometry at ${width}`, async ({ page }) => {
+        await openBoard(page, { reducedMotion: true, width });
+        const rail = page.locator('.col[data-column-id="col-2b3c4d5e"] .col-strip');
+        await rail.scrollIntoViewIfNeeded();
+        await settle(page);
+        const before = await rail.boundingBox();
+        await rail.hover();
+        await settle(page);
+        await page.screenshot({ path: path.join(screenshotDir, `folded-rail-hover-${width}.png`), animations: 'disabled' });
+        await expect(rail).not.toHaveAttribute('title');
+        const hint = page.getByRole('tooltip');
+        await expect(hint).toBeVisible();
+        await expect(hint).toHaveText('Analysis — 3 under min 4. Click to centre this column');
+        await expect(rail).toHaveAttribute('aria-describedby', await hint.getAttribute('id'));
+        const appearance = await rail.evaluate(node => ({
+            shadow: getComputedStyle(node, '::after').boxShadow,
+            ring: getComputedStyle(node).getPropertyValue('--hover-ring-inset').trim(),
+            transform: getComputedStyle(node).transform,
+        }));
+        expect(appearance.shadow).toBe('rgb(47, 128, 237) 0px 0px 0px 1px inset, rgba(47, 128, 237, 0.25) 0px 0px 0px 3px inset');
+        expect(appearance.ring).not.toBe('');
+        expect(appearance.transform).toBe('none');
+        expect(await rail.boundingBox()).toEqual(before);
+        const theme = await hint.evaluate(node => {
+            const style = getComputedStyle(node);
+            const sample = document.createElement('span');
+            sample.style.background = 'var(--bg-secondary)';
+            sample.style.color = 'var(--text-primary)';
+            document.body.append(sample);
+            const expected = getComputedStyle(sample);
+            const matches = style.backgroundColor === expected.backgroundColor && style.color === expected.color;
+            sample.remove();
+            return matches;
+        });
+        expect(theme).toBe(true);
+        const bounds = await hint.boundingBox();
+        expect(bounds.x).toBeGreaterThanOrEqual(8);
+        expect(bounds.y).toBeGreaterThanOrEqual(8);
+        expect(bounds.x + bounds.width).toBeLessThanOrEqual(width - 8);
+        expect(bounds.y + bounds.height).toBeLessThanOrEqual(892);
+        await page.keyboard.press('Escape');
+        await expect(hint).toHaveCount(0);
+        await page.mouse.move(0, 0);
+        await rail.focus();
+        await expect(hint).toBeVisible();
+        await page.keyboard.press('Enter');
+        await expect(page.locator('.col.is-focused')).toHaveAttribute('data-column-id', 'col-2b3c4d5e');
+        await expect(hint).toHaveCount(0);
+    });
+}

@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { createPortal } from 'react-dom';
 
-export default function EpicHeaderValueReadout({ value, suppressed = false, measureSelector = '', nativeSelector = '', children }) {
+export default function EpicHeaderValueReadout({ value, suppressed = false, measureSelector = '', nativeSelector = '', always = false, className = '', children }) {
     const triggerRef = React.useRef(null);
     const readoutRef = React.useRef(null);
     const closeTimerRef = React.useRef(null);
@@ -10,6 +10,7 @@ export default function EpicHeaderValueReadout({ value, suppressed = false, meas
     const focusWithinRef = React.useRef(false);
     const [truncated, setTruncated] = React.useState(false);
     const [visible, setVisible] = React.useState(false);
+    const readoutEnabled = always || truncated;
     const [position, setPosition] = React.useState({ left: 8, top: 8, placed: false, above: false });
     const readoutId = React.useId().replace(/:/g, '');
 
@@ -36,8 +37,8 @@ export default function EpicHeaderValueReadout({ value, suppressed = false, meas
             node.scrollWidth > node.clientWidth + 1 || node.scrollHeight > node.clientHeight + 1
         ));
         setTruncated(previous => (previous === next ? previous : next));
-        if (!next) setVisible(false);
-    }, [measureSelector]);
+        if (!next && !always) setVisible(false);
+    }, [always, measureSelector]);
 
     React.useLayoutEffect(() => {
         measureTruncation();
@@ -141,7 +142,7 @@ export default function EpicHeaderValueReadout({ value, suppressed = false, meas
 
     const show = () => {
         cancelClose();
-        if (truncated && !suppressed) {
+        if (readoutEnabled && !suppressed) {
             setVisible(true);
         }
     };
@@ -166,12 +167,12 @@ export default function EpicHeaderValueReadout({ value, suppressed = false, meas
             scheduleClose();
         },
     };
-    const describedBy = truncated ? `epic-full-value-${readoutId}` : undefined;
-    const readout = visible && truncated && !suppressed ? createPortal(
+    const describedBy = readoutEnabled ? `epic-full-value-${readoutId}` : undefined;
+    const readout = visible && readoutEnabled && !suppressed ? createPortal(
         <span
             ref={readoutRef}
             id={`epic-full-value-${readoutId}`}
-            className={`epic-full-value-readout${position.above ? ' is-above' : ''}`}
+            className={`epic-full-value-readout${position.above ? ' is-above' : ''}${className ? ` ${className}` : ''}`}
             role="tooltip"
             style={{
                 left: `${position.left}px`,

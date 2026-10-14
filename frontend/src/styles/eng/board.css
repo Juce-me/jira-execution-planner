@@ -567,6 +567,29 @@
             padding: 0;
         }
 
+        /* Keep the ring above the chart fill and separate from the breach glow. */
+        .eng-board .col-strip::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            pointer-events: none;
+            z-index: 2;
+        }
+
+        @media (hover: hover) {
+            .eng-board .col-strip:hover:where(:not(:disabled)):where(:not([aria-disabled="true"]))::after {
+                box-shadow: var(--hover-ring-inset);
+            }
+        }
+
+        /* The folded rail keeps its chart fill; its portal hint follows the active theme. */
+        .epic-full-value-readout.board-rail-readout {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border-color: var(--border);
+        }
+
         .eng-board .col-strip .fill {
             position: absolute;
             left: 0;

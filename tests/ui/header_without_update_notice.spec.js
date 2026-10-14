@@ -1,21 +1,19 @@
-const fs = require('node:fs');
 const { test, expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_home_token_fixture');
 
 const baseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
-const screenshotDir = '/tmp/header-update-badge-qa';
-
-test.beforeAll(() => {
-    fs.mkdirSync(screenshotDir, { recursive: true });
-});
-
-test('header update badge compacts while search is active', async ({ page }) => {
+test('header has no release update UI or request while search is active', async ({ page }, testInfo) => {
+    const versionRequests = [];
+    page.on('request', request => {
+        if (new URL(request.url()).pathname === '/api/version') versionRequests.push(request.url());
+    });
     await installDashboardShell(page);
     await page.addInitScript(() => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
             selectedView: 'epm',
             epmTab: 'active',
             selectedSprint: 42,
+            updateDismissedHash: 'legacy-dismissed-revision',
         }));
     });
     await page.route('**/api/**', route => {
@@ -71,26 +69,21 @@ test('header update badge compacts while search is active', async ({ page }) => 
     });
 
     await page.goto(`${baseUrl}/`, { waitUntil: 'networkidle' });
-    const badge = page.locator('.update-badge');
-    await expect(badge).toHaveText('New version available');
-    const expandedBox = await badge.boundingBox();
-    expect(expandedBox).toBeTruthy();
-
+    await expect(page.locator('.subtitle-main')).toContainText('Jira Delivery Planner');
+    const assertNoUpdate = async () => {
+        await expect(page.locator('.update-badge, .update-modal-backdrop')).toHaveCount(0);
+        await expect(page.getByRole('button', { name: 'New version available' })).toHaveCount(0);
+        expect(versionRequests).toEqual([]);
+    };
+    await assertNoUpdate();
     const searchInput = page.getByPlaceholder('Search tickets...').first();
     await searchInput.focus();
-    await expect(badge).toHaveText('Update');
-    const focusedBox = await badge.boundingBox();
-    expect(focusedBox).toBeTruthy();
-    expect(focusedBox.width).toBeLessThan(expandedBox.width - 80);
-    await page.screenshot({ path: `${screenshotDir}/search-focused-update-badge.png`, fullPage: true });
-
-    await searchInput.fill('rfp');
-    await expect(badge).toHaveText('Update');
-    const compactBox = await badge.boundingBox();
-    expect(compactBox).toBeTruthy();
-    expect(compactBox.width).toBeLessThan(expandedBox.width - 80);
-
+    await assertNoUpdate();
+    await page.screenshot({ path: testInfo.outputPath('search-focused-no-update.png'), fullPage: true, animations: 'disabled' });
+    await searchInput.fill('synthetic');
+    await assertNoUpdate();
     await page.getByRole('button', { name: 'Clear search' }).click();
-    await page.screenshot({ path: `${screenshotDir}/search-cleared-update-badge.png`, fullPage: true });
-    await expect(badge).toHaveText('New version available');
+    await expect(searchInput).toHaveValue('');
+    await assertNoUpdate();
+    await page.screenshot({ path: testInfo.outputPath('search-cleared-no-update.png'), fullPage: true, animations: 'disabled' });
 });

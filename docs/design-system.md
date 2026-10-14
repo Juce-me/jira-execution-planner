@@ -122,8 +122,7 @@ The single JSON block is the machine-readable source for paths, symbols, imports
     "status-pill",
     "story-requirement-pill",
     "tech-chip",
-    "uncheck-button",
-    "update-badge"
+    "uncheck-button"
   ],
   "hooks": [
     {
@@ -742,12 +741,6 @@ The single JSON block is the machine-readable source for paths, symbols, imports
       "class": "uncheck-button",
       "paths": [
         "frontend/src/styles/planning/stat-cards.css"
-      ]
-    },
-    {
-      "class": "update-badge",
-      "paths": [
-        "frontend/src/styles/shared/header.css"
       ]
     }
   ]

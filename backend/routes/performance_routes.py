@@ -13,7 +13,7 @@ from backend.auth.jira_auth import AuthError
 from backend.db.engine import DatabaseConfigurationError, session_scope
 from backend.routes import get_jira_server
 from backend.services.load_performance import collection_enabled, load_report, record_load
-from backend.services.update_check import run_git_command
+from backend.services.git_revision import run_git_command
 
 
 bp = Blueprint('performance_routes', __name__)

@@ -356,34 +356,6 @@ h1 {
   letter-spacing: 0.12em;
   opacity: 0.85;
 }
-.update-badge {
-  margin: 0;
-  padding: 0.15rem 0.5rem;
-  border: 1px solid rgba(220, 38, 38, 0.2);
-  color: #b91c1c;
-  background: rgba(220, 38, 38, 0.04);
-  border-radius: 999px;
-  font-size: 0.55rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  font-family: "IBM Plex Mono", monospace;
-  cursor: pointer;
-  white-space: nowrap;
-  transition:
-    padding 0.16s ease,
-    font-size 0.16s ease,
-    letter-spacing 0.16s ease;
-}
-.update-badge.compact {
-  padding: 0.12rem 0.38rem;
-  font-size: 0.47rem;
-  letter-spacing: 0.06em;
-}
-@media (hover: hover) {
-  .update-badge:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
-    box-shadow: var(--hover-overlay), var(--hover-ring);
-  }
-}
 
 /* frontend/src/styles/shared/controls.css */
 .search-input {
@@ -1160,48 +1132,6 @@ h1 {
   flex-direction: column;
   overflow: hidden;
   position: relative;
-}
-.update-modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(19, 16, 12, 0.4);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: var(--modal-popup-z);
-}
-.update-modal {
-  background: #fff;
-  width: min(520px, 90vw);
-  border: 1px solid var(--border);
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.16);
-  padding: 1rem 1.2rem;
-}
-.update-modal-title {
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 0.8rem;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: var(--text-secondary);
-  margin-bottom: 0.6rem;
-}
-.update-modal-body {
-  font-size: 0.85rem;
-  color: var(--text-secondary);
-  margin-bottom: 0.8rem;
-}
-.update-modal-body pre {
-  background: var(--bg-primary);
-  padding: 0.6rem 0.7rem;
-  border: 1px solid var(--border);
-  font-size: 0.7rem;
-  overflow-x: auto;
-  margin-top: 0.5rem;
-}
-.update-modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.6rem;
 }
 @media (hover: hover) {
   .group-gear-button:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {

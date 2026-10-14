@@ -21,7 +21,7 @@ class TestBackendServiceExtraction(unittest.TestCase):
         capacity_service = importlib.import_module('backend.services.capacity')
         sprint_service = importlib.import_module('backend.services.sprints')
         stats_cache_service = importlib.import_module('backend.services.stats_cache')
-        update_check_service = importlib.import_module('backend.services.update_check')
+        git_revision_service = importlib.import_module('backend.services.git_revision')
         priority_weights_service = importlib.import_module('backend.services.priority_weights')
         team_catalog_service = importlib.import_module('backend.services.team_catalog')
         group_config_service = importlib.import_module('backend.services.group_config')
@@ -39,8 +39,7 @@ class TestBackendServiceExtraction(unittest.TestCase):
         self.assertTrue(hasattr(sprint_service, 'deduplicate_sprints_by_name'))
         self.assertTrue(hasattr(stats_cache_service, 'load_stats_cache'))
         self.assertTrue(hasattr(stats_cache_service, 'build_stats_cache_key'))
-        self.assertTrue(hasattr(update_check_service, 'build_update_check_payload'))
-        self.assertTrue(hasattr(update_check_service, 'run_git_command'))
+        self.assertTrue(hasattr(git_revision_service, 'run_git_command'))
         self.assertTrue(hasattr(priority_weights_service, 'build_priority_weights_config'))
         self.assertTrue(hasattr(priority_weights_service, 'normalize_priority_weight_rows'))
         self.assertTrue(hasattr(team_catalog_service, 'normalize_team_catalog'))
@@ -176,15 +175,6 @@ class TestBackendServiceExtraction(unittest.TestCase):
         self.assertNotIn("with open(STATS_CACHE_FILE, 'w') as f:", server_source)
         self.assertNotIn('raw = f"{sprint_name}::{base_jql}::', server_source)
         self.assertNotIn("if os.path.exists(STATS_CACHE_FILE):\n            os.remove(STATS_CACHE_FILE)", server_source)
-
-    def test_update_check_service_logic_lives_outside_jira_server(self):
-        with open(jira_server.__file__, encoding='utf-8') as handle:
-            server_source = handle.read()
-
-        self.assertNotIn('import subprocess', server_source)
-        self.assertNotIn('subprocess.run(', server_source)
-        self.assertNotIn("local_hash, local_err = run_git_command(['rev-parse', 'HEAD'])", server_source)
-        self.assertNotIn("remote_output, remote_err = run_git_command(['ls-remote', UPDATE_CHECK_REMOTE", server_source)
 
     def test_priority_weight_service_logic_lives_outside_jira_server(self):
         with open(jira_server.__file__, encoding='utf-8') as handle:

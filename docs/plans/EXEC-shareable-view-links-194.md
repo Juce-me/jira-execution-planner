@@ -2,7 +2,7 @@
 
 > **Status:** Proposed 2026-10-14. Implementation not started. Awaiting operator review of this plan.
 >
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Per-task status and commits are recorded in the Execution status table below, inside this committed file, not in a scratch ledger.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Per-task status and commits are recorded in the Execution status table below, inside this committed file (see the recording rule there), not in a scratch ledger.
 
 **Goal:** A header Share control copies a readable, self-contained URL for the current ENG view (Catch Up, Planning, Board, Statistics); a recipient in the same workspace who opens it, signing in first if needed, lands in the same view bounded by their own Jira access.
 
@@ -11,6 +11,8 @@
 **Tech Stack:** Python 3.10+ and Flask (stash, redirects); React 19 and esbuild on Node 20.x; `node:test` unit tests bundled through esbuild into a `vm` sandbox; Playwright UI specs; `unittest`.
 
 **Spec:** [`SUPPORT-shareable-view-links-design-194.md`](SUPPORT-shareable-view-links-design-194.md) (validated 2026-10-14; executors read it first). Issue: [#194](https://github.com/Juce-me/jira-execution-planner/issues/194).
+
+**Base:** the code anchors in this plan were drafted against `origin/main` `bd5b2bc2` and re-verified against `origin/main` `4247a3b1` (PR #269, the design-system hover contract; PR #275, the Board card layout; PR #276, removal of the release update notice; PR #278, the people-editor search), which was merged into the branch at `31bf89bf` on 2026-10-14. If `origin/main` has moved again, sync and run the anchor sweep in Task 0 Step 3 before any task; the budget numbers below are for this base and shift by the same offset on another one (see the Budgets constraint).
 
 ## How this plan is organized
 
@@ -27,7 +29,7 @@ This file is the master: status, constraints, file map, contracts and the three 
 
 ## Execution status
 
-Record per-task status and commit SHA here as each task lands (statuses: `planned`, `in-progress`, `done`, `blocked`, `declined`). Rename `EXEC-` to `DONE-` only after the work is merged (`docs/plans/AGENTS.md`).
+Statuses and commit SHAs are written once, in Task 14 Step 9, from `git log --oneline origin/main..HEAD`: every task's first step needs a clean tree, so plan files stay unmodified between tasks (if execution pauses early, record them then in a docs-only commit). Statuses: `planned`, `in-progress`, `done`, `blocked`, `declined`. Rename `EXEC-` to `DONE-` only after the work is merged (`docs/plans/AGENTS.md`).
 
 | Task | Title | Status | Commit | Operator gate |
 | --- | --- | --- | --- | --- |
@@ -49,14 +51,14 @@ Record per-task status and commit SHA here as each task lands (statuses: `planne
 | 13 | Docs, ontology, budgets and plans index | planned | | |
 | 14 | Journeys, full verification and publication | planned | | G3 explicit publish go |
 
-Order: 0, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11a, 11b, 11c, 12, 13, 14, with Task 2 anywhere after Task 1 once G1 is confirmed. Checkpoint tasks end with: report the SHA, files, results and a concrete manual validation scope, then STOP until the operator confirms. If a task fails twice on the same issue, stop, summarize the evidence and ask (`AGENTS.md` section 6).
+Order: 0 (records the G1 answer), 1, 2 (only if G1 is accepted; any time after Task 1 and before Task 14), 3, 4, 5, 6, 7, 8, 9, 10, 11a, 11b, 11c, 12, 13, 14. Checkpoint tasks end with: report the SHA, files, results and a concrete manual validation scope, then STOP until the operator confirms. If a task fails twice on the same issue, stop, summarize the evidence and ask (`AGENTS.md` section 6).
 
 ### Operator gates
 
-- **G1 (Task 2):** the container access-log format change and the `find` key stand or fall together. Confirm design Open item 3 before executing Task 2. If declined: skip the access-log format and the log-redaction extension, still apply Task 2's `docs/PRIVACY.md` edit without the search-text clause (the pending-link cookie needs its notice), apply the "If the operator declines Task 2" edits in Task 3 (they remove `find`), and mark Task 2 `declined`.
+- **G1 (Task 2):** the container access-log format change and the `find` key stand or fall together. G1 is answered at plan review, before Task 0 runs, and Task 0 Step 1 records `G1: accepted <date>` or `G1: declined <date>` in the Execution status. This plan is written for `accepted`. If G1 is declined, do not execute a partially edited plan: the plan is re-issued without `find` and without Task 2 (Tasks 3, 4, 11a, 11c, 12 and 13 change), and the pending-link cookie and link contents still get their `docs/PRIVACY.md` notice.
 - **G2 (Task 12):** the standalone mock of the Share control states is reviewed first; record `Operator acceptance: <date>` in Task 12's Step 2 (in the control slice file) before wiring.
 - **G3 (Task 14):** nothing is pushed and no PR is opened without an explicit operator go (`AGENTS.md` section 10, publication transaction).
-- **Accepted by default unless the operator objects at plan review** (design "Open items"): Share rendered on both header surfaces; the v1 trims (no Board focus, no Board facets, no Statistics display options, no assignee filters); the Planning rows seed as a one-shot initial value; Board `scope` links opening at most one strict stream; extracting the two `dashboard.jsx` helpers; the budget ratchets in the ledger below; one transient lint warning in Task 11b.
+- **Accepted by default unless the operator objects at plan review** (design "Open items"): Share rendered on both header surfaces; the v1 trims (no Board focus, no Board facets, no Statistics display options, no assignee filters); the Planning rows seed as a one-shot initial value; Board `scope` links opening at most one strict stream; extracting the two `dashboard.jsx` helpers; the manifest budget moves in the ledger below; one transient lint warning in Task 11b.
 
 ## Global Constraints
 
@@ -69,24 +71,26 @@ Every task's requirements include this section. Values are copied from the desig
 - **Focus:** capture treats an element as visible only past `T + 12 + 1`; a reveal lands the target at `T + 12` (`SHARE_VIEW_FOCUS_MARGIN`); no highlight CSS is added.
 - **Server:** no new route, no new `EndpointPolicy`; exactly one `@app.before_request` in `jira_server.py`; tests patch `jira_server.<name>` or the helper module, never `auth_routes.<name>` (`bind_server_globals` re-copies globals into the route modules on every request).
 - **Frontend:** exactly six `window.addEventListener('keydown', handler)` registrations in the guarded owner files (the interaction guard uses `document` capture listeners in `shareView/`); ESLint warnings never exceed the 106 ratchet (Task 11b adds one transient `no-unused-vars`, cleared in Task 12); Node tests are `tests/test_*.js` (support files are not named `test_*.js`); new `.json` fixtures under `tests/fixtures/` must be named `*-example-sanitized.json` or `*-template.json` or they are gitignored; the regenerated `frontend/dist/` is committed by every task that changes a file under `frontend/src` (the build id hashes the whole tree) and is never hand-edited; `npm ci` before `npm run build` in a fresh worktree.
-- **Budgets:** `dashboard.jsx` is pinned in `tests/test_codebase_structure_budgets.py` (legacy dict) and by exact equality in `scripts/extraction_lint/owner_budgets.json` (`dashboard.lineCount`, `dashboard.lineCeiling`, `aggregates.appPlusOwners`), so both move together in the same commit; `jira_server.py` is pinned at its exact line count. The expected sequence is in the ledger below; always measure with `wc -l`.
+- **Budgets:** `scripts/extraction_lint/owner_budgets.json` pins `dashboard.jsx` by exact equality (`dashboard.lineCount`, `dashboard.lineCeiling` and `aggregates.appPlusOwners`, which is the dashboard plus `aggregates.uniqueOwners`), so every commit that changes the line count of `dashboard.jsx` moves those numbers to the measured values in the same commit (Tasks 5, 6, 11b and 12 each carry the step and a pin script that measures). `LEGACY_ENTRYPOINT_LINE_BUDGETS` in `tests/test_codebase_structure_budgets.py` holds ceilings (`jira_server.py` 6,487 and `dashboard.jsx` 7,573), not exact pins: on `origin/main` `4247a3b1` the files are 6,455 and 7,493 lines, and this plan's growth (+4 and +54) fits under both, so the plan never edits that dict. If a run reports `<file>: <N> lines exceeds budget <M>` for it (`main` tightened a ceiling after this plan was validated), raise that one entry to `<N>` in the same commit with a one-line reason naming issue #194 and add the test file to that commit. The expected sequence is the ledger below; always measure with `wc -l`.
+- **Design system (from `origin/main` PR #269):** look up an element's kind in `docs/design-system.md` and reuse its component and registered class hook (a new class for an existing kind is a review-stop); hover and focus use the foundation tokens, with no `transform` in `:hover` or `:active` and no `transition: all`; a new font-family, font-size, border-radius value or pill, chip, badge or button class needs a ratchet allowlist entry with a reason and a design-system map entry (follow "Adding an element or write" in `docs/design-system.md`, then `node scripts/generate_design_system_baseline.cjs`); hover and geometry changes ship with settled element-level Playwright assertions for every affected control kind, and an icon button's hover paint follows its visible border shape.
+- **Extraction lint on this base:** `origin/main` `4247a3b1` fails the extraction lint before any change of this plan (no CI job runs it): exit status 1, `0 errors`, 104 warnings, `owner budgets: 0 problems` on the first owner-budgets line and `enforced problems: 4`, namely four ENFORCED lines for `EpicBlock.jsx` and `GroupBoardSettings.jsx` (stale owner-budget digests left by PR #269). A separate bugfix refreshes those two digests; if it has landed on `origin/main` when Task 0 runs, the baseline is exit status 0 and no ENFORCED line instead. Task 0 records the output as the baseline, and `<B>` in the tasks means that baseline's enforced-problem count (4 or 0). Every lint expectation in the tasks means "unchanged from that baseline": a new ENFORCED line, any error, or a warning count above the stated one (never above the 106 ratchet) is a failure. Do not fix the baseline lines in this branch.
 - **Analytics:** two-trigger dataLayer contract; one new event `share_view_action` with fixed enums only; no URL, id, name or key in any payload; the GA4 page URL is never overridden.
 - **Repo hygiene:** commit with `git -c user.name=Juce -c user.email=Juce-me@users.noreply.github.com commit`; no `Co-Authored-By` trailer and no agent or tool branding anywhere (branches, commits, PRs, code, docs); no absolute local path, real email, hostname, secret, token or real Jira key in any committed file; synthetic or sanitized fixtures only; stage with explicit paths (the one exception is `git add -A -- frontend/dist`, because the build renames hashed chunk files and their deletions must be staged); every changed line traces to this plan; after every commit run `git show --stat HEAD` and `git status --short` and read them; never push without an explicit operator go.
-- **Commands:** `$PY` is `.venv/bin/python` (in a worktree without `.venv`, the interpreter named by `JEP_TEST_PYTHON`; a command may run in a fresh shell, so export it again or write the interpreter path in place of `$PY`). Python tests run as `env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest ...` so a symlinked real `.env` cannot leak into tests; type the assignments inline, never through a shell variable, because the multi-word `ATLASSIAN_SCOPES` does not survive word splitting. Node runs the version in `.nvmrc` (`fnm exec --using 20`). Lint is `fnm exec --using 20 bash scripts/extraction_lint/run.sh` (the script is not executable and its budget step reads `JEP_TEST_PYTHON`). Filter Playwright result lines with `grep -E '^ +[0-9]+ (passed|failed|flaky|skipped)'` because several spec titles contain those words. The UI specs read `frontend/dist/*`, so a built, committed `frontend/dist` must exist.
+- **Commands:** `$PY` is `.venv/bin/python` (in a worktree without `.venv`, the interpreter named by `JEP_TEST_PYTHON`; a command may run in a fresh shell, so export it again or write the interpreter path in place of `$PY`). Python tests run as `env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest ...` so a symlinked real `.env` cannot leak into tests; type the assignments inline, never through a shell variable, because the multi-word `ATLASSIAN_SCOPES` does not survive word splitting. Node runs the version in `.nvmrc` (`fnm exec --using 20`). Lint is `fnm exec --using 20 bash scripts/extraction_lint/run.sh` (the script is not executable and its budget step reads `JEP_TEST_PYTHON`). `make test` and `make test-security` hard-code `.venv/bin/python`, which a worktree without a venv lacks: use the explicit `unittest` forms in Tasks 0 and 14. Filter Playwright result lines with `grep -E '^ +[0-9]+ (passed|failed|flaky|skipped)'` because several spec titles contain those words. The UI specs read `frontend/dist/*`, so a built, committed `frontend/dist` must exist.
 - **Live data:** any operator live check is read-only and transient: numbers-only probes, no saved or published screenshots, the operator signs in themselves.
 
 ### Budget ledger (expected values; measure, do not trust)
 
-| After | `dashboard.jsx` lines (legacy pin) | `appPlusOwners` | `jira_server.py` lines (pin) |
+| After | `dashboard.jsx` lines (manifest pin) | `appPlusOwners` | `jira_server.py` lines (under its ceiling) |
 | --- | --- | --- | --- |
-| Baseline `bd5b2bc2` | 7,573 | 34,175 | 6,487 |
-| Task 1 | 7,573 | 34,175 | 6,491 |
-| Task 5 | 7,574 | 34,176 | 6,491 |
-| Task 6 | 7,585 | 34,187 | 6,491 |
-| Task 11b | 7,620 | 34,222 | 6,491 |
-| Task 12 | 7,627 | 34,229 | 6,491 |
+| Baseline `4247a3b1` | 7,493 | 34,095 | 6,455 |
+| Task 1 | 7,493 | 34,095 | 6,459 |
+| Task 5 | 7,494 | 34,096 | 6,459 |
+| Task 6 | 7,505 | 34,107 | 6,459 |
+| Task 11b | 7,540 | 34,142 | 6,459 |
+| Task 12 | 7,547 | 34,149 | 6,459 |
 
-Net: `dashboard.jsx` plus 54 lines and `jira_server.py` plus 4, each ratcheted with a one-line reason; the precedent is the data-freshness work (plus 48).
+Net: `dashboard.jsx` plus 54 lines (7,547 against the legacy ceiling of 7,573) and `jira_server.py` plus 4 (6,459 against 6,487); only the manifest moves. The absolute numbers are for the base above. If Task 0 measures a different baseline, add the same offset to every row: the per-task deltas (+4 in Task 1, +1 in Task 5, +11 in Task 6, +35 in Task 11b, +7 in Task 12) are the contract, and each pin step measures instead of trusting a number. The precedent for growth inside an extraction budget is the data-freshness work (plus 48).
 
 ## Review Focus
 
@@ -98,24 +102,66 @@ The five input classes the design implies, and the task whose tests pin each:
 4. **Ids with comma, colon, percent, plus, quote, space and non-ASCII** (a Team, group or status name): round-trip through the codec and still match the stash pattern. Task 3 (with the Task 1 corpus).
 5. **`navigator.clipboard` undefined, a rejected write, or an encoded URL over the cap**: a selectable fallback field or a refusal message, never a thrown error and never a truncated URL. Task 12 and Task 3.
 
+## Acceptance criteria and verification traceability
+
+Each acceptance criterion and each claim of the design's "Verification" table is pinned by the tests below. A test is named by its exact title (`test(...)`, `it(...)`, `def test_...` or a Playwright title) and the task whose steps create it; the design holds the full wording of every criterion and claim. A title that is not in the named task's text means the plan drifted: stop and report. Task 14 runs all of them as part of the full suites.
+
+### Acceptance criteria
+
+| AC | Criterion (short) | Tests: task and title |
+| --- | --- | --- |
+| AC1 | The copied URL reproduces every key that applies to the link's mode, whatever the recipient's saved view | Task 3: `round trip: every key, one at a time`<br>Task 3: `round trip: worst-case full Catch Up, Planning, Board and Statistics states`<br>Task 4: `Catch Up plan: find, lanes, initiatives, sort and alerts, each the default when omitted`<br>Task 4: `Statistics plan: stats and range; keys outside the resolved mode are absent`<br>Task 11a: `a scope-changing Catch Up link applies scope, fields, Teams and facets in four separate stages`<br>Task 11a: `Board scope is applied only when ready, and a Board link has no Teams or facets stage`<br>Task 11a: `Statistics writes its view and range, and a source-only view skips Stage C silently`<br>Task 11c: `a link for another Department and Sprint keeps its fields, Teams and filters through the group-state reset (V5)`<br>Task 11c: `a ${mode} link applies its mode and fields whatever the recipient's saved mode`<br>Task 12: `a click in the main header copies the link for the open view and sends one private event` |
+| AC2 | A signed-out recipient signs in and lands in the same view (900 s stash, 4,093-byte cookie, a failed callback keeps the stash) | Task 1: `test_full_login_return_chain_applies_the_link_once`<br>Task 1: `test_ttl_boundary_899_900_901_seconds`<br>Task 1: `test_failed_callback_keeps_the_stash_and_a_retry_applies_it`<br>Task 1: `test_pending_share_view_cookie_stays_under_the_browser_limit_through_the_login_hop` |
+| AC3 | An unresolved group or Sprint applies nothing else; other unresolved keys are skipped with one notice naming categories only | Task 4: `an unresolved group and sprint report both categories, group first`<br>Task 11a: `the first-run popup pauses the link; a group the recipient does not have drops it with the group category on the recipient surface`<br>Task 11a: `an unresolvable Sprint drops the link and applies nothing`<br>Task 11a: `a link that cannot start names no category, so the notice stays neutral`<br>Task 11c: `a first-run recipient is held through the Department popup, then the link is dropped and the Catch Up tour waits for i`<br>Task 12: `an opened link that cannot be applied shows its notice under the control, and Dismiss closes it`<br>Task 12: `notice copy reads its approved strings and names categories only` |
+| AC4 | Opening a link issues no request the manual navigation would not, no write outside the read allowlist, and strips the link before `gtm.js` | Task 11c: `a scope-changing link issues no default-scope load and the requests of a manual run pre-seeded to the same state (V6)`<br>Task 11c: `opening a link performs no mutating request outside the read-only allowlist, and reaches no preference or write route (V1)`<br>Task 11c: `opening the link strips its keys from the URL before Tag Manager is requested (V3)` |
+| AC5 | A consumed link never re-applies (reload, connection recovery, reauth); an auth lock or an early reload drops a pending one | Task 5: `a reload with the stripped URL yields absent`<br>Task 11c: `the link overrides the staged auth and connection recovery capsules (V7)`<br>Task 11c: `a terminal auth lock drops the pending link and leaves the lock unchanged (V16)` |
+| AC6 | The Share control matches the header cluster on both surfaces; the painted-ink check passes in headed Firefox and WebKit | Task 12: `both surfaces carry the shared header icon-button classes and nothing else, with the 38 by 38 geometry of their siblings`<br>Task 12: `hover paints the foundation overlay and ring inside the visible rounded border, like its Refresh sibling, on both surfaces`<br>Task 12: `the link and copied glyphs are centred in their 38 by 38 frame at rest and on hover, on both surfaces`<br>Task 12: `Share adds no compact-header height, moves no sticky offset and adds no horizontal overflow`<br>Task 12: `the main and the compact Share controls hover like their header siblings in the real app` |
+| AC7 | `decode(encode(state))` equals the state for every key and vector, and the encoder's output passes the stash validator through one corpus | Task 1: `test_every_corpus_accept_is_stashed_verbatim`<br>Task 1: `test_every_corpus_reject_and_stash_only_reject_is_not_stashed`<br>Task 3: `round trip: every key, one at a time`<br>Task 3: `round trip: worst-case full Catch Up, Planning, Board and Statistics states`<br>Task 3: `round trip: 400 random states built from awkward text`<br>Task 3: `corpus: the codec cap equals the stash cap and every encoder output matches the stash pattern`<br>Task 3: `corpus: queries the stash accepts are never invalid links`<br>Task 3: `corpus: every query the stash rejects is not applied by the decoder` |
+| AC8 | No link-derived value in analytics; access logs omit the query and the Referer; `docs/PRIVACY.md` lists the new data | Task 2: `test_entrypoint_access_log_format_has_no_query_referer_or_raw_client_atoms`<br>Task 2: `test_entrypoint_access_log_line_has_the_path_but_no_query_or_referer`<br>Task 2: `test_werkzeug_logs_redact_share_view_link_query`<br>Task 2, Step 10: Update `docs/PRIVACY.md`<br>Task 11c: `opening a link performs no mutating request outside the read-only allowlist, and reaches no preference or write route (V1)`<br>Task 12: `a click in the main header copies the link for the open view and sends one private event` |
+
+### Verification claims
+
+| V | Claim | Tests: task and title |
+| --- | --- | --- |
+| V1 | No write on apply | Task 11b: `shareView reaches no write API, preference save or CSRF helper`<br>Task 11c: `opening a link performs no mutating request outside the read-only allowlist, and reaches no preference or write route (V1)` |
+| V2 | Redirect target always `/` | Task 1: `test_hostile_stale_or_corrupt_stash_values_always_redirect_to_root`<br>Task 1: `test_hostile_queries_in_a_fresh_stash_return_root`<br>Task 1: `test_authenticated_login_visit_without_a_usable_stash_redirects_to_root` |
+| V3 | Strip before Tag Manager | Task 11c: `opening the link strips its keys from the URL before Tag Manager is requested (V3)` |
+| V4 | No `clearEngFilters`, no selector interpolation | Task 7: `V4: the capture never clears filters, opens Jira, navigates, moves focus or builds a selector from a value`<br>Task 8: `V4: hostile ids are compared as data, so they neither throw nor match another node`<br>Task 8: `V4: the focus modules never clear filters, open Jira, navigate, move focus or build a selector from a value`<br>Task 11b: `the link apply never calls the App helpers that reset filters, emit analytics or leave the page`<br>Task 11b: `no shareView selector interpolates a value into its selector string` |
+| V5 | Staged apply survives group-state resets | Task 11a: `a scope-changing Catch Up link applies scope, fields, Teams and facets in four separate stages`<br>Task 11c: `a link for another Department and Sprint keeps its fields, Teams and filters through the group-state reset (V5)` |
+| V6 | Hold prevents a wasted load | Task 11c: `a scope-changing link issues no default-scope load and the requests of a manual run pre-seeded to the same state (V6)` |
+| V7 | Link overrides the capsules | Task 11a: `a pending auth or Planning recovery capsule holds the link until the capsule is consumed`<br>Task 11c: `the link overrides the staged auth and connection recovery capsules (V7)` |
+| V8 | Cookie budget | Task 1: `test_cookie_guard_pops_the_stash_above_the_budget_and_keeps_the_rest`<br>Task 1: `test_pending_share_view_cookie_stays_under_the_browser_limit_through_the_login_hop`<br>Task 1: `test_cookie_guard_pops_a_replaced_stash_too` |
+| V9 | TTL | Task 1: `test_ttl_boundary_899_900_901_seconds` |
+| V10 | Group or sprint unresolved applies nothing | Task 4: `an unresolved group and sprint report both categories, group first`<br>Task 11a: `the first-run popup pauses the link; a group the recipient does not have drops it with the group category on the recipient surface`<br>Task 11a: `an unresolvable Sprint drops the link and applies nothing` |
+| V11 | No ids, names or tokens in the link | Task 3: `V11: no id, name or token key can appear in a link (parity with FORBIDDEN_VIEW_PAYLOAD_KEYS)`<br>Task 3: `test_no_link_key_is_a_forbidden_view_payload_key` |
+| V12 | Analytics fixed enums and no link values | Task 10: `share_view_action is a canonical userevent whose params accept only their fixed tokens`<br>Task 10: `share view analytics builder emits only the fixed bounded contract`<br>Task 10: `share view action pushes one fixed userevent through the dataLayer and drops anything off-enum`<br>Task 10: `useDashboardAnalytics exposes analyticsReady and trackShareViewAction; events sent before it flips are dropped`<br>Task 11c: `opening a link performs no mutating request outside the read-only allowlist, and reaches no preference or write route (V1)` |
+| V13 | Unavailable mode is reported, not forced | Task 4: `Planning needs a sprint that is not closed, Statistics one that is not future, Board always`<br>Task 4: `scenario, epm and unknown modes fall back to Catch Up and report mode`<br>Task 11a: `a Planning link for a closed Sprint is applied as Catch Up and reports the mode`<br>Task 11a: `a Statistics link whose Sprint is still in the future is applied as Catch Up: Teams and facets resolve for the resolved mode` |
+| V14 | Share visibility | Task 12: `the compact header takes the control over exactly when it appears and two controls are never on screen`<br>Task 12: `the control is hidden in EPM and in Scenario and returns in the ENG modes` |
+| V15 | EPM-saved recipient lands in ENG | Task 11a: `a recipient whose saved view is EPM waits for the Home token read, then lands in ENG without the one-shot restore`<br>Task 11c: `a recipient whose saved view is EPM, and one whose saved flags are Scenario, end in the link ENG view (V15, RF2)` |
+| V16 | Cancel and lifecycle | Task 9: `a deliberate interaction before Stage D starts cancels the link and keeps what was applied`<br>Task 11a: `a deliberate interaction before the reveal cancels the link without a notice; scrolling alone does not`<br>Task 11c: `a deliberate interaction while the scope loads cancels the link and keeps what was applied (V16)`<br>Task 11c: `a terminal auth lock drops the pending link and leaves the lock unchanged (V16)`<br>Task 11c: `a first-run recipient is held through the Department popup, then the link is dropped and the Catch Up tour waits for i` |
+| V17 | Encoding vectors | Task 3: `decode: every reviewed vector`<br>Task 3: `decode: unknown and prototype keys never reach the state, and nothing throws on junk`<br>Task 3: `decode: %2C stays inside an atom while a raw comma splits (the platform parser cannot tell them apart)`<br>Task 3: `RF4: ids with comma, colon, percent, plus, quote, space and non-ASCII round trip and match the stash pattern` |
+| V18 | Access-log format | Task 2: `test_entrypoint_access_log_format_has_no_query_referer_or_raw_client_atoms`<br>Task 2: `test_entrypoint_access_log_line_has_the_path_but_no_query_or_referer` |
+| V19 | Persistence per mode | Task 11c: `the link Department becomes the local favorite in JSON mode and never writes the server favorite in DB mode (V19)` |
+| V20 | Alert reveal | Task 7: `V20: a group inside a collapsed card or body is never visible, even though its box is on screen`<br>Task 7: `V20: followup story groups and future-routed Epic groups resolve to different anchors`<br>Task 7: `V20: a name-keyed group emits no alertTeam; the two placeholders and real ids still do`<br>Task 7: `V20: a collapsed card keeps an on-screen group box but is never the target`<br>Task 7: `V20: followup Story groups and future-routed Epic groups name different anchors; a name-keyed group names no Team`<br>Task 8: `V20: followup Story groups and future-routed Epic groups are revealed separately even when they share a Team id` |
+
 ## File map
 
-Generated from each task's own `Files` block; the task sections are authoritative. Every task that changes `frontend/src` also commits the regenerated `frontend/dist/`.
+Generated from each task's own `Files` block; the task sections are authoritative. Every task that changes `frontend/src` also commits the regenerated `frontend/dist/`. The last column lists existing tests a task extends or re-runs as a regression gate.
 
-| Task | Creates | Modifies | Extends existing tests |
+| Task | Creates | Modifies | Existing tests extended or re-run |
 | --- | --- | --- | --- |
-| 1 | `backend/auth/share_view_stash.py`<br>`tests/fixtures/share-view-query-corpus-example-sanitized.json`<br>`tests/test_share_view_stash.py` | `jira_server.py`<br>`backend/routes/auth_routes.py`<br>`tests/oauth_test_helpers.py`<br>`tests/test_codebase_structure_budgets.py` | `tests/test_auth_entry_page.py`<br>`tests/test_auth_routes.py`<br>`tests/test_db_oauth_cutover.py` |
+| 1 | `backend/auth/share_view_stash.py`<br>`tests/fixtures/share-view-query-corpus-example-sanitized.json`<br>`tests/test_share_view_stash.py` | `jira_server.py`<br>`backend/routes/auth_routes.py`<br>`tests/oauth_test_helpers.py` | `tests/test_auth_entry_page.py`<br>`tests/test_auth_routes.py`<br>`tests/test_db_oauth_cutover.py` |
 | 2 |  | `scripts/docker-entrypoint.sh`<br>`jira_server.py`<br>`docs/PRIVACY.md` | `tests/test_container_packaging.py`<br>`tests/test_logging_migration.py` |
-| 3 | `frontend/src/shareView/viewDefaults.js`<br>`frontend/src/shareView/codec.js`<br>`tests/test_share_view_codec.js` |  |  |
+| 3 | `frontend/src/shareView/viewDefaults.js`<br>`frontend/src/shareView/codec.js`<br>`tests/test_share_view_codec.js`<br>`tests/test_share_view_stash.py` |  |  |
 | 4 | `frontend/src/shareView/resolver.js`<br>`tests/test_share_view_resolver.js` |  |  |
-| 5 | `frontend/src/shareView/store.js`<br>`frontend/src/shareView/entry.js`<br>`tests/test_share_view_store.js` | `frontend/src/dashboard.jsx`<br>`tests/test_codebase_structure_budgets.py`<br>`scripts/extraction_lint/owner_budgets.json` |  |
-| 6 | `tests/test_share_view_extraction_characterization.js` | `frontend/src/dashboard.jsx`<br>`tests/test_codebase_structure_budgets.py`<br>`scripts/extraction_lint/owner_budgets.json` |  |
+| 5 | `frontend/src/shareView/store.js`<br>`frontend/src/shareView/entry.js`<br>`tests/test_share_view_store.js` | `frontend/src/dashboard.jsx`<br>`scripts/extraction_lint/owner_budgets.json` |  |
+| 6 | `tests/test_share_view_extraction_characterization.js` | `frontend/src/dashboard.jsx`<br>`scripts/extraction_lint/owner_budgets.json` |  |
 | 7 | `frontend/src/shareView/focusCapture.js`<br>`tests/test_share_view_alert_anchors.js`<br>`tests/test_share_view_focus_capture.js`<br>`tests/ui/share_view_focus.spec.js`<br>`tests/share_view_fake_dom.js`<br>`tests/share_view_alert_panel_fixture.js` | `frontend/src/eng/EngAlertsPanel.jsx` | `tests/ui/eng_alerts_panel_summary.spec.js` |
 | 8 | `frontend/src/shareView/focusReveal.js`<br>`tests/test_share_view_focus_reveal.js`<br>`tests/test_share_view_planning_rows_seed.js` | `frontend/src/eng/PlanningReviewTable.jsx`<br>`tests/ui/share_view_focus.spec.js` | `tests/ui/planning_review_table.spec.js` |
 | 9 | `frontend/src/shareView/applyMachine.js`<br>`tests/test_share_view_apply_machine.js` |  |  |
 | 10 |  | `frontend/src/analytics/events.js`<br>`frontend/src/analytics/dashboardAnalytics.js`<br>`docs/README_ANALYTICS.md`<br>`docs/plans/SUPPORT-ga4-user-configuration.md` | `tests/test_analytics_events.js`<br>`tests/test_analytics_source_guards.js` |
-| 11 | `frontend/src/shareView/applyController.js`<br>`frontend/src/shareView/captureState.js`<br>`frontend/src/shareView/interactionGuard.js`<br>`frontend/src/shareView/useShareViewApply.js`<br>`tests/test_share_view_apply_controller.js`<br>`tests/test_share_view_capture_state.js`<br>`tests/test_share_view_interaction_guard.js`<br>`tests/test_share_view_apply_hook.js`<br>`tests/test_share_view_source_guards.js`<br>`tests/test_share_view_onboarding_wait.js`<br>`tests/ui/shareable_view_links.spec.js` | `tests/react_hook_harness.js`<br>`frontend/src/dashboard.jsx`<br>`frontend/src/onboarding/useOnboardingTour.js`<br>`tests/test_dashboard_freshness_interactions.js`<br>`tests/test_codebase_structure_budgets.py`<br>`scripts/extraction_lint/owner_budgets.json` |  |
-| 12 | `assets/mockups/share-view-control-194.html`<br>`frontend/src/shareView/ShareViewButton.jsx`<br>`frontend/src/shareView/noticeCopy.js`<br>`tests/test_share_view_control.js`<br>`tests/ui/share_view_control_harness.jsx`<br>`tests/ui/share_view_control.spec.js` | `frontend/src/dashboard.jsx`<br>`frontend/src/styles/shared/controls.css`<br>`tests/ui/codebase_structure_smoke.spec.js`<br>`tests/test_codebase_structure_budgets.py`<br>`scripts/extraction_lint/owner_budgets.json` |  |
+| 11 | `frontend/src/shareView/applyController.js`<br>`frontend/src/shareView/captureState.js`<br>`frontend/src/shareView/interactionGuard.js`<br>`frontend/src/shareView/useShareViewApply.js`<br>`tests/test_share_view_apply_controller.js`<br>`tests/test_share_view_capture_state.js`<br>`tests/test_share_view_interaction_guard.js`<br>`tests/test_share_view_apply_hook.js`<br>`tests/test_share_view_source_guards.js`<br>`tests/test_share_view_onboarding_wait.js`<br>`tests/ui/shareable_view_links.spec.js` | `tests/react_hook_harness.js`<br>`frontend/src/dashboard.jsx`<br>`frontend/src/onboarding/useOnboardingTour.js`<br>`tests/test_dashboard_freshness_interactions.js`<br>`scripts/extraction_lint/owner_budgets.json` |  |
+| 12 | `assets/mockups/share-view-control-194.html`<br>`frontend/src/shareView/ShareViewButton.jsx`<br>`frontend/src/shareView/noticeCopy.js`<br>`tests/test_share_view_control.js`<br>`tests/ui/share_view_control_harness.jsx`<br>`tests/ui/share_view_control.spec.js` | `frontend/src/dashboard.jsx`<br>`frontend/src/styles/shared/controls.css`<br>`tests/ui/codebase_structure_smoke.spec.js`<br>`tests/ui/design_system_hover_eng.spec.js`<br>`scripts/extraction_lint/owner_budgets.json` |  |
 | 13 | `docs/features/shareable-view-links.md` | `docs/features/README.md`<br>`docs/features/eng-workflows.md`<br>`README.md`<br>`docs/architecture.md`<br>`docs/SUPPORT-atlassian-oauth-setup.md`<br>`docs/ontology.md`<br>`docs/TODO.md`<br>`docs/plans/README.md` | |
 | 14 | | `docs/plans/EXEC-shareable-view-links-194.md`<br>`docs/plans/README.md` | |
 
@@ -133,7 +179,8 @@ Names one task produces and another consumes. Each is defined in the producing t
 | Task 8 | `revealShareViewFocus`; the Planning rows seed in `PlanningReviewTable.jsx` | Task 11a |
 | Task 9 | `stepApplyMachine` | Task 11a |
 | Task 10 | `trackShareViewAction`, `buildShareViewActionParams`; `analyticsReady` from `useDashboardAnalytics` | Task 11a and 11b |
-| Task 11 | `useShareViewHold`, `useShareViewApply` (result `{ notice, dismissNotice, captureShareUrl, shareDisabled, applyTerminal }`), `useShareViewApplyTerminal`, `useShareViewPlanningTableKey`; `commitSprintSelection` and `persistTeamSelection` inside `App()` | Task 12 |
+| Task 6 | `commitSprintSelection` and `persistTeamSelection`, closures inside `App()` shared with the click handlers | Tasks 11a and 11b |
+| Task 11 | `useShareViewHold`, `useShareViewApply` (result `{ notice, dismissNotice, captureShareUrl, shareDisabled, applyTerminal }`), `useShareViewApplyTerminal`, `useShareViewPlanningTableKey` | Task 12 |
 | Task 12 | `ShareViewButton`, `shareViewNoticeMessage`, `shareViewDroppedCategories` | Task 13 |
 
 Notice categories: `group`, `sprint`, `mode`, `teams`, `filters`, `focus`. Notice kinds: `dropped`, `partial`, `invalid`, `newer`. Apply result to event result: `done` to `success`, `partial` to `partial`, `dropped` and `cancelled` to `rejected`.
@@ -162,11 +209,11 @@ git fetch origin
 git log --oneline origin/main..HEAD
 git diff --name-status origin/main...HEAD
 ```
-Expected: the branch is `feature/194-shareable-dashboard-view`; `git status --short` prints nothing; the log shows only this feature's documentation commits; the name-status lists only files under `docs/plans/` (this plan, its slices, the design, the plans index, the FUTURE pointer and the GATE-05 review date). If `origin/main` moved, sync before continuing (for an app-made worktree use the app's `sync_with_base_branch` tool; otherwise merge `origin/main` into the branch), then re-run this step and Step 3. Never merge feature work into local `main`.
+Expected: the branch is `feature/194-shareable-dashboard-view`; `git status --short` prints nothing; the log shows only this feature's documentation commits; the name-status lists only files under `docs/plans/` (this plan, its slices, the design, the plans index, the FUTURE pointer and the GATE-05 review date). If `origin/main` moved, sync before continuing (for an app-made worktree use the app's `sync_with_base_branch` tool; otherwise merge `origin/main` into the branch), then re-run this step and Step 3. Never merge feature work into local `main`. Record the answer to gate G1 from plan review in the Execution status (`G1: accepted <date>` or `G1: declined <date>`); if it is declined, stop, because the plan must be re-issued. Compare `git rev-parse --short origin/main` with the base named in the header (`4247a3b1`); if it differs, the anchor sweep in Step 3 is mandatory.
 
 - [ ] **Step 2: Read the instruction chain and the related postmortems**
 
-Read root `AGENTS.md` (sections 10 and 11), `docs/plans/AGENTS.md`, `docs/AGENTS.md`, the design `docs/plans/SUPPORT-shareable-view-links-design-194.md`, and these postmortems (the lesson that applies is in parentheses): `MRT009-sticky-layering-regressions.md` (do not change sticky offsets or z-index), `MRT010-startup-api-load-fanout-and-overscoped-payloads.md` (no redundant startup requests), `MRT020-project-track-filter-bar-bespoke-controls.md` and `MRT021-project-track-segmented-control-override.md` (reuse the shared control and its class hooks), `MRT023-alert-enrichment-blocked-first-screen.md` (alert work must not block the first screen), `MRT025-pr-publication-transaction-failures.md` (publication is one verified transaction), `MRT027-board-catalog-pagination.md` and `MRT031-board-discovery-page-token-budget.md` (Board scope and loading contracts). Record "read" in the status row.
+Read root `AGENTS.md` (sections 1, 10 and 11), `docs/plans/AGENTS.md`, `docs/AGENTS.md`, `docs/design-system.md` (the element map and "Adding an element or write"), `docs/ontology.md` (the entries this work extends), the design `docs/plans/SUPPORT-shareable-view-links-design-194.md`, and these postmortems (the lesson that applies is in parentheses): `MRT009-sticky-layering-regressions.md` (do not change sticky offsets or z-index), `MRT010-startup-api-load-fanout-and-overscoped-payloads.md` (no redundant startup requests), `MRT020-project-track-filter-bar-bespoke-controls.md` and `MRT021-project-track-segmented-control-override.md` (reuse the shared control and its class hooks), `MRT023-alert-enrichment-blocked-first-screen.md` (alert work must not block the first screen), `MRT025-pr-publication-transaction-failures.md` (publication is one verified transaction), `MRT027-board-catalog-pagination.md` and `MRT031-board-discovery-page-token-budget.md` (Board scope and loading contracts), `MRT016-exec-02-plan-file-map-drift.md` (a task's file map must match its steps) and `MRT007-bundled-frontend-regression.md` (a bundled module must not use a binding before its declaration). Record "read" in the status row.
 
 - [ ] **Step 3: Verify every existing file this plan modifies exists**
 
@@ -205,16 +252,18 @@ for f in \
   tests/test_analytics_source_guards.js \
   tests/test_auth_entry_page.py \
   tests/test_auth_routes.py \
-  tests/test_codebase_structure_budgets.py \
   tests/test_container_packaging.py \
   tests/test_dashboard_freshness_interactions.js \
   tests/test_db_oauth_cutover.py \
   tests/test_logging_migration.py \
   tests/ui/codebase_structure_smoke.spec.js \
+  tests/ui/design_system_hover_eng.spec.js \
   tests/ui/eng_alerts_panel_summary.spec.js \
   tests/ui/planning_review_table.spec.js; do [ -e "$f" ] && echo "ok       $f" || echo "MISSING  $f"; done
 ```
 Expected: no `MISSING` line. A missing file means the plan is stale: stop and report.
+
+Whenever `origin/main` is not `4247a3b1`, also run the anchor sweep: for every `Replace this` block in Tasks 5, 6, 7, 8, 10, 11b, 12 and 13 that quotes text from the base, run `rg -c --fixed-strings '<the first line of the quoted block>' <file>`. Each must print `1` at the point its task runs (a block that quotes text an earlier task creates matches after that task). A mismatch means `main` moved the text: stop and report; do not improvise the edit.
 
 - [ ] **Step 4: Prepare the toolchain**
 
@@ -225,14 +274,14 @@ npm ci
 export JEP_TEST_PYTHON=<path to a Python interpreter that has the repo requirements, for example the main checkout's .venv/bin/python>
 "$JEP_TEST_PYTHON" -c "import flask, itsdangerous; print('python ok')"
 ```
-Expected: the Node version printed matches `.nvmrc`; `npm ci` succeeds; `python ok`. The interpreter path is a local choice; do not write it into any committed file. A command may run in a fresh shell, so export `JEP_TEST_PYTHON` again or write the interpreter path in place of `$JEP_TEST_PYTHON`.
+Expected: the Node version printed matches `.nvmrc`; `npm ci` succeeds; `python ok`. The interpreter path is a local choice; do not write it into any committed file. A command may run in a fresh shell, so export `JEP_TEST_PYTHON` again or write the interpreter path in place of `$JEP_TEST_PYTHON`. A command may run in a fresh shell, so export `JEP_TEST_PYTHON` again or write the interpreter path in place of `$JEP_TEST_PYTHON`.
 
 - [ ] **Step 5: Record the baselines**
 
 Run each command and write the summary line into the Baseline table below.
 ```bash
 env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $JEP_TEST_PYTHON -m unittest discover -s tests
-make test-security
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $JEP_TEST_PYTHON -m unittest tests.test_endpoint_policy_inventory tests.test_endpoint_security_matrix tests.test_network_bind_guards tests.test_security_headers tests.test_oauth_route_guards tests.test_backend_route_source_guards tests.test_route_move_preservation
 npm run test:frontend:unit
 env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $JEP_TEST_PYTHON -m unittest tests.test_codebase_structure_budgets
 fnm exec --using 20 bash scripts/extraction_lint/run.sh
@@ -241,12 +290,12 @@ npx playwright test tests/ui/codebase_structure_smoke.spec.js tests/ui/ga4_tag_a
 npx playwright test tests/ui/codebase_structure_smoke.spec.js --browser=firefox
 npx playwright test tests/ui/codebase_structure_smoke.spec.js --browser=webkit
 ```
-Expected: all pass except the known environment-specific baseline failures, which you record by name instead of fixing: the load-sensitive `test_local_postgresql_runner` signal tests (they pass alone) and two `Task9 freshness reserved copy` cases in `codebase_structure_smoke.spec.js` that already fail in headless WebKit (document width 782 px against 781 and 755 px). Record counts, not just "pass". A baseline failure unrelated to this work is recorded with its name and the run continues only if the operator agrees; do not fix it in this branch.
+Expected: all pass except the known baseline failures, which you record by name instead of fixing: the extraction lint, which on `origin/main` `4247a3b1` exits 1 with `0 errors`, 104 warnings and four ENFORCED owner-budget lines for `EpicBlock.jsx` and `GroupBoardSettings.jsx`, and exits 0 with no ENFORCED line on a base where the separate digest refresh has landed (record the exit status, the warning count and every ENFORCED line; later lint gates mean "unchanged from this"), and the environment-specific ones: the load-sensitive `test_local_postgresql_runner` signal tests (they pass alone) and two `Task9 freshness reserved copy` cases in `codebase_structure_smoke.spec.js` that already fail in headless WebKit (document width 782 px against 781 and 755 px). Record counts, not just "pass". A baseline failure unrelated to this work is recorded with its name and the run continues only if the operator agrees; do not fix it in this branch.
 
 | Gate | Command | Result | Date |
 | --- | --- | --- | --- |
 | Python suite | `unittest discover -s tests` | | |
-| Security matrix | `make test-security` | | |
+| Security matrix | the explicit `unittest` list above (`make test-security` needs `.venv`) | | |
 | Node unit | `npm run test:frontend:unit` | | |
 | Structure budgets | `tests.test_codebase_structure_budgets` | | |
 | Extraction lint | `fnm exec --using 20 bash scripts/extraction_lint/run.sh` | | |
@@ -267,7 +316,7 @@ git -c user.name=Juce -c user.email=Juce-me@users.noreply.github.com commit -m "
 git show --stat HEAD
 git status --short
 ```
-Expected: one file changed; clean tree.
+Expected: one file changed (two if Step 6 changed `docs/plans/GATE-05-home-write-capability.md`; add it to the `git add` then); clean tree.
 
 ---
 
@@ -364,7 +413,7 @@ A link never carries your saved preferences, Planning row selections or review d
 ## Limits
 
 - A link has to stay under 1,536 characters. When a view would not fit, the lowest-priority parts are left out in this order (search text, the focus target, alert categories, Initiative grouping, sort) and the notice names them; if it still does not fit, nothing is copied.
-- A Planning table, Board or Statistics link has no Board focus target and no Board filters in this version.
+- A Board or Statistics link has no focus target, and no link carries Board filters or Statistics display options in this version.
 - Search text is part of the link. In the container deployment the access log records the request path only, never the query string or the Referer.
 ```
 Adjust any sentence that Tasks 1 to 12 made untrue; the guide describes shipped behavior.
@@ -431,7 +480,7 @@ with
     and auth status. The OAuth return carries a shared view link's query through
     the login hop via `backend/auth/share_view_stash.py`.
 ```
-and, at the end of the Frontend entrypoint bullet list (after the `jira-dashboard.html` bullet), add
+and insert this top-level bullet immediately after the line `  - Includes a small auth-refresh script before the bundled app.` (before `- Frontend source:`)
 ```
 - Shareable view links: `frontend/src/shareView/` holds the link codec, the
   recipient resolver, the pre-mount URL entry and store, the staged apply
@@ -462,7 +511,7 @@ Verified on: <YYYY-MM-DD> against the named symbols (code read plus the unit, Fl
 - **Share view apply** (alias: link apply): [`stepApplyMachine`](../frontend/src/shareView/applyMachine.js) decides the stage, drops, cancels and budgets; [`createApplyController`](../frontend/src/shareView/applyController.js) and `resolveApplyPlan` run Stage A (scope), B (fields), C (Teams and facets) and D (focus) through raw setters; [`useShareViewApply`](../frontend/src/shareView/useShareViewApply.js) mounts it after the App's own restore effects; `useShareViewHold` holds the ENG task load while a link is pending; `useShareViewApplyTerminal` lets the onboarding tour wait; `useShareViewPlanningTableKey` remounts an open Planning table; [`armInteractionGuard`](../frontend/src/shareView/interactionGuard.js) cancels on a deliberate interaction. The two App closures `commitSprintSelection` and `persistTeamSelection` in `dashboard.jsx` are shared with the click handlers. Depends on the resolver, the store, the codec and the focus modules; tests: `tests/test_share_view_apply_machine.js`, `tests/test_share_view_apply_controller.js`, `tests/test_share_view_apply_hook.js`, `tests/test_share_view_interaction_guard.js`, `tests/test_share_view_onboarding_wait.js`, `tests/test_share_view_source_guards.js`, `tests/ui/shareable_view_links.spec.js`.
 - **Share view capture**: [`buildShareViewState`](../frontend/src/shareView/captureState.js) builds the committed view state the encoder turns into a link; `captureShareUrl()` on the apply hook returns `{ ok, url, dropped }` synchronously. Test: `tests/test_share_view_capture_state.js`.
 - **Share focus**: [`captureShareViewFocus`](../frontend/src/shareView/focusCapture.js) reads the topmost visible alerts team group, Epic, Story or Planning row at Share time; [`revealShareViewFocus`](../frontend/src/shareView/focusReveal.js) scrolls to and highlights it at apply time; both share `SHARE_VIEW_FOCUS_MARGIN`. Alert groups carry `data-alert-team` in [`EngAlertsPanel.jsx`](../frontend/src/eng/EngAlertsPanel.jsx); the Planning table seeds its row mode from the store in [`PlanningReviewTable.jsx`](../frontend/src/eng/PlanningReviewTable.jsx). Tests: `tests/test_share_view_alert_anchors.js`, `tests/test_share_view_focus_capture.js`, `tests/test_share_view_focus_reveal.js`, `tests/test_share_view_planning_rows_seed.js`, `tests/ui/share_view_focus.spec.js`.
-- **Share control**: [`ShareViewButton.jsx`](../frontend/src/shareView/ShareViewButton.jsx), rendered on the main and compact header surfaces of `dashboard.jsx` through `renderShareViewControl`; notice copy: [`noticeCopy.js`](../frontend/src/shareView/noticeCopy.js) (`shareViewNoticeMessage`, `shareViewDroppedCategories`); the notice reuses the connection-recovery banner with `.share-view-notice`; the reviewed mock `assets/mockups/share-view-control-194.html`; analytics event `share_view_action` (`docs/README_ANALYTICS.md`). Tests: `tests/test_share_view_control.js`, `tests/ui/share_view_control.spec.js` with `tests/ui/share_view_control_harness.jsx`.
+- **Share control**: [`ShareViewButton.jsx`](../frontend/src/shareView/ShareViewButton.jsx), rendered on the main and compact header surfaces of `dashboard.jsx` through `renderShareViewControl`; notice copy: [`noticeCopy.js`](../frontend/src/shareView/noticeCopy.js) (`shareViewNoticeMessage`, `shareViewDroppedCategories`); the notice reuses the connection-recovery banner, placed by one attribute-scoped rule (`[data-share-view] > .server-unavailable-banner`); the reviewed mock `assets/mockups/share-view-control-194.html`; analytics event `share_view_action` (`docs/README_ANALYTICS.md`). Tests: `tests/test_share_view_control.js`, `tests/ui/share_view_control.spec.js` with `tests/ui/share_view_control_harness.jsx`.
 - **Pending-link stash** (alias: login return): [`share_view_stash.py`](../backend/auth/share_view_stash.py) stores a validated query in the signed session cookie from the unauthenticated dashboard entry (`redirect_unauthenticated_oauth_dashboard_entry` in `jira_server.py`) and returns it at the OAuth callback and the two authenticated `/login` redirects in [`auth_routes.py`](../backend/routes/auth_routes.py). Limits: 1,536 bytes, 900 seconds, 3,300 bytes of cookie. Tests: `tests/test_share_view_stash.py`, `tests/test_auth_entry_page.py`, `tests/test_auth_routes.py`, `tests/test_db_oauth_cutover.py`.
 ```
 Then in the same file replace the tail of the `Coverage:` paragraph
@@ -473,7 +522,7 @@ with
 ```
 the remaining `App()` responsibility inventory and Statistics state coupling (2026-10-08), and shareable view links (<YYYY-MM-DD>). Other application areas remain unmapped.
 ```
-Finally update the `## Dashboard extraction verification` current-measurement paragraph (the one that begins `Current #251 measurement`) by replacing the `7,573` figure and the aggregate figures it names with the values now pinned in `tests/test_codebase_structure_budgets.py` and `scripts/extraction_lint/owner_budgets.json` (read them; do not guess), and add the sentence `Shareable view links (issue #194) moved the pins by the net measured lines recorded in the Budget ledger of EXEC-shareable-view-links-194.`
+Finally update the `## Dashboard extraction verification` current-measurement paragraph (the one that begins `Current #251 measurement`) by replacing the App-cap figure (`7,493` on the validated base) and the `App plus owners` figure (`34,095`) with the values now pinned in `scripts/extraction_lint/owner_budgets.json` (read them; do not guess; the legacy ceilings in `tests/test_codebase_structure_budgets.py` are unchanged by this plan), and add the sentence `Shareable view links (issue #194) moved the pins by the net measured lines recorded in the Budget ledger of EXEC-shareable-view-links-194.`
 
 - [ ] **Step 7: Park the deferred scope**
 
@@ -495,13 +544,13 @@ wc -l frontend/src/dashboard.jsx jira_server.py
 env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $JEP_TEST_PYTHON -m unittest tests.test_codebase_structure_budgets tests.test_backend_route_source_guards tests.test_endpoint_policy_inventory
 fnm exec --using 20 bash scripts/extraction_lint/run.sh
 ```
-Expected: the two line counts equal the Budget ledger's last row (7,627 and 6,491) and the pins in `tests/test_codebase_structure_budgets.py` and (for `dashboard.jsx`) `scripts/extraction_lint/owner_budgets.json`; the three test modules and the lint pass with no more than 104 warnings. If a count moved after the last pin edit, move the pin in this commit with a one-line reason and record the net change per task in the ledger.
+Expected: the two line counts equal the Budget ledger's last row (7,547 and 6,459 on the validated base), the `dashboard.jsx` count equals the manifest pin in `scripts/extraction_lint/owner_budgets.json`, and both counts are at or under their legacy ceilings in `tests/test_codebase_structure_budgets.py`; the three test modules pass and the lint matches the Task 0 baseline (no new ENFORCED line, no error, at most 104 warnings). If the `dashboard.jsx` count moved after the last pin edit, move the manifest pin in this commit and record the net change per task in the ledger.
 
 - [ ] **Step 10: Check the docs for local data and run the doc-linked tests**
 
 Run:
 ```bash
-rg -n "/Users/|@criteo|[A-Za-z0-9._-]+@[A-Za-z0-9.-]+\.[a-z]{2,}" docs/features/shareable-view-links.md docs/ontology.md docs/TODO.md docs/architecture.md docs/SUPPORT-atlassian-oauth-setup.md docs/plans/README.md || echo "no local data"
+rg -n "/Users/|[A-Za-z0-9._-]+@[A-Za-z0-9.-]+\.[a-z]{2,}" docs/features/shareable-view-links.md docs/ontology.md docs/TODO.md docs/architecture.md docs/SUPPORT-atlassian-oauth-setup.md docs/plans/README.md || echo "no local data"
 npm run test:frontend:unit
 ```
 Expected: `no local data`; the Node suite passes (`test_analytics_source_guards.js` cross-checks README_ANALYTICS, the runbook and the YAML; nothing in this task should break it).
@@ -540,10 +589,9 @@ Open the Execution status table. Tasks 1 to 13 (including 11a, 11b, 11c) are `do
 
 ```bash
 env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $JEP_TEST_PYTHON -m unittest discover -s tests
-make test-security
-env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $JEP_TEST_PYTHON -m unittest tests.test_codebase_structure_budgets tests.test_backend_route_source_guards tests.test_endpoint_policy_inventory
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $JEP_TEST_PYTHON -m unittest tests.test_endpoint_policy_inventory tests.test_endpoint_security_matrix tests.test_network_bind_guards tests.test_security_headers tests.test_oauth_route_guards tests.test_backend_route_source_guards tests.test_route_move_preservation
 ```
-Expected: the full suite passes with no more skips and no new failures than the Task 0 baseline (the recorded environment-specific failures aside) and no new warning before the Flask startup banner; the security matrix passes; `test_endpoint_policy_inventory` still pins "no new route".
+Expected: the full suite passes with no more skips and no new failures than the Task 0 baseline (the recorded environment-specific failures aside) and no new warning before the Flask startup banner; the security modules pass; `test_endpoint_policy_inventory` still pins "no new route".
 
 - [ ] **Step 3: Full frontend gates**
 
@@ -595,7 +643,7 @@ Dispatch one fresh reviewer with this prompt, then fix what it confirms: "Review
 
 - [ ] **Step 9: Close out this plan**
 
-Set every row in the Execution status table to its final status with SHAs, add an `## Outcome` (`Implemented as planned` or `Implemented with changes` plus the differences) and a `## Current Accuracy` section per `docs/AGENTS.md`, and update the entry in `docs/plans/README.md`. Do not rename `EXEC-` to `DONE-` until the work is merged.
+Ask the operator whether to bump the `Effective date` in `docs/PRIVACY.md` (Task 2 and the pending-link notice changed what that document says) and, if yes, change it in this commit. Set every row in the Execution status table to its final status with SHAs from `git log --oneline origin/main..HEAD`, add an `## Outcome` (`Implemented as planned` or `Implemented with changes` plus the differences) and a `## Current Accuracy` section per `docs/AGENTS.md`, and update the entry in `docs/plans/README.md`. Do not rename `EXEC-` to `DONE-` until the work is merged.
 
 ```bash
 git add docs/plans/EXEC-shareable-view-links-194.md docs/plans/README.md
@@ -623,4 +671,4 @@ EOF
 gh pr view --json headRefOid,commits,files,body
 gh pr checks
 ```
-Expected: the remote head equals the approved local head; the commit count and changed-file list match the comparison above; the body reads back as rendered text (not serialized JSON); CI state is reported as it is. Open the PR page only if the operator asks (the operator's rule is to use `gh` unless a browser is requested); the operator attaches UI screenshots on the PR page. Then call the app's PR tools: get the PR status, bind the PR if it is not reported, read its CI and offer Auto-fix; never poll CI yourself and never enable auto-merge unless asked. If any post-publication check fails, report the publication as malformed and stop for operator direction.
+Expected: the remote head equals the approved local head; the commit count and changed-file list match the comparison above; the body reads back as rendered text (not serialized JSON); CI state is reported as it is. `AGENTS.md` section 10 asks for a visual inspection of the PR page, while the operator's standing rule is to use `gh` and open a browser only when asked: ask at gate G3 whether to open the page, and the operator attaches UI screenshots there. Then call the app's PR tools: get the PR status, bind the PR if it is not reported, read its CI and offer Auto-fix; never poll CI yourself and never enable auto-merge unless asked. If any post-publication check fails, report the publication as malformed and stop for operator direction.

@@ -1,6 +1,6 @@
 # Shareable View Links Implementation Plan: Extractions, apply machine and hook (Tasks 6, 9 and 11)
 
-> **Status:** Proposed 2026-10-14. Slice of [EXEC-shareable-view-links-194.md](EXEC-shareable-view-links-194.md). Read the master's Global Constraints, Review Focus and Execution status before starting, and record each task's status and commit SHA in the master's Execution status table. Slices are grouped by area, not by execution order; the master's table gives the order.
+> **Status:** Proposed 2026-10-14. Slice of [EXEC-shareable-view-links-194.md](EXEC-shareable-view-links-194.md). Read the master's Global Constraints, Review Focus and Execution status before starting. Statuses and commit SHAs are recorded once, in the master's Task 14 Step 9; keep plan files unmodified between tasks so every Step 0 sees a clean tree. Slices are grouped by area, not by execution order; the master's table gives the order.
 >
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -12,15 +12,15 @@
 
 ### Task 6: `dashboard.jsx` behavior-preserving extractions
 
-**Owner note:** depends on Task 5 (it starts from `dashboard.jsx` at 7,574 lines with the pins at 7,574 and 34,176); blocks Task 11b (the apply calls both helpers through the options object). Checkpoint task: it ends with a report and a stop (Step 10).
+**Owner note:** depends on Task 5 (it starts from `dashboard.jsx` as Task 5 left it: 7,494 lines on the validated base, with the manifest pins at 7,494 and 34,096); blocks Task 11b (the apply calls both helpers through the options object). Checkpoint task: it ends with a report and a stop (Step 10).
 
 **Why this task exists.** The link apply must write a Sprint and a Team selection exactly the way a click does, without the click's analytics, guard or selector side effects. Two closures of `App()` hold that raw half today, welded to their callers: `applyOrdinarySprint` (the Team carry-forward through `teamSelectionCarryForwardRef`, the Sprint id and name, and the Project Track range) and `toggleTeamSelection` (the stored Team selection plus the hydrated-selection marker, written twice with identical text). Duplicating them in `shareView/` would give the carry-forward rule two owners that drift. This task extracts them as `commitSprintSelection` and `persistTeamSelection`, behavior-preserving, characterization tests first.
 
-**Measured, not estimated.** The design estimated a net of about minus 8 lines. The extraction adds 11 lines (`dashboard.jsx` 7,574 to 7,585): the two helpers need their signatures and a comment each, and the call sites shrink by less than that. Both pins move in this commit: the legacy dict entry and `owner_budgets.json` (`dashboard.lineCount` and `lineCeiling` to 7,585, `aggregates.appPlusOwners` to 34,187). The alternative, skipping the extraction and duplicating about 25 lines in the apply, was rejected: it avoids a pin move of +11 only by creating a second implementation of the Team carry-forward and the Project Track range write.
+**Line budget.** The design estimated a net of about minus 8 lines. The extraction adds 11 lines (`dashboard.jsx` 7,494 to 7,505 on the validated base): the two helpers need their signatures and a comment each, and the call sites shrink by less than that. The manifest pins move in this commit (`dashboard.lineCount` and `lineCeiling` to the measured count, `aggregates.appPlusOwners` to that count plus the unchanged unique owners); the legacy ceiling is not edited. The alternative, skipping the extraction and duplicating about 25 lines in the apply, was rejected: it avoids a growth of +11 only by creating a second implementation of the Team carry-forward and the Project Track range write.
 
 **Files:**
 - Modify: `frontend/src/dashboard.jsx` (`applyOrdinarySprint`, `toggleTeamSelection`; two new closures declared directly above them)
-- Modify: `tests/test_codebase_structure_budgets.py` (`LEGACY_ENTRYPOINT_LINE_BUDGETS["frontend/src/dashboard.jsx"]`), `scripts/extraction_lint/owner_budgets.json` (`dashboard` and `aggregates.appPlusOwners`)
+- Modify: `scripts/extraction_lint/owner_budgets.json` (`dashboard` and `aggregates.appPlusOwners`)
 - Create: `tests/test_share_view_extraction_characterization.js`
 - Regenerated: `frontend/dist/` (by `npm run build`, never hand-edited)
 
@@ -39,7 +39,7 @@ persistTeamSelection(nextSelectedTeams) -> void
 - [ ] The Sprint selector keeps its analytics (`trackFilterChanged('sprint', ...)`), its same-Sprint guard, the Board scope control behavior (`setBoardStrictScope('')` after the commit) and `closeSprintSelector({ restoreFocus: true })`: all of them stay in `applyOrdinarySprint`.
 - [ ] The Teams dropdown keeps its analytics (`trackFilterChanged('team', ...)`), its insertion order, the fall back to `['all']` and the persist-inside-the-updater timing.
 - [ ] No behavior change anywhere: the characterization tests below pass unchanged before and after the edit, and the UI specs that exercise Sprint and Team selection pass.
-- [ ] `dashboard.jsx` grows by exactly 11 lines and both pins move in this commit. No other file under `frontend/src` changes.
+- [ ] `dashboard.jsx` grows by exactly 11 lines and the manifest pins move in this commit. No other file under `frontend/src` changes.
 - [ ] Analytics impact: none (no new trigger, event or parameter; the existing events fire from the same places).
 
 - [ ] **Step 0: Preflight and baselines**
@@ -56,7 +56,7 @@ rg -c "const toggleTeamSelection = \(teamId\) => \{" frontend/src/dashboard.jsx
 fnm exec --using 20 node --test tests/test_*.js 2>&1 | grep -E '^# (tests|pass|fail)'
 fnm exec --using 20 bash scripts/extraction_lint/run.sh 2>&1 | grep -E 'problems \('
 ```
-Expected: the branch is `feature/194-shareable-dashboard-view`; `git status --short` prints nothing; `7574 frontend/src/dashboard.jsx`; the two `rg` counts are `1` and `1`; the Node summary shows `# fail 0` (write down the `# tests` number as N0); the lint line shows `0 errors` (write down the warning count as W0). If `dashboard.jsx` is not 7,574 lines, Task 5 did not land as planned: stop and report.
+Expected: the branch is `feature/194-shareable-dashboard-view`; `git status --short` prints nothing; `7494 frontend/src/dashboard.jsx` (Task 0's baseline plus 1); the two `rg` counts are `1` and `1`; the Node summary shows `# fail 0` (write down the `# tests` number as N0); the lint line shows `0 errors` (write down the warning count as W0). If `dashboard.jsx` is not Task 0's baseline plus 1 (7,494 lines on the validated base), Task 5 did not land as planned: stop and report.
 
 - [ ] **Step 1: Write the characterization tests**
 
@@ -451,84 +451,52 @@ Run: `fnm exec --using 20 node --test tests/test_share_view_extraction_character
 
 Expected: `# tests 19`, `# pass 19`, `# fail 0`: the thirteen characterization tests still pass unchanged and the six contract tests pass.
 
-- [ ] **Step 7: Move the line-count pins**
+- [ ] **Step 7: Move the manifest pins (same commit)**
 
-Measure: `wc -l frontend/src/dashboard.jsx`. Expected: `7585 frontend/src/dashboard.jsx` (7,574 plus 11).
-
-Run: `env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets`
-
-Expected: `FAILED (failures=2)`. The manifest test reports `dashboard measured lineCount differs from actual`, `dashboard exceeds ceiling`, `appPlusOwners: measured aggregate 34176 differs from unique actual 34187` and `appPlusOwners: 34187 exceeds aggregate ceiling 34176`; the legacy test reports `frontend/src/dashboard.jsx: 7585 lines exceeds budget 7574`.
-
-The manifest is JSON and cannot hold a comment, so the one-line reason sits above the legacy entry, where earlier ratchets put theirs.
-
-In `tests/test_codebase_structure_budgets.py` (the end of `LEGACY_ENTRYPOINT_LINE_BUDGETS`; it occurs once):
-
-Replace this:
+`dashboard.jsx` grows by exactly 11 lines (the two helpers need their signatures and a comment each, and the call sites shrink by less). The extraction manifest pins it by exact equality, so its numbers move in this commit; `appPlusOwners` is the dashboard plus the unchanged `uniqueOwners` aggregate. The legacy ceiling in `LEGACY_ENTRYPOINT_LINE_BUDGETS` sits above the file and is not edited (Global Constraints, Budgets). Run `mkdir -p tmp/share-view-budget`, then create `tmp/share-view-budget/pins.py` (`tmp/` is gitignored; an earlier task may have left a copy, which this text replaces) with exactly this content:
 
 ```python
-    "frontend/src/dashboard.jsx": 7574,
-}
+import json
+import re
+import sys
+
+n = int(sys.argv[1])
+path = 'scripts/extraction_lint/owner_budgets.json'
+text = open(path).read()
+unique_owners = json.loads(text)['aggregates']['uniqueOwners']['measured']
+text, count = re.subn(
+    r'("dashboard": \{\s*"path": "frontend/src/dashboard\.jsx",\s*"lineCount": )\d+(,\s*"lineCeiling": )\d+',
+    lambda match: f'{match.group(1)}{n}{match.group(2)}{n}',
+    text,
+)
+assert count == 1, 'dashboard manifest entry not found exactly once'
+text, count = re.subn(
+    r'("appPlusOwners": \{\s*"measured": )\d+(,\s*"ceiling": )\d+',
+    lambda match: f'{match.group(1)}{n + unique_owners}{match.group(2)}{n + unique_owners}',
+    text,
+)
+assert count == 1, 'appPlusOwners aggregate not found exactly once'
+open(path, 'w').write(text)
+print(f'dashboard.jsx pinned at {n}; appPlusOwners pinned at {n + unique_owners}')
 ```
 
-with:
-
-```python
-    # Issue #194: the shared commitSprintSelection and persistTeamSelection helpers, extracted so the link apply and the click path share them (+11).
-    "frontend/src/dashboard.jsx": 7585,
-}
+Run:
+```bash
+wc -l frontend/src/dashboard.jsx
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets 2>&1 | grep -E 'differs|exceeds|^Ran |^OK|^FAILED'
+N=$(wc -l < frontend/src/dashboard.jsx | tr -d ' ')
+$PY tmp/share-view-budget/pins.py "$N"
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets 2>&1 | grep -E 'differs|exceeds|^Ran |^OK|^FAILED'
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY tests/test_codebase_structure_budgets.py --manifest scripts/extraction_lint/owner_budgets.json
+git diff --stat -- tests/test_codebase_structure_budgets.py scripts/extraction_lint/owner_budgets.json
 ```
-
-In `scripts/extraction_lint/owner_budgets.json` (the `dashboard` object; it occurs once):
-
-Replace this:
-
-```json
-  "dashboard": {
-    "path": "frontend/src/dashboard.jsx",
-    "lineCount": 7574,
-    "lineCeiling": 7574
-  },
-```
-
-with:
-
-```json
-  "dashboard": {
-    "path": "frontend/src/dashboard.jsx",
-    "lineCount": 7585,
-    "lineCeiling": 7585
-  },
-```
-
-In `scripts/extraction_lint/owner_budgets.json` (`aggregates.appPlusOwners`; it occurs once):
-
-Replace this:
-
-```json
-    "appPlusOwners": {
-      "measured": 34176,
-      "ceiling": 34176
-    }
-```
-
-with:
-
-```json
-    "appPlusOwners": {
-      "measured": 34187,
-      "ceiling": 34187
-    }
-```
-
-Run: `env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets` and `env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY tests/test_codebase_structure_budgets.py --manifest scripts/extraction_lint/owner_budgets.json`
-
-Expected: the first prints `Ran 2 tests` and `OK`; the second prints `owner budgets: 0 problems`.
+Expected: `wc -l` prints the previous task's count plus 11 (7,505 on the validated base); the first test run fails only the manifest test (the printed list holds `dashboard measured lineCount differs from actual`, `dashboard exceeds ceiling`, `appPlusOwners: measured aggregate ... differs from unique actual ...` and `appPlusOwners: ... exceeds aggregate ceiling ...`, then `FAILED (failures=1)`); the script prints `dashboard.jsx pinned at <N>; appPlusOwners pinned at <N + uniqueOwners>` (7,505 and 34,107 on the validated base); the second run reports `Ran 2 tests` and `OK`; the manifest run prints `owner budgets: 0 problems`; `git diff --stat` shows only `scripts/extraction_lint/owner_budgets.json` with 8 changed lines. If the legacy test fails too (`frontend/src/dashboard.jsx: <N> lines exceeds budget <M>`), `main` tightened that ceiling after this plan was validated: raise the entry in `tests/test_codebase_structure_budgets.py` to `<N>` with a one-line comment naming issue #194, and add that file to this commit's `git add`.
 
 - [ ] **Step 8: Run the task's regression gate**
 
 1. The whole frontend unit suite: `fnm exec --using 20 node --test tests/test_*.js 2>&1 | grep -E '^# (tests|pass|fail)'`. Expected: `# fail 0` and `# tests` equal to N0 plus 19.
 2. The Python tests that read `dashboard.jsx`: `env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets tests.test_eng_board_source_guards tests.test_project_packaging tests.test_auth_entry_page`. Expected: `OK`.
-3. The extraction gate: `fnm exec --using 20 bash scripts/extraction_lint/run.sh`. Expected: exit status 0, `0 errors`, a warning count equal to W0, `owner budgets: 0 problems` and `enforced problems: 0`.
+3. The extraction gate: `fnm exec --using 20 bash scripts/extraction_lint/run.sh`. Expected: the Task 0 baseline exit status, `0 errors`, a warning count equal to W0, `owner budgets: 0 problems` and `enforced problems: <B>`.
 4. The UI specs that exercise Sprint and Team selection, the freshness refresh and the auth lock: `npx playwright test tests/ui/planning_selection_defaults.spec.js tests/ui/shared_department_groups.spec.js tests/ui/global_auth_lock.spec.js tests/ui/dashboard_data_freshness.spec.js --browser=chromium --workers=4 2>&1 | grep -E '^ +[0-9]+ (passed|failed|flaky|skipped)'`. Expected: `204 passed` and no `failed` or `flaky` line (about three minutes; a different total only means an earlier task edited one of these specs, and the requirement is zero failures).
 5. Rebuild the generated output: `fnm exec --using 20 npm run build`. Expected: `Dashboard built: ` followed by 64 hexadecimal digits. Then `git status --short -- frontend/dist` must print exactly these four entries: `dashboard.js` and `dashboard.js.map` change because the dashboard source changed, and the manifest name follows the build id:
 
@@ -542,19 +510,19 @@ Expected: the first prints `Ran 2 tests` and `OK`; the second prints `owner budg
 - [ ] **Step 9: Commit**
 
 ```bash
-git add frontend/src/dashboard.jsx tests/test_share_view_extraction_characterization.js tests/test_codebase_structure_budgets.py scripts/extraction_lint/owner_budgets.json
+git add frontend/src/dashboard.jsx tests/test_share_view_extraction_characterization.js scripts/extraction_lint/owner_budgets.json
 git add -A -- frontend/dist
-git -c user.name=Juce -c user.email=Juce-me@users.noreply.github.com commit -m "Extract raw Sprint commit and Team persistence closures" -m "commitSprintSelection (the raw half of applyOrdinarySprint: Sprint id and name, Team carry-forward, Project Track range) and persistTeamSelection (the scope's stored Team selection plus the hydrated-selection marker) become closures that the shareable-link apply (issue 194) shares with the click path. Behavior-preserving: characterization tests pin the existing behavior and pass unchanged before and after. dashboard.jsx grows by 11 lines, so both line-count pins move to 7585 and the aggregate to 34187."
+git -c user.name=Juce -c user.email=Juce-me@users.noreply.github.com commit -m "Extract raw Sprint commit and Team persistence closures" -m "commitSprintSelection (the raw half of applyOrdinarySprint: Sprint id and name, Team carry-forward, Project Track range) and persistTeamSelection (the scope's stored Team selection plus the hydrated-selection marker) become closures that the shareable-link apply (issue 194) shares with the click path. Behavior-preserving: characterization tests pin the existing behavior and pass unchanged before and after. dashboard.jsx grows by 11 lines, so the manifest's line-count pins and aggregate move up by 11."
 git show --stat HEAD
 git status --short
 make verify-dist-clean
 ```
 
-Read the results: `git show --stat HEAD` lists exactly seven paths: `frontend/dist/dashboard.js`, `frontend/dist/dashboard.js.map`, the renamed `frontend/dist/lazy-views-*.json`, `frontend/src/dashboard.jsx` (31 insertions and 20 deletions), `scripts/extraction_lint/owner_budgets.json` (8 changed lines), `tests/test_codebase_structure_budgets.py` (2 insertions and 1 deletion) and `tests/test_share_view_extraction_characterization.js` (243 insertions). `git status --short` prints nothing. `make verify-dist-clean` prints nothing and exits 0.
+Read the results: `git show --stat HEAD` lists exactly six paths: `frontend/dist/dashboard.js`, `frontend/dist/dashboard.js.map`, the renamed `frontend/dist/lazy-views-*.json`, `frontend/src/dashboard.jsx` (31 insertions and 20 deletions), `scripts/extraction_lint/owner_budgets.json` (8 changed lines) and `tests/test_share_view_extraction_characterization.js` (243 insertions). `git status --short` prints nothing. `make verify-dist-clean` prints nothing and exits 0.
 
 - [ ] **Step 10: Checkpoint (stop here)**
 
-Report to the operator: the commit SHA, the files above, the results of Steps 6 to 8 (the test counts, the lint count, the UI count) and the line-budget move (`dashboard.jsx` 7,574 to 7,585; the design had estimated minus 8, so say so). Then ask the operator to validate by hand in a signed-in dashboard, and stop until they confirm:
+Report to the operator: the commit SHA, the files above, the results of Steps 6 to 8 (the test counts, the lint count, the UI count) and the line-budget move (`dashboard.jsx` plus 11 lines, 7,494 to 7,505 on the validated base; the design had estimated minus 8, so say so). Then ask the operator to validate by hand in a signed-in dashboard, and stop until they confirm:
 1. Header Sprint selector: choose another Sprint. The Sprint changes, the Teams selection you had carries over to the new Sprint, and focus returns to the selector button. Choose the same Sprint again: nothing changes.
 2. Teams dropdown: tick All Teams, tick one Team, tick a second, untick both. The selection follows each click, and a reload keeps the last choice.
 3. Statistics, Project Track: change the Sprint. The Sprint range follows the selected Sprint.
@@ -627,7 +595,7 @@ actions = [ { type: 'run', stage: 'A', scopeChange } | { type: 'run', stage: 'B'
 **Forbidden regressions for this task:**
 - [ ] The module imports nothing and reads no clock, timer, ref, DOM or random source (a test scans its code).
 - [ ] The budgets match the design: 90 s overall, A and B 5 s, C 20 s, D 20 s, and the clock stops while paused.
-- [ ] No existing file changes; no new ESLint warning; `dashboard.jsx` is untouched, so both line pins stay where Task 6 left them.
+- [ ] No existing file changes; no new ESLint warning; `dashboard.jsx` is untouched, so the manifest pins stay where Task 6 left them.
 - [ ] Analytics impact: none (a pure module; Task 11a sends the apply event).
 
 - [ ] **Step 0: Preflight and baselines**
@@ -1398,6 +1366,7 @@ STATS_RANGE_KIND                       // { cohort: 'quarter', excludedCapacity:
 buildShareViewState({ mode, groupId, sprintId, snapshot, searchQuery, sort, layout, rowsMode, boardStrictScope, sprintRange, alertFlags, alertCounts, focus }) -> ShareViewState
 // interactionGuard.js
 armInteractionGuard({ doc = document, onInteraction, isPaused = () => false }) -> disarm()
+SHARE_VIEW_MODIFIER_KEYS               // Set of the eleven modifier and lock keys that are not an interaction
 // useShareViewApply.js
 useShareViewHold() -> boolean                       // true while a pending link must hold the default-scope ENG load
 useShareViewApplyTerminal() -> boolean              // false only while a link is pending or running
@@ -1432,7 +1401,7 @@ useShareViewApply(options) -> { notice, dismissNotice(), captureShareUrl(), shar
 | `selectedTeams` | `selectedTeams` | controller | The committed Team selection; Stage C writes Teams only when it differs from the link. |
 | `tasksFetched` | `tasksFetched` | controller | A task load has completed for the committed scope. |
 | `tasksLoading` | `productTasksLoading \|\| techTasksLoading` | controller | A Product or Tech task lane is loading. |
-| `engLoadsTasks` | `selectedView === 'eng' && !isStatsSourceOnlyStatsView && !boardScopeRequested` | controller | The committed mode loads tasks (false for Board and the source-only Statistics views). |
+| `engLoadsTasks` | `selectedView === 'eng' && !isStatsSourceOnlyStatsView && !boardScopeRequested` | controller and hook | The committed mode loads a task list: false for a strict Board scope and the source-only Statistics views. The apply skips Teams and facets there, and Share does not wait for a Team hydrate that never runs. |
 | `activeGroupRef` | `activeGroupRef` | controller | The group the group-state effect last applied. |
 | `planningHydratedScopeRef` | `planningHydratedScopeRef` | controller | The Planning scope that has hydrated. |
 | `restoringGroupRef` | `restoringGroupRef` | controller | A group restore is in flight. |
@@ -1490,14 +1459,17 @@ useShareViewApply(options) -> { notice, dismissNotice(), captureShareUrl(), shar
 - The apply event is queued once. It is sent by `flushTrack` only when analytics is ready and only when `finishShareView` returned true. Its `sourceSurface` is the link's resolved mode, else the recipient's current ENG mode, else `catch_up`: never missing. A link that is already terminal when the store initializes (`newer`, `invalid`) reports one `rejected` event from the first tick.
 - Planning rows: Stage B decides the Epics/Stories rows and the first Stage C run seeds them (`setPendingPlanningRowMode`) before the stage begins. The first ENG load after the hold unmounts the Planning table, so a seed taken at the table's first mount would be lost; `useShareViewPlanningTableKey` flips when Stage C begins and the App keys the table on it, so the seed is read by a fresh mount.
 - The capture reads committed state only: `searchQuery` (not the input), the raw facet state from `buildGroupStateSnapshot()` (a fresh function: the memoized `groupStateSnapshot` omits `showAlertsPanel` from its dependencies), `selectedTeams` exactly as stored, and the Planning rows mode from the rendered table through `readPlanningRowsMode`. The encoder drops defaults and keys outside the mode, layout and Statistics view.
-- Interaction cancel: before Stage D a deliberate interaction (`pointerdown`, a non-modifier `keydown`, `touchstart`) cancels the link with no notice; `wheel` and `touchmove` are ignored; from Stage D any of the five cancels only the reveal; while the first-run popup or a tour pauses the link the listeners are ignored. The listeners are `document` capture-phase, passive, read the auth latch first, and ignore untrusted events: they are not `window.addEventListener('keydown', handler)` registrations, whose count `tests/test_auth_isolation_source_guard.js` pins.
+- Interaction cancel: before Stage D a deliberate interaction (`pointerdown`, a non-modifier `keydown`, `touchstart`) cancels the link with no notice; `wheel` and `touchmove` are ignored; from Stage D any of the five cancels only the reveal; while the first-run popup or a tour pauses the link the listeners are ignored. A key press is not an interaction when it is one of `SHARE_VIEW_MODIFIER_KEYS`: Shift, Control, Alt, AltGraph, Meta, CapsLock, NumLock, ScrollLock, Fn, FnLock, OS (one pinned list). The listeners are `document` capture-phase, passive, read the auth latch first, and ignore untrusted events: they are not `window.addEventListener('keydown', handler)` registrations, whose count `tests/test_auth_isolation_source_guard.js` pins.
+- The reveal is started with an `isCancelled` that is true when the machine cancelled it, when the guard reported an interaction since the last tick, or when the terminal auth latch is set, so it stops at its next frame without waiting for a tick.
+- Share is disabled until the scope is settled: a Sprint, loaded Departments, no first-run popup, a configured workspace, a validated catalog, no pending apply, a Team scope key and, only where a task list loads (`engLoadsTasks`), a Team selection hydrated to that key. A source-only Statistics view and a strict Board scope load no tasks, so no Team hydrate ever runs there and Share does not wait for one.
 
 **Forbidden regressions for this task:**
 - [ ] No write path: `shareView/` imports no `configApi`, `jiraIssueApi`, `postJsonWithCsrf` or `saveGroupPreferences`, and issues no network request (Task 11b adds the source guard, Task 11c the request log).
 - [ ] No link value is interpolated into a selector; no browser storage use; no `window` `keydown` listener.
 - [ ] The hook result is exactly `{ notice, dismissNotice, captureShareUrl, shareDisabled, applyTerminal }` (Task 12 renders the notice inside the Share control and calls `dismissNotice()` with no arguments).
+- [ ] Share is enabled in every settled view, including a source-only Statistics view and a strict Board scope (the hook test pins `engLoadsTasks: false` with an un-hydrated selection).
 - [ ] `captureShareUrl()` stays synchronous (Safari requires the clipboard write inside the click handler).
-- [ ] Nothing is mounted by this task: `dashboard.jsx` is untouched, so both line pins stay where Task 6 left them and no behavior changes.
+- [ ] Nothing is mounted by this task: `dashboard.jsx` is untouched, so the manifest pins stay where Task 6 left them and no behavior changes.
 - [ ] Analytics impact: the `apply_link` event is the only one; it carries enum tokens only (Task 10's builder), never a URL, id, name or key.
 
 - [ ] **Step 0: Preflight and baselines**
@@ -1964,6 +1936,36 @@ test('an interaction during the reveal cancels only the reveal and keeps the app
     assert.deepEqual(rig.store.log.at(-1), ['finish', 'done', []], 'the user scrolled on their own, so focus is not reported');
 });
 
+test('the reveal is cancelled by an interaction the guard reported since the last tick and by the terminal auth lock', () => {
+    const drive = () => {
+        const rig = createRig({ link: { ...LINK, focus: { kind: 'story', key: 'PROJ-9' } } });
+        rig.tick();
+        commitScope(rig);
+        rig.tick();
+        rig.tick();
+        finishLoad(rig);
+        rig.o.selectedTeams = ['t3'];
+        rig.o.catchUpAlertLoadRef.current = rig.o.catchUpAlertScopeKey;
+        rig.tick();
+        rig.tick();
+        rig.tick();
+        assert.equal(rig.revealLog.length, 1);
+        return rig;
+    };
+    const interacted = drive();
+    const { isCancelled } = interacted.revealLog[0].options;
+    assert.equal(isCancelled(), false);
+    interacted.controller.noteInterrupt('scroll');
+    assert.equal(isCancelled(), true, 'the reveal stops at its next frame, without waiting for the next tick');
+    interacted.tick();
+    assert.equal(isCancelled(), true, 'and stays cancelled after the tick consumed the interaction');
+
+    const locked = drive();
+    assert.equal(locked.revealLog[0].options.isCancelled(), false);
+    globalThis.window = { __JEP_AUTH_REQUIRED__: { locked: true } };
+    try { assert.equal(locked.revealLog[0].options.isCancelled(), true, 'a terminal auth lock stops the reveal'); } finally { delete globalThis.window; }
+});
+
 test('a dirty Planning review, a terminal auth lock and a vanished group each end the link', () => {
     const review = createRig({ link: LINK, options: { planningReviewBusy: true } });
     review.tick();
@@ -2241,7 +2243,7 @@ function loadModule() {
     return module.exports;
 }
 
-const { armInteractionGuard } = loadModule();
+const { armInteractionGuard, SHARE_VIEW_MODIFIER_KEYS } = loadModule();
 
 function fakeDocument() {
     const listeners = [];
@@ -2278,12 +2280,16 @@ test('pointer, touch and non-modifier key presses are deliberate and scrolling i
     assert.deepEqual(seen, ['deliberate', 'deliberate', 'deliberate', 'deliberate', 'scroll', 'scroll']);
 });
 
+test('the modifier and lock keys are one pinned list of eleven', () => {
+    assert.deepEqual([...SHARE_VIEW_MODIFIER_KEYS], ['Shift', 'Control', 'Alt', 'AltGraph', 'Meta', 'CapsLock', 'NumLock', 'ScrollLock', 'Fn', 'FnLock', 'OS']);
+});
+
 test('modifier keys, untrusted events and a paused link are ignored', () => {
     const doc = fakeDocument();
     const seen = [];
     let paused = false;
     armInteractionGuard({ doc, onInteraction: kind => seen.push(kind), isPaused: () => paused });
-    for (const key of ['Shift', 'Control', 'Alt', 'Meta', 'CapsLock']) doc.dispatch({ type: 'keydown', key });
+    for (const key of SHARE_VIEW_MODIFIER_KEYS) doc.dispatch({ type: 'keydown', key });
     doc.dispatch({ type: 'pointerdown', isTrusted: false });
     paused = true;
     doc.dispatch({ type: 'pointerdown' });
@@ -2356,7 +2362,7 @@ function createDoubles() {
 
 function makeOptions(overrides = {}) {
     return {
-        selectedSprint: 41, groupsLoading: false, onboardingRequired: false, adminSettingsGate: { status: 'clear' },
+        selectedSprint: 41, groupsLoading: false, onboardingRequired: false, adminSettingsGate: { status: 'clear' }, engLoadsTasks: true,
         teamSelectionScopeKey: 'team-selection::41::grp-a', teamSelectionHydratedScopeRef: { current: 'team-selection::41::grp-a' },
         sprintCatalogState: { authority: 'validated' }, selectedView: 'eng', activeEngMode: 'catch-up', activeGroupId: 'grp-a',
         buildGroupStateSnapshot: () => ({
@@ -2478,6 +2484,18 @@ test('the Share control is disabled until the scope is settled, whatever the blo
         hook.render();
         assert.equal(hook.render().shareDisabled, true, JSON.stringify(blocker));
     }
+    // A source-only Statistics view and a strict Board scope load no task list, so no Team hydrate ever runs there and Share does not wait for one.
+    for (const [overrides, disabled] of [
+        [{ engLoadsTasks: false, teamSelectionHydratedScopeRef: { current: '' } }, false],
+        [{ engLoadsTasks: false, teamSelectionScopeKey: '', teamSelectionHydratedScopeRef: { current: '' } }, true],
+        [{ engLoadsTasks: true, teamSelectionHydratedScopeRef: { current: '' } }, true],
+    ]) {
+        const { doubles: scoped, modules: scopedModules } = createDoubles();
+        scoped.snapshot = { phase: PHASES.ABSENT, stage: null, entry: null, hold: false, terminal: true, notice: null };
+        const scopedHook = mountHook({ modules: scopedModules }, makeOptions(overrides));
+        scopedHook.render();
+        assert.equal(scopedHook.render().shareDisabled, disabled, JSON.stringify(overrides));
+    }
     const { doubles, modules } = createDoubles();
     doubles.snapshot = { phase: PHASES.ABSENT, stage: null, entry: null, hold: false, terminal: true, notice: null };
     const hook = mountHook({ modules }, makeOptions());
@@ -2563,13 +2581,14 @@ import { readPendingAuthenticationRequired } from '../api/authRequired.js';
 // tests/test_auth_isolation_source_guard.js pins over a fixed owner list that excludes shareView/.
 const DELIBERATE_EVENTS = ['pointerdown', 'touchstart', 'keydown'];
 const SCROLL_EVENTS = ['wheel', 'touchmove'];
-const MODIFIER_KEYS = new Set(['Shift', 'Control', 'Alt', 'AltGraph', 'Meta', 'CapsLock', 'NumLock', 'ScrollLock', 'Fn', 'FnLock', 'OS']);
+// Modifier and lock keys: pressing one is not an interaction.
+export const SHARE_VIEW_MODIFIER_KEYS = new Set(['Shift', 'Control', 'Alt', 'AltGraph', 'Meta', 'CapsLock', 'NumLock', 'ScrollLock', 'Fn', 'FnLock', 'OS']);
 
 export function armInteractionGuard({ doc = document, onInteraction, isPaused = () => false }) {
     const handle = (event) => {
         if (readPendingAuthenticationRequired()) return;
         if (isPaused() || event.isTrusted === false) return;
-        if (event.type === 'keydown' && MODIFIER_KEYS.has(event.key)) return;
+        if (event.type === 'keydown' && SHARE_VIEW_MODIFIER_KEYS.has(event.key)) return;
         onInteraction(DELIBERATE_EVENTS.includes(event.type) ? 'deliberate' : 'scroll');
     };
     const types = [...DELIBERATE_EVENTS, ...SCROLL_EVENTS];
@@ -2839,7 +2858,8 @@ export function createApplyController({ readOptions, now = clock }) {
         } else {
             const target = resolveShareViewFocus(state, fresh.scope.mode);
             if (!target) { focusResult = 'missing'; return true; }
-            reveal = revealShareViewFocus(target, { mode: fresh.scope.mode, isCancelled: () => revealCancelled });
+            // Cancelled by the machine, by an interaction the guard reported since the last tick, or by the terminal auth lock.
+            reveal = revealShareViewFocus(target, { mode: fresh.scope.mode, isCancelled: () => revealCancelled || interrupt !== null || Boolean(readPendingAuthenticationRequired()) });
             reveal.done.catch(() => 'missing').then((result) => { focusResult = result; controller.evaluate(); });
         }
         return true;
@@ -2928,10 +2948,11 @@ export function useShareViewPlanningTableKey() {
     return React.useSyncExternalStore(subscribeShareView, selectPlanningTableKey, selectPlanningTableKey);
 }
 
-// Sharing needs a settled scope: a Sprint, loaded Departments, a hydrated Team selection, a validated catalog and no pending apply.
+// Sharing needs a settled scope: a Sprint, loaded Departments, a validated catalog and no pending apply, and, where a task list loads, a
+// hydrated Team selection. A source-only Statistics view and a strict Board scope load no tasks, so no Team hydrate ever runs there.
 const isShareDisabled = (o, applyTerminal) => !applyTerminal
     || o.selectedSprint === null || o.groupsLoading || o.onboardingRequired || o.adminSettingsGate.status === 'missing'
-    || !o.teamSelectionScopeKey || o.teamSelectionHydratedScopeRef.current !== o.teamSelectionScopeKey
+    || !o.teamSelectionScopeKey || (o.engLoadsTasks && o.teamSelectionHydratedScopeRef.current !== o.teamSelectionScopeKey)
     || o.sprintCatalogState.authority !== 'validated' || o.selectedView !== 'eng' || o.activeEngMode === 'scenario'
     || Boolean(readPendingAuthenticationRequired());
 
@@ -2989,13 +3010,13 @@ export function useShareViewApply(options) {
 
 Run: `fnm exec --using 20 node --test tests/test_share_view_apply_controller.js tests/test_share_view_capture_state.js tests/test_share_view_interaction_guard.js tests/test_share_view_apply_hook.js`
 
-Expected: `# tests 44`, `# pass 44`, `# fail 0` (26 controller, 7 capture, 4 guard, 7 hook). The hook file ends the process cleanly: every `withBrowser` run stubs the timers and `document`, and the tests unmount their hooks.
+Expected: `# tests 46`, `# pass 46`, `# fail 0` (27 controller, 7 capture, 5 guard, 7 hook). The hook file ends the process cleanly: every `withBrowser` run stubs the timers and `document`, and the tests unmount their hooks.
 
 - [ ] **Step 5: Run the task's regression gate**
 
-1. The whole frontend unit suite: `fnm exec --using 20 node --test tests/test_*.js 2>&1 | grep -E '^# (tests|pass|fail)'`. Expected: `# fail 0` and `# tests` equal to N0 plus 44. This run includes `tests/test_auth_isolation_source_guard.js` (the `window` `keydown` count stays at six) and `tests/test_frontend_api_source_guards.js`.
+1. The whole frontend unit suite: `fnm exec --using 20 node --test tests/test_*.js 2>&1 | grep -E '^# (tests|pass|fail)'`. Expected: `# fail 0` and `# tests` equal to N0 plus 46. This run includes `tests/test_auth_isolation_source_guard.js` (the `window` `keydown` count stays at six) and `tests/test_frontend_api_source_guards.js`.
 2. The structure budgets: `env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets`. Expected: `Ran 2 tests` and `OK`.
-3. The extraction gate: `fnm exec --using 20 bash scripts/extraction_lint/run.sh`. Expected: exit status 0, `0 errors`, a warning count equal to W0, `owner budgets: 0 problems` and `enforced problems: 0`.
+3. The extraction gate: `fnm exec --using 20 bash scripts/extraction_lint/run.sh`. Expected: the Task 0 baseline exit status, `0 errors`, a warning count equal to W0, `owner budgets: 0 problems` and `enforced problems: <B>`.
 4. Rebuild: `fnm exec --using 20 npm run build`. Expected: `Dashboard built: ` followed by 64 hexadecimal digits. Then `git status --short -- frontend/dist` must print the same three entries as in Task 9 (the modules are not imported by the App yet, so the bundle only changes by its build id):
 
 ```
@@ -3024,7 +3045,7 @@ Read the results: `git show --stat HEAD` lists exactly eleven paths: `frontend/d
 
 **Owner note:** depends on Task 6 (`commitSprintSelection`, `persistTeamSelection`), Task 10 (the analytics hook returns `trackShareViewAction` and `analyticsReady`) and Task 11a (the hook and its early hooks); blocks Task 11c and Task 12. Anchors this task assumes are already applied: Task 5's first line (`import './shareView/entry.js';`, which no block below touches), Task 6's two closures, Task 10's analytics module. It assumes none of Task 12: Task 12 runs after this task and its anchors (the `JiraExportButton` import, `renderEpmControls`, `renderSearchControl('main')`, `compact-sticky-header-search`) do not overlap any block here; its Step 0 needs exactly one `const shareView = useShareViewApply(` line, which this task adds. This task mounts no notice: Task 12 renders the notice inside the Share control and reads `shareView.notice`.
 
-**What lands here.** The only behavior change of Task 11 in `dashboard.jsx`, in eight small replacements:
+**What lands here.** The only behavior change of Task 11 in `dashboard.jsx`, in nine small replacements:
 
 | # | Where | What |
 | --- | --- | --- |
@@ -3036,20 +3057,21 @@ Read the results: `git show --stat HEAD` lists exactly eleven paths: `frontend/d
 | 6 | the same effect's dependency list | append `shareViewHold` |
 | 7 | after `useEngModeState` | the flat `shareViewOptions` object (the 73 names of Task 11a's table) and `const shareView = useShareViewApply(shareViewOptions);` |
 | 8 | the Planning table element | `key={shareViewPlanningTableKey}` |
+| 9 | the `usePlanningSprintReview` call | its `active` expression gains `&& !shareViewHold` (no line count change) |
 
 Plus a three-line change in `frontend/src/onboarding/useOnboardingTour.js`: the Catch Up tour's auto-start waits for `applyTerminal`.
 
-**The hold.** A link is pending from the moment the entry module decoded it. While `useShareViewHold()` is true the ENG task-load effect returns early exactly as it does for `groupsLoading`, so no request is issued for the recipient's saved scope. The hold ends when the machine emits `releaseHold` (one commit after Stage B) or when the link finishes, so an unresolvable link never blocks the default load. The one exception is a staged Planning recovery capsule (`pendingPlanningAuthResumeRef.current`): `usePlanningSelectionSync` clears it only after the ENG load, so holding would wait on itself. The link waits for the capsule (the readiness gate includes `capsulesPending`) and the capsule's own load runs.
+**The hold.** A link is pending from the moment the entry module decoded it. While `useShareViewHold()` is true the ENG task-load effect returns early exactly as it does for `groupsLoading`, so no request is issued for the recipient's saved scope, and the Planning review stays inactive, so a Planning table that is already mounted does not read the review schema of the recipient's saved Sprint (a Planning link or a Catch Up link would otherwise add `GET /api/eng/sprints/<saved Sprint>/review`, which a manual run never issues). The hold ends when the machine emits `releaseHold` (one commit after Stage B) or when the link finishes, so an unresolvable link never blocks the default load. The one exception is a staged Planning recovery capsule (`pendingPlanningAuthResumeRef.current`): `usePlanningSelectionSync` clears it only after the ENG load, so holding would wait on itself. The link waits for the capsule (the readiness gate includes `capsulesPending`) and the capsule's own load runs.
 
 **The tour wait.** `useShareViewApplyTerminal()` is false only while a link is pending or running. The onboarding controller is declared before `useEngModeState`, so this early hook is the only way to pass it down; the Catch Up tour's auto-start waits for it and starts as before once the link is terminal (a link that settles after Catch Up was already completed starts nothing).
 
-**The Planning table key.** The Planning table's Epics/Stories rows are local state seeded once at mount (Task 8). The controller seeds them when Stage C begins, after the first ENG load (which unmounts the table), and `useShareViewPlanningTableKey()` flips at the same moment, so the keyed table remounts and reads the seed. Verified in a real page: with the seed taken at the table's first mount instead, the load that the hold delays unmounted the table and the next mount started from Epics.
+**The Planning table key.** The Planning table's Epics/Stories rows are local state seeded once at mount (Task 8). The controller seeds them when Stage C begins, after the first ENG load (which unmounts the table), and `useShareViewPlanningTableKey()` flips at the same moment, so the keyed table remounts and reads the seed. A seed taken at the table's first mount would be lost: the first ENG load, which the hold delays until after Stage B, unmounts the table, and the next mount starts from Epics.
 
 **Files:**
 - Modify: `frontend/src/dashboard.jsx` (the eight replacements above)
 - Modify: `frontend/src/onboarding/useOnboardingTour.js` (`shouldAutomaticallyStartOnboarding`, `useOnboardingController`, its auto-start effect)
 - Modify: `tests/test_dashboard_freshness_interactions.js` (the `normalEngLoadEffect` inputs, one new test)
-- Modify: `tests/test_codebase_structure_budgets.py`, `scripts/extraction_lint/owner_budgets.json` (the `dashboard.jsx` pins, same commit)
+- Modify: `scripts/extraction_lint/owner_budgets.json` (the `dashboard.jsx` manifest pins, same commit)
 - Test (new): `tests/test_share_view_source_guards.js`, `tests/test_share_view_onboarding_wait.js`
 - Regenerated: `frontend/dist/`
 
@@ -3060,9 +3082,9 @@ Plus a three-line change in `frontend/src/onboarding/useOnboardingTour.js`: the 
 **Forbidden regressions for this task:**
 - [ ] Reauth recovery and its source guards are untouched: no `AuthRequiredGate`, `authRecoveryCoordinator` or `sanitizeLoginUrl` edit; `tests/test_auth_isolation_source_guard.js` still counts exactly six `window.addEventListener('keydown', handler)` registrations; the staged Planning recovery capsule still loads.
 - [ ] Non-link startup is unchanged: without a link the hold is false and the tour's `applyTerminal` is true, so the ENG load effect and the tour behave exactly as before (the freshness test pins the load with `shareViewHold: false`). The dependency list only gains `shareViewHold` at its tail.
-- [ ] The first load stays cache-first and performance-critical: no new request, no extra fetch (Task 11c compares the request multiset with a manual run).
+- [ ] The first load stays cache-first and performance-critical: no new request, no extra fetch, and no review read for the saved Sprint (Task 11c compares the request multiset with a manual run, for a Catch Up recipient and for a recipient who saved a Planning table).
 - [ ] No notice mount, no Share control and no CSS here (Task 12). No sticky offset or z-index changes.
-- [ ] `dashboard.jsx` grows by exactly 35 lines and both pins move in this commit.
+- [ ] `dashboard.jsx` grows by exactly 35 lines and the manifest pins move in this commit.
 - [ ] Analytics impact: the `apply_link` event of Task 11a is the only new event; Task 13 documents it.
 - [ ] ESLint: this task adds exactly one warning, `'shareView' is assigned a value but never used`, which Task 12 removes by rendering the control. The ratchet (106) holds.
 
@@ -3081,7 +3103,7 @@ rg -n "^        analyticsReady,$|^        trackShareViewAction,$" frontend/src/a
 fnm exec --using 20 node --test tests/test_*.js 2>&1 | grep -E '^# (tests|pass|fail)'
 fnm exec --using 20 bash scripts/extraction_lint/run.sh 2>&1 | grep -E 'problems \('
 ```
-Expected: the branch is `feature/194-shareable-dashboard-view`; `git status --short` prints nothing; `wc -l` prints `7585 frontend/src/dashboard.jsx`; the `rg -c "const shareView"` command prints nothing (no match yet); the second `rg` prints `4` and the third prints `2` (the hook returns both new members); the Node summary shows `# fail 0` (write down `# tests` as N0); the lint line shows `0 errors` (write down the warning count as W0).
+Expected: the branch is `feature/194-shareable-dashboard-view`; `git status --short` prints nothing; `wc -l` prints Task 6's count (`7505 frontend/src/dashboard.jsx` on the validated base); the `rg -c "const shareView"` command prints nothing (no match yet); the second `rg` prints `4` and the third prints `2` (the hook returns both new members); the Node summary shows `# fail 0` (write down `# tests` as N0); the lint line shows `0 errors` (write down the warning count as W0).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -3132,7 +3154,7 @@ test('a link that settles after the user already completed Catch Up does not sta
 }));
 ```
 
-Create `tests/test_share_view_source_guards.js`. It checks code only (comments are stripped with esbuild, so a comment may name a forbidden helper) and pins: no forbidden helper, no template-literal selector, no write API, no `URLSearchParams` in the codec, no `window` `keydown` handler in `shareView/`, the entry import first, the hook declared after the restore effects and after `useEngModeState`, the options parity in both directions, the ten alert-flag pairs, the hold in the ENG effect with its capsule exception and dependency, and the early hooks with the tour wait and the table key:
+Create `tests/test_share_view_source_guards.js`. It checks code only (comments are stripped with esbuild, so a comment may name a forbidden helper) and pins: no forbidden helper, no template-literal selector, no write API, no `URLSearchParams` in the codec, no `window` `keydown` handler in `shareView/`, the entry import first, the hook declared after the restore effects and after `useEngModeState`, the options parity in both directions, the ten alert-flag pairs, the hold in the ENG effect with its capsule exception and dependency, the hold on the Planning review read, and the early hooks with the tour wait and the table key:
 
 ```js
 const test = require('node:test');
@@ -3260,6 +3282,12 @@ test('the ENG task-load effect holds for a pending link, with the Planning recov
     assert.ok(dashboard.includes('groupsLoading, groupPreferences.onboardingRequired, configRefreshNonce, authResumeStagedRevision, shareViewHold]);'));
 });
 
+test('the Planning review read holds with the link, so it never reads the review of the recipient saved Sprint', () => {
+    const call = between(dashboard, 'const planningReview = usePlanningSprintReview({', '\n            });');
+    assert.ok(call.includes("active: selectedView === 'eng' && showPlanning && planningLayout === 'table' && engWorkspaceConfigured && !shareViewHold,"));
+    assert.ok(dashboard.indexOf('const shareViewHold = useShareViewHold();') < dashboard.indexOf('const planningReview = usePlanningSprintReview({'));
+});
+
 test('the early link hooks precede both of their consumers and the Catch Up tour waits for the link', () => {
     const early = dashboard.indexOf('const shareViewHold = useShareViewHold();');
     assert.ok(early > 0);
@@ -3324,7 +3352,7 @@ test('held catalog display cannot authorize a normal ENG acquisition before vali
 
 Run: `fnm exec --using 20 node --test tests/test_share_view_source_guards.js tests/test_share_view_onboarding_wait.js tests/test_dashboard_freshness_interactions.js`
 
-Expected: exit status 1 with seven failures and everything else passing. In the source guards: `the apply hook is declared after the restore effects, the group and Team effects and the mode state`, `the options object names exactly what the apply reads from it`, `the alert flag pairs cover the ten alert categories, each with its own value and setter`, `the ENG task-load effect holds for a pending link, with the Planning recovery capsule as the only exception` and `the early link hooks precede both of their consumers and the Catch Up tour waits for the link`. In the onboarding file: `the Catch Up tour does not auto-start while a shareable link is still applying, and starts once it settles`. In the freshness file: `a pending shareable link holds the normal ENG load until it is released, unless a Planning recovery capsule needs its own load`.
+Expected: exit status 1 with eight failures and everything else passing. In the source guards: `the apply hook is declared after the restore effects, the group and Team effects and the mode state`, `the options object names exactly what the apply reads from it`, `the alert flag pairs cover the ten alert categories, each with its own value and setter`, `the ENG task-load effect holds for a pending link, with the Planning recovery capsule as the only exception`, `the Planning review read holds with the link, so it never reads the review of the recipient saved Sprint` and `the early link hooks precede both of their consumers and the Catch Up tour waits for the link`. In the onboarding file: `the Catch Up tour does not auto-start while a shareable link is still applying, and starts once it settles`. In the freshness file: `a pending shareable link holds the normal ENG load until it is released, unless a Planning recovery capsule needs its own load`.
 
 - [ ] **Step 3: Make the Catch Up tour wait for the link**
 
@@ -3396,7 +3424,7 @@ with:
 
 - [ ] **Step 4: Mount the apply in `dashboard.jsx`**
 
-Eight replacements in `frontend/src/dashboard.jsx`, each old block occurring exactly once. Apply them in this order.
+Nine replacements in `frontend/src/dashboard.jsx`, each old block occurring exactly once. Apply them in this order.
 
 1. The import (below the analytics import):
 
@@ -3559,90 +3587,72 @@ with:
 <PlanningReviewTable key={shareViewPlanningTableKey} toolbarHost={planningToolbarHost} onInteractionChange=
 ```
 
+9. The Planning review read, in the `usePlanningSprintReview` call (the hold is declared far above it, with the other early hooks): the review stays inactive while the link is pending, so it never reads the review of the saved Sprint. The line count does not change:
+
+Replace this:
+
+```js
+                sprintId: selectedSprint, active: selectedView === 'eng' && showPlanning && planningLayout === 'table' && engWorkspaceConfigured,
+```
+
+with:
+
+```js
+                sprintId: selectedSprint, active: selectedView === 'eng' && showPlanning && planningLayout === 'table' && engWorkspaceConfigured && !shareViewHold,
+```
+
 - [ ] **Step 5: Run the tests and confirm they pass**
 
 Run: `fnm exec --using 20 node --test tests/test_share_view_source_guards.js tests/test_share_view_onboarding_wait.js tests/test_dashboard_freshness_interactions.js`
 
-Expected: `# fail 0`. The source guards report 11 passing tests and the onboarding file 3. The freshness file passes its existing tests (every test that runs the load effect needs the harness input added in Step 1: without it the effect throws `ReferenceError: shareViewHold`) plus the new hold test.
+Expected: `# fail 0`. The source guards report 12 passing tests and the onboarding file 3. The freshness file passes its existing tests (every test that runs the load effect needs the harness input added in Step 1: without it the effect throws `ReferenceError: shareViewHold`) plus the new hold test.
 
-- [ ] **Step 6: Move the line-count pins**
+- [ ] **Step 6: Move the manifest pins (same commit)**
 
-Measure: `wc -l frontend/src/dashboard.jsx`. Expected: `7620 frontend/src/dashboard.jsx` (7,585 plus 35).
-
-Run: `env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets`
-
-Expected: `FAILED (failures=2)`: `dashboard measured lineCount differs from actual`, `dashboard exceeds ceiling`, `appPlusOwners: measured aggregate 34187 differs from unique actual 34222`, `appPlusOwners: 34222 exceeds aggregate ceiling 34187` and `frontend/src/dashboard.jsx: 7620 lines exceeds budget 7585`.
-
-The manifest is JSON and cannot hold a comment, so the one-line reason sits above the legacy entry, where earlier ratchets put theirs.
-
-In `tests/test_codebase_structure_budgets.py` (the end of `LEGACY_ENTRYPOINT_LINE_BUDGETS`; it occurs once):
-
-Replace this:
+`dashboard.jsx` grows by exactly 35 lines (the apply mount, its options object, the early hold hooks and the ENG load-effect hold). The extraction manifest pins it by exact equality, so its numbers move in this commit; `appPlusOwners` is the dashboard plus the unchanged `uniqueOwners` aggregate. The legacy ceiling in `LEGACY_ENTRYPOINT_LINE_BUDGETS` sits above the file and is not edited (Global Constraints, Budgets). Run `mkdir -p tmp/share-view-budget`, then create `tmp/share-view-budget/pins.py` (`tmp/` is gitignored; an earlier task may have left a copy, which this text replaces) with exactly this content:
 
 ```python
-    "frontend/src/dashboard.jsx": 7585,
-}
+import json
+import re
+import sys
+
+n = int(sys.argv[1])
+path = 'scripts/extraction_lint/owner_budgets.json'
+text = open(path).read()
+unique_owners = json.loads(text)['aggregates']['uniqueOwners']['measured']
+text, count = re.subn(
+    r'("dashboard": \{\s*"path": "frontend/src/dashboard\.jsx",\s*"lineCount": )\d+(,\s*"lineCeiling": )\d+',
+    lambda match: f'{match.group(1)}{n}{match.group(2)}{n}',
+    text,
+)
+assert count == 1, 'dashboard manifest entry not found exactly once'
+text, count = re.subn(
+    r'("appPlusOwners": \{\s*"measured": )\d+(,\s*"ceiling": )\d+',
+    lambda match: f'{match.group(1)}{n + unique_owners}{match.group(2)}{n + unique_owners}',
+    text,
+)
+assert count == 1, 'appPlusOwners aggregate not found exactly once'
+open(path, 'w').write(text)
+print(f'dashboard.jsx pinned at {n}; appPlusOwners pinned at {n + unique_owners}')
 ```
 
-with:
-
-```python
-    # Issue #194: the shareable-link apply mount, its options object, the early hold hooks and the ENG load-effect hold (+35).
-    "frontend/src/dashboard.jsx": 7620,
-}
+Run:
+```bash
+wc -l frontend/src/dashboard.jsx
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets 2>&1 | grep -E 'differs|exceeds|^Ran |^OK|^FAILED'
+N=$(wc -l < frontend/src/dashboard.jsx | tr -d ' ')
+$PY tmp/share-view-budget/pins.py "$N"
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets 2>&1 | grep -E 'differs|exceeds|^Ran |^OK|^FAILED'
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY tests/test_codebase_structure_budgets.py --manifest scripts/extraction_lint/owner_budgets.json
+git diff --stat -- tests/test_codebase_structure_budgets.py scripts/extraction_lint/owner_budgets.json
 ```
-
-In `scripts/extraction_lint/owner_budgets.json` (the `dashboard` object; it occurs once):
-
-Replace this:
-
-```json
-  "dashboard": {
-    "path": "frontend/src/dashboard.jsx",
-    "lineCount": 7585,
-    "lineCeiling": 7585
-  },
-```
-
-with:
-
-```json
-  "dashboard": {
-    "path": "frontend/src/dashboard.jsx",
-    "lineCount": 7620,
-    "lineCeiling": 7620
-  },
-```
-
-In `scripts/extraction_lint/owner_budgets.json` (`aggregates.appPlusOwners`; it occurs once):
-
-Replace this:
-
-```json
-    "appPlusOwners": {
-      "measured": 34187,
-      "ceiling": 34187
-    }
-```
-
-with:
-
-```json
-    "appPlusOwners": {
-      "measured": 34222,
-      "ceiling": 34222
-    }
-```
-
-Run: `env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets` and `env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY tests/test_codebase_structure_budgets.py --manifest scripts/extraction_lint/owner_budgets.json`
-
-Expected: the first prints `Ran 2 tests` and `OK`; the second prints `owner budgets: 0 problems`.
+Expected: `wc -l` prints the previous task's count plus 35 (7,540 on the validated base); the first test run fails only the manifest test (the printed list holds `dashboard measured lineCount differs from actual`, `dashboard exceeds ceiling`, `appPlusOwners: measured aggregate ... differs from unique actual ...` and `appPlusOwners: ... exceeds aggregate ceiling ...`, then `FAILED (failures=1)`); the script prints `dashboard.jsx pinned at <N>; appPlusOwners pinned at <N + uniqueOwners>` (7,540 and 34,142 on the validated base); the second run reports `Ran 2 tests` and `OK`; the manifest run prints `owner budgets: 0 problems`; `git diff --stat` shows only `scripts/extraction_lint/owner_budgets.json` with 8 changed lines. If the legacy test fails too (`frontend/src/dashboard.jsx: <N> lines exceeds budget <M>`), `main` tightened that ceiling after this plan was validated: raise the entry in `tests/test_codebase_structure_budgets.py` to `<N>` with a one-line comment naming issue #194, and add that file to this commit's `git add`.
 
 - [ ] **Step 7: Run the task's regression gate**
 
-1. The whole frontend unit suite: `fnm exec --using 20 node --test tests/test_*.js 2>&1 | grep -E '^# (tests|pass|fail)'`. Expected: `# fail 0` and `# tests` equal to N0 plus 15 (11 source guards, 3 onboarding, 1 freshness). This run includes `tests/test_auth_isolation_source_guard.js` and `tests/test_epm_shell_source_guards.js`.
+1. The whole frontend unit suite: `fnm exec --using 20 node --test tests/test_*.js 2>&1 | grep -E '^# (tests|pass|fail)'`. Expected: `# fail 0` and `# tests` equal to N0 plus 16 (12 source guards, 3 onboarding, 1 freshness). This run includes `tests/test_auth_isolation_source_guard.js` and `tests/test_epm_shell_source_guards.js`.
 2. The Python tests that read `dashboard.jsx`: `env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets tests.test_eng_board_source_guards tests.test_project_packaging tests.test_auth_entry_page`. Expected: `OK`.
-3. The extraction gate: `fnm exec --using 20 bash scripts/extraction_lint/run.sh`. Expected: exit status 0, `0 errors`, a warning count equal to W0 plus 1 (the one `shareView` warning named above), `owner budgets: 0 problems` and `enforced problems: 0`. Also confirm Task 12's precondition: `rg -n "const shareView = useShareViewApply\(" frontend/src/dashboard.jsx` prints exactly one line.
+3. The extraction gate: `fnm exec --using 20 bash scripts/extraction_lint/run.sh`. Expected: the Task 0 baseline exit status, `0 errors`, a warning count equal to W0 plus 1 (the one `shareView` warning named above), `owner budgets: 0 problems` and `enforced problems: <B>`. Also confirm Task 12's precondition: `rg -n "const shareView = useShareViewApply\(" frontend/src/dashboard.jsx` prints exactly one line.
 4. The UI specs that exercise startup, the ENG load, onboarding, recovery and the Board reuse: `npx playwright test tests/ui/onboarding_tour.spec.js tests/ui/global_auth_lock.spec.js tests/ui/planning_selection_defaults.spec.js tests/ui/dashboard_data_freshness.spec.js tests/ui/shared_department_groups.spec.js tests/ui/eng_group_board_view.spec.js tests/ui/server_unavailable_ui.spec.js --browser=chromium --workers=4 2>&1 | grep -E '^ +[0-9]+ (passed|failed|flaky|skipped)'`. Expected: `535 passed` and no `failed` or `flaky` line (about six minutes; a different total only means an earlier task edited one of these specs, and the requirement is zero failures).
 5. Rebuild: `fnm exec --using 20 npm run build`. Expected: `Dashboard built: ` followed by 64 hexadecimal digits. Then `git status --short -- frontend/dist` must print these four entries (the dashboard source changed, so the bundle and its source map change, and the manifest name follows the build id):
 
@@ -3656,30 +3666,31 @@ Expected: the first prints `Ran 2 tests` and `OK`; the second prints `owner budg
 - [ ] **Step 8: Commit**
 
 ```bash
-git add frontend/src/dashboard.jsx frontend/src/onboarding/useOnboardingTour.js tests/test_share_view_source_guards.js tests/test_share_view_onboarding_wait.js tests/test_dashboard_freshness_interactions.js tests/test_codebase_structure_budgets.py scripts/extraction_lint/owner_budgets.json
+git add frontend/src/dashboard.jsx frontend/src/onboarding/useOnboardingTour.js tests/test_share_view_source_guards.js tests/test_share_view_onboarding_wait.js tests/test_dashboard_freshness_interactions.js scripts/extraction_lint/owner_budgets.json
 git add -A -- frontend/dist
-git -c user.name=Juce -c user.email=Juce-me@users.noreply.github.com commit -m "Mount the shareable-link apply, hold and tour wait" -m "dashboard.jsx mounts useShareViewApply after the mode state with one flat options object of raw setters and refs, holds the default-scope ENG load while a link is pending (a staged Planning recovery capsule excepted), keys the Planning table so it re-reads the link rows, and makes the Catch Up tour wait for the link (issue 194). Source guards pin the options parity, the hook order, the hold and the forbidden helpers. dashboard.jsx grows by 35 lines, so both line-count pins move to 7620 and the aggregate to 34222."
+git -c user.name=Juce -c user.email=Juce-me@users.noreply.github.com commit -m "Mount the shareable-link apply, hold and tour wait" -m "dashboard.jsx mounts useShareViewApply after the mode state with one flat options object of raw setters and refs, holds the default-scope ENG load while a link is pending (a staged Planning recovery capsule excepted), keys the Planning table so it re-reads the link rows, and makes the Catch Up tour wait for the link (issue 194). Source guards pin the options parity, the hook order, the hold and the forbidden helpers. dashboard.jsx grows by 35 lines, so the manifest's line-count pins and aggregate move up by 35."
 git show --stat HEAD
 git status --short
 make verify-dist-clean
 ```
 
-Read the results: `git show --stat HEAD` lists exactly ten paths: `frontend/dist/dashboard.js`, `frontend/dist/dashboard.js.map`, the renamed `frontend/dist/lazy-views-*.json`, `frontend/src/dashboard.jsx` (38 insertions and 3 deletions), `frontend/src/onboarding/useOnboardingTour.js` (5 insertions and 1 deletion), `scripts/extraction_lint/owner_budgets.json` (8 changed lines), `tests/test_codebase_structure_budgets.py` (2 insertions and 1 deletion), `tests/test_dashboard_freshness_interactions.js` (17 insertions and 1 deletion), `tests/test_share_view_onboarding_wait.js` (42 insertions) and `tests/test_share_view_source_guards.js` (139 insertions). `git status --short` prints nothing. `make verify-dist-clean` prints nothing and exits 0.
+Read the results: `git show --stat HEAD` lists exactly nine paths: `frontend/dist/dashboard.js`, `frontend/dist/dashboard.js.map`, the renamed `frontend/dist/lazy-views-*.json`, `frontend/src/dashboard.jsx` (39 insertions and 4 deletions), `frontend/src/onboarding/useOnboardingTour.js` (5 insertions and 1 deletion), `scripts/extraction_lint/owner_budgets.json` (8 changed lines), `tests/test_dashboard_freshness_interactions.js` (17 insertions and 1 deletion), `tests/test_share_view_onboarding_wait.js` (42 insertions) and `tests/test_share_view_source_guards.js` (145 insertions). `git status --short` prints nothing. `make verify-dist-clean` prints nothing and exits 0.
 
 
 ---
 
 ### Task 11c: Shareable-link UI acceptance spec
 
-**Owner note:** depends on Task 10 (the spec reads the apply event from `window.dataLayer`) and Task 11b (it drives the mounted hook); no later task builds on it, but Task 14's journey A cites it. It adds one test file and changes no source, so there is no `dist` rebuild and no budget move. Task 11 is a checkpoint: this task ends with a report and a stop (Step 11).
+**Owner note:** depends on Task 10 (the spec reads the apply event from `window.dataLayer`) and Task 11b (it drives the mounted hook); no later task builds on it, but Task 14's journey A cites it. It adds one test file and changes no source, so there is no `dist` rebuild and no budget move. Task 11 is a checkpoint: this task ends with a report and a stop (Step 13).
 
-**What the spec proves.** Real pages in Chromium, with the real App, the real store, codec, resolver, controller and hook, and a mocked network that records every request. It covers V1, V3, V5, V6, V7, V15, V16 and V19 of the design and the Review Focus lines RF1, RF2 and RF3, plus the Stage D reveal, the Planning rows seed and the three non-Catch-Up modes.
+**What the spec proves.** Real pages in Chromium, with the real App, the real store, codec, resolver, controller and hook, and a mocked network that records every request. It covers V1, V3, V5, V6 (for a Catch Up recipient and for a recipient who saved a Planning table), V7, V15, V16 and V19 of the design, the focus-miss clause of V4, the Review Focus lines RF1, RF2 and RF3, the Stage D reveal, the Planning rows seed, the three non-Catch-Up modes and when Share is enabled.
 
 | Test | Pins |
 | --- | --- |
 | a link for another Department and Sprint keeps its fields, Teams and filters through the group-state reset | V5: Stage B and C survive `applyGroupState`; the saved prefs are overwritten by the link, not merged; one `apply_link` event with `result: success` |
 | opening the link strips its keys from the URL before Tag Manager is requested | V3: `history.replaceState` runs before the Tag Manager script is appended, and the frame URL at the `gtm.js` request has an empty search |
-| a scope-changing link issues no default-scope load and the requests of a manual run pre-seeded to the same state | V6: no task request for the saved scope; the multiset of requests (method, path, sorted parameter names, aborted ones counted) equals a manual run |
+| a scope-changing link issues no default-scope load and the requests of a manual run pre-seeded to the same state | V6: no task request for the saved scope; the multiset of requests (method, path, sorted parameter names, aborted ones counted) equals a manual run whose Department is pre-seeded through the groups config; both runs load only the link's Department and Sprint |
+| a Planning link, and a Catch Up link, for a recipient with a saved Planning table issue the requests of a manual run and never read the review of the saved Sprint | V6 for the Planning review: the hold also covers the review read, so no `GET /api/eng/sprints/<saved Sprint>/review` is issued |
 | the link overrides the staged auth and connection recovery capsules | V7: both capsules are consumed and the final view is the link's |
 | a recipient whose saved view is EPM, and one whose saved flags are Scenario, end in the link ENG view | V15 and RF2: the one-shot EPM restore does not win; Scenario flags are overwritten |
 | a same-scope link skips the scope write but still applies its fields, Teams and facets with one load | RF3: Stage A writes no scope, Stages B and C still apply; one load per lane |
@@ -3690,19 +3701,21 @@ Read the results: `git show --stat HEAD` lists exactly ten paths: `frontend/dist
 | a terminal auth lock drops the pending link and leaves the lock unchanged | V16 |
 | a first-run recipient is held through the Department popup, then the link is dropped and the Catch Up tour waits for it | RF1: nothing loads or reports while the popup is open; after the pick the link drops with one `rejected` event; then the tour starts |
 | the Catch Up tour does not auto-start while the link is still applying | RF1 |
-| a focus target that exists is revealed and one that does not is reported as partial | Stage D: the Epic block is revealed and the link ends `success`; an absent valid key ends `partial` after the reveal's own 8 s poll |
+| a focus target that exists is revealed and one that does not is reported as partial | Stage D: the Epic block is revealed and the link ends `success`; an absent valid key ends `partial` after the reveal's own 8 s poll, the Teams the link set stay, and no `filter_changed` event is emitted (the V4 clause) |
 | a Planning link switches a Planning table that is already open to the rows of the link | the keyed table re-reads the Stage C rows seed |
 | a source-only Statistics link for another Department loads no Catch Up tasks for any scope | the hold is released after Stage B, not after Stage A |
 | a link equal to the recipient current view writes nothing new and still completes with one load | the identity link |
+| Share stays disabled while a link applies and is enabled once the view has settled | the hook's `shareDisabled` and `applyTerminal`, read from the page |
+| Share is enabled in a source-only Statistics view, which loads no task list and so never hydrates the Team selection | a saved source-only view and the same view reached by a link: no task request, and Share is enabled |
 
-**Fixture facts the spec relies on:** the shared fixture `tests/ui/epm_home_token_fixture.js` routes `/` with a pattern that never matches a URL with a query, so the spec registers its own route for `/?v=1...`; the fixture reads `frontend/dist/*` when a spec file loads, so a built `frontend/dist` must exist (it is committed); the dashboard bundle itself is built from source in `beforeAll`. All synthetic: two Departments with their own Teams and an active, a future and a closed Sprint. An Epic key in a link must match the Jira key pattern (`BET-100`, not `BET-EPIC`), or the decoder reports `focus` and no reveal happens.
+**Fixture facts the spec relies on:** the shared fixture `tests/ui/epm_home_token_fixture.js` routes `/` with a pattern that never matches a URL with a query, so the spec registers its own route for `/?v=1...`; the fixture reads `frontend/dist/*` when a spec file loads, so a built `frontend/dist` must exist (it is committed); the dashboard bundle itself is built from source in an async `beforeAll`. The Share control is a later task, so the build adds a probe through an esbuild plugin: it wraps the real `useShareViewApply` and publishes its result as `window.__shareViewProbe`, which the two Share tests read; no production file carries a test seam, and the plugin throws if the hook's declaration changes. All data is synthetic: two Departments with their own Teams and an active, a future and a closed Sprint. An Epic key in a link must match the Jira key pattern (`BET-100`, not `BET-EPIC`), or the decoder reports `focus` and no reveal happens. A manual run starts from the link's resolved state, and the Department of a manual run comes from `groupsConfig.preferences.activeGroupId`: the saved prefs alone do not move it.
 
 **Files:**
 - Create: `tests/ui/shareable_view_links.spec.js`
 
 **Interfaces:**
 - Consumes: the mounted apply (Task 11b), `share_view_action` in `window.dataLayer` (Task 10: `feature_name`, `workflow_action`, `result`, `source_surface`), the real modules of Tasks 3 to 9 and 11a.
-- Produces: the executable acceptance evidence for V1, V3, V5, V6, V7, V15, V16, V19, RF1, RF2 and RF3.
+- Produces: the executable acceptance evidence for V1, V3, V5, V6, V7, V15, V16, V19, the V4 focus-miss clause, RF1, RF2 and RF3.
 
 **Forbidden regressions for this task:**
 - [ ] No source file changes in this task (the negative controls below are reverted before the commit).
@@ -3739,12 +3752,36 @@ const PREFS_KEY = 'jira_dashboard_ui_prefs_v1';
 const TEAM_SELECTION_KEY = 'jira_dashboard_team_selection_state_v1';
 let dashboardJs;
 
-test.beforeAll(() => {
-    dashboardJs = esbuild.buildSync({
+// The Share control is a later task, so the spec reads the hook result from the page through a build-time probe on the real module:
+// the bundle publishes what `useShareViewApply` returns as `window.__shareViewProbe`. No production code carries a test seam.
+const HOOK_DECLARATION = 'export function useShareViewApply(options) {';
+const shareViewProbe = {
+    name: 'share-view-probe',
+    setup(build) {
+        build.onLoad({ filter: /shareView[\\/]useShareViewApply\.js$/ }, async (args) => {
+            const source = await fs.promises.readFile(args.path, 'utf8');
+            if (!source.includes(HOOK_DECLARATION)) throw new Error('useShareViewApply is declared differently now: update the probe');
+            return {
+                contents: `${source.replace(HOOK_DECLARATION, 'function useShareViewApplyOriginal(options) {')}
+export function useShareViewApply(options) {
+    const result = useShareViewApplyOriginal(options);
+    window.__shareViewProbe = result;
+    return result;
+}
+`,
+                loader: 'js',
+            };
+        });
+    },
+};
+
+test.beforeAll(async () => {
+    dashboardJs = (await esbuild.build({
         entryPoints: [path.join(repoRoot, 'frontend', 'src', 'dashboard.jsx')],
         bundle: true, write: false, format: 'iife', loader: { '.css': 'empty' },
         define: { 'process.env.NODE_ENV': '"test"' },
-    }).outputFiles[0].text;
+        plugins: [shareViewProbe],
+    })).outputFiles[0].text;
 });
 
 // Synthetic data: two Departments with their own Teams, and an active, a future and a closed Sprint.
@@ -3956,32 +3993,60 @@ test('opening the link strips its keys from the URL before Tag Manager is reques
     expect(new URL(gtmFrameUrls[0]).search).toBe('');
 });
 
-test('a scope-changing link issues no default-scope load and the requests of a manual run pre-seeded to the same state (V6)', async ({ browser }) => {
-    const linkPage = await browser.newPage();
-    const linkCalls = await installLinkFixture(linkPage, { prefs: { engEpicSort: 'priority' } });
-    await linkPage.goto(`${appBaseUrl}${FULL_LINK}`, { waitUntil: 'domcontentloaded' });
-    await settled(linkPage, linkCalls);
-    await linkPage.waitForLoadState('networkidle');
+// A manual run starts from the link's resolved state. The Department comes from the groups config (the saved prefs alone do not move it);
+// the Sprint, the mode flags and the fields come from the saved prefs.
+const MANUAL_DEPARTMENT_B = { preferences: { activeGroupId: 'grp-b' } };
+const MANUAL_SCOPE_B42 = { activeGroupId: 'grp-b', selectedSprint: 42, sprintName: 'Sprint 42' };
+const reviewCalls = calls => calls.filter(call => /\/api\/eng\/sprints\/[^/]+\/review$/.test(call.pathname));
 
-    const manualPage = await browser.newPage();
-    const manualCalls = await installLinkFixture(manualPage, {
+async function loadRun(browser, setup, entry) {
+    const page = await browser.newPage();
+    const calls = await installLinkFixture(page, setup);
+    await page.goto(`${appBaseUrl}${entry}`, { waitUntil: 'domcontentloaded' });
+    await expect.poll(() => taskCalls(calls).length).toBeGreaterThan(0);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(500);
+    return { page, calls };
+}
+
+test('a scope-changing link issues no default-scope load and the requests of a manual run pre-seeded to the same state (V6)', async ({ browser }) => {
+    const link = await loadRun(browser, { prefs: { engEpicSort: 'priority' } }, FULL_LINK);
+    const manual = await loadRun(browser, {
+        ...MANUAL_DEPARTMENT_B,
         prefs: {
-            activeGroupId: 'grp-b', selectedSprint: 42, sprintName: 'Sprint 42', searchQuery: 'story', selectedTeams: ['team-b1'], showProduct: true, showTech: false,
+            ...MANUAL_SCOPE_B42, searchQuery: 'story', selectedTeams: ['team-b1'], showProduct: true, showTech: false,
             engEpicSort: 'status', engStatusFilter: { only: ['In Progress', 'Blocked'] }, showBlockedAlert: true,
         },
         teamSelection: { 'team-selection::42::grp-b': { selectedTeams: ['team-b1'], selectedTeamId: 'team-b1' } },
-    });
-    await manualPage.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
-    await settled(manualPage, manualCalls);
-    await manualPage.waitForLoadState('networkidle');
-
-    expect(taskCalls(linkCalls).length).toBeGreaterThan(0);
-    expect(taskCalls(linkCalls).every(call => call.params.groupId === 'grp-b' && call.params.sprint === '42')).toBe(true);
-    expect(linkCalls.some(call => call.params.groupId === 'grp-a' || call.params.sprint === '41')).toBe(false);
-    expect(apiSignatures(linkCalls)).toEqual(apiSignatures(manualCalls));
-    await linkPage.close();
-    await manualPage.close();
+    }, '/');
+    for (const run of [link, manual]) {
+        expect(taskCalls(run.calls).length).toBeGreaterThan(0);
+        expect(taskCalls(run.calls).every(call => call.params.groupId === 'grp-b' && call.params.sprint === '42')).toBe(true);
+    }
+    expect(link.calls.some(call => call.params.groupId === 'grp-a' || call.params.sprint === '41')).toBe(false);
+    expect(apiSignatures(link.calls)).toEqual(apiSignatures(manual.calls));
+    await link.page.close();
+    await manual.page.close();
 });
+
+// The Planning review reads the review schema for the Sprint it is mounted on, so the hold covers it too: a recipient who saved a Planning
+// table never reads the review of the saved Sprint, and a Catch Up link never reads one at all.
+for (const [title, entry, manualFlags] of [
+    ['a Planning link', '/?v=1&mode=planning&group=grp-b&sprint=42', { showPlanning: true }],
+    ['a Catch Up link', '/?v=1&mode=catch-up&group=grp-b&sprint=42', { showPlanning: false }],
+]) {
+    test(`${title} for a recipient with a saved Planning table issues the requests of a manual run and never reads the review of the saved Sprint (V6)`, async ({ browser }) => {
+        const saved = { showPlanning: true, planningLayout: 'table' };
+        const link = await loadRun(browser, { prefs: saved }, entry);
+        const manual = await loadRun(browser, { ...MANUAL_DEPARTMENT_B, prefs: { ...MANUAL_SCOPE_B42, ...saved, ...manualFlags } }, '/');
+        for (const run of [link, manual]) expect(taskCalls(run.calls).every(call => call.params.groupId === 'grp-b' && call.params.sprint === '42')).toBe(true);
+        expect(link.calls.some(call => call.params.groupId === 'grp-a' || call.params.sprint === '41' || call.pathname.includes('/sprints/41/'))).toBe(false);
+        expect(reviewCalls(link.calls).map(call => call.pathname)).toEqual(reviewCalls(manual.calls).map(call => call.pathname));
+        expect(apiSignatures(link.calls)).toEqual(apiSignatures(manual.calls));
+        await link.page.close();
+        await manual.page.close();
+    });
+}
 
 test('the link overrides the staged auth and connection recovery capsules (V7)', async ({ page }) => {
     const capturedAt = Date.now();
@@ -4163,10 +4228,13 @@ test('a focus target that exists is revealed and one that does not is reported a
 
     const missing = await browser.newPage();
     await installLinkFixture(missing, { analytics: ANALYTICS_ENABLED });
-    await missing.goto(`${appBaseUrl}/?v=1&mode=catch-up&group=grp-b&sprint=42&epic=BET-999`, { waitUntil: 'domcontentloaded' });
+    await missing.goto(`${appBaseUrl}/?v=1&mode=catch-up&group=grp-b&sprint=42&teams=team-b1&epic=BET-999`, { waitUntil: 'domcontentloaded' });
     // The reveal polls for a mounted target for up to eight seconds before it reports a miss.
     await expect.poll(() => applyEvents(missing).then(events => events.map(event => event.result)), { timeout: 20000 }).toEqual(['partial']);
-    expect(await readPrefs(missing)).toMatchObject({ activeGroupId: 'grp-b', selectedSprint: 42 });
+    expect(await readPrefs(missing)).toMatchObject({ activeGroupId: 'grp-b', selectedSprint: 42, selectedTeams: ['team-b1'] });
+    await expect(teamLabel(missing)).toHaveText('Beta One');
+    // A miss never opens Jira and never clears a filter: no filter event is emitted and the Teams stay as the link set them (V4).
+    expect(await missing.evaluate(() => (window.dataLayer || []).filter(entry => entry && entry.event_name === 'filter_changed'))).toEqual([]);
     await found.close();
     await missing.close();
 });
@@ -4199,13 +4267,44 @@ test('a link equal to the recipient current view writes nothing new and still co
     expect(taskCalls(calls).filter(call => call.params.groupId === 'grp-a' && call.params.sprint === '41')).toHaveLength(2);
     expect(await readPrefs(page)).toMatchObject({ activeGroupId: 'grp-a', selectedSprint: 41, searchQuery: '', showPlanning: false });
 });
+
+const shareState = page => page.evaluate(() => (window.__shareViewProbe ? { disabled: window.__shareViewProbe.shareDisabled, terminal: window.__shareViewProbe.applyTerminal } : null));
+
+test('Share stays disabled while a link applies and is enabled once the view has settled', async ({ page }) => {
+    const taskGate = deferred();
+    const calls = await installLinkFixture(page, { analytics: ANALYTICS_ENABLED, taskGate });
+    await page.goto(`${appBaseUrl}${FULL_LINK}`, { waitUntil: 'domcontentloaded' });
+    await expect.poll(() => taskCalls(calls).length).toBeGreaterThan(0);
+    expect(await shareState(page)).toEqual({ disabled: true, terminal: false });
+    taskGate.resolve();
+    await expect.poll(() => applyEvents(page).then(events => events.length)).toBe(1);
+    await expect.poll(() => shareState(page)).toEqual({ disabled: false, terminal: true });
+});
+
+test('Share is enabled in a source-only Statistics view, which loads no task list and so never hydrates the Team selection', async ({ browser }) => {
+    const saved = await browser.newPage();
+    const savedCalls = await installLinkFixture(saved, { prefs: { showStats: true, statsView: 'projectTrack', excludedCapacityStartSprintId: '41', excludedCapacityEndSprintId: '41' } });
+    await saved.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await expect(engMode(saved, 'Statistics')).toHaveAttribute('aria-checked', 'true');
+    await expect.poll(() => shareState(saved)).toEqual({ disabled: false, terminal: true });
+    expect(taskCalls(savedCalls)).toEqual([]);
+
+    const linked = await browser.newPage();
+    const linkedCalls = await installLinkFixture(linked, { analytics: ANALYTICS_ENABLED });
+    await linked.goto(`${appBaseUrl}/?v=1&mode=statistics&group=grp-b&sprint=41&stats=projectTrack&from=41&to=41`, { waitUntil: 'domcontentloaded' });
+    await expect.poll(() => applyEvents(linked).then(events => events.map(event => event.result))).toEqual(['success']);
+    await expect.poll(() => shareState(linked)).toEqual({ disabled: false, terminal: true });
+    expect(taskCalls(linkedCalls)).toEqual([]);
+    await saved.close();
+    await linked.close();
+});
 ```
 
 - [ ] **Step 2: Run it and confirm it passes**
 
 Run: `npx playwright test tests/ui/shareable_view_links.spec.js --browser=chromium 2>&1 | grep -E '^ +[0-9]+\) |^ +[0-9]+ (passed|failed|flaky|skipped)'`
 
-Expected: `19 passed` (about 35 seconds) and no numbered failure line. The spec needs no running server and no `JEP_TEST_PYTHON`: every request is answered by the fixture. If one test fails, read its error context under `test-results/` and fix the cause in the code under test, never in the assertion; if the cause is in a sibling task's module, report it against that task.
+Expected: `23 passed` (about one minute) and no numbered failure line. The spec needs no running server and no `JEP_TEST_PYTHON`: every request is answered by the fixture. If one test fails, read its error context under `test-results/` and fix the cause in the code under test, never in the assertion; if the cause is in a sibling task's module, report it against that task.
 
 - [ ] **Step 3: Negative control 1: no hold**
 
@@ -4223,9 +4322,9 @@ with:
                 if (false && shareViewHold && !pendingPlanningAuthResumeRef.current) {
 ```
 
-Run: `npx playwright test tests/ui/shareable_view_links.spec.js --browser=chromium 2>&1 | grep -E '^ +[0-9]+\) |^ +[0-9]+ (passed|failed|flaky|skipped)'`, then `git checkout -- frontend/src/dashboard.jsx`.
+Run: `npx playwright test tests/ui/shareable_view_links.spec.js --browser=chromium 2>&1 | grep -E '^ +[0-9]+\) |^ +[0-9]+ (passed|failed|flaky|skipped)'`, then `fnm exec --using 20 node --test tests/test_share_view_source_guards.js tests/test_dashboard_freshness_interactions.js 2>&1 | grep -E '^# (pass|fail)'`, then `git checkout -- frontend/src/dashboard.jsx`.
 
-Expected before the revert: `6 failed` and `13 passed`. The failures are the V5 test, the V6 test, the V7 test, the RF3 test, the source-only Statistics test and the identity-link test: with no hold the recipient's saved scope loads first. The unit counterparts fail too (`node --test tests/test_share_view_source_guards.js tests/test_dashboard_freshness_interactions.js` reports two failures).
+Expected before the revert: `9 failed` and `14 passed`. The failures are the V5 test, the V6 test, both Planning-table V6 tests, the V7 test, the RF3 test, the source-only Statistics test, the identity-link test and the source-only Share test: with no hold the recipient's saved scope loads first. The unit counterparts report `# fail 2`.
 
 - [ ] **Step 4: Negative control 2: the hold released with Stage A**
 
@@ -4248,7 +4347,7 @@ with:
 
 Run: `npx playwright test tests/ui/shareable_view_links.spec.js --browser=chromium 2>&1 | grep -E '^ +[0-9]+\) |^ +[0-9]+ (passed|failed|flaky|skipped)'`, then `fnm exec --using 20 node --test tests/test_share_view_apply_machine.js 2>&1 | grep -E '^# (pass|fail)'`, then `git checkout -- frontend/src/shareView/applyMachine.js`.
 
-Expected before the revert: exactly one UI failure, `a source-only Statistics link for another Department loads no Catch Up tasks for any scope` (between Stage A and Stage B's commit the App still carries the recipient's saved flags, so the released hold starts a Catch Up load that the link's mode never needs), `18 passed`, and a non-zero `# fail` from the machine tests.
+Expected before the revert: `3 failed` and `20 passed`: `a Catch Up link for a recipient with a saved Planning table ...`, `a source-only Statistics link for another Department loads no Catch Up tasks for any scope` and `Share is enabled in a source-only Statistics view ...` (between Stage A and Stage B's commit the App still carries the recipient's saved flags, so the released hold starts a load that the link's mode never needs), and the machine file reports `# fail 21`.
 
 - [ ] **Step 5: Negative control 3: the Planning table is not keyed**
 
@@ -4343,29 +4442,69 @@ Run: `npx playwright test tests/ui/shareable_view_links.spec.js --browser=chromi
 
 Expected before the revert: the UI test fails (the click no longer cancels the link, so no `rejected` event arrives) and the unit files report four failures.
 
-- [ ] **Step 9: Confirm the reverts and rerun the spec**
+- [ ] **Step 9: Negative control 7: Share waits for a Team hydrate in every view**
+
+Apply this edit to `frontend/src/shareView/useShareViewApply.js` (`isShareDisabled`):
+
+Replace this:
+
+```js
+    || !o.teamSelectionScopeKey || (o.engLoadsTasks && o.teamSelectionHydratedScopeRef.current !== o.teamSelectionScopeKey)
+```
+
+with:
+
+```js
+    || !o.teamSelectionScopeKey || o.teamSelectionHydratedScopeRef.current !== o.teamSelectionScopeKey
+```
+
+Run: `npx playwright test tests/ui/shareable_view_links.spec.js --browser=chromium -g 'Share is enabled in a source-only' 2>&1 | grep -E '^ +[0-9]+\) |^ +[0-9]+ (passed|failed|flaky|skipped)'`, then `fnm exec --using 20 node --test tests/test_share_view_apply_hook.js 2>&1 | grep -E '^not ok|^# (pass|fail)'`, then `git checkout -- frontend/src/shareView/useShareViewApply.js`.
+
+Expected before the revert: the UI test fails (a source-only Statistics view never hydrates the Team selection, so Share stays disabled) and the hook test `the Share control is disabled until the scope is settled, whatever the blocker` fails.
+
+- [ ] **Step 10: Negative control 8: the Planning review is not held**
+
+Apply this edit to `frontend/src/dashboard.jsx` (the `usePlanningSprintReview` call):
+
+Replace this:
+
+```js
+                sprintId: selectedSprint, active: selectedView === 'eng' && showPlanning && planningLayout === 'table' && engWorkspaceConfigured && !shareViewHold,
+```
+
+with:
+
+```js
+                sprintId: selectedSprint, active: selectedView === 'eng' && showPlanning && planningLayout === 'table' && engWorkspaceConfigured,
+```
+
+Run: `npx playwright test tests/ui/shareable_view_links.spec.js --browser=chromium -g 'recipient with a saved Planning table' 2>&1 | grep -E '^ +[0-9]+\) |^ +[0-9]+ (passed|failed|flaky|skipped)'`, then `fnm exec --using 20 node --test tests/test_share_view_source_guards.js 2>&1 | grep -E '^not ok|^# (pass|fail)'`, then `git checkout -- frontend/src/dashboard.jsx`.
+
+Expected before the revert: both Planning-table V6 tests fail (the review of the saved Sprint is read during the link run only) and the source guard `the Planning review read holds with the link, so it never reads the review of the recipient saved Sprint` fails.
+
+- [ ] **Step 11: Confirm the reverts and rerun the spec**
 
 Run:
 ```bash
 git status --short
 npx playwright test tests/ui/shareable_view_links.spec.js --browser=chromium 2>&1 | grep -E '^ +[0-9]+\) |^ +[0-9]+ (passed|failed|flaky|skipped)'
 ```
-Expected: `git status --short` prints exactly `?? tests/ui/shareable_view_links.spec.js` (every negative control was reverted); the spec reports `19 passed`.
+Expected: `git status --short` prints exactly `?? tests/ui/shareable_view_links.spec.js` (every negative control was reverted); the spec reports `23 passed`.
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 12: Commit**
 
 ```bash
 git add tests/ui/shareable_view_links.spec.js
-git -c user.name=Juce -c user.email=Juce-me@users.noreply.github.com commit -m "Add the shareable-link UI acceptance spec" -m "Real-page acceptance for the staged apply (issue 194): the group-state reset cannot undo a link, the hold avoids the default-scope load and the request set equals a manual run, recovery capsules and the one-shot EPM restore yield to the link, no mutating request is issued, the first-run popup pauses the link and the Catch Up tour waits for it, interactions and the auth lock end it, the reveal and the Planning rows seed work, and the strip-before-Tag-Manager order holds."
+git -c user.name=Juce -c user.email=Juce-me@users.noreply.github.com commit -m "Add the shareable-link UI acceptance spec" -m "Real-page acceptance for the staged apply (issue 194): the group-state reset cannot undo a link, the hold avoids the default-scope load and the Planning review read so the request set equals a manual run, recovery capsules and the one-shot EPM restore yield to the link, no mutating request is issued, the first-run popup pauses the link and the Catch Up tour waits for it, interactions and the auth lock end it, the reveal and the Planning rows seed work, a focus miss changes no filter, Share is enabled in every settled view, and the strip-before-Tag-Manager order holds."
 git show --stat HEAD
 git status --short
 ```
 
 Read the results: `git show --stat HEAD` lists exactly one path, `tests/ui/shareable_view_links.spec.js`, and `git status --short` prints nothing. No `frontend/dist` change is expected (the commit changes no file under `frontend/src`).
 
-- [ ] **Step 11: Checkpoint (stop here)**
+- [ ] **Step 13: Checkpoint (stop here)**
 
-Report to the operator: the SHAs of Tasks 11a, 11b and 11c, the files of each, the results (the Node counts, `19 passed` for the spec, the 535 passed regression run of Task 11b, the lint warning count, and that the six negative controls each failed the intended tests), the budget moves (`dashboard.jsx` 7,585 to 7,620; the aggregate 34,222) and the deviations listed in this draft's closing sections. Then ask the operator to validate the live behavior by hand and stop until they confirm. The Share control does not exist before Task 12, so the check uses a typed link:
+Report to the operator: the SHAs of Tasks 11a, 11b and 11c, the files of each, the results (the Node counts, `23 passed` for the spec, the passed count of Task 11b's regression run, the lint warning count, and that the eight negative controls each failed the intended tests), the budget moves (`dashboard.jsx` plus 35 lines in Task 11b, 7,505 to 7,540 on the validated base) and any deviation from this plan. Then ask the operator to validate the live behavior by hand and stop until they confirm. The Share control does not exist before Task 12, so the check uses a typed link:
 1. In a signed-in dashboard open the browser's network panel and note one Department id (`/api/groups-config`) and one Sprint id (`/api/sprints`); ids only.
 2. Open `<origin>/?v=1&mode=catch-up&group=<id>&sprint=<id>` in a new tab. The address bar shows plain `/` as soon as the page paints; the view lands on that Department and Sprint, and the first task request in the network panel already carries that Department and Sprint (the saved scope never loads).
 3. Add `&find=<text>` and `&status=only:<one status name>`: the search box shows the text and the status filter is applied. Try `&mode=planning` and `&mode=board`.
@@ -4378,15 +4517,16 @@ Live checks are read-only and transient: you sign in yourself, report numbers on
 
 ## Notes for the executor
 
-Decisions already settled while this slice was drafted; none changes a binding name in the master.
+Settled decisions for this slice; none changes a binding name in the master.
 
-1. Task 6 measures plus 11 lines (`dashboard.jsx` 7,574 to 7,585; pins 7,585 and 34,187). The extraction stays: the alternative is a second implementation of about 25 lines inside `shareView/`. This is design Open item 6.
-2. The hold is released one commit after Stage B (design refinement 1) and does not apply while a staged Planning recovery capsule is pending (`pendingPlanningAuthResumeRef` clears only after the ENG load).
-3. The overall 90 s budget ends `partial` when stages ran; a Stage A timeout drops the link (its 5 s window opens when the readiness gate first opens); drops before the start name no category.
-4. The Planning rows seed is written at the first Stage C run and `useShareViewPlanningTableKey()` flips with it. The hook module also exports `useShareViewApplyTerminal()` (the onboarding controller is declared before `useEngModeState`, where `shareView` cannot yet exist) and `useShareViewPlanningTableKey()`. The hook result keeps exactly `{ notice, dismissNotice, captureShareUrl, shareDisabled, applyTerminal }` for Task 12.
-5. Task 11b leaves one transient lint warning (`shareView` is unused until Task 12 renders the control): 105 against the ratchet of 106, back to 104 after Task 12. After Tasks 6 and 11b `dashboard.jsx` is 7,620 lines (`appPlusOwners` 34,222); Task 12 adds 7.
-6. The V1 read allowlist in the UI spec includes `POST /api/auth/refresh`. `persistTeamSelection` is the persistence pair (selection store and hydrated-selection marker); `setSelectedTeams` stays at the call sites.
-7. The Sprint catalog goes to the resolver unchanged: its start dates order a Sprint range chronologically (a name-only shape sorted `Sprint 10` before `Sprint 9`).
-8. Commands: lint is `fnm exec --using 20 bash scripts/extraction_lint/run.sh` with `JEP_TEST_PYTHON` exported (the script is not executable and its budget step reads that variable); filter Playwright result lines with `grep -E '^ +[0-9]+ (passed|failed|flaky|skipped)'` because several spec titles contain those words; the UI specs read `frontend/dist/*`, so a built, committed `frontend/dist` must exist.
-9. Accepted limits: the hold covers the ENG task load only (a source-only Statistics link fetches its own source, a strict Board link runs the Board pipeline once); Stage D starts only in a visible document; a Stage C timeout remounts an open Planning table to its default rows once; a reload before the apply completes drops the link; a second tab can overwrite what a link persisted.
-10. Checkpoints: after Task 6 and after Task 11c, report the SHAs, files, results and a concrete manual validation scope, then stop until the operator confirms.
+1. Task 6 measures plus 11 lines (`dashboard.jsx` 7,494 to 7,505 on the validated base; manifest pins 7,505 and 34,107). The extraction stays: the alternative is a second implementation of about 25 lines inside `shareView/`. This is design Open item 6.
+2. The hold is released one commit after Stage B (design refinement 1). It gates the ENG task load and the Planning review read (the `active` expression of `usePlanningSprintReview` gains `&& !shareViewHold`, net zero lines) and does not apply while a staged Planning recovery capsule is pending (`pendingPlanningAuthResumeRef` clears only after the ENG load).
+3. Share is disabled until the Team hydrate has reached the scope key only when the ENG load runs tasks (`engLoadsTasks`); source-only Statistics views and strict Board never hydrate Teams. The interaction guard's modifier-key list is exported as `SHARE_VIEW_MODIFIER_KEYS` and is the single list (Task 8's reveal copies it with a comment, because Task 8 runs first); the controller passes the reveal an `isCancelled` that also covers a pending guard interrupt and the auth latch.
+4. The overall 90 s budget ends `partial` when stages ran; a Stage A timeout drops the link (its 5 s window opens when the readiness gate first opens); drops before the start name no category.
+5. The Planning rows seed is written at the first Stage C run and `useShareViewPlanningTableKey()` flips with it. The hook module also exports `useShareViewApplyTerminal()` (the onboarding controller is declared before `useEngModeState`, where `shareView` cannot yet exist) and `useShareViewPlanningTableKey()`. The hook result keeps exactly `{ notice, dismissNotice, captureShareUrl, shareDisabled, applyTerminal }` for Task 12.
+6. Task 11b leaves one transient lint warning (`shareView` is unused until Task 12 renders the control): 105 against the ratchet of 106, back to 104 after Task 12. After Tasks 6 and 11b `dashboard.jsx` is 7,540 lines on the validated base (`appPlusOwners` 34,142); Task 12 adds 7.
+7. The V1 read allowlist in the UI spec includes `POST /api/auth/refresh`. `persistTeamSelection` is the persistence pair (selection store and hydrated-selection marker); `setSelectedTeams` stays at the call sites.
+8. The Sprint catalog goes to the resolver unchanged: its start dates order a Sprint range chronologically (a name-only shape sorted `Sprint 10` before `Sprint 9`).
+9. Commands: lint is `fnm exec --using 20 bash scripts/extraction_lint/run.sh` with `JEP_TEST_PYTHON` exported (the script is not executable and its budget step reads that variable); filter Playwright result lines with `grep -E '^ +[0-9]+ (passed|failed|flaky|skipped)'` because several spec titles contain those words; the UI specs read `frontend/dist/*`, so a built, committed `frontend/dist` must exist.
+10. Accepted limits: the hold covers the ENG task load and the Planning review read only (a source-only Statistics link fetches its own source, a strict Board link runs the Board pipeline once); Stage D starts only in a visible document; a Stage C timeout remounts an open Planning table to its default rows once; a reload before the apply completes drops the link; a second tab can overwrite what a link persisted.
+11. Checkpoints: after Task 6 and after Task 11c, report the SHAs, files, results and a concrete manual validation scope, then stop until the operator confirms.

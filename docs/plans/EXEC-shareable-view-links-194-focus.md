@@ -1,6 +1,6 @@
 # Shareable View Links Implementation Plan: Alert anchors, focus capture and reveal (Tasks 7 and 8)
 
-> **Status:** Proposed 2026-10-14. Slice of [EXEC-shareable-view-links-194.md](EXEC-shareable-view-links-194.md). Read the master's Global Constraints, Review Focus and Execution status before starting, and record each task's status and commit SHA in the master's Execution status table. Slices are grouped by area, not by execution order; the master's table gives the order.
+> **Status:** Proposed 2026-10-14. Slice of [EXEC-shareable-view-links-194.md](EXEC-shareable-view-links-194.md). Read the master's Global Constraints, Review Focus and Execution status before starting. Statuses and commit SHAs are recorded once, in the master's Task 14 Step 9; keep plan files unmodified between tasks so every Step 0 sees a clean tree. Slices are grouped by area, not by execution order; the master's table gives the order.
 >
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -1065,7 +1065,7 @@ fnm exec --using 20 bash scripts/extraction_lint/run.sh
 fnm exec --using 20 npx playwright test tests/ui/eng_alerts_panel_summary.spec.js tests/ui/eng_alert_loading_order.spec.js tests/ui/eng_missing_story_ghosts.spec.js --browser=chromium
 ```
 
-Expected: the unit run ends `# fail 0` (2,495 tests when this plan was drafted, from a baseline of 2,477 plus this task's 18; the real total includes every other task's tests); the lint run ends `✖ 104 problems (0 errors, 104 warnings)`, `owner budgets: 0 problems` and `enforced problems: 0` (the warning count must not rise above the baseline you measured before this task, and never above the 106 ratchet; set `JEP_TEST_PYTHON` first in a worktree without `.venv`); the three UI specs report `49 passed`. `run.sh` is not executable in the checkout, hence `bash`.
+Expected: the unit run ends `# fail 0` (`# tests` is the baseline total plus this task's 18 new tests); the lint run ends `✖ 104 problems (0 errors, 104 warnings)`, `owner budgets: 0 problems` and `enforced problems: <B>` (the warning count must not rise above the baseline you measured before this task, and never above the 106 ratchet; set `JEP_TEST_PYTHON` first in a worktree without `.venv`); the three UI specs report `49 passed`. `run.sh` is not executable in the checkout, hence `bash`.
 
 - [ ] **Step 11: Commit**
 
@@ -1102,13 +1102,14 @@ Expected: `git show --stat HEAD` lists exactly ten files (`frontend/dist/dashboa
 
 **Interfaces:**
 - Consumes: `blinkElement(element, className, durationMs = 1200)` from `frontend/src/eng/planningConfirmedEdit.js` (existing; never moves focus); `alertCardId`, `measureShareViewStickyBottom`, `SHARE_VIEW_FOCUS_MARGIN` from `frontend/src/shareView/focusCapture.js` (Task 7); `takeInitialPlanningRowMode() -> 'epic' | 'story' | null` (one-shot, Task 5); test only: `setPendingPlanningRowMode(mode)`, `resetShareViewForTests()` (Task 5).
-- Produces (binding): `revealShareViewFocus(target, { mode, root = document, win = window, timeoutMs = 8000, isCancelled = () => false }) -> { cancel(): void, done: Promise<'revealed' | 'missing' | 'cancelled'> }`. `target` is the focus shape `resolveShareViewFocus` returns (`{ kind: 'alertTeam', anchor, id }` or `{ kind: 'epic' | 'story', key }`); `mode` is the Share view mode string (`'planning'` also searches table rows before the list). It scrolls with `win.scrollTo({ top, behavior: 'instant' })` so the target's top lands `SHARE_VIEW_FOCUS_MARGIN` below the sticky stack (within 1 px), and blinks with `blinkElement`; it never focuses, never clears a filter, never opens Jira and never navigates.
+- Produces (binding): `revealShareViewFocus(target, { mode, root = document, win = window, timeoutMs = 8000, isCancelled = () => false }) -> { cancel(): void, done: Promise<'revealed' | 'missing' | 'cancelled'> }`. `target` is the focus shape `resolveShareViewFocus` returns (`{ kind: 'alertTeam', anchor, id }` or `{ kind: 'epic' | 'story', key }`); `mode` is the Share view mode string (`'planning'` also searches table rows before the list). It scrolls with `win.scrollTo({ top, behavior: 'instant' })` so the target's top lands `SHARE_VIEW_FOCUS_MARGIN` below the sticky stack (within 1 px), and blinks with `blinkElement`; it never focuses, never clears a filter, never opens Jira and never navigates. It ends `'cancelled'` on `cancel()`, when `isCancelled()` returns true, and on a trusted `wheel`, `touchmove`, `pointerdown`, `touchstart` or non-modifier `keydown` at `root`; it applies the apply guard's rule to those events, so an event a script dispatched (`isTrusted === false`) and a bare modifier `keydown` do not cancel it.
 - Produces: `PlanningReviewTable` opens in the mode returned by `takeInitialPlanningRowMode()` and otherwise in `'epic'`.
 - Contract for the apply machine (Tasks 9 and 11): an `alertTeam` target is found only inside an expanded card, so Stage B must have expanded its category (a collapsed card never resolves and the reveal ends `'missing'` after 8 s of visible time); call `setPendingPlanningRowMode` in Stage B before the commit that mounts the Planning table; pass `isCancelled` or call `cancel()` for the lifecycle cancellations. Seed hazards: (a) a table that is already mounted when Stage B runs (a recipient whose saved layout is the Planning table) never reads the seed, so Stage B must seed before the table mounts or the App must remount the table, for example with a `key` that changes when a link applies; (b) Task 5's store keeps the seed after `finishShareView` on purpose (a table that mounts after a cancel still takes it) and Task 4's plan carries `rows` only for the table layout, so an unread seed can only come from case (a), and it would then be taken by the next manual mount of the table; (c) the app must stay free of `StrictMode`, which would run the initializer twice and lose the seed.
 
 **Forbidden regressions for this task:**
 - [ ] Without a seed the Planning table still opens in Epics, and the Epics/Stories switch behaves exactly as before for every user choice.
 - [ ] The reveal never calls `clearEngFilters`, `resetEngFilters`, `navigateToAlertStory`, `handleAlertStoryClick`, `applyEngMode`, `window.open`, `scrollIntoView` or `.focus()`, and builds no selector from a link value (V4 guard in the tests).
+- [ ] A script-dispatched event and a bare modifier key never cancel a reveal, and the modifier list stays equal to `MODIFIER_KEYS` in `interactionGuard.js` (Task 11a), the source of truth for it.
 - [ ] Capturing right after a reveal returns the revealed target for an alert group, an Epic block, a Story card and a Planning row (round-trip tests); the landing offset is the imported `SHARE_VIEW_FOCUS_MARGIN`, never a literal, and the landing tolerance stays 1 px.
 - [ ] No stylesheet changes; the highlight classes `epic-flash`, `task-highlight` and `planning-review-confirmed` keep painting (CSS source test).
 - [ ] Sticky layering and the Planning confirmed-edit motion are untouched (`planningConfirmedEdit.js` and `usePlanningRowMotion.js` are not edited; the existing Planning UI specs pass).
@@ -1254,6 +1255,8 @@ With:
 ```jsx
     const [mode, setMode] = React.useState(() => takeInitialPlanningRowMode() || 'epic');
 ```
+
+Task 3's owner pin for the Planning table row mode accepts both `React.useState('epic')` and this lazy form, so the unit gate stays green.
 
 - [ ] **Step 4: Run it and confirm it passes**
 
@@ -1465,8 +1468,14 @@ test('a target that never appears resolves missing after 8 seconds of visible ti
     } finally { p.restore(); }
 });
 
-test('each deliberate input cancels the reveal; a bare modifier key does not', async () => {
-    const events = [{ type: 'wheel' }, { type: 'touchmove' }, { type: 'pointerdown' }, { type: 'touchstart' }, { type: 'keydown', key: 'a' }];
+// MODIFIER_KEYS in the apply guard (interactionGuard.js, Task 11a) is the source of truth for this list; focusReveal.js keeps a copy of it.
+const GUARD_MODIFIER_KEYS = ['Shift', 'Control', 'Alt', 'AltGraph', 'Meta', 'CapsLock', 'NumLock', 'ScrollLock', 'Fn', 'FnLock', 'OS'];
+
+test('each trusted deliberate input cancels the reveal, a keydown of any non-modifier key included', async () => {
+    const events = [
+        { type: 'wheel' }, { type: 'touchmove' }, { type: 'pointerdown' }, { type: 'touchstart' },
+        { type: 'keydown', key: 'a' }, { type: 'keydown', key: 'Escape' }, { type: 'keydown', key: 'Tab' },
+    ].map(event => ({ isTrusted: true, ...event }));
     for (const event of events) {
         const p = page();
         try {
@@ -1476,22 +1485,33 @@ test('each deliberate input cancels the reveal; a bare modifier key does not', a
             p.dom.stepMs(100);
             p.dom.dispatch('document', event);
             await flush();
-            assert.equal(outcome.result, 'cancelled', event.type);
+            assert.equal(outcome.result, 'cancelled', `${event.type} ${event.key ?? ''}`);
             p.dom.stepMs(1000);
             assert.deepEqual(p.dom.window.scrollCalls, [], `${event.type} stops every later scroll`);
             assert.equal(p.dom.listenerCount(), 0);
         } finally { p.restore(); }
     }
-    const modifier = page();
-    try {
-        const g = modifier.group('t1', 1500);
-        modifier.mount(g.card('eng-alert-blocked'));
-        const { outcome } = run(modifier, alertTarget, { mode: 'catch-up' });
-        modifier.dom.dispatch('document', { type: 'keydown', key: 'Shift' });
-        modifier.dom.stepMs(700);
-        await flush();
-        assert.equal(outcome.result, 'revealed');
-    } finally { modifier.restore(); }
+});
+
+test('an event a script dispatched and a bare modifier key never cancel the reveal', async () => {
+    const ignored = [
+        ...['wheel', 'touchmove', 'pointerdown', 'touchstart'].map(type => ({ type, isTrusted: false })),
+        { type: 'keydown', key: 'a', isTrusted: false },
+        ...GUARD_MODIFIER_KEYS.map(key => ({ type: 'keydown', key, isTrusted: true })),
+    ];
+    for (const event of ignored) {
+        const p = page();
+        try {
+            const g = p.group('t1', 1500);
+            p.mount(g.card('eng-alert-blocked'));
+            const { outcome } = run(p, alertTarget, { mode: 'catch-up' });
+            p.dom.stepMs(100);
+            p.dom.dispatch('document', event);
+            p.dom.stepMs(700);
+            await flush();
+            assert.equal(outcome.result, 'revealed', `${event.type} ${event.key ?? ''} trusted: ${event.isTrusted}`);
+        } finally { p.restore(); }
+    }
 });
 
 test('cancel() and isCancelled() both end the reveal as cancelled', async () => {
@@ -1860,6 +1880,23 @@ test('planning table: a row lands below the sticky stack at T + 12 and paints th
     expect(landed.cellAnimation).toBe('epicFlash');
 });
 
+// The reveal listens like the apply guard: only events the reader produced count, and a bare modifier key is not one of them.
+test('events a script dispatched and a bare modifier key leave a pending reveal alone, and a real non-modifier key cancels it', async ({ page }) => {
+    await load(page, catchUpHtml());
+    await page.evaluate(() => {
+        // The target is not in the page, so the reveal stays pending for its whole budget.
+        window.__share.revealShareViewFocus({ kind: 'alertTeam', anchor: 'blocked', id: 'absent' }, { mode: 'catch-up' }).done.then((value) => { window.__revealResult = value; });
+        for (const type of ['wheel', 'touchmove', 'pointerdown', 'touchstart']) document.dispatchEvent(new Event(type, { bubbles: true }));
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }));
+    });
+    await page.keyboard.press('Shift');
+    await page.waitForTimeout(150);
+    expect(await page.evaluate(() => window.__revealResult)).toBeUndefined();
+    await page.keyboard.press('a');
+    await page.waitForFunction(() => window.__revealResult !== undefined);
+    expect(await page.evaluate(() => window.__revealResult)).toBe('cancelled');
+});
+
 // Forwarding a received link: capturing right after a reveal must name the revealed target, not the sibling above it (alert groups sit 9.6 px
 // apart and table rows touch, so a sliver of the one above would show if the capture counted it).
 for (const compact of [false, true]) {
@@ -1908,7 +1945,9 @@ const SETTLE_FRAMES = 2;        // the compact header, the filter bar and the do
 const LANDING_TOLERANCE_PX = 1; // the capture counts a node as visible only past T + SHARE_VIEW_FOCUS_MARGIN + 1, so a landing off by more than 1 px is corrected
 const TASK_HIGHLIGHT_MS = 2200; // the 1.8s pulse plus the margin dashboard.jsx gives it
 const INTERRUPTS = ['wheel', 'touchmove', 'pointerdown', 'touchstart', 'keydown'];
-const MODIFIER_KEYS = new Set(['Shift', 'Control', 'Alt', 'Meta']);
+// A bare keydown of one of these is not a deliberate interaction. The list is MODIFIER_KEYS in interactionGuard.js, the source of truth for it; this
+// module is committed before that one exists, so it keeps a copy instead of importing it.
+const MODIFIER_KEYS = new Set(['Shift', 'Control', 'Alt', 'AltGraph', 'Meta', 'CapsLock', 'NumLock', 'ScrollLock', 'Fn', 'FnLock', 'OS']);
 const PLANNING_ROW_SELECTOR = 'tr[data-planning-row-key][data-row-kind][data-issue-key]';
 
 // Targets are found by comparing dataset values, never by building a selector from a link value. Each result names the existing class whose
@@ -1975,6 +2014,7 @@ export function revealShareViewFocus(target, { mode, root = document, win = wind
     };
     const schedule = () => { frame = win.requestAnimationFrame(step); };
     function onInterrupt(event) {
+        if (event.isTrusted === false) return;   // an event a script dispatched is not the reader
         if (event.type === 'keydown' && MODIFIER_KEYS.has(event.key)) return;
         finish('cancelled');
     }
@@ -2024,7 +2064,7 @@ fnm exec --using 20 node --test tests/test_share_view_focus_reveal.js tests/test
 fnm exec --using 20 npx playwright test tests/ui/share_view_focus.spec.js --browser=chromium
 ```
 
-Expected: `# tests 23`, `# pass 23`, `# fail 0` (twenty reveal tests and the three seed tests); Playwright `21 passed` (nine capture tests from Task 7, nine reveal tests and three round-trip tests).
+Expected: `# tests 24`, `# pass 24`, `# fail 0` (twenty-one reveal tests and the three seed tests); Playwright `22 passed` (nine capture tests from Task 7, ten reveal tests and three round-trip tests).
 
 - [ ] **Step 9: Rebuild the generated frontend output**
 
@@ -2043,7 +2083,7 @@ fnm exec --using 20 bash scripts/extraction_lint/run.sh
 fnm exec --using 20 npx playwright test tests/ui/planning_review_table.spec.js tests/ui/planning_review_integration.spec.js tests/ui/planning_selection_defaults.spec.js --browser=chromium --workers=2
 ```
 
-Expected: the unit run ends `# fail 0` (2,518 when this plan was drafted); the lint run ends `✖ 104 problems (0 errors, 104 warnings)` with `owner budgets: 0 problems` and `enforced problems: 0` (the warning count must not rise; the two new files add none); the three Planning UI specs report no failure (164 passed in the final scratch replay; an earlier replay saw one timing flake, described next). One existing test, `planning_review_table.spec.js` "the page scrolls to a moved row only when it would be off-screen...", measures a smooth scroll and failed once when three specs ran together under load; it passed 3 of 3 alone and in a full-file rerun (84 of 84). If it fails, rerun that file alone before treating it as a regression; any other failure is one.
+Expected: the unit run ends `# fail 0` (`# tests` is the baseline total plus Task 7's 18 and this task's 24 new tests; Task 3's owner pin for the row mode is part of it and passes against the lazy form); the lint run ends `✖ 104 problems (0 errors, 104 warnings)` with `owner budgets: 0 problems` and `enforced problems: <B>` (the warning count must not rise; the two new files add none); the three Planning UI specs report `164 passed`, or `163 passed` and one failure of the flaky test described next. One existing test, `planning_review_table.spec.js` "the page scrolls to a moved row only when it would be off-screen...", asserts an exact `window.scrollY` after a smooth scroll and misses by 1 to 2 px now and then on a loaded machine; it does the same on the commit before Task 7 (1 failure in 12 parallel repeats) and passes when run alone (5 of 5). If it fails, rerun that file alone before treating it as a regression; any other failure is one.
 
 - [ ] **Step 11: Commit**
 
@@ -2059,7 +2099,7 @@ Expected: `git show --stat HEAD` lists exactly eight files (`frontend/dist/dashb
 
 ## Notes for the executor
 
-Decisions already settled while this slice was drafted; none changes a binding name in the master.
+Settled decisions for this slice; none changes a binding name in the master.
 
 1. `revealIfHidden` is not reused and `planningConfirmedEdit.js` is untouched: `revealIfHidden` scrolls the minimum distance, measures with a list that names `.eng-filter-bar` (it left an Epic block under the sticky bar) and scrolls smoothly. `blinkElement` is reused. The `.eng-filter-bar` selector, which no element carries, is also in `alertEpicNavigation.js`; that pre-existing defect is left for a separate fix.
 2. The reveal's `T` omits pinned Epic headers (counting the target's own header pushed it 36 px low); a Story target adds its own Epic header's height. Capture counts pinned Epic headers because they hide what is under them.

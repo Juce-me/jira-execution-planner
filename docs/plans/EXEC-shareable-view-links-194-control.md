@@ -1,6 +1,6 @@
 # Shareable View Links Implementation Plan: Analytics and Share control (Tasks 10 and 12)
 
-> **Status:** Proposed 2026-10-14. Slice of [EXEC-shareable-view-links-194.md](EXEC-shareable-view-links-194.md). Read the master's Global Constraints, Review Focus and Execution status before starting, and record each task's status and commit SHA in the master's Execution status table. Slices are grouped by area, not by execution order; the master's table gives the order.
+> **Status:** Proposed 2026-10-14. Slice of [EXEC-shareable-view-links-194.md](EXEC-shareable-view-links-194.md). Read the master's Global Constraints, Review Focus and Execution status before starting. Statuses and commit SHAs are recorded once, in the master's Task 14 Step 9; keep plan files unmodified between tasks so every Step 0 sees a clean tree. Slices are grouped by area, not by execution order; the master's table gives the order.
 >
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -477,9 +477,9 @@ Expected: no `not ok`; `# tests 83`, `# pass 83`, `# fail 0`.
 
 ```bash
 fnm exec --using 20 node --test tests/test_*.js 2>&1 | grep -E '^(not ok|# (tests|pass|fail))'
-fnm exec --using 20 bash scripts/extraction_lint/run.sh 2>&1 | tail -4
+fnm exec --using 20 bash scripts/extraction_lint/run.sh 2>&1 | grep -E 'problems|owner budgets'
 ```
-Expected: the Node suite reports no `not ok` and `# tests` equal to the previous task's total plus 6 (4 in `test_analytics_events.js`, 2 in `test_analytics_source_guards.js`; the total was 2,477 at `bd5b2bc2` before any task of this plan). The script's mode is 644 in git, so `scripts/extraction_lint/run.sh` alone fails with `Permission denied`; run it through `bash`. The lint tail shows `0 errors`, warnings at or below the 106 ratchet (104 at `bd5b2bc2`) and `owner budgets: 0 problems`. `docs/plans/SUPPORT-ga4-gtm-mcp-execution.yaml` is unchanged (`git diff --stat -- docs/plans/SUPPORT-ga4-gtm-mcp-execution.yaml` prints nothing).
+Expected: the Node suite reports no `not ok` and `# tests` equal to the previous task's total plus 6 (4 in `test_analytics_events.js`, 2 in `test_analytics_source_guards.js`; Task 0 records the baseline total). The script's mode is 644 in git, so `scripts/extraction_lint/run.sh` alone fails with `Permission denied`; run it through `bash`. The lint reports `0 errors`, warnings at or below the 106 ratchet (104 on the current main) and `owner budgets: 0 problems`; its second owner-budget line, `owner budgets: 80 modules; problems: N`, equals the Task 0 baseline (N is 4 on the current main, the stale interface measurements of `EpicBlock.jsx` and `GroupBoardSettings.jsx`, which this task does not touch; the `ENFORCED owner budget` lines that name them print only without the `grep`). `docs/plans/SUPPORT-ga4-gtm-mcp-execution.yaml` is unchanged (`git diff --stat -- docs/plans/SUPPORT-ga4-gtm-mcp-execution.yaml` prints nothing).
 
 - [ ] **Step 8: Rebuild the frontend output**
 
@@ -503,7 +503,7 @@ Expected: the six source, documentation and test files plus the regenerated `fro
 
 ### Task 12: Share control, notice and header surfaces
 
-**Owner note:** Depends on Task 3 (`SHARE_VIEW_CATEGORY_BY_KEY`), Task 10 (`trackShareViewAction`) and Task 11 (`const shareView = useShareViewApply(...)` in `dashboard.jsx`). Blocks Task 13 (documentation) and Task 14 (journeys and the headed Firefox and WebKit run). Operator gate G2 sits inside this task: Steps 1 and 2 build and show the mock; Steps 3 to 12 run only once the acceptance line below holds a real date.
+**Owner note:** Depends on Task 3 (`SHARE_VIEW_CATEGORY_BY_KEY`), Task 10 (`trackShareViewAction`) and Task 11 (`const shareView = useShareViewApply(...)` in `dashboard.jsx`). Blocks Task 13 (documentation) and Task 14 (journeys and the headed Firefox and WebKit run). Operator gate G2 sits inside this task: Steps 1 and 2 build and show the mock; Steps 3 to 12 run only once the acceptance line below holds a real date. The control is a framed header icon button, so it reuses `IconButton` and the registered `header-icon-button` hook and adds no class, hover rule, font-family, font-size or border-radius value; Step 0 lists the design-system rules that govern it.
 
 **Gate G2 (operator):** Operator acceptance: pending
 
@@ -514,26 +514,28 @@ Replace `pending` with the date of the operator's acceptance in chat, quoting th
 - Create: `frontend/src/shareView/ShareViewButton.jsx`, `frontend/src/shareView/noticeCopy.js`
 - Create: `tests/test_share_view_control.js`, `tests/ui/share_view_control_harness.jsx`, `tests/ui/share_view_control.spec.js`
 - Modify: `frontend/src/dashboard.jsx` (import; `renderShareViewControl` before `renderEpmControls`; one call in `.header-actions-row`; one call in `.compact-sticky-header`)
-- Modify: `frontend/src/styles/shared/controls.css` (three selector lists and one rule next to the header icon-button rules)
+- Modify: `frontend/src/styles/shared/controls.css` (the compact selector on the header icon-button base and glyph rules, and one attribute-scoped placement rule for the notice; no hover rule, class or token change)
 - Modify: `tests/ui/codebase_structure_smoke.spec.js` (the existing header assertions, seven edits)
-- Modify: `tests/test_codebase_structure_budgets.py`, `scripts/extraction_lint/owner_budgets.json` (the `dashboard.jsx` pins, same commit)
+- Modify: `tests/ui/design_system_hover_eng.spec.js` (the framed header icon test now counts Share: one edit)
+- Modify: `scripts/extraction_lint/owner_budgets.json` (the `dashboard.jsx` manifest pins, same commit)
 - Modify: `docs/plans/EXEC-shareable-view-links-194-control.md` (the gate line above)
 - Regenerated: `frontend/dist/`
 - Not committed (`tmp/` is gitignored): `tmp/share-view-mock/generate.mjs`, `tmp/share-view-mock/shots.mjs` and their PNGs
-- Not touched: `frontend/src/eng/EngControls.jsx`, `frontend/src/components/*`, `frontend/src/ui/IconButton.jsx`, `frontend/src/styles/eng/loading.css`, every registered owner module under `scenario/`, `settings/` and `epm/`
+- Not touched: `frontend/src/eng/EngControls.jsx`, `frontend/src/components/*`, `frontend/src/ui/IconButton.jsx`, `frontend/src/styles/eng/loading.css`, `frontend/src/styles/eng/controls.css` (the global foundation hover the compact control inherits), `docs/design-system.md` and `tests/design_system_baseline.json` (no kind, class, write or ratchet value is added; Step 10 proves it), every registered owner module under `scenario/`, `settings/` and `epm/`
 
 **Interfaces:**
 - Consumes (Task 11, binding): `shareView = { notice: null | { kind: 'dropped' | 'partial' | 'invalid' | 'newer', categories: string[] }, dismissNotice(), captureShareUrl() -> { ok: true, url, dropped: string[] } | { ok: false, reason: 'disabled' | 'too_long' | 'invalid_state' }, shareDisabled: boolean, applyTerminal: boolean }`.
 - Consumes (Task 10): `trackShareViewAction({ workflowAction, result, sourceSurface })`, imported as a module function (the same pattern as `trackBoardSmallScreenSupportRequest` in `EngBoardView.jsx`).
 - Consumes (Task 3): `SHARE_VIEW_CATEGORY_BY_KEY` from `frontend/src/shareView/viewDefaults.js`, a frozen plain object keyed by query key (`find`, `alertTeam`, `alerts`, `epic`, `story`, `initiatives`, `sort`, ...).
-- Consumes (existing): `IconButton` (`variant="secondary compact"`), the header icon-button rules in `shared/controls.css`, the banner rules `.server-unavailable-banner`, `.connection-recovery-notice`, `.connection-recovery-notice-actions` in `eng/loading.css`, `.search-input`, `.planning-review-sr-only`, `activeControlSurface`, `activeEngMode`, `analyticsToken` in `dashboard.jsx`.
+- Consumes (existing): `IconButton` (`variant="secondary compact"`) with the registered `header-icon-button` hook and the header icon-button base and glyph rules in `shared/controls.css`; the foundation hover `button.secondary:hover` in `eng/controls.css` (tokens `--hover-overlay` and `--hover-ring`); the banner rules `.server-unavailable-banner`, `.connection-recovery-notice`, `.connection-recovery-notice-actions` in `eng/loading.css`; `.search-input`; `.planning-review-sr-only`; `activeControlSurface`, `activeEngMode`, `analyticsToken` in `dashboard.jsx`.
 - Produces:
 ```
 <ShareViewButton surface="main" | "compact" share={shareView} sourceSurface={analyticsToken(activeEngMode)} activeControlSurface={activeControlSurface} />
 shareViewNoticeMessage(notice) -> string          // apply result copy; '' for an unknown kind
 shareViewCopyMessage({ type: 'copied' | 'manual' | 'refused', reason?, dropped? }) -> string
 shareViewDroppedCategories(dropped) -> string[]   // notice categories of the encoder's dropped keys
-DOM hooks: .share-view, .share-view-button, .share-view-notice, [data-share-view-icon="link" | "copied"]
+DOM hooks (data attributes and existing classes only, no new class): [data-share-view="main" | "compact"] on the wrapper, [data-share-view-control] on the button,
+  [data-share-view-icon="link" | "copied"], and the notice as [data-share-view] > .server-unavailable-banner
 accessible name: "Copy link to this view"
 ```
   `ShareViewButton` renders `share.notice` itself, on the surface that is showing. Task 11 must not mount a second notice in `dashboard.jsx`.
@@ -542,12 +544,12 @@ accessible name: "Copy link to this view"
 
 | State | Mock section | Pinned by |
 | --- | --- | --- |
-| Default, hover | Main header: default (hover it; the page prints the computed size, radius and background live) | harness contract and hover cases; the Node markup contract |
+| Default, hover | Main header: default (hover it; the page prints the computed size, radius, overlay, ring, circle paint and transform live) | harness contract and hover cases (settled overlay and ring, border shape, no lift, equal to Refresh); the real-app hover case; `design_system_hover_eng.spec.js`; the Node markup contract |
 | Copied | Main header: copied (check glyph for two seconds, same 38 by 38 frame) | harness copy case; the painted-ink case |
-| Disabled | Main header: disabled | harness disabled case; the Node markup contract |
+| Disabled | Main header: disabled | harness disabled case (no hover delta); the Node markup contract |
 | Apply notice | partial; group not available | the harness apply-notice table (exact strings) |
 | Copy fallback and over-cap | read-only field; categories named | harness fallback and dropped cases |
-| Compact surface | compact default; compact refusal notice | harness contract (compact computes what main computes); smoke compact assertions; app swap case |
+| Compact surface | compact default (hover it too); compact refusal notice | harness contract and hover (compact computes and hovers like main); smoke compact assertions; app swap and hover cases |
 
 **Exact user-facing copy** (it names categories, never values; the strings live in `noticeCopy.js` and are pinned by the Node test and by the harness cases; category labels: `group` Department group, `sprint` Sprint, `mode` view mode, `teams` Teams, `filters` filters, `focus` highlighted item, always listed in that order):
 
@@ -570,19 +572,32 @@ accessible name: "Copy link to this view"
 
 | Candidate | Evidence | Verdict |
 | --- | --- | --- |
-| `ConnectionRecoveryNotice` (`.server-unavailable-banner.connection-recovery-notice`, `role="status"`, a `<p>` and `.connection-recovery-notice-actions`; its `settings_discarded` kind offers `Dismiss`; `blocked_scope`, built in `frontend/src/scenario/connectionScenarioRecovery.js`, is the precedent for a scope that cannot be restored: its message says the group or sprint is not active) | `frontend/src/components/ConnectionRecoveryNotice.jsx`; rules and mobile stacking in `frontend/src/styles/eng/loading.css` lines 105 to 175, including a banner button hover that stays light | Reused: its classes, anatomy, `Dismiss` label and CSS. The component itself is not reused: it is bound to the connection-recovery kinds and their Recover and Discard actions and sits under recovery source guards, so reusing its classes leaves that path untouched |
+| `ConnectionRecoveryNotice` (`.server-unavailable-banner.connection-recovery-notice`, `role="status"`, a `<p>` and `.connection-recovery-notice-actions`; its `settings_discarded` kind offers `Dismiss`; `blocked_scope`, built in `frontend/src/scenario/connectionScenarioRecovery.js`, is the precedent for a scope that cannot be restored: its message says the group or sprint is not active) | `frontend/src/components/ConnectionRecoveryNotice.jsx`; rules and mobile stacking in `frontend/src/styles/eng/loading.css` lines 105 to 175, including the banner button's foundation hover (overlay and ring) | Reused: its classes, anatomy, `Dismiss` label and CSS. The component itself is not reused: it is bound to the connection-recovery kinds and their Recover and Discard actions and sits under recovery source guards, so reusing its classes leaves that path untouched |
 | `ServerUnavailableBanner` | same file family; `role="alert"`, error title, a Retry action | Same CSS base, wrong semantics for an information notice |
 | `.board-scope-status` | `dashboard.jsx` (Board scope and Sprint catalog status); no rule of its own, it wraps `EmptyState` | A blocking-state placeholder, not a notice |
 | `.jira-export-toast` | `JiraExportButton.jsx`, `styles/eng/export.css` | The only header-anchored feedback, but transient (4.5 s), text only and Jira-named; informs the anchoring, not reused |
 | `.story-readiness-notice`, `.planning-review-guidance`, `.group-modal-warning` | EngAlertsPanel, PlanningReviewTable, settings modals | Scoped inside panels, tables and modals |
 
-Mounting the banner in flow like `ConnectionRecoveryNotice` fails for this control. Measured in the shared ENG fixture (`tests/ui/eng_epic_refresh_fixture.js`) at 1440 by 900: the header bottom is at 146 px, the Share control's bottom at 59 px, and an in-flow banner (it renders after the filter bar, which spans 155 to 211 px) is above the viewport for any scroll beyond about 170 px, while the compact header appears at 146 px. A copy failure from the compact control, or a partial-apply notice after Stage D's reveal scroll, would be invisible. So the notice is the same banner anchored under the control it belongs to (one rule, `.share-view-notice`, that changes placement only), rendered by whichever surface is showing. Cost to confirm at the gate: while open it covers the right part of the controls row (the ENG mode control at 1440 px) until Dismiss.
+Mounting the banner in flow like `ConnectionRecoveryNotice` fails for this control. Measured in the shared ENG fixture (`tests/ui/eng_epic_refresh_fixture.js`) at 1440 by 900: the header bottom is at 146 px, the Share control's bottom at 59 px, and an in-flow banner (it renders after the filter bar, which spans 155 to 211 px) is above the viewport for any scroll beyond about 170 px, while the compact header appears at 146 px. A copy failure from the compact control, or a partial-apply notice after Stage D's reveal scroll, would be invisible. So the notice is the same banner anchored under the control it belongs to (one rule on `[data-share-view] > .server-unavailable-banner`, which changes placement only), rendered by whichever surface is showing. The attribute-scoped selector outranks the banner's own `margin: 1rem 0 1.5rem` in `eng/loading.css`, which a single class in `shared/controls.css` would lose on source order. Cost to confirm at the gate: while open it covers the right part of the controls row (the ENG mode control at 1440 px) until Dismiss.
 
 Also measured in that fixture, for the operator's review: with Share, the compact header changes nothing at 1028 px and wider; at 761 px the Sprint and Teams controls are 21 and 16 px narrower; at 600 px they go from 19 and 14 px wide to 0 (at 390 px they were already 0). The header height and every sticky offset are unchanged except that, with the ENG/EPM switch present, the main header wraps to a second line at about 900 px (132 px to 164 px high). There is a band of scroll offsets with no Share control in the viewport: it leaves at 59 px and the compact header appears at 146 px. "Exactly one visible" therefore holds as "never two, and the compact control takes over exactly when the compact header shows".
 
+**Design-system lookup (`docs/design-system.md` and the root `AGENTS.md`):**
+
+| Element | Kind in the Element map | Reused | Added |
+| --- | --- | --- | --- |
+| Share button | Icon buttons (`ui/IconButton.jsx`); a framed header icon, so its hover is the 8% overlay plus ring inside its existing border shape | `IconButton variant="secondary compact"`, the registered hook `header-icon-button`, the foundation hover | nothing: no class, no hover rule |
+| Notice | no row of its own; a passive container (Non-interactive cards / rows) whose Dismiss is an ordinary button (Buttons row) and whose field is a control field | `.server-unavailable-banner.connection-recovery-notice`, `.connection-recovery-notice-actions`, `.search-input` | one placement rule on `[data-share-view] > .server-unavailable-banner`, no class |
+| Copied status | existing utility | `.planning-review-sr-only` | nothing |
+
+No registry or ratchet entry is needed: the registered class-hook set is untouched, no font-family, font-size or border-radius value is introduced, and no `:hover` or `:active` declaration is added. `node scripts/generate_design_system_baseline.cjs` leaves `tests/design_system_baseline.json` unchanged and `tests/test_design_system_ratchets.js` passes (Step 10); that run is `docs/design-system.md` "Adding an element or write", steps 1, 4 and 5. Steps 2 and 3 (a Jira write) do not apply: Share writes only the clipboard.
+
+Compact hover, decided with evidence: the compact control needs no copy of the header hover rule. The foundation rule `button.secondary:hover:where(:enabled):where(:not([aria-disabled="true"]))` in `eng/controls.css` has the same specificity as the compact base rule's `box-shadow: none` and comes later in the bundle, so the compact control, which carries `secondary`, paints the same overlay and ring. The mock readout (Step 1), the harness hover case and the real-app hover case show identical hover paint on both surfaces, and the Node test pins the two facts the result depends on: the foundation rule stays, and the control keeps its `secondary` variant. If a later change breaks either, the compact hover case fails on the real stylesheet.
+
 **Forbidden regressions for this task:**
 - [ ] The existing header assertions in `codebase_structure_smoke.spec.js` (geometry, `.refresh-icon + .group-gear-button` adjacency, the freshness cases) pass with only the intended edits; sticky offsets and compact-header height are unchanged (MRT009).
-- [ ] No new hover rule and no local variant of the shared header icon button (MRT020, MRT021); the banner keeps its own layout and surface.
+- [ ] No new class, hover rule or local variant of the shared header icon button (MRT020, MRT021): hover and focus come from the foundation tokens, no `transform` in `:hover` or `:active`, no `transition: all`, no new font-family, font-size or border-radius value; the banner keeps its own layout and surface.
+- [ ] Hover and geometry are proved by settled element-level Playwright assertions for every affected control kind: the Share button on both surfaces (rest, hover, disabled), the Refresh sibling it is compared with, the banner's Dismiss button, and the header icon-button count in `design_system_hover_eng.spec.js`.
 - [ ] Touch: every action works by tap; nothing needs a drag. Keyboard-only polish stays parked (Escape to dismiss, focus return) and is handed to Task 13 for `docs/TODO.md`.
 - [ ] No new `window.addEventListener('keydown', ...)`; no new request; no write; no Jira, Home or service-credential path.
 - [ ] `frontend/src/dashboard.jsx` grows by exactly 7 lines and its pins move in the same commit.
@@ -593,9 +608,11 @@ Also measured in that fixture, for the operator's review: with Share, the compac
 rg -n "SHARE_VIEW_CATEGORY_BY_KEY" frontend/src/shareView/viewDefaults.js
 rg -n "export function trackShareViewAction|analyticsReady," frontend/src/analytics/dashboardAnalytics.js
 rg -n "const shareView = useShareViewApply\(" frontend/src/dashboard.jsx
+rg -n "^module.exports" tests/ui/design_system_hover_helpers.js
+rg -n "button.secondary:hover" frontend/src/styles/eng/controls.css
 git status --short
 ```
-Expected: `viewDefaults.js` exports `SHARE_VIEW_CATEGORY_BY_KEY`; the analytics module exports `trackShareViewAction` and returns `analyticsReady`; exactly one `const shareView = useShareViewApply(` line; a clean tree. If any is missing the plan is stale: stop and report. Read `docs/postmortem/MRT009-sticky-layering-regressions.md`, `MRT020-project-track-filter-bar-bespoke-controls.md`, `MRT021-project-track-segmented-control-override.md` and `MRT029-eng-alert-style-reinvention.md` (the lessons applied here: no sticky offset change, reuse the shared control and its class hooks, neutralize the global button surface, assert computed hover) and record "read" in the status row.
+Expected: `viewDefaults.js` exports `SHARE_VIEW_CATEGORY_BY_KEY`; the analytics module exports `trackShareViewAction` and returns `analyticsReady`; exactly one `const shareView = useShareViewApply(` line; the shared hover helper exports `hoverEvidence` (`module.exports = { contrast, measure, measureDescendantText, evidenceDir, hoverEvidence };`); `eng/controls.css` holds the foundation rule `button.secondary:hover` that the compact control inherits; a clean tree. If any is missing the plan is stale: stop and report. Read `docs/postmortem/MRT009-sticky-layering-regressions.md`, `MRT020-project-track-filter-bar-bespoke-controls.md`, `MRT021-project-track-segmented-control-override.md` and `MRT029-eng-alert-style-reinvention.md` (the lessons applied here: no sticky offset change, reuse the shared control and its class hooks, assert computed hover). Then read the design-system contract. From the root `AGENTS.md` (section 10 Conventions and section 11): "Look up an element's kind in `docs/design-system.md` and reuse its component and registered class hook; a new class for an existing kind is a review-stop." "Hover and focus use the design-system foundation tokens; no transform in `:hover`/`:active` and no `transition: all`." "A new font-family, font-size, border-radius value or pill/chip/badge/button class needs a ratchet allowlist entry with a reason; existing baselines are shrink-only and new classes must be registered in the design-system map." "Hover and geometry changes ship with settled element-level Playwright assertions for every affected control kind." "Hover paint must follow an icon button's visible border shape; use circular paint only for unframed icons or genuinely circular borders, and verify the shape in mounted tests." From `docs/design-system.md`: the Element map rows Icon buttons and Buttons, "Implemented hover vocabulary and retained exceptions", and "Adding an element or write" (steps 1, 4 and 5 apply; steps 2 and 3 are for Jira writes and do not). The result of the lookup is the table above. Record "read" in the status row.
 
 - [ ] **Step 1: Generate the mock (verbatim repository CSS, synthetic data)**
 
@@ -604,9 +621,10 @@ The mock inlines `frontend/dist/dashboard.css` verbatim plus exactly the CSS thi
 ```js
 // Throwaway generator for assets/mockups/share-view-control-194.html (tmp/ is gitignored; the generated mock is committed).
 // Usage from the repository root:  node tmp/share-view-mock/generate.mjs
-// The page inlines frontend/dist/dashboard.css verbatim, plus exactly the CSS Task 12 adds (three selector-list additions and
-// one rule, shown here in the built stylesheet's formatting). Neighbouring controls are server-rendered from the real components; the Share control
-// markup is the contract Task 12 implements and tests against.
+// The page inlines frontend/dist/dashboard.css verbatim, plus exactly the CSS Task 12 adds (two selector-list additions and
+// one rule, shown here in the built stylesheet's formatting; hover needs none, the compact control takes the foundation hover).
+// Neighbouring controls are server-rendered from the real components; the Share control markup is the contract Task 12 implements
+// and tests against.
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -621,8 +639,6 @@ let css = fs.readFileSync(path.join(root, 'frontend/dist/dashboard.css'), 'utf8'
 const edits = [
     ['.header-actions-row button.header-icon-button {\n  width: var(--control-height);',
         '.header-actions-row button.header-icon-button,\n.compact-sticky-header button.header-icon-button {\n  width: var(--control-height);'],
-    ['.header-actions-row button.header-icon-button:hover {\n  color: var(--text-primary);',
-        '.header-actions-row button.header-icon-button:hover,\n.compact-sticky-header button.header-icon-button:hover {\n  color: var(--text-primary);'],
     ['.header-actions-row button.header-icon-button svg {\n  width: 18px;\n  min-width: 18px;\n  height: 18px;\n  flex: none;\n}\n',
         `.header-actions-row button.header-icon-button svg,
 .compact-sticky-header button.header-icon-button svg {
@@ -634,8 +650,9 @@ const edits = [
 /* Share notice: the shared banner (eng/loading.css) anchored under the Share control, so it stays
    visible on both header surfaces. It anchors to the nearest positioned ancestor (the main
    header's .subtitle or the sticky compact header), so it never leaves the viewport. The
-   typography reset undoes the uppercase, tracked text .subtitle passes down. */
-.share-view-notice {
+   attribute-scoped selector outranks the banner's own margin; the typography reset undoes
+   the uppercase, tracked text .subtitle passes down. */
+[data-share-view] > .server-unavailable-banner {
   position: absolute;
   top: calc(100% + 0.35rem);
   right: 0;
@@ -700,8 +717,8 @@ const html = Object.fromEntries(Object.entries(mod.exports.parts).map(([key, ele
 const LINK_ICON = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true" data-share-view-icon="link"><g transform="rotate(-45 12 12)" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 7.5H7a4.5 4.5 0 0 0 0 9h2.5"></path><path d="M14.5 7.5H17a4.5 4.5 0 0 1 0 9h-2.5"></path><path d="M9.5 12h5"></path></g></svg>';
 const COPIED_ICON = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true" data-share-view-icon="copied"><path d="M5 12.25l4.5 4.5L19 7.25" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>';
 const escape = (text) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;');
-const banner = (message, url = '') => `<div class="server-unavailable-banner connection-recovery-notice share-view-notice" role="status"><div><p>${escape(message)}</p>${url ? `<input class="search-input" type="text" readonly="" value="${escape(url)}" aria-label="Link to copy">` : ''}</div><div class="connection-recovery-notice-actions"><button type="button">Dismiss</button></div></div>`;
-const share = ({ icon = LINK_ICON, disabled = false, status = '', notice = '' } = {}) => `<div class="share-view"><button${disabled ? ' disabled=""' : ''} title="${disabled ? 'Sharing is available once the view has loaded' : 'Copy link to this view'}" aria-label="Copy link to this view" class="secondary compact header-icon-button share-view-button" type="button">${icon}</button><span class="planning-review-sr-only" role="status">${status}</span>${notice}</div>`;
+const banner = (message, url = '') => `<div class="server-unavailable-banner connection-recovery-notice" role="status"><div><p>${escape(message)}</p>${url ? `<input class="search-input" type="text" readonly="" value="${escape(url)}" aria-label="Link to copy">` : ''}</div><div class="connection-recovery-notice-actions"><button type="button">Dismiss</button></div></div>`;
+const share = ({ surface = 'main', icon = LINK_ICON, disabled = false, status = '', notice = '' } = {}) => `<div data-share-view="${surface}"><button${disabled ? ' disabled=""' : ''} title="${disabled ? 'Sharing is available once the view has loaded' : 'Copy link to this view'}" aria-label="Copy link to this view" data-share-view-control="" class="secondary compact header-icon-button" type="button">${icon}</button><span class="planning-review-sr-only" role="status">${status}</span>${notice}</div>`;
 const fragment = (name, markup) => `<!-- fragment:${name} -->${markup}<!-- /fragment:${name} -->`;
 const URL_EXAMPLE = 'http://127.0.0.1:5050/?v=1&mode=catch-up&group=synthetic-group&sprint=3001&teams=team-alpha,team-beta';
 
@@ -727,15 +744,15 @@ const compactHeader = (control, { reserve = 0, label } = {}) => `
 </section>`;
 
 const body = [
-    mainHeader(fragment('default', share()), { label: 'Main header: default (hover it to see the existing header icon-button hover)' }),
+    mainHeader(fragment('default', share()), { label: 'Main header: default (hover it: the design-system overlay and ring, inside its rounded border)' }),
     mainHeader(share({ icon: COPIED_ICON, status: 'Link copied' }), { label: 'Main header: copied (the icon swaps for two seconds, still 38 by 38; the status text is visually hidden)' }),
     mainHeader(fragment('disabled', share({ disabled: true })), { label: 'Main header: disabled (hold, load or an unresolved apply in progress)' }),
     mainHeader(fragment('notice-partial', share({ notice: banner('Part of this link was not applied: Teams and filters. Everything else was applied.') })), { reserve: 250, label: 'Main header: apply notice, partial' }),
     mainHeader(share({ notice: banner('This link was not applied: its Department group is not available to you.') }), { reserve: 250, label: 'Main header: apply notice, group not available' }),
     mainHeader(fragment('notice-fallback', share({ notice: banner('The browser did not allow copying. Select the link below and copy it. Left out to keep it short: filters.', URL_EXAMPLE) })), { reserve: 280, label: 'Main header: copy fallback (clipboard unavailable or refused), read-only field' }),
     mainHeader(fragment('notice-copied-dropped', share({ icon: COPIED_ICON, status: 'Link copied', notice: banner('Link copied, without some details to keep it short: filters and highlighted item.') })), { reserve: 250, label: 'Main header: link copied, over-cap keys named as categories' }),
-    compactHeader(share(), { label: 'Compact header: default (Share follows Search)' }),
-    compactHeader(share({ notice: banner('This view cannot be shared as a link right now, so nothing was copied.') }), { reserve: 220, label: 'Compact header: refusal notice' }),
+    compactHeader(fragment('compact', share({ surface: 'compact' })), { label: 'Compact header: default (Share follows Search; hover it)' }),
+    compactHeader(share({ surface: 'compact', notice: banner('This view cannot be shared as a link right now, so nothing was copied.') }), { reserve: 220, label: 'Compact header: refusal notice' }),
 ].join('\n');
 
 const page = `<!DOCTYPE html>
@@ -746,7 +763,7 @@ const page = `<!DOCTYPE html>
 <title>Share Control Mock</title>
 <link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@300;400;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style id="repo-css">
-/* frontend/dist/dashboard.css, verbatim, except the header icon-button selector additions and the .share-view-notice rule (the CSS Task 12 adds). */
+/* frontend/dist/dashboard.css, verbatim, except the compact selectors on the header icon-button base and glyph rules and the Share notice placement rule (the CSS Task 12 adds). */
 ${css}
 </style>
 <style id="mock-chrome">
@@ -763,25 +780,26 @@ ${css}
 <h2>Share control: states (synthetic data)</h2>
 <ul class="mock-intro">
 <li>Placement: main header Search, Share, Jira export, Refresh, Settings; compact header Search, Share. Hidden in EPM and Scenario.</li>
-<li>One shared header icon button: same 38 by 38 frame, border, radius and hover as its siblings. No new hover rule; the compact surface joins the existing rule through its selector list.</li>
-<li>Notice: the shared banner (server-unavailable-banner, connection-recovery-notice) anchored under the control so it is visible on both surfaces. It overlays the controls row until dismissed. The alternative, an in-flow banner under the header, is out of view whenever the compact header is the active surface.</li>
+<li>One shared header icon button (IconButton, the registered header-icon-button hook, no class of its own): same 38 by 38 frame, border and 10px radius as its siblings. Hover is the design-system foundation, the 8% overlay plus ring painted inside that rounded border, with no lift and no circle. No hover rule is added; the compact surface joins the base and glyph rules and takes the foundation hover.</li>
+<li>Notice: the shared banner (server-unavailable-banner, connection-recovery-notice) anchored under the control by one placement rule scoped to the Share wrapper, so it is visible on both surfaces. It overlays the controls row until dismissed. The alternative, an in-flow banner under the header, is out of view whenever the compact header is the active surface.</li>
 <li>Copy strings are final; they name categories, never values.</li>
 </ul>
 ${body}
 <div class="mock-readout" id="mock-readout"></div>
 </div>
 <script>
-// Live readout of the first Share control (main and compact) and its Refresh sibling.
+// Live readout of the first Share control (main and compact) and its Refresh sibling: frame, radius and the hover paint.
 const readout = document.getElementById('mock-readout');
 function describe(node) {
   const rect = node.getBoundingClientRect();
   const style = getComputedStyle(node);
-  return Math.round(rect.width * 10) / 10 + ' x ' + Math.round(rect.height * 10) / 10 + ', radius ' + style.borderRadius + ', background ' + style.backgroundColor + ', hovered ' + node.matches(':hover');
+  return Math.round(rect.width * 10) / 10 + ' x ' + Math.round(rect.height * 10) / 10 + ', radius ' + style.borderRadius + ', hovered ' + node.matches(':hover')
+    + ', overlay ' + /999px/.test(style.boxShadow) + ', ring ' + /47, 128, 237/.test(style.boxShadow) + ', background-image ' + style.backgroundImage + ', transform ' + style.transform;
 }
 function update() {
-  const main = document.querySelector('.header-actions-row .share-view-button');
+  const main = document.querySelector('.header-actions-row [data-share-view-control]');
   const refresh = document.querySelector('.header-actions-row .refresh-icon');
-  const compact = document.querySelector('.compact-sticky-header .share-view-button');
+  const compact = document.querySelector('.compact-sticky-header [data-share-view-control]');
   readout.textContent = 'Share (main): ' + describe(main) + '\\nRefresh (main): ' + describe(refresh) + '\\nShare (compact): ' + describe(compact);
 }
 document.addEventListener('mouseover', update);
@@ -819,18 +837,23 @@ for (const width of [1440, 390]) {
     await page.addStyleTag({ content: '*,*::before,*::after{animation:none!important;transition:none!important}' });
     await page.screenshot({ path: out(`mock-${width}.png`), fullPage: true });
     if (width === 1440) {
-        const share = page.locator('.header-actions-row .share-view-button').first();
+        const share = page.locator('.header-actions-row [data-share-view-control]').first();
         await share.hover();
-        await page.waitForTimeout(200);
+        await page.waitForTimeout(450);
         const box = await share.evaluate(node => node.closest('header').getBoundingClientRect().toJSON());
         await page.screenshot({ path: out('mock-hover-1440.png'), clip: { x: box.x, y: box.y, width: box.width, height: box.height } });
-        const readout = await page.locator('#mock-readout').innerText();
-        console.log(readout);
+        console.log(await page.locator('#mock-readout').innerText());
+        // The compact surface hovers through the same foundation rule; its readout and a close-up follow.
+        const compact = page.locator('.compact-sticky-header [data-share-view-control]').first();
+        await compact.hover();
+        await page.waitForTimeout(450);
+        await compact.locator('xpath=ancestor::div[contains(@class, "compact-sticky-header")]').screenshot({ path: out('mock-hover-compact-1440.png'), animations: 'disabled' });
+        console.log((await page.locator('#mock-readout').innerText()).split('\n').pop());
     }
     await page.close();
 }
 await browser.close();
-console.log('wrote tmp/share-view-mock/mock-1440.png, mock-hover-1440.png, mock-390.png');
+console.log('wrote tmp/share-view-mock/mock-1440.png, mock-hover-1440.png, mock-hover-compact-1440.png, mock-390.png');
 ```
 
 Run:
@@ -839,14 +862,14 @@ Run:
 fnm exec --using 20 node tmp/share-view-mock/generate.mjs
 fnm exec --using 20 node tmp/share-view-mock/shots.mjs
 ```
-Expected: `wrote assets/mockups/share-view-control-194.html (` followed by a byte count of about 375,000; then the three readout lines (`Share (main): 38 x 38, radius 10px, background rgb(247, 245, 240), hovered true`, `Refresh (main): 38 x 38, radius 10px, background rgb(255, 255, 255), hovered false`, `Share (compact): 38 x 38, radius 10px, background rgb(255, 255, 255), hovered false`) and `wrote tmp/share-view-mock/mock-1440.png, mock-hover-1440.png, mock-390.png`. The generator throws `Built stylesheet does not contain exactly one:` if the built stylesheet no longer has the three rules it extends; then run `npm run build` first and re-check that no earlier task edited them.
+Expected: `wrote assets/mockups/share-view-control-194.html (` followed by a byte count of about 400,000; then the readout with the main Share control hovered (`Share (main): 38 x 38, radius 10px, hovered true, overlay true, ring true, background-image none, transform none`, `Refresh (main): 38 x 38, radius 10px, hovered false, overlay false, ring false, background-image none, transform none`, `Share (compact): 38 x 38, radius 10px, hovered false, overlay false, ring false, background-image none, transform none`), the compact control hovered (`Share (compact): 38 x 38, radius 10px, hovered true, overlay true, ring true, background-image none, transform none`) and `wrote tmp/share-view-mock/mock-1440.png, mock-hover-1440.png, mock-hover-compact-1440.png, mock-390.png`. The last readout line is the evidence that the compact control needs no hover rule of its own: only the two selector additions are in the mock's stylesheet. The generator throws `Built stylesheet does not contain exactly one:` if the built stylesheet no longer has the two rules it extends; then run `npm run build` first and re-check that no earlier task edited them.
 
 - [ ] **Step 2: Show the mock to the operator and stop**
 
-Open `assets/mockups/share-view-control-194.html` for the operator (`open assets/mockups/share-view-control-194.html` on macOS; a standalone file, no server) and attach `tmp/share-view-mock/mock-1440.png`, `mock-hover-1440.png` and `mock-390.png` in the reply (all synthetic data). Ask for acceptance of each point, with the measured numbers above:
+Open `assets/mockups/share-view-control-194.html` for the operator (`open assets/mockups/share-view-control-194.html` on macOS; a standalone file, no server) and attach `tmp/share-view-mock/mock-1440.png`, `mock-hover-1440.png`, `mock-hover-compact-1440.png` and `mock-390.png` in the reply (all synthetic data). Ask for acceptance of each point, with the measured numbers above:
 1. Placement: main header Search, Share, Jira export, Refresh, Settings; compact header Search, Share; hidden in EPM and Scenario.
 2. Glyphs: link, then a check for two seconds in the same 38 by 38 frame; disabled dims like its siblings.
-3. Hover and frame: the existing header icon-button rule, no new hover CSS (the readout above).
+3. Hover and frame: the design-system foundation hover, the 8% overlay plus ring painted inside the 10px rounded border, no lift and no circle, identical on both surfaces with no hover CSS added (the readouts above, `mock-hover-1440.png` and `mock-hover-compact-1440.png`).
 4. The notice: the shared banner anchored under the control, with the overlay trade-off and the in-flow alternative described above.
 5. The copy: the strings in the mock are the ones Step 5 implements (they name categories, never values).
 
@@ -864,6 +887,7 @@ const path = require('node:path');
 const esbuild = require('esbuild');
 const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
+const { analyzeDashboard, parseRules, readRegistry } = require('../scripts/design_system_css.cjs');
 
 const repoRoot = path.resolve(__dirname, '..');
 const read = (relativePath) => fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
@@ -881,10 +905,11 @@ const copy = load('frontend/src/shareView/noticeCopy.js');
 const ShareViewButton = load('frontend/src/shareView/ShareViewButton.jsx').default;
 
 const LINK_ICON = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true" data-share-view-icon="link"><g transform="rotate(-45 12 12)" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 7.5H7a4.5 4.5 0 0 0 0 9h2.5"></path><path d="M14.5 7.5H17a4.5 4.5 0 0 1 0 9h-2.5"></path><path d="M9.5 12h5"></path></g></svg>';
-const button = (attributes) => `<button${attributes.disabled ? ' disabled=""' : ''} title="${attributes.title}" aria-label="Copy link to this view" class="secondary compact header-icon-button share-view-button" type="button">${LINK_ICON}</button><span class="planning-review-sr-only" role="status"></span>`;
-const DEFAULT_MARKUP = `<div class="share-view">${button({ title: 'Copy link to this view' })}</div>`;
-const DISABLED_MARKUP = `<div class="share-view">${button({ disabled: true, title: 'Sharing is available once the view has loaded' })}</div>`;
-const PARTIAL_MARKUP = `<div class="share-view">${button({ title: 'Copy link to this view' })}<div class="server-unavailable-banner connection-recovery-notice share-view-notice" role="status"><div><p>Part of this link was not applied: Teams and filters. Everything else was applied.</p></div><div class="connection-recovery-notice-actions"><button type="button">Dismiss</button></div></div></div>`;
+const button = (attributes) => `<button${attributes.disabled ? ' disabled=""' : ''} title="${attributes.title}" aria-label="Copy link to this view" data-share-view-control="" class="secondary compact header-icon-button" type="button">${LINK_ICON}</button><span class="planning-review-sr-only" role="status"></span>`;
+const wrap = (surface, inner) => `<div data-share-view="${surface}">${inner}</div>`;
+const defaultMarkup = (surface) => wrap(surface, button({ title: 'Copy link to this view' }));
+const DISABLED_MARKUP = wrap('main', button({ disabled: true, title: 'Sharing is available once the view has loaded' }));
+const PARTIAL_MARKUP = wrap('main', `${button({ title: 'Copy link to this view' })}<div class="server-unavailable-banner connection-recovery-notice" role="status"><div><p>Part of this link was not applied: Teams and filters. Everything else was applied.</p></div><div class="connection-recovery-notice-actions"><button type="button">Dismiss</button></div></div>`);
 
 const fakeShare = (patch = {}) => ({
     notice: null, dismissNotice() {}, captureShareUrl() { return { ok: true, url: 'unused', dropped: [] }; }, shareDisabled: false, applyTerminal: true, ...patch,
@@ -933,17 +958,17 @@ test('notice copy reads its approved strings and names categories only', () => {
     }
 });
 
-test('ShareViewButton renders the header icon-button contract and reuses the shared banner for its notice', () => {
-    assert.equal(render(), DEFAULT_MARKUP);
-    assert.equal(render({ surface: 'compact', activeControlSurface: 'compact' }), DEFAULT_MARKUP);
+test('ShareViewButton renders the header icon-button contract with data-attribute hooks and reuses the shared banner for its notice', () => {
+    assert.equal(render(), defaultMarkup('main'));
+    assert.equal(render({ surface: 'compact', activeControlSurface: 'compact' }), defaultMarkup('compact'));
     assert.equal(render({ share: { shareDisabled: true } }), DISABLED_MARKUP);
     const partial = { notice: { kind: 'partial', categories: ['teams', 'filters'] } };
     assert.equal(render({ share: partial }), PARTIAL_MARKUP);
     // Only the surface that is showing renders the notice.
-    assert.equal(render({ activeControlSurface: 'compact', share: partial }), DEFAULT_MARKUP);
-    assert.equal(render({ surface: 'compact', activeControlSurface: 'main', share: partial }), DEFAULT_MARKUP);
+    assert.equal(render({ activeControlSurface: 'compact', share: partial }), defaultMarkup('main'));
+    assert.equal(render({ surface: 'compact', activeControlSurface: 'main', share: partial }), defaultMarkup('compact'));
     // An apply result with no copy renders nothing extra.
-    assert.equal(render({ share: { notice: { kind: 'unknown', categories: [] } } }), DEFAULT_MARKUP);
+    assert.equal(render({ share: { notice: { kind: 'unknown', categories: [] } } }), defaultMarkup('main'));
 });
 
 test('the dashboard renders the Share control on both header surfaces through one helper, hidden in EPM and Scenario', async () => {
@@ -971,34 +996,51 @@ test('the dashboard renders the Share control on both header surfaces through on
     }
 });
 
-test('Share adds no hover CSS: the compact surface joins the existing header icon-button rules and the notice reuses the shared banner', () => {
-    const controls = read('frontend/src/styles/shared/controls.css');
-    for (const suffix of ['', ':hover', '\\s+svg']) {
-        assert.match(controls, new RegExp(`\\.header-actions-row button\\.header-icon-button${suffix},\\s*\\.compact-sticky-header button\\.header-icon-button${suffix}\\s*\\{`));
+test('Share adds no class and no hover CSS: the compact surface joins the base and glyph rules, hover comes from the foundation, and the notice is one placement rule', async () => {
+    const current = await analyzeDashboard();
+    const controlsFile = 'frontend/src/styles/shared/controls.css';
+    // Zero new class hooks: the registered set is untouched and no stylesheet names a Share class.
+    assert.deepEqual(current.classHooks, readRegistry().classHooks);
+    assert.equal(current.rules.some(rule => /\.share-view/.test(rule.selector)), false, 'no Share class in any selector');
+
+    // The compact surface joins the base and glyph rules of the shared header icon button; both selectors carry identical declarations.
+    for (const suffix of ['', ' svg']) {
+        const main = current.rules.filter(rule => rule.selector === `.header-actions-row button.header-icon-button${suffix}` && rule.file === controlsFile);
+        const compact = current.rules.filter(rule => rule.selector === `.compact-sticky-header button.header-icon-button${suffix}` && rule.file === controlsFile);
+        assert.equal(main.length, 1, `main${suffix}`);
+        assert.equal(compact.length, 1, `compact${suffix}`);
+        assert.deepEqual(compact[0].declarations, main[0].declarations, `compact${suffix} declarations`);
+        assert.deepEqual(compact[0].context, main[0].context);
     }
-    const stylesDir = path.join(repoRoot, 'frontend', 'src', 'styles');
-    const cssFiles = [];
-    (function walk(dir) {
-        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-            if (entry.isDirectory()) walk(path.join(dir, entry.name));
-            else if (entry.name.endsWith('.css')) cssFiles.push(path.join(dir, entry.name));
-        }
-    }(stylesDir));
-    const allCss = cssFiles.map(file => fs.readFileSync(file, 'utf8')).join('\n');
-    assert.doesNotMatch(allCss, /share-view[^{,]*:hover/, 'no hover rule of its own');
-    assert.doesNotMatch(allCss, /\.share-view-button\b/, 'no local variant of the shared header icon button');
-    assert.doesNotMatch(allCss, /\.share-view\s*[,{]/, 'no wrapper rule beyond the shared header rules');
+    assert.equal(current.rules.some(rule => rule.selector.includes('.compact-sticky-header button.header-icon-button:hover')), false, 'no copy of the header hover rule');
+
+    // Dependency pin: the compact control gets its hover from the global foundation rule for `button.secondary`, which needs the control
+    // to carry `secondary` (IconButton variant) and the foundation rule to stay in place. The header's own hover rule is untouched.
+    const source = (file) => parseRules(read(`frontend/src/styles/${file}`), file);
+    const foundation = source('eng/controls.css').find(rule => rule.selector === 'button.secondary:hover:where(:enabled):where(:not([aria-disabled="true"]))');
+    assert.ok(foundation && foundation.context.some(context => /^@media\s*\(hover:\s*hover\)$/.test(context)));
+    assert.deepEqual(foundation.declarations, [{ property: 'box-shadow', value: 'var(--hover-overlay), var(--hover-ring)' }]);
+    const headerHover = source('shared/controls.css').filter(rule => rule.selector.includes('.header-actions-row button.header-icon-button:hover'));
+    assert.equal(headerHover.length, 1);
+    assert.deepEqual(headerHover[0].declarations, [{ property: 'background-image', value: 'none' }, { property: 'box-shadow', value: 'var(--hover-overlay), var(--hover-ring)' }]);
 
     // The notice rule changes placement and resets the typography .subtitle passes down; the banner's own layout and surface stay untouched.
-    const rule = controls.match(/\.share-view-notice \{([\s\S]*?)\n {8}\}/)[1];
-    for (const needle of ['position: absolute', 'top: calc(100% + 0.35rem)', 'right: 0', 'text-transform: none', 'letter-spacing: normal']) assert.ok(rule.includes(needle), needle);
-    for (const forbidden of ['display', 'flex', 'padding', 'background', 'border', 'color:', 'font', 'hover']) assert.equal(rule.includes(forbidden), false, `the notice rule must not set ${forbidden}`);
+    const noticeRules = current.rules.filter(rule => rule.selector.includes('share-view'));
+    assert.deepEqual(noticeRules.map(rule => [rule.file, rule.context, rule.selector]), [[controlsFile, [], '[data-share-view] > .server-unavailable-banner']]);
+    assert.deepEqual(noticeRules[0].declarations.map(item => item.property),
+        ['position', 'top', 'right', 'z-index', 'width', 'margin', 'box-shadow', 'text-transform', 'letter-spacing']);
+    const value = (property) => noticeRules[0].declarations.find(item => item.property === property).value;
+    assert.deepEqual([value('position'), value('top'), value('right'), value('margin'), value('text-transform'), value('letter-spacing')],
+        ['absolute', 'calc(100% + 0.35rem)', '0', '0', 'none', 'normal']);
+    for (const rule of noticeRules) assert.equal(/:(hover|active)\b/.test(rule.selector), false);
 
     const component = read('frontend/src/shareView/ShareViewButton.jsx');
     for (const required of [
-        'variant="secondary compact"', 'className="header-icon-button share-view-button"', 'className="server-unavailable-banner connection-recovery-notice share-view-notice"',
-        'className="connection-recovery-notice-actions"', 'className="search-input"', 'className="planning-review-sr-only"',
+        'variant="secondary compact"', 'className="header-icon-button"', 'data-share-view-control=""', 'data-share-view={surface}',
+        'className="server-unavailable-banner connection-recovery-notice"', 'className="connection-recovery-notice-actions"',
+        'className="search-input"', 'className="planning-review-sr-only"',
     ]) assert.ok(component.includes(required), required);
+    assert.equal(/className="[^"]*share-view/.test(component), false, 'no Share class in the component');
     assert.equal(component.split('navigator.clipboard.writeText').length - 1, 1);
     for (const forbidden of ['window.location', 'history.', 'execCommand', 'console.', 'dangerouslySetInnerHTML', 'dataLayer', 'trackEvent', 'trackProductEvent', 'localStorage']) {
         assert.equal(component.includes(forbidden), false, `ShareViewButton must not use ${forbidden}`);
@@ -1014,6 +1056,7 @@ test('the accepted mock and the component render the same Share markup and copy'
         return match[1];
     };
     assert.equal(fragment('default'), render(), 'regenerate the mock with tmp/share-view-mock/generate.mjs and re-ask for acceptance if the markup changes');
+    assert.equal(fragment('compact'), render({ surface: 'compact', activeControlSurface: 'compact' }));
     assert.equal(fragment('disabled'), render({ share: { shareDisabled: true } }));
     assert.equal(fragment('notice-partial'), render({ share: { notice: { kind: 'partial', categories: ['teams', 'filters'] } } }));
     // Copy-outcome notices are click state, so only their message text is compared.
@@ -1021,11 +1064,12 @@ test('the accepted mock and the component render the same Share markup and copy'
     assert.equal(message('notice-fallback'), copy.shareViewCopyMessage({ type: 'manual', dropped: ['sort'] }));
     assert.equal(message('notice-copied-dropped'), copy.shareViewCopyMessage({ type: 'copied', dropped: ['find', 'alertTeam'] }));
     assert.ok(mock.includes('id="repo-css"') && mock.includes('--control-height: 38px'), 'the mock inlines the repository stylesheet verbatim');
-    // The mock's two CSS edits are the ones the stylesheet carries: the compact selectors and the placement-only notice rule.
-    for (const suffix of ['', ':hover', ' svg']) {
+    // The mock's CSS edits are the ones the stylesheet carries: the compact selectors on the base and glyph rules, and the placement-only notice rule.
+    for (const suffix of ['', ' svg']) {
         assert.ok(mock.includes(`.header-actions-row button.header-icon-button${suffix},\n.compact-sticky-header button.header-icon-button${suffix} {`), `mock selector list${suffix}`);
     }
-    const noticeRule = (css) => css.match(/\.share-view-notice \{([\s\S]*?)\}/)[1].replace(/\s+/g, ' ').trim();
+    assert.equal(mock.includes('.compact-sticky-header button.header-icon-button:hover'), false, 'the mock adds no hover rule');
+    const noticeRule = (css) => css.match(/\[data-share-view\] > \.server-unavailable-banner \{([\s\S]*?)\}/)[1].replace(/\s+/g, ' ').trim();
     assert.equal(noticeRule(mock), noticeRule(read('frontend/src/styles/shared/controls.css')));
 });
 ```
@@ -1134,12 +1178,16 @@ const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
 const { catchUpPrefs, deferred, groupsConfigPayload, mockDashboard, openCatchUp } = require('./eng_epic_refresh_fixture');
 const { activeHomeTokenConnection } = require('./epm_home_token_fixture');
+const { hoverEvidence } = require('./design_system_hover_helpers');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const harnessUrl = `${appBaseUrl}/share-view-control-harness`;
 const dashboardHtml = fs.readFileSync(path.join(repoRoot, 'jira-dashboard.html'), 'utf8');
 const SHARE_LABEL = 'Copy link to this view';
+// The shared banner's accent label on white is 4.8:1 at rest and 4.28:1 once the foundation overlay is composed; it is the existing
+// palette, so the Dismiss case pins that it stays at least this readable instead of the 4.5:1 floor of new text.
+const DISMISS_MINIMUM_CONTRAST = 4;
 const SYNTHETIC_URL = 'http://127.0.0.1:5050/?v=1&mode=catch-up&group=synthetic-group&sprint=3001';
 const APP_URL_PREFIX = /^http:\/\/127\.0\.0\.1:5050\/\?v=1&mode=catch-up&group=group-alpha&sprint=3001(&|$)/;
 
@@ -1164,8 +1212,9 @@ test.beforeAll(() => {
 });
 
 // Clipboard stubs are installed before navigation: `ok` records writes, `rejected` refuses them,
-// `missing` models a non-secure origin where navigator.clipboard is undefined.
-async function openHarness(page, { width = 1440, height = 900, clipboard = 'ok' } = {}) {
+// `missing` models a non-secure origin where navigator.clipboard is undefined. Animations are always off (the header slides in on mount);
+// transitions are off too unless a case measures them, as the hover cases do after the helper's settle wait.
+async function openHarness(page, { width = 1440, height = 900, clipboard = 'ok', transitions = false } = {}) {
     await page.addInitScript((mode) => {
         window.__copied = [];
         const clipboardValue = {
@@ -1179,59 +1228,25 @@ async function openHarness(page, { width = 1440, height = 900, clipboard = 'ok' 
     await page.setViewportSize({ width, height });
     await page.goto(harnessUrl);
     await expect(page.getByRole('button', { name: SHARE_LABEL })).toHaveCount(2);
-    await page.addStyleTag({ content: '*,*::before,*::after{animation:none!important;transition:none!important}' });
+    await page.addStyleTag({ content: `*,*::before,*::after{animation:none!important${transitions ? '' : ';transition:none!important'}}` });
 }
 
-const shareButton = (page, surface) => page.locator(surface === 'main' ? '.header-actions-row .share-view-button' : '.compact-sticky-header .share-view-button');
+// Hooks are data attributes and existing classes only: the Share control adds no class of its own.
+const surfaceScope = (surface) => (surface === 'main' ? '.header-actions-row ' : surface === 'compact' ? '.compact-sticky-header ' : '');
+const shareButton = (page, surface) => page.locator(`${surfaceScope(surface)}[data-share-view-control]`);
+const shareNotice = (page, surface) => page.locator(`${surfaceScope(surface)}[data-share-view] > .server-unavailable-banner`);
+const shareStatus = (page, surface) => page.locator(`${surfaceScope(surface)}[data-share-view] > .planning-review-sr-only`);
 const setHarness = (page, patch) => page.evaluate(next => window.__shareHarness.set(next), patch);
 const shareEvents = (page) => page.evaluate(() => window.dataLayer.filter(entry => entry && entry.event_name === 'share_view_action'));
 
-// Computed-style report of a hovered control: colours as relative luminance plus the WCAG contrast
-// ratio between the glyph (or text) colour and the background, so a dark-on-dark global
-// `button:hover` surface cannot pass. Same method as eng_epic_refresh.spec.js.
-async function hoverStyleReport(control) {
-    return control.evaluate((node) => {
-        const channels = (value) => {
-            const match = value.match(/rgba?\(([^)]+)\)/);
-            return match ? match[1].split(/[,\s/]+/).filter(Boolean).slice(0, 3).map(Number) : null;
-        };
-        const luminance = (rgb) => {
-            const [red, green, blue] = rgb.map(c => c / 255).map(c => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
-            return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
-        };
-        const style = getComputedStyle(node);
-        const path = node.querySelector('svg path, svg g');
-        const stroke = path ? getComputedStyle(path).stroke : null;
-        const glyph = channels(stroke && stroke !== 'none' ? stroke : style.color);
-        const background = channels(style.backgroundColor);
-        const backgroundLuminance = luminance(background);
-        const glyphLuminance = luminance(glyph);
-        const [lighter, darker] = backgroundLuminance > glyphLuminance ? [backgroundLuminance, glyphLuminance] : [glyphLuminance, backgroundLuminance];
-        return {
-            hovered: node.matches(':hover'),
-            backgroundColor: style.backgroundColor,
-            backgroundLuminance,
-            glyphColor: stroke && stroke !== 'none' ? stroke : style.color,
-            contrast: (lighter + 0.05) / (darker + 0.05),
-            transform: style.transform,
-            boxShadow: style.boxShadow,
-        };
-    });
-}
-
-async function hoverCentre(page, control) {
-    const box = await control.boundingBox();
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    await expect.poll(() => control.evaluate(node => node.matches(':hover'))).toBe(true);
-}
-
 test.describe('Share control: shared header icon-button contract', () => {
-    test('both surfaces carry the header icon-button classes and the 38 by 38 geometry of their siblings', async ({ page }) => {
+    test('both surfaces carry the shared header icon-button classes and nothing else, with the 38 by 38 geometry of their siblings', async ({ page }) => {
         await openHarness(page);
         const main = shareButton(page, 'main');
         const compact = shareButton(page, 'compact');
         for (const button of [main, compact]) {
-            for (const className of ['secondary', 'compact', 'header-icon-button', 'share-view-button']) await expect(button).toHaveClass(new RegExp(`(^|\\s)${className}(\\s|$)`));
+            // Zero new classes: the shared IconButton variant and its registered header hook, exactly.
+            await expect(button).toHaveAttribute('class', 'secondary compact header-icon-button');
         }
         const read = (button) => button.evaluate((node) => {
             const style = getComputedStyle(node);
@@ -1257,29 +1272,37 @@ test.describe('Share control: shared header icon-button contract', () => {
         // The one rule set serves both surfaces: the compact control computes exactly what the main one does.
         expect(compactShare).toEqual(mainShare);
         // Order and adjacency: Search, Share, Jira export in the main row; Share right after Search in the compact row.
-        await expect(page.locator('.header-actions-row > .control-search + .share-view + .jira-export')).toHaveCount(1);
+        await expect(page.locator('.header-actions-row > .control-search + [data-share-view] + .jira-export')).toHaveCount(1);
         await expect(page.locator('.header-actions-row .refresh-icon + .group-gear-button')).toHaveCount(1);
-        await expect(page.locator('.compact-sticky-header > .compact-sticky-header-search + .share-view')).toHaveCount(1);
+        await expect(page.locator('.compact-sticky-header > .compact-sticky-header-search + [data-share-view]')).toHaveCount(1);
         // Bottom edges line up with the neighbouring Search input on both surfaces.
         const bottoms = await page.evaluate(() => ['.header-actions-row', '.compact-sticky-header'].map((rowSelector) => {
             const row = document.querySelector(rowSelector);
-            return Math.abs(row.querySelector('.search-input').getBoundingClientRect().bottom - row.querySelector('.share-view-button').getBoundingClientRect().bottom);
+            return Math.abs(row.querySelector('.search-input').getBoundingClientRect().bottom - row.querySelector('[data-share-view-control]').getBoundingClientRect().bottom);
         }));
         bottoms.forEach(delta => expect(delta).toBeLessThanOrEqual(1));
     });
 
-    test('hover keeps a light surface, a readable glyph and no lift on both surfaces', async ({ page }) => {
-        await openHarness(page);
+    // Settled element-level evidence (design_system_hover_helpers): the stationary box, text and border, the foundation
+    // overlay and ring, their painted pixels and the composed contrast, on the real stylesheet and the real component.
+    test('hover paints the foundation overlay and ring inside the visible rounded border, like its Refresh sibling, on both surfaces', async ({ page }, testInfo) => {
+        await openHarness(page, { transitions: true });
+        const sibling = await hoverEvidence(page, page.locator('.header-actions-row .refresh-icon'), testInfo, 'share-harness-refresh', { foundation: true });
         for (const surface of ['main', 'compact']) {
-            const button = shareButton(page, surface);
-            await hoverCentre(page, button);
-            const report = await hoverStyleReport(button);
-            expect(report.hovered).toBe(true);
-            expect(report.backgroundLuminance, `${surface} background ${report.backgroundColor} is a light surface, not the dark global button:hover`).toBeGreaterThan(0.8);
-            expect(report.contrast, `${surface} glyph ${report.glyphColor} on ${report.backgroundColor}`).toBeGreaterThanOrEqual(3);
-            expect(report.transform, `${surface} transform`).toBe('none');
-            expect(report.boxShadow, `${surface} box-shadow`).toBe('none');
-            await page.mouse.move(2, 2);
+            const { rest, hover } = await hoverEvidence(page, shareButton(page, surface), testInfo, `share-harness-${surface}`, { foundation: true });
+            // The visible shape is a 1px solid border on a 10px rounded square, so the paint is the box-shadow overlay and ring that
+            // follow it, never a full-size circle (circle paint is for unframed icons).
+            expect(rest.box.slice(2), `${surface} frame`).toEqual([38, 38]);
+            expect([hover.radius, hover.borderWidth, hover.borderStyle], `${surface} visible border shape`).toEqual(['10px', '1px', 'solid']);
+            expect(Number.parseFloat(hover.radius), `${surface} is not a circle`).toBeLessThan(rest.box[2] / 2);
+            expect(hover.backgroundImage, `${surface} no circle paint`).toBe('none');
+            expect(hover.shadow, `${surface} overlay inside the border`).toMatch(/inset/);
+            expect(hover.transform, `${surface} no lift`).toBe('none');
+            expect(hover.transition, `${surface} no transition: all`).not.toMatch(/\ball\b/);
+            // The same hover language as the existing sibling, on both surfaces.
+            for (const key of ['shadow', 'radius', 'borderWidth', 'borderStyle', 'border', 'background', 'backgroundImage', 'transform', 'filter', 'opacity']) {
+                expect(hover[key], `${surface} ${key} equals the Refresh sibling`).toBe(sibling.hover[key]);
+            }
         }
     });
 });
@@ -1288,7 +1311,7 @@ test.describe('Share control: copy outcomes', () => {
     test('a click copies the captured URL once, swaps the icon at a fixed 38 by 38 and reports one fixed event', async ({ page }) => {
         await openHarness(page);
         const button = shareButton(page, 'main');
-        const status = page.locator('.header-actions-row .share-view [role="status"]');
+        const status = shareStatus(page, 'main');
         await button.click();
         await expect(button.locator('[data-share-view-icon="copied"]')).toHaveCount(1);
         await expect(status).toHaveText('Link copied');
@@ -1296,7 +1319,7 @@ test.describe('Share control: copy outcomes', () => {
         expect(box.width).toBeCloseTo(38, 1);
         expect(box.height).toBeCloseTo(38, 1);
         expect(await page.evaluate(() => window.__copied)).toEqual([SYNTHETIC_URL]);
-        await expect(page.locator('.share-view-notice')).toHaveCount(0);
+        await expect(shareNotice(page)).toHaveCount(0);
         expect(await shareEvents(page)).toEqual([{
             event: 'userevent', trigger: 'userevent', event_type: 'event', event_name: 'share_view_action',
             feature_name: 'share_view', workflow_action: 'copy_link', result: 'success', source_surface: 'catch_up',
@@ -1311,7 +1334,7 @@ test.describe('Share control: copy outcomes', () => {
         await openHarness(page);
         await setHarness(page, { capture: { ok: true, url: SYNTHETIC_URL, dropped: ['find', 'alertTeam', 'sort'] } });
         await shareButton(page, 'main').click();
-        const notice = page.locator('.share-view-notice');
+        const notice = shareNotice(page);
         await expect(notice.locator('p')).toHaveText('Link copied, without some details to keep it short: filters and highlighted item.');
         await expect(notice.getByRole('textbox')).toHaveCount(0);
         expect(await page.evaluate(() => window.__copied)).toEqual([SYNTHETIC_URL]);
@@ -1325,7 +1348,7 @@ test.describe('Share control: copy outcomes', () => {
             const longUrl = `${SYNTHETIC_URL}&find=${'a'.repeat(1400)}`;
             await setHarness(page, { capture: { ok: true, url: longUrl, dropped: ['sort'] } });
             await shareButton(page, 'main').click();
-            const notice = page.locator('.share-view-notice');
+            const notice = shareNotice(page);
             await expect(notice.locator('p')).toHaveText('The browser did not allow copying. Select the link below and copy it. Left out to keep it short: filters.');
             const field = notice.getByRole('textbox', { name: 'Link to copy' });
             await expect(field).toHaveAttribute('readonly', '');
@@ -1348,7 +1371,7 @@ test.describe('Share control: copy outcomes', () => {
             await openHarness(page);
             await setHarness(page, { capture: { ok: false, reason } });
             await shareButton(page, 'main').click();
-            const notice = page.locator('.share-view-notice');
+            const notice = shareNotice(page);
             await expect(notice.locator('p')).toHaveText(message);
             await expect(notice.getByRole('textbox')).toHaveCount(0);
             expect(await page.evaluate(() => window.__copied)).toEqual([]);
@@ -1356,7 +1379,7 @@ test.describe('Share control: copy outcomes', () => {
         });
     }
 
-    test('a disabled control stays inert, light and unlifted', async ({ page }) => {
+    test('a disabled control stays inert and gains no hover delta on either surface', async ({ page }, testInfo) => {
         await openHarness(page);
         await setHarness(page, { disabled: true });
         for (const surface of ['main', 'compact']) {
@@ -1365,13 +1388,9 @@ test.describe('Share control: copy outcomes', () => {
             await expect(button).toHaveAttribute('title', 'Sharing is available once the view has loaded');
             await expect(button).toHaveAttribute('aria-label', SHARE_LABEL);
             await button.click({ force: true });
-            const box = await button.boundingBox();
-            await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-            const report = await hoverStyleReport(button);
-            expect(report.transform).toBe('none');
-            expect(report.boxShadow).toBe('none');
-            expect(report.backgroundLuminance).toBeGreaterThan(0.8);
-            await page.mouse.move(2, 2);
+            // The helper asserts that the hovered state equals the resting state for a disabled control.
+            const { rest, hover } = await hoverEvidence(page, button, testInfo, `share-harness-disabled-${surface}`, { disabled: true });
+            expect([rest.shadow, hover.shadow]).toEqual(['none', 'none']);
         }
         expect(await page.evaluate(() => window.__shareHarness.calls.captures)).toBe(0);
         expect(await shareEvents(page)).toEqual([]);
@@ -1394,11 +1413,12 @@ test.describe('Share control: apply notice', () => {
         test(`the ${notice.kind} notice for [${notice.categories.join(', ')}] reads exactly its copy, names categories only and dismisses through the hook`, async ({ page }) => {
             await openHarness(page);
             await setHarness(page, { notice });
-            const banner = page.locator('.share-view-notice');
+            const banner = shareNotice(page);
             await expect(banner).toHaveCount(1);
             await expect(banner.locator('p')).toHaveText(message);
             await expect(banner).toHaveAttribute('role', 'status');
-            await expect(banner).toHaveClass(/server-unavailable-banner connection-recovery-notice/);
+            // The shared banner as it is: its two existing classes and no class of Share's own.
+            await expect(banner).toHaveAttribute('class', 'server-unavailable-banner connection-recovery-notice');
             await expect(banner.getByRole('textbox')).toHaveCount(0);
             await banner.getByRole('button', { name: 'Dismiss' }).click();
             await expect(banner).toHaveCount(0);
@@ -1411,22 +1431,22 @@ test.describe('Share control: apply notice', () => {
     test('only the surface that is showing renders the notice, so exactly one is ever on screen', async ({ page }) => {
         await openHarness(page);
         await setHarness(page, { notice: { kind: 'partial', categories: ['teams'] } });
-        await expect(page.locator('.share-view-notice')).toHaveCount(1);
-        await expect(page.locator('.header-actions-row .share-view-notice')).toHaveCount(1);
+        await expect(shareNotice(page)).toHaveCount(1);
+        await expect(shareNotice(page, 'main')).toHaveCount(1);
         await setHarness(page, { active: 'compact' });
-        await expect(page.locator('.share-view-notice')).toHaveCount(1);
-        await expect(page.locator('.compact-sticky-header .share-view-notice')).toHaveCount(1);
-        await expect(page.locator('.header-actions-row .share-view-notice')).toHaveCount(0);
+        await expect(shareNotice(page)).toHaveCount(1);
+        await expect(shareNotice(page, 'compact')).toHaveCount(1);
+        await expect(shareNotice(page, 'main')).toHaveCount(0);
     });
 
     test('a Share failure clears when its surface stops showing', async ({ page }) => {
         await openHarness(page, { clipboard: 'missing' });
         await shareButton(page, 'main').click();
-        await expect(page.locator('.share-view-notice')).toHaveCount(1);
+        await expect(shareNotice(page)).toHaveCount(1);
         await setHarness(page, { active: 'compact' });
-        await expect(page.locator('.share-view-notice')).toHaveCount(0);
+        await expect(shareNotice(page)).toHaveCount(0);
         await setHarness(page, { active: 'main' });
-        await expect(page.locator('.share-view-notice')).toHaveCount(0);
+        await expect(shareNotice(page)).toHaveCount(0);
     });
 
     // Element-level geometry (MRT020): the painted text, the field and the Dismiss button, not only the container box.
@@ -1436,12 +1456,12 @@ test.describe('Share control: apply notice', () => {
                 await openHarness(page, { width, clipboard: 'missing' });
                 await setHarness(page, { active: surface, capture: { ok: true, url: `${SYNTHETIC_URL}&find=${'a'.repeat(900)}`, dropped: [] } });
                 await shareButton(page, surface).click();
-                const notice = page.locator('.share-view-notice');
+                const notice = shareNotice(page);
                 await expect(notice).toBeVisible();
                 const metrics = await notice.evaluate((node, surfaceName) => {
                     const rect = node.getBoundingClientRect();
                     const host = node.closest(surfaceName === 'main' ? '.subtitle' : '.compact-sticky-header').getBoundingClientRect();
-                    const share = node.parentElement.querySelector('.share-view-button').getBoundingClientRect();
+                    const share = node.parentElement.querySelector('[data-share-view-control]').getBoundingClientRect();
                     const paragraph = node.querySelector('p');
                     const range = document.createRange();
                     range.selectNodeContents(paragraph);
@@ -1484,21 +1504,20 @@ test.describe('Share control: apply notice', () => {
         }
     }
 
-    test('the Dismiss button keeps the shared banner hover: a light surface and a readable label', async ({ page }) => {
+    test('the Dismiss button keeps the shared banner hover: the foundation overlay and ring, stationary and readable', async ({ page }, testInfo) => {
         await openHarness(page);
         await setHarness(page, { notice: { kind: 'invalid', categories: [] } });
-        const dismiss = page.locator('.share-view-notice').getByRole('button', { name: 'Dismiss' });
-        await hoverCentre(page, dismiss);
-        const report = await hoverStyleReport(dismiss);
-        expect(report.backgroundLuminance).toBeGreaterThan(0.8);
-        expect(report.contrast).toBeGreaterThanOrEqual(3);
+        const dismiss = shareNotice(page).getByRole('button', { name: 'Dismiss' });
+        const { hover } = await hoverEvidence(page, dismiss, testInfo, 'share-harness-dismiss', { foundation: true, minimumContrast: DISMISS_MINIMUM_CONTRAST });
+        expect(hover.transform).toBe('none');
     });
 });
 
 // Absolute-pixel ink bounds of what a control paints inside its inset box, compared with the centre of
 // that box (same method as eng_group_board_card.spec.js). Integer-aligned clips keep the result exact at
-// the fractional positions flex layout produces.
-async function paintedInkOffset(page, locator, inset = 3) {
+// the fractional positions flex layout produces. The inset is 5 px: with the 10px corner radius a 3 px inset
+// puts the ground sample on the antialiased border, and every interior pixel then counts as ink.
+async function paintedInkOffset(page, locator, inset = 5) {
     const rect = await locator.evaluate((node) => {
         const box = node.getBoundingClientRect();
         return { x: box.x, y: box.y, w: box.width, h: box.height };
@@ -1537,11 +1556,24 @@ async function paintedInkOffset(page, locator, inset = 3) {
         }
         return {
             painted: maxX >= 0,
+            inkWidth: (maxX - minX + 1) / scale,
+            inkHeight: (maxY - minY + 1) / scale,
             dx: originX + ((minX + maxX + 1) / 2) / scale - (box.x + box.w / 2),
             dy: originY + ((minY + maxY + 1) / 2) / scale - (box.y + box.h / 2),
         };
     }, { base64: image.toString('base64'), x0, y0, rect, inset, width });
 }
+
+// The measured ink must be the glyph, not the whole frame: a degenerate "everything differs from the ground" result centres trivially.
+const expectCentredGlyph = (ink, label) => {
+    expect(ink.painted, `${label} paints`).toBe(true);
+    for (const size of [ink.inkWidth, ink.inkHeight]) {
+        expect(size, `${label} ink is the glyph, not the frame`).toBeGreaterThan(6);
+        expect(size, `${label} ink is the glyph, not the frame`).toBeLessThan(22);
+    }
+    expect(Math.abs(ink.dx), `${label} horizontal offset`).toBeLessThanOrEqual(0.75);
+    expect(Math.abs(ink.dy), `${label} vertical offset`).toBeLessThanOrEqual(0.75);
+};
 
 test.describe('Share control: painted glyph ink', () => {
     test.use({ deviceScaleFactor: 2 });
@@ -1561,9 +1593,7 @@ test.describe('Share control: painted glyph ink', () => {
                 if (state === 'hover') await button.hover(); else await page.mouse.move(2, 2);
                 await page.waitForTimeout(300);
                 const ink = await paintedInkOffset(page, button);
-                expect(ink.painted, `${surface} link ${state} paints`).toBe(true);
-                expect(Math.abs(ink.dx), `${surface} link ${state} horizontal offset`).toBeLessThanOrEqual(0.75);
-                expect(Math.abs(ink.dy), `${surface} link ${state} vertical offset`).toBeLessThanOrEqual(0.75);
+                expectCentredGlyph(ink, `${surface} link ${state}`);
             }
             // The copied glyph lasts two seconds after a click, so both of its states are measured at once.
             await button.click();
@@ -1572,9 +1602,7 @@ test.describe('Share control: painted glyph ink', () => {
                 if (state === 'rest') await page.mouse.move(2, 2);
                 await page.waitForTimeout(250);
                 const ink = await paintedInkOffset(page, button);
-                expect(ink.painted, `${surface} copied ${state} paints`).toBe(true);
-                expect(Math.abs(ink.dx), `${surface} copied ${state} horizontal offset`).toBeLessThanOrEqual(0.75);
-                expect(Math.abs(ink.dy), `${surface} copied ${state} vertical offset`).toBeLessThanOrEqual(0.75);
+                expectCentredGlyph(ink, `${surface} copied ${state}`);
             }
             await expect(button.locator('[data-share-view-icon="link"]')).toHaveCount(1, { timeout: 4000 });
         }
@@ -1594,7 +1622,7 @@ async function installClipboard(page, mode = 'ok') {
 const enableAnalytics = (ctx) => ctx.respond('/api/analytics/context', ({ json }) => json({ enabled: true }));
 
 // Share controls inside the viewport and not under an aria-hidden ancestor, by surface.
-const visibleShareSurfaces = (page) => page.evaluate(() => [...document.querySelectorAll('.share-view-button')].filter((node) => {
+const visibleShareSurfaces = (page) => page.evaluate(() => [...document.querySelectorAll('[data-share-view-control]')].filter((node) => {
     const rect = node.getBoundingClientRect();
     return rect.width > 0 && rect.height > 0 && getComputedStyle(node).visibility !== 'hidden'
         && rect.bottom > 0 && rect.top < window.innerHeight && !node.closest('[aria-hidden="true"]');
@@ -1607,7 +1635,7 @@ test.describe('Share control: in the app', () => {
         const ctx = await mockDashboard(page);
         enableAnalytics(ctx);
         await openCatchUp(page, ctx, { width: 1440, height: 900 });
-        const button = page.locator('.header-actions-row .share-view-button');
+        const button = shareButton(page, 'main');
         await expect(button).toBeEnabled();
         await button.click();
         await expect.poll(() => page.evaluate(() => window.__copied.length)).toBe(1);
@@ -1640,15 +1668,38 @@ test.describe('Share control: in the app', () => {
         }
         expect(sampled.some(item => item.compact)).toBe(true);
         // The compact control copies the same link the main control copies, apart from the focus target, which follows the scroll position.
-        await page.locator('.compact-sticky-header .share-view-button').click();
+        await shareButton(page, 'compact').click();
         await page.evaluate(() => window.scrollTo(0, 0));
         await expect(page.locator('.compact-sticky-header.is-visible')).toHaveCount(0);
-        await page.locator('.header-actions-row .share-view-button').click();
+        await shareButton(page, 'main').click();
         await expect.poll(() => page.evaluate(() => window.__copied.length)).toBe(2);
         const [fromCompact, fromMain] = await page.evaluate(() => window.__copied);
         expect(fromCompact).toMatch(APP_URL_PREFIX);
         const withoutFocus = (url) => url.replace(/&(?:epic|story|alertTeam)=[^&]*/g, '');
         expect(withoutFocus(fromCompact)).toBe(withoutFocus(fromMain));
+    });
+
+    // Mounted proof of the hover contract on the real dashboard: the main Share control and the compact one (after the scroll swap)
+    // paint the same foundation overlay and ring inside the same rounded border as the neighbouring header icon buttons.
+    test('the main and the compact Share controls hover like their header siblings in the real app', async ({ page }, testInfo) => {
+        const ctx = await mockDashboard(page);
+        await openCatchUp(page, ctx, { width: 1440, height: 900 });
+        // Settled evidence: no entrance animation may move the header between the resting and the hovered measurement.
+        await page.addStyleTag({ content: '* { animation: none !important; }' });
+        const refresh = await hoverEvidence(page, page.locator('.header-actions-row .refresh-icon'), testInfo, 'share-app-refresh', { foundation: true });
+        const main = await hoverEvidence(page, shareButton(page, 'main'), testInfo, 'share-app-main', { foundation: true });
+        await page.evaluate(() => window.scrollTo(0, 900));
+        await expect(page.locator('.compact-sticky-header.is-visible')).toHaveCount(1);
+        const compact = await hoverEvidence(page, shareButton(page, 'compact'), testInfo, 'share-app-compact', { foundation: true });
+        for (const [label, evidence] of [['main', main], ['compact', compact]]) {
+            expect([evidence.hover.radius, evidence.hover.borderWidth, evidence.hover.borderStyle], `${label} visible border shape`).toEqual(['10px', '1px', 'solid']);
+            expect(evidence.hover.backgroundImage, `${label} no circle paint`).toBe('none');
+            expect(evidence.hover.transform, `${label} no lift`).toBe('none');
+            expect(evidence.hover.transition, `${label} no transition: all`).not.toMatch(/\ball\b/);
+            for (const key of ['shadow', 'radius', 'borderWidth', 'border', 'background', 'backgroundImage']) {
+                expect(evidence.hover[key], `${label} ${key} equals the Refresh sibling`).toBe(refresh.hover[key]);
+            }
+        }
     });
 
     // Sticky layering (MRT009) and the header's no-overflow contract: the baseline is the same page with the Share wrappers hidden.
@@ -1659,7 +1710,7 @@ test.describe('Share control: in the app', () => {
         const setShare = (shown) => page.evaluate((visible) => {
             let style = document.getElementById('share-baseline');
             if (!style) { style = document.createElement('style'); style.id = 'share-baseline'; document.head.appendChild(style); }
-            style.textContent = visible ? '' : '.share-view { display: none !important; }';
+            style.textContent = visible ? '' : '[data-share-view] { display: none !important; }';
         }, shown);
         const measure = async () => {
             await page.evaluate(() => window.scrollTo(0, 0));
@@ -1694,21 +1745,21 @@ test.describe('Share control: in the app', () => {
         const ctx = await mockDashboard(page);
         ctx.respond('/api/me/connections/home-token', ({ json }) => json(activeHomeTokenConnection()));
         await openCatchUp(page, ctx, { width: 1440, height: 900 });
-        await expect(page.locator('.share-view-button')).toHaveCount(1);
+        await expect(shareButton(page)).toHaveCount(1);
         await page.getByRole('radio', { name: 'EPM', exact: true }).click();
         await expect(page.getByRole('radio', { name: 'EPM', exact: true })).toBeChecked();
-        await expect(page.locator('.share-view-button')).toHaveCount(0);
+        await expect(shareButton(page)).toHaveCount(0);
         await page.getByRole('radio', { name: 'ENG', exact: true }).click();
-        await expect(page.locator('.share-view-button')).toHaveCount(1);
+        await expect(shareButton(page)).toHaveCount(1);
         const modes = page.locator('.view-selector .eng-mode-control');
         await modes.getByRole('radio', { name: 'Scenario' }).click();
         await expect(modes.getByRole('radio', { name: 'Scenario' })).toBeChecked();
-        await expect(page.locator('.share-view-button')).toHaveCount(0);
+        await expect(shareButton(page)).toHaveCount(0);
         await page.evaluate(() => window.scrollTo(0, 700));
-        await expect(page.locator('.share-view-button')).toHaveCount(0);
+        await expect(shareButton(page)).toHaveCount(0);
         await page.evaluate(() => window.scrollTo(0, 0));
         await modes.getByRole('radio', { name: 'Catch Up' }).click();
-        await expect(page.locator('.share-view-button')).toHaveCount(1);
+        await expect(shareButton(page)).toHaveCount(1);
     });
 
     test('the control stays disabled while the Department groups are loading', async ({ page }) => {
@@ -1718,7 +1769,7 @@ test.describe('Share control: in the app', () => {
         await page.addInitScript((prefs) => window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs)), catchUpPrefs());
         await page.setViewportSize({ width: 1440, height: 900 });
         await page.goto(appBaseUrl, { waitUntil: 'domcontentloaded' });
-        const button = page.locator('.header-actions-row .share-view-button');
+        const button = shareButton(page, 'main');
         await expect(button).toBeDisabled();
         release.resolve();
         await expect(page.locator('.epic-block[data-epic-key="EPIC-1"]')).toBeVisible();
@@ -1731,11 +1782,11 @@ test.describe('Share control: in the app', () => {
         await page.route(/^http:\/\/127\.0\.0\.1:5050\/\?v=1&/, route => route.fulfill({ status: 200, contentType: 'text/html', body: dashboardHtml }));
         await page.setViewportSize({ width: 1440, height: 900 });
         await page.goto(`${appBaseUrl}/?v=1&mode=catch-up&group=missing-group&sprint=3001`);
-        const notice = page.locator('.header-actions-row .share-view-notice');
+        const notice = shareNotice(page, 'main');
         await expect(notice.locator('p')).toHaveText('This link was not applied: its Department group is not available to you.');
-        await expect(page.locator('.share-view-notice')).toHaveCount(1);
+        await expect(shareNotice(page)).toHaveCount(1);
         await notice.getByRole('button', { name: 'Dismiss' }).click();
-        await expect(page.locator('.share-view-notice')).toHaveCount(0);
+        await expect(shareNotice(page)).toHaveCount(0);
     });
 
     for (const mode of ['catch-up', 'planning']) {
@@ -1745,8 +1796,8 @@ test.describe('Share control: in the app', () => {
             await openCatchUp(page, ctx, { width: 1440, height: 900, prefs: mode === 'planning' ? { showPlanning: true, planningLayout: 'list' } : {} });
             await page.evaluate(() => window.scrollTo(0, 900));
             await expect(page.locator('.compact-sticky-header.is-visible')).toHaveCount(1);
-            await page.locator('.compact-sticky-header .share-view-button').click();
-            const notice = page.locator('.compact-sticky-header .share-view-notice');
+            await shareButton(page, 'compact').click();
+            const notice = shareNotice(page, 'compact');
             await expect(notice).toBeVisible();
             const hits = await notice.evaluate((node) => {
                 const inside = (element) => {
@@ -1757,7 +1808,7 @@ test.describe('Share control: in the app', () => {
             });
             expect(hits).toEqual({ notice: true, field: true, dismiss: true });
             await notice.getByRole('button', { name: 'Dismiss' }).click();
-            await expect(page.locator('.share-view-notice')).toHaveCount(0);
+            await expect(shareNotice(page)).toHaveCount(0);
         });
     }
 });
@@ -1783,7 +1834,7 @@ with this:
     await expect(settings).toBeVisible();
     await expect(share).toBeVisible();
     await expect(headerActions.locator('.refresh-icon + .group-gear-button')).toHaveCount(1);
-    await expect(headerActions.locator('.control-search + .share-view + .jira-export')).toHaveCount(1);
+    await expect(headerActions.locator('.control-search + [data-share-view] + .jira-export')).toHaveCount(1);
     const iconButtonGeometry = await headerActions.evaluate((row) => {
 ```
 
@@ -1801,7 +1852,7 @@ with this:
             row.querySelector('.jira-export-icon-button'),
             row.querySelector('.refresh-icon'),
             row.querySelector('.group-gear-button'),
-            row.querySelector('.share-view-button'),
+            row.querySelector('[data-share-view-control]'),
         ];
 ```
 
@@ -1817,7 +1868,7 @@ with this:
                 row.querySelector('.jira-export-icon-button'),
                 row.querySelector('.refresh-icon'),
                 row.querySelector('.group-gear-button'),
-                row.querySelector('.share-view-button'),
+                row.querySelector('[data-share-view-control]'),
             ].map((control) => Math.abs(controlsBottom - control.getBoundingClientRect().bottom)),
 ```
 
@@ -1893,14 +1944,29 @@ with this:
         const documentOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 ```
 
+In `tests/ui/design_system_hover_eng.spec.js`, `framed header icon hover follows the button shape with subtle shading` measures every framed icon button of the main row in the real app, so it is the existing hover proof for the main surface. Share is the fourth (Share, Jira export, Refresh, Settings):
+
+Replace this:
+```js
+    const controls=page.locator('.header-actions-row button.header-icon-button');
+    await expect(controls).toHaveCount(3);
+    for(let index=0;index<3;index++){
+```
+with this:
+```js
+    const controls=page.locator('.header-actions-row button.header-icon-button');
+    await expect(controls).toHaveCount(4); // Share, Jira export, Refresh and Settings
+    for(let index=0;index<4;index++){
+```
+
 - [ ] **Step 4: Run them and confirm they fail**
 
 ```bash
 fnm exec --using 20 node --test tests/test_share_view_control.js 2>&1 | grep -E '^(not ok|# (tests|pass|fail))|Could not resolve' | head -4
 npx playwright test tests/ui/share_view_control.spec.js --browser=chromium --workers=2 -g 'Share control: (shared header|copy outcomes|apply notice)' 2>&1 | grep -E 'passed|failed|did not run|Could not resolve' | sort -u
-npx playwright test tests/ui/codebase_structure_smoke.spec.js -g 'multiple groups keep the main controls|open header dropdown toggles filter groups' --browser=chromium --workers=2 2>&1 | grep -E 'passed|failed|Locator:|Expected:|Received:|not found'
+npx playwright test tests/ui/codebase_structure_smoke.spec.js tests/ui/design_system_hover_eng.spec.js -g 'multiple groups keep the main controls|open header dropdown toggles filter groups|framed header icon hover follows the button shape' --browser=chromium --workers=2 2>&1 | grep -E 'passed|failed|Locator:|Expected:|Received:|not found'
 ```
-Expected: the Node file fails to load (`not ok 1 - .../tests/test_share_view_control.js`, `Could not resolve ".../frontend/src/shareView/noticeCopy.js"`); the harness group reports `1 failed`, `29 did not run`, with `Could not resolve "../../frontend/src/shareView/ShareViewButton.jsx"`; both smoke cases fail on the source as it is (`Locator: locator('.header-actions-row').getByRole('button', { name: 'Copy link to this view' })`, `element(s) not found`, and `Locator: locator('.compact-sticky-header.is-visible').getByRole('button', { name: 'Copy link to this view' })`, `Expected: 1`, `Received: 0`).
+Expected: the Node file fails to load (`not ok 1 - .../tests/test_share_view_control.js`, `Could not resolve ".../frontend/src/shareView/noticeCopy.js"`); the harness group reports `1 failed`, `29 did not run`, with `Could not resolve "../../frontend/src/shareView/ShareViewButton.jsx"`; the three UI cases fail on the source as it is (`Locator: locator('.header-actions-row').getByRole('button', { name: 'Copy link to this view' })`, `element(s) not found`; `Locator: locator('.compact-sticky-header.is-visible').getByRole('button', { name: 'Copy link to this view' })`, `Expected: 1`, `Received: 0`; and for the framed header icon case `Locator: locator('.header-actions-row button.header-icon-button')`, `Expected: 4`, `Received: 3`), so `3 failed`.
 
 - [ ] **Step 5: Implement the copy module and the component (no CSS, no wiring yet)**
 
@@ -2018,14 +2084,15 @@ export default function ShareViewButton({ surface, share, sourceSurface, activeC
 
     const notice = local || (share.notice ? { message: shareViewNoticeMessage(share.notice) } : null);
     return (
-        <div className="share-view">
+        <div data-share-view={surface}>
             <IconButton
                 variant="secondary compact"
-                className="header-icon-button share-view-button"
+                className="header-icon-button"
                 onClick={copy}
                 disabled={share.shareDisabled}
                 title={share.shareDisabled ? 'Sharing is available once the view has loaded' : LABEL}
                 aria-label={LABEL}
+                data-share-view-control=""
             >
                 {copied ? (
                     <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" data-share-view-icon="copied">
@@ -2044,7 +2111,7 @@ export default function ShareViewButton({ surface, share, sourceSurface, activeC
             {/* The app's only visually hidden utility, defined with the Planning review styles. */}
             <span className="planning-review-sr-only" role="status">{copied ? 'Link copied' : ''}</span>
             {active && notice?.message && (
-                <div className="server-unavailable-banner connection-recovery-notice share-view-notice" role="status">
+                <div className="server-unavailable-banner connection-recovery-notice" role="status">
                     <div>
                         <p>{notice.message}</p>
                         {notice.url && (
@@ -2075,11 +2142,11 @@ export default function ShareViewButton({ surface, share, sourceSurface, activeC
 fnm exec --using 20 node --test tests/test_share_view_control.js 2>&1 | grep -E '^(not ok|ok|# (tests|pass|fail))'
 npx playwright test tests/ui/share_view_control.spec.js --browser=chromium --workers=3 -g 'Share control: (shared header|copy outcomes|apply notice)' 2>&1 | grep -E '✘|passed|failed'
 ```
-Expected: Node `# tests 5`, `# pass 2`, `# fail 3`: the copy strings and the markup contract pass; `the dashboard renders the Share control on both header surfaces...`, `Share adds no hover CSS...` and `the accepted mock and the component render the same Share markup and copy` fail (in the last one the markup and copy assertions pass; its final assertion compares the mock's `.share-view-notice` rule with `controls.css`, which Step 7 adds). The harness group reports `9 failed` and `21 passed`; the nine are exactly the cases that need the stylesheet: `both surfaces carry the header icon-button classes and the 38 by 38 geometry of their siblings` (the compact control is unstyled), `hover keeps a light surface, a readable glyph and no lift on both surfaces`, `a disabled control stays inert, light and unlifted`, and the fallback-notice geometry case on main at 1440, 1028, 760, 390 and 375 px plus on compact at 375 px (no placement rule, no typography reset).
+Expected: Node `# tests 5`, `# pass 2`, `# fail 3`: the copy strings and the markup contract pass; `the dashboard renders the Share control on both header surfaces...`, `Share adds no class and no hover CSS...` and `the accepted mock and the component render the same Share markup and copy` fail (in the last one the markup and copy assertions pass; its final assertion compares the mock's notice placement rule with `controls.css`, which Step 7 adds). The harness group reports `8 failed` and `22 passed`; the eight are exactly the cases that need the stylesheet: `both surfaces carry the shared header icon-button classes and nothing else, with the 38 by 38 geometry of their siblings` (the compact control is unstyled), `hover paints the foundation overlay and ring inside the visible rounded border, like its Refresh sibling, on both surfaces` (the compact control is not 38 by 38 yet), and the fallback-notice geometry case on main at 1440, 1028, 760, 390 and 375 px plus on compact at 375 px (no placement rule, no typography reset).
 
 - [ ] **Step 7: Add the CSS and the dashboard wiring**
 
-In `frontend/src/styles/shared/controls.css`, the compact surface joins the three existing header icon-button rules through their selector lists (no declaration changes, so the hover, geometry and glyph size are the ones the siblings have), and one placement rule is added after the glyph rule:
+In `frontend/src/styles/shared/controls.css`, the compact surface joins the base and glyph rules of the header icon button through their selector lists (no declaration changes, so the geometry and glyph size are the ones the siblings have), and one placement rule is added after the glyph rule. The hover rule is not touched: the compact control takes its hover from the foundation rule `button.secondary:hover:where(:enabled):where(:not([aria-disabled="true"]))` in `eng/controls.css`, and the mock readout, the harness hover case and the real-app hover case prove it paints the same overlay and ring on both surfaces (see the design-system lookup above):
 
 Replace this:
 ```css
@@ -2091,18 +2158,6 @@ with this:
         .header-actions-row button.header-icon-button,
         .compact-sticky-header button.header-icon-button {
             width: var(--control-height);
-```
-
-Replace this:
-```css
-        .header-actions-row button.header-icon-button:hover {
-            color: var(--text-primary);
-```
-with this:
-```css
-        .header-actions-row button.header-icon-button:hover,
-        .compact-sticky-header button.header-icon-button:hover {
-            color: var(--text-primary);
 ```
 
 Replace this:
@@ -2127,8 +2182,9 @@ with this:
         /* Share notice: the shared banner (eng/loading.css) anchored under the Share control, so it stays
            visible on both header surfaces. It anchors to the nearest positioned ancestor (the main
            header's .subtitle or the sticky compact header), so it never leaves the viewport. The
-           typography reset undoes the uppercase, tracked text .subtitle passes down. */
-        .share-view-notice {
+           attribute-scoped selector outranks the banner's own margin; the typography reset undoes
+           the uppercase, tracked text .subtitle passes down. */
+        [data-share-view] > .server-unavailable-banner {
             position: absolute;
             top: calc(100% + 0.35rem);
             right: 0;
@@ -2204,13 +2260,13 @@ with this:
 npm run build
 fnm exec --using 20 node --test tests/test_share_view_control.js 2>&1 | grep -E '^(not ok|# (tests|pass|fail))'
 npx playwright test tests/ui/share_view_control.spec.js --browser=chromium --workers=3 2>&1 | grep -E '✘|passed|failed|skipped'
-npx playwright test tests/ui/codebase_structure_smoke.spec.js -g 'multiple groups keep the main controls|open header dropdown toggles filter groups|Task9 freshness reserved copy' --browser=chromium --workers=2 2>&1 | grep -E '✘|passed|failed'
+npx playwright test tests/ui/codebase_structure_smoke.spec.js tests/ui/design_system_hover_eng.spec.js -g 'multiple groups keep the main controls|open header dropdown toggles filter groups|Task9 freshness reserved copy|framed header icon hover follows the button shape' --browser=chromium --workers=2 2>&1 | grep -E '✘|passed|failed'
 ```
-Expected: `# tests 5`, `# pass 5`, `# fail 0`; the spec reports `38 passed` and `1 skipped` (the painted-ink case runs only headed, Step 11); the four smoke cases pass (`open header dropdown toggles...`, `multiple groups keep the main controls...` and the two `Task9 freshness reserved copy...` cases; the last two walk nine widths and three search states and require every `.header-icon-button` to be exactly 38 by 38). The harness cases build the stylesheet from source; the app cases and the smoke cases use the `frontend/dist` that `npm run build` just wrote, so they fail on a stale build. The app cases exercise Task 11's real hook: if one fails because the hook disagrees with the binding (`shareDisabled` while the groups load, or a `dropped` notice for an unresolved group), report it against Task 11 instead of patching it here.
+Expected: `# tests 5`, `# pass 5`, `# fail 0`; the spec reports `39 passed` and `1 skipped` (the painted-ink case runs only headed, Step 11); the five UI cases pass (`open header dropdown toggles...`, `multiple groups keep the main controls...`, the two `Task9 freshness reserved copy...` cases, which walk nine widths and three search states and require every `.header-icon-button` to be exactly 38 by 38, and `framed header icon hover follows the button shape...`, which now measures four framed icons in the real app). The harness cases build the stylesheet from source; the app cases and the smoke cases use the `frontend/dist` that `npm run build` just wrote, so they fail on a stale build. The app cases exercise Task 11's real hook: if one fails because the hook disagrees with the binding (`shareDisabled` while the groups load, or a `dropped` notice for an unresolved group), report it against Task 11 instead of patching it here.
 
-- [ ] **Step 9: Pin the `dashboard.jsx` budgets (same commit)**
+- [ ] **Step 9: Move the manifest pins (same commit)**
 
-`dashboard.jsx` grew by exactly 7 lines (the import 1, the helper and its blank line 4, two call sites 2). Measure, then move the legacy pin and the manifest together with a one-line reason; `appPlusOwners` is the dashboard plus the unchanged `uniqueOwners` aggregate. Create the throwaway script `tmp/share-view-mock/budget-pins.py` (gitignored):
+`dashboard.jsx` grows by exactly 7 lines (the import 1, the helper and its blank line 4, two call sites 2). The extraction manifest pins it by exact equality, so its numbers move in this commit; `appPlusOwners` is the dashboard plus the unchanged `uniqueOwners` aggregate. The legacy ceiling in `LEGACY_ENTRYPOINT_LINE_BUDGETS` sits above the file and is not edited (Global Constraints, Budgets). Run `mkdir -p tmp/share-view-budget`, then create `tmp/share-view-budget/pins.py` (`tmp/` is gitignored; an earlier task may have left a copy, which this text replaces) with exactly this content:
 
 ```python
 import json
@@ -2218,19 +2274,6 @@ import re
 import sys
 
 n = int(sys.argv[1])
-
-# Legacy line budget (tests/test_codebase_structure_budgets.py): one pin plus a one-line reason.
-path = 'tests/test_codebase_structure_budgets.py'
-source = open(path).read()
-source, count = re.subn(
-    r'\n    "frontend/src/dashboard\.jsx": \d+,',
-    f'\n    # Issue #194 Share control: its import, one render helper and the two header call sites (+7).\n    "frontend/src/dashboard.jsx": {n},',
-    source,
-)
-assert count == 1, 'legacy pin not found exactly once'
-open(path, 'w').write(source)
-
-# Extraction manifest: the dashboard entry and the aggregate it feeds (appPlusOwners = dashboard + unique owners).
 path = 'scripts/extraction_lint/owner_budgets.json'
 text = open(path).read()
 unique_owners = json.loads(text)['aggregates']['uniqueOwners']['measured']
@@ -2250,27 +2293,32 @@ open(path, 'w').write(text)
 print(f'dashboard.jsx pinned at {n}; appPlusOwners pinned at {n + unique_owners}')
 ```
 
+Run:
 ```bash
 wc -l frontend/src/dashboard.jsx
-env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets 2>&1 | tail -4
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets 2>&1 | grep -E 'differs|exceeds|^Ran |^OK|^FAILED'
 N=$(wc -l < frontend/src/dashboard.jsx | tr -d ' ')
-$PY tmp/share-view-mock/budget-pins.py "$N"
-env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets 2>&1 | tail -4
+$PY tmp/share-view-budget/pins.py "$N"
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets 2>&1 | grep -E 'differs|exceeds|^Ran |^OK|^FAILED'
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY tests/test_codebase_structure_budgets.py --manifest scripts/extraction_lint/owner_budgets.json
 git diff --stat -- tests/test_codebase_structure_budgets.py scripts/extraction_lint/owner_budgets.json
 ```
-Expected: the first run fails (`frontend/src/dashboard.jsx: <N> lines exceeds budget <N-7>`, `dashboard measured lineCount differs from actual`, `appPlusOwners: measured aggregate ... differs from unique actual ...`); the script prints `dashboard.jsx pinned at <N>; appPlusOwners pinned at <N + uniqueOwners>`; the second run reports `Ran 2 tests` and `OK`; the diff touches the legacy dict (a new comment line plus the pin), the manifest's `dashboard` entry (`lineCount` and `lineCeiling`) and `appPlusOwners` (`measured` and `ceiling`).
+Expected: `wc -l` prints the previous task's count plus 7 (7,547 on the validated base); the first test run fails only the manifest test (the printed list holds `dashboard measured lineCount differs from actual`, `dashboard exceeds ceiling`, `appPlusOwners: measured aggregate ... differs from unique actual ...` and `appPlusOwners: ... exceeds aggregate ceiling ...`, then `FAILED (failures=1)`); the script prints `dashboard.jsx pinned at <N>; appPlusOwners pinned at <N + uniqueOwners>` (7,547 and 34,149 on the validated base); the second run reports `Ran 2 tests` and `OK`; the manifest run prints `owner budgets: 0 problems`; `git diff --stat` shows only `scripts/extraction_lint/owner_budgets.json` with 8 changed lines. If the legacy test fails too (`frontend/src/dashboard.jsx: <N> lines exceeds budget <M>`), `main` tightened that ceiling after this plan was validated: raise the entry in `tests/test_codebase_structure_budgets.py` to `<N>` with a one-line comment naming issue #194, and add that file to this commit's `git add`.
 
 - [ ] **Step 10: Run the task's regression gate**
 
 ```bash
 fnm exec --using 20 node --test tests/test_*.js 2>&1 | grep -E '^(not ok|# (tests|pass|fail))'
+fnm exec --using 20 node --test tests/test_design_system_ratchets.js tests/test_design_system_write_contract.js tests/test_design_system_status_binding.js tests/test_design_system_hover_foundation.js 2>&1 | grep -E '^(not ok|# (tests|pass|fail))'
+fnm exec --using 20 node scripts/generate_design_system_baseline.cjs | grep -E '"(offenders|classHooks)"'
+git diff --stat -- tests/design_system_baseline.json
 env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets tests.test_dashboard_css_extraction 2>&1 | tail -3
 fnm exec --using 20 bash scripts/extraction_lint/run.sh 2>&1 | grep -E 'problems|owner budgets'
-npx playwright test tests/ui/codebase_structure_smoke.spec.js tests/ui/planning_review_integration.spec.js tests/ui/dashboard_data_freshness.spec.js tests/ui/eng_compact_layout_visual.spec.js tests/ui/planning_selection_defaults.spec.js tests/ui/onboarding_tour.spec.js --browser=chromium --workers=4 2>&1 | grep -E '✘|passed|failed|skipped'
-npx playwright test tests/ui/share_view_control.spec.js --browser=firefox --workers=2 2>&1 | grep -E '✘|passed|failed|skipped'
-npx playwright test tests/ui/share_view_control.spec.js --browser=webkit --workers=2 2>&1 | grep -E '✘|passed|failed|skipped'
+npx playwright test tests/ui/codebase_structure_smoke.spec.js tests/ui/planning_review_integration.spec.js tests/ui/dashboard_data_freshness.spec.js tests/ui/eng_compact_layout_visual.spec.js tests/ui/planning_selection_defaults.spec.js tests/ui/onboarding_tour.spec.js tests/ui/design_system_hover_eng.spec.js tests/ui/design_system_hover_surfaces.spec.js tests/ui/design_system_status_contract.spec.js --browser=chromium --workers=4 2>&1 | grep -E '^ +[0-9]+ (passed|failed|flaky|skipped)|✘'
+npx playwright test tests/ui/share_view_control.spec.js --browser=firefox --workers=2 2>&1 | grep -E '^ +[0-9]+ (passed|failed|flaky|skipped)|✘'
+npx playwright test tests/ui/share_view_control.spec.js --browser=webkit --workers=2 2>&1 | grep -E '^ +[0-9]+ (passed|failed|flaky|skipped)|✘'
 ```
-Expected: no `not ok`, `# tests` equal to the previous task's total plus 5; `OK` for both Python modules; the lint reports `0 errors`, `104 warnings` (105 before this task: Task 11b's transient `'shareView' is assigned a value but never used` is cleared because `renderShareViewControl` now reads it; the new files add none; the ratchet is 106) and `owner budgets: 0 problems`; the Chromium UI set passes with no skipped header case (`onboarding_tour.spec.js` `offscreen target scrolls once on step entry...` is timing-sensitive under four workers: if it is the only failure, run it alone with `--repeat-each=3` before treating it as a regression; it passed 3 of 3 alone, at the base and with Share. On a machine busy with other test runs, `open header dropdown toggles filter groups teams and sprints` (about 19 s alone against the 30 s limit) and some Firefox and WebKit cases can time out as well: re-run each failure alone with `--workers=1` before treating it as a regression); Firefox and WebKit report `38 passed` and `1 skipped`. In a headless WebKit run, the two `Task9 freshness reserved copy...` smoke cases already fail at `bd5b2bc2` with or without Share (document width 782 px against 781 and 755 px at several widths, identical sets of failing assertions), so compare against that baseline instead of running them as a gate here.
+Expected: no `not ok`, `# tests` equal to the previous task's total plus 5; the four design-system files report `# fail 0` (60 tests at the time of writing); the baseline generator prints `"offenders": 19` and `"classHooks": 41` and the `git diff --stat` after it prints nothing (no allowance, registry entry or baseline value changes); `OK` for both Python modules; the lint reports `0 errors`, `104 warnings` (105 before this task: Task 11b's transient `'shareView' is assigned a value but never used` is cleared because `renderShareViewControl` now reads it; the new files add none; the ratchet is 106), `owner budgets: 0 problems` and an `owner budgets: 80 modules; problems: N` line with the same N as Task 0's baseline (4 on the current main; this task adds none); the Chromium UI set, which now includes the three design-system specs (404 passed and 2 skipped at the time of writing), passes with no skipped header case (`onboarding_tour.spec.js` `offscreen target scrolls once on step entry...` is timing-sensitive under four workers: if it is the only failure, run it alone with `--repeat-each=3` before treating it as a regression; it passed 3 of 3 alone, at the base and with Share. On a machine busy with other test runs, `open header dropdown toggles filter groups teams and sprints` (about 19 s alone against the 30 s limit) and some Firefox and WebKit cases can time out as well: re-run each failure alone with `--workers=1` before treating it as a regression); Firefox and WebKit report `39 passed` and `1 skipped`. In a headless WebKit run, the two `Task9 freshness reserved copy...` smoke cases already fail on the base, at `bd5b2bc2` and on the current main, with or without Share (document width 782 px against 781 and 755 px at several widths, identical sets of failing assertions), so compare against that baseline instead of running them as a gate here.
 
 - [ ] **Step 11: Run the painted-ink check in headed Firefox and WebKit at 2x**
 
@@ -2278,14 +2326,14 @@ Expected: no `not ok`, `# tests` equal to the previous task's total plus 5; `OK`
 npx playwright test tests/ui/share_view_control.spec.js --browser=firefox --headed -g "painted glyph ink"
 npx playwright test tests/ui/share_view_control.spec.js --browser=webkit --headed -g "painted glyph ink"
 ```
-Expected: `1 passed` in each (headless runs and non-macOS platforms skip it). It measures the absolute-pixel ink of the link and the copied glyph at rest and on hover on both surfaces against the centre of the 38 by 38 frame, tolerance 0.75 px. Headless runs of the same measurement, with the skips removed, gave at most 0.41 px of offset in Chromium, Firefox and WebKit. Look at the screenshot of a failure before changing a tolerance.
+Expected: `1 passed` in each (headless runs and non-macOS platforms skip it). It measures the absolute-pixel ink of the link and the copied glyph at rest and on hover on both surfaces against the centre of the 38 by 38 frame, tolerance 0.75 px. Headless runs of the same measurement, with the skips removed, gave at most 0.41 px of offset in Chromium, Firefox and WebKit. The ground sample sits 5 px inside the frame and the test asserts that the ink is glyph-sized (14 by 14 px for the link, 13 by 9 px for the check), so a whole-frame result, which would centre trivially, cannot pass. Look at the screenshot of a failure before changing a tolerance.
 
 - [ ] **Step 12: Commit**
 
 ```bash
-git add assets/mockups/share-view-control-194.html docs/plans/EXEC-shareable-view-links-194-control.md frontend/src/shareView/ShareViewButton.jsx frontend/src/shareView/noticeCopy.js frontend/src/dashboard.jsx frontend/src/styles/shared/controls.css tests/test_share_view_control.js tests/ui/share_view_control_harness.jsx tests/ui/share_view_control.spec.js tests/ui/codebase_structure_smoke.spec.js tests/test_codebase_structure_budgets.py scripts/extraction_lint/owner_budgets.json
+git add assets/mockups/share-view-control-194.html docs/plans/EXEC-shareable-view-links-194-control.md frontend/src/shareView/ShareViewButton.jsx frontend/src/shareView/noticeCopy.js frontend/src/dashboard.jsx frontend/src/styles/shared/controls.css tests/test_share_view_control.js tests/ui/share_view_control_harness.jsx tests/ui/share_view_control.spec.js tests/ui/codebase_structure_smoke.spec.js tests/ui/design_system_hover_eng.spec.js scripts/extraction_lint/owner_budgets.json
 git add -A frontend/dist
-git -c user.name=Juce -c user.email=Juce-me@users.noreply.github.com commit -m "Add the Share control to both header surfaces" -m "The control copies a self-contained view link from the main and compact headers, reuses the shared header icon button and the shared banner, and falls back to a read-only field when the clipboard is unavailable. No new hover CSS: the compact surface joins the existing icon-button rules. The accepted mock is kept in assets/mockups and pinned to the component by a parity test."
+git -c user.name=Juce -c user.email=Juce-me@users.noreply.github.com commit -m "Add the Share control to both header surfaces" -m "The control copies a self-contained view link from the main and compact headers, reuses the shared header icon button and the shared banner, and falls back to a read-only field when the clipboard is unavailable. No new class or hover CSS: the compact surface joins the header icon-button base and glyph rules and takes the foundation hover. The accepted mock is kept in assets/mockups and pinned to the component by a parity test."
 git show --stat HEAD
 git status --short
 make verify-dist-clean
@@ -2294,11 +2342,11 @@ Expected: the 12 listed files plus the regenerated `frontend/dist` files; `git s
 
 ## Notes for the executor
 
-Decisions already settled while this slice was drafted; none changes a binding name in the master.
+Settled decisions for this slice; none changes a binding name in the master.
 
 1. `ShareViewButton` takes two props beyond `surface` and `share`: `sourceSurface` (the `copy_link` event's `source_surface`) and `activeControlSurface` (the prop `SprintControl`, `GroupControl` and `TeamControl` already receive, so only the showing surface renders the notice). `dashboard.jsx` passes them through `renderShareViewControl`.
 2. The compact control is a flex sibling directly after `.compact-sticky-header-search`, not a child: a child would shrink Search or need a `:has()` rule, and the guard in `tests/test_epm_shell_source_guards.js` slices on the exact `<div className="compact-sticky-header-search">` text. Measured cost: nothing moves at 1028 px and wider; at 761 px Sprint and Teams are 21 and 16 px narrower.
-3. The notice renders inside `ShareViewButton`, anchored under the control, reusing `.server-unavailable-banner.connection-recovery-notice` with one placement rule, `.share-view-notice`. There is no notice mount in `dashboard.jsx`, so Task 11 adds none. It covers the right part of the controls row until Dismiss; the operator reviews this at gate G2.
+3. The notice renders inside `ShareViewButton`, anchored under the control, reusing `.server-unavailable-banner.connection-recovery-notice` with one attribute-scoped placement rule, `[data-share-view] > .server-unavailable-banner` (the wrapper carries `data-share-view`; no class is added). There is no notice mount in `dashboard.jsx`, so Task 11 adds none. It covers the right part of the controls row until Dismiss; the operator reviews this at gate G2.
 4. At most one control is visible at any scroll position: the compact one exactly while the compact header is visible. For about 87 px of scroll neither is on screen, as for every control in the main actions row; closing that band would change `compactStickyVisible`, which is outside this feature.
 5. `dropped` carries the state key `focus`, which `SHARE_VIEW_CATEGORY_BY_KEY` (a query-key map) does not contain; `shareViewDroppedCategories` maps it locally and every other key through `Object.hasOwn`.
 6. Task 10 does not edit `dashboard.jsx` (to avoid two unused-name lint warnings): Task 11b destructures `analyticsReady` and `trackShareViewAction` from `useDashboardAnalytics`, sends `apply_link` only after `analyticsReady` with a valid `sourceSurface`, calls `dismissNotice()` with no arguments, and keeps `captureShareUrl()` synchronous (Safari requires the clipboard write inside the click).

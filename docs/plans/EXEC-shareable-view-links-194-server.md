@@ -1,6 +1,6 @@
 # Shareable View Links Implementation Plan: Server login stash and log hygiene (Tasks 1 and 2)
 
-> **Status:** Proposed 2026-10-14. Slice of [EXEC-shareable-view-links-194.md](EXEC-shareable-view-links-194.md). Read the master's Global Constraints, Review Focus and Execution status before starting, and record each task's status and commit SHA in the master's Execution status table. Slices are grouped by area, not by execution order; the master's table gives the order.
+> **Status:** Proposed 2026-10-14. Slice of [EXEC-shareable-view-links-194.md](EXEC-shareable-view-links-194.md). Read the master's Global Constraints, Review Focus and Execution status before starting. Statuses and commit SHAs are recorded once, in the master's Task 14 Step 9; keep plan files unmodified between tasks so every Step 0 sees a clean tree. Slices are grouped by area, not by execution order; the master's table gives the order.
 >
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -21,7 +21,6 @@
 - Modify: `jira_server.py` (import block; `redirect_unauthenticated_oauth_dashboard_entry`)
 - Modify: `backend/routes/auth_routes.py` (import block; `auth_entry_page`; `api_atlassian_callback`; `api_auth_logout`)
 - Modify: `tests/oauth_test_helpers.py` (import block; new `forbid_jira_http`)
-- Modify: `tests/test_codebase_structure_budgets.py` (`LEGACY_ENTRYPOINT_LINE_BUDGETS["jira_server.py"]`)
 - Test: `tests/test_auth_entry_page.py` (`TestAuthEntryPage`), `tests/test_auth_routes.py` (`TestAuthRoutes`), `tests/test_db_oauth_cutover.py` (`DbOauthCutoverTests`), `tests/test_share_view_stash.py`
 
 **Interfaces:**
@@ -48,7 +47,8 @@
 - Existing login, callback and logout behavior (status codes, JSON errors, session keys, the DB browser-session lifecycle, the local token store) is unchanged; the existing tests in the three route test modules pass unmodified.
 - The redirect target is only ever `/` or the literal `'/?' + q` after re-validation; never built from request parameters or `urllib` (design V2).
 - A plain or invalid entry never touches an existing stash; a failed callback keeps it; the session cookie stays under 4,093 bytes with a maximum stash (design V8).
-- `jira_server.py` stays within its pin: it grows by four lines and the pin is ratcheted in this commit (Step 9).
+- The stash module imports only `re`, `time`, `contextlib` and `flask`, so it can never reach Jira, Home/Townsquare or token code; an AST test pins this.
+- `jira_server.py` stays under its line ceiling: it grows by four lines (6,455 to 6,459 on `origin/main` `4247a3b1`, against a ceiling of 6,487), so no pin is edited (Step 9).
 
 - [ ] **Step 1: Write the failing unit tests and the corpus fixture**
 
@@ -246,6 +246,7 @@ Create `tests/fixtures/share-view-query-corpus-example-sanitized.json` (syntheti
 Create `tests/test_share_view_stash.py`:
 
 ```python
+import ast
 import hashlib
 import json
 import re
@@ -270,6 +271,7 @@ from backend.auth.share_view_stash import (
 
 CORPUS_PATH = Path(__file__).resolve().parent / 'fixtures' / 'share-view-query-corpus-example-sanitized.json'
 CORPUS = json.loads(CORPUS_PATH.read_text(encoding='utf-8'))
+MODULE_PATH = Path(__file__).resolve().parents[1] / 'backend' / 'auth' / 'share_view_stash.py'
 NOW = 1_700_000_000
 LINK = 'v=1&mode=board&group=default&sprint=4182'
 
@@ -396,6 +398,18 @@ class ShareViewStashContractTests(ShareViewStashTestCase):
         for query, expected in cases:
             with self.subTest(length=len(query), stored=expected):
                 self.assertEqual(SHARE_VIEW_STASH_KEY in self.stash(query), expected)
+
+    def test_module_imports_nothing_beyond_what_it_needs(self):
+        # The stash runs on unauthenticated requests: it must never reach Jira, Home/Townsquare or token code.
+        source = MODULE_PATH.read_text(encoding='utf-8')
+        imported = set()
+        for node in ast.walk(ast.parse(source)):
+            if isinstance(node, ast.Import):
+                imported.update(alias.name.split('.')[0] for alias in node.names)
+            elif isinstance(node, ast.ImportFrom):
+                imported.add('.' * node.level + (node.module or '').split('.')[0])
+        self.assertEqual(imported - {'re', 'time', 'contextlib', 'flask'}, set())
+        self.assertNotIn('__import__', source)
 
     def test_python_dollar_would_accept_a_trailing_newline_so_fullmatch_is_required(self):
         query = 'v=1&mode=board\n'
@@ -662,14 +676,58 @@ def clear_share_view_stash(session):
 
 `Cache-Control: no-store` is attached with `flask.after_this_request` only when a stash was actually stored, which keeps the binding return type `None` and keeps `jira_server.py` at four added lines.
 
-- [ ] **Step 4: Run and confirm pass**
+- [ ] **Step 4: Run and confirm pass, then prove the import guard bites**
 
 Run:
 ```bash
 env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_share_view_stash
 env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -W error -c "import backend.auth.share_view_stash"
 ```
-Expected: `Ran 24 tests` and `OK`; the second command prints nothing.
+Expected: `Ran 25 tests` and `OK`; the second command prints nothing.
+
+Mutation proof for `test_module_imports_nothing_beyond_what_it_needs`: add a forbidden import, see the guard fail, then undo it.
+
+Edit `backend/auth/share_view_stash.py`.
+
+Replace this:
+
+```python
+from flask import after_this_request, current_app
+```
+
+With this:
+
+```python
+from backend.epm import home
+from flask import after_this_request, current_app
+```
+
+Run:
+```bash
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_share_view_stash.ShareViewStashContractTests.test_module_imports_nothing_beyond_what_it_needs
+```
+Expected: `FAILED (failures=1)` with `AssertionError: Items in the first set but not the second:` followed by `'backend'`.
+
+Undo the mutation.
+
+Replace this:
+
+```python
+from backend.epm import home
+from flask import after_this_request, current_app
+```
+
+With this:
+
+```python
+from flask import after_this_request, current_app
+```
+
+Run:
+```bash
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_share_view_stash
+```
+Expected: `Ran 25 tests` and `OK`.
 
 - [ ] **Step 5: Write the failing route tests (entry hook, `/login`, callback, logout, DB profile)**
 
@@ -1157,14 +1215,14 @@ With this (the same lines followed by nine new tests, V2, V8 and the full login-
             authorize = self.client.get('/api/auth/atlassian/login')
             state = parse_qs(urlparse(authorize.headers['Location']).query)['state'][0]
             callback = self.client.get('/api/auth/atlassian/callback?state=%s&code=abc' % state)
-            replay = self.client.get('/api/auth/atlassian/callback?state=%s&code=abc' % state)
+            repeated = self.client.get('/api/auth/atlassian/callback?state=%s&code=abc' % state)
             dashboard = self.client.get(callback.headers['Location'])
             dashboard.close()
         self.assertEqual((entry.status_code, entry.headers['Location']), (302, '/login'))
         self.assertEqual(login_page.status_code, 200)
         self.assertEqual(authorize.status_code, 302)
         self.assertEqual((callback.status_code, callback.headers['Location']), (302, '/?' + self.SHARE_LINK))
-        self.assertEqual((replay.status_code, replay.get_json()['error']), (400, 'invalid_oauth_state'))
+        self.assertEqual((repeated.status_code, repeated.get_json()['error']), (400, 'invalid_oauth_state'))
         self.assertEqual(dashboard.status_code, 200)
         self.assertIsNone(self._stash())
 
@@ -1416,7 +1474,7 @@ The module from Step 3 exists, the route wiring does not yet. Run:
 ```bash
 env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_share_view_stash tests.test_auth_entry_page tests.test_auth_routes tests.test_db_oauth_cutover
 ```
-Expected: `Ran 118 tests` and `FAILED (failures=31, errors=4)`. Every failing entry belongs to a new test (10 in `TestAuthEntryPage`, 20 in `TestAuthRoutes`, 5 in `DbOauthCutoverTests`; subtests count separately); none of the 24 stash unit tests and none of the existing tests fails. Representative messages:
+Expected: `Ran 119 tests` and `FAILED (failures=31, errors=4)`. Every failing entry belongs to a new test (10 in `TestAuthEntryPage`, 20 in `TestAuthRoutes`, 5 in `DbOauthCutoverTests`; subtests count separately); none of the 25 stash unit tests and none of the existing tests fails. Representative messages:
 - `AssertionError: '/' != '/?v=1&mode=board&group=default&sprint=4182&find=50%25%20off'` (the callback and `/login` ignore the stash);
 - `AssertionError: {'q': 'v=1&mode=board&group=default&sprint=4182&find=50%25%20off', 't': ...} is not None` (the stash is never consumed or cleared);
 - `TypeError: 'NoneType' object is not subscriptable` (the entry hook never writes a stash).
@@ -1556,40 +1614,18 @@ Run:
 env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_share_view_stash tests.test_auth_entry_page tests.test_auth_routes tests.test_db_oauth_cutover
 git diff --stat -- jira_server.py backend/routes/auth_routes.py
 ```
-Expected: `Ran 118 tests` and `OK`; the diffstat shows `backend/routes/auth_routes.py | 8 +++++---` and `jira_server.py | 4 ++++`.
+Expected: `Ran 119 tests` and `OK`; the diffstat shows `backend/routes/auth_routes.py | 8 +++++---` and `jira_server.py | 4 ++++`.
 
-- [ ] **Step 9: Ratchet the `jira_server.py` line pin (same commit)**
+- [ ] **Step 9: Confirm the `jira_server.py` line budget (no edit)**
 
-Measure and run the budget test, which must fail first:
+The change adds four lines to `jira_server.py`. Its entry in `LEGACY_ENTRYPOINT_LINE_BUDGETS` is a ceiling, and on the validated base it sits 32 lines above the file (6,487 against 6,455), so nothing is edited (Global Constraints, Budgets).
+
+Run:
 ```bash
 wc -l < jira_server.py
 env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets
 ```
-Expected: `6491`, then `FAILED (failures=1)` with `jira_server.py: 6491 lines exceeds budget 6487`.
-
-Edit `tests/test_codebase_structure_budgets.py`.
-
-Replace this (the last comment line and the entry in `LEGACY_ENTRYPOINT_LINE_BUDGETS`):
-
-```python
-    # Merge of origin/main into feature/217-sprint-review-table: both lines above are additive; the merged file is 6487 lines.
-    "jira_server.py": 6487,
-```
-
-With this:
-
-```python
-    # Merge of origin/main into feature/217-sprint-review-table: both lines above are additive; the merged file is 6487 lines.
-    # feature/194-shareable-dashboard-view: the single dashboard-entry before_request calls the share-view stash
-    # helper in backend/auth/share_view_stash.py (one import, two clears on authenticated entry, one stash call: +4).
-    "jira_server.py": 6491,
-```
-
-Run again:
-```bash
-env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets
-```
-Expected: `Ran 2 tests` and `OK`. The `dashboard.jsx` pin and `scripts/extraction_lint/owner_budgets.json` are untouched (no frontend change in this task).
+Expected: the line count is Task 0's baseline plus 4 (`6459` on the validated base) and the test prints `Ran 2 tests` and `OK`. If it fails with `jira_server.py: <N> lines exceeds budget <M>` (`main` tightened the ceiling after this plan was validated), raise that one entry in `tests/test_codebase_structure_budgets.py` to `<N>` with a one-line comment naming issue #194 and add the file to this commit's `git add`. `dashboard.jsx` and `scripts/extraction_lint/owner_budgets.json` are untouched (no frontend change in this task).
 
 - [ ] **Step 10: Run the task's regression gate**
 
@@ -1598,7 +1634,7 @@ Run:
 env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_endpoint_policy_inventory tests.test_endpoint_security_matrix tests.test_network_bind_guards tests.test_security_headers tests.test_oauth_route_guards tests.test_backend_route_source_guards tests.test_route_move_preservation
 env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest discover -s tests
 ```
-Expected: the first command (the module list `make test-security` runs; use `make test-security` itself in a checkout that has `.venv`) prints `Ran 82 tests` and `OK`. The full suite shows the Task 0 baseline plus exactly 51 new tests (24 + 12 + 9 + 6), the same skips and no new failure or error; a failure that is already in the Task 0 baseline stays out of scope.
+Expected: the first command (the module list `make test-security` runs; use `make test-security` itself in a checkout that has `.venv`) prints `Ran 82 tests` and `OK`. The full suite shows the Task 0 baseline plus exactly 52 new tests (25 + 12 + 9 + 6), the same skips and no new failure or error; a failure that is already in the Task 0 baseline stays out of scope.
 
 `make test-security` and `tests/test_endpoint_policy_inventory.py` are not affected: this task adds no route, no `EndpointPolicy` and no second `@app.before_request` (`test_only_dashboard_entry_redirect_remains_as_jira_server_before_request` pins the single hook), so both pass without edits. If either needs a change, stop: the implementation drifted from the design.
 
@@ -1607,22 +1643,20 @@ Expected: the first command (the module list `make test-security` runs; use `mak
 ```bash
 git add backend/auth/share_view_stash.py backend/routes/auth_routes.py jira_server.py \
   tests/fixtures/share-view-query-corpus-example-sanitized.json tests/oauth_test_helpers.py \
-  tests/test_auth_entry_page.py tests/test_auth_routes.py tests/test_codebase_structure_budgets.py \
+  tests/test_auth_entry_page.py tests/test_auth_routes.py \
   tests/test_db_oauth_cutover.py tests/test_share_view_stash.py
 git diff --cached --check
-git -c user.name=Juce -c user.email=Juce-me@users.noreply.github.com commit -m "Carry shareable view links through the OAuth login hop" -m "A link opened while signed out lost its query at the login redirect. The validated query (at most 1,536 bytes, strict pattern shared with the frontend codec through a sanitized corpus fixture) now rides in the signed session cookie and is applied only as the literal '/?' + query after sign-in, within 15 minutes. It is written on GET at the final unauthenticated branch, consumed at the callback success and the two authenticated /login redirects, cleared on logout and authenticated entry, kept by a failed callback, and dropped by a 3,300-byte cookie guard so oauth_state is never lost. jira_server.py grows by four lines and its pin moves to 6,491."
+git -c user.name=Juce -c user.email=Juce-me@users.noreply.github.com commit -m "Carry shareable view links through the OAuth login hop" -m "A link opened while signed out lost its query at the login redirect. The validated query (at most 1,536 bytes, strict pattern shared with the frontend codec through a sanitized corpus fixture) now rides in the signed session cookie and is applied only as the literal '/?' + query after sign-in, within 15 minutes. It is written on GET at the final unauthenticated branch, consumed at the callback success and the two authenticated /login redirects, cleared on logout and authenticated entry, kept by a failed callback, and dropped by a 3,300-byte cookie guard so oauth_state is never lost. jira_server.py grows by four lines, within its existing line budget."
 git show --stat HEAD
 git status --short
 ```
-Expected: `git add` exits 0 and `git diff --cached --check` prints nothing; `git show --stat HEAD` lists exactly ten paths (new: the module, the fixture, `tests/test_share_view_stash.py`; modified: `jira_server.py`, `backend/routes/auth_routes.py`, `tests/oauth_test_helpers.py`, `tests/test_auth_entry_page.py`, `tests/test_auth_routes.py`, `tests/test_db_oauth_cutover.py`, `tests/test_codebase_structure_budgets.py`) with about 1,130 insertions and 7 deletions and no `| 0` row; `git status --short` prints nothing. If `git add` fails, stop, run `git status`, and re-stage explicitly before committing.
+Expected: `git add` exits 0 and `git diff --cached --check` prints nothing; `git show --stat HEAD` lists exactly nine paths (new: the module, the fixture, `tests/test_share_view_stash.py`; modified: `jira_server.py`, `backend/routes/auth_routes.py`, `tests/oauth_test_helpers.py`, `tests/test_auth_entry_page.py`, `tests/test_auth_routes.py`, `tests/test_db_oauth_cutover.py`) with about 1,150 insertions and 6 deletions and no `| 0` row; `git status --short` prints nothing. If `git add` fails, stop, run `git status`, and re-stage explicitly before committing.
 
 ---
 
 ### Task 2: Log hygiene and privacy notice
 
-> **OPERATOR GATE G1.** Execute this task only after the operator confirms design Open item 3 (the container access-log format change). The access-log change and the `find` key stand or fall together. If the operator declines, follow "If the operator declines" at the end of this task and remove `find` from the schema in Task 3.
-
-**Owner note:** Depends on Task 1 (the privacy text describes its pending-link cookie; both tasks edit `jira_server.py`). Blocks nothing in code.
+**Owner note:** Depends on Task 1 (the privacy text describes its pending-link cookie; both tasks edit `jira_server.py`). Blocks nothing in code. This task is part of a plan only when gate G1 (the container access-log format change, design Open item 3) was confirmed at plan review, before Task 0.
 
 **Files:**
 - Modify: `scripts/docker-entrypoint.sh` (the `exec gunicorn` argument list)
@@ -1639,7 +1673,7 @@ Expected: `git add` exits 0 and `git diff --cached --check` prints nothing; `git
 - OAuth callback query redaction behaves exactly as before (`test_werkzeug_logs_redact_oauth_callback_query` passes unmodified); the callback `code` and `state` are never logged.
 - Ordinary dashboard requests (`/`, `/?perf=1`, `?v=1` on an asset or API path) stay readable in the development log.
 - A decoded newline or other control character in a request path never starts a second access-log line: the path is rendered with `%(U)r` and the Basic-auth user name, the other field that could carry a newline, is not logged.
-- `jira_server.py` stays at 6,491 lines (no pin change in this task).
+- `jira_server.py` stays exactly as long as Task 1 left it (this task's edit is line-neutral).
 
 **gunicorn 23 format identifiers (read from the installed `gunicorn/glogging.py`, `gunicorn/config.py` `AccessLogFormat` and `gunicorn/http/message.py`):** `h` remote address, `l` `-`, `u` HTTP Basic user name, `t` date in brackets, `m` request method, `U` URL path without the query string, `H` protocol, `s` status, `b` response length or `-`, `a` user agent; `r` is `METHOD RAW_URI PROTOCOL` and carries the query string, `q` is the query string, `f` is the Referer. `U` is the percent-DECODED `PATH_INFO` (`util.unquote_to_wsgi_str`), so a request to `/%0A...` would put a raw newline into the log; `u` is a client-supplied Basic-auth name with the same flaw. The format therefore drops `l` and `u` and renders the path with `%(U)r` (`repr` escapes the newline). `m` and `H` are validated tokens and `a` cannot hold CR, LF or NUL (gunicorn's parser rejects them: `RFC9110_5_5_INVALID_AND_DANGEROUS`). An unknown identifier renders as `-` without an error, which is why Step 1 renders real lines instead of only searching the text.
 
@@ -1688,7 +1722,7 @@ With this (a constant, two helpers and four new tests inserted before it):
         atoms = Logger.__new__(Logger).atoms(response, request, environ, timedelta(milliseconds=5))
         return self.entrypoint_access_log_format() % SafeAtoms(atoms)
 
-    def test_entrypoint_access_log_format_is_the_reviewed_one(self):
+    def test_entrypoint_access_log_format_matches_the_expected_format(self):
         self.assertEqual(self.entrypoint_access_log_format(), self.EXPECTED_ACCESS_LOG_FORMAT)
 
     def test_entrypoint_access_log_format_has_no_query_referer_or_raw_client_atoms(self):
@@ -1907,14 +1941,14 @@ With this:
 
 The second branch redacts only a root-path request whose query starts with `v=<digit>` and, unlike the callback branch, runs to the next ASCII whitespace instead of stopping at a quote: Werkzeug decodes `%22` to a literal `"` in the logged path, so stopping at a quote would leak the search text that follows it.
 
-- [ ] **Step 9: Run and confirm pass, and confirm the line pin is untouched**
+- [ ] **Step 9: Run and confirm pass, and confirm the line count is unchanged**
 
 Run:
 ```bash
 env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_logging_migration tests.test_codebase_structure_budgets
 wc -l < jira_server.py
 ```
-Expected: `Ran 11 tests` and `OK`; `6491`.
+Expected: `Ran 11 tests` and `OK`; the line count Task 1 Step 9 printed (`6459` on the validated base).
 
 - [ ] **Step 10: Update `docs/PRIVACY.md`**
 
@@ -2012,56 +2046,18 @@ git status --short
 ```
 Expected: `git diff --cached --check` prints nothing; `git show --stat HEAD` lists exactly five paths (about 154 insertions and 2 deletions: the entrypoint +1, `tests/test_container_packaging.py` +72, `tests/test_logging_migration.py` +55, `docs/PRIVACY.md` +24, `jira_server.py` +2/-2); `git status --short` prints nothing.
 
-#### If the operator declines (gate G1)
-
-The decline path, step by step:
-
-1. **Skip the access-log format and the redaction extension.** Do not run Steps 1 to 9 and Step 11. Leave `scripts/docker-entrypoint.sh`, `jira_server.py`, `tests/test_container_packaging.py` and `tests/test_logging_migration.py` unchanged.
-2. **Still apply the privacy notice, without the search-text clause.** The pending-link cookie from Task 1 exists whether or not `find` ships. In Step 10 apply edit A' below instead of edit A and skip edit B (no access-log paragraph). The verification commands of Step 10 then print one `rg` match, nothing from `awk`, and 13 insertions for `docs/PRIVACY.md`.
-3. **Remove `find` in Task 3.** Task 3's "If the operator declines Task 2" section removes `find` from the schema; apply it.
-4. Commit only `docs/PRIVACY.md` with the commands below and record `declined` for Task 2 in the plan's Execution status table.
-
-Edit A': replace the same "Replace this" block of edit A with this (no search-text clause, no access-log paragraph):
-
-```text
-  `localStorage`, an analytics login-deduplication marker in `sessionStorage`,
-  and authentication/session and CSRF state in a cookie.
-
-A signed-in user can copy a shareable link to the current dashboard view. The
-link is a plain URL on the same instance whose query string lists the selectors
-that recreate the view: the Department group and Sprint identifiers, selected
-Team identifiers, filter selections such as status and priority names, alert
-categories, and optionally one Epic or Story key. It contains no tokens or
-credentials, and opening it does not change any Jira data. Anyone who receives
-the link can read that text, and it remains wherever the link is pasted and in
-browser history. When a signed-out user opens a link, the software keeps the
-link's query text in the signed (not encrypted) session cookie so the view can
-be applied after sign-in. It removes that value when sign-in finishes, when the
-user signs out, or when the user opens the dashboard while signed in, ignores it
-once it is more than 15 minutes old, and does not store the link anywhere else.
-
-The software uses this data to authenticate users, authorize application
-```
-
-```bash
-git add docs/PRIVACY.md
-git diff --cached --check
-git -c user.name=Juce -c user.email=Juce-me@users.noreply.github.com commit -m "Document the pending shareable link cookie in the privacy notice" -m "A link opened while signed out is kept in the signed session cookie until sign-in finishes. The notice lists that value and the link contents."
-git show --stat HEAD
-git status --short
-```
-
 ---
 
 ## Notes for the executor
 
-Decisions already settled while this slice was drafted; none changes a binding name in the master.
+Settled decisions for this slice; none changes a binding name in the master.
 
 1. The corpus `rejects` holds only entries the codec reports as invalid (raw-alphabet violations and a malformed `v`). Queries only the stash rejects (percent-encoded controls, malformed percent sequences, a key with an underscore, 41 further pairs, the generated cap cases) live in `tests/test_share_view_stash.py`, because the decoder is deliberately less strict than the stash (defense in depth).
 2. `accepts` is hand-built in the design's key order with defaults omitted. Task 3 asserts each entry decodes to `ok` and may regenerate entries if its encoder's canonical order differs.
 3. `stash_share_view_query` keeps its `None` return; `Cache-Control: no-store` is attached with `flask.after_this_request` only when a stash was stored, which keeps `jira_server.py` at four added lines.
-4. `jira_server.py` is pinned at 6,487 lines. The import and three call lines make 6,491; Task 1 Step 9 ratchets the pin with a one-line reason. Task 2's regex edit is line-neutral.
-5. Files beyond the design's list: `tests/oauth_test_helpers.py` (one shared `forbid_jira_http`) and `tests/test_codebase_structure_budgets.py`. The chain tests live in the three existing auth test modules plus `tests/test_share_view_stash.py`; there is no `tests/test_share_view_login_return.py`.
-6. Gate G1: if the operator declines, skip the access-log format and the redaction extension, still apply the `docs/PRIVACY.md` edit without the search-text clause (the pending-link cookie needs its notice), and apply Task 3's decline edits, which remove `find`. The `Effective date` in `docs/PRIVACY.md` is left for the operator to bump at publication.
-7. The access-log format drops `%(l)s %(u)s` and renders the path with `%(U)r`: gunicorn's `%(U)s` is the percent-decoded path, so a `%0A` path would forge a second log line. Step 5 proves the script's own arguments reach gunicorn intact.
-8. The full Python suite has two load-sensitive `test_local_postgresql_runner` signal tests that failed on the base in the drafting environment and pass alone. Record them in Task 0 and do not treat them as regressions. CI runs Python 3.10 and 3.11, which the drafting run did not execute; the new Python parses under 3.10 syntax.
+4. `jira_server.py` is 6,455 lines on the validated base and its legacy ceiling is 6,487. The import and three call lines make 6,459, under the ceiling, so no pin is edited (Task 1 Step 9 checks it). Task 2's regex edit is line-neutral.
+5. Files beyond the design's list: `tests/oauth_test_helpers.py` (one shared `forbid_jira_http`). The chain tests live in the three existing auth test modules plus `tests/test_share_view_stash.py`; there is no `tests/test_share_view_login_return.py`.
+6. Gate G1 is answered at plan review, before Task 0. If it is declined the plan is re-issued without `find` and without this task (the pending-link cookie still needs its `docs/PRIVACY.md` notice); there is no partial recipe. The `Effective date` in `docs/PRIVACY.md` is left for the operator to bump at the end (Task 14 Step 9).
+7. The access-log format drops `%(l)s %(u)s` and renders the path with `%(U)r`: gunicorn's `%(U)s` is the percent-decoded path, so a `%0A` path would forge a second log line. A rendered `/%0A...` line must stay one line (that test alone fails against `%(U)s`). The path is single-quoted inside the request field and the line no longer follows the Apache combined layout (no ident, user or Referer field), so log parsers keyed to that layout need adjusting. Step 5 proves the script's own arguments reach gunicorn intact.
+8. Counts are relative to the base: `Ran N tests` for the named modules, baseline plus 52 for the full suite after Task 1 and plus 7 more after Task 2.
+9. The full Python suite has two load-sensitive `test_local_postgresql_runner` signal tests that failed on the base in the drafting environment and pass alone. Record them in Task 0 and do not treat them as regressions. CI runs Python 3.10 and 3.11, which the drafting run did not execute; the new Python parses under 3.10 syntax.

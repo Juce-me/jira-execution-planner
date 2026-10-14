@@ -36,7 +36,7 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 ## Shareable view links (issue #194)
 
-- [Shareable view links design](SUPPORT-shareable-view-links-design-194.md): proposed 2026-10-13 and awaiting operator review (issue #194). A header Share button copies a readable self-contained URL (`/?v=1&mode=…`) for ENG Catch Up, Planning, Board and Statistics; the recipient's own Jira access and visible groups bound what applies, an OAuth login hop keeps the query through a validated session-cookie stash, and a failed group or sprint applies nothing else. No server-stored token, no new route. Supersedes the "Shareable View Links" section of [FUTURE-db-additional-features.md](FUTURE-db-additional-features.md) for v1. The execution plan `EXEC-shareable-view-links-194.md` is not written yet.
+- [Shareable view links design](SUPPORT-shareable-view-links-design-194.md): proposed 2026-10-13, validated and tightened 2026-10-14 by four independent adversarial reviews, awaiting operator review (issue #194). A header Share button (rendered on both header surfaces) copies a readable self-contained URL (`/?v=1&mode=…`) for ENG Catch Up, Planning, Board and Statistics; the recipient's own Jira access bounds what applies, an OAuth login hop keeps the query through a validated session-cookie stash, apply is a staged machine gated on readiness, and a failed group or sprint applies nothing else. No server-stored token, no new route. Supersedes the "Shareable View Links" section of [FUTURE-db-additional-features.md](FUTURE-db-additional-features.md) for v1. The execution plan `EXEC-shareable-view-links-194.md` is not written yet.
 
 ## Per-epic refresh (issue #213)
 

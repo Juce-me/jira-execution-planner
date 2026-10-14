@@ -18,8 +18,9 @@ import IssuePersonEditor from '../issues/IssuePersonEditor.jsx';
 //   - the track glyph reuses .epic-track-indicator with the app's own
 //     getProjectTrackEmoji/getProjectTrackLabel (engTaskUtils.js), exactly like dashboard.jsx's
 //     own passive (non-transition) rendering of the same span;
-//   - the status pill is the shared <StatusPill> in its passive span form — the board does not
-//     wire a transition menu onto the card in this task; that arrives with the detail panel;
+//   - the status is the shared <StatusPill> in its passive span form, using the compact
+//     `epic-status-pill` variant on the progress row — the board does not wire a transition menu
+//     onto the card in this task; that arrives with the detail panel;
 //   - the story-progress bar reuses .story-subtasks-progress-track/-segment verbatim (the same
 //     markup IssueCard.jsx already renders for a story's own subtask bar) rather than the asset's
 //     .eprog-track/--st-done/--st-progress, which are undefined custom properties in the real app.
@@ -94,7 +95,6 @@ export default function EngBoardEpicCard({
                         {getProjectTrackEmoji(track)}
                     </span>
                 )}
-                <StatusPill className={getIssueStatusClassName(status)} label={status || 'Unknown'} status={status} />
                 <span className="etitle">{summary}</span>
                 <span className="ekey">{key}</span>
             </div>
@@ -111,24 +111,25 @@ export default function EngBoardEpicCard({
                         />
                     </span>
                 </span>
-                <span>{incomplete
+                <span className="estories">{incomplete
                     ? epicGroup.childProgress
                         ? `${progress.done} of ${progress.total}+ ${workItemLabel} · loaded so far`
                         : loading ? `Loading ${workItemLabel}…` : `${workItemLabel} unavailable`
                     : `${progress.done} of ${progress.total} ${workItemLabel}`}</span>
+                <StatusPill className={getIssueStatusClassName(status, 'epic-status-pill')} label={status || 'Unknown'} status={status} />
                 <span className="push">{incomplete
                     ? <span className={loading ? 'board-loading-bar board-loading-value' : ''}>{loading ? '' : '— SP'}</span>
                     : `${storyPoints} sp`}</span>
-                {epic.updated ? (
-                    <time dateTime={epic.updated}>{formatSubtaskUpdatedDate(epic.updated)}</time>
-                ) : (
-                    <span>No update</span>
-                )}
             </div>
             </button>
             <div className="erow3">
                 {issueFieldEdits ? personEditor('assignee', 'Assignee', epic.assignee) : <span className="eperson"><span className="lbl">Assignee</span><b>{assigneeName}</b></span>}
                 {issueFieldEdits ? personEditor('deliveryOwner', 'Delivery owner', epic.deliveryOwner) : <span className="eperson"><span className="lbl">Delivery owner</span><b className={deliveryOwnerName ? '' : 'is-empty'}>{deliveryOwnerName || 'Not set'}</b></span>}
+                {epic.updated ? (
+                    <time className="eupdated" dateTime={epic.updated}>{formatSubtaskUpdatedDate(epic.updated)}</time>
+                ) : (
+                    <span className="eupdated">No update</span>
+                )}
             </div>
         </div>
     );

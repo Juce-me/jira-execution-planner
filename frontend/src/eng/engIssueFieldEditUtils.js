@@ -33,12 +33,17 @@ function normalizedPerson(person) {
     };
 }
 
-export function normalizeIssueUserSuggestions(me, options, maximum = 5) {
+export function matchesIssueUserQuery(person, query) {
+    const text = String(query || '').trim().toLocaleLowerCase();
+    return [person?.displayName, person?.emailAddress].some(value => String(value || '').toLocaleLowerCase().includes(text));
+}
+
+export function normalizeIssueUserSuggestions(me, options, maximum = 5, query = '') {
     const result = [];
     const seen = new Set();
     const append = person => {
         const normalized = normalizedPerson(person);
-        if (!normalized || seen.has(normalized.accountId) || result.length >= maximum) return;
+        if (!normalized || !matchesIssueUserQuery(normalized, query) || seen.has(normalized.accountId) || result.length >= maximum) return;
         seen.add(normalized.accountId);
         result.push(normalized);
     };

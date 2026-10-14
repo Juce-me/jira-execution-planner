@@ -80,6 +80,8 @@ In Catch Up and Planning, hover (or keyboard-focus) an Epic header to reveal a s
 
 ## Planning
 
+Assignee and Delivery Owner editors select the full existing name when opened, including after metadata loads or the editor is reopened. Typing replaces that selection and highlights the first enabled name or email match, without selecting the typed text again. While typing, only matching suggestions are shown, including Me only when it matches. With no matches, no person can be selected by pointer, arrow keys or Enter. A suggestion explicitly highlighted by pointer or arrow keys stays highlighted by account ID as results refresh or reorder, until the next input change returns priority to the first enabled match. Highlighting alone never saves the assignee. Cached search suggestions are matched before the five-option limit is applied.
+
 When capacity is enabled, the app reads capacity from the Jira project and field configured in Settings → Admin → Capacity. Planning is a calculator over the currently visible Stories:
 
 - Individual Story checkboxes and the `Accepted`, `To Do`, `Postponed`, `Awaiting Val.`, and `Select All` action-bar buttons change only the planning selection.

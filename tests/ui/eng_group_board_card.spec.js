@@ -53,6 +53,7 @@ function epicPayload(firstEpicAssignee = 'Alice Adams', firstEpicStatus = null, 
     firstEpicTrack = null,
     firstEpicInitiative = null,
     omitFirstEpicAssignee = false,
+    omitFirstEpicUpdated = false,
 } = {}) {
     const epics = {};
     EPIC_SPECS.forEach(([key, status, priority, assigneeName, deliveryOwnerName, projectTrack, updated], index) => {
@@ -64,7 +65,7 @@ function epicPayload(firstEpicAssignee = 'Alice Adams', firstEpicStatus = null, 
             priority: index === 0 && firstEpicPriority ? firstEpicPriority : priority,
             assignee: omitFirstEpicAssignee && index === 0 ? null : (assigneeName ? { displayName: index === 0 ? firstEpicAssignee : assigneeName } : null),
             projectTrack: index === 0 && firstEpicTrack !== null ? firstEpicTrack : projectTrack,
-            updated,
+            updated: omitFirstEpicUpdated && index === 0 ? undefined : updated,
         };
         if (index === 0 && firstEpicInitiative) epics[actualKey].initiative = firstEpicInitiative;
         // The key is present only when a Delivery Owner field is configured and the epic has
@@ -175,6 +176,7 @@ async function installBoardFixture(page, fieldCalls = [], {
     firstEpicTrack = null,
     firstEpicInitiative = null,
     omitFirstEpicAssignee = false,
+    omitFirstEpicUpdated = false,
     authMode = 'atlassian_oauth',
     userCanEditSettings = true,
     includeNoEpic = false,
@@ -261,6 +263,7 @@ async function installBoardFixture(page, fieldCalls = [], {
                 firstEpicTrack,
                 firstEpicInitiative,
                 omitFirstEpicAssignee,
+                omitFirstEpicUpdated,
             });
             return json({
                 issues: storyPayload(storyAssigneeName, firstEpicStoryPoints, firstEpicKey, includeNoEpic, extraFirstEpicStatuses),
@@ -291,6 +294,7 @@ async function openBoard(page, {
     firstEpicTrack = null,
     firstEpicInitiative = null,
     omitFirstEpicAssignee = false,
+    omitFirstEpicUpdated = false,
     authMode = 'atlassian_oauth',
     userCanEditSettings = true,
     includeNoEpic = false,
@@ -311,6 +315,7 @@ async function openBoard(page, {
         firstEpicTrack,
         firstEpicInitiative,
         omitFirstEpicAssignee,
+        omitFirstEpicUpdated,
         authMode,
         userCanEditSettings,
         includeNoEpic,
@@ -471,6 +476,106 @@ test('the card renders its three rows, and the track glyph only when set', async
     await expect(withoutTrack.locator('.epic-track-indicator')).toHaveCount(0);
     // PLAT-1 has 2 stories, one Done: row 2 states the fraction.
     await expect(withoutTrack.locator('.erow2')).toContainText('1 of 2 stories');
+});
+
+test('every card starts its title, progress row and people row at one x, with or without a Project Track (issue #271)', async ({ page }) => {
+    await openBoard(page);
+    const rows = await openColumnCards(page).evaluateAll((cards) => cards.map((card) => {
+        const origin = card.getBoundingClientRect().left;
+        const x = (selector) => card.querySelector(selector).getBoundingClientRect().left - origin;
+        const glyph = card.querySelector('.epic-track-indicator');
+        return {
+            key: card.dataset.epicKey,
+            hasTrack: Boolean(glyph),
+            title: x('.etitle'),
+            bar: x('.story-subtasks-progress'),
+            people: x('.erow3 .eperson'),
+            glyphClips: glyph ? glyph.scrollWidth > glyph.clientWidth + 1 : false,
+        };
+    }));
+    // PLAT-2 (Committed) and PLAT-3 (Flexible) carry a glyph; the rest do not, so both shapes are measured.
+    expect(rows.filter((row) => row.hasTrack)).toHaveLength(2);
+    expect(rows.filter((row) => !row.hasTrack).length).toBeGreaterThanOrEqual(5);
+    rows.forEach((row) => {
+        expect(Math.abs(row.title - rows[0].title), `${row.key} title x`).toBeLessThanOrEqual(0.5);
+        expect(Math.abs(row.bar - row.title), `${row.key} progress row x`).toBeLessThanOrEqual(0.5);
+        expect(Math.abs(row.people - row.title), `${row.key} people row x`).toBeLessThanOrEqual(0.5);
+        expect(row.glyphClips, `${row.key} glyph inside its slot`).toBe(false);
+    });
+});
+
+test('status is a compact passive chip right after the progress bar, never on the title row (issue #271)', async ({ page }) => {
+    await openBoard(page, { firstEpicStatus: '' });
+    const column = col(page, 'col-1a2b3c4d');
+    const card = column.locator('.ecard[data-epic-key="PLAT-2"]');
+    await expect(card.locator('.erow1 .status-pill')).toHaveCount(0);
+    const chip = card.locator('.erow2 > .status-pill.task-status.epic-status-pill');
+    await expect(chip).toHaveCount(1);
+    await expect(chip).toHaveText('To Do');
+    // Passive: a span, never a button, so the card cannot write a status from here.
+    expect(await chip.evaluate((node) => node.tagName)).toBe('SPAN');
+    expect(await card.locator('.erow2').evaluate((row) => [...row.children].map((child) => child.classList[0])))
+        .toEqual(['story-subtasks-progress', 'status-pill', 'estories', 'push']);
+    // Compact: the app's epic-status-pill scale (0.58rem), smaller than the card title.
+    const sizes = await card.evaluate((node) => ({
+        chip: parseFloat(getComputedStyle(node.querySelector('.erow2 > .status-pill')).fontSize),
+        title: parseFloat(getComputedStyle(node.querySelector('.etitle')).fontSize),
+    }));
+    expect(sizes.chip).toBeCloseTo(9.28, 1);
+    expect(sizes.chip).toBeLessThan(sizes.title);
+    // An empty Jira status keeps the existing "Unknown" label.
+    await expect(column.locator('.ecard[data-epic-key="PLAT-1"] .erow2 > .status-pill')).toHaveText('Unknown');
+});
+
+test('the updated date ends the people row on the same right edge as the key and the story points (issue #271)', async ({ page }) => {
+    await openBoard(page, { omitFirstEpicUpdated: true });
+    const column = col(page, 'col-1a2b3c4d');
+    const card = column.locator('.ecard[data-epic-key="PLAT-2"]');
+    await expect(card.locator('.erow2 time')).toHaveCount(0);
+    await expect(card.locator('.erow3 > time.eupdated')).toHaveText('2026-07-21');
+    await expect(card.locator('.erow3 > time.eupdated')).toHaveAttribute('datetime', '2026-07-21T00:00:00.000+0000');
+    const edges = await card.evaluate((node) => ({
+        key: node.querySelector('.ekey').getBoundingClientRect().right,
+        points: node.querySelector('.erow2 > .push').getBoundingClientRect().right,
+        date: node.querySelector('.erow3 > .eupdated').getBoundingClientRect().right,
+    }));
+    expect(Math.abs(edges.key - edges.date)).toBeLessThanOrEqual(1);
+    expect(Math.abs(edges.points - edges.date)).toBeLessThanOrEqual(1);
+    // No `updated` on the Epic: the fallback keeps its place at the right edge, as a span.
+    const fallback = column.locator('.ecard[data-epic-key="PLAT-1"] .erow3 > .eupdated');
+    await expect(fallback).toHaveText('No update');
+    expect(await fallback.evaluate((node) => node.tagName)).toBe('SPAN');
+    const gap = await column.locator('.ecard[data-epic-key="PLAT-1"]').evaluate((node) => (
+        node.querySelector('.ekey').getBoundingClientRect().right
+        - node.querySelector('.erow3 > .eupdated').getBoundingClientRect().right));
+    expect(Math.abs(gap)).toBeLessThanOrEqual(1);
+});
+
+test('in a narrow column the stories text gives way before the status chip does (issue #271)', async ({ page }) => {
+    await openBoard(page, { firstEpicStatus: 'Waiting for Release' });
+    // Force the squeeze deterministically: the open-column width is one custom property.
+    await page.locator('.eng-board').evaluate((node) => node.style.setProperty('--board-open-w', '340px'));
+    await settle(page);
+    const card = col(page, 'col-1a2b3c4d').locator('.ecard[data-epic-key="PLAT-1"]');
+    const geometry = await card.evaluate((node) => {
+        const row = node.querySelector('.erow2');
+        const chip = row.querySelector('.status-pill');
+        const text = row.querySelector('.estories');
+        return {
+            rowOverflow: row.scrollWidth - row.clientWidth,
+            cardOverflow: node.scrollWidth - node.clientWidth,
+            chipClips: chip.scrollWidth > chip.clientWidth + 1,
+            chipInside: chip.getBoundingClientRect().right <= node.getBoundingClientRect().right,
+            textEllipsis: getComputedStyle(text).textOverflow,
+            textClips: text.scrollWidth > text.clientWidth,
+        };
+    });
+    expect(geometry.textClips, 'the stories text is the element that yields').toBe(true);
+    expect(geometry.textEllipsis).toBe('ellipsis');
+    expect(geometry.chipClips).toBe(false);
+    expect(geometry.chipInside).toBe(true);
+    expect(geometry.rowOverflow).toBeLessThanOrEqual(1);
+    expect(geometry.cardOverflow).toBeLessThanOrEqual(1);
 });
 
 test('card hover belongs to the wrapper, without an inner button frame', async ({ page, browserName }) => {
@@ -1239,7 +1344,7 @@ test('typing in search issues no API request', async ({ page }) => {
 test('card text-bearing elements do not overflow their box', async ({ page }) => {
     await openBoard(page);
     const overflow = await openColumnCards(page).evaluateAll((cards) => cards.flatMap((card) => (
-        [...card.querySelectorAll('.ekey, .eperson b, .erow2 span, .erow2 time')].map((el) => ({
+        [...card.querySelectorAll('.ekey, .eperson b, .erow2 span, .erow3 .eupdated')].map((el) => ({
             className: el.className,
             clips: el.scrollWidth > el.clientWidth + 1,
         }))

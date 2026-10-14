@@ -440,3 +440,4 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Settings section tabs (`group-modal-tab`) use underline-only hover; preserve the selected accent underline and existing focus outline instead of applying boxed button shading/rings.
 
 - Start independent issue branches from `origin/main`; never inherit another issue's commits or uncommitted changes.
+- When a plan lists an unanswered layout "default" that differs from the operator-approved mockup's default variant, implement the mockup variant and compare the rendered screenshot against the mockup image before reporting; the Board Epic status chip belongs after the `n of m stories` text, never between the bar and the count (#271).

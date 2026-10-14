@@ -1307,7 +1307,7 @@ Expected: `# tests 38`, `# pass 38`, `# fail 0`. The last test is the seeded fuz
 
 1. The whole frontend unit suite: `fnm exec --using 20 node --test tests/test_*.js 2>&1 | grep -E '^# (tests|pass|fail)'`. Expected: `# fail 0` and `# tests` equal to N0 plus 38.
 2. The structure budgets: `env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets`. Expected: `Ran 2 tests` and `OK` (a file under `shareView/` needs no registration: only `scenario/`, `settings/` and `epm/` do).
-3. The extraction gate: `fnm exec --using 20 bash scripts/extraction_lint/run.sh`. Expected: exit status 0 and a warning count equal to W0.
+3. The extraction gate: `fnm exec --using 20 bash scripts/extraction_lint/run.sh`. Expected: the Task 0 baseline exit status, `0 errors`, a warning count equal to W0, `owner budgets: 0 problems` and `enforced problems: <B>`.
 4. Rebuild: `fnm exec --using 20 npm run build`. Expected: `Dashboard built: ` followed by 64 hexadecimal digits. Then `git status --short -- frontend/dist` must print these entries (the module is not imported yet, so only `dashboard.js` and the manifest name change; the source map keeps its content):
 
 ```
@@ -3068,7 +3068,7 @@ Plus a three-line change in `frontend/src/onboarding/useOnboardingTour.js`: the 
 **The Planning table key.** The Planning table's Epics/Stories rows are local state seeded once at mount (Task 8). The controller seeds them when Stage C begins, after the first ENG load (which unmounts the table), and `useShareViewPlanningTableKey()` flips at the same moment, so the keyed table remounts and reads the seed. A seed taken at the table's first mount would be lost: the first ENG load, which the hold delays until after Stage B, unmounts the table, and the next mount starts from Epics.
 
 **Files:**
-- Modify: `frontend/src/dashboard.jsx` (the eight replacements above)
+- Modify: `frontend/src/dashboard.jsx` (the nine replacements above)
 - Modify: `frontend/src/onboarding/useOnboardingTour.js` (`shouldAutomaticallyStartOnboarding`, `useOnboardingController`, its auto-start effect)
 - Modify: `tests/test_dashboard_freshness_interactions.js` (the `normalEngLoadEffect` inputs, one new test)
 - Modify: `scripts/extraction_lint/owner_budgets.json` (the `dashboard.jsx` manifest pins, same commit)

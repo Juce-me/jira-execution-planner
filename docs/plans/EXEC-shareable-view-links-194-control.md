@@ -493,7 +493,7 @@ Expected: the build prints `Dashboard built: <64 hex>` and no error; `git status
 
 ```bash
 git add frontend/src/analytics/events.js frontend/src/analytics/dashboardAnalytics.js docs/README_ANALYTICS.md docs/plans/SUPPORT-ga4-user-configuration.md tests/test_analytics_events.js tests/test_analytics_source_guards.js
-git add -A frontend/dist
+git add -A -- frontend/dist
 git -c user.name=Juce -c user.email=Juce-me@users.noreply.github.com commit -m "Add share_view_action analytics event and analyticsReady" -m "The Share control and an opened link need one privacy-safe event with fixed enums. Events sent before analytics initializes are dropped, so the hook now returns analyticsReady for the apply outcome to wait on. No new parameter key, trigger or custom definition; the GA4 MCP YAML is unchanged."
 git show --stat HEAD
 git status --short
@@ -2238,7 +2238,7 @@ with this:
                                     {!(boardScopeRequested && !strictBoardActive) && (
 ```
 
-and the compact surface, a flex sibling after the Search container (the container keeps its own `flex: 0 1 190px` width contract and the exact `<div className="compact-sticky-header-search">` text that `tests/test_epm_shell_source_guards.js` pins):
+and, still in `frontend/src/dashboard.jsx`, the compact surface, a flex sibling after the Search container (the container keeps its own `flex: 0 1 190px` width contract and the exact `<div className="compact-sticky-header-search">` text that `tests/test_epm_shell_source_guards.js` pins; that test is not edited):
 
 Replace this:
 ```jsx
@@ -2318,7 +2318,7 @@ npx playwright test tests/ui/codebase_structure_smoke.spec.js tests/ui/planning_
 npx playwright test tests/ui/share_view_control.spec.js --browser=firefox --workers=2 2>&1 | grep -E '^ +[0-9]+ (passed|failed|flaky|skipped)|✘'
 npx playwright test tests/ui/share_view_control.spec.js --browser=webkit --workers=2 2>&1 | grep -E '^ +[0-9]+ (passed|failed|flaky|skipped)|✘'
 ```
-Expected: no `not ok`, `# tests` equal to the previous task's total plus 5; the four design-system files report `# fail 0` (60 tests at the time of writing); the baseline generator prints `"offenders": 19` and `"classHooks": 40` and the `git diff --stat` after it prints nothing (no allowance, registry entry or baseline value changes); `OK` for both Python modules; the lint reports `0 errors`, `104 warnings` (105 before this task: Task 11b's transient `'shareView' is assigned a value but never used` is cleared because `renderShareViewControl` now reads it; the new files add none; the ratchet is 106), `owner budgets: 0 problems` and an `owner budgets: 80 modules; problems: N` line with the same N as Task 0's baseline (4 on the current main; this task adds none); the Chromium UI set, which now includes the three design-system specs (404 passed and 2 skipped at the time of writing), passes with no skipped header case (`onboarding_tour.spec.js` `offscreen target scrolls once on step entry...` is timing-sensitive under four workers: if it is the only failure, run it alone with `--repeat-each=3` before treating it as a regression; it passed 3 of 3 alone, at the base and with Share. On a machine busy with other test runs, `open header dropdown toggles filter groups teams and sprints` (about 19 s alone against the 30 s limit) and some Firefox and WebKit cases can time out as well: re-run each failure alone with `--workers=1` before treating it as a regression); Firefox and WebKit report `39 passed` and `1 skipped`. In a headless WebKit run, the two `Task9 freshness reserved copy...` smoke cases already fail on the base, at `bd5b2bc2` and on the current main, with or without Share (document width 782 px against 781 and 755 px at several widths, identical sets of failing assertions), so compare against that baseline instead of running them as a gate here.
+Expected: no `not ok`, `# tests` equal to the previous task's total plus 5; the four design-system files report `# fail 0` (60 tests on `4247a3b1`); the baseline generator prints `"offenders": 19` and `"classHooks": 40` and the `git diff --stat` after it prints nothing (no allowance, registry entry or baseline value changes); `OK` for both Python modules; the lint reports `0 errors`, `104 warnings` (105 before this task: Task 11b's transient `'shareView' is assigned a value but never used` is cleared because `renderShareViewControl` now reads it; the new files add none; the ratchet is 106), `owner budgets: 0 problems` and an `owner budgets: 80 modules; problems: N` line with the same N as Task 0's baseline (4 on the current main; this task adds none); the Chromium UI set, which now includes the three design-system specs (404 passed and 2 skipped on `4247a3b1`), passes with no skipped header case (`onboarding_tour.spec.js` `offscreen target scrolls once on step entry...` is timing-sensitive under four workers: if it is the only failure, run it alone with `--repeat-each=3` before treating it as a regression; it passed 3 of 3 alone, at the base and with Share. On a machine busy with other test runs, `open header dropdown toggles filter groups teams and sprints` (about 19 s alone against the 30 s limit) and some Firefox and WebKit cases can time out as well: re-run each failure alone with `--workers=1` before treating it as a regression); Firefox and WebKit report `39 passed` and `1 skipped`. In a headless WebKit run, the two `Task9 freshness reserved copy...` smoke cases already fail on the base, at `bd5b2bc2` and on the current main, with or without Share (document width 782 px against 781 and 755 px at several widths, identical sets of failing assertions), so compare against that baseline instead of running them as a gate here.
 
 - [ ] **Step 11: Run the painted-ink check in headed Firefox and WebKit at 2x**
 
@@ -2332,7 +2332,7 @@ Expected: `1 passed` in each (headless runs and non-macOS platforms skip it). It
 
 ```bash
 git add assets/mockups/share-view-control-194.html docs/plans/EXEC-shareable-view-links-194-control.md frontend/src/shareView/ShareViewButton.jsx frontend/src/shareView/noticeCopy.js frontend/src/dashboard.jsx frontend/src/styles/shared/controls.css tests/test_share_view_control.js tests/ui/share_view_control_harness.jsx tests/ui/share_view_control.spec.js tests/ui/codebase_structure_smoke.spec.js tests/ui/design_system_hover_eng.spec.js scripts/extraction_lint/owner_budgets.json
-git add -A frontend/dist
+git add -A -- frontend/dist
 git -c user.name=Juce -c user.email=Juce-me@users.noreply.github.com commit -m "Add the Share control to both header surfaces" -m "The control copies a self-contained view link from the main and compact headers, reuses the shared header icon button and the shared banner, and falls back to a read-only field when the clipboard is unavailable. No new class or hover CSS: the compact surface joins the header icon-button base and glyph rules and takes the foundation hover. The accepted mock is kept in assets/mockups and pinned to the component by a parity test."
 git show --stat HEAD
 git status --short

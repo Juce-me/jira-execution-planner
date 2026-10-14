@@ -1,6 +1,6 @@
 # Design system Part 2: global hover fix
 
-> **Status:** Active. Implemented and locally verified 2026-10-13; stays EXEC until acceptance or merge. A local commit of the final combined Part 2/3 work is authorized 2026-10-14; push, PR and secondary worktrees remain unauthorized.
+> **Status:** Active. Implemented and locally verified 2026-10-13; stays EXEC until acceptance or merge. The final combined Part 2/3 work is committed as `1960753e`. One combined design-system PR with the existing five-commit history and Planning follow-up is authorized 2026-10-14; final full verification has passed; committed-revision and remote publication checks follow the approved transaction. Secondary worktrees remain unauthorized.
 > **Execution:** Superpowers planning and task execution, with repository location/publication overrides.
 
 **Goal:** Replace the global dark fill, lift and elevation with the existing 12% currentColor overlay plus ring; remove the three lifts and ten transition-all declarations, retaining resting geometry, selected states, readable text, disabled behavior and interaction contracts.

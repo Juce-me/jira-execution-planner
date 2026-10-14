@@ -42,7 +42,10 @@
 .planning-review-table thead .planning-review-selection, .planning-review-table thead .planning-review-key, .planning-review-table tfoot .planning-review-selection, .planning-review-table tfoot .planning-review-key { z-index: 6; }
 .planning-review-components { max-width: 200px; white-space: normal !important; }
 
-.planning-review-storyPoints input.story-points-editor { min-width: 32px; border: 1px solid var(--border); border-radius: 4px; padding: 2px 4px; background: #fff; box-sizing: content-box; cursor: text; }
+/* Match custom fields' 21px outer height so the Story editor cannot enlarge the compact row. */
+/* A block flex wrapper avoids an inline baseline strut adding fractional height in WebKit. */
+.planning-review-storyPoints .story-points-editor-wrap { display: flex; width: fit-content; margin-left: auto; }
+.planning-review-storyPoints input.story-points-editor { min-width: 32px; height: 15px; line-height: 1; border: 1px solid var(--border); border-radius: 4px; padding: 2px 4px; background: #fff; box-sizing: content-box; cursor: text; }
 
 @media (min-width: 1000px) { .planning-review-table thead .planning-review-summary, .planning-review-table tfoot .planning-review-summary { z-index: 5; } }
 
@@ -150,7 +153,7 @@
 /* Hovered fills use z-index 40; the persistent readout must stay above them. */
 .planning-panel-compact .planning-compact-readout { position: absolute; inset: 0 8px; display: flex; align-items: center; white-space: nowrap; pointer-events: none; z-index: 41; }
 
-.planning-panel-project-graph .planning-compact-readout { color: #fff; text-shadow: 0 1px 2px #0006; }
+.planning-panel-project-graph .planning-compact-readout { color: var(--text-primary); text-shadow: none; }
 .planning-panel-compact:has(.planning-panel-capacity-status) { flex-wrap: wrap; }
 .planning-panel-capacity-status { flex-basis: 100%; color: #92400e; font-size: 0.7rem; }
 

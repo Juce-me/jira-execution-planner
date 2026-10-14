@@ -8959,8 +8959,15 @@ input.story-points-editor.story-points-alert-highlight {
   max-width: 200px;
   white-space: normal !important;
 }
+.planning-review-storyPoints .story-points-editor-wrap {
+  display: flex;
+  width: fit-content;
+  margin-left: auto;
+}
 .planning-review-storyPoints input.story-points-editor {
   min-width: 32px;
+  height: 15px;
+  line-height: 1;
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 2px 4px;
@@ -9471,8 +9478,8 @@ input.story-points-editor.story-points-alert-highlight {
   z-index: 41;
 }
 .planning-panel-project-graph .planning-compact-readout {
-  color: #fff;
-  text-shadow: 0 1px 2px #0006;
+  color: var(--text-primary);
+  text-shadow: none;
 }
 .planning-panel-compact:has(.planning-panel-capacity-status) {
   flex-wrap: wrap;
@@ -13516,6 +13523,20 @@ a.project-track-phase-epic-link:focus-visible {
   margin-top: 0.3rem;
   margin-bottom: 1.45rem;
 }
+.project-bar-graph .capacity-bar-marker {
+  z-index: auto;
+  transform: none;
+}
+.project-bar-graph .capacity-bar-marker-line.dashed {
+  z-index: 41;
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      var(--text-primary) 0px,
+      var(--text-primary) 3px,
+      transparent 3px,
+      transparent 5px);
+}
 .project-bar-fill {
   position: absolute;
   top: 0;
@@ -13533,27 +13554,27 @@ a.project-track-phase-epic-link:focus-visible {
 }
 .project-bar-fill.product {
   left: 0;
-  background: #3d1ef8;
+  background: color-mix(in srgb, #3d1ef8 20%, white);
   border-radius: 6px 0 0 6px;
 }
 .project-bar-fill.product-adhoc {
   background:
     repeating-linear-gradient(
       135deg,
-      #6b54fb,
-      #6b54fb 5px,
-      #8b78ff 5px,
-      #8b78ff 10px);
+      color-mix(in srgb, #3d1ef8 32%, white),
+      color-mix(in srgb, #3d1ef8 32%, white) 5px,
+      color-mix(in srgb, #3d1ef8 24%, white) 5px,
+      color-mix(in srgb, #3d1ef8 24%, white) 10px);
   z-index: 2;
   pointer-events: auto;
 }
 .project-bar-fill.tech {
   border-radius: 0 6px 6px 0;
-  background: #FE5000;
+  background: color-mix(in srgb, #FE5000 20%, white);
   justify-content: flex-end;
 }
 .project-bar-fill .capacity-bar-fill-label {
-  color: #fff;
+  color: var(--text-primary);
 }
 .project-bar-fill[data-tooltip]:hover::after {
   content: attr(data-tooltip);

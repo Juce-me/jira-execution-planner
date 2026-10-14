@@ -411,9 +411,9 @@ When the user corrects your approach, append a one-line rule here before ending 
 
 - In Planning Table, retain readiness-only Epics and show one awaiting-creation placeholder per uncovered Team; Story status/priority filters must not hide these placeholders, and placeholders must never be selectable or editable.
 
-- Start the Planning Table sticky overview compact for every Team scope, including All Teams, with Show/Collapse panel for details; collapsed mode retains graph bars and capacity warnings, keeps graph labels above hovered fills, and expansion must preserve selection and mounted editors.
+- Start the Planning Table sticky overview compact for every Team scope, including All Teams, with Show/Collapse panel for details; collapsed mode retains graph bars and capacity warnings, keeps graph labels and target markers above hovered fills, and expansion must preserve selection and mounted editors.
 
-- In Planning table headers, reset inherited global button margins on sort buttons and drag handles; keep sparse custom inputs compact and vertically centered with fixed focus geometry and no inherited focus shadow instead of padding every column to text-field width.
+- In Planning table headers, reset inherited global button margins on sort buttons and drag handles; keep custom and Story Points inputs compact and vertically centered within the existing Epic row height, with fixed focus geometry and no inherited focus shadow instead of padding every column to text-field width.
 
 - Default Planning to Table when no valid layout preference exists; keep Table chrome minimal: Epics/Stories in the Filters row, Save and Discard only while the review is dirty, no options menu or persistent instructional text, and the app-header Refresh also reloads the review; Planned Teams Effort is a collapsed strip in Table view, and the Accepted column (selected Story Points) carries its accepted numbers inside the table.
 

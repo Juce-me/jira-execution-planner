@@ -6,7 +6,7 @@ between List and a compact spreadsheet, including when no Stories are selected.
 The layout is a private browser presentation preference. The shared header,
 Sprint/Teams controls and filters retain their list width. Every Table scope,
 including multiple Teams, starts with the sticky Planning overview reduced to
-one desktop row of capacity and Product/Tech graph bars. Graph labels stay readable when either fill is hovered. Collapse panel returns
+one desktop row of capacity and Product/Tech graph bars. Graph labels and the dashed target marker stay visible when any Product, Tech or Ad Hoc segment is hovered. Product/Tech fills use pale tints with dark labels; Ad Hoc retains its striped Product tint. Collapse panel returns
 expanded details to that same graph row. Show panel restores selection
 actions and per-Team capacity details without changing selection or fetching
 new datasets. List retains the full Planning overview. On narrow screens, the
@@ -50,7 +50,7 @@ column, without a Fields menu. Component, Project, Capacity and Project Track ar
 hidden by default; use Show hidden in the Add popover to show them. Saved visibility choices
 take precedence over defaults, including an explicitly saved all-visible layout. Story Points have a visible
 in-cell input with Enter to save and Escape to cancel in the signed-in Jira editor;
-Epic Sprint SP remains a computed total. Story Capacity and Project Track
+Epic Sprint SP remains a computed total. Story Points inputs fit the same compact row height as Epic rows, including while focused; expanding an in-cell Summary editor may still grow its row. Story Capacity and Project Track
 reflect the parent Epic; capacity changes use the existing shared Department setting.
 Capacity chips keep their pale green Included or light gray Excluded resting
 treatment on hover, adding an inset blue ring that remains visible within the cell.

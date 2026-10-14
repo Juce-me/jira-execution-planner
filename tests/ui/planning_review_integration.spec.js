@@ -430,6 +430,61 @@ for (const authMode of ['basic', 'atlassian_oauth']) test(`table status chips re
     }
 });
 
+for (const width of [390, 1280]) test(`Story rows match compact Epic row height with the real Jira editor at ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    await installPlanningFixture(page, { authMode: 'atlassian_oauth' });
+    await page.route('**/api/eng/sprints/*/review', route => json(route, { schemaRevision: 0, columns: [], capabilities: { canRead: false, canSave: false } }));
+    await page.route('**/api/issues/PLAN-1/editable-fields?*', route => json(route, { editable: true, currentValue: 1, mappingRevision: 'synthetic', baseUpdated: 'synthetic' }));
+    let savedPoints;
+    await page.route('**/api/issues/PLAN-1/field', route => {
+        savedPoints = route.request().postDataJSON().value;
+        return json(route, { value: savedPoints, result: 'updated', mappingRevision: 'synthetic' });
+    });
+    await openPlanning(page);
+    await page.getByRole('button', { name: 'Show Planning table', exact: true }).click();
+    const table = page.locator('.planning-review-table');
+    const epic = table.locator('tbody tr[data-issue-key="PLAN-EPIC"]');
+    const epicHeight = await epic.evaluate(node => node.getBoundingClientRect().height);
+    expect(epicHeight).toBeGreaterThanOrEqual(32);
+    expect(epicHeight).toBeLessThan(33);
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    const story = table.locator('tbody tr[data-issue-key="PLAN-1"]');
+    const points = story.getByRole('textbox', { name: 'Story Points', exact: true });
+    await story.scrollIntoViewIfNeeded();
+    const geometry = await story.evaluate(node => {
+        const input = node.querySelector('.story-points-editor');
+        const cell = input.closest('td');
+        return { rowHeight: node.getBoundingClientRect().height, inputHeight: input.getBoundingClientRect().height, inputWidth: input.getBoundingClientRect().width,
+            wrapperRight: input.parentElement.getBoundingClientRect().right, cellContentRight: cell.getBoundingClientRect().right - parseFloat(getComputedStyle(cell).paddingRight) };
+    });
+    await testInfo.attach('row geometry', { body: JSON.stringify({ epicHeight, ...geometry }), contentType: 'application/json' });
+    await page.screenshot({ path: testInfo.outputPath(`story-row-${width}.png`) });
+    expect(geometry.rowHeight).toBe(epicHeight);
+    expect(geometry.inputHeight).toBe(21);
+    expect(geometry.inputWidth).toBe(42);
+    // Firefox serializes subpixel right-edge coordinates with float precision differences.
+    expect(geometry.wrapperRight).toBeCloseTo(geometry.cellContentRight, 3);
+    await expect(points).toHaveAttribute('readonly', '');
+    await points.hover();
+    expect(await story.evaluate(node => node.getBoundingClientRect().height)).toBe(epicHeight);
+    await points.click();
+    await expect(points).toBeEditable();
+    await expect(points).toBeFocused();
+    await points.fill('0');
+    expect(await story.evaluate(node => node.getBoundingClientRect().height)).toBe(epicHeight);
+    await points.press('Escape');
+    await expect(points).toHaveValue('1');
+    expect(await story.evaluate(node => node.getBoundingClientRect().height)).toBe(epicHeight);
+    await points.click();
+    await expect(points).toBeEditable();
+    await points.fill('0');
+    await points.press('Enter');
+    await expect(points).toHaveValue('0');
+    await expect(story).toHaveClass(/planning-review-zero-sp/);
+    expect(savedPoints).toBe(0);
+    expect(await story.evaluate(node => node.getBoundingClientRect().height)).toBe(epicHeight);
+});
+
  test('Stories expose Epic and explicit metadata, totals stay visible and Story Points save through Jira editor', async ({page}) => {
     await installPlanningFixture(page,{authMode:'atlassian_oauth'});
     await page.route('**/api/eng/sprints/*/review',route=>json(route,{schemaRevision:0,columns:[],capabilities:{canRead:false,canSave:false}}));

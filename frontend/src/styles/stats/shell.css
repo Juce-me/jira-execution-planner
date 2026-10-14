@@ -82,9 +82,11 @@
             text-decoration: none;
         }
 
-        .stats-card-link:hover {
-            color: #1e40af;
-            text-decoration: underline;
+        @media (hover: hover) {
+            .stats-card-link:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                color: #1e40af;
+                text-decoration: underline;
+            }
         }
 
         .stats-bars {

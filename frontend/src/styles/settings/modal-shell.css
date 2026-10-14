@@ -21,19 +21,11 @@
             height: 16px;
         }
 
-        .group-gear-button:hover {
-            color: var(--text-primary);
-            border-color: var(--border);
-            background: #f7f5f0;
-            box-shadow: none;
-            transform: none;
-        }
 
-        .group-list-item:hover,
+
         .group-list-item:focus {
             background: #f7f5f0;
             color: var(--text-primary);
-            transform: none;
             box-shadow: none;
         }
 
@@ -106,4 +98,28 @@
             display: flex;
             justify-content: flex-end;
             gap: 0.6rem;
+        }
+
+        @media (hover: hover) {
+            .group-gear-button:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                background-image: none;
+                box-shadow: var(--hover-overlay), var(--hover-ring);
+            }
+
+            button.group-list-item:where(:not(.active)):hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                color: var(--text-primary);
+                box-shadow: var(--hover-overlay), var(--hover-ring);
+            }
+
+            button.group-list-item:where(:not(.active)):hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) .group-list-meta {
+                color: var(--text-primary);
+            }
+
+            button.group-list-item:where(:not(.active)):hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) .group-list-dot {
+                color: var(--text-primary);
+            }
+
+            button.group-list-item.active:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                box-shadow: var(--hover-ring);
+            }
         }

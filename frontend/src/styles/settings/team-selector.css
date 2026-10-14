@@ -32,7 +32,6 @@
             transform: none;
         }
 
-        .team-search-result-item[type="button"]:not(:disabled):hover,
         .team-search-result-item[type="button"]:not(:disabled):focus-visible {
             background: #f8f9fa;
             color: inherit;
@@ -187,7 +186,6 @@
             color: var(--accent);
         }
 
-        .group-list-star:not(:disabled):hover,
         .group-list-star:not(:disabled):focus-visible {
             background: rgba(212, 56, 13, 0.08);
             color: var(--accent);
@@ -207,12 +205,6 @@
             color: inherit;
         }
 
-        .group-list-select:hover {
-            background: transparent;
-            color: inherit;
-            box-shadow: none;
-            transform: none;
-        }
 
         .group-list-name-input {
             min-width: 0;
@@ -304,4 +296,29 @@
 
         .settings-source-grid .capacity-inline-row {
             margin-top: 0.15rem;
+        }
+
+        @media (hover: hover) {
+            .group-list-select:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                background: transparent;
+                color: inherit;
+                text-decoration: underline;
+                box-shadow: none;
+            }
+
+            .team-search-result-item[type="button"]:where(:not(.active)):hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                background: #f8f9fa;
+                color: inherit;
+                box-shadow: none;
+            }
+
+            button.group-list-star:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                background-image: radial-gradient(circle closest-side, #f7f5f0 100%, transparent 100%);
+                box-shadow: none;
+            }
+
+            button.group-list-star[aria-pressed="true"]:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                background-image: none;
+                box-shadow: var(--hover-ring);
+            }
         }

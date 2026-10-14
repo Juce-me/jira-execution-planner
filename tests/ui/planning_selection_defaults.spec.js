@@ -1036,7 +1036,7 @@ test('planning epic excluded-capacity toggle updates shared group config', async
     const included = epicBlock.getByRole('button', { name: /Included/ });
     await included.hover();
     await expect(included).toHaveCSS('transform', 'none');
-    await expect(included).toHaveCSS('box-shadow', 'rgba(47, 128, 237, 0.35) 0px 0px 0px 2px');
+    await expect(included).toHaveCSS('box-shadow', 'rgb(47, 128, 237) 0px 0px 0px 1px, rgba(47, 128, 237, 0.25) 0px 0px 0px 3px');
     await expect(included).toHaveCSS('font-size', '10px');
     await epicBlock.locator('.epic-header').screenshot({ path: testInfo.outputPath('included-hover.png') });
     await included.click();

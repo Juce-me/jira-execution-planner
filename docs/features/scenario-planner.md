@@ -2,6 +2,8 @@
 
 The Scenario Planner builds a quarter timeline from Jira data so users can inspect sequencing, capacity pressure, and dependency risk before changing plans.
 
+Existing actions use the shared [hover vocabulary](../design-system.md): ordinary actions shade within their bounds and gain a ring, selected toggles keep their fill, clickable section headings and inline Exit underline. Lane labels retain their approved blue hover tint and an inset ring so existing green/red status text keeps its meaning and contrast. Resting typography, focus paint, bar/readout behavior, disabled locks and tap actions stay unchanged. This presentation migration adds no planning or Jira publication authority.
+
 ## What It Uses
 
 - sprint-scoped Jira work

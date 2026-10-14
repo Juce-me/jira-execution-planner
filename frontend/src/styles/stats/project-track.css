@@ -127,9 +127,14 @@
             cursor: pointer;
         }
 
-        a.project-track-phase-epic-link:hover,
         a.project-track-phase-epic-link:focus-visible {
             text-decoration: underline;
+        }
+
+        @media (hover: hover) {
+            a.project-track-phase-epic-link:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                text-decoration: underline;
+            }
         }
 
         .stacked-bar-row-total {
@@ -173,7 +178,6 @@
         /* Chart segments keep their own colour on hover: no global button lift (#173). */
         .stacked-bar-segment:hover {
             background: var(--stacked-bar-color, #94a3b8);
-            transform: none;
             box-shadow: inset 0 0 0 999px rgba(255, 255, 255, 0.08);
         }
 

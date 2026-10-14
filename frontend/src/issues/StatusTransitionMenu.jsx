@@ -167,7 +167,7 @@ export default function StatusTransitionMenu({
 
     const handleOptionClick = (targetStatus) => {
         if (optionDisabled) return;
-        onSubmit?.(targetStatus);
+        onSubmit?.(targetStatus, issue);
     };
 
     return (

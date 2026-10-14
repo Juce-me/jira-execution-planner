@@ -86,12 +86,6 @@
             box-shadow: none;
         }
 
-        .group-modal-tab:hover {
-            color: var(--text-primary);
-            background: none;
-            transform: none;
-            box-shadow: none;
-        }
 
         .group-modal-tab.active {
             color: var(--accent);
@@ -180,4 +174,18 @@
             flex-direction: column;
             gap: 0.45rem;
             margin-top: 0;
+        }
+
+        @media (hover: hover) {
+            .group-modal-tab:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                color: var(--text-primary);
+                border-bottom-color: var(--text-secondary);
+                box-shadow: none;
+            }
+
+            .group-modal-tab.active:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                color: var(--accent);
+                border-bottom-color: var(--accent);
+                box-shadow: none;
+            }
         }

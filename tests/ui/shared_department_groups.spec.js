@@ -2659,11 +2659,13 @@ test('personal favorite star is separate from shared default and temporary group
     await expect.poll(() => platformGroupSelect.evaluate((node) => {
         const style = getComputedStyle(node);
         return {
+            textDecoration: style.textDecorationLine,
             backgroundColor: style.backgroundColor,
             boxShadow: style.boxShadow,
             transform: style.transform,
         };
     })).toEqual({
+        textDecoration: 'underline',
         backgroundColor: 'rgba(0, 0, 0, 0)',
         boxShadow: 'none',
         transform: 'none',
@@ -2694,19 +2696,22 @@ test('personal favorite star is separate from shared default and temporary group
     await expect(dialog.getByTitle('Default group')).toHaveCount(0);
 
     const defaultHeart = rows.nth(0).getByRole('button', { name: 'Set Default as your favorite Department' });
+    const defaultHeartRest = await defaultHeart.evaluate(node => ({ fill: getComputedStyle(node).backgroundColor, ink: getComputedStyle(node).color }));
     await defaultHeart.hover();
     await expect.poll(() => defaultHeart.evaluate((node) => {
         const style = getComputedStyle(node);
         return {
             backgroundColor: style.backgroundColor,
+            backgroundImage: style.backgroundImage,
             boxShadow: style.boxShadow,
             color: style.color,
             transform: style.transform,
         };
     })).toEqual({
-        backgroundColor: 'rgba(212, 56, 13, 0.08)',
+        backgroundColor: defaultHeartRest.fill,
+        backgroundImage: 'radial-gradient(circle closest-side, rgb(247, 245, 240) 100%, rgba(0, 0, 0, 0) 100%)',
         boxShadow: 'none',
-        color: 'rgb(212, 56, 13)',
+        color: defaultHeartRest.ink,
         transform: 'none',
     });
 

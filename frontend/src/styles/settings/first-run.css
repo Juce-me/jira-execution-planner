@@ -96,7 +96,6 @@
             cursor: default;
         }
 
-        .department-first-run-option:hover,
         .department-first-run-option.selected {
             border-color: #d7d2ca;
             background: #fbfaf7;
@@ -312,4 +311,14 @@
         .first-run-configuration-actions button {
             min-width: 44px;
             min-height: 44px;
+        }
+
+        @media (hover: hover) {
+            .department-first-run-option:where(:has(input:not(:disabled))) .department-first-run-option-main.eligible:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                background: #fbfaf7;
+            }
+
+            .department-first-run-option.selected .department-first-run-option-main.eligible:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                background: transparent;
+            }
         }

@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('node:child_process');
 const { test, expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_home_token_fixture');
 
@@ -180,6 +181,61 @@ async function openBoardsTab(page, dialog) {
     await dialog.getByRole('tab', { name: 'Boards' }).click();
     await expect(page.locator('#department-settings-boards-panel')).toBeVisible();
 }
+
+test('a newly added column goes before Done and can move left after save and reload', async ({ page }) => {
+    const calls = await mockConfigSettings(page);
+    if (process.env.JEP_BOARD_COLUMN_BASE_REF) {
+        await page.route('**/frontend/dist/**', route => {
+            const asset = new URL(route.request().url()).pathname.slice('/frontend/dist/'.length);
+            if (!/^(?:dashboard\.js|chunks\/[A-Za-z0-9_-]+\.js|lazy-views-[a-f0-9]{64}\.json)$/.test(asset)) return route.fallback();
+            const body = execFileSync('git', ['show', `${process.env.JEP_BOARD_COLUMN_BASE_REF}:frontend/dist/${asset}`], { cwd: path.join(__dirname, '../..'), maxBuffer: 16 * 1024 * 1024 });
+            return route.fulfill({ contentType: asset.endsWith('.json') ? 'application/json' : 'application/javascript', body });
+        });
+    }
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    let dialog = page.getByRole('dialog').first();
+    await openBoardsTab(page, dialog);
+    await dialog.getByRole('button', { name: '+ Add column', exact: true }).click();
+    await dialog.locator('.board-columns').evaluate(node => { node.scrollLeft = node.scrollWidth; });
+    await page.waitForTimeout(200);
+    await dialog.locator('.group-board-composer').screenshot({
+        path: path.join(screenshotDir, `new-column-${process.env.JEP_BOARD_COLUMN_BASE_REF ? 'before' : 'after'}.png`),
+        animations: 'disabled',
+    });
+    const names = () => dialog.locator('.board-column-name').evaluateAll(nodes => nodes.map(node => node.value));
+    await expect.poll(names).toEqual([
+        'To do', 'Analysis', 'Ready to start', 'Accepted in Q', 'External block', 'In progress', 'New column', 'Done',
+    ]);
+    const added = dialog.locator('.board-column').nth(6);
+    const id = await added.getAttribute('data-column-id');
+    await added.locator('.board-column-name').fill('Review');
+    await added.getByRole('button', { name: '+ Add status' }).click();
+    await added.locator('.board-pick button[data-status="In Progress"]').click();
+    const handle = dialog.locator(`[data-column-id="${id}"] .board-column-drag`);
+    await handle.focus();
+    await page.keyboard.press('Alt+ArrowLeft');
+    await expect.poll(names).toEqual([
+        'To do', 'Analysis', 'Ready to start', 'Accepted in Q', 'External block', 'Review', 'In progress', 'Done',
+    ]);
+    await dialog.getByRole('button', { name: /^Save$/ }).click();
+    await expect(dialog).toHaveCount(0);
+    const save = calls.find(call => call.method === 'POST' && call.pathname === '/api/groups-config');
+    expect(save.body.groups.find(group => group.id === 'northwind').board.columns.map(column => column.name))
+        .toEqual(['To do', 'Analysis', 'Ready to start', 'Accepted in Q', 'External block', 'Review', 'In progress', 'Done']);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    dialog = page.getByRole('dialog').first();
+    await openBoardsTab(page, dialog);
+    await expect.poll(names).toEqual([
+        'To do', 'Analysis', 'Ready to start', 'Accepted in Q', 'External block', 'Review', 'In progress', 'Done',
+    ]);
+    await dialog.locator(`[data-column-id="${id}"] .board-column-drag`).focus();
+    await page.keyboard.press('Alt+ArrowLeft');
+    await expect.poll(names).toEqual([
+        'To do', 'Analysis', 'Ready to start', 'Accepted in Q', 'Review', 'External block', 'In progress', 'Done',
+    ]);
+});
 
 test('Boards is a leaf tab under Departments, distinct from the top-level tab bar', async ({ page }) => {
     await mockConfigSettings(page);

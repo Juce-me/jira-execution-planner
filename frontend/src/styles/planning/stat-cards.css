@@ -234,14 +234,10 @@
             border: 1px solid var(--border);
         }
 
-        .team-capacity-action:hover,
-        .team-capacity-editor-action:hover {
-            transform: none;
-            border-color: #b7afa2;
-            background: #f6f4ef;
-            color: var(--text-primary);
-            box-shadow: none;
-        }
+        @media (hover: hover) {
+.team-capacity-action:is(button, a):hover:where(:not(:disabled)):where(:not([aria-disabled="true"])),
+.team-capacity-editor-action:is(button):hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) { background-image: none; box-shadow: var(--hover-overlay), var(--hover-ring); }
+}
 
         .team-capacity-action:focus-visible,
         .team-capacity-editor-action:focus-visible {
@@ -417,6 +413,24 @@
             margin-bottom: 1.45rem;
         }
 
+        /* Layer the target stroke above hovered fills independently of its
+           label, so the label cannot paint over a segment's readout. */
+        .project-bar-graph .capacity-bar-marker {
+            z-index: auto;
+            transform: none;
+        }
+
+        .project-bar-graph .capacity-bar-marker-line.dashed {
+            z-index: 41;
+            background: repeating-linear-gradient(
+                to bottom,
+                var(--text-primary) 0px,
+                var(--text-primary) 3px,
+                transparent 3px,
+                transparent 5px
+            );
+        }
+
         .project-bar-fill {
             position: absolute;
             top: 0;
@@ -436,7 +450,7 @@
 
         .project-bar-fill.product {
             left: 0;
-            background: #3d1ef8;
+            background: color-mix(in srgb, #3d1ef8 20%, white);
             border-radius: 6px 0 0 6px;
         }
 
@@ -445,10 +459,10 @@
         .project-bar-fill.product-adhoc {
             background: repeating-linear-gradient(
                 135deg,
-                #6b54fb,
-                #6b54fb 5px,
-                #8b78ff 5px,
-                #8b78ff 10px
+                color-mix(in srgb, #3d1ef8 32%, white),
+                color-mix(in srgb, #3d1ef8 32%, white) 5px,
+                color-mix(in srgb, #3d1ef8 24%, white) 5px,
+                color-mix(in srgb, #3d1ef8 24%, white) 10px
             );
             z-index: 2;
             pointer-events: auto;
@@ -456,12 +470,12 @@
 
         .project-bar-fill.tech {
             border-radius: 0 6px 6px 0;
-            background: #FE5000;
+            background: color-mix(in srgb, #FE5000 20%, white);
             justify-content: flex-end;
         }
 
         .project-bar-fill .capacity-bar-fill-label {
-            color: #fff;
+            color: var(--text-primary);
         }
 
         .project-bar-fill[data-tooltip]:hover::after {
@@ -565,24 +579,12 @@
             font-size: 0.66rem;
             margin: 0;
             cursor: pointer;
-            transition: all 0.2s;
+            transition: background-color var(--motion-hover), color var(--motion-hover), border-color var(--motion-hover), box-shadow var(--motion-hover);
         }
 
-        .uncheck-button:hover {
-            background: var(--bg-secondary);
-            color: var(--text-primary);
-            border-color: var(--border);
-            box-shadow: 0 6px 14px rgba(22, 22, 22, 0.12);
-            transform: none;
-        }
+        @media (hover: hover) { .uncheck-button:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) { color: var(--text-primary); box-shadow: var(--hover-overlay), var(--hover-ring); } }
 
         .uncheck-button:disabled {
             opacity: 0.3;
             cursor: not-allowed;
-        }
-
-        .uncheck-button:disabled:hover {
-            background: transparent;
-            color: var(--text-secondary);
-            border-color: var(--border);
         }

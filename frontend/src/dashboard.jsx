@@ -5762,7 +5762,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                     statusLabel={row.status} statusClassName={getIssueStatusClassName(row.status)} sourceSurface="planning" isOpen={statusTransitionActiveKey === row.key}
                     options={transitionOptions} optionsLoading={transitionOptionsLoading} submitting={statusTransitionSubmitting || pendingStatusIssueKeys.has(row.key)}
                     error={transitionError} errorCode={transitionErrorCode} result={transitionResult}
-                    portalTarget={document.body} onOpen={openSingleIssueStatusControl} onPrefetch={prefetchSingleIssueStatusOptions} onClose={closeSingleIssueStatusControl} onSubmit={(targetStatus) => handleSubmitStatusTransition(targetStatus, { key: row.key })} />;
+                    portalTarget={document.body} onOpen={openSingleIssueStatusControl} onPrefetch={prefetchSingleIssueStatusOptions} onClose={closeSingleIssueStatusControl} onSubmit={handleSubmitStatusTransition} />;
                 if (field === 'priority') return <PriorityTransitionMenu
                     issue={{ key: row.key, priority: row.priority, summary: row.summary }} fallbackIssueType={row.rowKind === 'epic' ? 'Epic' : 'Story'}
                     priorityLabel={row.priority} currentPriorityLabel={row.priority} renderPriorityIcon={renderPriorityIcon}

@@ -17,6 +17,7 @@ import {
     describeColumnMove,
     fromStoredBoard,
     inheritColumnColoursFromStoredBoard,
+    insertColumnBeforeTerminal,
     moveColumn,
     parseBoundInput,
     retentionDaysFromStoredBoard,
@@ -427,9 +428,8 @@ export default function GroupBoardSettings(props) {
     const addColumn = () => {
         const column = createColumn({ usedIds: usedIdsRef.current, random });
         usedIdsRef.current.add(column.id);
-        commit([...columnsRef.current, column]);
+        commit(insertColumnBeforeTerminal(columnsRef.current, column));
     };
-
     // *Reset to default columns* (§5.5's second fixture). The derivation itself lives in
     // eng/engBoardColumns.js, which is also what the board falls back on, so the two surfaces
     // cannot produce different defaults — a second implementation here would be the defect this

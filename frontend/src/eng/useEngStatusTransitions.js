@@ -270,6 +270,7 @@ export function useEngStatusTransitions({
         const status = String(targetStatus || '').trim();
         if (!status) return null;
 
+        if (typeof explicitTargetKey !== 'string') return null;
         const explicitKey = String(explicitTargetKey || '').trim();
         if (!explicitKey) return null;
         const targets = [

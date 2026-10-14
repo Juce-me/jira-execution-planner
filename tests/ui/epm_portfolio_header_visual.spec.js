@@ -564,16 +564,20 @@ for (const viewport of [
         expect(collapsedUpdateFit.scrollHeight).toBeLessThanOrEqual(collapsedUpdateFit.clientHeight + 1);
         expect(collapsedBoardBox.height).toBeLessThan(boardBox.height);
 
+        const restingBackground = await toggle.evaluate(node => getComputedStyle(node).backgroundColor);
         await toggle.hover();
-        await page.waitForTimeout(180);
+        await page.waitForTimeout(450);
         const hoverStyle = await toggle.evaluate((node) => {
             const style = window.getComputedStyle(node);
             return {
                 backgroundColor: style.backgroundColor,
                 transform: style.transform,
+                shadow: style.boxShadow,
             };
         });
-        expect(hoverStyle.backgroundColor).not.toBe('rgb(47, 47, 47)');
+        expect(hoverStyle.backgroundColor).toBe(restingBackground);
+        expect(hoverStyle.shadow).toContain('999px');
+        expect(hoverStyle.shadow).toContain('rgb(47, 128, 237)');
         expect(hoverStyle.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
         expect(hoverStyle.transform).toBe('none');
 

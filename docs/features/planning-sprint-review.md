@@ -6,7 +6,7 @@ between List and a compact spreadsheet, including when no Stories are selected.
 The layout is a private browser presentation preference. The shared header,
 Sprint/Teams controls and filters retain their list width. Every Table scope,
 including multiple Teams, starts with the sticky Planning overview reduced to
-one desktop row of capacity and Product/Tech graph bars. Graph labels stay readable when either fill is hovered. Collapse panel returns
+one desktop row of capacity and Product/Tech graph bars. Graph labels and the dashed target marker stay visible when any Product, Tech or Ad Hoc segment is hovered. Product/Tech fills use pale tints with dark labels; Ad Hoc retains its striped Product tint. Collapse panel returns
 expanded details to that same graph row. Show panel restores selection
 actions and per-Team capacity details without changing selection or fetching
 new datasets. List retains the full Planning overview. On narrow screens, the
@@ -50,10 +50,12 @@ column, without a Fields menu. Component, Project, Capacity and Project Track ar
 hidden by default; use Show hidden in the Add popover to show them. Saved visibility choices
 take precedence over defaults, including an explicitly saved all-visible layout. Story Points have a visible
 in-cell input with Enter to save and Escape to cancel in the signed-in Jira editor;
-Epic Sprint SP remains a computed total. Story Capacity and Project Track
+Epic Sprint SP remains a computed total. Story Points inputs fit the same compact row height as Epic rows, including while focused; expanding an in-cell Summary editor may still grow its row. Story Capacity and Project Track
 reflect the parent Epic; capacity changes use the existing shared Department setting.
-Capacity chips retain a pale green Included or light gray Excluded background
-on hover and keyboard focus, with a visible focus outline.
+Capacity chips keep their pale green Included or light gray Excluded resting
+treatment on hover, adding an inset blue ring that remains visible within the cell.
+Keyboard focus keeps its existing light fill and visible outline. Disabled chips
+retain their resting appearance.
 
 Accepted is a computed number column right after the points column, visible by default
 (it is optional, so it can be hidden, moved and restored like the other Jira columns, and its
@@ -75,8 +77,17 @@ shows are also available in the table through the Accepted column.
 The table's surfaces, borders and secondary text use the shared design tokens (`--bg-primary`,
 `--bg-secondary`, `--border`, `--text-primary`, `--text-secondary`) rather than slate literals, so it
 reads like the rest of ENG. Editable Summary, Team and Assignee triggers rest in neutral ink at
-weight 400 and turn amber on hover and focus; the red zero-point tint, the green Included chip and
+weight 400 and underline on hover; keyboard focus retains amber ink. The red zero-point tint, the green Included chip and
 the blue drop and insertion cues keep their own colours.
+
+Planning actions and sortable headings use the shared overlay and blue ring;
+selected actions add only the ring. Framed icon actions and capacity controls shade within their existing border; unframed icons use a tinted circle, and menu
+options use row tint. Custom editable fields underline their bottom edge without
+changing size or fill. The boundary insertion control keeps its transparent hit
+region, with the ring around its visible + dot. Hover feedback is enabled only on
+hover-capable devices and enabled controls; reveal, touch and drag behavior stay
+unchanged. The [design-system map](../design-system.md) records shared ownership
+and the separate palette and keyboard follow-ups.
 
 Epics show scoped child Story Points and contributing Teams. Story mode includes
 orphans and awaiting-creation placeholders, one per uncovered Team. Readiness-only

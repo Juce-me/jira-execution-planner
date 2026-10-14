@@ -53,12 +53,18 @@
             transform: none;
         }
 
-        .capacity-header-toggle:hover {
-            background: none;
-            color: inherit;
-            transform: none;
-            box-shadow: none;
-            letter-spacing: normal;
+        @media (hover: hover) {
+            .capacity-header-toggle:hover:where(:enabled):where(:not([aria-disabled="true"])) {
+                box-shadow: var(--hover-overlay), var(--hover-ring-inset);
+            }
+
+            .capacity-header-toggle:hover:where(:enabled):where(:not([aria-disabled="true"])) .capacity-title {
+                color: var(--text-primary);
+            }
+
+            .capacity-header-toggle:hover:where(:enabled):where(:not([aria-disabled="true"])) .capacity-subtitle {
+                color: var(--text-primary);
+            }
         }
 
         .capacity-panel.open.capacity-panel-collapsed {
@@ -295,4 +301,28 @@
         .postponed-cell:hover .stats-link {
             opacity: 1;
             color: var(--accent);
+        }
+
+        @media (hover: hover) {
+            .postponed-link:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                background-image: radial-gradient(circle closest-side, #f7f5f0 100%, transparent 100%);
+            }
+        }
+
+        @media (hover: hover) {
+            .todo-link:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                background-image: radial-gradient(circle closest-side, #f7f5f0 100%, transparent 100%);
+            }
+        }
+
+        @media (hover: hover) {
+            .accepted-link:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                background-image: radial-gradient(circle closest-side, #f7f5f0 100%, transparent 100%);
+            }
+        }
+
+        @media (hover: hover) {
+            .stats-link:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                background-image: radial-gradient(circle closest-side, #f7f5f0 100%, transparent 100%);
+            }
         }

@@ -64,11 +64,12 @@
             letter-spacing: 0;
         }
 
-        .jira-export-menu-item:hover {
-            background: var(--bg-secondary);
-            color: var(--text-primary);
-            box-shadow: none;
-            transform: none;
+        @media (hover: hover) {
+            .jira-export-menu-item:hover:where(:enabled):where(:not([aria-disabled="true"])) {
+                background: var(--bg-secondary);
+                color: var(--text-primary);
+                box-shadow: none;
+            }
         }
 
         .jira-export-menu-item:disabled {
@@ -111,11 +112,7 @@
             box-shadow: none;
         }
 
-        button.toggle:hover {
-            background: var(--bg-primary);
-            color: var(--text-primary);
-            transform: none;
-        }
+
 
         button.toggle.active {
             background: #f4f2ec;
@@ -128,7 +125,6 @@
         .control-search.active-filter.applied-filter .search-input,
         .control-search.active-filter.applied-filter .search-input:focus,
         .team-dropdown-toggle.active-filter.applied-filter,
-        .team-dropdown-toggle.active-filter.applied-filter:hover,
         .team-dropdown-toggle.active-filter.applied-filter.open,
         button.toggle.applied-filter,
         button.toggle.applied-filter.active {
@@ -136,6 +132,26 @@
             background: var(--eng-empty-filter-surface);
             color: var(--eng-empty-filter-text);
             box-shadow: 0 0 0 2px var(--eng-empty-filter-shadow);
+        }
+
+        @media (hover: hover) {
+            .team-dropdown-toggle.active-filter.applied-filter:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                box-shadow: var(--hover-ring);
+            }
+        }
+
+        @media (hover: hover) {
+            button.toggle:hover:where(:enabled):where(:not([aria-disabled="true"])) {
+                box-shadow: var(--hover-overlay), var(--hover-ring);
+            }
+
+            button.toggle.active:hover:where(:enabled):where(:not([aria-disabled="true"])) {
+                box-shadow: var(--hover-ring);
+            }
+
+            button.toggle.applied-filter:hover:where(:enabled):where(:not([aria-disabled="true"])) {
+                box-shadow: var(--hover-ring);
+            }
         }
 
         button.toggle.applied-filter,

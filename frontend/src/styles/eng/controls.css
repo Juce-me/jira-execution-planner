@@ -20,7 +20,7 @@
             justify-content: space-between;
             gap: 0.5rem;
             cursor: pointer;
-            transition: all 0.2s;
+            transition: background-color var(--motion-hover), color var(--motion-hover), border-color var(--motion-hover), box-shadow var(--motion-hover);
             text-transform: none;
             letter-spacing: normal;
             border-radius: 10px;
@@ -38,20 +38,12 @@
             overflow: hidden;
         }
 
-        .team-dropdown-toggle:hover {
-            background: var(--bg-secondary);
-            color: var(--text-primary);
-            border-color: var(--border);
-            box-shadow: 0 6px 14px rgba(22, 22, 22, 0.12);
-        }
-
         .team-dropdown-toggle.active-filter {
             border-color: #597ef7;
             background: #f4f7ff;
             box-shadow: 0 0 0 2px rgba(89, 126, 247, 0.18);
         }
 
-        .team-dropdown-toggle.active-filter:hover,
         .team-dropdown-toggle.active-filter.open {
             border-color: #597ef7;
             background: #f4f7ff;
@@ -62,6 +54,18 @@
             outline: none;
             border-color: var(--border);
             box-shadow: none;
+        }
+
+        @media (hover: hover) {
+            .team-dropdown-toggle:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                box-shadow: var(--hover-overlay), var(--hover-ring);
+            }
+        }
+
+        @media (hover: hover) {
+            .team-dropdown-toggle.active-filter:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                box-shadow: var(--hover-ring);
+            }
         }
 
         .team-dropdown-toggle svg {
@@ -113,9 +117,11 @@
             margin: 0;
         }
 
-        .team-dropdown-panel label.team-dropdown-option:hover {
-            background: var(--bg-primary);
-            color: var(--text-primary);
+        @media (hover: hover) {
+            .team-dropdown-panel label.team-dropdown-option:where(:has(input:not(:disabled))):hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                background: var(--bg-primary);
+                color: var(--text-primary);
+            }
         }
 
         .team-dropdown-panel label.team-dropdown-option input {
@@ -170,7 +176,7 @@
             background: var(--bg-primary);
             font-family: 'Crimson Pro', serif;
             font-size: 1rem;
-            transition: all 0.2s;
+            transition: border-color var(--motion-hover), box-shadow var(--motion-hover);
         }
 
         input:focus {
@@ -189,15 +195,15 @@
             text-transform: uppercase;
             letter-spacing: 0.1em;
             cursor: pointer;
-            transition: all 0.3s;
+            transition: background-color var(--motion-hover), color var(--motion-hover), border-color var(--motion-hover), box-shadow var(--motion-hover), filter var(--motion-hover);
             margin-right: 1rem;
             border-radius: 10px;
         }
 
-        button:hover {
-            background: #2f2f2f;
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px var(--shadow);
+        @media (hover: hover) {
+            button:hover:where(:enabled):where(:not([aria-disabled="true"])) {
+                box-shadow: var(--hover-overlay), var(--hover-ring);
+            }
         }
 
         button:disabled {
@@ -211,12 +217,10 @@
             border: 1px solid var(--border);
         }
 
-        button.secondary:hover {
-            background: var(--bg-secondary);
-            color: var(--text-primary);
-            border-color: var(--border);
-            box-shadow: 0 6px 14px rgba(22, 22, 22, 0.12);
-            transform: none;
+        @media (hover: hover) {
+            button.secondary:hover:where(:enabled):where(:not([aria-disabled="true"])) {
+                box-shadow: var(--hover-overlay), var(--hover-ring);
+            }
         }
 
         button.compact {

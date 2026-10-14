@@ -3,6 +3,7 @@ const path = require('node:path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_home_token_fixture');
+const { hoverEvidence } = require('./design_system_hover_helpers');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
@@ -429,6 +430,61 @@ for (const authMode of ['basic', 'atlassian_oauth']) test(`table status chips re
     }
 });
 
+for (const width of [390, 1280]) test(`Story rows match compact Epic row height with the real Jira editor at ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    await installPlanningFixture(page, { authMode: 'atlassian_oauth' });
+    await page.route('**/api/eng/sprints/*/review', route => json(route, { schemaRevision: 0, columns: [], capabilities: { canRead: false, canSave: false } }));
+    await page.route('**/api/issues/PLAN-1/editable-fields?*', route => json(route, { editable: true, currentValue: 1, mappingRevision: 'synthetic', baseUpdated: 'synthetic' }));
+    let savedPoints;
+    await page.route('**/api/issues/PLAN-1/field', route => {
+        savedPoints = route.request().postDataJSON().value;
+        return json(route, { value: savedPoints, result: 'updated', mappingRevision: 'synthetic' });
+    });
+    await openPlanning(page);
+    await page.getByRole('button', { name: 'Show Planning table', exact: true }).click();
+    const table = page.locator('.planning-review-table');
+    const epic = table.locator('tbody tr[data-issue-key="PLAN-EPIC"]');
+    const epicHeight = await epic.evaluate(node => node.getBoundingClientRect().height);
+    expect(epicHeight).toBeGreaterThanOrEqual(32);
+    expect(epicHeight).toBeLessThan(33);
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    const story = table.locator('tbody tr[data-issue-key="PLAN-1"]');
+    const points = story.getByRole('textbox', { name: 'Story Points', exact: true });
+    await story.scrollIntoViewIfNeeded();
+    const geometry = await story.evaluate(node => {
+        const input = node.querySelector('.story-points-editor');
+        const cell = input.closest('td');
+        return { rowHeight: node.getBoundingClientRect().height, inputHeight: input.getBoundingClientRect().height, inputWidth: input.getBoundingClientRect().width,
+            wrapperRight: input.parentElement.getBoundingClientRect().right, cellContentRight: cell.getBoundingClientRect().right - parseFloat(getComputedStyle(cell).paddingRight) };
+    });
+    await testInfo.attach('row geometry', { body: JSON.stringify({ epicHeight, ...geometry }), contentType: 'application/json' });
+    await page.screenshot({ path: testInfo.outputPath(`story-row-${width}.png`) });
+    expect(geometry.rowHeight).toBe(epicHeight);
+    expect(geometry.inputHeight).toBe(21);
+    expect(geometry.inputWidth).toBe(42);
+    // Firefox serializes subpixel right-edge coordinates with float precision differences.
+    expect(geometry.wrapperRight).toBeCloseTo(geometry.cellContentRight, 3);
+    await expect(points).toHaveAttribute('readonly', '');
+    await points.hover();
+    expect(await story.evaluate(node => node.getBoundingClientRect().height)).toBe(epicHeight);
+    await points.click();
+    await expect(points).toBeEditable();
+    await expect(points).toBeFocused();
+    await points.fill('0');
+    expect(await story.evaluate(node => node.getBoundingClientRect().height)).toBe(epicHeight);
+    await points.press('Escape');
+    await expect(points).toHaveValue('1');
+    expect(await story.evaluate(node => node.getBoundingClientRect().height)).toBe(epicHeight);
+    await points.click();
+    await expect(points).toBeEditable();
+    await points.fill('0');
+    await points.press('Enter');
+    await expect(points).toHaveValue('0');
+    await expect(story).toHaveClass(/planning-review-zero-sp/);
+    expect(savedPoints).toBe(0);
+    expect(await story.evaluate(node => node.getBoundingClientRect().height)).toBe(epicHeight);
+});
+
  test('Stories expose Epic and explicit metadata, totals stay visible and Story Points save through Jira editor', async ({page}) => {
     await installPlanningFixture(page,{authMode:'atlassian_oauth'});
     await page.route('**/api/eng/sprints/*/review',route=>json(route,{schemaRevision:0,columns:[],capabilities:{canRead:false,canSave:false}}));
@@ -486,7 +542,7 @@ for (const authMode of ['basic','atlassian_oauth']) for(const width of [390,1280
     await page.screenshot({path:`tmp/217-ui/planning-review-summary-${authMode}-${width}.png`,fullPage:true});
 });
 
-for(const width of [390,1280]) test(`Summary edits inside its cell with Enter, blur and Escape at ${width}px`,async({page})=>{
+for(const width of [390,1280]) test(`Summary edits inside its cell with Enter, blur and Escape at ${width}px`,async({page},testInfo)=>{
     const summary='Original summary';let saved=[];
     await page.setViewportSize({width,height:900});
     await installPlanningFixture(page,{authMode:'atlassian_oauth',summary});
@@ -498,11 +554,12 @@ for(const width of [390,1280]) test(`Summary edits inside its cell with Enter, b
     const cell=page.locator('tbody .planning-review-summary').first();
     const trigger=cell.getByRole('button',{name:'Edit summary for PLAN-EPIC',exact:true});
     const editor=cell.getByRole('textbox',{name:'Summary for PLAN-EPIC',exact:true});
-    // The editable Summary rests in neutral ink at weight 400 and turns amber on hover.
-    await page.mouse.move(0,0);
-    expect(await trigger.evaluate(node=>({color:getComputedStyle(node).color,weight:getComputedStyle(node).fontWeight}))).toEqual({color:'rgb(26, 26, 26)',weight:'400'});
-    await trigger.hover();await expect.poll(()=>trigger.evaluate(node=>getComputedStyle(node).color)).toBe('rgb(212, 136, 6)');
-    expect(await trigger.evaluate(node=>getComputedStyle(node).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
+    // Editable Summary keeps neutral 400-weight ink; hover underlines without a button frame or geometry change.
+    const summaryHover=await hoverEvidence(page,trigger,testInfo,`planning-summary-${width}`,{underline:true});
+    expect(summaryHover.rest.color).toBe('rgb(26, 26, 26)');
+    expect(summaryHover.hover.color).toBe(summaryHover.rest.color);
+    expect(await trigger.evaluate(node=>getComputedStyle(node).fontWeight)).toBe('400');
+    expect(summaryHover.hover.background).toBe('rgba(0, 0, 0, 0)');
     await trigger.click();await expect(editor).toBeEditable();
     await expect(page.getByRole('button',{name:'Save summary',exact:true})).toHaveCount(0);
     const bounds=await editor.boundingBox(),cellBounds=await cell.boundingBox();
@@ -789,11 +846,11 @@ test('Planning List shows the Planned Teams Effort panel exactly as before',asyn
     expect((await panel.boundingBox()).height).toBeGreaterThan(100);
 });
 
-test('the Planned Teams Effort toggle keeps a readable, flat hover',async({page})=>{
+test('the Planned Teams Effort toggle keeps a readable, stationary hover',async({page},testInfo)=>{
     await page.setViewportSize({width:1440,height:900});
     await installPlanningFixture(page,{planningLayout:'table',scopeTeamIds:['team-alpha','team-beta']});await allowReviewSaving(page);await openPlanning(page,{expectStories:false});
     const toggle=effortToggle(page);
-    await toggle.hover();
+    await hoverEvidence(page,toggle,testInfo,'planning-effort-header',{foundation:true,clipped:true,readableDescendants:true});
     const read=()=>toggle.evaluate(node=>{
         const parse=v=>(v.match(/[\d.]+/g)||[]).map(Number);
         let surface=node,bg=parse(getComputedStyle(surface).backgroundColor);
@@ -803,7 +860,7 @@ test('the Planned Teams Effort toggle keeps a readable, flat hover',async({page}
         return {contrast:(hi+0.05)/(lo+0.05),transform:style.transform,shadow:style.boxShadow,spacing:style.letterSpacing,cursor:style.cursor};
     });
     await expect.poll(async()=>(await read()).contrast).toBeGreaterThanOrEqual(4.5);
-    const settled=await read();expect(settled.transform).toBe('none');expect(settled.shadow).toBe('none');expect(settled.cursor).toBe('pointer');
+    const settled=await read();expect(settled.transform).toBe('none');expect(settled.cursor).toBe('pointer');
     expect(['normal','0px']).toContain(settled.spacing);
 });
 

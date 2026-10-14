@@ -363,9 +363,14 @@
             animation: board-hint-nudge 2.4s ease-in-out infinite;
         }
 
-        .eng-board .board-hint:hover .pip {
-            border-color: var(--accent);
-            color: var(--accent);
+        @media (hover: hover) {
+            .eng-board .board-hint:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                box-shadow: none;
+            }
+
+            .eng-board .board-hint:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) .pip {
+                box-shadow: var(--hover-ring);
+            }
         }
 
         .eng-board .board-hint .pip b {
@@ -475,8 +480,11 @@
             color: var(--text-secondary);
         }
 
-        .eng-board .col-head .fold:hover {
-            color: var(--accent);
+        @media (hover: hover) {
+            .eng-board .col-head .fold:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                text-decoration: underline;
+                box-shadow: none;
+            }
         }
 
         /* visibility, not display: the control keeps its slot so a starred header does not
@@ -498,8 +506,11 @@
             color: var(--muted);
         }
 
-        .eng-board .col-star:hover {
-            color: #e8b339;
+        @media (hover: hover) {
+            .eng-board .col-star:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                background-image: radial-gradient(circle closest-side, #f7f5f0 100%, transparent 100%);
+                box-shadow: none;
+            }
         }
 
         .eng-board .col-star[aria-pressed="true"] {
@@ -648,6 +659,10 @@
             border-left: 3px solid var(--board-column-accent);
             border-radius: 10px;
             transition: border-color 0.15s, box-shadow 0.15s;
+            /* Lead slot: the priority icon (16px, issues.css) plus the Project Track glyph in a fixed slot, so every
+               title starts at one x whether or not the Epic has a track. Rows 2 and 3 indent to the same x. */
+            --ecard-track-slot: 1.0625rem;
+            --ecard-lead: calc(16px + 0.4rem + var(--ecard-track-slot) + 0.4rem);
         }
 
         .eng-board .ecard-open {
@@ -671,12 +686,18 @@
             background: var(--bg-secondary);
             border-color: var(--board-column-accent);
             box-shadow: 0 4px 12px var(--shadow);
-            transform: none;
         }
 
         .eng-board .ecard-open:focus-visible {
             outline: 2px solid var(--accent);
             outline-offset: 2px;
+        }
+
+        /* The wrapper owns card hover; its panel trigger must not paint a second frame. */
+        @media (hover: hover) {
+            .eng-board .ecard-open:hover {
+                box-shadow: none;
+            }
         }
 
         /* ── The drag gesture (§6.4). The wrapper owns drag; .ecard-open owns activation. ── */
@@ -720,9 +741,18 @@
 
         .eng-board .erow1 > .task-priority-icon,
         .eng-board .erow1 > .epic-track-indicator,
-        .eng-board .erow1 > .status-pill,
         .eng-board .ekey {
             flex: none;
+        }
+
+        .eng-board .erow1 > .epic-track-indicator {
+            width: var(--ecard-track-slot);
+            justify-content: center;
+        }
+
+        /* No track glyph: the priority icon keeps the glyph's slot, so the title does not move left. */
+        .eng-board .erow1 > .task-priority-icon:not(:has(+ .epic-track-indicator)) {
+            margin-right: calc(var(--ecard-track-slot) + 0.4rem);
         }
 
         .eng-board .etitle {
@@ -748,7 +778,8 @@
             display: flex;
             align-items: center;
             gap: 0.55rem;
-            padding-left: 1.65rem;
+            min-width: 0;
+            padding-left: var(--ecard-lead);
             font-family: 'IBM Plex Mono', monospace;
             font-size: 0.52rem;
             letter-spacing: 0.06em;
@@ -765,7 +796,24 @@
             margin-left: auto;
         }
 
-        .eng-board .erow2 time {
+        .eng-board .erow2 > .status-pill {
+            flex: none;
+        }
+
+        .eng-board .erow2 > .estories {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .eng-board .erow3 > .eperson {
+            max-width: none;
+        }
+
+        .eng-board .erow3 > .eupdated {
+            flex: none;
+            margin-left: auto;
             font-variant-numeric: tabular-nums;
         }
 
@@ -871,8 +919,10 @@
             text-decoration: none;
         }
 
-        .eng-board .m-eyebrow a:hover {
-            text-decoration: underline;
+        @media (hover: hover) {
+            .eng-board .m-eyebrow a:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                text-decoration: underline;
+            }
         }
 
         .eng-board .m-close {
@@ -890,11 +940,11 @@
             padding: 0;
         }
 
-        .eng-board .m-close:hover {
-            background: var(--bg-primary);
-            color: var(--text-primary);
-            box-shadow: none;
-            transform: none;
+        @media (hover: hover) {
+            .eng-board .m-close:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                background-image: radial-gradient(circle closest-side, #f7f5f0 100%, transparent 100%);
+                box-shadow: none;
+            }
         }
 
         .eng-board .m-controls {
@@ -1057,8 +1107,10 @@
             overflow-wrap: anywhere;
         }
 
-        .eng-board .m-desc-body a:hover {
-            text-decoration: underline;
+        @media (hover: hover) {
+            .eng-board .m-desc-body a:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                text-decoration: underline;
+            }
         }
 
         .eng-board .m-desc-more {
@@ -1074,10 +1126,11 @@
             color: var(--accent);
         }
 
-        .eng-board .m-desc-more:hover {
-            text-decoration: underline;
-            box-shadow: none;
-            transform: none;
+        @media (hover: hover) {
+            .eng-board .m-desc-more:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                text-decoration: underline;
+                box-shadow: none;
+            }
         }
 
         /* Loading is a skeleton in THIS block only: the title, controls and story list are already
@@ -1120,10 +1173,10 @@
             cursor: pointer;
         }
 
-        .eng-board .m-desc-retry:hover {
-            background: #ffe4e3;
-            box-shadow: none;
-            transform: none;
+        @media (hover: hover) {
+            .eng-board .m-desc-retry:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                box-shadow: var(--hover-overlay), var(--hover-ring);
+            }
         }
 
         .eng-board .m-sec {
@@ -1232,4 +1285,12 @@
             margin: 8px 0;
             color: var(--text-secondary);
             font: 12px 'IBM Plex Mono', monospace;
+        }
+
+        @media (hover: none) {
+            .eng-board .ecard:hover:where(:not(.is-rejected)):where(:not(.is-dragging)) {
+                border-color: var(--border);
+                border-left-color: var(--board-column-accent);
+                box-shadow: none;
+            }
         }

@@ -51,7 +51,7 @@ test('Planning Table status pills submit through the keyed handler, never the ra
     const source = read('frontend/src/dashboard.jsx');
     assert.match(
         source,
-        /sourceSurface="planning" isOpen=\{statusTransitionActiveKey === row\.key\}[\s\S]*?onSubmit=\{\(targetStatus\) => handleSubmitStatusTransition\(targetStatus, \{ key: row\.key \}\)\}/,
+        /sourceSurface="planning" isOpen=\{statusTransitionActiveKey === row\.key\}[\s\S]*?onSubmit=\{handleSubmitStatusTransition\}/,
         'a Table row pill must act on its own row, not on the selected Stories',
     );
 });

@@ -2,6 +2,8 @@
 
 This guide covers the operational path from choosing a Department through planning, Board work, search, and the Jira handoff. The first-run Department workflow is available on desktop and mobile. The dashboard coachmark tour is desktop only; mobile tour work is deferred in GitHub issue #151.
 
+Existing controls use the shared [hover vocabulary](../design-system.md): ordinary actions shade within their fixed bounds and gain a ring, selected controls keep their treatment, icons use circles, links and inline edits underline, and menu options tint their row. Passive Story and alert rows gain no clickable feedback; hover-reveal actions retain touch access. Board feedback belongs to the whole card while its inner opening trigger stays plain. Skip onboarding retains its approved darker red hover with a ring; its resting and disabled colors stay unchanged.
+
 ## Choose or add a Department
 
 First run begins with a personal Department choice:
@@ -99,6 +101,10 @@ A priority or status change in Planning, in the List and in the Table, writes on
 The top bar compares the selected task count and SP with **Planning** capacity and **Team Cap**. Its over/under state shows whether selected SP is above or below the capacity signal. The breakdowns are labelled **Selected SP by Team** and **Selected SP by Project**. The capacity table is **Planned Teams Effort (Story Points)** and uses Product, Tech, and Total columns with **To Do / Pending**, **Postponed**, and **Accepted** values. A Team name too long for its column is shown on one line with an ellipsis; hovering or keyboard-focusing it shows the full name in the same readout used for truncated Epic header values.
 
 ## Board (Kanban)
+
+In Department settings → Boards, new columns are inserted before the final terminal column (Done in the default layout). Drag the handle or use Alt+Left/Right to move working columns into the middle; their order persists when saved and reloaded. The terminal column remains last.
+
+Hover highlights the whole Epic card with its column color and soft shadow. The title and progress rows keep their plain background, and keyboard opening retains a visible focus outline. Each Epic card reads in three bands: the title row (priority, Project Track, title and key), the progress row (bar, `n of m` stories, the Epic's status as a compact chip and Story Points) and the people row (Assignee, Delivery owner and the last-updated date). Titles and rows share one left edge whether or not the Epic has a Project Track. The status is a passive chip; changing it still happens only by dragging the card to another column or from the Epic panel.
 
 Board groups Epics into the Department's configured columns. Opening an Epic shows its Stories and status progress. The Epic card and panel count a child in `Done` or `Incomplete` as done (green) and leave a `Killed` child out of the total; `Cancelled`, `Rejected` and `Won't do` stay in the total but not in the done segment, so an Epic whose children are all Killed shows `0 of 0`, like an Epic with no children. Dropping an Epic onto a resolved status warns only about the children still open. Board's own Priority, Projects, Assignee, and Project Track facet filters refine the Epic set without changing the shared task-list filters. Project Track always shows Committed and Flexible, including a zero-count option. With both checked, its heading counts every scoped Epic, including unset values; either checked alone selects that value, while both unchecked means only genuinely unset (`null`, missing, or trim-empty) values. Populated unknown values are not treated as unset. Select all, chip clear, and Clear all restore neutral; ordinary rerenders, mode and Teams changes, and same-scope Department restoration preserve an explicit empty selection, while a new Department or sprint snapshot starts neutral.
 

@@ -62,15 +62,16 @@
             border-color: #111;
         }
 
-        .epic-stat-toggle:hover {
-            background: #fff;
-            transform: none;
-            filter: brightness(0.94);
-            box-shadow: 0 0 0 2px rgba(47, 128, 237, 0.35);
-        }
+        @media (hover: hover) {
+            .epic-stat-toggle:hover:where(:enabled):where(:not([aria-disabled="true"])) {
+                background: #fff;
+                filter: brightness(0.94);
+                box-shadow: var(--hover-ring);
+            }
 
-        .epic-stat-toggle.active:hover {
-            background: #111;
+            .epic-stat-toggle.active:hover:where(:enabled):where(:not([aria-disabled="true"])) {
+                background: #111;
+            }
         }
 
         .epic-stat-toggle svg {
@@ -96,23 +97,50 @@
             border-color: var(--text-primary);
         }
 
-        .stats-toggle:hover {
-            background: var(--bg-secondary);
-            color: var(--text-primary);
-            border-color: var(--border);
-            box-shadow: 0 6px 14px rgba(22, 22, 22, 0.12);
-            transform: none;
+        @media (hover: hover) {
+            .stats-toggle:hover:where(:enabled):where(:not([aria-disabled="true"])) {
+                color: var(--text-primary);
+                box-shadow: var(--hover-overlay), var(--hover-ring);
+            }
+
+            .stats-toggle.active:hover:where(:enabled):where(:not([aria-disabled="true"])) {
+                color: var(--bg-primary);
+                box-shadow: var(--hover-ring);
+            }
         }
 
         .stats-card.selectable {
             cursor: pointer;
-            transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+            position: relative;
+            transition: box-shadow var(--motion-hover);
         }
 
-        .stats-card.selectable:hover {
-            border-color: var(--border);
-            box-shadow: 0 6px 14px rgba(22, 22, 22, 0.12);
-            transform: none;
+        /* Keep the selected elevation on the card itself; the independent ring
+           does not replace that meaningful selection shadow. */
+        .stats-card.selectable.active::before {
+            content: "";
+            position: absolute;
+            inset: -1px;
+            border-radius: inherit;
+            pointer-events: none;
+        }
+
+        @media (hover: hover) {
+            .stats-card.selectable:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])):where(:not(.active)) {
+                box-shadow: var(--hover-overlay), var(--hover-ring);
+            }
+
+            .stats-card.selectable:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])):where(:not(.active)) h4 {
+                color: var(--text-primary);
+            }
+
+            .stats-card.selectable:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])):where(:not(.active)) .stats-note {
+                color: var(--text-primary);
+            }
+
+            .stats-card.selectable.active:hover:where(:not(:disabled)):where(:not([aria-disabled="true"]))::before {
+                box-shadow: var(--hover-ring);
+            }
         }
 
         .stats-card.active {

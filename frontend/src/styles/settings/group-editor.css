@@ -198,9 +198,6 @@
             border-bottom: 1px solid #f0f0f0;
         }
 
-        .team-search-result-item:hover {
-            background: #f8f9fa;
-        }
 
         .team-search-result-item.active {
             background: rgba(212, 56, 13, 0.12);
@@ -269,9 +266,6 @@
             align-items: center;
         }
 
-        .selected-team-chip .remove-btn:hover {
-            color: var(--accent);
-        }
 
         .group-modal-body textarea {
             width: 100%;
@@ -378,9 +372,6 @@
             align-items: center;
         }
 
-        .component-chip .remove-btn:hover {
-            color: var(--accent);
-        }
 
         .component-search-wrapper {
             position: relative;
@@ -427,9 +418,6 @@
             border-bottom: 1px solid #f0f0f0;
         }
 
-        .component-search-result-item:hover {
-            background: #f8f9fa;
-        }
 
         .component-search-result-item.active {
             background: rgba(212, 56, 13, 0.12);
@@ -447,7 +435,6 @@
         .component-result-meta {
             color: var(--text-secondary);
         }
-
 
         .group-modal-actions {
             display: flex;
@@ -541,14 +528,8 @@
             color: #b42318;
         }
 
-        .secondary.compact.danger:hover {
-            border-color: #b42318;
-        }
 
-        .secondary.compact.lift-hover:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px var(--shadow);
-        }
+
 
         @media (max-width: 820px) {
             .group-modal {
@@ -627,7 +608,7 @@
             font-size: 0.875rem;
             color: var(--text-primary);
             cursor: pointer;
-            transition: all 0.2s;
+            transition: border-color var(--motion-hover), box-shadow var(--motion-hover);
             border-radius: 10px;
         }
 
@@ -637,11 +618,42 @@
             box-shadow: 0 0 0 3px rgba(212, 56, 13, 0.1);
         }
 
-        select:hover {
-            border-color: var(--text-secondary);
-        }
 
         select:disabled {
             opacity: 0.5;
             cursor: not-allowed;
+        }
+
+        @media (hover: hover) {
+            .team-search-result-item:where(:not(.is-empty, .active)):where(:not(:has(.project-result-actions))):hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                background: #f8f9fa;
+                box-shadow: none;
+            }
+
+            .selected-team-chip .remove-btn:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                background-image: radial-gradient(circle closest-side, #f7f5f0 100%, transparent 100%);
+                box-shadow: none;
+            }
+
+            .component-chip .remove-btn:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                background-image: radial-gradient(circle closest-side, #f7f5f0 100%, transparent 100%);
+                box-shadow: none;
+            }
+
+            .component-search-result-item:where(:not(.is-empty, .active)):hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                background: #f8f9fa;
+                box-shadow: none;
+            }
+
+            .secondary.compact.danger:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                box-shadow: var(--hover-overlay), var(--hover-ring);
+            }
+
+            .secondary.compact.lift-hover:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                box-shadow: var(--hover-overlay), var(--hover-ring);
+            }
+
+            select:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                border-color: var(--text-secondary);
+            }
         }

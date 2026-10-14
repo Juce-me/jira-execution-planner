@@ -289,7 +289,7 @@ export default function IssueCard({
                             onOpen={onOpenStatusTransition}
                             onPrefetch={onPrefetchStatusTransition}
                             onClose={onCloseStatusTransition}
-                            onSubmit={(targetStatus) => onSubmitStatusTransition?.(targetStatus, task)}
+                            onSubmit={onSubmitStatusTransition}
                             previewOnly={onboardingPreviewSession}
                             onPreviewLifecycleChange={onPreviewLifecycleChange}
                         />
@@ -396,7 +396,7 @@ export default function IssueCard({
                                             onOpen={onOpenStatusTransition}
                                             onPrefetch={onPrefetchStatusTransition}
                                             onClose={onCloseStatusTransition}
-                                            onSubmit={(targetStatus) => onSubmitStatusTransition?.(targetStatus, subtask)}
+                                            onSubmit={onSubmitStatusTransition}
                                             previewOnly={onboardingPreviewSession}
                                             onPreviewLifecycleChange={onPreviewLifecycleChange}
                                         />

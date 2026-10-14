@@ -229,7 +229,7 @@ export default function EngBoardEpicPanel({
                 onOpen={statusTransitions.openSingleIssueStatusControl}
                 onPrefetch={statusTransitions.prefetchSingleIssueStatusOptions}
                 onClose={statusTransitions.closeSingleIssueStatusControl}
-                onSubmit={(targetStatus) => onSubmitStatusTransition?.(targetStatus, task)}
+                onSubmit={onSubmitStatusTransition}
                 portalTarget={panelRef.current}
             />
         );
@@ -358,7 +358,7 @@ export default function EngBoardEpicPanel({
                                 onOpen={statusTransitions.openSingleIssueStatusControl}
                                 onPrefetch={statusTransitions.prefetchSingleIssueStatusOptions}
                                 onClose={statusTransitions.closeSingleIssueStatusControl}
-                                onSubmit={(targetStatus) => onSubmitStatusTransition?.(targetStatus, { key: epicKey })}
+                                onSubmit={onSubmitStatusTransition}
                                 portalTarget={panelRef.current}
                             />
                         ) : (

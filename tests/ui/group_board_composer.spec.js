@@ -1067,19 +1067,19 @@ test('a new column gets an opaque lowercase hex id that is never reused', async 
     await page.locator('.board-add-column').click();
     let board = await boardState(page);
     expect(board.columns).toHaveLength(8);
-    const created = board.columns[7].id;
+    const created = board.columns[6].id;
     expect(created).toMatch(/^col-[0-9a-f]{8}$/);
 
-    await page.locator('.board-column').nth(7).locator('.remove-btn[title="Delete column"]').click();
+    await page.locator('.board-column').nth(6).locator('.remove-btn[title="Delete column"]').click();
     const seen = new Set([created]);
     for (let index = 0; index < 4; index += 1) {
         await page.locator('.board-add-column').click();
         board = await boardState(page);
-        const id = board.columns[board.columns.length - 1].id;
+        const id = board.columns[board.columns.length - 2].id;
         expect(id).toMatch(/^col-[0-9a-f]{8}$/);
         expect(seen.has(id), 'a deleted id must never come back').toBe(false);
         seen.add(id);
-        await page.locator('.board-column').last().locator('.remove-btn[title="Delete column"]').click();
+        await page.locator('.board-column').nth(board.columns.length - 2).locator('.remove-btn[title="Delete column"]').click();
     }
 });
 

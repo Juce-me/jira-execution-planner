@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_home_token_fixture');
+const { measure, contrast } = require('./design_system_hover_helpers');
 
 // The board's epic card (§6.2), its Tech/Product derivation (§4.4/D41 — unit-tested only, no
 // facet UI exists yet to assert against), and board search (§8/D27). Task 11's own board/column
@@ -52,6 +53,7 @@ function epicPayload(firstEpicAssignee = 'Alice Adams', firstEpicStatus = null, 
     firstEpicTrack = null,
     firstEpicInitiative = null,
     omitFirstEpicAssignee = false,
+    omitFirstEpicUpdated = false,
 } = {}) {
     const epics = {};
     EPIC_SPECS.forEach(([key, status, priority, assigneeName, deliveryOwnerName, projectTrack, updated], index) => {
@@ -63,7 +65,7 @@ function epicPayload(firstEpicAssignee = 'Alice Adams', firstEpicStatus = null, 
             priority: index === 0 && firstEpicPriority ? firstEpicPriority : priority,
             assignee: omitFirstEpicAssignee && index === 0 ? null : (assigneeName ? { displayName: index === 0 ? firstEpicAssignee : assigneeName } : null),
             projectTrack: index === 0 && firstEpicTrack !== null ? firstEpicTrack : projectTrack,
-            updated,
+            updated: omitFirstEpicUpdated && index === 0 ? undefined : updated,
         };
         if (index === 0 && firstEpicInitiative) epics[actualKey].initiative = firstEpicInitiative;
         // The key is present only when a Delivery Owner field is configured and the epic has
@@ -174,6 +176,7 @@ async function installBoardFixture(page, fieldCalls = [], {
     firstEpicTrack = null,
     firstEpicInitiative = null,
     omitFirstEpicAssignee = false,
+    omitFirstEpicUpdated = false,
     authMode = 'atlassian_oauth',
     userCanEditSettings = true,
     includeNoEpic = false,
@@ -182,6 +185,7 @@ async function installBoardFixture(page, fieldCalls = [], {
     extraFirstEpicStatuses = [],
 } = {}) {
     await installDashboardShell(page);
+    if(process.env.JEP_HOVER_CSS_PATH) await page.route('**/frontend/dist/dashboard.css',route=>route.fulfill({contentType:'text/css',body:fs.readFileSync(process.env.JEP_HOVER_CSS_PATH,'utf8')}));
     await page.route('**/api/**', (route) => {
         const request = route.request();
         const url = new URL(request.url());
@@ -259,6 +263,7 @@ async function installBoardFixture(page, fieldCalls = [], {
                 firstEpicTrack,
                 firstEpicInitiative,
                 omitFirstEpicAssignee,
+                omitFirstEpicUpdated,
             });
             return json({
                 issues: storyPayload(storyAssigneeName, firstEpicStoryPoints, firstEpicKey, includeNoEpic, extraFirstEpicStatuses),
@@ -289,6 +294,7 @@ async function openBoard(page, {
     firstEpicTrack = null,
     firstEpicInitiative = null,
     omitFirstEpicAssignee = false,
+    omitFirstEpicUpdated = false,
     authMode = 'atlassian_oauth',
     userCanEditSettings = true,
     includeNoEpic = false,
@@ -309,6 +315,7 @@ async function openBoard(page, {
         firstEpicTrack,
         firstEpicInitiative,
         omitFirstEpicAssignee,
+        omitFirstEpicUpdated,
         authMode,
         userCanEditSettings,
         includeNoEpic,
@@ -469,6 +476,154 @@ test('the card renders its three rows, and the track glyph only when set', async
     await expect(withoutTrack.locator('.epic-track-indicator')).toHaveCount(0);
     // PLAT-1 has 2 stories, one Done: row 2 states the fraction.
     await expect(withoutTrack.locator('.erow2')).toContainText('1 of 2 stories');
+});
+
+test('every card starts its title, progress row and people row at one x, with or without a Project Track (issue #271)', async ({ page }) => {
+    await openBoard(page);
+    const rows = await openColumnCards(page).evaluateAll((cards) => cards.map((card) => {
+        const origin = card.getBoundingClientRect().left;
+        const x = (selector) => card.querySelector(selector).getBoundingClientRect().left - origin;
+        const glyph = card.querySelector('.epic-track-indicator');
+        return {
+            key: card.dataset.epicKey,
+            hasTrack: Boolean(glyph),
+            title: x('.etitle'),
+            bar: x('.story-subtasks-progress'),
+            people: x('.erow3 .eperson'),
+            glyphClips: glyph ? glyph.scrollWidth > glyph.clientWidth + 1 : false,
+        };
+    }));
+    // PLAT-2 (Committed) and PLAT-3 (Flexible) carry a glyph; the rest do not, so both shapes are measured.
+    expect(rows.filter((row) => row.hasTrack)).toHaveLength(2);
+    expect(rows.filter((row) => !row.hasTrack).length).toBeGreaterThanOrEqual(5);
+    rows.forEach((row) => {
+        expect(Math.abs(row.title - rows[0].title), `${row.key} title x`).toBeLessThanOrEqual(0.5);
+        expect(Math.abs(row.bar - row.title), `${row.key} progress row x`).toBeLessThanOrEqual(0.5);
+        expect(Math.abs(row.people - row.title), `${row.key} people row x`).toBeLessThanOrEqual(0.5);
+        expect(row.glyphClips, `${row.key} glyph inside its slot`).toBe(false);
+    });
+});
+
+test('status is a compact passive chip after the stories count, never on the title row (issue #271)', async ({ page }) => {
+    await openBoard(page, { firstEpicStatus: '' });
+    const column = col(page, 'col-1a2b3c4d');
+    const card = column.locator('.ecard[data-epic-key="PLAT-2"]');
+    await expect(card.locator('.erow1 .status-pill')).toHaveCount(0);
+    const chip = card.locator('.erow2 > .status-pill.task-status.epic-status-pill');
+    await expect(chip).toHaveCount(1);
+    await expect(chip).toHaveText('To Do');
+    // Passive: a span, never a button, so the card cannot write a status from here.
+    expect(await chip.evaluate((node) => node.tagName)).toBe('SPAN');
+    expect(await card.locator('.erow2').evaluate((row) => [...row.children].map((child) => child.classList[0])))
+        .toEqual(['story-subtasks-progress', 'estories', 'status-pill', 'push']);
+    // Compact: the app's epic-status-pill scale (0.58rem), smaller than the card title.
+    const sizes = await card.evaluate((node) => ({
+        chip: parseFloat(getComputedStyle(node.querySelector('.erow2 > .status-pill')).fontSize),
+        title: parseFloat(getComputedStyle(node.querySelector('.etitle')).fontSize),
+    }));
+    expect(sizes.chip).toBeCloseTo(9.28, 1);
+    expect(sizes.chip).toBeLessThan(sizes.title);
+    // An empty Jira status keeps the existing "Unknown" label.
+    await expect(column.locator('.ecard[data-epic-key="PLAT-1"] .erow2 > .status-pill')).toHaveText('Unknown');
+});
+
+test('the updated date ends the people row on the same right edge as the key and the story points (issue #271)', async ({ page }) => {
+    await openBoard(page, { omitFirstEpicUpdated: true });
+    const column = col(page, 'col-1a2b3c4d');
+    const card = column.locator('.ecard[data-epic-key="PLAT-2"]');
+    await expect(card.locator('.erow2 time')).toHaveCount(0);
+    await expect(card.locator('.erow3 > time.eupdated')).toHaveText('2026-07-21');
+    await expect(card.locator('.erow3 > time.eupdated')).toHaveAttribute('datetime', '2026-07-21T00:00:00.000+0000');
+    const edges = await card.evaluate((node) => ({
+        key: node.querySelector('.ekey').getBoundingClientRect().right,
+        points: node.querySelector('.erow2 > .push').getBoundingClientRect().right,
+        date: node.querySelector('.erow3 > .eupdated').getBoundingClientRect().right,
+    }));
+    expect(Math.abs(edges.key - edges.date)).toBeLessThanOrEqual(1);
+    expect(Math.abs(edges.points - edges.date)).toBeLessThanOrEqual(1);
+    // No `updated` on the Epic: the fallback keeps its place at the right edge, as a span.
+    const fallback = column.locator('.ecard[data-epic-key="PLAT-1"] .erow3 > .eupdated');
+    await expect(fallback).toHaveText('No update');
+    expect(await fallback.evaluate((node) => node.tagName)).toBe('SPAN');
+    const gap = await column.locator('.ecard[data-epic-key="PLAT-1"]').evaluate((node) => (
+        node.querySelector('.ekey').getBoundingClientRect().right
+        - node.querySelector('.erow3 > .eupdated').getBoundingClientRect().right));
+    expect(Math.abs(gap)).toBeLessThanOrEqual(1);
+});
+
+test('in a narrow column the stories text gives way before the status chip does (issue #271)', async ({ page }) => {
+    await openBoard(page, { firstEpicStatus: 'Waiting for Release' });
+    // Force the squeeze deterministically: the open-column width is one custom property.
+    await page.locator('.eng-board').evaluate((node) => node.style.setProperty('--board-open-w', '340px'));
+    await settle(page);
+    const card = col(page, 'col-1a2b3c4d').locator('.ecard[data-epic-key="PLAT-1"]');
+    const geometry = await card.evaluate((node) => {
+        const row = node.querySelector('.erow2');
+        const chip = row.querySelector('.status-pill');
+        const text = row.querySelector('.estories');
+        return {
+            rowOverflow: row.scrollWidth - row.clientWidth,
+            cardOverflow: node.scrollWidth - node.clientWidth,
+            chipClips: chip.scrollWidth > chip.clientWidth + 1,
+            chipInside: chip.getBoundingClientRect().right <= node.getBoundingClientRect().right,
+            textEllipsis: getComputedStyle(text).textOverflow,
+            textClips: text.scrollWidth > text.clientWidth,
+        };
+    });
+    expect(geometry.textClips, 'the stories text is the element that yields').toBe(true);
+    expect(geometry.textEllipsis).toBe('ellipsis');
+    expect(geometry.chipClips).toBe(false);
+    expect(geometry.chipInside).toBe(true);
+    expect(geometry.rowOverflow).toBeLessThanOrEqual(1);
+    expect(geometry.cardOverflow).toBeLessThanOrEqual(1);
+});
+
+test('card hover belongs to the wrapper, without an inner button frame', async ({ page, browserName }) => {
+    await openBoard(page);
+    const card = col(page, 'col-1a2b3c4d').locator('.ecard[data-epic-key="PLAT-1"]');
+    const trigger = card.locator('.ecard-open');
+    const measure = () => card.evaluate(node => {
+        const button = node.querySelector('.ecard-open');
+        const rect = element => {
+            const box = element.getBoundingClientRect();
+            return [box.x, box.y, box.width, box.height];
+        };
+        const range = document.createRange();
+        range.selectNodeContents(node.querySelector('.etitle'));
+        const text = range.getBoundingClientRect();
+        return {
+            card: rect(node), trigger: rect(button),
+            title: [text.x, text.y, text.width, text.height],
+            background: getComputedStyle(button).backgroundColor,
+            shadow: getComputedStyle(button).boxShadow,
+            border: getComputedStyle(node).borderRightColor,
+            cardShadow: getComputedStyle(node).boxShadow,
+        };
+    });
+    await page.mouse.move(1, 1);
+    await page.waitForTimeout(200);
+    const rest = await measure();
+    await card.locator('.etitle').hover();
+    await page.waitForTimeout(200);
+    const hovered = await measure();
+    await card.screenshot({ path: path.join(screenshotDir, `card-hover-${process.env.JEP_ECARD_PHASE || 'after'}.png`), animations: 'disabled' });
+    expect(hovered.card).toEqual(rest.card);
+    expect(hovered.trigger).toEqual(rest.trigger);
+    expect(hovered.title).toEqual(rest.title);
+    expect(hovered.background).toBe('rgba(0, 0, 0, 0)');
+    expect(hovered.shadow).toBe('none');
+    expect(hovered.border).toBe('rgb(89, 126, 247)');
+    expect(hovered.cardShadow).not.toBe('none');
+    await page.mouse.move(1, 1);
+    // WebKit's macOS Option-Tab path includes button controls.
+    const tabKey = browserName === 'webkit' ? 'Alt+Tab' : 'Tab';
+    for (let index = 0; index < 30 && !await trigger.evaluate(node => node === document.activeElement); index += 1) {
+        await page.keyboard.press(tabKey);
+    }
+    await expect(trigger).toBeFocused();
+    expect(await trigger.evaluate(node => getComputedStyle(node).outlineStyle)).toBe('solid');
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('dialog')).toBeVisible();
 });
 
 test('Incomplete fills the green done segment and Killed leaves the total (issue #253)', async ({ page }) => {
@@ -1189,7 +1344,7 @@ test('typing in search issues no API request', async ({ page }) => {
 test('card text-bearing elements do not overflow their box', async ({ page }) => {
     await openBoard(page);
     const overflow = await openColumnCards(page).evaluateAll((cards) => cards.flatMap((card) => (
-        [...card.querySelectorAll('.ekey, .eperson b, .erow2 span, .erow2 time')].map((el) => ({
+        [...card.querySelectorAll('.ekey, .eperson b, .erow2 span, .erow3 .eupdated')].map((el) => ({
             className: el.className,
             clips: el.scrollWidth > el.clientWidth + 1,
         }))
@@ -1260,6 +1415,7 @@ async function paintedInkOffset(page, locator, inset = 3) {
     const width = Math.ceil(rect.x + rect.w) + 2 - x0;
     const height = Math.ceil(rect.y + rect.h) + 2 - y0;
     const image = await page.screenshot({ clip: { x: x0, y: y0, width, height }, animations: 'disabled' });
+    if(process.env.JEP_GLYPH_DEBUG) fs.writeFileSync(path.join(screenshotDir,`${process.env.JEP_GLYPH_DEBUG}-${await locator.textContent()}-${await locator.evaluate(node=>node.matches(':hover'))?'hover':'rest'}.png`),image);
     return page.evaluate(async ({ base64, x0: originX, y0: originY, rect: box, inset: edge, width: clipWidth }) => {
         const img = new Image();
         img.src = `data:image/png;base64,${base64}`;
@@ -1289,6 +1445,7 @@ async function paintedInkOffset(page, locator, inset = 3) {
         }
         return {
             painted: maxX >= 0,
+            ground, extents: [minX,minY,maxX,maxY], rect:box, origin:[originX,originY],
             dx: originX + ((minX + maxX + 1) / 2) / scale - (box.x + box.w / 2),
             dy: originY + ((minY + maxY + 1) / 2) / scale - (box.y + box.h / 2),
         };
@@ -1352,12 +1509,20 @@ test.describe('ENG hover affordances', () => {
                 if (state === 'hover') await trigger.hover(); else await page.mouse.move(2, 2);
                 await page.waitForTimeout(300);
                 const ink = await paintedInkOffset(page, trigger);
+                if(process.env.JEP_GLYPH_DEBUG) console.log(JSON.stringify({glyph,state,ink}));
                 expect(ink.painted, `${glyph} ${state} paints`).toBe(true);
                 expect(Math.abs(ink.dx), `${glyph} ${state} horizontal offset`).toBeLessThanOrEqual(0.75);
                 expect(Math.abs(ink.dy), `${glyph} ${state} vertical offset`).toBeLessThanOrEqual(0.75);
             }
         }
         expect(glyphs.size).toBeGreaterThanOrEqual(3);
+        // A deliberate 3px glyph displacement must fail the unchanged 0.75px centering tolerance.
+        const poisoned=triggers.first();
+        await poisoned.scrollIntoViewIfNeeded(); await poisoned.hover();
+        await poisoned.evaluate(node=>{const ink=document.createElement('span');ink.textContent=node.textContent;ink.style.transform='translateX(3px)';node.replaceChildren(ink);});
+        const shifted=await paintedInkOffset(page,poisoned);
+        expect(shifted.painted).toBe(true);
+        expect(Math.abs(shifted.dx)).toBeGreaterThan(0.75);
     });
 
     test('Epic and Story priority hover frames share one shape and the app radius', async ({ page }) => {
@@ -1375,13 +1540,13 @@ test.describe('ENG hover affordances', () => {
             await page.mouse.move(2, 2);
             await locator.hover();
             // The frame fades in over 0.16s; only the settled fill counts.
-            await expect.poll(() => locator.evaluate(node => getComputedStyle(node, '::before').backgroundColor)).toBe('rgb(248, 247, 244)');
+            await expect.poll(() => locator.evaluate(node => getComputedStyle(node, '::before').backgroundImage)).toContain('radial-gradient');
             return locator.evaluate(node => {
                 const frame = getComputedStyle(node, '::before');
                 const label = getComputedStyle(node, '::after');
                 const box = node.getBoundingClientRect();
                 return {
-                    width: frame.width, height: frame.height, radius: frame.borderRadius, fill: frame.backgroundColor,
+                    width: frame.width, height: frame.height, radius: frame.borderRadius, fill: frame.backgroundImage,
                     ring: frame.boxShadow, transform: frame.transform, position: frame.position,
                     // Label bottom edge relative to the frame's top edge.
                     labelAboveFrame: parseFloat(label.top) - (box.height / 2 - 12),
@@ -1398,40 +1563,36 @@ test.describe('ENG hover affordances', () => {
         expect(storyFrame, 'Story frame matches the Epic frame').toEqual(epicFrame);
         expect(epicFrame.ownFill, 'the button itself stays transparent').toBe('rgba(0, 0, 0, 0)');
         expect(epicFrame.ownRing).toBe('none');
+        expect(epicFrame.ring).toBe('none');
+        expect(epicFrame.fill).toContain('radial-gradient');
 
         await track.scrollIntoViewIfNeeded();
         await page.mouse.move(2, 2);
         await track.hover();
-        await expect.poll(() => track.evaluate(node => getComputedStyle(node).backgroundColor)).toBe('rgb(248, 247, 244)');
+        await expect.poll(() => track.evaluate(node => getComputedStyle(node).backgroundImage)).toContain('radial-gradient');
+        expect(await track.evaluate(node => getComputedStyle(node).boxShadow)).toBe('none');
         expect(await track.evaluate(node => getComputedStyle(node).borderRadius), 'Project Track frame uses the same radius').toBe(appRadius);
     });
 
     test('transparent controls stay readable on hover instead of turning dark', async ({ page }) => {
         await openBoard(page, { width: 1280, height: 900 });
         await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Catch Up' }).click();
-        const hoverContrast = locator => locator.evaluate(node => {
-            const style = getComputedStyle(node);
-            const rgba = value => (value.match(/[\d.]+/g) || []).map(Number);
-            return { background: rgba(style.backgroundColor), color: rgba(style.color), transform: style.transform, shadow: style.boxShadow };
-        });
-        const expectReadable = async (locator, label) => {
-            await locator.hover();
-            // The global button rule animates `all` for 0.3s, so only the settled colours count.
-            await expect.poll(async () => {
-                const { background, color } = await hoverContrast(locator);
-                return (background[3] ?? 1) === 1 ? contrastRatio(color.slice(0, 3), background.slice(0, 3)) : 0;
-            }, { message: `${label} hover contrast`, timeout: 2000 }).toBeGreaterThanOrEqual(4.5);
-            const settled = await hoverContrast(locator);
-            expect(settled.transform, `${label} hover does not lift`).toBe('none');
-            expect(settled.shadow, `${label} hover has no dark drop shadow`).toBe('none');
-        };
-
         await page.locator('.search-input').first().fill('ua');
-        await expectReadable(page.getByRole('button', { name: 'Clear search' }), 'search clear');
+        const clearSearch=page.getByRole('button',{name:'Clear search'});
+        await clearSearch.hover(); await page.waitForTimeout(450);
+        const clearEvidence=await measure(clearSearch);
+        expect(clearEvidence.backgroundImage).toContain('radial-gradient');
+        expect(contrast(clearEvidence.text,clearEvidence.fill)).toBeGreaterThanOrEqual(4.5);
+        expect(clearEvidence.transform).toBe('none'); expect(clearEvidence.shadow).toBe('none');
 
         await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Scenario' }).click();
         const inactiveToggle = page.locator('.scenario-toggle:not(.active)').first();
         await expect(inactiveToggle).toBeVisible();
-        await expectReadable(inactiveToggle, 'scenario toggle');
+        await inactiveToggle.hover(); await page.waitForTimeout(450);
+        const scenarioEvidence = await measure(inactiveToggle);
+        expect(scenarioEvidence.shadow).toContain('999px');
+        expect(scenarioEvidence.shadow).toContain('rgb(47, 128, 237)');
+        expect(contrast(scenarioEvidence.text, scenarioEvidence.fill)).toBeGreaterThanOrEqual(4.5);
+        expect(scenarioEvidence.transform).toBe('none');
     });
 });

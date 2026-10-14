@@ -139,8 +139,10 @@
             color: var(--accent);
         }
 
-        .server-unavailable-banner button:hover {
-            background: #fff7f0;
+        @media (hover: hover) {
+            .server-unavailable-banner button:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                box-shadow: var(--hover-overlay), var(--hover-ring);
+            }
         }
 
         .server-unavailable-banner button:disabled {

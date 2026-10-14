@@ -18,6 +18,12 @@
   --border: #e0ddd7;
   --radius: 10px;
   --shadow: rgba(0, 0, 0, 0.04);
+  --hover-ring: 0 0 0 1px #2f80ed, 0 0 0 3px rgba(47, 128, 237, .25);
+  --hover-ring-inset: inset 0 0 0 1px #2f80ed, inset 0 0 0 3px rgba(47, 128, 237, .25);
+  --overlay-pct: 8;
+  --hover-overlay: inset 0 0 0 999px color-mix(in srgb, currentColor calc(var(--overlay-pct) * 1%), transparent);
+  --focus-ring-color: #2563eb;
+  --motion-hover: 150ms ease;
   --control-height: 38px;
   --sticky-search-z: 1000;
   --modal-backdrop-z: 9000;
@@ -237,12 +243,17 @@ header {
   box-shadow: none;
   margin: 0;
 }
-.sprint-selector-control button.sprint-dropdown-option:hover,
 .sprint-selector-control button.sprint-dropdown-option.is-active {
   background: var(--bg-primary);
   color: var(--text-primary);
-  transform: none;
   box-shadow: inset 2px 0 0 var(--accent);
+}
+@media (hover: hover) {
+  .sprint-selector-control button.sprint-dropdown-option:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
 }
 .header-filter-dropdown--sprint .sprint-option-readiness {
   flex: 0 1 auto;
@@ -368,9 +379,10 @@ h1 {
   font-size: 0.47rem;
   letter-spacing: 0.06em;
 }
-.update-badge:hover {
-  background: rgba(220, 38, 38, 0.1);
-  border-color: rgba(220, 38, 38, 0.4);
+@media (hover: hover) {
+  .update-badge:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    box-shadow: var(--hover-overlay), var(--hover-ring);
+  }
 }
 
 /* frontend/src/styles/shared/controls.css */
@@ -384,7 +396,10 @@ h1 {
   text-transform: none;
   letter-spacing: normal;
   width: 100%;
-  transition: all 0.2s ease;
+  transition:
+    background-color var(--motion-hover),
+    border-color var(--motion-hover),
+    box-shadow var(--motion-hover);
   border-radius: 10px;
   height: var(--control-height);
   box-sizing: border-box;
@@ -468,12 +483,11 @@ h1 {
   color: var(--text-secondary);
   box-shadow: none;
 }
-.header-actions-row button.header-icon-button:hover {
-  color: var(--text-primary);
-  border-color: var(--border);
-  background: #f7f5f0;
-  box-shadow: none;
-  transform: none;
+@media (hover: hover) {
+  .header-actions-row button.header-icon-button:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background-image: none;
+    box-shadow: var(--hover-overlay), var(--hover-ring);
+  }
 }
 .header-actions-row button.header-icon-button svg {
   width: 18px;
@@ -577,11 +591,15 @@ h1 {
   padding: 0.1rem 0.3rem;
   border-radius: 10px;
 }
-.search-clear:hover {
-  color: var(--text-primary);
-  background: #f7f5f0;
-  box-shadow: none;
-  transform: none;
+@media (hover: hover) {
+  .search-clear:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background-image:
+      radial-gradient(
+        circle closest-side,
+        #f7f5f0 100%,
+        transparent 100%);
+    box-shadow: none;
+  }
 }
 .view-selector {
   display: flex;
@@ -666,6 +684,7 @@ h1 {
   margin-left: 0;
 }
 .segmented-control-button {
+  position: relative;
   padding: 0 0.75rem;
   font-size: 0.7rem;
   font-family: "IBM Plex Mono", monospace;
@@ -688,21 +707,28 @@ h1 {
     color 0.16s ease,
     box-shadow 0.16s ease;
 }
-.segmented-control-button:hover {
-  background: rgba(255, 255, 255, 0.72);
-  color: var(--text-primary);
-  transform: none;
-  box-shadow: none;
+@media (hover: hover) {
+  .segmented-control-button:hover:where(:not(:disabled)):where(:not([aria-disabled=true])):where(:not(.active)) {
+    color: var(--text-primary);
+    box-shadow: var(--hover-overlay), var(--hover-ring);
+  }
 }
 .segmented-control-button.active {
   background: var(--text-primary);
   color: var(--bg-primary);
   box-shadow: 0 1px 2px rgba(22, 22, 22, 0.18);
 }
-.segmented-control-button.active:hover {
-  background: var(--text-primary);
-  color: var(--bg-primary);
-  box-shadow: 0 1px 2px rgba(22, 22, 22, 0.18);
+.segmented-control-button.active::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+@media (hover: hover) {
+  .segmented-control-button.active:hover:where(:not(:disabled)):where(:not([aria-disabled=true]))::before {
+    box-shadow: var(--hover-ring);
+  }
 }
 .segmented-control-button:focus-visible {
   outline: 2px solid var(--accent);
@@ -731,7 +757,11 @@ h1 {
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  transition: all 0.2s;
+  transition:
+    background-color var(--motion-hover),
+    color var(--motion-hover),
+    border-color var(--motion-hover),
+    box-shadow var(--motion-hover);
   text-transform: none;
   letter-spacing: normal;
   margin-right: 0;
@@ -760,16 +790,14 @@ h1 {
   flex-shrink: 0;
   transition: transform 0.2s ease;
 }
-.sprint-dropdown-toggle:hover {
-  border-color: var(--border);
-  transform: none;
-  box-shadow: 0 6px 14px rgba(22, 22, 22, 0.12);
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-}
 .sprint-dropdown-toggle.open {
   border-color: var(--border);
   box-shadow: 0 6px 14px rgba(22, 22, 22, 0.12);
+}
+@media (hover: hover) {
+  .sprint-dropdown-toggle:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    box-shadow: var(--hover-overlay), var(--hover-ring);
+  }
 }
 .sprint-dropdown-toggle.open svg {
   transform: rotate(180deg);
@@ -871,9 +899,12 @@ h1 {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.sprint-dropdown-option:hover {
-  background: var(--bg-primary);
-  color: var(--text-primary);
+@media (hover: hover) {
+  .sprint-dropdown-option:where(button, [role=button], [role=option], [data-project-id], [data-epm-sort], [data-sub-goal-key]):hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    box-shadow: none;
+  }
 }
 .sprint-dropdown-option.selected {
   background: var(--bg-primary);
@@ -988,7 +1019,11 @@ h1 {
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  transition: all 0.2s;
+  transition:
+    background-color var(--motion-hover),
+    color var(--motion-hover),
+    border-color var(--motion-hover),
+    box-shadow var(--motion-hover);
   text-transform: none;
   letter-spacing: normal;
   margin-right: 0;
@@ -1007,16 +1042,14 @@ h1 {
   flex-shrink: 0;
   transition: transform 0.2s ease;
 }
-.group-dropdown-toggle:hover {
-  border-color: var(--border);
-  transform: none;
-  box-shadow: 0 6px 14px rgba(22, 22, 22, 0.12);
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-}
 .group-dropdown-toggle.open {
   border-color: var(--border);
   box-shadow: 0 6px 14px rgba(22, 22, 22, 0.12);
+}
+@media (hover: hover) {
+  .group-dropdown-toggle:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    box-shadow: var(--hover-overlay), var(--hover-ring);
+  }
 }
 .group-dropdown-toggle.open svg {
   transform: rotate(180deg);
@@ -1054,9 +1087,11 @@ h1 {
   line-height: 1.2;
   cursor: pointer;
 }
-.group-dropdown-option:hover {
-  background: var(--bg-primary);
-  color: var(--text-primary);
+@media (hover: hover) {
+  .group-dropdown-option:where(:has(.group-option-tags)):hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+  }
 }
 .group-dropdown-option + .group-dropdown-option {
   border-top: 1px dashed var(--border);
@@ -1100,18 +1135,9 @@ h1 {
   width: 16px;
   height: 16px;
 }
-.group-gear-button:hover {
-  color: var(--text-primary);
-  border-color: var(--border);
-  background: #f7f5f0;
-  box-shadow: none;
-  transform: none;
-}
-.group-list-item:hover,
 .group-list-item:focus {
   background: #f7f5f0;
   color: var(--text-primary);
-  transform: none;
   box-shadow: none;
 }
 .group-modal-backdrop {
@@ -1176,6 +1202,25 @@ h1 {
   display: flex;
   justify-content: flex-end;
   gap: 0.6rem;
+}
+@media (hover: hover) {
+  .group-gear-button:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background-image: none;
+    box-shadow: var(--hover-overlay), var(--hover-ring);
+  }
+  button.group-list-item:where(:not(.active)):hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    color: var(--text-primary);
+    box-shadow: var(--hover-overlay), var(--hover-ring);
+  }
+  button.group-list-item:where(:not(.active)):hover:where(:not(:disabled)):where(:not([aria-disabled=true])) .group-list-meta {
+    color: var(--text-primary);
+  }
+  button.group-list-item:where(:not(.active)):hover:where(:not(:disabled)):where(:not([aria-disabled=true])) .group-list-dot {
+    color: var(--text-primary);
+  }
+  button.group-list-item.active:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    box-shadow: var(--hover-ring);
+  }
 }
 
 /* frontend/src/styles/settings/first-run.css */
@@ -1265,7 +1310,6 @@ h1 {
   text-align: left;
   cursor: default;
 }
-.department-first-run-option:hover,
 .department-first-run-option.selected {
   border-color: #d7d2ca;
   background: #fbfaf7;
@@ -1451,6 +1495,14 @@ h1 {
   min-width: 44px;
   min-height: 44px;
 }
+@media (hover: hover) {
+  .department-first-run-option:where(:has(input:not(:disabled))) .department-first-run-option-main.eligible:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background: #fbfaf7;
+  }
+  .department-first-run-option.selected .department-first-run-option-main.eligible:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background: transparent;
+  }
+}
 
 /* frontend/src/styles/settings/team-groups.css */
 .group-modal-header {
@@ -1529,12 +1581,6 @@ h1 {
   transition: color 0.15s, border-color 0.15s;
   box-shadow: none;
 }
-.group-modal-tab:hover {
-  color: var(--text-primary);
-  background: none;
-  transform: none;
-  box-shadow: none;
-}
 .group-modal-tab.active {
   color: var(--accent);
   border-bottom-color: var(--accent);
@@ -1610,6 +1656,18 @@ h1 {
   gap: 0.45rem;
   margin-top: 0;
 }
+@media (hover: hover) {
+  .group-modal-tab:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    color: var(--text-primary);
+    border-bottom-color: var(--text-secondary);
+    box-shadow: none;
+  }
+  .group-modal-tab.active:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+    box-shadow: none;
+  }
+}
 
 /* frontend/src/styles/settings/jira-fields.css */
 .group-field-helper {
@@ -1663,20 +1721,6 @@ h1 {
   line-height: 1.3;
   margin-right: 0;
 }
-.project-type-btn:hover {
-  transform: none;
-  box-shadow: none;
-}
-.project-type-btn.product:hover {
-  background: rgba(22, 119, 255, 0.12);
-  border-color: rgba(22, 119, 255, 0.4);
-  color: #1677ff;
-}
-.project-type-btn.tech:hover {
-  background: rgba(250, 84, 28, 0.10);
-  border-color: rgba(250, 84, 28, 0.4);
-  color: #fa541c;
-}
 .selected-team-chip.product-chip {
   border-left: 3px solid rgba(22, 119, 255, 0.5);
 }
@@ -1685,6 +1729,23 @@ h1 {
 }
 .selected-team-chip.issue-type-chip {
   border-left: 3px solid rgba(114, 46, 209, 0.5);
+}
+@media (hover: hover) {
+  .project-type-btn:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    box-shadow: var(--hover-ring);
+  }
+  .project-type-btn.product:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background: rgba(22, 119, 255, 0.12);
+    border-color: rgba(22, 119, 255, 0.4);
+    color: #1677ff;
+    box-shadow: var(--hover-ring);
+  }
+  .project-type-btn.tech:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background: rgba(250, 84, 28, 0.10);
+    border-color: rgba(250, 84, 28, 0.4);
+    color: #fa541c;
+    box-shadow: var(--hover-ring);
+  }
 }
 
 /* frontend/src/styles/settings/team-selector.css */
@@ -1718,7 +1779,6 @@ h1 {
   box-shadow: none;
   transform: none;
 }
-.team-search-result-item[type=button]:not(:disabled):hover,
 .team-search-result-item[type=button]:not(:disabled):focus-visible {
   background: #f8f9fa;
   color: inherit;
@@ -1853,7 +1913,6 @@ h1 {
 .group-list-star-status {
   color: var(--accent);
 }
-.group-list-star:not(:disabled):hover,
 .group-list-star:not(:disabled):focus-visible {
   background: rgba(212, 56, 13, 0.08);
   color: var(--accent);
@@ -1869,12 +1928,6 @@ h1 {
   padding: 0;
   text-align: left;
   color: inherit;
-}
-.group-list-select:hover {
-  background: transparent;
-  color: inherit;
-  box-shadow: none;
-  transform: none;
 }
 .group-list-name-input {
   min-width: 0;
@@ -1953,6 +2006,31 @@ h1 {
 }
 .settings-source-grid .capacity-inline-row {
   margin-top: 0.15rem;
+}
+@media (hover: hover) {
+  .group-list-select:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background: transparent;
+    color: inherit;
+    text-decoration: underline;
+    box-shadow: none;
+  }
+  .team-search-result-item[type=button]:where(:not(.active)):hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background: #f8f9fa;
+    color: inherit;
+    box-shadow: none;
+  }
+  button.group-list-star:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background-image:
+      radial-gradient(
+        circle closest-side,
+        #f7f5f0 100%,
+        transparent 100%);
+    box-shadow: none;
+  }
+  button.group-list-star[aria-pressed=true]:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background-image: none;
+    box-shadow: var(--hover-ring);
+  }
 }
 
 /* frontend/src/styles/settings/user-connections.css */
@@ -2291,10 +2369,6 @@ h1 {
   font-size: 0.9rem;
   line-height: 1;
 }
-.epm-scope-chip .remove-btn:hover {
-  color: var(--accent);
-  border-color: rgba(212, 56, 13, 0.36);
-}
 .epm-scope-search {
   min-width: 0;
   margin-top: 0.5rem;
@@ -2396,6 +2470,16 @@ h1 {
 }
 .epm-project-row-warning {
   color: #92400e;
+}
+@media (hover: hover) {
+  .epm-scope-chip .remove-btn:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background-image:
+      radial-gradient(
+        circle closest-side,
+        #f7f5f0 100%,
+        transparent 100%);
+    box-shadow: none;
+  }
 }
 
 /* frontend/src/styles/settings/mapping-preview.css */
@@ -2737,9 +2821,6 @@ h1 {
   cursor: pointer;
   border-bottom: 1px solid #f0f0f0;
 }
-.team-search-result-item:hover {
-  background: #f8f9fa;
-}
 .team-search-result-item.active {
   background: rgba(212, 56, 13, 0.12);
 }
@@ -2794,9 +2875,6 @@ h1 {
   line-height: 1;
   display: flex;
   align-items: center;
-}
-.selected-team-chip .remove-btn:hover {
-  color: var(--accent);
 }
 .group-modal-body textarea {
   width: 100%;
@@ -2886,9 +2964,6 @@ h1 {
   display: flex;
   align-items: center;
 }
-.component-chip .remove-btn:hover {
-  color: var(--accent);
-}
 .component-search-wrapper {
   position: relative;
 }
@@ -2927,9 +3002,6 @@ h1 {
   font-size: 0.7rem;
   cursor: pointer;
   border-bottom: 1px solid #f0f0f0;
-}
-.component-search-result-item:hover {
-  background: #f8f9fa;
 }
 .component-search-result-item.active {
   background: rgba(212, 56, 13, 0.12);
@@ -3022,13 +3094,6 @@ h1 {
   border-color: rgba(180, 35, 24, 0.4);
   color: #b42318;
 }
-.secondary.compact.danger:hover {
-  border-color: #b42318;
-}
-.secondary.compact.lift-hover:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px var(--shadow);
-}
 @media (max-width: 820px) {
   .group-modal {
     width: min(94vw, 680px);
@@ -3094,7 +3159,7 @@ select {
   font-size: 0.875rem;
   color: var(--text-primary);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: border-color var(--motion-hover), box-shadow var(--motion-hover);
   border-radius: 10px;
 }
 select:focus {
@@ -3102,12 +3167,44 @@ select:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(212, 56, 13, 0.1);
 }
-select:hover {
-  border-color: var(--text-secondary);
-}
 select:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+@media (hover: hover) {
+  .team-search-result-item:where(:not(.is-empty, .active)):where(:not(:has(.project-result-actions))):hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background: #f8f9fa;
+    box-shadow: none;
+  }
+  .selected-team-chip .remove-btn:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background-image:
+      radial-gradient(
+        circle closest-side,
+        #f7f5f0 100%,
+        transparent 100%);
+    box-shadow: none;
+  }
+  .component-chip .remove-btn:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background-image:
+      radial-gradient(
+        circle closest-side,
+        #f7f5f0 100%,
+        transparent 100%);
+    box-shadow: none;
+  }
+  .component-search-result-item:where(:not(.is-empty, .active)):hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background: #f8f9fa;
+    box-shadow: none;
+  }
+  .secondary.compact.danger:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    box-shadow: var(--hover-overlay), var(--hover-ring);
+  }
+  .secondary.compact.lift-hover:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    box-shadow: var(--hover-overlay), var(--hover-ring);
+  }
+  select:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    border-color: var(--text-secondary);
+  }
 }
 
 /* frontend/src/styles/settings/group-board.css */
@@ -3199,12 +3296,6 @@ select:disabled {
   color: var(--text-secondary);
   transition: color 0.15s ease;
 }
-.board-column-drag:hover {
-  background: none;
-  transform: none;
-  box-shadow: none;
-  color: var(--accent);
-}
 .board-column-drag:active {
   cursor: grabbing;
 }
@@ -3221,11 +3312,6 @@ select:disabled {
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12);
   transition: box-shadow 0.15s ease;
 }
-.board-column-colour:hover {
-  background: var(--board-column-accent);
-  transform: none;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
-}
 .board-column-name {
   min-width: 0;
   flex: 1 1 auto;
@@ -3236,10 +3322,6 @@ select:disabled {
   font-family: "Crimson Pro", serif;
   font-size: 0.85rem;
   color: var(--text-primary);
-}
-.board-column-name:hover {
-  border-color: var(--border);
-  background: var(--bg-secondary);
 }
 .board-column-name:focus {
   border-color: var(--accent);
@@ -3257,12 +3339,6 @@ select:disabled {
   letter-spacing: normal;
   color: var(--muted);
   transition: color 0.15s ease;
-}
-.board-column-star:hover {
-  background: none;
-  transform: none;
-  box-shadow: none;
-  color: #e8b339;
 }
 .board-column-star[aria-pressed=true] {
   color: #e8a11d;
@@ -3286,12 +3362,6 @@ select:disabled {
   text-transform: none;
   letter-spacing: normal;
   color: var(--text-secondary);
-}
-.board-column-top .remove-btn:hover {
-  background: none;
-  transform: none;
-  box-shadow: none;
-  color: var(--accent);
 }
 .board-column-limits {
   display: grid;
@@ -3352,9 +3422,6 @@ select:disabled {
   letter-spacing: -0.1em;
   transition: color 0.15s ease;
 }
-.chip-grip:hover {
-  color: var(--accent);
-}
 .chip-grip:active {
   cursor: grabbing;
 }
@@ -3395,13 +3462,6 @@ select:disabled {
   color: var(--text-secondary);
   transition: border-color 0.15s ease, color 0.15s ease;
 }
-.board-add-status:hover {
-  background: none;
-  transform: none;
-  box-shadow: none;
-  border-color: var(--accent);
-  color: var(--accent);
-}
 .board-add-status[aria-expanded=true] {
   border-style: solid;
   border-color: var(--accent);
@@ -3428,12 +3488,6 @@ select:disabled {
   text-transform: none;
   letter-spacing: normal;
   color: var(--text-primary);
-}
-.board-pick .component-chip:hover {
-  background: var(--bg-primary);
-  transform: none;
-  box-shadow: none;
-  border-color: var(--accent);
 }
 .board-pick .component-chip .component-name {
   flex: none;
@@ -3467,6 +3521,7 @@ select:disabled {
   border-radius: 5px;
 }
 .board-pick-colours .board-column-colour[aria-checked=true] {
+  position: relative;
   box-shadow: 0 0 0 1px var(--bg-secondary), 0 0 0 3px var(--text-primary);
 }
 .board-add-column {
@@ -3485,13 +3540,6 @@ select:disabled {
   letter-spacing: normal;
   color: var(--text-secondary);
   transition: border-color 0.15s ease, color 0.15s ease;
-}
-.board-add-column:hover {
-  background: none;
-  transform: none;
-  box-shadow: none;
-  border-color: var(--accent);
-  color: var(--accent);
 }
 .board-preview {
   display: flex;
@@ -3561,6 +3609,76 @@ select:disabled {
 .board-preview .col.is-breach .col-strip {
   border-color: var(--warn);
   box-shadow: 0 0 0 1px var(--warn), 0 0 10px rgba(207, 19, 34, 0.40);
+}
+@media (hover: hover) {
+  .board-column-drag:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    color: var(--accent);
+    background-image:
+      radial-gradient(
+        circle closest-side,
+        #f7f5f0 100%,
+        transparent 100%);
+    box-shadow: none;
+  }
+  .board-column-colour:where(:not([aria-checked=true])):hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    box-shadow: var(--hover-ring);
+  }
+  .board-column-name:where(:not(:focus)):hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    border-color: var(--border);
+    background: var(--bg-secondary);
+  }
+  .board-column-star:where(:not([aria-pressed=true])):hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    color: #e8b339;
+    background-image:
+      radial-gradient(
+        circle closest-side,
+        #f7f5f0 100%,
+        transparent 100%);
+    box-shadow: none;
+  }
+  .board-column-top .remove-btn:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background-image:
+      radial-gradient(
+        circle closest-side,
+        #f7f5f0 100%,
+        transparent 100%);
+    box-shadow: none;
+  }
+  .chip-grip:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    color: var(--accent);
+    background-image:
+      radial-gradient(
+        circle closest-side,
+        #f7f5f0 100%,
+        transparent 100%);
+    box-shadow: none;
+  }
+  .board-add-status:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    box-shadow: var(--hover-overlay), var(--hover-ring);
+  }
+  .board-pick .component-chip:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    box-shadow: var(--hover-ring-inset);
+  }
+  .board-add-column:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    box-shadow: var(--hover-overlay), var(--hover-ring);
+  }
+  .board-column-star[aria-pressed=true]:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background-image: none;
+    box-shadow: var(--hover-ring);
+  }
+  .board-pick-colours .board-column-colour[aria-checked=true]:hover:where(:not(:disabled)):where(:not([aria-disabled=true]))::before {
+    box-shadow: var(--hover-ring);
+  }
+  .board-add-status[aria-expanded=true]:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    box-shadow: var(--hover-ring);
+  }
+}
+.board-pick-colours .board-column-colour[aria-checked=true]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
 }
 
 /* frontend/src/styles/settings/onboarding-tour.css */
@@ -3692,30 +3810,15 @@ select:disabled {
   background: #69c0ff;
   color: #1f1f1f;
 }
-.onboarding-tour-action-next:hover {
-  border-color: #40a9ff;
-  background: #40a9ff;
-  color: #1f1f1f;
-}
 .onboarding-tour-action-skip-all.secondary {
   border: 1px solid #ff4d4f;
   background: #ff4d4f;
-  color: #fff;
-}
-.onboarding-tour-action-skip-all.secondary:hover {
-  border-color: #d9363e;
-  background: #d9363e;
   color: #fff;
 }
 .onboarding-tour-action-skip-section.secondary {
   border-color: #ff4d4f;
   background: transparent;
   color: #cf1322;
-}
-.onboarding-tour-action-skip-section.secondary:hover {
-  border-color: #d9363e;
-  background: #fff1f0;
-  color: #a8071a;
 }
 .onboarding-tour-action-next:disabled {
   border-color: #91caff;
@@ -3772,6 +3875,20 @@ select:disabled {
     transition: none;
   }
 }
+@media (hover: hover) {
+  .onboarding-tour-action-next:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    box-shadow: var(--hover-overlay), var(--hover-ring);
+  }
+  .onboarding-tour-action-skip-all.secondary:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    border-color: #d9363e;
+    background: #d9363e;
+    color: #fff;
+    box-shadow: var(--hover-ring);
+  }
+  .onboarding-tour-action-skip-section.secondary:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    box-shadow: var(--hover-overlay), var(--hover-ring);
+  }
+}
 
 /* frontend/src/styles/settings.css */
 
@@ -3797,7 +3914,11 @@ select:disabled {
   justify-content: space-between;
   gap: 0.5rem;
   cursor: pointer;
-  transition: all 0.2s;
+  transition:
+    background-color var(--motion-hover),
+    color var(--motion-hover),
+    border-color var(--motion-hover),
+    box-shadow var(--motion-hover);
   text-transform: none;
   letter-spacing: normal;
   border-radius: 10px;
@@ -3812,18 +3933,11 @@ select:disabled {
   max-width: 100%;
   overflow: hidden;
 }
-.team-dropdown-toggle:hover {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  border-color: var(--border);
-  box-shadow: 0 6px 14px rgba(22, 22, 22, 0.12);
-}
 .team-dropdown-toggle.active-filter {
   border-color: #597ef7;
   background: #f4f7ff;
   box-shadow: 0 0 0 2px rgba(89, 126, 247, 0.18);
 }
-.team-dropdown-toggle.active-filter:hover,
 .team-dropdown-toggle.active-filter.open {
   border-color: #597ef7;
   background: #f4f7ff;
@@ -3833,6 +3947,16 @@ select:disabled {
   outline: none;
   border-color: var(--border);
   box-shadow: none;
+}
+@media (hover: hover) {
+  .team-dropdown-toggle:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    box-shadow: var(--hover-overlay), var(--hover-ring);
+  }
+}
+@media (hover: hover) {
+  .team-dropdown-toggle.active-filter:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    box-shadow: var(--hover-ring);
+  }
 }
 .team-dropdown-toggle svg {
   width: 0.55rem;
@@ -3879,9 +4003,11 @@ select:disabled {
   box-sizing: border-box;
   margin: 0;
 }
-.team-dropdown-panel label.team-dropdown-option:hover {
-  background: var(--bg-primary);
-  color: var(--text-primary);
+@media (hover: hover) {
+  .team-dropdown-panel label.team-dropdown-option:where(:has(input:not(:disabled))):hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+  }
 }
 .team-dropdown-panel label.team-dropdown-option input {
   margin: 0;
@@ -3928,7 +4054,7 @@ input {
   background: var(--bg-primary);
   font-family: "Crimson Pro", serif;
   font-size: 1rem;
-  transition: all 0.2s;
+  transition: border-color var(--motion-hover), box-shadow var(--motion-hover);
 }
 input:focus {
   outline: none;
@@ -3945,14 +4071,19 @@ button {
   text-transform: uppercase;
   letter-spacing: 0.1em;
   cursor: pointer;
-  transition: all 0.3s;
+  transition:
+    background-color var(--motion-hover),
+    color var(--motion-hover),
+    border-color var(--motion-hover),
+    box-shadow var(--motion-hover),
+    filter var(--motion-hover);
   margin-right: 1rem;
   border-radius: 10px;
 }
-button:hover {
-  background: #2f2f2f;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px var(--shadow);
+@media (hover: hover) {
+  button:hover:where(:enabled):where(:not([aria-disabled=true])) {
+    box-shadow: var(--hover-overlay), var(--hover-ring);
+  }
 }
 button:disabled {
   opacity: 0.5;
@@ -3963,12 +4094,10 @@ button.secondary {
   color: var(--text-secondary);
   border: 1px solid var(--border);
 }
-button.secondary:hover {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  border-color: var(--border);
-  box-shadow: 0 6px 14px rgba(22, 22, 22, 0.12);
-  transform: none;
+@media (hover: hover) {
+  button.secondary:hover:where(:enabled):where(:not([aria-disabled=true])) {
+    box-shadow: var(--hover-overlay), var(--hover-ring);
+  }
 }
 button.compact {
   padding: 0.4rem 0.75rem;
@@ -4036,11 +4165,12 @@ button.compact {
   text-align: left;
   letter-spacing: 0;
 }
-.jira-export-menu-item:hover {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  box-shadow: none;
-  transform: none;
+@media (hover: hover) {
+  .jira-export-menu-item:hover:where(:enabled):where(:not([aria-disabled=true])) {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    box-shadow: none;
+  }
 }
 .jira-export-menu-item:disabled {
   opacity: 0.45;
@@ -4078,11 +4208,6 @@ button.toggle {
   margin: 0;
   box-shadow: none;
 }
-button.toggle:hover {
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  transform: none;
-}
 button.toggle.active {
   background: #f4f2ec;
   color: var(--text-primary);
@@ -4093,7 +4218,6 @@ button.toggle.active {
 .control-search.active-filter.applied-filter .search-input,
 .control-search.active-filter.applied-filter .search-input:focus,
 .team-dropdown-toggle.active-filter.applied-filter,
-.team-dropdown-toggle.active-filter.applied-filter:hover,
 .team-dropdown-toggle.active-filter.applied-filter.open,
 button.toggle.applied-filter,
 button.toggle.applied-filter.active {
@@ -4101,6 +4225,22 @@ button.toggle.applied-filter.active {
   background: var(--eng-empty-filter-surface);
   color: var(--eng-empty-filter-text);
   box-shadow: 0 0 0 2px var(--eng-empty-filter-shadow);
+}
+@media (hover: hover) {
+  .team-dropdown-toggle.active-filter.applied-filter:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    box-shadow: var(--hover-ring);
+  }
+}
+@media (hover: hover) {
+  button.toggle:hover:where(:enabled):where(:not([aria-disabled=true])) {
+    box-shadow: var(--hover-overlay), var(--hover-ring);
+  }
+  button.toggle.active:hover:where(:enabled):where(:not([aria-disabled=true])) {
+    box-shadow: var(--hover-ring);
+  }
+  button.toggle.applied-filter:hover:where(:enabled):where(:not([aria-disabled=true])) {
+    box-shadow: var(--hover-ring);
+  }
 }
 button.toggle.applied-filter,
 button.toggle.applied-filter.active {
@@ -4122,12 +4262,6 @@ button.toggle.applied-filter.active {
   color: var(--text-primary);
   background: none;
   transition: none;
-}
-:where(.filterbar, .popover, .planning-review-popover) button:hover {
-  background: none;
-  color: var(--text-primary);
-  transform: none;
-  box-shadow: none;
 }
 .filterbar-wrap {
   position: sticky;
@@ -4180,8 +4314,10 @@ button.toggle.applied-filter.active {
   letter-spacing: 0.08em;
   font-size: 0.6rem;
 }
-.fb-trigger:hover {
-  box-shadow: 0 4px 10px rgba(22, 22, 22, 0.10);
+@media (hover: hover) {
+  .fb-trigger:hover:where(:enabled):where(:not([aria-disabled=true])) {
+    box-shadow: var(--hover-overlay), var(--hover-ring);
+  }
 }
 .fb-trigger-icon {
   width: 30px;
@@ -4193,10 +4329,6 @@ button.toggle.applied-filter.active {
   background: var(--text-primary);
   color: var(--bg-primary);
   border-color: var(--text-primary);
-}
-.fb-trigger-primary:hover {
-  background: #2f2f2f;
-  color: var(--bg-primary);
 }
 .fb-trigger-primary:disabled {
   opacity: 0.5;
@@ -4279,9 +4411,10 @@ button.toggle.applied-filter.active {
   color: var(--text-secondary);
   padding: 0 0.55rem;
 }
-.chip-more:hover {
-  border-color: var(--accent);
-  color: var(--accent);
+@media (hover: hover) {
+  .chip-more:hover:where(:enabled):where(:not([aria-disabled=true])) {
+    box-shadow: var(--hover-ring-inset);
+  }
 }
 .chip .x {
   flex: 0 0 16px;
@@ -4301,9 +4434,15 @@ button.toggle.applied-filter.active {
   letter-spacing: 0;
   text-transform: none;
 }
-.chip .x:hover {
-  background: none;
-  color: var(--accent);
+@media (hover: hover) {
+  .chip .x:hover:where(:enabled):where(:not([aria-disabled=true])) {
+    background-image:
+      radial-gradient(
+        circle closest-side,
+        #f7f5f0 100%,
+        transparent 100%);
+    box-shadow: none;
+  }
 }
 .chip-clear {
   border: 0;
@@ -4318,8 +4457,11 @@ button.toggle.applied-filter.active {
   white-space: nowrap;
   flex: none;
 }
-.chip-clear:hover {
-  text-decoration: underline;
+@media (hover: hover) {
+  .chip-clear:hover:where(:enabled):where(:not([aria-disabled=true])) {
+    text-decoration: underline;
+    box-shadow: none;
+  }
 }
 .pop-host {
   position: relative;
@@ -4384,8 +4526,11 @@ button.toggle.applied-filter.active {
   font-size: 0.5rem;
   color: var(--accent);
 }
-.pop-head .pop-all:hover {
-  text-decoration: underline;
+@media (hover: hover) {
+  .pop-head .pop-all:hover:where(:enabled):where(:not([aria-disabled=true])) {
+    text-decoration: underline;
+    box-shadow: none;
+  }
 }
 .pop-list {
   display: grid;
@@ -4406,8 +4551,11 @@ button.toggle.applied-filter.active {
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.62rem;
 }
-.pop-opt:hover {
-  background: var(--bg-primary);
+@media (hover: hover) {
+  .pop-opt:hover:where(:enabled):where(:not([aria-disabled=true])) {
+    background: var(--bg-primary);
+    box-shadow: none;
+  }
 }
 .pop-opt .box {
   width: 12px;
@@ -4530,6 +4678,17 @@ button.toggle.applied-filter.active {
   color: var(--jira-initiative-accent);
   border-color: var(--jira-initiative-accent);
   background: var(--jira-initiative-accent-surface);
+}
+@media (hover: hover) {
+  .fb-trigger-icon:where(:not([aria-pressed=true])):hover:where(:enabled):where(:not([aria-disabled=true])) {
+    background-image: none;
+    box-shadow: var(--hover-overlay), var(--hover-ring);
+  }
+}
+@media (hover: hover) {
+  .initiative-grouping-control .fb-trigger[aria-pressed=true]:hover:where(:enabled):where(:not([aria-disabled=true])) {
+    box-shadow: var(--hover-ring);
+  }
 }
 .initiative-grouping-tooltip {
   position: absolute;
@@ -4843,9 +5002,13 @@ button.toggle.applied-filter.active {
   box-shadow: 0 2px 8px rgba(22, 22, 22, 0.10);
   animation: board-hint-nudge 2.4s ease-in-out infinite;
 }
-.eng-board .board-hint:hover .pip {
-  border-color: var(--accent);
-  color: var(--accent);
+@media (hover: hover) {
+  .eng-board .board-hint:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    box-shadow: none;
+  }
+  .eng-board .board-hint:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) .pip {
+    box-shadow: var(--hover-ring);
+  }
 }
 .eng-board .board-hint .pip b {
   font-weight: 500;
@@ -4935,8 +5098,11 @@ button.toggle.applied-filter.active {
   text-transform: uppercase;
   color: var(--text-secondary);
 }
-.eng-board .col-head .fold:hover {
-  color: var(--accent);
+@media (hover: hover) {
+  .eng-board .col-head .fold:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    text-decoration: underline;
+    box-shadow: none;
+  }
 }
 .eng-board .col.is-starred .col-head .fold {
   visibility: hidden;
@@ -4952,8 +5118,15 @@ button.toggle.applied-filter.active {
   line-height: 1;
   color: var(--muted);
 }
-.eng-board .col-star:hover {
-  color: #e8b339;
+@media (hover: hover) {
+  .eng-board .col-star:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background-image:
+      radial-gradient(
+        circle closest-side,
+        #f7f5f0 100%,
+        transparent 100%);
+    box-shadow: none;
+  }
 }
 .eng-board .col-star[aria-pressed=true] {
   color: #e8a11d;
@@ -5070,6 +5243,8 @@ button.toggle.applied-filter.active {
   border-left: 3px solid var(--board-column-accent);
   border-radius: 10px;
   transition: border-color 0.15s, box-shadow 0.15s;
+  --ecard-track-slot: 1.0625rem;
+  --ecard-lead: calc(16px + 0.4rem + var(--ecard-track-slot) + 0.4rem);
 }
 .eng-board .ecard-open {
   appearance: none;
@@ -5091,11 +5266,15 @@ button.toggle.applied-filter.active {
   background: var(--bg-secondary);
   border-color: var(--board-column-accent);
   box-shadow: 0 4px 12px var(--shadow);
-  transform: none;
 }
 .eng-board .ecard-open:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+@media (hover: hover) {
+  .eng-board .ecard-open:hover {
+    box-shadow: none;
+  }
 }
 .eng-board .ecard:hover {
   cursor: grab;
@@ -5126,9 +5305,15 @@ button.toggle.applied-filter.active {
 }
 .eng-board .erow1 > .task-priority-icon,
 .eng-board .erow1 > .epic-track-indicator,
-.eng-board .erow1 > .status-pill,
 .eng-board .ekey {
   flex: none;
+}
+.eng-board .erow1 > .epic-track-indicator {
+  width: var(--ecard-track-slot);
+  justify-content: center;
+}
+.eng-board .erow1 > .task-priority-icon:not(:has(+ .epic-track-indicator)) {
+  margin-right: calc(var(--ecard-track-slot) + 0.4rem);
 }
 .eng-board .etitle {
   flex: 1 1 0%;
@@ -5151,7 +5336,8 @@ button.toggle.applied-filter.active {
   display: flex;
   align-items: center;
   gap: 0.55rem;
-  padding-left: 1.65rem;
+  min-width: 0;
+  padding-left: var(--ecard-lead);
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.52rem;
   letter-spacing: 0.06em;
@@ -5165,7 +5351,21 @@ button.toggle.applied-filter.active {
 .eng-board .erow2 .push {
   margin-left: auto;
 }
-.eng-board .erow2 time {
+.eng-board .erow2 > .status-pill {
+  flex: none;
+}
+.eng-board .erow2 > .estories {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.eng-board .erow3 > .eperson {
+  max-width: none;
+}
+.eng-board .erow3 > .eupdated {
+  flex: none;
+  margin-left: auto;
   font-variant-numeric: tabular-nums;
 }
 .eng-board .eperson {
@@ -5252,8 +5452,10 @@ button.toggle.applied-filter.active {
   color: var(--accent);
   text-decoration: none;
 }
-.eng-board .m-eyebrow a:hover {
-  text-decoration: underline;
+@media (hover: hover) {
+  .eng-board .m-eyebrow a:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    text-decoration: underline;
+  }
 }
 .eng-board .m-close {
   margin: 0 0 0 auto;
@@ -5269,11 +5471,15 @@ button.toggle.applied-filter.active {
   border-radius: 6px;
   padding: 0;
 }
-.eng-board .m-close:hover {
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  box-shadow: none;
-  transform: none;
+@media (hover: hover) {
+  .eng-board .m-close:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background-image:
+      radial-gradient(
+        circle closest-side,
+        #f7f5f0 100%,
+        transparent 100%);
+    box-shadow: none;
+  }
 }
 .eng-board .m-controls {
   display: flex;
@@ -5424,8 +5630,10 @@ button.toggle.applied-filter.active {
   text-decoration: none;
   overflow-wrap: anywhere;
 }
-.eng-board .m-desc-body a:hover {
-  text-decoration: underline;
+@media (hover: hover) {
+  .eng-board .m-desc-body a:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    text-decoration: underline;
+  }
 }
 .eng-board .m-desc-more {
   margin: 0.4rem 0 0;
@@ -5439,10 +5647,11 @@ button.toggle.applied-filter.active {
   font-size: 0.55rem;
   color: var(--accent);
 }
-.eng-board .m-desc-more:hover {
-  text-decoration: underline;
-  box-shadow: none;
-  transform: none;
+@media (hover: hover) {
+  .eng-board .m-desc-more:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    text-decoration: underline;
+    box-shadow: none;
+  }
 }
 .eng-board .m-desc-skeleton {
   display: grid;
@@ -5477,10 +5686,10 @@ button.toggle.applied-filter.active {
   text-transform: none;
   cursor: pointer;
 }
-.eng-board .m-desc-retry:hover {
-  background: #ffe4e3;
-  box-shadow: none;
-  transform: none;
+@media (hover: hover) {
+  .eng-board .m-desc-retry:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    box-shadow: var(--hover-overlay), var(--hover-ring);
+  }
 }
 .eng-board .m-sec {
   margin-top: 1.35rem;
@@ -5578,6 +5787,13 @@ button.toggle.applied-filter.active {
   color: var(--text-secondary);
   font: 12px "IBM Plex Mono", monospace;
 }
+@media (hover: none) {
+  .eng-board .ecard:hover:where(:not(.is-rejected)):where(:not(.is-dragging)) {
+    border-color: var(--border);
+    border-left-color: var(--board-column-accent);
+    box-shadow: none;
+  }
+}
 
 /* frontend/src/styles/eng/alerts.css */
 .alert-panels {
@@ -5614,10 +5830,10 @@ button.toggle.applied-filter.active {
   min-height: 34px;
   margin: 0;
 }
-.alerts-panel-toggle:hover {
-  background: var(--bg-primary);
-  transform: none;
-  box-shadow: none;
+@media (hover: hover) {
+  .alerts-panel-toggle:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    box-shadow: var(--hover-overlay), var(--hover-ring);
+  }
 }
 .alerts-panel-toggle-icon {
   width: 1.15rem;
@@ -5673,7 +5889,6 @@ button.toggle.applied-filter.active {
   white-space: nowrap;
   margin: 0;
   box-shadow: none;
-  transform: none;
   cursor: default;
 }
 button.alerts-panel-summary-pill {
@@ -5683,10 +5898,11 @@ button.alerts-panel-summary-pill {
     border-color 0.16s ease,
     color 0.16s ease;
 }
-button.alerts-panel-summary-pill:hover {
-  border-color: currentColor;
-  transform: none;
-  box-shadow: none;
+@media (hover: hover) {
+  button.alerts-panel-summary-pill:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    border-color: currentColor;
+    box-shadow: var(--hover-ring);
+  }
 }
 button.alerts-panel-summary-pill:focus-visible,
 .alert-card:focus-visible {
@@ -5704,33 +5920,45 @@ button.alerts-panel-summary-pill:focus-visible,
   border-color: rgba(250, 140, 22, 0.36);
   color: var(--alert-missing);
 }
-button.alerts-panel-summary-pill.missing:hover,
-button.alerts-panel-summary-pill.empty:hover {
-  background: rgba(250, 140, 22, 0.14);
+@media (hover: hover) {
+  button.alerts-panel-summary-pill.missing:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background: rgba(250, 140, 22, 0.14);
+  }
+}
+@media (hover: hover) {
+  button.alerts-panel-summary-pill.empty:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background: rgba(250, 140, 22, 0.14);
+  }
 }
 .alerts-panel-summary-pill.blocked {
   background: rgba(212, 56, 13, 0.1);
   border-color: rgba(212, 56, 13, 0.36);
   color: var(--alert-blocked);
 }
-button.alerts-panel-summary-pill.blocked:hover {
-  background: rgba(212, 56, 13, 0.14);
+@media (hover: hover) {
+  button.alerts-panel-summary-pill.blocked:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background: rgba(212, 56, 13, 0.14);
+  }
 }
 .alerts-panel-summary-pill.following {
   background: rgba(99, 102, 241, 0.1);
   border-color: rgba(99, 102, 241, 0.32);
   color: #4338ca;
 }
-button.alerts-panel-summary-pill.following:hover {
-  background: rgba(99, 102, 241, 0.14);
+@media (hover: hover) {
+  button.alerts-panel-summary-pill.following:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background: rgba(99, 102, 241, 0.14);
+  }
 }
 .alerts-panel-summary-pill.done {
   background: rgba(82, 196, 26, 0.1);
   border-color: rgba(82, 196, 26, 0.32);
   color: #237804;
 }
-button.alerts-panel-summary-pill.done:hover {
-  background: rgba(82, 196, 26, 0.14);
+@media (hover: hover) {
+  button.alerts-panel-summary-pill.done:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background: rgba(82, 196, 26, 0.14);
+  }
 }
 .alerts-panel-summary-count {
   font-weight: 700;
@@ -5835,8 +6063,11 @@ button.alerts-panel-summary-pill.done:hover {
   cursor: pointer;
   min-height: 28px;
 }
-.alert-chip:hover {
-  background: #2a2a2a;
+@media (hover: hover) {
+  a.alert-chip:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background: #2a2a2a;
+    box-shadow: var(--hover-ring);
+  }
 }
 .alert-toggle {
   background: transparent;
@@ -5850,10 +6081,10 @@ button.alerts-panel-summary-pill.done:hover {
   border-radius: 10px;
   min-height: 28px;
 }
-.alert-toggle:hover {
-  background: transparent;
-  transform: none;
-  box-shadow: none;
+@media (hover: hover) {
+  .alert-toggle:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    box-shadow: var(--hover-overlay), var(--hover-ring);
+  }
 }
 .alert-toggle-icon {
   width: 1.15rem;
@@ -5954,8 +6185,10 @@ button.alerts-panel-summary-pill.done:hover {
   text-decoration: none;
   font-weight: 600;
 }
-.alert-team-link:hover {
-  color: var(--accent);
+@media (hover: hover) {
+  .alert-team-link:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    text-decoration: underline;
+  }
 }
 .alert-stories {
   display: flex;
@@ -5972,11 +6205,7 @@ button.alerts-panel-summary-pill.done:hover {
   background: #fff;
   position: relative;
   min-width: 0;
-}
-.alert-story:hover {
-  border-color: var(--accent);
-  transform: translateY(-1px);
-  transition: all 0.2s ease;
+  transition: border-color var(--motion-hover);
 }
 .alert-pill {
   padding: 0.25rem 0.55rem;
@@ -6021,17 +6250,16 @@ button.alert-story-local-link {
   overflow: hidden;
   text-overflow: ellipsis;
   cursor: pointer;
-  transform: none;
   box-shadow: none;
 }
-button.alert-story-local-link:hover {
-  background: transparent;
-  color: var(--text-primary);
-  transform: none;
-  box-shadow: none;
+@media (hover: hover) {
+  button.alert-story-local-link:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    text-decoration: underline;
+    box-shadow: none;
+  }
 }
 button.alert-story-local-link:focus-visible {
-  outline: 2px solid var(--focus-ring, #2563eb);
+  outline: 2px solid var(--focus-ring-color, #2563eb);
   outline-offset: 3px;
   border-radius: 3px;
 }
@@ -6118,8 +6346,20 @@ button.alert-story-local-link:focus-visible {
 .alert-story .alert-remove {
   border-color: var(--border);
 }
-.alert-story .alert-remove:hover {
-  transform: none;
+@media (hover: hover) {
+  .alert-epic-link:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    text-decoration: underline;
+  }
+}
+@media (hover: hover) {
+  .alert-story-link:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    text-decoration: underline;
+  }
+}
+@media (hover: hover) {
+  .alert-action:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    text-decoration: underline;
+  }
 }
 
 /* frontend/src/styles/eng/issues.css */
@@ -6216,10 +6456,6 @@ button.alert-story-local-link:focus-visible {
     animation: epic-refresh-tint 1200ms ease-out 1 both;
   }
 }
-.task-item:hover {
-  border-left-color: var(--accent);
-  box-shadow: inset 3px 0 0 var(--accent), -6px 0 18px var(--shadow);
-}
 @keyframes task-appear {
   from {
     opacity: 0;
@@ -6290,9 +6526,6 @@ button.alert-story-local-link:focus-visible {
 .task-item.status-killed .task-priority-icon {
   color: #8c8c8c;
 }
-.task-item.status-killed:hover {
-  opacity: 0.75;
-}
 .task-item.status-incomplete {
   background: #fffbf0;
   border-left-color: #fa8c16;
@@ -6346,11 +6579,11 @@ button.alert-story-local-link:focus-visible {
   opacity: 0;
   pointer-events: none;
 }
-.task-remove:hover {
-  background: var(--accent);
-  color: white;
-  border-color: var(--accent);
-  transform: none;
+@media (hover: hover) {
+  .task-remove:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background-image: none;
+    box-shadow: var(--hover-overlay), var(--hover-ring);
+  }
 }
 @keyframes task-remove-dissolve {
   from {
@@ -6415,8 +6648,10 @@ button.alert-story-local-link:focus-visible {
   border-bottom: 1px solid transparent;
   transition: border-color 0.2s;
 }
-.task-title a:hover {
-  border-bottom-color: var(--text-primary);
+@media (hover: hover) {
+  .task-title a:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    border-bottom-color: var(--text-primary);
+  }
 }
 .task-inline-meta {
   flex: 0 0 auto;
@@ -6435,8 +6670,10 @@ button.alert-story-local-link:focus-visible {
   text-decoration: none;
   border-bottom: 1px solid transparent;
 }
-.task-key-link:hover {
-  border-bottom-color: var(--text-primary);
+@media (hover: hover) {
+  .task-key-link:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    border-bottom-color: var(--text-primary);
+  }
 }
 .task-inline-sp {
   color: #d48806;
@@ -6460,13 +6697,18 @@ button.alert-story-local-link:focus-visible {
   text-transform: none;
   white-space: nowrap;
 }
-.story-subtasks-toggle:hover,
 .story-subtasks-toggle.is-expanded {
   background: #eef4ff;
   border-color: rgba(89, 126, 247, 0.42);
   color: var(--text-primary);
-  box-shadow: none;
-  transform: none;
+}
+@media (hover: hover) {
+  .story-subtasks-toggle:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background: #eef4ff;
+    border-color: rgba(89, 126, 247, 0.42);
+    color: var(--text-primary);
+    box-shadow: var(--hover-ring);
+  }
 }
 .story-subtasks-count {
   font-weight: 600;
@@ -6560,16 +6802,27 @@ button.task-priority-icon::before {
   pointer-events: none;
   transition: background-color 0.16s ease, box-shadow 0.16s ease;
 }
-button.task-priority-icon:hover,
 button.task-priority-icon:focus-visible {
-  transform: none;
   background: transparent;
   box-shadow: none;
 }
-button.task-priority-icon:hover::before,
+@media (hover: hover) {
+  button.task-priority-icon:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    box-shadow: none;
+  }
+}
 button.task-priority-icon:focus-visible::before {
   background: var(--bg-primary);
   box-shadow: 0 0 0 2px rgba(47, 128, 237, 0.22);
+}
+@media (hover: hover) {
+  button.task-priority-icon:hover:where(:not(:disabled)):where(:not([aria-disabled=true]))::before {
+    background-image:
+      radial-gradient(
+        circle closest-side,
+        var(--bg-primary) 100%,
+        transparent 100%);
+  }
 }
 button.task-priority-icon[data-priority]:hover::after {
   top: calc(50% - 1.1rem);
@@ -6986,9 +7239,10 @@ button.task-priority-icon[data-priority]:hover::after {
   --story-requirement-border: #dc756a;
   --story-requirement-surface: #fff5f3;
 }
-.task-list:not(.epm-issue-board) .epic-block > .story-requirement-card:hover {
-  color: inherit;
-  box-shadow: 0 5px 14px rgba(26, 26, 26, 0.08);
+@media (hover: hover) {
+  .task-list:not(.epm-issue-board) .epic-block > .story-requirement-card:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) .story-requirement-title {
+    text-decoration: underline;
+  }
 }
 .task-list:not(.epm-issue-board) .epic-block > .story-requirement-card:focus-visible {
   outline: 3px solid #174f82;
@@ -7103,6 +7357,11 @@ button.task-priority-icon[data-priority]:hover::after {
     animation-duration: 0.01ms;
   }
 }
+@media (hover: none) {
+  .task-remove {
+    opacity: 1;
+  }
+}
 
 /* frontend/src/styles/eng/dependencies.css */
 .dependency-strip {
@@ -7134,26 +7393,29 @@ button.task-priority-icon[data-priority]:hover::after {
     color 0.15s ease,
     box-shadow 0.15s ease;
 }
-.dependency-count:hover {
-  transform: none;
-  box-shadow: 0 0 0 2px rgba(47, 128, 237, 0.35);
+@media (hover: hover) {
+  .dependency-count:hover:where(:enabled):where(:not([aria-disabled=true])) {
+    box-shadow: var(--hover-ring-inset);
+  }
 }
 .dependency-count.active {
   background: #111;
   color: #fff;
   border-color: #111;
 }
-.dependency-count[data-dep-chip=depends-on]:hover,
-.dependency-count[data-dep-chip=blocked-by]:hover {
-  background: rgba(239, 68, 68, 0.16);
-  border-color: rgba(239, 68, 68, 0.55);
-  color: #7f1d1d;
-}
-.dependency-count[data-dep-chip=dependents]:hover,
-.dependency-count[data-dep-chip=blocks]:hover {
-  background: rgba(59, 130, 246, 0.16);
-  border-color: rgba(59, 130, 246, 0.55);
-  color: #1d4ed8;
+@media (hover: hover) {
+  .dependency-count[data-dep-chip=depends-on]:hover:where(:enabled):where(:not([aria-disabled=true])),
+  .dependency-count[data-dep-chip=blocked-by]:hover:where(:enabled):where(:not([aria-disabled=true])) {
+    background: rgba(239, 68, 68, 0.16);
+    border-color: rgba(239, 68, 68, 0.55);
+    color: #7f1d1d;
+  }
+  .dependency-count[data-dep-chip=dependents]:hover:where(:enabled):where(:not([aria-disabled=true])),
+  .dependency-count[data-dep-chip=blocks]:hover:where(:enabled):where(:not([aria-disabled=true])) {
+    background: rgba(59, 130, 246, 0.16);
+    border-color: rgba(59, 130, 246, 0.55);
+    color: #1d4ed8;
+  }
 }
 .dependency-count.active[data-dep-chip=depends-on],
 .dependency-count.active[data-dep-chip=blocked-by] {
@@ -7168,7 +7430,6 @@ button.task-priority-icon[data-priority]:hover::after {
   color: #1d4ed8;
 }
 .dependency-count.unblocked[data-dep-chip=blocked-by],
-.dependency-count.unblocked[data-dep-chip=blocked-by]:hover,
 .dependency-count.active.unblocked[data-dep-chip=blocked-by] {
   background: rgba(22, 163, 74, 0.12);
   border-color: rgba(22, 163, 74, 0.42);
@@ -7262,8 +7523,10 @@ a.dependency-missing-item {
   color: inherit;
   text-decoration: none;
 }
-a.dependency-missing-item:hover {
-  text-decoration: underline;
+@media (hover: hover) {
+  a.dependency-missing-item:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    text-decoration: underline;
+  }
 }
 .dependency-missing-sep {
   margin: 0 0.35rem;
@@ -7335,10 +7598,10 @@ a.dependency-missing-item:hover {
   letter-spacing: 0;
   text-transform: none;
 }
-.story-subtasks-error button:hover {
-  background: #ffe4e3;
-  box-shadow: none;
-  transform: none;
+@media (hover: hover) {
+  .story-subtasks-error button:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    box-shadow: var(--hover-overlay), var(--hover-ring);
+  }
 }
 .story-subtasks-rows {
   display: grid;
@@ -7380,9 +7643,11 @@ a.dependency-missing-item:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.story-subtask-name:hover {
-  text-decoration: underline;
-  text-underline-offset: 2px;
+@media (hover: hover) {
+  .story-subtask-name:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
 }
 .story-subtask-row > .task-status,
 .story-subtask-row > .status-transition > .task-status {
@@ -7496,7 +7761,6 @@ a.dependency-missing-item:hover {
   margin: 0;
   padding: 0;
   letter-spacing: 0;
-  transform: none;
   box-shadow: none;
   opacity: 0;
   pointer-events: none;
@@ -7506,11 +7770,11 @@ a.dependency-missing-item:hover {
   color: var(--text-secondary);
   transition: opacity 0.12s ease;
 }
-.epic-header button.epic-refresh-button:hover {
-  background: #f7f5f0;
-  color: var(--text-primary);
-  transform: none;
-  box-shadow: none;
+@media (hover: hover) {
+  .epic-header button.epic-refresh-button:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background-image: none;
+    box-shadow: var(--hover-overlay), var(--hover-ring);
+  }
 }
 .epic-header:hover button.epic-refresh-button,
 .epic-header:focus-within button.epic-refresh-button,
@@ -7559,8 +7823,10 @@ a.dependency-missing-item:hover {
 .clickable-number {
   cursor: pointer;
 }
-.clickable-number:hover {
-  text-decoration: underline;
+@media (hover: hover) {
+  .clickable-number:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    text-decoration: underline;
+  }
 }
 .back-to-top {
   position: fixed;
@@ -7579,10 +7845,10 @@ a.dependency-missing-item:hover {
     color 0.15s ease,
     border-color 0.15s ease;
 }
-.back-to-top:hover {
-  background: #2f2f2f;
-  color: #fff;
-  border-color: #2f2f2f;
+@media (hover: hover) {
+  .back-to-top:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    box-shadow: var(--hover-overlay), var(--hover-ring);
+  }
 }
 .epic-title {
   font-size: 1.1rem;
@@ -7608,10 +7874,12 @@ a.dependency-missing-item:hover {
   color: inherit;
   text-decoration: none;
 }
-.epic-link:hover {
-  text-decoration: underline;
-  text-decoration-thickness: 1px;
-  text-underline-offset: 3px;
+@media (hover: hover) {
+  .epic-link:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+  }
 }
 .epic-name {
   display: block;
@@ -7746,9 +8014,11 @@ a.dependency-missing-item:hover {
   text-decoration: none;
   white-space: nowrap;
 }
-.initiative-label-key:hover {
-  text-decoration: underline;
-  text-underline-offset: 2px;
+@media (hover: hover) {
+  .initiative-label-key:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
 }
 .initiative-label-only .initiative-label-key {
   color: var(--jira-initiative-accent);
@@ -7879,11 +8149,19 @@ button.epic-track-indicator {
     padding: 0 0 2px;
   }
 }
-button.epic-track-indicator:hover,
 button.epic-track-indicator:focus-visible {
-  transform: none;
   background: var(--bg-primary);
   box-shadow: 0 0 0 2px rgba(47, 128, 237, 0.22);
+}
+@media (hover: hover) {
+  button.epic-track-indicator:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background-image:
+      radial-gradient(
+        circle closest-side,
+        var(--bg-primary) 100%,
+        transparent 100%);
+    box-shadow: none;
+  }
 }
 .epic-refresh-status {
   position: absolute;
@@ -8027,8 +8305,10 @@ button.epic-track-indicator:focus-visible {
   background: #ffffff;
   color: var(--accent);
 }
-.server-unavailable-banner button:hover {
-  background: #fff7f0;
+@media (hover: hover) {
+  .server-unavailable-banner button:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    box-shadow: var(--hover-overlay), var(--hover-ring);
+  }
 }
 .server-unavailable-banner button:disabled {
   cursor: wait;
@@ -8077,10 +8357,11 @@ button.status-pill {
   cursor: pointer;
   transition: box-shadow 0.15s ease, filter 0.15s ease;
 }
-button.status-pill:hover {
-  transform: none;
-  filter: brightness(0.94);
-  box-shadow: 0 0 0 2px rgba(47, 128, 237, 0.35);
+@media (hover: hover) {
+  button.status-pill:hover:where(:enabled):where(:not([aria-disabled=true])) {
+    filter: brightness(0.94);
+    box-shadow: var(--hover-ring);
+  }
 }
 button.status-pill:focus-visible {
   outline: 2px solid rgba(47, 128, 237, 0.65);
@@ -8187,18 +8468,37 @@ button.status-pill:focus-visible {
 .priority-transition-option > .task-priority-icon {
   justify-self: center;
 }
-.status-transition-option:hover:not(:disabled),
 .status-transition-option:focus-visible,
-.priority-transition-option:hover:not(:disabled),
 .priority-transition-option:focus-visible,
-.project-track-transition-option:hover:not(:disabled),
 .project-track-transition-option:focus-visible,
-.issue-person-editor-option:hover:not(:disabled),
 .issue-person-editor-option:focus-visible,
 .issue-person-editor-option.is-active:not(:disabled) {
-  transform: none;
   background: var(--bg-primary);
   box-shadow: inset 0 0 0 1px rgba(47, 128, 237, 0.18);
+}
+@media (hover: hover) {
+  .status-transition-option:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background: var(--bg-primary);
+    box-shadow: none;
+  }
+}
+@media (hover: hover) {
+  .priority-transition-option:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background: var(--bg-primary);
+    box-shadow: none;
+  }
+}
+@media (hover: hover) {
+  .project-track-transition-option:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background: var(--bg-primary);
+    box-shadow: none;
+  }
+}
+@media (hover: hover) {
+  .issue-person-editor-option:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background: var(--bg-primary);
+    box-shadow: none;
+  }
 }
 .status-transition-option:focus-visible,
 .priority-transition-option:focus-visible,
@@ -8213,14 +8513,6 @@ button.status-pill:focus-visible {
 .issue-person-editor-option:disabled {
   cursor: not-allowed;
   opacity: 0.55;
-}
-.status-transition-option:disabled:hover,
-.priority-transition-option:disabled:hover,
-.project-track-transition-option:disabled:hover,
-.issue-person-editor-option:disabled:hover {
-  background: transparent;
-  transform: none;
-  box-shadow: none;
 }
 .status-transition-option-marker.task-status,
 .priority-transition-option-marker {
@@ -8327,10 +8619,17 @@ button.issue-person-editor-trigger {
   cursor: pointer;
   box-shadow: none;
 }
-input.issue-person-editor-trigger:hover,
-button.issue-person-editor-trigger:hover {
-  transform: none;
-  box-shadow: none;
+@media (hover: hover) {
+  input.issue-person-editor-trigger:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    border-bottom-color: currentColor;
+    box-shadow: none;
+  }
+}
+@media (hover: hover) {
+  button.issue-person-editor-trigger:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    text-decoration: underline;
+    box-shadow: none;
+  }
 }
 input.issue-person-editor-trigger:not(:read-only):not(:disabled) {
   border-bottom-color: currentColor;
@@ -8416,6 +8715,11 @@ input.story-points-editor.story-points-alert-highlight {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+@media (hover: hover) {
+  .issue-person-editor-option.is-active:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    box-shadow: none;
+  }
 }
 
 /* frontend/src/styles/eng/planning-review-table.css */
@@ -8539,11 +8843,16 @@ input.story-points-editor.story-points-alert-highlight {
   color: inherit;
   background: transparent;
 }
-.planning-review-input:hover,
 .planning-review-input:focus {
   border-color: var(--text-secondary);
   background: #fff;
   box-shadow: none;
+}
+@media (hover: hover) {
+  .planning-review-input:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    border-bottom-color: currentColor;
+    box-shadow: none;
+  }
 }
 .planning-review-input.invalid {
   border-color: #b91c1c;
@@ -8579,14 +8888,11 @@ input.story-points-editor.story-points-alert-highlight {
   letter-spacing: normal;
   margin: 0;
   box-shadow: none;
-  transform: none;
 }
-.planning-review-heading:hover,
-.planning-review-text-button:hover {
-  background: var(--border);
-  color: #0f172a;
-  transform: none;
-  box-shadow: none;
+@media (hover: hover) {
+  .planning-review-heading:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    box-shadow: var(--hover-overlay), var(--hover-ring-inset);
+  }
 }
 .planning-review-recovery {
   display: flex;
@@ -8676,8 +8982,15 @@ input.story-points-editor.story-points-alert-highlight {
   max-width: 200px;
   white-space: normal !important;
 }
+.planning-review-storyPoints .story-points-editor-wrap {
+  display: flex;
+  width: fit-content;
+  margin-left: auto;
+}
 .planning-review-storyPoints input.story-points-editor {
   min-width: 32px;
+  height: 15px;
+  line-height: 1;
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 2px 4px;
@@ -8702,25 +9015,38 @@ input.story-points-editor.story-points-alert-highlight {
   background: #f1f5f9;
   color: var(--text-secondary);
   box-shadow: none;
-  transform: none;
 }
 .planning-review-capacity .epic-stat-toggle.active {
   background: #ecfdf5;
   border-color: #86efac;
   color: #166534;
 }
-.planning-review-capacity .epic-stat-toggle:hover,
 .planning-review-capacity .epic-stat-toggle:focus-visible {
   background: var(--border);
   color: #334155;
   filter: none;
   box-shadow: none;
-  transform: none;
 }
-.planning-review-capacity .epic-stat-toggle.active:hover,
+@media (hover: hover) {
+  .planning-review-capacity .epic-stat-toggle:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background: #f1f5f9;
+    color: var(--text-secondary);
+    filter: none;
+    box-shadow: var(--hover-ring-inset);
+  }
+}
 .planning-review-capacity .epic-stat-toggle.active:focus-visible {
   background: #dcfce7;
   color: #166534;
+}
+@media (hover: hover) {
+  .planning-review-capacity .epic-stat-toggle.active:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background: #ecfdf5;
+    color: #166534;
+    border-color: #86efac;
+    filter: none;
+    box-shadow: var(--hover-ring-inset);
+  }
 }
 .planning-review-capacity .epic-stat-toggle:focus-visible {
   outline: 2px solid #93c5fd;
@@ -8787,13 +9113,20 @@ input.story-points-editor.story-points-alert-highlight {
   width: 14px;
   height: 14px;
 }
-.planning-review-column-action:hover,
 .planning-review-column-action:focus-visible {
   background: var(--bg-primary);
   color: var(--text-primary);
-  transform: none;
   box-shadow: none;
-  letter-spacing: normal;
+}
+@media (hover: hover) {
+  .planning-review-column-action:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background-image:
+      radial-gradient(
+        circle closest-side,
+        #f7f5f0 100%,
+        transparent 100%);
+    box-shadow: none;
+  }
 }
 .planning-review-column-action:focus-visible {
   outline: 2px solid #93c5fd;
@@ -8907,14 +9240,21 @@ input.story-points-editor.story-points-alert-highlight {
   letter-spacing: normal;
   cursor: grab;
   box-shadow: none;
-  transform: none;
 }
-.planning-review-drag:hover,
 .planning-review-drag:focus-visible {
   background: transparent;
   color: var(--text-primary);
-  transform: none;
   box-shadow: none;
+}
+@media (hover: hover) {
+  .planning-review-drag:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background-image:
+      radial-gradient(
+        circle closest-side,
+        #f7f5f0 100%,
+        transparent 100%);
+    box-shadow: none;
+  }
 }
 .planning-review-table th.planning-review-drop {
   box-shadow: inset 3px 0 #3b82f6;
@@ -8978,14 +9318,10 @@ input.story-points-editor.story-points-alert-highlight {
   pointer-events: auto;
   cursor: pointer;
   box-shadow: none;
-  transform: none;
   letter-spacing: 0;
 }
 .planning-review-boundary-hit:hover {
-  background: transparent;
-  transform: none;
   box-shadow: none;
-  letter-spacing: 0;
 }
 .planning-review-boundary-dot {
   display: grid;
@@ -9165,8 +9501,8 @@ input.story-points-editor.story-points-alert-highlight {
   z-index: 41;
 }
 .planning-panel-project-graph .planning-compact-readout {
-  color: #fff;
-  text-shadow: 0 1px 2px #0006;
+  color: var(--text-primary);
+  text-shadow: none;
 }
 .planning-panel-compact:has(.planning-panel-capacity-status) {
   flex-wrap: wrap;
@@ -9292,8 +9628,12 @@ input.story-points-editor.story-points-alert-highlight {
   color: var(--text-primary);
   font-weight: 400;
 }
-.planning-review-table input.issue-person-editor-trigger:hover,
-.planning-review-table button.issue-person-editor-trigger:hover,
+@media (hover: hover) {
+  .planning-review-table input.issue-person-editor-trigger:hover:where(:not(:disabled)):where(:not([aria-disabled=true])),
+  .planning-review-table button.issue-person-editor-trigger:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    color: var(--text-primary);
+  }
+}
 .planning-review-table input.issue-person-editor-trigger:focus-visible,
 .planning-review-table button.issue-person-editor-trigger:focus-visible {
   color: #d48806;
@@ -9316,9 +9656,18 @@ input.story-points-editor.story-points-alert-highlight {
   fill: currentColor;
   stroke: none;
 }
-.planning-review-jira-link:hover,
 .planning-review-jira-link:focus-visible {
   color: #d48806;
+}
+@media (hover: hover) {
+  .planning-review-jira-link:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background-image:
+      radial-gradient(
+        circle closest-side,
+        #f7f5f0 100%,
+        transparent 100%);
+    box-shadow: none;
+  }
 }
 .planning-review-table tr.planning-review-moving td {
   position: relative;
@@ -9360,6 +9709,11 @@ input.story-points-editor.story-points-alert-highlight {
     background: rgba(255, 255, 0, 0.25);
   }
 }
+@media (hover: hover) {
+  .planning-review-boundary-hit:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) .planning-review-boundary-dot {
+    box-shadow: var(--hover-ring);
+  }
+}
 
 /* frontend/src/styles/eng.css */
 
@@ -9391,13 +9745,6 @@ input.story-points-editor.story-points-alert-highlight {
   align-items: center;
   gap: 0.5rem;
   margin-left: 0;
-}
-.planning-button:hover {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  border-color: var(--border);
-  box-shadow: 0 6px 14px rgba(22, 22, 22, 0.12);
-  transform: none;
 }
 .planning-button.active {
   background: var(--text-primary);
@@ -9597,11 +9944,15 @@ input.story-points-editor.story-points-alert-highlight {
   font-size: 0.7rem;
   padding: 0.35rem 0.6rem;
 }
-.scenario-toggle:not(.active):hover {
-  background: #f7f5f0;
-  color: var(--text-primary);
-  box-shadow: none;
-  transform: none;
+@media (hover: hover) {
+  .scenario-toggle:hover:where(:enabled):where(:not([aria-disabled=true])) {
+    color: var(--text-primary);
+    box-shadow: var(--hover-overlay), var(--hover-ring);
+  }
+  .scenario-toggle.active:hover:where(:enabled):where(:not([aria-disabled=true])) {
+    color: var(--bg-primary);
+    box-shadow: var(--hover-ring);
+  }
 }
 .scenario-toggle.active {
   background: var(--text-primary);
@@ -9691,10 +10042,6 @@ input.story-points-editor.story-points-alert-highlight {
   white-space: nowrap;
   transition: color 0.15s ease, border-color 0.15s ease;
 }
-.scenario-summary-toggle:hover {
-  color: var(--text-primary);
-  border-color: var(--text-secondary);
-}
 .scenario-card {
   border: 1px solid var(--border);
   border-radius: 0.6rem;
@@ -9724,8 +10071,10 @@ input.story-points-editor.story-points-alert-highlight {
   cursor: pointer;
   user-select: none;
 }
-.scenario-card-toggle:hover {
-  opacity: 0.7;
+@media (hover: hover) {
+  .scenario-card-toggle:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    text-decoration: underline;
+  }
 }
 .scenario-card-chevron {
   display: inline-block;
@@ -9825,7 +10174,13 @@ input.story-points-editor.story-points-alert-highlight {
   cursor: default;
   opacity: 0.7;
 }
-.scenario-lane-label:hover,
+@media (hover: hover) {
+  .scenario-lane-label:hover:where(:enabled):where(:not([aria-disabled=true])) {
+    background: rgba(59, 130, 246, 0.08);
+    color: #0f172a;
+    box-shadow: var(--hover-ring-inset);
+  }
+}
 .scenario-lane-label:focus-visible {
   background: rgba(59, 130, 246, 0.08);
   color: #0f172a;
@@ -10275,12 +10630,18 @@ input.story-points-editor.story-points-alert-highlight {
   white-space: nowrap;
   min-width: 0;
 }
-.scenario-link:hover {
-  text-decoration: none;
-  color: #0f172a;
-  background: rgba(16, 185, 129, 0.1);
-  box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.18);
-  transform: none;
+@media (hover: hover) {
+  .scenario-link:hover:where(:enabled):where(:not([aria-disabled=true])) {
+    color: #0f172a;
+    box-shadow: var(--hover-overlay), var(--hover-ring-inset);
+  }
+  .scenario-link:hover:where(:enabled):where(:not([aria-disabled=true])):where(:not(:focus-visible)) .scenario-link-key {
+    color: var(--text-primary);
+  }
+  .scenario-focus-exit:hover:where(:enabled):where(:not([aria-disabled=true])) {
+    text-decoration: underline;
+    box-shadow: none;
+  }
 }
 .scenario-link:focus-visible {
   text-decoration: none;
@@ -10479,9 +10840,11 @@ input.story-points-editor.story-points-alert-highlight {
   color: #1d4ed8;
   text-decoration: none;
 }
-.stats-card-link:hover {
-  color: #1e40af;
-  text-decoration: underline;
+@media (hover: hover) {
+  .stats-card-link:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    color: #1e40af;
+    text-decoration: underline;
+  }
 }
 .stats-bars {
   display: grid;
@@ -10983,10 +11346,12 @@ input.story-points-editor.story-points-alert-highlight {
     color 0.16s ease,
     opacity 0.16s ease;
 }
-.excluded-capacity-line-legend-item:hover {
-  background: rgba(31, 111, 235, 0.06);
-  box-shadow: 0 0 0 3px rgba(31, 111, 235, 0.08);
-  color: var(--text-primary);
+@media (hover: hover) {
+  .excluded-capacity-line-legend-item:hover:where(:enabled):where(:not([aria-disabled=true])) {
+    background: rgba(31, 111, 235, 0.06);
+    box-shadow: 0 0 0 3px rgba(31, 111, 235, 0.08);
+    color: var(--text-primary);
+  }
 }
 .excluded-capacity-line-legend-item.is-isolated {
   color: var(--text-primary);
@@ -11008,8 +11373,11 @@ input.story-points-editor.story-points-alert-highlight {
   font: inherit;
   padding: 0;
 }
-.excluded-capacity-line-legend-reset:hover {
-  text-decoration: underline;
+@media (hover: hover) {
+  .excluded-capacity-line-legend-reset:hover:where(:enabled):where(:not([aria-disabled=true])) {
+    text-decoration: underline;
+    box-shadow: none;
+  }
 }
 .excluded-capacity-line-empty {
   color: var(--text-secondary);
@@ -11047,7 +11415,6 @@ input.story-points-editor.story-points-alert-highlight {
 .effort-type-split-legend-item:hover {
   background: transparent;
   box-shadow: none;
-  transform: none;
 }
 .effort-type-split-legend-item.dimmed {
   opacity: 0.45;
@@ -11136,7 +11503,6 @@ input.story-points-editor.story-points-alert-highlight {
 .effort-type-split-segment:hover {
   background: var(--effort-color);
   box-shadow: none;
-  transform: none;
 }
 .effort-type-split-segment:focus-visible {
   outline: 2px solid rgba(31, 111, 235, 0.45);
@@ -11559,9 +11925,10 @@ input.story-points-editor.story-points-alert-highlight {
   text-transform: uppercase;
   flex-shrink: 0;
 }
-.cohort-open-jira-button:hover {
-  border-color: #cbd5e1;
-  background: #f8fafc;
+@media (hover: hover) {
+  .cohort-open-jira-button:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    box-shadow: var(--hover-overlay), var(--hover-ring);
+  }
 }
 .cohort-open-bars {
   display: flex;
@@ -11582,9 +11949,10 @@ input.story-points-editor.story-points-alert-highlight {
   text-transform: uppercase;
   cursor: pointer;
 }
-.cohort-open-more:hover {
-  border-color: #cbd5e1;
-  background: #f8fafc;
+@media (hover: hover) {
+  .cohort-open-more:hover:where(:enabled):where(:not([aria-disabled=true])) {
+    box-shadow: var(--hover-overlay), var(--hover-ring);
+  }
 }
 .cohort-open-row {
   display: flex;
@@ -11608,10 +11976,15 @@ input.story-points-editor.story-points-alert-highlight {
   text-decoration: none;
   min-width: 0;
 }
-.cohort-open-link:hover .cohort-open-key,
-.cohort-open-link:hover .cohort-open-summary {
-  text-decoration: underline;
-  text-underline-offset: 2px;
+@media (hover: hover) {
+  .cohort-open-link:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) .cohort-open-key {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .cohort-open-link:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) .cohort-open-summary {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
 }
 .cohort-open-key {
   font-family: "IBM Plex Mono", monospace;
@@ -11693,6 +12066,12 @@ input.story-points-editor.story-points-alert-highlight {
     justify-self: start;
   }
 }
+@media (hover: hover) {
+  .cohort-clear-row:hover:where(:enabled):where(:not([aria-disabled=true])) {
+    text-decoration: underline;
+    box-shadow: none;
+  }
+}
 
 /* frontend/src/styles/stats/priority.css */
 .priority-radar {
@@ -11752,14 +12131,15 @@ input.story-points-editor.story-points-alert-highlight {
   color: #fff;
   border-color: #111;
 }
-.epic-stat-toggle:hover {
-  background: #fff;
-  transform: none;
-  filter: brightness(0.94);
-  box-shadow: 0 0 0 2px rgba(47, 128, 237, 0.35);
-}
-.epic-stat-toggle.active:hover {
-  background: #111;
+@media (hover: hover) {
+  .epic-stat-toggle:hover:where(:enabled):where(:not([aria-disabled=true])) {
+    background: #fff;
+    filter: brightness(0.94);
+    box-shadow: var(--hover-ring);
+  }
+  .epic-stat-toggle.active:hover:where(:enabled):where(:not([aria-disabled=true])) {
+    background: #111;
+  }
 }
 .epic-stat-toggle svg {
   width: 0.75rem;
@@ -11784,24 +12164,41 @@ input.story-points-editor.story-points-alert-highlight {
   color: var(--bg-primary);
   border-color: var(--text-primary);
 }
-.stats-toggle:hover {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  border-color: var(--border);
-  box-shadow: 0 6px 14px rgba(22, 22, 22, 0.12);
-  transform: none;
+@media (hover: hover) {
+  .stats-toggle:hover:where(:enabled):where(:not([aria-disabled=true])) {
+    color: var(--text-primary);
+    box-shadow: var(--hover-overlay), var(--hover-ring);
+  }
+  .stats-toggle.active:hover:where(:enabled):where(:not([aria-disabled=true])) {
+    color: var(--bg-primary);
+    box-shadow: var(--hover-ring);
+  }
 }
 .stats-card.selectable {
   cursor: pointer;
-  transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease,
-    transform 0.15s ease;
+  position: relative;
+  transition: box-shadow var(--motion-hover);
 }
-.stats-card.selectable:hover {
-  border-color: var(--border);
-  box-shadow: 0 6px 14px rgba(22, 22, 22, 0.12);
-  transform: none;
+.stats-card.selectable.active::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+}
+@media (hover: hover) {
+  .stats-card.selectable:hover:where(:not(:disabled)):where(:not([aria-disabled=true])):where(:not(.active)) {
+    box-shadow: var(--hover-overlay), var(--hover-ring);
+  }
+  .stats-card.selectable:hover:where(:not(:disabled)):where(:not([aria-disabled=true])):where(:not(.active)) h4 {
+    color: var(--text-primary);
+  }
+  .stats-card.selectable:hover:where(:not(:disabled)):where(:not([aria-disabled=true])):where(:not(.active)) .stats-note {
+    color: var(--text-primary);
+  }
+  .stats-card.selectable.active:hover:where(:not(:disabled)):where(:not([aria-disabled=true]))::before {
+    box-shadow: var(--hover-ring);
+  }
 }
 .stats-card.active {
   border-color: #111;
@@ -11917,12 +12314,16 @@ input.story-points-editor.story-points-alert-highlight {
   box-shadow: none;
   transform: none;
 }
-.capacity-header-toggle:hover {
-  background: none;
-  color: inherit;
-  transform: none;
-  box-shadow: none;
-  letter-spacing: normal;
+@media (hover: hover) {
+  .capacity-header-toggle:hover:where(:enabled):where(:not([aria-disabled=true])) {
+    box-shadow: var(--hover-overlay), var(--hover-ring-inset);
+  }
+  .capacity-header-toggle:hover:where(:enabled):where(:not([aria-disabled=true])) .capacity-title {
+    color: var(--text-primary);
+  }
+  .capacity-header-toggle:hover:where(:enabled):where(:not([aria-disabled=true])) .capacity-subtitle {
+    color: var(--text-primary);
+  }
 }
 .capacity-panel.open.capacity-panel-collapsed {
   display: flex;
@@ -12116,6 +12517,42 @@ input.story-points-editor.story-points-alert-highlight {
   opacity: 1;
   color: var(--accent);
 }
+@media (hover: hover) {
+  .postponed-link:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background-image:
+      radial-gradient(
+        circle closest-side,
+        #f7f5f0 100%,
+        transparent 100%);
+  }
+}
+@media (hover: hover) {
+  .todo-link:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background-image:
+      radial-gradient(
+        circle closest-side,
+        #f7f5f0 100%,
+        transparent 100%);
+  }
+}
+@media (hover: hover) {
+  .accepted-link:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background-image:
+      radial-gradient(
+        circle closest-side,
+        #f7f5f0 100%,
+        transparent 100%);
+  }
+}
+@media (hover: hover) {
+  .stats-link:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background-image:
+      radial-gradient(
+        circle closest-side,
+        #f7f5f0 100%,
+        transparent 100%);
+  }
+}
 
 /* frontend/src/styles/stats/project-track.css */
 .project-track-controls {
@@ -12226,9 +12663,13 @@ a.project-track-phase-epic-link {
   text-decoration: none;
   cursor: pointer;
 }
-a.project-track-phase-epic-link:hover,
 a.project-track-phase-epic-link:focus-visible {
   text-decoration: underline;
+}
+@media (hover: hover) {
+  a.project-track-phase-epic-link:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    text-decoration: underline;
+  }
 }
 .stacked-bar-row-total {
   color: var(--text-secondary);
@@ -12267,7 +12708,6 @@ a.project-track-phase-epic-link:focus-visible {
 }
 .stacked-bar-segment:hover {
   background: var(--stacked-bar-color, #94a3b8);
-  transform: none;
   box-shadow: inset 0 0 0 999px rgba(255, 255, 255, 0.08);
 }
 .stacked-bar-segment:focus-visible {
@@ -12945,13 +13385,12 @@ a.project-track-phase-epic-link:focus-visible {
   flex: 0 0 24px;
   border: 1px solid var(--border);
 }
-.team-capacity-action:hover,
-.team-capacity-editor-action:hover {
-  transform: none;
-  border-color: #b7afa2;
-  background: #f6f4ef;
-  color: var(--text-primary);
-  box-shadow: none;
+@media (hover: hover) {
+  .team-capacity-action:is(button, a):hover:where(:not(:disabled)):where(:not([aria-disabled=true])),
+  .team-capacity-editor-action:is(button):hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background-image: none;
+    box-shadow: var(--hover-overlay), var(--hover-ring);
+  }
 }
 .team-capacity-action:focus-visible,
 .team-capacity-editor-action:focus-visible {
@@ -13107,6 +13546,20 @@ a.project-track-phase-epic-link:focus-visible {
   margin-top: 0.3rem;
   margin-bottom: 1.45rem;
 }
+.project-bar-graph .capacity-bar-marker {
+  z-index: auto;
+  transform: none;
+}
+.project-bar-graph .capacity-bar-marker-line.dashed {
+  z-index: 41;
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      var(--text-primary) 0px,
+      var(--text-primary) 3px,
+      transparent 3px,
+      transparent 5px);
+}
 .project-bar-fill {
   position: absolute;
   top: 0;
@@ -13124,27 +13577,27 @@ a.project-track-phase-epic-link:focus-visible {
 }
 .project-bar-fill.product {
   left: 0;
-  background: #3d1ef8;
+  background: color-mix(in srgb, #3d1ef8 20%, white);
   border-radius: 6px 0 0 6px;
 }
 .project-bar-fill.product-adhoc {
   background:
     repeating-linear-gradient(
       135deg,
-      #6b54fb,
-      #6b54fb 5px,
-      #8b78ff 5px,
-      #8b78ff 10px);
+      color-mix(in srgb, #3d1ef8 32%, white),
+      color-mix(in srgb, #3d1ef8 32%, white) 5px,
+      color-mix(in srgb, #3d1ef8 24%, white) 5px,
+      color-mix(in srgb, #3d1ef8 24%, white) 10px);
   z-index: 2;
   pointer-events: auto;
 }
 .project-bar-fill.tech {
   border-radius: 0 6px 6px 0;
-  background: #FE5000;
+  background: color-mix(in srgb, #FE5000 20%, white);
   justify-content: flex-end;
 }
 .project-bar-fill .capacity-bar-fill-label {
-  color: #fff;
+  color: var(--text-primary);
 }
 .project-bar-fill[data-tooltip]:hover::after {
   content: attr(data-tooltip);
@@ -13235,23 +13688,21 @@ a.project-track-phase-epic-link:focus-visible {
   font-size: 0.66rem;
   margin: 0;
   cursor: pointer;
-  transition: all 0.2s;
+  transition:
+    background-color var(--motion-hover),
+    color var(--motion-hover),
+    border-color var(--motion-hover),
+    box-shadow var(--motion-hover);
 }
-.uncheck-button:hover {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  border-color: var(--border);
-  box-shadow: 0 6px 14px rgba(22, 22, 22, 0.12);
-  transform: none;
+@media (hover: hover) {
+  .uncheck-button:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    color: var(--text-primary);
+    box-shadow: var(--hover-overlay), var(--hover-ring);
+  }
 }
 .uncheck-button:disabled {
   opacity: 0.3;
   cursor: not-allowed;
-}
-.uncheck-button:disabled:hover {
-  background: transparent;
-  color: var(--text-secondary);
-  border-color: var(--border);
 }
 
 /* frontend/src/styles/planning/actions.css */
@@ -13271,31 +13722,26 @@ a.project-track-phase-epic-link:focus-visible {
   align-items: center;
   gap: 0.5rem;
 }
-.planning-action-button:hover {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  border-color: var(--border);
-  box-shadow: 0 6px 14px rgba(22, 22, 22, 0.12);
-  transform: none;
+@media (hover: hover) {
+  .planning-action-button:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    color: var(--text-primary);
+    box-shadow: var(--hover-overlay), var(--hover-ring);
+  }
 }
 .planning-action-button.active {
   background: #f6ffed;
   border-color: #b7eb8f;
   color: #389e0d;
 }
-.planning-action-button.active:hover {
-  background: #f6ffed;
-  color: #389e0d;
-  border-color: #b7eb8f;
+@media (hover: hover) {
+  .planning-action-button.active:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    color: #389e0d;
+    box-shadow: var(--hover-ring);
+  }
 }
 .planning-action-button:disabled {
   opacity: 0.3;
   cursor: not-allowed;
-}
-.planning-action-button:disabled:hover {
-  background: transparent;
-  color: var(--text-secondary);
-  border-color: var(--border);
 }
 .planning-action-button svg {
   width: 1rem;
@@ -13332,6 +13778,19 @@ a.project-track-phase-epic-link:focus-visible {
   .planning-actions {
     flex-wrap: wrap;
     white-space: normal;
+  }
+}
+@media (hover: hover) {
+  .planning-icon-button:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background-image: none;
+    box-shadow: var(--hover-overlay), var(--hover-ring);
+  }
+}
+@media (hover: hover) {
+  .planning-icon-button[aria-pressed=true]:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    color: var(--text-secondary);
+    background-image: none;
+    box-shadow: var(--hover-ring);
   }
 }
 
@@ -13406,13 +13865,15 @@ a.project-track-phase-epic-link:focus-visible {
   border: 1.5px solid var(--border);
   border-radius: 2px;
   background: var(--bg-secondary);
-  transition: all 0.2s;
+  transition: background-color var(--motion-hover), border-color var(--motion-hover);
   position: relative;
   box-sizing: border-box;
   flex-shrink: 0;
 }
-.task-checkbox:hover {
-  border-color: var(--text-secondary);
+@media (hover: hover) {
+  .task-checkbox:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    box-shadow: var(--hover-ring);
+  }
 }
 .task-checkbox:checked {
   background: #52c41a;
@@ -13488,9 +13949,14 @@ a.project-track-phase-epic-link:focus-visible {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.epm-project-collapse-all-button:hover {
-  background: var(--epm-project-hover-surface);
-  color: var(--epm-project-accent);
+@media (hover: hover) {
+  .group-gear-button.epm-project-collapse-all-button:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    background-color: var(--epm-project-accent-surface);
+    background-image: none;
+    border-color: var(--epm-project-accent-soft);
+    color: var(--epm-project-accent);
+    box-shadow: var(--hover-overlay), var(--hover-ring);
+  }
 }
 .epm-project-board-header {
   display: block;
@@ -13540,12 +14006,10 @@ a.project-track-phase-epic-link:focus-visible {
     box-shadow 0.14s ease,
     color 0.14s ease;
 }
-.epm-project-board-toggle:hover {
-  background: var(--epm-project-hover-surface);
-  border-color: rgba(7, 71, 166, 0.36);
-  color: var(--text-primary);
-  transform: none;
-  box-shadow: 0 2px 8px rgba(7, 71, 166, 0.12);
+@media (hover: hover) {
+  .epm-project-board-toggle:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    box-shadow: var(--hover-overlay), var(--hover-ring);
+  }
 }
 .epm-project-board-toggle:focus-visible {
   outline: 2px solid var(--epm-project-accent);
@@ -13671,11 +14135,13 @@ a.project-track-phase-epic-link:focus-visible {
   color: inherit;
   text-decoration: none;
 }
-.epm-project-board-name-link:hover {
-  color: var(--epm-project-accent);
-  text-decoration: underline;
-  text-decoration-thickness: 1px;
-  text-underline-offset: 3px;
+@media (hover: hover) {
+  .epm-project-board-name-link:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    color: var(--epm-project-accent);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+  }
 }
 .epm-project-board-label-pill {
   font-family: "IBM Plex Mono", monospace;
@@ -13915,12 +14381,19 @@ a.project-track-phase-epic-link:focus-visible {
   text-decoration: none;
   border-radius: 4px;
 }
-.epm-project-board-update-meta-link:hover,
 .epm-project-board-update-meta-link:focus-visible {
   color: var(--epm-project-accent);
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 2px;
+}
+@media (hover: hover) {
+  .epm-project-board-update-meta-link:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    color: var(--epm-project-accent);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+  }
 }
 .epm-project-board-update-date,
 .epm-project-board-update-author {
@@ -13942,11 +14415,15 @@ a.project-track-phase-epic-link:focus-visible {
   margin-right: 0.35rem;
   color: var(--text-secondary);
 }
-.epm-project-board-update-meta-link:hover .epm-project-board-update-date,
-.epm-project-board-update-meta-link:hover .epm-project-board-update-author,
 .epm-project-board-update-meta-link:focus-visible .epm-project-board-update-date,
 .epm-project-board-update-meta-link:focus-visible .epm-project-board-update-author {
   color: var(--epm-project-accent);
+}
+@media (hover: hover) {
+  .epm-project-board-update-meta-link:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) .epm-project-board-update-date,
+  .epm-project-board-update-meta-link:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) .epm-project-board-update-author {
+    color: var(--epm-project-accent);
+  }
 }
 .epm-project-board-update.is-stale .epm-project-board-update-date {
   color: #b91c1c;
@@ -14265,9 +14742,11 @@ a.project-track-phase-epic-link:focus-visible {
   color: var(--epm-project-accent);
   text-decoration: none;
 }
-.epm-duplicates-issues a:hover {
-  text-decoration: underline;
-  text-underline-offset: 2px;
+@media (hover: hover) {
+  .epm-duplicates-issues a:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
 }
 
 /* frontend/src/styles/epm.css */

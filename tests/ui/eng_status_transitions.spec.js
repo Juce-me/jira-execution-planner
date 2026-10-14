@@ -1177,13 +1177,17 @@ test('a disabled status option keeps readable colors under the pointer', async (
     const option = menu(page, 'PROD-1').getByRole('menuitem', { name: 'Accepted' });
     await option.evaluate((node) => { node.disabled = true; });
     await expect(option).toBeDisabled();
-    await option.hover({ force: true });
+    await page.mouse.move(0, 0);
+    const resting = await option.evaluate(node => { const style = getComputedStyle(node); return { background: style.backgroundColor, transform: style.transform, shadow: style.boxShadow }; });
+    const box = await option.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await expect.poll(() => option.evaluate(node => node.matches(':hover'))).toBe(true);
     await page.waitForTimeout(400);
     const style = await option.evaluate((node) => {
         const computed = getComputedStyle(node);
         return { background: computed.backgroundColor, transform: computed.transform, shadow: computed.boxShadow };
     });
-    expect(style.background).not.toBe('rgb(47, 47, 47)');
+    expect(style).toEqual(resting);
     expect(style.transform).toBe('none');
 });
 

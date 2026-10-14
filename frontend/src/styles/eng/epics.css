@@ -47,7 +47,6 @@
             margin: 0;
             padding: 0;
             letter-spacing: 0;
-            transform: none;
             box-shadow: none;
             opacity: 0;
             pointer-events: none;
@@ -58,11 +57,11 @@
             transition: opacity 0.12s ease;
         }
 
-        .epic-header button.epic-refresh-button:hover {
-            background: #f7f5f0;
-            color: var(--text-primary);
-            transform: none;
-            box-shadow: none;
+        @media (hover: hover) {
+            .epic-header button.epic-refresh-button:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                background-image: none;
+                box-shadow: var(--hover-overlay), var(--hover-ring);
+            }
         }
 
         .epic-header:hover button.epic-refresh-button,
@@ -119,8 +118,10 @@
             cursor: pointer;
         }
 
-        .clickable-number:hover {
-            text-decoration: underline;
+        @media (hover: hover) {
+            .clickable-number:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                text-decoration: underline;
+            }
         }
 
         .back-to-top {
@@ -138,10 +139,10 @@
             transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
         }
 
-        .back-to-top:hover {
-            background: #2f2f2f;
-            color: #fff;
-            border-color: #2f2f2f;
+        @media (hover: hover) {
+            .back-to-top:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                box-shadow: var(--hover-overlay), var(--hover-ring);
+            }
         }
 
         .epic-title {
@@ -171,10 +172,12 @@
             text-decoration: none;
         }
 
-        .epic-link:hover {
-            text-decoration: underline;
-            text-decoration-thickness: 1px;
-            text-underline-offset: 3px;
+        @media (hover: hover) {
+            .epic-link:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                text-decoration: underline;
+                text-decoration-thickness: 1px;
+                text-underline-offset: 3px;
+            }
         }
 
         .epic-name {
@@ -333,9 +336,11 @@
             white-space: nowrap;
         }
 
-        .initiative-label-key:hover {
-            text-decoration: underline;
-            text-underline-offset: 2px;
+        @media (hover: hover) {
+            .initiative-label-key:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                text-decoration: underline;
+                text-underline-offset: 2px;
+            }
         }
 
         .initiative-label-only .initiative-label-key {
@@ -488,11 +493,16 @@
             }
         }
 
-        button.epic-track-indicator:hover,
         button.epic-track-indicator:focus-visible {
-            transform: none;
             background: var(--bg-primary);
             box-shadow: 0 0 0 2px rgba(47, 128, 237, 0.22);
+        }
+
+        @media (hover: hover) {
+            button.epic-track-indicator:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                background-image: radial-gradient(circle closest-side, var(--bg-primary) 100%, transparent 100%);
+                box-shadow: none;
+            }
         }
 
         .epic-refresh-status {

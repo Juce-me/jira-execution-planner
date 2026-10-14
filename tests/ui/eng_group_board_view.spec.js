@@ -5390,6 +5390,8 @@ test('All work preserves bounded partial cards after a hard limit and retries on
     await expect(card).toContainText('Loading work items');
     await expect(card).not.toContainText('0 of 0');
     await expect(card.locator('.erow2')).toHaveAttribute('aria-busy', 'true');
+    await expect(card.locator('.erow2 > .status-pill')).toHaveCount(1);
+    await expect(card.locator('.erow2 > .estories')).toContainText('Loading work items');
     expect(await card.locator('.board-loading-bar').first().evaluate(el => getComputedStyle(el).animationName)).toBe('board-loading-shimmer');
     await page.screenshot({ path: path.join(screenshotDir, 'progressive-epic-pending.png'), animations: 'disabled' });
     await card.locator('.ecard-open').click();

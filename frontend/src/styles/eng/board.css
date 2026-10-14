@@ -567,6 +567,27 @@
             padding: 0;
         }
 
+        /* Paint the shared hover above the fill, entirely inside the clipped control. */
+        .eng-board .col-strip::after {
+            content: '';
+            color: var(--text-primary);
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            pointer-events: none;
+            z-index: 2;
+        }
+
+        @media (hover: hover) {
+            .eng-board .col:not(.is-breach) .col-strip:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                box-shadow: none;
+            }
+
+            .eng-board .col-strip:hover:where(:not(:disabled)):where(:not([aria-disabled="true"]))::after {
+                box-shadow: var(--hover-overlay), var(--hover-ring-inset);
+            }
+        }
+
         .eng-board .col-strip .fill {
             position: absolute;
             left: 0;

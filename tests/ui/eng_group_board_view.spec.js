@@ -5996,3 +5996,49 @@ for (const scope of ['Component', 'All work']) test(`simulated persisted ${scope
     expect(await page.evaluate(() => localStorage.getItem('jira_dashboard_ui_prefs_v1'))).toBe(preferences);
     await testInfo.attach('strict-persisted-return', { body: JSON.stringify({ scope, catalogReads: 1, heldBoardReads: 0, acceptedBoardReads: 1, simulated: true, realBFCacheObserved: false }), contentType: 'application/json' });
 });
+
+
+for (const width of [1280, 820]) {
+    for (const breached of [true, false]) {
+        const id = 'col-2b3c4d5e';
+        test(`folded control hover paints all edges inside the control at ${width}, breach ${breached}`, async ({ page }) => {
+            const board = { columns: BOARD_COLUMNS.map(column => column.id === id ? { ...column, min: breached ? 4 : null } : column) };
+            await openBoard(page, { width, reducedMotion: true, board });
+            const control = col(page, id).locator('.col-strip');
+            await control.scrollIntoViewIfNeeded();
+            await settle(page);
+            const before = await control.boundingBox();
+            const title = await control.getAttribute('title');
+            const restingShadow = await control.evaluate(node => getComputedStyle(node).boxShadow);
+            await control.hover();
+            await settle(page);
+            await page.screenshot({ path: `${screenshotDir}/${process.env.JEP_HOVER_PHASE || 'after'}-control-hover-${width}-${breached}.png`, animations: 'disabled' });
+            const hover = await control.evaluate(node => {
+                const style = getComputedStyle(node);
+                const ring = getComputedStyle(node, '::after');
+                return {
+                    shadow: style.boxShadow,
+                    ring: ring.boxShadow,
+                    radius: ring.borderRadius,
+                    controlRadius: style.borderRadius,
+                    top: ring.top, right: ring.right, bottom: ring.bottom, left: ring.left,
+                    pointerEvents: ring.pointerEvents,
+                    layer: Number(ring.zIndex),
+                    labelLayer: Number(getComputedStyle(node.querySelector('.cap')).zIndex),
+                };
+            });
+            expect(hover.shadow).toBe(breached ? restingShadow : 'none');
+            expect(hover.ring).toMatch(/999px inset/);
+            expect(hover.ring).toContain('rgb(47, 128, 237) 0px 0px 0px 1px inset');
+            expect(hover.ring).toContain('rgba(47, 128, 237, 0.25) 0px 0px 0px 3px inset');
+            expect([hover.top, hover.right, hover.bottom, hover.left]).toEqual(['0px', '0px', '0px', '0px']);
+            expect(hover.radius).toBe(hover.controlRadius);
+            expect(hover.pointerEvents).toBe('none');
+            expect(hover.layer).toBeGreaterThan(hover.labelLayer);
+            expect(await control.boundingBox()).toEqual(before);
+            await expect(control).toHaveAttribute('title', title);
+            await control.click();
+            await expect(page.locator('.col.is-focused')).toHaveAttribute('data-column-id', id);
+        });
+    }
+}

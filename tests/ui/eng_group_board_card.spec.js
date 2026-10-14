@@ -504,7 +504,7 @@ test('every card starts its title, progress row and people row at one x, with or
     });
 });
 
-test('status is a compact passive chip right after the progress bar, never on the title row (issue #271)', async ({ page }) => {
+test('status is a compact passive chip after the stories count, never on the title row (issue #271)', async ({ page }) => {
     await openBoard(page, { firstEpicStatus: '' });
     const column = col(page, 'col-1a2b3c4d');
     const card = column.locator('.ecard[data-epic-key="PLAT-2"]');
@@ -515,7 +515,7 @@ test('status is a compact passive chip right after the progress bar, never on th
     // Passive: a span, never a button, so the card cannot write a status from here.
     expect(await chip.evaluate((node) => node.tagName)).toBe('SPAN');
     expect(await card.locator('.erow2').evaluate((row) => [...row.children].map((child) => child.classList[0])))
-        .toEqual(['story-subtasks-progress', 'status-pill', 'estories', 'push']);
+        .toEqual(['story-subtasks-progress', 'estories', 'status-pill', 'push']);
     // Compact: the app's epic-status-pill scale (0.58rem), smaller than the card title.
     const sizes = await card.evaluate((node) => ({
         chip: parseFloat(getComputedStyle(node.querySelector('.erow2 > .status-pill')).fontSize),

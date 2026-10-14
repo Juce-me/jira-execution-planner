@@ -740,26 +740,6 @@ def get_config():
     return jsonify(payload)
 
 
-@bp.route('/api/version', methods=['GET'])
-def get_version():
-    """Return local/remote version info for update checks."""
-    if not UPDATE_CHECK_ENABLED:
-        return jsonify({'enabled': False})
-
-    now = time.time()
-    with _cache_lock:
-        cached = UPDATE_CHECK_CACHE.get('data')
-        cached_ts = UPDATE_CHECK_CACHE.get('ts', 0)
-    if cached and (now - cached_ts) < UPDATE_CHECK_TTL_SECONDS:
-        return jsonify(cached)
-
-    payload = build_update_check_payload()
-    with _cache_lock:
-        UPDATE_CHECK_CACHE['data'] = payload
-        UPDATE_CHECK_CACHE['ts'] = now
-    return jsonify(payload)
-
-
 @bp.route('/api/groups-config', methods=['GET'])
 def get_groups_config():
     """Return the saved team groups configuration."""

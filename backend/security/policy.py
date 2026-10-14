@@ -104,7 +104,6 @@ ENDPOINT_POLICIES = (
     EndpointPolicy("jira-team-capacity-write", "/api/capacity/<issue_key>", frozenset({"PATCH"}), "user_write", "dynamic"),
     EndpointPolicy("jira-issue-status-catalog", "/api/issues/statuses/catalog", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("settings-config-read", "/api/config", PUBLIC_METHODS, "authenticated_read"),
-    EndpointPolicy("settings-version", "/api/version", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("settings-groups-read", "/api/groups-config", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("settings-groups-write", "/api/groups-config", frozenset({"POST"}), "user_write"),
     EndpointPolicy("settings-group-preferences-write", "/api/groups-preferences", frozenset({"POST"}), "user_write"),

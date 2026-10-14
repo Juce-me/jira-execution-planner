@@ -134,9 +134,11 @@ class OAuthSettingsRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         self.assertTrue(response.get_json()["userCanEditSettings"])
 
+    def test_obsolete_version_route_is_removed(self):
+        self.assertNotIn('/api/version', {rule.rule for rule in jira_server.app.url_map.iter_rules()})
+
     def test_local_config_get_routes_are_oauth_ready(self):
         routes = [
-            "/api/version",
             "/api/groups-config",
             "/api/team-catalog",
             "/api/projects/selected",
@@ -151,7 +153,6 @@ class OAuthSettingsRouteTests(unittest.TestCase):
             "/api/epm/config",
         ]
         patches = [
-            patch.object(jira_server, "UPDATE_CHECK_ENABLED", False),
             patch.object(jira_server, "load_dashboard_config", return_value={}),
             patch.object(jira_server, "load_team_catalog", return_value={"catalog": {}, "meta": {}}),
             patch.object(jira_server, "migrate_team_catalog_from_config"),

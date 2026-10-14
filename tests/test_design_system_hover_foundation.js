@@ -147,7 +147,6 @@ test('shared controls consume their hover vocabulary without movement or fill re
         ['eng/controls.css', '.team-dropdown-toggle:hover', 'var(--hover-overlay), var(--hover-ring)'],
         ['eng/controls.css', '.team-dropdown-toggle.active-filter:hover', 'var(--hover-ring)'],
         ['eng/export.css', '.team-dropdown-toggle.active-filter.applied-filter:hover', 'var(--hover-ring)'],
-        ['shared/header.css', '.update-badge:hover', 'var(--hover-overlay), var(--hover-ring)'],
     ]) {
         const rules = parseRules(read(`frontend/src/styles/${file}`), file);
         const matches = rules.filter(rule => rule.selector === selector + gates);

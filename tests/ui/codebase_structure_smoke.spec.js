@@ -1269,7 +1269,7 @@ test('ENG Catch Up, Planning, and Scenario render with scoped startup and sticky
 
     const startupCounts = summarizeCalls(calls);
     expect(startupCounts['GET /api/config']).toBe(1);
-    expect(startupCounts['GET /api/version']).toBe(1);
+    expect(startupCounts['GET /api/version'] || 0).toBe(0);
     expect(startupCounts['GET /api/groups-config']).toBe(1);
     expect(startupCounts['GET /api/sprints']).toBe(1);
     expect(startupCounts['GET /api/issue-types'] || 0).toBe(0);
@@ -4149,14 +4149,6 @@ const coldModeRequestContracts = {
         {
             "body": null,
             "csrf": "absent",
-            "method": "GET",
-            "params": {},
-            "pathname": "/api/version",
-            "requestedWith": null
-        },
-        {
-            "body": null,
-            "csrf": "absent",
             "method": "POST",
             "params": {},
             "pathname": "/api/auth/refresh",
@@ -4297,14 +4289,6 @@ const coldModeRequestContracts = {
         {
             "body": null,
             "csrf": "absent",
-            "method": "GET",
-            "params": {},
-            "pathname": "/api/version",
-            "requestedWith": null
-        },
-        {
-            "body": null,
-            "csrf": "absent",
             "method": "POST",
             "params": {},
             "pathname": "/api/auth/refresh",
@@ -4427,14 +4411,6 @@ const coldModeRequestContracts = {
             "method": "GET",
             "params": {},
             "pathname": "/api/stats/priority-weights-config",
-            "requestedWith": null
-        },
-        {
-            "body": null,
-            "csrf": "absent",
-            "method": "GET",
-            "params": {},
-            "pathname": "/api/version",
             "requestedWith": null
         },
         {
@@ -4567,14 +4543,6 @@ const coldModeRequestContracts = {
         {
             "body": null,
             "csrf": "absent",
-            "method": "GET",
-            "params": {},
-            "pathname": "/api/version",
-            "requestedWith": null
-        },
-        {
-            "body": null,
-            "csrf": "absent",
             "method": "POST",
             "params": {},
             "pathname": "/api/auth/refresh",
@@ -4697,14 +4665,6 @@ const coldModeRequestContracts = {
             "method": "GET",
             "params": {},
             "pathname": "/api/stats/priority-weights-config",
-            "requestedWith": null
-        },
-        {
-            "body": null,
-            "csrf": "absent",
-            "method": "GET",
-            "params": {},
-            "pathname": "/api/version",
             "requestedWith": null
         },
         {
@@ -4878,14 +4838,6 @@ const coldModeRequestContracts = {
         {
             "body": null,
             "csrf": "absent",
-            "method": "GET",
-            "params": {},
-            "pathname": "/api/version",
-            "requestedWith": null
-        },
-        {
-            "body": null,
-            "csrf": "absent",
             "method": "POST",
             "params": {},
             "pathname": "/api/auth/refresh",
@@ -4999,14 +4951,6 @@ const coldModeRequestContracts = {
         {
             "body": null,
             "csrf": "absent",
-            "method": "GET",
-            "params": {},
-            "pathname": "/api/version",
-            "requestedWith": null
-        },
-        {
-            "body": null,
-            "csrf": "absent",
             "method": "POST",
             "params": {},
             "pathname": "/api/auth/refresh",
@@ -5083,14 +5027,6 @@ const coldModeRequestContracts = {
         {
             "body": null,
             "csrf": "absent",
-            "method": "GET",
-            "params": {},
-            "pathname": "/api/version",
-            "requestedWith": null
-        },
-        {
-            "body": null,
-            "csrf": "absent",
             "method": "POST",
             "params": {},
             "pathname": "/api/auth/refresh",
@@ -5162,14 +5098,6 @@ const coldModeRequestContracts = {
             "method": "GET",
             "params": {},
             "pathname": "/api/stats/priority-weights-config",
-            "requestedWith": null
-        },
-        {
-            "body": null,
-            "csrf": "absent",
-            "method": "GET",
-            "params": {},
-            "pathname": "/api/version",
             "requestedWith": null
         },
         {

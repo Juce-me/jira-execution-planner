@@ -11,7 +11,6 @@ async function openSurface(page, mode, {canEdit=true,canSave=true,reviewLayouts=
     const ctx = await mockDashboard(page);
     ctx.respond('/api/issues/priorities/options',({json})=>json({priorities:[{id:'1',name:'Highest',rank:10},{id:'2',name:'Low',rank:50}],source:'jira'}));
     ctx.respond('/api/issues/project-track/options',({json})=>json({options:[{value:'Flexible'},{value:'Committed'}],source:'jira'}));
-    ctx.respond('/api/version',({json})=>json({enabled:true,updateAvailable:true,remote:{hash:'synthetic-new-revision'}}));
     if(process.env.JEP_HOVER_CSS_PATH) await page.route('**/frontend/dist/dashboard.css',route=>route.fulfill({contentType:'text/css',body:fs.readFileSync(process.env.JEP_HOVER_CSS_PATH,'utf8')}));
     if(!canEdit) ctx.respond('/api/config',({json})=>json({jiraUrl:'https://jira.example',capacityProject:'',authMode:'atlassian_oauth',projectsConfigured:true,userCanEditSettings:false,environmentConfigExists:true}));
     ctx.respond('/api/groups-config', ({ json }) => json({ ...groupsConfigPayload, groups: groupsConfigPayload.groups.map(group => ({ ...group, excludedCapacityEpics:canEdit?(excludedCapacityEpics||group.excludedCapacityEpics):['EPIC-3'], board: { columns: [{ id:'todo', name:'To do', colour:'#597ef7', star:true, statuses:['To Do','In Progress'], min:null, max:null }, { id:'done', name:'Done', colour:'#52c41a', star:false, statuses:['Done'], min:null, max:null }] } })) }));
@@ -29,7 +28,6 @@ for (const mode of ['catch-up','planning-list','planning-table','board']) {
         await openSurface(page,mode);
         testInfo.setTimeout(60000);
         const dir=evidenceDir(testInfo);
-        await hoverEvidence(page,page.getByRole('button',{name:'New version available',exact:true}),testInfo,`${mode}-update-notice`,{foundation:true});
         await hoverEvidence(page,page.locator('.header-icon-button').first(),testInfo,`${mode}-transparent-header`,{foundation:true});
         await hoverEvidence(page,page.locator('.eng-mode-control .active').first(),testInfo,`${mode}-selected-mode`,{pill:true,selected:true,ringPseudo:true});
         await page.screenshot({path:path.join(dir,`${mode}-surface.png`),fullPage:true,animations:'disabled'});

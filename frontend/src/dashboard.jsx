@@ -99,7 +99,6 @@ import { updateCapacity } from './api/capacityApi.js';
 import { resolveBackendUrl } from './api/backendUrl.js';
 import {
     fetchBootstrapConfig,
-    fetchVersionInfo,
     completeOnboardingModule as requestCompleteOnboardingModule,
     resetOnboardingModules as requestResetOnboardingModules,
 } from './api/configApi.js';
@@ -965,9 +964,6 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
             const alertStabilizeFrameRef = useRef(null);
             const alertHighlightRef = useRef(null);
             const alertHighlightTimeoutRef = useRef(null);
-            const [updateInfo, setUpdateInfo] = useState(null);
-            const [showUpdateModal, setShowUpdateModal] = useState(false);
-            const [updateDismissedHash, setUpdateDismissedHash] = useState(savedPrefsRef.current.updateDismissedHash || '');
             const [showBackToTop, setShowBackToTop] = useState(false);
             const [stickyEpicFocusKey, setStickyEpicFocusKey] = useState(null);
             const epicRefMap = useRef(new Map());
@@ -1705,24 +1701,6 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
             }, [groupsLoading, groupPreferences.onboardingRequired, adminSettingsGate.status]);
 
             useEffect(() => {
-                let cancelled = false;
-                const fetchVersion = async () => {
-                    try {
-                        const data = await fetchVersionInfo(BACKEND_URL);
-                        if (!cancelled) {
-                            setUpdateInfo(data);
-                        }
-                    } catch (err) {
-                        // ignore version check failures
-                    }
-                };
-                fetchVersion();
-                return () => {
-                    cancelled = true;
-                };
-            }, []);
-
-            useEffect(() => {
                 return () => {
                     abortSprintFetches();
                 };
@@ -2296,24 +2274,6 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 || groupVisibilitySaving
                 || onboarding.pending
             );
-
-
-
-            const updateNoticeVisible = React.useMemo(() => {
-                if (!updateInfo || updateInfo.enabled === false) return false;
-                if (!updateInfo.updateAvailable) return false;
-                const remoteHash = updateInfo?.remote?.hash;
-                if (!remoteHash) return false;
-                return remoteHash !== updateDismissedHash;
-            }, [updateInfo, updateDismissedHash]);
-            const dismissUpdateNotice = () => {
-                const remoteHash = updateInfo?.remote?.hash;
-                if (remoteHash) {
-                    setUpdateDismissedHash(remoteHash);
-                }
-                setShowUpdateModal(false);
-            };
-
 
 
 
@@ -3265,8 +3225,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                     showEmptyEpicAlert,
                     showDoneEpicAlert,
                     showAlertsPanel,
-                    groupVisibilityPreferences: { visibleGroupIds: groupPreferences.visibleGroupIds || [], activeGroupId: groupPreferences.activeGroupId || activeGroupId },
-                    updateDismissedHash
+                    groupVisibilityPreferences: { visibleGroupIds: groupPreferences.visibleGroupIds || [], activeGroupId: groupPreferences.activeGroupId || activeGroupId }
                 });
             }, [
                 selectedView,
@@ -3318,8 +3277,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 showEmptyEpicAlert,
                 showDoneEpicAlert,
                 showAlertsPanel,
-                groupPreferences.visibleGroupIds, groupPreferences.activeGroupId,
-                updateDismissedHash
+                groupPreferences.visibleGroupIds, groupPreferences.activeGroupId
             ]);
 
             const loadConfig = async ({ preserveEpmDraft = false, replaceWorkspaceDrafts = false } = {}) => {
@@ -6198,17 +6156,6 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                                 <img src="epm-burst.svg" alt="" className="subtitle-logo" aria-hidden="true" />
                                 Jira Delivery Planner
                                 <span className="subtitle-secondary"> · Product &amp; Tech Projects</span>
-                                {updateNoticeVisible && (
-                                    <button
-                                        type="button"
-                                        className={`update-badge ${searchPanelActive ? 'compact' : ''}`}
-                                        onClick={() => setShowUpdateModal(true)}
-                                        aria-label="New version available"
-                                        title="A new version is available"
-                                    >
-                                        {searchPanelActive ? 'Update' : 'New version available'}
-                                    </button>
-                                )}
                             </span>
                             <div className="header-actions">
                                 <div className="header-actions-row">
@@ -7534,33 +7481,6 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                         onModuleRequestConsumed={onboarding.clearModuleRequest}
                         onModuleInterrupted={onboarding.interrupt}
                     />
-                    {showUpdateModal && updateNoticeVisible && (
-                        <div
-                            className="update-modal-backdrop"
-                            role="dialog"
-                            aria-modal="true"
-                            onClick={() => setShowUpdateModal(false)}
-                        >
-                            <div className="update-modal" onClick={(event) => event.stopPropagation()}>
-                                <div className="update-modal-title">New Version Available</div>
-                                <div className="update-modal-body">
-                                    <div>Your dashboard is behind the latest release.</div>
-                                    <div>If you installed from git:</div>
-                                    <pre>{`git checkout main\n\ngit pull\n\npython3 jira_server.py`}</pre>
-                                    <div>Or download the latest release zip and replace this folder.</div>
-                                    <div>Then refresh this page.</div>
-                                </div>
-                                <div className="update-modal-actions">
-                                    <button className="secondary compact" onClick={() => setShowUpdateModal(false)} type="button">
-                                        Close
-                                    </button>
-                                    <button className="compact" onClick={dismissUpdateNotice} type="button">
-                                        Dismiss
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
                 </div>
                 </StatusColourProvider>
             );

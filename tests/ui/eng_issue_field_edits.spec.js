@@ -32,7 +32,7 @@ test.beforeAll(() => {
                 const people = [
                     { accountId: 'self', displayName: 'Current Person', eligibility: 'eligible' },
                     { accountId: 'inactive', displayName: 'Inactive Person', eligibility: 'ineligible', reason: 'inactive' },
-                    { accountId: 'unverified', displayName: 'A Very Long Unverified Delivery Owner Name That Must Stay Inside The Popover', emailAddress: 'visible@example.test', eligibility: 'unverified' },
+                    { accountId: 'unverified', displayName: 'A Very Long Unverified Delivery Owner Person Name That Must Stay Inside The Popover', emailAddress: 'visible@example.test', eligibility: 'unverified' },
                     { accountId: 'eligible', displayName: 'Eligible Person', eligibility: 'eligible' },
                 ];
 
@@ -44,6 +44,8 @@ test.beforeAll(() => {
                     const [pointSubmits, setPointSubmits] = React.useState([]);
                     const [points, setPoints] = React.useState(0);
                     const [personEditable, setPersonEditable] = React.useState(true);
+                    const [personLoading, setPersonLoading] = React.useState(false);
+                    const [personSuggestions, setPersonSuggestions] = React.useState(null);
                     const [pointsEditable, setPointsEditable] = React.useState(true);
                     const [personSubmitting, setPersonSubmitting] = React.useState(false);
                     const [pointsSubmitting, setPointsSubmitting] = React.useState(false);
@@ -62,7 +64,7 @@ test.beforeAll(() => {
                         me: people[0],
                         mappingRevision: 'synthetic-revision',
                     };
-                    window.__issueEditorHarness = { teamSubmits, setTeamEditable, personSubmits, pointSubmits, recoveryCalls, setPersonOpen, setPointsOpen, setPoints, setPersonEditable, setPointsEditable, setPersonSubmitting, setPointsSubmitting, setPersonError, setPointsError, setPersonRecovery, setPointsRecovery, setConfigurationChanged };
+                    window.__issueEditorHarness = { teamSubmits, setTeamEditable, personSubmits, pointSubmits, recoveryCalls, setPersonOpen, setPointsOpen, setPoints, setPersonEditable, setPersonLoading, setPersonSuggestions, setPointsEditable, setPersonSubmitting, setPointsSubmitting, setPersonError, setPointsError, setPersonRecovery, setPointsRecovery, setConfigurationChanged };
                     return <main style={{ minHeight: '1200px', padding: '24px' }}>
                         <button id="outside-target" type="button">Outside target</button>
                         <div style={{ marginTop: '24px', width: '240px' }}>
@@ -88,7 +90,8 @@ test.beforeAll(() => {
                                 currentValue={{ accountId: 'owner', displayName: 'Existing Owner' }}
                                 isOpen={personOpen}
                                 metadata={metadata}
-                                suggestions={query.trim() === 'zzz' ? [] : (query.trim().length >= 3 ? people : [people[0]])}
+                                suggestions={personSuggestions || (query.trim() === 'zzz' ? [] : (query.trim().length >= 3 ? people : [people[0]]))}
+                                loading={personLoading}
                                 query={query}
                                 onOpen={() => setPersonOpen(true)}
                                 onClose={() => setPersonOpen(false)}
@@ -192,6 +195,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
         await expect(page.locator('.issue-person-editor-menu .component-search-input')).toHaveCount(0);
         await expect(input).toBeFocused();
         await expect(input).toBeEditable();
+        await expect.poll(() => input.evaluate(element => [element.selectionStart, element.selectionEnd])).toEqual([0, 'Existing Owner'.length]);
         await expect(input).toHaveAttribute('aria-expanded', 'true');
         await expect(page.getByRole('option', { name: /Current Person/ })).toBeVisible();
         await expect(page.getByText(/Type at least 3 characters/)).toBeVisible();
@@ -201,7 +205,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
         await input.fill('zzz');
         await expect(page.getByText(/No people found/)).toBeVisible();
 
-        await input.fill('ali');
+        await input.fill('Person');
         await expect(page.getByRole('option', { name: /Inactive Person/ })).toBeDisabled();
         await input.press('ArrowDown');
         const unverifiedId = await page.getByRole('option', { name: /Long Unverified/ }).getAttribute('id');
@@ -225,6 +229,119 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 
         })).toBe(true);
     });
 }
+
+test('typing selects a matching person instead of Me and Enter uses that suggestion', async ({ page }) => {
+    await mountHarness(page, { width: 1440, height: 900 });
+    await page.getByRole('combobox', { name: 'Assignee: Existing Owner' }).click();
+    const input = page.getByRole('combobox', { name: 'Search Assignee' });
+    await input.pressSequentially('Eligible');
+    await expect(input).toHaveValue('Eligible');
+    await page.screenshot({ path: path.join(screenshotDir, 'person-query-match.png') });
+    const match = page.getByRole('option', { name: 'Eligible Person', exact: true });
+    await expect(match).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('option', { name: /Current Person/ })).toHaveCount(0);
+    await input.press('Enter');
+    await expect.poll(() => page.evaluate(() => window.__issueEditorHarness.personSubmits)).toEqual(['eligible']);
+});
+
+test('email matching, no-match typing and clearing preserve safe keyboard selection', async ({ page }) => {
+    await mountHarness(page, { width: 1440, height: 900 });
+    await page.getByRole('combobox', { name: 'Assignee: Existing Owner' }).click();
+    const input = page.getByRole('combobox', { name: 'Search Assignee' });
+    await input.fill('VISIBLE@');
+    await expect(page.getByRole('option', { name: /Long Unverified/ })).toHaveAttribute('aria-selected', 'true');
+    await input.fill('zzz');
+    await expect(input).not.toHaveAttribute('aria-activedescendant');
+    await expect(page.getByRole('option')).toHaveCount(0);
+    await page.screenshot({ path: path.join(screenshotDir, 'person-no-results.png') });
+    await input.press('ArrowDown');
+    await input.press('ArrowUp');
+    await expect(input).not.toHaveAttribute('aria-activedescendant');
+    await input.press('Enter');
+    expect(await page.evaluate(() => window.__issueEditorHarness.personSubmits)).toEqual([]);
+    await input.fill('');
+    await expect(page.getByRole('option', { name: /Current Person/ })).toHaveAttribute('aria-selected', 'true');
+});
+
+for (const navigation of ['pointer', 'keyboard']) {
+    test(`explicit ${navigation} suggestion survives refreshed results until typing resumes`, async ({ page }) => {
+        await mountHarness(page, { width: 1440, height: 900 });
+        const people = [
+            { accountId: 'one', displayName: 'New One', eligibility: 'eligible' },
+            { accountId: 'two', displayName: 'New Two', eligibility: 'eligible' },
+        ];
+        await page.evaluate(values => window.__issueEditorHarness.setPersonSuggestions(values), people);
+        await page.getByRole('combobox', { name: 'Assignee: Existing Owner' }).click();
+        const input = page.getByRole('combobox', { name: 'Search Assignee' });
+        await input.fill('New');
+        await expect(page.getByRole('option', { name: 'New One' })).toHaveAttribute('aria-selected', 'true');
+        const chosen = page.getByRole('option', { name: 'New Two' });
+        if (navigation === 'pointer') {
+            await chosen.hover();
+            await page.mouse.move(20, 20);
+        } else {
+            await input.press('ArrowDown');
+        }
+        await expect(chosen).toHaveAttribute('aria-selected', 'true');
+        await page.evaluate(values => window.__issueEditorHarness.setPersonSuggestions(values), [
+            { accountId: 'three', displayName: 'New Three', eligibility: 'eligible' }, people[1], people[0],
+        ]);
+        await expect(chosen).toHaveAttribute('aria-selected', 'true');
+        expect(await page.evaluate(() => window.__issueEditorHarness.personSubmits)).toEqual([]);
+        await page.screenshot({ path: path.join(screenshotDir, `person-preserved-${navigation}.png`) });
+        // Even continuing with whitespace resets the explicit choice before the next response.
+        await input.press('End');
+        await input.pressSequentially(' ');
+        await expect(page.getByRole('option', { name: 'New Three' })).toHaveAttribute('aria-selected', 'true');
+        await input.fill('New Two');
+        await expect(chosen).toHaveAttribute('aria-selected', 'true');
+        await input.press('Enter');
+        await expect.poll(() => page.evaluate(() => window.__issueEditorHarness.personSubmits)).toEqual(['two']);
+    });
+}
+
+test('Enter commits the explicit suggestion after results reorder', async ({ page }) => {
+    await mountHarness(page, { width: 1440, height: 900 });
+    const people = [
+        { accountId: 'one', displayName: 'New One', eligibility: 'eligible' },
+        { accountId: 'two', displayName: 'New Two', eligibility: 'eligible' },
+    ];
+    await page.evaluate(values => window.__issueEditorHarness.setPersonSuggestions(values), people);
+    await page.getByRole('combobox', { name: 'Assignee: Existing Owner' }).click();
+    const input = page.getByRole('combobox', { name: 'Search Assignee' });
+    await input.fill('New');
+    await input.press('ArrowDown');
+    await expect(page.getByRole('option', { name: 'New Two' })).toHaveAttribute('aria-selected', 'true');
+    await page.evaluate(values => window.__issueEditorHarness.setPersonSuggestions(values), [people[1], people[0]]);
+    await expect(input).toHaveAttribute('aria-activedescendant', await page.getByRole('option', { name: 'New Two' }).getAttribute('id'));
+    await input.press('Enter');
+    await expect.poll(() => page.evaluate(() => window.__issueEditorHarness.personSubmits)).toEqual(['two']);
+});
+
+test('delayed metadata selects the existing text and delayed search results select the match', async ({ page }) => {
+    await mountHarness(page, { width: 1440, height: 900 });
+    await page.evaluate(() => window.__issueEditorHarness.setPersonLoading(true));
+    await page.getByRole('combobox', { name: 'Assignee: Existing Owner' }).click();
+    const input = page.getByRole('combobox', { name: 'Search Assignee' });
+    await expect(input).toBeDisabled();
+    await page.evaluate(() => {
+        window.__issueEditorHarness.setPersonLoading(false);
+        window.__issueEditorHarness.setPersonSuggestions([]);
+    });
+    await expect.poll(() => input.evaluate(element => [element.selectionStart, element.selectionEnd])).toEqual([0, 'Existing Owner'.length]);
+    await input.pressSequentially('New');
+    await expect(input).not.toHaveAttribute('aria-activedescendant');
+    await page.evaluate(() => window.__issueEditorHarness.setPersonSuggestions([
+        { accountId: 'new-person', displayName: 'New Person', eligibility: 'eligible' },
+    ]));
+    await expect(page.getByRole('option', { name: 'New Person' })).toHaveAttribute('aria-selected', 'true');
+    await expect.poll(() => input.evaluate(element => [element.selectionStart, element.selectionEnd])).toEqual([3, 3]);
+    await input.press('Escape');
+    await page.getByRole('combobox', { name: 'Assignee: Existing Owner' }).click();
+    await expect(input).toHaveValue('Existing Owner');
+    await expect.poll(() => input.evaluate(element => [element.selectionStart, element.selectionEnd])).toEqual([0, 'Existing Owner'.length]);
+    await page.screenshot({ path: path.join(screenshotDir, 'person-existing-selected.png') });
+});
 
 for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
     test(`team combobox filters, saves on Enter and cancels on Escape at ${viewport.width}x${viewport.height}`, async ({ page }) => {
@@ -325,7 +442,7 @@ test('person editor preserves the current value until typing and keeps failed ch
 
     await input.press('a');
     await expect(input).toHaveValue('a');
-    await input.fill('ali');
+    await input.fill('Eligible');
     await page.getByRole('option', { name: /Eligible Person/ }).click();
     await expect.poll(() => page.evaluate(() => window.__issueEditorHarness.personSubmits)).toEqual(['eligible']);
 
@@ -402,7 +519,7 @@ test('editors fail closed before editable metadata and allow retry after a rejec
 
     await page.evaluate(() => window.__issueEditorHarness.setPersonEditable(true));
     await expect(personInput).toBeEnabled();
-    await personInput.fill('ali');
+    await personInput.fill('Person');
     await page.getByRole('option', { name: /Eligible Person/ }).click();
     await expect.poll(() => page.evaluate(() => window.__issueEditorHarness.personSubmits)).toEqual(['eligible']);
     await page.evaluate(() => {

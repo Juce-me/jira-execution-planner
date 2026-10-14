@@ -1055,7 +1055,7 @@ fnm exec --using 20 npm run build
 git status --short -- frontend/dist
 ```
 
-Expected: the build ends with `Done in ...ms` lines and no error; the status shows ` M frontend/dist/dashboard.js`, ` M frontend/dist/dashboard.js.map`, ` D frontend/dist/lazy-views-<old hash>.json` and `?? frontend/dist/lazy-views-<new hash>.json` (the manifest is renamed because the build id covers every `frontend/src` file; no chunk files change).
+Expected: the build ends with `Done in ...ms` lines and no error; the status shows ` M frontend/dist/dashboard.js`, ` M frontend/dist/dashboard.js.map`, ` D frontend/dist/lazy-views-<old hash>.json` and `?? frontend/dist/lazy-views-<new hash>.json` (the manifest is renamed because the build id covers every `frontend/src` file); renamed chunk files, if esbuild re-hashed any, are allowed (Global Constraints, Generated output).
 
 - [ ] **Step 10: Run the task's regression gate**
 
@@ -1077,7 +1077,7 @@ git status --short
 make verify-dist-clean
 ```
 
-Expected: `git show --stat HEAD` lists exactly ten files (`frontend/dist/dashboard.js`, `frontend/dist/dashboard.js.map`, the renamed `lazy-views` manifest, `EngAlertsPanel.jsx`, `focusCapture.js`, the two helpers, the two test files and the UI spec; `EngAlertsPanel.jsx` shows 22 changed lines); `git status --short` and `make verify-dist-clean` print nothing and exit 0.
+Expected: `git show --stat HEAD` lists the regenerated `frontend/dist` files (Global Constraints, Generated output) and exactly seven other files (`EngAlertsPanel.jsx`, `focusCapture.js`, the two helpers, the two test files and the UI spec; `EngAlertsPanel.jsx` shows 22 changed lines; check them with `git show --name-only --format= HEAD | rg -v '^frontend/dist/'`); `git status --short` and `make verify-dist-clean` print nothing and exit 0.
 
 ### Task 8: Focus reveal and Planning rows seed
 
@@ -2073,7 +2073,7 @@ fnm exec --using 20 npm run build
 git status --short -- frontend/dist
 ```
 
-Expected: no build error; ` M frontend/dist/dashboard.js`, ` M frontend/dist/dashboard.js.map`, the `lazy-views` manifest replaced again (` D` the Task 7 file, `?? ` a new one) and no chunk files (the table and the store are in the main bundle).
+Expected: no build error; ` M frontend/dist/dashboard.js`, ` M frontend/dist/dashboard.js.map`, the `lazy-views` manifest replaced again (` D` the Task 7 file, `?? ` a new one) and, only if esbuild re-hashed a chunk, equal numbers of ` D` and `??` chunk lines (Global Constraints, Generated output).
 
 - [ ] **Step 10: Run the task's regression gate**
 
@@ -2095,7 +2095,7 @@ git status --short
 make verify-dist-clean
 ```
 
-Expected: `git show --stat HEAD` lists exactly eight files (`frontend/dist/dashboard.js`, `dashboard.js.map`, the renamed manifest, `PlanningReviewTable.jsx` with `3 +-`, `focusReveal.js`, the reveal and seed tests, and the UI spec); `git status --short` and `make verify-dist-clean` print nothing and exit 0.
+Expected: `git show --stat HEAD` lists the regenerated `frontend/dist` files (Global Constraints, Generated output) and exactly five other files (`PlanningReviewTable.jsx` with `3 +-`, `focusReveal.js`, the reveal and seed tests, and the UI spec; check them with `git show --name-only --format= HEAD | rg -v '^frontend/dist/'`); `git status --short` and `make verify-dist-clean` print nothing and exit 0.
 
 ## Notes for the executor
 

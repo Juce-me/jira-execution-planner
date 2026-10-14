@@ -1644,7 +1644,7 @@ Expected: `wc -l` prints the previous task's count plus 1 (7,494 on the validate
 1. The whole frontend unit suite: `fnm exec --using 20 node --test tests/test_*.js`. Read the summary: `# fail 0` and `# pass` equal to `# tests`. At `bd5b2bc2` the suite has 2477 tests; the two share-view test files of Tasks 4 and 5 add 49 and 28. This run includes `tests/test_auth_isolation_source_guard.js`, `tests/test_frontend_api_source_guards.js` and `tests/test_dashboard_split_build.js`, which scan or build the files this task adds.
 2. The Python tests that read `dashboard.jsx` or the frontend tree: `env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets tests.test_eng_board_source_guards tests.test_project_packaging tests.test_auth_entry_page`. Expected: `OK` with no failures or errors.
 3. The extraction gate: `fnm exec --using 20 bash scripts/extraction_lint/run.sh`. Expected: the Task 0 baseline exit status and the same last lines as in Task 4, Step 5 (the warning count must still equal the Task 0 baseline).
-4. Rebuild the generated output: `fnm exec --using 20 npm run build`. Expected: `Dashboard built: ` followed by 64 hexadecimal digits. Then `git status --short -- frontend/dist` must print exactly these four entries (`dashboard.js` changes because the store and entry are now in the bundle, `dashboard.js.map` because its sources changed, and the manifest name follows the build id):
+4. Rebuild the generated output: `fnm exec --using 20 npm run build`. Expected: `Dashboard built: ` followed by 64 hexadecimal digits. Then `git status --short -- frontend/dist` must print these four entries (`dashboard.js` changes because the store and entry are now in the bundle, `dashboard.js.map` because its sources changed, and the manifest name follows the build id), plus renamed chunk files if esbuild re-hashed any (Global Constraints, Generated output; on `4247a3b1` the first import renames two chunks and their maps):
 
 ```
  M frontend/dist/dashboard.js
@@ -1653,7 +1653,7 @@ Expected: `wc -l` prints the previous task's count plus 1 (7,494 on the validate
 ?? frontend/dist/lazy-views-<new build id>.json
 ```
 
-If a chunk file appears, stop and re-check that `node_modules` came from `npm ci` inside this worktree.
+Renamed chunks (equal numbers of ` D frontend/dist/chunks/` and `?? frontend/dist/chunks/` lines, `.js` and `.js.map`) are allowed. Any other extra path is a stop: re-check that `node_modules` came from `npm ci` inside this worktree.
 
 - [ ] **Step 10: Commit**
 
@@ -1666,7 +1666,7 @@ git status --short
 make verify-dist-clean
 ```
 
-Read the results: `git show --stat HEAD` lists exactly eight paths: `frontend/dist/dashboard.js`, `frontend/dist/dashboard.js.map`, the renamed `frontend/dist/lazy-views-*.json`, `frontend/src/dashboard.jsx` with 1 changed line, `frontend/src/shareView/entry.js` with 5 added lines, `frontend/src/shareView/store.js` with 126 added lines, `scripts/extraction_lint/owner_budgets.json` with 8 changed lines and `tests/test_share_view_store.js` with 435 added lines (the `dist` counts depend on the bundle). `git status --short` prints nothing. `make verify-dist-clean` prints nothing and exits 0.
+Read the results: `git show --stat HEAD` lists the regenerated `frontend/dist` files (Global Constraints, Generated output) and exactly five other paths: `frontend/src/dashboard.jsx` with 1 changed line, `frontend/src/shareView/entry.js` with 5 added lines, `frontend/src/shareView/store.js` with 126 added lines, `scripts/extraction_lint/owner_budgets.json` with 8 changed lines and `tests/test_share_view_store.js` with 435 added lines (check them with `git show --name-only --format= HEAD | rg -v '^frontend/dist/'`). `git status --short` prints nothing. `make verify-dist-clean` prints nothing and exits 0.
 
 ---
 

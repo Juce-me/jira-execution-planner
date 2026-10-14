@@ -498,7 +498,7 @@ Expected: `wc -l` prints the previous task's count plus 11 (7,505 on the validat
 2. The Python tests that read `dashboard.jsx`: `env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets tests.test_eng_board_source_guards tests.test_project_packaging tests.test_auth_entry_page`. Expected: `OK`.
 3. The extraction gate: `fnm exec --using 20 bash scripts/extraction_lint/run.sh`. Expected: the Task 0 baseline exit status, `0 errors`, a warning count equal to W0, `owner budgets: 0 problems` and `enforced problems: <B>`.
 4. The UI specs that exercise Sprint and Team selection, the freshness refresh and the auth lock: `npx playwright test tests/ui/planning_selection_defaults.spec.js tests/ui/shared_department_groups.spec.js tests/ui/global_auth_lock.spec.js tests/ui/dashboard_data_freshness.spec.js --browser=chromium --workers=4 2>&1 | grep -E '^ +[0-9]+ (passed|failed|flaky|skipped)'`. Expected: `204 passed` and no `failed` or `flaky` line (about three minutes; a different total only means an earlier task edited one of these specs, and the requirement is zero failures).
-5. Rebuild the generated output: `fnm exec --using 20 npm run build`. Expected: `Dashboard built: ` followed by 64 hexadecimal digits. Then `git status --short -- frontend/dist` must print exactly these four entries: `dashboard.js` and `dashboard.js.map` change because the dashboard source changed, and the manifest name follows the build id:
+5. Rebuild the generated output: `fnm exec --using 20 npm run build`. Expected: `Dashboard built: ` followed by 64 hexadecimal digits. Then `git status --short -- frontend/dist` must print these four entries, plus renamed chunk files if esbuild re-hashed any (Global Constraints, Generated output): `dashboard.js` and `dashboard.js.map` change because the dashboard source changed, and the manifest name follows the build id:
 
 ```
  M frontend/dist/dashboard.js
@@ -518,7 +518,7 @@ git status --short
 make verify-dist-clean
 ```
 
-Read the results: `git show --stat HEAD` lists exactly six paths: `frontend/dist/dashboard.js`, `frontend/dist/dashboard.js.map`, the renamed `frontend/dist/lazy-views-*.json`, `frontend/src/dashboard.jsx` (31 insertions and 20 deletions), `scripts/extraction_lint/owner_budgets.json` (8 changed lines) and `tests/test_share_view_extraction_characterization.js` (243 insertions). `git status --short` prints nothing. `make verify-dist-clean` prints nothing and exits 0.
+Read the results: `git show --stat HEAD` lists the regenerated `frontend/dist` files (Global Constraints, Generated output) and exactly three other paths: `frontend/src/dashboard.jsx` (31 insertions and 20 deletions), `scripts/extraction_lint/owner_budgets.json` (8 changed lines) and `tests/test_share_view_extraction_characterization.js` (243 insertions); check them with `git show --name-only --format= HEAD | rg -v '^frontend/dist/'`. `git status --short` prints nothing. `make verify-dist-clean` prints nothing and exits 0.
 
 - [ ] **Step 10: Checkpoint (stop here)**
 
@@ -3654,7 +3654,7 @@ Expected: `wc -l` prints the previous task's count plus 35 (7,540 on the validat
 2. The Python tests that read `dashboard.jsx`: `env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets tests.test_eng_board_source_guards tests.test_project_packaging tests.test_auth_entry_page`. Expected: `OK`.
 3. The extraction gate: `fnm exec --using 20 bash scripts/extraction_lint/run.sh`. Expected: the Task 0 baseline exit status, `0 errors`, a warning count equal to W0 plus 1 (the one `shareView` warning named above), `owner budgets: 0 problems` and `enforced problems: <B>`. Also confirm Task 12's precondition: `rg -n "const shareView = useShareViewApply\(" frontend/src/dashboard.jsx` prints exactly one line.
 4. The UI specs that exercise startup, the ENG load, onboarding, recovery and the Board reuse: `npx playwright test tests/ui/onboarding_tour.spec.js tests/ui/global_auth_lock.spec.js tests/ui/planning_selection_defaults.spec.js tests/ui/dashboard_data_freshness.spec.js tests/ui/shared_department_groups.spec.js tests/ui/eng_group_board_view.spec.js tests/ui/server_unavailable_ui.spec.js --browser=chromium --workers=4 2>&1 | grep -E '^ +[0-9]+ (passed|failed|flaky|skipped)'`. Expected: `535 passed` and no `failed` or `flaky` line (about six minutes; a different total only means an earlier task edited one of these specs, and the requirement is zero failures).
-5. Rebuild: `fnm exec --using 20 npm run build`. Expected: `Dashboard built: ` followed by 64 hexadecimal digits. Then `git status --short -- frontend/dist` must print these four entries (the dashboard source changed, so the bundle and its source map change, and the manifest name follows the build id):
+5. Rebuild: `fnm exec --using 20 npm run build`. Expected: `Dashboard built: ` followed by 64 hexadecimal digits. Then `git status --short -- frontend/dist` must print these four entries (the dashboard source changed, so the bundle and its source map change, and the manifest name follows the build id), plus renamed chunk files if esbuild re-hashed any (Global Constraints, Generated output):
 
 ```
  M frontend/dist/dashboard.js
@@ -3674,7 +3674,7 @@ git status --short
 make verify-dist-clean
 ```
 
-Read the results: `git show --stat HEAD` lists exactly nine paths: `frontend/dist/dashboard.js`, `frontend/dist/dashboard.js.map`, the renamed `frontend/dist/lazy-views-*.json`, `frontend/src/dashboard.jsx` (39 insertions and 4 deletions), `frontend/src/onboarding/useOnboardingTour.js` (5 insertions and 1 deletion), `scripts/extraction_lint/owner_budgets.json` (8 changed lines), `tests/test_dashboard_freshness_interactions.js` (17 insertions and 1 deletion), `tests/test_share_view_onboarding_wait.js` (42 insertions) and `tests/test_share_view_source_guards.js` (145 insertions). `git status --short` prints nothing. `make verify-dist-clean` prints nothing and exits 0.
+Read the results: `git show --stat HEAD` lists the regenerated `frontend/dist` files (Global Constraints, Generated output) and exactly six other paths: `frontend/src/dashboard.jsx` (39 insertions and 4 deletions), `frontend/src/onboarding/useOnboardingTour.js` (5 insertions and 1 deletion), `scripts/extraction_lint/owner_budgets.json` (8 changed lines), `tests/test_dashboard_freshness_interactions.js` (17 insertions and 1 deletion), `tests/test_share_view_onboarding_wait.js` (42 insertions) and `tests/test_share_view_source_guards.js` (145 insertions); check them with `git show --name-only --format= HEAD | rg -v '^frontend/dist/'`. `git status --short` prints nothing. `make verify-dist-clean` prints nothing and exits 0.
 
 
 ---

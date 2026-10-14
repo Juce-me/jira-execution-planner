@@ -71,8 +71,8 @@ Every task's requirements include this section. Values are copied from the desig
 - **Frontend:** exactly six `window.addEventListener('keydown', handler)` registrations in the guarded owner files (the interaction guard uses `document` capture listeners in `shareView/`); ESLint warnings never exceed the 106 ratchet (Task 11b adds one transient `no-unused-vars`, cleared in Task 12); Node tests are `tests/test_*.js` (support files are not named `test_*.js`); new `.json` fixtures under `tests/fixtures/` must be named `*-example-sanitized.json` or `*-template.json` or they are gitignored; the regenerated `frontend/dist/` is committed by every task that changes a file under `frontend/src` (the build id hashes the whole tree) and is never hand-edited; `npm ci` before `npm run build` in a fresh worktree.
 - **Budgets:** `dashboard.jsx` is pinned in `tests/test_codebase_structure_budgets.py` (legacy dict) and by exact equality in `scripts/extraction_lint/owner_budgets.json` (`dashboard.lineCount`, `dashboard.lineCeiling`, `aggregates.appPlusOwners`), so both move together in the same commit; `jira_server.py` is pinned at its exact line count. The expected sequence is in the ledger below; always measure with `wc -l`.
 - **Analytics:** two-trigger dataLayer contract; one new event `share_view_action` with fixed enums only; no URL, id, name or key in any payload; the GA4 page URL is never overridden.
-- **Repo hygiene:** commit with `git -c user.name=Juce -c user.email=Juce-me@users.noreply.github.com commit`; no `Co-Authored-By` trailer and no agent or tool branding anywhere (branches, commits, PRs, code, docs); no absolute local path, real email, hostname, secret, token or real Jira key in any committed file; synthetic or sanitized fixtures only; every changed line traces to this plan; after every commit run `git show --stat HEAD` and `git status --short` and read them; never push without an explicit operator go.
-- **Commands:** `$PY` is `.venv/bin/python` (in a worktree without `.venv`, the interpreter named by `JEP_TEST_PYTHON`, which Task 0 exports). `$TEST_ENV` is `JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access'` so a symlinked real `.env` cannot leak into tests. Node runs the version in `.nvmrc` (`fnm exec --using 20`). Lint is `fnm exec --using 20 bash scripts/extraction_lint/run.sh` (the script is not executable and its budget step reads `JEP_TEST_PYTHON`). Filter Playwright result lines with `grep -E '^ +[0-9]+ (passed|failed|flaky|skipped)'` because several spec titles contain those words. The UI specs read `frontend/dist/*`, so a built, committed `frontend/dist` must exist.
+- **Repo hygiene:** commit with `git -c user.name=Juce -c user.email=Juce-me@users.noreply.github.com commit`; no `Co-Authored-By` trailer and no agent or tool branding anywhere (branches, commits, PRs, code, docs); no absolute local path, real email, hostname, secret, token or real Jira key in any committed file; synthetic or sanitized fixtures only; stage with explicit paths (the one exception is `git add -A -- frontend/dist`, because the build renames hashed chunk files and their deletions must be staged); every changed line traces to this plan; after every commit run `git show --stat HEAD` and `git status --short` and read them; never push without an explicit operator go.
+- **Commands:** `$PY` is `.venv/bin/python` (in a worktree without `.venv`, the interpreter named by `JEP_TEST_PYTHON`; a command may run in a fresh shell, so export it again or write the interpreter path in place of `$PY`). Python tests run as `env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest ...` so a symlinked real `.env` cannot leak into tests; type the assignments inline, never through a shell variable, because the multi-word `ATLASSIAN_SCOPES` does not survive word splitting. Node runs the version in `.nvmrc` (`fnm exec --using 20`). Lint is `fnm exec --using 20 bash scripts/extraction_lint/run.sh` (the script is not executable and its budget step reads `JEP_TEST_PYTHON`). Filter Playwright result lines with `grep -E '^ +[0-9]+ (passed|failed|flaky|skipped)'` because several spec titles contain those words. The UI specs read `frontend/dist/*`, so a built, committed `frontend/dist` must exist.
 - **Live data:** any operator live check is read-only and transient: numbers-only probes, no saved or published screenshots, the operator signs in themselves.
 
 ### Budget ledger (expected values; measure, do not trust)
@@ -225,16 +225,16 @@ npm ci
 export JEP_TEST_PYTHON=<path to a Python interpreter that has the repo requirements, for example the main checkout's .venv/bin/python>
 "$JEP_TEST_PYTHON" -c "import flask, itsdangerous; print('python ok')"
 ```
-Expected: the Node version printed matches `.nvmrc`; `npm ci` succeeds; `python ok`. The interpreter path is a local choice; do not write it into any committed file.
+Expected: the Node version printed matches `.nvmrc`; `npm ci` succeeds; `python ok`. The interpreter path is a local choice; do not write it into any committed file. A command may run in a fresh shell, so export `JEP_TEST_PYTHON` again or write the interpreter path in place of `$JEP_TEST_PYTHON`.
 
 - [ ] **Step 5: Record the baselines**
 
 Run each command and write the summary line into the Baseline table below.
 ```bash
-env $TEST_ENV $JEP_TEST_PYTHON -m unittest discover -s tests
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $JEP_TEST_PYTHON -m unittest discover -s tests
 make test-security
 npm run test:frontend:unit
-env $TEST_ENV $JEP_TEST_PYTHON -m unittest tests.test_codebase_structure_budgets
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $JEP_TEST_PYTHON -m unittest tests.test_codebase_structure_budgets
 fnm exec --using 20 bash scripts/extraction_lint/run.sh
 npm run build && make verify-dist-clean
 npx playwright test tests/ui/codebase_structure_smoke.spec.js tests/ui/ga4_tag_and_events.spec.js tests/ui/eng_group_board_view.spec.js --browser=chromium
@@ -492,7 +492,7 @@ In `docs/plans/README.md`, in the `## Shareable view links (issue #194)` section
 Run:
 ```bash
 wc -l frontend/src/dashboard.jsx jira_server.py
-env $TEST_ENV $JEP_TEST_PYTHON -m unittest tests.test_codebase_structure_budgets tests.test_backend_route_source_guards tests.test_endpoint_policy_inventory
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $JEP_TEST_PYTHON -m unittest tests.test_codebase_structure_budgets tests.test_backend_route_source_guards tests.test_endpoint_policy_inventory
 fnm exec --using 20 bash scripts/extraction_lint/run.sh
 ```
 Expected: the two line counts equal the Budget ledger's last row (7,627 and 6,491) and the pins in `tests/test_codebase_structure_budgets.py` and (for `dashboard.jsx`) `scripts/extraction_lint/owner_budgets.json`; the three test modules and the lint pass with no more than 104 warnings. If a count moved after the last pin edit, move the pin in this commit with a one-line reason and record the net change per task in the ledger.
@@ -539,9 +539,9 @@ Open the Execution status table. Tasks 1 to 13 (including 11a, 11b, 11c) are `do
 - [ ] **Step 2: Full backend gates**
 
 ```bash
-env $TEST_ENV $JEP_TEST_PYTHON -m unittest discover -s tests
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $JEP_TEST_PYTHON -m unittest discover -s tests
 make test-security
-env $TEST_ENV $JEP_TEST_PYTHON -m unittest tests.test_codebase_structure_budgets tests.test_backend_route_source_guards tests.test_endpoint_policy_inventory
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $JEP_TEST_PYTHON -m unittest tests.test_codebase_structure_budgets tests.test_backend_route_source_guards tests.test_endpoint_policy_inventory
 ```
 Expected: the full suite passes with no more skips and no new failures than the Task 0 baseline (the recorded environment-specific failures aside) and no new warning before the Flask startup banner; the security matrix passes; `test_endpoint_policy_inventory` still pins "no new route".
 
@@ -573,7 +573,7 @@ Expected: the painted-ink and geometry checks pass in both engines (headless run
 
 ```bash
 sh -n scripts/docker-entrypoint.sh
-env $TEST_ENV $JEP_TEST_PYTHON scripts/check_startup_preflight.py
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $JEP_TEST_PYTHON scripts/check_startup_preflight.py
 ```
 Expected: no output from `sh -n`; the preflight passes. If a local `.env`, database and Postgres are available (see the operator's worktree notes), launch `.venv/bin/python jira_server.py` and check `curl http://localhost:5050/api/test`; any Python dependency or runtime warning before the Flask banner is a failed verification. If no local credentials exist, record "not run: no local credentials" instead of claiming it.
 

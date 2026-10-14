@@ -487,7 +487,7 @@ Expected: the Node suite reports no `not ok` and `# tests` equal to the previous
 npm run build
 git status --short frontend/dist
 ```
-Expected: the build prints `Dashboard built: <64 hex>` and no error; `git status --short frontend/dist` lists the regenerated bundle, its map and the renamed `lazy-views-*.json` (the build ID hashes every `frontend/src` file). Build before committing: `tests/test_scenario_draft_history_source_guards.js` fails any working tree where `frontend/dist` has changes and `frontend/src` has none, so never commit the source and the output separately.
+Expected: the build prints `Dashboard built: <64 hex>` and no error; `git status --short frontend/dist` lists the regenerated files (the entry bundle, the shared chunks whose content hash changed, and the renamed `lazy-views-*.json`; the build ID hashes every `frontend/src` file). Build before committing: `tests/test_scenario_draft_history_source_guards.js` fails any working tree where `frontend/dist` has changes and `frontend/src` has none, so never commit the source and the output separately.
 
 - [ ] **Step 9: Commit**
 
@@ -497,8 +497,9 @@ git add -A frontend/dist
 git -c user.name=Juce -c user.email=Juce-me@users.noreply.github.com commit -m "Add share_view_action analytics event and analyticsReady" -m "The Share control and an opened link need one privacy-safe event with fixed enums. Events sent before analytics initializes are dropped, so the hook now returns analyticsReady for the apply outcome to wait on. No new parameter key, trigger or custom definition; the GA4 MCP YAML is unchanged."
 git show --stat HEAD
 git status --short
+make verify-dist-clean
 ```
-Expected: the six source, documentation and test files plus the regenerated `frontend/dist` files; `git status --short` prints nothing.
+Expected: the six source, documentation and test files plus the regenerated `frontend/dist` files; `git status --short` prints nothing; `make verify-dist-clean` prints nothing and exits 0 (it reads `git status --porcelain -- frontend/dist`, so it passes only after the commit).
 
 ### Task 12: Share control, notice and header surfaces
 
@@ -1638,7 +1639,7 @@ test.describe('Share control: in the app', () => {
             if (state.scrollY === 0) expect(visible).toEqual(['main']);
         }
         expect(sampled.some(item => item.compact)).toBe(true);
-        // The compact control copies the same link the main control copies.
+        // The compact control copies the same link the main control copies, apart from the focus target, which follows the scroll position.
         await page.locator('.compact-sticky-header .share-view-button').click();
         await page.evaluate(() => window.scrollTo(0, 0));
         await expect(page.locator('.compact-sticky-header.is-visible')).toHaveCount(0);
@@ -1646,7 +1647,8 @@ test.describe('Share control: in the app', () => {
         await expect.poll(() => page.evaluate(() => window.__copied.length)).toBe(2);
         const [fromCompact, fromMain] = await page.evaluate(() => window.__copied);
         expect(fromCompact).toMatch(APP_URL_PREFIX);
-        expect(fromCompact).toBe(fromMain);
+        const withoutFocus = (url) => url.replace(/&(?:epic|story|alertTeam)=[^&]*/g, '');
+        expect(withoutFocus(fromCompact)).toBe(withoutFocus(fromMain));
     });
 
     // Sticky layering (MRT009) and the header's no-overflow contract: the baseline is the same page with the Share wrappers hidden.
@@ -2073,7 +2075,7 @@ export default function ShareViewButton({ surface, share, sourceSurface, activeC
 fnm exec --using 20 node --test tests/test_share_view_control.js 2>&1 | grep -E '^(not ok|ok|# (tests|pass|fail))'
 npx playwright test tests/ui/share_view_control.spec.js --browser=chromium --workers=3 -g 'Share control: (shared header|copy outcomes|apply notice)' 2>&1 | grep -E '✘|passed|failed'
 ```
-Expected: Node `# tests 5`, `# pass 3`, `# fail 2`: the markup contract, the copy strings and the mock parity pass; `the dashboard renders the Share control on both header surfaces...` and `Share adds no hover CSS...` fail. The harness group reports `9 failed` and `21 passed`; the nine are exactly the cases that need the stylesheet: `both surfaces carry the header icon-button classes and the 38 by 38 geometry of their siblings` (the compact control is unstyled), `hover keeps a light surface, a readable glyph and no lift on both surfaces`, `a disabled control stays inert, light and unlifted`, and the fallback-notice geometry case on main at 1440, 1028, 760, 390 and 375 px plus on compact at 375 px (no placement rule, no typography reset).
+Expected: Node `# tests 5`, `# pass 2`, `# fail 3`: the copy strings and the markup contract pass; `the dashboard renders the Share control on both header surfaces...`, `Share adds no hover CSS...` and `the accepted mock and the component render the same Share markup and copy` fail (in the last one the markup and copy assertions pass; its final assertion compares the mock's `.share-view-notice` rule with `controls.css`, which Step 7 adds). The harness group reports `9 failed` and `21 passed`; the nine are exactly the cases that need the stylesheet: `both surfaces carry the header icon-button classes and the 38 by 38 geometry of their siblings` (the compact control is unstyled), `hover keeps a light surface, a readable glyph and no lift on both surfaces`, `a disabled control stays inert, light and unlifted`, and the fallback-notice geometry case on main at 1440, 1028, 760, 390 and 375 px plus on compact at 375 px (no placement rule, no typography reset).
 
 - [ ] **Step 7: Add the CSS and the dashboard wiring**
 
@@ -2250,10 +2252,10 @@ print(f'dashboard.jsx pinned at {n}; appPlusOwners pinned at {n + unique_owners}
 
 ```bash
 wc -l frontend/src/dashboard.jsx
-env $TEST_ENV $PY -m unittest tests.test_codebase_structure_budgets 2>&1 | tail -4
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets 2>&1 | tail -4
 N=$(wc -l < frontend/src/dashboard.jsx | tr -d ' ')
 $PY tmp/share-view-mock/budget-pins.py "$N"
-env $TEST_ENV $PY -m unittest tests.test_codebase_structure_budgets 2>&1 | tail -4
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets 2>&1 | tail -4
 git diff --stat -- tests/test_codebase_structure_budgets.py scripts/extraction_lint/owner_budgets.json
 ```
 Expected: the first run fails (`frontend/src/dashboard.jsx: <N> lines exceeds budget <N-7>`, `dashboard measured lineCount differs from actual`, `appPlusOwners: measured aggregate ... differs from unique actual ...`); the script prints `dashboard.jsx pinned at <N>; appPlusOwners pinned at <N + uniqueOwners>`; the second run reports `Ran 2 tests` and `OK`; the diff touches the legacy dict (a new comment line plus the pin), the manifest's `dashboard` entry (`lineCount` and `lineCeiling`) and `appPlusOwners` (`measured` and `ceiling`).
@@ -2262,13 +2264,13 @@ Expected: the first run fails (`frontend/src/dashboard.jsx: <N> lines exceeds bu
 
 ```bash
 fnm exec --using 20 node --test tests/test_*.js 2>&1 | grep -E '^(not ok|# (tests|pass|fail))'
-env $TEST_ENV $PY -m unittest tests.test_codebase_structure_budgets tests.test_dashboard_css_extraction 2>&1 | tail -3
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets tests.test_dashboard_css_extraction 2>&1 | tail -3
 fnm exec --using 20 bash scripts/extraction_lint/run.sh 2>&1 | grep -E 'problems|owner budgets'
 npx playwright test tests/ui/codebase_structure_smoke.spec.js tests/ui/planning_review_integration.spec.js tests/ui/dashboard_data_freshness.spec.js tests/ui/eng_compact_layout_visual.spec.js tests/ui/planning_selection_defaults.spec.js tests/ui/onboarding_tour.spec.js --browser=chromium --workers=4 2>&1 | grep -E '✘|passed|failed|skipped'
 npx playwright test tests/ui/share_view_control.spec.js --browser=firefox --workers=2 2>&1 | grep -E '✘|passed|failed|skipped'
 npx playwright test tests/ui/share_view_control.spec.js --browser=webkit --workers=2 2>&1 | grep -E '✘|passed|failed|skipped'
 ```
-Expected: no `not ok`, `# tests` equal to the previous task's total plus 5; `OK` for both Python modules; the lint reports `0 errors`, warnings unchanged from the previous task (the ratchet is 106; the new files add none) and `owner budgets: 0 problems`; the Chromium UI set passes with no skipped header case (`onboarding_tour.spec.js` `offscreen target scrolls once on step entry...` is timing-sensitive under four workers: if it is the only failure, run it alone with `--repeat-each=3` before treating it as a regression; it passed 3 of 3 alone, at the base and with Share); Firefox and WebKit report `38 passed` and `1 skipped`. In a headless WebKit run, the two `Task9 freshness reserved copy...` smoke cases already fail at `bd5b2bc2` with or without Share (document width 782 px against 781 and 755 px at several widths, identical sets of failing assertions), so compare against that baseline instead of running them as a gate here.
+Expected: no `not ok`, `# tests` equal to the previous task's total plus 5; `OK` for both Python modules; the lint reports `0 errors`, `104 warnings` (105 before this task: Task 11b's transient `'shareView' is assigned a value but never used` is cleared because `renderShareViewControl` now reads it; the new files add none; the ratchet is 106) and `owner budgets: 0 problems`; the Chromium UI set passes with no skipped header case (`onboarding_tour.spec.js` `offscreen target scrolls once on step entry...` is timing-sensitive under four workers: if it is the only failure, run it alone with `--repeat-each=3` before treating it as a regression; it passed 3 of 3 alone, at the base and with Share. On a machine busy with other test runs, `open header dropdown toggles filter groups teams and sprints` (about 19 s alone against the 30 s limit) and some Firefox and WebKit cases can time out as well: re-run each failure alone with `--workers=1` before treating it as a regression); Firefox and WebKit report `38 passed` and `1 skipped`. In a headless WebKit run, the two `Task9 freshness reserved copy...` smoke cases already fail at `bd5b2bc2` with or without Share (document width 782 px against 781 and 755 px at several widths, identical sets of failing assertions), so compare against that baseline instead of running them as a gate here.
 
 - [ ] **Step 11: Run the painted-ink check in headed Firefox and WebKit at 2x**
 
@@ -2286,8 +2288,9 @@ git add -A frontend/dist
 git -c user.name=Juce -c user.email=Juce-me@users.noreply.github.com commit -m "Add the Share control to both header surfaces" -m "The control copies a self-contained view link from the main and compact headers, reuses the shared header icon button and the shared banner, and falls back to a read-only field when the clipboard is unavailable. No new hover CSS: the compact surface joins the existing icon-button rules. The accepted mock is kept in assets/mockups and pinned to the component by a parity test."
 git show --stat HEAD
 git status --short
+make verify-dist-clean
 ```
-Expected: the 12 listed files plus the regenerated `frontend/dist` files; `git status --short` prints nothing (`tmp/share-view-mock/` is ignored).
+Expected: the 12 listed files plus the regenerated `frontend/dist` files; `git status --short` prints nothing (`tmp/share-view-mock/` is ignored); `make verify-dist-clean` prints nothing and exits 0 (it reads `git status --porcelain -- frontend/dist`, so it passes only after the commit).
 
 ## Notes for the executor
 

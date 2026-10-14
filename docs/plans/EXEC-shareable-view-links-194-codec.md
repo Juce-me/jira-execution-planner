@@ -19,11 +19,12 @@
 - Create: `frontend/src/shareView/codec.js`
 - Test (create): `tests/test_share_view_codec.js`
 - Generated in the same commit, never hand-edited: `frontend/dist/dashboard.js` (modified) and `frontend/dist/lazy-views-<64 hex>.json` (the old manifest replaced by a new one)
-- Read only, no edits (no owner module needs even a one-word `export`): `tests/fixtures/share-view-query-corpus-example-sanitized.json` (Task 1) and the owner modules in the "Owner inventory" table below (`frontend/src/eng/engCatchUpFilters.js`, `engTaskUtils.js`, `engProjectTrack.js`, `engModeState.js`, `PlanningReviewTable.jsx`, `planningReviewTableModel.js`, `frontend/src/stats/statsConstants.js`, `excludedCapacityStats.js`, `frontend/src/cohort/cohortUtils.js`, `frontend/src/dashboard.jsx`)
+- Read only, no edits (no owner module needs even a one-word `export`): `tests/fixtures/share-view-query-corpus-example-sanitized.json` (Task 1), `backend/config/view_validation.py` (read as text by the V11 test) and the owner modules in the "Owner inventory" table below (`frontend/src/eng/engCatchUpFilters.js`, `engTaskUtils.js`, `engProjectTrack.js`, `engModeState.js`, `PlanningReviewTable.jsx`, `planningReviewTableModel.js`, `frontend/src/stats/statsConstants.js`, `excludedCapacityStats.js`, `frontend/src/cohort/cohortUtils.js`, `frontend/src/dashboard.jsx`)
 
 **Interfaces:**
 - Consumes (Task 1): `tests/fixtures/share-view-query-corpus-example-sanitized.json` = `{"pattern": str, "maxQueryBytes": 1536, "accepts": [str], "rejects": [{"query": str, "why": str}]}`, queries without a leading `?`. The tests need: `pattern` compiles with `new RegExp('^(?:' + pattern + ')$')`; `maxQueryBytes` is 1536; at least one `accepts` entry; at least ten `rejects` entries, at least one of which the decoder rejects outright (a raw character outside `[A-Za-z0-9._~%&=,:-]`, more than 1,536 characters, 41 further pairs or a bad version). If the fixture does not meet that, stop and report to the lead; do not edit it in this task.
 - Consumes (existing exports, imported by `viewDefaults.js`, not modified): `DEFAULT_ENG_STATUS_FILTER` (`engCatchUpFilters.js`), `DEFAULT_ENG_EPIC_SORT` and `ENG_EPIC_SORT_OPTIONS` (`engTaskUtils.js`), `PROJECT_TRACK_COMMITTED` and `PROJECT_TRACK_FLEXIBLE` (`engProjectTrack.js`), `PRIORITY_AXIS` (`statsConstants.js`), `getCurrentQuarterLabel` (`cohortUtils.js`), `buildDefaultExcludedCapacityRange` (`excludedCapacityStats.js`).
+- Consumes (read as text by the V11 test, not imported): `backend/config/view_validation.py`, the literal `{ ... }` block of `FORBIDDEN_VIEW_PAYLOAD_KEYS` (24 names at `bd5b2bc2`, `authConnections` to `siteUrl`). The test fails with a clear message when the block cannot be found or no longer lists `workspaceId`, `accountId`, `cloudId`, `siteUrl`, `userId`, `password`, `secret`, `credential` and `service_integration_tokens`, so a refactor of that file cannot silently void it.
 - Produces, `frontend/src/shareView/viewDefaults.js` (binding names first, then seven vocabularies and two narrowing tables that Task 4 may import instead of repeating):
   ```
   SHARE_VIEW_VERSION = 1
@@ -68,6 +69,7 @@
 - The new modules touch no DOM, React, storage, network or analytics, and the app does not import them yet: startup, bundle contents and every existing view are unchanged; `frontend/dist` changes only by the build id.
 - Design rules implemented here, copied from the design: query cap 1,536 characters; `v` first, then at most 40 further pairs; first duplicate wins; keys are case-sensitive and checked with `Object.hasOwn` on a frozen spec; atoms are `encodeURIComponent` plus `!'()*` as `%21 %27 %28 %29 %2A`; an omitted key means its default constant; `v mode group sprint` always written; over the cap drop `find`, the focus keys, `alerts`, `initiatives`, `sort` and never scope keys; never truncate.
 - Review Focus RF4 is pinned by the test named `RF4: ids with comma, colon, percent, plus, quote, space and non-ASCII round trip and match the stash pattern`; the over-cap half of RF5 by `over the cap: scope keys are never dropped and nothing is truncated (too_long)`.
+- Design Verification row V11 (no ids, names or tokens in the link) is pinned by the test named `V11: no id, name or token key can appear in a link (parity with FORBIDDEN_VIEW_PAYLOAD_KEYS)`: no link key equals a forbidden name (case-insensitively) or contains `token`, `secret`, `password`, `credential`, `workspace`, `cloud`, `site`, `account` or `user`; the worst-case full Catch Up, Planning, Board and Statistics links write none of those names as a key; and a state that carries every forbidden name as an extra property encodes to the same link.
 
 - [ ] **Step 1: Confirm the preconditions and write the failing test**
 
@@ -75,13 +77,13 @@ Run:
 ```bash
 git branch --show-current
 git status --short
-for f in tests/fixtures/share-view-query-corpus-example-sanitized.json frontend/src/eng/engCatchUpFilters.js frontend/src/eng/engTaskUtils.js frontend/src/eng/engProjectTrack.js frontend/src/eng/engModeState.js frontend/src/eng/PlanningReviewTable.jsx frontend/src/eng/planningReviewTableModel.js frontend/src/stats/statsConstants.js frontend/src/stats/excludedCapacityStats.js frontend/src/cohort/cohortUtils.js frontend/src/dashboard.jsx scripts/extraction_lint/run.sh; do [ -e "$f" ] && echo "ok       $f" || echo "MISSING  $f"; done
+for f in tests/fixtures/share-view-query-corpus-example-sanitized.json frontend/src/eng/engCatchUpFilters.js frontend/src/eng/engTaskUtils.js frontend/src/eng/engProjectTrack.js frontend/src/eng/engModeState.js frontend/src/eng/PlanningReviewTable.jsx frontend/src/eng/planningReviewTableModel.js frontend/src/stats/statsConstants.js frontend/src/stats/excludedCapacityStats.js frontend/src/cohort/cohortUtils.js frontend/src/dashboard.jsx backend/config/view_validation.py scripts/extraction_lint/run.sh; do [ -e "$f" ] && echo "ok       $f" || echo "MISSING  $f"; done
 ls frontend/src/shareView 2>&1 | head -1
 [ -d node_modules ] && [ ! -L node_modules ] && echo "node_modules is this worktree's own install"
 ```
 Expected: the branch is `feature/194-shareable-dashboard-view`; `git status --short` prints nothing; every path prints `ok` (a `MISSING` line means Task 1 has not landed or the plan is stale: stop and report); `ls` reports `No such file or directory`; the last line prints. The `node_modules` line matters for Step 6: a build that resolves `node_modules` from an ancestor checkout fails the CI dist check.
 
-Create `tests/test_share_view_codec.js` with exactly this content. It bundles the new modules and the owner modules through esbuild into a `vm` context like `tests/test_auth_resume_state.js`, reads the Task 1 fixture, and holds every reviewed decode and encode vector, the round trips, the over-cap rules, the owner pins and the source guards. Everything about `find` sits between the `find: begin` and `find: end` markers so it can be removed in one piece.
+Create `tests/test_share_view_codec.js` with exactly this content. It bundles the new modules and the owner modules through esbuild into a `vm` context like `tests/test_auth_resume_state.js`, reads the Task 1 fixture and `backend/config/view_validation.py`, and holds every reviewed decode and encode vector, the round trips, the over-cap rules, the V11 forbidden-key parity check, the owner pins and the source guards. Everything about `find` sits between the `find: begin` and `find: end` markers so it can be removed in one piece.
 
 ```js
 // Contract tests for the shareable view link codec (docs/plans/SUPPORT-shareable-view-links-design-194.md:
@@ -96,6 +98,7 @@ const esbuild = require('esbuild');
 
 const SRC = path.join(__dirname, '..', 'frontend', 'src');
 const CORPUS_PATH = path.join(__dirname, 'fixtures', 'share-view-query-corpus-example-sanitized.json');
+const VIEW_VALIDATION_PATH = path.join(__dirname, '..', 'backend', 'config', 'view_validation.py');
 
 // Bundle an entry for the browser and run it in a fresh vm context, the way
 // test_auth_resume_state.js does. `sandbox` adds globals (a fixed Date for the Lead Times default).
@@ -839,6 +842,46 @@ test('strip: removes every link key and keeps other params verbatim', () => {
     assert.equal(stripShareViewParams('?v&mode'), '');
     assert.equal(stripShareViewParams(undefined), '');
     for (const key of codec.SHARE_VIEW_QUERY_KEYS) assert.equal(stripShareViewParams(`?${key}=1&keep=2`), '?keep=2', key);
+});
+
+// ---- V11: no ids, names or tokens in the link ------------------------------------------------
+
+// The literal set of names backend/config/view_validation.py refuses in a saved view payload. If a
+// refactor moves or reshapes it, this read fails with a message instead of the test going vacuous.
+function forbiddenViewPayloadKeys() {
+    const source = fs.readFileSync(VIEW_VALIDATION_PATH, 'utf8');
+    const start = source.indexOf('FORBIDDEN_VIEW_PAYLOAD_KEYS = (');
+    const end = start < 0 ? -1 : source.indexOf('\n)\n', start);
+    const open = end < 0 ? -1 : source.indexOf('{', start);
+    const close = open < 0 || open > end ? -1 : source.indexOf('}', open);
+    if (close < 0 || close > end) {
+        throw new Error('backend/config/view_validation.py: the literal { ... } block of FORBIDDEN_VIEW_PAYLOAD_KEYS was not found; update this test to read its new definition');
+    }
+    const names = [...source.slice(open, close).matchAll(/['"]([^'"]+)['"]/g)].map((match) => match[1]);
+    for (const anchor of ['workspaceId', 'accountId', 'cloudId', 'siteUrl', 'userId', 'password', 'secret', 'credential', 'service_integration_tokens']) {
+        if (!names.includes(anchor)) {
+            throw new Error(`backend/config/view_validation.py: ${anchor} is missing from the FORBIDDEN_VIEW_PAYLOAD_KEYS block this test read; update this test if the block moved`);
+        }
+    }
+    return names;
+}
+
+test('V11: no id, name or token key can appear in a link (parity with FORBIDDEN_VIEW_PAYLOAD_KEYS)', () => {
+    const forbidden = forbiddenViewPayloadKeys();
+    const names = forbidden.map((name) => name.toLowerCase());
+    for (const key of plain(codec.SHARE_VIEW_QUERY_KEYS)) {
+        assert.equal(names.includes(key.toLowerCase()), false, `link key ${key} is a forbidden payload key`);
+        for (const part of ['token', 'secret', 'password', 'credential', 'workspace', 'cloud', 'site', 'account', 'user']) {
+            assert.equal(key.toLowerCase().includes(part), false, `link key ${key} contains ${part}`);
+        }
+    }
+    const extras = Object.fromEntries(forbidden.map((name) => [name, `x-${name}`]));
+    for (const [label, state] of Object.entries(FULL_STATES)) {
+        const written = `?${encode(state).query}`.toLowerCase();
+        for (const name of names) assert.equal(written.includes(`?${name}=`) || written.includes(`&${name}=`), false, `${label} writes ${name}`);
+        // A state that carries every forbidden name as an extra property still encodes to the same link.
+        assert.deepEqual(encode({ ...state, ...extras }), encode(state), `${label} with forbidden names as extra state keys`);
+    }
 });
 
 // ---- Shared corpus (tests/fixtures/share-view-query-corpus-example-sanitized.json) -----------
@@ -1776,18 +1819,18 @@ Run:
 ```bash
 fnm exec --using 20 node --test tests/test_share_view_codec.js
 ```
-Expected: `# tests 44`, `# pass 44`, `# fail 0`. A Node warning `MODULE_TYPELESS_PACKAGE_JSON` for `engModeState.js` is the same one `tests/test_eng_mode_state.js` already prints and is harmless. If the owner pins fail, the message names the owner literal that changed and the constant to update in `viewDefaults.js`; fix `viewDefaults.js`, not the pin.
+Expected: `# tests 45`, `# pass 45`, `# fail 0`. A Node warning `MODULE_TYPELESS_PACKAGE_JSON` for `engModeState.js` is the same one `tests/test_eng_mode_state.js` already prints and is harmless. If the owner pins fail, the message names the owner literal that changed and the constant to update in `viewDefaults.js`; fix `viewDefaults.js`, not the pin.
 
 - [ ] **Step 5: Run the task's regression gate**
 
 Run:
 ```bash
 fnm exec --using 20 npm run test:frontend:unit
-env $TEST_ENV $PY -m unittest tests.test_codebase_structure_budgets
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets
 fnm exec --using 20 bash scripts/extraction_lint/run.sh; echo "exit $?"
 tmp/lint/node_modules/.bin/eslint --no-config-lookup -c tmp/lint/eslint.config.mjs --max-warnings 0 frontend/src/shareView && echo "shareView: 0 problems"
 ```
-Expected: the first prints `# fail 0` and a `# tests` count equal to the Task 0 baseline plus 44 (2477 plus 44 is 2521 at `bd5b2bc2`); the second prints `Ran 2 tests ... OK`; the third prints `owner budgets: 0 problems`, an ESLint summary with no more warnings than the ratchet (106; 104 at `bd5b2bc2`, and the new files add none) and `exit 0`; the fourth prints `shareView: 0 problems`. Read each summary line; a failure unrelated to this task is a baseline failure to report, not to fix here.
+Expected: the first prints `# fail 0` and a `# tests` count equal to the Task 0 baseline plus 45 (2477 plus 45 is 2522 at `bd5b2bc2`); the second prints `Ran 2 tests ... OK`; the third prints `owner budgets: 0 problems`, an ESLint summary with no more warnings than the ratchet (106; 104 at `bd5b2bc2`, and the new files add none) and `exit 0`; the fourth prints `shareView: 0 problems`. Read each summary line; a failure unrelated to this task is a baseline failure to report, not to fix here.
 
 - [ ] **Step 6: Regenerate the compiled frontend and verify the diff**
 
@@ -1811,11 +1854,11 @@ git show --stat HEAD
 git status --short
 fnm exec --using 20 npm run build && git status --short && make verify-dist-clean && echo "dist is reproducible"
 ```
-Expected: `git show --stat HEAD` lists five paths: `frontend/dist/dashboard.js` (one line changed), the lazy-views manifest (a rename, or one delete plus one add), `frontend/src/shareView/codec.js` (about 444 lines), `frontend/src/shareView/viewDefaults.js` (about 123 lines) and `tests/test_share_view_codec.js` (about 1,100 lines), "5 files changed" when measured at `bd5b2bc2`. `git status --short` prints nothing, the second build leaves `git status --short` empty and prints `dist is reproducible`. Read `git show --stat HEAD` before going on; if a path is missing or `| 0` appears for a file you edited, re-stage and amend before anything else.
+Expected: `git show --stat HEAD` lists five paths: `frontend/dist/dashboard.js` (one line changed), the lazy-views manifest (a rename, or one delete plus one add), `frontend/src/shareView/codec.js` (about 444 lines), `frontend/src/shareView/viewDefaults.js` (about 123 lines) and `tests/test_share_view_codec.js` (about 1,140 lines), "5 files changed" when measured at `bd5b2bc2`. `git status --short` prints nothing, the second build leaves `git status --short` empty and prints `dist is reproducible`. Read `git show --stat HEAD` before going on; if a path is missing or `| 0` appears for a file you edited, re-stage and amend before anything else.
 
 ## If the operator declines Task 2
 
-The search key `find` and the container access-log change stand or fall together (design Open item 3). If the operator declines, `find` is removed from this task. Apply every edit below to the Step 1 test and the Step 3 code before running Step 2; no other code or test line in Task 3 mentions `find`. With these edits the test file reports `# tests 38`, `# pass 38`, `# fail 0` (the six `find` tests are gone). After the edits `find` stays only as `SHARE_VIEW_PLANNING_ROWS.find(...)` in `codec.js` (the array method). A link that still carries `find=...` then decodes as an unknown key: ignored, nothing reported. The Step 4 expected counts become `# tests 38 / # pass 38`, and Step 5's `# tests` becomes the baseline plus 38.
+The search key `find` and the container access-log change stand or fall together (design Open item 3). If the operator declines, `find` is removed from this task. Apply every edit below to the Step 1 test and the Step 3 code before running Step 2; no other code or test line in Task 3 mentions `find`. With these edits the test file reports `# tests 39`, `# pass 39`, `# fail 0` (the six `find` tests are gone). After the edits `find` stays only as `SHARE_VIEW_PLANNING_ROWS.find(...)` in `codec.js` (the array method). A link that still carries `find=...` then decodes as an unknown key: ignored, nothing reported. The Step 4 expected counts become `# tests 39 / # pass 39`, and Step 5's `# tests` becomes the baseline plus 39.
 
 Edit `frontend/src/shareView/viewDefaults.js`:
 

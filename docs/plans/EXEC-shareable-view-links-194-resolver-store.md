@@ -1603,7 +1603,7 @@ Expected: exit status 0 with `# tests 28`, `# pass 28` and `# fail 0`.
 
 Measure: `wc -l frontend/src/dashboard.jsx`. Expected: `7574 frontend/src/dashboard.jsx`.
 
-Run: `env $TEST_ENV $PY -m unittest tests.test_codebase_structure_budgets`
+Run: `env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets`
 
 Expected: `FAILED (failures=2)`. The manifest test reports `'dashboard measured lineCount differs from actual'`, `'dashboard exceeds ceiling'`, `'appPlusOwners: measured aggregate 34175 differs from unique actual 34176'` and `'appPlusOwners: 34176 exceeds aggregate ceiling 34175'`. The legacy test reports `'frontend/src/dashboard.jsx: 7574 lines exceeds budget 7573'`.
 
@@ -1662,14 +1662,14 @@ With:
     }
 ```
 
-Run: `env $TEST_ENV $PY -m unittest tests.test_codebase_structure_budgets` and `env $TEST_ENV $PY tests/test_codebase_structure_budgets.py --manifest scripts/extraction_lint/owner_budgets.json`
+Run: `env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets` and `env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY tests/test_codebase_structure_budgets.py --manifest scripts/extraction_lint/owner_budgets.json`
 
 Expected: the first prints `Ran 2 tests` and `OK`; the second prints `owner budgets: 0 problems`.
 
 - [ ] **Step 9: Run the task's regression gate**
 
 1. The whole frontend unit suite: `fnm exec --using 20 node --test tests/test_*.js`. Read the summary: `# fail 0` and `# pass` equal to `# tests`. At `bd5b2bc2` the suite has 2477 tests; the two share-view test files of Tasks 4 and 5 add 49 and 28. This run includes `tests/test_auth_isolation_source_guard.js`, `tests/test_frontend_api_source_guards.js` and `tests/test_dashboard_split_build.js`, which scan or build the files this task adds.
-2. The Python tests that read `dashboard.jsx` or the frontend tree: `env $TEST_ENV $PY -m unittest tests.test_codebase_structure_budgets tests.test_eng_board_source_guards tests.test_project_packaging tests.test_auth_entry_page`. Expected: `OK` with no failures or errors.
+2. The Python tests that read `dashboard.jsx` or the frontend tree: `env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets tests.test_eng_board_source_guards tests.test_project_packaging tests.test_auth_entry_page`. Expected: `OK` with no failures or errors.
 3. The extraction gate: `fnm exec --using 20 bash scripts/extraction_lint/run.sh`. Expected: exit status 0 and the same last lines as in Task 4, Step 5 (the warning count must still equal the Task 0 baseline).
 4. Rebuild the generated output: `fnm exec --using 20 npm run build`. Expected: `Dashboard built: ` followed by 64 hexadecimal digits. Then `git status --short -- frontend/dist` must print exactly these four entries (`dashboard.js` changes because the store and entry are now in the bundle, `dashboard.js.map` because its sources changed, and the manifest name follows the build id):
 

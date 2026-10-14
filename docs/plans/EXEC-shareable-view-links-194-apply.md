@@ -44,7 +44,7 @@ persistTeamSelection(nextSelectedTeams) -> void
 
 - [ ] **Step 0: Preflight and baselines**
 
-Run every command of this task from the worktree root in a shell where `JEP_TEST_PYTHON` is exported and `$PY` and `$TEST_ENV` are set as in the Global Constraints (Task 0, Step 4): the extraction lint reads `JEP_TEST_PYTHON` too.
+Run every command of this task from the worktree root with `JEP_TEST_PYTHON` exported (a command may run in a fresh shell, so export it again or write the interpreter path in place of `$PY`; the extraction lint reads `JEP_TEST_PYTHON` too) and with the Python test environment typed inline exactly as the commands show it.
 
 Run:
 ```bash
@@ -455,7 +455,7 @@ Expected: `# tests 19`, `# pass 19`, `# fail 0`: the thirteen characterization t
 
 Measure: `wc -l frontend/src/dashboard.jsx`. Expected: `7585 frontend/src/dashboard.jsx` (7,574 plus 11).
 
-Run: `env $TEST_ENV $PY -m unittest tests.test_codebase_structure_budgets`
+Run: `env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets`
 
 Expected: `FAILED (failures=2)`. The manifest test reports `dashboard measured lineCount differs from actual`, `dashboard exceeds ceiling`, `appPlusOwners: measured aggregate 34176 differs from unique actual 34187` and `appPlusOwners: 34187 exceeds aggregate ceiling 34176`; the legacy test reports `frontend/src/dashboard.jsx: 7585 lines exceeds budget 7574`.
 
@@ -520,14 +520,14 @@ with:
     }
 ```
 
-Run: `env $TEST_ENV $PY -m unittest tests.test_codebase_structure_budgets` and `env $TEST_ENV $PY tests/test_codebase_structure_budgets.py --manifest scripts/extraction_lint/owner_budgets.json`
+Run: `env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets` and `env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY tests/test_codebase_structure_budgets.py --manifest scripts/extraction_lint/owner_budgets.json`
 
 Expected: the first prints `Ran 2 tests` and `OK`; the second prints `owner budgets: 0 problems`.
 
 - [ ] **Step 8: Run the task's regression gate**
 
 1. The whole frontend unit suite: `fnm exec --using 20 node --test tests/test_*.js 2>&1 | grep -E '^# (tests|pass|fail)'`. Expected: `# fail 0` and `# tests` equal to N0 plus 19.
-2. The Python tests that read `dashboard.jsx`: `env $TEST_ENV $PY -m unittest tests.test_codebase_structure_budgets tests.test_eng_board_source_guards tests.test_project_packaging tests.test_auth_entry_page`. Expected: `OK`.
+2. The Python tests that read `dashboard.jsx`: `env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets tests.test_eng_board_source_guards tests.test_project_packaging tests.test_auth_entry_page`. Expected: `OK`.
 3. The extraction gate: `fnm exec --using 20 bash scripts/extraction_lint/run.sh`. Expected: exit status 0, `0 errors`, a warning count equal to W0, `owner budgets: 0 problems` and `enforced problems: 0`.
 4. The UI specs that exercise Sprint and Team selection, the freshness refresh and the auth lock: `npx playwright test tests/ui/planning_selection_defaults.spec.js tests/ui/shared_department_groups.spec.js tests/ui/global_auth_lock.spec.js tests/ui/dashboard_data_freshness.spec.js --browser=chromium --workers=4 2>&1 | grep -E '^ +[0-9]+ (passed|failed|flaky|skipped)'`. Expected: `204 passed` and no `failed` or `flaky` line (about three minutes; a different total only means an earlier task edited one of these specs, and the requirement is zero failures).
 5. Rebuild the generated output: `fnm exec --using 20 npm run build`. Expected: `Dashboard built: ` followed by 64 hexadecimal digits. Then `git status --short -- frontend/dist` must print exactly these four entries: `dashboard.js` and `dashboard.js.map` change because the dashboard source changed, and the manifest name follows the build id:
@@ -632,7 +632,7 @@ actions = [ { type: 'run', stage: 'A', scopeChange } | { type: 'run', stage: 'B'
 
 - [ ] **Step 0: Preflight and baselines**
 
-Run every command of this task from the worktree root in a shell where `JEP_TEST_PYTHON` is exported and `$PY` and `$TEST_ENV` are set as in the Global Constraints (Task 0, Step 4): the extraction lint reads `JEP_TEST_PYTHON` too.
+Run every command of this task from the worktree root with `JEP_TEST_PYTHON` exported (a command may run in a fresh shell, so export it again or write the interpreter path in place of `$PY`; the extraction lint reads `JEP_TEST_PYTHON` too) and with the Python test environment typed inline exactly as the commands show it.
 
 Run:
 ```bash
@@ -1338,7 +1338,7 @@ Expected: `# tests 38`, `# pass 38`, `# fail 0`. The last test is the seeded fuz
 - [ ] **Step 5: Run the task's regression gate**
 
 1. The whole frontend unit suite: `fnm exec --using 20 node --test tests/test_*.js 2>&1 | grep -E '^# (tests|pass|fail)'`. Expected: `# fail 0` and `# tests` equal to N0 plus 38.
-2. The structure budgets: `env $TEST_ENV $PY -m unittest tests.test_codebase_structure_budgets`. Expected: `Ran 2 tests` and `OK` (a file under `shareView/` needs no registration: only `scenario/`, `settings/` and `epm/` do).
+2. The structure budgets: `env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets`. Expected: `Ran 2 tests` and `OK` (a file under `shareView/` needs no registration: only `scenario/`, `settings/` and `epm/` do).
 3. The extraction gate: `fnm exec --using 20 bash scripts/extraction_lint/run.sh`. Expected: exit status 0 and a warning count equal to W0.
 4. Rebuild: `fnm exec --using 20 npm run build`. Expected: `Dashboard built: ` followed by 64 hexadecimal digits. Then `git status --short -- frontend/dist` must print these entries (the module is not imported yet, so only `dashboard.js` and the manifest name change; the source map keeps its content):
 
@@ -1502,7 +1502,7 @@ useShareViewApply(options) -> { notice, dismissNotice(), captureShareUrl(), shar
 
 - [ ] **Step 0: Preflight and baselines**
 
-Run every command of this task from the worktree root in a shell where `JEP_TEST_PYTHON` is exported and `$PY` and `$TEST_ENV` are set as in the Global Constraints (Task 0, Step 4): the extraction lint reads `JEP_TEST_PYTHON` too.
+Run every command of this task from the worktree root with `JEP_TEST_PYTHON` exported (a command may run in a fresh shell, so export it again or write the interpreter path in place of `$PY`; the extraction lint reads `JEP_TEST_PYTHON` too) and with the Python test environment typed inline exactly as the commands show it.
 
 Run:
 ```bash
@@ -2994,7 +2994,7 @@ Expected: `# tests 44`, `# pass 44`, `# fail 0` (26 controller, 7 capture, 4 gua
 - [ ] **Step 5: Run the task's regression gate**
 
 1. The whole frontend unit suite: `fnm exec --using 20 node --test tests/test_*.js 2>&1 | grep -E '^# (tests|pass|fail)'`. Expected: `# fail 0` and `# tests` equal to N0 plus 44. This run includes `tests/test_auth_isolation_source_guard.js` (the `window` `keydown` count stays at six) and `tests/test_frontend_api_source_guards.js`.
-2. The structure budgets: `env $TEST_ENV $PY -m unittest tests.test_codebase_structure_budgets`. Expected: `Ran 2 tests` and `OK`.
+2. The structure budgets: `env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets`. Expected: `Ran 2 tests` and `OK`.
 3. The extraction gate: `fnm exec --using 20 bash scripts/extraction_lint/run.sh`. Expected: exit status 0, `0 errors`, a warning count equal to W0, `owner budgets: 0 problems` and `enforced problems: 0`.
 4. Rebuild: `fnm exec --using 20 npm run build`. Expected: `Dashboard built: ` followed by 64 hexadecimal digits. Then `git status --short -- frontend/dist` must print the same three entries as in Task 9 (the modules are not imported by the App yet, so the bundle only changes by its build id):
 
@@ -3068,7 +3068,7 @@ Plus a three-line change in `frontend/src/onboarding/useOnboardingTour.js`: the 
 
 - [ ] **Step 0: Preflight and baselines**
 
-Run every command of this task from the worktree root in a shell where `JEP_TEST_PYTHON` is exported and `$PY` and `$TEST_ENV` are set as in the Global Constraints (Task 0, Step 4): the extraction lint reads `JEP_TEST_PYTHON` too.
+Run every command of this task from the worktree root with `JEP_TEST_PYTHON` exported (a command may run in a fresh shell, so export it again or write the interpreter path in place of `$PY`; the extraction lint reads `JEP_TEST_PYTHON` too) and with the Python test environment typed inline exactly as the commands show it.
 
 Run:
 ```bash
@@ -3569,7 +3569,7 @@ Expected: `# fail 0`. The source guards report 11 passing tests and the onboardi
 
 Measure: `wc -l frontend/src/dashboard.jsx`. Expected: `7620 frontend/src/dashboard.jsx` (7,585 plus 35).
 
-Run: `env $TEST_ENV $PY -m unittest tests.test_codebase_structure_budgets`
+Run: `env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets`
 
 Expected: `FAILED (failures=2)`: `dashboard measured lineCount differs from actual`, `dashboard exceeds ceiling`, `appPlusOwners: measured aggregate 34187 differs from unique actual 34222`, `appPlusOwners: 34222 exceeds aggregate ceiling 34187` and `frontend/src/dashboard.jsx: 7620 lines exceeds budget 7585`.
 
@@ -3634,14 +3634,14 @@ with:
     }
 ```
 
-Run: `env $TEST_ENV $PY -m unittest tests.test_codebase_structure_budgets` and `env $TEST_ENV $PY tests/test_codebase_structure_budgets.py --manifest scripts/extraction_lint/owner_budgets.json`
+Run: `env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets` and `env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY tests/test_codebase_structure_budgets.py --manifest scripts/extraction_lint/owner_budgets.json`
 
 Expected: the first prints `Ran 2 tests` and `OK`; the second prints `owner budgets: 0 problems`.
 
 - [ ] **Step 7: Run the task's regression gate**
 
 1. The whole frontend unit suite: `fnm exec --using 20 node --test tests/test_*.js 2>&1 | grep -E '^# (tests|pass|fail)'`. Expected: `# fail 0` and `# tests` equal to N0 plus 15 (11 source guards, 3 onboarding, 1 freshness). This run includes `tests/test_auth_isolation_source_guard.js` and `tests/test_epm_shell_source_guards.js`.
-2. The Python tests that read `dashboard.jsx`: `env $TEST_ENV $PY -m unittest tests.test_codebase_structure_budgets tests.test_eng_board_source_guards tests.test_project_packaging tests.test_auth_entry_page`. Expected: `OK`.
+2. The Python tests that read `dashboard.jsx`: `env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets tests.test_eng_board_source_guards tests.test_project_packaging tests.test_auth_entry_page`. Expected: `OK`.
 3. The extraction gate: `fnm exec --using 20 bash scripts/extraction_lint/run.sh`. Expected: exit status 0, `0 errors`, a warning count equal to W0 plus 1 (the one `shareView` warning named above), `owner budgets: 0 problems` and `enforced problems: 0`. Also confirm Task 12's precondition: `rg -n "const shareView = useShareViewApply\(" frontend/src/dashboard.jsx` prints exactly one line.
 4. The UI specs that exercise startup, the ENG load, onboarding, recovery and the Board reuse: `npx playwright test tests/ui/onboarding_tour.spec.js tests/ui/global_auth_lock.spec.js tests/ui/planning_selection_defaults.spec.js tests/ui/dashboard_data_freshness.spec.js tests/ui/shared_department_groups.spec.js tests/ui/eng_group_board_view.spec.js tests/ui/server_unavailable_ui.spec.js --browser=chromium --workers=4 2>&1 | grep -E '^ +[0-9]+ (passed|failed|flaky|skipped)'`. Expected: `535 passed` and no `failed` or `flaky` line (about six minutes; a different total only means an earlier task edited one of these specs, and the requirement is zero failures).
 5. Rebuild: `fnm exec --using 20 npm run build`. Expected: `Dashboard built: ` followed by 64 hexadecimal digits. Then `git status --short -- frontend/dist` must print these four entries (the dashboard source changed, so the bundle and its source map change, and the manifest name follows the build id):

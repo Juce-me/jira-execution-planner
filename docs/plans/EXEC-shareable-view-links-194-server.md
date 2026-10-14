@@ -579,7 +579,7 @@ if __name__ == '__main__':
 
 Run:
 ```bash
-env $TEST_ENV $PY -m unittest tests.test_share_view_stash
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_share_view_stash
 ```
 Expected: `ModuleNotFoundError: No module named 'backend.auth.share_view_stash'` and `FAILED (errors=1)`.
 
@@ -666,8 +666,8 @@ def clear_share_view_stash(session):
 
 Run:
 ```bash
-env $TEST_ENV $PY -m unittest tests.test_share_view_stash
-env $TEST_ENV $PY -W error -c "import backend.auth.share_view_stash"
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_share_view_stash
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -W error -c "import backend.auth.share_view_stash"
 ```
 Expected: `Ran 24 tests` and `OK`; the second command prints nothing.
 
@@ -1414,7 +1414,7 @@ if __name__ == '__main__':
 
 The module from Step 3 exists, the route wiring does not yet. Run:
 ```bash
-env $TEST_ENV $PY -m unittest tests.test_share_view_stash tests.test_auth_entry_page tests.test_auth_routes tests.test_db_oauth_cutover
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_share_view_stash tests.test_auth_entry_page tests.test_auth_routes tests.test_db_oauth_cutover
 ```
 Expected: `Ran 118 tests` and `FAILED (failures=31, errors=4)`. Every failing entry belongs to a new test (10 in `TestAuthEntryPage`, 20 in `TestAuthRoutes`, 5 in `DbOauthCutoverTests`; subtests count separately); none of the 24 stash unit tests and none of the existing tests fails. Representative messages:
 - `AssertionError: '/' != '/?v=1&mode=board&group=default&sprint=4182&find=50%25%20off'` (the callback and `/login` ignore the stash);
@@ -1553,7 +1553,7 @@ Do not change any other line of these two files. The first `redirect('/')` in `a
 
 Run:
 ```bash
-env $TEST_ENV $PY -m unittest tests.test_share_view_stash tests.test_auth_entry_page tests.test_auth_routes tests.test_db_oauth_cutover
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_share_view_stash tests.test_auth_entry_page tests.test_auth_routes tests.test_db_oauth_cutover
 git diff --stat -- jira_server.py backend/routes/auth_routes.py
 ```
 Expected: `Ran 118 tests` and `OK`; the diffstat shows `backend/routes/auth_routes.py | 8 +++++---` and `jira_server.py | 4 ++++`.
@@ -1563,7 +1563,7 @@ Expected: `Ran 118 tests` and `OK`; the diffstat shows `backend/routes/auth_rout
 Measure and run the budget test, which must fail first:
 ```bash
 wc -l < jira_server.py
-env $TEST_ENV $PY -m unittest tests.test_codebase_structure_budgets
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets
 ```
 Expected: `6491`, then `FAILED (failures=1)` with `jira_server.py: 6491 lines exceeds budget 6487`.
 
@@ -1587,7 +1587,7 @@ With this:
 
 Run again:
 ```bash
-env $TEST_ENV $PY -m unittest tests.test_codebase_structure_budgets
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets
 ```
 Expected: `Ran 2 tests` and `OK`. The `dashboard.jsx` pin and `scripts/extraction_lint/owner_budgets.json` are untouched (no frontend change in this task).
 
@@ -1595,8 +1595,8 @@ Expected: `Ran 2 tests` and `OK`. The `dashboard.jsx` pin and `scripts/extractio
 
 Run:
 ```bash
-env $TEST_ENV $PY -m unittest tests.test_endpoint_policy_inventory tests.test_endpoint_security_matrix tests.test_network_bind_guards tests.test_security_headers tests.test_oauth_route_guards tests.test_backend_route_source_guards tests.test_route_move_preservation
-env $TEST_ENV $PY -m unittest discover -s tests
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_endpoint_policy_inventory tests.test_endpoint_security_matrix tests.test_network_bind_guards tests.test_security_headers tests.test_oauth_route_guards tests.test_backend_route_source_guards tests.test_route_move_preservation
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest discover -s tests
 ```
 Expected: the first command (the module list `make test-security` runs; use `make test-security` itself in a checkout that has `.venv`) prints `Ran 82 tests` and `OK`. The full suite shows the Task 0 baseline plus exactly 51 new tests (24 + 12 + 9 + 6), the same skips and no new failure or error; a failure that is already in the Task 0 baseline stays out of scope.
 
@@ -1735,7 +1735,7 @@ With this (a constant, two helpers and four new tests inserted before it):
 
 Run:
 ```bash
-env $TEST_ENV $PY -m unittest tests.test_container_packaging
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_container_packaging
 ```
 Expected: `FAILED (failures=4)`; every failure reads `AssertionError: unexpectedly None : the entrypoint must pass a single-quoted --access-logformat to gunicorn`.
 
@@ -1764,7 +1764,7 @@ The format is gunicorn's default with `%(l)s %(u)s` and the Referer field remove
 
 Run:
 ```bash
-env $TEST_ENV $PY -m unittest tests.test_container_packaging
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_container_packaging
 ```
 Expected: `Ran 12 tests` and `OK`.
 
@@ -1774,7 +1774,7 @@ Run:
 ```bash
 sh -n scripts/docker-entrypoint.sh
 sed -n '/^exec gunicorn/,$p' scripts/docker-entrypoint.sh | sed 's/^exec gunicorn/printf "[%s]\\n"/' | sh
-sed -n '/^exec gunicorn/,$p' scripts/docker-entrypoint.sh | sed "s|^exec gunicorn|$PY -m gunicorn --print-config|" | env $TEST_ENV sh | grep -E '^(access_log_format|accesslog|errorlog) '
+sed -n '/^exec gunicorn/,$p' scripts/docker-entrypoint.sh | sed "s|^exec gunicorn|$PY -m gunicorn --print-config|" | env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' sh | grep -E '^(access_log_format|accesslog|errorlog) '
 ```
 Expected: `sh -n` prints nothing. The second command prints each argument on its own line, including `[--access-logformat]` followed by `[%(h)s %(t)s "%(m)s %(U)r %(H)s" %(s)s %(b)s "%(a)s"]` and ending with `[jira_server:app]`. The third prints the format as gunicorn resolves it, plus `accesslog = -` and `errorlog = -`:
 ```text
@@ -1869,7 +1869,7 @@ if __name__ == '__main__':
 
 Run:
 ```bash
-env $TEST_ENV $PY -m unittest tests.test_logging_migration
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_logging_migration
 ```
 Expected: `FAILED (failures=4)` (three subtests of `test_werkzeug_logs_redact_share_view_link_query` and `test_development_server_request_line_for_a_share_view_link_is_redacted`); the message names the unredacted line, for example `... not found in 'INFO:werkzeug:127.0.0.1 - - [14/Oct/2026 12:00:00] "GET /?v=1&mode=board&find=secret-text HTTP/1.1" 200 -'`. The existing callback test and the keep-readable test pass.
 
@@ -1911,7 +1911,7 @@ The second branch redacts only a root-path request whose query starts with `v=<d
 
 Run:
 ```bash
-env $TEST_ENV $PY -m unittest tests.test_logging_migration tests.test_codebase_structure_budgets
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_logging_migration tests.test_codebase_structure_budgets
 wc -l < jira_server.py
 ```
 Expected: `Ran 11 tests` and `OK`; `6491`.
@@ -1996,8 +1996,8 @@ Expected: four matches (one in edit A, three in edit B); `awk` prints nothing; t
 
 Run:
 ```bash
-env $TEST_ENV $PY -m unittest tests.test_container_packaging tests.test_logging_migration tests.test_codebase_structure_budgets tests.test_cloud_sql_iam
-env $TEST_ENV $PY -m unittest discover -s tests
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_container_packaging tests.test_logging_migration tests.test_codebase_structure_budgets tests.test_cloud_sql_iam
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest discover -s tests
 ```
 Expected: the first command prints `Ran 50 tests` and `OK` (`test_cloud_sql_iam` also reads the entrypoint; it must pass unmodified). The full suite shows the post-Task-1 total plus exactly 7 new tests (4 + 3), the same skips and no new failure.
 

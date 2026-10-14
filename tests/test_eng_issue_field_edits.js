@@ -72,7 +72,7 @@ test('one active editor drops stale metadata and stale debounced search results'
     searches[0].resolve({ options: [{ accountId: 'ada', displayName: 'Ada' }] });
     searches[1].resolve({ options: [{ accountId: 'grace', displayName: 'Grace' }] });
     await Promise.all([oldSearch, newSearch]);
-    assert.deepEqual(controller.getState().suggestions.map(person => person.accountId), ['me', 'grace']);
+    assert.deepEqual(controller.getState().suggestions.map(person => person.accountId), ['grace']);
 });
 
 test('below-threshold searches make no request and 300ms debounce dispatches only the latest query', async () => {
@@ -114,7 +114,7 @@ test('mounted-session people cache restores discovered users and skips repeated 
 
     await controller.openEditor({ issueKey: 'DEMO-1', field: 'assignee' });
     await controller.search('Grace');
-    assert.deepEqual(controller.getState().suggestions.map(person => person.accountId), ['me', 'grace']);
+    assert.deepEqual(controller.getState().suggestions.map(person => person.accountId), ['grace']);
     await controller.search('grace');
     assert.deepEqual(searches, ['Grace']);
     controller.closeEditor();
@@ -149,6 +149,27 @@ test('authentication context changes clear mounted-session people searches', asy
     await controller.openEditor({ issueKey: 'DEMO-1', field: 'assignee' });
     await controller.search('Grace');
     assert.equal(searches, 2);
+});
+
+test('query matches are filtered before the people cache cap, including repeated searches', async () => {
+    const { createEngIssueFieldEditController } = await loadController();
+    const controller = createEngIssueFieldEditController({
+        debounceMs: 0,
+        fetchEditableField: async () => metadata(),
+        searchUsers: async (_url, _key, { query }) => ({ options: query === 'Owner'
+            ? Array.from({ length: 5 }, (_, index) => ({ accountId: `owner-${index}`, displayName: `Owner ${index}` }))
+            : [{ accountId: 'grace', displayName: 'Grace Hopper', emailAddress: 'grace@example.test' }] }),
+    });
+    await controller.openEditor({ issueKey: 'DEMO-1', field: 'assignee' });
+    await controller.search('Owner');
+    await controller.search('Grace');
+    assert.deepEqual(controller.getState().suggestions.map(person => person.accountId), ['grace']);
+    await controller.search('GRACE');
+    assert.deepEqual(controller.getState().suggestions.map(person => person.accountId), ['grace']);
+    await controller.search('example.test');
+    assert.deepEqual(controller.getState().suggestions.map(person => person.accountId), ['grace']);
+    await controller.search('zzz');
+    assert.deepEqual(controller.getState().suggestions.map(person => person.accountId), []);
 });
 
 test('submit freezes context, keeps dispatched writes alive after close, and confirms through Task 2 seams', async () => {

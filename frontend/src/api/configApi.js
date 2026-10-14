@@ -69,9 +69,6 @@ export const fetchBootstrapConfig = (backendUrl) => {
         .finally(() => clearTimeout(timer));
 };
 
-export const fetchVersionInfo = (backendUrl) =>
-    getJson(`${backendUrl}/api/version`, 'Version', { cache: 'no-cache' });
-
 export const testJiraConnection = (backendUrl) =>
     apiFetch(`${backendUrl}/api/test`);
 

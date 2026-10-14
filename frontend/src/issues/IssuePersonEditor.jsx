@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { createPortal } from 'react-dom';
 import useIssueFieldPopover from './useIssueFieldPopover.js';
+import { matchesIssueUserQuery } from '../eng/engIssueFieldEditUtils.js';
 
 const SEARCH_THRESHOLD = 3;
 
@@ -45,7 +46,7 @@ export default function IssuePersonEditor({
     const recoveryButtonRef = React.useRef(null);
     const [localQuery, setLocalQuery] = React.useState('');
     const [editingStarted, setEditingStarted] = React.useState(false);
-    const [activeIndex, setActiveIndex] = React.useState(-1);
+    const [activeAccountId, setActiveAccountId] = React.useState(null);
     const [recoveryBusy, setRecoveryBusy] = React.useState(false);
     const submittedRef = React.useRef(false);
     const wasSubmittingRef = React.useRef(false);
@@ -63,14 +64,16 @@ export default function IssuePersonEditor({
             const accountId = String(person?.accountId || '').trim();
             const displayName = String(person?.displayName || '').trim();
             if (!accountId || !displayName || seen.has(accountId) || values.length >= 5) return;
+            if (editingStarted && !matchesIssueUserQuery(person, effectiveQuery)) return;
             seen.add(accountId);
             values.push(person);
         };
         if (metadata) append(metadata.me);
         (Array.isArray(suggestions) ? suggestions : []).forEach(append);
         return values;
-    }, [effectiveQuery, metadata, suggestions]);
-    const hasNonMeResult = options.some(person => person.accountId !== metadata?.me?.accountId);
+    }, [effectiveQuery, editingStarted, metadata, suggestions]);
+    const explicitIndex = options.findIndex(person => person.accountId === activeAccountId && !optionDisabled(person));
+    const activeIndex = explicitIndex >= 0 ? explicitIndex : options.findIndex(person => !optionDisabled(person));
 
     const { triggerRef, panelRef, focusTrigger } = useIssueFieldPopover({
         blockClass: 'issue-person-editor',
@@ -85,17 +88,16 @@ export default function IssuePersonEditor({
 
     React.useEffect(() => {
         setEditingStarted(false);
+        setActiveAccountId(null);
         if (!isOpen) return;
         submittedRef.current = false;
-        const firstEnabled = options.findIndex(person => !optionDisabled(person));
-        setActiveIndex(firstEnabled);
     }, [isOpen]);
 
-    React.useEffect(() => {
-        if (!isOpen || loading) return;
+    React.useLayoutEffect(() => {
+        if (!isOpen || loading || editingStarted) return;
         inputRef.current?.focus();
         inputRef.current?.select();
-    }, [isOpen, loading]);
+    }, [isOpen, loading, editingStarted]);
 
     React.useEffect(() => {
         if (wasSubmittingRef.current && !submitting) submittedRef.current = false;
@@ -106,14 +108,9 @@ export default function IssuePersonEditor({
         if (!error) return;
         submittedRef.current = false;
         setEditingStarted(false);
+        setActiveAccountId(null);
         requestAnimationFrame(() => inputRef.current?.select());
     }, [error]);
-
-    React.useEffect(() => {
-        if (!isOpen) return;
-        if (activeIndex >= 0 && options[activeIndex] && !optionDisabled(options[activeIndex])) return;
-        setActiveIndex(options.findIndex(person => !optionDisabled(person)));
-    }, [activeIndex, isOpen, options]);
 
     const closeAndRestore = reason => {
         focusTrigger();
@@ -144,11 +141,11 @@ export default function IssuePersonEditor({
 
     const moveActive = direction => {
         if (!options.length) return;
-        let next = activeIndex;
+        let next = activeIndex < 0 && direction < 0 ? 0 : activeIndex;
         for (let attempts = 0; attempts < options.length; attempts += 1) {
             next = (next + direction + options.length) % options.length;
             if (!optionDisabled(options[next])) {
-                setActiveIndex(next);
+                setActiveAccountId(options[next].accountId);
                 return;
             }
         }
@@ -193,7 +190,7 @@ export default function IssuePersonEditor({
                 <div className="issue-person-editor-menu-note">Type at least 3 characters to search Jira.</div>
             )}
             {!loading && searching && <div className="issue-person-editor-menu-note issue-person-editor-menu-loading">Searching Jira...</div>}
-            {!loading && !searching && textLength(effectiveQuery) >= SEARCH_THRESHOLD && !hasNonMeResult && (
+            {!loading && !searching && textLength(effectiveQuery) >= SEARCH_THRESHOLD && options.length === 0 && (
                 <div className="issue-person-editor-menu-note">No people found. Try a display name or check Jira.</div>
             )}
             {!loading && options.length > 0 && (
@@ -210,7 +207,7 @@ export default function IssuePersonEditor({
                                 aria-selected={index === activeIndex}
                                 aria-label={`${person.displayName}${isMe ? ', Me' : ''}`}
                                 disabled={optionDisabled(person) || submitting || recoveryLocked || metadata?.editable !== true}
-                                onPointerMove={() => { if (!optionDisabled(person)) setActiveIndex(index); }}
+                                onPointerMove={() => { if (!optionDisabled(person)) setActiveAccountId(person.accountId); }}
                                 onClick={() => selectPerson(person)}
                             >
                                 <span className="issue-person-editor-option-label">
@@ -267,14 +264,17 @@ export default function IssuePersonEditor({
                 onDragStart={(event) => { event.preventDefault(); event.stopPropagation(); }}
                 onClick={(event) => {
                     event.stopPropagation();
-                    if (!isOpen) onOpen?.();
+                    if (!isOpen) {
+                        onOpen?.();
+                        event.currentTarget.select();
+                    }
                 }}
                 onChange={event => {
                     if (!isOpen) return;
                     const value = event.target.value;
                     setEditingStarted(true);
                     if (query === undefined) setLocalQuery(value);
-                    setActiveIndex(-1);
+                    setActiveAccountId(null);
                     onSearch?.(value);
                 }}
                 onKeyDown={event => {

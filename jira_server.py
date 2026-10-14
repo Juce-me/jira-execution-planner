@@ -113,7 +113,6 @@ from backend.services.alert_epics import (
     fetch_epics_by_keys_for_alert as fetch_epics_by_keys_for_alert_service,
     quote_jql_value,
 )
-from backend.services import update_check as _update_check_service
 from backend.services import priority_weights as _priority_weights_service
 from backend.services import team_catalog as _team_catalog_service
 from backend.services import group_config as _group_config_service
@@ -179,13 +178,8 @@ TEAM_GROUPS_JSON = os.getenv('TEAM_GROUPS_JSON', '').strip()
 JQL_QUERY_TEMPLATE = os.getenv('JQL_QUERY_TEMPLATE', '').strip()
 DEBUG_MODE = os.getenv('DEBUG_MODE', 'false').lower() == 'true'
 SETTINGS_ADMIN_ONLY = os.getenv('SETTINGS_ADMIN_ONLY', 'true').lower() not in ('0', 'false', 'no')
-UPDATE_CHECK_ENABLED = os.getenv('UPDATE_CHECK', 'true').lower() not in ('0', 'false', 'no')
-UPDATE_CHECK_REMOTE = os.getenv('UPDATE_CHECK_REMOTE', 'origin').strip() or 'origin'
-UPDATE_CHECK_BRANCH = os.getenv('UPDATE_CHECK_BRANCH', 'main').strip() or 'main'
-UPDATE_CHECK_TTL_SECONDS = int(os.getenv('UPDATE_CHECK_TTL_SECONDS', '300'))
 
 def local_file_state_enabled(environ=None): return _runtime_state.local_file_state_enabled(environ, default_environment=APP_ENVIRONMENT_KEY)
-UPDATE_CHECK_RELEASE_INFO = os.getenv('UPDATE_CHECK_RELEASE_INFO', 'release-info.json').strip() or 'release-info.json'
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').strip().upper() or 'INFO'
 JIRA_RETRY_MAX_ATTEMPTS = int(os.getenv('JIRA_RETRY_MAX_ATTEMPTS', '4'))
 JIRA_RETRY_MAX_ELAPSED_SECONDS = float(os.getenv('JIRA_RETRY_MAX_ELAPSED_SECONDS', '10'))
@@ -218,7 +212,6 @@ MISSING_INFO_CACHE = {}
 MISSING_INFO_CACHE_TTL_SECONDS = 60 * 5
 DEPENDENCIES_CACHE = {}
 DEPENDENCIES_CACHE_TTL_SECONDS = 60 * 5
-UPDATE_CHECK_CACHE = {'ts': 0, 'data': None}
 EPIC_COHORT_CACHE = {}
 EXCLUDED_CAPACITY_STATS_SOURCE_CACHE = {}
 EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE = {}
@@ -2594,31 +2587,6 @@ def parse_groups_config_env():
 
 def invalidate_sprints_cache():
     return _sprints_service.invalidate_sprints_cache(SPRINTS_CACHE_FILE, log_warning_fn=log_warning) if local_file_state_enabled() else False
-
-
-def run_git_command(args):
-    return _update_check_service.run_git_command(
-        args,
-        repo_dir=os.path.dirname(os.path.abspath(__file__)),
-    )
-
-
-def load_release_info():
-    return _update_check_service.load_release_info(
-        UPDATE_CHECK_RELEASE_INFO,
-        base_dir=os.path.dirname(os.path.abspath(__file__)),
-        log_warning_fn=log_warning,
-    )
-
-
-def build_update_check_payload():
-    return _update_check_service.build_update_check_payload(
-        remote=UPDATE_CHECK_REMOTE,
-        branch=UPDATE_CHECK_BRANCH,
-        run_git_command_fn=run_git_command,
-        load_release_info_fn=load_release_info,
-        now_iso_fn=utc_now_iso,
-    )
 
 
 def normalize_team_catalog(raw):

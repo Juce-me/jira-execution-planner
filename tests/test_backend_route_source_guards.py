@@ -56,7 +56,6 @@ ENG_ROUTE_PATHS = (
 )
 SETTINGS_ROUTE_PATHS = (
     "/api/config",
-    "/api/version",
     "/api/groups-config",
     "/api/me/onboarding",
     "/api/team-catalog",

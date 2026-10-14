@@ -384,7 +384,7 @@ Implemented with changes. The implementation is now the source of truth.
 - The status chip sits after the `n of m stories` text and before Story Points, not directly after the bar (Decision 3 reversed by the operator during execution); the card spec pins child order `story-subtasks-progress`, `estories`, `status-pill`, `push`.
 - `.erow2` and `.erow3` also gained `min-width: 0` (ledger ruling) so the stories text, not the chip, yields in a narrow column.
 - The card's one-x claim now covers the title, the progress bar and the people row; the chip's own x follows the stories text length.
-- Gate results are recorded under Execution ledger, Task 4.
+- Gate results are recorded under Execution ledger, Task 4. The related discovery notes were dropped; they are not part of this change.
 
 ## Current Accuracy
 
@@ -393,4 +393,5 @@ Mostly accurate: Goal, Decisions, Task 1 Step 3 and Task 2 Step 1 were corrected
 - Task 2: complete (commit bf474d79). Card and view specs: 262 passed, 1 skipped (headed-only glyph guard), 0 failed (Chromium, `--workers=4`). Related Board specs: 134 passed, 4 failed in `eng_board_progressive_loading.spec.js` with "campaign server startup timed out" (machine load average about 37 from a concurrent unrelated test run); all four pass when re-run alone (4/4). Node guards: 72/72, baseline JSON untouched. Hover image shows the unchanged column-coloured border and soft shadow.
 - Task 3: complete. Feature doc, design-system map row, ontology entry (paths and symbols resolved with `rg`), analytics allowlist row and plan index updated.
 - Task 4 gates, run on the final tree: `npm run build` exit 0 and `git status --short frontend/dist` empty; `node --test tests/test_*.js` 0 failed; Python `JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile` 2131 tests OK (29 skipped); Python default environment 2131 tests, 1 error in `test_oauth_route_guards` (`test_basic_mode_does_not_apply_oauth_route_guard`): the local Postgres socket is not running, environmental, and this change touches no Python file.
-- Not run before publication, by the operator's instruction to publish: the full Chromium `tests/ui` run was still in progress, the headed Firefox and WebKit runs of the card spec were not run, and no fresh-context whole-branch review was dispatched. The PR description states this.
+- Full Chromium `tests/ui` run on the final tree (`--workers=4`, 31 minutes, machine under heavy load from an unrelated run): 1588 passed, 8 skipped, 2 did not run, 14 failed; all 14 failures pass when re-run alone (16 of 16 with sibling cases), so none reproduced.
+- Not run before publication, by the operator's instruction to publish: the headed Firefox and WebKit runs of the card spec, and a fresh-context whole-branch review. The PR description states this.

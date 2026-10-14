@@ -218,12 +218,12 @@ export function createEngIssueFieldEditController(options = {}) {
         publish({
             searchQuery: query,
             searching: hasIssueUserSearchThreshold(query),
-            suggestions: normalizeIssueUserSuggestions(metadata?.me, cachedPeople(editor)),
+            suggestions: normalizeIssueUserSuggestions(metadata?.me, cachedPeople(editor), 5, query),
         });
         if (!editor || !metadata || !hasIssueUserSearchThreshold(query)) return Promise.resolve(null);
         const cacheKey = peopleSearchKey(editor, query);
         if (peopleSearchCache.has(cacheKey)) {
-            publish({ suggestions: normalizeIssueUserSuggestions(metadata.me, cachedPeople(editor)), searching: false });
+            publish({ suggestions: normalizeIssueUserSuggestions(metadata.me, cachedPeople(editor), 5, query), searching: false });
             return Promise.resolve({ options: cachedPeople(editor), cached: true });
         }
         const editorId = editor.id;
@@ -241,7 +241,7 @@ export function createEngIssueFieldEditController(options = {}) {
                     rememberPeople(editor, result?.options);
                     peopleSearchCache.add(cacheKey);
                     if (peopleSearchCache.size > MAX_CACHED_SEARCHES) peopleSearchCache.delete(peopleSearchCache.values().next().value);
-                    publish({ suggestions: normalizeIssueUserSuggestions(metadata.me, cachedPeople(editor)), searching: false });
+                    publish({ suggestions: normalizeIssueUserSuggestions(metadata.me, cachedPeople(editor), 5, query), searching: false });
                     resolve(result);
                 } catch (error) {
                     if (isAuthenticationRequiredError(error)) {

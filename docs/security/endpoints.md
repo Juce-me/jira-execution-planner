@@ -51,7 +51,6 @@ The endpoint policy registry lives in `backend/security/policy.py`. Every Flask 
 | `eng-api-dependencies` | `POST` | `/api/dependencies` | `authenticated_read` | `exact` |
 | `eng-api-issue-lookup` | `GET` | `/api/issues/lookup` | `authenticated_read` | `exact` |
 | `settings-config-read` | `GET` | `/api/config` | `authenticated_read` | `exact` |
-| `settings-version` | `GET` | `/api/version` | `authenticated_read` | `exact` |
 | `settings-groups-read` | `GET` | `/api/groups-config` | `authenticated_read` | `exact` |
 | `settings-groups-write` | `POST` | `/api/groups-config` | `user_write` | `exact` |
 | `settings-catalog-read` | `GET` | `/api/team-catalog` | `authenticated_read` | `exact` |

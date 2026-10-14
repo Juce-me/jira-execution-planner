@@ -438,3 +438,8 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Hover paint must follow an icon button’s visible border shape; use circular paint only for unframed icons or genuinely circular borders, and verify the shape in mounted tests.
 
 - Settings section tabs (`group-modal-tab`) use underline-only hover; preserve the selected accent underline and existing focus outline instead of applying boxed button shading/rings.
+
+- Start independent issue branches from `origin/main`; never inherit another issue's commits or uncommitted changes.
+- When a plan lists an unanswered layout "default" that differs from the operator-approved mockup's default variant, implement the mockup variant and compare the rendered screenshot against the mockup image before reporting; the Board Epic status chip belongs after the `n of m stories` text, never between the bar and the count (#271).
+
+- Select existing inline person-field text on opening; typing shows only query matches (no Me fallback), and an explicit pointer/keyboard highlight survives refreshed results until the next input change.

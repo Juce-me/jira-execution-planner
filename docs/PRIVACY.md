@@ -103,14 +103,6 @@ whether analytics may be enabled and for providing any required notice or
 choice. The detailed analytics contract is documented in
 [README_ANALYTICS.md](README_ANALYTICS.md).
 
-Unless disabled with `UPDATE_CHECK=false`, the dashboard requests version
-information when it loads. The server can then contact the configured Git
-remote to compare the installed revision with the configured branch, subject
-to a short server-side result cache. For the default public repository, that
-remote is normally hosted by GitHub. This check sends ordinary server
-connection metadata to the remote Git host; it does not send Jira content or
-application user records.
-
 The deployment operator may configure additional infrastructure or services
 that are not supplied by this repository. Those services are governed by the
 operator's own configuration and privacy notice.

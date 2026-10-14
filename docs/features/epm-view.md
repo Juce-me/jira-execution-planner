@@ -2,6 +2,13 @@
 
 Use the header `ENG | EPM` switch to move between team delivery and project delivery.
 
+The Jira rollup toggle uses the shared button overlay and blue ring. Collapse all
+and the settings gear use tinted circles; project, update and duplicate-issue links
+underline. Passive project status and label chips keep their resting appearance.
+Hover feedback is limited to enabled controls on hover-capable devices. Desktop
+and narrow progress readouts retain their placement, reveal and focus behavior;
+the [design-system map](../design-system.md) records the shared control owners.
+
 In DB/OAuth mode, EPM is intentionally hidden until the signed-in user connects a Home/Townsquare token in `Settings -> Connections`. Jira REST reads use the user's Atlassian OAuth session. Home/Townsquare metadata reads use the same user's connected `atlassian_user_api_token`, stored encrypted in DB `auth_tokens`. Shared service credentials are not a DB/OAuth EPM fallback.
 
 The Home token is a credential connection, not EPM saved-view state. Token material is not stored in dashboard config, EPM config, JSON files, browser local storage, API responses, or user view payloads.

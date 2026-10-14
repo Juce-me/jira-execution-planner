@@ -20,7 +20,7 @@ Make the UI simpler, more readable and easier for a new user: (1) write down whi
 5. Write-contract enforcement: API shape plus source guards. No runtime assertion.
 6. One machine-readable `json` block inside `docs/design-system.md` holds the write contract and the hook registry; the doc is the single source.
 7. Ring: option A, `0 0 0 1px #2f80ed, 0 0 0 3px rgba(47, 128, 237, .25)` (about 3.9:1 on white; 1.95:1 against the In-Progress fill), with an inset variant for cells that clip overflow.
-8. Buttons: an overlay of the button's own text colour at 12% (drawn as an inset shadow, so it also works over inline fills) plus the ring. No new `Button` component.
+8. Buttons: an overlay of the button's own text colour at 8% (drawn as an inset shadow, so it also works over inline fills) plus the ring. No new `Button` component.
 9. Interactive pills keep today's resting look (no new resting cue). Pill hover keeps `filter: brightness(.94)` and the existing semantic hover tints; only the ring changes.
 10. Ratchets in PR1: font-family, font-size, border-radius, hover offenders, and new pill/chip/badge/button class names.
 11. AGENTS.md: five binding rules in section 10; section 11 learnings that go stale are updated or retired in the PR that removes their cause.
@@ -84,7 +84,7 @@ Existing classes keep their selectors and consume the tokens; there are no group
 | Kind | Hover |
 | --- | --- |
 | Interactive pills, chips | Ring A; `brightness(.94)` and semantic tints stay; inset ring in clipped cells |
-| Buttons (filled, secondary, transparent, light) | 12% text-colour overlay plus ring A; nothing moves |
+| Buttons (filled, secondary, transparent, light) | 8% text-colour overlay plus ring A; nothing moves |
 | Inline text edit, links | Underline |
 | Icon buttons | Tinted circle |
 | Menu and dropdown options | Row tint |
@@ -149,3 +149,7 @@ Keyboard-only focus work (`docs/TODO.md` Deferred); keyframe deduplication and e
 ## Validation record
 
 Four read-only reviews on 2026-10-13 (write-contract call paths, hover/CSS feasibility, repo-rule compliance, goal fit and UX) found revision 1 not ready for planning. They corrected the baseline counts, the foundation architecture (grouped selector lists), the rollout (one PR), the write contract (guards that could not stop the motivating regression), the ring strength and the missing element kinds. A standalone specimen built from the repo's verbatim CSS settled ring strength, button hover and the resting cue; the operator's choices are decisions 7 to 9.
+
+Operator refinement (2026-10-14): reduce ordinary-button dimming from 12% to 8%. Framed header icon buttons follow their rounded-square border with the shared overlay/ring; unframed icon circles retain their existing treatment. The original 12% inert-token delivery notes above are historical. Geometry, selected states, disabled gates and semantic exceptions remain unchanged.
+
+Operator shape correction (2026-10-14): icon hover follows any visible non-circular border, including Planning action pills, capacity rail controls and issue remove/refresh buttons. These use the 8% overlay/ring without changing the existing border radius or geometry. Circles remain appropriate for unframed icons and genuinely circular frames. Mounted checks now reject circular paint inside non-circular visible borders and pin radius/width/style.

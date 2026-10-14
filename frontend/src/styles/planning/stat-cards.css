@@ -234,14 +234,10 @@
             border: 1px solid var(--border);
         }
 
-        .team-capacity-action:hover,
-        .team-capacity-editor-action:hover {
-            transform: none;
-            border-color: #b7afa2;
-            background: #f6f4ef;
-            color: var(--text-primary);
-            box-shadow: none;
-        }
+        @media (hover: hover) {
+.team-capacity-action:is(button, a):hover:where(:not(:disabled)):where(:not([aria-disabled="true"])),
+.team-capacity-editor-action:is(button):hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) { background-image: none; box-shadow: var(--hover-overlay), var(--hover-ring); }
+}
 
         .team-capacity-action:focus-visible,
         .team-capacity-editor-action:focus-visible {
@@ -565,24 +561,12 @@
             font-size: 0.66rem;
             margin: 0;
             cursor: pointer;
-            transition: all 0.2s;
+            transition: background-color var(--motion-hover), color var(--motion-hover), border-color var(--motion-hover), box-shadow var(--motion-hover);
         }
 
-        .uncheck-button:hover {
-            background: var(--bg-secondary);
-            color: var(--text-primary);
-            border-color: var(--border);
-            box-shadow: 0 6px 14px rgba(22, 22, 22, 0.12);
-            transform: none;
-        }
+        @media (hover: hover) { .uncheck-button:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) { color: var(--text-primary); box-shadow: var(--hover-overlay), var(--hover-ring); } }
 
         .uncheck-button:disabled {
             opacity: 0.3;
             cursor: not-allowed;
-        }
-
-        .uncheck-button:disabled:hover {
-            background: transparent;
-            color: var(--text-secondary);
-            border-color: var(--border);
         }

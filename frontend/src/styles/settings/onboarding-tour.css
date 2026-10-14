@@ -142,11 +142,6 @@
     color: #1f1f1f;
 }
 
-.onboarding-tour-action-next:hover {
-    border-color: #40a9ff;
-    background: #40a9ff;
-    color: #1f1f1f;
-}
 
 .onboarding-tour-action-skip-all.secondary {
     border: 1px solid #ff4d4f;
@@ -154,11 +149,6 @@
     color: #fff;
 }
 
-.onboarding-tour-action-skip-all.secondary:hover {
-    border-color: #d9363e;
-    background: #d9363e;
-    color: #fff;
-}
 
 .onboarding-tour-action-skip-section.secondary {
     border-color: #ff4d4f;
@@ -166,11 +156,6 @@
     color: #cf1322;
 }
 
-.onboarding-tour-action-skip-section.secondary:hover {
-    border-color: #d9363e;
-    background: #fff1f0;
-    color: #a8071a;
-}
 
 .onboarding-tour-action-next:disabled {
     border-color: #91caff;
@@ -236,5 +221,22 @@
 @media (prefers-reduced-motion: reduce) {
     .onboarding-tour-spotlight {
         transition: none;
+    }
+}
+
+@media (hover: hover) {
+    .onboarding-tour-action-next:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+        box-shadow: var(--hover-overlay), var(--hover-ring);
+    }
+
+    .onboarding-tour-action-skip-all.secondary:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+        border-color: #d9363e;
+        background: #d9363e;
+        color: #fff;
+        box-shadow: var(--hover-ring);
+    }
+
+    .onboarding-tour-action-skip-section.secondary:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+        box-shadow: var(--hover-overlay), var(--hover-ring);
     }
 }

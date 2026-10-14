@@ -122,14 +122,43 @@ function parseRules(css, file) {
     return rules;
 }
 
-function safeShadow(value) {
+// Only these exact, uniquely declared root tokens may stand in for safe shadows.
+// Validating every declaration also catches conditional and descendant overrides.
+const foundationShadowValues = {
+    '--hover-ring': '0 0 0 1px #2f80ed, 0 0 0 3px rgba(47, 128, 237, .25)',
+    '--hover-ring-inset': 'inset 0 0 0 1px #2f80ed, inset 0 0 0 3px rgba(47, 128, 237, .25)',
+    '--hover-overlay': 'inset 0 0 0 999px color-mix(in srgb, currentColor calc(var(--overlay-pct) * 1%), transparent)',
+};
+
+function validatedShadowTokens(rules) {
+    const expected = { ...foundationShadowValues, '--overlay-pct': '8' };
+    const valid = new Set();
+    for (const [property, value] of Object.entries(expected)) {
+        const declarations = rules.flatMap(rule => rule.declarations
+            .filter(declaration => declaration.property === property)
+            .map(declaration => ({ rule, value: declaration.value })));
+        if (declarations.length === 1 && declarations[0].rule.selector === ':root'
+            && declarations[0].rule.context.length === 0 && declarations[0].value === value) valid.add(property);
+    }
+    if (!valid.has('--overlay-pct')) valid.delete('--hover-overlay');
+    valid.delete('--overlay-pct');
+    return valid;
+}
+
+function safeShadow(value, validatedTokens = new Set()) {
     if (value === 'none') return true;
-    return splitCss(value, ',').every(({ text: shadow }) =>
-        /\binset\b/.test(shadow) || /^0(?:px)?\s+0(?:px)?\s+0(?:px)?\s+\d*\.?\d+px(?:\s|$)/.test(shadow));
+    return splitCss(value, ',').every(({ text: shadow }) => {
+        const token = shadow.match(/^var\((--[\w-]+)\)$/);
+        if (token) return Object.hasOwn(foundationShadowValues, token[1]) && validatedTokens.has(token[1]);
+        // Keep the existing literal-ring/inset policy; a variable standing in for
+        // the entire shadow must satisfy the foundation validation above.
+        return /\binset\b/.test(shadow) || /^0(?:px)?\s+0(?:px)?\s+0(?:px)?\s+\d*\.?\d+px(?:\s|$)/.test(shadow);
+    });
 }
 
 function analyzeCss(sources) {
     const rules = sources.flatMap(({ file, css }) => parseRules(css, file));
+    const shadowTokens = validatedShadowTokens(rules);
     const values = Object.fromEntries(typographyProperties.map((property) => [property, new Set()]));
     const offenders = {};
     const classHooks = new Set();
@@ -145,7 +174,7 @@ function analyzeCss(sources) {
             const interactive = /:(?:hover|active)\b/.test(rule.selector);
             const offender = (interactive && ['transform', 'scale', 'translate'].includes(property))
                 || (property === 'transition' && splitCss(value, ',').some(({ text }) => /(?:^|\s)all(?:\s|$)/.test(text)))
-                || (interactive && property === 'box-shadow' && !safeShadow(value));
+                || (interactive && property === 'box-shadow' && !safeShadow(value, shadowTokens));
             if (offender) {
                 const key = JSON.stringify([rule.file, rule.context, rule.selector, rule.occurrence, property, propertyOccurrence]);
                 if (Object.hasOwn(offenders, key)) throw new Error(`CSS identity collision: ${key}`);
@@ -217,4 +246,4 @@ function readRegistry() {
     return JSON.parse(blocks[0][1]);
 }
 
-module.exports = { repoRoot, splitCss, parseRules, safeShadow, analyzeCss, analyzeDashboard, baselineData, compareBaseline, baselineRegenerationErrors, readRegistry };
+module.exports = { repoRoot, splitCss, parseRules, safeShadow, validatedShadowTokens, analyzeCss, analyzeDashboard, baselineData, compareBaseline, baselineRegenerationErrors, readRegistry };

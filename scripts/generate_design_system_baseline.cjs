@@ -1,6 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { repoRoot, analyzeDashboard, baselineData, baselineRegenerationErrors, safeShadow } = require('./design_system_css.cjs');
+const { repoRoot, analyzeDashboard, baselineData, baselineRegenerationErrors, safeShadow, validatedShadowTokens } = require('./design_system_css.cjs');
 
 (async () => {
     const analysis = await analyzeDashboard();
@@ -9,6 +9,7 @@ const { repoRoot, analyzeDashboard, baselineData, baselineRegenerationErrors, sa
     const errors = baselineRegenerationErrors(analysis, existing);
     if (errors.length) throw new Error(`Baseline regeneration rejected:\n${errors.join('\n')}`);
     fs.writeFileSync(baselinePath, `${JSON.stringify(baselineData(analysis), null, 2)}\n`);
+    const shadowTokens = validatedShadowTokens(analysis.rules);
     const duplicates = analysis.rules.filter((rule) => rule.occurrence > 1);
     const blocks = new Map();
     for (const rule of analysis.rules) {
@@ -31,7 +32,7 @@ const { repoRoot, analyzeDashboard, baselineData, baselineRegenerationErrors, sa
             hoverActiveTransformNone: interactiveDeclarations.filter(({ property, value }) => property === 'transform' && value === 'none').length,
             hoverActiveTransformNonNone: interactiveDeclarations.filter(({ property, value }) => property === 'transform' && value !== 'none').length,
             transitionAll: declarations.filter(({ property, value }) => property === 'transition' && /(?:^|[\s,])all(?:[\s,]|$)/.test(value)).length,
-            hoverActiveShadowOffenders: interactiveDeclarations.filter(({ property, value }) => property === 'box-shadow' && !safeShadow(value)).length,
+            hoverActiveShadowOffenders: interactiveDeclarations.filter(({ property, value }) => property === 'box-shadow' && !safeShadow(value, shadowTokens)).length,
         },
         offenderIdentities: {
             transform: Object.keys(analysis.offenders).filter((key) => JSON.parse(key)[4] === 'transform').length,

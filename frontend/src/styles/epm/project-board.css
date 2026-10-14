@@ -56,9 +56,14 @@
             stroke-linejoin: round;
         }
 
-        .epm-project-collapse-all-button:hover {
-            background: var(--epm-project-hover-surface);
-            color: var(--epm-project-accent);
+        @media (hover: hover) {
+            .group-gear-button.epm-project-collapse-all-button:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                background-color: var(--epm-project-accent-surface);
+                background-image: none;
+                border-color: var(--epm-project-accent-soft);
+                color: var(--epm-project-accent);
+                box-shadow: var(--hover-overlay), var(--hover-ring);
+            }
         }
 
         .epm-project-board-header {
@@ -110,13 +115,11 @@
             transition: background-color 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease, color 0.14s ease;
         }
 
-        /* EPM hover contrast principle: use light accent surfaces with dark text so local hovers never inherit the global dark button hover. */
-        .epm-project-board-toggle:hover {
-            background: var(--epm-project-hover-surface);
-            border-color: rgba(7, 71, 166, 0.36);
-            color: var(--text-primary);
-            transform: none;
-            box-shadow: 0 2px 8px rgba(7, 71, 166, 0.12);
+        /* EPM hover contrast principle: preserve the resting accent palette under the shared overlay and ring. */
+        @media (hover: hover) {
+            .epm-project-board-toggle:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                box-shadow: var(--hover-overlay), var(--hover-ring);
+            }
         }
 
         .epm-project-board-toggle:focus-visible {
@@ -250,11 +253,13 @@
             text-decoration: none;
         }
 
-        .epm-project-board-name-link:hover {
-            color: var(--epm-project-accent);
-            text-decoration: underline;
-            text-decoration-thickness: 1px;
-            text-underline-offset: 3px;
+        @media (hover: hover) {
+            .epm-project-board-name-link:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                color: var(--epm-project-accent);
+                text-decoration: underline;
+                text-decoration-thickness: 1px;
+                text-underline-offset: 3px;
+            }
         }
 
         .epm-project-board-label-pill {
@@ -513,12 +518,20 @@
             border-radius: 4px;
         }
 
-        .epm-project-board-update-meta-link:hover,
         .epm-project-board-update-meta-link:focus-visible {
             color: var(--epm-project-accent);
             text-decoration: underline;
             text-decoration-thickness: 1px;
             text-underline-offset: 2px;
+        }
+
+        @media (hover: hover) {
+            .epm-project-board-update-meta-link:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                color: var(--epm-project-accent);
+                text-decoration: underline;
+                text-decoration-thickness: 1px;
+                text-underline-offset: 2px;
+            }
         }
 
         .epm-project-board-update-date,
@@ -544,11 +557,16 @@
             color: var(--text-secondary);
         }
 
-        .epm-project-board-update-meta-link:hover .epm-project-board-update-date,
-        .epm-project-board-update-meta-link:hover .epm-project-board-update-author,
         .epm-project-board-update-meta-link:focus-visible .epm-project-board-update-date,
         .epm-project-board-update-meta-link:focus-visible .epm-project-board-update-author {
             color: var(--epm-project-accent);
+        }
+
+        @media (hover: hover) {
+            .epm-project-board-update-meta-link:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) .epm-project-board-update-date,
+            .epm-project-board-update-meta-link:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) .epm-project-board-update-author {
+                color: var(--epm-project-accent);
+            }
         }
 
         .epm-project-board-update.is-stale .epm-project-board-update-date {

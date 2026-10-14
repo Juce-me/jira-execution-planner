@@ -31,14 +31,6 @@
             margin-left: 0;
         }
 
-        .planning-button:hover {
-            background: var(--bg-secondary);
-            color: var(--text-primary);
-            border-color: var(--border);
-            box-shadow: 0 6px 14px rgba(22, 22, 22, 0.12);
-            transform: none;
-        }
-
         .planning-button.active {
             background: var(--text-primary);
             color: var(--bg-primary);

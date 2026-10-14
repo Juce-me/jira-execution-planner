@@ -932,22 +932,10 @@ test('EPM project hover states document and enforce accessible contrast', () => 
         !dashboardCssSource.includes('.epm-project-board-toggle:hover .epm-project-board-name'),
         'Expected icon-only toggle hover not to depend on the project title being inside the button'
     );
-    assert.ok(
-        dashboardCssSource.includes('.epm-project-board-toggle:hover {'),
-        'Expected EPM project toggle to own its hover style instead of inheriting global button:hover'
-    );
-    assert.ok(
-        dashboardCssSource.includes('background: var(--epm-project-hover-surface);'),
-        'Expected EPM project toggle hover to use a light accent surface'
-    );
-    assert.ok(
-        dashboardCssSource.includes('transform: none;'),
-        'Expected EPM project toggle hover to reset the global button hover transform'
-    );
-    assert.ok(
-        dashboardCssSource.includes('box-shadow: 0 2px 8px rgba(7, 71, 166, 0.12);'),
-        'Expected EPM project toggle hover to use a visible but low-contrast-safe affordance'
-    );
+    const toggleHover = dashboardCssSource.match(/\.epm-project-board-toggle:hover:where\(:not\(:disabled\)\):where\(:not\(\[aria-disabled="true"\]\)\)\s*\{([^}]+)\}/);
+    assert.ok(toggleHover, 'Expected enabled-only EPM ordinary button hover');
+    assert.match(toggleHover[1], /box-shadow:\s*var\(--hover-overlay\), var\(--hover-ring\)/);
+    assert.doesNotMatch(toggleHover[1], /transform|background|0 2px 8px/);
     assert.ok(
         dashboardCssSource.includes('.epm-project-board-body::before'),
         'Expected expanded project rail to live in the body away from the disclosure button'

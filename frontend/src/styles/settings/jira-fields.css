@@ -57,22 +57,9 @@
             margin-right: 0;
         }
 
-        .project-type-btn:hover {
-            transform: none;
-            box-shadow: none;
-        }
 
-        .project-type-btn.product:hover {
-            background: rgba(22, 119, 255, 0.12);
-            border-color: rgba(22, 119, 255, 0.4);
-            color: #1677ff;
-        }
 
-        .project-type-btn.tech:hover {
-            background: rgba(250, 84, 28, 0.10);
-            border-color: rgba(250, 84, 28, 0.4);
-            color: #fa541c;
-        }
+
 
         .selected-team-chip.product-chip {
             border-left: 3px solid rgba(22, 119, 255, 0.5);
@@ -84,4 +71,24 @@
 
         .selected-team-chip.issue-type-chip {
             border-left: 3px solid rgba(114, 46, 209, 0.5);
+        }
+
+        @media (hover: hover) {
+            .project-type-btn:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                box-shadow: var(--hover-ring);
+            }
+
+            .project-type-btn.product:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                background: rgba(22, 119, 255, 0.12);
+                border-color: rgba(22, 119, 255, 0.4);
+                color: #1677ff;
+                box-shadow: var(--hover-ring);
+            }
+
+            .project-type-btn.tech:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                background: rgba(250, 84, 28, 0.10);
+                border-color: rgba(250, 84, 28, 0.4);
+                color: #fa541c;
+                box-shadow: var(--hover-ring);
+            }
         }

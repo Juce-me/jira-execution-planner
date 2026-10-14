@@ -66,10 +66,10 @@
             text-transform: none;
         }
 
-        .story-subtasks-error button:hover {
-            background: #ffe4e3;
-            box-shadow: none;
-            transform: none;
+        @media (hover: hover) {
+            .story-subtasks-error button:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                box-shadow: var(--hover-overlay), var(--hover-ring);
+            }
         }
 
         .story-subtasks-rows {
@@ -138,9 +138,11 @@
             white-space: nowrap;
         }
 
-        .story-subtask-name:hover {
-            text-decoration: underline;
-            text-underline-offset: 2px;
+        @media (hover: hover) {
+            .story-subtask-name:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                text-decoration: underline;
+                text-underline-offset: 2px;
+            }
         }
 
         .story-subtask-row > .task-status,

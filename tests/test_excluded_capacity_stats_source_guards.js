@@ -1,3 +1,4 @@
+const { parseRules } = require('../scripts/design_system_css.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -196,11 +197,12 @@ test('effort split bar segments reset global button spacing and rounding', () =>
         /\.effort-type-split-segment\s*\{[\s\S]*border-radius:\s*0/,
         'Expected only the track, not every segment, to create the rounded bar shape'
     );
-    assert.match(
-        cssSource,
-        /\.effort-type-split-segment:hover\s*\{[\s\S]*transform:\s*none/,
-        'Expected segment hover to avoid the global button lift'
-    );
+    const segmentHover = parseRules(cssSource, 'dashboard').find(rule => rule.selector === '.effort-type-split-segment:hover');
+    assert.ok(segmentHover, 'Expected exact segment hover owner');
+    const properties = Object.fromEntries(segmentHover.declarations.map(({property,value})=>[property,value]));
+    assert.equal(properties.background, 'var(--effort-color)', 'Expected semantic segment color on hover');
+    assert.equal(properties['box-shadow'], 'none', 'Expected chart segment to suppress ordinary button framing');
+    assert.ok(!('transform' in properties), 'Obsolete no-lift reset is gone');
     assert.match(
         cssSource,
         /\.effort-type-split-legend-item\s*\{[\s\S]*margin-right:\s*0/,
@@ -348,7 +350,7 @@ test('excluded-capacity epic menu wraps long labels without horizontal scroll', 
     );
     assert.match(
         cssSource,
-        /\.team-dropdown-panel label\.team-dropdown-option:hover\s*\{[\s\S]*background:\s*var\(--bg-primary\)/,
+        /\.team-dropdown-panel label\.team-dropdown-option:where\(:has\(input:not\(:disabled\)\)\):hover:where\(:not\(:disabled\)\):where\(:not\(\[aria-disabled="true"\]\)\)\s*\{[^}]*background:\s*var\(--bg-primary\)/,
         'Expected excluded epic option hover to come from the shared team dropdown style'
     );
     assert.match(
@@ -617,11 +619,14 @@ test('excluded-capacity line chart uses a readable custom hover readout', () => 
         /\.excluded-capacity-line-hover-bubble\s*\{[\s\S]*z-index:\s*calc\(var\(--sticky-control-overlay-z\) \+ 4\)/,
         'Expected line chart readout to layer above chart and sticky controls'
     );
-    assert.match(
-        cssSource,
-        /\.excluded-capacity-line-legend-item:hover\s*\{[\s\S]*box-shadow:/,
-        'Expected legend hover to use a subtle glow instead of a dark tooltip'
-    );
+    const legendHover = parseRules(cssSource, 'dashboard').find(rule => rule.selector === '.excluded-capacity-line-legend-item:hover:where(:enabled):where(:not([aria-disabled="true"]))');
+    assert.ok(legendHover, 'Expected exact enabled native chart legend hover owner');
+    assert.ok(legendHover.context.includes('@media (hover: hover)'), 'Legend hover is capability gated');
+    const properties = Object.fromEntries(legendHover.declarations.map(({property,value})=>[property,value]));
+    assert.equal(properties.background, 'rgba(31, 111, 235, 0.06)');
+    assert.equal(properties['box-shadow'], '0 0 0 3px rgba(31, 111, 235, 0.08)');
+    assert.equal(properties.color, 'var(--text-primary)');
+    assert.ok(!('transform' in properties));
 });
 
 test('excluded-capacity controls keep sprint first and actions on the right', () => {

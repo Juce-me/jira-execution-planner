@@ -126,11 +126,16 @@
             padding: 0.35rem 0.6rem;
         }
 
-        .scenario-toggle:not(.active):hover {
-            background: #f7f5f0;
-            color: var(--text-primary);
-            box-shadow: none;
-            transform: none;
+        @media (hover: hover) {
+            .scenario-toggle:hover:where(:enabled):where(:not([aria-disabled="true"])) {
+                color: var(--text-primary);
+                box-shadow: var(--hover-overlay), var(--hover-ring);
+            }
+
+            .scenario-toggle.active:hover:where(:enabled):where(:not([aria-disabled="true"])) {
+                color: var(--bg-primary);
+                box-shadow: var(--hover-ring);
+            }
         }
 
         .scenario-toggle.active {
@@ -236,11 +241,6 @@
             transition: color 0.15s ease, border-color 0.15s ease;
         }
 
-        .scenario-summary-toggle:hover {
-            color: var(--text-primary);
-            border-color: var(--text-secondary);
-        }
-
         .scenario-card {
             border: 1px solid var(--border);
             border-radius: 0.6rem;
@@ -276,8 +276,10 @@
             user-select: none;
         }
 
-        .scenario-card-toggle:hover {
-            opacity: 0.7;
+        @media (hover: hover) {
+            .scenario-card-toggle:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                text-decoration: underline;
+            }
         }
 
         .scenario-card-chevron {

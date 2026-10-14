@@ -90,7 +90,7 @@
             align-items: center;
             justify-content: space-between;
             gap: 0.5rem;
-            transition: all 0.2s;
+            transition: background-color var(--motion-hover), color var(--motion-hover), border-color var(--motion-hover), box-shadow var(--motion-hover);
             text-transform: none;
             letter-spacing: normal;
             margin-right: 0;
@@ -112,17 +112,15 @@
             transition: transform 0.2s ease;
         }
 
-        .group-dropdown-toggle:hover {
-            border-color: var(--border);
-            transform: none;
-            box-shadow: 0 6px 14px rgba(22, 22, 22, 0.12);
-            background: var(--bg-secondary);
-            color: var(--text-primary);
-        }
-
         .group-dropdown-toggle.open {
             border-color: var(--border);
             box-shadow: 0 6px 14px rgba(22, 22, 22, 0.12);
+        }
+
+        @media (hover: hover) {
+            .group-dropdown-toggle:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                box-shadow: var(--hover-overlay), var(--hover-ring);
+            }
         }
 
         .group-dropdown-toggle.open svg {
@@ -164,9 +162,11 @@
             cursor: pointer;
         }
 
-        .group-dropdown-option:hover {
-            background: var(--bg-primary);
-            color: var(--text-primary);
+        @media (hover: hover) {
+            .group-dropdown-option:where(:has(.group-option-tags)):hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                background: var(--bg-primary);
+                color: var(--text-primary);
+            }
         }
 
         .group-dropdown-option + .group-dropdown-option {

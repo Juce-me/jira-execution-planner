@@ -140,7 +140,9 @@
             text-decoration: none;
         }
 
-        .epm-duplicates-issues a:hover {
-            text-decoration: underline;
-            text-underline-offset: 2px;
+        @media (hover: hover) {
+            .epm-duplicates-issues a:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                text-decoration: underline;
+                text-underline-offset: 2px;
+            }
         }

@@ -98,10 +98,6 @@
             line-height: 1;
         }
 
-        .epm-scope-chip .remove-btn:hover {
-            color: var(--accent);
-            border-color: rgba(212, 56, 13, 0.36);
-        }
 
         .epm-scope-search {
             min-width: 0;
@@ -215,4 +211,11 @@
 
         .epm-project-row-warning {
             color: #92400e;
+        }
+
+        @media (hover: hover) {
+            .epm-scope-chip .remove-btn:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                background-image: radial-gradient(circle closest-side, #f7f5f0 100%, transparent 100%);
+                box-shadow: none;
+            }
         }

@@ -21,7 +21,7 @@
             /* Foundation only; hover consumers migrate in later parts. */
             --hover-ring: 0 0 0 1px #2f80ed, 0 0 0 3px rgba(47, 128, 237, .25);
             --hover-ring-inset: inset 0 0 0 1px #2f80ed, inset 0 0 0 3px rgba(47, 128, 237, .25);
-            --overlay-pct: 12;
+            --overlay-pct: 8;
             --hover-overlay: inset 0 0 0 999px color-mix(in srgb, currentColor calc(var(--overlay-pct) * 1%), transparent);
             --focus-ring-color: #2563eb;
             --motion-hover: 150ms ease;

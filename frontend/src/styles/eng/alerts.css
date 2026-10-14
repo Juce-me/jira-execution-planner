@@ -36,10 +36,10 @@
             margin: 0;
         }
 
-        .alerts-panel-toggle:hover {
-            background: var(--bg-primary);
-            transform: none;
-            box-shadow: none;
+        @media (hover: hover) {
+            .alerts-panel-toggle:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                box-shadow: var(--hover-overlay), var(--hover-ring);
+            }
         }
 
         .alerts-panel-toggle-icon {
@@ -101,7 +101,6 @@
             white-space: nowrap;
             margin: 0;
             box-shadow: none;
-            transform: none;
             cursor: default;
         }
 
@@ -110,10 +109,11 @@
             transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
         }
 
-        button.alerts-panel-summary-pill:hover {
-            border-color: currentColor;
-            transform: none;
-            box-shadow: none;
+        @media (hover: hover) {
+            button.alerts-panel-summary-pill:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                border-color: currentColor;
+                box-shadow: var(--hover-ring);
+            }
         }
 
         button.alerts-panel-summary-pill:focus-visible,
@@ -135,9 +135,16 @@
             color: var(--alert-missing);
         }
 
-        button.alerts-panel-summary-pill.missing:hover,
-        button.alerts-panel-summary-pill.empty:hover {
-            background: rgba(250, 140, 22, 0.14);
+        @media (hover: hover) {
+            button.alerts-panel-summary-pill.missing:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                background: rgba(250, 140, 22, 0.14);
+            }
+        }
+
+        @media (hover: hover) {
+            button.alerts-panel-summary-pill.empty:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                background: rgba(250, 140, 22, 0.14);
+            }
         }
 
         .alerts-panel-summary-pill.blocked {
@@ -146,8 +153,10 @@
             color: var(--alert-blocked);
         }
 
-        button.alerts-panel-summary-pill.blocked:hover {
-            background: rgba(212, 56, 13, 0.14);
+        @media (hover: hover) {
+            button.alerts-panel-summary-pill.blocked:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                background: rgba(212, 56, 13, 0.14);
+            }
         }
 
         .alerts-panel-summary-pill.following {
@@ -156,8 +165,10 @@
             color: #4338ca;
         }
 
-        button.alerts-panel-summary-pill.following:hover {
-            background: rgba(99, 102, 241, 0.14);
+        @media (hover: hover) {
+            button.alerts-panel-summary-pill.following:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                background: rgba(99, 102, 241, 0.14);
+            }
         }
 
         .alerts-panel-summary-pill.done {
@@ -166,8 +177,10 @@
             color: #237804;
         }
 
-        button.alerts-panel-summary-pill.done:hover {
-            background: rgba(82, 196, 26, 0.14);
+        @media (hover: hover) {
+            button.alerts-panel-summary-pill.done:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                background: rgba(82, 196, 26, 0.14);
+            }
         }
 
         .alerts-panel-summary-count {
@@ -292,8 +305,11 @@
             min-height: 28px;
         }
 
-        .alert-chip:hover {
-            background: #2a2a2a;
+        @media (hover: hover) {
+            a.alert-chip:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                background: #2a2a2a;
+                box-shadow: var(--hover-ring);
+            }
         }
 
         .alert-toggle {
@@ -309,10 +325,10 @@
             min-height: 28px;
         }
 
-        .alert-toggle:hover {
-            background: transparent;
-            transform: none;
-            box-shadow: none;
+        @media (hover: hover) {
+            .alert-toggle:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                box-shadow: var(--hover-overlay), var(--hover-ring);
+            }
         }
 
         .alert-toggle-icon {
@@ -428,8 +444,10 @@
             font-weight: 600;
         }
 
-        .alert-team-link:hover {
-            color: var(--accent);
+        @media (hover: hover) {
+            .alert-team-link:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                text-decoration: underline;
+            }
         }
 
         .alert-stories {
@@ -448,13 +466,9 @@
             background: #fff;
             position: relative;
             min-width: 0;
+            transition: border-color var(--motion-hover);
         }
 
-        .alert-story:hover {
-            border-color: var(--accent);
-            transform: translateY(-1px);
-            transition: all 0.2s ease;
-        }
 
         .alert-pill {
             padding: 0.25rem 0.55rem;
@@ -503,15 +517,14 @@
             overflow: hidden;
             text-overflow: ellipsis;
             cursor: pointer;
-            transform: none;
             box-shadow: none;
         }
 
-        button.alert-story-local-link:hover {
-            background: transparent;
-            color: var(--text-primary);
-            transform: none;
-            box-shadow: none;
+        @media (hover: hover) {
+            button.alert-story-local-link:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                text-decoration: underline;
+                box-shadow: none;
+            }
         }
 
         button.alert-story-local-link:focus-visible {
@@ -612,6 +625,22 @@
             border-color: var(--border);
         }
 
-        .alert-story .alert-remove:hover {
-            transform: none;
+
+
+        @media (hover: hover) {
+            .alert-epic-link:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                text-decoration: underline;
+            }
+        }
+
+        @media (hover: hover) {
+            .alert-story-link:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                text-decoration: underline;
+            }
+        }
+
+        @media (hover: hover) {
+            .alert-action:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                text-decoration: underline;
+            }
         }

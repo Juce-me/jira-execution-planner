@@ -12,13 +12,7 @@
             gap: 0.5rem;
         }
 
-        .planning-action-button:hover {
-            background: var(--bg-secondary);
-            color: var(--text-primary);
-            border-color: var(--border);
-            box-shadow: 0 6px 14px rgba(22, 22, 22, 0.12);
-            transform: none;
-        }
+        @media (hover: hover) { .planning-action-button:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) { color: var(--text-primary); box-shadow: var(--hover-overlay), var(--hover-ring); } }
 
         .planning-action-button.active {
             background: #f6ffed;
@@ -26,21 +20,11 @@
             color: #389e0d;
         }
 
-        .planning-action-button.active:hover {
-            background: #f6ffed;
-            color: #389e0d;
-            border-color: #b7eb8f;
-        }
+        @media (hover: hover) { .planning-action-button.active:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) { color: #389e0d; box-shadow: var(--hover-ring); } }
 
         .planning-action-button:disabled {
             opacity: 0.3;
             cursor: not-allowed;
-        }
-
-        .planning-action-button:disabled:hover {
-            background: transparent;
-            color: var(--text-secondary);
-            border-color: var(--border);
         }
 
         .planning-action-button svg {
@@ -87,3 +71,6 @@
                 white-space: normal;
             }
         }
+
+@media (hover: hover) { .planning-icon-button:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) { background-image: none; box-shadow: var(--hover-overlay), var(--hover-ring); } }
+@media (hover: hover) { .planning-icon-button[aria-pressed="true"]:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) { color: var(--text-secondary); background-image: none; box-shadow: var(--hover-ring); } }

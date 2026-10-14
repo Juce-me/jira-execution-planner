@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_home_token_fixture');
+const { measure, contrast } = require('./design_system_hover_helpers');
 
 // The board's epic card (§6.2), its Tech/Product derivation (§4.4/D41 — unit-tested only, no
 // facet UI exists yet to assert against), and board search (§8/D27). Task 11's own board/column
@@ -182,6 +183,7 @@ async function installBoardFixture(page, fieldCalls = [], {
     extraFirstEpicStatuses = [],
 } = {}) {
     await installDashboardShell(page);
+    if(process.env.JEP_HOVER_CSS_PATH) await page.route('**/frontend/dist/dashboard.css',route=>route.fulfill({contentType:'text/css',body:fs.readFileSync(process.env.JEP_HOVER_CSS_PATH,'utf8')}));
     await page.route('**/api/**', (route) => {
         const request = route.request();
         const url = new URL(request.url());
@@ -469,6 +471,54 @@ test('the card renders its three rows, and the track glyph only when set', async
     await expect(withoutTrack.locator('.epic-track-indicator')).toHaveCount(0);
     // PLAT-1 has 2 stories, one Done: row 2 states the fraction.
     await expect(withoutTrack.locator('.erow2')).toContainText('1 of 2 stories');
+});
+
+test('card hover belongs to the wrapper, without an inner button frame', async ({ page, browserName }) => {
+    await openBoard(page);
+    const card = col(page, 'col-1a2b3c4d').locator('.ecard[data-epic-key="PLAT-1"]');
+    const trigger = card.locator('.ecard-open');
+    const measure = () => card.evaluate(node => {
+        const button = node.querySelector('.ecard-open');
+        const rect = element => {
+            const box = element.getBoundingClientRect();
+            return [box.x, box.y, box.width, box.height];
+        };
+        const range = document.createRange();
+        range.selectNodeContents(node.querySelector('.etitle'));
+        const text = range.getBoundingClientRect();
+        return {
+            card: rect(node), trigger: rect(button),
+            title: [text.x, text.y, text.width, text.height],
+            background: getComputedStyle(button).backgroundColor,
+            shadow: getComputedStyle(button).boxShadow,
+            border: getComputedStyle(node).borderRightColor,
+            cardShadow: getComputedStyle(node).boxShadow,
+        };
+    });
+    await page.mouse.move(1, 1);
+    await page.waitForTimeout(200);
+    const rest = await measure();
+    await card.locator('.etitle').hover();
+    await page.waitForTimeout(200);
+    const hovered = await measure();
+    await card.screenshot({ path: path.join(screenshotDir, `card-hover-${process.env.JEP_ECARD_PHASE || 'after'}.png`), animations: 'disabled' });
+    expect(hovered.card).toEqual(rest.card);
+    expect(hovered.trigger).toEqual(rest.trigger);
+    expect(hovered.title).toEqual(rest.title);
+    expect(hovered.background).toBe('rgba(0, 0, 0, 0)');
+    expect(hovered.shadow).toBe('none');
+    expect(hovered.border).toBe('rgb(89, 126, 247)');
+    expect(hovered.cardShadow).not.toBe('none');
+    await page.mouse.move(1, 1);
+    // WebKit's macOS Option-Tab path includes button controls.
+    const tabKey = browserName === 'webkit' ? 'Alt+Tab' : 'Tab';
+    for (let index = 0; index < 30 && !await trigger.evaluate(node => node === document.activeElement); index += 1) {
+        await page.keyboard.press(tabKey);
+    }
+    await expect(trigger).toBeFocused();
+    expect(await trigger.evaluate(node => getComputedStyle(node).outlineStyle)).toBe('solid');
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('dialog')).toBeVisible();
 });
 
 test('Incomplete fills the green done segment and Killed leaves the total (issue #253)', async ({ page }) => {
@@ -1260,6 +1310,7 @@ async function paintedInkOffset(page, locator, inset = 3) {
     const width = Math.ceil(rect.x + rect.w) + 2 - x0;
     const height = Math.ceil(rect.y + rect.h) + 2 - y0;
     const image = await page.screenshot({ clip: { x: x0, y: y0, width, height }, animations: 'disabled' });
+    if(process.env.JEP_GLYPH_DEBUG) fs.writeFileSync(path.join(screenshotDir,`${process.env.JEP_GLYPH_DEBUG}-${await locator.textContent()}-${await locator.evaluate(node=>node.matches(':hover'))?'hover':'rest'}.png`),image);
     return page.evaluate(async ({ base64, x0: originX, y0: originY, rect: box, inset: edge, width: clipWidth }) => {
         const img = new Image();
         img.src = `data:image/png;base64,${base64}`;
@@ -1289,6 +1340,7 @@ async function paintedInkOffset(page, locator, inset = 3) {
         }
         return {
             painted: maxX >= 0,
+            ground, extents: [minX,minY,maxX,maxY], rect:box, origin:[originX,originY],
             dx: originX + ((minX + maxX + 1) / 2) / scale - (box.x + box.w / 2),
             dy: originY + ((minY + maxY + 1) / 2) / scale - (box.y + box.h / 2),
         };
@@ -1352,12 +1404,20 @@ test.describe('ENG hover affordances', () => {
                 if (state === 'hover') await trigger.hover(); else await page.mouse.move(2, 2);
                 await page.waitForTimeout(300);
                 const ink = await paintedInkOffset(page, trigger);
+                if(process.env.JEP_GLYPH_DEBUG) console.log(JSON.stringify({glyph,state,ink}));
                 expect(ink.painted, `${glyph} ${state} paints`).toBe(true);
                 expect(Math.abs(ink.dx), `${glyph} ${state} horizontal offset`).toBeLessThanOrEqual(0.75);
                 expect(Math.abs(ink.dy), `${glyph} ${state} vertical offset`).toBeLessThanOrEqual(0.75);
             }
         }
         expect(glyphs.size).toBeGreaterThanOrEqual(3);
+        // A deliberate 3px glyph displacement must fail the unchanged 0.75px centering tolerance.
+        const poisoned=triggers.first();
+        await poisoned.scrollIntoViewIfNeeded(); await poisoned.hover();
+        await poisoned.evaluate(node=>{const ink=document.createElement('span');ink.textContent=node.textContent;ink.style.transform='translateX(3px)';node.replaceChildren(ink);});
+        const shifted=await paintedInkOffset(page,poisoned);
+        expect(shifted.painted).toBe(true);
+        expect(Math.abs(shifted.dx)).toBeGreaterThan(0.75);
     });
 
     test('Epic and Story priority hover frames share one shape and the app radius', async ({ page }) => {
@@ -1375,13 +1435,13 @@ test.describe('ENG hover affordances', () => {
             await page.mouse.move(2, 2);
             await locator.hover();
             // The frame fades in over 0.16s; only the settled fill counts.
-            await expect.poll(() => locator.evaluate(node => getComputedStyle(node, '::before').backgroundColor)).toBe('rgb(248, 247, 244)');
+            await expect.poll(() => locator.evaluate(node => getComputedStyle(node, '::before').backgroundImage)).toContain('radial-gradient');
             return locator.evaluate(node => {
                 const frame = getComputedStyle(node, '::before');
                 const label = getComputedStyle(node, '::after');
                 const box = node.getBoundingClientRect();
                 return {
-                    width: frame.width, height: frame.height, radius: frame.borderRadius, fill: frame.backgroundColor,
+                    width: frame.width, height: frame.height, radius: frame.borderRadius, fill: frame.backgroundImage,
                     ring: frame.boxShadow, transform: frame.transform, position: frame.position,
                     // Label bottom edge relative to the frame's top edge.
                     labelAboveFrame: parseFloat(label.top) - (box.height / 2 - 12),
@@ -1398,40 +1458,36 @@ test.describe('ENG hover affordances', () => {
         expect(storyFrame, 'Story frame matches the Epic frame').toEqual(epicFrame);
         expect(epicFrame.ownFill, 'the button itself stays transparent').toBe('rgba(0, 0, 0, 0)');
         expect(epicFrame.ownRing).toBe('none');
+        expect(epicFrame.ring).toBe('none');
+        expect(epicFrame.fill).toContain('radial-gradient');
 
         await track.scrollIntoViewIfNeeded();
         await page.mouse.move(2, 2);
         await track.hover();
-        await expect.poll(() => track.evaluate(node => getComputedStyle(node).backgroundColor)).toBe('rgb(248, 247, 244)');
+        await expect.poll(() => track.evaluate(node => getComputedStyle(node).backgroundImage)).toContain('radial-gradient');
+        expect(await track.evaluate(node => getComputedStyle(node).boxShadow)).toBe('none');
         expect(await track.evaluate(node => getComputedStyle(node).borderRadius), 'Project Track frame uses the same radius').toBe(appRadius);
     });
 
     test('transparent controls stay readable on hover instead of turning dark', async ({ page }) => {
         await openBoard(page, { width: 1280, height: 900 });
         await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Catch Up' }).click();
-        const hoverContrast = locator => locator.evaluate(node => {
-            const style = getComputedStyle(node);
-            const rgba = value => (value.match(/[\d.]+/g) || []).map(Number);
-            return { background: rgba(style.backgroundColor), color: rgba(style.color), transform: style.transform, shadow: style.boxShadow };
-        });
-        const expectReadable = async (locator, label) => {
-            await locator.hover();
-            // The global button rule animates `all` for 0.3s, so only the settled colours count.
-            await expect.poll(async () => {
-                const { background, color } = await hoverContrast(locator);
-                return (background[3] ?? 1) === 1 ? contrastRatio(color.slice(0, 3), background.slice(0, 3)) : 0;
-            }, { message: `${label} hover contrast`, timeout: 2000 }).toBeGreaterThanOrEqual(4.5);
-            const settled = await hoverContrast(locator);
-            expect(settled.transform, `${label} hover does not lift`).toBe('none');
-            expect(settled.shadow, `${label} hover has no dark drop shadow`).toBe('none');
-        };
-
         await page.locator('.search-input').first().fill('ua');
-        await expectReadable(page.getByRole('button', { name: 'Clear search' }), 'search clear');
+        const clearSearch=page.getByRole('button',{name:'Clear search'});
+        await clearSearch.hover(); await page.waitForTimeout(450);
+        const clearEvidence=await measure(clearSearch);
+        expect(clearEvidence.backgroundImage).toContain('radial-gradient');
+        expect(contrast(clearEvidence.text,clearEvidence.fill)).toBeGreaterThanOrEqual(4.5);
+        expect(clearEvidence.transform).toBe('none'); expect(clearEvidence.shadow).toBe('none');
 
         await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Scenario' }).click();
         const inactiveToggle = page.locator('.scenario-toggle:not(.active)').first();
         await expect(inactiveToggle).toBeVisible();
-        await expectReadable(inactiveToggle, 'scenario toggle');
+        await inactiveToggle.hover(); await page.waitForTimeout(450);
+        const scenarioEvidence = await measure(inactiveToggle);
+        expect(scenarioEvidence.shadow).toContain('999px');
+        expect(scenarioEvidence.shadow).toContain('rgb(47, 128, 237)');
+        expect(contrast(scenarioEvidence.text, scenarioEvidence.fill)).toBeGreaterThanOrEqual(4.5);
+        expect(scenarioEvidence.transform).toBe('none');
     });
 });

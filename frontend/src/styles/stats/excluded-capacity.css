@@ -231,10 +231,12 @@
             transition: background 0.16s ease, box-shadow 0.16s ease, color 0.16s ease, opacity 0.16s ease;
         }
 
-        .excluded-capacity-line-legend-item:hover {
-            background: rgba(31, 111, 235, 0.06);
-            box-shadow: 0 0 0 3px rgba(31, 111, 235, 0.08);
-            color: var(--text-primary);
+        @media (hover: hover) {
+            .excluded-capacity-line-legend-item:hover:where(:enabled):where(:not([aria-disabled="true"])) {
+                background: rgba(31, 111, 235, 0.06);
+                box-shadow: 0 0 0 3px rgba(31, 111, 235, 0.08);
+                color: var(--text-primary);
+            }
         }
 
         .excluded-capacity-line-legend-item.is-isolated {
@@ -261,8 +263,11 @@
             padding: 0;
         }
 
-        .excluded-capacity-line-legend-reset:hover {
-            text-decoration: underline;
+        @media (hover: hover) {
+            .excluded-capacity-line-legend-reset:hover:where(:enabled):where(:not([aria-disabled="true"])) {
+                text-decoration: underline;
+                box-shadow: none;
+            }
         }
 
         .excluded-capacity-line-empty {
@@ -305,7 +310,6 @@
         .effort-type-split-legend-item:hover {
             background: transparent;
             box-shadow: none;
-            transform: none;
         }
 
         .effort-type-split-legend-item.dimmed {
@@ -406,7 +410,6 @@
         .effort-type-split-segment:hover {
             background: var(--effort-color);
             box-shadow: none;
-            transform: none;
         }
 
         .effort-type-split-segment:focus-visible {

@@ -269,9 +269,10 @@
             flex-shrink: 0;
         }
 
-        .cohort-open-jira-button:hover {
-            border-color: #cbd5e1;
-            background: #f8fafc;
+        @media (hover: hover) {
+            .cohort-open-jira-button:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                box-shadow: var(--hover-overlay), var(--hover-ring);
+            }
         }
 
         .cohort-open-bars {
@@ -295,9 +296,10 @@
             cursor: pointer;
         }
 
-        .cohort-open-more:hover {
-            border-color: #cbd5e1;
-            background: #f8fafc;
+        @media (hover: hover) {
+            .cohort-open-more:hover:where(:enabled):where(:not([aria-disabled="true"])) {
+                box-shadow: var(--hover-overlay), var(--hover-ring);
+            }
         }
 
         .cohort-open-row {
@@ -325,10 +327,16 @@
             min-width: 0;
         }
 
-        .cohort-open-link:hover .cohort-open-key,
-        .cohort-open-link:hover .cohort-open-summary {
-            text-decoration: underline;
-            text-underline-offset: 2px;
+        @media (hover: hover) {
+            .cohort-open-link:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) .cohort-open-key {
+                text-decoration: underline;
+                text-underline-offset: 2px;
+            }
+
+            .cohort-open-link:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) .cohort-open-summary {
+                text-decoration: underline;
+                text-underline-offset: 2px;
+            }
         }
 
         .cohort-open-key {
@@ -413,5 +421,12 @@
 
             .cohort-open-meta {
                 justify-self: start;
+            }
+        }
+
+        @media (hover: hover) {
+            .cohort-clear-row:hover:where(:enabled):where(:not([aria-disabled="true"])) {
+                text-decoration: underline;
+                box-shadow: none;
             }
         }

@@ -19,10 +19,13 @@
             transition: box-shadow 0.15s ease, filter 0.15s ease;
         }
 
-        button.status-pill:hover {
-            transform: none;
-            filter: brightness(0.94);
-            box-shadow: 0 0 0 2px rgba(47, 128, 237, 0.35);
+
+
+        @media (hover: hover) {
+            button.status-pill:hover:where(:enabled):where(:not([aria-disabled="true"])) {
+                filter: brightness(0.94);
+                box-shadow: var(--hover-ring);
+            }
         }
 
         button.status-pill:focus-visible {
@@ -152,18 +155,41 @@
             justify-self: center;
         }
 
-        .status-transition-option:hover:not(:disabled),
         .status-transition-option:focus-visible,
-        .priority-transition-option:hover:not(:disabled),
         .priority-transition-option:focus-visible,
-        .project-track-transition-option:hover:not(:disabled),
         .project-track-transition-option:focus-visible,
-        .issue-person-editor-option:hover:not(:disabled),
         .issue-person-editor-option:focus-visible,
         .issue-person-editor-option.is-active:not(:disabled) {
-            transform: none;
             background: var(--bg-primary);
             box-shadow: inset 0 0 0 1px rgba(47, 128, 237, 0.18);
+        }
+
+        @media (hover: hover) {
+            .status-transition-option:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                background: var(--bg-primary);
+                box-shadow: none;
+            }
+        }
+
+        @media (hover: hover) {
+            .priority-transition-option:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                background: var(--bg-primary);
+                box-shadow: none;
+            }
+        }
+
+        @media (hover: hover) {
+            .project-track-transition-option:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                background: var(--bg-primary);
+                box-shadow: none;
+            }
+        }
+
+        @media (hover: hover) {
+            .issue-person-editor-option:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                background: var(--bg-primary);
+                box-shadow: none;
+            }
         }
 
         .status-transition-option:focus-visible,
@@ -182,14 +208,7 @@
             opacity: 0.55;
         }
 
-        .status-transition-option:disabled:hover,
-        .priority-transition-option:disabled:hover,
-        .project-track-transition-option:disabled:hover,
-        .issue-person-editor-option:disabled:hover {
-            background: transparent;
-            transform: none;
-            box-shadow: none;
-        }
+
 
         .status-transition-option-marker.task-status,
         .priority-transition-option-marker {
@@ -309,10 +328,18 @@
             box-shadow: none;
         }
 
-        input.issue-person-editor-trigger:hover,
-        button.issue-person-editor-trigger:hover {
-            transform: none;
-            box-shadow: none;
+        @media (hover: hover) {
+            input.issue-person-editor-trigger:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                border-bottom-color: currentColor;
+                box-shadow: none;
+            }
+        }
+
+        @media (hover: hover) {
+            button.issue-person-editor-trigger:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                text-decoration: underline;
+                box-shadow: none;
+            }
         }
 
         input.issue-person-editor-trigger:not(:read-only):not(:disabled) {
@@ -405,4 +432,10 @@
             clip: rect(0, 0, 0, 0);
             white-space: nowrap;
             border: 0;
+        }
+
+        @media (hover: hover) {
+            .issue-person-editor-option.is-active:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                box-shadow: none;
+            }
         }

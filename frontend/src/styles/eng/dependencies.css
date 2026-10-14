@@ -25,9 +25,12 @@
             transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
         }
 
-        .dependency-count:hover {
-            transform: none;
-            box-shadow: 0 0 0 2px rgba(47, 128, 237, 0.35);
+
+
+        @media (hover: hover) {
+            .dependency-count:hover:where(:enabled):where(:not([aria-disabled="true"])) {
+                box-shadow: var(--hover-ring-inset);
+            }
         }
 
         .dependency-count.active {
@@ -36,18 +39,20 @@
             border-color: #111;
         }
 
-        .dependency-count[data-dep-chip="depends-on"]:hover,
-        .dependency-count[data-dep-chip="blocked-by"]:hover {
-            background: rgba(239, 68, 68, 0.16);
-            border-color: rgba(239, 68, 68, 0.55);
-            color: #7f1d1d;
-        }
+        @media (hover: hover) {
+            .dependency-count[data-dep-chip="depends-on"]:hover:where(:enabled):where(:not([aria-disabled="true"])),
+            .dependency-count[data-dep-chip="blocked-by"]:hover:where(:enabled):where(:not([aria-disabled="true"])) {
+                background: rgba(239, 68, 68, 0.16);
+                border-color: rgba(239, 68, 68, 0.55);
+                color: #7f1d1d;
+            }
 
-        .dependency-count[data-dep-chip="dependents"]:hover,
-        .dependency-count[data-dep-chip="blocks"]:hover {
-            background: rgba(59, 130, 246, 0.16);
-            border-color: rgba(59, 130, 246, 0.55);
-            color: #1d4ed8;
+            .dependency-count[data-dep-chip="dependents"]:hover:where(:enabled):where(:not([aria-disabled="true"])),
+            .dependency-count[data-dep-chip="blocks"]:hover:where(:enabled):where(:not([aria-disabled="true"])) {
+                background: rgba(59, 130, 246, 0.16);
+                border-color: rgba(59, 130, 246, 0.55);
+                color: #1d4ed8;
+            }
         }
 
         .dependency-count.active[data-dep-chip="depends-on"],
@@ -65,7 +70,6 @@
         }
 
         .dependency-count.unblocked[data-dep-chip="blocked-by"],
-        .dependency-count.unblocked[data-dep-chip="blocked-by"]:hover,
         .dependency-count.active.unblocked[data-dep-chip="blocked-by"] {
             background: rgba(22, 163, 74, 0.12);
             border-color: rgba(22, 163, 74, 0.42);
@@ -172,8 +176,10 @@
             text-decoration: none;
         }
 
-        a.dependency-missing-item:hover {
-            text-decoration: underline;
+        @media (hover: hover) {
+            a.dependency-missing-item:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                text-decoration: underline;
+            }
         }
 
         .dependency-missing-sep {

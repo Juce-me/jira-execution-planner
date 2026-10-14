@@ -18,15 +18,16 @@
 /* 127px = the 107px editor column plus the 20px the lane adds, so the widest valid value still fits its field. */
 .planning-review-table .planning-review-custom { width: 127px; min-width: 127px; max-width: 200px; }
 .planning-review-input { box-sizing: border-box; width: 100%; min-width: 0; height: 21px; margin: 0; vertical-align: middle; line-height: 1; box-shadow: none; transition: border-color 0.15s, background-color 0.15s; padding: 2px 4px; border: 1px solid transparent; border-radius: 4px; font: inherit; color: inherit; background: transparent; }
-.planning-review-input:hover, .planning-review-input:focus { border-color: var(--text-secondary); background: #fff; box-shadow: none; }
+.planning-review-input:focus { border-color: var(--text-secondary); background: #fff; box-shadow: none; }
+@media (hover: hover) { .planning-review-input:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) { border-bottom-color: currentColor; box-shadow: none; } }
 .planning-review-input.invalid { border-color: #b91c1c; }
 .planning-review-validation { display: block; white-space: normal; max-width: 180px; color: #b91c1c; font-size: 0.7rem; }
 .planning-review-requirement { display: block; color: var(--text-secondary); font-size: 0.7rem; margin-top: 2px; }
 .planning-review-synthetic td { background: var(--bg-primary); color: var(--text-secondary); }
 /* Real Epics and Stories without points; the same red tint the alerts and board use. */
 .planning-review-table tbody tr.planning-review-zero-sp td { background: #fff1f0; }
-.planning-review-heading, .planning-review-text-button { background: transparent; color: inherit; border: 0; padding: 0; font: inherit; font-weight: 600; letter-spacing: normal; margin: 0; box-shadow: none; transform: none; }
-.planning-review-heading:hover, .planning-review-text-button:hover { background: var(--border); color: #0f172a; transform: none; box-shadow: none; }
+.planning-review-heading, .planning-review-text-button { background: transparent; color: inherit; border: 0; padding: 0; font: inherit; font-weight: 600; letter-spacing: normal; margin: 0; box-shadow: none; }
+@media (hover: hover) { .planning-review-heading:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) { box-shadow: var(--hover-overlay), var(--hover-ring-inset); } }
 .planning-review-recovery { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; padding: 0.75rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-primary); margin: 0.5rem 0; max-width: 100%; box-sizing: border-box; }
 .planning-review-dialog-backdrop { position: fixed; inset: 0; z-index: 10000; display: grid; place-items: center; padding: 1rem; background: rgba(15,23,42,0.35); }
 .planning-review-dialog { box-sizing: border-box; width: 420px; max-width: 100%; background: #fff; color: #334155; border-radius: 12px; padding: 1.25rem; box-shadow: 0 16px 48px #0f172a33; }
@@ -45,10 +46,12 @@
 
 @media (min-width: 1000px) { .planning-review-table thead .planning-review-summary, .planning-review-table tfoot .planning-review-summary { z-index: 5; } }
 
-.planning-review-capacity .epic-stat-toggle { margin: 0; padding: 2px 6px; font: inherit; letter-spacing: normal; line-height: 1.4; border: 1px solid var(--border); border-radius: 4px; background: #f1f5f9; color: var(--text-secondary); box-shadow: none; transform: none; }
+.planning-review-capacity .epic-stat-toggle { margin: 0; padding: 2px 6px; font: inherit; letter-spacing: normal; line-height: 1.4; border: 1px solid var(--border); border-radius: 4px; background: #f1f5f9; color: var(--text-secondary); box-shadow: none; }
 .planning-review-capacity .epic-stat-toggle.active { background: #ecfdf5; border-color: #86efac; color: #166534; }
-.planning-review-capacity .epic-stat-toggle:hover, .planning-review-capacity .epic-stat-toggle:focus-visible { background: var(--border); color: #334155; filter: none; box-shadow: none; transform: none; }
-.planning-review-capacity .epic-stat-toggle.active:hover, .planning-review-capacity .epic-stat-toggle.active:focus-visible { background: #dcfce7; color: #166534; }
+.planning-review-capacity .epic-stat-toggle:focus-visible { background: var(--border); color: #334155; filter: none; box-shadow: none; }
+@media (hover: hover) { .planning-review-capacity .epic-stat-toggle:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) { background: #f1f5f9; color: var(--text-secondary); filter: none; box-shadow: var(--hover-ring-inset); } }
+.planning-review-capacity .epic-stat-toggle.active:focus-visible { background: #dcfce7; color: #166534; }
+@media (hover: hover) { .planning-review-capacity .epic-stat-toggle.active:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) { background: #ecfdf5; color: #166534; border-color: #86efac; filter: none; box-shadow: var(--hover-ring-inset); } }
 .planning-review-capacity .epic-stat-toggle:focus-visible { outline: 2px solid #93c5fd; outline-offset: 2px; }
 
 .planning-review-summary .issue-person-editor { display: flex; width: 100%; min-width: 0; }
@@ -63,7 +66,8 @@
 .planning-review-column-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0.25rem; }
 .planning-review-column-action { color: var(--text-secondary); background: transparent; border: 1px solid transparent; border-radius: 6px; letter-spacing: normal; cursor: pointer; transition: none; }
 .planning-review-column-action svg { width: 14px; height: 14px; }
-.planning-review-column-action:hover, .planning-review-column-action:focus-visible { background: var(--bg-primary); color: var(--text-primary); transform: none; box-shadow: none; letter-spacing: normal; }
+.planning-review-column-action:focus-visible { background: var(--bg-primary); color: var(--text-primary); box-shadow: none; }
+@media (hover: hover) { .planning-review-column-action:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) { background-image: radial-gradient(circle closest-side, #f7f5f0 100%, transparent 100%); box-shadow: none; } }
 .planning-review-column-action:focus-visible { outline: 2px solid #93c5fd; outline-offset: 1px; }
 .planning-review-column-action:disabled { opacity: 0.4; cursor: not-allowed; }
 .planning-review-column-confirm { grid-template-columns: minmax(0, 1fr); gap: 0.4rem; padding: 0.35rem; border-radius: 6px; background: var(--bg-primary); font-family: 'IBM Plex Mono', monospace; font-size: 0.62rem; line-height: 1.4; }
@@ -82,8 +86,9 @@
 /* A faint divider after each draggable heading shows which cell its grip belongs to. */
 .planning-review-table thead th.planning-review-movable::after { content: ''; position: absolute; top: 25%; right: 0; bottom: 25%; width: 1px; background: var(--border); }
 .planning-review-sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
-.planning-review-drag { position: absolute; top: 0; bottom: 0; left: 100%; display: flex; align-items: center; justify-content: center; width: 10px; margin: 0; opacity: 0; background: transparent; color: var(--text-secondary); border: 0; padding: 0; font: inherit; letter-spacing: normal; cursor: grab; box-shadow: none; transform: none; }
-.planning-review-drag:hover, .planning-review-drag:focus-visible { background: transparent; color: var(--text-primary); transform: none; box-shadow: none; }
+.planning-review-drag { position: absolute; top: 0; bottom: 0; left: 100%; display: flex; align-items: center; justify-content: center; width: 10px; margin: 0; opacity: 0; background: transparent; color: var(--text-secondary); border: 0; padding: 0; font: inherit; letter-spacing: normal; cursor: grab; box-shadow: none; }
+.planning-review-drag:focus-visible { background: transparent; color: var(--text-primary); box-shadow: none; }
+@media (hover: hover) { .planning-review-drag:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) { background-image: radial-gradient(circle closest-side, #f7f5f0 100%, transparent 100%); box-shadow: none; } }
 .planning-review-table th.planning-review-drop { box-shadow: inset 3px 0 #3b82f6; }
 /* The chevron is an IconButton inside the popover anchor, so it is positioned against .planning-review-head. */
 .planning-review-head .planning-review-colmenu { position: absolute; top: calc(50% - 12px); left: calc(100% + 10px); opacity: 0; }
@@ -98,8 +103,8 @@
 .planning-review-boundary { position: fixed; z-index: calc(var(--sticky-epic-z, 50) + 5); width: 0; height: 32px; pointer-events: none; }
 .planning-review-boundary[hidden] { display: none; }
 .planning-review-boundary-line { position: absolute; left: -1px; top: 0; width: 2px; height: 32px; background: #3b82f6; }
-.planning-review-boundary-hit { position: absolute; left: -8px; top: 4px; width: 16px; height: 24px; padding: 0; margin: 0; border: 0; border-radius: 8px; background: transparent; pointer-events: auto; cursor: pointer; box-shadow: none; transform: none; letter-spacing: 0; }
-.planning-review-boundary-hit:hover { background: transparent; transform: none; box-shadow: none; letter-spacing: 0; }
+.planning-review-boundary-hit { position: absolute; left: -8px; top: 4px; width: 16px; height: 24px; padding: 0; margin: 0; border: 0; border-radius: 8px; background: transparent; pointer-events: auto; cursor: pointer; box-shadow: none; letter-spacing: 0; }
+.planning-review-boundary-hit:hover { box-shadow: none; }
 .planning-review-boundary-dot { display: grid; place-items: center; width: 16px; height: 16px; margin: 4px 0; border-radius: 50%; background: #3b82f6; color: #fff; font: 700 12px/1 'IBM Plex Mono', monospace; letter-spacing: 0; }
 /* Corner "+" in the pinned select header cell; absolute so the header row stays 32px. */
 .planning-review-corner { position: absolute; top: calc(50% - 12px); left: calc(50% - 12px); border-color: var(--border); border-radius: 50%; color: var(--text-primary); }
@@ -177,9 +182,13 @@
 .planning-review-header-docked > thead, .planning-review-footer-docked > tfoot { opacity: 0; pointer-events: none; }
 .planning-review-docked-table th, .planning-review-docked-table td { overflow: hidden; }
 
-/* Editable Summary, Team and Assignee triggers: neutral ink at rest (the shared trigger is amber and bold), amber on hover and focus. */
+/* Editable Summary, Team and Assignee triggers retain neutral ink; their shared hover underline remains visible. */
 .planning-review-table input.issue-person-editor-trigger, .planning-review-table button.issue-person-editor-trigger { color: var(--text-primary); font-weight: 400; }
-.planning-review-table input.issue-person-editor-trigger:hover, .planning-review-table button.issue-person-editor-trigger:hover,
+@media (hover: hover) {
+.planning-review-table input.issue-person-editor-trigger:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])),
+.planning-review-table button.issue-person-editor-trigger:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) { color: var(--text-primary); }
+}
+
 .planning-review-table input.issue-person-editor-trigger:focus-visible, .planning-review-table button.issue-person-editor-trigger:focus-visible { color: #d48806; }
 
 /* Every pill in the table (Status, awaited Stories) shares the Catch Up and filter typography: Plex Mono capitals. Passive spans and the editing button read identically. */
@@ -188,7 +197,8 @@
 /* Key stands in for itself as a Jira icon in the Summary cell while the Key column is hidden. */
 .planning-review-jira-link { display: inline-flex; flex: 0 0 auto; align-items: center; color: #0052cc; }
 .planning-review-jira-link svg { width: 14px; height: 14px; fill: currentColor; stroke: none; }
-.planning-review-jira-link:hover, .planning-review-jira-link:focus-visible { color: #d48806; }
+.planning-review-jira-link:focus-visible { color: #d48806; }
+@media (hover: hover) { .planning-review-jira-link:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) { background-image: radial-gradient(circle closest-side, #f7f5f0 100%, transparent 100%); box-shadow: none; } }
 
 /* A confirmed Planning edit (issue #250). The cells of the edited row are raised above the rows it passes while it slides (its own open
    menu stays on top; WebKit ignores position on a <tr>, so it is the cells that are raised), pinned cells keeping their order above the
@@ -205,3 +215,6 @@
 @media (prefers-reduced-motion: reduce) {
     .planning-review-table tr.planning-review-confirmed td::after { animation: none; background: rgba(255, 255, 0, 0.25); }
 }
+
+/* The transparent boundary hit region owns placement; feedback belongs to its visible dot. */
+@media (hover: hover) { .planning-review-boundary-hit:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) .planning-review-boundary-dot { box-shadow: var(--hover-ring); } }

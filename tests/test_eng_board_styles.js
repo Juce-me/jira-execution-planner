@@ -3,12 +3,19 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { readDashboardCssSource } = require('./css_source_helpers');
+const { parseRules } = require('../scripts/design_system_css.cjs');
 
 const repoRoot = path.join(__dirname, '..');
 const boardCssPath = path.join(repoRoot, 'frontend', 'src', 'styles', 'eng', 'board.css');
 const issuesCssPath = path.join(repoRoot, 'frontend', 'src', 'styles', 'eng', 'issues.css');
 const statusTransitionsCssPath = path.join(repoRoot, 'frontend', 'src', 'styles', 'eng', 'status-transitions.css');
 const storyRequirementCardPath = path.join(repoRoot, 'frontend', 'src', 'eng', 'StoryRequirementCard.jsx');
+
+test('Board card activation delegates hover to the card wrapper and retains keyboard focus', () => {
+    const css = fs.readFileSync(boardCssPath, 'utf8');
+    assert.match(css, /@media\s*\(hover:\s*hover\)\s*\{\s*\.eng-board \.ecard-open:hover\s*\{\s*box-shadow:\s*none;\s*\}/);
+    assert.match(css, /\.eng-board \.ecard-open:focus-visible\s*\{\s*outline:\s*2px solid var\(--accent\);\s*outline-offset:\s*2px;/);
+});
 
 // An undefined custom property silently drops the WHOLE declaration it appears in, and this
 // design's assets have already been caught shipping four variables that exist in no stylesheet
@@ -140,11 +147,28 @@ test('ENG epic headline source sizes artwork and keeps focus/readout visible', a
     assert.match(source, /\.epic-full-value-readout\s*\{[^}]*max-width:\s*min\(36rem,\s*calc\(100vw\s*-\s*16px\)\)\s*;/s);
 });
 
-test('hover states on transparent buttons neutralize the global dark button hover', async () => {
+test('transparent controls retain their approved hover and glyph geometry', async () => {
     const source = readDashboardCssSource(repoRoot);
 
-    assert.match(source, /\.search-clear:hover\s*\{[^}]*color:\s*var\(--text-primary\)\s*;[^}]*background:\s*#f7f5f0\s*;[^}]*box-shadow:\s*none\s*;[^}]*transform:\s*none\s*;/s);
-    assert.match(source, /\.scenario-toggle:not\(\.active\):hover\s*\{[^}]*background:\s*#f7f5f0\s*;[^}]*color:\s*var\(--text-primary\)\s*;[^}]*transform:\s*none\s*;/s);
+    assert.match(source, /\.search-clear:hover:where\(:not\(:disabled\)\):where\(:not\(\[aria-disabled="true"\]\)\)\s*\{[^}]*background-image:\s*radial-gradient\(circle closest-side, #f7f5f0 100%, transparent 100%\);[^}]*box-shadow:\s*none;/s);
+    const scenarioRules = parseRules(fs.readFileSync(path.join(repoRoot, 'frontend/src/styles/scenario/shell.css'), 'utf8'), 'scenario/shell.css');
+    const scenarioGates = ':where(:enabled):where(:not([aria-disabled="true"]))';
+    const declaration = (rule, property) => rule.declarations.find(item => item.property === property)?.value;
+    for (const [selector, shadow, ink] of [
+        ['.scenario-toggle:hover', 'var(--hover-overlay), var(--hover-ring)', 'var(--text-primary)'],
+        ['.scenario-toggle.active:hover', 'var(--hover-ring)', 'var(--bg-primary)'],
+    ]) {
+        const rule = scenarioRules.find(item => item.selector === selector + scenarioGates);
+        assert.ok(rule?.context.some(context => /^@media\s*\(hover:\s*hover\)$/.test(context)), selector);
+        assert.equal(declaration(rule, 'box-shadow'), shadow);
+        assert.equal(declaration(rule, 'color'), ink);
+        assert.equal(declaration(rule, 'background'), undefined);
+        assert.equal(declaration(rule, 'transform'), undefined);
+    }
+    const scenarioRest = scenarioRules.find(item => item.selector === '.scenario-toggle');
+    const scenarioSelected = scenarioRules.find(item => item.selector === '.scenario-toggle.active');
+    assert.equal(declaration(scenarioRest, 'background'), 'transparent');
+    assert.equal(declaration(scenarioSelected, 'background'), 'var(--text-primary)');
     assert.match(source, /button\.epic-track-indicator\s*\{[^}]*padding:\s*1px\s+0\s+0\s*;[^}]*letter-spacing:\s*0\s*;[^}]*font:\s*inherit\s*;\s*font-family:\s*'Apple Color Emoji'/s);
     assert.match(source, /@supports\s*\(font:\s*-apple-system-body\)\s*\{\s*button\.epic-track-indicator\s*\{\s*padding:\s*0\s+0\s+2px\s*;/s);
     assert.match(source, /:root\s*\{[^}]*--radius:\s*10px\s*;/s);

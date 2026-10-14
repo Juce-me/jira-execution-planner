@@ -4,6 +4,8 @@ The Statistics panel summarizes sprint execution and epic flow for the currently
 
 It is available for active and completed sprints. Future sprints do not use the Statistics panel.
 
+Hover uses the shared [design-system vocabulary](../design-system.md): ordinary actions use the overlay and ring; selected cohort and graph controls keep their selected colors and meaningful elevation with a separate ring; icons use circles and text links underline. Graph headings and notes remain readable on the composed hover fill without changing resting typography. Chart segment fills, legend isolation/dimming, strip feedback and contained pointer readouts retain their existing behavior. The existing muted-detail and excluded-Epic dimming contrast debt remains separate palette scope.
+
 Use the current UI names when translating older meeting language: **Burndown** is the remaining-work chart; **Lead Times** contains the cohort heatmap and open/completed Epic views; **Excluded Capacity** reports configured excluded work; **Mono vs Cross** reports whether Epic work spans teams; and **Project Track** contains the Epic-mode assignee view and Team-mode team view.
 
 ## Views

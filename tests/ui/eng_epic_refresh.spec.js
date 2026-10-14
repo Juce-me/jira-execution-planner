@@ -212,12 +212,20 @@ async function hoverStyleReport(button) {
         const path = svg?.querySelector('path');
         const stroke = path ? getComputedStyle(path).stroke : null;
         const glyph = channels(stroke && stroke !== 'none' ? stroke : style.color);
-        const background = channels(style.backgroundColor);
+        let background = channels(style.backgroundColor);
+        const overlayPct = Number(style.getPropertyValue('--overlay-pct').trim());
+        if (/999px/.test(style.boxShadow)) {
+            const alpha = overlayPct / 100;
+            if (!Number.isFinite(alpha) || alpha <= 0 || alpha > 1) throw new Error('Invalid hover overlay percentage');
+            const ink = channels(style.color);
+            background = background.map((channel, index) => channel * (1 - alpha) + ink[index] * alpha);
+        }
         const bgLuminance = luminance(background);
         const glyphLuminance = luminance(glyph);
         const [lighter, darker] = bgLuminance > glyphLuminance ? [bgLuminance, glyphLuminance] : [glyphLuminance, bgLuminance];
         return {
             hovered: node.matches(':hover'),
+            disabled: node.matches(':disabled,[aria-disabled="true"]'),
             opacity: style.opacity,
             backgroundColor: style.backgroundColor,
             backgroundLuminance: bgLuminance,
@@ -225,6 +233,8 @@ async function hoverStyleReport(button) {
             contrast: (lighter + 0.05) / (darker + 0.05),
             transform: style.transform,
             boxShadow: style.boxShadow,
+            backgroundImage: style.backgroundImage,
+            overlayPct,
             letterSpacing: style.letterSpacing,
         };
     });
@@ -237,13 +247,20 @@ async function hoverButtonItself(page, button) {
     await expect.poll(() => button.evaluate(node => node.matches(':hover') && getComputedStyle(node).opacity === '1')).toBe(true);
 }
 
-function expectReadableHover(report, label) {
+function expectReadableHover(report, label, expectedDisabled = false) {
     expect(report.hovered, `${label} is hovered`).toBe(true);
     expect(report.opacity, `${label} opacity settled`).toBe('1');
     expect(report.backgroundLuminance, `${label} background ${report.backgroundColor} is a light surface, not the dark global button:hover`).toBeGreaterThan(0.8);
     expect(report.contrast, `${label} glyph ${report.glyphColor} on ${report.backgroundColor}`).toBeGreaterThanOrEqual(3);
     expect(report.transform, `${label} transform`).toBe('none');
-    expect(report.boxShadow, `${label} box-shadow`).toBe('none');
+    expect(report.disabled, `${label} disabled state`).toBe(expectedDisabled);
+    if (expectedDisabled) expect(report.boxShadow, `${label} disabled hover stays unframed`).toBe('none');
+    else {
+        expect(report.boxShadow, `${label} shape-matched shading`).toMatch(/999px.*inset|inset.*999px/);
+        expect(report.boxShadow, `${label} foundation ring`).toContain('rgb(47, 128, 237)');
+    }
+    expect(report.backgroundImage, `${label} no circular paint inside the frame`).toBe('none');
+    expect(report.overlayPct, `${label} subtle shading`).toBe(8);
     expect(['0px', 'normal'], `${label} letter-spacing ${report.letterSpacing}`).toContain(report.letterSpacing);
 }
 
@@ -263,7 +280,7 @@ for (const epicKey of ['EPIC-1', 'EPIC-2']) {
         await hoverButtonItself(page, button);
         const busy = await hoverStyleReport(button);
         // The busy glyph is an image, so only the button colour is measured against the surface here.
-        expectReadableHover(busy, `${epicKey} aria-busy hover`);
+        expectReadableHover(busy, `${epicKey} aria-busy hover`, true);
         hold.release();
         await expect(button).not.toHaveAttribute('aria-busy', 'true');
     });

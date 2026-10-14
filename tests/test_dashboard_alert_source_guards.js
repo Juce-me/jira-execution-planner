@@ -441,7 +441,7 @@ test('ENG alerts toolbar summary CSS is responsive and uses clickable chip style
     );
     assert.match(
         css,
-        /button\.alerts-panel-summary-pill\.blocked:hover\s*\{[\s\S]*background: rgba\(212, 56, 13, 0\.14\);/
+        /button\.alerts-panel-summary-pill\.blocked:hover:where\(:not\(:disabled\)\):where\(:not\(\[aria-disabled="true"\]\)\)\s*\{[\s\S]*background: rgba\(212, 56, 13, 0\.14\);/
     );
     assert.match(
         css,

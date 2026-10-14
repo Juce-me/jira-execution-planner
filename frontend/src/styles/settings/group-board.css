@@ -121,12 +121,6 @@
             transition: color 0.15s ease;
         }
 
-        .board-column-drag:hover {
-            background: none;
-            transform: none;
-            box-shadow: none;
-            color: var(--accent);
-        }
 
         .board-column-drag:active {
             cursor: grabbing;
@@ -146,11 +140,6 @@
             transition: box-shadow 0.15s ease;
         }
 
-        .board-column-colour:hover {
-            background: var(--board-column-accent);
-            transform: none;
-            box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
-        }
 
         /* Not .group-name-input (group-editor.css:88): that class assumes the row-header layout of
            a group's own name field, and this input's job here is only to disappear into a 200px
@@ -168,10 +157,6 @@
             color: var(--text-primary);
         }
 
-        .board-column-name:hover {
-            border-color: var(--border);
-            background: var(--bg-secondary);
-        }
 
         .board-column-name:focus {
             border-color: var(--accent);
@@ -196,12 +181,6 @@
             transition: color 0.15s ease;
         }
 
-        .board-column-star:hover {
-            background: none;
-            transform: none;
-            box-shadow: none;
-            color: #e8b339;
-        }
 
         .board-column-star[aria-pressed="true"] {
             color: #e8a11d;
@@ -233,12 +212,6 @@
             color: var(--text-secondary);
         }
 
-        .board-column-top .remove-btn:hover {
-            background: none;
-            transform: none;
-            box-shadow: none;
-            color: var(--accent);
-        }
 
         .board-column-limits {
             display: grid;
@@ -315,9 +288,6 @@
             transition: color 0.15s ease;
         }
 
-        .chip-grip:hover {
-            color: var(--accent);
-        }
 
         .chip-grip:active {
             cursor: grabbing;
@@ -367,13 +337,6 @@
             transition: border-color 0.15s ease, color 0.15s ease;
         }
 
-        .board-add-status:hover {
-            background: none;
-            transform: none;
-            box-shadow: none;
-            border-color: var(--accent);
-            color: var(--accent);
-        }
 
         .board-add-status[aria-expanded="true"] {
             border-style: solid;
@@ -411,12 +374,6 @@
             color: var(--text-primary);
         }
 
-        .board-pick .component-chip:hover {
-            background: var(--bg-primary);
-            transform: none;
-            box-shadow: none;
-            border-color: var(--accent);
-        }
 
         /* The status itself never gives up space — a clipped status name is unreadable — so the
            provenance is the only shrinkable part of the row. */
@@ -458,6 +415,7 @@
         }
 
         .board-pick-colours .board-column-colour[aria-checked="true"] {
+            position: relative;
             box-shadow: 0 0 0 1px var(--bg-secondary), 0 0 0 3px var(--text-primary);
         }
 
@@ -479,13 +437,7 @@
             transition: border-color 0.15s ease, color 0.15s ease;
         }
 
-        .board-add-column:hover {
-            background: none;
-            transform: none;
-            box-shadow: none;
-            border-color: var(--accent);
-            color: var(--accent);
-        }
+
 
         /* The preview reuses the board's own column classes so it cannot drift from what the
            board renders; only the scale is preview-sized, and that scale is scoped here so the
@@ -570,4 +522,71 @@
         .board-preview .col.is-breach .col-strip {
             border-color: var(--warn);
             box-shadow: 0 0 0 1px var(--warn), 0 0 10px rgba(207, 19, 34, 0.40);
+        }
+
+        @media (hover: hover) {
+            .board-column-drag:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                color: var(--accent);
+                background-image: radial-gradient(circle closest-side, #f7f5f0 100%, transparent 100%);
+                box-shadow: none;
+            }
+
+            .board-column-colour:where(:not([aria-checked="true"])):hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                box-shadow: var(--hover-ring);
+            }
+
+            .board-column-name:where(:not(:focus)):hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                border-color: var(--border);
+                background: var(--bg-secondary);
+            }
+
+            .board-column-star:where(:not([aria-pressed="true"])):hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                color: #e8b339;
+                background-image: radial-gradient(circle closest-side, #f7f5f0 100%, transparent 100%);
+                box-shadow: none;
+            }
+
+            .board-column-top .remove-btn:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                background-image: radial-gradient(circle closest-side, #f7f5f0 100%, transparent 100%);
+                box-shadow: none;
+            }
+
+            .chip-grip:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                color: var(--accent);
+                background-image: radial-gradient(circle closest-side, #f7f5f0 100%, transparent 100%);
+                box-shadow: none;
+            }
+
+            .board-add-status:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                box-shadow: var(--hover-overlay), var(--hover-ring);
+            }
+
+            .board-pick .component-chip:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                box-shadow: var(--hover-ring-inset);
+            }
+
+            .board-add-column:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                box-shadow: var(--hover-overlay), var(--hover-ring);
+            }
+
+            .board-column-star[aria-pressed="true"]:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                background-image: none;
+                box-shadow: var(--hover-ring);
+            }
+
+            .board-pick-colours .board-column-colour[aria-checked="true"]:hover:where(:not(:disabled)):where(:not([aria-disabled="true"]))::before {
+                box-shadow: var(--hover-ring);
+            }
+
+            .board-add-status[aria-expanded="true"]:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) {
+                box-shadow: var(--hover-ring);
+            }
+        }
+
+        .board-pick-colours .board-column-colour[aria-checked="true"]::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            pointer-events: none;
         }

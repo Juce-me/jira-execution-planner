@@ -15,15 +15,13 @@
             border: 1.5px solid var(--border);
             border-radius: 2px;
             background: var(--bg-secondary);
-            transition: all 0.2s;
+            transition: background-color var(--motion-hover), border-color var(--motion-hover);
             position: relative;
             box-sizing: border-box;
             flex-shrink: 0;
         }
 
-        .task-checkbox:hover {
-            border-color: var(--text-secondary);
-        }
+        @media (hover: hover) { .task-checkbox:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) { box-shadow: var(--hover-ring); } }
 
         .task-checkbox:checked {
             background: #52c41a;

@@ -387,11 +387,11 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Team-catalog readers must unwrap the persisted `{catalog, meta}` envelope and normalize the inner `catalog`; never pass the envelope to a flat Team-map normalizer or display a Team id as its name.
 - ENG epic-header layout rules must preserve the complete shared `.task-status` presentation—geometry, typography, border, and colors; never add header-specific status-pill restyling.
 - When the user names an existing component as the visual reference, change the compared elements to match that reference; do not restyle the reference component unless explicitly requested.
-- Every transparent or icon `<button>` class must override the global `button:hover` dark surface (`background`, `transform`, `box-shadow`) and the global `letter-spacing` with a readable hover, and get a settled-state hover-contrast assertion in Playwright; a dark-on-dark hover is a recurring defect class, not a one-off (e.g. `.search-clear`, `.scenario-toggle`).
+- Transparent and icon buttons must retain readable settled hover contrast and their existing typography resets; verify actual controls in Playwright when changing the global foundation or bespoke overrides.
 - Verify a glyph or emoji centred in a hover frame by measuring its painted ink (absolute pixel clip) in headed Firefox and WebKit at 2x, the engines the app is reviewed in; headless runs and Chromium place emoji ink about 2px differently, and the Playwright fixture stubs web fonts, so set the emoji in an emoji font stack rather than tuning padding to one engine's measurement.
 - For Project Track Team mode (#262), hide duplicate totals when the header scope contains one Team and split each track's Story Points by each Story's own status (Department `board.columns` order and colours, Board ownership rule, default To Do/In Progress/Done); keep Project Track inherited from the Epic, use the Start–End range, count all non-Killed work, and show column names only in the hover readout without "left"/remaining values, legend panes, or click actions.
 - Ground Stats UI proposals in the existing header Sprint/Teams controls, chart interactions, source, and repository screenshots; explain outside-range choices with a concrete chart-range/global-Sprint-selector example, and do not introduce a duplicate team picker or access Firefox for this work.
-- Chart bar segments and strips must not inherit the global button hover lift; override `background`/`transform` and use a soft shadow instead, leaving other controls' existing hover behavior untouched.
+- Preserve chart bar/strip geometry, semantic fills and readable in-app readouts when changing button hover; verify actual charts without altering unrelated controls.
 - Build UI mockups from verbatim repository CSS (tokens, fonts, sizes, grid columns, breakpoints) and existing DOM classes; do not approximate styling or add dark modes the app lacks.
 - Keep Planning spreadsheet columns and cell padding compact without stretching a short table; widen only the spreadsheet region and preserve the header, capacity panel, and filters at their original width.
 - Manage Planning review columns from the header: a persistent corner "+" (Add column and Show hidden), a pointer-only hover boundary "+" that inserts at that position, and a per-column chevron menu that does not repeat the column name or a usage hint; do not add toolbar "+ Column"/"Columns" buttons (`docs/plans/EXEC-planning-review-table-chrome-217.md`).
@@ -407,7 +407,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 
 - Edit Planning table Summary directly inside its cell with Enter/blur save and Escape cancel; never open a Summary popup with large Save/Cancel controls.
 
-- Keep Planning Capacity chips readable on hover and keyboard focus; override inherited dark active-button hover rules and verify real Included/Excluded classes in browser checks.
+- Keep Planning Capacity chips readable on hover and keyboard focus; preserve selected fills and verify real Included/Excluded classes in browser checks.
 
 - In Planning Table, retain readiness-only Epics and show one awaiting-creation placeholder per uncovered Team; Story status/priority filters must not hide these placeholders, and placeholders must never be selectable or editable.
 
@@ -430,3 +430,11 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Every ENG status pill, in every view, writes only its own issue key; never let the Planning selection or any default selection widen a status write.
 
 - When using live data from the running app, keep it read-only and transient: prefer numbers-only probes, never save or publish screenshots of it (delete any taken), keep only obfuscated aggregates, and let the user sign in themselves.
+
+- Board card activation (`.ecard-open`) must delegate hover feedback to `.ecard`; keep the inner trigger transparent and preserve its keyboard focus outline.
+
+- Create Board columns with `insertColumnBeforeTerminal`; appending makes the new column the fixed terminal column and prevents reordering.
+
+- Hover paint must follow an icon button’s visible border shape; use circular paint only for unframed icons or genuinely circular borders, and verify the shape in mounted tests.
+
+- Settings section tabs (`group-modal-tab`) use underline-only hover; preserve the selected accent underline and existing focus outline instead of applying boxed button shading/rings.

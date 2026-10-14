@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
+const { measure, evidenceDir } = require('./design_system_hover_helpers');
 const root = path.join(__dirname, '..', '..');
 let js, css;
 test.beforeAll(() => {
@@ -31,7 +32,7 @@ test.beforeAll(() => {
         }
         createRoot(document.getElementById('root')).render(<App/>);
     ` }, bundle: true, write: false, format: 'iife', define: { 'process.env.NODE_ENV': '"test"' } }).outputFiles[0].text;
-    css = esbuild.buildSync({ entryPoints: [path.join(root, 'frontend/src/styles/dashboard.css')], bundle: true, write: false }).outputFiles[0].text;
+    css = process.env.JEP_HOVER_CSS_PATH ? fs.readFileSync(process.env.JEP_HOVER_CSS_PATH,'utf8') : esbuild.buildSync({ entryPoints: [path.join(root, 'frontend/src/styles/dashboard.css')], bundle: true, write: false }).outputFiles[0].text;
 });
 async function install(page, longReview = false, longNames = false, zeroStory = false, motion = false) {
     await page.setContent(`<meta name="viewport" content="width=device-width, initial-scale=1"><style>${css} ${motion ? '' : '*,*::before,*::after{animation:none!important;transition:none!important}'}</style><div id="root"></div>`);
@@ -113,7 +114,7 @@ test('390px creation fits, frozen keys and last-column reachability at desktop a
     await expect(page.getByRole('textbox', { name: 'Cost 7 for DEMO-1', exact: true })).toBeInViewport();
     await page.getByRole('button', { name: 'Cost 7', exact: true }).hover();
     // Read the settled hover state: WebKit applies :hover a frame after the pointer arrives.
-    await expect.poll(() => page.getByRole('button', { name: 'Cost 7', exact: true }).evaluate(node => ({ background:getComputedStyle(node).backgroundColor,color:getComputedStyle(node).color,transform:getComputedStyle(node).transform,shadow:getComputedStyle(node).boxShadow }))).toEqual({ background:'rgb(224, 221, 215)', color:'rgb(15, 23, 42)', transform:'none', shadow:'none' });   // the shared --border token
+    await expect.poll(() => page.getByRole('button', { name: 'Cost 7', exact: true }).evaluate(node => ({ background:getComputedStyle(node).backgroundColor,color:getComputedStyle(node).color,transform:getComputedStyle(node).transform,shadow:getComputedStyle(node).boxShadow }))).toEqual({ background:'rgba(0, 0, 0, 0)', color:'rgb(26, 26, 26)', transform:'none', shadow:'color(srgb 0.101961 0.101961 0.101961 / 0.08) 0px 0px 0px 999px inset, rgb(47, 128, 237) 0px 0px 0px 1px inset, rgba(47, 128, 237, 0.25) 0px 0px 0px 3px inset' });
     await page.screenshot({ path: path.join(root, 'tmp/217-ui/planning-review-desktop.png'), fullPage: true });
     // Browser zoom reduces the CSS layout viewport; a body CSS transform does not.
     await page.setViewportSize({ width: Math.round(1280 / 1.5), height: Math.round(900 / 1.5) });
@@ -451,10 +452,10 @@ for(const mode of ['Epics','Stories']) test(`optional metadata hidden by default
 test('Capacity hover and keyboard focus retain readable light Included and Excluded chips',async({page})=>{
     await install(page);await page.getByRole('radio',{name:'Stories',exact:true}).click();
     await showHiddenColumn(page,'Capacity');
-    for(const [key,background,color] of [['DEMO-1','rgb(220, 252, 231)','rgb(22, 101, 52)'],['DEMO-2','rgb(224, 221, 215)','rgb(51, 65, 85)']]){
+    for(const [key,background,color] of [['DEMO-1','rgb(236, 253, 245)','rgb(22, 101, 52)'],['DEMO-2','rgb(241, 245, 249)','rgb(102, 102, 102)']]){
         const control=page.getByRole('button',{name:'inclusion for '+key,exact:true});
         await control.hover();await expect(control).toHaveCSS('background-color',background);await expect(control).toHaveCSS('color',color);
-        await expect(control).toHaveCSS('transform','none');await expect(control).toHaveCSS('box-shadow','none');await expect(control).toHaveCSS('filter','none');
+        await expect(control).toHaveCSS('transform','none');await expect(control).toHaveCSS('box-shadow','rgb(47, 128, 237) 0px 0px 0px 1px inset, rgba(47, 128, 237, 0.25) 0px 0px 0px 3px inset');await expect(control).toHaveCSS('filter','none');
         await page.mouse.move(0,0);await page.keyboard.press('Tab');await control.focus();
         await expect(control).toBeFocused();await expect(control).toHaveCSS('outline-style','solid');
         expect(await control.evaluate(node=>getComputedStyle(node).backgroundColor)).not.toBe('rgb(17, 17, 17)');
@@ -1432,7 +1433,7 @@ test('Accepted hides from its header menu, persists through the shared layout sa
 
 // Visual coherence (C4): neutral ink for editable triggers, shared tokens for surfaces.
 const rgbOf = value => (value.match(/[\d.]+/g) || []).map(Number);
-test('editable triggers rest in neutral ink at weight 400 and turn amber on hover and focus', async ({ page }) => {
+test('editable triggers keep neutral ink and underline on hover', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 }); await install(page); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
     const trigger = page.getByRole('textbox', { name: 'assignee for DEMO-1', exact: true });
     const read = () => trigger.evaluate(node => { const s = getComputedStyle(node); return { color: s.color, weight: s.fontWeight }; });
@@ -1440,7 +1441,9 @@ test('editable triggers rest in neutral ink at weight 400 and turn amber on hove
     expect(await read()).toEqual({ color: 'rgb(26, 26, 26)', weight: '400' });
     await page.locator('.planning-review-scroll').screenshot({ path: path.join(root, 'tmp/217-ui/c4-table-ink-1440.png') });
     await trigger.hover();
-    await expect.poll(async () => (await read()).color).toBe('rgb(212, 136, 6)');
+    await expect(trigger).toHaveCSS('border-bottom-color','rgb(26, 26, 26)');
+    await expect(trigger).toHaveCSS('box-shadow','none');
+    await expect.poll(async () => (await read()).color).toBe('rgb(26, 26, 26)');
     await page.mouse.move(0, 0);
     await trigger.focus();
     await expect.poll(async () => (await read()).color).toBe('rgb(212, 136, 6)');
@@ -1477,15 +1480,17 @@ test('review table surfaces and borders use the shared tokens, not slate literal
     expect(popover).toEqual({ bg: tokens.bgSecondary, border: tokens.border, ink: tokens.textPrimary });
 });
 
-test('heading hover keeps a readable fill from the shared border token', async ({ page }) => {
+test('heading hover uses an inset overlay and ring without changing its fill', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 }); await install(page); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
     const heading = page.locator('.planning-review-heading', { hasText: /^Status/ });
     await heading.hover();
     const read = () => heading.evaluate(node => { const s = getComputedStyle(node); const probe = document.createElement('div'); document.body.append(probe); probe.style.color = 'var(--border)'; const border = getComputedStyle(probe).color; probe.remove(); return { bg: s.backgroundColor, border, color: s.color, transform: s.transform, shadow: s.boxShadow }; });
-    await expect.poll(async () => { const r = await read(); return r.bg === r.border; }).toBe(true);
+    await expect.poll(async () => (await read()).shadow).toContain('rgb(47, 128, 237)');
+    expect((await read()).bg).toBe('rgba(0, 0, 0, 0)');
     const settled = await read();
-    expect(contrastRatio(rgbOf(settled.color).slice(0, 3), rgbOf(settled.bg).slice(0, 3))).toBeGreaterThanOrEqual(4.5);
-    expect(settled.transform).toBe('none'); expect(settled.shadow).toBe('none');
+    expect(settled.color).toBe('rgb(26, 26, 26)');
+    expect(settled.transform).toBe('none'); expect(settled.shadow).toContain('999px inset');
+    expect(settled.shadow).toContain('1px inset');
 });
 
 test('on a wide display the sheet shrinks to its columns and sits centred with no blank frame to its right', async ({ page }) => {
@@ -1567,4 +1572,52 @@ test('status pills use the Catch Up capital Plex Mono typography', async ({ page
         expect(heights.pill, mode).toBeLessThanOrEqual(heights.key + 4);
         await page.locator('.planning-review-scroll').screenshot({ path: path.join(root, `tmp/245/status-${mode}.png`) });
     }
+});
+
+
+test('custom Planning cell hover underlines without moving its field',async({page},testInfo)=>{
+    await page.setViewportSize({width:1440,height:900});await install(page);await page.getByRole('radio',{name:'Stories',exact:true}).click();
+    const input=page.getByRole('textbox',{name:'Cost 0 for DEMO-1',exact:true});
+    await input.scrollIntoViewIfNeeded();await page.mouse.move(1,1);
+    const rest=await measure(input);
+    const restBottom=await input.evaluate(node=>getComputedStyle(node).borderBottomColor);
+    await input.evaluate(node=>{node.__pointerEvents=[];for(const name of ['pointerenter','pointermove'])node.addEventListener(name,event=>node.__pointerEvents.push({x:event.clientX,y:event.clientY,targetInside:node.contains(event.target)}));});
+    await input.hover();
+    const pointer=await input.evaluate(node=>{const event=node.__pointerEvents.at(-1);return {seen:Boolean(event),...event,hitInside:Boolean(event&&node.contains(document.elementFromPoint(event.x,event.y)))};});
+    expect(pointer.seen).toBe(true);expect(pointer.targetInside).toBe(true);expect(pointer.hitInside).toBe(true);
+    const hover=await measure(input);
+    const hoverBottom=await input.evaluate(node=>getComputedStyle(node).borderBottomColor);
+    const proof={rest,hover,restBottom,hoverBottom,pointer,textContrast:contrastRatio(hover.text,hover.fill)};
+    expect(hover.box).toEqual(rest.box);expect(hover.ranges).toEqual(rest.ranges);expect(hover.font).toBe(rest.font);
+    fs.writeFileSync(path.join(evidenceDir(testInfo),'planning-table-custom-input.json'),JSON.stringify(proof,null,2));
+    await input.screenshot({path:path.join(evidenceDir(testInfo),'planning-table-custom-input.png'),animations:'disabled'});
+    if(process.env.JEP_HOVER_CAPTURE_ONLY!=='1') {
+        await expect(input).toHaveCSS('border-bottom-color',proof.rest.color);
+        expect(hoverBottom).not.toBe(restBottom);
+        expect(proof.hover.shadow).toBe('none');
+        expect(proof.hover.background).toBe(proof.rest.background);
+        expect(proof.textContrast).toBeGreaterThanOrEqual(4.5);
+    }
+});
+
+test('boundary feedback paints only the visible dot without moving the placement hit region',async({page},testInfo)=>{
+    await page.setViewportSize({width:2400,height:900});await install(page);await page.getByRole('radio',{name:'Stories',exact:true}).click();
+    const target=(await liveBoundaries(page)).find(item=>item.id==='status');
+    await page.mouse.move(target.right+1,target.top+1);await expect(overlay(page)).toBeVisible();
+    const hit=overlayHit(page),dot=hit.locator('.planning-review-boundary-dot');
+    expect(await page.evaluate(({x,y})=>Boolean(document.elementFromPoint(x,y)?.closest('.planning-review-boundary-hit')),{x:target.right+1,y:target.top+1})).toBe(false);
+    const rest={hit:await measure(hit),dot:await measure(dot)};
+    await hit.evaluate(node=>{node.__pointerEvents=[];for(const name of ['pointerenter','pointermove'])node.addEventListener(name,event=>node.__pointerEvents.push({x:event.clientX,y:event.clientY,targetInside:node.contains(event.target)}));});
+    const hitBox=await hit.boundingBox();await page.mouse.move(hitBox.x+hitBox.width/2,hitBox.y+hitBox.height/2,{steps:2});
+    const pointer=await hit.evaluate(node=>{const event=node.__pointerEvents.at(-1);return {seen:Boolean(event),...event,hitInside:Boolean(event&&node.contains(document.elementFromPoint(event.x,event.y)))};});
+    expect(pointer.seen).toBe(true);expect(pointer.targetInside).toBe(true);expect(pointer.hitInside).toBe(true);
+    const hover={hit:await measure(hit),dot:await measure(dot)};
+    const dir=evidenceDir(testInfo);fs.writeFileSync(path.join(dir,'planning-boundary-dot.json'),JSON.stringify({rest,hover,pointer},null,2));
+    const box=hover.dot.box;const png=await page.screenshot({clip:{x:box[0]-3,y:box[1]-3,width:box[2]+6,height:box[3]+6},animations:'disabled'});
+    fs.writeFileSync(path.join(dir,'planning-boundary-dot-ring.png'),png);
+    const outside=await page.evaluate(async data=>{const img=new Image();img.src=data;await img.decode();const canvas=document.createElement('canvas');canvas.width=img.width;canvas.height=img.height;const ctx=canvas.getContext('2d');ctx.drawImage(img,0,0);const pixels=ctx.getImageData(0,0,canvas.width,canvas.height).data;let count=0;for(let y=0;y<canvas.height;y++)for(let x=0;x<canvas.width;x++){if(x>=3&&x<canvas.width-3&&y>=3&&y<canvas.height-3)continue;const i=(y*canvas.width+x)*4;if(pixels[i]>=35&&pixels[i]<=65&&pixels[i+1]>=105&&pixels[i+1]<=145&&pixels[i+2]>=210&&pixels[i+2]<=250)count++;}return count;},'data:image/png;base64,'+png.toString('base64'));
+    if(process.env.JEP_HOVER_CAPTURE_ONLY==='1')return;
+    expect(hover.hit.box).toEqual(rest.hit.box);expect(hover.dot.box).toEqual(rest.dot.box);expect(hover.dot.ranges).toEqual(rest.dot.ranges);expect(hover.dot.font).toBe(rest.dot.font);
+    expect(hover.hit.shadow).toBe('none');expect(hover.hit.background).toBe('rgba(0, 0, 0, 0)');
+    expect(hover.dot.background).toBe(rest.dot.background);expect(hover.dot.color).toBe(rest.dot.color);expect(rest.dot.shadow).toBe('none');expect(hover.dot.shadow).toContain('rgb(47, 128, 237)');expect(outside).toBeGreaterThan(4);
 });

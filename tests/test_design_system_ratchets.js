@@ -135,3 +135,31 @@ test('baseline regeneration permits initial creation and stale removals only', (
     assert.ok(compare(after, before).some((error) => error.startsWith('Stale ')));
     assert.deepEqual(baselineRegenerationErrors(after, baselineData(before)), []);
 });
+
+const foundation = ':root { --hover-ring: 0 0 0 1px #2f80ed, 0 0 0 3px rgba(47, 128, 237, .25); --hover-ring-inset: inset 0 0 0 1px #2f80ed, inset 0 0 0 3px rgba(47, 128, 237, .25); --overlay-pct: 8; --hover-overlay: inset 0 0 0 999px color-mix(in srgb, currentColor calc(var(--overlay-pct) * 1%), transparent); }';
+
+test('only uniquely declared safe foundation shadows may be referenced by hover variables', () => {
+    for (const shadow of ['var(--hover-ring)', 'var(--hover-ring-inset)', 'var(--hover-overlay), var(--hover-ring)']) {
+        assert.deepEqual(analyze(`${foundation} .a:hover { box-shadow: ${shadow}; }`).offenders, {});
+        assert.equal(Object.keys(analyze(`.a:hover { box-shadow: ${shadow}; }`).offenders).length, 1);
+        assert.equal(safeShadow(shadow), false, 'token names alone confer no exemption');
+    }
+    for (const shadow of ['var(--unknown)', 'var(--hover-ring, none)', 'var(--unknown), var(--hover-ring)', 'var(--hover-ring) 0 2px 4px #000']) {
+        assert.equal(Object.keys(analyze(`${foundation} .a:hover { box-shadow: ${shadow}; }`).offenders).length, 1, shadow);
+    }
+});
+
+test('foundation token drift, duplicate declarations and conditional or descendant overrides fail closed', () => {
+    const use = ' .a:hover { box-shadow: var(--hover-overlay), var(--hover-ring); }';
+    for (const css of [
+        foundation.replace('--overlay-pct: 8', '--overlay-pct: 13'),
+        foundation.replace('0 0 0 1px #2f80ed', '0 2px 4px #2f80ed'),
+        foundation.replace('999px color-mix', '999px var(--unsafe)'),
+        foundation.replace(':root', '.theme'),
+        `${foundation} .a { --hover-ring: 0 2px 4px #000; }`,
+        `${foundation} :root { --hover-ring: 0 0 0 1px #2f80ed, 0 0 0 3px rgba(47, 128, 237, .25); }`,
+        `${foundation} @media (hover: hover) { :root { --overlay-pct: 8; } }`,
+        `${foundation} .a { --overlay-pct: 8; }`,
+    ]) assert.equal(Object.keys(analyze(css + use).offenders).length, 1, css);
+    assert.throws(() => analyze(`${foundation} .a { &:hover { box-shadow: var(--hover-ring); } }`), /Unsupported nested CSS block/);
+});

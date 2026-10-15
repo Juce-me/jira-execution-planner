@@ -253,14 +253,14 @@ PRIORITY_WEIGHT_NAME_ALIASES = {
 
 
 SENSITIVE_CALLBACK_QUERY_RE = re.compile(
-    r'(/api/auth/atlassian/callback)\?[^ \t\r\n"]+'
+    r'(/api/auth/atlassian/callback)\?[^ \t\r\n"]+|((?<= )/(?:jira-dashboard\.html)?)\?(?=v=\d)[^ \t\r\n]+'
 )
 
 
 def redact_sensitive_log_text(value):
     if not isinstance(value, str):
         return value
-    return SENSITIVE_CALLBACK_QUERY_RE.sub(r'\1?[redacted]', value)
+    return SENSITIVE_CALLBACK_QUERY_RE.sub(r'\1\2?[redacted]', value)
 
 
 class SensitiveLogRedactionFilter(logging.Filter):

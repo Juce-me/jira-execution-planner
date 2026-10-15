@@ -42,6 +42,20 @@ instance can process:
   `localStorage`, an analytics login-deduplication marker in `sessionStorage`,
   and authentication/session and CSRF state in a cookie.
 
+A signed-in user can copy a shareable link to the current dashboard view. The
+link is a plain URL on the same instance whose query string lists the selectors
+that recreate the view: the Department group and Sprint identifiers, selected
+Team identifiers, filter selections such as status and priority names, alert
+categories, the text typed into the search box, and optionally one Epic or
+Story key. It contains no tokens or credentials, and opening it does not change
+any Jira data. Anyone who receives the link can read that text, and it remains
+wherever the link is pasted and in browser history. When a signed-out user
+opens a link, the software keeps the link's query text in the signed (not
+encrypted) session cookie so the view can be applied after sign-in. It removes
+that value when sign-in finishes, when the user signs out, or when the user
+opens the dashboard while signed in, ignores it once it is more than 15 minutes
+old, and does not store the link anywhere else.
+
 The software uses this data to authenticate users, authorize application
 features, retrieve and display Atlassian information, support planning and
 collaboration workflows, preserve user and workspace configuration, secure
@@ -79,6 +93,16 @@ The software uses short-lived in-memory caches for several Jira and
 Home/Townsquare views. Legacy or local-file modes can also write local cache and
 configuration files. Cache expiration does not determine how long database
 records, logs, configuration files, or backups are retained.
+
+The container entrypoint writes the Gunicorn access log with the client
+address, time, request method, URL path, protocol, status, response size, and
+user agent. It does not record query strings, the `Referer` header, or an HTTP
+Basic user name, so shareable-link contents (including search text) and OAuth
+callback parameters are not written to that log. The development server started
+with `python jira_server.py` redacts the query of the OAuth callback and of
+shareable links from its request log. A proxy, load balancer, or log pipeline
+that the deployment operator places in front of the application may still
+record full request URLs and `Referer` headers under its own configuration.
 
 ## External services
 

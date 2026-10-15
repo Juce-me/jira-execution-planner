@@ -13,5 +13,6 @@ exec gunicorn \
   --threads "${GUNICORN_THREADS:-8}" \
   --timeout "${GUNICORN_TIMEOUT:-120}" \
   --access-logfile - \
+  --access-logformat '%(h)s %(t)s "%(m)s %(U)r %(H)s" %(s)s %(b)s "%(a)s"' \
   --error-logfile - \
   jira_server:app

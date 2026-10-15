@@ -3,6 +3,7 @@
 **Status:** Drafted on 2026-05-26 for GA4 web stream Measurement ID `G-6QERX19WB0`. Use this runbook alongside `docs/plans/DONE-ga4-instrumentation.md`.
 
 **Revision notes:**
+- 2026-10-14: Added the Share control event (`share_view_action`). Its four params (`feature_name`, `workflow_action`, `result`, `source_surface`) are already mapped through the existing `userevent` tag and already registered, so no new parameter key, custom definition, trigger or MCP YAML change is required. Link queries never reach GA4; the verification paragraph below covers the page-location and site-search checks.
 - 2026-09-30: Added the ENG per-Epic refresh event (`epic_refresh_action`) and its dedicated `api_surface=epic_refresh` reliability verification. `issue_count_bucket` is mapped through the existing `userevent` tag and remains intentionally unregistered without a named report.
 - 2026-10-01: Planning Sprint review reuses existing action, sort, field-edit, link and API events. Summary/Team edits use `feature_name=planning_review` on Planning; no new triggers, parameter keys or custom definitions are required.
 - 2026-09-25: Added the ENG Board small-screen support request (`board_action`). `reason` (`short`\|`narrow`\|`touch`) is mapped through the existing `userevent` tag and remains intentionally unregistered without a named report.
@@ -422,6 +423,7 @@ Representative events to verify:
 | Use Planning Sprint review | `planning_action`, `sort_changed`, `issue_field_edit_action`, `api_result` | `feature_name=planning_review`, `source_surface=planning`; bounded actions, built-in sort category or `custom`, `field_name=summary|team`, `api_surface=planning_review` for review requests | cell values, custom column labels/IDs, summaries, issue/Team/person identities, URLs, JQL |
 | Refresh one ENG Epic | `epic_refresh_action` | `feature_name=epic_refresh`, `workflow_action=refresh_result`, `source_surface=catch_up\|planning`, `result=changed\|unchanged\|failure`, `issue_count_bucket` | Epic or Story keys, Story Point values, names, sprint or group ids, raw errors |
 | Request Board small-screen support | `board_action` | `feature_name=eng_board`, `workflow_action=small_screen_support_request`, `reason=short\|narrow\|touch`, `source_surface=board` | viewport sizes, group/column ids or names, free text |
+| Copy a Share link, or open one | `share_view_action` | `feature_name=share_view`, `workflow_action=copy_link\|apply_link`, `result=success\|failure` (copy) or `success\|partial\|rejected` (apply), `source_surface=catch_up\|planning\|board\|statistics` | link URL or query string, group, Team or Sprint ids or names, search text, issue keys, notice categories |
 | API completes | `api_result` | `feature_name`, `api_surface`, `status_bucket`, `duration_bucket`; for EPM APIs use `feature_name=epm` and also include `epm_tab`, `project_scope`, `subgoal_scope` when known | URL query, response body, Jira error text |
 | Reach 90% scroll depth | `scroll` | GA4-managed Enhanced Measurement event | app-owned custom params |
 | Download file link | `file_download` | GA4-managed Enhanced Measurement event | app-owned custom params |
@@ -447,6 +449,8 @@ For Planning Sprint review, verify explicit layout, column, save and recovery ac
 For the ENG per-Epic refresh, verify one `epic_refresh_action` per applied click (none for ignored clicks or discarded results), plus `api_result` with `api_surface=epic_refresh` and `feature_name=epic_refresh`, so per-click requests never appear in the `eng_tasks` series. Confirm the payload holds only the five documented params, mapped through the single `CE - userevent` trigger. Do not register `issue_count_bucket` as a custom dimension without a named report; use Preview/DebugView for this validation.
 
 For the ENG Board small-screen alert, verify exactly one `board_action` per click of Request small-screen support, with only the four documented params and a `reason` enum, mapped through the single `CE - userevent` trigger. Do not register `reason` as a custom dimension without a named report.
+
+For Share links, verify exactly one `share_view_action` per Share click (`workflow_action=copy_link`) and exactly one per opened link (`workflow_action=apply_link`), each carrying only the four documented params and mapped through the single `CE - userevent` trigger. Open a link whose search text is non-empty and confirm the first `page_view` and every later hit show a page location without `v=`, `mode=`, `group=`, `sprint=` or `find=`, and that no `view_search_results` event fires. Do not register new custom dimensions for Share: `feature_name`, `workflow_action`, `result` and `source_surface` are already registered, so build the adoption and partial-rate view in Explore from them.
 
 ---
 

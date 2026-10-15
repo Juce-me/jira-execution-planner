@@ -19,6 +19,7 @@ const EVENT_NAMES = new Set([
     'issue_field_edit_action',
     'epic_refresh_action',
     'board_action',
+    'share_view_action',
     'external_link_opened',
     'api_result',
     'app_error_shown'

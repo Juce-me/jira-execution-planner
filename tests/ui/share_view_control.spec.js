@@ -440,6 +440,7 @@ test.describe('Share control: painted glyph ink', () => {
         await openHarness(page);
         await page.evaluate(() => document.fonts.ready);
         for (const surface of ['main', 'compact']) {
+            await setHarness(page, { active: surface });
             const button = shareButton(page, surface);
             await button.scrollIntoViewIfNeeded();
             for (const state of ['rest', 'hover']) {

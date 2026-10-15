@@ -33,7 +33,7 @@ Statuses and commit SHAs are written once, in Task 14 Step 9, from `git log --on
 
 | Task | Title | Status | Commit | Operator gate |
 | --- | --- | --- | --- | --- |
-| 0 | Baseline and preflight | planned | | |
+| 0 | Baseline and preflight | planned | | G1: accepted 2026-10-15; instruction chain and related postmortems read; baseline continuation agreement pending |
 | 1 | Server login stash and shared corpus | planned | | |
 | 2 | Log hygiene and privacy notice | planned | | G1 accepted 2026-10-15 |
 | 3 | View defaults and codec | planned | | |
@@ -268,7 +268,7 @@ for f in \
 ```
 Expected: no `MISSING` line. A missing file means the plan is stale: stop and report.
 
-Whenever `origin/main` is not `4247a3b1`, also run the anchor sweep: for every `Replace this` block in Tasks 1, 2, 5, 6, 7, 8, 10, 11a, 11b, 12 and 13 that quotes text from the base, run `rg -c --fixed-strings '<the first line of the quoted block>' <file>`. Each must print `1` at the point its task runs (a block that quotes text an earlier task creates matches after that task). A mismatch means `main` moved the text: stop and report; do not improvise the edit.
+Whenever `origin/main` is not `4247a3b1`, also run the anchor sweep: for every `Replace this` block in Tasks 1, 2, 5, 6, 7, 8, 10, 11a, 11b, 12 and 13 that quotes text from the base, run `rg -c --fixed-strings '<the first line of the quoted block>' <file>`. Each must print `1` at the point its task runs (a block that quotes text an earlier task creates matches after that task). Exception accepted by the operator on 2026-10-15: five first-line anchors were already nonunique on `4247a3b1`; require exactly one full quoted block match for the Task 10 `useDashboardAnalytics` return, the two Task 12 compact-header replacements in `codebase_structure_smoke.spec.js`, the Task 1 callback-test footer in `test_auth_routes.py`, and the Task 11b `shouldAutomaticallyStartOnboarding` signature. Every full quoted block must still match exactly once. A mismatch means `main` moved the text: stop and report; do not improvise the edit.
 
 - [ ] **Step 4: Prepare the toolchain**
 
@@ -300,15 +300,15 @@ Expected: all pass except the known baseline failures, which you record by name 
 
 | Gate | Command | Result | Date |
 | --- | --- | --- | --- |
-| Python suite | `unittest discover -s tests` | | |
-| Security matrix | the explicit `unittest` list above (`make test-security` needs `.venv`) | | |
-| Node unit | `npm run test:frontend:unit` | | |
-| Structure budgets | `tests.test_codebase_structure_budgets` | | |
-| Extraction lint | `fnm exec --using 20 bash scripts/extraction_lint/run.sh` | | |
-| Build and dist | `npm run build && make verify-dist-clean` | | |
-| UI baseline, Chromium | the three specs above | | |
-| UI baseline, Firefox | `codebase_structure_smoke.spec.js` | | |
-| UI baseline, WebKit | `codebase_structure_smoke.spec.js` | | |
+| Python suite | `unittest discover -s tests` | Exit 0; 2,124 tests run, 29 skipped, 0 failures/errors (129.163 s). Existing static-response ResourceWarnings observed. | 2026-10-15 |
+| Security matrix | the explicit `unittest` list above (`make test-security` needs `.venv`) | Exit 0; 82 tests run, 0 failures/errors, 0 skipped. | 2026-10-15 |
+| Node unit | `npm run test:frontend:unit` | Exit 0; 2,539 passed, 0 failed, 0 skipped. | 2026-10-15 |
+| Structure budgets | `tests.test_codebase_structure_budgets` | Exit 0; 2 tests passed. Measured dashboard/server lines: 7,493 / 6,455; manifest pins unchanged. | 2026-10-15 |
+| Extraction lint | `fnm exec --using 20 bash scripts/extraction_lint/run.sh` | Exit 1; 0 errors, 104 warnings; owner budgets: 0 problems; enforced problems: 4 (known baseline).<br>`ENFORCED owner budget: stale interface measurement frontend/src/eng/EpicBlock.jsx:EpicBlock:expandedInputCount`<br>`ENFORCED owner budget: unresolved inventory frontend/src/eng/EpicBlock.jsx:EpicBlock: bag epicGroup member alias epicInfo, forwarded input epicGroup, bag epicRefresh dynamic deep member, bag selectedTasks dynamic member, bag selectedTasks dynamic deep member, bag storySubtasksByKey dynamic member, bag storySubtasksByKey dynamic deep member`<br>`ENFORCED owner budget: stale interface measurement frontend/src/settings/GroupBoardSettings.jsx:default:expandedInputCount`<br>`ENFORCED owner budget: unresolved inventory frontend/src/settings/GroupBoardSettings.jsx:default: forwarded input board, forwarded input backendUrl, forwarded input epicsByStatus` | 2026-10-15 |
+| Build and dist | `npm run build && make verify-dist-clean` | Exit 0 for build and verify-dist-clean; no generated output changes. | 2026-10-15 |
+| UI baseline, Chromium | the three specs above | Exit 0; 271 passed, 2 skipped, 0 failed (6.1 min), approved outside sandbox. Initial sandbox launch was interrupted after macOS Mach-port permission failures. | 2026-10-15 |
+| UI baseline, Firefox | `codebase_structure_smoke.spec.js` | Exit 1; 39 passed, 3 failed, 2 skipped (2.6 min). Failures: `Statistics subviews render extracted panels and preserve stats API ownership`; `stats sprint range End panels keep long options inside the narrow viewport`; `Excluded Capacity summary shows product and tech shares instead of source copy`. Operator agreement required before implementation continues. | 2026-10-15 |
+| UI baseline, WebKit | `codebase_structure_smoke.spec.js` | Exit 1; 40 passed, 2 failed, 2 skipped (2.3 min). Failures: `Task9 freshness reserved copy preserves responsive header geometry ENG only`; `Task9 freshness reserved copy preserves responsive header geometry with ENG EPM switch`. Operator agreement required before implementation continues. | 2026-10-15 |
 
 - [ ] **Step 6: Run the startup gate sweep (auth work)**
 

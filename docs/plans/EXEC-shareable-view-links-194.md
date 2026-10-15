@@ -1,6 +1,6 @@
 # Shareable View Links Implementation Plan
 
-> **Status:** Task 11c automated verification and fresh review approved 2026-10-15; correction `d00b324f` is committed. Stopped at the typed-link manual checkpoint before Task 12. The operator authorized diagnosis and continuation after the two-attempt pause; bounded drained-pipe capture completed the exact negative control. All temporary application mutations are restored. Task 12 has not started. No push or PR.
+> **Status:** Task 12 standalone Share-control mock built and shown 2026-10-15; stopped at gate G2 pending operator acceptance. The operator requested building the button before the outstanding Task 11c live manual check. That check is not marked passed. No Task 12 application wiring, database migration, push or PR.
 >
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Per-task status and commits are recorded in the Execution status table below, inside this committed file (see the recording rule there), not in a scratch ledger.
 
@@ -51,7 +51,7 @@ Statuses and commit SHAs are written once, in Task 14 Step 9, from `git log --on
 | 11a | Apply controller, capture builder, interaction guard and hook | done | `a362b9c6` | Review approved; 46 focused, 2,831 full Node and two structure tests pass |
 | 11b | Mount: hold, options, tour wait and Planning table key | done | `51841e95` | Review approved; 2,847 Node, 34 Python and 539 Chromium tests pass; measured dashboard 7,540 |
 | 11c | Link UI acceptance spec | in-progress | `045887d1`, `d00b324f` | Automated verification and fresh review approved; 24 Chromium cases pass; stopped for typed-link manual acceptance |
-| 12 | Share control, notice and header surfaces | planned | | G2 mock acceptance |
+| 12 | Share control, notice and header surfaces | in-progress | | Step 0 instruction chain, design system and four postmortems read; Steps 1–2 mock complete; G2 acceptance pending |
 | 13 | Docs, ontology, budgets and plans index | planned | | |
 | 14 | Journeys, full verification and publication | planned | | G3 explicit publish go |
 
@@ -76,6 +76,11 @@ The supplied and actual corrected specs match byte-for-byte. Final acceptance pa
 Task 11c manual checkpoint (2026-10-15): corrective commit `d00b324f` changes only `tests/ui/shareable_view_links.spec.js` and the master/apply plans. Fresh review approves both spec compliance and quality, with no new blocking findings; the recorded extraction-lint baseline remains for final verification. Tasks 11a `a362b9c6`, 11b `51841e95` and original 11c `045887d1` retain their scope and results above. Final corrected acceptance is 24 passed, full Node 2,847 passed, structure two passed, and Task 11b regression 539 Chromium cases passed. All eight original negative controls plus the non-Share privacy control detected their intended regressions and were restored. Committed-revision build and dist checks pass with a clean worktree; measured dashboard remains 7,540 lines, aggregate pin 34,142 (Task 11b growth +35 from 7,505), and server remains 6,459. The separate test correction and bounded pipe-capture remedy are the approved deviations; application code, dist and budgets did not change in this correction.
 
 Execution stops until the operator confirms the Task 11c Step 13 signed-in typed-link checks: URL stripping and the first request's link scope; search/status and Planning/Board modes; cancellation during loading without rollback; unknown group applying nothing. Use read-only live data, sign in personally, report modes/counts only and save no live screenshots. Task 12 and its separate G2 standalone-mock acceptance remain unstarted; no push or PR. This checkpoint documentation commit is a recording-rule history exception, with its SHA reconciled at Task 14.
+
+
+Task 12 G2 checkpoint (2026-10-15): the operator requested “build the button please” after the Task 11c manual checkpoint. Proceeding to the standalone mock follows that instruction; it does not claim the typed-link manual checks passed. The attempted local app startup could not reach the dashboard because the configured database migrations are behind this branch; no schema change was made. The live check remains outstanding for final journey validation.
+
+Task 12 Steps 0–2 are complete: all precondition anchors match, the instruction chain, design-system lookup and four named postmortems were read, and the exact supplied generator produced `assets/mockups/share-view-control-194.html` (396,475 bytes). The generator and capture commands run through Node 20 and exit zero. Both header Share controls measure 38 by 38 px with a 10 px radius; hovered overlay and ring are true, background image and transform are none. The first sandboxed Chromium launch failed before rendering; the same script succeeded with the required elevated execution. Four synthetic captures at 1440 and 390 px plus main/compact hover close-ups were inspected, and the standalone mock was opened for review. No source, test, dist, budget, token or new class changed. The generated HTML remains uncommitted until G2 acceptance, as required. This docs-only pause record is a recording-rule history exception. The G2 line in the control slice remains `Operator acceptance: pending`; no acceptance date is inferred from the request to build. Steps 3–12 must wait for acceptance of the concrete mock.
 
 ### Operator gates
 

@@ -3155,6 +3155,14 @@ test('open header dropdown toggles filter groups teams and sprints', async ({ pa
         await page.evaluate(() => window.scrollTo(0, 600));
         const compactHeader = page.locator('.compact-sticky-header.is-visible');
         await expect(compactHeader).toBeVisible();
+        const compactShare = compactHeader.getByRole('button', { name: 'Copy link to this view' });
+        await expect(compactShare).toHaveCount(1);
+        await expect(compactShare).toBeVisible();
+        const compactShareBox = await compactShare.boundingBox();
+        expect(compactShareBox.width).toBeCloseTo(38, 1);
+        expect(compactShareBox.height).toBeCloseTo(38, 1);
+        expect(compactShareBox.x).toBeGreaterThanOrEqual(0);
+        expect(compactShareBox.x + compactShareBox.width).toBeLessThanOrEqual(viewportWidth + 1);
         for (const dropdownCase of dropdownCases) {
             const dropdown = compactHeader.locator(`.${dropdownCase.kind}-dropdown.header-filter-dropdown`);
             await expect(dropdown).toHaveClass(new RegExp(`header-filter-dropdown--${dropdownCase.kind}`));
@@ -3184,6 +3192,9 @@ test('open header dropdown toggles filter groups teams and sprints', async ({ pa
         await waitForVisualSettled(page);
         const compactHeader = page.locator('.compact-sticky-header.is-visible');
         await expect(compactHeader).toBeVisible();
+        const narrowShareBox = await compactHeader.getByRole('button', { name: 'Copy link to this view' }).boundingBox();
+        expect(narrowShareBox.x).toBeGreaterThanOrEqual(0);
+        expect(narrowShareBox.x + narrowShareBox.width).toBeLessThanOrEqual(width + 1);
         const documentOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
         expect(documentOverflow).toBeLessThanOrEqual(1);
         await compactHeader.screenshot({ path: path.join(headerDropdownAfterDir, `stable-compact-header-${width}-after.png`) });
@@ -3260,10 +3271,13 @@ test('multiple groups keep the main controls on one row and settings beside refr
     const jiraExport = headerActions.getByRole('button', { name: 'Open Jira issue menu' });
     const refresh = headerActions.getByRole('button', { name: 'Refresh tasks and sprints from Jira' });
     const settings = headerActions.getByRole('button', { name: 'Manage team groups' });
+    const share = headerActions.getByRole('button', { name: 'Copy link to this view' });
     await expect(jiraExport).toBeVisible();
     await expect(refresh).toBeVisible();
     await expect(settings).toBeVisible();
+    await expect(share).toBeVisible();
     await expect(headerActions.locator('.refresh-icon + .group-gear-button')).toHaveCount(1);
+    await expect(headerActions.locator('.control-search + [data-share-view] + .jira-export')).toHaveCount(1);
     const iconButtonGeometry = await headerActions.evaluate((row) => {
         const rowRect = row.getBoundingClientRect();
         const headerRect = row.closest('.subtitle').getBoundingClientRect();
@@ -3274,6 +3288,7 @@ test('multiple groups keep the main controls on one row and settings beside refr
             row.querySelector('.jira-export-icon-button'),
             row.querySelector('.refresh-icon'),
             row.querySelector('.group-gear-button'),
+            row.querySelector('[data-share-view-control]'),
         ];
         // The reserved freshness slot is its own flex line under the controls; the controls line ends one row gap above it.
         const slotRect = row.querySelector('.dashboard-freshness-slot').getBoundingClientRect();
@@ -3287,6 +3302,7 @@ test('multiple groups keep the main controls on one row and settings beside refr
                 row.querySelector('.jira-export-icon-button'),
                 row.querySelector('.refresh-icon'),
                 row.querySelector('.group-gear-button'),
+                row.querySelector('[data-share-view-control]'),
             ].map((control) => Math.abs(controlsBottom - control.getBoundingClientRect().bottom)),
             buttons: buttons.map((button) => {
             const rect = button.getBoundingClientRect();
@@ -3306,8 +3322,8 @@ test('multiple groups keep the main controls on one row and settings beside refr
     });
     expect(iconButtonGeometry.rightOverflow).toBeLessThanOrEqual(1);
     iconButtonGeometry.bottomDeltas.forEach((delta) => expect(delta).toBeLessThanOrEqual(1));
-    const [jiraGeometry, refreshGeometry, settingsGeometry] = iconButtonGeometry.buttons;
-    for (const geometry of [jiraGeometry, refreshGeometry, settingsGeometry]) {
+    const [jiraGeometry, refreshGeometry, settingsGeometry, shareGeometry] = iconButtonGeometry.buttons;
+    for (const geometry of [jiraGeometry, refreshGeometry, settingsGeometry, shareGeometry]) {
         expect(geometry.width).toBe(iconButtonGeometry.controlHeight);
         expect(geometry.height).toBe(iconButtonGeometry.controlHeight);
         expect(geometry.iconWidth).toBeCloseTo(18, 3);
@@ -3392,6 +3408,7 @@ test('multiple groups keep the main controls on one row and settings beside refr
     });
     expect(reportedViewportGeometry.rightOverflow).toBeLessThanOrEqual(1);
     expect(reportedViewportGeometry.buttonSizes).toEqual([
+        { width: 38, height: 38 },
         { width: 38, height: 38 },
         { width: 38, height: 38 },
         { width: 38, height: 38 },

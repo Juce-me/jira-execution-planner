@@ -90,7 +90,8 @@
             padding: 0.4rem 0.9rem;
         }
 
-        .header-actions-row button.header-icon-button {
+        .header-actions-row button.header-icon-button,
+        .compact-sticky-header button.header-icon-button {
             width: var(--control-height);
             min-width: var(--control-height);
             height: var(--control-height);
@@ -114,11 +115,29 @@
             }
         }
 
-        .header-actions-row button.header-icon-button svg {
+        .header-actions-row button.header-icon-button svg,
+        .compact-sticky-header button.header-icon-button svg {
             width: 18px;
             min-width: 18px;
             height: 18px;
             flex: none;
+        }
+
+        /* Share notice: the shared banner (eng/loading.css) anchored under the Share control, so it stays
+           visible on both header surfaces. It anchors to the nearest positioned ancestor (the main
+           header's .subtitle or the sticky compact header), so it never leaves the viewport. The
+           attribute-scoped selector outranks the banner's own margin; the typography reset undoes
+           the uppercase, tracked text .subtitle passes down. */
+        [data-share-view] > .server-unavailable-banner {
+            position: absolute;
+            top: calc(100% + 0.35rem);
+            right: 0;
+            z-index: calc(var(--sticky-control-overlay-z) + 4);
+            width: min(26rem, 100%);
+            margin: 0;
+            box-shadow: 0 12px 28px rgba(22, 22, 22, 0.14);
+            text-transform: none;
+            letter-spacing: normal;
         }
 
         .secondary.compact {

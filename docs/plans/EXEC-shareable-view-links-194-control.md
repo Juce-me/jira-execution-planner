@@ -505,7 +505,7 @@ Expected: the six source, documentation and test files plus the regenerated `fro
 
 **Owner note:** Depends on Task 3 (`SHARE_VIEW_CATEGORY_BY_KEY`), Task 10 (`trackShareViewAction`) and Task 11 (`const shareView = useShareViewApply(...)` in `dashboard.jsx`). Blocks Task 13 (documentation) and Task 14 (journeys and the headed Firefox and WebKit run). Operator gate G2 sits inside this task: Steps 1 and 2 build and show the mock; Steps 3 to 12 run only once the acceptance line below holds a real date. The control is a framed header icon button, so it reuses `IconButton` and the registered `header-icon-button` hook and adds no class, hover rule, font-family, font-size or border-radius value; Step 0 lists the design-system rules that govern it.
 
-**Gate G2 (operator):** Operator acceptance: pending
+**Gate G2 (operator):** Operator acceptance: 2026-10-15 — “but it's about the opening the link, if I got it right, so the problem is not copying, it's openning — for the opening outdated links — with non existems teams or departments — sound good”.
 
 Replace `pending` with the date of the operator's acceptance in chat, quoting their words, in this task's section of `docs/plans/EXEC-shareable-view-links-194-control.md`. Never write the date on the operator's behalf. If the line still reads `pending`, stop after Step 2 and report.
 

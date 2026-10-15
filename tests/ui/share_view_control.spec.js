@@ -1,0 +1,640 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const esbuild = require('esbuild');
+const { test, expect } = require('@playwright/test');
+const { catchUpPrefs, deferred, groupsConfigPayload, mockDashboard, openCatchUp } = require('./eng_epic_refresh_fixture');
+const { activeHomeTokenConnection } = require('./epm_home_token_fixture');
+const { hoverEvidence } = require('./design_system_hover_helpers');
+
+const repoRoot = path.join(__dirname, '..', '..');
+const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
+const harnessUrl = `${appBaseUrl}/share-view-control-harness`;
+const dashboardHtml = fs.readFileSync(path.join(repoRoot, 'jira-dashboard.html'), 'utf8');
+const SHARE_LABEL = 'Copy link to this view';
+// The shared banner's accent label on white is 4.8:1 at rest and 4.28:1 once the foundation overlay is composed; it is the existing
+// palette, so the Dismiss case pins that it stays at least this readable instead of the 4.5:1 floor of new text.
+const DISMISS_MINIMUM_CONTRAST = 4;
+const SYNTHETIC_URL = 'http://127.0.0.1:5050/?v=1&mode=catch-up&group=synthetic-group&sprint=3001';
+const APP_URL_PREFIX = /^http:\/\/127\.0\.0\.1:5050\/\?v=1&mode=catch-up&group=group-alpha&sprint=3001(&|$)/;
+
+let harnessHtml;
+
+test.beforeAll(() => {
+    const harnessJs = esbuild.buildSync({
+        entryPoints: [path.join(__dirname, 'share_view_control_harness.jsx')],
+        bundle: true,
+        write: false,
+        format: 'iife',
+        define: { 'process.env.NODE_ENV': '"test"' },
+    }).outputFiles[0].text;
+    // The real stylesheet bundle, built from source, so the cascade is the app's.
+    const dashboardCss = esbuild.buildSync({
+        entryPoints: [path.join(repoRoot, 'frontend', 'src', 'styles', 'dashboard.css')],
+        bundle: true,
+        write: false,
+    }).outputFiles[0].text;
+    harnessHtml = '<!doctype html><html><head><meta charset="utf-8">'
+        + `<style>${dashboardCss}</style></head><body><div id="harness-root"></div><script>${harnessJs}</script></body></html>`;
+});
+
+// Clipboard stubs are installed before navigation: `ok` records writes, `rejected` refuses them,
+// `missing` models a non-secure origin where navigator.clipboard is undefined. Animations are always off (the header slides in on mount);
+// transitions are off too unless a case measures them, as the hover cases do after the helper's settle wait.
+async function openHarness(page, { width = 1440, height = 900, clipboard = 'ok', transitions = false } = {}) {
+    await page.addInitScript((mode) => {
+        window.__copied = [];
+        const clipboardValue = {
+            ok: { writeText: async (text) => { window.__copied.push(text); } },
+            rejected: { writeText: () => Promise.reject(new DOMException('denied', 'NotAllowedError')) },
+            missing: undefined,
+        }[mode];
+        Object.defineProperty(navigator, 'clipboard', { configurable: true, value: clipboardValue });
+    }, clipboard);
+    await page.route(harnessUrl, route => route.fulfill({ status: 200, contentType: 'text/html', body: harnessHtml }));
+    await page.setViewportSize({ width, height });
+    await page.goto(harnessUrl);
+    await expect(page.getByRole('button', { name: SHARE_LABEL })).toHaveCount(2);
+    await page.addStyleTag({ content: `*,*::before,*::after{animation:none!important${transitions ? '' : ';transition:none!important'}}` });
+}
+
+// Hooks are data attributes and existing classes only: the Share control adds no class of its own.
+const surfaceScope = (surface) => (surface === 'main' ? '.header-actions-row ' : surface === 'compact' ? '.compact-sticky-header ' : '');
+const shareButton = (page, surface) => page.locator(`${surfaceScope(surface)}[data-share-view-control]`);
+const shareNotice = (page, surface) => page.locator(`${surfaceScope(surface)}[data-share-view] > .server-unavailable-banner`);
+const shareStatus = (page, surface) => page.locator(`${surfaceScope(surface)}[data-share-view] > .planning-review-sr-only`);
+const setHarness = (page, patch) => page.evaluate(next => window.__shareHarness.set(next), patch);
+const shareEvents = (page) => page.evaluate(() => window.dataLayer.filter(entry => entry && entry.event_name === 'share_view_action'));
+
+test.describe('Share control: shared header icon-button contract', () => {
+    test('both surfaces carry the shared header icon-button classes and nothing else, with the 38 by 38 geometry of their siblings', async ({ page }) => {
+        await openHarness(page);
+        const main = shareButton(page, 'main');
+        const compact = shareButton(page, 'compact');
+        for (const button of [main, compact]) {
+            // Zero new classes: the shared IconButton variant and its registered header hook, exactly.
+            await expect(button).toHaveAttribute('class', 'secondary compact header-icon-button');
+        }
+        const read = (button) => button.evaluate((node) => {
+            const style = getComputedStyle(node);
+            const rect = node.getBoundingClientRect();
+            const icon = node.querySelector('svg').getBoundingClientRect();
+            return {
+                width: rect.width, height: rect.height, iconWidth: icon.width, iconHeight: icon.height,
+                borderRadius: style.borderRadius, backgroundColor: style.backgroundColor, borderColor: style.borderColor, color: style.color,
+                borderTopWidth: style.borderTopWidth, marginRight: style.marginRight,
+            };
+        });
+        const refresh = await read(page.locator('.header-actions-row .refresh-icon'));
+        const mainShare = await read(main);
+        const compactShare = await read(compact);
+        for (const share of [mainShare, compactShare]) {
+            expect(share.width).toBe(38);
+            expect(share.height).toBe(38);
+            expect(share.iconWidth).toBeCloseTo(18, 3);
+            expect(share.iconHeight).toBeCloseTo(18, 3);
+            expect(share.marginRight).toBe('0px');
+            for (const key of ['borderRadius', 'backgroundColor', 'borderColor', 'color', 'borderTopWidth']) expect(share[key], key).toBe(refresh[key]);
+        }
+        // The one rule set serves both surfaces: the compact control computes exactly what the main one does.
+        expect(compactShare).toEqual(mainShare);
+        // Order and adjacency: Search, Share, Jira export in the main row; Share right after Search in the compact row.
+        await expect(page.locator('.header-actions-row > .control-search + [data-share-view] + .jira-export')).toHaveCount(1);
+        await expect(page.locator('.header-actions-row .refresh-icon + .group-gear-button')).toHaveCount(1);
+        await expect(page.locator('.compact-sticky-header > .compact-sticky-header-search + [data-share-view]')).toHaveCount(1);
+        // Bottom edges line up with the neighbouring Search input on both surfaces.
+        const bottoms = await page.evaluate(() => ['.header-actions-row', '.compact-sticky-header'].map((rowSelector) => {
+            const row = document.querySelector(rowSelector);
+            return Math.abs(row.querySelector('.search-input').getBoundingClientRect().bottom - row.querySelector('[data-share-view-control]').getBoundingClientRect().bottom);
+        }));
+        bottoms.forEach(delta => expect(delta).toBeLessThanOrEqual(1));
+    });
+
+    // Settled element-level evidence (design_system_hover_helpers): the stationary box, text and border, the foundation
+    // overlay and ring, their painted pixels and the composed contrast, on the real stylesheet and the real component.
+    test('hover paints the foundation overlay and ring inside the visible rounded border, like its Refresh sibling, on both surfaces', async ({ page }, testInfo) => {
+        await openHarness(page, { transitions: true });
+        const sibling = await hoverEvidence(page, page.locator('.header-actions-row .refresh-icon'), testInfo, 'share-harness-refresh', { foundation: true });
+        for (const surface of ['main', 'compact']) {
+            const { rest, hover } = await hoverEvidence(page, shareButton(page, surface), testInfo, `share-harness-${surface}`, { foundation: true });
+            // The visible shape is a 1px solid border on a 10px rounded square, so the paint is the box-shadow overlay and ring that
+            // follow it, never a full-size circle (circle paint is for unframed icons).
+            expect(rest.box.slice(2), `${surface} frame`).toEqual([38, 38]);
+            expect([hover.radius, hover.borderWidth, hover.borderStyle], `${surface} visible border shape`).toEqual(['10px', '1px', 'solid']);
+            expect(Number.parseFloat(hover.radius), `${surface} is not a circle`).toBeLessThan(rest.box[2] / 2);
+            expect(hover.backgroundImage, `${surface} no circle paint`).toBe('none');
+            expect(hover.shadow, `${surface} overlay inside the border`).toMatch(/inset/);
+            expect(hover.transform, `${surface} no lift`).toBe('none');
+            expect(hover.transition, `${surface} no transition: all`).not.toMatch(/\ball\b/);
+            // The same hover language as the existing sibling, on both surfaces.
+            for (const key of ['shadow', 'radius', 'borderWidth', 'borderStyle', 'border', 'background', 'backgroundImage', 'transform', 'filter', 'opacity']) {
+                expect(hover[key], `${surface} ${key} equals the Refresh sibling`).toBe(sibling.hover[key]);
+            }
+        }
+    });
+});
+
+test.describe('Share control: copy outcomes', () => {
+    test('a click copies the captured URL once, swaps the icon at a fixed 38 by 38 and reports one fixed event', async ({ page }) => {
+        await openHarness(page);
+        const button = shareButton(page, 'main');
+        const status = shareStatus(page, 'main');
+        await button.click();
+        await expect(button.locator('[data-share-view-icon="copied"]')).toHaveCount(1);
+        await expect(status).toHaveText('Link copied');
+        const box = await button.boundingBox();
+        expect(box.width).toBeCloseTo(38, 1);
+        expect(box.height).toBeCloseTo(38, 1);
+        expect(await page.evaluate(() => window.__copied)).toEqual([SYNTHETIC_URL]);
+        await expect(shareNotice(page)).toHaveCount(0);
+        expect(await shareEvents(page)).toEqual([{
+            event: 'userevent', trigger: 'userevent', event_type: 'event', event_name: 'share_view_action',
+            feature_name: 'share_view', workflow_action: 'copy_link', result: 'success', source_surface: 'catch_up',
+        }]);
+        // The link icon returns by itself and the status text clears.
+        await expect(button.locator('[data-share-view-icon="link"]')).toHaveCount(1, { timeout: 4000 });
+        await expect(status).toHaveText('');
+        expect(await page.evaluate(() => window.__shareHarness.calls.captures)).toBe(1);
+    });
+
+    test('over-cap dropped keys are named in the notice as categories, never as values', async ({ page }) => {
+        await openHarness(page);
+        await setHarness(page, { capture: { ok: true, url: SYNTHETIC_URL, dropped: ['find', 'alertTeam', 'sort'] } });
+        await shareButton(page, 'main').click();
+        const notice = shareNotice(page);
+        await expect(notice.locator('p')).toHaveText('Link copied, without some details to keep it short: filters and highlighted item.');
+        await expect(notice.getByRole('textbox')).toHaveCount(0);
+        expect(await page.evaluate(() => window.__copied)).toEqual([SYNTHETIC_URL]);
+        const events = await shareEvents(page);
+        expect(events.map(event => event.result)).toEqual(['success']);
+    });
+
+    for (const clipboard of ['missing', 'rejected']) {
+        test(`clipboard ${clipboard}: the notice shows the whole link in a selectable read-only field and reports a failure`, async ({ page }) => {
+            await openHarness(page, { clipboard });
+            const longUrl = `${SYNTHETIC_URL}&find=${'a'.repeat(1400)}`;
+            await setHarness(page, { capture: { ok: true, url: longUrl, dropped: ['sort'] } });
+            await shareButton(page, 'main').click();
+            const notice = shareNotice(page);
+            await expect(notice.locator('p')).toHaveText('The browser did not allow copying. Select the link below and copy it. Left out to keep it short: filters.');
+            const field = notice.getByRole('textbox', { name: 'Link to copy' });
+            await expect(field).toHaveAttribute('readonly', '');
+            await expect(field).toHaveValue(longUrl);
+            await expect(field).toBeFocused();
+            expect(await field.evaluate(node => [node.selectionStart, node.selectionEnd, node.value.length])).toEqual([0, longUrl.length, longUrl.length]);
+            expect(await page.evaluate(() => window.__copied)).toEqual([]);
+            expect((await shareEvents(page)).map(event => event.result)).toEqual(['failure']);
+            await expect(shareButton(page, 'main').locator('[data-share-view-icon="copied"]')).toHaveCount(0);
+            await notice.getByRole('button', { name: 'Dismiss' }).click();
+            await expect(notice).toHaveCount(0);
+        });
+    }
+
+    for (const [reason, message] of [
+        ['too_long', 'This view has too many selections to fit in one link, so nothing was copied.'],
+        ['invalid_state', 'This view cannot be shared as a link right now, so nothing was copied.'],
+    ]) {
+        test(`a capture refused as ${reason} shows its message, copies nothing and shows no field`, async ({ page }) => {
+            await openHarness(page);
+            await setHarness(page, { capture: { ok: false, reason } });
+            await shareButton(page, 'main').click();
+            const notice = shareNotice(page);
+            await expect(notice.locator('p')).toHaveText(message);
+            await expect(notice.getByRole('textbox')).toHaveCount(0);
+            expect(await page.evaluate(() => window.__copied)).toEqual([]);
+            expect((await shareEvents(page)).map(event => event.result)).toEqual(['failure']);
+        });
+    }
+
+    test('a disabled control stays inert and gains no hover delta on either surface', async ({ page }, testInfo) => {
+        await openHarness(page);
+        await setHarness(page, { disabled: true });
+        for (const surface of ['main', 'compact']) {
+            const button = shareButton(page, surface);
+            await expect(button).toBeDisabled();
+            await expect(button).toHaveAttribute('title', 'Sharing is available once the view has loaded');
+            await expect(button).toHaveAttribute('aria-label', SHARE_LABEL);
+            await button.click({ force: true });
+            // The helper asserts that the hovered state equals the resting state for a disabled control.
+            const { rest, hover } = await hoverEvidence(page, button, testInfo, `share-harness-disabled-${surface}`, { disabled: true });
+            expect([rest.shadow, hover.shadow]).toEqual(['none', 'none']);
+        }
+        expect(await page.evaluate(() => window.__shareHarness.calls.captures)).toBe(0);
+        expect(await shareEvents(page)).toEqual([]);
+    });
+});
+
+const APPLY_NOTICES = [
+    [{ kind: 'dropped', categories: ['group'] }, 'This link was not applied: its Department group is not available to you.'],
+    [{ kind: 'dropped', categories: ['sprint'] }, 'This link was not applied: its Sprint is not available to you.'],
+    [{ kind: 'dropped', categories: ['sprint', 'group'] }, 'This link was not applied: its Department group and Sprint are not available to you.'],
+    [{ kind: 'dropped', categories: [] }, 'This link could not be applied right now, so your view was left as it was.'],
+    [{ kind: 'partial', categories: ['teams', 'filters'] }, 'Part of this link was not applied: Teams and filters. Everything else was applied.'],
+    [{ kind: 'partial', categories: ['focus', 'filters', 'teams', 'mode', 'bogus'] }, 'Part of this link was not applied: view mode, Teams, filters and highlighted item. Everything else was applied.'],
+    [{ kind: 'invalid', categories: [] }, 'This link is not valid, so it was not applied. Ask the sender to copy it again.'],
+    [{ kind: 'newer', categories: [] }, 'This link was made with a newer version of the app, so it was not applied. Update the app and open the link again.'],
+];
+
+test.describe('Share control: apply notice', () => {
+    for (const [notice, message] of APPLY_NOTICES) {
+        test(`the ${notice.kind} notice for [${notice.categories.join(', ')}] reads exactly its copy, names categories only and dismisses through the hook`, async ({ page }) => {
+            await openHarness(page);
+            await setHarness(page, { notice });
+            const banner = shareNotice(page);
+            await expect(banner).toHaveCount(1);
+            await expect(banner.locator('p')).toHaveText(message);
+            await expect(banner).toHaveAttribute('role', 'status');
+            // The shared banner as it is: its two existing classes and no class of Share's own.
+            await expect(banner).toHaveAttribute('class', 'server-unavailable-banner connection-recovery-notice');
+            await expect(banner.getByRole('textbox')).toHaveCount(0);
+            await banner.getByRole('button', { name: 'Dismiss' }).click();
+            await expect(banner).toHaveCount(0);
+            expect(await page.evaluate(() => window.__shareHarness.calls.dismissed)).toBe(1);
+            // The notice is not an analytics event.
+            expect(await shareEvents(page)).toEqual([]);
+        });
+    }
+
+    test('only the surface that is showing renders the notice, so exactly one is ever on screen', async ({ page }) => {
+        await openHarness(page);
+        await setHarness(page, { notice: { kind: 'partial', categories: ['teams'] } });
+        await expect(shareNotice(page)).toHaveCount(1);
+        await expect(shareNotice(page, 'main')).toHaveCount(1);
+        await setHarness(page, { active: 'compact' });
+        await expect(shareNotice(page)).toHaveCount(1);
+        await expect(shareNotice(page, 'compact')).toHaveCount(1);
+        await expect(shareNotice(page, 'main')).toHaveCount(0);
+    });
+
+    test('a Share failure clears when its surface stops showing', async ({ page }) => {
+        await openHarness(page, { clipboard: 'missing' });
+        await shareButton(page, 'main').click();
+        await expect(shareNotice(page)).toHaveCount(1);
+        await setHarness(page, { active: 'compact' });
+        await expect(shareNotice(page)).toHaveCount(0);
+        await setHarness(page, { active: 'main' });
+        await expect(shareNotice(page)).toHaveCount(0);
+    });
+
+    // Element-level geometry (MRT020): the painted text, the field and the Dismiss button, not only the container box.
+    for (const width of [1440, 1028, 760, 390, 375]) {
+        for (const surface of ['main', 'compact']) {
+            test(`the fallback notice stays inside the viewport and its header, unclipped and hit-testable, on ${surface} at ${width}px`, async ({ page }) => {
+                await openHarness(page, { width, clipboard: 'missing' });
+                await setHarness(page, { active: surface, capture: { ok: true, url: `${SYNTHETIC_URL}&find=${'a'.repeat(900)}`, dropped: [] } });
+                await shareButton(page, surface).click();
+                const notice = shareNotice(page);
+                await expect(notice).toBeVisible();
+                const metrics = await notice.evaluate((node, surfaceName) => {
+                    const rect = node.getBoundingClientRect();
+                    const host = node.closest(surfaceName === 'main' ? '.subtitle' : '.compact-sticky-header').getBoundingClientRect();
+                    const share = node.parentElement.querySelector('[data-share-view-control]').getBoundingClientRect();
+                    const paragraph = node.querySelector('p');
+                    const range = document.createRange();
+                    range.selectNodeContents(paragraph);
+                    const paintedRight = Math.max(...[...range.getClientRects()].map(item => item.right));
+                    const field = node.querySelector('input').getBoundingClientRect();
+                    const dismiss = node.querySelector('button').getBoundingClientRect();
+                    const hit = (x, y) => node.contains(document.elementFromPoint(x, y));
+                    const paragraphStyle = getComputedStyle(paragraph);
+                    return {
+                        textTransform: paragraphStyle.textTransform, letterSpacing: paragraphStyle.letterSpacing,
+                        left: rect.left, right: rect.right, top: rect.top, viewport: document.documentElement.clientWidth,
+                        hostLeft: host.left, hostRight: host.right, shareBottom: share.bottom,
+                        paragraphClip: paragraph.scrollWidth - paragraph.clientWidth, paintedRight,
+                        fieldLeft: field.left, fieldRight: field.right, dismissLeft: dismiss.left, dismissRight: dismiss.right, dismissWidth: dismiss.width,
+                        centreHit: hit(rect.left + rect.width / 2, rect.top + rect.height / 2),
+                        dismissHit: hit(dismiss.left + dismiss.width / 2, dismiss.top + dismiss.height / 2),
+                        fieldHit: hit(field.left + field.width / 2, field.top + field.height / 2),
+                        documentOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+                    };
+                }, surface);
+                expect(metrics.left).toBeGreaterThanOrEqual(metrics.hostLeft - 1);
+                expect(metrics.right).toBeLessThanOrEqual(metrics.hostRight + 1);
+                expect(metrics.left).toBeGreaterThanOrEqual(-1);
+                expect(metrics.right).toBeLessThanOrEqual(metrics.viewport + 1);
+                expect(metrics.top).toBeGreaterThanOrEqual(metrics.shareBottom);
+                // The main header's .subtitle passes down uppercase, tracked text; the notice resets it.
+                expect(metrics.textTransform).toBe('none');
+                expect(['normal', '0px']).toContain(metrics.letterSpacing);
+                expect(metrics.paragraphClip).toBeLessThanOrEqual(1);
+                expect(metrics.paintedRight).toBeLessThanOrEqual(metrics.right);
+                expect(metrics.fieldLeft).toBeGreaterThanOrEqual(metrics.left);
+                expect(metrics.fieldRight).toBeLessThanOrEqual(metrics.right);
+                expect(metrics.dismissLeft).toBeGreaterThanOrEqual(metrics.left);
+                expect(metrics.dismissRight).toBeLessThanOrEqual(metrics.right);
+                expect(metrics.dismissWidth).toBeGreaterThan(40);
+                expect(metrics.centreHit && metrics.dismissHit && metrics.fieldHit, 'the notice is not covered by anything').toBe(true);
+                // The notice is anchored in the viewport and adds no document overflow.
+                expect(metrics.documentOverflow).toBeLessThanOrEqual(0);
+            });
+        }
+    }
+
+    test('the Dismiss button keeps the shared banner hover: the foundation overlay and ring, stationary and readable', async ({ page }, testInfo) => {
+        await openHarness(page);
+        await setHarness(page, { notice: { kind: 'invalid', categories: [] } });
+        const dismiss = shareNotice(page).getByRole('button', { name: 'Dismiss' });
+        const { hover } = await hoverEvidence(page, dismiss, testInfo, 'share-harness-dismiss', { foundation: true, minimumContrast: DISMISS_MINIMUM_CONTRAST });
+        expect(hover.transform).toBe('none');
+    });
+});
+
+// Absolute-pixel ink bounds of what a control paints inside its inset box, compared with the centre of
+// that box (same method as eng_group_board_card.spec.js). Integer-aligned clips keep the result exact at
+// the fractional positions flex layout produces. The inset is 5 px: with the 10px corner radius a 3 px inset
+// puts the ground sample on the antialiased border, and every interior pixel then counts as ink.
+async function paintedInkOffset(page, locator, inset = 5) {
+    const rect = await locator.evaluate((node) => {
+        const box = node.getBoundingClientRect();
+        return { x: box.x, y: box.y, w: box.width, h: box.height };
+    });
+    const x0 = Math.floor(rect.x) - 2;
+    const y0 = Math.floor(rect.y) - 2;
+    const width = Math.ceil(rect.x + rect.w) + 2 - x0;
+    const height = Math.ceil(rect.y + rect.h) + 2 - y0;
+    const image = await page.screenshot({ clip: { x: x0, y: y0, width, height }, animations: 'disabled' });
+    return page.evaluate(async ({ base64, x0: originX, y0: originY, rect: box, inset: edge, width: clipWidth }) => {
+        const img = new Image();
+        img.src = `data:image/png;base64,${base64}`;
+        await img.decode();
+        const scale = img.width / clipWidth;
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const context = canvas.getContext('2d');
+        context.drawImage(img, 0, 0);
+        const data = context.getImageData(0, 0, img.width, img.height).data;
+        const pixel = (x, y) => { const o = (y * img.width + x) * 4; return [data[o], data[o + 1], data[o + 2]]; };
+        const left = Math.ceil((box.x + edge - originX) * scale);
+        const top = Math.ceil((box.y + edge - originY) * scale);
+        const right = Math.floor((box.x + box.w - edge - originX) * scale);
+        const bottom = Math.floor((box.y + box.h - edge - originY) * scale);
+        const ground = pixel(left, top);
+        let minX = Infinity; let minY = Infinity; let maxX = -1; let maxY = -1;
+        for (let y = top; y < bottom; y += 1) {
+            for (let x = left; x < right; x += 1) {
+                const p = pixel(x, y);
+                if (Math.max(...p.map((channel, i) => Math.abs(channel - ground[i]))) > 30) {
+                    minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+                    minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+                }
+            }
+        }
+        return {
+            painted: maxX >= 0,
+            inkWidth: (maxX - minX + 1) / scale,
+            inkHeight: (maxY - minY + 1) / scale,
+            dx: originX + ((minX + maxX + 1) / 2) / scale - (box.x + box.w / 2),
+            dy: originY + ((minY + maxY + 1) / 2) / scale - (box.y + box.h / 2),
+        };
+    }, { base64: image.toString('base64'), x0, y0, rect, inset, width });
+}
+
+// The measured ink must be the glyph, not the whole frame: a degenerate "everything differs from the ground" result centres trivially.
+const expectCentredGlyph = (ink, label) => {
+    expect(ink.painted, `${label} paints`).toBe(true);
+    for (const size of [ink.inkWidth, ink.inkHeight]) {
+        expect(size, `${label} ink is the glyph, not the frame`).toBeGreaterThan(6);
+        expect(size, `${label} ink is the glyph, not the frame`).toBeLessThan(22);
+    }
+    expect(Math.abs(ink.dx), `${label} horizontal offset`).toBeLessThanOrEqual(0.75);
+    expect(Math.abs(ink.dy), `${label} vertical offset`).toBeLessThanOrEqual(0.75);
+};
+
+test.describe('Share control: painted glyph ink', () => {
+    test.use({ deviceScaleFactor: 2 });
+
+    // Glyph ink placement is only representative headed, in the engines the app is reviewed in. Run:
+    //   npx playwright test tests/ui/share_view_control.spec.js --browser=firefox --headed -g "painted glyph ink"
+    //   npx playwright test tests/ui/share_view_control.spec.js --browser=webkit --headed -g "painted glyph ink"
+    test('the link and copied glyphs are centred in their 38 by 38 frame at rest and on hover, on both surfaces', async ({ page }, testInfo) => {
+        test.skip(process.platform !== 'darwin', 'Glyph ink placement is reviewed on macOS.');
+        test.skip(testInfo.project.use.headless !== false, 'Glyph ink placement is only representative headed.');
+        await openHarness(page);
+        await page.evaluate(() => document.fonts.ready);
+        for (const surface of ['main', 'compact']) {
+            const button = shareButton(page, surface);
+            await button.scrollIntoViewIfNeeded();
+            for (const state of ['rest', 'hover']) {
+                if (state === 'hover') await button.hover(); else await page.mouse.move(2, 2);
+                await page.waitForTimeout(300);
+                const ink = await paintedInkOffset(page, button);
+                expectCentredGlyph(ink, `${surface} link ${state}`);
+            }
+            // The copied glyph lasts two seconds after a click, so both of its states are measured at once.
+            await button.click();
+            await expect(button.locator('[data-share-view-icon="copied"]')).toHaveCount(1);
+            for (const state of ['hover', 'rest']) {
+                if (state === 'rest') await page.mouse.move(2, 2);
+                await page.waitForTimeout(250);
+                const ink = await paintedInkOffset(page, button);
+                expectCentredGlyph(ink, `${surface} copied ${state}`);
+            }
+            await expect(button.locator('[data-share-view-icon="link"]')).toHaveCount(1, { timeout: 4000 });
+        }
+    });
+});
+
+async function installClipboard(page, mode = 'ok') {
+    await page.addInitScript((value) => {
+        window.__copied = [];
+        Object.defineProperty(navigator, 'clipboard', {
+            configurable: true,
+            value: value === 'missing' ? undefined : { writeText: async (text) => { window.__copied.push(text); } },
+        });
+    }, mode);
+}
+
+const enableAnalytics = (ctx) => ctx.respond('/api/analytics/context', ({ json }) => json({ enabled: true }));
+
+// Share controls inside the viewport and not under an aria-hidden ancestor, by surface.
+const visibleShareSurfaces = (page) => page.evaluate(() => [...document.querySelectorAll('[data-share-view-control]')].filter((node) => {
+    const rect = node.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0 && getComputedStyle(node).visibility !== 'hidden'
+        && rect.bottom > 0 && rect.top < window.innerHeight && !node.closest('[aria-hidden="true"]');
+}).map(node => (node.closest('.compact-sticky-header') ? 'compact' : 'main')));
+
+// App cases: the real dashboard and the real useShareViewApply hook against the shared ENG fixture (build `frontend/dist` first).
+test.describe('Share control: in the app', () => {
+    test('a click in the main header copies the link for the open view and sends one private event', async ({ page }) => {
+        await installClipboard(page);
+        const ctx = await mockDashboard(page);
+        enableAnalytics(ctx);
+        await openCatchUp(page, ctx, { width: 1440, height: 900 });
+        const button = shareButton(page, 'main');
+        await expect(button).toBeEnabled();
+        await button.click();
+        await expect.poll(() => page.evaluate(() => window.__copied.length)).toBe(1);
+        expect((await page.evaluate(() => window.__copied))[0]).toMatch(APP_URL_PREFIX);
+        await expect.poll(async () => (await shareEvents(page)).length).toBe(1);
+        expect((await shareEvents(page))[0]).toEqual({
+            event: 'userevent', trigger: 'userevent', event_type: 'event', event_name: 'share_view_action', feature_name: 'share_view',
+            workflow_action: 'copy_link', result: 'success', source_surface: 'catch_up',
+        });
+        const serialised = JSON.stringify(await page.evaluate(() => window.dataLayer));
+        for (const fragment of ['http', '?v=', 'group-alpha', '3001']) expect(serialised, `no ${fragment} in any analytics payload`).not.toContain(fragment);
+    });
+
+    test('the compact header takes the control over exactly when it appears and two controls are never on screen', async ({ page }) => {
+        await installClipboard(page);
+        const ctx = await mockDashboard(page);
+        await openCatchUp(page, ctx, { width: 1440, height: 900 });
+        const headerBottom = await page.evaluate(() => document.querySelector('header').getBoundingClientRect().bottom + window.scrollY);
+        const sampled = [];
+        for (const y of [0, 40, Math.round(headerBottom / 2), Math.round(headerBottom) - 2, Math.round(headerBottom) + 2, 700, 1500]) {
+            await page.evaluate(top => window.scrollTo(0, top), y);
+            await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+            await page.waitForTimeout(150);
+            const state = await page.evaluate(() => ({ scrollY: window.scrollY, compact: Boolean(document.querySelector('.compact-sticky-header.is-visible')) }));
+            const visible = await visibleShareSurfaces(page);
+            sampled.push({ ...state, visible });
+            expect(visible.length, `scrollY ${state.scrollY}: ${visible}`).toBeLessThanOrEqual(1);
+            if (state.compact) expect(visible, `scrollY ${state.scrollY}`).toEqual(['compact']);
+            if (state.scrollY === 0) expect(visible).toEqual(['main']);
+        }
+        expect(sampled.some(item => item.compact)).toBe(true);
+        // The compact control copies the same link the main control copies, apart from the focus target, which follows the scroll position.
+        await shareButton(page, 'compact').click();
+        await page.evaluate(() => window.scrollTo(0, 0));
+        await expect(page.locator('.compact-sticky-header.is-visible')).toHaveCount(0);
+        await shareButton(page, 'main').click();
+        await expect.poll(() => page.evaluate(() => window.__copied.length)).toBe(2);
+        const [fromCompact, fromMain] = await page.evaluate(() => window.__copied);
+        expect(fromCompact).toMatch(APP_URL_PREFIX);
+        const withoutFocus = (url) => url.replace(/&(?:epic|story|alertTeam)=[^&]*/g, '');
+        expect(withoutFocus(fromCompact)).toBe(withoutFocus(fromMain));
+    });
+
+    // Mounted proof of the hover contract on the real dashboard: the main Share control and the compact one (after the scroll swap)
+    // paint the same foundation overlay and ring inside the same rounded border as the neighbouring header icon buttons.
+    test('the main and the compact Share controls hover like their header siblings in the real app', async ({ page }, testInfo) => {
+        const ctx = await mockDashboard(page);
+        await openCatchUp(page, ctx, { width: 1440, height: 900 });
+        // Settled evidence: no entrance animation may move the header between the resting and the hovered measurement.
+        await page.addStyleTag({ content: '* { animation: none !important; }' });
+        const refresh = await hoverEvidence(page, page.locator('.header-actions-row .refresh-icon'), testInfo, 'share-app-refresh', { foundation: true });
+        const main = await hoverEvidence(page, shareButton(page, 'main'), testInfo, 'share-app-main', { foundation: true });
+        await page.evaluate(() => window.scrollTo(0, 900));
+        await expect(page.locator('.compact-sticky-header.is-visible')).toHaveCount(1);
+        const compact = await hoverEvidence(page, shareButton(page, 'compact'), testInfo, 'share-app-compact', { foundation: true });
+        for (const [label, evidence] of [['main', main], ['compact', compact]]) {
+            expect([evidence.hover.radius, evidence.hover.borderWidth, evidence.hover.borderStyle], `${label} visible border shape`).toEqual(['10px', '1px', 'solid']);
+            expect(evidence.hover.backgroundImage, `${label} no circle paint`).toBe('none');
+            expect(evidence.hover.transform, `${label} no lift`).toBe('none');
+            expect(evidence.hover.transition, `${label} no transition: all`).not.toMatch(/\ball\b/);
+            for (const key of ['shadow', 'radius', 'borderWidth', 'border', 'background', 'backgroundImage']) {
+                expect(evidence.hover[key], `${label} ${key} equals the Refresh sibling`).toBe(refresh.hover[key]);
+            }
+        }
+    });
+
+    // Sticky layering (MRT009) and the header's no-overflow contract: the baseline is the same page with the Share wrappers hidden.
+    test('Share adds no compact-header height, moves no sticky offset and adds no horizontal overflow', async ({ page }) => {
+        const ctx = await mockDashboard(page);
+        await openCatchUp(page, ctx, { width: 1440, height: 900, prefs: { showPlanning: true, planningLayout: 'list' } });
+        await page.addStyleTag({ content: '*,*::before,*::after{animation:none!important;transition:none!important}' });
+        const setShare = (shown) => page.evaluate((visible) => {
+            let style = document.getElementById('share-baseline');
+            if (!style) { style = document.createElement('style'); style.id = 'share-baseline'; document.head.appendChild(style); }
+            style.textContent = visible ? '' : '[data-share-view] { display: none !important; }';
+        }, shown);
+        const measure = async () => {
+            await page.evaluate(() => window.scrollTo(0, 0));
+            await page.waitForTimeout(200);
+            const top = await page.evaluate(() => ({ header: document.querySelector('header').getBoundingClientRect().height, overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth }));
+            await page.evaluate(() => window.scrollTo(0, 900));
+            await page.waitForTimeout(300);
+            const scrolled = await page.evaluate(() => {
+                const container = getComputedStyle(document.querySelector('.container'));
+                return {
+                    compact: document.querySelector('.compact-sticky-header').getBoundingClientRect().height,
+                    offsets: ['--compact-header-offset', '--planning-sticky-top', '--filterbar-sticky-top', '--epic-sticky-top'].map(name => container.getPropertyValue(name).trim()),
+                };
+            });
+            return { ...top, ...scrolled };
+        };
+        for (const width of [1440, 1028, 900, 760, 390]) {
+            await page.setViewportSize({ width, height: 900 });
+            await setShare(false);
+            const baseline = await measure();
+            await setShare(true);
+            const withShare = await measure();
+            expect(withShare.compact, `${width}px compact header height`).toBe(baseline.compact);
+            expect(withShare.offsets, `${width}px sticky offsets`).toEqual(baseline.offsets);
+            expect(withShare.overflow, `${width}px horizontal overflow`).toBeLessThanOrEqual(baseline.overflow);
+            // One header line stays one line while it fits (the actions row may wrap below that).
+            if (width >= 1028) expect(withShare.header, `${width}px header height`).toBe(baseline.header);
+        }
+    });
+
+    test('the control is hidden in EPM and in Scenario and returns in the ENG modes', async ({ page }) => {
+        const ctx = await mockDashboard(page);
+        ctx.respond('/api/me/connections/home-token', ({ json }) => json(activeHomeTokenConnection()));
+        await openCatchUp(page, ctx, { width: 1440, height: 900 });
+        await expect(shareButton(page)).toHaveCount(1);
+        await page.getByRole('radio', { name: 'EPM', exact: true }).click();
+        await expect(page.getByRole('radio', { name: 'EPM', exact: true })).toBeChecked();
+        await expect(shareButton(page)).toHaveCount(0);
+        await page.getByRole('radio', { name: 'ENG', exact: true }).click();
+        await expect(shareButton(page)).toHaveCount(1);
+        const modes = page.locator('.view-selector .eng-mode-control');
+        await modes.getByRole('radio', { name: 'Scenario' }).click();
+        await expect(modes.getByRole('radio', { name: 'Scenario' })).toBeChecked();
+        await expect(shareButton(page)).toHaveCount(0);
+        await page.evaluate(() => window.scrollTo(0, 700));
+        await expect(shareButton(page)).toHaveCount(0);
+        await page.evaluate(() => window.scrollTo(0, 0));
+        await modes.getByRole('radio', { name: 'Catch Up' }).click();
+        await expect(shareButton(page)).toHaveCount(1);
+    });
+
+    test('the control stays disabled while the Department groups are loading', async ({ page }) => {
+        const ctx = await mockDashboard(page);
+        const release = deferred();
+        ctx.respond('/api/groups-config', async ({ json }) => { await release.promise; return json(groupsConfigPayload); });
+        await page.addInitScript((prefs) => window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs)), catchUpPrefs());
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await page.goto(appBaseUrl, { waitUntil: 'domcontentloaded' });
+        const button = shareButton(page, 'main');
+        await expect(button).toBeDisabled();
+        release.resolve();
+        await expect(page.locator('.epic-block[data-epic-key="EPIC-1"]')).toBeVisible();
+        await expect(button).toBeEnabled();
+    });
+
+    test('an opened link that cannot be applied shows its notice under the control, and Dismiss closes it', async ({ page }) => {
+        await mockDashboard(page);
+        // The shared fixture routes `/` with a pattern that never matches a URL with a query.
+        await page.route(/^http:\/\/127\.0\.0\.1:5050\/\?v=1&/, route => route.fulfill({ status: 200, contentType: 'text/html', body: dashboardHtml }));
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await page.goto(`${appBaseUrl}/?v=1&mode=catch-up&group=missing-group&sprint=3001`);
+        const notice = shareNotice(page, 'main');
+        await expect(notice.locator('p')).toHaveText('This link was not applied: its Department group is not available to you.');
+        await expect(shareNotice(page)).toHaveCount(1);
+        await notice.getByRole('button', { name: 'Dismiss' }).click();
+        await expect(shareNotice(page)).toHaveCount(0);
+    });
+
+    for (const mode of ['catch-up', 'planning']) {
+        test(`the fallback notice is not covered by the sticky stack in ${mode} when the compact control is used`, async ({ page }) => {
+            await installClipboard(page, 'missing');
+            const ctx = await mockDashboard(page);
+            await openCatchUp(page, ctx, { width: 1440, height: 900, prefs: mode === 'planning' ? { showPlanning: true, planningLayout: 'list' } : {} });
+            await page.evaluate(() => window.scrollTo(0, 900));
+            await expect(page.locator('.compact-sticky-header.is-visible')).toHaveCount(1);
+            await shareButton(page, 'compact').click();
+            const notice = shareNotice(page, 'compact');
+            await expect(notice).toBeVisible();
+            const hits = await notice.evaluate((node) => {
+                const inside = (element) => {
+                    const rect = element.getBoundingClientRect();
+                    return node.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2));
+                };
+                return { notice: inside(node), field: inside(node.querySelector('input')), dismiss: inside(node.querySelector('button')) };
+            });
+            expect(hits).toEqual({ notice: true, field: true, dismiss: true });
+            await notice.getByRole('button', { name: 'Dismiss' }).click();
+            await expect(shareNotice(page)).toHaveCount(0);
+        });
+    }
+});

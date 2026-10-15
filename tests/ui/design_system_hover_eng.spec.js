@@ -648,8 +648,8 @@ test('framed header icon hover follows the button shape with subtle shading', as
     await hoverEvidence(page,planning,testInfo,'subtle-planning-mode',{foundation:true});
     expect(await planning.evaluate(node=>getComputedStyle(node).getPropertyValue('--overlay-pct').trim())).toBe('8');
     const controls=page.locator('.header-actions-row button.header-icon-button');
-    await expect(controls).toHaveCount(3);
-    for(let index=0;index<3;index++){
+    await expect(controls).toHaveCount(4); // Share, Jira export, Refresh and Settings
+    for(let index=0;index<4;index++){
         const control=controls.nth(index);
         const result=await hoverEvidence(page,control,testInfo,`framed-header-${index}`,{foundation:true});
         expect(result.hover.backgroundImage).toBe('none');

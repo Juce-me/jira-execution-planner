@@ -20,6 +20,7 @@ import IconButton from './ui/IconButton.jsx';
 import EmptyState from './ui/EmptyState.jsx';
 import LoadingState from './ui/LoadingState.jsx';
 import JiraExportButton from './components/JiraExportButton.jsx';
+import ShareViewButton from './shareView/ShareViewButton.jsx';
 import ServerUnavailableBanner from './components/ServerUnavailableBanner.jsx';
 import { createSprintCatalogController, createSprintCatalogState, getCookie, getCurrentQuarter, isActiveHomeTokenConnection, loadCachedSprintCatalog, loadUiPrefs, saveUiPrefs, setCookie, shouldReconcileSprintCatalogSource, sprintCatalogSourcesEqual, sprintCatalogValidationKey } from './dashboardRuntime.js';
 import OnboardingTour, { isDashboardMobileViewport } from './onboarding/OnboardingTour.jsx';
@@ -5599,6 +5600,10 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 />
             );
 
+            const renderShareViewControl = (surface) => selectedView === 'eng' && activeEngMode !== 'scenario' && (
+                <ShareViewButton surface={surface} share={shareView} sourceSurface={analyticsToken(activeEngMode)} activeControlSurface={activeControlSurface} />
+            );
+
             const renderEpmControls = (surface, { showProjectPicker = true, showStateControl = true } = {}) => (
                 <EpmControls
                     selectedView={selectedView}
@@ -6200,6 +6205,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                                 <div className="header-actions-row">
                                     {renderViewSwitch()}
                                     {renderSearchControl('main')}
+                                    {renderShareViewControl('main')}
                                     {!(boardScopeRequested && !strictBoardActive) && (
                                         <JiraExportButton
                                             onboardingTarget="jira-export"
@@ -6322,6 +6328,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                                 <div className="compact-sticky-header-search">
                                     {renderSearchControl('compact', 'compact-sticky-header-search-field')}
                                 </div>
+                                {renderShareViewControl('compact')}
                             </>
                         )}
                     </div>

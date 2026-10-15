@@ -279,6 +279,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - For shared header/menu UI changes, add or update Playwright assertions for menu layering and icon/control geometry before reporting visual verification.
 - Before merging backend dependency or startup-path changes, launch `.venv/bin/python jira_server.py` and verify `/api/test`.
 - Before presenting a local build, verify the process listening on its port belongs to the intended checkout and serves its current bundle.
+- Keep view-link copying separate from explicit item-link copying so the destination is clear before the user clicks.
 - Treat Python dependency/runtime warnings before the Flask startup banner as failed server verification unless the warning is intentionally documented as benign.
 - In settings, the config modal footer Save must persist all dirty editable sections together; keep each endpoint payload scoped to its own section instead of mixing department, admin, preference, or EPM fields.
 - For cross-layer access or configuration changes, verify the backend response contract and the frontend render/edit/save gates together; do not treat backend route tests as enough when UI permissions control the user journey.

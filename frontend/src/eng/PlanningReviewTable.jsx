@@ -15,6 +15,7 @@ import PlanningReviewBoundaryPlus from './PlanningReviewBoundaryPlus.jsx';
 import PlanningReviewColumnMenu from './PlanningReviewColumnMenu.jsx';
 import PlanningReviewStateCluster from './PlanningReviewStateCluster.jsx';
 import { usePlanningRowMotion } from './usePlanningRowMotion.js';
+import { takeInitialPlanningRowMode } from '../shareView/store.js';
 import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
 import { buildPlanningReviewRows, buildPlanningReviewColumns, hasZeroStoryPoints, reviewSelectionState, reviewValue, selectedStoryPoints, sortPlanningReviewRows, planningReviewTotals } from './planningReviewTableModel.js';
 
@@ -95,7 +96,7 @@ export function PlanningReviewScopeDialog({ review }) {
 }
 
 export default function PlanningReviewTable({ epicGroups = [], visibleTasks = [], selectedStoryKeys = new Set(), onToggleStory, onSelectStories, jiraUrl = '', review, getTeamInfo, admittedTeamCount, admittedProjectCount, renderPriorityIcon, renderFieldEditor, onReviewAction, toolbarHost, excludedEpicSet = new Set(), pendingOriginals = null, onHoldRow, confirmedEdit = null, onConfirmedEditHandled, isRowHeld, onInteractionChange }) {
-    const [mode, setMode] = React.useState('epic');
+    const [mode, setMode] = React.useState(() => takeInitialPlanningRowMode() || 'epic');
     const hidden = new Set(review.layouts?.[mode]?.hidden ?? DEFAULT_REVIEW_HIDDEN_COLUMNS);
     const draggedColumn = React.useRef(null);
     const [dropColumn, setDropColumn] = React.useState(null);

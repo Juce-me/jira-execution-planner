@@ -7,7 +7,7 @@ const { renderAlertsPanel } = require('../share_view_alert_panel_fixture.js');
 // The Share view focus modules against real CSS: the committed dashboard stylesheet, the REAL server-rendered alerts panel, and hand-written
 // Epic, Story and Planning row markup that uses the production class and attribute names (the pill_hover.spec.js approach, no Flask).
 const css = fs.readFileSync(path.join(__dirname, '../../frontend/dist/dashboard.css'), 'utf8');
-const MODULES_ENTRY = "import { captureShareViewFocus, measureShareViewStickyBottom, readPlanningRowsMode, SHARE_VIEW_FOCUS_MARGIN } from './shareView/focusCapture.js'; window.__share = { captureShareViewFocus, measureShareViewStickyBottom, readPlanningRowsMode, SHARE_VIEW_FOCUS_MARGIN };";
+const MODULES_ENTRY = "import { captureShareViewFocus, measureShareViewStickyBottom, readPlanningRowsMode, SHARE_VIEW_FOCUS_MARGIN } from './shareView/focusCapture.js'; import { revealShareViewFocus } from './shareView/focusReveal.js'; window.__share = { captureShareViewFocus, measureShareViewStickyBottom, readPlanningRowsMode, SHARE_VIEW_FOCUS_MARGIN, revealShareViewFocus };";
 const modules = esbuild.buildSync({
     stdin: { contents: MODULES_ENTRY, resolveDir: path.join(__dirname, '../../frontend/src'), loader: 'js' },
     bundle: true, write: false, format: 'iife', platform: 'browser',
@@ -117,5 +117,122 @@ test('planning table: the first visible row is named by its issue key and the ta
         const row = await page.evaluate(key => { const rect = [...document.querySelectorAll('tr')].find(node => node.dataset.issueKey === key).getBoundingClientRect(); return { top: rect.top, bottom: rect.bottom, stackBottom: window.__share.measureShareViewStickyBottom(), margin: window.__share.SHARE_VIEW_FOCUS_MARGIN }; }, captured.key);
         expect(row.bottom).toBeGreaterThan(row.stackBottom + row.margin + 1);
         expect(row.top).toBeLessThan(800);
+    }
+});
+
+// Where a reveal leaves the target relative to the stack: T + SHARE_VIEW_FOCUS_MARGIN, within the 1px the reveal tolerates (the capture's `+ 1`).
+const landing = (page, selectorKind) => page.evaluate((kind) => {
+    const find = {
+        group: () => [...document.querySelectorAll('#eng-alert-blocked .alert-team-group')].find(node => node.dataset.alertTeam === 't2'),
+        epic: () => [...document.querySelectorAll('.epic-block')].find(node => node.dataset.epicKey === 'PROJ-6'),
+        story: () => [...document.querySelectorAll('.task-item')].find(node => node.dataset.taskKey === 'PROJ-73'),
+        row: () => [...document.querySelectorAll('tr')].find(node => node.dataset.issueKey === 'PROJ-40'),
+    }[kind];
+    const node = find();
+    const parentHeader = node.closest('.epic-block')?.querySelector('.epic-header')?.getBoundingClientRect();
+    return {
+        top: node.getBoundingClientRect().top, className: node.className, headerBottom: parentHeader?.bottom ?? null,
+        stackBottom: window.__share.measureShareViewStickyBottom({ epicHeaders: kind === 'story' }), margin: window.__share.SHARE_VIEW_FOCUS_MARGIN,
+        animations: document.getAnimations().map(animation => animation.animationName),
+        cellAnimation: kind === 'row' ? getComputedStyle(node.cells[0], '::after').animationName : null,
+    };
+}, selectorKind);
+const reveal = (page, target, mode) => page.evaluate(async ({ target, mode }) => {
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    const focusBefore = document.activeElement;
+    const result = await window.__share.revealShareViewFocus(target, { mode }).done;
+    return { result, focusMoved: document.activeElement !== focusBefore };
+}, { target, mode });
+
+for (const compact of [false, true]) {
+    test.describe(`reveal, ${compact ? 'compact header up' : 'main header'}`, () => {
+        test('an alert group lands at T + 12 and paints the epic-flash blink without moving focus', async ({ page }) => {
+            await load(page, catchUpHtml({ compact }));
+            expect(await reveal(page, { kind: 'alertTeam', anchor: 'blocked', id: 't2' }, 'catch-up')).toEqual({ result: 'revealed', focusMoved: false });
+            const landed = await landing(page, 'group');
+            expect(Math.abs(landed.top - (landed.stackBottom + landed.margin))).toBeLessThanOrEqual(1);
+            expect(landed.className).toContain('epic-flash');
+            expect(landed.animations).toContain('epicFlash');
+        });
+
+        test('an Epic block lands at T + 12 and paints the epic-flash blink', async ({ page }) => {
+            await load(page, catchUpHtml({ compact }));
+            expect((await reveal(page, { kind: 'epic', key: 'PROJ-6' }, 'catch-up')).result).toBe('revealed');
+            const landed = await landing(page, 'epic');
+            expect(Math.abs(landed.top - (landed.stackBottom + landed.margin))).toBeLessThanOrEqual(1);
+            expect(landed.className).toContain('epic-flash');
+            expect(landed.animations).toContain('epicFlash');
+        });
+
+        test('a Story card lands below its pinned parent header and paints the task-highlight pulse', async ({ page }) => {
+            await load(page, catchUpHtml({ compact }));
+            expect((await reveal(page, { kind: 'story', key: 'PROJ-73' }, 'catch-up')).result).toBe('revealed');
+            const landed = await landing(page, 'story');
+            expect(Math.abs(landed.top - (landed.stackBottom + landed.margin))).toBeLessThanOrEqual(1);
+            expect(landed.top).toBeGreaterThanOrEqual(landed.headerBottom);
+            expect(landed.className).toContain('task-highlight');
+            expect(landed.animations).toContain('taskHighlightPulse');
+        });
+
+        test('a real wheel event cancels a reveal in flight', async ({ page }) => {
+            await load(page, catchUpHtml({ compact }));
+            await page.evaluate(() => {
+                window.__share.revealShareViewFocus({ kind: 'alertTeam', anchor: 'blocked', id: 't2' }, { mode: 'catch-up' }).done.then((value) => { window.__revealResult = value; });
+            });
+            await page.mouse.move(400, 400);
+            await page.mouse.wheel(0, 40);
+            await page.waitForFunction(() => window.__revealResult !== undefined);
+            expect(await page.evaluate(() => window.__revealResult)).toBe('cancelled');
+        });
+    });
+}
+
+test('planning table: a row lands below the sticky stack at T + 12 and paints the row blink', async ({ page }) => {
+    await load(page, planningHtml('epic'));
+    expect((await reveal(page, { kind: 'epic', key: 'PROJ-40' }, 'planning')).result).toBe('revealed');
+    const landed = await landing(page, 'row');
+    expect(Math.abs(landed.top - (landed.stackBottom + landed.margin))).toBeLessThanOrEqual(1);
+    expect(landed.className).toContain('planning-review-confirmed');
+    expect(landed.cellAnimation).toBe('epicFlash');
+});
+
+// The reveal listens like the apply guard: only events the reader produced count, and a bare modifier key is not one of them.
+test('events a script dispatched and a bare modifier key leave a pending reveal alone, and a real non-modifier key cancels it', async ({ page }) => {
+    await load(page, catchUpHtml());
+    await page.evaluate(() => {
+        // The target is not in the page, so the reveal stays pending for its whole budget.
+        window.__share.revealShareViewFocus({ kind: 'alertTeam', anchor: 'blocked', id: 'absent' }, { mode: 'catch-up' }).done.then((value) => { window.__revealResult = value; });
+        for (const type of ['wheel', 'touchmove', 'pointerdown', 'touchstart']) document.dispatchEvent(new Event(type, { bubbles: true }));
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }));
+    });
+    await page.keyboard.press('Shift');
+    await page.waitForTimeout(150);
+    expect(await page.evaluate(() => window.__revealResult)).toBeUndefined();
+    await page.keyboard.press('a');
+    await page.waitForFunction(() => window.__revealResult !== undefined);
+    expect(await page.evaluate(() => window.__revealResult)).toBe('cancelled');
+});
+
+// Forwarding a received link: capturing right after a reveal must name the revealed target, not the sibling above it (alert groups sit 9.6 px
+// apart and table rows touch, so a sliver of the one above would show if the capture counted it).
+for (const compact of [false, true]) {
+    test(`round trip, ${compact ? 'compact header up' : 'main header'}: capture after reveal names the same alert group, Epic block or Story card`, async ({ page }) => {
+        await load(page, catchUpHtml({ compact, moreGroups: { blockedAlertTeams: ['t2b', 't2c'] } }));
+        for (const target of [
+            { kind: 'alertTeam', anchor: 'blocked', id: 't2b' }, { kind: 'alertTeam', anchor: 'blocked', id: 't2c' },
+            { kind: 'epic', key: 'PROJ-6' }, { kind: 'story', key: 'PROJ-71' }, { kind: 'story', key: 'PROJ-73' },
+        ]) {
+            expect((await reveal(page, target, 'catch-up')).result, JSON.stringify(target)).toBe('revealed');
+            expect(await capture(page, 'catch-up'), JSON.stringify(target)).toEqual(target);
+        }
+    });
+}
+
+test('round trip, planning table: capture after reveal names the same row, not the adjacent row above it', async ({ page }) => {
+    for (const rowKind of ['epic', 'story']) {
+        await load(page, planningHtml(rowKind));
+        const target = { kind: rowKind, key: 'PROJ-40' };
+        expect((await reveal(page, target, 'planning')).result, rowKind).toBe('revealed');
+        expect(await capture(page, 'planning'), rowKind).toEqual(target);
     }
 });

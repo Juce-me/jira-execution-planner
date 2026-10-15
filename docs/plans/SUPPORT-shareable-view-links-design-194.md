@@ -16,6 +16,38 @@
 
 A signed-in user presses one Share control and gets a plain URL to paste into chat. Another user in the same resolved workspace and site who opens it, signing in first if needed, lands in the same ENG view for the link's mode: group, sprint, Teams, filters, search, and an opened alerts category scrolled to a Team, or an exact Epic or Story. Everything the recipient sees is fetched with the recipient's own Jira OAuth token and catalogs. A link carries selectors, not access.
 
+## Destination clarity amendment (2026-10-15)
+
+Status: the operator requested explicit Epic-level sharing and selected **Preview target, then Copy** for the header. Written-spec review is pending before implementation. This section supersedes the original one-click header copy and rejection of per-target controls; all other v1 contracts remain unless explicitly amended below.
+
+### User-visible behavior
+
+- Header Share on both surfaces opens the existing Share panel as a preview. It names the actual destination before any clipboard write: **Epic** or **Story**, its key and available summary; an alert destination names its category and Team; a link without focus says **View only**. Mode and Sprint identify the surrounding view. Initiative grouping does not turn an Epic into an Initiative destination.
+- **Copy link** in that panel copies the reviewed link. **Dismiss** closes it. The target is captured when Share opens, so opening the panel cannot change which item is selected. If the shareable state changes before Copy, refresh the preview and require another Copy rather than copying a destination the user has not reviewed. Hide/reset the panel when its header surface becomes inactive or sharing becomes unavailable.
+- Each real Epic in Catch Up and Planning List has an always-available share action alongside its header controls. Each real Epic row in Planning Table has the same action beside its summary. Its accessible name names **Copy link to Epic** and that Epic's key; its readout names the Epic summary. It copies that exact Epic with current scope and filters, independent of the viewport. It works by tap, including inside Initiative groups. Synthetic/no-Epic rows have no action. No per-Story or Initiative action is added.
+- Board and Statistics retain view sharing, with **View only** in the header preview. Their v1 focus exclusions remain. An explicit Epic action never opens Jira, clears filters, changes the selected mode, writes an issue or requests additional data.
+- Clipboard success, failure, absent clipboard and manual fallback retain the existing Share feedback and selectable URL. Explicit Epic copy refuses if encoding would omit that Epic target; it must never silently copy a view-only link. The header preview describes the encoded result, including any existing size-cap drops.
+
+### Architecture and constraints
+
+Reuse the current Share component, IconButton, SVG glyph, Share panel chrome, codec, apply hook and clipboard ownership guards. Add an optional explicit focus argument to the capture path; do not create a second URL encoder or clipboard implementation. Display labels come from the current loaded/rendered data, stay outside the query contract and never enter analytics. Header previews and Epic actions share the existing `share_view_action` copy outcome event; opening/dismissing the intermediate preview needs no separate event because copy completion is the decision being measured. Fixed analytics enums remain unchanged.
+
+Reuse the registered icon-button and panel hooks, with attribute-scoped placement only where necessary. Preserve the single-row Epic title/metadata layout, compact Planning rows, existing hover paint and modal/menu layers. Measure text clipping, hit areas, glyph centering and panel containment at desktop and narrow/touch sizes, including nested Initiative Epics. No new font, radius or button/pill/chip class is required.
+
+The new callback into EpicBlock is a deliberate extension of its frozen interface. Measure dashboard and owner line counts with `wc -l`, review the changed EpicBlock interface/inventory and move its manifest pins in the same source commit. If that required review refreshes the stale EpicBlock inventory recorded in the lint baseline, record the resulting baseline reduction explicitly; do not refresh the unrelated GroupBoardSettings inventory. This exception is limited to the owner changed for the requested Epic action.
+
+Expected source scope: `frontend/src/shareView/ShareViewButton.jsx`, `useShareViewApply.js`, `focusCapture.js` or a small destination-description helper in that directory, `frontend/src/eng/EpicBlock.jsx`, `PlanningReviewTable.jsx`, `frontend/src/dashboard.jsx`, minimal registered/attribute-scoped styles, the owner-budget manifest, existing Share/Planning/Epic tests and regenerated dist. Update design-system registration, analytics impact note, ontology and user guide alongside the implementation. No server, auth, storage or link-schema change is part of this UI amendment.
+
+### Acceptance and verification
+
+1. Opening header Share shows the exact encoded destination and makes zero clipboard writes; Copy writes that destination once. Existing main/compact active-surface, stale async completion, size-cap and manual fallback checks still pass.
+2. Explicit Epic links encode the clicked Epic even when a different item is topmost, and the recipient reveals that Epic in Catch Up, Planning List and Planning Table Epics mode. A grouped Epic stays an Epic target. Synthetic rows cannot produce a target.
+3. Preview text identifies an Epic versus Story versus alert versus view-only destination. Long summaries remain readable and contained; state changes cannot silently copy the old preview.
+4. Settled element-level browser checks preserve desktop Epic baselines, compact table height, touch operability, panel layering and header geometry. Inspect synthetic before/after screenshots and headed Firefox/WebKit glyph paint.
+5. Run focused and full Node checks, Python structure/design-system checks, extraction lint against the explicitly recorded remaining baseline, build and committed-revision dist verification. Run the full Chromium gate after this amendment and any confirmed cold-login focus correction are ready together; do not treat the earlier failing run as a pass.
+
+The separately reported private-window login-return focus failure remains under bounded diagnosis. Reopening the same link after data loads succeeds, but this UI amendment does not claim to repair that lifecycle failure or authorize a timing-budget change.
+
 ## Decisions (operator-approved 2026-10-13)
 
 | Decision | Choice | Rejected alternative |

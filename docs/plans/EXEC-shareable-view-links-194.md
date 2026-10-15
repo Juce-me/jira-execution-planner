@@ -1,6 +1,6 @@
 # Shareable View Links Implementation Plan
 
-> **Status:** Task 12 standalone Share-control mock built and shown 2026-10-15; stopped at gate G2 pending operator acceptance. The operator requested building the button before the outstanding Task 11c live manual check. That check is not marked passed. No Task 12 application wiring, database migration, push or PR.
+> **Status:** Task 12 paused 2026-10-15 before application edits: fetched `origin/main` moved to `778fb2aa` (PR #281), whose future-Sprint Statistics behavior conflicts with the resolver contract below. No merge started. The operator accepted the displayed mock; G2 acceptance is recorded below for transfer to the control-slice gate line before implementation resumes. Task 11c live manual validation remains outstanding. No push or PR.
 >
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Per-task status and commits are recorded in the Execution status table below, inside this committed file (see the recording rule there), not in a scratch ledger.
 
@@ -51,7 +51,7 @@ Statuses and commit SHAs are written once, in Task 14 Step 9, from `git log --on
 | 11a | Apply controller, capture builder, interaction guard and hook | done | `a362b9c6` | Review approved; 46 focused, 2,831 full Node and two structure tests pass |
 | 11b | Mount: hold, options, tour wait and Planning table key | done | `51841e95` | Review approved; 2,847 Node, 34 Python and 539 Chromium tests pass; measured dashboard 7,540 |
 | 11c | Link UI acceptance spec | in-progress | `045887d1`, `d00b324f` | Automated verification and fresh review approved; 24 Chromium cases pass; stopped for typed-link manual acceptance |
-| 12 | Share control, notice and header surfaces | in-progress | | Step 0 instruction chain, design system and four postmortems read; Steps 1–2 mock complete; G2 acceptance pending |
+| 12 | Share control, notice and header surfaces | blocked | | G2 mock accepted 2026-10-15; incoming main changes the mirrored Statistics availability contract; plan adjustment required before sync and wiring |
 | 13 | Docs, ontology, budgets and plans index | planned | | |
 | 14 | Journeys, full verification and publication | planned | | G3 explicit publish go |
 
@@ -81,6 +81,13 @@ Execution stops until the operator confirms the Task 11c Step 13 signed-in typed
 Task 12 G2 checkpoint (2026-10-15): the operator requested “build the button please” after the Task 11c manual checkpoint. Proceeding to the standalone mock follows that instruction; it does not claim the typed-link manual checks passed. The attempted local app startup could not reach the dashboard because the configured database migrations are behind this branch; no schema change was made. The live check remains outstanding for final journey validation.
 
 Task 12 Steps 0–2 are complete: all precondition anchors match, the instruction chain, design-system lookup and four named postmortems were read, and the exact supplied generator produced `assets/mockups/share-view-control-194.html` (396,475 bytes). The generator and capture commands run through Node 20 and exit zero. Both header Share controls measure 38 by 38 px with a 10 px radius; hovered overlay and ring are true, background image and transform are none. The first sandboxed Chromium launch failed before rendering; the same script succeeded with the required elevated execution. Four synthetic captures at 1440 and 390 px plus main/compact hover close-ups were inspected, and the standalone mock was opened for review. No source, test, dist, budget, token or new class changed. The generated HTML remains uncommitted until G2 acceptance, as required. This docs-only pause record is a recording-rule history exception. The G2 line in the control slice remains `Operator acceptance: pending`; no acceptance date is inferred from the request to build. Steps 3–12 must wait for acceptance of the concrete mock.
+
+
+Task 12 incoming-base pause (2026-10-15): after viewing the standalone mock and discussing the opening-link partial notice, the operator said “but it's about the opening the link, if I got it right, so the problem is not copying, it's openning — for the opening outdated links — with non existems teams or departments — sound good”. This accepts the mock in the ongoing build request; do not ask for G2 acceptance again. Transfer the date and quote to the control-slice gate line before Step 3 resumes. The implementation worker stopped without changing any file or starting tests.
+
+The required pre-edit fetch advanced `origin/main` from `a48e273a` to `778fb2aa` (PR #281, implementation `f3590b5a`). Incoming main enables Statistics for future Sprints by removing its disabled predicate from `EngModeControl`, its dashboard auto-exit effect and its auth-resume rejection. The Task 4 resolver contract, supplied implementation and tests still reject Statistics on a future Sprint; the literal `(resume.engMode === 'statistics' && isFutureSprintSelected)` required by the resolver's dashboard source guard is absent in incoming main. This is verified source/contract drift, not an unexplained baseline failure. No merge, failing test run or speculative compatibility fix was performed. The approved mock remains untracked and preserved; application sources, dist and pins are unchanged.
+
+Proposed operator decision: preserve main's future-Sprint Statistics behavior, update the resolver and its mode-availability/source-guard tests plus supplied plan/design contracts and traceability, then sync, sweep the anchors, measure the incoming minus-eight dashboard budget offset and regenerate dist before resuming Task 12. This changes the agreed resolver contract and therefore requires direction under the plan's drift-stop rule. Any mechanical merge conflicts, reproducibility and revised test counts must be verified rather than assumed. The pause record is a recording-rule history exception; publication history reconciliation remains Task 14's responsibility.
 
 ### Operator gates
 

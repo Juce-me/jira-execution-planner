@@ -1,6 +1,6 @@
 # Shareable View Links Implementation Plan
 
-> **Status:** Proposed 2026-10-14. Implementation not started. Awaiting operator review of this plan.
+> **Status:** Ready 2026-10-15: the operator accepted the design's default decisions and gate G1 (see Operator gates). Implementation not started.
 >
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Per-task status and commits are recorded in the Execution status table below, inside this committed file (see the recording rule there), not in a scratch ledger.
 
@@ -35,7 +35,7 @@ Statuses and commit SHAs are written once, in Task 14 Step 9, from `git log --on
 | --- | --- | --- | --- | --- |
 | 0 | Baseline and preflight | planned | | |
 | 1 | Server login stash and shared corpus | planned | | |
-| 2 | Log hygiene and privacy notice | planned | | G1 confirm before executing |
+| 2 | Log hygiene and privacy notice | planned | | G1 accepted 2026-10-15 |
 | 3 | View defaults and codec | planned | | |
 | 4 | Resolver | planned | | |
 | 5 | Store and entry | planned | | |
@@ -55,10 +55,10 @@ Order: 0 (records the G1 answer), 1, 2 (only if G1 is accepted; any time after T
 
 ### Operator gates
 
-- **G1 (Task 2):** the container access-log format change and the `find` key stand or fall together. G1 is answered at plan review, before Task 0 runs, and Task 0 Step 1 records `G1: accepted <date>` or `G1: declined <date>` in the Execution status. This plan is written for `accepted`. If G1 is declined, do not execute a partially edited plan: the plan is re-issued without `find` and without Task 2 (Tasks 3, 4, 11a, 11c, 12 and 13 change), and the pending-link cookie and link contents still get their `docs/PRIVACY.md` notice.
+- **G1 (Task 2):** the container access-log format change and the `find` key stand or fall together. G1 is answered at plan review, before Task 0 runs. **Answer: accepted by the operator on 2026-10-15.** Task 0 Step 1 copies `G1: accepted 2026-10-15` into the Task 0 row of the Execution status table. This plan is written for `accepted`. If G1 were declined, do not execute a partially edited plan: the plan is re-issued without `find` and without Task 2 (Tasks 3, 4, 11a, 11c, 12 and 13 change), and the pending-link cookie and link contents still get their `docs/PRIVACY.md` notice.
 - **G2 (Task 12):** the standalone mock of the Share control states is reviewed first; replace `Operator acceptance: pending` with `Operator acceptance: <date>` on Task 12's `Gate G2 (operator)` line (in the control slice file) before wiring; Task 12's Step 2 stops until that is done.
 - **G3 (Task 14):** nothing is pushed and no PR is opened without an explicit operator go (`AGENTS.md` section 10, publication transaction).
-- **Accepted by default unless the operator objects at plan review** (design "Open items"): Share rendered on both header surfaces; the v1 trims (no Board focus, no Board facets, no Statistics display options, no assignee filters); the Planning rows seed as a one-shot initial value; Board `scope` links opening at most one strict stream; extracting the two `dashboard.jsx` helpers; the manifest budget moves in the ledger below; one transient lint warning in Task 11b.
+- **Accepted by the operator at plan review on 2026-10-15** (design "Open items"; item 3 is gate G1 above): Share rendered on both header surfaces; the v1 trims (no Board focus, no Board facets, no Statistics display options, no assignee filters); the Planning rows seed as a one-shot initial value; Board `scope` links opening at most one strict stream; extracting the two `dashboard.jsx` helpers; the manifest budget moves in the ledger below; one transient lint warning in Task 11b.
 
 ## Global Constraints
 
@@ -211,7 +211,7 @@ git fetch origin
 git log --oneline origin/main..HEAD
 git diff --name-status origin/main...HEAD
 ```
-Expected: the branch is `feature/194-shareable-dashboard-view`; `git status --short` prints nothing; the log shows only this feature's documentation commits; the name-status lists only files under `docs/plans/` (this plan, its slices, the design, the plans index, the FUTURE pointer and the GATE-05 review date). If `origin/main` moved, sync before continuing (for an app-made worktree use the app's `sync_with_base_branch` tool; otherwise merge `origin/main` into the branch), then re-run this step and Step 3. Never merge feature work into local `main`. Record the answer to gate G1 from plan review in the Task 0 row of the Execution status table (`G1: accepted <date>` or `G1: declined <date>`); if it is declined, stop, because the plan must be re-issued. Compare `git rev-parse --short origin/main` with the base named in the header (`4247a3b1`); if it differs, the anchor sweep in Step 3 is mandatory.
+Expected: the branch is `feature/194-shareable-dashboard-view`; `git status --short` prints nothing; the log shows only this feature's documentation commits; the name-status lists only files under `docs/plans/` (this plan, its slices, the design, the plans index, the FUTURE pointer and the GATE-05 review date). If `origin/main` moved, sync before continuing (for an app-made worktree use the app's `sync_with_base_branch` tool; otherwise merge `origin/main` into the branch), then re-run this step and Step 3. Never merge feature work into local `main`. Record the answer to gate G1 from plan review in the Task 0 row of the Execution status table (plan review gave `G1: accepted 2026-10-15`; if the operator has since reversed it, stop, because the plan must be re-issued). Compare `git rev-parse --short origin/main` with the base named in the header (`4247a3b1`); if it differs, the anchor sweep in Step 3 is mandatory.
 
 - [ ] **Step 2: Read the instruction chain and the related postmortems**
 
@@ -540,7 +540,7 @@ In `docs/TODO.md`, under `## Deferred`, add these bullets after the last existin
 
 - [ ] **Step 8: Update the plans index**
 
-In `docs/plans/README.md`, in the `## Shareable view links (issue #194)` section, change the implementation-plan bullet's status text from `proposed 2026-10-14, awaiting operator review; implementation not started` to `implemented through Task 13; Task 14 verification pending` and keep its six slice links and gate list (Task 14 Step 9 sets the final `implemented, awaiting merge`). Do not rename the file to `DONE-` until the work is merged.
+In `docs/plans/README.md`, in the `## Shareable view links (issue #194)` section, change the implementation-plan bullet's status text from `ready 2026-10-15, operator accepted the defaults and gate G1; implementation not started` to `implemented through Task 13; Task 14 verification pending` and keep its six slice links and gate list (Task 14 Step 9 sets the final `implemented, awaiting merge`). Do not rename the file to `DONE-` until the work is merged.
 
 - [ ] **Step 9: Reconcile the line budgets**
 

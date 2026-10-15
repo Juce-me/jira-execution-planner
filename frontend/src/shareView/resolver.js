@@ -40,11 +40,10 @@ export function resolveShareViewScope(state, ctx) {
     if (!group || !sprint) {
         return { ok: false, reason: group ? 'sprint_unresolved' : 'group_unresolved', reported };
     }
-    // The predicates EngModeControl disables Planning and Statistics with; Board is always available.
+    // EngModeControl disables Planning only for closed Sprints; Board and Statistics are always available.
     const sprintState = String(sprint.state || '').toLowerCase();
     const available = MODES.has(state.mode)
-        && !(state.mode === 'planning' && sprintState === 'closed')
-        && !(state.mode === 'statistics' && sprintState === 'future');
+        && !(state.mode === 'planning' && sprintState === 'closed');
     if (!available) reported.push('mode');
     return {
         ok: true,

@@ -1902,24 +1902,33 @@ test('a Planning link for a closed Sprint is applied as Catch Up and reports the
     assert.ok(rig.store.log.at(-1)[2].includes('mode'));
 });
 
-test('a Statistics link whose Sprint is still in the future is applied as Catch Up: Teams and facets resolve for the resolved mode', () => {
-    const rig = createRig({ link: { version: 1, mode: 'statistics', group: 'grp-a', sprint: '42', stats: 'projectTrack' } });
-    rig.tick();
-    assert.deepEqual(rig.take().pop(), ['commitSprintSelection', { id: 42, name: 'Sprint 42', state: 'future' }, { groupId: 'grp-a', teams: ['all'], projectTrackRange: false }]);
-    commitScope(rig, { group: 'grp-a', sprint: 42 });
-    rig.tick();
-    rig.tick();
-    rig.take();
-    finishLoad(rig, { group: 'grp-a', sprint: 42 });
-    rig.tick();
-    rig.tick();
-    assert.deepEqual(rig.take().filter(([name]) => /^setEng/.test(name)), [
-        ['setEngStatusFilter', { hidden: ['Killed'] }], ['setEngPriorityFilter', null], ['setEngProjectTrackFilter', undefined],
-    ]);
-    rig.tick();
-    assert.deepEqual(rig.store.log.at(-1), ['finish', 'partial', ['mode']]);
-    rig.flush(true);
-    assert.deepEqual(rig.tracked, [{ workflowAction: 'apply_link', result: 'partial', sourceSurface: 'catch_up' }]);
+test('a future Sprint Statistics link retains Statistics: Teams follow its view and Catch Up facets are absent', () => {
+    for (const stats of ['projectTrack', 'teams']) {
+        const rig = createRig({ link: { version: 1, mode: 'statistics', group: 'grp-a', sprint: '42', stats, teams: ['t1'] } });
+        rig.tick();
+        assert.deepEqual(rig.take().pop(), ['commitSprintSelection', { id: 42, name: 'Sprint 42', state: 'future' }, {
+            groupId: 'grp-a', teams: stats === 'teams' ? ['t1'] : undefined, projectTrackRange: stats === 'projectTrack',
+        }]);
+        commitScope(rig, { group: 'grp-a', sprint: 42 });
+        rig.tick();
+        rig.tick();
+        const fields = rig.take();
+        assert.ok(fields.some(([name, value]) => name === 'setShowStats' && value === true));
+        assert.ok(fields.some(([name, value]) => name === 'setStatsView' && value === stats));
+        if (stats === 'projectTrack') {
+            assert.deepEqual(fields.filter(([name]) => name.startsWith('setExcludedCapacity')), [
+                ['setExcludedCapacityStartSprintId', '42'], ['setExcludedCapacityEndSprintId', '42'],
+            ]);
+        }
+        finishLoad(rig, { group: 'grp-a', sprint: 42 });
+        const writes = [];
+        for (let step = 0; step < 8; step += 1) { rig.tick(); writes.push(...rig.take()); }
+        assert.deepEqual(writes.filter(([name]) => /^setEng/.test(name)), []);
+        assert.deepEqual(writes.filter(([name]) => name === 'setSelectedTeams'), stats === 'teams' ? [['setSelectedTeams', ['t1']]] : []);
+        assert.deepEqual(rig.store.log.at(-1), ['finish', 'done', []]);
+        rig.flush(true);
+        assert.deepEqual(rig.tracked, [{ workflowAction: 'apply_link', result: 'success', sourceSurface: 'statistics' }]);
+    }
 });
 
 test('decode-time reports reach the notice and the result is partial', () => {
@@ -2763,7 +2772,7 @@ const resolverContext = o => ({
 export function resolveApplyPlan(o, state) {
     const scope = resolveShareViewScope(state, resolverContext(o));
     if (!scope.ok) return { ok: false, categories: scope.reported };
-    // The resolved mode, not the link's: a Planning or Statistics link that fell back to Catch Up is applied as Catch Up.
+    // The resolved mode, not the link's: a Planning link for a closed Sprint that fell back to Catch Up is applied as Catch Up.
     const teams = resolveShareViewTeams(state, scope.group, scope.mode);
     return {
         ok: true, scope, teams, reported: [...scope.reported, ...teams.reported],

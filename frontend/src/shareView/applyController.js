@@ -42,7 +42,7 @@ const resolverContext = o => ({
 export function resolveApplyPlan(o, state) {
     const scope = resolveShareViewScope(state, resolverContext(o));
     if (!scope.ok) return { ok: false, categories: scope.reported };
-    // The resolved mode, not the link's: a Planning or Statistics link that fell back to Catch Up is applied as Catch Up.
+    // The resolved mode, not the link's: a Planning link for a closed Sprint that fell back to Catch Up is applied as Catch Up.
     const teams = resolveShareViewTeams(state, scope.group, scope.mode);
     return {
         ok: true, scope, teams, reported: [...scope.reported, ...teams.reported],

@@ -1,6 +1,6 @@
 # Shareable View Links Implementation Plan
 
-> **Status:** Task 12 paused 2026-10-15 before application edits: fetched `origin/main` moved to `778fb2aa` (PR #281), whose future-Sprint Statistics behavior conflicts with the resolver contract below. No merge started. The operator accepted the displayed mock; G2 acceptance is recorded below for transfer to the control-slice gate line before implementation resumes. Task 11c live manual validation remains outstanding. No push or PR.
+> **Status:** Task 12 remains before application edits. On 2026-10-15 the operator approved merging `origin/main` `778fb2aa` and aligning shared Statistics links with its future-Sprint availability; compatibility checks passed; fresh review is required before Task 12 wiring. The operator accepted the displayed mock; G2 acceptance is recorded below for transfer to the control-slice gate line before implementation resumes. Task 11c live manual validation remains outstanding. No push or PR.
 >
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Per-task status and commits are recorded in the Execution status table below, inside this committed file (see the recording rule there), not in a scratch ledger.
 
@@ -51,7 +51,7 @@ Statuses and commit SHAs are written once, in Task 14 Step 9, from `git log --on
 | 11a | Apply controller, capture builder, interaction guard and hook | done | `a362b9c6` | Review approved; 46 focused, 2,831 full Node and two structure tests pass |
 | 11b | Mount: hold, options, tour wait and Planning table key | done | `51841e95` | Review approved; 2,847 Node, 34 Python and 539 Chromium tests pass; measured dashboard 7,540 |
 | 11c | Link UI acceptance spec | in-progress | `045887d1`, `d00b324f` | Automated verification and fresh review approved; 24 Chromium cases pass; stopped for typed-link manual acceptance |
-| 12 | Share control, notice and header surfaces | blocked | | G2 mock accepted 2026-10-15; incoming main changes the mirrored Statistics availability contract; plan adjustment required before sync and wiring |
+| 12 | Share control, notice and header surfaces | blocked | | G2 mock accepted 2026-10-15; approved incoming-main Statistics alignment verified; fresh review required before wiring |
 | 13 | Docs, ontology, budgets and plans index | planned | | |
 | 14 | Journeys, full verification and publication | planned | | G3 explicit publish go |
 
@@ -96,6 +96,8 @@ Proposed operator decision: preserve main's future-Sprint Statistics behavior, u
 - **G3 (Task 14):** nothing is pushed and no PR is opened without an explicit operator go (`AGENTS.md` section 10, publication transaction).
 - **Accepted by the operator at plan review on 2026-10-15** (design "Open items"; item 3 is gate G1 above): Share rendered on both header surfaces; the v1 trims (no Board focus, no Board facets, no Statistics display options, no assignee filters); the Planning rows seed as a one-shot initial value; Board `scope` links opening at most one strict stream; extracting the two `dashboard.jsx` helpers; the manifest budget moves in the ledger below; one transient lint warning in Task 11b.
 
+Operator approval (2026-10-15): “you can merge with the latest origin and proceed” authorizes the preceding concrete proposal. Merge `origin/main` `778fb2aac2c5cfbc80f23209452f60b708ac908b` into pre-merge feature HEAD `115beb470debf587c06f35b78fd60601f08f1a00`, retain future-Sprint Statistics, and align resolver, tests and supplied contracts before Task 12. This merge plus compatibility alignment is an approved publication-history exception; record its SHA at Task 14. Automated compatibility verification: 76 focused and 2,847 full Node tests passed; 14 structure/CSS extraction tests, 24 share-link Chromium acceptance cases and both incoming future-Sprint Statistics/onboarding Chromium cases passed. Extraction lint remains 105 warnings, zero errors, owner pins zero problems and the same four enforced baseline inventory findings. All 14 remaining Task 12 replacement blocks and seven Task 13 quotes plus both placement anchors match exactly once; four supplied resolver/controller implementation/test blocks match actual files byte-for-byte. The accepted mock regenerates byte-identically. Generated output was rebuilt, and measured dashboard/aggregate pins are 7,532/34,134. Historical test counts remain unchanged. No Task 12 wiring or G2 gate-line edit is included. The accepted mock remains preserved and untracked; live Task 11c checks remain outstanding.
+
 ## Global Constraints
 
 Every task's requirements include this section. Values are copied from the design.
@@ -125,9 +127,12 @@ Every task's requirements include this section. Values are copied from the desig
 | Task 5 | 7,494 | 34,096 | 6,459 |
 | Task 6 | 7,505 | 34,107 | 6,459 |
 | Task 11b | 7,540 | 34,142 | 6,459 |
-| Task 12 | 7,547 | 34,149 | 6,459 |
+| Post-merge `778fb2aa` (measured; minus 8) | 7,532 | 34,134 | 6,459 |
+| Task 12 (projected plus 7) | 7,539 | 34,141 | 6,459 |
 
-Net: `dashboard.jsx` plus 54 lines (7,547 against the legacy ceiling of 7,573) and `jira_server.py` plus 4 (6,459 against 6,487); only the manifest moves. The absolute numbers are for the base above. If Task 0 measures a different baseline, add the same offset to every row: the per-task deltas (+4 in Task 1, +1 in Task 5, +11 in Task 6, +35 in Task 11b, +7 in Task 12) are the contract, and each pin step measures instead of trusting a number. The precedent for growth inside an extraction budget is the data-freshness work (plus 48).
+Historical pre-sync projection: `dashboard.jsx` plus 54 lines (7,547 against the legacy ceiling of 7,573) and `jira_server.py` plus 4 (6,459 against 6,487); only the manifest moves. The absolute numbers are for the base above. If Task 0 measures a different baseline, add the same offset to every row: the per-task deltas (+4 in Task 1, +1 in Task 5, +11 in Task 6, +35 in Task 11b, +7 in Task 12) are the contract, and each pin step measures instead of trusting a number. The precedent for growth inside an extraction budget is the data-freshness work (plus 48).
+
+Post-sync offset: incoming main removes 8 dashboard lines. Historical Task 0/6/11b measurements above remain unchanged; current measured pins are 7,532 / 34,134 and Task 12 projects 7,539 / 34,141. Per-task growth is unchanged.
 
 ## Review Focus
 
@@ -172,7 +177,7 @@ Each acceptance criterion and each claim of the design's "Verification" table is
 | V10 | Group or sprint unresolved applies nothing | Task 4: `an unresolved group and sprint report both categories, group first`<br>Task 11a: `the first-run popup pauses the link; a group the recipient does not have drops it with the group category on the recipient surface`<br>Task 11a: `an unresolvable Sprint drops the link and applies nothing` |
 | V11 | No ids, names or tokens in the link | Task 3: `V11: no id, name or token key can appear in a link (parity with FORBIDDEN_VIEW_PAYLOAD_KEYS)`<br>Task 3: `test_no_link_key_is_a_forbidden_view_payload_key` |
 | V12 | Analytics fixed enums and no link values | Task 10: `share_view_action is a canonical userevent whose params accept only their fixed tokens`<br>Task 10: `share view analytics builder emits only the fixed bounded contract`<br>Task 10: `share view action pushes one fixed userevent through the dataLayer and drops anything off-enum`<br>Task 10: `useDashboardAnalytics exposes analyticsReady and trackShareViewAction; events sent before it flips are dropped`<br>Task 11c: `opening a link performs no mutating request outside the read-only allowlist, and reaches no preference or write route (V1)`<br>Task 12: `a click in the main header copies the link for the open view and sends one private event` |
-| V13 | Unavailable mode is reported, not forced | Task 4: `Planning needs a sprint that is not closed, Statistics one that is not future, Board always`<br>Task 4: `scenario, epm and unknown modes fall back to Catch Up and report mode`<br>Task 11a: `a Planning link for a closed Sprint is applied as Catch Up and reports the mode`<br>Task 11a: `a Statistics link whose Sprint is still in the future is applied as Catch Up: Teams and facets resolve for the resolved mode` |
+| V13 | Unavailable mode is reported, not forced | Task 4: `Planning needs a sprint that is not closed; Statistics and Board allow every sprint state`<br>Task 4: `scenario, epm and unknown modes fall back to Catch Up and report mode`<br>Task 11a: `a Planning link for a closed Sprint is applied as Catch Up and reports the mode`<br>Task 11a: `a future Sprint Statistics link retains Statistics: Teams follow its view and Catch Up facets are absent` |
 | V14 | Share visibility | Task 12: `the compact header takes the control over exactly when it appears and two controls are never on screen`<br>Task 12: `the control is hidden in EPM and in Scenario and returns in the ENG modes` |
 | V15 | EPM-saved recipient lands in ENG | Task 11a: `a recipient whose saved view is EPM waits for the Home token read, then lands in ENG without the one-shot restore`<br>Task 11c: `a recipient whose saved view is EPM ends in the link ENG view (V15, RF2)`<br>Task 11c: `a recipient whose saved flags are Scenario ends in the link ENG view (RF2)` |
 | V16 | Cancel and lifecycle | Task 9: `a deliberate interaction before Stage D starts cancels the link and keeps what was applied`<br>Task 9: `a dirty, saving or pending-scope Planning review cancels the link without a notice`<br>Task 9: `the overall budget ends an applying link as partial and names every step it still owed`<br>Task 11a: `a deliberate interaction before the reveal cancels the link without a notice; scrolling alone does not`<br>Task 11c: `a deliberate interaction while the scope loads cancels the link and keeps what was applied (V16)`<br>Task 11c: `a terminal auth lock drops the pending link and leaves the lock unchanged (V16)`<br>Task 11c: `a first-run recipient is held through the Department popup, then the link is dropped and the Catch Up tour waits for it (RF1, V16)` |
@@ -182,6 +187,8 @@ Each acceptance criterion and each claim of the design's "Verification" table is
 | V20 | Alert reveal | Task 7: `V20: a group inside a collapsed card or body is never visible, even though its box is on screen`<br>Task 7: `V20: followup story groups and future-routed Epic groups resolve to different anchors`<br>Task 7: `V20: a name-keyed group emits no alertTeam; the two placeholders and real ids still do`<br>Task 7: `V20: a collapsed card keeps an on-screen group box but is never the target`<br>Task 7: `V20: followup Story groups and future-routed Epic groups name different anchors; a name-keyed group names no Team`<br>Task 8: `V20: followup Story groups and future-routed Epic groups are revealed separately even when they share a Team id` |
 
 ## File map
+
+Approved sync scope: incoming `778fb2aa` changes root instructions, Statistics documentation/analytics/ontology, two synthetic review images, `dashboard.jsx`, `EngModeControl.jsx`, its two UI specs, generated dist and owner-budget pins. Compatibility adds only the resolver behavior, one controller comment, their existing tests and master/resolver-store/apply/design contracts. No Task 12 control implementation is included.
 
 Generated from each task's own `Files` block; the task sections are authoritative. Every task that changes `frontend/src` also commits the regenerated `frontend/dist/`. The last column lists existing tests a task extends or re-runs as a regression gate.
 
@@ -600,7 +607,7 @@ wc -l frontend/src/dashboard.jsx jira_server.py
 env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $JEP_TEST_PYTHON -m unittest tests.test_codebase_structure_budgets tests.test_backend_route_source_guards tests.test_endpoint_policy_inventory
 fnm exec --using 20 bash scripts/extraction_lint/run.sh
 ```
-Expected: the two line counts equal the Budget ledger's last row (7,547 and 6,459 on the validated base), the `dashboard.jsx` count equals the manifest pin in `scripts/extraction_lint/owner_budgets.json`, and both counts are at or under their legacy ceilings in `tests/test_codebase_structure_budgets.py`; the three test modules pass and the lint matches the Task 0 baseline (no new ENFORCED line, no error, at most 104 warnings). If the `dashboard.jsx` count moved after the last pin edit, move the manifest pin in this commit and record the net change per task in the ledger.
+Expected: the two line counts equal the Budget ledger's last row (7,539 and 6,459 after the approved `778fb2aa` sync), the `dashboard.jsx` count equals the manifest pin in `scripts/extraction_lint/owner_budgets.json`, and both counts are at or under their legacy ceilings in `tests/test_codebase_structure_budgets.py`; the three test modules pass and the lint matches the Task 0 baseline (no new ENFORCED line, no error, at most 104 warnings). If the `dashboard.jsx` count moved after the last pin edit, move the manifest pin in this commit and record the net change per task in the ledger.
 
 - [ ] **Step 10: Check the docs for local data and run the doc-linked tests**
 

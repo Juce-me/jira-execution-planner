@@ -127,14 +127,14 @@ test('group team ids come back trimmed, de-duplicated and non-empty', () => {
     assert.deepEqual(scopeFor({}, ctx).group.teamIds, ['t1', 't2']);
 });
 
-test('Planning needs a sprint that is not closed, Statistics one that is not future, Board always', () => {
+test('Planning needs a sprint that is not closed; Statistics and Board allow every sprint state', () => {
     const cases = [
         // [mode, sprint state, resolved mode, reported]
         ['catch-up', 'closed', 'catch-up', []], ['catch-up', 'active', 'catch-up', []], ['catch-up', 'future', 'catch-up', []],
         ['board', 'closed', 'board', []], ['board', 'active', 'board', []], ['board', 'future', 'board', []],
         ['planning', 'closed', 'catch-up', ['mode']], ['planning', 'active', 'planning', []], ['planning', 'future', 'planning', []],
-        ['statistics', 'future', 'catch-up', ['mode']], ['statistics', 'active', 'statistics', []], ['statistics', 'closed', 'statistics', []],
-        ['planning', 'CLOSED', 'catch-up', ['mode']], ['statistics', 'Future', 'catch-up', ['mode']],
+        ['statistics', 'future', 'statistics', []], ['statistics', 'active', 'statistics', []], ['statistics', 'closed', 'statistics', []],
+        ['planning', 'CLOSED', 'catch-up', ['mode']], ['statistics', 'Future', 'statistics', []],
         ['planning', '', 'planning', []], ['statistics', undefined, 'statistics', []],
     ];
     for (const [mode, sprintState, expected, reported] of cases) {
@@ -177,7 +177,6 @@ test('dashboard.jsx still derives the sprint-state predicates the resolver mirro
         "const isCompletedSprintSelected = selectedSprintState === 'closed';",
         "const isFutureSprintSelected = selectedSprintState === 'future';",
         "(resume.engMode === 'planning' && isCompletedSprintSelected)",
-        "(resume.engMode === 'statistics' && isFutureSprintSelected)",
     ]) {
         assert.ok(source.includes(line), `dashboard.jsx no longer contains: ${line}`);
     }
@@ -422,8 +421,8 @@ test('Board scope applies only when the Board is ready for the link group', () =
 
 test('Statistics plan: stats and range; keys outside the resolved mode are absent', () => {
     assert.deepEqual(planFor({ mode: 'statistics' }), { apply: { stats: SHARE_VIEW_DEFAULTS.stats, range: null }, reported: [] });
-    const fallback = planFor({ mode: 'statistics', sprint: '4183', stats: 'cohort' });
-    assert.deepEqual(Object.keys(fallback.apply).sort(), ['alerts', 'find', 'initiatives', 'lanes', 'sort']);
+    const future = planFor({ mode: 'statistics', sprint: '4183', stats: 'cohort' });
+    assert.deepEqual(future, { apply: { stats: 'cohort', range: { from: '2026Q4', to: '2026Q4' } }, reported: [] });
     const planning = planFor({ mode: 'planning', sprint: '4181' });
     assert.deepEqual(Object.keys(planning.apply).sort(), ['alerts', 'find', 'initiatives', 'lanes', 'sort']);
 });

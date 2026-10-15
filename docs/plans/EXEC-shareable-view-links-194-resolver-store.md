@@ -41,7 +41,7 @@ options = { status:string[], priority:string[], track:string[] }   // the DECLAR
 ```
 - Call order for Tasks 9 and 11, with the resolved `scope.mode` passed on so a fall-back to Catch Up is honored: `resolveShareViewScope` once the catalogs are ready; `buildShareViewFieldPlan(state, scope, ctx)` at Stage B; `resolveShareViewTeams(state, scope.group, scope.mode)` and `resolveShareViewFacets(state, options, scope.mode)` at Stage C; `resolveShareViewFocus(state, scope.mode)` at Stage D. The notice categories are the union of the decode-time `entry.reported` and every `reported` array returned here.
 - Semantics Tasks 9 and 11 rely on:
-  - `scope.mode` is the requested mode, or `'catch-up'` with `'mode'` reported when the mode is unknown, Planning meets a closed sprint or Statistics a future one (state compared lowercase; Board is always available). Unresolved group and sprint report both categories, group first.
+  - `scope.mode` is the requested mode, or `'catch-up'` with `'mode'` reported when the mode is unknown, Planning meets a closed sprint (state compared lowercase; Board and Statistics are always available). Unresolved group and sprint report both categories, group first.
   - `apply` carries only the keys of the resolved mode. Catch Up: `find lanes initiatives sort alerts`. Planning: `find lanes layout`, plus `rows` for the table or `initiatives sort` for the list. Board: `find`, plus `scope` (absent, with `'mode'` reported, when a strict scope is requested and `ctx.boardScopeReady` is not `true`). Statistics: `stats range` (`range` is `null` for `teams`, `priority`, `burnout`). Each value is the link value or its `SHARE_VIEW_DEFAULTS` constant. `alerts` is `{ panel, expanded }` over all ten category keys: omitted or `off` leave every category expanded (`off` sets `panel` false), `none` collapses all, a list expands exactly its keys (a key the sprint state does not render is not an error).
   - A skipped key is absent from `apply`: test `Object.hasOwn(apply, key)`. A neutral Project Track is an own property holding `undefined`.
   - `resolveShareViewTeams` returns `['all']` when the link says all or omits the key, `null` (skip, never the widened `['all']`) when nothing matches or Teams do not apply to the mode, and reports `teams` whenever an id was dropped.
@@ -188,14 +188,14 @@ test('group team ids come back trimmed, de-duplicated and non-empty', () => {
     assert.deepEqual(scopeFor({}, ctx).group.teamIds, ['t1', 't2']);
 });
 
-test('Planning needs a sprint that is not closed, Statistics one that is not future, Board always', () => {
+test('Planning needs a sprint that is not closed; Statistics and Board allow every sprint state', () => {
     const cases = [
         // [mode, sprint state, resolved mode, reported]
         ['catch-up', 'closed', 'catch-up', []], ['catch-up', 'active', 'catch-up', []], ['catch-up', 'future', 'catch-up', []],
         ['board', 'closed', 'board', []], ['board', 'active', 'board', []], ['board', 'future', 'board', []],
         ['planning', 'closed', 'catch-up', ['mode']], ['planning', 'active', 'planning', []], ['planning', 'future', 'planning', []],
-        ['statistics', 'future', 'catch-up', ['mode']], ['statistics', 'active', 'statistics', []], ['statistics', 'closed', 'statistics', []],
-        ['planning', 'CLOSED', 'catch-up', ['mode']], ['statistics', 'Future', 'catch-up', ['mode']],
+        ['statistics', 'future', 'statistics', []], ['statistics', 'active', 'statistics', []], ['statistics', 'closed', 'statistics', []],
+        ['planning', 'CLOSED', 'catch-up', ['mode']], ['statistics', 'Future', 'statistics', []],
         ['planning', '', 'planning', []], ['statistics', undefined, 'statistics', []],
     ];
     for (const [mode, sprintState, expected, reported] of cases) {
@@ -238,7 +238,6 @@ test('dashboard.jsx still derives the sprint-state predicates the resolver mirro
         "const isCompletedSprintSelected = selectedSprintState === 'closed';",
         "const isFutureSprintSelected = selectedSprintState === 'future';",
         "(resume.engMode === 'planning' && isCompletedSprintSelected)",
-        "(resume.engMode === 'statistics' && isFutureSprintSelected)",
     ]) {
         assert.ok(source.includes(line), `dashboard.jsx no longer contains: ${line}`);
     }
@@ -483,8 +482,8 @@ test('Board scope applies only when the Board is ready for the link group', () =
 
 test('Statistics plan: stats and range; keys outside the resolved mode are absent', () => {
     assert.deepEqual(planFor({ mode: 'statistics' }), { apply: { stats: SHARE_VIEW_DEFAULTS.stats, range: null }, reported: [] });
-    const fallback = planFor({ mode: 'statistics', sprint: '4183', stats: 'cohort' });
-    assert.deepEqual(Object.keys(fallback.apply).sort(), ['alerts', 'find', 'initiatives', 'lanes', 'sort']);
+    const future = planFor({ mode: 'statistics', sprint: '4183', stats: 'cohort' });
+    assert.deepEqual(future, { apply: { stats: 'cohort', range: { from: '2026Q4', to: '2026Q4' } }, reported: [] });
     const planning = planFor({ mode: 'planning', sprint: '4181' });
     assert.deepEqual(Object.keys(planning.apply).sort(), ['alerts', 'find', 'initiatives', 'lanes', 'sort']);
 });
@@ -690,11 +689,10 @@ export function resolveShareViewScope(state, ctx) {
     if (!group || !sprint) {
         return { ok: false, reason: group ? 'sprint_unresolved' : 'group_unresolved', reported };
     }
-    // The predicates EngModeControl disables Planning and Statistics with; Board is always available.
+    // EngModeControl disables Planning only for closed Sprints; Board and Statistics are always available.
     const sprintState = String(sprint.state || '').toLowerCase();
     const available = MODES.has(state.mode)
-        && !(state.mode === 'planning' && sprintState === 'closed')
-        && !(state.mode === 'statistics' && sprintState === 'future');
+        && !(state.mode === 'planning' && sprintState === 'closed');
     if (!available) reported.push('mode');
     return {
         ok: true,
@@ -914,7 +912,7 @@ If a chunk file or `dashboard.js.map` also appears, stop: something besides the 
 ```
 git add frontend/src/shareView/resolver.js tests/test_share_view_resolver.js
 git add -A -- frontend/dist
-git -c user.name=Juce -c user.email=Juce-me@users.noreply.github.com commit -m "Add the share view link resolver" -m "Pure resolution of a decoded share-view link against the recipient's own groups, Sprint catalog, Teams and facet options (issue 194). The group match is exact and case-sensitive, the Sprint keeps its catalog id, and Planning or Statistics fall back to Catch Up on a closed or future Sprint with the predicates EngModeControl uses. Every miss is reported by notice category and its key is skipped: an unmatched Team list is never widened to all Teams, which sanitizeSelectedTeamsForScope would do, and an unmatched status, priority or Project Track id never reaches a setter, which the facet reconciliation would persist. Nothing imports the module yet, so the regenerated dist differs only by the build id."
+git -c user.name=Juce -c user.email=Juce-me@users.noreply.github.com commit -m "Add the share view link resolver" -m "Pure resolution of a decoded share-view link against the recipient's own groups, Sprint catalog, Teams and facet options (issue 194). The group match is exact and case-sensitive, the Sprint keeps its catalog id, and Planning falls back to Catch Up on a closed Sprint with the predicate EngModeControl uses; Statistics remains available for every Sprint state. Every miss is reported by notice category and its key is skipped: an unmatched Team list is never widened to all Teams, which sanitizeSelectedTeamsForScope would do, and an unmatched status, priority or Project Track id never reaches a setter, which the facet reconciliation would persist. Nothing imports the module yet, so the regenerated dist differs only by the build id."
 git show --stat HEAD
 git status --short
 make verify-dist-clean
@@ -1675,7 +1673,7 @@ Read the results: `git show --stat HEAD` lists the regenerated `frontend/dist` f
 Settled decisions for this slice; none changes a binding name in the master.
 
 1. `resolveShareViewFocus` returns no `reported`; the `focus` notice category comes from `buildShareViewFieldPlan(...).reported`. The apply must merge the decode-time `entry.reported`, the plan's `reported` and every other resolver `reported`.
-2. `resolveShareViewTeams` and `resolveShareViewFacets` take an optional trailing `mode` (default `state.mode`). Pass the resolved `scope.mode`, so a Statistics link on a future Sprint that fell back to Catch Up is handled as Catch Up. `ctx.currentQuarter` is optional (default: the clock).
+2. `resolveShareViewTeams` and `resolveShareViewFacets` take an optional trailing `mode` (default `state.mode`). Pass the resolved `scope.mode`, so a Planning link on a closed Sprint that fell back to Catch Up is handled as Catch Up; Statistics retains its mode for every Sprint state. `ctx.currentQuarter` is optional (default: the clock).
 3. Planning `rows` applies to the table only; a list link yields `initiatives` and `sort`.
 4. The store strips the link keys from the URL before it decodes, each step guarded; one test pins the order with a throwing stub codec.
 5. `finishShareView` returns a boolean. A `newer` or `invalid` link is already terminal when the store initializes, so no `finishShareView` call is made for it; the apply emits that link's `rejected` event itself.

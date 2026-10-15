@@ -43,7 +43,7 @@ Configured Jira Components broaden Missing Information and Lead Times through co
 If expected work is missing, check in this order:
 
 1. Confirm the active Department and selected sprint.
-2. Clear search, facet filters, and the Product/Tech display filters.
+2. Clear find text, facet filters, and the Product/Tech display filters.
 3. Verify the Jira Story Team and sprint.
 4. For Epic-only discovery, verify the Epic Team or one of the exact team-label aliases, then verify the Epic sprint or either accepted whole sprint label.
 5. Save the Department configuration.

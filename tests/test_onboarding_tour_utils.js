@@ -908,7 +908,7 @@ test('coachmark action hierarchy uses stable role classes and a 560px placement 
 test('search and field preview copy states the exact supported scope without requiring a change', async () => {
     const { ONBOARDING_STEP_CATALOG } = await loadModule();
     const step = (id) => ONBOARDING_STEP_CATALOG.find((entry) => entry.id === id);
-    assert.match(step('search').body, /key or summary/i);
+    assert.match(step('search').body, /key, summary or assignee/i);
     assert.match(step('search').body, /Initiatives, Epics, and Stories/i);
     assert.match(step('search').body, /assignee.*Epics and Stories/i);
     assert.match(step('search').body, /not Initiatives/i);

@@ -271,7 +271,7 @@ test('a link for another Department and Sprint keeps its fields, Teams and filte
     await page.goto(`${appBaseUrl}${FULL_LINK}`, { waitUntil: 'domcontentloaded' });
     await expect.poll(() => applyEvents(page).then(events => events.length)).toBe(1);
     expect(page.url()).toBe(`${appBaseUrl}/`);
-    await expect(page.getByRole('textbox', { name: 'Search tickets...' })).toHaveValue('story');
+    await expect(page.getByRole('textbox', { name: 'Find in view' })).toHaveValue('story');
     await expect(teamLabel(page)).toHaveText('Beta One');
     await expect(engMode(page, 'Catch Up')).toHaveAttribute('aria-checked', 'true');
     const prefs = await readPrefs(page);
@@ -445,7 +445,7 @@ test('a same-scope link skips the scope write but still applies its fields, Team
     await page.goto(`${appBaseUrl}/?v=1&mode=catch-up&group=grp-a&sprint=41&teams=team-a1&find=story&status=only:Blocked`, { waitUntil: 'domcontentloaded' });
     await expect.poll(() => applyEvents(page).then(events => events.length)).toBe(1);
     await expect(teamLabel(page)).toHaveText('Alpha One');
-    await expect(page.getByRole('textbox', { name: 'Search tickets...' })).toHaveValue('story');
+    await expect(page.getByRole('textbox', { name: 'Find in view' })).toHaveValue('story');
     expect(await readPrefs(page)).toMatchObject({ activeGroupId: 'grp-a', selectedSprint: 41, selectedTeams: ['team-a1'], engStatusFilter: { only: ['Blocked'] }, showTech: true });
     expect(taskCalls(calls).filter(call => call.params.groupId === 'grp-a' && call.params.sprint === '41').length).toBe(2);
     expect(calls.filter(call => call.pathname === '/api/sprints')).toHaveLength(1);

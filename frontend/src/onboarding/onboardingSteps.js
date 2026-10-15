@@ -190,7 +190,7 @@ export const ONBOARDING_STEP_CATALOG = Object.freeze([
         group: CONTINUE_IN_JIRA,
         selectors: [target('search')],
         title: 'Find work across the hierarchy',
-        body: 'Search by key or summary across Initiatives, Epics, and Stories. Assignee search covers Epics and Stories, not Initiatives.',
+        body: 'Type a key, summary or assignee name to narrow the current view across Initiatives, Epics, and Stories. Assignee matching covers Epics and Stories, not Initiatives.',
     }),
     freezeStep({
         id: 'jira-export',

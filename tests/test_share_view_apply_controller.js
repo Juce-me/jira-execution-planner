@@ -200,6 +200,20 @@ test('a same-scope link skips the scope write but still syncs the view and appli
     assert.deepEqual(rig.store.log.at(-1), ['finish', 'done', []]);
 });
 
+test('a consumed same-scope Planning recovery capsule applies Teams and facets without a second epoch', () => {
+    const rig = createRig({ link: { ...LINK, mode: 'planning', group: 'grp-a', sprint: '41', teams: ['t1'] },
+        options: { pendingPlanningAuthResumeRef: { current: { scopeKey: 'planning::41::grp-a' } } } });
+    rig.tick();
+    assert.deepEqual(rig.take(), []);
+    finishLoad(rig, { group: 'grp-a', sprint: 41 });
+    rig.o.pendingPlanningAuthResumeRef.current = null;
+    for (let i = 0; i < 7; i += 1) rig.tick();
+    assert.equal(rig.o.loadEpochRef.current, 1);
+    assert.ok(rig.log.some(([name, teams]) => name === 'persistTeamSelection' && teams[0] === 't1'));
+    assert.ok(rig.log.some(([name]) => name === 'setEngStatusFilter'));
+    assert.deepEqual(rig.store.log.at(-1), ['finish', 'done', []]);
+});
+
 test('a recipient whose saved view is EPM waits for the Home token read, then lands in ENG without the one-shot restore', () => {
     const rig = createRig({ link: LINK, options: { savedViewIsEpm: true, homeTokenConnectionLoaded: false } });
     rig.tick();

@@ -147,7 +147,8 @@ export function stepApplyMachine(previous, input) {
             return { state, actions };
         }
         if (state.cPart === null) state.cPart = c.teams ? 'teams' : 'facets';
-        const loaded = scope.epoch > state.epochAtA && !scope.lanesLoading && scope.tasksFetched
+        const epochReady = state.scopeChange ? scope.epoch > state.epochAtA : scope.epoch >= state.epochAtA;
+        const loaded = input.scope.equal && epochReady && !scope.lanesLoading && scope.tasksFetched
             && scope.lastLoadedMatches && scope.teamsHydrated;
         const committed = input.commit > state.cCommit || state.active - state.cActive >= APPLY_SETTLE_FALLBACK_MS;
         if (state.active - state.armedActive >= APPLY_STAGE_BUDGET_MS.C) {

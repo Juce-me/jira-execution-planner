@@ -533,6 +533,8 @@ No behavior may differ from the version before this commit.
 
 ### Task 9: Apply machine (pure)
 
+**Approved Task 14 correction (2026-10-15):** the same-scope Planning recovery load can complete before Stage A. Stage C accepts that equal epoch only when Stage A verified the same scope and the current scope still equals the resolved target; all idle/fetched/Sprint/Team hydration checks remain. Scope changes still require a strictly newer epoch, and no redundant load is forced. The supplied machine, pure/controller regressions and mounted Planning recovery case below include this correction. The deadline cases now explicitly retain the committed target scope while isolating their timing input.
+
 **Approved deadline correction (2026-10-15):** the operator approved a separate correction after Task 9 review. The supplied machine and tests below include that correction: 19 new boundary tests fail on the original implementation (13 failures), then all 57 focused and 2,779 full Node tests pass after expiry is checked before readiness. The original 38 tests and seeded fuzz remain unchanged. The correction also updates this slice and the master status/history record; fresh review is required before Task 10.
 
 **Owner note:** no dependency on another `shareView` module (the machine imports nothing); blocks Task 11a (the controller steps it every tick). It changes no existing file, so no budget pin moves here.
@@ -589,7 +591,7 @@ actions = [ { type: 'run', stage: 'A', scopeChange } | { type: 'run', stage: 'B'
 | Stage A | One `run A` with `scopeChange: !input.scope.equal`. A same-scope link still runs A (it sets the ENG view and consumes the one-shot EPM restore) but writes no scope. |
 | Stage B | Needs the scope committed (`scope.equal`), the group applied, the Planning scope hydrated, no group restore in flight, no pending Board scope readiness, and, for a scope change, one commit after Stage A (`applyGroupState` has run by then). |
 | Hold | `releaseHold` is emitted one commit after Stage B ran (or after 250 ms of active time when nothing committed, or when Stage B timed out). Stage C waits for it. |
-| Stage C | Waits for the hold release, then skips silently when the committed mode loads no tasks (`!c.expected`) or the plan owes nothing. Otherwise it needs the scope loaded: `epoch` newer than at Stage A, no lane loading, `tasksFetched`, `lastLoadedMatches` and `teamsHydrated`. Teams run first, then facets one commit later (or after the 250 ms settle). |
+| Stage C | Waits for the hold release, then skips silently when the committed mode loads no tasks (`!c.expected`) or the plan owes nothing. Otherwise it needs the scope loaded: `scope.equal`, an epoch at least equal to Stage A for a verified same-scope apply or strictly newer for a scope change, no lane loading, `tasksFetched`, `lastLoadedMatches` and `teamsHydrated`. Teams run first, then facets one commit later (or after the 250 ms settle). |
 | Stage D | Runs when the plan owes a focus target and `cohortSettled && recoveryIdle && visible`. It finishes on `focusResult`: `revealed` and `cancelled` finish `done`, `missing` finishes `partial` with `focus`. A reveal that never answers is cancelled at its own 20 s budget. |
 
 - Decision: the hold is released after Stage B commits, not after Stage A as the design text says. Between Stage A and Stage B's commit the App still carries the recipient's saved mode flags, so a released hold would start a Catch Up task load for a link whose mode loads no Catch Up tasks (a source-only Statistics link, a strict Board link). Task 11c pins this with a request log.
@@ -822,7 +824,7 @@ test('Stage B past its budget is skipped, reports mode and filters, and still re
     assert.equal(sim.state.stage, 'C');
 });
 
-test('Stage C waits until the scope is loaded: a newer epoch, idle lanes, fetched tasks, the right Sprint and a hydrated Team selection', () => {
+test('a changed scope waits for a newer epoch, idle lanes, fetched tasks, the right Sprint and hydrated Teams', () => {
     for (const blocker of [
         { epoch: 0 }, { lanesLoading: true }, { tasksFetched: false }, { lastLoadedMatches: false }, { teamsHydrated: false },
     ]) {
@@ -832,7 +834,7 @@ test('Stage C waits until the scope is loaded: a newer epoch, idle lanes, fetche
     }
 });
 
-test('the epoch must be newer than the one seen when Stage A ran', () => {
+test('a changed scope requires an epoch newer than the one seen when Stage A ran', () => {
     const sim = simulate();
     sim.step({ commit: 1, c: { epoch: 3 } });
     sim.step({ commit: 2, scope: { equal: true }, c: { epoch: 3 } });
@@ -850,6 +852,17 @@ test('Stage C waits for the hold to be released after Stage B, then skips silent
     assert.equal(sim.state.stage, 'D', 'Teams and facets are not applied where no task list loads');
     assert.deepEqual(sim.state.skipped, [], 'a view that never loads tasks owes nothing');
     assert.deepEqual(sim.step({ commit: 4, scope: { equal: true }, d: { cohortSettled: true } }), [{ type: 'run', stage: 'D' }]);
+});
+
+test('same-scope recovery reuses an equal completed epoch while retaining every readiness check', () => {
+    for (const blocker of [null, { epoch: 2 }, { lanesLoading: true }, { tasksFetched: false }, { lastLoadedMatches: false }, { teamsHydrated: false }, { scopeEqual: false }]) {
+        const sim = simulate();
+        sim.step({ commit: 1, scope: { equal: true }, c: { ...LOADED, epoch: 3 } });
+        sim.step({ commit: 2, scope: { equal: true } });
+        sim.step({ commit: 3, scope: { equal: true }, c: { ...LOADED, epoch: 3, tasksFetched: false } });
+        const actions = sim.step({ commit: 4, scope: { equal: blocker?.scopeEqual !== false }, c: { ...LOADED, epoch: 3, ...blocker } });
+        assert.deepEqual(actions, blocker ? [] : [{ type: 'run', stage: 'C', part: 'teams' }], JSON.stringify(blocker));
+    }
 });
 
 test('Stage C applies Teams, then facets one commit later', () => {
@@ -1093,7 +1106,7 @@ for (const offset of [-1, 0, 1]) {
         for (const teams of [false, true]) {
             const sim = simulate();
             throughB(sim, { plan: { c: { teams, facets: true }, d: true } });
-            assert.deepEqual(sim.step({ commit: 4, c: LOADED }, APPLY_STAGE_BUDGET_MS.C + offset), offset < 0
+            assert.deepEqual(sim.step({ commit: 4, scope: { equal: true }, c: LOADED }, APPLY_STAGE_BUDGET_MS.C + offset), offset < 0
                 ? [{ type: 'run', stage: 'C', part: teams ? 'teams' : 'facets' }] : []);
             assert.deepEqual(sim.state.skipped, offset < 0 ? [] : [...(teams ? ['teams'] : []), 'filters']);
             if (offset >= 0) assert.equal(sim.state.stage, 'D');
@@ -1103,8 +1116,8 @@ for (const offset of [-1, 0, 1]) {
     test(`Stage C facets readiness ${boundary} its deadline never reports Teams already applied`, () => {
         const sim = simulate();
         throughB(sim);
-        assert.deepEqual(sim.step({ commit: 4, c: LOADED }, APPLY_STAGE_BUDGET_MS.C - 2), [{ type: 'run', stage: 'C', part: 'teams' }]);
-        assert.deepEqual(sim.step({ commit: 5, c: LOADED }, 2 + offset), offset < 0
+        assert.deepEqual(sim.step({ commit: 4, scope: { equal: true }, c: LOADED }, APPLY_STAGE_BUDGET_MS.C - 2), [{ type: 'run', stage: 'C', part: 'teams' }]);
+        assert.deepEqual(sim.step({ commit: 5, scope: { equal: true }, c: LOADED }, 2 + offset), offset < 0
             ? [{ type: 'run', stage: 'C', part: 'facets' }] : []);
         assert.deepEqual(sim.state.skipped, offset < 0 ? [] : ['filters']);
         assert.equal(sim.state.stage, 'D');
@@ -1332,7 +1345,8 @@ export function stepApplyMachine(previous, input) {
             return { state, actions };
         }
         if (state.cPart === null) state.cPart = c.teams ? 'teams' : 'facets';
-        const loaded = scope.epoch > state.epochAtA && !scope.lanesLoading && scope.tasksFetched
+        const epochReady = state.scopeChange ? scope.epoch > state.epochAtA : scope.epoch >= state.epochAtA;
+        const loaded = input.scope.equal && epochReady && !scope.lanesLoading && scope.tasksFetched
             && scope.lastLoadedMatches && scope.teamsHydrated;
         const committed = input.commit > state.cCommit || state.active - state.cActive >= APPLY_SETTLE_FALLBACK_MS;
         if (state.active - state.armedActive >= APPLY_STAGE_BUDGET_MS.C) {
@@ -1382,7 +1396,7 @@ export function stepApplyMachine(previous, input) {
 
 Run: `fnm exec --using 20 node --test tests/test_share_view_apply_machine.js`
 
-Expected: `# tests 57`, `# pass 57`, `# fail 0`. The last test is the seeded fuzz (300 runs of 120 random steps): it asserts at most one `run` per step, stages in order and each at most once, at most one terminal action, an inert finished machine and the hold released at most once.
+Expected after the approved Task 14 correction: `# tests 58`, `# pass 58`, `# fail 0`. The last test is the seeded fuzz (300 runs of 120 random steps): it asserts at most one `run` per step, stages in order and each at most once, at most one terminal action, an inert finished machine and the hold released at most once.
 
 - [ ] **Step 5: Run the task's regression gate**
 
@@ -1408,7 +1422,7 @@ git status --short
 make verify-dist-clean
 ```
 
-Read the results: `git show --stat HEAD` lists exactly four paths: `frontend/dist/dashboard.js`, the renamed `frontend/dist/lazy-views-*.json`, `frontend/src/shareView/applyMachine.js` (193 lines after the approved deadline correction) and `tests/test_share_view_apply_machine.js` (551 lines after the approved deadline correction); the `dist` counts depend on the bundle. `git status --short` prints nothing. `make verify-dist-clean` prints nothing and exits 0.
+Read the results: `git show --stat HEAD` lists exactly four paths: `frontend/dist/dashboard.js`, the renamed `frontend/dist/lazy-views-*.json`, `frontend/src/shareView/applyMachine.js` (194 lines after the approved Task 14 recovery correction) and `tests/test_share_view_apply_machine.js` (562 lines after the approved Task 14 recovery correction); the `dist` counts depend on the bundle. `git status --short` prints nothing. `make verify-dist-clean` prints nothing and exits 0.
 
 
 ---
@@ -1790,6 +1804,20 @@ test('a same-scope link skips the scope write but still syncs the view and appli
     rig.tick();
     rig.tick();
     assert.equal(rig.log.some(([name]) => name === 'setEngStatusFilter'), true);
+    assert.deepEqual(rig.store.log.at(-1), ['finish', 'done', []]);
+});
+
+test('a consumed same-scope Planning recovery capsule applies Teams and facets without a second epoch', () => {
+    const rig = createRig({ link: { ...LINK, mode: 'planning', group: 'grp-a', sprint: '41', teams: ['t1'] },
+        options: { pendingPlanningAuthResumeRef: { current: { scopeKey: 'planning::41::grp-a' } } } });
+    rig.tick();
+    assert.deepEqual(rig.take(), []);
+    finishLoad(rig, { group: 'grp-a', sprint: 41 });
+    rig.o.pendingPlanningAuthResumeRef.current = null;
+    for (let i = 0; i < 7; i += 1) rig.tick();
+    assert.equal(rig.o.loadEpochRef.current, 1);
+    assert.ok(rig.log.some(([name, teams]) => name === 'persistTeamSelection' && teams[0] === 't1'));
+    assert.ok(rig.log.some(([name]) => name === 'setEngStatusFilter'));
     assert.deepEqual(rig.store.log.at(-1), ['finish', 'done', []]);
 });
 
@@ -3775,6 +3803,10 @@ Operator-approved correction (2026-10-15): use a synthetic intercepted GTM ident
 
 **Owner note:** depends on Task 10 (the spec reads the apply event from `window.dataLayer`) and Task 11b (it drives the mounted hook); no later task builds on it, but Task 14's journey A cites it. It adds one test file and changes no source, so there is no `dist` rebuild and no budget move. Task 11 is a checkpoint: this task ends with a report and a stop (Step 13).
 
+**Approved AC4 completion (Task 14, 2026-10-15):** the named `AC4 ${scenario.name} ${cache}: link and manual API request multisets match` matrix below covers Catch Up, Planning table (including review and values/read), ordinary Board, strict Board Component and All work, task-loading Statistics, and source-only Statistics Project Track, each cold and warm. Warm runs first execute the equivalent manual navigation to prime a synthetic backend cache and obtain the app-persisted v2 Sprint catalog, then clone that cache independently for link/manual measurement. The catalog is still validated against the source identity/version. Request timestamp values are excluded only from backend cache keys; the multiset still includes every query name, duplicate and aborted request. Read POST bodies are compared in full, with explicit target Sprint/Team/issue assertions. Two real aborted requests to an identical synthetic URL prove logger retention.
+
+Strict scope and Project Track force-refresh are transient session state, so the synthetic bundle pre-seeds only their existing initial state values for the manual comparator: `selectBoardScope` writes `setBoardStrictScope(scope)`, and `commitSprintSelection` with `projectTrackRange` sets `excludedCapacityForceRefreshRef.current = true`. Effects, fetches and cache owners remain the real code. Project Track initial scope navigation bypasses its source cache on both paths even in the warm row; both bypasses are asserted, while the warmed validated catalog is actually consumed. This preserves the original AC4 scope rather than narrowing it.
+
 **What the spec proves.** Real pages in Chromium, with the real App, the real store, codec, resolver, controller and hook, and a mocked network that records every request. It covers V1, V3, V5, V6 (for a Catch Up recipient and for a recipient who saved a Planning table), V7, V15, V16 and V19 of the design, the focus-miss clause of V4, the Review Focus lines RF1, RF2 and RF3, the Stage D reveal, the Planning rows seed, the three non-Catch-Up modes and when Share is enabled.
 
 | Test | Pins |
@@ -3787,6 +3819,8 @@ Operator-approved correction (2026-10-15): use a synthetic intercepted GTM ident
 | a recipient whose saved view is EPM ends in the link ENG view (V15, RF2) | The one-shot EPM restore does not win, including after the delayed check |
 | a recipient whose saved flags are Scenario ends in the link ENG view (RF2) | Scenario flags are overwritten in an independent isolated recipient, including after the delayed check |
 | a same-scope link skips the scope write but still applies its fields, Teams and facets with one load | RF3: Stage A writes no scope, Stages B and C still apply; one load per lane |
+| a same-scope Planning recovery capsule reuses its completed load and applies Teams facets and rows (V7, RF3) | Equal completed epoch, requested Teams/facets/row mode, terminal success and one request per lane |
+| AC4 ${scenario.name} ${cache}: link and manual API request multisets match | Seven loading branches in cold/warm states, full API multisets, POST scope, validated warm caches, no default-scope request and at most one strict stream |
 | opening a link performs no mutating request outside the read-only allowlist | V1: zero non-GET requests outside `/api/dependencies`, `/api/stats/*`, `values/read`, `/api/performance/loads` and the session refresh; no preference, onboarding, issue or groups-config write; no link value in an analytics payload |
 | the link Department becomes the local favorite in JSON mode and never writes the server favorite in DB mode | V19 |
 | a planning, a board and a statistics link apply their mode and fields | each mode lands with its flags and surface (`planning`, `board`, `statistics`) whatever the saved mode |
@@ -3851,6 +3885,20 @@ const HOOK_DECLARATION = 'export function useShareViewApply(options) {';
 const shareViewProbe = {
     name: 'share-view-probe',
     setup(build) {
+        build.onLoad({ filter: /[\\/]dashboard\.jsx$/ }, async args => {
+            const source = await fs.promises.readFile(args.path, 'utf8');
+            const declaration = "const [boardStrictScope, setBoardStrictScope] = useState('');";
+            if (!source.includes(declaration)) throw new Error('Update the manual strict-scope initial-state probe');
+            return { contents: source.replace(declaration,
+                "const [boardStrictScope, setBoardStrictScope] = useState(window.__shareManualStrictScope || '');"), loader: 'jsx' };
+        });
+        build.onLoad({ filter: /[\\/]stats[\\/]useStatsState\.js$/ }, async args => {
+            const source = await fs.promises.readFile(args.path, 'utf8');
+            const declaration = 'const excludedCapacityForceRefreshRef = useRef(false);';
+            if (!source.includes(declaration)) throw new Error('Update the manual Project Track initial-state probe');
+            return { contents: source.replace(declaration,
+                'const excludedCapacityForceRefreshRef = useRef(Boolean(window.__shareManualStatsRefresh));'), loader: 'js' };
+        });
         build.onLoad({ filter: /shareView[\\/]useShareViewApply\.js$/ }, async (args) => {
             const source = await fs.promises.readFile(args.path, 'utf8');
             if (!source.includes(HOOK_DECLARATION)) throw new Error('useShareViewApply is declared differently now: update the probe');
@@ -3932,16 +3980,22 @@ async function installDocumentRoutes(page) {
 
 async function installLinkFixture(page, {
     groupsSource = 'workspace_db', preferences = {}, taskGate = null, taskAuthFailure = false, homeToken = { connected: false },
-    prefs = {}, teamSelection = null, analytics = null, capsules = null,
+    prefs = {}, teamSelection = null, analytics = null, capsules = null, matrix = false, backendCache = null, strictScope = '', statsRefresh = false,
 } = {}) {
     const calls = [];
-    page.on('requestfailed', (request) => {
-        const call = [...calls].reverse().find(candidate => candidate.url === request.url() && !candidate.completed);
-        if (call) call.aborted = true;
+    const requestCalls = new Map();
+    page.on('request', request => {
+        const url = new URL(request.url());
+        if (!url.pathname.startsWith('/api/')) return;
+        const call = { method: request.method(), url: request.url(), pathname: url.pathname,
+            params: Object.fromEntries(url.searchParams.entries()), body: request.postData(), aborted: false };
+        requestCalls.set(request, call);
+        calls.push(call);
     });
+    page.on('requestfailed', request => { const call = requestCalls.get(request); if (call) call.aborted = true; });
     // Only the Workspace DB owns personal Department preferences; the JSON source has none.
     const groupsConfig = {
-        version: 1, configRevision: 1, source: groupsSource, defaultGroupId: 'grp-a', groups: GROUPS,
+        version: 1, configRevision: 1, source: groupsSource, defaultGroupId: 'grp-a', groups: matrix ? GROUPS.map(group => ({ ...group, missingInfoComponents: ['Platform'], board: { columns: [{ id: 'active', name: 'Active', color: '#597ef7', statusNames: ['In Progress'], terminal: false }] } })) : GROUPS,
         ...(groupsSource === 'workspace_db' ? {
             preferences: {
                 onboardingRequired: false, onboardingDone: true, completedOnboardingModules: ['catch-up', 'configuration', 'planning', 'board', 'statistics'],
@@ -3951,23 +4005,37 @@ async function installLinkFixture(page, {
     };
     await installDashboardShell(page);
     await installDocumentRoutes(page);
-    await page.addInitScript(({ prefsKey, teamKey, savedPrefs, savedTeams, savedCapsules }) => {
+    await page.addInitScript(({ prefsKey, teamKey, savedPrefs, savedTeams, savedCapsules, strictScope, statsRefresh }) => {
+        window.__shareManualStatsRefresh = statsRefresh;
+        window.__shareManualStrictScope = strictScope;
         if (window.sessionStorage.getItem('share_link_fixture_seeded')) return;
         window.sessionStorage.setItem('share_link_fixture_seeded', 'true');
         window.localStorage.setItem(prefsKey, JSON.stringify(savedPrefs));
         if (savedTeams) window.localStorage.setItem(teamKey, JSON.stringify(savedTeams));
         Object.entries(savedCapsules || {}).forEach(([key, value]) => window.sessionStorage.setItem(key, JSON.stringify(value)));
-    }, { prefsKey: PREFS_KEY, teamKey: TEAM_SELECTION_KEY, savedPrefs: { selectedView: 'eng', planningLayout: 'list', selectedSprint: 41, sprintName: 'Sprint 41', activeGroupId: 'grp-a', ...prefs }, savedTeams: teamSelection, savedCapsules: capsules });
+    }, { prefsKey: PREFS_KEY, teamKey: TEAM_SELECTION_KEY, savedPrefs: { selectedView: 'eng', planningLayout: 'list', selectedSprint: 41, sprintName: 'Sprint 41', activeGroupId: 'grp-a', ...prefs }, savedTeams: teamSelection, savedCapsules: capsules, strictScope, statsRefresh });
     await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: dashboardJs }));
     await page.route('**/api/**', async (route) => {
         const request = route.request();
         const url = new URL(request.url());
-        const call = {
-            method: request.method(), url: request.url(), pathname: url.pathname, params: Object.fromEntries(url.searchParams.entries()),
-            body: request.method() === 'POST' ? request.postData() : null,
-        };
-        calls.push(call);
+        const call = requestCalls.get(request);
+        const cacheUrl = new URL(url);
+        cacheUrl.searchParams.delete('t'); // Existing request nonce is not part of the backend data-cache scope.
+        cacheUrl.searchParams.delete('refresh');
+        const cacheBody = request.postData() ? JSON.parse(request.postData()) : null;
+        const refresh = call.params.refresh === 'true' || cacheBody?.refresh === true;
+        if (cacheBody) delete cacheBody.refresh;
+        const cacheKey = `${request.method()} ${cacheUrl.pathname}${cacheUrl.search} ${JSON.stringify(cacheBody)}`;
+        call.cacheBypassed = refresh;
         const reply = (body, status = 200) => { call.completed = true; return json(route, body, status); };
+        const cachedReply = body => {
+            call.cacheHit = !refresh && Boolean(backendCache?.has(cacheKey));
+            if (backendCache) {
+                if (refresh || !backendCache.has(cacheKey)) backendCache.set(cacheKey, body);
+                body = backendCache.get(cacheKey);
+            }
+            return reply({ ...body, cached: call.cacheHit });
+        };
         if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
         if (url.pathname === '/api/auth/csrf') return reply({ csrfToken: 'csrf-token' });
         if (url.pathname === '/api/auth/status') return reply({ authMode: 'atlassian_oauth', authenticated: true, email: 'profile@example.com' });
@@ -3977,14 +4045,39 @@ async function installLinkFixture(page, {
             return reply({
                 jiraUrl: 'https://jira.example', capacityProject: '', authMode: 'atlassian_oauth', groupQueryTemplateEnabled: false,
                 settingsAdminOnly: false, userCanEditSettings: true, projectsConfigured: true, environmentConfigExists: true,
+                ...(matrix ? { boardAllWorkAvailable: true, sharedConfig: { projects: { selected: ['SYN'] }, board: { boardId: '42' } }, sprintCatalogSource: MATRIX_SOURCE } : {}),
                 epm: { version: 2, labelPrefix: '', scope: {}, projects: {} },
                 viewConfig: { workspaceId: 'workspace-test', viewConfigId: 'view-test', view: { epm: { version: 2, labelPrefix: '', scope: {}, projects: {} } } },
             });
         }
         if (url.pathname === '/api/version') return reply({ enabled: false });
         if (url.pathname === '/api/groups-config') return reply(groupsConfig);
-        if (url.pathname === '/api/projects/selected') return reply({ selected: [] });
-        if (url.pathname === '/api/sprints') return reply({ sprints: SPRINTS });
+        if (url.pathname === '/api/projects/selected') return reply({ selected: matrix ? ['SYN'] : [] });
+        if (url.pathname === '/api/sprints') return matrix ? cachedReply({ sprints: SPRINTS, cache: {
+            ...MATRIX_SOURCE, state: 'fresh', catalogVersion: '33333333-3333-4333-8333-333333333333',
+            validatedAt: new Date().toISOString(), refreshStatus: 'idle', refreshAttemptId: null, refreshStarted: false, refreshFailed: false,
+        } }) : reply({ sprints: SPRINTS });
+        if (matrix && url.pathname === '/api/eng/board') {
+            const scope = url.searchParams.get('scope');
+            call.cacheHit = !refresh && Boolean(backendCache?.has(cacheKey));
+            backendCache?.set(cacheKey, true);
+            const base = (sequence, frame) => ({ protocolVersion: 1, generationId: 'synthetic-generation', sequence, ...frame });
+            const frames = [
+                base(0, { type: 'start', scope, scopeVersion: 'synthetic-scope', scopeCohortDigest: 'a'.repeat(64),
+                    columns: [{ id: 'active', name: 'Active', color: '#597ef7', statusNames: ['In Progress'], terminal: false }] }),
+                base(1, { type: 'index', epics: [], membership: scope === 'sprint' ? 'candidate' : 'authoritative' }),
+                base(2, { type: 'column', columnId: 'active', epics: [], children: [], authoritative: true }),
+                base(3, { type: 'complete', outcome: 'success', authoritative: true, epicCount: 0, childCount: 0,
+                    diagnostics: { indexMs: 1, focusedCompleteMs: 2, durationMs: 3, jiraRequests: 1, jiraPages: 1, jiraRetries: 0,
+                        peakChildSearches: 1, cacheState: call.cacheHit ? 'hit' : 'miss', completeness: 'complete' } }),
+            ];
+            call.completed = true;
+            return route.fulfill({ status: 200, contentType: 'application/x-ndjson', body: frames.map(frame => JSON.stringify(frame)).join('\n') + '\n' });
+        }
+        if (matrix && /\/api\/eng\/sprints\/[^/]+\/review$/.test(url.pathname)) return cachedReply({ schemaVersion: 1,
+            sprintId: url.pathname.split('/')[4], schemaRevision: 0, columns: [], capabilities: { canRead: true, canSave: false } });
+        if (matrix && url.pathname.endsWith('/review/values/read')) return cachedReply({ cells: [], unavailableIssueIds: [] });
+        if (matrix && url.pathname === '/api/stats/excluded-capacity-source') return cachedReply({ data: { issues: [], epics: {}, sprints: SPRINTS } });
         if (url.pathname === '/api/stats/priority-weights-config') return reply({ weights: [], source: 'test' });
         if (url.pathname === '/api/eng/story-readiness') return reply({ schemaVersion: 1, complete: true, scope: {}, epics: [] });
         if (url.pathname === '/api/tasks-with-team-name') {
@@ -3994,9 +4087,9 @@ async function installLinkFixture(page, {
             const sprintId = Number(url.searchParams.get('sprint'));
             if (taskGate && !purpose) await taskGate.promise;
             if (taskAuthFailure && !purpose) return reply({ error: 'auth_required', loginUrl: '/login?reason=session_expired' }, 401);
-            if (project !== 'product' || purpose) return reply({ issues: [], epics: {}, epicsInScope: [], names: {} });
+            if (project !== 'product' || purpose) return matrix ? cachedReply({ issues: [], epics: {}, epicsInScope: [], names: {} }) : reply({ issues: [], epics: {}, epicsInScope: [], names: {} });
             const epic = epicFor(groupId, sprintId);
-            return reply({ issues: storiesFor(groupId, sprintId), epics: { [epic.key]: epic }, epicsInScope: [epic], names: {} });
+            return (matrix ? cachedReply : reply)({ issues: storiesFor(groupId, sprintId), epics: { [epic.key]: { ...epic, id: groupId === 'grp-b' ? '9200' : '9100' } }, epicsInScope: [{ ...epic, id: groupId === 'grp-b' ? '9200' : '9100' }], names: {} });
         }
         if (url.pathname === '/api/missing-info') return reply({ issues: [], epics: [], count: 0, epicCount: 0 });
         if (url.pathname === '/api/backlog-epics') return reply({ epics: [] });
@@ -4012,7 +4105,7 @@ async function installLinkFixture(page, {
 const READ_ONLY_POSTS = new Set(['/api/dependencies', '/api/performance/loads', '/api/auth/refresh']);
 const isReadOnlyPost = call => READ_ONLY_POSTS.has(call.pathname) || call.pathname.startsWith('/api/stats/') || /\/values\/read$/.test(call.pathname);
 const mutatingCalls = calls => calls.filter(call => call.method !== 'GET' && !isReadOnlyPost(call));
-const signature = call => `${call.method} ${call.pathname}?${Object.keys(call.params).sort().join('&')}${call.aborted ? ' aborted' : ''}`;
+const signature = call => `${call.method} ${call.pathname}?${[...new URL(call.url).searchParams.keys()].sort().join('&')}${call.aborted ? ' aborted' : ''}`;
 const apiSignatures = calls => calls.map(signature).sort();
 const taskCalls = calls => calls.filter(call => call.pathname === '/api/tasks-with-team-name' && !call.params.purpose);
 
@@ -4169,6 +4262,25 @@ test('the link overrides the staged auth and connection recovery capsules (V7)',
     await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_connection_recovery_v1'))).toBe(null);
     expect((await applyEvents(page))[0].result).toBe('success');
     expect(taskCalls(calls).every(call => call.params.groupId === 'grp-b' && call.params.sprint === '42')).toBe(true);
+});
+
+test('a same-scope Planning recovery capsule reuses its completed load and applies Teams facets and rows (V7, RF3)', async ({ page }) => {
+    const calls = await installLinkFixture(page, {
+        analytics: ANALYTICS_ENABLED, prefs: { showPlanning: true, planningLayout: 'table', selectedTeams: ['team-a2'] },
+        capsules: { jira_dashboard_auth_resume_v1: {
+            version: 1, capturedAt: Date.now(), principal: { workspaceId: 'workspace-test', viewConfigId: 'view-test' },
+            view: { selectedView: 'eng', activeGroupId: 'grp-a', selectedSprint: '41', engMode: 'planning', settingsOpen: false, settingsTab: 'teams' },
+            planning: { scopeKey: 'planning::41::grp-a', selectedTaskKeys: [], selectedTeams: ['team-a2'], selectionMode: 'manual' },
+        } },
+    });
+    await page.goto(`${appBaseUrl}/?v=1&mode=planning&group=grp-a&sprint=41&teams=team-a1&status=only:Blocked&rows=stories`, { waitUntil: 'domcontentloaded' });
+    await expect.poll(() => applyEvents(page).then(events => events.map(event => event.result)), { timeout: 25000 }).toEqual(['success']);
+    await expect(teamLabel(page)).toHaveText('Alpha One');
+    expect(await readPrefs(page)).toMatchObject({ selectedTeams: ['team-a1'], engStatusFilter: { only: ['Blocked'] } });
+    await expect(page.locator('[aria-label="Planning review rows"]').getByRole('radio', { name: 'Stories' })).toHaveAttribute('aria-checked', 'true');
+    await page.waitForLoadState('networkidle');
+    expect(taskCalls(calls)).toHaveLength(2);
+    expect(taskCalls(calls).every(call => call.params.groupId === 'grp-a' && call.params.sprint === '41')).toBe(true);
 });
 
 test('a recipient whose saved view is EPM ends in the link ENG view (V15, RF2)', async ({ page }) => {
@@ -4420,13 +4532,138 @@ test('Share is enabled in a source-only Statistics view, which loads no task lis
     await saved.close();
     await linked.close();
 });
+
+// Test-only initial-state probes above preseed the same state written by the real manual controls:
+// selectBoardScope -> setBoardStrictScope(scope), and commitSprintSelection's projectTrackRange ->
+// excludedCapacityForceRefreshRef.current = true. They change no effect, request or cache implementation.
+// AC4: explicit backend cache priming and persisted display-cache seeding, while the existing
+// catalog controller still validates its source before either manual navigation or a link can load.
+const MATRIX_SOURCE = { backend: 'postgresql', identity: 'sc1:synthetic-share', boardId: '42', browserContextId: 'bc1:synthetic-share' };
+const MATRIX_CASES = [
+    { name: 'Catch Up', mode: 'catch-up', flags: {}, endpoint: '/api/tasks-with-team-name' },
+    { name: 'Planning', mode: 'planning', flags: { showPlanning: true, planningLayout: 'table' }, endpoint: '/api/tasks-with-team-name' },
+    { name: 'ordinary Board', mode: 'board', flags: { showBoard: true }, endpoint: '/api/tasks-with-team-name' },
+    ...['component', 'all_work'].map(scope => ({ name: `strict Board ${scope}`, mode: 'board', query: `&scope=${scope}`,
+        flags: { showBoard: true }, endpoint: '/api/eng/board', strict: scope })),
+    { name: 'task-loading Statistics', mode: 'statistics', flags: { showStats: true, statsView: 'teams' }, endpoint: '/api/tasks-with-team-name' },
+    { name: 'source-only Statistics Project Track', mode: 'statistics', query: '&stats=projectTrack&from=42&to=42',
+        flags: { showStats: true, statsView: 'projectTrack', excludedCapacityStartSprintId: '42', excludedCapacityEndSprintId: '42' }, endpoint: '/api/stats/excluded-capacity-source', sourceOnly: true },
+];
+const normalizedBody = body => {
+    if (Array.isArray(body)) return body.map(normalizedBody).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+    if (body && typeof body === 'object') return Object.fromEntries(Object.keys(body).sort().map(key => [key, normalizedBody(body[key])]));
+    return body;
+};
+const scopedPostBodies = calls => calls.filter(call => call.method === 'POST' && call.pathname !== '/api/performance/loads')
+    .map(call => `${call.pathname} ${JSON.stringify(normalizedBody(call.body ? JSON.parse(call.body) : null))}`).sort();
+
+async function matrixRun(browser, scenario, { linked = false, backendCache = new Map(), sprintCatalog } = {}) {
+    const page = await browser.newPage();
+    const manualPrefs = { ...MANUAL_SCOPE_B42, ...scenario.flags };
+    // Match the raw session state the real selectBoardScope/commitSprintSelection controls write;
+    // it has no persisted preference key. Only the initial value changes in the synthetic bundle.
+    const calls = await installLinkFixture(page, { matrix: true, backendCache, analytics: ANALYTICS_ENABLED,
+        ...(linked ? {} : MANUAL_DEPARTMENT_B), strictScope: linked ? '' : scenario.strict || '', statsRefresh: !linked && Boolean(scenario.sourceOnly),
+        prefs: { ...(linked ? { selectedSprint: 40, sprintName: 'Sprint 40' } : manualPrefs), ...(sprintCatalog ? { sprintCatalog } : {}) },
+    });
+    await page.goto(`${appBaseUrl}${linked ? `/?v=1&mode=${scenario.mode}&group=grp-b&sprint=42${scenario.query || ''}` : '/'}`, { waitUntil: 'domcontentloaded' });
+    if (linked) await expect.poll(() => applyEvents(page).then(events => events.map(event => event.result))).toEqual(['success']);
+    await expect(engMode(page, scenario.mode === 'catch-up' ? 'Catch Up' : scenario.mode === 'statistics' ? 'Statistics' : scenario.mode === 'board' ? 'Board' : 'Planning')).toHaveAttribute('aria-checked', 'true');
+    await expect.poll(() => calls.some(call => call.pathname === scenario.endpoint && call.completed)).toBe(true);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(500);
+    return { page, calls, linked };
+}
+
+for (const scenario of MATRIX_CASES) {
+    for (const cache of ['cold', 'warm']) {
+        test(`AC4 ${scenario.name} ${cache}: link and manual API request multisets match`, async ({ browser }) => {
+            const backendCache = new Map();
+            let sprintCatalog;
+            if (cache === 'warm') {
+                const primed = await matrixRun(browser, scenario, { backendCache });
+                sprintCatalog = (await readPrefs(primed.page)).sprintCatalog;
+                expect(sprintCatalog).toMatchObject({ version: 2, identity: MATRIX_SOURCE.identity, catalogVersion: '33333333-3333-4333-8333-333333333333' });
+                expect(sprintCatalog.validatedAt).toBeTruthy();
+                await primed.page.close();
+            }
+            // Identical warmed snapshots; neither measured run can warm the other.
+            const link = await matrixRun(browser, scenario, { linked: true, backendCache: new Map(backendCache), sprintCatalog });
+            const manual = await matrixRun(browser, scenario, { backendCache: new Map(backendCache), sprintCatalog });
+            for (const run of [link, manual]) {
+                expect(mutatingCalls(run.calls)).toEqual([]);
+                expect(run.calls.filter(call => call.params.groupId === 'grp-a' || call.params.departmentId === 'grp-a'
+                    || call.params.sprint === '40' || call.params.sprintId === '40' || call.pathname.includes('/sprints/40/'))).toEqual([]);
+                for (const call of run.calls) {
+                    if (call.params.sprint) expect(call.params.sprint).toBe('42');
+                    if (call.params.sprintId) expect(call.params.sprintId).toBe('42');
+                    if (call.params.teamIds) expect(call.params.teamIds.split(',').every(id => ['team-b1', 'team-b2'].includes(id))).toBe(true);
+                }
+                const scoped = run.calls.filter(call => call.pathname === scenario.endpoint);
+                expect(scoped.every(call => call.cacheHit === (cache === 'warm' && !call.cacheBypassed))).toBe(true);
+                // Warm source-only initial navigation deliberately bypasses its data cache on both paths.
+                // The warmed catalog is still consumed and validated; never relabel a forced source miss as a hit.
+                const catalog = run.calls.find(call => call.pathname === '/api/sprints');
+                expect(catalog.cacheHit).toBe(cache === 'warm');
+                expect((await readPrefs(run.page)).sprintCatalog.identity).toBe(MATRIX_SOURCE.identity);
+                expect(await readPrefs(run.page)).toMatchObject({ activeGroupId: 'grp-b', selectedSprint: 42, ...scenario.flags });
+                if (scenario.strict) {
+                    expect(scoped).toHaveLength(1);
+                    expect(scoped[0].params).toMatchObject({ departmentId: 'grp-b', scope: scenario.strict });
+                    expect(scoped[0].params.sprintId).toBeUndefined();
+                    expect(taskCalls(run.calls)).toEqual([]);
+                    await expect(run.page.locator('.eng-board')).toHaveCount(1);
+                } else if (scenario.sourceOnly) {
+                    expect(taskCalls(run.calls)).toEqual([]);
+                    expect(scoped.every(call => call.cacheBypassed && !call.cacheHit)).toBe(true);
+                    expect(scoped.map(call => JSON.parse(call.body))).toEqual([{ sprintIds: ['42'], teamIds: ['team-b1', 'team-b2'], refresh: true }]);
+                    await expect(run.page.getByText('Excluded capacity fetch failed', { exact: false })).toHaveCount(0);
+                } else {
+                    expect(taskCalls(run.calls).every(call => call.params.groupId === 'grp-b' && call.params.sprint === '42')).toBe(true);
+                }
+                for (const call of run.calls.filter(call => call.pathname === '/api/dependencies')) {
+                    expect(JSON.parse(call.body).keys.every(key => key.startsWith('BET-'))).toBe(true);
+                }
+                if (scenario.mode === 'planning') {
+                    expect(reviewCalls(run.calls)).toHaveLength(1);
+                    const values = run.calls.filter(call => call.pathname === '/api/eng/sprints/42/review/values/read');
+                    expect(values.length).toBeGreaterThan(0);
+                    expect(values.every(call => JSON.parse(call.body).issueIds.every(id => id === '9200' || id.startsWith('BET-')))).toBe(true);
+                }
+            }
+            expect(apiSignatures(link.calls)).toEqual(apiSignatures(manual.calls));
+            expect(scopedPostBodies(link.calls)).toEqual(scopedPostBodies(manual.calls));
+            await link.page.close();
+            await manual.page.close();
+        });
+    }
+}
+
+test('AC4 request normalization preserves duplicate query names and aborted request entries', () => {
+    const call = { method: 'GET', pathname: '/api/synthetic-read', url: `${appBaseUrl}/api/synthetic-read?team=one&team=two&sprint=42`, aborted: true };
+    expect(apiSignatures([call, call])).toEqual(['GET /api/synthetic-read?sprint&team&team aborted', 'GET /api/synthetic-read?sprint&team&team aborted']);
+});
+
+test('AC4 logger counts two real aborted requests to the same URL separately', async ({ page }) => {
+    const calls = await installLinkFixture(page);
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('networkidle');
+    await page.route('**/api/synthetic-read?*', route => route.abort());
+    await page.evaluate(async () => {
+        const url = '/api/synthetic-read?team=one&team=two&sprint=42';
+        await Promise.all([fetch(url).catch(() => {}), fetch(url).catch(() => {})]);
+    });
+    const aborted = () => calls.filter(call => call.pathname === '/api/synthetic-read');
+    await expect.poll(() => aborted().filter(call => call.aborted).length).toBe(2);
+    expect(apiSignatures(aborted())).toEqual(['GET /api/synthetic-read?sprint&team&team aborted', 'GET /api/synthetic-read?sprint&team&team aborted']);
+});
 ```
 
 - [ ] **Step 2: Run it and confirm it passes**
 
 Run: `npx playwright test tests/ui/shareable_view_links.spec.js --browser=chromium 2>&1 | grep -E '^ +[0-9]+\) |^ +[0-9]+ (passed|failed|flaky|skipped)'`
 
-Expected: `24 passed` (about one minute) and no numbered failure line. The spec needs no running server and no `JEP_TEST_PYTHON`: every request is answered by the fixture. If one test fails, read its error context under `test-results/` and fix the cause in the code under test, never in the assertion; if the cause is in a sibling task's module, report it against that task.
+Expected: `41 passed` (about one minute) and no numbered failure line. The spec needs no running server and no `JEP_TEST_PYTHON`: every request is answered by the fixture. If one test fails, read its error context under `test-results/` and fix the cause in the code under test, never in the assertion; if the cause is in a sibling task's module, report it against that task.
 
 - [ ] **Step 3: Negative control 1: no hold**
 
@@ -4611,7 +4848,7 @@ Run:
 git status --short
 npx playwright test tests/ui/shareable_view_links.spec.js --browser=chromium 2>&1 | grep -E '^ +[0-9]+\) |^ +[0-9]+ (passed|failed|flaky|skipped)'
 ```
-Expected: `git status --short` prints exactly `?? tests/ui/shareable_view_links.spec.js` (every negative control was reverted); the spec reports `24 passed`.
+Expected: `git status --short` prints exactly `?? tests/ui/shareable_view_links.spec.js` (every negative control was reverted); the spec reports `41 passed`.
 
 - [ ] **Step 12: Commit**
 
@@ -4626,7 +4863,7 @@ Read the results: `git show --stat HEAD` lists exactly one path, `tests/ui/share
 
 - [ ] **Step 13: Checkpoint (stop here)**
 
-Report to the operator: the SHAs of Tasks 11a, 11b and 11c, the files of each, the results (the Node counts, `24 passed` for the spec, the passed count of Task 11b's regression run, the lint warning count, and that the eight negative controls each failed the intended tests), the budget moves (`dashboard.jsx` plus 35 lines in Task 11b, 7,505 to 7,540 on the validated base) and any deviation from this plan. Then ask the operator to validate the live behavior by hand and stop until they confirm. The Share control does not exist before Task 12, so the check uses a typed link:
+Report to the operator: the SHAs of Tasks 11a, 11b and 11c, the files of each, the results (the Node counts, `41 passed` for the spec, the passed count of Task 11b's regression run, the lint warning count, and that the eight negative controls each failed the intended tests), the budget moves (`dashboard.jsx` plus 35 lines in Task 11b, 7,505 to 7,540 on the validated base) and any deviation from this plan. Then ask the operator to validate the live behavior by hand and stop until they confirm. The Share control does not exist before Task 12, so the check uses a typed link:
 1. In a signed-in dashboard open the browser's network panel and note one Department id (`/api/groups-config`) and one Sprint id (`/api/sprints`); ids only.
 2. Open `<origin>/?v=1&mode=catch-up&group=<id>&sprint=<id>` in a new tab. The address bar shows plain `/` as soon as the page paints; the view lands on that Department and Sprint, and the first task request in the network panel already carries that Department and Sprint (the saved scope never loads).
 3. Add `&find=<text>` and `&status=only:<one status name>`: the search box shows the text and the status filter is applied. Try `&mode=planning` and `&mode=board`.

@@ -190,3 +190,76 @@ test('the accepted mock and the component render the same Share markup and copy'
     const noticeRule = (css) => css.match(/\[data-share-view\] > \.server-unavailable-banner \{([\s\S]*?)\}/)[1].replace(/\s+/g, ' ').trim();
     assert.equal(noticeRule(mock), noticeRule(read('frontend/src/styles/shared/controls.css')));
 });
+
+// Exercise the real component's asynchronous closures with the existing hook runtime.
+function deferredControl() {
+    const { createRuntime } = require('./react_hook_harness');
+    const runtime = createRuntime();
+    const source = esbuild.buildSync({ entryPoints: [path.join(repoRoot, 'frontend/src/shareView/ShareViewButton.jsx')], bundle: true,
+        write: false, format: 'cjs', platform: 'node', external: ['react'] }).outputFiles[0].text;
+    const module = { exports: {} };
+    new Function('module', 'exports', 'require', source)(module, module.exports, name => name === 'react' ? { ...React, ...runtime.react } : require(name));
+    const pending = [];
+    const oldWindow = globalThis.window;
+    const oldNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+    globalThis.window = { clearTimeout() {}, setTimeout() { return 1; } };
+    Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { clipboard: { writeText: url => new Promise((resolve, reject) => pending.push({ url, resolve, reject })) } } });
+    let props = { surface: 'main', activeControlSurface: 'main', sourceSurface: 'catch_up', share: fakeShare({ captureShareUrl: () => ({ ok: true, url: 'https://example.test/?v=1&find=first', dropped: [] }) }) };
+    return {
+        pending,
+        render(patch = {}) { props = { ...props, ...patch }; runtime.begin(); const tree = module.exports.default(props); runtime.commit(); return tree; },
+        unmount: () => runtime.unmount(),
+        restore() { globalThis.window = oldWindow; if (oldNavigator) Object.defineProperty(globalThis, 'navigator', oldNavigator); else delete globalThis.navigator; },
+    };
+}
+const controlInput = tree => tree.props.children.at(-1)?.props.children[0].props.children[1];
+
+test('a deferred clipboard rejection cannot resurrect feedback after its surface hides and returns', async () => {
+    const rig = deferredControl();
+    try {
+        const click = rig.render().props.children[0].props.onClick();
+        assert.equal(rig.pending.length, 1, 'capture and clipboard invocation stay synchronous');
+        rig.render({ activeControlSurface: 'compact' });
+        rig.pending[0].reject(new Error('denied'));
+        await click;
+        assert.equal(controlInput(rig.render({ activeControlSurface: 'main' })), undefined);
+    } finally { rig.unmount(); rig.restore(); }
+});
+
+test('a newer copy supersedes older clipboard completions in either order', async () => {
+    for (const olderSucceeds of [false, true]) {
+        const rig = deferredControl();
+        try {
+            const first = rig.render().props.children[0].props.onClick();
+            const second = rig.render({ share: fakeShare({ captureShareUrl: () => ({ ok: true, url: 'https://example.test/?v=1&find=second', dropped: [] }) }) }).props.children[0].props.onClick();
+            rig.pending[1].reject(new Error('second denied'));
+            await second;
+            if (olderSucceeds) rig.pending[0].resolve(); else rig.pending[0].reject(new Error('first denied'));
+            await first;
+            assert.equal(controlInput(rig.render()).props.value, 'https://example.test/?v=1&find=second');
+        } finally { rig.unmount(); rig.restore(); }
+    }
+});
+
+test('an unmounted copy ignores a deferred clipboard completion', async () => {
+    const rig = deferredControl();
+    try {
+        const click = rig.render().props.children[0].props.onClick();
+        rig.unmount();
+        rig.pending[0].reject(new Error('denied'));
+        await click;
+        assert.equal(controlInput(rig.render()), undefined);
+    } finally { rig.restore(); }
+});
+
+test('a new refused copy clears the previous copied indicator when it supersedes its timer', async () => {
+    const rig = deferredControl();
+    try {
+        const copied = rig.render().props.children[0].props.onClick();
+        rig.pending[0].resolve();
+        await copied;
+        assert.equal(rig.render().props.children[1].props.children, 'Link copied');
+        await rig.render({ share: fakeShare({ captureShareUrl: () => ({ ok: false, reason: 'too_long' }) }) }).props.children[0].props.onClick();
+        assert.equal(rig.render().props.children[1].props.children, '');
+    } finally { rig.unmount(); rig.restore(); }
+});

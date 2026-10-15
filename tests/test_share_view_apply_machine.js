@@ -201,7 +201,7 @@ test('Stage B past its budget is skipped, reports mode and filters, and still re
     assert.equal(sim.state.stage, 'C');
 });
 
-test('Stage C waits until the scope is loaded: a newer epoch, idle lanes, fetched tasks, the right Sprint and a hydrated Team selection', () => {
+test('a changed scope waits for a newer epoch, idle lanes, fetched tasks, the right Sprint and hydrated Teams', () => {
     for (const blocker of [
         { epoch: 0 }, { lanesLoading: true }, { tasksFetched: false }, { lastLoadedMatches: false }, { teamsHydrated: false },
     ]) {
@@ -211,7 +211,7 @@ test('Stage C waits until the scope is loaded: a newer epoch, idle lanes, fetche
     }
 });
 
-test('the epoch must be newer than the one seen when Stage A ran', () => {
+test('a changed scope requires an epoch newer than the one seen when Stage A ran', () => {
     const sim = simulate();
     sim.step({ commit: 1, c: { epoch: 3 } });
     sim.step({ commit: 2, scope: { equal: true }, c: { epoch: 3 } });
@@ -229,6 +229,17 @@ test('Stage C waits for the hold to be released after Stage B, then skips silent
     assert.equal(sim.state.stage, 'D', 'Teams and facets are not applied where no task list loads');
     assert.deepEqual(sim.state.skipped, [], 'a view that never loads tasks owes nothing');
     assert.deepEqual(sim.step({ commit: 4, scope: { equal: true }, d: { cohortSettled: true } }), [{ type: 'run', stage: 'D' }]);
+});
+
+test('same-scope recovery reuses an equal completed epoch while retaining every readiness check', () => {
+    for (const blocker of [null, { epoch: 2 }, { lanesLoading: true }, { tasksFetched: false }, { lastLoadedMatches: false }, { teamsHydrated: false }, { scopeEqual: false }]) {
+        const sim = simulate();
+        sim.step({ commit: 1, scope: { equal: true }, c: { ...LOADED, epoch: 3 } });
+        sim.step({ commit: 2, scope: { equal: true } });
+        sim.step({ commit: 3, scope: { equal: true }, c: { ...LOADED, epoch: 3, tasksFetched: false } });
+        const actions = sim.step({ commit: 4, scope: { equal: blocker?.scopeEqual !== false }, c: { ...LOADED, epoch: 3, ...blocker } });
+        assert.deepEqual(actions, blocker ? [] : [{ type: 'run', stage: 'C', part: 'teams' }], JSON.stringify(blocker));
+    }
 });
 
 test('Stage C applies Teams, then facets one commit later', () => {
@@ -472,7 +483,7 @@ for (const offset of [-1, 0, 1]) {
         for (const teams of [false, true]) {
             const sim = simulate();
             throughB(sim, { plan: { c: { teams, facets: true }, d: true } });
-            assert.deepEqual(sim.step({ commit: 4, c: LOADED }, APPLY_STAGE_BUDGET_MS.C + offset), offset < 0
+            assert.deepEqual(sim.step({ commit: 4, scope: { equal: true }, c: LOADED }, APPLY_STAGE_BUDGET_MS.C + offset), offset < 0
                 ? [{ type: 'run', stage: 'C', part: teams ? 'teams' : 'facets' }] : []);
             assert.deepEqual(sim.state.skipped, offset < 0 ? [] : [...(teams ? ['teams'] : []), 'filters']);
             if (offset >= 0) assert.equal(sim.state.stage, 'D');
@@ -482,8 +493,8 @@ for (const offset of [-1, 0, 1]) {
     test(`Stage C facets readiness ${boundary} its deadline never reports Teams already applied`, () => {
         const sim = simulate();
         throughB(sim);
-        assert.deepEqual(sim.step({ commit: 4, c: LOADED }, APPLY_STAGE_BUDGET_MS.C - 2), [{ type: 'run', stage: 'C', part: 'teams' }]);
-        assert.deepEqual(sim.step({ commit: 5, c: LOADED }, 2 + offset), offset < 0
+        assert.deepEqual(sim.step({ commit: 4, scope: { equal: true }, c: LOADED }, APPLY_STAGE_BUDGET_MS.C - 2), [{ type: 'run', stage: 'C', part: 'teams' }]);
+        assert.deepEqual(sim.step({ commit: 5, scope: { equal: true }, c: LOADED }, 2 + offset), offset < 0
             ? [{ type: 'run', stage: 'C', part: 'facets' }] : []);
         assert.deepEqual(sim.state.skipped, offset < 0 ? [] : ['filters']);
         assert.equal(sim.state.stage, 'D');

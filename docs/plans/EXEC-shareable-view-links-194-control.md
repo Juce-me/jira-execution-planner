@@ -523,6 +523,8 @@ Replace `pending` with the date of the operator's acceptance in chat, quoting th
 - Not committed (`tmp/` is gitignored): `tmp/share-view-mock/generate.mjs`, `tmp/share-view-mock/shots.mjs` and their PNGs
 - Not touched: `frontend/src/eng/EngControls.jsx`, `frontend/src/components/*`, `frontend/src/ui/IconButton.jsx`, `frontend/src/styles/eng/loading.css`, `frontend/src/styles/eng/controls.css` (the global foundation hover the compact control inherits), `docs/design-system.md` and `tests/design_system_baseline.json` (no kind, class, write or ratchet value is added; Step 10 proves it), every registered owner module under `scenario/`, `settings/` and `epm/`
 
+**Approved Task 14 asynchronous feedback correction (2026-10-15):** a copy attempt captures and invokes the clipboard synchronously. Its completion may update local feedback only while its generation is current, its surface is active and the component is mounted. Surface changes, unmount and a newer click invalidate older completions; both success and failure still report only the existing fixed enums. No new analytics event or parameter is added: feedback cleanup remains covered by the existing notice/fallback No-Event allowlist. Pure component deferred rejection, out-of-order success/failure and unmount tests plus mounted hide/return and out-of-order rejection cases below pin this lifecycle.
+
 **Interfaces:**
 - Consumes (Task 11, binding): `shareView = { notice: null | { kind: 'dropped' | 'partial' | 'invalid' | 'newer', categories: string[] }, dismissNotice(), captureShareUrl() -> { ok: true, url, dropped: string[] } | { ok: false, reason: 'disabled' | 'too_long' | 'invalid_state' }, shareDisabled: boolean, applyTerminal: boolean }`.
 - Consumes (Task 10): `trackShareViewAction({ workflowAction, result, sourceSurface })`, imported as a module function (the same pattern as `trackBoardSmallScreenSupportRequest` in `EngBoardView.jsx`).
@@ -1072,6 +1074,79 @@ test('the accepted mock and the component render the same Share markup and copy'
     const noticeRule = (css) => css.match(/\[data-share-view\] > \.server-unavailable-banner \{([\s\S]*?)\}/)[1].replace(/\s+/g, ' ').trim();
     assert.equal(noticeRule(mock), noticeRule(read('frontend/src/styles/shared/controls.css')));
 });
+
+// Exercise the real component's asynchronous closures with the existing hook runtime.
+function deferredControl() {
+    const { createRuntime } = require('./react_hook_harness');
+    const runtime = createRuntime();
+    const source = esbuild.buildSync({ entryPoints: [path.join(repoRoot, 'frontend/src/shareView/ShareViewButton.jsx')], bundle: true,
+        write: false, format: 'cjs', platform: 'node', external: ['react'] }).outputFiles[0].text;
+    const module = { exports: {} };
+    new Function('module', 'exports', 'require', source)(module, module.exports, name => name === 'react' ? { ...React, ...runtime.react } : require(name));
+    const pending = [];
+    const oldWindow = globalThis.window;
+    const oldNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+    globalThis.window = { clearTimeout() {}, setTimeout() { return 1; } };
+    Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { clipboard: { writeText: url => new Promise((resolve, reject) => pending.push({ url, resolve, reject })) } } });
+    let props = { surface: 'main', activeControlSurface: 'main', sourceSurface: 'catch_up', share: fakeShare({ captureShareUrl: () => ({ ok: true, url: 'https://example.test/?v=1&find=first', dropped: [] }) }) };
+    return {
+        pending,
+        render(patch = {}) { props = { ...props, ...patch }; runtime.begin(); const tree = module.exports.default(props); runtime.commit(); return tree; },
+        unmount: () => runtime.unmount(),
+        restore() { globalThis.window = oldWindow; if (oldNavigator) Object.defineProperty(globalThis, 'navigator', oldNavigator); else delete globalThis.navigator; },
+    };
+}
+const controlInput = tree => tree.props.children.at(-1)?.props.children[0].props.children[1];
+
+test('a deferred clipboard rejection cannot resurrect feedback after its surface hides and returns', async () => {
+    const rig = deferredControl();
+    try {
+        const click = rig.render().props.children[0].props.onClick();
+        assert.equal(rig.pending.length, 1, 'capture and clipboard invocation stay synchronous');
+        rig.render({ activeControlSurface: 'compact' });
+        rig.pending[0].reject(new Error('denied'));
+        await click;
+        assert.equal(controlInput(rig.render({ activeControlSurface: 'main' })), undefined);
+    } finally { rig.unmount(); rig.restore(); }
+});
+
+test('a newer copy supersedes older clipboard completions in either order', async () => {
+    for (const olderSucceeds of [false, true]) {
+        const rig = deferredControl();
+        try {
+            const first = rig.render().props.children[0].props.onClick();
+            const second = rig.render({ share: fakeShare({ captureShareUrl: () => ({ ok: true, url: 'https://example.test/?v=1&find=second', dropped: [] }) }) }).props.children[0].props.onClick();
+            rig.pending[1].reject(new Error('second denied'));
+            await second;
+            if (olderSucceeds) rig.pending[0].resolve(); else rig.pending[0].reject(new Error('first denied'));
+            await first;
+            assert.equal(controlInput(rig.render()).props.value, 'https://example.test/?v=1&find=second');
+        } finally { rig.unmount(); rig.restore(); }
+    }
+});
+
+test('an unmounted copy ignores a deferred clipboard completion', async () => {
+    const rig = deferredControl();
+    try {
+        const click = rig.render().props.children[0].props.onClick();
+        rig.unmount();
+        rig.pending[0].reject(new Error('denied'));
+        await click;
+        assert.equal(controlInput(rig.render()), undefined);
+    } finally { rig.restore(); }
+});
+
+test('a new refused copy clears the previous copied indicator when it supersedes its timer', async () => {
+    const rig = deferredControl();
+    try {
+        const copied = rig.render().props.children[0].props.onClick();
+        rig.pending[0].resolve();
+        await copied;
+        assert.equal(rig.render().props.children[1].props.children, 'Link copied');
+        await rig.render({ share: fakeShare({ captureShareUrl: () => ({ ok: false, reason: 'too_long' }) }) }).props.children[0].props.onClick();
+        assert.equal(rig.render().props.children[1].props.children, '');
+    } finally { rig.unmount(); rig.restore(); }
+});
 ```
 
 Create `tests/ui/share_view_control_harness.jsx` (the real component on both header surfaces inside a structural replica of the real header, so the real cascade applies; a spec drives its fake `share` through `window.__shareHarness`):
@@ -1217,10 +1292,12 @@ test.beforeAll(() => {
 async function openHarness(page, { width = 1440, height = 900, clipboard = 'ok', transitions = false } = {}) {
     await page.addInitScript((mode) => {
         window.__copied = [];
+        window.__clipboardPending = [];
         const clipboardValue = {
             ok: { writeText: async (text) => { window.__copied.push(text); } },
             rejected: { writeText: () => Promise.reject(new DOMException('denied', 'NotAllowedError')) },
             missing: undefined,
+            deferred: { writeText: text => new Promise((resolve, reject) => window.__clipboardPending.push({ text, resolve, reject })) },
         }[mode];
         Object.defineProperty(navigator, 'clipboard', { configurable: true, value: clipboardValue });
     }, clipboard);
@@ -1449,6 +1526,31 @@ test.describe('Share control: apply notice', () => {
         await expect(shareNotice(page)).toHaveCount(0);
     });
 
+    test('a deferred clipboard rejection stays cleared after the active surface hides and returns', async ({ page }) => {
+        await openHarness(page, { clipboard: 'deferred' });
+        await shareButton(page, 'main').click();
+        expect(await page.evaluate(() => window.__clipboardPending.length)).toBe(1);
+        await setHarness(page, { active: 'compact' });
+        await page.evaluate(() => window.__clipboardPending[0].reject(new Error('denied')));
+        await setHarness(page, { active: 'main' });
+        await expect(shareNotice(page)).toHaveCount(0);
+        expect((await shareEvents(page)).map(event => event.result)).toEqual(['failure']);
+    });
+
+    test('an older clipboard rejection cannot replace the latest fallback URL', async ({ page }) => {
+        await openHarness(page, { clipboard: 'deferred' });
+        await shareButton(page, 'main').click();
+        await setHarness(page, { capture: { ok: true, url: `${SYNTHETIC_URL}&find=latest`, dropped: [] } });
+        await shareButton(page, 'main').click();
+        await page.evaluate(() => window.__clipboardPending[1].reject(new Error('latest denied')));
+        await expect(page.getByRole('textbox', { name: 'Link to copy' })).toHaveValue(`${SYNTHETIC_URL}&find=latest`);
+        await page.evaluate(() => window.__clipboardPending[0].reject(new Error('older denied')));
+        await expect(page.getByRole('textbox', { name: 'Link to copy' })).toHaveValue(`${SYNTHETIC_URL}&find=latest`);
+        const events = await shareEvents(page);
+        expect(events).toHaveLength(2);
+        expect(JSON.stringify(events)).not.toContain(SYNTHETIC_URL);
+    });
+
     // Element-level geometry (MRT020): the painted text, the field and the Dismiss button, not only the container box.
     for (const width of [1440, 1028, 760, 390, 375]) {
         for (const surface of ['main', 'compact']) {
@@ -1612,6 +1714,7 @@ test.describe('Share control: painted glyph ink', () => {
 async function installClipboard(page, mode = 'ok') {
     await page.addInitScript((value) => {
         window.__copied = [];
+        window.__clipboardPending = [];
         Object.defineProperty(navigator, 'clipboard', {
             configurable: true,
             value: value === 'missing' ? undefined : { writeText: async (text) => { window.__copied.push(text); } },
@@ -2053,12 +2156,35 @@ export default function ShareViewButton({ surface, share, sourceSurface, activeC
     const timerRef = React.useRef(null);
     const active = surface === activeControlSurface;
 
-    React.useEffect(() => () => window.clearTimeout(timerRef.current), []);
-    React.useEffect(() => { if (!active) setLocal(null); }, [active]);
+    const attemptRef = React.useRef({ generation: 0, active, mounted: true });
+    if (attemptRef.current.active !== active) {
+        attemptRef.current.active = active;
+        attemptRef.current.generation += 1;
+    }
+    React.useEffect(() => {
+        attemptRef.current.mounted = true;
+        return () => {
+            attemptRef.current.mounted = false;
+            attemptRef.current.generation += 1;
+            window.clearTimeout(timerRef.current);
+        };
+    }, []);
+    React.useEffect(() => {
+        if (!active) {
+            window.clearTimeout(timerRef.current);
+            setCopied(false);
+            setLocal(null);
+        }
+    }, [active]);
 
     const report = (result) => trackShareViewAction({ workflowAction: 'copy_link', result, sourceSurface });
     const copy = async () => {
-        if (share.shareDisabled) return;
+        if (share.shareDisabled || !active) return;
+        const generation = ++attemptRef.current.generation;
+        window.clearTimeout(timerRef.current);
+        setCopied(false);
+        const isCurrent = () => attemptRef.current.mounted && attemptRef.current.active
+            && attemptRef.current.generation === generation;
         const captured = share.captureShareUrl();
         if (!captured.ok) {
             if (captured.reason === 'disabled') return;
@@ -2069,17 +2195,19 @@ export default function ShareViewButton({ surface, share, sourceSurface, activeC
         try {
             await navigator.clipboard.writeText(captured.url);
         } catch {
+            report('failure');
+            if (!isCurrent()) return;
             setCopied(false);
             setLocal({ message: shareViewCopyMessage({ type: 'manual', dropped: captured.dropped }), url: captured.url });
-            report('failure');
             return;
         }
+        report('success');
+        if (!isCurrent()) return;
         window.clearTimeout(timerRef.current);
-        timerRef.current = window.setTimeout(() => setCopied(false), COPIED_MS);
+        timerRef.current = window.setTimeout(() => { if (isCurrent()) setCopied(false); }, COPIED_MS);
         setCopied(true);
         const message = shareViewCopyMessage({ type: 'copied', dropped: captured.dropped });
         setLocal(message ? { message } : null);
-        report('success');
     };
 
     const notice = local || (share.notice ? { message: shareViewNoticeMessage(share.notice) } : null);
@@ -2262,7 +2390,7 @@ fnm exec --using 20 node --test tests/test_share_view_control.js 2>&1 | grep -E 
 npx playwright test tests/ui/share_view_control.spec.js --browser=chromium --workers=3 2>&1 | grep -E '✘|passed|failed|skipped'
 npx playwright test tests/ui/codebase_structure_smoke.spec.js tests/ui/design_system_hover_eng.spec.js -g 'multiple groups keep the main controls|open header dropdown toggles filter groups|Task9 freshness reserved copy|framed header icon hover follows the button shape' --browser=chromium --workers=2 2>&1 | grep -E '✘|passed|failed'
 ```
-Expected: `# tests 5`, `# pass 5`, `# fail 0`; the spec reports `39 passed` and `1 skipped` (the painted-ink case runs only headed, Step 11); the five UI cases pass (`open header dropdown toggles...`, `multiple groups keep the main controls...`, the two `Task9 freshness reserved copy...` cases, which walk nine widths and three search states and require every `.header-icon-button` to be exactly 38 by 38, and `framed header icon hover follows the button shape...`, which now measures four framed icons in the real app). The harness cases build the stylesheet from source; the app cases and the smoke cases use the `frontend/dist` that `npm run build` just wrote, so they fail on a stale build. The app cases exercise Task 11's real hook: if one fails because the hook disagrees with the binding (`shareDisabled` while the groups load, or a `dropped` notice for an unresolved group), report it against Task 11 instead of patching it here.
+Expected after Task 14: `# tests 9`, `# pass 9`, `# fail 0`; the spec reports `41 passed` and `1 skipped` (the painted-ink case runs only headed, Step 11); the five UI cases pass (`open header dropdown toggles...`, `multiple groups keep the main controls...`, the two `Task9 freshness reserved copy...` cases, which walk nine widths and three search states and require every `.header-icon-button` to be exactly 38 by 38, and `framed header icon hover follows the button shape...`, which now measures four framed icons in the real app). The harness cases build the stylesheet from source; the app cases and the smoke cases use the `frontend/dist` that `npm run build` just wrote, so they fail on a stale build. The app cases exercise Task 11's real hook: if one fails because the hook disagrees with the binding (`shareDisabled` while the groups load, or a `dropped` notice for an unresolved group), report it against Task 11 instead of patching it here.
 
 - [ ] **Step 9: Move the manifest pins (same commit)**
 
@@ -2318,7 +2446,7 @@ npx playwright test tests/ui/codebase_structure_smoke.spec.js tests/ui/planning_
 npx playwright test tests/ui/share_view_control.spec.js --browser=firefox --workers=2 2>&1 | grep -E '^ +[0-9]+ (passed|failed|flaky|skipped)|✘'
 npx playwright test tests/ui/share_view_control.spec.js --browser=webkit --workers=2 2>&1 | grep -E '^ +[0-9]+ (passed|failed|flaky|skipped)|✘'
 ```
-Expected: no `not ok`, `# tests` equal to the previous task's total plus 5; the four design-system files report `# fail 0` (60 tests on `4247a3b1`); the baseline generator prints `"offenders": 19` and `"classHooks": 40` and the `git diff --stat` after it prints nothing (no allowance, registry entry or baseline value changes); `OK` for both Python modules; the lint reports `0 errors`, `104 warnings` (105 before this task: Task 11b's transient `'shareView' is assigned a value but never used` is cleared because `renderShareViewControl` now reads it; the new files add none; the ratchet is 106), `owner budgets: 0 problems` and an `owner budgets: 80 modules; problems: N` line with the same N as Task 0's baseline (4 on the current main; this task adds none); the Chromium UI set, which now includes the three design-system specs (404 passed and 2 skipped on `4247a3b1`), passes with no skipped header case (`onboarding_tour.spec.js` `offscreen target scrolls once on step entry...` is timing-sensitive under four workers: if it is the only failure, run it alone with `--repeat-each=3` before treating it as a regression; it passed 3 of 3 alone, at the base and with Share. On a machine busy with other test runs, `open header dropdown toggles filter groups teams and sprints` (about 19 s alone against the 30 s limit) and some Firefox and WebKit cases can time out as well: re-run each failure alone with `--workers=1` before treating it as a regression); Firefox and WebKit report `39 passed` and `1 skipped`. In a headless WebKit run, the two `Task9 freshness reserved copy...` smoke cases already fail on the base, at `bd5b2bc2` and on the current main, with or without Share (document width 782 px against 781 and 755 px at several widths, identical sets of failing assertions), so compare against that baseline instead of running them as a gate here.
+Expected: no `not ok`, `# tests` equal to the previous task's total plus 9 after the Task 14 deferred-completion regressions; the four design-system files report `# fail 0` (60 tests on `4247a3b1`); the baseline generator prints `"offenders": 19` and `"classHooks": 40` and the `git diff --stat` after it prints nothing (no allowance, registry entry or baseline value changes); `OK` for both Python modules; the lint reports `0 errors`, `104 warnings` (105 before this task: Task 11b's transient `'shareView' is assigned a value but never used` is cleared because `renderShareViewControl` now reads it; the new files add none; the ratchet is 106), `owner budgets: 0 problems` and an `owner budgets: 80 modules; problems: N` line with the same N as Task 0's baseline (4 on the current main; this task adds none); the Chromium UI set, which now includes the three design-system specs (404 passed and 2 skipped on `4247a3b1`), passes with no skipped header case (`onboarding_tour.spec.js` `offscreen target scrolls once on step entry...` is timing-sensitive under four workers: if it is the only failure, run it alone with `--repeat-each=3` before treating it as a regression; it passed 3 of 3 alone, at the base and with Share. On a machine busy with other test runs, `open header dropdown toggles filter groups teams and sprints` (about 19 s alone against the 30 s limit) and some Firefox and WebKit cases can time out as well: re-run each failure alone with `--workers=1` before treating it as a regression); Firefox and WebKit report `41 passed` and `1 skipped`. In a headless WebKit run, the two `Task9 freshness reserved copy...` smoke cases already fail on the base, at `bd5b2bc2` and on the current main, with or without Share (document width 782 px against 781 and 755 px at several widths, identical sets of failing assertions), so compare against that baseline instead of running them as a gate here.
 
 - [ ] **Step 11: Run the painted-ink check in headed Firefox and WebKit at 2x**
 

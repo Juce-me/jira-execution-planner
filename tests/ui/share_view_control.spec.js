@@ -43,10 +43,12 @@ test.beforeAll(() => {
 async function openHarness(page, { width = 1440, height = 900, clipboard = 'ok', transitions = false } = {}) {
     await page.addInitScript((mode) => {
         window.__copied = [];
+        window.__clipboardPending = [];
         const clipboardValue = {
             ok: { writeText: async (text) => { window.__copied.push(text); } },
             rejected: { writeText: () => Promise.reject(new DOMException('denied', 'NotAllowedError')) },
             missing: undefined,
+            deferred: { writeText: text => new Promise((resolve, reject) => window.__clipboardPending.push({ text, resolve, reject })) },
         }[mode];
         Object.defineProperty(navigator, 'clipboard', { configurable: true, value: clipboardValue });
     }, clipboard);
@@ -275,6 +277,31 @@ test.describe('Share control: apply notice', () => {
         await expect(shareNotice(page)).toHaveCount(0);
     });
 
+    test('a deferred clipboard rejection stays cleared after the active surface hides and returns', async ({ page }) => {
+        await openHarness(page, { clipboard: 'deferred' });
+        await shareButton(page, 'main').click();
+        expect(await page.evaluate(() => window.__clipboardPending.length)).toBe(1);
+        await setHarness(page, { active: 'compact' });
+        await page.evaluate(() => window.__clipboardPending[0].reject(new Error('denied')));
+        await setHarness(page, { active: 'main' });
+        await expect(shareNotice(page)).toHaveCount(0);
+        expect((await shareEvents(page)).map(event => event.result)).toEqual(['failure']);
+    });
+
+    test('an older clipboard rejection cannot replace the latest fallback URL', async ({ page }) => {
+        await openHarness(page, { clipboard: 'deferred' });
+        await shareButton(page, 'main').click();
+        await setHarness(page, { capture: { ok: true, url: `${SYNTHETIC_URL}&find=latest`, dropped: [] } });
+        await shareButton(page, 'main').click();
+        await page.evaluate(() => window.__clipboardPending[1].reject(new Error('latest denied')));
+        await expect(page.getByRole('textbox', { name: 'Link to copy' })).toHaveValue(`${SYNTHETIC_URL}&find=latest`);
+        await page.evaluate(() => window.__clipboardPending[0].reject(new Error('older denied')));
+        await expect(page.getByRole('textbox', { name: 'Link to copy' })).toHaveValue(`${SYNTHETIC_URL}&find=latest`);
+        const events = await shareEvents(page);
+        expect(events).toHaveLength(2);
+        expect(JSON.stringify(events)).not.toContain(SYNTHETIC_URL);
+    });
+
     // Element-level geometry (MRT020): the painted text, the field and the Dismiss button, not only the container box.
     for (const width of [1440, 1028, 760, 390, 375]) {
         for (const surface of ['main', 'compact']) {
@@ -438,6 +465,7 @@ test.describe('Share control: painted glyph ink', () => {
 async function installClipboard(page, mode = 'ok') {
     await page.addInitScript((value) => {
         window.__copied = [];
+        window.__clipboardPending = [];
         Object.defineProperty(navigator, 'clipboard', {
             configurable: true,
             value: value === 'missing' ? undefined : { writeText: async (text) => { window.__copied.push(text); } },

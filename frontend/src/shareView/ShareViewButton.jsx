@@ -14,12 +14,35 @@ export default function ShareViewButton({ surface, share, sourceSurface, activeC
     const timerRef = React.useRef(null);
     const active = surface === activeControlSurface;
 
-    React.useEffect(() => () => window.clearTimeout(timerRef.current), []);
-    React.useEffect(() => { if (!active) setLocal(null); }, [active]);
+    const attemptRef = React.useRef({ generation: 0, active, mounted: true });
+    if (attemptRef.current.active !== active) {
+        attemptRef.current.active = active;
+        attemptRef.current.generation += 1;
+    }
+    React.useEffect(() => {
+        attemptRef.current.mounted = true;
+        return () => {
+            attemptRef.current.mounted = false;
+            attemptRef.current.generation += 1;
+            window.clearTimeout(timerRef.current);
+        };
+    }, []);
+    React.useEffect(() => {
+        if (!active) {
+            window.clearTimeout(timerRef.current);
+            setCopied(false);
+            setLocal(null);
+        }
+    }, [active]);
 
     const report = (result) => trackShareViewAction({ workflowAction: 'copy_link', result, sourceSurface });
     const copy = async () => {
-        if (share.shareDisabled) return;
+        if (share.shareDisabled || !active) return;
+        const generation = ++attemptRef.current.generation;
+        window.clearTimeout(timerRef.current);
+        setCopied(false);
+        const isCurrent = () => attemptRef.current.mounted && attemptRef.current.active
+            && attemptRef.current.generation === generation;
         const captured = share.captureShareUrl();
         if (!captured.ok) {
             if (captured.reason === 'disabled') return;
@@ -30,17 +53,19 @@ export default function ShareViewButton({ surface, share, sourceSurface, activeC
         try {
             await navigator.clipboard.writeText(captured.url);
         } catch {
+            report('failure');
+            if (!isCurrent()) return;
             setCopied(false);
             setLocal({ message: shareViewCopyMessage({ type: 'manual', dropped: captured.dropped }), url: captured.url });
-            report('failure');
             return;
         }
+        report('success');
+        if (!isCurrent()) return;
         window.clearTimeout(timerRef.current);
-        timerRef.current = window.setTimeout(() => setCopied(false), COPIED_MS);
+        timerRef.current = window.setTimeout(() => { if (isCurrent()) setCopied(false); }, COPIED_MS);
         setCopied(true);
         const message = shareViewCopyMessage({ type: 'copied', dropped: captured.dropped });
         setLocal(message ? { message } : null);
-        report('success');
     };
 
     const notice = local || (share.notice ? { message: shareViewNoticeMessage(share.notice) } : null);

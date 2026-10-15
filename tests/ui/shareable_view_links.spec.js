@@ -17,6 +17,20 @@ const HOOK_DECLARATION = 'export function useShareViewApply(options) {';
 const shareViewProbe = {
     name: 'share-view-probe',
     setup(build) {
+        build.onLoad({ filter: /[\\/]dashboard\.jsx$/ }, async args => {
+            const source = await fs.promises.readFile(args.path, 'utf8');
+            const declaration = "const [boardStrictScope, setBoardStrictScope] = useState('');";
+            if (!source.includes(declaration)) throw new Error('Update the manual strict-scope initial-state probe');
+            return { contents: source.replace(declaration,
+                "const [boardStrictScope, setBoardStrictScope] = useState(window.__shareManualStrictScope || '');"), loader: 'jsx' };
+        });
+        build.onLoad({ filter: /[\\/]stats[\\/]useStatsState\.js$/ }, async args => {
+            const source = await fs.promises.readFile(args.path, 'utf8');
+            const declaration = 'const excludedCapacityForceRefreshRef = useRef(false);';
+            if (!source.includes(declaration)) throw new Error('Update the manual Project Track initial-state probe');
+            return { contents: source.replace(declaration,
+                'const excludedCapacityForceRefreshRef = useRef(Boolean(window.__shareManualStatsRefresh));'), loader: 'js' };
+        });
         build.onLoad({ filter: /shareView[\\/]useShareViewApply\.js$/ }, async (args) => {
             const source = await fs.promises.readFile(args.path, 'utf8');
             if (!source.includes(HOOK_DECLARATION)) throw new Error('useShareViewApply is declared differently now: update the probe');
@@ -98,16 +112,22 @@ async function installDocumentRoutes(page) {
 
 async function installLinkFixture(page, {
     groupsSource = 'workspace_db', preferences = {}, taskGate = null, taskAuthFailure = false, homeToken = { connected: false },
-    prefs = {}, teamSelection = null, analytics = null, capsules = null,
+    prefs = {}, teamSelection = null, analytics = null, capsules = null, matrix = false, backendCache = null, strictScope = '', statsRefresh = false,
 } = {}) {
     const calls = [];
-    page.on('requestfailed', (request) => {
-        const call = [...calls].reverse().find(candidate => candidate.url === request.url() && !candidate.completed);
-        if (call) call.aborted = true;
+    const requestCalls = new Map();
+    page.on('request', request => {
+        const url = new URL(request.url());
+        if (!url.pathname.startsWith('/api/')) return;
+        const call = { method: request.method(), url: request.url(), pathname: url.pathname,
+            params: Object.fromEntries(url.searchParams.entries()), body: request.postData(), aborted: false };
+        requestCalls.set(request, call);
+        calls.push(call);
     });
+    page.on('requestfailed', request => { const call = requestCalls.get(request); if (call) call.aborted = true; });
     // Only the Workspace DB owns personal Department preferences; the JSON source has none.
     const groupsConfig = {
-        version: 1, configRevision: 1, source: groupsSource, defaultGroupId: 'grp-a', groups: GROUPS,
+        version: 1, configRevision: 1, source: groupsSource, defaultGroupId: 'grp-a', groups: matrix ? GROUPS.map(group => ({ ...group, missingInfoComponents: ['Platform'], board: { columns: [{ id: 'active', name: 'Active', color: '#597ef7', statusNames: ['In Progress'], terminal: false }] } })) : GROUPS,
         ...(groupsSource === 'workspace_db' ? {
             preferences: {
                 onboardingRequired: false, onboardingDone: true, completedOnboardingModules: ['catch-up', 'configuration', 'planning', 'board', 'statistics'],
@@ -117,23 +137,37 @@ async function installLinkFixture(page, {
     };
     await installDashboardShell(page);
     await installDocumentRoutes(page);
-    await page.addInitScript(({ prefsKey, teamKey, savedPrefs, savedTeams, savedCapsules }) => {
+    await page.addInitScript(({ prefsKey, teamKey, savedPrefs, savedTeams, savedCapsules, strictScope, statsRefresh }) => {
+        window.__shareManualStatsRefresh = statsRefresh;
+        window.__shareManualStrictScope = strictScope;
         if (window.sessionStorage.getItem('share_link_fixture_seeded')) return;
         window.sessionStorage.setItem('share_link_fixture_seeded', 'true');
         window.localStorage.setItem(prefsKey, JSON.stringify(savedPrefs));
         if (savedTeams) window.localStorage.setItem(teamKey, JSON.stringify(savedTeams));
         Object.entries(savedCapsules || {}).forEach(([key, value]) => window.sessionStorage.setItem(key, JSON.stringify(value)));
-    }, { prefsKey: PREFS_KEY, teamKey: TEAM_SELECTION_KEY, savedPrefs: { selectedView: 'eng', planningLayout: 'list', selectedSprint: 41, sprintName: 'Sprint 41', activeGroupId: 'grp-a', ...prefs }, savedTeams: teamSelection, savedCapsules: capsules });
+    }, { prefsKey: PREFS_KEY, teamKey: TEAM_SELECTION_KEY, savedPrefs: { selectedView: 'eng', planningLayout: 'list', selectedSprint: 41, sprintName: 'Sprint 41', activeGroupId: 'grp-a', ...prefs }, savedTeams: teamSelection, savedCapsules: capsules, strictScope, statsRefresh });
     await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: dashboardJs }));
     await page.route('**/api/**', async (route) => {
         const request = route.request();
         const url = new URL(request.url());
-        const call = {
-            method: request.method(), url: request.url(), pathname: url.pathname, params: Object.fromEntries(url.searchParams.entries()),
-            body: request.method() === 'POST' ? request.postData() : null,
-        };
-        calls.push(call);
+        const call = requestCalls.get(request);
+        const cacheUrl = new URL(url);
+        cacheUrl.searchParams.delete('t'); // Existing request nonce is not part of the backend data-cache scope.
+        cacheUrl.searchParams.delete('refresh');
+        const cacheBody = request.postData() ? JSON.parse(request.postData()) : null;
+        const refresh = call.params.refresh === 'true' || cacheBody?.refresh === true;
+        if (cacheBody) delete cacheBody.refresh;
+        const cacheKey = `${request.method()} ${cacheUrl.pathname}${cacheUrl.search} ${JSON.stringify(cacheBody)}`;
+        call.cacheBypassed = refresh;
         const reply = (body, status = 200) => { call.completed = true; return json(route, body, status); };
+        const cachedReply = body => {
+            call.cacheHit = !refresh && Boolean(backendCache?.has(cacheKey));
+            if (backendCache) {
+                if (refresh || !backendCache.has(cacheKey)) backendCache.set(cacheKey, body);
+                body = backendCache.get(cacheKey);
+            }
+            return reply({ ...body, cached: call.cacheHit });
+        };
         if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
         if (url.pathname === '/api/auth/csrf') return reply({ csrfToken: 'csrf-token' });
         if (url.pathname === '/api/auth/status') return reply({ authMode: 'atlassian_oauth', authenticated: true, email: 'profile@example.com' });
@@ -143,14 +177,39 @@ async function installLinkFixture(page, {
             return reply({
                 jiraUrl: 'https://jira.example', capacityProject: '', authMode: 'atlassian_oauth', groupQueryTemplateEnabled: false,
                 settingsAdminOnly: false, userCanEditSettings: true, projectsConfigured: true, environmentConfigExists: true,
+                ...(matrix ? { boardAllWorkAvailable: true, sharedConfig: { projects: { selected: ['SYN'] }, board: { boardId: '42' } }, sprintCatalogSource: MATRIX_SOURCE } : {}),
                 epm: { version: 2, labelPrefix: '', scope: {}, projects: {} },
                 viewConfig: { workspaceId: 'workspace-test', viewConfigId: 'view-test', view: { epm: { version: 2, labelPrefix: '', scope: {}, projects: {} } } },
             });
         }
         if (url.pathname === '/api/version') return reply({ enabled: false });
         if (url.pathname === '/api/groups-config') return reply(groupsConfig);
-        if (url.pathname === '/api/projects/selected') return reply({ selected: [] });
-        if (url.pathname === '/api/sprints') return reply({ sprints: SPRINTS });
+        if (url.pathname === '/api/projects/selected') return reply({ selected: matrix ? ['SYN'] : [] });
+        if (url.pathname === '/api/sprints') return matrix ? cachedReply({ sprints: SPRINTS, cache: {
+            ...MATRIX_SOURCE, state: 'fresh', catalogVersion: '33333333-3333-4333-8333-333333333333',
+            validatedAt: new Date().toISOString(), refreshStatus: 'idle', refreshAttemptId: null, refreshStarted: false, refreshFailed: false,
+        } }) : reply({ sprints: SPRINTS });
+        if (matrix && url.pathname === '/api/eng/board') {
+            const scope = url.searchParams.get('scope');
+            call.cacheHit = !refresh && Boolean(backendCache?.has(cacheKey));
+            backendCache?.set(cacheKey, true);
+            const base = (sequence, frame) => ({ protocolVersion: 1, generationId: 'synthetic-generation', sequence, ...frame });
+            const frames = [
+                base(0, { type: 'start', scope, scopeVersion: 'synthetic-scope', scopeCohortDigest: 'a'.repeat(64),
+                    columns: [{ id: 'active', name: 'Active', color: '#597ef7', statusNames: ['In Progress'], terminal: false }] }),
+                base(1, { type: 'index', epics: [], membership: scope === 'sprint' ? 'candidate' : 'authoritative' }),
+                base(2, { type: 'column', columnId: 'active', epics: [], children: [], authoritative: true }),
+                base(3, { type: 'complete', outcome: 'success', authoritative: true, epicCount: 0, childCount: 0,
+                    diagnostics: { indexMs: 1, focusedCompleteMs: 2, durationMs: 3, jiraRequests: 1, jiraPages: 1, jiraRetries: 0,
+                        peakChildSearches: 1, cacheState: call.cacheHit ? 'hit' : 'miss', completeness: 'complete' } }),
+            ];
+            call.completed = true;
+            return route.fulfill({ status: 200, contentType: 'application/x-ndjson', body: frames.map(frame => JSON.stringify(frame)).join('\n') + '\n' });
+        }
+        if (matrix && /\/api\/eng\/sprints\/[^/]+\/review$/.test(url.pathname)) return cachedReply({ schemaVersion: 1,
+            sprintId: url.pathname.split('/')[4], schemaRevision: 0, columns: [], capabilities: { canRead: true, canSave: false } });
+        if (matrix && url.pathname.endsWith('/review/values/read')) return cachedReply({ cells: [], unavailableIssueIds: [] });
+        if (matrix && url.pathname === '/api/stats/excluded-capacity-source') return cachedReply({ data: { issues: [], epics: {}, sprints: SPRINTS } });
         if (url.pathname === '/api/stats/priority-weights-config') return reply({ weights: [], source: 'test' });
         if (url.pathname === '/api/eng/story-readiness') return reply({ schemaVersion: 1, complete: true, scope: {}, epics: [] });
         if (url.pathname === '/api/tasks-with-team-name') {
@@ -160,9 +219,9 @@ async function installLinkFixture(page, {
             const sprintId = Number(url.searchParams.get('sprint'));
             if (taskGate && !purpose) await taskGate.promise;
             if (taskAuthFailure && !purpose) return reply({ error: 'auth_required', loginUrl: '/login?reason=session_expired' }, 401);
-            if (project !== 'product' || purpose) return reply({ issues: [], epics: {}, epicsInScope: [], names: {} });
+            if (project !== 'product' || purpose) return matrix ? cachedReply({ issues: [], epics: {}, epicsInScope: [], names: {} }) : reply({ issues: [], epics: {}, epicsInScope: [], names: {} });
             const epic = epicFor(groupId, sprintId);
-            return reply({ issues: storiesFor(groupId, sprintId), epics: { [epic.key]: epic }, epicsInScope: [epic], names: {} });
+            return (matrix ? cachedReply : reply)({ issues: storiesFor(groupId, sprintId), epics: { [epic.key]: { ...epic, id: groupId === 'grp-b' ? '9200' : '9100' } }, epicsInScope: [{ ...epic, id: groupId === 'grp-b' ? '9200' : '9100' }], names: {} });
         }
         if (url.pathname === '/api/missing-info') return reply({ issues: [], epics: [], count: 0, epicCount: 0 });
         if (url.pathname === '/api/backlog-epics') return reply({ epics: [] });
@@ -178,7 +237,7 @@ async function installLinkFixture(page, {
 const READ_ONLY_POSTS = new Set(['/api/dependencies', '/api/performance/loads', '/api/auth/refresh']);
 const isReadOnlyPost = call => READ_ONLY_POSTS.has(call.pathname) || call.pathname.startsWith('/api/stats/') || /\/values\/read$/.test(call.pathname);
 const mutatingCalls = calls => calls.filter(call => call.method !== 'GET' && !isReadOnlyPost(call));
-const signature = call => `${call.method} ${call.pathname}?${Object.keys(call.params).sort().join('&')}${call.aborted ? ' aborted' : ''}`;
+const signature = call => `${call.method} ${call.pathname}?${[...new URL(call.url).searchParams.keys()].sort().join('&')}${call.aborted ? ' aborted' : ''}`;
 const apiSignatures = calls => calls.map(signature).sort();
 const taskCalls = calls => calls.filter(call => call.pathname === '/api/tasks-with-team-name' && !call.params.purpose);
 
@@ -335,6 +394,25 @@ test('the link overrides the staged auth and connection recovery capsules (V7)',
     await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_connection_recovery_v1'))).toBe(null);
     expect((await applyEvents(page))[0].result).toBe('success');
     expect(taskCalls(calls).every(call => call.params.groupId === 'grp-b' && call.params.sprint === '42')).toBe(true);
+});
+
+test('a same-scope Planning recovery capsule reuses its completed load and applies Teams facets and rows (V7, RF3)', async ({ page }) => {
+    const calls = await installLinkFixture(page, {
+        analytics: ANALYTICS_ENABLED, prefs: { showPlanning: true, planningLayout: 'table', selectedTeams: ['team-a2'] },
+        capsules: { jira_dashboard_auth_resume_v1: {
+            version: 1, capturedAt: Date.now(), principal: { workspaceId: 'workspace-test', viewConfigId: 'view-test' },
+            view: { selectedView: 'eng', activeGroupId: 'grp-a', selectedSprint: '41', engMode: 'planning', settingsOpen: false, settingsTab: 'teams' },
+            planning: { scopeKey: 'planning::41::grp-a', selectedTaskKeys: [], selectedTeams: ['team-a2'], selectionMode: 'manual' },
+        } },
+    });
+    await page.goto(`${appBaseUrl}/?v=1&mode=planning&group=grp-a&sprint=41&teams=team-a1&status=only:Blocked&rows=stories`, { waitUntil: 'domcontentloaded' });
+    await expect.poll(() => applyEvents(page).then(events => events.map(event => event.result)), { timeout: 25000 }).toEqual(['success']);
+    await expect(teamLabel(page)).toHaveText('Alpha One');
+    expect(await readPrefs(page)).toMatchObject({ selectedTeams: ['team-a1'], engStatusFilter: { only: ['Blocked'] } });
+    await expect(page.locator('[aria-label="Planning review rows"]').getByRole('radio', { name: 'Stories' })).toHaveAttribute('aria-checked', 'true');
+    await page.waitForLoadState('networkidle');
+    expect(taskCalls(calls)).toHaveLength(2);
+    expect(taskCalls(calls).every(call => call.params.groupId === 'grp-a' && call.params.sprint === '41')).toBe(true);
 });
 
 test('a recipient whose saved view is EPM ends in the link ENG view (V15, RF2)', async ({ page }) => {
@@ -585,4 +663,129 @@ test('Share is enabled in a source-only Statistics view, which loads no task lis
     expect(taskCalls(linkedCalls)).toEqual([]);
     await saved.close();
     await linked.close();
+});
+
+// Test-only initial-state probes above preseed the same state written by the real manual controls:
+// selectBoardScope -> setBoardStrictScope(scope), and commitSprintSelection's projectTrackRange ->
+// excludedCapacityForceRefreshRef.current = true. They change no effect, request or cache implementation.
+// AC4: explicit backend cache priming and persisted display-cache seeding, while the existing
+// catalog controller still validates its source before either manual navigation or a link can load.
+const MATRIX_SOURCE = { backend: 'postgresql', identity: 'sc1:synthetic-share', boardId: '42', browserContextId: 'bc1:synthetic-share' };
+const MATRIX_CASES = [
+    { name: 'Catch Up', mode: 'catch-up', flags: {}, endpoint: '/api/tasks-with-team-name' },
+    { name: 'Planning', mode: 'planning', flags: { showPlanning: true, planningLayout: 'table' }, endpoint: '/api/tasks-with-team-name' },
+    { name: 'ordinary Board', mode: 'board', flags: { showBoard: true }, endpoint: '/api/tasks-with-team-name' },
+    ...['component', 'all_work'].map(scope => ({ name: `strict Board ${scope}`, mode: 'board', query: `&scope=${scope}`,
+        flags: { showBoard: true }, endpoint: '/api/eng/board', strict: scope })),
+    { name: 'task-loading Statistics', mode: 'statistics', flags: { showStats: true, statsView: 'teams' }, endpoint: '/api/tasks-with-team-name' },
+    { name: 'source-only Statistics Project Track', mode: 'statistics', query: '&stats=projectTrack&from=42&to=42',
+        flags: { showStats: true, statsView: 'projectTrack', excludedCapacityStartSprintId: '42', excludedCapacityEndSprintId: '42' }, endpoint: '/api/stats/excluded-capacity-source', sourceOnly: true },
+];
+const normalizedBody = body => {
+    if (Array.isArray(body)) return body.map(normalizedBody).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+    if (body && typeof body === 'object') return Object.fromEntries(Object.keys(body).sort().map(key => [key, normalizedBody(body[key])]));
+    return body;
+};
+const scopedPostBodies = calls => calls.filter(call => call.method === 'POST' && call.pathname !== '/api/performance/loads')
+    .map(call => `${call.pathname} ${JSON.stringify(normalizedBody(call.body ? JSON.parse(call.body) : null))}`).sort();
+
+async function matrixRun(browser, scenario, { linked = false, backendCache = new Map(), sprintCatalog } = {}) {
+    const page = await browser.newPage();
+    const manualPrefs = { ...MANUAL_SCOPE_B42, ...scenario.flags };
+    // Match the raw session state the real selectBoardScope/commitSprintSelection controls write;
+    // it has no persisted preference key. Only the initial value changes in the synthetic bundle.
+    const calls = await installLinkFixture(page, { matrix: true, backendCache, analytics: ANALYTICS_ENABLED,
+        ...(linked ? {} : MANUAL_DEPARTMENT_B), strictScope: linked ? '' : scenario.strict || '', statsRefresh: !linked && Boolean(scenario.sourceOnly),
+        prefs: { ...(linked ? { selectedSprint: 40, sprintName: 'Sprint 40' } : manualPrefs), ...(sprintCatalog ? { sprintCatalog } : {}) },
+    });
+    await page.goto(`${appBaseUrl}${linked ? `/?v=1&mode=${scenario.mode}&group=grp-b&sprint=42${scenario.query || ''}` : '/'}`, { waitUntil: 'domcontentloaded' });
+    if (linked) await expect.poll(() => applyEvents(page).then(events => events.map(event => event.result))).toEqual(['success']);
+    await expect(engMode(page, scenario.mode === 'catch-up' ? 'Catch Up' : scenario.mode === 'statistics' ? 'Statistics' : scenario.mode === 'board' ? 'Board' : 'Planning')).toHaveAttribute('aria-checked', 'true');
+    await expect.poll(() => calls.some(call => call.pathname === scenario.endpoint && call.completed)).toBe(true);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(500);
+    return { page, calls, linked };
+}
+
+for (const scenario of MATRIX_CASES) {
+    for (const cache of ['cold', 'warm']) {
+        test(`AC4 ${scenario.name} ${cache}: link and manual API request multisets match`, async ({ browser }) => {
+            const backendCache = new Map();
+            let sprintCatalog;
+            if (cache === 'warm') {
+                const primed = await matrixRun(browser, scenario, { backendCache });
+                sprintCatalog = (await readPrefs(primed.page)).sprintCatalog;
+                expect(sprintCatalog).toMatchObject({ version: 2, identity: MATRIX_SOURCE.identity, catalogVersion: '33333333-3333-4333-8333-333333333333' });
+                expect(sprintCatalog.validatedAt).toBeTruthy();
+                await primed.page.close();
+            }
+            // Identical warmed snapshots; neither measured run can warm the other.
+            const link = await matrixRun(browser, scenario, { linked: true, backendCache: new Map(backendCache), sprintCatalog });
+            const manual = await matrixRun(browser, scenario, { backendCache: new Map(backendCache), sprintCatalog });
+            for (const run of [link, manual]) {
+                expect(mutatingCalls(run.calls)).toEqual([]);
+                expect(run.calls.filter(call => call.params.groupId === 'grp-a' || call.params.departmentId === 'grp-a'
+                    || call.params.sprint === '40' || call.params.sprintId === '40' || call.pathname.includes('/sprints/40/'))).toEqual([]);
+                for (const call of run.calls) {
+                    if (call.params.sprint) expect(call.params.sprint).toBe('42');
+                    if (call.params.sprintId) expect(call.params.sprintId).toBe('42');
+                    if (call.params.teamIds) expect(call.params.teamIds.split(',').every(id => ['team-b1', 'team-b2'].includes(id))).toBe(true);
+                }
+                const scoped = run.calls.filter(call => call.pathname === scenario.endpoint);
+                expect(scoped.every(call => call.cacheHit === (cache === 'warm' && !call.cacheBypassed))).toBe(true);
+                // Warm source-only initial navigation deliberately bypasses its data cache on both paths.
+                // The warmed catalog is still consumed and validated; never relabel a forced source miss as a hit.
+                const catalog = run.calls.find(call => call.pathname === '/api/sprints');
+                expect(catalog.cacheHit).toBe(cache === 'warm');
+                expect((await readPrefs(run.page)).sprintCatalog.identity).toBe(MATRIX_SOURCE.identity);
+                expect(await readPrefs(run.page)).toMatchObject({ activeGroupId: 'grp-b', selectedSprint: 42, ...scenario.flags });
+                if (scenario.strict) {
+                    expect(scoped).toHaveLength(1);
+                    expect(scoped[0].params).toMatchObject({ departmentId: 'grp-b', scope: scenario.strict });
+                    expect(scoped[0].params.sprintId).toBeUndefined();
+                    expect(taskCalls(run.calls)).toEqual([]);
+                    await expect(run.page.locator('.eng-board')).toHaveCount(1);
+                } else if (scenario.sourceOnly) {
+                    expect(taskCalls(run.calls)).toEqual([]);
+                    expect(scoped.every(call => call.cacheBypassed && !call.cacheHit)).toBe(true);
+                    expect(scoped.map(call => JSON.parse(call.body))).toEqual([{ sprintIds: ['42'], teamIds: ['team-b1', 'team-b2'], refresh: true }]);
+                    await expect(run.page.getByText('Excluded capacity fetch failed', { exact: false })).toHaveCount(0);
+                } else {
+                    expect(taskCalls(run.calls).every(call => call.params.groupId === 'grp-b' && call.params.sprint === '42')).toBe(true);
+                }
+                for (const call of run.calls.filter(call => call.pathname === '/api/dependencies')) {
+                    expect(JSON.parse(call.body).keys.every(key => key.startsWith('BET-'))).toBe(true);
+                }
+                if (scenario.mode === 'planning') {
+                    expect(reviewCalls(run.calls)).toHaveLength(1);
+                    const values = run.calls.filter(call => call.pathname === '/api/eng/sprints/42/review/values/read');
+                    expect(values.length).toBeGreaterThan(0);
+                    expect(values.every(call => JSON.parse(call.body).issueIds.every(id => id === '9200' || id.startsWith('BET-')))).toBe(true);
+                }
+            }
+            expect(apiSignatures(link.calls)).toEqual(apiSignatures(manual.calls));
+            expect(scopedPostBodies(link.calls)).toEqual(scopedPostBodies(manual.calls));
+            await link.page.close();
+            await manual.page.close();
+        });
+    }
+}
+
+test('AC4 request normalization preserves duplicate query names and aborted request entries', () => {
+    const call = { method: 'GET', pathname: '/api/synthetic-read', url: `${appBaseUrl}/api/synthetic-read?team=one&team=two&sprint=42`, aborted: true };
+    expect(apiSignatures([call, call])).toEqual(['GET /api/synthetic-read?sprint&team&team aborted', 'GET /api/synthetic-read?sprint&team&team aborted']);
+});
+
+test('AC4 logger counts two real aborted requests to the same URL separately', async ({ page }) => {
+    const calls = await installLinkFixture(page);
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('networkidle');
+    await page.route('**/api/synthetic-read?*', route => route.abort());
+    await page.evaluate(async () => {
+        const url = '/api/synthetic-read?team=one&team=two&sprint=42';
+        await Promise.all([fetch(url).catch(() => {}), fetch(url).catch(() => {})]);
+    });
+    const aborted = () => calls.filter(call => call.pathname === '/api/synthetic-read');
+    await expect.poll(() => aborted().filter(call => call.aborted).length).toBe(2);
+    expect(apiSignatures(aborted())).toEqual(['GET /api/synthetic-read?sprint&team&team aborted', 'GET /api/synthetic-read?sprint&team&team aborted']);
 });

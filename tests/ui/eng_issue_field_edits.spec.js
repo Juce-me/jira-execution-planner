@@ -328,6 +328,8 @@ test('delayed metadata selects the existing text and delayed search results sele
         window.__issueEditorHarness.setPersonLoading(false);
         window.__issueEditorHarness.setPersonSuggestions([]);
     });
+    await expect(input).toBeEnabled();
+    await expect(input).toBeFocused();
     await expect.poll(() => input.evaluate(element => [element.selectionStart, element.selectionEnd])).toEqual([0, 'Existing Owner'.length]);
     await input.pressSequentially('New');
     await expect(input).not.toHaveAttribute('aria-activedescendant');

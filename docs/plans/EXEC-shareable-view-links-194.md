@@ -1,6 +1,6 @@
 # Shareable View Links Implementation Plan
 
-> **Status:** In progress 2026-10-15: Tasks 0–6 are complete; the operator confirmed Task 6 signed-in manual validation and continuation. Task 7 is next. No publication.
+> **Status:** Paused 2026-10-15 after Task 9 review: Tasks 0–8 are complete; Task 9 is committed but blocked on an operator decision about plan-mandated deadline defects. Task 10 has not started. No publication.
 >
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Per-task status and commits are recorded in the Execution status table below, inside this committed file (see the recording rule there), not in a scratch ledger.
 
@@ -44,9 +44,9 @@ Statuses and commit SHAs are written once, in Task 14 Step 9, from `git log --on
 | 4 | Resolver | done | `c511e805` | Review approved; 49 resolver and 2,633 full Node tests pass |
 | 5 | Store and entry | done | `60f89d12` | Review approved; 28 store, 2,661 full Node and 34 targeted Python tests pass |
 | 6 | `dashboard.jsx` behavior-preserving extractions | done | `bde1decd` | Automated checks and review approved; manual validation confirmed by the operator 2026-10-15 |
-| 7 | Alert anchors and focus capture | planned | | |
-| 8 | Focus reveal and Planning rows seed | planned | | |
-| 9 | Apply machine (pure) | planned | | |
+| 7 | Alert anchors and focus capture | done | `698ff529` | Review approved; 18 focused and 2,698 full Node tests, 9 new and 49 existing Chromium cases pass |
+| 8 | Focus reveal and Planning rows seed | done | `21c82a18` | Review approved; 24 focused and 2,722 full Node tests, 22 focus and 168 Planning Chromium cases pass |
+| 9 | Apply machine (pure) | blocked | `17b6a2b6` | Review reproduced plan-mandated deadline defects; operator decision pending |
 | 10 | Analytics `share_view_action` | planned | | |
 | 11a | Apply controller, capture builder, interaction guard and hook | planned | | |
 | 11b | Mount: hold, options, tour wait and Planning table key | planned | | |
@@ -60,6 +60,8 @@ Order: 0 (records the G1 answer), 1, 2 (only if G1 is accepted; any time after T
 Task 3 review correction (2026-10-15): the operator approved moving the pair-cap check before returning `newer`, adding `v=2` vectors for both 40 and 41 further pairs, and aligning the supplied codec and tests in the slice. Commit `883d29f6` resolves the plan-mandated contract conflict: `v=2` plus 40 pairs remains `newer`; 41 pairs is `invalid` with `too_many_pairs`. The new vector failed before the correction and passed afterward. Both the original and corrected codec passed 45 codec tests, 2,584 full Node tests, 26 stash tests, two structure tests and a reproducible committed build. Extraction lint remained at 104 warnings and four existing enforced findings; dedicated shareView lint was clean. Fresh review approved the correction before Task 4 started.
 
 Task 6 checkpoint (2026-10-15): `bde1decd` changes only `frontend/src/dashboard.jsx`, `tests/test_share_view_extraction_characterization.js`, `scripts/extraction_lint/owner_budgets.json` and regenerated dashboard bundle/map/manifest. All 13 characterization tests passed before extraction and unchanged afterward; six new helper contracts failed before extraction, then all 19 passed. Regression results: 2,680 Node tests, 34 targeted Python tests and 204 Chromium cases passed with no failures or flaky cases. Lint remained at 104 warnings, zero errors and the same four enforced baseline findings. The committed build is reproducible and dist/worktree checks are clean. Measured dashboard growth is 7,494 to 7,505 (+11, versus the design's original minus-8 estimate); aggregate pins moved from 34,096 to 34,107 in the same commit. An additional build before the UI run ensured it exercised the extracted source; the stated final and committed builds also ran. Fresh review approved the task. The operator confirmed all signed-in manual checks and continuation on 2026-10-15: Sprint changes preserve Teams and return focus, same-Sprint selection changes nothing, All/one/two Team toggles and reload persistence work, and Statistics Project Track range follows Sprint changes. No behavior difference was reported.
+
+Task 9 review pause (2026-10-15): commit `17b6a2b6` matches the supplied machine block and passes all 38 prescribed tests, 2,760 full Node tests, two structure tests and a reproducible committed build; lint remains the same 104 warnings and four enforced baseline findings. Review found two Important plan-mandated defects against the stated stage budgets. Stage A checks expiry only while its readiness gate is closed: with the gate open and resolution absent, it still waits at 5,000 ms and runs when resolution arrives at 6,000 ms. Stages B, C and D check readiness before expiry: focused probes first making B ready at 6,000 ms or C/D ready at 20,001 ms emitted a stage run despite expiry. The pure machine is not imported into the app yet. Proposed remedy: enforce an armed Stage A deadline regardless of gate state, prioritize B/C/D expiry before readiness-driven run actions, add boundary/late-readiness regression tests, align the supplied implementation/test blocks and rerun the machine, full Node, lint and build gates. Budgets stay unchanged. The correction requires an operator decision; Task 10 has not started. Tasks 7 and 8 retain Minor direct-ESM module-type warning findings for Task 14 review; no correctness defect was found in either task.
 
 ### Operator gates
 

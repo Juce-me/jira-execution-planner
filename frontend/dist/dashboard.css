@@ -4177,6 +4177,7 @@ button.compact {
   border-radius: 8px;
   color: #8a4b00;
   box-shadow: 0 12px 28px rgba(22, 22, 22, 0.14);
+  font-family: "IBM Plex Mono", monospace;
   font-size: 0.75rem;
   line-height: 1.3;
   text-transform: none;

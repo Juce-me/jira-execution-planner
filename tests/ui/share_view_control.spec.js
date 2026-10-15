@@ -1029,3 +1029,83 @@ test('Epic List and Table manual feedback keeps the URL and compact dismissal ab
         } finally { await context.close(); }
     }
 });
+
+
+test('genuine warnings match the Jira warning typography and wrapping across main compact List Epic and Table Epic hosts on desktop and touch', async ({ browser }) => {
+    test.setTimeout(120000);
+    const typography = locator => locator.evaluate(node => {
+        const css = getComputedStyle(node);
+        return Object.fromEntries(['fontFamily', 'fontSize', 'lineHeight', 'color', 'textTransform', 'letterSpacing'].map(key => [key, css[key]]));
+    });
+    const directory = path.join(repoRoot, 'tmp/share-view-tasks/warning-font-visual');
+    fs.mkdirSync(directory, { recursive: true });
+    for (const touch of [false, true]) {
+        const context = await browser.newContext({ viewport: { width: touch ? 390 : 1440, height: 900 }, hasTouch: touch });
+        const referencePage = await context.newPage();
+        try {
+            // Use the existing mounted Jira overflow warning in its canonical main-header context.
+            await openHarness(referencePage, { width: touch ? 390 : 1440 });
+            await setHarness(referencePage, { referenceControls: true });
+            await referencePage.getByRole('button', { name: 'Open Jira issue menu' }).click();
+            await referencePage.getByRole('menuitem', { name: 'Open epics' }).click();
+            const reference = await typography(referencePage.locator('.jira-export > .jira-export-toast'));
+            expect(reference.fontFamily).toBe('"IBM Plex Mono", monospace');
+            await referencePage.close();
+            const geometry = [];
+            for (const host of ['main', 'compact', 'list', 'table']) {
+                const page = await context.newPage();
+                const ctx = await mockDashboard(page);
+                // A synthetic group beyond the codec's existing 255-character limit produces a
+                // genuine invalid_state refusal without replacing the Share component or capture hook.
+                const groupId = 'synthetic-group-'.repeat(18);
+                ctx.respond('/api/groups-config', ({ json }) => json({
+                    ...groupsConfigPayload, defaultGroupId: groupId,
+                    groups: [{ ...groupsConfigPayload.groups[0], id: groupId }],
+                    preferences: { ...groupsConfigPayload.preferences, activeGroupId: groupId, effectiveVisibleGroupIds: [groupId] },
+                }));
+                await page.addInitScript(prefs => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs)), catchUpPrefs({
+                    activeGroupId: groupId, showPlanning: host === 'table', planningLayout: host === 'table' ? 'table' : 'list',
+                }));
+                await page.goto(appBaseUrl, { waitUntil: 'networkidle' });
+                await page.addStyleTag({ content: '*,*::before,*::after{animation:none!important;transition:none!important}' });
+                const action = host === 'main' || host === 'compact' ? shareButton(page, host) : epicCopy(page, 'EPIC-1');
+                if (host === 'compact') {
+                    await page.evaluate(() => window.scrollTo(0, 900));
+                    await expect(page.locator('.compact-sticky-header.is-visible')).toHaveCount(1);
+                } else await action.scrollIntoViewIfNeeded();
+                await action.focus();
+                if (touch) await action.tap(); else await action.click();
+                const notice = shareNotice(page, host === 'list' || host === 'table' ? 'epic' : host);
+                await expect(notice).toHaveClass('jira-export-toast');
+                await expect(notice.locator('p')).toHaveText('This view cannot be shared as a link right now, so nothing was copied.');
+                expect.soft(await typography(notice), `${host}/${touch ? 'touch' : 'desktop'} canonical warning`).toEqual(reference);
+                expect.soft(await typography(notice.locator('p')), `${host} actual text inheritance`).toEqual(reference);
+                await expectCompactFeedback(notice);
+                const textBounds = await notice.locator('p').evaluate(node => {
+                    const range = document.createRange(); range.selectNodeContents(node);
+                    const box = node.getBoundingClientRect();
+                    const lines = [...range.getClientRects()].filter(rect => rect.width > 0).map(rect => ({ width: rect.width, height: rect.height, left: rect.left - box.left, right: rect.right - box.left }));
+                    return { width: box.width, height: box.height, lines };
+                });
+                expect(textBounds.lines.length).toBeGreaterThan(1);
+                for (const line of textBounds.lines) {
+                    expect(line.left).toBeGreaterThanOrEqual(0);
+                    expect(line.right).toBeLessThanOrEqual(textBounds.width + 1);
+                }
+                geometry.push({ host, ...textBounds });
+                await page.screenshot({ path: path.join(directory, `${process.env.JEP_WARNING_FONT_STAGE || 'after'}-${touch ? 'touch' : 'desktop'}-${host}.png`), animations: 'disabled' });
+                if (touch) await notice.getByRole('button', { name: 'Dismiss' }).tap(); else await notice.getByRole('button', { name: 'Dismiss' }).click();
+                await expect(notice).toHaveCount(0);
+                await page.close();
+            }
+            // All hosts have the same bounded 18rem warning width: the same genuine sentence
+            // must wrap identically, including its actual rendered line fragments and paragraph box.
+            for (const value of geometry.slice(1)) {
+                const { host, ...bounds } = value;
+                const { host: referenceHost, ...mainBounds } = geometry[0];
+                expect.soft(bounds, `${host} wrapping matches ${referenceHost}`).toEqual(mainBounds);
+            }
+            fs.writeFileSync(path.join(directory, `${process.env.JEP_WARNING_FONT_STAGE || 'after'}-${touch ? 'touch' : 'desktop'}-geometry.json`), JSON.stringify({ reference, geometry }, null, 2));
+        } finally { await context.close(); }
+    }
+});

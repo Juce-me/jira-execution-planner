@@ -1060,7 +1060,7 @@ async function seedSearchPrefs(page, searchQuery) {
 }
 
 function searchInput(page) {
-    return page.getByPlaceholder('Search tickets...').first();
+    return page.getByRole('textbox', { name: 'Find in view' }).first();
 }
 
 async function storedSearchQuery(page) {

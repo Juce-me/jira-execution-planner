@@ -3,6 +3,9 @@ import ControlField from '../ui/ControlField.jsx';
 import SegmentedControl from '../ui/SegmentedControl.jsx';
 import { bucketCount } from '../analytics/dashboardAnalytics.js';
 
+const FIND_EXAMPLES = ['ABC-123', 'payment retries', 'Jordan Lee', 'checkout redesign', 'Q3 migration'];
+const FIND_EXAMPLE = FIND_EXAMPLES[Math.floor(Math.random() * FIND_EXAMPLES.length)];
+
 export function SearchControl({
     surface,
     extraClassName = '',
@@ -13,14 +16,15 @@ export function SearchControl({
     searchInputRef,
 }) {
     return (
-        <ControlField label="Search" className={`control-search ${searchActive ? 'active-filter applied-filter' : ''} ${extraClassName}`.trim()}>
+        <ControlField label="Find" className={`control-search ${searchActive ? 'active-filter applied-filter' : ''} ${extraClassName}`.trim()}>
             <div className="search-wrap">
                 <input
                     data-onboarding-target="search"
                     data-onboarding-surface={surface}
                     type="text"
                     className="search-input"
-                    placeholder="Search tickets..."
+                    aria-label="Find in view"
+                    placeholder={`e.g. ${FIND_EXAMPLE}`}
                     value={searchInput}
                     onChange={(e) => setSearchInput(e.target.value)} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)}
                     ref={searchInputRef}
@@ -29,8 +33,8 @@ export function SearchControl({
                     <button
                         className="search-clear"
                         onClick={() => setSearchInput('')}
-                        title="Clear search"
-                        aria-label="Clear search"
+                        title="Clear find"
+                        aria-label="Clear find"
                         type="button"
                     >
                         ×

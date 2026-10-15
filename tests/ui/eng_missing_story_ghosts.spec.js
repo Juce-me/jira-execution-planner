@@ -569,7 +569,7 @@ test('Stories Required reuses the existing alert row style and focuses the local
     });
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
 
-    const searchInput = page.getByRole('textbox', { name: 'Search tickets...' });
+    const searchInput = page.getByRole('textbox', { name: 'Find in view' });
     const section = page.locator('#eng-alert-needs-stories');
     await searchInput.fill('no matching alert');
     await expect(section).toHaveCount(0);

@@ -54,6 +54,7 @@ from backend.auth.key_provider import key_provider_from_env
 from backend.auth.local_oauth_store import LocalOAuthStoreConfig, LocalOAuthTokenStore
 from backend.auth.project_access import project_access_denied_response
 from backend.auth.service_integrations import register_service_integration_cache_invalidator
+from backend.auth.share_view_stash import clear_share_view_stash, stash_share_view_query
 from backend.analytics.config import AnalyticsConfigError, validate_analytics_startup_config
 from backend.config.repository import (
     ConfigStorageError,
@@ -893,12 +894,15 @@ def redirect_unauthenticated_oauth_dashboard_entry():
     if database_storage_enabled() and db_oauth_browser_session_data():
         try:
             current_request_auth_context()
+            clear_share_view_stash(session)
             return None
         except AuthError:
             pass
     data = oauth_session_data()
     if data.get('access_token') and data.get('cloudid'):
+        clear_share_view_stash(session)
         return None
+    stash_share_view_query(request, session)
     return redirect('/login?reason=session_expired' if session.get('atlassian_oauth_session_id') else '/login')
 
 

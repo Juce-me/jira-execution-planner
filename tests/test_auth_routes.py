@@ -1,4 +1,5 @@
 import os
+import secrets
 import time
 import unittest
 from pathlib import Path
@@ -9,10 +10,10 @@ from urllib.parse import parse_qs, urlparse
 
 from backend import app as app_module
 from backend.auth.context import RequestAuthContext
-from backend.auth.csrf import CSRF_SESSION_KEY, validate_csrf_token
+from backend.auth.csrf import CSRF_SESSION_KEY, issue_csrf_token, validate_csrf_token
 from backend.routes import auth_routes
 import jira_server
-from tests.oauth_test_helpers import FULL_OAUTH_SCOPE
+from tests.oauth_test_helpers import FULL_OAUTH_SCOPE, forbid_jira_http
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -666,3 +667,228 @@ class TestAuthRoutes(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.get_json()['error'], 'local_token_store_not_allowed')
         self.assertEqual(jira_server.OAUTH_TOKEN_STORE, {})
+
+    PENDING_VIEW_KEY = 'pending_share_view'
+    SHARE_LINK = 'v=1&mode=board&group=default&sprint=4182&find=50%25%20off'
+    CALLBACK_URL = '/api/auth/atlassian/callback?state=state-123&code=abc'
+
+    def _oauth_flow(self, **overrides):
+        """Patch the OAuth configuration and the Atlassian exchange so the real routes run offline."""
+        values = dict(
+            JIRA_AUTH_MODE='atlassian_oauth',
+            APP_ENVIRONMENT_KEY='local',
+            OAUTH_LOCAL_TOKEN_STORE_ALLOWED=True,
+            ATLASSIAN_CLIENT_ID='client-123',
+            ATLASSIAN_CLIENT_SECRET='secret-123',
+            ATLASSIAN_REDIRECT_URI='http://localhost:5050/api/auth/atlassian/callback',
+            FLASK_SECRET_KEY='test-secret',
+            JIRA_URL='https://example.atlassian.net',
+            database_storage_enabled=lambda: False,
+            exchange_authorization_code=lambda config, code, verifier: {
+                'access_token': 'access-123',
+                'refresh_token': 'refresh-123',
+                'expires_in': 3600,
+            },
+            fetch_current_user=lambda token: {'account_id': 'account-123', 'account_status': 'active'},
+            fetch_accessible_resources=lambda token: [{
+                'id': 'cloud-123',
+                'url': 'https://example.atlassian.net/',
+                'name': 'Example Jira',
+            }],
+        )
+        values.update(overrides)
+        return patch.multiple(jira_server, **values)
+
+    def _prime_callback(self, stash=None):
+        with self.client.session_transaction() as flask_session:
+            flask_session['oauth_state'] = 'state-123'
+            flask_session['oauth_pkce_verifier'] = 'verifier-123'
+            if stash is not None:
+                flask_session[self.PENDING_VIEW_KEY] = stash
+
+    def _fresh_stash(self, query, age_seconds=5):
+        return {'q': query, 't': int(time.time()) - age_seconds}
+
+    def _stash(self):
+        with self.client.session_transaction() as flask_session:
+            return flask_session.get(self.PENDING_VIEW_KEY)
+
+    def test_callback_redirects_to_the_stashed_share_view_and_pops_it(self):
+        forbid_jira_http(self)
+        self._prime_callback(self._fresh_stash(self.SHARE_LINK))
+        with self._oauth_flow():
+            response = self.client.get(self.CALLBACK_URL)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers['Location'], '/?' + self.SHARE_LINK)
+        parts = urlparse(response.headers['Location'])
+        self.assertEqual((parts.scheme, parts.netloc, parts.path, parts.fragment), ('', '', '/', ''))
+        with self.client.session_transaction() as flask_session:
+            self.assertNotIn(self.PENDING_VIEW_KEY, flask_session)
+            self.assertIsNotNone(flask_session.get('atlassian_oauth_session_id'))
+            self.assertNotIn('oauth_state', flask_session)
+
+    def test_callback_without_a_stash_redirects_to_root(self):
+        self._prime_callback()
+        with self._oauth_flow():
+            response = self.client.get(self.CALLBACK_URL)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers['Location'], '/')
+
+    def test_callback_target_ignores_request_parameters(self):
+        hostile_url = self.CALLBACK_URL + '&next=//evil.example&redirect=https://evil.example&v=1&find=x'
+        self._prime_callback(self._fresh_stash(self.SHARE_LINK))
+        with self._oauth_flow():
+            with_stash = self.client.get(hostile_url)
+        self._prime_callback()
+        with self._oauth_flow():
+            without_stash = self.client.get(hostile_url)
+        self.assertEqual(with_stash.headers['Location'], '/?' + self.SHARE_LINK)
+        self.assertEqual(without_stash.headers['Location'], '/')
+
+    def test_failed_callback_keeps_the_stash_and_a_retry_applies_it(self):
+        def reject_exchange(config, code, verifier):
+            raise jira_server.AuthError('auth_required', 'Authentication failed.')
+
+        stash = self._fresh_stash(self.SHARE_LINK)
+        failures = (
+            ('invalid_state', self.CALLBACK_URL.replace('state-123', 'wrong'), {}, 400, 'invalid_oauth_state'),
+            ('authorization_denied', '/api/auth/atlassian/callback?state=state-123&error=access_denied', {}, 400, 'oauth_authorization_failed'),
+            ('missing_code', '/api/auth/atlassian/callback?state=state-123', {}, 400, 'missing_oauth_code'),
+            ('failed_exchange', self.CALLBACK_URL, {'exchange_authorization_code': reject_exchange}, 401, 'auth_required'),
+        )
+        for name, url, overrides, status, error in failures:
+            with self.subTest(failure=name):
+                self._prime_callback(stash)
+                with self._oauth_flow(**overrides):
+                    response = self.client.get(url)
+                self.assertEqual(response.status_code, status)
+                self.assertEqual(response.get_json()['error'], error)
+                self.assertEqual(self._stash(), stash)
+        with self.subTest(failure='missing_verifier'):
+            self._prime_callback(stash)
+            with self.client.session_transaction() as flask_session:
+                flask_session.pop('oauth_pkce_verifier')
+            with self._oauth_flow():
+                response = self.client.get(self.CALLBACK_URL)
+            self.assertEqual(response.get_json()['error'], 'missing_pkce_verifier')
+            self.assertEqual(self._stash(), stash)
+
+        self._prime_callback()
+        with self._oauth_flow():
+            retry = self.client.get(self.CALLBACK_URL)
+        self.assertEqual(retry.status_code, 302)
+        self.assertEqual(retry.headers['Location'], '/?' + self.SHARE_LINK)
+        self.assertIsNone(self._stash())
+
+    def test_hostile_stale_or_corrupt_stash_values_always_redirect_to_root(self):
+        fresh = int(time.time())
+        hostile = [
+            {'q': '//evil.example/?v=1', 't': fresh},
+            {'q': 'https://evil.example/', 't': fresh},
+            {'q': '/\\x', 't': fresh},
+            {'q': 'v=1\r\nSet-Cookie: pwn=1', 't': fresh},
+            {'q': 'v=1&find=Terminé', 't': fresh},
+            {'q': 'v=1&find=a%0Ab', 't': fresh},
+            {'q': 'v=1&mode=board' + 'a' * 1600, 't': fresh},
+            {'q': self.SHARE_LINK, 't': fresh - 3600},
+            {'q': self.SHARE_LINK},
+            {'q': self.SHARE_LINK, 't': 'soon'},
+            {'q': 7, 't': fresh},
+            'v=1&mode=board',
+            ['v=1&mode=board'],
+            7,
+        ]
+        real_redirect = jira_server.redirect
+        for stored in hostile:
+            with self.subTest(stored=stored):
+                self._prime_callback(stored)
+                with patch.object(jira_server, 'redirect', wraps=real_redirect) as redirect_spy, \
+                     self._oauth_flow():
+                    response = self.client.get(self.CALLBACK_URL)
+                parts = urlparse(response.headers['Location'])
+                self.assertEqual(response.headers['Location'], '/')
+                self.assertEqual((parts.scheme, parts.netloc, parts.fragment), ('', '', ''))
+                redirect_spy.assert_called_once_with('/')
+                self.assertIsNone(self._stash())
+
+    def test_logout_clears_the_pending_share_view(self):
+        self._prime_callback(self._fresh_stash(self.SHARE_LINK))
+        response = self.client.post(
+            '/api/auth/logout',
+            headers={'X-Requested-With': 'jira-execution-planner'},
+        )
+        self.assertEqual(response.status_code, 200)
+        with self.client.session_transaction() as flask_session:
+            self.assertNotIn(self.PENDING_VIEW_KEY, flask_session)
+            self.assertNotIn('oauth_state', flask_session)
+
+    def test_basic_mode_never_stashes_or_consumes_a_share_view(self):
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'):
+            entry = self.client.get('/?' + self.SHARE_LINK)
+            entry.close()
+            self.assertEqual(entry.status_code, 200)
+            self.assertEqual(entry.headers.getlist('Set-Cookie'), [])
+            self.assertIsNone(self._stash())
+
+            stash = self._fresh_stash(self.SHARE_LINK)
+            with self.client.session_transaction() as flask_session:
+                flask_session[self.PENDING_VIEW_KEY] = stash
+            login = self.client.get('/login')
+            self.assertEqual(login.status_code, 302)
+            self.assertEqual(login.headers['Location'], '/')
+            self.assertEqual(self._stash(), stash)
+
+    def test_full_login_return_chain_applies_the_link_once(self):
+        forbid_jira_http(self)
+        with self._oauth_flow():
+            entry = self.client.get('/?' + self.SHARE_LINK)
+            login_page = self.client.get(entry.headers['Location'])
+            authorize = self.client.get('/api/auth/atlassian/login')
+            state = parse_qs(urlparse(authorize.headers['Location']).query)['state'][0]
+            callback = self.client.get('/api/auth/atlassian/callback?state=%s&code=abc' % state)
+            repeated = self.client.get('/api/auth/atlassian/callback?state=%s&code=abc' % state)
+            dashboard = self.client.get(callback.headers['Location'])
+            dashboard.close()
+        self.assertEqual((entry.status_code, entry.headers['Location']), (302, '/login'))
+        self.assertEqual(login_page.status_code, 200)
+        self.assertEqual(authorize.status_code, 302)
+        self.assertEqual((callback.status_code, callback.headers['Location']), (302, '/?' + self.SHARE_LINK))
+        self.assertEqual((repeated.status_code, repeated.get_json()['error']), (400, 'invalid_oauth_state'))
+        self.assertEqual(dashboard.status_code, 200)
+        self.assertIsNone(self._stash())
+
+    def test_pending_share_view_cookie_stays_under_the_browser_limit_through_the_login_hop(self):
+        """V8: a maximum stash on top of every session key still fits one cookie (limit 4093 bytes)."""
+        browser_session_id = '8b1c2d3e-4f50-4a6b-9c7d-0e1f2a3b4c5d'
+        https = {'base_url': 'https://localhost'}
+        with self.client.session_transaction() as flask_session:
+            flask_session['db_oauth_session'] = {'db_browser_session_id': browser_session_id}
+            flask_session['atlassian_oauth_session_id'] = browser_session_id
+            for _ in range(8):
+                issue_csrf_token(flask_session, {})
+        longest = 'v=1&find=' + secrets.token_urlsafe(1200)[:1527]
+        too_long = longest + 'a'
+        self.assertEqual((len(longest), len(too_long)), (1536, 1537))
+
+        with patch.dict(jira_server.app.config, {'SESSION_COOKIE_SECURE': True}), self._oauth_flow():
+            entry = self.client.get('/?' + longest, **https)
+            login = self.client.get('/api/auth/atlassian/login', **https)
+
+        for response in (entry, login):
+            headers = response.headers.getlist('Set-Cookie')
+            self.assertEqual(len(headers), 1)
+            self.assertIn('; Secure', headers[0])
+            self.assertLessEqual(len(headers[0]), 4093)
+        with self.client.session_transaction() as flask_session:
+            self.assertEqual(flask_session[self.PENDING_VIEW_KEY]['q'], longest)
+            self.assertEqual(len(flask_session['csrf_token_hashes']), 8)
+            self.assertTrue(flask_session['oauth_state'])
+            self.assertTrue(flask_session['oauth_pkce_verifier'])
+        self.assertIn('state=' + flask_session['oauth_state'], login.headers['Location'])
+
+        refused = jira_server.app.test_client()
+        with self._oauth_flow():
+            response = refused.get('/?' + too_long)
+        self.assertEqual(response.headers.getlist('Set-Cookie'), [])
+        with refused.session_transaction() as flask_session:
+            self.assertNotIn(self.PENDING_VIEW_KEY, flask_session)

@@ -8,6 +8,7 @@ from backend.auth.csrf import csrf_session_data_for_auth_context, issue_csrf_tok
 from backend.auth.db_browser_sessions import delete_browser_session
 from backend.auth.jira_auth import ensure_oauth_token
 from backend.auth.scope_policy import missing_context_oauth_scopes
+from backend.auth.share_view_stash import clear_share_view_stash, pop_share_view_target
 from backend.config.repository import ConfigStorageError
 from backend.epm import home as epm_home
 from backend.db.engine import DatabaseConfigurationError, session_scope
@@ -99,12 +100,12 @@ def auth_entry_page():
     if not terminal_recovery and database_storage_enabled() and db_oauth_browser_session_data():
         try:
             current_request_auth_context()
-            return redirect('/')
+            return redirect(pop_share_view_target(session))
         except AuthError:
             pass
     data = oauth_session_data()
     if not terminal_recovery and data.get('access_token') and data.get('cloudid'):
-        return redirect('/')
+        return redirect(pop_share_view_target(session))
     message = ''
     login_url = '/api/auth/atlassian/login'
     if recovery_reason == 'session_expired':
@@ -434,7 +435,7 @@ def api_atlassian_callback():
         if error.code in {'missing_jira_url', 'missing_oauth_config', 'missing_flask_secret_key', 'invalid_auth_mode', 'local_token_store_not_allowed'}:
             return auth_error_response(error, 400)
         return auth_error_response(error, 401 if error.code != 'jira_site_not_accessible' else 403)
-    return redirect('/')
+    return redirect(pop_share_view_target(session))
 
 
 @bp.route('/api/auth/refresh', methods=['POST'])
@@ -580,4 +581,5 @@ def api_auth_logout():
     save_oauth_session({})
     session.pop('oauth_state', None)
     session.pop('oauth_pkce_verifier', None)
+    clear_share_view_stash(session)
     return jsonify({'ok': True})

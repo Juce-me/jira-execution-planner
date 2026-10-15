@@ -1,0 +1,186 @@
+{
+  "pattern": "v=[1-9][0-9]{0,2}(?:&[A-Za-z][A-Za-z0-9]{0,15}=(?:[A-Za-z0-9_.~:,-]|%(?![01][0-9A-Fa-f]|7[Ff])[0-9A-Fa-f]{2})*){0,40}",
+  "maxQueryBytes": 1536,
+  "accepts": [
+    "v=1&mode=catch-up&group=default&sprint=4182",
+    "v=1&mode=catch-up&group=grp-4f2a1c&sprint=4182&teams=7f88c5cc-36b1-5bbe-b163-9bb375d42fc4,39070dcb-6fde-5128-a434-3dd9560f077c,13d3c0b4-815a-5a78-b746-3a7e8565b635",
+    "v=1&mode=catch-up&group=grp-4f2a1c&sprint=4182&teams=7f88c5cc-36b1-5bbe-b163-9bb375d42fc4,39070dcb-6fde-5128-a434-3dd9560f077c,13d3c0b4-815a-5a78-b746-3a7e8565b635,92e36a80-042d-5027-9eb7-67896736b45e,3e1cf4c2-1d40-571d-95cc-5b652fc8c670,f98953c0-58f4-56d4-97da-6a0b90ed1893,53510729-582e-5e95-8e2a-834cf275d8ba,416c294a-2d83-576c-8383-132f04d7e56d,d460599d-a3e2-5ae6-9978-b46bd015e796,5129901e-7dab-5d1c-83b8-9e99ad09a040,f7c56327-73dc-56ae-9d17-38439e8a3900,99ea0da3-eeaf-5be0-9b41-81f6cf593e63",
+    "v=1&mode=catch-up&group=grp-4f2a1c&sprint=4182&teams=7f88c5cc-36b1-5bbe-b163-9bb375d42fc4,39070dcb-6fde-5128-a434-3dd9560f077c,13d3c0b4-815a-5a78-b746-3a7e8565b635,92e36a80-042d-5027-9eb7-67896736b45e,3e1cf4c2-1d40-571d-95cc-5b652fc8c670,f98953c0-58f4-56d4-97da-6a0b90ed1893,53510729-582e-5e95-8e2a-834cf275d8ba,416c294a-2d83-576c-8383-132f04d7e56d,d460599d-a3e2-5ae6-9978-b46bd015e796,5129901e-7dab-5d1c-83b8-9e99ad09a040,f7c56327-73dc-56ae-9d17-38439e8a3900,99ea0da3-eeaf-5be0-9b41-81f6cf593e63&status=only:In%20Progress,To%20Do&priority=only:Blocker,Critical&track=none&lanes=tech&initiatives=0&sort=track-flexible&alerts=blocked,missing,followup,backlog,missingTeam,missingLabels,needsStories,waiting,empty&alertTeam=blocked:92e36a80-042d-5027-9eb7-67896736b45e",
+    "v=1&mode=catch-up&group=default&sprint=4182&status=all&alerts=off",
+    "v=1&mode=catch-up&group=default&sprint=4182&status=hide:Ready%2C%20set,Won%27t%20Do&alerts=none",
+    "v=1&mode=catch-up&group=default&sprint=4182&status=only:Termin%C3%A9,%E5%AE%8C%E4%BA%86",
+    "v=1&mode=catch-up&group=default&sprint=4182&find=50%25%20off%20%26%20more%3Dyes%2B%20%28x%29%2A",
+    "v=1&mode=catch-up&group=default&sprint=4182&find=Release%202.0%2E",
+    "v=1&mode=catch-up&group=dept%2Fa&sprint=4182&teams=team%3A%3Aorbit,a%2Cb,50%25,c%2B%2B,Won%27t,Caf%C3%A9",
+    "v=1&mode=catch-up&group=default&sprint=4182&alerts=followup&alertTeam=followupEpics:Unknown%20Team",
+    "v=1&mode=catch-up&group=default&sprint=4182&epic=PROJ-101",
+    "v=1&mode=planning&group=default&sprint=4182&initiatives=0&sort=status&layout=list&story=PROJ-102",
+    "v=1&mode=planning&group=default&sprint=4182&find=checkout&status=only:In%20Progress&rows=stories",
+    "v=1&mode=board&group=default&sprint=4182&scope=all_work&find=checkout",
+    "v=1&mode=statistics&group=default&sprint=4182&stats=cohort&from=2026Q3&to=2026Q4",
+    "v=1&mode=statistics&group=default&sprint=4182&teams=3e1cf4c2-1d40-571d-95cc-5b652fc8c670&stats=burnout",
+    "v=1&mode=statistics&group=default&sprint=4182&stats=projectTrack&from=4180&to=4182"
+  ],
+  "rejects": [
+    {
+      "query": "v=1&find=a+b",
+      "why": "raw plus"
+    },
+    {
+      "query": "v=1&find=a b",
+      "why": "raw space"
+    },
+    {
+      "query": "v=1&find=a\"b",
+      "why": "double quote"
+    },
+    {
+      "query": "v=1&find=a'b",
+      "why": "single quote"
+    },
+    {
+      "query": "v=1&find=a<b",
+      "why": "less-than"
+    },
+    {
+      "query": "v=1&find=a>b",
+      "why": "greater-than"
+    },
+    {
+      "query": "v=1&find=a\\b",
+      "why": "backslash"
+    },
+    {
+      "query": "v=1&find=a/b",
+      "why": "raw slash"
+    },
+    {
+      "query": "v=1&epic=../x",
+      "why": "path traversal"
+    },
+    {
+      "query": "v=1&group=//evil.example",
+      "why": "protocol-relative authority"
+    },
+    {
+      "query": "v=1&group=https://evil.example/",
+      "why": "absolute URL"
+    },
+    {
+      "query": "v=1&find=a@b",
+      "why": "at sign"
+    },
+    {
+      "query": "v=1&find=a#b",
+      "why": "fragment delimiter"
+    },
+    {
+      "query": "v=1&find=a;b",
+      "why": "semicolon"
+    },
+    {
+      "query": "v=1&find=a(b",
+      "why": "raw open parenthesis (must be %28)"
+    },
+    {
+      "query": "v=1&find=a)b",
+      "why": "raw close parenthesis (must be %29)"
+    },
+    {
+      "query": "v=1&find=a!b",
+      "why": "raw exclamation mark (must be %21)"
+    },
+    {
+      "query": "v=1&find=a*b",
+      "why": "raw asterisk (must be %2A)"
+    },
+    {
+      "query": "v=1&find=a$b",
+      "why": "dollar"
+    },
+    {
+      "query": "v=1&find=a|b",
+      "why": "pipe"
+    },
+    {
+      "query": "v=1&find=a{b",
+      "why": "open brace"
+    },
+    {
+      "query": "v=1&find=a}b",
+      "why": "close brace"
+    },
+    {
+      "query": "v=1&find=a[b",
+      "why": "open bracket"
+    },
+    {
+      "query": "v=1&find=a^b",
+      "why": "caret"
+    },
+    {
+      "query": "v=1&find=a`b",
+      "why": "backtick"
+    },
+    {
+      "query": "v=1&find=a?b",
+      "why": "raw question mark"
+    },
+    {
+      "query": "v=1&mode=board\n",
+      "why": "trailing LF (Python $ would accept it)"
+    },
+    {
+      "query": "v=1&mode=board\r\n",
+      "why": "trailing CRLF"
+    },
+    {
+      "query": "v=1&find=a\nb",
+      "why": "LF inside a value"
+    },
+    {
+      "query": "v=1&find=a\rb",
+      "why": "CR inside a value"
+    },
+    {
+      "query": "v=1&find=a\u0000b",
+      "why": "raw NUL"
+    },
+    {
+      "query": "v=1&find=a\u007fb",
+      "why": "raw DEL"
+    },
+    {
+      "query": "v=1&find=Termin\u00e9",
+      "why": "raw non-ASCII letter"
+    },
+    {
+      "query": "v=1&find=\u5b8c\u4e86",
+      "why": "raw CJK"
+    },
+    {
+      "query": "v=1&find=a\u202eb",
+      "why": "raw bidi override"
+    },
+    {
+      "query": "v=1&find=a\u2028b",
+      "why": "raw line separator"
+    },
+    {
+      "query": "v=1&find=\ud83d\ude00",
+      "why": "raw emoji"
+    },
+    {
+      "query": "v=01",
+      "why": "version with leading zero"
+    },
+    {
+      "query": "v=1.0",
+      "why": "version with a dot"
+    },
+    {
+      "query": "v=",
+      "why": "empty version"
+    }
+  ]
+}

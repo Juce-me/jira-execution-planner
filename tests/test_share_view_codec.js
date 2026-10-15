@@ -226,6 +226,8 @@ const DECODE_VECTORS = [
     [`${FILLER_1536}a`, invalid('too_long')],
     [`?v=1&${FORTY_PAIRS}`, ok()],
     [`?v=1&${FORTY_PAIRS}&k40=1`, invalid('too_many_pairs')],
+    [`?v=2&${FORTY_PAIRS}`, NEWER],
+    [`?v=2&${FORTY_PAIRS}&k40=1`, invalid('too_many_pairs')],
     [`?v=1&${FORTY_PAIRS}&&&`, ok()],
     ['?v=1&mode=board#top', invalid('bad_character')],
     ['?v=1&mode=board\n', invalid('bad_character')],

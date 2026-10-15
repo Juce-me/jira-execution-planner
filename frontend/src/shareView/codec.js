@@ -198,9 +198,9 @@ export function decodeShareView(search) {
     const [versionPair, ...rest] = query.split('&');
     const version = versionPair.slice(2);
     if (!VERSION.test(version)) return invalidLink('bad_version');
-    if (Number(version) !== SHARE_VIEW_VERSION) return { kind: 'newer' };
     const pairs = rest.filter(Boolean);
     if (pairs.length > MAX_FURTHER_PAIRS) return invalidLink('too_many_pairs');
+    if (Number(version) !== SHARE_VIEW_VERSION) return { kind: 'newer' };
 
     const state = { version: SHARE_VIEW_VERSION, mode: SHARE_VIEW_DEFAULTS.mode };
     const reported = [];

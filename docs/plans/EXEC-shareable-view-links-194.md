@@ -1,6 +1,6 @@
 # Shareable View Links Implementation Plan
 
-> **Status:** Paused 2026-10-15 after Task 3 review: Tasks 0–2 are complete; Task 3 is committed and verified but awaits an operator decision on the pair-cap/version validation conflict described below. No publication.
+> **Status:** In progress 2026-10-15: Tasks 0–2 are complete; the operator approved the Task 3 pair-cap correction and continuation. Task 3 correction is awaiting fresh review; Tasks 4–14 remain planned. No publication.
 >
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Per-task status and commits are recorded in the Execution status table below, inside this committed file (see the recording rule there), not in a scratch ledger.
 
@@ -31,6 +31,8 @@ This file is the master: status, constraints, file map, contracts and the three 
 
 The operator declined a browser-failure waiver and instructed repair on 2026-10-15. The separate `bugfix/browser-baseline-layout` commit `4764991e` and its merge carrying this record are approved baseline-repair history before Task 1, in addition to the sixteen feature-task commits. Include their paths from the File map in the publication scope if they have not separately reached `origin/main`; do not treat these approved commits as unexplained feature-task history.
 
+The pause-record documentation commit `9bf40051` and the separate Task 3 corrective commit ("Validate link pair cap before future version handling"), approved by the operator on 2026-10-15, are history exceptions in addition to the sixteen feature-task commits. Resolve the corrective commit SHA from the log at Task 14; no SHA is predicted here.
+
 Statuses and commit SHAs are written once, in Task 14 Step 9, from `git log --oneline origin/main..HEAD`: every task's first step needs a clean tree, so plan files stay unmodified between tasks (if execution pauses early, record them then in a docs-only commit). Task 0 alone writes earlier, and only into its own row: the G1 answer and that the instruction chain was read, in its own documentation-only commit. Statuses: `planned`, `in-progress`, `done`, `blocked`, `declined`. Rename `EXEC-` to `DONE-` only after the work is merged (`docs/plans/AGENTS.md`).
 
 | Task | Title | Status | Commit | Operator gate |
@@ -38,7 +40,7 @@ Statuses and commit SHAs are written once, in Task 14 Step 9, from `git log --on
 | 0 | Baseline and preflight | done | `b9ae6641` | G1: accepted 2026-10-15; instruction chain and related postmortems read; browser baseline repaired in `4764991e` |
 | 1 | Server login stash and shared corpus | done | `e7f9ede2` | Review approved; full Python 2,176 tests, 29 skips, no failures |
 | 2 | Log hygiene and privacy notice | done | `2ad069a5` | G1 accepted 2026-10-15; review approved; full Python 2,183 tests, 29 skips, no failures |
-| 3 | View defaults and codec | blocked | `345d69a5` | Review found a plan-mandated contract conflict; operator decision pending |
+| 3 | View defaults and codec | in-progress | `345d69a5` | Pair-cap correction approved 2026-10-15; separate corrective commit awaiting fresh review |
 | 4 | Resolver | planned | | |
 | 5 | Store and entry | planned | | |
 | 6 | `dashboard.jsx` behavior-preserving extractions | planned | | Checkpoint |
@@ -55,7 +57,7 @@ Statuses and commit SHAs are written once, in Task 14 Step 9, from `git log --on
 
 Order: 0 (records the G1 answer), 1, 2 (only if G1 is accepted; any time after Task 1 and before Task 14), 3, 4, 5, 6, 7, 8, 9, 10, 11a, 11b, 11c, 12, 13, 14. Checkpoint tasks end with: report the SHA, files, results and a concrete manual validation scope, then STOP until the operator confirms. If a task fails twice on the same issue, stop, summarize the evidence and ask (`AGENTS.md` section 6).
 
-Task 3 review pause (2026-10-15): the codec slice's decoded-state contract says more than 40 further pairs is `invalid`, but its supplied implementation returns `newer` before checking the pair count. A focused review probe using `v=2` plus 41 further pairs returned `{kind:'newer'}` instead of `{kind:'invalid', reason:'too_many_pairs'}`. Neither result applies state. The committed code matches the supplied block exactly; correction requires an operator decision on the plan. Proposed remedy: check the pair cap before returning `newer`, add the future-version over-cap vector, align the supplied block, then rerun the codec, stash, Node, lint and build gates. Task 3 otherwise passed 45 codec tests, 2,584 full Node tests, 26 stash tests, two structure tests and a reproducible committed build; extraction lint remains the recorded 104 warnings and four existing enforced findings. Task 4 has not started.
+Task 3 review correction (2026-10-15): the operator approved moving the pair-cap check before returning `newer`, adding `v=2` vectors for both 40 and 41 further pairs, and aligning the supplied codec and tests in the slice. This resolves the plan-mandated contract conflict: `v=2` plus 40 pairs remains `newer`; 41 pairs is `invalid` with `too_many_pairs`. The original codec commit `345d69a5` passed 45 codec tests, 2,584 full Node tests, 26 stash tests, two structure tests and a reproducible committed build. The correction reruns those gates; extraction lint must remain at 104 warnings and four existing enforced findings, and dedicated shareView lint must remain clean. Fresh review is required before Task 4 starts. Task 4 has not started.
 
 ### Operator gates
 
@@ -607,7 +609,7 @@ Expected: only the listed docs (and the two budget files if a pin moved) changed
 
 - [ ] **Step 1: Confirm every task is done**
 
-Run `git log --oneline origin/main..HEAD`. After the plan's own documentation commits and any merge of `origin/main`, it must show one commit for each of Tasks 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11a, 11b, 11c, 12 and 13, sixteen feature-task commits in all (plus the approved baseline-repair commit and merge recorded above if not already in `origin/main`), in the order the Execution status table lists them (Task 2 may sit anywhere after Task 1). A missing, extra or out-of-order commit is a deviation to report before going on. The Execution status table still reads `planned` here: it is written once, in Step 9, from this log.
+Run `git log --oneline origin/main..HEAD`. After the plan's own documentation commits and any merge of `origin/main`, it must show one commit for each of Tasks 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11a, 11b, 11c, 12 and 13, sixteen feature-task commits in all (plus the approved baseline-repair commit and merge, pause-record documentation commit `9bf40051`, and Task 3 corrective commit recorded above if not already in `origin/main`), in the order the Execution status table lists them (Task 2 may sit anywhere after Task 1). A missing, extra or out-of-order commit is a deviation to report before going on. Rows recorded during the approved Task 3 pause and correction retain their recorded statuses; later task rows remain `planned` until Step 9 reconciles all statuses and SHAs from this log. Count the sixteen feature-task commits separately from the approved history exceptions above.
 
 - [ ] **Step 2: Full backend gates**
 

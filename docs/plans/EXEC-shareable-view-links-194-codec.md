@@ -1,6 +1,6 @@
 # Shareable View Links Implementation Plan: View defaults and link codec (Task 3)
 
-> **Status:** Proposed 2026-10-14. Slice of [EXEC-shareable-view-links-194.md](EXEC-shareable-view-links-194.md). Read the master's Global Constraints, Review Focus and Execution status before starting. Statuses and commit SHAs are recorded once, in the master's Task 14 Step 9; keep plan files unmodified between tasks so every Step 0 sees a clean tree. Slices are grouped by area, not by execution order; the master's table gives the order.
+> **Status:** Task 3 implemented; the operator approved the pair-cap validation correction on 2026-10-15. Slice of [EXEC-shareable-view-links-194.md](EXEC-shareable-view-links-194.md). Read the master's Global Constraints, Review Focus and Execution status before starting. Statuses and commit SHAs are recorded once, in the master's Task 14 Step 9; keep plan files unmodified between tasks so every Step 0 sees a clean tree. Slices are grouped by area, not by execution order; the master's table gives the order.
 >
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -55,7 +55,7 @@
   ```
 - Produces, `tests/test_share_view_stash.py`: the class `ShareViewLinkKeyTests` with one test, `test_no_link_key_is_a_forbidden_view_payload_key`, the Python half of design verification V11. It reads `frontend/src/shareView/codec.js` as text, extracts the `SHARE_VIEW_QUERY_KEYS` array literal and fails, naming the file, if it cannot find it or finds fewer than 20 keys.
 - Decoded-state contract (binding for Tasks 4, 5 and 12):
-  - `search` is `location.search`, a leading `?` is optional. A query that does not start with `v=` is `{kind:'none'}` (so `?mode=board&v=1` is not a link). Over 1,536 characters, a character outside `[A-Za-z0-9._~%&=,:-]`, a `v` that is not `^[1-9][0-9]{0,2}$` or more than 40 further pairs is `invalid`; `v` above 1 is `newer`.
+  - `search` is `location.search`, a leading `?` is optional. A query that does not start with `v=` is `{kind:'none'}` (so `?mode=board&v=1` is not a link). Over 1,536 characters, a character outside `[A-Za-z0-9._~%&=,:-]`, a `v` that is not `^[1-9][0-9]{0,2}$` or more than 40 further pairs is `invalid`; only an envelope within those limits with `v` above 1 is `newer`.
   - In an `ok` result `state.version` is 1 and `state.mode` is always one of the four modes (a missing `mode` is `catch-up`; an invalid one is `catch-up` and is reported as `mode`). Every other key is present only when it was valid. An absent key means its default in `SHARE_VIEW_DEFAULTS` (a Lead Times link made by this encoder always carries `from` and `to`, so the default quarter only serves hand-made links), except `group` and `sprint`, whose absence means unresolved (the resolver returns `group_unresolved` or `sprint_unresolved`). So `state.group` and `state.sprint` can be missing even though the shared `ShareViewState` type lists them.
   - Value shapes: `teams` is `['all']` or at most 12 distinct ids; `status` and `priority` are `null`, `{only:[...]}` or `{hidden:[...]}` with at most 20 distinct atoms, kept exactly as written (case and spaces preserved: the resolver matches case-insensitively, and `priority` ids are not checked against the six labels here); `track` is absent (`track=all`), `[]` (`track=none`) or a subset of `['committed','flexible']` matched case-sensitively; `lanes` is `{product, tech}` (never both false); `initiatives` is a boolean; `rows` is `'epic'` or `'story'`; `alerts` is `'off'`, `'none'` or distinct category keys; `alertTeam` is `{anchor, id}`; `find` is trimmed, at most 100 code points, `''` for `find=`; `from` and `to` are each a Lead Times quarter or a Sprint id, nothing more (pairing, order, the 16-quarter window, the view's own shape and the catalog are Task 4's).
   - `epic` and `story` share the one `focus` slot: the first valid one in link order wins and the other adds `focus` to `reported`. `alertTeam` and `focus` can both be present; `resolveShareViewFocus` keeps at most one and reports `focus`.
@@ -318,6 +318,8 @@ const DECODE_VECTORS = [
     [`${FILLER_1536}a`, invalid('too_long')],
     [`?v=1&${FORTY_PAIRS}`, ok()],
     [`?v=1&${FORTY_PAIRS}&k40=1`, invalid('too_many_pairs')],
+    [`?v=2&${FORTY_PAIRS}`, NEWER],
+    [`?v=2&${FORTY_PAIRS}&k40=1`, invalid('too_many_pairs')],
     [`?v=1&${FORTY_PAIRS}&&&`, ok()],
     ['?v=1&mode=board#top', invalid('bad_character')],
     ['?v=1&mode=board\n', invalid('bad_character')],
@@ -1642,9 +1644,9 @@ export function decodeShareView(search) {
     const [versionPair, ...rest] = query.split('&');
     const version = versionPair.slice(2);
     if (!VERSION.test(version)) return invalidLink('bad_version');
-    if (Number(version) !== SHARE_VIEW_VERSION) return { kind: 'newer' };
     const pairs = rest.filter(Boolean);
     if (pairs.length > MAX_FURTHER_PAIRS) return invalidLink('too_many_pairs');
+    if (Number(version) !== SHARE_VIEW_VERSION) return { kind: 'newer' };
 
     const state = { version: SHARE_VIEW_VERSION, mode: SHARE_VIEW_DEFAULTS.mode };
     const reported = [];
@@ -1987,3 +1989,7 @@ Settled decisions for this slice; none changes a binding name in the master.
 6. Source and tests build invisible characters with `String.fromCharCode` and `String.fromCodePoint`. Do not paste literal bidi controls into a source file and do not write backslash-u escapes for them (editing tools may convert them).
 7. Beyond the binding names the module exports the vocabularies and two narrowing tables; the resolver does not need them.
 8. The build id hashes every file under `frontend/src`, so this commit carries the regenerated `frontend/dist`.
+
+## Approved Task 3 review correction (2026-10-15)
+
+The operator approved checking the 40-further-pair cap before returning `newer`, with regression vectors for `v=2` plus 40 pairs (`newer`) and 41 pairs (`invalid`, `too_many_pairs`). The supplied codec and test blocks above include the correction. The separate corrective commit and the earlier pause-record commit are approved history exceptions recorded in the master; they do not replace a feature-task commit.

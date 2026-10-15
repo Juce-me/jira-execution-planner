@@ -1,3 +1,4 @@
+import './shareView/entry.js';
 import { useEngScope } from './eng/useEngScope.js';
 import { SearchControl, ViewSwitch, SprintControl, GroupControl, TeamControl } from './eng/EngControls.jsx';
 import { EpicBlock } from './eng/EpicBlock.jsx';

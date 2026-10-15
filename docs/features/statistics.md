@@ -2,7 +2,7 @@
 
 The Statistics panel summarizes sprint execution and epic flow for the currently selected scope.
 
-It is available for active and completed sprints. Future sprints do not use the Statistics panel.
+It is available for future, active, and completed sprints. Teams and Priority show the data available for the selected sprint; range-backed views retain their own Start Sprint and End Sprint selectors. Changing the header Sprint to a future sprint keeps Statistics open. Sign-in recovery preserves Statistics for future sprints too.
 
 Hover uses the shared [design-system vocabulary](../design-system.md): ordinary actions use the overlay and ring; selected cohort and graph controls keep their selected colors and meaningful elevation with a separate ring; icons use circles and text links underline. Graph headings and notes remain readable on the composed hover fill without changing resting typography. Chart segment fills, legend isolation/dimming, strip feedback and contained pointer readouts retain their existing behavior. The existing muted-detail and excluded-Epic dimming contrast debt remains separate palette scope.
 

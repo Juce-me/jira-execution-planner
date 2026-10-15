@@ -962,8 +962,23 @@ test('selector modes: closed and future Sprint choices preserve mode eligibility
     await page.getByRole('option', { name: '2026Q3 Sprint 43', exact: true }).click();
     await expect(modes.getByRole('radio', { name: 'Planning', exact: true })).toBeEnabled();
     await expect(modes.getByRole('radio', { name: 'Scenario', exact: true })).toBeEnabled();
-    await expect(modes.getByRole('radio', { name: 'Statistics', exact: true })).toBeDisabled();
+    await settle(page);
+    await modes.screenshot({ path: `${screenshotDir}/future-sprint-statistics-after.png` });
+    const statistics = modes.getByRole('radio', { name: 'Statistics', exact: true });
+    await expect(statistics).toBeEnabled();
     await expect(modes.getByRole('radio', { name: 'Board', exact: true })).toBeEnabled();
+    await statistics.click();
+    await expect(statistics).toHaveAttribute('aria-checked', 'true');
+    await expect(page.getByRole('radiogroup', { name: 'Statistics view', exact: true })).toBeVisible();
+    await expect(trigger).toContainText('2026Q3 Sprint 43');
+
+    // Statistics remains mounted when its header Sprint changes back to a future sprint.
+    await trigger.click();
+    await page.getByRole('option', { name: selectedSprintName, exact: true }).click();
+    await trigger.click();
+    await page.getByRole('option', { name: '2026Q3 Sprint 43', exact: true }).click();
+    await expect(statistics).toHaveAttribute('aria-checked', 'true');
+    await expect(page.getByRole('radiogroup', { name: 'Statistics view', exact: true })).toBeVisible();
 });
 
 const selectorModePrefs = (modeName) => ({

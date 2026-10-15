@@ -31,6 +31,7 @@ function createRuntime() {
             return cells[slot].value;
         },
         useCallback(fn, deps) { return react.useMemo(() => fn, deps); },
+        useSyncExternalStore(_subscribe, getSnapshot) { return getSnapshot(); },
         useEffect(effect, deps) {
             const slot = index++;
             const previous = cells[slot];

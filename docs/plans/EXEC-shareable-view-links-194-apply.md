@@ -533,6 +533,8 @@ No behavior may differ from the version before this commit.
 
 ### Task 9: Apply machine (pure)
 
+**Approved deadline correction (2026-10-15):** the operator approved a separate correction after Task 9 review. The supplied machine and tests below include that correction: 19 new boundary tests fail on the original implementation (13 failures), then all 57 focused and 2,779 full Node tests pass after expiry is checked before readiness. The original 38 tests and seeded fuzz remain unchanged. The correction also updates this slice and the master status/history record; fresh review is required before Task 10.
+
 **Owner note:** no dependency on another `shareView` module (the machine imports nothing); blocks Task 11a (the controller steps it every tick). It changes no existing file, so no budget pin moves here.
 
 **What it is.** `stepApplyMachine(state, input)` returns `{ state, actions }`. It owns ordering and timing only: the caller (Task 11a) reads one plain readiness snapshot per tick, executes the returned actions with raw setters and feeds the next snapshot back. It never reads a clock, a ref or the DOM, so every row of the design's Stages, Lifecycle and Budget tables is testable with a fake clock (the `now` field of the input). It issues at most one `run` action per step, so a stage's writes commit before the next stage reads state.
@@ -583,7 +585,7 @@ actions = [ { type: 'run', stage: 'A', scopeChange } | { type: 'run', stage: 'B'
 | Lifecycle: immediate drops | `groupsFailed`, `adminGate === 'missing'` and `catalog === 'failed'` finish `dropped`, as does an unresolved group or Sprint (the resolver's categories). A link that could not start names no category: the notice stays neutral. Only a group or Sprint the recipient does not have is named. |
 | Lifecycle: auth lock, dirty review | `authLocked` finishes `dropped`, `reviewBusy` finishes `cancelled`, both with no category. |
 | Lifecycle: interactions | Before Stage D a `deliberate` interrupt finishes `cancelled` (no notice); `scroll` is ignored. From Stage D any interrupt emits one `cancelReveal` and the link still finishes with the applied stages. While `paused` interrupts are ignored. |
-| Budgets | The overall budget (90 s) runs from the first step after `configSettled`; Stage A's 5 s window opens when the readiness gate first opens; B, C and D each start when the previous stage finished. All are measured on an active clock that stops while `paused`. A stage that runs out is skipped and its categories reported (`B` mode and filters, `C` teams and filters, `D` focus). The overall budget finishes `dropped` if Stage A never ran, otherwise `partial` listing what was still owed. A Stage A timeout drops the link. |
+| Budgets | The overall budget (90 s) runs from the first step after `configSettled`; Stage A's 5 s window opens when the readiness gate first opens; B, C and D each start when the previous stage finished. All are measured on an active clock that stops while `paused`. A stage that runs out is skipped and its categories reported (`B` mode and filters, `C` teams and filters, `D` focus). The overall budget finishes `dropped` if Stage A never ran, otherwise `partial` listing what was still owed. A Stage A timeout drops the link even if the gate stays open and resolution is absent. Once armed, expiry takes priority over readiness in every stage; readiness at the deadline cannot run the stage. No-work stages still skip silently, and C reports only its still-owed parts. |
 | Stage A | One `run A` with `scopeChange: !input.scope.equal`. A same-scope link still runs A (it sets the ENG view and consumes the one-shot EPM restore) but writes no scope. |
 | Stage B | Needs the scope committed (`scope.equal`), the group applied, the Planning scope hydrated, no group restore in flight, no pending Board scope readiness, and, for a scope change, one commit after Stage A (`applyGroupState` has run by then). |
 | Hold | `releaseHold` is emitted one commit after Stage B ran (or after 250 ms of active time when nothing committed, or when Stage B timed out). Stage C waits for it. |
@@ -1053,6 +1055,83 @@ test('every stage budget and the overall budget match the design', () => {
     assert.equal(APPLY_OVERALL_BUDGET_MS, 90000);
 });
 
+// Readiness arriving at the active-time deadline is already too late to run a stage.
+for (const offset of [-1, 0, 1]) {
+    const boundary = offset < 0 ? 'immediately before' : offset === 0 ? 'at' : 'after';
+    test(`Stage A resolution ${boundary} its deadline respects the armed window`, () => {
+        for (const closes of [false, true]) {
+            const sim = simulate();
+            assert.deepEqual(sim.step({ resolution: null }), []);
+            if (closes) assert.deepEqual(sim.step({ gate: { catalog: 'pending' }, resolution: null }, 1), []);
+            const actions = sim.step({}, APPLY_STAGE_BUDGET_MS.A + offset - (closes ? 1 : 0));
+            assert.deepEqual(actions, offset < 0
+                ? [{ type: 'run', stage: 'A', scopeChange: true }]
+                : [{ type: 'finish', result: 'dropped', categories: [] }]);
+        }
+    });
+
+    test(`Stage A unresolved with an open gate ${boundary} its deadline cannot run late`, () => {
+        const sim = simulate();
+        assert.deepEqual(sim.step({ resolution: null }), []);
+        assert.deepEqual(sim.step({ resolution: null }, APPLY_STAGE_BUDGET_MS.A + offset), offset < 0
+            ? [] : [{ type: 'finish', result: 'dropped', categories: [] }]);
+        if (offset < 0) assert.deepEqual(sim.step({ resolution: null }, 1), [{ type: 'finish', result: 'dropped', categories: [] }]);
+        assert.deepEqual(sim.step({}, 1), [], 'late resolution cannot revive a dropped link');
+    });
+
+    test(`Stage B first readiness ${boundary} its deadline respects expiry and releases the hold`, () => {
+        const sim = simulate();
+        sim.step();
+        assert.deepEqual(sim.step({ commit: 2, scope: { equal: true } }, APPLY_STAGE_BUDGET_MS.B + offset), offset < 0
+            ? [{ type: 'run', stage: 'B' }] : [{ type: 'releaseHold' }]);
+        assert.deepEqual(sim.state.skipped, offset < 0 ? [] : ['mode', 'filters']);
+        assert.equal(sim.state.stage, 'C');
+        assert.deepEqual(sim.step({ commit: 3, scope: { equal: true } }), offset < 0 ? [{ type: 'releaseHold' }] : []);
+    });
+
+    test(`Stage C first readiness ${boundary} its deadline skips only owed work`, () => {
+        for (const teams of [false, true]) {
+            const sim = simulate();
+            throughB(sim, { plan: { c: { teams, facets: true }, d: true } });
+            assert.deepEqual(sim.step({ commit: 4, c: LOADED }, APPLY_STAGE_BUDGET_MS.C + offset), offset < 0
+                ? [{ type: 'run', stage: 'C', part: teams ? 'teams' : 'facets' }] : []);
+            assert.deepEqual(sim.state.skipped, offset < 0 ? [] : [...(teams ? ['teams'] : []), 'filters']);
+            if (offset >= 0) assert.equal(sim.state.stage, 'D');
+        }
+    });
+
+    test(`Stage C facets readiness ${boundary} its deadline never reports Teams already applied`, () => {
+        const sim = simulate();
+        throughB(sim);
+        assert.deepEqual(sim.step({ commit: 4, c: LOADED }, APPLY_STAGE_BUDGET_MS.C - 2), [{ type: 'run', stage: 'C', part: 'teams' }]);
+        assert.deepEqual(sim.step({ commit: 5, c: LOADED }, 2 + offset), offset < 0
+            ? [{ type: 'run', stage: 'C', part: 'facets' }] : []);
+        assert.deepEqual(sim.state.skipped, offset < 0 ? [] : ['filters']);
+        assert.equal(sim.state.stage, 'D');
+    });
+
+    test(`Stage D first readiness ${boundary} its deadline preserves focus reporting`, () => {
+        const sim = simulate();
+        throughB(sim, { plan: { c: { teams: false, facets: false }, d: true } });
+        assert.deepEqual(sim.step(), []);
+        assert.deepEqual(sim.step({ d: { cohortSettled: true } }, APPLY_STAGE_BUDGET_MS.D + offset), offset < 0
+            ? [{ type: 'run', stage: 'D' }] : [{ type: 'finish', result: 'partial', categories: ['focus'] }]);
+    });
+}
+
+test('expired stages with no work still skip silently', () => {
+    for (const offset of [0, 1]) {
+        for (const c of [{ teams: false, facets: false }, { teams: true, facets: true }]) {
+            const sim = simulate();
+            sim.step({ resolution: { ok: true, plan: { c, d: false } } });
+            sim.step({ commit: 2, scope: { equal: true } });
+            assert.deepEqual(sim.step({ commit: 3, c: { expected: false } }, APPLY_STAGE_BUDGET_MS.C + offset), [{ type: 'releaseHold' }]);
+            assert.deepEqual(sim.state.skipped, []);
+            assert.deepEqual(sim.step({}, APPLY_STAGE_BUDGET_MS.D + offset), [{ type: 'finish', result: 'done', categories: [] }]);
+        }
+    }
+});
+
 test('random readiness never breaks the machine invariants', () => {
     let seed = 20261014;
     const random = () => { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296; };
@@ -1203,7 +1282,8 @@ export function stepApplyMachine(previous, input) {
         const open = !gate.groupsLoading && !gate.onboardingRequired && gate.adminGate === 'clear'
             && gate.catalog === 'validated' && !gate.capsulesPending && gate.homeTokenReady;
         if (open && state.armedActive === null) state.armedActive = state.active;
-        if (!open) return state.armedActive !== null && state.active - state.armedActive >= APPLY_STAGE_BUDGET_MS.A ? drop() : wait();
+        if (state.armedActive !== null && state.active - state.armedActive >= APPLY_STAGE_BUDGET_MS.A) return drop();
+        if (!open) return wait();
         if (!input.resolution) return wait();
         if (!input.resolution.ok) return drop(input.resolution.categories);
         state.plan = input.resolution.plan;
@@ -1227,16 +1307,16 @@ export function stepApplyMachine(previous, input) {
         const { b } = input;
         const settled = input.scope.equal && b.groupApplied && b.planningHydrated && !b.restoring
             && (!state.scopeChange || input.commit > state.aCommit) && !b.scopePending;
-        if (settled) {
+        if (state.active - state.armedActive >= APPLY_STAGE_BUDGET_MS.B) {
+            moveTo('C', ['B']);
+            actions.push({ type: 'releaseHold' });
+        } else if (settled) {
             state.bCommit = input.commit;
             state.bActive = state.active;
             state.holdPending = true;
             complete('B');
             moveTo('C');
             actions.push({ type: 'run', stage: 'B' });
-        } else if (state.active - state.armedActive >= APPLY_STAGE_BUDGET_MS.B) {
-            moveTo('C', ['B']);
-            actions.push({ type: 'releaseHold' });
         }
         return { state, actions };
     }
@@ -1255,7 +1335,9 @@ export function stepApplyMachine(previous, input) {
         const loaded = scope.epoch > state.epochAtA && !scope.lanesLoading && scope.tasksFetched
             && scope.lastLoadedMatches && scope.teamsHydrated;
         const committed = input.commit > state.cCommit || state.active - state.cActive >= APPLY_SETTLE_FALLBACK_MS;
-        if (loaded && state.cPart === 'teams') {
+        if (state.active - state.armedActive >= APPLY_STAGE_BUDGET_MS.C) {
+            moveTo('D', state.cPart === 'teams' ? ['Ct', ...(c.facets ? ['Cf'] : [])] : ['Cf']);
+        } else if (loaded && state.cPart === 'teams') {
             state.cCommit = input.commit;
             state.cActive = state.active;
             complete('Ct');
@@ -1266,8 +1348,6 @@ export function stepApplyMachine(previous, input) {
             complete('Cf');
             actions.push({ type: 'run', stage: 'C', part: 'facets' });
             moveTo('D');
-        } else if (state.active - state.armedActive >= APPLY_STAGE_BUDGET_MS.C) {
-            moveTo('D', state.cPart === 'teams' ? ['Ct', ...(c.facets ? ['Cf'] : [])] : ['Cf']);
         }
         return { state, actions };
     }
@@ -1276,13 +1356,14 @@ export function stepApplyMachine(previous, input) {
     if (!state.plan.d) return settle();
     if (!state.ran.D) {
         const { d } = input;
+        if (state.active - state.armedActive >= APPLY_STAGE_BUDGET_MS.D) {
+            moveTo('D', ['D']);
+            return settle();
+        }
         if (d.cohortSettled && d.recoveryIdle && d.visible) {
             state.ran.D = true;
             state.dActive = state.active;
             actions.push({ type: 'run', stage: 'D' });
-        } else if (state.active - state.armedActive >= APPLY_STAGE_BUDGET_MS.D) {
-            moveTo('D', ['D']);
-            return settle();
         }
         return { state, actions };
     }
@@ -1301,11 +1382,11 @@ export function stepApplyMachine(previous, input) {
 
 Run: `fnm exec --using 20 node --test tests/test_share_view_apply_machine.js`
 
-Expected: `# tests 38`, `# pass 38`, `# fail 0`. The last test is the seeded fuzz (300 runs of 120 random steps): it asserts at most one `run` per step, stages in order and each at most once, at most one terminal action, an inert finished machine and the hold released at most once.
+Expected: `# tests 57`, `# pass 57`, `# fail 0`. The last test is the seeded fuzz (300 runs of 120 random steps): it asserts at most one `run` per step, stages in order and each at most once, at most one terminal action, an inert finished machine and the hold released at most once.
 
 - [ ] **Step 5: Run the task's regression gate**
 
-1. The whole frontend unit suite: `fnm exec --using 20 node --test tests/test_*.js 2>&1 | grep -E '^# (tests|pass|fail)'`. Expected: `# fail 0` and `# tests` equal to N0 plus 38.
+1. The whole frontend unit suite: `fnm exec --using 20 node --test tests/test_*.js 2>&1 | grep -E '^# (tests|pass|fail)'`. Expected: `# fail 0` and `# tests` equal to N0 plus 57 (2,779 on the verified base).
 2. The structure budgets: `env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest tests.test_codebase_structure_budgets`. Expected: `Ran 2 tests` and `OK` (a file under `shareView/` needs no registration: only `scenario/`, `settings/` and `epm/` do).
 3. The extraction gate: `fnm exec --using 20 bash scripts/extraction_lint/run.sh`. Expected: the Task 0 baseline exit status, `0 errors`, a warning count equal to W0, `owner budgets: 0 problems` and `enforced problems: <B>`.
 4. Rebuild: `fnm exec --using 20 npm run build`. Expected: `Dashboard built: ` followed by 64 hexadecimal digits. Then `git status --short -- frontend/dist` must print these entries (the module is not imported yet, so only `dashboard.js` and the manifest name change; the source map keeps its content):
@@ -1327,7 +1408,7 @@ git status --short
 make verify-dist-clean
 ```
 
-Read the results: `git show --stat HEAD` lists exactly four paths: `frontend/dist/dashboard.js`, the renamed `frontend/dist/lazy-views-*.json`, `frontend/src/shareView/applyMachine.js` (191 added lines) and `tests/test_share_view_apply_machine.js` (474 added lines); the `dist` counts depend on the bundle. `git status --short` prints nothing. `make verify-dist-clean` prints nothing and exits 0.
+Read the results: `git show --stat HEAD` lists exactly four paths: `frontend/dist/dashboard.js`, the renamed `frontend/dist/lazy-views-*.json`, `frontend/src/shareView/applyMachine.js` (193 lines after the approved deadline correction) and `tests/test_share_view_apply_machine.js` (551 lines after the approved deadline correction); the `dist` counts depend on the bundle. `git status --short` prints nothing. `make verify-dist-clean` prints nothing and exits 0.
 
 
 ---

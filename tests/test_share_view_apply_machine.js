@@ -434,6 +434,83 @@ test('every stage budget and the overall budget match the design', () => {
     assert.equal(APPLY_OVERALL_BUDGET_MS, 90000);
 });
 
+// Readiness arriving at the active-time deadline is already too late to run a stage.
+for (const offset of [-1, 0, 1]) {
+    const boundary = offset < 0 ? 'immediately before' : offset === 0 ? 'at' : 'after';
+    test(`Stage A resolution ${boundary} its deadline respects the armed window`, () => {
+        for (const closes of [false, true]) {
+            const sim = simulate();
+            assert.deepEqual(sim.step({ resolution: null }), []);
+            if (closes) assert.deepEqual(sim.step({ gate: { catalog: 'pending' }, resolution: null }, 1), []);
+            const actions = sim.step({}, APPLY_STAGE_BUDGET_MS.A + offset - (closes ? 1 : 0));
+            assert.deepEqual(actions, offset < 0
+                ? [{ type: 'run', stage: 'A', scopeChange: true }]
+                : [{ type: 'finish', result: 'dropped', categories: [] }]);
+        }
+    });
+
+    test(`Stage A unresolved with an open gate ${boundary} its deadline cannot run late`, () => {
+        const sim = simulate();
+        assert.deepEqual(sim.step({ resolution: null }), []);
+        assert.deepEqual(sim.step({ resolution: null }, APPLY_STAGE_BUDGET_MS.A + offset), offset < 0
+            ? [] : [{ type: 'finish', result: 'dropped', categories: [] }]);
+        if (offset < 0) assert.deepEqual(sim.step({ resolution: null }, 1), [{ type: 'finish', result: 'dropped', categories: [] }]);
+        assert.deepEqual(sim.step({}, 1), [], 'late resolution cannot revive a dropped link');
+    });
+
+    test(`Stage B first readiness ${boundary} its deadline respects expiry and releases the hold`, () => {
+        const sim = simulate();
+        sim.step();
+        assert.deepEqual(sim.step({ commit: 2, scope: { equal: true } }, APPLY_STAGE_BUDGET_MS.B + offset), offset < 0
+            ? [{ type: 'run', stage: 'B' }] : [{ type: 'releaseHold' }]);
+        assert.deepEqual(sim.state.skipped, offset < 0 ? [] : ['mode', 'filters']);
+        assert.equal(sim.state.stage, 'C');
+        assert.deepEqual(sim.step({ commit: 3, scope: { equal: true } }), offset < 0 ? [{ type: 'releaseHold' }] : []);
+    });
+
+    test(`Stage C first readiness ${boundary} its deadline skips only owed work`, () => {
+        for (const teams of [false, true]) {
+            const sim = simulate();
+            throughB(sim, { plan: { c: { teams, facets: true }, d: true } });
+            assert.deepEqual(sim.step({ commit: 4, c: LOADED }, APPLY_STAGE_BUDGET_MS.C + offset), offset < 0
+                ? [{ type: 'run', stage: 'C', part: teams ? 'teams' : 'facets' }] : []);
+            assert.deepEqual(sim.state.skipped, offset < 0 ? [] : [...(teams ? ['teams'] : []), 'filters']);
+            if (offset >= 0) assert.equal(sim.state.stage, 'D');
+        }
+    });
+
+    test(`Stage C facets readiness ${boundary} its deadline never reports Teams already applied`, () => {
+        const sim = simulate();
+        throughB(sim);
+        assert.deepEqual(sim.step({ commit: 4, c: LOADED }, APPLY_STAGE_BUDGET_MS.C - 2), [{ type: 'run', stage: 'C', part: 'teams' }]);
+        assert.deepEqual(sim.step({ commit: 5, c: LOADED }, 2 + offset), offset < 0
+            ? [{ type: 'run', stage: 'C', part: 'facets' }] : []);
+        assert.deepEqual(sim.state.skipped, offset < 0 ? [] : ['filters']);
+        assert.equal(sim.state.stage, 'D');
+    });
+
+    test(`Stage D first readiness ${boundary} its deadline preserves focus reporting`, () => {
+        const sim = simulate();
+        throughB(sim, { plan: { c: { teams: false, facets: false }, d: true } });
+        assert.deepEqual(sim.step(), []);
+        assert.deepEqual(sim.step({ d: { cohortSettled: true } }, APPLY_STAGE_BUDGET_MS.D + offset), offset < 0
+            ? [{ type: 'run', stage: 'D' }] : [{ type: 'finish', result: 'partial', categories: ['focus'] }]);
+    });
+}
+
+test('expired stages with no work still skip silently', () => {
+    for (const offset of [0, 1]) {
+        for (const c of [{ teams: false, facets: false }, { teams: true, facets: true }]) {
+            const sim = simulate();
+            sim.step({ resolution: { ok: true, plan: { c, d: false } } });
+            sim.step({ commit: 2, scope: { equal: true } });
+            assert.deepEqual(sim.step({ commit: 3, c: { expected: false } }, APPLY_STAGE_BUDGET_MS.C + offset), [{ type: 'releaseHold' }]);
+            assert.deepEqual(sim.state.skipped, []);
+            assert.deepEqual(sim.step({}, APPLY_STAGE_BUDGET_MS.D + offset), [{ type: 'finish', result: 'done', categories: [] }]);
+        }
+    }
+});
+
 test('random readiness never breaks the machine invariants', () => {
     let seed = 20261014;
     const random = () => { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296; };

@@ -97,7 +97,8 @@ export function stepApplyMachine(previous, input) {
         const open = !gate.groupsLoading && !gate.onboardingRequired && gate.adminGate === 'clear'
             && gate.catalog === 'validated' && !gate.capsulesPending && gate.homeTokenReady;
         if (open && state.armedActive === null) state.armedActive = state.active;
-        if (!open) return state.armedActive !== null && state.active - state.armedActive >= APPLY_STAGE_BUDGET_MS.A ? drop() : wait();
+        if (state.armedActive !== null && state.active - state.armedActive >= APPLY_STAGE_BUDGET_MS.A) return drop();
+        if (!open) return wait();
         if (!input.resolution) return wait();
         if (!input.resolution.ok) return drop(input.resolution.categories);
         state.plan = input.resolution.plan;
@@ -121,16 +122,16 @@ export function stepApplyMachine(previous, input) {
         const { b } = input;
         const settled = input.scope.equal && b.groupApplied && b.planningHydrated && !b.restoring
             && (!state.scopeChange || input.commit > state.aCommit) && !b.scopePending;
-        if (settled) {
+        if (state.active - state.armedActive >= APPLY_STAGE_BUDGET_MS.B) {
+            moveTo('C', ['B']);
+            actions.push({ type: 'releaseHold' });
+        } else if (settled) {
             state.bCommit = input.commit;
             state.bActive = state.active;
             state.holdPending = true;
             complete('B');
             moveTo('C');
             actions.push({ type: 'run', stage: 'B' });
-        } else if (state.active - state.armedActive >= APPLY_STAGE_BUDGET_MS.B) {
-            moveTo('C', ['B']);
-            actions.push({ type: 'releaseHold' });
         }
         return { state, actions };
     }
@@ -149,7 +150,9 @@ export function stepApplyMachine(previous, input) {
         const loaded = scope.epoch > state.epochAtA && !scope.lanesLoading && scope.tasksFetched
             && scope.lastLoadedMatches && scope.teamsHydrated;
         const committed = input.commit > state.cCommit || state.active - state.cActive >= APPLY_SETTLE_FALLBACK_MS;
-        if (loaded && state.cPart === 'teams') {
+        if (state.active - state.armedActive >= APPLY_STAGE_BUDGET_MS.C) {
+            moveTo('D', state.cPart === 'teams' ? ['Ct', ...(c.facets ? ['Cf'] : [])] : ['Cf']);
+        } else if (loaded && state.cPart === 'teams') {
             state.cCommit = input.commit;
             state.cActive = state.active;
             complete('Ct');
@@ -160,8 +163,6 @@ export function stepApplyMachine(previous, input) {
             complete('Cf');
             actions.push({ type: 'run', stage: 'C', part: 'facets' });
             moveTo('D');
-        } else if (state.active - state.armedActive >= APPLY_STAGE_BUDGET_MS.C) {
-            moveTo('D', state.cPart === 'teams' ? ['Ct', ...(c.facets ? ['Cf'] : [])] : ['Cf']);
         }
         return { state, actions };
     }
@@ -170,13 +171,14 @@ export function stepApplyMachine(previous, input) {
     if (!state.plan.d) return settle();
     if (!state.ran.D) {
         const { d } = input;
+        if (state.active - state.armedActive >= APPLY_STAGE_BUDGET_MS.D) {
+            moveTo('D', ['D']);
+            return settle();
+        }
         if (d.cohortSettled && d.recoveryIdle && d.visible) {
             state.ran.D = true;
             state.dActive = state.active;
             actions.push({ type: 'run', stage: 'D' });
-        } else if (state.active - state.armedActive >= APPLY_STAGE_BUDGET_MS.D) {
-            moveTo('D', ['D']);
-            return settle();
         }
         return { state, actions };
     }

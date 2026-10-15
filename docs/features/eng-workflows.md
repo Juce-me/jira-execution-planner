@@ -150,6 +150,10 @@ Project Track remains an Epic-owned field even in these Story-oriented modes. It
 
 Board search is separate and Epic-only. It matches Epic key, summary, assignee, and Delivery Owner, then combines that result with Board's own facet filters. There is no single global search predicate shared by Board and Catch Up/Planning.
 
+## Share a view
+
+The header **Share** control copies a link to the current Catch Up, Planning, Board or Statistics view. See [Shareable View Links](shareable-view-links.md) for what a link carries and what a recipient sees.
+
 ## Continue in Jira
 
 The blue Jira control normally opens a menu with separate **Open epics** and **Open stories** choices. On strict Board, the second choice is **Open work items** and includes every authoritative visible configured child type, such as Stories, Bugs, or Tasks. Choosing one opens only that currently scoped subset in Jira, where Jira provides its bulk-operation tools. Pending Board data exposes no Work items export action. The app does not perform an in-app bulk mutation from this control.

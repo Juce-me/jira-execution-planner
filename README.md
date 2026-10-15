@@ -27,6 +27,7 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 - ✅ **Compact sticky controls** - Sticky Sprint/Group/Teams controls keep the same dropdown behavior while using a smaller compact layout
 - ✅ **Scenario planner** - [Feature guide](docs/features/scenario-planner.md)
 - ✅ **Alerts** - [Feature guide](docs/features/alerts.md)
+- ✅ **Shareable view links** - Share the current Catch Up, Planning, Board or Statistics view as one link; the recipient signs in and lands in the same view with their own access ([Feature guide](docs/features/shareable-view-links.md))
 - ✅ **Sprint statistics** - [Feature guide](docs/features/statistics.md)
 - ✅ **EPM view** - [Feature guide](docs/features/epm-view.md)
 
@@ -34,6 +35,7 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 
 - [Feature docs index](docs/features/README.md)
 - [Alerts](docs/features/alerts.md)
+- [Shareable View Links](docs/features/shareable-view-links.md)
 - [Statistics](docs/features/statistics.md)
 - [Scenario Planner](docs/features/scenario-planner.md)
 - [EPM View](docs/features/epm-view.md)

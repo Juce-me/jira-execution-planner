@@ -1508,6 +1508,24 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                     void planningReviewGuardRef.current(commitSelection);
                 } else commitSelection();
             };
+            // Raw half of applyOrdinarySprint: no analytics, no guard, no selector side effects. The
+            // shareable-link apply calls it with the link's Department, Team list and Sprint.
+            const commitSprintSelection = (sprint, { groupId = activeGroupId, teams = selectedTeams, sprintChanged = true, projectTrackRange = false } = {}) => {
+                if (sprintChanged) {
+                    teamSelectionCarryForwardRef.current = groupId ? {
+                        scopeKey: buildTeamSelectionScopeKey({ sprintId: sprint.id, groupId }),
+                        selectedTeams: normalizeSelectedTeams(teams),
+                    } : null;
+                    setSelectedSprint(sprint.id);
+                    setSprintName(sprint.name);
+                }
+                if (projectTrackRange) {
+                    excludedCapacityForceRefreshRef.current = true;
+                    setExcludedCapacityStartSprintId(String(sprint.id));
+                    setExcludedCapacityEndSprintId(String(sprint.id));
+                    setExcludedCapacityRefreshNonce(previous => previous + 1);
+                }
+            };
             const applyOrdinarySprint = (sprint, boardScopeControl) => {
                 const sameOrdinarySelection = !boardStrictScope
                     && String(selectedSprint) === String(sprint.id);
@@ -1524,19 +1542,11 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                         source_surface: currentDashboardView(),
                         scope_type: boardScopeControl ? 'sprint' : currentDashboardView(),
                     });
-                    teamSelectionCarryForwardRef.current = activeGroupId ? {
-                        scopeKey: buildTeamSelectionScopeKey({ sprintId: sprint.id, groupId: activeGroupId }),
-                        selectedTeams: normalizeSelectedTeams(selectedTeams),
-                    } : null;
-                    setSelectedSprint(sprint.id);
-                    setSprintName(sprint.name);
                 }
-                if (projectTrackSprintId && (!sameOrdinarySelection || !projectTrackRangeMatches)) {
-                    excludedCapacityForceRefreshRef.current = true;
-                    setExcludedCapacityStartSprintId(projectTrackSprintId);
-                    setExcludedCapacityEndSprintId(projectTrackSprintId);
-                    setExcludedCapacityRefreshNonce(previous => previous + 1);
-                }
+                commitSprintSelection(sprint, {
+                    sprintChanged: !sameOrdinarySelection,
+                    projectTrackRange: Boolean(projectTrackSprintId) && (!sameOrdinarySelection || !projectTrackRangeMatches),
+                });
                 if (boardScopeControl) setBoardStrictScope('');
                 closeSprintSelector({ restoreFocus: true });
             };
@@ -4091,12 +4101,16 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
 
 
 
+            // Persistence half of a Team selection (the scope's stored selection and the hydrated-selection marker),
+            // shared with the shareable-link apply. Callers set the React state themselves.
+            const persistTeamSelection = (nextSelectedTeams) => {
+                if (!teamSelectionScopeKey) return;
+                saveTeamSelectionState(window.localStorage, teamSelectionScopeKey, { selectedTeams: nextSelectedTeams });
+                teamSelectionHydratedSelectionRef.current = { scopeKey: teamSelectionScopeKey, selectedTeams: nextSelectedTeams };
+            };
             const toggleTeamSelection = (teamId) => {
                 if (teamId === 'all') {
-                    if (teamSelectionScopeKey) {
-                        saveTeamSelectionState(window.localStorage, teamSelectionScopeKey, { selectedTeams: ['all'] });
-                        teamSelectionHydratedSelectionRef.current = { scopeKey: teamSelectionScopeKey, selectedTeams: ['all'] };
-                    }
+                    persistTeamSelection(['all']);
                     setSelectedTeams(['all']);
                     trackFilterChanged('team', { selection_count_bucket: '0' });
                     return;
@@ -4110,10 +4124,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                     }
                     trackFilterChanged('team', { selection_count_bucket: bucketCount(next.size) });
                     const nextSelectedTeams = next.size ? Array.from(next) : ['all'];
-                    if (teamSelectionScopeKey) {
-                        saveTeamSelectionState(window.localStorage, teamSelectionScopeKey, { selectedTeams: nextSelectedTeams });
-                        teamSelectionHydratedSelectionRef.current = { scopeKey: teamSelectionScopeKey, selectedTeams: nextSelectedTeams };
-                    }
+                    persistTeamSelection(nextSelectedTeams);
                     return nextSelectedTeams;
                 });
             };

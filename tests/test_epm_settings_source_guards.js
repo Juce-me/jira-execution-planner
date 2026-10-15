@@ -506,7 +506,7 @@ test('EPM settings source uses shared basic UI primitives for representative row
     assert.ok(dashboardSource.includes("import IconButton from './ui/IconButton.jsx';"), 'Expected dashboard to import IconButton');
     assert.ok(epmSettingsTabSource.includes("import LoadingRows from '../ui/LoadingRows.jsx';"), 'Expected the EPM tab container to import LoadingRows');
     assert.ok(dashboardSource.includes("import EmptyState from './ui/EmptyState.jsx';"), 'Expected dashboard to import EmptyState');
-    assert.ok(engControlsSource.includes('<ControlField label="Search"'), 'Expected header search control to use ControlField');
+    assert.ok(engControlsSource.includes('<ControlField label="Find"'), 'Expected header search control to use ControlField');
     assert.ok(epmControlsSource.includes('<ControlField label="Project"'), 'Expected EPM project picker control to use ControlField');
     assert.ok(epmSettingsUiSource.includes('<IconButton') && epmSettingsUiSource.includes('className="epm-label-change-shortcut"'), 'Expected selected-label change action to use IconButton');
     assert.ok(epmSettingsUiSource.includes('<IconButton') && epmSettingsUiSource.includes('className="epm-project-home-shortcut"'), 'Expected Home project shortcut to use IconButton');

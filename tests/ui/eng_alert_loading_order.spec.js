@@ -327,7 +327,7 @@ test('missing Story Points alert reveals the dashboard story and activates its i
     const alertLink = page.locator('#eng-alert-missing .alert-story-link').filter({ hasText: 'PROD-1' });
     await expect(alertLink).toBeVisible();
     // Search now filters alerts too (#192, adccdae7), so it cannot hide the Story while keeping its alert.
-    await page.getByRole('textbox', { name: 'Search tickets...' }).fill('PROD-1');
+    await page.getByRole('textbox', { name: 'Find in view' }).fill('PROD-1');
     await expect(alertLink).toBeVisible();
     await expect(story).toBeVisible();
     await expect(story).not.toHaveClass(/task-highlight/);

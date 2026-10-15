@@ -379,7 +379,7 @@ test('dashboard source uses shared basic UI primitives for representative contro
     assert.ok(engViewSource.includes("import LoadingState from '../ui/LoadingState.jsx';"), 'Expected ENG view to import LoadingState');
     assert.ok(dashboardSource.includes("import EmptyState from './ui/EmptyState.jsx';"), 'Expected dashboard to import EmptyState');
     assert.ok(engControlsSource.includes('<SegmentedControl') && engControlsSource.includes('className="view-mode-control"'), 'Expected ENG/EPM selector to use SegmentedControl');
-    assert.ok(engControlsSource.includes('<ControlField') && engControlsSource.includes('label="Search"'), 'Expected header search control to use ControlField');
+    assert.ok(engControlsSource.includes('<ControlField') && engControlsSource.includes('label="Find"'), 'Expected header search control to use ControlField');
     assert.ok(dashboardSource.includes('<IconButton') && dashboardSource.includes('className="header-icon-button refresh-icon"'), 'Expected compact refresh action to use the shared header IconButton geometry');
     assert.ok(epmSettingsTabSource.includes('<LoadingRows') && epmSettingsTabSource.includes('className="epm-project-skeleton-list"'), 'Expected EPM project loading rows to use LoadingRows');
     assert.ok(loadingStateSource.includes('epm-burst.svg'), 'Expected LoadingState to use the EPM burst asset');

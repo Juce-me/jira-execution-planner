@@ -1286,7 +1286,7 @@ test('the epic count in the column header and the folded rail bar agree with the
 test('search narrows cards by Delivery Owner and clearing it restores the full set', async ({ page }) => {
     await openBoard(page);
 
-    const search = page.locator('input[type="search"], input[placeholder*="Search" i]').first();
+    const search = page.getByRole('textbox', { name: 'Find in view' }).first();
     await search.fill('perez');
     await settle(page);
 
@@ -1304,7 +1304,7 @@ test('search narrows cards by Delivery Owner and clearing it restores the full s
 test('search also narrows by key and by summary, case-insensitively', async ({ page }) => {
     await openBoard(page);
 
-    const search = page.locator('input[type="search"], input[placeholder*="Search" i]').first();
+    const search = page.getByRole('textbox', { name: 'Find in view' }).first();
     await search.fill('plat-6');
     await settle(page);
     expect(await cardKeys(page)).toEqual(['PLAT-6']);
@@ -1329,7 +1329,7 @@ test('typing in search issues no API request', async ({ page }) => {
     expect(before, 'the board must have loaded something, or this test proves nothing')
         .toBeGreaterThan(0);
 
-    const search = page.locator('input[type="search"], input[placeholder*="Search" i]').first();
+    const search = page.getByRole('textbox', { name: 'Find in view' }).first();
     await search.pressSequentially('perez', { delay: 40 });
     await settle(page);
     expect(await cardKeys(page)).toEqual(['PLAT-2']);
@@ -1578,7 +1578,7 @@ test.describe('ENG hover affordances', () => {
         await openBoard(page, { width: 1280, height: 900 });
         await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Catch Up' }).click();
         await page.locator('.search-input').first().fill('ua');
-        const clearSearch=page.getByRole('button',{name:'Clear search'});
+        const clearSearch=page.getByRole('button',{name:'Clear find'});
         await clearSearch.hover(); await page.waitForTimeout(450);
         const clearEvidence=await measure(clearSearch);
         expect(clearEvidence.backgroundImage).toContain('radial-gradient');

@@ -396,7 +396,7 @@ test('ENG alerts summary chips open and focus their matching alert section', asy
 test('ENG search filters alert rows, panels, summary chips, and total count', async ({ page }) => {
     await openEng(page, { width: 1280, height: 760 }, true);
 
-    await page.getByRole('textbox', { name: 'Search tickets...' }).fill('TECH');
+    await page.getByRole('textbox', { name: 'Find in view' }).fill('TECH');
 
     const summary = page.locator('.alerts-panel-summary');
     await expect(summary).toContainText('3 total');
@@ -409,7 +409,7 @@ test('ENG search filters alert rows, panels, summary chips, and total count', as
     await expect(page.locator('#eng-alert-blocked .alert-story')).toHaveCount(2);
     await expect(page.locator('#eng-alert-done .alert-story')).toHaveCount(1);
 
-    await page.getByRole('textbox', { name: 'Search tickets...' }).fill('no matching alert');
+    await page.getByRole('textbox', { name: 'Find in view' }).fill('no matching alert');
     await expect(page.locator('.alerts-panel-toolbar')).toHaveCount(0);
 });
 

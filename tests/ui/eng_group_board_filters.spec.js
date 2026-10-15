@@ -392,7 +392,7 @@ test('a facet tick with search text active fires no new app_search event', async
     await page.evaluate(() => window.JepAnalytics.initAnalytics());
     await expect.poll(() => gtmRequests.length).toBeGreaterThan(0);
 
-    const search = page.locator('input[type="search"], input[placeholder*="Search" i]').first();
+    const search = page.getByRole('textbox', { name: 'Find in view' }).first();
     await search.fill('epx'); // matches every epic's key, so this narrows nothing on its own
     await waitForVisualSettled(page);
 

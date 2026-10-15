@@ -1676,7 +1676,7 @@ test('Initiative and Epic search reveal loaded descendants', async ({ page }) =>
     await captureSmokeScreenshot(page, 'initiative-search-before');
     expect(apiMocks.unexpectedCalls).toEqual([]);
 
-    const searchInput = page.getByPlaceholder('Search tickets...').first();
+    const searchInput = page.getByRole('textbox', { name: 'Find in view' }).first();
     await searchInput.fill('Payments Initiative');
     await expect(page.locator('.epic-block', { hasText: 'Payments API Epic' })).toBeVisible();
     await expect(page.locator('.epic-block', { hasText: 'Payments Ledger Epic' })).toBeVisible();

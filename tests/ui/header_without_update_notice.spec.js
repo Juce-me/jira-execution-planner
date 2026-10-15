@@ -76,13 +76,13 @@ test('header has no release update UI or request while search is active', async 
         expect(versionRequests).toEqual([]);
     };
     await assertNoUpdate();
-    const searchInput = page.getByPlaceholder('Search tickets...').first();
+    const searchInput = page.getByRole('textbox', { name: 'Find in view' }).first();
     await searchInput.focus();
     await assertNoUpdate();
     await page.screenshot({ path: testInfo.outputPath('search-focused-no-update.png'), fullPage: true, animations: 'disabled' });
     await searchInput.fill('synthetic');
     await assertNoUpdate();
-    await page.getByRole('button', { name: 'Clear search' }).click();
+    await page.getByRole('button', { name: 'Clear find' }).click();
     await expect(searchInput).toHaveValue('');
     await assertNoUpdate();
     await page.screenshot({ path: testInfo.outputPath('search-cleared-no-update.png'), fullPage: true, animations: 'disabled' });

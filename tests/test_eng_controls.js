@@ -35,13 +35,14 @@ function props(surface) {
         filteredTeamOptions: [{ id: 'one', name: 'Synthetic team' }], selectedTeamSet: new Set(['one']), toggleTeamSelection: noop };
 }
 for (const surface of ['main', 'compact']) {
-    for (const [name, label, className] of [['SearchControl', 'Search', 'control-search active-filter applied-filter'], ['SprintControl', 'Sprint', 'sprint-dropdown sprint-selector-control'],
+    for (const [name, label, className] of [['SearchControl', 'Find', 'control-search active-filter applied-filter'], ['SprintControl', 'Sprint', 'sprint-dropdown sprint-selector-control'],
         ['GroupControl', 'Group', 'group-control'], ['TeamControl', 'Teams', 'team-dropdown header-filter-dropdown']]) {
         test(`${name} SSR preserves ${surface} root and native control contract`, () => {
             const html = renderToString(React.createElement(load('EngControls.jsx')[name], props(surface)));
             assert.ok(html.includes(label)); assert.ok(html.includes(className));
             assert.ok(html.includes(`data-onboarding-surface="${surface}"`));
-            if (name === 'SearchControl') { assert.ok(html.includes('value="synthetic query"')); assert.ok(html.includes('aria-label="Clear search"')); }
+            if (name === 'SearchControl') { assert.ok(html.includes('value="synthetic query"')); assert.ok(html.includes('aria-label="Clear find"'));
+                assert.ok(html.includes('aria-label="Find in view"')); assert.match(html, /placeholder="e\.g\. (ABC-123|payment retries|Jordan Lee|checkout redesign|Q3 migration)"/); }
             if (name === 'SprintControl') assert.ok(html.includes(`aria-controls="sprint-${surface}-listbox"`));
         });
     }

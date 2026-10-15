@@ -2903,7 +2903,6 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
 
                 const nextView = resume.selectedView === 'epm' && showEpmNavigation ? 'epm' : 'eng';
                 const unavailableMode = (resume.engMode === 'planning' && isCompletedSprintSelected)
-                    || (resume.engMode === 'statistics' && isFutureSprintSelected)
                     || (resume.engMode === 'scenario' && isCompletedSprintSelected);
                 const nextMode = unavailableMode ? 'catch-up' : resume.engMode;
                 if (resume.engMode === 'planning' && nextMode !== 'planning') {
@@ -4236,12 +4235,6 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 scenarioJiraStoryKeys,
             } = scenario;
 
-            useEffect(() => {
-                if (isFutureSprintSelected && showStats) {
-                    setShowStats(false);
-                }
-            }, [isFutureSprintSelected, showStats]);
-
             // Planning selects from this set, so it stays no narrower than the Done and Killed
             // Display toggles were: closed work leaves when the Status facet *excludes* it, and no
             // other status narrowing touches it. Narrowing Catch Up to, say, In Progress must not
@@ -5549,7 +5542,6 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 <EngModeControl
                     activeMode={activeEngMode}
                     isCompletedSprintSelected={isCompletedSprintSelected}
-                    isFutureSprintSelected={isFutureSprintSelected}
                     onChange={(nextMode) => {
                         applyEngMode(nextMode);
                         if (onboardingBootstrapReady && isEngOnboardingModuleSurface(nextMode)) {

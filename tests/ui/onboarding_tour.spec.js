@@ -1676,14 +1676,20 @@ test('Catch Up returns to the page top before targeting its real header controls
     await expect(page.locator('[data-onboarding-target="settings-launcher"]')).toBeVisible();
 });
 
-test('production disabled Statistics does not start onboarding without a real open', async ({ page }) => {
+test('production future-sprint Statistics starts onboarding only after a real open', async ({ page }) => {
     const { calls } = await installProductionOnboardingFixture(page, {
         sprintState: 'future',
         completedOnboardingModules: ['catch-up'],
     });
-    await expect(engModeButton(page, 'Statistics')).toBeDisabled();
+    const statistics = engModeButton(page, 'Statistics');
+    await expect(statistics).toBeEnabled();
     await expect(page.locator('[data-onboarding-tour]')).toHaveCount(0);
     expect(fieldCalls(calls, '/api/me/onboarding', 'POST')).toEqual([]);
+
+    await expectSingleLauncherTransition(page, 'statistics', () => statistics.click());
+    await expect(statistics).toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator('[data-onboarding-target="statistics-overview"]')).toBeVisible();
+    await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-state', 'interactive_closed');
 });
 
 test('production Board and Statistics onboarding target the Board canvas and real statistics control', async ({ page }) => {

@@ -4,7 +4,6 @@ import SegmentedControl from '../ui/SegmentedControl.jsx';
 export default function EngModeControl({
     activeMode,
     isCompletedSprintSelected,
-    isFutureSprintSelected,
     onChange,
     selectedSprint,
 }) {
@@ -31,7 +30,6 @@ export default function EngModeControl({
                 {
                     value: 'statistics',
                     label: 'Statistics',
-                    disabled: isFutureSprintSelected,
                     title: 'Show sprint statistics',
                 },
                 {

@@ -34,8 +34,10 @@ export function shouldAutomaticallyStartOnboarding({
     automaticStarted = false,
     replayPending = false,
     activeSurface = 'catch-up',
+    applyTerminal = true,
 } = {}) {
     return Boolean(bootstrapReady
+        && applyTerminal
         && activeSurface === 'catch-up'
         && !isOnboardingModuleComplete(completedModules, 'catch-up')
         && !run
@@ -138,6 +140,7 @@ export function updateOnboardingStepUnlock(currentKey, action = {}) {
 export function useOnboardingController({
     bootstrapReady = false,
     activeSurface = 'catch-up',
+    applyTerminal = true,
     completedModules,
     setCompletedModules,
     completeModule,
@@ -194,9 +197,10 @@ export function useOnboardingController({
             automaticStarted: automaticStartedRef.current,
             replayPending: replayPendingRef.current,
             activeSurface,
+            applyTerminal,
         })) return;
         automaticStartedRef.current = openModule('catch-up', 'first_run');
-    }, [activeSurface, bootstrapReady, normalizedCompletedModules, openModule, run]);
+    }, [activeSurface, applyTerminal, bootstrapReady, normalizedCompletedModules, openModule, run]);
 
     React.useEffect(() => {
         if (isOnboardingModuleComplete(normalizedCompletedModules, 'catch-up')) {

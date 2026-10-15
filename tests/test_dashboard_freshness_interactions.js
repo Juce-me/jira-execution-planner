@@ -108,7 +108,7 @@ function normalEngLoadEffect({ cached = true, overrides = {} } = {}) {
         selectedView: 'eng', isStatsSourceOnlyStatsView: false, boardScopeRequested: false,
         sprintCatalogReady: true, sprintCatalogState: { selectionPreserved: false }, sprintsLoading: false,
         selectedSprint: 'sample-sprint', selectedSprintInfo: { id: 'sample-sprint' },
-        activeGroupId: 'sample-group', activeGroupTeamIds: ['sample-team'], groupsLoading: false,
+        activeGroupId: 'sample-group', activeGroupTeamIds: ['sample-team'], groupsLoading: false, shareViewHold: false,
         groupPreferences: { onboardingRequired: false }, planningScopeKey: scopeKey,
         pendingPlanningAuthResumeRef: { current: null }, planningAuthResumeLoadRef: { current: null },
         groupLoadVersionRef: { current: 7 }, lastLoadedSprintRef: { current: 'sample-sprint' },
@@ -141,6 +141,22 @@ test('validated normal ENG cache hit changes neither load authority nor mounted 
     assert.equal(h.inputs.groupLoadVersionRef.current, 7);
     assert.deepEqual(h.calls, []); assert.deepEqual(h.writes, []);
     assert.deepEqual(h.retired, { load: 0, performance: 0, fetches: 0 });
+});
+
+test('a pending shareable link holds the normal ENG load until it is released, unless a Planning recovery capsule needs its own load', () => {
+    const held = normalEngLoadEffect({ cached: false, overrides: { shareViewHold: true } });
+    assert.equal(held.capture().callback(), undefined);
+    assert.equal(held.inputs.groupLoadVersionRef.current, 7, 'a held link starts no load and fences nothing');
+    assert.deepEqual(held.calls, []); assert.deepEqual(held.writes, []);
+    assert.notDeepEqual(held.capture({ shareViewHold: false }).dependencies, held.capture().dependencies, 'releasing the hold re-runs the effect');
+
+    const released = normalEngLoadEffect({ cached: false });
+    released.capture().callback();
+    assert.equal(released.calls.length, 1, 'the same scope loads once the hold is released');
+
+    const capsule = normalEngLoadEffect({ cached: false, overrides: { shareViewHold: true, pendingPlanningAuthResumeRef: { current: { scopeKey: 'planning::sample-sprint::sample-group' } } } });
+    capsule.capture().callback();
+    assert.equal(capsule.calls.length, 1, 'only the recovery load can clear the capsule the link waits for');
 });
 
 test('held catalog display cannot authorize a normal ENG acquisition before validation', () => {

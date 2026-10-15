@@ -158,6 +158,7 @@ import { fetchHomeTokenConnection } from './api/authApi.js';
 import { useDashboardFreshness } from './useDashboardFreshness.js';
 import DashboardFreshnessStatus from './components/DashboardFreshnessStatus.jsx';
 import { analyticsToken, buildPlanningReviewAnalyticsParams, bucketCount, exposeAnalyticsForTests, useDashboardAnalytics } from './analytics/dashboardAnalytics.js';
+import { useShareViewApply, useShareViewApplyTerminal, useShareViewHold, useShareViewPlanningTableKey } from './shareView/useShareViewApply.js';
 import { useEpmViewData } from './epm/useEpmViewData.js';
 import {
     DEFAULT_EPM_PROJECT_SORT,
@@ -1054,7 +1055,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
             const {
                 currentDashboardView, trackAppError, trackApiResult, trackEpmAction, trackFilterChanged,
                 trackIssueStatusAction, trackIssuePriorityAction, trackIssueProjectTrackAction, trackIssueFieldEditAction, trackEpicRefreshAction, trackPlanningCapacityAction, trackPlanningSelection, trackScenarioAction, trackSearch, trackSelectContent,
-                trackSettingsAction, trackSortChanged, trackStatsAction, trackProductEvent,
+                trackSettingsAction, trackSortChanged, trackStatsAction, trackProductEvent, trackShareViewAction, analyticsReady,
             } = useDashboardAnalytics(React, { authMode, selectedView, showPlanning, showStats, showScenario, showBoard, serverConnectionError });
             const {
                 groupsConfig,
@@ -2242,6 +2243,11 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 trackSettingsAction,
                 userCanEditSettings,
             });
+            // A pending shareable link holds the default-scope ENG load and the Catch Up tour's auto-start until it settles,
+            // and a link that seeds the Planning rows remounts the Planning table once so that it re-reads the seed.
+            const shareViewHold = useShareViewHold();
+            const shareViewTerminal = useShareViewApplyTerminal();
+            const shareViewPlanningTableKey = useShareViewPlanningTableKey();
             const onboardingActiveSurface = showGroupManage
                 ? 'settings'
                 : (selectedView === 'eng'
@@ -2258,6 +2264,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
             );
             const onboarding = useOnboardingController({
                 bootstrapReady: onboardingBootstrapReady,
+                applyTerminal: shareViewTerminal,
                 activeSurface: onboardingActiveSurface,
                 completedModules: groupPreferences.completedOnboardingModules,
                 setCompletedModules: (settlement) => setGroupPreferences((current) => ({
@@ -3470,6 +3477,11 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 if (groupPreferences.onboardingRequired) {
                     return;
                 }
+                // A pending shareable link holds the default-scope load. A pending Planning recovery capsule is the exception:
+                // only its own load can clear it, and the link waits for the capsule.
+                if (shareViewHold && !pendingPlanningAuthResumeRef.current) {
+                    return;
+                }
 
                 const pendingPlanningResume = pendingPlanningAuthResumeRef.current;
                 const recoveryScopeKey = pendingPlanningResume?.scopeKey === planningScopeKey
@@ -3540,7 +3552,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                     groupLoadVersionRef.current += 1;
                     abortSprintFetches();
                 };
-            }, [selectedView, isStatsSourceOnlyStatsView, boardScopeRequested, sprintCatalogReady || (sprintCatalogState.selectionPreserved && Boolean(selectedSprintInfo)), sprintsLoading, selectedSprint, selectedSprintInfo?.id, activeGroupId, activeGroupTeamIds.join('|'), groupsLoading, groupPreferences.onboardingRequired, configRefreshNonce, authResumeStagedRevision]);
+            }, [selectedView, isStatsSourceOnlyStatsView, boardScopeRequested, sprintCatalogReady || (sprintCatalogState.selectionPreserved && Boolean(selectedSprintInfo)), sprintsLoading, selectedSprint, selectedSprintInfo?.id, activeGroupId, activeGroupTeamIds.join('|'), groupsLoading, groupPreferences.onboardingRequired, configRefreshNonce, authResumeStagedRevision, shareViewHold]);
 
             useEffect(() => {
                 if (groupsLoading || !groupPreferences.onboardingRequired) return;
@@ -4380,7 +4392,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
             }, [trackProductEvent, trackSortChanged]);
             if (sprintCatalogState.browserContextId) planningReviewBrowserContextRef.current = sprintCatalogState.browserContextId;
             const planningReview = usePlanningSprintReview({
-                sprintId: selectedSprint, active: selectedView === 'eng' && showPlanning && planningLayout === 'table' && engWorkspaceConfigured,
+                sprintId: selectedSprint, active: selectedView === 'eng' && showPlanning && planningLayout === 'table' && engWorkspaceConfigured && !shareViewHold,
                 contextKey: `${authMode}|${jiraUrl}|${planningReviewBrowserContextRef.current}|${authResumeStagedRevision}`,
                 backendUrl: BACKEND_URL, rows: planningReviewRows, automaticHoldRef: planningAutomaticReadRef, onReviewAction: trackPlanningReviewAction,
             });
@@ -5557,6 +5569,29 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 trackSelectContent,
                 onEnterCatchUp: () => { if (planningAlertsDirtyRef.current) rearmCatchUpAlerts(); },
             });
+            const shareViewOptions = {
+                sharedConfigReady, groupsLoading, groupsFailed: Boolean(groupsError || boardGroupsReadFailed), onboardingRequired: groupPreferences.onboardingRequired,
+                adminSettingsGate, sprintCatalogState, homeTokenConnectionLoaded, savedViewIsEpm: savedInitialViewRef.current === 'epm', visibleControlGroups,
+                pendingShellAuthResumeRef, pendingPlanningAuthResumeRef, pendingConnectionRecoveryRef, tourRunning: onboarding.run,
+                planningReviewBusy: Boolean(planningReview.dirty || planningReview.saving || planningReview.pendingScopeChange),
+                activeGroupId, selectedSprint, planningScopeKey, teamSelectionScopeKey, selectedView, selectedTeams, tasksFetched,
+                tasksLoading: productTasksLoading || techTasksLoading, engLoadsTasks: selectedView === 'eng' && !isStatsSourceOnlyStatsView && !boardScopeRequested,
+                activeGroupRef, planningHydratedScopeRef, restoringGroupRef, teamSelectionHydratedScopeRef, lastLoadedSprintRef, loadEpochRef,
+                catchUpAlertLoadRef, catchUpAlertScopeKey, alertCohortRef, engSprintSelectorState, engCatchUpFacetModel,
+                restoredInitialEpmViewRef, setSelectedView, setActiveGroupId, commitSprintSelection, persistTeamSelection,
+                setShowPlanning, setShowStats, setShowScenario, setShowBoard, setSearchInput, setSearchQuery, setShowProduct, setShowTech,
+                setGroupByInitiativeChoice, setEngEpicSort, setPlanningLayout, setStatsView, setCohortStartQuarter, setCohortEndQuarter,
+                setExcludedCapacityStartSprintId, setExcludedCapacityEndSprintId, setShowAlertsPanel, setBoardStrictScope, setSelectedTeams,
+                setEngStatusFilter, setEngPriorityFilter, setEngProjectTrackFilter,
+                alertFlags: {
+                    missing: [showMissingAlert, setShowMissingAlert], blocked: [showBlockedAlert, setShowBlockedAlert], followup: [showPostponedAlert, setShowPostponedAlert],
+                    backlog: [showBacklogAlert, setShowBacklogAlert], missingTeam: [showMissingTeamAlert, setShowMissingTeamAlert], missingLabels: [showMissingLabelsAlert, setShowMissingLabelsAlert],
+                    needsStories: [showNeedsStoriesAlert, setShowNeedsStoriesAlert], waiting: [showWaitingAlert, setShowWaitingAlert], empty: [showEmptyEpicAlert, setShowEmptyEpicAlert], done: [showDoneEpicAlert, setShowDoneEpicAlert],
+                },
+                activeEngMode, buildGroupStateSnapshot, searchQuery, engEpicSort, planningLayout, boardStrictScope,
+                excludedCapacityStartSprintId, excludedCapacityEndSprintId, alertCounts, trackShareViewAction, analyticsReady,
+            };
+            const shareView = useShareViewApply(shareViewOptions);
             const renderEngModeControl = () => (
                 <EngModeControl
                     activeMode={activeEngMode}
@@ -6910,7 +6945,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                             {shouldRenderEngTaskList && (
                                 <EngView
                                     selectedView={selectedView} sprintCatalogLoading={sprintsLoading} InitiativeIcon={InitiativeIcon}
-                                    planningTable={showPlanning && planningLayout === 'table' ? <PlanningReviewTable toolbarHost={planningToolbarHost} onInteractionChange={value => { if (planningInteractionRef.current === Boolean(value)) return; planningInteractionRef.current = Boolean(value); notifyPlanningInteraction(previous => previous + 1); }}
+                                    planningTable={showPlanning && planningLayout === 'table' ? <PlanningReviewTable key={shareViewPlanningTableKey} toolbarHost={planningToolbarHost} onInteractionChange={value => { if (planningInteractionRef.current === Boolean(value)) return; planningInteractionRef.current = Boolean(value); notifyPlanningInteraction(previous => previous + 1); }}
                                         epicGroups={epicGroups} visibleTasks={visibleTasksForList}
                                         selectedStoryKeys={new Set(Object.keys(selectedTasks).filter(key => selectedTasks[key]))}
                                         onToggleStory={task => toggleTaskSelection(task.key)} onSelectStories={selectPlanningReviewStories}

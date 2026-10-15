@@ -449,3 +449,4 @@ When the user corrects your approach, append a one-line rule here before ending 
 
 - Before asking to accept baseline test failures, explain each failure's cause, user impact, reproducibility and proposed remedy; do not treat pre-existing failures as automatically acceptable.
 - Use the existing copy icon confirmation for clipboard success; reserve recovery-warning banners for recovery and style feedback actions with existing compact controls.
+- Never use port 5050 from a worktree: it belongs to the main checkout's server and the OAuth redirect. Run a worktree server on another port (e.g. `--server_port 5051`) and never stop or replace a server that is not yours.

@@ -80,7 +80,7 @@ test('legacy Board status and priority successes retain local reconciliation wit
     assert.deepEqual(calls, ['subtask:ENG-1']);
 });
 
-test('strict Board status and priority successes refresh only the strict owner', async () => {
+test('strict Board status success never reloads the Board; priority success still refreshes the strict owner', async () => {
     const calls = [];
     const props = strictEngBoardMutationProps({
         active: true,
@@ -94,7 +94,7 @@ test('strict Board status and priority successes refresh only the strict owner',
     await props.status.onTransitionSuccessRefresh({ affectedSubtaskStoryKeys: ['ENG-1'] });
     await props.priority.onPrioritySuccessRefresh();
 
-    assert.deepEqual(calls, ['strict-refresh', 'strict-refresh']);
+    assert.deepEqual(calls, ['strict-refresh']);
 });
 
 test('Planning priority success keeps the legacy task refresh outside strict Board', async () => {

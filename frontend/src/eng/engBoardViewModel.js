@@ -4,7 +4,8 @@
 // in this module.
 
 import { computeEpicStatusCountProgress } from './engBoardCardModel.js';
-import { buildBoardColumns, UNCONFIGURED_COLUMN_ID } from './engBoardColumns.js';
+import { buildBoardColumns, resolveBoardColumnOwner, UNCONFIGURED_COLUMN_ID } from './engBoardColumns.js';
+import { epicStatusName } from './engTaskUtils.js';
 
 function adaptColumn(column, savedById) {
     const saved = savedById.get(column.id) || {};
@@ -107,6 +108,21 @@ export function buildStrictEngBoardViewModel(
             ? explicitMembership[column.id].slice()
             : derivedMembership[column.id],
     ]));
+
+    // A status edit is shown before the refetch confirms it, so a patched Epic moves to the column
+    // that owns its new status now, by the same ownership rule the server applies. Unpatched Epics
+    // keep the server's membership, which stays authoritative.
+    const ownerOf = resolveBoardColumnOwner(columnConfigs);
+    if (ownerOf) {
+        Object.entries(issuePatchesByKey).forEach(([key, patch]) => {
+            if (!patch || !Object.prototype.hasOwnProperty.call(patch, 'status') || !epicsByKey[key]) return;
+            const target = ownerOf(epicStatusName(patch));
+            const source = wireColumns.find((column) => columnEpicKeys[column.id].includes(key));
+            if (!source || source.id === target) return;
+            columnEpicKeys[source.id] = columnEpicKeys[source.id].filter((member) => member !== key);
+            columnEpicKeys[target].push(key);
+        });
+    }
 
     return {
         columns: buildBoardColumns({ columns: columnConfigs, epicGroups, columnEpicKeys }),

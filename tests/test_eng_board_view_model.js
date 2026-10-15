@@ -130,3 +130,37 @@ test('completed column keeps final counts while another column still hydrates', 
     assert.equal(model.epicGroups.find(group => group.key === 'E-2').childrenIncomplete, false);
     assert.equal(model.epicGroups.find(group => group.key === 'E-2').childrenLoading, false);
 });
+
+test('an optimistic epic status patch moves the card to the column that owns the new status at once', async () => {
+    const { buildStrictEngBoardViewModel } = await loadModule();
+    const frame = {
+        columns: [
+            { id: 'todo', name: 'To Do', color: '#597ef7', statusNames: ['To Do'], terminal: false },
+            { id: 'active', name: 'Active', color: '#8c8c8c', statusNames: ['In Progress'], terminal: false },
+            { id: 'done', name: 'Accepted', color: '#52c41a', statusNames: ['Accepted'], terminal: true },
+        ],
+        epicsByKey: {
+            'E-1': { key: 'E-1', summary: 'Moves', status: { name: 'Accepted' }, priority: null, parent: null, columnId: 'done' },
+            'E-2': { key: 'E-2', summary: 'Stays', status: { name: 'Accepted' }, priority: null, parent: null, columnId: 'done' },
+        },
+        columnEpicKeys: { todo: [], active: [], done: ['E-1', 'E-2'] },
+        childrenByKey: {},
+        membershipAuthoritative: true,
+        childrenAuthoritative: true,
+    };
+    const keysOf = (model) => model.columns.map((column) => column.epicGroups.map((group) => group.key));
+
+    assert.deepEqual(keysOf(buildStrictEngBoardViewModel(frame)), [[], [], ['E-1', 'E-2']]);
+
+    const moved = buildStrictEngBoardViewModel(frame, { issuePatchesByKey: { 'E-1': { status: { name: 'In Progress' } } } });
+    assert.deepEqual(keysOf(moved), [[], ['E-1'], ['E-2']]);
+    assert.deepEqual(moved.columnEpicKeys, { todo: [], active: ['E-1'], done: ['E-2'] });
+
+    // A status no column holds is To Do work, the first column — the same rule the server applies.
+    const unmapped = buildStrictEngBoardViewModel(frame, { issuePatchesByKey: { 'E-1': { status: { name: 'Waiting' } } } });
+    assert.deepEqual(keysOf(unmapped), [['E-1'], [], ['E-2']]);
+
+    // A patch that does not touch status leaves the placement alone.
+    const priorityOnly = buildStrictEngBoardViewModel(frame, { issuePatchesByKey: { 'E-1': { priority: { name: 'High' } } } });
+    assert.deepEqual(keysOf(priorityOnly), [[], [], ['E-1', 'E-2']]);
+});

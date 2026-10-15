@@ -3762,6 +3762,8 @@ Read the results: `git show --stat HEAD` lists the regenerated `frontend/dist` f
 
 ### Task 11c: Shareable-link UI acceptance spec
 
+Operator-approved correction (2026-10-15): use a synthetic intercepted GTM identifier, assert privacy across app-owned `pageview` and `userevent` payloads, and test saved EPM and Scenario recipients independently. This separate test-only correction preserves production sources and budgets. Before fresh review, rerun original controls 1 and 2 with the 24-case suite (9 failed/15 passed and 3 failed/21 passed), inject a private link value into a non-Share pageview payload to prove V1 fails; restore every mutation. The other original controls remain verified on identical production sources. The manual checkpoint remains pending after fresh review.
+
 **Owner note:** depends on Task 10 (the spec reads the apply event from `window.dataLayer`) and Task 11b (it drives the mounted hook); no later task builds on it, but Task 14's journey A cites it. It adds one test file and changes no source, so there is no `dist` rebuild and no budget move. Task 11 is a checkpoint: this task ends with a report and a stop (Step 13).
 
 **What the spec proves.** Real pages in Chromium, with the real App, the real store, codec, resolver, controller and hook, and a mocked network that records every request. It covers V1, V3, V5, V6 (for a Catch Up recipient and for a recipient who saved a Planning table), V7, V15, V16 and V19 of the design, the focus-miss clause of V4, the Review Focus lines RF1, RF2 and RF3, the Stage D reveal, the Planning rows seed, the three non-Catch-Up modes and when Share is enabled.
@@ -3773,7 +3775,8 @@ Read the results: `git show --stat HEAD` lists the regenerated `frontend/dist` f
 | a scope-changing link issues no default-scope load and the requests of a manual run pre-seeded to the same state | V6: no task request for the saved scope; the multiset of requests (method, path, sorted parameter names, aborted ones counted) equals a manual run whose Department is pre-seeded through the groups config; both runs load only the link's Department and Sprint |
 | a Planning link, and a Catch Up link, for a recipient with a saved Planning table issue the requests of a manual run and never read the review of the saved Sprint | V6 for the Planning review: the hold also covers the review read, so no `GET /api/eng/sprints/<saved Sprint>/review` is issued |
 | the link overrides the staged auth and connection recovery capsules | V7: both capsules are consumed and the final view is the link's |
-| a recipient whose saved view is EPM, and one whose saved flags are Scenario, end in the link ENG view | V15 and RF2: the one-shot EPM restore does not win; Scenario flags are overwritten |
+| a recipient whose saved view is EPM ends in the link ENG view (V15, RF2) | The one-shot EPM restore does not win, including after the delayed check |
+| a recipient whose saved flags are Scenario ends in the link ENG view (RF2) | Scenario flags are overwritten in an independent isolated recipient, including after the delayed check |
 | a same-scope link skips the scope write but still applies its fields, Teams and facets with one load | RF3: Stage A writes no scope, Stages B and C still apply; one load per lane |
 | opening a link performs no mutating request outside the read-only allowlist | V1: zero non-GET requests outside `/api/dependencies`, `/api/stats/*`, `values/read`, `/api/performance/loads` and the session refresh; no preference, onboarding, issue or groups-config write; no link value in an analytics payload |
 | the link Department becomes the local favorite in JSON mode and never writes the server favorite in DB mode | V19 |
@@ -4018,6 +4021,8 @@ const sprintToggle = page => page.locator('.sprint-dropdown').first().locator('.
 const settled = (page, calls) => expect.poll(() => calls.some(call => call.pathname === '/api/missing-info')).toBe(true);
 
 // A link keeps its own query out of analytics; the apply event is the only evidence of its terminal state.
+// App-owned payloads use only these two triggers; vendor bookkeeping is outside this contract.
+const analyticsEvents = page => page.evaluate(() => (window.dataLayer || []).filter(entry => entry && ['pageview', 'userevent'].includes(entry.event)));
 const applyEvents = page => page.evaluate(() => (window.dataLayer || []).filter(entry => entry && entry.event_name === 'share_view_action'));
 const ANALYTICS_ENABLED = { enabled: true, measurementId: 'G-SYNTHETIC', ga4UserId: 'synthetic-user', debugMode: false };
 
@@ -4047,7 +4052,7 @@ test('a link for another Department and Sprint keeps its fields, Teams and filte
 
 
 test('opening the link strips its keys from the URL before Tag Manager is requested (V3)', async ({ page }) => {
-    await installLinkFixture(page, { analytics: { ...ANALYTICS_ENABLED, gtmContainerId: 'GTM-NZJW2CFN' } });
+    await installLinkFixture(page, { analytics: { ...ANALYTICS_ENABLED, gtmContainerId: 'GTM-SYNTHETIC' } });
     await page.addInitScript(() => {
         window.__shareOrder = [];
         const replaceState = History.prototype.replaceState;
@@ -4062,7 +4067,7 @@ test('opening the link strips its keys from the URL before Tag Manager is reques
         };
     });
     const gtmFrameUrls = [];
-    await page.route('https://www.googletagmanager.com/gtm.js?id=GTM-NZJW2CFN', (route) => {
+    await page.route('https://www.googletagmanager.com/gtm.js?id=GTM-SYNTHETIC', (route) => {
         gtmFrameUrls.push(route.request().frame().url());
         return route.fulfill({ status: 200, contentType: 'application/javascript', body: '' });
     });
@@ -4157,15 +4162,28 @@ test('the link overrides the staged auth and connection recovery capsules (V7)',
     expect(taskCalls(calls).every(call => call.params.groupId === 'grp-b' && call.params.sprint === '42')).toBe(true);
 });
 
-test('a recipient whose saved view is EPM, and one whose saved flags are Scenario, end in the link ENG view (V15, RF2)', async ({ page }) => {
+test('a recipient whose saved view is EPM ends in the link ENG view (V15, RF2)', async ({ page }) => {
     const activeHomeToken = { connected: true, provider: 'atlassian_user_api_token', credentialSubject: 'profile@example.com', status: 'active', lastValidatedAt: '2026-05-11T09:00:00Z', needsReconnect: false };
-    await installLinkFixture(page, { analytics: ANALYTICS_ENABLED, homeToken: activeHomeToken, prefs: { selectedView: 'epm', showScenario: true } });
+    await installLinkFixture(page, { analytics: ANALYTICS_ENABLED, homeToken: activeHomeToken, prefs: { selectedView: 'epm', showScenario: false } });
     await page.goto(`${appBaseUrl}${FULL_LINK}`, { waitUntil: 'domcontentloaded' });
     await expect.poll(() => applyEvents(page).then(events => events.length)).toBe(1);
     await expect(engMode(page, 'Catch Up')).toHaveAttribute('aria-checked', 'true');
     await expect(groupToggle(page)).toContainText('Beta');
     await page.waitForTimeout(1500);
     await expect(engMode(page, 'Catch Up')).toHaveAttribute('aria-checked', 'true');
+    expect((await applyEvents(page))[0]).toMatchObject({ workflow_action: 'apply_link', result: 'success', source_surface: 'catch_up' });
+    expect(await readPrefs(page)).toMatchObject({ selectedView: 'eng', showScenario: false, showPlanning: false, showStats: false, showBoard: false, activeGroupId: 'grp-b' });
+});
+
+test('a recipient whose saved flags are Scenario ends in the link ENG view (RF2)', async ({ page }) => {
+    await installLinkFixture(page, { analytics: ANALYTICS_ENABLED, prefs: { selectedView: 'eng', showScenario: true } });
+    await page.goto(`${appBaseUrl}${FULL_LINK}`, { waitUntil: 'domcontentloaded' });
+    await expect.poll(() => applyEvents(page).then(events => events.length)).toBe(1);
+    await expect(engMode(page, 'Catch Up')).toHaveAttribute('aria-checked', 'true');
+    await expect(groupToggle(page)).toContainText('Beta');
+    await page.waitForTimeout(1500);
+    await expect(engMode(page, 'Catch Up')).toHaveAttribute('aria-checked', 'true');
+    expect((await applyEvents(page))[0]).toMatchObject({ workflow_action: 'apply_link', result: 'success', source_surface: 'catch_up' });
     expect(await readPrefs(page)).toMatchObject({ selectedView: 'eng', showScenario: false, showPlanning: false, showStats: false, showBoard: false, activeGroupId: 'grp-b' });
 });
 
@@ -4190,8 +4208,22 @@ test('opening a link performs no mutating request outside the read-only allowlis
     expect(mutatingCalls(calls)).toEqual([]);
     expect(calls.filter(call => call.pathname === '/api/groups-preferences' || call.pathname.startsWith('/api/me/onboarding')
         || call.pathname.startsWith('/api/issues/') || (call.pathname === '/api/groups-config' && call.method !== 'GET'))).toEqual([]);
-    const serialized = JSON.stringify(await applyEvents(page));
-    expect(serialized).not.toMatch(/grp-b|team-b1|story|BET-|Beta/);
+    const events = await analyticsEvents(page);
+    expect(events.some(event => event.event === 'pageview')).toBe(true);
+    expect(events.some(event => event.event === 'userevent')).toBe(true);
+    expect((await applyEvents(page))[0]).toMatchObject({ workflow_action: 'apply_link', result: 'success', source_surface: 'catch_up' });
+    // Fixed mode/surface enums are allowed; the link's scope, search and facet values are private.
+    const serialized = JSON.stringify(events);
+    expect(serialized).not.toMatch(/grp-b|team-b1|BET-|Beta|In Progress|Blocked/);
+    expect(serialized).not.toContain(FULL_LINK);
+    // A numeric duration can coincidentally equal the Sprint id; strings and every other field stay checked.
+    const payloadValues = value => value && typeof value === 'object'
+        ? Object.entries(value).flatMap(([key, entry]) => key === 'duration_ms' && typeof entry === 'number' ? [] : payloadValues(entry))
+        : [value];
+    const values = payloadValues(events);
+    expect(values).not.toContain('story');
+    expect(values).not.toContain(42);
+    expect(values).not.toContain('42');
 });
 
 test('the link Department becomes the local favorite in JSON mode and never writes the server favorite in DB mode (V19)', async ({ browser }) => {
@@ -4385,7 +4417,7 @@ test('Share is enabled in a source-only Statistics view, which loads no task lis
 
 Run: `npx playwright test tests/ui/shareable_view_links.spec.js --browser=chromium 2>&1 | grep -E '^ +[0-9]+\) |^ +[0-9]+ (passed|failed|flaky|skipped)'`
 
-Expected: `23 passed` (about one minute) and no numbered failure line. The spec needs no running server and no `JEP_TEST_PYTHON`: every request is answered by the fixture. If one test fails, read its error context under `test-results/` and fix the cause in the code under test, never in the assertion; if the cause is in a sibling task's module, report it against that task.
+Expected: `24 passed` (about one minute) and no numbered failure line. The spec needs no running server and no `JEP_TEST_PYTHON`: every request is answered by the fixture. If one test fails, read its error context under `test-results/` and fix the cause in the code under test, never in the assertion; if the cause is in a sibling task's module, report it against that task.
 
 - [ ] **Step 3: Negative control 1: no hold**
 
@@ -4405,7 +4437,7 @@ with:
 
 Run: `npx playwright test tests/ui/shareable_view_links.spec.js --browser=chromium 2>&1 | grep -E '^ +[0-9]+\) |^ +[0-9]+ (passed|failed|flaky|skipped)'`, then `fnm exec --using 20 node --test tests/test_share_view_source_guards.js tests/test_dashboard_freshness_interactions.js 2>&1 | grep -E '^# (pass|fail)'`, then `git checkout -- frontend/src/dashboard.jsx`.
 
-Expected before the revert: `9 failed` and `14 passed`. The failures are the V5 test, the V6 test, both Planning-table V6 tests, the V7 test, the RF3 test, the source-only Statistics test, the identity-link test and the source-only Share test: with no hold the recipient's saved scope loads first. The unit counterparts report `# fail 2`.
+Expected before the revert: `9 failed` and `15 passed`. The failures are the V5 test, the V6 test, both Planning-table V6 tests, the V7 test, the RF3 test, the source-only Statistics test, the identity-link test and the source-only Share test: with no hold the recipient's saved scope loads first. The unit counterparts report `# fail 2`.
 
 - [ ] **Step 4: Negative control 2: the hold released with Stage A**
 
@@ -4428,7 +4460,7 @@ with:
 
 Run: `npx playwright test tests/ui/shareable_view_links.spec.js --browser=chromium 2>&1 | grep -E '^ +[0-9]+\) |^ +[0-9]+ (passed|failed|flaky|skipped)'`, then `fnm exec --using 20 node --test tests/test_share_view_apply_machine.js 2>&1 | grep -E '^# (pass|fail)'`, then `git checkout -- frontend/src/shareView/applyMachine.js`.
 
-Expected before the revert: `3 failed` and `20 passed`: `a Catch Up link for a recipient with a saved Planning table ...`, `a source-only Statistics link for another Department loads no Catch Up tasks for any scope` and `Share is enabled in a source-only Statistics view ...` (between Stage A and Stage B's commit the App still carries the recipient's saved flags, so the released hold starts a load that the link's mode never needs), and the machine file reports `# fail 21`.
+Expected before the revert: `3 failed` and `21 passed`: `a Catch Up link for a recipient with a saved Planning table ...`, `a source-only Statistics link for another Department loads no Catch Up tasks for any scope` and `Share is enabled in a source-only Statistics view ...` (between Stage A and Stage B's commit the App still carries the recipient's saved flags, so the released hold starts a load that the link's mode never needs), and the machine file reports `# fail 31`.
 
 - [ ] **Step 5: Negative control 3: the Planning table is not keyed**
 
@@ -4570,7 +4602,7 @@ Run:
 git status --short
 npx playwright test tests/ui/shareable_view_links.spec.js --browser=chromium 2>&1 | grep -E '^ +[0-9]+\) |^ +[0-9]+ (passed|failed|flaky|skipped)'
 ```
-Expected: `git status --short` prints exactly `?? tests/ui/shareable_view_links.spec.js` (every negative control was reverted); the spec reports `23 passed`.
+Expected: `git status --short` prints exactly `?? tests/ui/shareable_view_links.spec.js` (every negative control was reverted); the spec reports `24 passed`.
 
 - [ ] **Step 12: Commit**
 
@@ -4585,7 +4617,7 @@ Read the results: `git show --stat HEAD` lists exactly one path, `tests/ui/share
 
 - [ ] **Step 13: Checkpoint (stop here)**
 
-Report to the operator: the SHAs of Tasks 11a, 11b and 11c, the files of each, the results (the Node counts, `23 passed` for the spec, the passed count of Task 11b's regression run, the lint warning count, and that the eight negative controls each failed the intended tests), the budget moves (`dashboard.jsx` plus 35 lines in Task 11b, 7,505 to 7,540 on the validated base) and any deviation from this plan. Then ask the operator to validate the live behavior by hand and stop until they confirm. The Share control does not exist before Task 12, so the check uses a typed link:
+Report to the operator: the SHAs of Tasks 11a, 11b and 11c, the files of each, the results (the Node counts, `24 passed` for the spec, the passed count of Task 11b's regression run, the lint warning count, and that the eight negative controls each failed the intended tests), the budget moves (`dashboard.jsx` plus 35 lines in Task 11b, 7,505 to 7,540 on the validated base) and any deviation from this plan. Then ask the operator to validate the live behavior by hand and stop until they confirm. The Share control does not exist before Task 12, so the check uses a typed link:
 1. In a signed-in dashboard open the browser's network panel and note one Department id (`/api/groups-config`) and one Sprint id (`/api/sprints`); ids only.
 2. Open `<origin>/?v=1&mode=catch-up&group=<id>&sprint=<id>` in a new tab. The address bar shows plain `/` as soon as the page paints; the view lands on that Department and Sprint, and the first task request in the network panel already carries that Department and Sprint (the saved scope never loads).
 3. Add `&find=<text>` and `&status=only:<one status name>`: the search box shows the text and the status filter is applied. Try `&mode=planning` and `&mode=board`.

@@ -196,6 +196,8 @@ const sprintToggle = page => page.locator('.sprint-dropdown').first().locator('.
 const settled = (page, calls) => expect.poll(() => calls.some(call => call.pathname === '/api/missing-info')).toBe(true);
 
 // A link keeps its own query out of analytics; the apply event is the only evidence of its terminal state.
+// App-owned payloads use only these two triggers; vendor bookkeeping is outside this contract.
+const analyticsEvents = page => page.evaluate(() => (window.dataLayer || []).filter(entry => entry && ['pageview', 'userevent'].includes(entry.event)));
 const applyEvents = page => page.evaluate(() => (window.dataLayer || []).filter(entry => entry && entry.event_name === 'share_view_action'));
 const ANALYTICS_ENABLED = { enabled: true, measurementId: 'G-SYNTHETIC', ga4UserId: 'synthetic-user', debugMode: false };
 
@@ -225,7 +227,7 @@ test('a link for another Department and Sprint keeps its fields, Teams and filte
 
 
 test('opening the link strips its keys from the URL before Tag Manager is requested (V3)', async ({ page }) => {
-    await installLinkFixture(page, { analytics: { ...ANALYTICS_ENABLED, gtmContainerId: 'GTM-NZJW2CFN' } });
+    await installLinkFixture(page, { analytics: { ...ANALYTICS_ENABLED, gtmContainerId: 'GTM-SYNTHETIC' } });
     await page.addInitScript(() => {
         window.__shareOrder = [];
         const replaceState = History.prototype.replaceState;
@@ -240,7 +242,7 @@ test('opening the link strips its keys from the URL before Tag Manager is reques
         };
     });
     const gtmFrameUrls = [];
-    await page.route('https://www.googletagmanager.com/gtm.js?id=GTM-NZJW2CFN', (route) => {
+    await page.route('https://www.googletagmanager.com/gtm.js?id=GTM-SYNTHETIC', (route) => {
         gtmFrameUrls.push(route.request().frame().url());
         return route.fulfill({ status: 200, contentType: 'application/javascript', body: '' });
     });
@@ -335,15 +337,28 @@ test('the link overrides the staged auth and connection recovery capsules (V7)',
     expect(taskCalls(calls).every(call => call.params.groupId === 'grp-b' && call.params.sprint === '42')).toBe(true);
 });
 
-test('a recipient whose saved view is EPM, and one whose saved flags are Scenario, end in the link ENG view (V15, RF2)', async ({ page }) => {
+test('a recipient whose saved view is EPM ends in the link ENG view (V15, RF2)', async ({ page }) => {
     const activeHomeToken = { connected: true, provider: 'atlassian_user_api_token', credentialSubject: 'profile@example.com', status: 'active', lastValidatedAt: '2026-05-11T09:00:00Z', needsReconnect: false };
-    await installLinkFixture(page, { analytics: ANALYTICS_ENABLED, homeToken: activeHomeToken, prefs: { selectedView: 'epm', showScenario: true } });
+    await installLinkFixture(page, { analytics: ANALYTICS_ENABLED, homeToken: activeHomeToken, prefs: { selectedView: 'epm', showScenario: false } });
     await page.goto(`${appBaseUrl}${FULL_LINK}`, { waitUntil: 'domcontentloaded' });
     await expect.poll(() => applyEvents(page).then(events => events.length)).toBe(1);
     await expect(engMode(page, 'Catch Up')).toHaveAttribute('aria-checked', 'true');
     await expect(groupToggle(page)).toContainText('Beta');
     await page.waitForTimeout(1500);
     await expect(engMode(page, 'Catch Up')).toHaveAttribute('aria-checked', 'true');
+    expect((await applyEvents(page))[0]).toMatchObject({ workflow_action: 'apply_link', result: 'success', source_surface: 'catch_up' });
+    expect(await readPrefs(page)).toMatchObject({ selectedView: 'eng', showScenario: false, showPlanning: false, showStats: false, showBoard: false, activeGroupId: 'grp-b' });
+});
+
+test('a recipient whose saved flags are Scenario ends in the link ENG view (RF2)', async ({ page }) => {
+    await installLinkFixture(page, { analytics: ANALYTICS_ENABLED, prefs: { selectedView: 'eng', showScenario: true } });
+    await page.goto(`${appBaseUrl}${FULL_LINK}`, { waitUntil: 'domcontentloaded' });
+    await expect.poll(() => applyEvents(page).then(events => events.length)).toBe(1);
+    await expect(engMode(page, 'Catch Up')).toHaveAttribute('aria-checked', 'true');
+    await expect(groupToggle(page)).toContainText('Beta');
+    await page.waitForTimeout(1500);
+    await expect(engMode(page, 'Catch Up')).toHaveAttribute('aria-checked', 'true');
+    expect((await applyEvents(page))[0]).toMatchObject({ workflow_action: 'apply_link', result: 'success', source_surface: 'catch_up' });
     expect(await readPrefs(page)).toMatchObject({ selectedView: 'eng', showScenario: false, showPlanning: false, showStats: false, showBoard: false, activeGroupId: 'grp-b' });
 });
 
@@ -368,8 +383,22 @@ test('opening a link performs no mutating request outside the read-only allowlis
     expect(mutatingCalls(calls)).toEqual([]);
     expect(calls.filter(call => call.pathname === '/api/groups-preferences' || call.pathname.startsWith('/api/me/onboarding')
         || call.pathname.startsWith('/api/issues/') || (call.pathname === '/api/groups-config' && call.method !== 'GET'))).toEqual([]);
-    const serialized = JSON.stringify(await applyEvents(page));
-    expect(serialized).not.toMatch(/grp-b|team-b1|story|BET-|Beta/);
+    const events = await analyticsEvents(page);
+    expect(events.some(event => event.event === 'pageview')).toBe(true);
+    expect(events.some(event => event.event === 'userevent')).toBe(true);
+    expect((await applyEvents(page))[0]).toMatchObject({ workflow_action: 'apply_link', result: 'success', source_surface: 'catch_up' });
+    // Fixed mode/surface enums are allowed; the link's scope, search and facet values are private.
+    const serialized = JSON.stringify(events);
+    expect(serialized).not.toMatch(/grp-b|team-b1|BET-|Beta|In Progress|Blocked/);
+    expect(serialized).not.toContain(FULL_LINK);
+    // A numeric duration can coincidentally equal the Sprint id; strings and every other field stay checked.
+    const payloadValues = value => value && typeof value === 'object'
+        ? Object.entries(value).flatMap(([key, entry]) => key === 'duration_ms' && typeof entry === 'number' ? [] : payloadValues(entry))
+        : [value];
+    const values = payloadValues(events);
+    expect(values).not.toContain('story');
+    expect(values).not.toContain(42);
+    expect(values).not.toContain('42');
 });
 
 test('the link Department becomes the local favorite in JSON mode and never writes the server favorite in DB mode (V19)', async ({ browser }) => {

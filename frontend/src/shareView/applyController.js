@@ -133,6 +133,7 @@ export function createApplyController({ readOptions, now = clock }) {
     let commit = 0;
     let interrupt = null;
     let focusResult = null;
+    let focusReached = false;
     let reveal = null;
     let revealCancelled = false;
     let seeded = false;
@@ -150,6 +151,11 @@ export function createApplyController({ readOptions, now = clock }) {
         pendingTrack = { workflowAction: 'apply_link', result: ANALYTICS_RESULT[result], sourceSurface };
     };
 
+    const focusScopeMatches = o => o.selectedView === 'eng' && String(o.activeGroupId) === locked.target.groupId
+        && String(o.selectedSprint) === locked.target.sprintId && o.activeEngMode === locked.mode;
+    const cohortSettled = (o, scopeKey) => o.catchUpAlertScopeKey === scopeKey
+        && o.catchUpAlertLoadRef.current === scopeKey && o.alertCohortRef.current === null;
+
     const buildInput = (o, state) => {
         const preScope = !machine.ran.A;
         resolved = preScope ? resolveApplyPlan(o, state) : resolved;
@@ -158,6 +164,12 @@ export function createApplyController({ readOptions, now = clock }) {
         const boardToken = mode === 'board' && (state.scope === 'component' || state.scope === 'all_work') ? state.scope : null;
         const readiness = boardToken === 'component' ? o.engSprintSelectorState.componentReadiness : o.engSprintSelectorState.allWorkReadiness;
         const teamsHydrated = Boolean(o.teamSelectionScopeKey) && o.teamSelectionHydratedScopeRef.current === o.teamSelectionScopeKey;
+        const focus = resolveShareViewFocus(state, mode);
+        const epochReady = machine.scopeChange ? o.loadEpochRef.current > machine.epochAtA : o.loadEpochRef.current >= machine.epochAtA;
+        const scopeMatches = !preScope && focusScopeMatches(o);
+        const tasksReady = scopeMatches && epochReady && !o.tasksLoading && o.tasksFetched
+            && String(o.lastLoadedSprintRef.current ?? '') === target.sprintId && teamsHydrated;
+        const alertsReady = mode !== 'catch-up' || cohortSettled(o, o.catchUpAlertScopeKey);
         return {
             now: now(), commit, paused: isApplyPaused(o), authLocked: Boolean(readPendingAuthenticationRequired()),
             reviewBusy: Boolean(o.planningReviewBusy), interrupt, reported: [...reported],
@@ -176,10 +188,10 @@ export function createApplyController({ readOptions, now = clock }) {
                 teamsHydrated, expected: Boolean(o.engLoadsTasks),
             },
             d: {
-                cohortSettled: mode === 'catch-up' ? o.catchUpAlertLoadRef.current === o.catchUpAlertScopeKey && o.alertCohortRef.current === null : true,
+                cohortSettled: alertsReady, targetReady: focus?.kind === 'alertTeam' ? alertsReady : tasksReady, scopeMatches,
                 recoveryIdle: !o.pendingConnectionRecoveryRef.current, visible: isVisible(),
             },
-            focusResult,
+            focusResult, focusReached,
         };
     };
 
@@ -219,7 +231,18 @@ export function createApplyController({ readOptions, now = clock }) {
             const target = resolveShareViewFocus(state, fresh.scope.mode);
             if (!target) { focusResult = 'missing'; return true; }
             // Cancelled by the machine, by an interaction the guard reported since the last tick, or by the terminal auth lock.
-            reveal = revealShareViewFocus(target, { mode: fresh.scope.mode, isCancelled: () => revealCancelled || interrupt !== null || Boolean(readPendingAuthenticationRequired()) });
+            const initialAlertScope = o.catchUpAlertScopeKey;
+            reveal = revealShareViewFocus(target, {
+                mode: fresh.scope.mode,
+                onReached: () => { focusReached = true; controller.evaluate(); },
+                isLayoutSettled: () => locked.mode !== 'catch-up' || target.kind === 'alertTeam'
+                    || cohortSettled(readOptions(), initialAlertScope),
+                isCancelled: () => {
+                    const current = readOptions();
+                    return revealCancelled || interrupt !== null || Boolean(readPendingAuthenticationRequired())
+                        || !focusScopeMatches(current) || Boolean(current.pendingConnectionRecoveryRef.current);
+                },
+            });
             reveal.done.catch(() => 'missing').then((result) => { focusResult = result; controller.evaluate(); });
         }
         return true;

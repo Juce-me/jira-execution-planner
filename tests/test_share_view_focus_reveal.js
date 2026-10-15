@@ -501,3 +501,56 @@ test('the three reused highlight classes still paint through an animation', () =
     assert.match(css, /\.task-item\.task-highlight::after\s*\{\s*animation:\s*taskHighlightPulse\s/);
     assert.match(css, /\.planning-review-table tr\.planning-review-confirmed td::after\s*\{[^}]*animation:\s*epicFlash\s/);
 });
+
+
+test('bounded alignment reaches once and waits through cohort expansion without restarting search', async () => {
+    const p = page();
+    try {
+        let settled = false;
+        let reached = 0;
+        const block = p.epicBlock('PROJ-1', 1500);
+        p.dom.stepMs(7900);
+        const { handle, outcome } = run(p, { kind: 'epic', key: 'PROJ-1' }, { mode: 'catch-up', onReached: () => { reached += 1; }, isLayoutSettled: () => settled });
+        p.dom.stepMs(7900);
+        p.mount(block);
+        p.dom.stepMs(80);
+        assert.equal(reached, 1);
+        assert.equal(block.getBoundingClientRect().top, 62);
+        assert.equal(outcome.result, undefined);
+        for (const shift of [200, 300]) {
+            block.box.top += shift;
+            p.dom.stepMs(100);
+            assert.equal(block.getBoundingClientRect().top, 62);
+            assert.equal(reached, 1);
+        }
+        p.dom.stepMs(1200);
+        assert.equal(block.classList.contains('epic-flash'), false, 'no second blink');
+        settled = true;
+        p.dom.stepMs(200);
+        await flush();
+        assert.equal(outcome.result, undefined, 'a queued expansion is not mistaken for two stable frames');
+        block.box.top += 250;
+        p.dom.stepMs(100);
+        assert.equal(block.getBoundingClientRect().top, 62);
+        p.dom.stepMs(200);
+        await flush();
+        assert.equal(outcome.result, 'revealed');
+        assert.equal(p.dom.listenerCount(), 0);
+        assert.equal(p.dom.pendingFrames(), 0);
+        handle.cancel();
+    } finally { p.restore(); }
+    const delayed = page();
+    try {
+        let settled = false;
+        const { outcome } = run(delayed, { kind: 'epic', key: 'PROJ-1' }, { mode: 'catch-up', isLayoutSettled: () => settled });
+        delayed.dom.stepMs(100);
+        settled = true;
+        delayed.mount(delayed.epicBlock('PROJ-1', 1500));
+        delayed.dom.stepMs(80);
+        await flush();
+        assert.equal(outcome.result, undefined, 'a cohort completing just before reach still needs its mounted expansion interval');
+        delayed.dom.stepMs(500);
+        await flush();
+        assert.equal(outcome.result, 'revealed');
+    } finally { delayed.restore(); }
+});

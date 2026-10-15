@@ -41,6 +41,27 @@ Acceptance: header copies contain no focus at any scroll position; Epic actions 
 
 The operator rejected extending the 20-second focus limit. The cold-start correction must remove unrelated alert blocking for a loaded Epic/Story while preserving bounded reveal, later layout alignment and user-interaction/auth cancellation. It must not increase the stage, target-search or overall time limits. Alert-target readiness remains tied to its alert cohort.
 
+## Cold focus amendment (operator-approved 2026-10-15)
+
+This amendment supersedes historical cohort-only issue-target requirements and quoted implementation blocks below. Available Epic/Story targets reveal as soon as the locked group/Sprint's primary lanes, epoch, fetched Sprint and hydrated Teams are ready and Stage C's existing committed sequence or skip has completed. Alert-team targets retain full-cohort readiness. Stage D additionally checks the actual ENG surface, group, Sprint and resolved mode before starting and throughout correction, using the controller's existing current-options reader. No App state, request, auth/storage/schema or reading-order owner changes.
+
+`revealShareViewFocus` retains `{ cancel, done }`; optional `onReached` (default no-op) fires once after initial alignment, two-frame correction and one blink; optional `isLayoutSettled` (default true) reads current locked-scope cohort settlement. `done` still means cleanup complete (`revealed | missing | cancelled`). Catch Up issue targets keep the same handle alive for bounded geometry corrections, including intermediate alert renders. After cohort completion, observe the existing 350 ms expansion interval and stable target geometry/two-frame correction before cleanup; the first landing never waits for it. Trusted input, auth lock, recovery or changed surface/scope/mode cancels corrections immediately; no replay or later pullback.
+
+Every timer and measurement origin stays unchanged: overall 90 s; A/B 5 s; C/D 20 s; pre-start D from `armedActive`, running D from the original `dActive`; initial target search eight visible-frame seconds with the existing 100 ms frame cap. Search expiry cannot report missing after reach. The controller records private `focusReached`, and the machine acknowledges it before overall expiry, removes only D's owed focus category and preserves earlier Teams/Filters skips. A reach first delivered at/after expiry cannot defeat expiry; previously accepted reach remains success at cleanup. Deadline cleanup cancels the same handle without a new interval, grace or reset; no empty partial notice. Readiness at/after the pre-start bound cannot start D.
+
+Approved minimum: immediate available-item reveal, bounded correction, reached-at-bound success and no scripted pullback after interaction/cleanup. Arbitrarily late content beyond cleanup has no scripted guarantee; test Chromium/Firefox/WebKit native anchoring and report observed limits rather than adding unbounded scroll.
+
+Analytics impact: existing `userevent` / `share_view_action`, `feature_name=share_view`, `workflow_action=apply_link`, enum-only `result` and `source_surface`, once at terminal cleanup. Intermediate reach/alignment adds no trigger, event, identifier or GA4 registration; existing taxonomy/runbook contract remains.
+
+Named regressions (exact titles, cross-slice traceability):
+- `cold issue focus starts before unrelated alerts and aligns each partial result once`
+- `cold focus reached before the running bound succeeds and never scrolls after cleanup`
+- `cold alignment stops on trusted input or a changed scope`
+- `cold content beyond cleanup records native anchoring without scripted correction`
+- `issue focus uses own task readiness while alert targets retain the full cohort gate`
+- `reached focus survives running and overall deadline boundaries without hiding earlier skips`
+- `bounded alignment reaches once and waits through cohort expansion without restarting search`
+
 ## Decisions (operator-approved 2026-10-13)
 
 | Decision | Choice | Rejected alternative |

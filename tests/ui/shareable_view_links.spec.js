@@ -39,6 +39,7 @@ const shareViewProbe = {
 export function useShareViewApply(options) {
     const result = useShareViewApplyOriginal(options);
     window.__shareViewProbe = result;
+    window.__shareViewOptions = options;
     return result;
 }
 `,
@@ -112,7 +113,7 @@ async function installDocumentRoutes(page) {
 
 async function installLinkFixture(page, {
     groupsSource = 'workspace_db', preferences = {}, taskGate = null, taskAuthFailure = false, homeToken = { connected: false },
-    prefs = {}, teamSelection = null, analytics = null, capsules = null, matrix = false, backendCache = null, strictScope = '', statsRefresh = false,
+    prefs = {}, teamSelection = null, analytics = null, capsules = null, coldAlerts = null, matrix = false, backendCache = null, strictScope = '', statsRefresh = false,
 } = {}) {
     const calls = [];
     const requestCalls = new Map();
@@ -219,11 +220,21 @@ async function installLinkFixture(page, {
             const sprintId = Number(url.searchParams.get('sprint'));
             if (taskGate && !purpose) await taskGate.promise;
             if (taskAuthFailure && !purpose) return reply({ error: 'auth_required', loginUrl: '/login?reason=session_expired' }, 401);
+            if (coldAlerts && project === 'product' && purpose === 'alerts') {
+                await coldAlerts.alerts?.promise;
+                const epic = { ...epicFor(groupId, sprintId), key: 'ALP-900', summary: 'Synthetic empty Epic', status: { name: 'Analysis' }, totalStories: 0, selectedStories: 0, selectedActionableStories: 0, futureOpenStories: 0, storyStatusCounts: {} };
+                return reply({ issues: [], epics: { [epic.key]: epic }, epicsInScope: [epic], names: {} });
+            }
             if (project !== 'product' || purpose) return matrix ? cachedReply({ issues: [], epics: {}, epicsInScope: [], names: {} }) : reply({ issues: [], epics: {}, epicsInScope: [], names: {} });
             const epic = epicFor(groupId, sprintId);
             return (matrix ? cachedReply : reply)({ issues: storiesFor(groupId, sprintId), epics: { [epic.key]: { ...epic, id: groupId === 'grp-b' ? '9200' : '9100' } }, epicsInScope: [{ ...epic, id: groupId === 'grp-b' ? '9200' : '9100' }], names: {} });
         }
-        if (url.pathname === '/api/missing-info') return reply({ issues: [], epics: [], count: 0, epicCount: 0 });
+        if (url.pathname === '/api/missing-info') {
+            if (!coldAlerts) return reply({ issues: [], epics: [], count: 0, epicCount: 0 });
+            await coldAlerts.missing.promise;
+            const issues = storiesFor('grp-a', 41).slice(0, 2).map(issue => ({ ...issue, fields: { ...issue.fields, customfield_10004: null, missingFields: ['Story Points'] } }));
+            return reply({ issues, epics: [], count: issues.length, epicCount: 0 });
+        }
         if (url.pathname === '/api/backlog-epics') return reply({ epics: [] });
         if (url.pathname === '/api/capacity') return reply({ enabled: false, capacity: [], teams: [], totalCapacity: 0 });
         if (url.pathname === '/api/dependencies') return reply({ dependencies: {} });
@@ -820,3 +831,133 @@ for (const [name, prefs] of [
         } finally { await source.close(); await recipient.close(); }
     });
 }
+
+// Real dashboard cold-focus regression. Only synthetic API members are held; the controller/reveal run unchanged.
+async function coldFocus(page, { alerts = null } = {}) {
+    const missing = deferred();
+    const tasks = deferred();
+    const calls = await installLinkFixture(page, { analytics: ANALYTICS_ENABLED, taskGate: tasks, coldAlerts: { missing, alerts } });
+    await page.addInitScript(() => {
+        if (window.__coldScrolls) return;
+        const scrollTo = window.scrollTo.bind(window);
+        window.__coldScrolls = [];
+        window.__coldHighlights = [];
+        document.addEventListener('animationstart', event => {
+            if (event.animationName === 'epicFlash' && event.target.matches?.('.epic-block[data-epic-key="ALP-100"]')) window.__coldHighlights.push(performance.now());
+        }, true);
+        window.scrollTo = (...args) => { window.__coldScrolls.push(args); return scrollTo(...args); };
+    });
+    await page.goto(`${appBaseUrl}/?v=1&mode=catch-up&group=grp-a&sprint=41&epic=ALP-100`, { waitUntil: 'domcontentloaded' });
+    await page.addStyleTag({ content: '.epic-block { margin-top: 1200px !important; } body { padding-bottom: 1200px !important; }' });
+    tasks.resolve();
+    const target = page.locator('.epic-block[data-epic-key="ALP-100"]');
+    await expect(target).toBeVisible();
+    return { missing, alerts, calls, target };
+}
+async function coldLanding(page) {
+    return page.evaluate(() => {
+        const target = document.querySelector('.epic-block[data-epic-key="ALP-100"]');
+        const filter = document.querySelector('.filterbar-wrap');
+        const bottom = filter?.getBoundingClientRect().bottom || 0;
+        return { top: target.getBoundingClientRect().top, bottom, scrollY: scrollY, scrolls: window.__coldScrolls.length };
+    });
+}
+async function expectColdLanding(page) {
+    await expect.poll(async () => { const value = await coldLanding(page); return Math.abs(value.top - value.bottom - 12); }).toBeLessThanOrEqual(1);
+}
+
+test('cold issue focus starts before unrelated alerts and aligns each partial result once', async ({ page }, testInfo) => {
+    const alerts = deferred();
+    const { missing, calls } = await coldFocus(page, { alerts });
+    // Before the correction this remains at the top for the whole pre-start Stage D budget.
+    await expect.poll(() => page.evaluate(() => scrollY), { timeout: 3000 }).toBeGreaterThan(500);
+    await expect.poll(() => page.evaluate(() => window.__coldHighlights.length)).toBe(1);
+    await expectColdLanding(page);
+    expect(await applyEvents(page)).toEqual([]);
+    const prefs = await readPrefs(page);
+    const initial = await coldLanding(page);
+    alerts.resolve();
+    await expect.poll(() => calls.filter(call => call.params.purpose === 'alerts' && call.completed).length).toBe(2);
+    await expectColdLanding(page);
+    await expect.poll(async () => (await coldLanding(page)).scrollY).toBeGreaterThan(initial.scrollY + 20);
+    const partial = await coldLanding(page);
+    missing.resolve();
+    await expect.poll(() => applyEvents(page).then(events => events.map(event => event.result))).toEqual(['success']);
+    await expectColdLanding(page);
+    expect((await coldLanding(page)).scrollY).toBeGreaterThan(partial.scrollY + 20);
+    expect(await page.evaluate(() => window.__coldHighlights.length)).toBe(1);
+    expect(await readPrefs(page)).toEqual(prefs);
+    expect(mutatingCalls(calls)).toEqual([]);
+    await page.screenshot({ path: path.join(repoRoot, 'tmp/share-view-tasks/cold-focus-after-' + testInfo.project.name + '.png') });
+});
+
+
+test('cold focus reached before the running bound succeeds and never scrolls after cleanup', async ({ page }) => {
+    test.setTimeout(35000);
+    const { missing, calls } = await coldFocus(page);
+    await expect.poll(() => page.evaluate(() => scrollY), { timeout: 3000 }).toBeGreaterThan(500);
+    await expectColdLanding(page);
+    const reachedAt = await page.evaluate(() => performance.now());
+    await expect.poll(() => applyEvents(page).then(events => events.map(event => event.result)), { timeout: 22000 }).toEqual(['success']);
+    const endedAt = await page.evaluate(() => performance.now());
+    expect(endedAt - reachedAt).toBeLessThan(21000);
+    expect(endedAt - reachedAt).toBeGreaterThan(17000);
+    expect(await page.evaluate(() => window.__shareViewProbe.notice)).toBe(null);
+    const scrolls = (await coldLanding(page)).scrolls;
+    missing.resolve();
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/missing-info' && call.completed).length).toBe(1);
+    await page.waitForTimeout(600);
+    expect((await coldLanding(page)).scrolls).toBe(scrolls);
+    expect((await applyEvents(page)).map(event => event.result)).toEqual(['success']);
+});
+
+test('cold alignment stops on trusted input or a changed scope', async ({ page }) => {
+    test.setTimeout(60000);
+    for (const interruption of ['wheel', 'pointer', 'key', 'sprint', 'group', 'mode', 'surface', 'recovery', 'auth']) {
+        const { missing, calls } = await coldFocus(page);
+        await expect.poll(() => page.evaluate(() => scrollY), { timeout: 3000 }).toBeGreaterThan(500);
+        await expectColdLanding(page);
+        if (interruption === 'wheel') { await page.mouse.move(900, 600); await page.mouse.wheel(0, 400); }
+        else if (interruption === 'pointer') await page.mouse.click(1000, 600);
+        else if (interruption === 'key') await page.keyboard.press('ArrowDown');
+        else await page.evaluate(kind => {
+            const o = window.__shareViewOptions;
+            if (kind === 'sprint') o.commitSprintSelection({ id: 42, name: 'Sprint 42' });
+            if (kind === 'group') o.setActiveGroupId('grp-b');
+            if (kind === 'mode') o.setShowPlanning(true);
+            if (kind === 'surface') o.setSelectedView('epm');
+            if (kind === 'recovery') o.pendingConnectionRecoveryRef.current = { scope: 'synthetic-other' };
+            if (kind === 'auth') {
+                window.__JEP_AUTH_REQUIRED__ = { locked: true, loginUrl: '/login?reason=session_expired' };
+                window.dispatchEvent(new CustomEvent('jep:authentication-required', { detail: window.__JEP_AUTH_REQUIRED__ }));
+            }
+        }, interruption);
+        await expect.poll(() => shareState(page).then(value => value?.terminal)).toBe(true);
+        await page.waitForTimeout(100);
+        const scrolls = await page.evaluate(() => window.__coldScrolls.length);
+        missing.resolve();
+        await page.waitForTimeout(600);
+        expect(await page.evaluate(() => window.__coldScrolls.length), interruption).toBe(scrolls);
+        expect(mutatingCalls(calls), interruption).toEqual([]);
+        if (interruption === 'auth') {
+            expect((await applyEvents(page)).map(event => event.result)).toEqual(['rejected']);
+            expect(await page.evaluate(() => window.__JEP_AUTH_REQUIRED__.locked)).toBe(true);
+        }
+    }
+});
+
+test('cold content beyond cleanup records native anchoring without scripted correction', async ({ page }, testInfo) => {
+    test.setTimeout(35000);
+    const { missing, calls } = await coldFocus(page);
+    await expect.poll(() => page.evaluate(() => scrollY), { timeout: 3000 }).toBeGreaterThan(500);
+    await expect.poll(() => applyEvents(page).then(events => events.map(event => event.result)), { timeout: 22000 }).toEqual(['success']);
+    await expectColdLanding(page);
+    const before = await coldLanding(page);
+    missing.resolve();
+    await expect.poll(() => calls.filter(call => call.pathname === '/api/missing-info' && call.completed).length).toBe(1);
+    await page.waitForTimeout(700);
+    const after = await coldLanding(page);
+    expect(after.scrolls).toBe(before.scrolls);
+    await testInfo.attach('native anchoring beyond bounded cleanup', { body: JSON.stringify({ browser: testInfo.project.name, before, after, displacement: after.top - before.top }), contentType: 'application/json' });
+    fs.writeFileSync(path.join(repoRoot, 'tmp/share-view-tasks/cold-focus-native-' + testInfo.project.name + '.json'), JSON.stringify({ before, after, displacement: after.top - before.top }));
+});

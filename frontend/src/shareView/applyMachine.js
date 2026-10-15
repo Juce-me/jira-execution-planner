@@ -83,10 +83,15 @@ export function stepApplyMachine(previous, input) {
     }
     if (!input.gate.configSettled) return wait();
     if (state.startActive === null) state.startActive = state.active;
+    // Accept reach only inside the original bounds. Removing D's debt preserves an earlier accepted
+    // landing through cleanup; a newly delivered reach at expiry cannot hide the expired work.
+    if (state.ran.D && input.focusReached && state.active - state.startActive < APPLY_OVERALL_BUDGET_MS
+        && state.active - state.dActive < APPLY_STAGE_BUDGET_MS.D) complete('D');
     if (state.active - state.startActive >= APPLY_OVERALL_BUDGET_MS) {
         if (!state.ran.A) return drop();
         if (state.ran.D) cancelReveal();
-        return finish('partial', [...reported, ...state.skipped, ...state.owed.flatMap(entry => entry.categories)]);
+        const categories = [...reported, ...state.skipped, ...state.owed.flatMap(entry => entry.categories)];
+        return finish(categories.length ? 'partial' : 'done', categories);
     }
     if (input.paused) return wait();
 
@@ -176,19 +181,19 @@ export function stepApplyMachine(previous, input) {
             moveTo('D', ['D']);
             return settle();
         }
-        if (d.cohortSettled && d.recoveryIdle && d.visible) {
+        if (d.targetReady && d.scopeMatches && d.recoveryIdle && d.visible) {
             state.ran.D = true;
             state.dActive = state.active;
             actions.push({ type: 'run', stage: 'D' });
         }
         return { state, actions };
     }
-    if (input.focusResult === 'revealed' || input.focusResult === 'cancelled') return settle();
-    if (input.focusResult === 'missing') { moveTo('D', ['D']); return settle(); }
     if (state.active - state.dActive >= APPLY_STAGE_BUDGET_MS.D) {
         cancelReveal();
-        moveTo('D', ['D']);
+        if (state.owed.some(entry => entry.step === 'D')) moveTo('D', ['D']);
         return settle();
     }
+    if (input.focusResult === 'revealed' || input.focusResult === 'cancelled') return settle();
+    if (input.focusResult === 'missing') { moveTo('D', ['D']); return settle(); }
     return { state, actions };
 }

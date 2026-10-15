@@ -56,13 +56,18 @@ function alignBelowStickyStack({ element, belowEpicHeader = false }, win) {
 
 // Scrolls to and blinks the link's focus target without moving keyboard focus, clearing a filter or leaving the page. A target that never
 // appears within `timeoutMs` of visible time resolves 'missing'; any deliberate input or `isCancelled()` resolves 'cancelled'.
-export function revealShareViewFocus(target, { mode, root = document, win = window, timeoutMs = 8000, isCancelled = () => false } = {}) {
+export function revealShareViewFocus(target, { mode, root = document, win = window, timeoutMs = 8000, isCancelled = () => false, onReached = () => {}, isLayoutSettled = () => true } = {}) {
     let finished = false;
     let frame = null;
     let lastTime = null;
     let elapsed = 0;
     let readySince = null;
     let settleFramesLeft = 0;
+    let reached = false;
+    let awaitingLayout = !isLayoutSettled();
+    let layoutSettledSince = null;
+    let stableTop = null;
+    let stableFrames = 0;
     let resolveDone;
     const done = new Promise((resolve) => { resolveDone = resolve; });
 
@@ -90,11 +95,26 @@ export function revealShareViewFocus(target, { mode, root = document, win = wind
         if (root.visibilityState !== 'visible') { lastTime = null; return; }   // `visibilitychange` resumes the loop
         elapsed += lastTime === null ? 0 : Math.min(time - lastTime, FRAME_CAP_MS);
         lastTime = time;
+        if (!isLayoutSettled()) awaitingLayout = true;
         const found = findTarget(target, mode, root);
         if (!found || found.collapsed) {
             readySince = null;
             settleFramesLeft = 0;
-            if (elapsed >= timeoutMs) finish('missing'); else schedule();
+            if (!reached && elapsed >= timeoutMs) finish('missing'); else schedule();
+            return;
+        }
+        if (reached) {
+            // Keep correcting the same target without another blink or a fresh search/stage clock.
+            alignBelowStickyStack(found, win);
+            const top = found.element.getBoundingClientRect().top + win.scrollY;
+            if (!isLayoutSettled()) { layoutSettledSince = null; stableFrames = 0; }
+            else {
+                layoutSettledSince = layoutSettledSince ?? time;
+                stableFrames = stableTop !== null && Math.abs(top - stableTop) <= LANDING_TOLERANCE_PX ? stableFrames + 1 : 0;
+                if (time - layoutSettledSince >= EXPAND_WAIT_MS && stableFrames >= SETTLE_FRAMES) { finish('revealed'); return; }
+            }
+            stableTop = top;
+            schedule();
             return;
         }
         if (settleFramesLeft === 0) {
@@ -109,7 +129,11 @@ export function revealShareViewFocus(target, { mode, root = document, win = wind
         if (settleFramesLeft > 0) { schedule(); return; }
         alignBelowStickyStack(found, win);
         blinkElement(found.element, found.className, found.durationMs);
-        finish('revealed');
+        reached = true;
+        onReached();
+        if (finished) return;
+        if (!awaitingLayout && isLayoutSettled()) finish('revealed');
+        else schedule();
     }
 
     for (const name of INTERRUPTS) root.addEventListener(name, onInterrupt, { capture: true, passive: true });

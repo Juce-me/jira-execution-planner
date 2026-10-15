@@ -60,7 +60,7 @@ function createRig({ link, search, options = {} } = {}) {
         visibleControlGroups: [{ id: 'grp-a', teamIds: ['t1', 't2'] }, { id: 'grp-b', teamIds: ['t3', ' t4 ', 't3'] }],
         pendingShellAuthResumeRef: { current: null }, pendingPlanningAuthResumeRef: { current: null }, pendingConnectionRecoveryRef: { current: null },
         tourRunning: false, planningReviewBusy: false,
-        activeGroupId: 'grp-a', selectedSprint: 41, planningScopeKey: 'planning::41::grp-a', teamSelectionScopeKey: 'team-selection::41::grp-a',
+        selectedView: 'eng', activeGroupId: 'grp-a', selectedSprint: 41, planningScopeKey: 'planning::41::grp-a', teamSelectionScopeKey: 'team-selection::41::grp-a',
         selectedTeams: ['all'], tasksFetched: false, tasksLoading: false, engLoadsTasks: true, activeEngMode: 'catch-up',
         activeGroupRef: { current: 'grp-a' }, planningHydratedScopeRef: { current: 'planning::41::grp-a' }, restoringGroupRef: { current: false },
         teamSelectionHydratedScopeRef: { current: '' }, lastLoadedSprintRef: { current: null }, loadEpochRef: { current: 0 },
@@ -369,27 +369,24 @@ test('every raw write goes through the options bag: the throwing helpers are nev
     assert.equal(rig.revealLog.length, 1, 'Stage D ran without touching a forbidden helper');
 });
 
-test('Stage D reveals the focus target once the alert cohort settles and finishes on the reveal result', async () => {
-    const rig = createRig({ link: { ...LINK, focus: { kind: 'epic', key: 'PROJ-1' } } });
-    rig.tick();
-    commitScope(rig);
-    rig.tick();
-    rig.tick();
-    finishLoad(rig);
-    rig.o.selectedTeams = ['t3'];
-    rig.tick();
-    rig.tick();
-    rig.tick();
-    assert.equal(rig.revealLog.length, 0, 'the alert cohort has not settled');
-    rig.o.catchUpAlertLoadRef.current = rig.o.catchUpAlertScopeKey;
-    rig.tick();
-    assert.equal(rig.revealLog.length, 1);
-    assert.deepEqual(rig.revealLog[0].target, { kind: 'epic', key: 'PROJ-1' });
-    assert.equal(rig.revealLog[0].options.mode, 'catch-up');
-    assert.equal(rig.revealLog[0].options.isCancelled(), false);
-    rig.revealLog[0].finish('revealed');
-    await new Promise(resolve => setTimeout(resolve, 0));
-    assert.deepEqual(rig.store.log.at(-1), ['finish', 'done', []]);
+test('issue focus uses own task readiness while alert targets retain the full cohort gate', async () => {
+    for (const alert of [false, true]) {
+        const rig = createRig({ link: { ...LINK, ...(alert ? { alertTeam: { anchor: 'blocked', id: 't3' } } : { focus: { kind: 'epic', key: 'PROJ-1' } }) } });
+        rig.tick(); commitScope(rig); rig.tick(); rig.tick(); finishLoad(rig);
+        rig.o.selectedTeams = ['t3'];
+        rig.tick(); rig.tick(); rig.tick();
+        assert.equal(rig.revealLog.length, alert ? 0 : 1, 'only alert targets wait for the full cohort');
+        if (!alert) assert.equal(rig.revealLog[0].options.isLayoutSettled(), false, 'null before cohort starts is insufficient');
+        rig.o.catchUpAlertLoadRef.current = rig.o.catchUpAlertScopeKey;
+        rig.tick();
+        assert.equal(rig.revealLog.length, 1);
+        assert.deepEqual(rig.revealLog[0].target, alert ? { kind: 'alertTeam', anchor: 'blocked', id: 't3' } : { kind: 'epic', key: 'PROJ-1' });
+        assert.equal(rig.revealLog[0].options.mode, 'catch-up');
+        assert.equal(rig.revealLog[0].options.isCancelled(), false);
+        rig.revealLog[0].finish('revealed');
+        await new Promise(resolve => setTimeout(resolve, 0));
+        assert.deepEqual(rig.store.log.at(-1), ['finish', 'done', []]);
+    }
 });
 
 test('a missing focus target is reported as focus', async () => {
@@ -617,4 +614,35 @@ test('the facet option ids are read from the facet model', () => {
         status: ['In Progress', 'To Do', 'Done'], priority: ['Blocker', 'Major'], track: ['Committed', 'Flexible'],
     });
     assert.deepEqual(rig.readFacetOptionIds(undefined), { status: [], priority: [], track: [] });
+});
+
+
+test('cold focus reached before the running bound succeeds and never scrolls after cleanup', () => {
+    const rig = createRig({ link: { ...LINK, focus: { kind: 'epic', key: 'PROJ-1' } } });
+    rig.tick(); commitScope(rig); rig.tick(); rig.tick(); finishLoad(rig);
+    rig.tick(); rig.tick(); rig.tick();
+    const handle = rig.revealLog[0];
+    assert.ok(handle, 'own data starts the reveal');
+    handle.options.onReached();
+    rig.tick(19999);
+    assert.equal(handle.cancelled, false);
+    rig.tick(1);
+    assert.equal(handle.cancelled, true);
+    assert.deepEqual(rig.store.log.at(-1), ['finish', 'done', []]);
+    rig.flush(); rig.flush();
+    assert.deepEqual(rig.tracked.map(event => event.result), ['success']);
+});
+
+test('cold alignment stops on trusted input or a changed scope', () => {
+    for (const change of [o => { o.selectedSprint = 41; }, o => { o.activeGroupId = 'grp-a'; }, o => { o.activeEngMode = 'planning'; }, o => { o.selectedView = 'epm'; }, o => { o.pendingConnectionRecoveryRef.current = {}; }]) {
+        const rig = createRig({ link: { ...LINK, focus: { kind: 'epic', key: 'PROJ-1' } } });
+        rig.tick(); commitScope(rig); rig.tick(); rig.tick(); finishLoad(rig);
+        rig.tick(); rig.tick(); rig.tick();
+        const handle = rig.revealLog[0];
+        assert.ok(handle);
+        const previous = rig.o;
+        // Replace the actual options fields between controller ticks: the live predicate must see them.
+        change(previous);
+        assert.equal(handle.options.isCancelled(), true);
+    }
 });

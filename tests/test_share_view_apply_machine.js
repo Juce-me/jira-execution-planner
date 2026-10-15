@@ -38,11 +38,12 @@ function makeInput(over = {}) {
         gate: READY_GATE, resolution: { ok: true, plan: FULL_PLAN }, scope: { equal: false },
         b: { groupApplied: true, planningHydrated: true, restoring: false, scopePending: false },
         c: { epoch: 0, lanesLoading: false, tasksFetched: false, lastLoadedMatches: false, teamsHydrated: false, expected: true },
-        d: { cohortSettled: false, recoveryIdle: true, visible: true },
+        d: { cohortSettled: false, targetReady: false, scopeMatches: true, recoveryIdle: true, visible: true },
         focusResult: null,
     };
     const merged = { ...base, ...over };
     for (const key of ['gate', 'scope', 'b', 'c', 'd']) merged[key] = { ...base[key], ...(over[key] || {}) };
+    if (over.d && !Object.hasOwn(over.d, 'targetReady')) merged.d.targetReady = over.d.cohortSettled ?? false;
     return merged;
 }
 
@@ -287,8 +288,8 @@ test('Stage C past its budget is skipped with the categories of the parts it sti
     assert.deepEqual(factsOwed.state.skipped, ['filters']);
 });
 
-test('Stage D needs the alert cohort settled, an idle recovery scroll and a visible document', () => {
-    for (const blocker of [{ cohortSettled: false }, { recoveryIdle: false }, { visible: false }]) {
+test('Stage D needs target readiness, an idle recovery scroll, matching scope and a visible document', () => {
+    for (const blocker of [{ targetReady: false }, { scopeMatches: false }, { recoveryIdle: false }, { visible: false }]) {
         const sim = simulate();
         throughB(sim);
         sim.step({ commit: 4, scope: { equal: true }, c: LOADED });
@@ -559,4 +560,34 @@ test('random readiness never breaks the machine invariants', () => {
         assert.ok(finishes <= 1, 'one terminal action');
         assert.deepEqual(seen, order.filter(stage => seen.includes(stage)), 'stages run once, in order');
     }
+});
+
+
+test('reached focus survives running and overall deadline boundaries without hiding earlier skips', () => {
+    const running = (skips = []) => {
+        const sim = simulate();
+        throughB(sim);
+        sim.step({ commit: 4, scope: { equal: true }, c: LOADED });
+        sim.step({ commit: 5, scope: { equal: true }, c: LOADED });
+        sim.step({ d: { targetReady: true } });
+        sim.state.skipped.push(...skips);
+        return sim;
+    };
+    for (const deadline of [20000, 90000]) {
+        for (const offset of [-1, 0, 1]) {
+            const sim = running();
+            if (deadline === 90000) sim.state.dActive = 80000; // isolate overall expiry from running-D expiry
+            const actions = sim.step({ focusReached: true }, deadline + offset);
+            if (offset < 0) {
+                assert.equal(actions.some(action => action.type === 'finish'), false);
+                const terminal = sim.step({ focusReached: true }, 1);
+                assert.deepEqual(terminal, [{ type: 'cancelReveal' }, { type: 'finish', result: 'done', categories: [] }]);
+            } else {
+                assert.deepEqual(actions, [{ type: 'cancelReveal' }, { type: 'finish', result: 'partial', categories: ['focus'] }], `first reach ${offset} from ${deadline} cannot conceal expiry`);
+            }
+        }
+    }
+    const partial = running(['teams', 'filters']);
+    partial.step({ focusReached: true }, 100);
+    assert.deepEqual(partial.step({ focusReached: true }, 19900), [{ type: 'cancelReveal' }, { type: 'finish', result: 'partial', categories: ['teams', 'filters'] }]);
 });

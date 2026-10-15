@@ -1,6 +1,6 @@
 # Shareable View Links Implementation Plan
 
-> **Status:** Ready 2026-10-15: the operator accepted the design's default decisions and gate G1 (see Operator gates). Implementation not started.
+> **Status:** Paused 2026-10-15 after Task 3 review: Tasks 0–2 are complete; Task 3 is committed and verified but awaits an operator decision on the pair-cap/version validation conflict described below. No publication.
 >
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Per-task status and commits are recorded in the Execution status table below, inside this committed file (see the recording rule there), not in a scratch ledger.
 
@@ -35,10 +35,10 @@ Statuses and commit SHAs are written once, in Task 14 Step 9, from `git log --on
 
 | Task | Title | Status | Commit | Operator gate |
 | --- | --- | --- | --- | --- |
-| 0 | Baseline and preflight | planned | | G1: accepted 2026-10-15; instruction chain and related postmortems read; browser baseline repaired in `4764991e` |
-| 1 | Server login stash and shared corpus | planned | | |
-| 2 | Log hygiene and privacy notice | planned | | G1 accepted 2026-10-15 |
-| 3 | View defaults and codec | planned | | |
+| 0 | Baseline and preflight | done | `b9ae6641` | G1: accepted 2026-10-15; instruction chain and related postmortems read; browser baseline repaired in `4764991e` |
+| 1 | Server login stash and shared corpus | done | `e7f9ede2` | Review approved; full Python 2,176 tests, 29 skips, no failures |
+| 2 | Log hygiene and privacy notice | done | `2ad069a5` | G1 accepted 2026-10-15; review approved; full Python 2,183 tests, 29 skips, no failures |
+| 3 | View defaults and codec | blocked | `345d69a5` | Review found a plan-mandated contract conflict; operator decision pending |
 | 4 | Resolver | planned | | |
 | 5 | Store and entry | planned | | |
 | 6 | `dashboard.jsx` behavior-preserving extractions | planned | | Checkpoint |
@@ -54,6 +54,8 @@ Statuses and commit SHAs are written once, in Task 14 Step 9, from `git log --on
 | 14 | Journeys, full verification and publication | planned | | G3 explicit publish go |
 
 Order: 0 (records the G1 answer), 1, 2 (only if G1 is accepted; any time after Task 1 and before Task 14), 3, 4, 5, 6, 7, 8, 9, 10, 11a, 11b, 11c, 12, 13, 14. Checkpoint tasks end with: report the SHA, files, results and a concrete manual validation scope, then STOP until the operator confirms. If a task fails twice on the same issue, stop, summarize the evidence and ask (`AGENTS.md` section 6).
+
+Task 3 review pause (2026-10-15): the codec slice's decoded-state contract says more than 40 further pairs is `invalid`, but its supplied implementation returns `newer` before checking the pair count. A focused review probe using `v=2` plus 41 further pairs returned `{kind:'newer'}` instead of `{kind:'invalid', reason:'too_many_pairs'}`. Neither result applies state. The committed code matches the supplied block exactly; correction requires an operator decision on the plan. Proposed remedy: check the pair cap before returning `newer`, add the future-version over-cap vector, align the supplied block, then rerun the codec, stash, Node, lint and build gates. Task 3 otherwise passed 45 codec tests, 2,584 full Node tests, 26 stash tests, two structure tests and a reproducible committed build; extraction lint remains the recorded 104 warnings and four existing enforced findings. Task 4 has not started.
 
 ### Operator gates
 

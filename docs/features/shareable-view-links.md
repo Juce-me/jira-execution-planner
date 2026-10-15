@@ -6,12 +6,12 @@ Share the ENG view you are looking at as one link. A teammate who opens it, sign
 
 1. Set up the view: choose the Sprint, group and Teams, and apply filters or search.
 2. Press **Copy view link** in the header to share those settings. Scroll position never adds an item target. After you scroll past the main header, the same control appears in the compact bar beside Find in view.
-3. The confirmation says **View link copied** and the icon turns into a check for two seconds. If your browser blocks the clipboard, the link appears under the control in a selectable field instead.
+3. The icon turns into a check for two seconds; its tooltip and accessible status say **View link copied**. Ordinary success adds no visible popup or Dismiss button. If your browser blocks the clipboard, the link appears under the control in a selectable field instead.
 4. Paste it into chat.
 
 Share is available in Catch Up, Planning, Board and Statistics, including Statistics on future Sprints. Planning links for closed Sprints fall back to Catch Up. It is hidden in EPM and Scenario, and disabled until the Department, Sprint catalog and applicable Team selection are ready.
 
-To point at a particular Epic in Catch Up or Planning, use the chain-link action at the right edge of its title (or beside its summary in Planning Table Epics rows). It is separate from the Jira title link. Hover or focus the header/row to reveal it; on touch devices it stays visible. Its tooltip says **Copy link to this Epic**, and the confirmation identifies the copied Epic. The action also works inside Initiative groups and carries the current view settings. Story and synthetic rows have no copy action. Older links targeting Stories or alert groups still open.
+To point at a particular Epic in Catch Up or Planning, use the chain-link action at the right edge of its title (or beside its summary in Planning Table Epics rows). It is separate from the Jira title link. Hover or focus the header/row to reveal it; on touch devices it stays visible. Its tooltip says **Copy link to this Epic**, and the checkmark tooltip and accessible status identify the copied Epic. The action also works inside Initiative groups and carries the current view settings. Story and synthetic rows have no copy action. Older links targeting Stories or alert groups still open.
 
 ## What a link carries
 
@@ -72,3 +72,5 @@ Apply and omission notices name categories, never values from the link. Copy con
 - The query part of a link can contain at most 1,536 characters. When a view would not fit, the lowest-priority parts are left out in this order (search text, the focus target, alert categories, Initiative grouping, sort) and the notice names them; if it still does not fit, nothing is copied.
 - A Board or Statistics link has no focus target, and no link carries Board filters or Statistics display options in this version.
 - Search text is part of the link. In the container deployment the access log records the request path only, never the query string or the Referer.
+
+Feedback uses the existing compact export surfaces: a neutral menu holds the full selectable URL for manual copying, while omissions, refused copies and unapplied link details use a compact warning. Each has a compact Dismiss action. Recovery banners are reserved for connection recovery.

@@ -448,3 +448,4 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Select existing inline person-field text on opening; typing shows only query matches (no Me fallback), and an explicit pointer/keyboard highlight survives refreshed results until the next input change.
 
 - Before asking to accept baseline test failures, explain each failure's cause, user impact, reproducibility and proposed remedy; do not treat pre-existing failures as automatically acceptable.
+- Use the existing copy icon confirmation for clipboard success; reserve recovery-warning banners for recovery and style feedback actions with existing compact controls.

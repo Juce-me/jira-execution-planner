@@ -11,9 +11,7 @@ const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const harnessUrl = `${appBaseUrl}/share-view-control-harness`;
 const dashboardHtml = fs.readFileSync(path.join(repoRoot, 'jira-dashboard.html'), 'utf8');
 const SHARE_LABEL = 'Copy view link';
-// The shared banner's accent label on white is 4.8:1 at rest and 4.28:1 once the foundation overlay is composed; it is the existing
-// palette, so the Dismiss case pins that it stays at least this readable instead of the 4.5:1 floor of new text.
-const DISMISS_MINIMUM_CONTRAST = 4;
+const DISMISS_MINIMUM_CONTRAST = 4.5;
 const SYNTHETIC_URL = 'http://127.0.0.1:5050/?v=1&mode=catch-up&group=synthetic-group&sprint=3001';
 const APP_URL_PREFIX = /^http:\/\/127\.0\.0\.1:5050\/\?v=1&mode=catch-up&group=group-alpha&sprint=3001(&|$)/;
 
@@ -62,7 +60,7 @@ async function openHarness(page, { width = 1440, height = 900, clipboard = 'ok',
 // Hooks are data attributes and existing classes only: the Share control adds no class of its own.
 const surfaceScope = (surface) => surface ? `[data-share-view="${surface}"]` : ':is([data-share-view="main"], [data-share-view="compact"])';
 const shareButton = (page, surface) => page.locator(`${surfaceScope(surface)} > [data-share-view-control]`);
-const shareNotice = (page, surface) => page.locator(`${surfaceScope(surface)} > .server-unavailable-banner`);
+const shareNotice = (page, surface) => page.locator(`${surfaceScope(surface)} > :is(.jira-export-menu, .jira-export-toast)`);
 const shareStatus = (page, surface) => page.locator(`${surfaceScope(surface)} > .planning-review-sr-only`);
 const setHarness = (page, patch) => page.evaluate(next => window.__shareHarness.set(next), patch);
 const shareEvents = (page) => page.evaluate(() => window.dataLayer.filter(entry => entry && entry.event_name === 'share_view_action'));
@@ -147,7 +145,8 @@ test.describe('Share control: copy outcomes', () => {
         expect(box.width).toBeCloseTo(38, 1);
         expect(box.height).toBeCloseTo(38, 1);
         expect(await page.evaluate(() => window.__copied)).toEqual([SYNTHETIC_URL]);
-        await expect(shareNotice(page).locator('p')).toHaveText('View link copied.');
+        expect(await shareNotice(page).count()).toBe(0);
+        await expect(button).toHaveAttribute('title', 'View link copied');
         expect(await shareEvents(page)).toEqual([{
             event: 'userevent', trigger: 'userevent', event_type: 'event', event_name: 'share_view_action',
             feature_name: 'share_view', workflow_action: 'copy_link', result: 'success', source_surface: 'catch_up',
@@ -245,8 +244,8 @@ test.describe('Share control: apply notice', () => {
             await expect(banner).toHaveCount(1);
             await expect(banner.locator('p')).toHaveText(message);
             await expect(banner).toHaveAttribute('role', 'status');
-            // The shared banner as it is: its two existing classes and no class of Share's own.
-            await expect(banner).toHaveAttribute('class', 'server-unavailable-banner connection-recovery-notice');
+            // Genuine apply warnings reuse the existing compact export warning surface.
+            await expect(banner).toHaveAttribute('class', 'jira-export-toast');
             await expect(banner.getByRole('textbox')).toHaveCount(0);
             await banner.getByRole('button', { name: 'Dismiss' }).click();
             await expect(banner).toHaveCount(0);
@@ -328,7 +327,7 @@ test.describe('Share control: apply notice', () => {
                         left: rect.left, right: rect.right, top: rect.top, viewport: document.documentElement.clientWidth,
                         hostLeft: host.left, hostRight: host.right, shareBottom: share.bottom,
                         paragraphClip: paragraph.scrollWidth - paragraph.clientWidth, paintedRight,
-                        fieldLeft: field.left, fieldRight: field.right, dismissLeft: dismiss.left, dismissRight: dismiss.right, dismissWidth: dismiss.width,
+                        fieldLeft: field.left, fieldRight: field.right, dismissLeft: dismiss.left, dismissRight: dismiss.right, dismissWidth: dismiss.width, dismissHeight: dismiss.height,
                         centreHit: hit(rect.left + rect.width / 2, rect.top + rect.height / 2),
                         dismissHit: hit(dismiss.left + dismiss.width / 2, dismiss.top + dismiss.height / 2),
                         fieldHit: hit(field.left + field.width / 2, field.top + field.height / 2),
@@ -350,6 +349,8 @@ test.describe('Share control: apply notice', () => {
                 expect(metrics.dismissLeft).toBeGreaterThanOrEqual(metrics.left);
                 expect(metrics.dismissRight).toBeLessThanOrEqual(metrics.right);
                 expect(metrics.dismissWidth).toBeGreaterThan(40);
+                expect(metrics.dismissWidth).toBeLessThanOrEqual(110);
+                expect(metrics.dismissHeight).toBeLessThanOrEqual(38);
                 expect(metrics.centreHit && metrics.dismissHit && metrics.fieldHit, 'the notice is not covered by anything').toBe(true);
                 // The notice is anchored in the viewport and adds no document overflow.
                 expect(metrics.documentOverflow).toBeLessThanOrEqual(0);
@@ -357,7 +358,7 @@ test.describe('Share control: apply notice', () => {
         }
     }
 
-    test('the Dismiss button keeps the shared banner hover: the foundation overlay and ring, stationary and readable', async ({ page }, testInfo) => {
+    test('the compact Dismiss button keeps the foundation overlay and ring, stationary and readable', async ({ page }, testInfo) => {
         await openHarness(page);
         await setHarness(page, { notice: { kind: 'invalid', categories: [] } });
         const dismiss = shareNotice(page).getByRole('button', { name: 'Dismiss' });
@@ -733,7 +734,8 @@ test('Epic share discovery preserves title geometry and works by touch', async (
             if (touch) await action.tap(); else await action.click();
             await expect.poll(() => page.evaluate(() => window.__copied.length)).toBe(1);
             expect((await page.evaluate(() => window.__copied))[0]).toContain('&epic=EPIC-1');
-            await expect(header.locator('[data-share-view="epic"] .server-unavailable-banner p')).toHaveText('Epic EPIC-1 link copied.');
+            await expect(header.locator('[data-share-view="epic"] .planning-review-sr-only')).toHaveText('Epic EPIC-1 link copied');
+            expect(await header.locator('.jira-export-toast, .jira-export-menu').count()).toBe(0);
         } finally { await context.close(); }
     }
 });
@@ -786,7 +788,7 @@ test('Epic Table discovery keeps row geometry and touch fallback operable with n
             if (touch) await action.tap(); else await action.click();
             await page.mouse.move(2, 2);
             await expect(action).toHaveCSS('opacity', '1');
-            const notice = row.locator('.server-unavailable-banner');
+            const notice = row.locator('.jira-export-menu');
             await expect(notice.getByRole('textbox')).toHaveValue(/&epic=EPIC-1/);
             expect(await notice.evaluate(node => { const field = node.querySelector('input').getBoundingClientRect(); return node.contains(document.elementFromPoint(field.x + field.width / 2, field.y + field.height / 2)); })).toBe(true);
             await explicitShot(page, `table-${touch ? 'touch' : 'desktop'}-fallback`);
@@ -828,12 +830,202 @@ test('a newer Epic copy owns feedback across separate controls and the header', 
     await page.evaluate(() => window.__clipboardPending[1].resolve());
     await expect(second.locator('[data-share-view-icon="copied"]')).toHaveCount(1);
     await page.evaluate(() => window.__clipboardPending[0].reject(new Error('older write refused')));
-    await expect(page.locator('[data-share-view="epic"] .server-unavailable-banner')).toHaveCount(1);
-    await expect(page.locator('[data-share-view="epic"] .server-unavailable-banner p')).toHaveText('Epic SYN-2 link copied.');
+    await expect(second.locator('[data-share-view-icon="copied"]')).toHaveCount(1);
+    await expect(page.locator('[data-share-view="epic"] .planning-review-sr-only')).toHaveText(['', 'Epic SYN-2 link copied']);
+    expect(await page.locator('[data-share-view="epic"] :is(.jira-export-menu, .jira-export-toast)').count()).toBe(0);
     await shareButton(page, 'main').click();
     await page.evaluate(() => window.__clipboardPending[2].resolve());
-    await expect(page.locator('[data-share-view="epic"] .server-unavailable-banner')).toHaveCount(0);
-    await expect(shareNotice(page, 'main').locator('p')).toHaveText('View link copied.');
+    await expect(page.locator('[data-share-view="epic"] .planning-review-sr-only')).toHaveText(['', '']);
+    await expect(shareStatus(page, 'main')).toHaveText('View link copied');
+    expect(await shareNotice(page).count()).toBe(0);
     expect((await shareEvents(page)).map(event => event.result)).toEqual(['success', 'failure', 'success']);
     expect(JSON.stringify(await shareEvents(page))).not.toContain('SYN-');
+});
+
+test('ordinary copy success leaves work unobscured on main, compact and Epic controls', async ({ page }) => {
+    await openHarness(page);
+    await setHarness(page, { showEpics: true });
+    for (const surface of ['main', 'compact', 'epic']) {
+        await setHarness(page, { active: surface });
+        const root = page.locator(`[data-share-view="${surface}"]`).first();
+        const button = root.locator('[data-share-view-control]');
+        await button.focus();
+        const before = await button.boundingBox();
+        await button.click();
+        await expect(button.locator('[data-share-view-icon="copied"]')).toHaveCount(1);
+        const directory = path.join(repoRoot, 'tmp/share-view-tasks/feedback-visual');
+        fs.mkdirSync(directory, { recursive: true });
+        await page.screenshot({ path: path.join(directory, `${process.env.JEP_FEEDBACK_STAGE || 'after'}-${surface}-success.png`), animations: 'disabled' });
+        await expect(root.locator('.planning-review-sr-only')).toHaveText(surface === 'epic' ? 'Epic SYN-1 link copied' : 'View link copied');
+        expect(await root.locator('.server-unavailable-banner, .jira-export-menu, .jira-export-toast, input, button:not([data-share-view-control])').count()).toBe(0);
+        expect(await button.boundingBox()).toEqual(before);
+    }
+});
+
+
+test('Share feedback reuses export surfaces and compact actions by semantic kind', async ({ page }) => {
+    await openHarness(page, { clipboard: 'missing' });
+    await setHarness(page, { referenceControls: true });
+    const style = locator => locator.evaluate(node => {
+        const value = getComputedStyle(node);
+        return Object.fromEntries(['backgroundColor', 'borderColor', 'borderWidth', 'borderRadius', 'boxShadow', 'padding', 'fontSize', 'fontFamily', 'lineHeight', 'color', 'display', 'textTransform', 'letterSpacing'].map(key => [key, value[key]]));
+    });
+    await page.getByRole('button', { name: 'Open Jira issue menu' }).click();
+    const menu = page.locator('.jira-export > .jira-export-menu');
+    const menuItems = page.locator('.jira-export-menu-item');
+    // Original menu typography inherited from its host. Preserve the actual Jira controls and menu bounds.
+    const inherited = await page.addStyleTag({ content: '.jira-export-menu { font-family: inherit !important; font-size: inherit !important; line-height: inherit !important; color: inherit !important; text-transform: inherit !important; letter-spacing: inherit !important; }' });
+    const menuGeometry = () => menu.evaluate(node => {
+        const bounds = element => { const rect = element.getBoundingClientRect(); const css = getComputedStyle(element); return { left: rect.left, top: rect.top, width: rect.width, height: rect.height, font: css.fontFamily, size: css.fontSize, line: css.lineHeight, color: css.color, background: css.backgroundColor, border: css.border, padding: css.padding, shadow: css.boxShadow, textTransform: css.textTransform, letterSpacing: css.letterSpacing }; };
+        return { box: { width: node.getBoundingClientRect().width, height: node.getBoundingClientRect().height }, items: [...node.children].map(bounds) };
+    });
+    const originalGeometry = await menuGeometry();
+    await inherited.evaluate(node => node.remove());
+    expect(await menuGeometry()).toEqual(originalGeometry);
+    const menuStyle = await style(menu);
+    const itemStyle = await style(menuItems.first());
+    const directory = path.join(repoRoot, 'tmp/share-view-tasks/feedback-visual');
+    fs.mkdirSync(directory, { recursive: true });
+    fs.writeFileSync(path.join(directory, `menu-reference-${process.env.JEP_FEEDBACK_STAGE || 'after'}.json`), JSON.stringify({ menuStyle, itemStyle, originalGeometry, geometry: await menuGeometry() }, null, 2));
+    for (const property of ['fontFamily', 'fontSize', 'lineHeight']) expect(menuStyle[property], property).toBe(itemStyle[property]);
+    await page.getByRole('menuitem', { name: 'Open epics' }).click();
+    const warningStyle = await style(page.locator('.jira-export > .jira-export-toast'));
+    await shareButton(page, 'main').click();
+    const manual = shareNotice(page, 'main');
+    await expect(manual).toHaveClass('jira-export-menu');
+    // Native display, palette and canonical body typography all come from the shared menu surface.
+    expect(await style(manual)).toEqual(menuStyle);
+    expect(await style(manual.getByRole('button', { name: 'Dismiss' }))).toEqual(await style(page.locator('[data-feedback-reference="compact"] > button')));
+    await manual.getByRole('button', { name: 'Dismiss' }).click();
+    await page.getByRole('button', { name: 'Open Jira issue menu' }).click();
+    await page.getByRole('menuitem', { name: 'Open epics' }).click();
+    await setHarness(page, { capture: { ok: false, reason: 'too_long' } });
+    await shareButton(page, 'main').click();
+    const warning = shareNotice(page, 'main');
+    await expect(warning).toHaveClass('jira-export-toast');
+    expect(await style(warning)).toEqual(warningStyle);
+    expect(await style(warning.getByRole('button', { name: 'Dismiss' }))).toEqual(await style(page.locator('[data-feedback-reference="compact"] > button')));
+});
+
+async function expectCompactFeedback(notice) {
+    await expect(notice).toBeVisible();
+    if (await notice.getAttribute('class') === 'jira-export-menu') {
+        await expect(notice).toHaveCSS('font-family', '"IBM Plex Mono", monospace');
+        await expect(notice).toHaveCSS('font-size', '14px');
+        await expect(notice).toHaveCSS('line-height', 'normal');
+        await expect(notice).toHaveCSS('color', 'rgb(102, 102, 102)');
+        await expect(notice).toHaveCSS('text-transform', 'none');
+        expect(['normal', '0px']).toContain(await notice.evaluate(node => getComputedStyle(node).letterSpacing));
+    }
+    // Native tap paint was present at134ms and gone at268ms in the controlled browser probe.
+    // Preserve that feedback; settle its paint before geometry and synthetic visual evidence.
+    if (await notice.evaluate(() => navigator.maxTouchPoints > 0)) await notice.page().waitForTimeout(300);
+    // Trial action waits for the real sticky/header layout to settle and proves the compact action is unobscured.
+    await notice.getByRole('button', { name: 'Dismiss' }).click({ trial: true });
+    const metrics = await notice.evaluate(node => {
+        const rect = node.getBoundingClientRect();
+        const dismiss = node.querySelector('button');
+        const box = dismiss.getBoundingClientRect();
+        const field = node.querySelector('input');
+        const hit = element => {
+            const bounds = element.getBoundingClientRect();
+            return element.contains(document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2));
+        };
+        const points = element => {
+            const bounds = element.getBoundingClientRect();
+            return [[bounds.left + 3, bounds.top + bounds.height / 2], [bounds.right - 3, bounds.top + bounds.height / 2],
+                [bounds.left + bounds.width / 2, bounds.top + 3], [bounds.left + bounds.width / 2, bounds.bottom - 3],
+                [bounds.left + bounds.width / 2, bounds.top + bounds.height / 2]];
+        };
+        const inputHits = !field ? [] : points(field).map(([x, y]) => ({ x, y, own: field.contains(document.elementFromPoint(x, y)), cover: document.elementFromPoint(x, y)?.tagName }));
+        const paragraph = node.querySelector('p');
+        const range = document.createRange();
+        range.selectNodeContents(paragraph);
+        const textHits = [...range.getClientRects()].flatMap(bounds => [bounds.left + 1, (bounds.left + bounds.right) / 2, bounds.right - 1]
+            .map(x => ({ x, y: (bounds.top + bounds.bottom) / 2, own: paragraph.contains(document.elementFromPoint(x, (bounds.top + bounds.bottom) / 2)) })));
+        const back = document.querySelector('.back-to-top')?.getBoundingClientRect();
+        const overlapsBackToTop = Boolean(back?.width && back?.height && rect.left < back.right && rect.right > back.left && rect.top < back.bottom && rect.bottom > back.top);
+        const panelOcclusion = [];
+        for (let x = rect.left + 4; x < rect.right - 4; x += 8) for (let y = rect.top + 4; y < rect.bottom - 4; y += 8) {
+            const cover = document.elementFromPoint(x, y);
+            if (!node.contains(cover)) panelOcclusion.push({ x, y, cover: cover?.outerHTML.slice(0, 240) });
+        }
+        return {
+            panelOcclusion,
+            left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, viewport: document.documentElement.clientWidth,
+            backToTop: back ? { top: back.top, bottom: back.bottom, left: back.left, right: back.right, width: back.width, height: back.height } : null,
+            inputHits, textHits, overlapsBackToTop,
+            overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            dismissWidth: box.width, dismissHeight: box.height, dismissHit: hit(dismiss),
+            dismissTop: box.top, dismissCover: document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.outerHTML.slice(0, 240),
+            fieldHit: !field || hit(field), clipped: node.scrollWidth - node.clientWidth,
+        };
+    });
+    const directory = path.join(repoRoot, 'tmp/share-view-tasks/feedback-visual');
+    fs.mkdirSync(directory, { recursive: true });
+    fs.writeFileSync(path.join(directory, 'latest-feedback-bounds.json'), JSON.stringify(metrics, null, 2));
+    expect(metrics.overlapsBackToTop, JSON.stringify(metrics)).toBe(false);
+    expect(metrics.panelOcclusion, JSON.stringify(metrics)).toEqual([]);
+    expect(metrics.inputHits.every(hit => hit.own), JSON.stringify(metrics)).toBe(true);
+    expect(metrics.textHits.every(hit => hit.own), JSON.stringify(metrics)).toBe(true);
+    expect(metrics.left).toBeGreaterThanOrEqual(0);
+    expect(metrics.right).toBeLessThanOrEqual(metrics.viewport);
+    expect(metrics.overflow).toBeLessThanOrEqual(0);
+    expect(metrics.clipped).toBeLessThanOrEqual(1);
+    expect(metrics.dismissWidth).toBeGreaterThan(40);
+    expect(metrics.dismissWidth).toBeLessThanOrEqual(110);
+    expect(metrics.dismissHeight).toBeLessThanOrEqual(38);
+    expect(metrics.dismissHit && metrics.fieldHit, JSON.stringify(metrics)).toBe(true);
+}
+
+test('manual and warning feedback controls stay compact and hit-testable on touch main and compact headers', async ({ browser }) => {
+    const context = await browser.newContext({ viewport: { width: 390, height: 900 }, hasTouch: true });
+    const page = await context.newPage();
+    try {
+        await openHarness(page, { width: 390, clipboard: 'missing' });
+        for (const surface of ['main', 'compact']) {
+            for (const manual of [true, false]) {
+                await setHarness(page, { active: surface, capture: manual
+                    ? { ok: true, url: `${SYNTHETIC_URL}&find=${'a'.repeat(1400)}`, dropped: [] }
+                    : { ok: false, reason: 'too_long' } });
+                await shareButton(page, surface).tap();
+                const notice = shareNotice(page, surface);
+                await expectCompactFeedback(notice);
+                if (manual) {
+                    const field = notice.getByRole('textbox');
+                    await expect(field).toBeFocused();
+                    expect(await field.evaluate(node => node.selectionEnd - node.selectionStart)).toBe((await field.inputValue()).length);
+                }
+                const directory = path.join(repoRoot, 'tmp/share-view-tasks/feedback-visual');
+                fs.mkdirSync(directory, { recursive: true });
+                await page.screenshot({ path: path.join(directory, `after-touch-${surface}-${manual ? 'manual' : 'warning'}.png`), animations: 'disabled' });
+                await notice.getByRole('button', { name: 'Dismiss' }).tap();
+                await expect(notice).toHaveCount(0);
+            }
+        }
+    } finally { await context.close(); }
+});
+
+test('Epic List and Table manual feedback keeps the URL and compact dismissal above the sticky layers', async ({ browser }) => {
+    for (const layout of ['list', 'table']) for (const touch of [false, true]) {
+        const context = await browser.newContext({ viewport: { width: touch ? 390 : 1440, height: 900 }, hasTouch: touch });
+        const page = await context.newPage();
+        try {
+            await openShareFixture(page, layout);
+            await page.setViewportSize({ width: touch ? 390 : 1440, height: 900 });
+            await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined }));
+            const action = epicCopy(page, 'EPIC-1');
+            await action.scrollIntoViewIfNeeded();
+            await action.focus();
+            if (touch) await action.tap(); else await action.click();
+            const notice = page.locator('[data-share-view="epic"] > .jira-export-menu');
+            const directory = path.join(repoRoot, 'tmp/share-view-tasks/feedback-visual');
+            fs.mkdirSync(directory, { recursive: true });
+            await expectCompactFeedback(notice);
+            await expect(notice.getByRole('textbox')).toHaveValue(/&epic=EPIC-1/);
+            await page.screenshot({ path: path.join(directory, `after-${layout}-${touch ? 'touch' : 'desktop'}-manual.png`), animations: 'disabled' });
+            if (touch) await notice.getByRole('button', { name: 'Dismiss' }).tap(); else await notice.getByRole('button', { name: 'Dismiss' }).click();
+            await expect(notice).toHaveCount(0);
+        } finally { await context.close(); }
+    }
 });

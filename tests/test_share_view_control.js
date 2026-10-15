@@ -27,7 +27,7 @@ const button = (attributes) => `<button${attributes.disabled ? ' disabled=""' : 
 const wrap = (surface, inner) => `<div data-share-view="${surface}">${inner}</div>`;
 const defaultMarkup = (surface) => wrap(surface, button({ title: 'Copy view link' }));
 const DISABLED_MARKUP = wrap('main', button({ disabled: true, title: 'Sharing is available once the view has loaded' }));
-const PARTIAL_MARKUP = wrap('main', `${button({ title: 'Copy view link' })}<div class="server-unavailable-banner connection-recovery-notice" role="status"><div><p>Part of this link was not applied: Teams and filters. Everything else was applied.</p></div><div class="connection-recovery-notice-actions"><button type="button">Dismiss</button></div></div>`);
+const PARTIAL_MARKUP = wrap('main', `${button({ title: 'Copy view link' })}<div class="jira-export-toast" role="status"><p>Part of this link was not applied: Teams and filters. Everything else was applied.</p><button type="button" class="secondary compact">Dismiss</button></div>`);
 
 const { createShareViewCopyOwner } = load('frontend/src/shareView/useShareViewApply.js');
 const fakeShare = (patch = {}) => ({
@@ -78,7 +78,7 @@ test('notice copy reads its approved strings and names categories only', () => {
     }
 });
 
-test('ShareViewButton renders the header icon-button contract with data-attribute hooks and reuses the shared banner for its notice', () => {
+test('ShareViewButton renders the header icon-button contract and compact export warning notice', () => {
     assert.equal(render(), defaultMarkup('main'));
     assert.equal(render({ surface: 'compact', activeControlSurface: 'compact' }), defaultMarkup('compact'));
     assert.equal(render({ share: { shareDisabled: true } }), DISABLED_MARKUP);
@@ -88,7 +88,7 @@ test('ShareViewButton renders the header icon-button contract with data-attribut
     assert.equal(render({ activeControlSurface: 'compact', share: partial }), defaultMarkup('main'));
     assert.equal(render({ surface: 'compact', activeControlSurface: 'main', share: partial }), defaultMarkup('compact'));
     const epicMarkup = render({ surface: 'epic', activeControlSurface: 'epic', epicKey: 'PROJ-1', share: partial });
-    assert.equal(epicMarkup.includes('server-unavailable-banner'), false, 'global apply feedback belongs only to the header');
+    assert.equal(epicMarkup.includes('jira-export-toast'), false, 'global apply feedback belongs only to the header');
     // An apply result with no copy renders nothing extra.
     assert.equal(render({ share: { notice: { kind: 'unknown', categories: [] } } }), defaultMarkup('main'));
 });
@@ -146,15 +146,15 @@ test('Share reuses registered controls and foundation hover with attribute-scope
     assert.equal(headerHover.length, 1);
     assert.deepEqual(headerHover[0].declarations, [{ property: 'background-image', value: 'none' }, { property: 'box-shadow', value: 'var(--hover-overlay), var(--hover-ring)' }]);
 
-    // The notice rule changes placement and resets the typography .subtitle passes down; the banner's own layout and surface stay untouched.
-    const noticeRules = current.rules.filter(rule => rule.selector === '[data-share-view] > .server-unavailable-banner');
-    assert.deepEqual(noticeRules.map(rule => [rule.file, rule.context, rule.selector]), [[controlsFile, [], '[data-share-view] > .server-unavailable-banner']]);
-    assert.deepEqual(noticeRules[0].declarations.map(item => item.property),
-        ['position', 'top', 'right', 'z-index', 'width', 'margin', 'box-shadow', 'text-transform', 'letter-spacing']);
-    const value = (property) => noticeRules[0].declarations.find(item => item.property === property).value;
-    assert.deepEqual([value('position'), value('top'), value('right'), value('margin'), value('text-transform'), value('letter-spacing')],
-        ['absolute', 'calc(100% + 0.35rem)', '0', '0', 'none', 'normal']);
-    for (const rule of noticeRules) assert.equal(/:(hover|active)\b/.test(rule.selector), false);
+    // Share adds only placement/layout resets; the export surfaces retain their own palette, scale and paint.
+    const feedbackRules = current.rules.filter(rule => rule.selector.startsWith('[data-share-view] > :is(.jira-export-menu, .jira-export-toast)'));
+    assert.ok(feedbackRules.length >= 3);
+    for (const rule of feedbackRules) {
+        assert.equal(rule.file, controlsFile);
+        for (const declaration of rule.declarations) assert.ok(
+            ['width', 'min-width', 'margin'].includes(declaration.property), declaration.property);
+    }
+    assert.equal(read(controlsFile).includes('server-unavailable-banner'), false, 'Share no longer overrides recovery banners');
     const epicRules = current.rules.filter(rule => rule.selector.includes('data-share-view=epic'));
     assert.ok(epicRules.some(rule => rule.selector.includes('.epic-header:hover')));
     assert.ok(epicRules.some(rule => rule.context.some(context => context.includes('hover: none'))));
@@ -162,7 +162,7 @@ test('Share reuses registered controls and foundation hover with attribute-scope
     const component = read('frontend/src/shareView/ShareViewButton.jsx');
     for (const required of [
         'variant="secondary compact"', 'className="header-icon-button"', 'data-share-view-control=""', 'data-share-view={surface}',
-        'className="server-unavailable-banner connection-recovery-notice"', 'className="connection-recovery-notice-actions"',
+        'className={notice.url ? "jira-export-menu" : "jira-export-toast"}', 'className="secondary compact"',
         'className="search-input"', 'className="planning-review-sr-only"',
     ]) assert.ok(component.includes(required), required);
     assert.equal(/className="[^"]*share-view/.test(component), false, 'no Share class in the component');
@@ -173,7 +173,7 @@ test('Share reuses registered controls and foundation hover with attribute-scope
     assert.ok(component.includes("import { trackShareViewAction } from '../analytics/dashboardAnalytics.js';"));
 });
 
-test('the accepted mock preserves header markup with the approved Copy view link label amendment', () => {
+test('the historical mock preserves unchanged header markup and feedback copy', () => {
     const mock = read('assets/mockups/share-view-control-194.html').replaceAll('Copy link to this view', 'Copy view link');
     const fragment = (name) => {
         const match = mock.match(new RegExp(`<!-- fragment:${name} -->([\\s\\S]*?)<!-- /fragment:${name} -->`));
@@ -183,19 +183,17 @@ test('the accepted mock preserves header markup with the approved Copy view link
     assert.equal(fragment('default'), render(), 'regenerate the mock with tmp/share-view-mock/generate.mjs and re-ask for acceptance if the markup changes');
     assert.equal(fragment('compact'), render({ surface: 'compact', activeControlSurface: 'compact' }));
     assert.equal(fragment('disabled'), render({ share: { shareDisabled: true } }));
-    assert.equal(fragment('notice-partial'), render({ share: { notice: { kind: 'partial', categories: ['teams', 'filters'] } } }));
-    // Copy-outcome notices are click state, so only their message text is compared.
+    // The operator corrected the historical mock's recovery surface; only its feedback strings still apply.
     const message = (name) => fragment(name).match(/<p>([\s\S]*?)<\/p>/)[1].replace(/&amp;/g, '&');
+    assert.equal(message('notice-partial'), copy.shareViewNoticeMessage({ kind: 'partial', categories: ['teams', 'filters'] }));
     assert.equal(message('notice-fallback'), copy.shareViewCopyMessage({ type: 'manual', dropped: ['sort'] }));
     assert.equal(message('notice-copied-dropped'), copy.shareViewCopyMessage({ type: 'copied', dropped: ['find', 'alertTeam'] }));
     assert.ok(mock.includes('id="repo-css"') && mock.includes('--control-height: 38px'), 'the mock inlines the repository stylesheet verbatim');
-    // The mock's CSS edits are the ones the stylesheet carries: the compact selectors on the base and glyph rules, and the placement-only notice rule.
+    // The unchanged header frame and glyph selectors still match the historical mock.
     for (const suffix of ['', ' svg']) {
         assert.ok(mock.includes(`.header-actions-row button.header-icon-button${suffix},\n.compact-sticky-header button.header-icon-button${suffix} {`), `mock selector list${suffix}`);
     }
     assert.equal(mock.includes('.compact-sticky-header button.header-icon-button:hover'), false, 'the mock adds no hover rule');
-    const noticeRule = (css) => css.match(/\[data-share-view\] > \.server-unavailable-banner \{([\s\S]*?)\}/)[1].replace(/\s+/g, ' ').trim();
-    assert.equal(noticeRule(mock), noticeRule(read('frontend/src/styles/shared/controls.css')));
 });
 
 // Exercise the real component's asynchronous closures with the existing hook runtime.
@@ -219,7 +217,7 @@ function deferredControl() {
         restore() { globalThis.window = oldWindow; if (oldNavigator) Object.defineProperty(globalThis, 'navigator', oldNavigator); else delete globalThis.navigator; },
     };
 }
-const controlInput = tree => tree.props.children.at(-1)?.props.children[0].props.children[1];
+const controlInput = tree => tree.props.children.at(-1)?.props.children[1] || undefined;
 
 test('a deferred clipboard rejection cannot resurrect feedback after its surface hides and returns', async () => {
     const rig = deferredControl();
@@ -299,4 +297,18 @@ test('the shared control captures an explicit Epic synchronously and names its s
         rig.pending[0].resolve(); await click;
         assert.equal(rig.render().props.children[1].props.children, 'Epic PROJ-1 link copied');
     } finally { rig.unmount(); rig.restore(); }
+});
+
+test('ordinary clipboard success announces its destination without rendering a feedback surface', async () => {
+    for (const epicKey of [undefined, 'PROJ-1']) {
+        const rig = deferredControl();
+        try {
+            const click = rig.render(epicKey ? { surface: 'epic', activeControlSurface: 'epic', epicKey } : {}).props.children[0].props.onClick();
+            rig.pending[0].resolve();
+            await click;
+            const tree = rig.render();
+            assert.equal(tree.props.children[1].props.children, epicKey ? 'Epic PROJ-1 link copied' : 'View link copied');
+            assert.equal(Boolean(tree.props.children.at(-1)), false, 'ordinary success must not render a popup, warning or Dismiss');
+        } finally { rig.unmount(); rig.restore(); }
+    }
 });

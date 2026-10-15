@@ -471,16 +471,16 @@ h1 {
   height: 18px;
   flex: none;
 }
-[data-share-view] > .server-unavailable-banner {
-  position: absolute;
-  top: calc(100% + 0.35rem);
-  right: 0;
-  z-index: calc(var(--sticky-control-overlay-z) + 4);
-  width: min(26rem, 100%);
+[data-share-view] > :is(.jira-export-menu, .jira-export-toast) {
+  width: min(18rem, 100%);
+  min-width: 0;
   margin: 0;
-  box-shadow: 0 12px 28px rgba(22, 22, 22, 0.14);
-  text-transform: none;
-  letter-spacing: normal;
+}
+[data-share-view] > :is(.jira-export-menu, .jira-export-toast) > p {
+  margin: 0;
+}
+[data-share-view] > :is(.jira-export-menu, .jira-export-toast) > button {
+  margin: 0;
 }
 .secondary.compact {
   padding: 0.4rem 0.75rem;
@@ -951,12 +951,12 @@ h1 {
     pointer-events: auto;
   }
 }
-[data-share-view=epic] > .server-unavailable-banner {
+[data-share-view=epic] > :is(.jira-export-menu, .jira-export-toast) {
   position: fixed;
   top: auto;
-  bottom: 1rem;
+  bottom: calc(2rem + var(--control-height));
   right: 1rem;
-  width: min(26rem, calc(100vw - 2rem));
+  width: min(18rem, calc(100vw - 2rem));
 }
 
 /* frontend/src/styles/base.css */
@@ -4128,6 +4128,12 @@ button.compact {
   border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: 0 16px 32px rgba(22, 22, 22, 0.16);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.875rem;
+  line-height: normal;
+  color: var(--text-secondary);
+  text-transform: none;
+  letter-spacing: 0;
 }
 .jira-export-menu-item {
   width: 100%;

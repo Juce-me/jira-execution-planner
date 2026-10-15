@@ -125,21 +125,20 @@
             flex: none;
         }
 
-        /* Share notice: the shared banner (eng/loading.css) anchored under the Share control, so it stays
-           visible on both header surfaces. It anchors to the nearest positioned ancestor (the main
-           header's .subtitle or the sticky compact header), so it never leaves the viewport. The
-           attribute-scoped selector outranks the banner's own margin; the typography reset undoes
-           the uppercase, tracked text .subtitle passes down. */
-        [data-share-view] > .server-unavailable-banner {
-            position: absolute;
-            top: calc(100% + 0.35rem);
-            right: 0;
-            z-index: calc(var(--sticky-control-overlay-z) + 4);
-            width: min(26rem, 100%);
+        /* Feedback reuses the export menu for a manual URL and export toast for real warnings.
+           Keep header placement tied to its existing positioned ancestor and bound it to the viewport. */
+        [data-share-view] > :is(.jira-export-menu, .jira-export-toast) {
+            width: min(18rem, 100%);
+            min-width: 0;
             margin: 0;
-            box-shadow: 0 12px 28px rgba(22, 22, 22, 0.14);
-            text-transform: none;
-            letter-spacing: normal;
+        }
+
+        [data-share-view] > :is(.jira-export-menu, .jira-export-toast) > p {
+            margin: 0;
+        }
+
+        [data-share-view] > :is(.jira-export-menu, .jira-export-toast) > button {
+            margin: 0;
         }
 
         .secondary.compact {
@@ -712,10 +711,11 @@
             }
         }
 
-        [data-share-view="epic"] > .server-unavailable-banner {
+        [data-share-view="epic"] > :is(.jira-export-menu, .jira-export-toast) {
             position: fixed;
             top: auto;
-            bottom: 1rem;
+            /* Clear the existing Back to top footprint without changing its sticky layer. */
+            bottom: calc(2rem + var(--control-height));
             right: 1rem;
-            width: min(26rem, calc(100vw - 2rem));
+            width: min(18rem, calc(100vw - 2rem));
         }

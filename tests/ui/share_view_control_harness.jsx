@@ -18,6 +18,7 @@ const state = {
     scopeKey: 'synthetic-group:3001',
     epicKey: undefined,
     showEpics: false,
+    referenceControls: false,
     sourceSurface: 'catch_up',
     disabled: false,
     notice: null,
@@ -53,7 +54,8 @@ function Harness() {
                         <div className="header-actions-row">
                             <SearchControl {...searchProps('main')} />
                             {shareControl('main')}
-                            <JiraExportButton jiraUrl="https://jira.example" epicKeys={['SYN-1']} />
+                            <JiraExportButton jiraUrl="https://jira.example" epicKeys={state.referenceControls ? Array.from({ length: 251 }, (_, index) => `SYN-${index + 1}`) : ['SYN-1']} opener={() => {}} />
+                            {state.referenceControls && <div data-feedback-reference="compact"><button type="button" className="secondary compact">Dismiss</button></div>}
                             <IconButton variant="secondary compact" className="header-icon-button refresh-icon" title="Refresh tasks and sprints from Jira" aria-label="Refresh tasks and sprints from Jira">
                                 <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
                                     <path d="M19 7.5a7.5 7.5 0 1 0 2 5.1" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"/>

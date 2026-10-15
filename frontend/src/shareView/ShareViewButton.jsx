@@ -81,20 +81,20 @@ export default function ShareViewButton({ surface, share, sourceSurface, activeC
         timerRef.current = window.setTimeout(() => { if (isCurrent()) { setCopied(false); if (!captured.dropped.length) setLocal(null); } }, COPIED_MS);
         setCopied(true);
         const message = shareViewCopyMessage({ type: 'copied', dropped: captured.dropped });
-        setLocal({ message: message ? message.replace('Link copied', destination) : `${destination}.` });
+        setLocal(message ? { message: message.replace('Link copied', destination) } : null);
     };
 
     const currentLocal = ownsFeedback ? local : null;
     const notice = currentLocal || (!epicKey && share.notice ? { message: shareViewNoticeMessage(share.notice) } : null);
     return (
-        <div data-share-view={surface} data-share-feedback={currentLocal ? 'active' : undefined}>
+        <div data-share-view={surface} data-share-feedback={currentLocal || (copied && ownsFeedback) ? 'active' : undefined}>
             <IconButton
                 size={epicKey ? 'sm' : undefined}
                 variant="secondary compact"
                 className="header-icon-button"
                 onClick={copy}
                 disabled={share.shareDisabled}
-                title={share.shareDisabled ? 'Sharing is available once the view has loaded' : epicKey ? 'Copy link to this Epic' : LABEL}
+                title={share.shareDisabled ? 'Sharing is available once the view has loaded' : copied && ownsFeedback ? destination : epicKey ? 'Copy link to this Epic' : LABEL}
                 aria-label={label}
                 data-share-view-control=""
             >
@@ -115,24 +115,20 @@ export default function ShareViewButton({ surface, share, sourceSurface, activeC
             {/* The app's only visually hidden utility, defined with the Planning review styles. */}
             <span className="planning-review-sr-only" role="status">{copied && ownsFeedback ? destination : ''}</span>
             {active && notice?.message && (
-                <div className="server-unavailable-banner connection-recovery-notice" role="status">
-                    <div>
-                        <p>{notice.message}</p>
-                        {notice.url && (
-                            <input
-                                className="search-input"
-                                type="text"
-                                readOnly
-                                autoFocus
-                                value={notice.url}
-                                aria-label="Link to copy"
-                                onFocus={(event) => event.target.select()}
-                            />
-                        )}
-                    </div>
-                    <div className="connection-recovery-notice-actions">
-                        <button type="button" onClick={currentLocal ? () => setLocal(null) : () => share.dismissNotice()}>Dismiss</button>
-                    </div>
+                <div className={notice.url ? "jira-export-menu" : "jira-export-toast"} role="status">
+                    <p>{notice.message}</p>
+                    {notice.url && (
+                        <input
+                            className="search-input"
+                            type="text"
+                            readOnly
+                            autoFocus
+                            value={notice.url}
+                            aria-label="Link to copy"
+                            onFocus={(event) => event.target.select()}
+                        />
+                    )}
+                    <button type="button" className="secondary compact" onClick={currentLocal ? () => setLocal(null) : () => share.dismissNotice()}>Dismiss</button>
                 </div>
             )}
         </div>

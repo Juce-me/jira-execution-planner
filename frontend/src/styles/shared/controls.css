@@ -603,6 +603,11 @@
                 --sprint-dropdown-max-width: calc(100vw - 4rem);
             }
 
+            [data-stats-range] .sprint-dropdown-panel {
+                /* A long trigger must not override the panel's viewport width limit. */
+                min-width: min(100%, var(--sprint-dropdown-max-width));
+            }
+
             /* The ENG mode switch carries five options at 416px and its controls row is 342px at
                a 390px viewport, so without this the document itself scrolls sideways (MRT020's
                guard, at eng_compact_layout_visual.spec.js "ENG epic rows stay readable on narrow

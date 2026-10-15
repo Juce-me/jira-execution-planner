@@ -11,6 +11,11 @@
             min-width: 0;
         }
 
+        .cohort-controls [data-stats-range] .sprint-dropdown-toggle {
+            /* Keep quarter wrappers at the trigger's existing minimum width in Firefox. */
+            width: var(--sprint-dropdown-min-width);
+        }
+
         .cohort-controls > .stats-control-group:has(> .scenario-input) {
             flex: 1 1 8.5rem;
             max-width: 20rem;

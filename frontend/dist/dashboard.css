@@ -893,6 +893,9 @@ h1 {
   [data-stats-range] .sprint-dropdown {
     --sprint-dropdown-max-width: calc(100vw - 4rem);
   }
+  [data-stats-range] .sprint-dropdown-panel {
+    min-width: min(100%, var(--sprint-dropdown-max-width));
+  }
   .view-selector .eng-mode-control,
   .compact-sticky-header .eng-mode-control {
     min-width: 0;
@@ -4622,7 +4625,7 @@ button.toggle.applied-filter.active {
 }
 .initiative-grouping-tooltip {
   position: absolute;
-  left: 50%;
+  right: 0;
   top: calc(100% + 8px);
   bottom: auto;
   z-index: calc(var(--sticky-control-overlay-z) + 3);
@@ -4639,14 +4642,12 @@ button.toggle.applied-filter.active {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  transform: translate(-50%, 3px);
-  transition: opacity 120ms ease, transform 120ms ease;
+  transition: opacity 120ms ease;
 }
 .initiative-grouping-control:hover .initiative-grouping-tooltip,
 .initiative-grouping-control:focus-within .initiative-grouping-tooltip {
   opacity: 1;
   visibility: visible;
-  transform: translate(-50%, 0);
 }
 @media (max-width: 720px) {
   .filterbar {
@@ -11105,6 +11106,9 @@ input.story-points-editor.story-points-alert-highlight {
 .cohort-controls > .stats-control-group {
   flex: 0 0 auto;
   min-width: 0;
+}
+.cohort-controls [data-stats-range] .sprint-dropdown-toggle {
+  width: var(--sprint-dropdown-min-width);
 }
 .cohort-controls > .stats-control-group:has(> .scenario-input) {
   flex: 1 1 8.5rem;

@@ -29,11 +29,13 @@ This file is the master: status, constraints, file map, contracts and the three 
 
 ## Execution status
 
+The operator declined a browser-failure waiver and instructed repair on 2026-10-15. The separate `bugfix/browser-baseline-layout` commit `4764991e` and its merge carrying this record are approved baseline-repair history before Task 1, in addition to the sixteen feature-task commits. Include their paths from the File map in the publication scope if they have not separately reached `origin/main`; do not treat these approved commits as unexplained feature-task history.
+
 Statuses and commit SHAs are written once, in Task 14 Step 9, from `git log --oneline origin/main..HEAD`: every task's first step needs a clean tree, so plan files stay unmodified between tasks (if execution pauses early, record them then in a docs-only commit). Task 0 alone writes earlier, and only into its own row: the G1 answer and that the instruction chain was read, in its own documentation-only commit. Statuses: `planned`, `in-progress`, `done`, `blocked`, `declined`. Rename `EXEC-` to `DONE-` only after the work is merged (`docs/plans/AGENTS.md`).
 
 | Task | Title | Status | Commit | Operator gate |
 | --- | --- | --- | --- | --- |
-| 0 | Baseline and preflight | planned | | G1: accepted 2026-10-15; instruction chain and related postmortems read; baseline continuation agreement pending |
+| 0 | Baseline and preflight | planned | | G1: accepted 2026-10-15; instruction chain and related postmortems read; browser baseline repaired in `4764991e` |
 | 1 | Server login stash and shared corpus | planned | | |
 | 2 | Log hygiene and privacy notice | planned | | G1 accepted 2026-10-15 |
 | 3 | View defaults and codec | planned | | |
@@ -152,6 +154,7 @@ Generated from each task's own `Files` block; the task sections are authoritativ
 | Task | Creates | Modifies | Existing tests extended or re-run |
 | --- | --- | --- | --- |
 | Before Task 0 (already committed on the branch) | `docs/plans/SUPPORT-shareable-view-links-design-194.md`<br>`docs/plans/EXEC-shareable-view-links-194.md`<br>`docs/plans/EXEC-shareable-view-links-194-server.md`<br>`docs/plans/EXEC-shareable-view-links-194-codec.md`<br>`docs/plans/EXEC-shareable-view-links-194-resolver-store.md`<br>`docs/plans/EXEC-shareable-view-links-194-apply.md`<br>`docs/plans/EXEC-shareable-view-links-194-focus.md`<br>`docs/plans/EXEC-shareable-view-links-194-control.md` | `docs/plans/README.md`<br>`docs/plans/FUTURE-db-additional-features.md`<br>`docs/plans/GATE-05-home-write-capability.md` | |
+| Baseline repair before Task 1 (operator-authorized 2026-10-15) | | `AGENTS.md`<br>`docs/README_ANALYTICS.md`<br>`docs/design-system.md`<br>`docs/ontology.md`<br>`frontend/src/styles/eng/filter-bar.css`<br>`frontend/src/styles/shared/controls.css`<br>`frontend/src/styles/stats/excluded-capacity.css`<br>`frontend/dist/dashboard.css`<br>`tests/design_system_baseline.json`<br>`tests/test_design_system_hover_foundation.js`<br>`tests/ui/codebase_structure_smoke.spec.js`<br>`docs/plans/EXEC-shareable-view-links-194.md` (this merge record) | `tests/ui/codebase_structure_smoke.spec.js`<br>`tests/ui/ga4_tag_and_events.spec.js`<br>`tests/ui/eng_group_board_view.spec.js`<br>`tests/test_design_system_hover_foundation.js`<br>`tests/test_design_system_ratchets.js`<br>full Node suite and structure budgets |
 | 1 | `backend/auth/share_view_stash.py`<br>`tests/fixtures/share-view-query-corpus-example-sanitized.json`<br>`tests/test_share_view_stash.py` | `jira_server.py`<br>`backend/routes/auth_routes.py`<br>`tests/oauth_test_helpers.py` | `tests/test_auth_entry_page.py`<br>`tests/test_auth_routes.py`<br>`tests/test_db_oauth_cutover.py` |
 | 2 |  | `scripts/docker-entrypoint.sh`<br>`jira_server.py`<br>`docs/PRIVACY.md` | `tests/test_container_packaging.py`<br>`tests/test_logging_migration.py` |
 | 3 | `frontend/src/shareView/viewDefaults.js`<br>`frontend/src/shareView/codec.js`<br>`tests/test_share_view_codec.js`<br>`tests/test_share_view_stash.py` |  |  |
@@ -307,8 +310,21 @@ Expected: all pass except the known baseline failures, which you record by name 
 | Extraction lint | `fnm exec --using 20 bash scripts/extraction_lint/run.sh` | Exit 1; 0 errors, 104 warnings; owner budgets: 0 problems; enforced problems: 4 (known baseline).<br>`ENFORCED owner budget: stale interface measurement frontend/src/eng/EpicBlock.jsx:EpicBlock:expandedInputCount`<br>`ENFORCED owner budget: unresolved inventory frontend/src/eng/EpicBlock.jsx:EpicBlock: bag epicGroup member alias epicInfo, forwarded input epicGroup, bag epicRefresh dynamic deep member, bag selectedTasks dynamic member, bag selectedTasks dynamic deep member, bag storySubtasksByKey dynamic member, bag storySubtasksByKey dynamic deep member`<br>`ENFORCED owner budget: stale interface measurement frontend/src/settings/GroupBoardSettings.jsx:default:expandedInputCount`<br>`ENFORCED owner budget: unresolved inventory frontend/src/settings/GroupBoardSettings.jsx:default: forwarded input board, forwarded input backendUrl, forwarded input epicsByStatus` | 2026-10-15 |
 | Build and dist | `npm run build && make verify-dist-clean` | Exit 0 for build and verify-dist-clean; no generated output changes. | 2026-10-15 |
 | UI baseline, Chromium | the three specs above | Exit 0; 271 passed, 2 skipped, 0 failed (6.1 min), approved outside sandbox. Initial sandbox launch was interrupted after macOS Mach-port permission failures. | 2026-10-15 |
-| UI baseline, Firefox | `codebase_structure_smoke.spec.js` | Exit 1; 39 passed, 3 failed, 2 skipped (2.6 min). Failures: `Statistics subviews render extracted panels and preserve stats API ownership`; `stats sprint range End panels keep long options inside the narrow viewport`; `Excluded Capacity summary shows product and tech shares instead of source copy`. Operator agreement required before implementation continues. | 2026-10-15 |
-| UI baseline, WebKit | `codebase_structure_smoke.spec.js` | Exit 1; 40 passed, 2 failed, 2 skipped (2.3 min). Failures: `Task9 freshness reserved copy preserves responsive header geometry ENG only`; `Task9 freshness reserved copy preserves responsive header geometry with ENG EPM switch`. Operator agreement required before implementation continues. | 2026-10-15 |
+| UI baseline, Firefox | `codebase_structure_smoke.spec.js` | Exit 1; 39 passed, 3 failed, 2 skipped (2.6 min). Failures: `Statistics subviews render extracted panels and preserve stats API ownership`; `stats sprint range End panels keep long options inside the narrow viewport`; `Excluded Capacity summary shows product and tech shares instead of source copy`. Resolved by the operator-requested repair below; no waiver granted. | 2026-10-15 |
+| UI baseline, WebKit | `codebase_structure_smoke.spec.js` | Exit 1; 40 passed, 2 failed, 2 skipped (2.3 min). Failures: `Task9 freshness reserved copy preserves responsive header geometry ENG only`; `Task9 freshness reserved copy preserves responsive header geometry with ENG EPM switch`. Resolved by the operator-requested repair below; no waiver granted. | 2026-10-15 |
+
+
+**Current browser baseline after repair (`4764991e`, 2026-10-15):** the original table above is retained as pre-repair evidence. Quarter triggers keep their existing width without Firefox intrinsic wrapper growth; narrow menu minimums are capped by the existing maximum; the Initiative tooltip is end-aligned with an opacity-only reveal; the grid-edge assertion tolerates only 0.01 CSS px of floating-point noise. The dropdown checks settle responsive layout and queued Escape focus restoration before the next action. A synthetic probe confirmed that racing Escape with scroll returns to position 0, while settling focus first preserves position 600 and compact-header visibility. No product focus, view-state, API or analytics behavior changed.
+
+| Repaired gate | Final result |
+| --- | --- |
+| Chromium, all three baseline specs | Exit 0; 271 passed, 2 skipped, 0 failed (6.0 min). |
+| Firefox, full smoke spec | Exit 0; 42 passed, 2 skipped, 0 failed (2.5 min); final header-dropdown ordering additionally verified with 1 passed. |
+| WebKit, full smoke spec | Exit 0; 42 passed, 2 skipped, 0 failed (2.4 min). |
+| Node, CSS contracts and structure budgets | Full Node suite 2,539 passed; focused CSS foundation/ratchets 38 passed; structure budgets 2 passed. CSS allowances shrink from 19 to 18; no new scale or class allowance. |
+| Committed-revision build and dist | `npm run build` and `make verify-dist-clean` exit 0 at `4764991e`; generated CSS committed. |
+
+Later browser no-regression claims use the repaired zero-failure results, not the historical failures above. Both existing performance skips remain unchanged. The extraction-lint baseline remains four enforced inventory problems and 104 warnings, with no new line. Synthetic before/after screenshots were inspected; no live data was used. An initial Scenario-axis timeout passed unchanged in isolation and in the final full Firefox run; no Scenario assertion or behavior was changed and no failure waiver is recorded.
 
 - [ ] **Step 6: Run the startup gate sweep (auth work)**
 
@@ -589,7 +605,7 @@ Expected: only the listed docs (and the two budget files if a pin moved) changed
 
 - [ ] **Step 1: Confirm every task is done**
 
-Run `git log --oneline origin/main..HEAD`. After the plan's own documentation commits and any merge of `origin/main`, it must show one commit for each of Tasks 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11a, 11b, 11c, 12 and 13, sixteen in all, in the order the Execution status table lists them (Task 2 may sit anywhere after Task 1). A missing, extra or out-of-order commit is a deviation to report before going on. The Execution status table still reads `planned` here: it is written once, in Step 9, from this log.
+Run `git log --oneline origin/main..HEAD`. After the plan's own documentation commits and any merge of `origin/main`, it must show one commit for each of Tasks 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11a, 11b, 11c, 12 and 13, sixteen feature-task commits in all (plus the approved baseline-repair commit and merge recorded above if not already in `origin/main`), in the order the Execution status table lists them (Task 2 may sit anywhere after Task 1). A missing, extra or out-of-order commit is a deviation to report before going on. The Execution status table still reads `planned` here: it is written once, in Step 9, from this log.
 
 - [ ] **Step 2: Full backend gates**
 

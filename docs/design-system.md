@@ -29,14 +29,13 @@ Selected controls retain meaningful fills, ink, borders and selection shadows; h
 
 The final source bundle has 49 CSS source files, 225 actual `:hover` selector occurrences across 40 files, 7 font-family values, 52 font sizes, 27 border radii and 41 full suffix-matching element class hooks. These scales and class sets remain unchanged.
 
-Raw sources contain 12 exact `transform: none` declarations and 45 unrelated `text-transform: none` declarations. Hover/active blocks contain two right-edge tooltip placement resets and six non-none placement/reveal transforms. No declaration uses `transition: all`. The final generated baseline has 19 offender identities (nine transform identities and ten shadow identities), down from Part 1's 122 and Part 2's 106. All 87 removed Part 3 allowances are stale entries; no allowance has been added or changed. Duplicate tooltip selectors retain distinct source/context/occurrence identities. Ratchets reject stale entries, additions and changed values.
+Raw sources contain 12 exact `transform: none` declarations and 45 unrelated `text-transform: none` declarations. Hover/active blocks contain two right-edge tooltip placement resets and five non-none placement/reveal transforms. No declaration uses `transition: all`. The final generated baseline has 18 offender identities (eight transform identities and ten shadow identities), down from Part 1's 122 and Part 2's 106. All 87 removed Part 3 allowances are stale entries; the 2026-10-15 browser-layout repair removes one further allowance by making the Initiative tooltip end-aligned with an opacity-only reveal. No allowance has been added or changed. Duplicate tooltip selectors retain distinct source/context/occurrence identities. Ratchets reject stale entries, additions and changed values.
 
 The retained offender identities have concrete purposes (their exact source/context/occurrence values remain unchanged):
 
 | Owner / hook | Identities | Purpose |
 | --- | ---: | --- |
 | `eng/board.css` — `.eng-board .ecard:hover` | 1 | Approved outer-card soft shadow |
-| `eng/filter-bar.css` — Initiative grouping tooltip | 1 | Centered tooltip reveal transform |
 | `eng/issues.css` — priority icon `::after` | 1 | Place priority readout above its glyph |
 | `epm/project-board.css` — progress tooltip, desktop/narrow contexts | 2 | Reveal and position progress readout |
 | `planning/capacity.css` — marker tooltip | 2 | Readout shadow and horizontal placement |

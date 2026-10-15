@@ -531,7 +531,7 @@
 
         .initiative-grouping-tooltip {
             position: absolute;
-            left: 50%;
+            right: 0;
             top: calc(100% + 8px);
             bottom: auto;
             z-index: calc(var(--sticky-control-overlay-z) + 3);
@@ -548,15 +548,13 @@
             opacity: 0;
             visibility: hidden;
             pointer-events: none;
-            transform: translate(-50%, 3px);
-            transition: opacity 120ms ease, transform 120ms ease;
+            transition: opacity 120ms ease;
         }
 
         .initiative-grouping-control:hover .initiative-grouping-tooltip,
         .initiative-grouping-control:focus-within .initiative-grouping-tooltip {
             opacity: 1;
             visibility: visible;
-            transform: translate(-50%, 0);
         }
 
         @media (max-width: 720px) {

@@ -222,7 +222,12 @@ test('ENG filter and export controls pin the enabled hover vocabulary and preser
     assert.ok(!filters.some(rule=>rule.selector === ':where(.filterbar, .popover, .planning-review-popover) button:hover'));
     assert.equal(declaration(filters.find(rule=>rule.selector === '.fb-trigger-primary'),'background'),'var(--text-primary)');
     assert.equal(declaration(filters.find(rule=>rule.selector === '.initiative-grouping-control .fb-trigger[aria-pressed="true"]'),'background'),'var(--jira-initiative-accent-surface)');
-    assert.equal(declaration(filters.find(rule=>rule.selector === '.initiative-grouping-control:hover .initiative-grouping-tooltip'),'transform'),'translate(-50%, 0)');
+    const initiativeTooltip = filters.find(rule=>rule.selector === '.initiative-grouping-tooltip');
+    assert.equal(declaration(initiativeTooltip,'right'),'0');
+    assert.equal(declaration(initiativeTooltip,'left'),undefined);
+    assert.equal(declaration(initiativeTooltip,'transform'),undefined);
+    assert.equal(declaration(initiativeTooltip,'transition'),'opacity 120ms ease');
+    assert.equal(declaration(filters.find(rule=>rule.selector === '.initiative-grouping-control:hover .initiative-grouping-tooltip'),'transform'),undefined);
     assert.ok(filters.some(rule=>rule.selector === '.filterbar-wrap:has(.initiative-grouping-control:hover)' && declaration(rule,'z-index') === 'calc(var(--sticky-control-overlay-z) + 2)'));
 });
 

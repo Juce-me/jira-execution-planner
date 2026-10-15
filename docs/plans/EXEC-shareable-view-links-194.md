@@ -1,6 +1,6 @@
 # Shareable View Links Implementation Plan
 
-> **Status:** Task 12 remains before application edits. On 2026-10-15 the operator approved merging `origin/main` `778fb2aa` and aligning shared Statistics links with its future-Sprint availability; compatibility checks passed; fresh review is required before Task 12 wiring. The operator accepted the displayed mock; G2 acceptance is recorded below for transfer to the control-slice gate line before implementation resumes. Task 11c live manual validation remains outstanding. No push or PR.
+> **Status:** Implemented through Task 13; Task 14 remains incomplete. The latest full Chromium gate has 1,716 passed, nine explained skips and two failures. Controlled probes reproduce both failures through test-readiness gaps; test-only repair proposals await operator approval. The operator confirms Share is visible after the correct checkout replaced a stale local server, but reports an unresolved highlighted-item notice on a live link. Live acceptance and G3 publication remain pending. No push or PR.
 >
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Per-task status and commits are recorded in the Execution status table below, inside this committed file (see the recording rule there), not in a scratch ledger.
 
@@ -57,9 +57,9 @@ Statuses and commit SHAs are written once, in Task 14 Step 9, from `git log --on
 | 11a | Apply controller, capture builder, interaction guard and hook | done | `a362b9c6` | Review approved; 46 focused, 2,831 full Node and two structure tests pass |
 | 11b | Mount: hold, options, tour wait and Planning table key | done | `51841e95` | Review approved; 2,847 Node, 34 Python and 539 Chromium tests pass; measured dashboard 7,540 |
 | 11c | Link UI acceptance spec | in-progress | `045887d1`, `d00b324f` | Automated verification and fresh review approved; 24 Chromium cases pass; stopped for typed-link manual acceptance |
-| 12 | Share control, notice and header surfaces | blocked | | G2 mock accepted 2026-10-15; approved incoming-main Statistics alignment verified; fresh review required before wiring |
-| 13 | Docs, ontology, budgets and plans index | planned | | |
-| 14 | Journeys, full verification and publication | planned | | G3 explicit publish go |
+| 12 | Share control, notice and header surfaces | done | `9ef6b2ce` | G2 mock accepted 2026-10-15 before wiring; automated checks and fresh review approved; operator now confirms Share is visible |
+| 13 | Docs, ontology, budgets and plans index | done | `41c7c650` | Documentation checks and fresh review approved |
+| 14 | Journeys, full verification and publication | blocked | Corrections: `d5760f3a`, `6809990c`, `25483754` | Two test-repair proposals await approval; live focus report and A/B acceptance unresolved; G3 explicit publish go still required |
 
 Order: 0 (records the G1 answer), 1, 2 (only if G1 is accepted; any time after Task 1 and before Task 14), 3, 4, 5, 6, 7, 8, 9, 10, 11a, 11b, 11c, 12, 13, 14. Checkpoint tasks end with: report the SHA, files, results and a concrete manual validation scope, then STOP until the operator confirms. If a task fails twice on the same issue, stop, summarize the evidence and ask (`AGENTS.md` section 6).
 
@@ -86,7 +86,7 @@ Execution stops until the operator confirms the Task 11c Step 13 signed-in typed
 
 Task 12 G2 checkpoint (2026-10-15): the operator requested “build the button please” after the Task 11c manual checkpoint. Proceeding to the standalone mock follows that instruction; it does not claim the typed-link manual checks passed. The attempted local app startup could not reach the dashboard because the configured database migrations are behind this branch; no schema change was made. The live check remains outstanding for final journey validation.
 
-Task 12 Steps 0–2 are complete: all precondition anchors match, the instruction chain, design-system lookup and four named postmortems were read, and the exact supplied generator produced `assets/mockups/share-view-control-194.html` (396,475 bytes). The generator and capture commands run through Node 20 and exit zero. Both header Share controls measure 38 by 38 px with a 10 px radius; hovered overlay and ring are true, background image and transform are none. The first sandboxed Chromium launch failed before rendering; the same script succeeded with the required elevated execution. Four synthetic captures at 1440 and 390 px plus main/compact hover close-ups were inspected, and the standalone mock was opened for review. No source, test, dist, budget, token or new class changed. The generated HTML remains uncommitted until G2 acceptance, as required. This docs-only pause record is a recording-rule history exception. The G2 line in the control slice remains `Operator acceptance: pending`; no acceptance date is inferred from the request to build. Steps 3–12 must wait for acceptance of the concrete mock.
+Task 12 Steps 0–2 are complete: all precondition anchors match, the instruction chain, design-system lookup and four named postmortems were read, and the exact supplied generator produced `assets/mockups/share-view-control-194.html` (396,482 UTF-8 bytes; the generator reported 396,475 JavaScript characters). The generator and capture commands run through Node 20 and exit zero. Both header Share controls measure 38 by 38 px with a 10 px radius; hovered overlay and ring are true, background image and transform are none. The first sandboxed Chromium launch failed before rendering; the same script succeeded with the required elevated execution. Four synthetic captures at 1440 and 390 px plus main/compact hover close-ups were inspected, and the standalone mock was opened for review. No source, test, dist, budget, token or new class changed. The generated HTML remains uncommitted until G2 acceptance, as required. This docs-only pause record is a recording-rule history exception. The G2 line in the control slice remains `Operator acceptance: pending`; no acceptance date is inferred from the request to build. Steps 3–12 must wait for acceptance of the concrete mock.
 
 
 Task 12 incoming-base pause (2026-10-15): after viewing the standalone mock and discussing the opening-link partial notice, the operator said “but it's about the opening the link, if I got it right, so the problem is not copying, it's openning — for the opening outdated links — with non existems teams or departments — sound good”. This accepts the mock in the ongoing build request; do not ask for G2 acceptance again. Transfer the date and quote to the control-slice gate line before Step 3 resumes. The implementation worker stopped without changing any file or starting tests.
@@ -103,6 +103,29 @@ Proposed operator decision: preserve main's future-Sprint Statistics behavior, u
 - **Accepted by the operator at plan review on 2026-10-15** (design "Open items"; item 3 is gate G1 above): Share rendered on both header surfaces; the v1 trims (no Board focus, no Board facets, no Statistics display options, no assignee filters); the Planning rows seed as a one-shot initial value; Board `scope` links opening at most one strict stream; extracting the two `dashboard.jsx` helpers; the manifest budget moves in the ledger below; one transient lint warning in Task 11b.
 
 Operator approval (2026-10-15): “you can merge with the latest origin and proceed” authorizes the preceding concrete proposal. Merge `origin/main` `778fb2aac2c5cfbc80f23209452f60b708ac908b` into pre-merge feature HEAD `115beb470debf587c06f35b78fd60601f08f1a00`, retain future-Sprint Statistics, and align resolver, tests and supplied contracts before Task 12. This merge plus compatibility alignment is an approved publication-history exception; record its SHA at Task 14. Automated compatibility verification: 76 focused and 2,847 full Node tests passed; 14 structure/CSS extraction tests, 24 share-link Chromium acceptance cases and both incoming future-Sprint Statistics/onboarding Chromium cases passed. Extraction lint remains 105 warnings, zero errors, owner pins zero problems and the same four enforced baseline inventory findings. All 14 remaining Task 12 replacement blocks and seven Task 13 quotes plus both placement anchors match exactly once; four supplied resolver/controller implementation/test blocks match actual files byte-for-byte. The accepted mock regenerates byte-identically. Generated output was rebuilt, and measured dashboard/aggregate pins are 7,532/34,134. Historical test counts remain unchanged. No Task 12 wiring or G2 gate-line edit is included. The accepted mock remains preserved and untracked; live Task 11c checks remain outstanding.
+
+## Task 14 validation checkpoint (2026-10-15)
+
+This is a required recording-rule checkpoint, not final closeout or publication approval. History at `25483754` contains 46 commits beyond `origin/main` `778fb2aa`: sixteen feature-task commits plus thirty recorded plan, merge, checkpoint and corrective exceptions. The branch diff has 103 changed paths. The whole-branch review used one fresh reviewer; the same reviewer approved the focused corrections in `d5760f3a`, `6809990c` and `25483754`. This docs-only checkpoint is another recording-rule history exception. The root instruction learning about verifying the serving checkout records the operator's missing-button correction.
+
+| Gate | Latest actual result |
+| --- | --- |
+| Full Python | 2,184 tests, 29 unchanged skips, zero failures at the final application correction |
+| Security matrix modules | 82 passed |
+| Full Node | 2,858 passed, zero failures or skips |
+| Focused final application / structure checks | 95 / 14 passed |
+| Extraction lint | Baseline exit 1: 104 warnings, zero errors, owner pins zero problems, the same four enforced inventory findings; no waiver or repair of baseline lint |
+| Build and committed-revision dist | Reproducible build `a454596f5642e791151e4f940b457286a0ae766b81b5bdc7d40c5aaacc1cd663`; dist clean at `25483754` |
+| Full Chromium at `25483754` | 1,716 passed, nine explained skips, two failures in 14.3 minutes; repaired Planning scroll and Share cases pass; the full gate is failed |
+| Headed Firefox / WebKit | Each 84 passed, two unchanged opt-in runtime skips, zero failures after the glyph fixture repair; painted-ink case passes in both |
+| Measured budgets | `wc -l`: dashboard 7,539 and server 6,459; manifest dashboard 7,539, unique owners 26,602, App plus owners 34,141 |
+| Startup | Shell syntax passes. Basic/jsonfile preflight lacks Basic credentials in the configured DB/OAuth environment and is not claimed passed. Approved local migrations applied; correct-checkout server starts with no pre-banner Python/dependency warnings; signed-in browser API reports success |
+
+The two remaining full-run failures are `delayed metadata selects the existing text and delayed search results select the match` and `hoverless touch keeps the capacity Jira and pencil controls visible and operable`. Each passed alone and in eight instrumented four-worker repeats. In the subsequently approved bounded batch, CPU-throttled scheduling passed four cases per test. A controlled delayed metadata commit then reproduced the first exact symptom: the original selection poll passes while the input is disabled and unfocused; the first key goes to the page, leaving two letters. A held native header observer callback released during the touch reproduced the second exact symptom: layout changes between touch delivery and the compatibility click, which reaches a container and never opens the input. These prove concrete causal routes, while the historical full-run interleavings were not recorded. No test assertion or product behavior was changed. Proposed scope requiring approval: wait for enabled/focused Assignee input and settle actual compact-header state/target geometry before tapping; retain every existing assertion and actual touch interaction, then rerun affected specs and full Chromium. No further diagnosis or repair is implied by passing probes.
+
+The missing live Share control was a runtime mismatch: another checkout's stale server occupied the local port. Replacing it with this checkout restored one visible, enabled Share control without a code change; the operator confirmed visibility. A subsequent live link reported an unapplied highlighted item and no desired scroll. Its Catch Up link carries an Epic target. A single new signed-in diagnostic opening found 17 Epics and 24 Stories, one matching Epic, target top 130 pixels in a 720-pixel viewport after scrolling to 4,750, and no focus-partial notice. The original failure is not reproduced or waived; opening method and manual target presence remain pending. No live screenshots or issue identifiers are recorded. Signed-in and private-window journey acceptance remains incomplete.
+
+The operator approved updating the privacy Effective date to 2026-10-15; apply it in the final Step 9 closeout commit. Task 14 Steps 1–9 are not complete, so the prescribed outcome commit has not been made. G3 has no publication authorization.
 
 ## Global Constraints
 
@@ -134,11 +157,11 @@ Every task's requirements include this section. Values are copied from the desig
 | Task 6 | 7,505 | 34,107 | 6,459 |
 | Task 11b | 7,540 | 34,142 | 6,459 |
 | Post-merge `778fb2aa` (measured; minus 8) | 7,532 | 34,134 | 6,459 |
-| Task 12 (projected plus 7) | 7,539 | 34,141 | 6,459 |
+| Task 12 (measured plus 7) | 7,539 | 34,141 | 6,459 |
 
 Historical pre-sync projection: `dashboard.jsx` plus 54 lines (7,547 against the legacy ceiling of 7,573) and `jira_server.py` plus 4 (6,459 against 6,487); only the manifest moves. The absolute numbers are for the base above. If Task 0 measures a different baseline, add the same offset to every row: the per-task deltas (+4 in Task 1, +1 in Task 5, +11 in Task 6, +35 in Task 11b, +7 in Task 12) are the contract, and each pin step measures instead of trusting a number. The precedent for growth inside an extraction budget is the data-freshness work (plus 48).
 
-Post-sync offset: incoming main removes 8 dashboard lines. Historical Task 0/6/11b measurements above remain unchanged; current measured pins are 7,532 / 34,134 and Task 12 projects 7,539 / 34,141. Per-task growth is unchanged.
+Post-sync offset: incoming main removes 8 dashboard lines. Historical Task 0/6/11b measurements above remain unchanged; the pre-Task-12 measured pins were 7,532 / 34,134. Task 12 measured 7,539 / 34,141, which remain current. Per-task growth is unchanged.
 
 ## Review Focus
 
@@ -741,3 +764,12 @@ gh pr view --json headRefOid,commits,files,body
 gh pr checks
 ```
 Expected: the remote head equals the approved local head; the commit count and changed-file list match the comparison above; the body reads back as rendered text (not serialized JSON); CI state is reported as it is. `AGENTS.md` section 10 asks for a visual inspection of the PR page, while the operator's standing rule is to use `gh` and open a browser only when asked: ask at gate G3 whether to open the page, and the operator attaches UI screenshots there. Then call the app's PR tools: get the PR status, bind the PR if it is not reported, read its CI and offer Auto-fix; never poll CI yourself and never enable auto-merge unless asked. If any post-publication check fails, report the publication as malformed and stop for operator direction.
+
+
+## Outcome
+
+Implemented with changes through Task 13. Approved deviations include the baseline browser repairs, incoming-main Statistics alignment, deadline and query-cap corrections, expanded synthetic/privacy/request-parity coverage, same-scope recovery and clipboard completion fixes, and the Planning scroll test repair recorded above. Task 14 verification and live acceptance remain incomplete; this checkpoint does not claim completion or readiness to publish.
+
+## Current Accuracy
+
+The source, tests and current product documentation describe the implemented feature. Historical task instructions and measurements are retained for audit; use the current checkpoint for verification state and remaining work. Two additional test-readiness repairs await approval, and the live highlighted-item report remains unresolved. Keep the EXEC filename until completion and merge; G3 remains closed.

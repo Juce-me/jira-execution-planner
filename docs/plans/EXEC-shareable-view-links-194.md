@@ -1,6 +1,6 @@
 # Shareable View Links Implementation Plan
 
-> **Status:** In progress 2026-10-15: Tasks 0–2 are complete; the operator approved the Task 3 pair-cap correction and continuation. Task 3 correction is awaiting fresh review; Tasks 4–14 remain planned. No publication.
+> **Status:** Paused at the Task 6 checkpoint on 2026-10-15: Tasks 0–5 are complete; Task 6 is committed, automatically verified and review-approved, pending signed-in manual validation. Task 7 has not started. No publication.
 >
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Per-task status and commits are recorded in the Execution status table below, inside this committed file (see the recording rule there), not in a scratch ledger.
 
@@ -31,7 +31,7 @@ This file is the master: status, constraints, file map, contracts and the three 
 
 The operator declined a browser-failure waiver and instructed repair on 2026-10-15. The separate `bugfix/browser-baseline-layout` commit `4764991e` and its merge carrying this record are approved baseline-repair history before Task 1, in addition to the sixteen feature-task commits. Include their paths from the File map in the publication scope if they have not separately reached `origin/main`; do not treat these approved commits as unexplained feature-task history.
 
-The pause-record documentation commit `9bf40051` and the separate Task 3 corrective commit ("Validate link pair cap before future version handling"), approved by the operator on 2026-10-15, are history exceptions in addition to the sixteen feature-task commits. Resolve the corrective commit SHA from the log at Task 14; no SHA is predicted here.
+The pause-record documentation commit `9bf40051`, checkpoint documentation commits required by the recording rule below, and the separate Task 3 corrective commit `883d29f6` ("Validate link pair cap before future version handling"), approved by the operator on 2026-10-15, are history exceptions in addition to the sixteen feature-task commits. Reconcile their exact SHAs from the log at Task 14.
 
 Statuses and commit SHAs are written once, in Task 14 Step 9, from `git log --oneline origin/main..HEAD`: every task's first step needs a clean tree, so plan files stay unmodified between tasks (if execution pauses early, record them then in a docs-only commit). Task 0 alone writes earlier, and only into its own row: the G1 answer and that the instruction chain was read, in its own documentation-only commit. Statuses: `planned`, `in-progress`, `done`, `blocked`, `declined`. Rename `EXEC-` to `DONE-` only after the work is merged (`docs/plans/AGENTS.md`).
 
@@ -40,10 +40,10 @@ Statuses and commit SHAs are written once, in Task 14 Step 9, from `git log --on
 | 0 | Baseline and preflight | done | `b9ae6641` | G1: accepted 2026-10-15; instruction chain and related postmortems read; browser baseline repaired in `4764991e` |
 | 1 | Server login stash and shared corpus | done | `e7f9ede2` | Review approved; full Python 2,176 tests, 29 skips, no failures |
 | 2 | Log hygiene and privacy notice | done | `2ad069a5` | G1 accepted 2026-10-15; review approved; full Python 2,183 tests, 29 skips, no failures |
-| 3 | View defaults and codec | in-progress | `345d69a5` | Pair-cap correction approved 2026-10-15; separate corrective commit awaiting fresh review |
-| 4 | Resolver | planned | | |
-| 5 | Store and entry | planned | | |
-| 6 | `dashboard.jsx` behavior-preserving extractions | planned | | Checkpoint |
+| 3 | View defaults and codec | done | `345d69a5`, `883d29f6` | Pair-cap correction approved 2026-10-15; fresh review approved; 2,584 Node tests pass |
+| 4 | Resolver | done | `c511e805` | Review approved; 49 resolver and 2,633 full Node tests pass |
+| 5 | Store and entry | done | `60f89d12` | Review approved; 28 store, 2,661 full Node and 34 targeted Python tests pass |
+| 6 | `dashboard.jsx` behavior-preserving extractions | in-progress | `bde1decd` | Automated checks and review approved; checkpoint manual validation pending |
 | 7 | Alert anchors and focus capture | planned | | |
 | 8 | Focus reveal and Planning rows seed | planned | | |
 | 9 | Apply machine (pure) | planned | | |
@@ -57,7 +57,9 @@ Statuses and commit SHAs are written once, in Task 14 Step 9, from `git log --on
 
 Order: 0 (records the G1 answer), 1, 2 (only if G1 is accepted; any time after Task 1 and before Task 14), 3, 4, 5, 6, 7, 8, 9, 10, 11a, 11b, 11c, 12, 13, 14. Checkpoint tasks end with: report the SHA, files, results and a concrete manual validation scope, then STOP until the operator confirms. If a task fails twice on the same issue, stop, summarize the evidence and ask (`AGENTS.md` section 6).
 
-Task 3 review correction (2026-10-15): the operator approved moving the pair-cap check before returning `newer`, adding `v=2` vectors for both 40 and 41 further pairs, and aligning the supplied codec and tests in the slice. This resolves the plan-mandated contract conflict: `v=2` plus 40 pairs remains `newer`; 41 pairs is `invalid` with `too_many_pairs`. The original codec commit `345d69a5` passed 45 codec tests, 2,584 full Node tests, 26 stash tests, two structure tests and a reproducible committed build. The correction reruns those gates; extraction lint must remain at 104 warnings and four existing enforced findings, and dedicated shareView lint must remain clean. Fresh review is required before Task 4 starts. Task 4 has not started.
+Task 3 review correction (2026-10-15): the operator approved moving the pair-cap check before returning `newer`, adding `v=2` vectors for both 40 and 41 further pairs, and aligning the supplied codec and tests in the slice. Commit `883d29f6` resolves the plan-mandated contract conflict: `v=2` plus 40 pairs remains `newer`; 41 pairs is `invalid` with `too_many_pairs`. The new vector failed before the correction and passed afterward. Both the original and corrected codec passed 45 codec tests, 2,584 full Node tests, 26 stash tests, two structure tests and a reproducible committed build. Extraction lint remained at 104 warnings and four existing enforced findings; dedicated shareView lint was clean. Fresh review approved the correction before Task 4 started.
+
+Task 6 checkpoint (2026-10-15): `bde1decd` changes only `frontend/src/dashboard.jsx`, `tests/test_share_view_extraction_characterization.js`, `scripts/extraction_lint/owner_budgets.json` and regenerated dashboard bundle/map/manifest. All 13 characterization tests passed before extraction and unchanged afterward; six new helper contracts failed before extraction, then all 19 passed. Regression results: 2,680 Node tests, 34 targeted Python tests and 204 Chromium cases passed with no failures or flaky cases. Lint remained at 104 warnings, zero errors and the same four enforced baseline findings. The committed build is reproducible and dist/worktree checks are clean. Measured dashboard growth is 7,494 to 7,505 (+11, versus the design's original minus-8 estimate); aggregate pins moved from 34,096 to 34,107 in the same commit. An additional build before the UI run ensured it exercised the extracted source; the stated final and committed builds also ran. Fresh review approved the task. Before Task 7, the operator must confirm signed-in Sprint changes preserve Teams and return focus, same-Sprint selection changes nothing, All/one/two Team toggles and reload persistence work, and Statistics Project Track range follows Sprint changes. No behavior may differ from before the extraction.
 
 ### Operator gates
 
@@ -609,7 +611,7 @@ Expected: only the listed docs (and the two budget files if a pin moved) changed
 
 - [ ] **Step 1: Confirm every task is done**
 
-Run `git log --oneline origin/main..HEAD`. After the plan's own documentation commits and any merge of `origin/main`, it must show one commit for each of Tasks 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11a, 11b, 11c, 12 and 13, sixteen feature-task commits in all (plus the approved baseline-repair commit and merge, pause-record documentation commit `9bf40051`, and Task 3 corrective commit recorded above if not already in `origin/main`), in the order the Execution status table lists them (Task 2 may sit anywhere after Task 1). A missing, extra or out-of-order commit is a deviation to report before going on. Rows recorded during the approved Task 3 pause and correction retain their recorded statuses; later task rows remain `planned` until Step 9 reconciles all statuses and SHAs from this log. Count the sixteen feature-task commits separately from the approved history exceptions above.
+Run `git log --oneline origin/main..HEAD`. After the plan's own documentation commits and any merge of `origin/main`, it must show one commit for each of Tasks 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11a, 11b, 11c, 12 and 13, sixteen feature-task commits in all (plus the approved baseline-repair commit and merge, pause-record documentation commit `9bf40051`, required checkpoint documentation commits, and Task 3 corrective commit recorded above if not already in `origin/main`), in the order the Execution status table lists them (Task 2 may sit anywhere after Task 1). A missing, extra or out-of-order commit is a deviation to report before going on. Rows recorded during the approved Task 3 pause, correction and required checkpoints retain their recorded statuses; later task rows remain `planned` until Step 9 reconciles all statuses and SHAs from this log. Count the sixteen feature-task commits separately from the approved history exceptions above.
 
 - [ ] **Step 2: Full backend gates**
 

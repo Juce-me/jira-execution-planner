@@ -254,6 +254,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - In EPM settings Projects, put project name, Home status, Home link, and Jira label in stable cells so variable statuses do not distort the row.
 - In EPM settings Projects, use table-style header sorting and compact icon actions in cells; avoid bulky text sort/change controls in headers or label chips.
 - For UI screenshots, wait for CSS animations/transitions to settle or disable them before capturing visual proof.
+- For clipped controls, draw hover feedback inside the existing control and verify every edge; hover styling fixes must not change layout or tooltips.
 - Line-chart legends and points must use readable in-app hover/readout states; never rely on native `title` tooltips or dark hover pills.
 - In PR descriptions and final summaries, never include secrets, token placeholders, credential env vars, local absolute paths, or real project issue keys; use sanitized placeholders unless the user explicitly asks for real-key evidence.
 - Put PR descriptions directly in the reply body unless the user explicitly asks for a file; do not create temporary PR body files.

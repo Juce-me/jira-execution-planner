@@ -115,8 +115,9 @@ export function strictEngBoardMutationProps({ active, coordinator, refresh, sour
     return {
         status: { mutationCoordinator: coordinator,
             onTransitionSuccessRefresh: async ({ affectedSubtaskStoryKeys = [] } = {}) => {
-                if (active) await refresh();
-                else if (sourceSurface !== 'board') loadLegacy();
+                // One confirmed move never reloads the Board: the settled local patch already places
+                // the card, and the next scheduled read reconciles and drops it.
+                if (!active && sourceSurface !== 'board') loadLegacy();
                 if (!active) affectedSubtaskStoryKeys.forEach(key => retrySubtasks({ key }));
             } },
         priority: { mutationCoordinator: coordinator,

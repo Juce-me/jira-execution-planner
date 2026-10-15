@@ -444,3 +444,5 @@ When the user corrects your approach, append a one-line rule here before ending 
 - When a plan lists an unanswered layout "default" that differs from the operator-approved mockup's default variant, implement the mockup variant and compare the rendered screenshot against the mockup image before reporting; the Board Epic status chip belongs after the `n of m stories` text, never between the bar and the count (#271).
 
 - Select existing inline person-field text on opening; typing shows only query matches (no Me fallback), and an explicit pointer/keyboard highlight survives refreshed results until the next input change.
+
+- Never use port 5050 from a worktree: it belongs to the main checkout's server and the OAuth redirect. Run a worktree server on another port (e.g. `--server_port 5051`) and never stop or replace a server that is not yours.

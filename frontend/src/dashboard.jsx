@@ -5600,8 +5600,12 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 />
             );
 
+            const shareScopeKey = JSON.stringify([selectedView, activeEngMode, activeGroupId, selectedSprint, planningLayout]);
+            const renderEpicShareControl = (epicKey) => selectedView === 'eng' && ['catch-up', 'planning'].includes(activeEngMode) && (
+                <ShareViewButton surface="epic" epicKey={epicKey} scopeKey={shareScopeKey} share={shareView} sourceSurface={analyticsToken(activeEngMode)} activeControlSurface="epic" />
+            );
             const renderShareViewControl = (surface) => selectedView === 'eng' && activeEngMode !== 'scenario' && (
-                <ShareViewButton surface={surface} share={shareView} sourceSurface={analyticsToken(activeEngMode)} activeControlSurface={activeControlSurface} />
+                <ShareViewButton surface={surface} scopeKey={shareScopeKey} share={shareView} sourceSurface={analyticsToken(activeEngMode)} activeControlSurface={activeControlSurface} />
             );
 
             const renderEpmControls = (surface, { showProjectPicker = true, showStateControl = true } = {}) => (
@@ -6125,6 +6129,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                     />
             );
             const epicBlockProps = {
+                renderEpicShareControl,
                 statusTransitionActiveKey,
                 priorityTransitionActiveKey,
                 projectTrackTransitionActiveKey,
@@ -6950,7 +6955,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                                         onToggleStory={task => toggleTaskSelection(task.key)} onSelectStories={selectPlanningReviewStories}
                                         jiraUrl={jiraUrl} sprintId={selectedSprint} review={planningReview} getTeamInfo={getTeamInfo} excludedEpicSet={excludedEpicSet}
                                         admittedTeamCount={planningReviewAdmittedCounts.teams} admittedProjectCount={planningReviewAdmittedCounts.projects}
-                                        renderPriorityIcon={renderPriorityIcon} renderFieldEditor={renderPlanningReviewFieldEditor} onReviewAction={trackPlanningReviewAction}
+                                        renderPriorityIcon={renderPriorityIcon} renderEpicShareControl={renderEpicShareControl} renderFieldEditor={renderPlanningReviewFieldEditor} onReviewAction={trackPlanningReviewAction}
                                         pendingOriginals={planningOriginals} onHoldRow={key => holdEditor('table', key)}
                                         confirmedEdit={confirmedEdit} onConfirmedEditHandled={ackConfirmed} isRowHeld={isHeld}
                                     /> : null}

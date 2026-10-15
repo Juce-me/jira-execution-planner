@@ -10,7 +10,7 @@ const repoRoot = path.join(__dirname, '..', '..');
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const harnessUrl = `${appBaseUrl}/share-view-control-harness`;
 const dashboardHtml = fs.readFileSync(path.join(repoRoot, 'jira-dashboard.html'), 'utf8');
-const SHARE_LABEL = 'Copy link to this view';
+const SHARE_LABEL = 'Copy view link';
 // The shared banner's accent label on white is 4.8:1 at rest and 4.28:1 once the foundation overlay is composed; it is the existing
 // palette, so the Dismiss case pins that it stays at least this readable instead of the 4.5:1 floor of new text.
 const DISMISS_MINIMUM_CONTRAST = 4;
@@ -60,10 +60,10 @@ async function openHarness(page, { width = 1440, height = 900, clipboard = 'ok',
 }
 
 // Hooks are data attributes and existing classes only: the Share control adds no class of its own.
-const surfaceScope = (surface) => (surface === 'main' ? '.header-actions-row ' : surface === 'compact' ? '.compact-sticky-header ' : '');
-const shareButton = (page, surface) => page.locator(`${surfaceScope(surface)}[data-share-view-control]`);
-const shareNotice = (page, surface) => page.locator(`${surfaceScope(surface)}[data-share-view] > .server-unavailable-banner`);
-const shareStatus = (page, surface) => page.locator(`${surfaceScope(surface)}[data-share-view] > .planning-review-sr-only`);
+const surfaceScope = (surface) => surface ? `[data-share-view="${surface}"]` : ':is([data-share-view="main"], [data-share-view="compact"])';
+const shareButton = (page, surface) => page.locator(`${surfaceScope(surface)} > [data-share-view-control]`);
+const shareNotice = (page, surface) => page.locator(`${surfaceScope(surface)} > .server-unavailable-banner`);
+const shareStatus = (page, surface) => page.locator(`${surfaceScope(surface)} > .planning-review-sr-only`);
 const setHarness = (page, patch) => page.evaluate(next => window.__shareHarness.set(next), patch);
 const shareEvents = (page) => page.evaluate(() => window.dataLayer.filter(entry => entry && entry.event_name === 'share_view_action'));
 
@@ -142,12 +142,12 @@ test.describe('Share control: copy outcomes', () => {
         const status = shareStatus(page, 'main');
         await button.click();
         await expect(button.locator('[data-share-view-icon="copied"]')).toHaveCount(1);
-        await expect(status).toHaveText('Link copied');
+        await expect(status).toHaveText('View link copied');
         const box = await button.boundingBox();
         expect(box.width).toBeCloseTo(38, 1);
         expect(box.height).toBeCloseTo(38, 1);
         expect(await page.evaluate(() => window.__copied)).toEqual([SYNTHETIC_URL]);
-        await expect(shareNotice(page)).toHaveCount(0);
+        await expect(shareNotice(page).locator('p')).toHaveText('View link copied.');
         expect(await shareEvents(page)).toEqual([{
             event: 'userevent', trigger: 'userevent', event_type: 'event', event_name: 'share_view_action',
             feature_name: 'share_view', workflow_action: 'copy_link', result: 'success', source_surface: 'catch_up',
@@ -163,7 +163,7 @@ test.describe('Share control: copy outcomes', () => {
         await setHarness(page, { capture: { ok: true, url: SYNTHETIC_URL, dropped: ['find', 'alertTeam', 'sort'] } });
         await shareButton(page, 'main').click();
         const notice = shareNotice(page);
-        await expect(notice.locator('p')).toHaveText('Link copied, without some details to keep it short: filters and highlighted item.');
+        await expect(notice.locator('p')).toHaveText('View link copied, without some details to keep it short: filters and highlighted item.');
         await expect(notice.getByRole('textbox')).toHaveCount(0);
         expect(await page.evaluate(() => window.__copied)).toEqual([SYNTHETIC_URL]);
         const events = await shareEvents(page);
@@ -477,7 +477,7 @@ async function installClipboard(page, mode = 'ok') {
 const enableAnalytics = (ctx) => ctx.respond('/api/analytics/context', ({ json }) => json({ enabled: true }));
 
 // Share controls inside the viewport and not under an aria-hidden ancestor, by surface.
-const visibleShareSurfaces = (page) => page.evaluate(() => [...document.querySelectorAll('[data-share-view-control]')].filter((node) => {
+const visibleShareSurfaces = (page) => page.evaluate(() => [...document.querySelectorAll('[data-share-view="main"] [data-share-view-control], [data-share-view="compact"] [data-share-view-control]')].filter((node) => {
     const rect = node.getBoundingClientRect();
     return rect.width > 0 && rect.height > 0 && getComputedStyle(node).visibility !== 'hidden'
         && rect.bottom > 0 && rect.top < window.innerHeight && !node.closest('[aria-hidden="true"]');
@@ -504,7 +504,7 @@ test.describe('Share control: in the app', () => {
         for (const fragment of ['http', '?v=', 'group-alpha', '3001']) expect(serialised, `no ${fragment} in any analytics payload`).not.toContain(fragment);
     });
 
-    test('the compact header takes the control over exactly when it appears and two controls are never on screen', async ({ page }) => {
+    test('header copies view settings without a focus target at every scroll position', async ({ page }) => {
         await installClipboard(page);
         const ctx = await mockDashboard(page);
         await openCatchUp(page, ctx, { width: 1440, height: 900 });
@@ -517,21 +517,25 @@ test.describe('Share control: in the app', () => {
             const state = await page.evaluate(() => ({ scrollY: window.scrollY, compact: Boolean(document.querySelector('.compact-sticky-header.is-visible')) }));
             const visible = await visibleShareSurfaces(page);
             sampled.push({ ...state, visible });
+            if (visible.length === 1) {
+                await shareButton(page, visible[0]).click();
+                expect((await page.evaluate(() => window.__copied)).at(-1)).not.toMatch(/&(?:epic|story|alertTeam)=/);
+            }
             expect(visible.length, `scrollY ${state.scrollY}: ${visible}`).toBeLessThanOrEqual(1);
             if (state.compact) expect(visible, `scrollY ${state.scrollY}`).toEqual(['compact']);
             if (state.scrollY === 0) expect(visible).toEqual(['main']);
         }
         expect(sampled.some(item => item.compact)).toBe(true);
-        // The compact control copies the same link the main control copies, apart from the focus target, which follows the scroll position.
+        // Header copies carry only view settings at either scroll position.
         await shareButton(page, 'compact').click();
         await page.evaluate(() => window.scrollTo(0, 0));
         await expect(page.locator('.compact-sticky-header.is-visible')).toHaveCount(0);
         await shareButton(page, 'main').click();
-        await expect.poll(() => page.evaluate(() => window.__copied.length)).toBe(2);
-        const [fromCompact, fromMain] = await page.evaluate(() => window.__copied);
+        await expect.poll(() => page.evaluate(() => window.__copied.length)).toBe(sampled.filter(item => item.visible.length).length + 2);
+        const [fromCompact, fromMain] = (await page.evaluate(() => window.__copied)).slice(-2);
         expect(fromCompact).toMatch(APP_URL_PREFIX);
-        const withoutFocus = (url) => url.replace(/&(?:epic|story|alertTeam)=[^&]*/g, '');
-        expect(withoutFocus(fromCompact)).toBe(withoutFocus(fromMain));
+        expect(fromCompact).toBe(fromMain);
+        expect(fromCompact).not.toMatch(/&(?:epic|story|alertTeam)=/);
     });
 
     // Mounted proof of the hover contract on the real dashboard: the main Share control and the compact one (after the scroll swap)
@@ -666,4 +670,170 @@ test.describe('Share control: in the app', () => {
             await expect(shareNotice(page)).toHaveCount(0);
         });
     }
+});
+
+const epicCopy = (page, key) => page.getByRole('button', { name: `Copy link to Epic ${key}`, exact: true });
+const explicitEvidence = path.join(repoRoot, 'tmp', 'share-view-tasks', 'explicit-visual');
+async function openShareFixture(page, layout = 'list', withSynthetic = false) {
+    await installClipboard(page);
+    const ctx = await mockDashboard(page);
+    if (withSynthetic) {
+        const story = ctx.scenario.stories[0];
+        ctx.scenario.stories.push({ ...story, id: 'ORPHAN-1', key: 'ORPHAN-1', fields: { ...story.fields, epicKey: null, parentSummary: '' } });
+    }
+    if (layout === 'list') await openCatchUp(page, ctx, { width: 1440, height: 900 });
+    else {
+        await page.addInitScript(prefs => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs)), catchUpPrefs({ showPlanning: true, planningLayout: 'table' }));
+        await page.goto(appBaseUrl, { waitUntil: 'networkidle' });
+        await expect(page.locator('tr[data-row-kind="epic"][data-issue-key="EPIC-1"]')).toBeVisible();
+    }
+    await page.addStyleTag({ content: '*,*::before,*::after{animation:none!important;transition:none!important}' });
+    return ctx;
+}
+async function explicitShot(page, name) {
+    fs.mkdirSync(explicitEvidence, { recursive: true });
+    await page.screenshot({ path: path.join(explicitEvidence, `${process.env.JEP_EXPLICIT_STAGE || 'after'}-${name}.png`), animations: 'disabled' });
+}
+
+test('Epic share discovery preserves title geometry and works by touch', async ({ browser }) => {
+    for (const touch of [false, true]) {
+        const context = await browser.newContext({ viewport: { width: touch ? 390 : 1440, height: 900 }, hasTouch: touch });
+        const page = await context.newPage();
+        try {
+            await openShareFixture(page);
+            await page.setViewportSize({ width: touch ? 390 : 1440, height: 900 });
+            const header = page.locator('.epic-block[data-epic-key="EPIC-1"] > .epic-header');
+            await header.scrollIntoViewIfNeeded();
+            await page.mouse.move(2, 2);
+            await explicitShot(page, `list-${touch ? 'touch' : 'desktop'}-rest`);
+            const action = epicCopy(page, 'EPIC-1');
+            await expect(action).toBeAttached();
+            const title = header.locator('.epic-link');
+            const before = await title.boundingBox();
+            const shape = await action.boundingBox();
+            expect(shape.width).toBe(24); expect(shape.height).toBe(24);
+            expect(await action.getAttribute('title')).toBe('Copy link to this Epic');
+            if (!touch) {
+                await expect(action).toHaveCSS('opacity', '0');
+                await title.hover();
+            }
+            await expect(action).toHaveCSS('opacity', '1');
+            const after = await title.boundingBox();
+            expect(after).toEqual(before);
+            const overlap = await header.evaluate(node => {
+                const action = node.querySelector('[data-share-view-control]').getBoundingClientRect();
+                const link = node.querySelector('.epic-link').getBoundingClientRect();
+                const refresh = node.querySelector('.epic-refresh-button').getBoundingClientRect();
+                const intersects = other => action.left < other.right && action.right > other.left && action.top < other.bottom && action.bottom > other.top;
+                const text = node.querySelector('.epic-name');
+                return { link: intersects(link), refresh: intersects(refresh), textFits: text.scrollWidth <= text.clientWidth || getComputedStyle(text).textOverflow === 'ellipsis' };
+            });
+            expect(overlap).toEqual({ link: false, refresh: false, textFits: true });
+            await explicitShot(page, `list-${touch ? 'touch' : 'desktop'}-discovered`);
+            if (touch) await action.tap(); else await action.click();
+            await expect.poll(() => page.evaluate(() => window.__copied.length)).toBe(1);
+            expect((await page.evaluate(() => window.__copied))[0]).toContain('&epic=EPIC-1');
+            await expect(header.locator('[data-share-view="epic"] .server-unavailable-banner p')).toHaveText('Epic EPIC-1 link copied.');
+        } finally { await context.close(); }
+    }
+});
+
+test('grouped Epic and Planning Epic row copy their own targets', async ({ page, browser }) => {
+    await openShareFixture(page);
+    const grouped = page.locator('.initiative-body .epic-block[data-epic-key="EPIC-2"]');
+    await expect(grouped).toBeAttached();
+    await grouped.locator('.epic-title-row').hover();
+    await explicitShot(page, 'grouped-epic');
+    await epicCopy(page, 'EPIC-2').click();
+    expect((await page.evaluate(() => window.__copied))[0]).toContain('&epic=EPIC-2');
+    const tableContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    page = await tableContext.newPage();
+    await openShareFixture(page, 'table');
+    const row = page.locator('tr[data-row-kind="epic"][data-issue-key="EPIC-2"]');
+    await expect(row).toBeVisible();
+    await explicitShot(page, 'table-rest');
+    const action = epicCopy(page, 'EPIC-2');
+    await row.hover();
+    await expect(action).toHaveCSS('opacity', '1');
+    expect((await action.boundingBox()).height).toBe(24);
+    await action.click();
+    await expect.poll(() => page.evaluate(() => window.__copied.length)).toBe(1);
+    const url = (await page.evaluate(() => window.__copied))[0];
+    expect(url).toContain('mode=planning'); expect(url).toContain('&epic=EPIC-2');
+    await expect(page.locator('tr.planning-review-synthetic [data-share-view]')).toHaveCount(0);
+    await explicitShot(page, 'table-copied');
+    await tableContext.close();
+});
+
+test('Epic Table discovery keeps row geometry and touch fallback operable with no Story or synthetic action', async ({ browser }) => {
+    for (const touch of [false, true]) {
+        const context = await browser.newContext({ viewport: { width: touch ? 390 : 1440, height: 900 }, hasTouch: touch });
+        const page = await context.newPage();
+        try {
+            await openShareFixture(page, 'table', true);
+            await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined }));
+            const row = page.locator('tr[data-row-kind="epic"][data-issue-key="EPIC-1"]');
+            const action = epicCopy(page, 'EPIC-1');
+            await row.scrollIntoViewIfNeeded();
+            await page.mouse.move(2, 2);
+            const before = await row.boundingBox();
+            const title = row.locator('.planning-review-truncated-value').first();
+            const titleBox = await title.boundingBox();
+            if (!touch) { await expect(action).toHaveCSS('opacity', '0'); await row.hover(); }
+            await expect(action).toHaveCSS('opacity', '1');
+            expect(await row.boundingBox()).toEqual(before);
+            expect(await title.boundingBox()).toEqual(titleBox);
+            if (touch) await action.tap(); else await action.click();
+            await page.mouse.move(2, 2);
+            await expect(action).toHaveCSS('opacity', '1');
+            const notice = row.locator('.server-unavailable-banner');
+            await expect(notice.getByRole('textbox')).toHaveValue(/&epic=EPIC-1/);
+            expect(await notice.evaluate(node => { const field = node.querySelector('input').getBoundingClientRect(); return node.contains(document.elementFromPoint(field.x + field.width / 2, field.y + field.height / 2)); })).toBe(true);
+            await explicitShot(page, `table-${touch ? 'touch' : 'desktop'}-fallback`);
+            await notice.getByRole('button', { name: 'Dismiss' }).click();
+            await expect(page.locator('tr.planning-review-synthetic')).not.toHaveCount(0);
+            await expect(page.locator('tr.planning-review-synthetic [data-share-view]')).toHaveCount(0);
+            await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+            await expect(page.locator('tr[data-row-kind="story"]')).not.toHaveCount(0);
+            await expect(page.locator('tr[data-row-kind="story"] [data-share-view]')).toHaveCount(0);
+        } finally { await context.close(); }
+    }
+});
+
+test.describe('Epic Share: painted glyph ink', () => {
+    test.use({ deviceScaleFactor: 2 });
+    for (const layout of ['list', 'table']) {
+        test(`the reused link and copied glyphs stay centred in the small Epic frame in ${layout}`, async ({ page }, testInfo) => {
+            test.skip(process.platform !== 'darwin', 'Glyph ink placement is reviewed on macOS.');
+            test.skip(testInfo.project.use.headless !== false, 'Glyph ink placement is only representative headed.');
+            await openShareFixture(page, layout);
+            const action = epicCopy(page, 'EPIC-1');
+            await action.scrollIntoViewIfNeeded();
+            await action.focus();
+            expectCentredGlyph(await paintedInkOffset(page, action), `${layout} link`);
+            await action.click();
+            await expect(action.locator('[data-share-view-icon="copied"]')).toHaveCount(1);
+            expectCentredGlyph(await paintedInkOffset(page, action), `${layout} copied`);
+        });
+    }
+});
+
+
+test('a newer Epic copy owns feedback across separate controls and the header', async ({ page }) => {
+    await openHarness(page, { clipboard: 'deferred' });
+    await setHarness(page, { showEpics: true });
+    const first = epicCopy(page, 'SYN-1'); const second = epicCopy(page, 'SYN-2');
+    await first.focus(); await first.click();
+    await second.focus(); await second.click();
+    await page.evaluate(() => window.__clipboardPending[1].resolve());
+    await expect(second.locator('[data-share-view-icon="copied"]')).toHaveCount(1);
+    await page.evaluate(() => window.__clipboardPending[0].reject(new Error('older write refused')));
+    await expect(page.locator('[data-share-view="epic"] .server-unavailable-banner')).toHaveCount(1);
+    await expect(page.locator('[data-share-view="epic"] .server-unavailable-banner p')).toHaveText('Epic SYN-2 link copied.');
+    await shareButton(page, 'main').click();
+    await page.evaluate(() => window.__clipboardPending[2].resolve());
+    await expect(page.locator('[data-share-view="epic"] .server-unavailable-banner')).toHaveCount(0);
+    await expect(shareNotice(page, 'main').locator('p')).toHaveText('View link copied.');
+    expect((await shareEvents(page)).map(event => event.result)).toEqual(['success', 'failure', 'success']);
+    expect(JSON.stringify(await shareEvents(page))).not.toContain('SYN-');
 });

@@ -95,7 +95,7 @@ export function PlanningReviewScopeDialog({ review }) {
     </div></div>;
 }
 
-export default function PlanningReviewTable({ epicGroups = [], visibleTasks = [], selectedStoryKeys = new Set(), onToggleStory, onSelectStories, jiraUrl = '', review, getTeamInfo, admittedTeamCount, admittedProjectCount, renderPriorityIcon, renderFieldEditor, onReviewAction, toolbarHost, excludedEpicSet = new Set(), pendingOriginals = null, onHoldRow, confirmedEdit = null, onConfirmedEditHandled, isRowHeld, onInteractionChange }) {
+export default function PlanningReviewTable({ epicGroups = [], visibleTasks = [], selectedStoryKeys = new Set(), onToggleStory, onSelectStories, jiraUrl = '', review, getTeamInfo, admittedTeamCount, admittedProjectCount, renderPriorityIcon, renderEpicShareControl, renderFieldEditor, onReviewAction, toolbarHost, excludedEpicSet = new Set(), pendingOriginals = null, onHoldRow, confirmedEdit = null, onConfirmedEditHandled, isRowHeld, onInteractionChange }) {
     const [mode, setMode] = React.useState(() => takeInitialPlanningRowMode() || 'epic');
     const hidden = new Set(review.layouts?.[mode]?.hidden ?? DEFAULT_REVIEW_HIDDEN_COLUMNS);
     const draggedColumn = React.useRef(null);
@@ -187,8 +187,9 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
         const awaited = row.rowKind === 'epic' ? row.requirements?.length || 0 : 0;
         // Without the Key column the Summary still reaches Jira: an icon link stands in for the key.
         const jiraLink = keyHidden && !row.synthetic ? <TrackedExternalLink href={`${jiraUrl.replace(/\/+$/, '')}/browse/${encodeURIComponent(row.key)}`} className="planning-review-jira-link" target="_blank" rel="noopener noreferrer" aria-label={`Open ${row.key} in Jira`} title={`Open ${row.key} in Jira`} analyticsMeta={buildJiraBrowseLinkAnalytics({ issueKind: row.rowKind, sourceSurface: 'planning' })}><JiraMarkIcon /></TrackedExternalLink> : null;
-        if (!awaited && !jiraLink) return title;
-        return <span className="planning-review-summary-line">{jiraLink}{title}{awaited ? <StatusPill className={getIssueStatusClassName('Pending', 'planning-review-awaiting')} label={`${awaited} ${awaited === 1 ? 'Story' : 'Stories'} awaited`} /> : null}</span>;
+        const share = !row.synthetic && row.rowKind === 'epic' ? renderEpicShareControl?.(row.key) : null;
+        if (!awaited && !jiraLink && !share) return title;
+        return <span className="planning-review-summary-line">{jiraLink}{title}{share}{awaited ? <StatusPill className={getIssueStatusClassName('Pending', 'planning-review-awaiting')} label={`${awaited} ${awaited === 1 ? 'Story' : 'Stories'} awaited`} /> : null}</span>;
     };
     const field = (row, fieldName, fallback) => !row.synthetic && renderFieldEditor ? (renderFieldEditor({ row, field: fieldName, value: fallback }) ?? fallback) : fallback;
     const changeMode = next => { releaseEngReadingContext(); if (editing) document.activeElement?.blur(); setEditing(null); setMode(next); setNewColumnId(''); trackedAction('row_mode_changed', { mode: next }); };

@@ -789,3 +789,34 @@ test('AC4 logger counts two real aborted requests to the same URL separately', a
     await expect.poll(() => aborted().filter(call => call.aborted).length).toBe(2);
     expect(apiSignatures(aborted())).toEqual(['GET /api/synthetic-read?sprint&team&team aborted', 'GET /api/synthetic-read?sprint&team&team aborted']);
 });
+
+
+for (const [name, prefs] of [
+    ['Catch Up', {}], ['Planning List', { showPlanning: true, planningLayout: 'list' }],
+    ['Planning Table', { showPlanning: true, planningLayout: 'table' }],
+]) {
+    test(`an explicit Epic copy opens and reveals the same Epic in ${name}`, async ({ browser }) => {
+        const source = await browser.newPage();
+        const recipient = await browser.newPage();
+        try {
+            await source.addInitScript(() => { window.__explicitCopy = null; Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async url => { window.__explicitCopy = url; } } }); });
+            await installLinkFixture(source, { analytics: ANALYTICS_ENABLED, prefs });
+            await source.goto(appBaseUrl, { waitUntil: 'domcontentloaded' });
+            await expect.poll(() => source.evaluate(() => window.__shareViewProbe?.shareDisabled)).toBe(false);
+            const action = source.getByRole('button', { name: 'Copy link to Epic ALP-100', exact: true });
+            await action.scrollIntoViewIfNeeded(); await action.focus(); await action.click();
+            const url = await source.evaluate(() => window.__explicitCopy);
+            expect(url).toContain('&epic=ALP-100');
+            const copies = await applyEvents(source);
+            expect(copies).toHaveLength(1);
+            expect(copies[0]).toMatchObject({ trigger: 'userevent', event_type: 'event', event_name: 'share_view_action', feature_name: 'share_view', workflow_action: 'copy_link', result: 'success', source_surface: name === 'Catch Up' ? 'catch_up' : 'planning' });
+            expect(JSON.stringify(await analyticsEvents(source))).not.toContain('ALP-100');
+            await installLinkFixture(recipient, { analytics: ANALYTICS_ENABLED });
+            await recipient.goto(url, { waitUntil: 'domcontentloaded' });
+            await expect.poll(() => applyEvents(recipient).then(events => events.map(event => event.result))).toEqual(['success']);
+            const target = name === 'Planning Table' ? recipient.locator('tr[data-row-kind="epic"][data-issue-key="ALP-100"]') : recipient.locator('.epic-block[data-epic-key="ALP-100"]');
+            await expect(target).toBeVisible();
+            expect(await recipient.evaluate(() => window.__shareViewProbe.notice)).toBe(null);
+        } finally { await source.close(); await recipient.close(); }
+    });
+}

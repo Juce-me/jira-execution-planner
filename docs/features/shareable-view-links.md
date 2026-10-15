@@ -1,22 +1,24 @@
 # Shareable View Links
 
-Share the ENG view you are looking at as one link. A teammate who opens it, signing in first if needed, lands in the same view. The link carries selectors only (which view, group, Sprint, Teams, filters, search, and where to scroll); everything the teammate sees is loaded with their own Jira sign-in.
+Share the ENG view you are looking at as one link. A teammate who opens it, signing in first if needed, lands in the same view. The link carries selectors only (which view, group, Sprint, Teams, filters, search, and an optional explicit Epic destination); everything the teammate sees is loaded with their own Jira sign-in.
 
 ## Share a view
 
-1. Set up the view: choose the Sprint, group and Teams, apply filters or search, and scroll to the alerts group, Epic or Story you want to point at.
-2. Press **Share** in the header. After you scroll past the main header, the same control appears in the compact bar beside Search.
-3. The link is copied and the icon turns into a check for two seconds. If your browser blocks the clipboard, the link appears under the control in a selectable field instead.
+1. Set up the view: choose the Sprint, group and Teams, and apply filters or search.
+2. Press **Copy view link** in the header to share those settings. Scroll position never adds an item target. After you scroll past the main header, the same control appears in the compact bar beside Find in view.
+3. The confirmation says **View link copied** and the icon turns into a check for two seconds. If your browser blocks the clipboard, the link appears under the control in a selectable field instead.
 4. Paste it into chat.
 
 Share is available in Catch Up, Planning, Board and Statistics, including Statistics on future Sprints. Planning links for closed Sprints fall back to Catch Up. It is hidden in EPM and Scenario, and disabled until the Department, Sprint catalog and applicable Team selection are ready.
+
+To point at a particular Epic in Catch Up or Planning, use the chain-link action at the right edge of its title (or beside its summary in Planning Table Epics rows). It is separate from the Jira title link. Hover or focus the header/row to reveal it; on touch devices it stays visible. Its tooltip says **Copy link to this Epic**, and the confirmation identifies the copied Epic. The action also works inside Initiative groups and carries the current view settings. Story and synthetic rows have no copy action. Older links targeting Stories or alert groups still open.
 
 ## What a link carries
 
 | Mode | Carried |
 | --- | --- |
-| Catch Up | group, Sprint, Teams, search, Status, Priority and Project Track filters, Product/Tech lanes, Initiative grouping, Epic sort, which alert categories are expanded, and one focus target (an alerts team group, an Epic or a Story) |
-| Planning | group, Sprint, Teams, search, filters, lanes, List or Table, Epics or Stories rows (Table), Initiative grouping and sort (List), and one Epic or Story focus target |
+| Catch Up | group, Sprint, Teams, search, Status, Priority and Project Track filters, Product/Tech lanes, Initiative grouping, Epic sort, which alert categories are expanded, and an Epic target only when copied from that Epic |
+| Planning | group, Sprint, Teams, search, filters, lanes, List or Table, Epics or Stories rows (Table), Initiative grouping and sort (List), and an Epic target only when copied from that Epic |
 | Board | group, Sprint, the Board scope (Sprint, Component or All work) and search |
 | Statistics | group, Sprint, the Statistics view, its range, and Teams for the views that use them |
 
@@ -35,7 +37,7 @@ A link never carries your saved preferences, Planning row selections or review d
 
 ## What the notices mean
 
-Notices name categories, never values from the link. Multiple skipped categories use the same labels in the displayed order below.
+Apply and omission notices name categories, never values from the link. Copy confirmations name View or the explicitly selected Epic locally; that key never enters analytics. Multiple skipped categories use the same labels in the displayed order below. Omission copy examples use the header confirmation; Epic copy uses the same text with its local Epic destination.
 
 | Notice | What happened |
 | --- | --- |
@@ -53,25 +55,20 @@ Notices name categories, never values from the link. Multiple skipped categories
 | This link was not applied: its Department group and Sprint are not available to you. | The named scope was unavailable, so nothing else from the link was applied. |
 | This link is not valid, so it was not applied. Ask the sender to copy it again. | The query failed validation. |
 | This link was made with a newer version of the app, so it was not applied. Update the app and open the link again. | The query uses a newer link version. |
-| Link copied | The link reached the clipboard; the icon shows a check for two seconds. |
-| Link copied, without some details to keep it short: view mode. | The link was copied after these details were left out to meet the query cap. |
-| Link copied, without some details to keep it short: Teams. | The link was copied after these details were left out to meet the query cap. |
-| Link copied, without some details to keep it short: filters. | The link was copied after these details were left out to meet the query cap. |
-| Link copied, without some details to keep it short: highlighted item. | The link was copied after these details were left out to meet the query cap. |
-| Link copied, without some details to keep it short: filters and highlighted item. | The link was copied after these details were left out to meet the query cap. |
-| Link copied, without some details to keep it short: view mode, Teams, filters and highlighted item. | The link was copied after these details were left out to meet the query cap. |
+| View link copied / Epic &lt;key&gt; link copied | The named destination reached the clipboard; the icon shows a check for two seconds. |
+| View link copied, without some details to keep it short: view mode. | The link was copied after these details were left out to meet the query cap. |
+| View link copied, without some details to keep it short: Teams. | The link was copied after these details were left out to meet the query cap. |
+| View link copied, without some details to keep it short: filters. | The link was copied after these details were left out to meet the query cap. |
 | The browser did not allow copying. Select the link below and copy it. | Clipboard access was unavailable or refused; copy the selectable link manually. Any listed details were omitted to fit. |
 | The browser did not allow copying. Select the link below and copy it. Left out to keep it short: view mode. | Clipboard access was unavailable or refused; copy the selectable link manually. Any listed details were omitted to fit. |
 | The browser did not allow copying. Select the link below and copy it. Left out to keep it short: Teams. | Clipboard access was unavailable or refused; copy the selectable link manually. Any listed details were omitted to fit. |
 | The browser did not allow copying. Select the link below and copy it. Left out to keep it short: filters. | Clipboard access was unavailable or refused; copy the selectable link manually. Any listed details were omitted to fit. |
-| The browser did not allow copying. Select the link below and copy it. Left out to keep it short: highlighted item. | Clipboard access was unavailable or refused; copy the selectable link manually. Any listed details were omitted to fit. |
-| The browser did not allow copying. Select the link below and copy it. Left out to keep it short: filters and highlighted item. | Clipboard access was unavailable or refused; copy the selectable link manually. Any listed details were omitted to fit. |
-| The browser did not allow copying. Select the link below and copy it. Left out to keep it short: view mode, Teams, filters and highlighted item. | Clipboard access was unavailable or refused; copy the selectable link manually. Any listed details were omitted to fit. |
 | This view has too many selections to fit in one link, so nothing was copied. | The remaining selections still exceeded the query cap. |
 | This view cannot be shared as a link right now, so nothing was copied. | The current view could not be encoded. |
 
 ## Limits
 
+- An explicit Epic copy refuses if fitting the query would require omitting that Epic, so it never silently copies a view-only link.
 - The query part of a link can contain at most 1,536 characters. When a view would not fit, the lowest-priority parts are left out in this order (search text, the focus target, alert categories, Initiative grouping, sort) and the notice names them; if it still does not fit, nothing is copied.
 - A Board or Statistics link has no focus target, and no link carries Board filters or Statistics display options in this version.
 - Search text is part of the link. In the container deployment the access log records the request path only, never the query string or the Referer.

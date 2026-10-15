@@ -189,14 +189,14 @@ test('the hook returns the binding shape with the store notice and dismiss actio
     doubles.snapshot = { phase: PHASES.PARTIAL, stage: null, entry: null, hold: false, terminal: true, notice: { kind: 'partial', categories: ['teams'] } };
     const hook = mountHook({ modules }, makeOptions());
     const result = hook.render();
-    assert.deepEqual(Object.keys(result).sort(), ['applyTerminal', 'captureShareUrl', 'dismissNotice', 'notice', 'shareDisabled']);
+    assert.deepEqual(Object.keys(result).sort(), ['applyTerminal', 'captureShareUrl', 'copyOwner', 'dismissNotice', 'notice', 'shareDisabled']);
     assert.deepEqual(result.notice, { kind: 'partial', categories: ['teams'] });
     assert.equal(result.applyTerminal, true);
     result.dismissNotice();
     assert.deepEqual(doubles.calls.at(-1), ['dismissNotice']);
 }));
 
-test('captureShareUrl builds the state from committed values, encodes it and returns an absolute plain URL synchronously', () => withBrowser(() => {
+test('header copies view settings without a focus target at every scroll position', () => withBrowser(() => {
     const { doubles, modules } = createDoubles();
     doubles.snapshot = { phase: PHASES.ABSENT, stage: null, entry: null, hold: false, terminal: true, notice: null };
     doubles.focus = { kind: 'epic', key: 'PROJ-1' };
@@ -205,12 +205,8 @@ test('captureShareUrl builds the state from committed values, encodes it and ret
     const { captureShareUrl } = hook.render();
     const result = captureShareUrl();
     assert.equal(typeof result.then, 'undefined', 'the click handler copies inside the user gesture, so the result is not a promise');
-    assert.deepEqual(result, { ok: true, url: 'https://planner.example/?v=1&mode=catch-up&group=grp-a&sprint=41&find=login&epic=PROJ-1', dropped: [] });
-    const focusArgs = doubles.calls.find(call => call[0] === 'captureFocus')[1];
-    assert.equal(focusArgs.mode, 'catch-up');
-    assert.equal(focusArgs.rowsMode, null);
-    assert.equal(focusArgs.root, globalThis.document);
-    assert.equal(focusArgs.win, globalThis.window);
+    assert.deepEqual(result, { ok: true, url: 'https://planner.example/?v=1&mode=catch-up&group=grp-a&sprint=41&find=login', dropped: [] });
+    assert.equal(doubles.calls.some(call => call[0] === 'captureFocus'), false, 'viewport focus is never captured');
     assert.equal(doubles.calls.find(call => call[0] === 'readRowsMode')[1], globalThis.document, 'the rows mode is read from the rendered table');
 
     doubles.rowsMode = 'story';
@@ -238,4 +234,30 @@ test('captureShareUrl refuses while disabled and passes an encoder failure throu
     const tooLong = mountHook({ modules }, makeOptions({ buildGroupStateSnapshot: () => longSnapshot }));
     tooLong.render();
     assert.deepEqual(tooLong.render().captureShareUrl(), { ok: false, reason: 'too_long' });
+}));
+
+
+test('explicit Epic copy targets the clicked Epic and refuses a dropped focus', () => withBrowser(() => {
+    const { doubles, modules } = createDoubles();
+    doubles.snapshot = { phase: PHASES.ABSENT, terminal: true, hold: false, notice: null };
+    doubles.focus = { kind: 'epic', key: 'PROJ-99' };
+    for (const mode of ['catch-up', 'planning']) {
+        const hook = mountHook({ modules }, makeOptions({ activeEngMode: mode }));
+        hook.render();
+        const result = hook.render().captureShareUrl({ kind: 'epic', key: 'PROJ-2' });
+        assert.equal(result.ok, true);
+        assert.match(result.url, /&epic=PROJ-2$/);
+        assert.equal(result.url.includes('PROJ-99'), false);
+        assert.deepEqual(hook.render().captureShareUrl({ kind: 'story', key: 'PROJ-2' }), { ok: false, reason: 'invalid_state' });
+    }
+    const teams = Array.from({ length: 12 }, (_, index) => `${index}${'x'.repeat(118)}`);
+    const snapshot = { ...makeOptions().buildGroupStateSnapshot(), selectedTeams: teams };
+    const hook = mountHook({ modules }, makeOptions({ searchQuery: '', buildGroupStateSnapshot: () => snapshot }));
+    hook.render();
+    assert.equal(hook.render().captureShareUrl().ok, true, 'the view alone fits');
+    assert.deepEqual(hook.render().captureShareUrl({ kind: 'epic', key: 'ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZ-1234567890' }), { ok: false, reason: 'too_long' });
+    for (const mode of ['board', 'statistics']) {
+        const other = mountHook({ modules }, makeOptions({ activeEngMode: mode })); other.render();
+        assert.deepEqual(other.render().captureShareUrl({ kind: 'epic', key: 'PROJ-2' }), { ok: false, reason: 'invalid_state' });
+    }
 }));

@@ -91,7 +91,8 @@
         }
 
         .header-actions-row button.header-icon-button,
-        .compact-sticky-header button.header-icon-button {
+        .compact-sticky-header button.header-icon-button,
+        [data-share-view="epic"] > button.header-icon-button {
             width: var(--control-height);
             min-width: var(--control-height);
             height: var(--control-height);
@@ -116,7 +117,8 @@
         }
 
         .header-actions-row button.header-icon-button svg,
-        .compact-sticky-header button.header-icon-button svg {
+        .compact-sticky-header button.header-icon-button svg,
+        [data-share-view="epic"] > button.header-icon-button svg {
             width: 18px;
             min-width: 18px;
             height: 18px;
@@ -679,4 +681,41 @@
             .compact-sticky-header .eng-mode-control .segmented-control-button {
                 flex-shrink: 0;
             }
+        }
+
+        /* Reuse the header control at the shared small IconButton size. Its reserved slot never moves on discovery. */
+        [data-share-view="epic"] {
+            --control-height: 24px;
+            display: inline-flex;
+            flex: 0 0 24px;
+            align-items: center;
+        }
+
+        [data-share-view="epic"] > button {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .epic-header:hover [data-share-view="epic"] > button,
+        .epic-header:focus-within [data-share-view="epic"] > button,
+        .planning-review-table tr:hover [data-share-view="epic"] > button,
+        .planning-review-table tr:focus-within [data-share-view="epic"] > button,
+        [data-share-view="epic"][data-share-feedback="active"] > button {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        @media (hover: none), (pointer: coarse) {
+            [data-share-view="epic"] > button {
+                opacity: 1;
+                pointer-events: auto;
+            }
+        }
+
+        [data-share-view="epic"] > .server-unavailable-banner {
+            position: fixed;
+            top: auto;
+            bottom: 1rem;
+            right: 1rem;
+            width: min(26rem, calc(100vw - 2rem));
         }

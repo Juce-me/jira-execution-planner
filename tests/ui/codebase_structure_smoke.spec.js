@@ -3155,7 +3155,7 @@ test('open header dropdown toggles filter groups teams and sprints', async ({ pa
         await page.evaluate(() => window.scrollTo(0, 600));
         const compactHeader = page.locator('.compact-sticky-header.is-visible');
         await expect(compactHeader).toBeVisible();
-        const compactShare = compactHeader.getByRole('button', { name: 'Copy link to this view' });
+        const compactShare = compactHeader.getByRole('button', { name: 'Copy view link' });
         await expect(compactShare).toHaveCount(1);
         await expect(compactShare).toBeVisible();
         const compactShareBox = await compactShare.boundingBox();
@@ -3192,7 +3192,7 @@ test('open header dropdown toggles filter groups teams and sprints', async ({ pa
         await waitForVisualSettled(page);
         const compactHeader = page.locator('.compact-sticky-header.is-visible');
         await expect(compactHeader).toBeVisible();
-        const narrowShareBox = await compactHeader.getByRole('button', { name: 'Copy link to this view' }).boundingBox();
+        const narrowShareBox = await compactHeader.getByRole('button', { name: 'Copy view link' }).boundingBox();
         expect(narrowShareBox.x).toBeGreaterThanOrEqual(0);
         expect(narrowShareBox.x + narrowShareBox.width).toBeLessThanOrEqual(width + 1);
         const documentOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
@@ -3271,7 +3271,7 @@ test('multiple groups keep the main controls on one row and settings beside refr
     const jiraExport = headerActions.getByRole('button', { name: 'Open Jira issue menu' });
     const refresh = headerActions.getByRole('button', { name: 'Refresh tasks and sprints from Jira' });
     const settings = headerActions.getByRole('button', { name: 'Manage team groups' });
-    const share = headerActions.getByRole('button', { name: 'Copy link to this view' });
+    const share = headerActions.getByRole('button', { name: 'Copy view link' });
     await expect(jiraExport).toBeVisible();
     await expect(refresh).toBeVisible();
     await expect(settings).toBeVisible();

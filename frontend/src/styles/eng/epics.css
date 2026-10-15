@@ -516,3 +516,19 @@
             clip: rect(0, 0, 0, 0);
             white-space: nowrap;
         }
+
+        /* The trailing Share slot occupies the title lane, clear of the corner Refresh. */
+        @media (max-width: 760px) {
+            .epic-header:has([data-share-view="epic"]) .epic-title-row {
+                padding-right: 32px;
+            }
+        }
+
+        @media (max-width: 760px) {
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header:has([data-share-view="epic"]):has(.epic-stat-toggle) .epic-title-row {
+                gap: 0.15rem;
+            }
+            .epic-header:has([data-share-view="epic"]) .epic-stat-toggle {
+                margin-left: 0;
+            }
+        }

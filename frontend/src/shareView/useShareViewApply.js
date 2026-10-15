@@ -4,7 +4,7 @@ import { createApplyController } from './applyController.js';
 import { armInteractionGuard } from './interactionGuard.js';
 import { buildShareViewState } from './captureState.js';
 import { encodeShareView } from './codec.js';
-import { captureShareViewFocus, readPlanningRowsMode } from './focusCapture.js';
+import { readPlanningRowsMode } from './focusCapture.js';
 import { readPendingAuthenticationRequired } from '../api/authRequired.js';
 
 // Refs have no notifications, so a pending link is stepped on every commit and on this interval.
@@ -40,10 +40,23 @@ const isShareDisabled = (o, applyTerminal) => !applyTerminal
     || o.sprintCatalogState.authority !== 'validated' || o.selectedView !== 'eng' || o.activeEngMode === 'scenario'
     || Boolean(readPendingAuthenticationRequired());
 
+// One transient copy owner per mounted dashboard, shared by every header/Epic control.
+export function createShareViewCopyOwner() {
+    let generation = 0;
+    const listeners = new Set();
+    return {
+        getSnapshot: () => generation,
+        subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
+        begin() { generation += 1; listeners.forEach(listener => listener()); return generation; },
+    };
+}
+
 export function useShareViewApply(options) {
     const snapshot = React.useSyncExternalStore(subscribeShareView, getShareViewSnapshot, getShareViewSnapshot);
     const optionsRef = React.useRef(options);
     const controllerRef = React.useRef(null);
+    const copyOwnerRef = React.useRef(null);
+    if (!copyOwnerRef.current) copyOwnerRef.current = createShareViewCopyOwner();
     if (!controllerRef.current) controllerRef.current = createApplyController({ readOptions: () => optionsRef.current });
     const controller = controllerRef.current;
     const [shareDisabled, setShareDisabled] = React.useState(true);
@@ -68,23 +81,25 @@ export function useShareViewApply(options) {
         return () => { clearInterval(timer); disarm(); };
     }, [active, controller]);
 
-    const captureShareUrl = React.useCallback(() => {
+    const captureShareUrl = React.useCallback((focus = null) => {
         const o = optionsRef.current;
         if (isShareDisabled(o, selectApplyTerminal())) return { ok: false, reason: 'disabled' };
+        if (focus && (focus.kind !== 'epic' || !['catch-up', 'planning'].includes(o.activeEngMode))) return { ok: false, reason: 'invalid_state' };
         const rowsMode = readPlanningRowsMode(document);
         const state = buildShareViewState({
             mode: o.activeEngMode, groupId: o.activeGroupId, sprintId: o.selectedSprint, snapshot: o.buildGroupStateSnapshot(),
             searchQuery: o.searchQuery, sort: o.engEpicSort, layout: o.planningLayout, rowsMode, boardStrictScope: o.boardStrictScope,
             sprintRange: { start: o.excludedCapacityStartSprintId, end: o.excludedCapacityEndSprintId },
             alertFlags: o.alertFlags, alertCounts: o.alertCounts,
-            focus: captureShareViewFocus({ mode: o.activeEngMode, rowsMode, root: document, win: window }),
+            focus,
         });
         const encoded = encodeShareView(state);
+        if (focus && encoded.ok && encoded.dropped.includes('focus')) return { ok: false, reason: 'too_long' };
         return encoded.ok ? { ok: true, url: `${window.location.origin}/?${encoded.query}`, dropped: encoded.dropped } : { ok: false, reason: encoded.reason };
     }, []);
 
     return {
         notice: snapshot.notice, dismissNotice: dismissShareViewNotice, captureShareUrl, shareDisabled,
-        applyTerminal: isApplyTerminal(snapshot),
+        applyTerminal: isApplyTerminal(snapshot), copyOwner: copyOwnerRef.current,
     };
 }

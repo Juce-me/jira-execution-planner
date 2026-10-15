@@ -7,6 +7,7 @@
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 import ShareViewButton from '../../frontend/src/shareView/ShareViewButton.jsx';
+import { createShareViewCopyOwner } from '../../frontend/src/shareView/useShareViewApply.js';
 import { SearchControl } from '../../frontend/src/eng/EngControls.jsx';
 import JiraExportButton from '../../frontend/src/components/JiraExportButton.jsx';
 import IconButton from '../../frontend/src/ui/IconButton.jsx';
@@ -14,18 +15,23 @@ import { initAnalytics } from '../../frontend/src/analytics/analytics.js';
 
 const state = {
     active: 'main',
+    scopeKey: 'synthetic-group:3001',
+    epicKey: undefined,
+    showEpics: false,
     sourceSurface: 'catch_up',
     disabled: false,
     notice: null,
     capture: { ok: true, url: 'http://127.0.0.1:5050/?v=1&mode=catch-up&group=synthetic-group&sprint=3001', dropped: [] },
 };
 const calls = { captures: 0, dismissed: 0 };
+const copyOwner = createShareViewCopyOwner();
 let rerender = () => {};
 
 function Harness() {
     const [, setTick] = React.useState(0);
     rerender = () => setTick(tick => tick + 1);
     const share = {
+        copyOwner,
         notice: state.notice,
         dismissNotice: () => { calls.dismissed += 1; state.notice = null; rerender(); },
         captureShareUrl: () => { calls.captures += 1; return state.capture; },
@@ -36,7 +42,7 @@ function Harness() {
         surface, searchActive: false, searchInput: '', setSearchInput: () => {}, setSearchFocused: () => {}, searchInputRef: { current: null },
     });
     const shareControl = (surface) => (
-        <ShareViewButton surface={surface} share={share} sourceSurface={state.sourceSurface} activeControlSurface={state.active} />
+        <ShareViewButton surface={surface} scopeKey={state.scopeKey} epicKey={state.epicKey} share={share} sourceSurface={state.sourceSurface} activeControlSurface={state.active} />
     );
     return (
         <div className="container">
@@ -74,6 +80,9 @@ function Harness() {
                 </div>
                 {shareControl('compact')}
             </div>
+            {state.showEpics && <div className="task-list"><div className="epic-header">
+                {['SYN-1', 'SYN-2'].map(epicKey => <ShareViewButton key={epicKey} surface="epic" epicKey={epicKey} scopeKey={state.scopeKey} share={share} sourceSurface={state.sourceSurface} activeControlSurface="epic" />)}
+            </div></div>}
             <p style={{ height: 1200 }}>content</p>
         </div>
     );

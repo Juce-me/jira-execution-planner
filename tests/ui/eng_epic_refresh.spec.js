@@ -110,8 +110,8 @@ for (const width of [1280, 1024, 390]) {
             expect(shown.buttonInside, `${epicKey} button inside the header, in its top-right corner`).toBe(true);
         }
         if (width === 390) {
-            // The 760px-and-below padding rule is scoped to headers that own a refresh button AND the Planning stat toggle:
-            // Catch Up keeps the full epic name width (eng_compact_layout_visual), EPM-shaped headers are untouched.
+            // The approved explicit Epic Share slot also reserves the corner Refresh lane at narrow widths.
+            // EPM-shaped headers and headers with only a capacity toggle remain untouched.
             const paddings = await page.evaluate(() => {
                 const catchUp = document.querySelector('.epic-header:has(> .epic-refresh-button) .epic-title-row');
                 const probe = (html) => {
@@ -130,7 +130,7 @@ for (const width of [1280, 1024, 390]) {
                     toggleWithoutButton: probe('<div class="epic-title-row"><button class="epic-stat-toggle"></button></div>'),
                 };
             });
-            expect(paddings).toEqual({ catchUp: '0px', epmShaped: '0px', planningShaped: '32px', toggleWithoutButton: '0px' });
+            expect(paddings).toEqual({ catchUp: '32px', epmShaped: '0px', planningShaped: '32px', toggleWithoutButton: '0px' });
         }
     });
 }
@@ -187,9 +187,8 @@ for (const width of [1280, 1024, 390]) {
                 expect(overflow, `${epicKey} ${name} scrollWidth - clientWidth`).toBeLessThanOrEqual(1);
             }
             if (width === 390) {
-                // Catch Up has no stat toggle to protect, so it keeps the full epic name width (the accepted overlay may cover the
-                // end of the title while the button is shown; recorded above, not asserted).
-                expect(report.titleRowPaddingRight, `${epicKey} Catch Up title row keeps its full width`).toBe('0px');
+                // The approved explicit Share action reserves this lane, keeping the corner Refresh clear.
+                expect(report.titleRowPaddingRight, `${epicKey} Catch Up reserves the Refresh lane beside Share`).toBe('32px');
             }
         }
     });

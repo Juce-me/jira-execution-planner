@@ -19,6 +19,7 @@ from backend.auth.share_view_stash import (
     pop_share_view_target,
     stash_share_view_query,
 )
+from backend.config.view_validation import FORBIDDEN_VIEW_PAYLOAD_KEYS
 
 
 CORPUS_PATH = Path(__file__).resolve().parent / 'fixtures' / 'share-view-query-corpus-example-sanitized.json'
@@ -335,6 +336,39 @@ class ShareViewStashClearTests(ShareViewStashTestCase):
             flask.session.modified = False
             clear_share_view_stash(flask.session)
             self.assertFalse(flask.session.modified)
+
+
+class ShareViewLinkKeyTests(unittest.TestCase):
+    """No id, name or token key can appear in a link (design verification V11).
+
+    tests/test_share_view_codec.js checks the literal set in backend/config/view_validation.py; this
+    checks the real FORBIDDEN_VIEW_PAYLOAD_KEYS, which also unions the token and Home probe name sets.
+    """
+
+    CODEC_PATH = Path(__file__).resolve().parents[1] / 'frontend' / 'src' / 'shareView' / 'codec.js'
+
+    @staticmethod
+    def normalize(value):
+        return re.sub(r'[^a-z0-9]', '', value.lower())
+
+    def link_keys(self):
+        source = self.CODEC_PATH.read_text(encoding='utf-8')
+        match = re.search(r'SHARE_VIEW_QUERY_KEYS\s*=\s*Object\.freeze\(\[(.*?)\]\)', source, re.S)
+        if match is None:
+            self.fail('frontend/src/shareView/codec.js: the SHARE_VIEW_QUERY_KEYS array literal was not found; update this test to read its new definition')
+        keys = re.findall(r"'([^']+)'", match.group(1))
+        self.assertGreaterEqual(len(keys), 20, f'only {len(keys)} link keys were read from codec.js')
+        return keys
+
+    def test_no_link_key_is_a_forbidden_view_payload_key(self):
+        forbidden = {self.normalize(name) for name in FORBIDDEN_VIEW_PAYLOAD_KEYS}
+        # The real union set: the literal names plus the token and Home probe name sets it imports.
+        self.assertTrue(
+            {'workspaceid', 'accountid', 'accesstoken', 'authorization', 'email'} <= forbidden,
+            'FORBIDDEN_VIEW_PAYLOAD_KEYS no longer unions the literal, token and Home probe name sets',
+        )
+        collisions = sorted(key for key in self.link_keys() if self.normalize(key) in forbidden)
+        self.assertEqual(collisions, [], f'link keys that are forbidden view payload keys: {collisions}')
 
 
 if __name__ == '__main__':

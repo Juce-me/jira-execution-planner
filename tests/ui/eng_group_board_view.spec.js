@@ -3887,7 +3887,8 @@ async function smallScreenAlertState(page) {
 
 const boardActionEvents = (page) => page.evaluate(() => (window.dataLayer || [])
     .filter((entry) => entry?.event_name === 'board_action')
-    .map((entry) => ({ ...entry })));
+    .map((entry) => Object.fromEntries(Object.entries(entry).filter(([key, value]) =>
+        value !== undefined && !(key === 'ga4_user_id' && value === null)))));
 
 async function expectSmallScreenRequestFlow(page, reason, screenshot) {
     const alert = page.locator('.eng-board .board-data-state');

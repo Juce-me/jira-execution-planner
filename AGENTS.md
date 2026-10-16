@@ -258,7 +258,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Line-chart legends and points must use readable in-app hover/readout states; never rely on native `title` tooltips or dark hover pills.
 - In PR descriptions and final summaries, never include secrets, token placeholders, credential env vars, local absolute paths, or real project issue keys; use sanitized placeholders unless the user explicitly asks for real-key evidence.
 - Put PR descriptions directly in the reply body unless the user explicitly asks for a file; do not create temporary PR body files.
-- Use `gh` CLI for GitHub operations and verification; do not open a browser unless the user explicitly requests it.
+- Always use `gh` CLI for GitHub operations and verification; do not use browser automation for GitHub unless the user explicitly requests it.
 - Treat Atlassian account ids only as stable identity keys for tool-local admin roles; never imply Atlassian tenant/admin status grants tool admin access.
 - Redact OAuth callback query strings from logs; never log authorization code or state values.
 - Store implementation plans in `docs/plans/` only.
@@ -450,3 +450,6 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Before asking to accept baseline test failures, explain each failure's cause, user impact, reproducibility and proposed remedy; do not treat pre-existing failures as automatically acceptable.
 - Use the existing copy icon confirmation for clipboard success; reserve recovery-warning banners for recovery and style feedback actions with existing compact controls.
 - Never use port 5050 from a worktree: it belongs to the main checkout's server and the OAuth redirect. Run a worktree server on another port (e.g. `--server_port 5051`) and never stop or replace a server that is not yours.
+
+- Keep instance-specific GTM exports, resource IDs, workspace metadata and validation captures out of tracked analytics handoffs; store them only in ignored scratch or a private operator handoff.
+- Use `localhost` for local browser and analytics validation URLs.

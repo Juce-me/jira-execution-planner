@@ -4,6 +4,7 @@
 
 **Revision notes:**
 - 2026-10-14: Added the Share control event (`share_view_action`). Its four params (`feature_name`, `workflow_action`, `result`, `source_surface`) are already mapped through the existing `userevent` tag and already registered, so no new parameter key, custom definition, trigger or MCP YAML change is required. Link queries never reach GA4; the verification paragraph below covers the page-location and site-search checks.
+- 2026-10-16: Corrected the DLV persistence contract and restored a 25-parameter MCP core. The native mapping below covers all app-supported parameters, including `field_name`, `module_id`, `reason`, search/filter buckets, sort, errors and issue-count buckets. Earlier statements that a parameter “is mapped” describe desired configuration, not verified published state. Google tag setup, per-occurrence User-ID clearing, debug removal and live validation remain mandatory release gates.
 - 2026-09-30: Added the ENG per-Epic refresh event (`epic_refresh_action`) and its dedicated `api_surface=epic_refresh` reliability verification. `issue_count_bucket` is mapped through the existing `userevent` tag and remains intentionally unregistered without a named report.
 - 2026-10-01: Planning Sprint review reuses existing action, sort, field-edit, link and API events. Summary/Team edits use `feature_name=planning_review` on Planning; no new triggers, parameter keys or custom definitions are required.
 - 2026-09-25: Added the ENG Board small-screen support request (`board_action`). `reason` (`short`\|`narrow`\|`touch`) is mapped through the existing `userevent` tag and remains intentionally unregistered without a named report.
@@ -25,7 +26,7 @@
 - The deployment has set `GA4_ENABLED=true`, `GTM_CONTAINER_ID=<container id>`, `GA4_MEASUREMENT_ID=G-6QERX19WB0`, and a secret `GA4_USER_ID_PEPPER`.
 - The deployment is approved for internal employee product analytics. This app does not implement an in-app analytics consent control; `GA4_ENABLED=false` is the app-level off switch and must prevent GTM/GA4 requests.
 
-Official docs checked on 2026-05-29:
+Official docs originally checked on 2026-05-29; data-layer persistence, User-ID, manual pageviews, DebugView and Google tag configuration update handling rechecked on 2026-10-16:
 - Events: https://developers.google.com/analytics/devguides/collection/ga4/events
 - User-ID: https://developers.google.com/analytics/devguides/collection/ga4/user-id
 - CSP for Google tags: https://developers.google.com/tag-platform/security/guides/csp
@@ -225,85 +226,92 @@ Create one Custom Event trigger:
 
 Create one Data Layer Variable for `event_name` and use it only as the GA4 Event Name. Do not send `event_name` as a GA4 event parameter.
 
-Create Data Layer Variables once for all allowed app-owned user-event properties. Map every variable below as a GA4 event parameter on the single `userevent` tag; undefined values can be ignored by GTM/GA4. Every app-owned `userevent` push must include `feature_name`; every app-owned `pageview` push must include `page_name`.
+Create Data Layer Variables once for all allowed app-owned user-event properties. Map every variable below as a GA4 event parameter on the single `userevent` tag. The app now explicitly writes `undefined` for every omitted approved parameter in the same push; GTM must omit those values from the hit. Omission alone does not clear a DLV v2 value from a previous event. Every app-owned `userevent` push must include `feature_name`; every app-owned `pageview` push must include `page_name`.
 
-```text
-api_surface
-auth_mode
-blocking_reason
-cache_state
-chart_id
-connection_type
-content_id
-content_type
-conflict_count_bucket
-conflict_state
-dashboard_view
-dependency_state
-dirty_state
-duration_bucket
-eng_mode
-epm_tab
-error_area
-error_code
-feature_name
-field_name
-filter_type
-from_mode
-from_view
-group_count_bucket
-issue_count_bucket
-issue_kind
-lane_mode
-link_type
-page_name
-method
-metric
-module_id
-override_count_bucket
-pending_unsaved_state
-point_bucket
-previous_status
-project_count_bucket
-project_scope
-query_length_bucket
-range_size_bucket
-reason
-recoverable_state
-result
-result_count_bucket
-search_scope
-section
-selection_count_bucket
-selected_count_bucket
-selected_sp_bucket
-series_type
-source_surface
-scope_type
-sort_direction
-sort_key
-sort_scope
-sprint_selection_state
-stats_view
-status_bucket
-subgoal_scope
-team_count_bucket
-value_state
-validation_count_bucket
-visible_count_bucket
-workflow_action
-duration_ms
-visible_count
-selected_count
-selected_story_points
-override_count
-issue_count
-conflict_count
-unschedulable_count
-project_count
-```
+The complete native map is below. Each row maps a DLV v2 variable with no default value. Keep this full sparse map on the existing dynamic GA4 Event tag; no additional event tags, triggers or custom definitions. A configuration can declare more than 25 possible sparse fields; **each actual hit** must have at most 25 populated event parameters (including `debug_mode` during validation). If the native editor rejects the row count, stop and record the limitation rather than split into per-event tags, truncate parameters or weaken the MCP validator.
 
-No additional GTM configuration is required for a new app event name when it uses `event=userevent`, an allowlisted `event_name`, and only the properties above. GTM changes are required only when adding a new dataLayer property key, adding a new analytics destination, or changing tag transport behavior. Configure Data Layer Variables without default values so omitted app fields do not become blank GA4 parameters.
+| GA4 parameter | Value |
+| --- | --- |
+| `api_surface` | `{{DLV - api_surface}}` |
+| `auth_mode` | `{{DLV - auth_mode}}` |
+| `blocking_reason` | `{{DLV - blocking_reason}}` |
+| `cache_state` | `{{DLV - cache_state}}` |
+| `capacity_side` | `{{DLV - capacity_side}}` |
+| `chart_id` | `{{DLV - chart_id}}` |
+| `connection_type` | `{{DLV - connection_type}}` |
+| `content_id` | `{{DLV - content_id}}` |
+| `content_type` | `{{DLV - content_type}}` |
+| `conflict_count` | `{{DLV - conflict_count}}` |
+| `conflict_count_bucket` | `{{DLV - conflict_count_bucket}}` |
+| `conflict_state` | `{{DLV - conflict_state}}` |
+| `dashboard_view` | `{{DLV - dashboard_view}}` |
+| `dependency_state` | `{{DLV - dependency_state}}` |
+| `dirty_state` | `{{DLV - dirty_state}}` |
+| `duration_bucket` | `{{DLV - duration_bucket}}` |
+| `duration_ms` | `{{DLV - duration_ms}}` |
+| `eng_mode` | `{{DLV - eng_mode}}` |
+| `epm_tab` | `{{DLV - epm_tab}}` |
+| `error_area` | `{{DLV - error_area}}` |
+| `error_code` | `{{DLV - error_code}}` |
+| `feature_name` | `{{DLV - feature_name}}` |
+| `field_name` | `{{DLV - field_name}}` |
+| `filter_type` | `{{DLV - filter_type}}` |
+| `from_mode` | `{{DLV - from_mode}}` |
+| `from_view` | `{{DLV - from_view}}` |
+| `group_count_bucket` | `{{DLV - group_count_bucket}}` |
+| `issue_count` | `{{DLV - issue_count}}` |
+| `issue_count_bucket` | `{{DLV - issue_count_bucket}}` |
+| `issue_kind` | `{{DLV - issue_kind}}` |
+| `issue_type_mix` | `{{DLV - issue_type_mix}}` |
+| `lane_mode` | `{{DLV - lane_mode}}` |
+| `link_type` | `{{DLV - link_type}}` |
+| `method` | `{{DLV - method}}` |
+| `metric` | `{{DLV - metric}}` |
+| `mode` | `{{DLV - mode}}` |
+| `module_id` | `{{DLV - module_id}}` |
+| `override_count` | `{{DLV - override_count}}` |
+| `override_count_bucket` | `{{DLV - override_count_bucket}}` |
+| `page_name` | `{{DLV - page_name}}` |
+| `pending_unsaved_state` | `{{DLV - pending_unsaved_state}}` |
+| `point_bucket` | `{{DLV - point_bucket}}` |
+| `previous_status` | `{{DLV - previous_status}}` |
+| `priority_bucket` | `{{DLV - priority_bucket}}` |
+| `project_count` | `{{DLV - project_count}}` |
+| `project_count_bucket` | `{{DLV - project_count_bucket}}` |
+| `project_scope` | `{{DLV - project_scope}}` |
+| `query_length_bucket` | `{{DLV - query_length_bucket}}` |
+| `range_size_bucket` | `{{DLV - range_size_bucket}}` |
+| `reason` | `{{DLV - reason}}` |
+| `recoverable_state` | `{{DLV - recoverable_state}}` |
+| `result` | `{{DLV - result}}` |
+| `result_count_bucket` | `{{DLV - result_count_bucket}}` |
+| `search_scope` | `{{DLV - search_scope}}` |
+| `section` | `{{DLV - section}}` |
+| `selected_count` | `{{DLV - selected_count}}` |
+| `selected_count_bucket` | `{{DLV - selected_count_bucket}}` |
+| `selected_sp_bucket` | `{{DLV - selected_sp_bucket}}` |
+| `selected_story_points` | `{{DLV - selected_story_points}}` |
+| `selection_count_bucket` | `{{DLV - selection_count_bucket}}` |
+| `series_type` | `{{DLV - series_type}}` |
+| `source_surface` | `{{DLV - source_surface}}` |
+| `scope_type` | `{{DLV - scope_type}}` |
+| `sort_direction` | `{{DLV - sort_direction}}` |
+| `sort_key` | `{{DLV - sort_key}}` |
+| `sort_scope` | `{{DLV - sort_scope}}` |
+| `sprint_selection_state` | `{{DLV - sprint_selection_state}}` |
+| `stats_view` | `{{DLV - stats_view}}` |
+| `status_bucket` | `{{DLV - status_bucket}}` |
+| `subgoal_scope` | `{{DLV - subgoal_scope}}` |
+| `team_count_bucket` | `{{DLV - team_count_bucket}}` |
+| `unschedulable_count` | `{{DLV - unschedulable_count}}` |
+| `validation_count_bucket` | `{{DLV - validation_count_bucket}}` |
+| `value_state` | `{{DLV - value_state}}` |
+| `visible_count` | `{{DLV - visible_count}}` |
+| `visible_count_bucket` | `{{DLV - visible_count_bucket}}` |
+| `workflow_action` | `{{DLV - workflow_action}}` |
+
+
+No additional GTM configuration is required for a new app event name when it uses `event=userevent`, an allowlisted `event_name`, and only the properties above. GTM changes are required only when adding a new dataLayer property key, adding a new analytics destination, or changing tag transport behavior. Configure Data Layer Variables without default values. Explicit `undefined` clears previous event parameters; `null` clears User-ID. Do not replace either with strings, blank defaults or a fallback identity.
 
 ---
 
@@ -520,3 +528,44 @@ Start with Explore reports or standard custom reports:
 - Treat values that identify a person, team, project, Jira issue, Home project, deployment, or workspace as sensitive even when they are not obvious PII.
 - If stakeholders require reports by actual team or group name, build a separate internal reporting path with access controls. Do not overload GA4.
 - Keep Measurement Protocol API secrets out of this slice.
+
+## Isolation Repair And Native Completion (2026-10-16)
+
+This section defines reusable desired configuration. Instance-specific container exports, resource IDs, workspace/version metadata and validation captures belong only in ignored local scratch or the operator's private handoff. Do not add those values to committed changes. Read the actual target before applying this procedure; earlier statements of completed mapping do not prove any instance's published state.
+
+### Reproduce before and after
+
+Run `node --test tests/test_analytics_events.js`. The persistent-DLV regression harness merges sequential object pushes as GTM does. Before the fix, search → sort retained `query_length_bucket=1_5`; login → logout retained User-ID; debug-on → context-refresh/debug-off retained debug; auth expiry retained both. All four regressions were run and failed before the transport change. Afterward, the same single event object supplies explicit clearing values for every absent field. Routing keys and identity are not GA4 custom parameters. No resetting of unrelated GTM state and no extra occurrence are allowed.
+
+Run `node scripts/print_analytics_gtm_mappings.mjs` for a reproducible tab-separated native parameter map derived from the current app schema, including the separate debug mapping. This is a mapping handoff, **not** a native container import or evidence of live application.
+
+### Prepare only a fresh workspace
+
+1. Read the container's current **live** version and record its ID/fingerprint, the target Measurement ID and workspace capacity. Read both event tags, triggers, variables and workspace status. Never modify Default Workspace or a stale linked workspace, and never assume their contents match live.
+2. Create a uniquely named new workspace from the latest live container version. Verify the new workspace base against live before changing it; if live advanced, sync/review only this new workspace. Record its ID and clean conflict status.
+3. Validate `SUPPORT-ga4-gtm-mcp-execution.yaml`; the dynamic tag must have exactly 25 static core rows. Run the MCP dry-run/diff, then apply only GTM workspace changes in the new workspace. Do not call GA4 Admin apply: existing custom definitions are not part of this repair.
+4. Complete the native full parameter table above on the existing dynamic tag. The four removed core rows (`module_id`, `reason`, `selected_count`, `project_count`) remain approved DLVs and belong in the native completion. Add any missing DLVs including `field_name`, `module_id`, `reason`; no defaults. Add the full remaining rows, not only these examples. Do not reapply the core after native completion: that can overwrite the complete map with 25 rows.
+5. Create one classic native **Google tag** through **Other Google → Google Tag** for the target Measurement ID. Avoid the newer Google Analytics destination workflow, which can create automatic-event and user-provided-data settings; verify the workspace diff contains no such additional settings. Set configuration `send_page_view` to boolean `false` and `user_id` to `{{DLV - ga4_user_id}}`. Configure this tag as a setup tag before **both** existing GA4 Event tags, with execution once per event and stop-on-setup-failure. It must execute before each app occurrence, including logout and auth-required events; once per page would keep a stale User-ID. Keep the two existing Custom Event triggers and canonical event names unchanged. The setup-only Google tag needs no additional Custom Event trigger and emits no pageview. Never deploy it through Custom HTML or direct app `gtag` calls.
+   Before accepting identity sequencing, inspect Google tag Admin → Manage Google tag → **Ignore duplicate instances of on-page configuration**. It must not suppress these per-occurrence configuration updates. If enabled, record a release blocker: changing this destination-level setting can affect live tags and requires its existing explicit approval gate. Prove User-ID clearing on an actual outgoing hit after any approved adjustment; a setup-tag firing check alone is insufficient. See [Google tag management](https://support.google.com/tagmanager/answer/12329709) and [User-ID configuration](https://developers.google.com/analytics/devguides/collection/ga4/user-id?client_type=gtm).
+6. Map `debug_mode={{DLV - debug_mode}}` at **event scope** on both existing GA4 Event tags for controlled validation. Do not put it into persistent Google tag configuration/shared global settings. Keep User-ID out of both event parameter tables and all custom definitions.
+7. In GA4 Admin → Data streams → web stream → Enhanced Measurement → Page views → advanced settings, confirm **Page changes based on browser history events is disabled**. Save no unrelated Enhanced Measurement/consent changes. `send_page_view=false` alone does not prove history tracking is off. Record the read-back result; this MCP cannot read or modify that setting.
+8. Export/read back the candidate workspace and check: one Google tag, two Event tags, two Custom Event triggers, all native mappings, both setup relationships, no `user_id` custom param and no new custom definitions/consent behavior. This remains an unpublished workspace; creating a container version and publishing each need separate explicit approval.
+
+### Tag Assistant / GA4 acceptance record
+
+Use the intended deployment or a separately approved controlled validation environment. Mocked browser tests cannot satisfy this gate. In Tag Assistant Preview, confirm the **new workspace**, Google tag configuration/setup order, no setup pageview, one fired Event tag per occurrence, DLV null/undefined semantics and outgoing collect parameters. In GA4 DebugView confirm receipt and association for:
+
+| Sequence | Required observation |
+| --- | --- |
+| Initial dashboard → EPM → ENG → Planning → Statistics | Exactly five `page_view` hits for five accepted logical views, including the initial view; no extra initial/history pageviews. |
+| Search → sort → settings | Search buckets present only on search; sort fields present only on sort; `section` present only on settings. |
+| Jira list → Jira single issue → onboarding → Board support request | `issue_count_bucket` only when provided; `module_id` and `reason` mapped on their occurrences, absent later. |
+| API failure → unrelated action | Bounded error details/status/duration present only on the API/error occurrence. |
+| Authenticated → logout or forced auth expiry → next anonymous occurrence | Google tag receives real JS `null` for `user_id`; collect User-ID association absent after clearing; no identity field among custom params. Test both paths. |
+| Controlled debug on → server debug off → context refresh → next occurrence | Debug flag only on validation hits, undefined afterward and absent from collect. Tag Assistant/browser debug extensions themselves can enable debug: disconnect Preview/disable those tools and validate with a clean browser after the session. |
+
+Count populated outgoing GA4 event params on each representative hit (≤25), excluding routing/identity fields; DLV clearing keys must never become blank or literal `undefined` parameters. Keep only sanitized counts/results as evidence. Do not record raw User-IDs, Google credentials or Jira data.
+
+**Local verification (2026-10-16):** Four regression cases failed against the original transport and passed after the repair. Focused analytics/source/onboarding Node tests: 90 passed. Full frontend Node suite: 2,548 passed. Backend identity/route/security-header suite: 18 passed. Final Chromium analytics/global-auth/onboarding run on `localhost`: 121 passed, including startup under the unchanged strict script CSP. The CSP regression failed on the redundant inline bootstrap before its removal. `npm run build` succeeded under Node 20. MCP spec validation returned `ok: true`, with no errors or warnings. Five actual app view changes produced five app-owned pageview occurrences in the fixture-backed browser test. These results do not establish GA4 receipt or production delivery.
+
+External workspace preparation/read-back, Enhanced Measurement and Tag Assistant/DebugView evidence are instance-specific. Keep their status and any remaining blockers in the private handoff. Deployment, Git publication, GTM version creation and publishing each retain their existing explicit approval gates.

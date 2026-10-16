@@ -19,6 +19,13 @@ async function loadHttp() {
     return import('../frontend/src/api/http.js');
 }
 
+// Existing event-shape assertions inspect populated fields. Isolation regressions
+// below retain raw pushes and model GTM's persistent DLV values.
+function populatedEntry(entry) {
+    return Object.fromEntries(Object.entries(entry).filter(([key, value]) =>
+        value !== undefined && !(key === 'ga4_user_id' && value === null)));
+}
+
 function resetDom() {
     delete global.window;
     delete global.document;
@@ -93,7 +100,7 @@ test('analytics lazy-loads GTM only from enabled context and pushes only through
     const { initAnalytics, setAnalyticsUser, trackPageview, trackEvent } = await loadAnalytics();
     const { appendedScripts } = resetDom();
     const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(entry) };
+    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
     global.window.gtag = () => {
         throw new Error('app analytics must not call gtag');
     };
@@ -141,11 +148,11 @@ test('analytics lazy-loads GTM only from enabled context and pushes only through
     ]);
 });
 
-test('auth-required analytics omits user and debug context from its fixed event', async () => {
+test('auth-required analytics sends no populated user and debug context in its fixed event', async () => {
     const { initAnalytics, trackAuthRequiredLock } = await loadAnalytics();
     resetDom();
     const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(entry) };
+    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
 
     await initAnalytics({
         fetchContext: async () => ({
@@ -173,7 +180,7 @@ test('analytics guards drop sends while context is disabled or uninitialized', a
     const { trackEvent, initAnalytics } = await loadAnalytics();
     resetDom();
     const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(entry) };
+    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
 
     trackEvent('settings_action', { feature_name: 'settings', section: 'epm', workflow_action: 'open' });
     await initAnalytics({ fetchContext: async () => ({ enabled: false }) });
@@ -201,7 +208,7 @@ test('analytics context refresh shuts off collection in an already-open tab', as
             ga4UserId: null
         }
     ];
-    global.window.dataLayer = { push: entry => pushed.push(entry) };
+    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
 
     await initAnalytics({ fetchContext: async () => contexts.shift() });
     trackEvent('settings_action', { feature_name: 'settings', section: 'epm', workflow_action: 'open' });
@@ -546,7 +553,7 @@ test('api_result accepts the jira_issue_priorities surface', async () => {
     const { initAnalytics, trackApiResult } = await loadAnalytics();
     resetDom();
     const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(entry) };
+    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
 
     await initAnalytics({
         fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
@@ -567,7 +574,7 @@ test('api_result accepts jira_team_capacity with the existing bucketed API contr
     const { initAnalytics, trackApiResult } = await loadAnalytics();
     resetDom();
     const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(entry) };
+    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
 
     await initAnalytics({
         fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
@@ -599,7 +606,7 @@ test('eng_board terminal api_result accepts only bounded scope and omits high-ca
     const { initAnalytics, trackApiResult } = await loadAnalytics();
     resetDom();
     const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(entry) };
+    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
     await initAnalytics({
         fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
     });
@@ -633,7 +640,7 @@ test('issue_priority_action pushes the eng priority transition contract through 
     const { initAnalytics, trackEvent } = await loadAnalytics();
     resetDom();
     const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(entry) };
+    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
 
     await initAnalytics({
         fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
@@ -757,7 +764,7 @@ test('api_result accepts the jira_issue_project_track surface', async () => {
     const { initAnalytics, trackApiResult } = await loadAnalytics();
     resetDom();
     const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(entry) };
+    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
 
     await initAnalytics({
         fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
@@ -778,7 +785,7 @@ test('issue_project_track_action pushes the eng project track contract through t
     const { initAnalytics, trackEvent } = await loadAnalytics();
     resetDom();
     const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(entry) };
+    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
 
     await initAnalytics({
         fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
@@ -813,7 +820,7 @@ test('api_result accepts the jira_issue_transitions surface', async () => {
     const { initAnalytics, trackApiResult } = await loadAnalytics();
     resetDom();
     const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(entry) };
+    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
 
     await initAnalytics({
         fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
@@ -834,7 +841,7 @@ test('issue_status_action pushes the eng status transition contract through the 
     const { initAnalytics, trackEvent } = await loadAnalytics();
     resetDom();
     const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(entry) };
+    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
 
     await initAnalytics({
         fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
@@ -871,7 +878,7 @@ test('external link helper emits bucketed Jira link events without raw URLs', as
     const { initAnalytics, trackExternalLinkOpened } = await loadAnalytics();
     resetDom();
     const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(entry) };
+    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
 
     await initAnalytics({
         fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
@@ -957,7 +964,7 @@ test('api result helper emits explicit allowlisted API surfaces only', async () 
     const { initAnalytics, trackApiResult } = await loadAnalytics();
     resetDom();
     const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(entry) };
+    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
 
     await initAnalytics({
         fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
@@ -1001,7 +1008,7 @@ test('api result helper emits eng_subtasks surface for story subtask loads', asy
     const { initAnalytics, trackApiResult } = await loadAnalytics();
     resetDom();
     const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(entry) };
+    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
 
     await initAnalytics({
         fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
@@ -1039,7 +1046,7 @@ test('api result helper emits only bounded Story readiness success and failure m
     const { initAnalytics, trackApiResult } = await loadAnalytics();
     resetDom();
     const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(entry) };
+    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
 
     await initAnalytics({
         fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
@@ -1072,7 +1079,7 @@ test('api result helper emits eng_issue_description and board_config_statuses su
     const { initAnalytics, trackApiResult } = await loadAnalytics();
     resetDom();
     const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(entry) };
+    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
 
     await initAnalytics({
         fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
@@ -1125,7 +1132,7 @@ test('tracked fetch suppresses intended abort telemetry but retains network fail
     resetDom();
     globalThis.JepAnalytics = analytics;
     const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(entry) };
+    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
     await initAnalytics({
         fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
     });
@@ -1258,7 +1265,7 @@ test('api_result accepts jira_issue_field_edits without raw field-edit data', as
     const { initAnalytics, trackApiResult } = await loadAnalytics();
     resetDom();
     const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(entry) };
+    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
     await initAnalytics({ fetchContext: async () => ({ enabled: true }) });
 
     trackApiResult('jira_issue_field_edits', {
@@ -1312,7 +1319,7 @@ test('board small-screen support request pushes one fixed userevent through the 
     const { trackBoardSmallScreenSupportRequest } = await loadDashboardAnalytics();
     resetDom();
     const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(entry) };
+    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
     await initAnalytics({ fetchContext: async () => ({ enabled: true }) });
 
     trackBoardSmallScreenSupportRequest('narrow');
@@ -1549,7 +1556,9 @@ test('share view action pushes one fixed userevent through the dataLayer and dro
     trackShareViewAction({ workflowAction: 'apply_link', result: 'failure', sourceSurface: 'board' });
     trackShareViewAction({ workflowAction: 'apply_link', result: 'partial', sourceSurface: 'epm' });
 
-    assert.deepEqual(pushed, [{
+    // Sparse parameters are cleared explicitly (undefined or null), so compare the keys that carry a value.
+    const defined = entry => Object.fromEntries(Object.entries(entry).filter(([, value]) => value !== undefined && value !== null));
+    assert.deepEqual(pushed.map(defined), [{
         event: 'userevent', trigger: 'userevent', event_type: 'event', event_name: 'share_view_action',
         feature_name: 'share_view', workflow_action: 'copy_link', result: 'failure', source_surface: 'board',
     }]);
@@ -1593,4 +1602,121 @@ test('useDashboardAnalytics exposes analyticsReady and trackShareViewAction; eve
         runtime.unmount();
         delete global.fetch;
     }
+});
+
+// GTM DLV v2 keeps a model across pushes; omitted keys retain their old value.
+function installPersistentDataLayer() {
+    const model = {};
+    const snapshots = [];
+    global.window.dataLayer = { push(entry) {
+        Object.assign(model, entry);
+        snapshots.push({ ...model });
+    } };
+    return { model, snapshots };
+}
+
+test('sequential analytics events clear omitted DLV parameters in the same occurrence', async () => {
+    const { initAnalytics, trackEvent, trackPageview } = await loadAnalytics();
+    resetDom();
+    const { snapshots } = installPersistentDataLayer();
+    await initAnalytics({ fetchContext: async () => ({ enabled: true }), contextRefreshIntervalMs: 0 });
+    trackEvent('app_search', { feature_name: 'search', query_length_bucket: '1_5', result_count_bucket: '6_10' });
+    trackEvent('sort_changed', { feature_name: 'sorting', sort_key: 'priority', sort_direction: 'asc' });
+    trackEvent('settings_action', { feature_name: 'settings', section: 'connections', workflow_action: 'open' });
+    trackPageview('dashboard', { dashboard_view: 'epm', auth_mode: 'oauth', source_surface: 'dashboard' });
+    assert.equal(snapshots.length, 4, 'one push per occurrence, no reset event');
+    assert.equal(snapshots[0].query_length_bucket, '1_5');
+    assert.equal(snapshots[1].query_length_bucket, undefined);
+    assert.equal(snapshots[1].result_count_bucket, undefined);
+    assert.equal(snapshots[2].sort_key, undefined);
+    assert.equal(snapshots[2].sort_direction, undefined);
+    assert.equal(snapshots[3].section, undefined);
+    assert.equal(snapshots[3].feature_name, undefined);
+});
+
+test('logout clears persistent identity before the existing logout event', async () => {
+    const { initAnalytics, trackEvent } = await loadAnalytics();
+    resetDom();
+    const { snapshots } = installPersistentDataLayer();
+    await initAnalytics({ fetchContext: async () => ({ enabled: true, ga4UserId: 'synthetic-user' }), contextRefreshIntervalMs: 0 });
+    trackEvent('login', { feature_name: 'auth', method: 'oauth' });
+    trackEvent('logout', { feature_name: 'auth', method: 'oauth' });
+    trackEvent('settings_action', { feature_name: 'settings', workflow_action: 'open' });
+    assert.equal(snapshots.length, 3);
+    assert.equal(snapshots[0].ga4_user_id, 'synthetic-user');
+    assert.equal(snapshots[1].ga4_user_id, null);
+    assert.equal(snapshots[2].ga4_user_id, null);
+});
+
+test('auth expiry clears persistent identity and debug for the lock and later events', async () => {
+    const { initAnalytics, trackEvent, trackAuthRequiredLock } = await loadAnalytics();
+    resetDom();
+    const { snapshots } = installPersistentDataLayer();
+    await initAnalytics({ fetchContext: async () => ({ enabled: true, ga4UserId: 'synthetic-user', debugMode: true }), contextRefreshIntervalMs: 0 });
+    trackEvent('login', { feature_name: 'auth', method: 'oauth' });
+    trackAuthRequiredLock();
+    trackEvent('settings_action', { feature_name: 'settings', workflow_action: 'open' });
+    assert.equal(snapshots.length, 3);
+    for (const entry of snapshots.slice(1)) {
+        assert.equal(entry.ga4_user_id, null);
+        assert.equal(entry.debug_mode, undefined);
+    }
+});
+
+test('context refresh clears debug and identity without retaining prior DLV values', async () => {
+    const { initAnalytics, refreshAnalyticsContext, trackEvent } = await loadAnalytics();
+    resetDom();
+    const { snapshots } = installPersistentDataLayer();
+    let context = { enabled: true, ga4UserId: 'synthetic-user', debugMode: true };
+    await initAnalytics({ fetchContext: async () => context, contextRefreshIntervalMs: 0 });
+    trackEvent('login', { feature_name: 'auth', method: 'oauth' });
+    context = { enabled: true, ga4UserId: null, debugMode: false };
+    await refreshAnalyticsContext();
+    trackEvent('settings_action', { feature_name: 'settings', workflow_action: 'open' });
+    assert.equal(snapshots.length, 2);
+    assert.equal(snapshots[1].ga4_user_id, null);
+    assert.equal(snapshots[1].debug_mode, undefined);
+});
+
+test('parameter cap counts populated GA4 params, not DLV clearing keys or routing fields', async () => {
+    const { isolateAnalyticsPayload } = await loadEvents();
+    const source = fs.readFileSync(path.join(__dirname, '../frontend/src/analytics/events.js'), 'utf8');
+    const keys = [...source.match(/const EVENT_PARAMS = new Set\(\[([\s\S]*?)\]\)/)[1].matchAll(/'([^']+)'/g)].map(match => match[1]);
+    const params = Object.fromEntries(keys.filter(key => !['module_id', 'reason', 'scope_type'].includes(key)).slice(0, 24).map(key => [key, 'safe']));
+    const base = { event: 'userevent', trigger: 'userevent', event_type: 'event', event_name: 'settings_action', ...params, feature_name: 'settings', ga4_user_id: null };
+    const isolated = isolateAnalyticsPayload(base);
+    assert.equal(keys.filter(key => isolated[key] !== undefined).length, 24);
+    assert.equal(Object.keys(isolated).length, keys.length + 6);
+    const nextKey = keys.find(key => !Object.hasOwn(params, key) && !['module_id', 'reason', 'scope_type'].includes(key));
+    assert.doesNotThrow(() => isolateAnalyticsPayload({ ...base, [nextKey]: 'safe' }));
+    assert.throws(() => isolateAnalyticsPayload({ ...base, [nextKey]: 'safe', debug_mode: true }), /at most 25/);
+});
+
+test('a late analytics refresh cannot restore identity after auth expiry', async () => {
+    const { initAnalytics, refreshAnalyticsContext, trackAuthRequiredLock, trackEvent } = await loadAnalytics();
+    resetDom();
+    const { snapshots } = installPersistentDataLayer();
+    let resolve;
+    let first = true;
+    await initAnalytics({ fetchContext: () => {
+        if (first) { first = false; return Promise.resolve({ enabled: true, ga4UserId: 'synthetic-user', debugMode: true }); }
+        return new Promise(done => { resolve = done; });
+    }, contextRefreshIntervalMs: 0 });
+    const pending = refreshAnalyticsContext();
+    trackAuthRequiredLock();
+    resolve({ enabled: true, ga4UserId: 'synthetic-user', debugMode: true });
+    await pending;
+    trackEvent('settings_action', { feature_name: 'settings', workflow_action: 'open' });
+    assert.equal(snapshots.at(-1).ga4_user_id, null);
+    assert.equal(snapshots.at(-1).debug_mode, undefined);
+});
+
+test('caller parameters cannot enable debug or restore a cleared identity', async () => {
+    const { initAnalytics, trackEvent } = await loadAnalytics();
+    resetDom();
+    const { snapshots } = installPersistentDataLayer();
+    await initAnalytics({ fetchContext: async () => ({ enabled: true }), contextRefreshIntervalMs: 0 });
+    trackEvent('settings_action', { feature_name: 'settings', ga4_user_id: 'caller-user', debug_mode: true });
+    assert.equal(snapshots[0].ga4_user_id, null);
+    assert.equal(snapshots[0].debug_mode, undefined);
 });

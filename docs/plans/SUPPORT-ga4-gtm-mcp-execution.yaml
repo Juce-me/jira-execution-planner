@@ -22,7 +22,7 @@ source_artifacts:
 
 execution:
   mode: "dry_run"
-  workspace_name: "ga4-jira-execution-planner-2026-05-29"
+  workspace_name: "analytics-isolation-validation"
   publish_allowed: false
   require_human_approval: true
   approval_token_required: true
@@ -202,6 +202,10 @@ gtm_web:
         - { variable: "DLV - trigger", operator: "equals", value: "userevent" }
         - { variable: "DLV - event_type", operator: "equals", value: "event" }
 
+  # Validator-compatible static core only. Full sparse native completion is in
+  # SUPPORT-ga4-user-configuration.md and scripts/print_analytics_gtm_mappings.mjs.
+  # Never reapply this core over the completed native map. Google tag, setup
+  # sequencing, User-ID, debug and history-pageview controls remain native steps.
   tags:
     - name: "GA4 - page_view from dataLayer pageview"
       type: "ga4_event"
@@ -222,11 +226,9 @@ gtm_web:
       params:
         feature_name: "{{DLV - feature_name}}"
         field_name: "{{DLV - field_name}}"
-        reason: "{{DLV - reason}}"
         source_surface: "{{DLV - source_surface}}"
         result: "{{DLV - result}}"
         workflow_action: "{{DLV - workflow_action}}"
-        module_id: "{{DLV - module_id}}"
         dashboard_view: "{{DLV - dashboard_view}}"
         eng_mode: "{{DLV - eng_mode}}"
         epm_tab: "{{DLV - epm_tab}}"
@@ -245,10 +247,8 @@ gtm_web:
         duration_bucket: "{{DLV - duration_bucket}}"
         cache_state: "{{DLV - cache_state}}"
         duration_ms: "{{DLV - duration_ms}}"
-        selected_count: "{{DLV - selected_count}}"
         issue_count: "{{DLV - issue_count}}"
         conflict_count: "{{DLV - conflict_count}}"
-        project_count: "{{DLV - project_count}}"
 
   ecommerce:
     enabled: false

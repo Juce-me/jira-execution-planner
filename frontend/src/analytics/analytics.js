@@ -2,7 +2,7 @@ import {
     bucketCount,
     bucketDuration,
     sanitizeAnalyticsParams,
-    validateAnalyticsPayload
+    isolateAnalyticsPayload
 } from './events.js';
 import { fetchAnalyticsContext as defaultFetchContext } from '../api/analyticsApi.js';
 import { isAuthenticationRequiredError } from '../api/authRequired.js';
@@ -13,6 +13,7 @@ let currentWindow = null;
 let analyticsUserId = null;
 let measurementId = null;
 let debugMode = false;
+let authContextCleared = false;
 let contextFetcher = null;
 let contextRefreshTimer = null;
 
@@ -52,6 +53,7 @@ function getWindow() {
         analyticsUserId = null;
         measurementId = null;
         debugMode = false;
+        authContextCleared = false;
         contextFetcher = null;
     }
     currentWindow = window;
@@ -70,7 +72,7 @@ function ensureDataLayer() {
 function pushDataLayer(payload) {
     const dataLayer = ensureDataLayer();
     if (!dataLayer || !enabled || !initialized) return;
-    const entry = validateAnalyticsPayload(payload);
+    const entry = isolateAnalyticsPayload(payload);
     dataLayer.push(entry);
 }
 
@@ -121,8 +123,8 @@ function applyAnalyticsContext(context = {}) {
 
     enabled = true;
     measurementId = context?.measurementId || null;
-    analyticsUserId = context?.ga4UserId || null;
-    debugMode = Boolean(context?.debugMode);
+    analyticsUserId = authContextCleared ? null : context?.ga4UserId || null;
+    debugMode = !authContextCleared && Boolean(context?.debugMode);
     setGoogleAnalyticsDisabled(measurementId, false);
     appendGtmScript(context?.gtmContainerId);
     return { enabled, ga4UserId: analyticsUserId };
@@ -156,13 +158,14 @@ export async function refreshAnalyticsContext() {
 
 export function setAnalyticsUser(userId) {
     analyticsUserId = userId || null;
+    authContextCleared = !userId;
 }
 
 function withContext(params) {
     return {
         ...params,
-        ...(analyticsUserId ? { ga4_user_id: analyticsUserId } : {}),
-        ...(debugMode ? { debug_mode: true } : {})
+        ga4_user_id: analyticsUserId,
+        debug_mode: debugMode ? true : undefined
     };
 }
 
@@ -179,6 +182,7 @@ export function trackPageview(pageName, params = {}) {
 
 export function trackEvent(eventName, params = {}) {
     const clean = sanitizeAnalyticsParams(params, eventName);
+    if (eventName === 'logout') clearAuthContext();
     pushDataLayer(withContext({
         event: 'userevent',
         trigger: 'userevent',
@@ -188,7 +192,14 @@ export function trackEvent(eventName, params = {}) {
     }));
 }
 
+function clearAuthContext() {
+    analyticsUserId = null;
+    debugMode = false;
+    authContextCleared = true;
+}
+
 export function trackAuthRequiredLock() {
+    clearAuthContext();
     const clean = sanitizeAnalyticsParams({
         feature_name: 'auth',
         error_area: 'auth',

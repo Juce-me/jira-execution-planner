@@ -22,6 +22,13 @@ let dashboardJs;
 let runtimeProbeBundle;
 let statsUtils;
 
+// Shape baselines compare populated GA4 fields; the dedicated analytics suite
+// verifies raw undefined/null clearing entries and persistent DLV isolation.
+function populatedAnalyticsEvent(entry) {
+    return Object.fromEntries(Object.entries(entry).filter(([key, value]) =>
+        value !== undefined && !(key === 'ga4_user_id' && value === null)));
+}
+
 // Reuse the app's single Project Track color source in assertions. statsUtils.js is ESM
 // (and pulls in ESM deps), so bundle it to a self-contained CJS module with the same
 // esbuild the shell bundle uses, then eval it — this proves the phase chart uses
@@ -1699,7 +1706,8 @@ test('Initiative and Epic search reveal loaded descendants', async ({ page }) =>
     const appSearchEvent = await page.evaluate(() => (
         window.dataLayer.filter(entry => entry.event_name === 'app_search').at(-1)
     ));
-    expect(appSearchEvent).toEqual({
+    const populatedSearchEvent = populatedAnalyticsEvent(appSearchEvent);
+    expect(populatedSearchEvent).toEqual({
         event: 'userevent',
         trigger: 'userevent',
         event_type: 'event',
@@ -1711,7 +1719,7 @@ test('Initiative and Epic search reveal loaded descendants', async ({ page }) =>
         result_count_bucket: '1_5',
         auth_mode: 'basic',
     });
-    expect(Object.keys(appSearchEvent).sort()).toEqual([
+    expect(Object.keys(populatedSearchEvent).sort()).toEqual([
         'auth_mode',
         'event',
         'event_name',
@@ -3882,7 +3890,7 @@ test('Statistics preserves analytics event contracts', async ({ page }) => {
     await settleContract(page);
     // duration_ms is the only excluded wall-clock measurement. Keep its typed bucket.
     const events = () => page.evaluate(() => window.dataLayer.filter(entry => ['userevent', 'pageview'].includes(entry.event)).map(({ duration_ms, ...entry }) => entry));
-    const sortedEvents = rows => rows.map(row => JSON.stringify(canonicalContract(row))).sort();
+    const sortedEvents = rows => rows.map(row => JSON.stringify(canonicalContract(populatedAnalyticsEvent(row)))).sort();
     expect(sortedEvents(await events())).toEqual(sortedEvents(statsAnalyticsBaseline.start));
     const beforeGraphMode = await events();
     await page.getByRole('button', { name: /Weighted Rate/ }).click();

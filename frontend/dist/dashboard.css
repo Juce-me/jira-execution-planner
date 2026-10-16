@@ -934,6 +934,10 @@ h1 {
   flex: 0 0 24px;
   align-items: center;
 }
+.planning-review-table [data-share-view=epic] {
+  --control-height: 20px;
+  flex-basis: 20px;
+}
 [data-share-view=epic] > button {
   opacity: 0;
   pointer-events: none;
@@ -8240,11 +8244,14 @@ button.epic-track-indicator:focus-visible {
   white-space: nowrap;
 }
 @media (max-width: 760px) {
-  .epic-header:has([data-share-view=epic]) .epic-title-row {
-    padding-right: 32px;
+  .epic-header:not(:has(.epic-stat-toggle)) .epic-title-row > [data-share-view=epic] {
+    position: absolute;
+    top: 36px;
+    right: 0;
   }
-}
-@media (max-width: 760px) {
+  .epic-header:not(:has(.epic-stat-toggle)):has([data-share-view=epic]) .epic-meta {
+    padding-right: 30px;
+  }
   .task-list:not(.epm-issue-board) .epic-block > .epic-header:has([data-share-view=epic]):has(.epic-stat-toggle) .epic-title-row {
     gap: 0.15rem;
   }
@@ -9658,6 +9665,12 @@ input.story-points-editor.story-points-alert-highlight {
 }
 .planning-review-awaiting {
   flex: none;
+}
+.planning-review-summary .planning-review-summary-line .planning-review-truncated-value:has(.issue-summary-editor-inline) {
+  flex: 1 1 auto;
+}
+.planning-review-summary-line:has(.issue-summary-editor-inline) > [data-share-view=epic] {
+  display: none;
 }
 .planning-review-truncated-value:focus-visible {
   outline: 2px solid #93c5fd;

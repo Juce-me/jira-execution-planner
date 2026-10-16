@@ -691,6 +691,12 @@
             align-items: center;
         }
 
+        /* A Planning table row is 32px tall: the action fits its content box instead of growing the row. */
+        .planning-review-table [data-share-view="epic"] {
+            --control-height: 20px;
+            flex-basis: 20px;
+        }
+
         [data-share-view="epic"] > button {
             opacity: 0;
             pointer-events: none;

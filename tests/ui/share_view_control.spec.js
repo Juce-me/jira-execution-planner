@@ -770,7 +770,8 @@ test('grouped Epic and Planning Epic row copy their own targets', async ({ page,
     const action = epicCopy(page, 'EPIC-2');
     await row.hover();
     await expect(action).toHaveCSS('opacity', '1');
-    expect((await action.boundingBox()).height).toBe(24);
+    // A Planning table row is 32px tall, so its action is the 20px size that fits the row's content box.
+    expect((await action.boundingBox()).height).toBe(20);
     await action.click();
     await expect.poll(() => page.evaluate(() => window.__copied.length)).toBe(1);
     const url = (await page.evaluate(() => window.__copied))[0];

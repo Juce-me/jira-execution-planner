@@ -550,17 +550,23 @@
             white-space: nowrap;
         }
 
-        /* The trailing Share slot occupies the title lane, clear of the corner Refresh. */
+        /* On narrow screens a header without the Planning capacity toggle keeps its full title width: the action leaves the title row for
+           the corner column under Refresh. Planning headers keep it in the row, which already reserves the Refresh lane above. */
         @media (max-width: 760px) {
-            .epic-header:has([data-share-view="epic"]) .epic-title-row {
-                padding-right: 32px;
+            .epic-header:not(:has(.epic-stat-toggle)) .epic-title-row > [data-share-view="epic"] {
+                position: absolute;
+                top: 36px;
+                right: 0;
             }
-        }
 
-        @media (max-width: 760px) {
+            .epic-header:not(:has(.epic-stat-toggle)):has([data-share-view="epic"]) .epic-meta {
+                padding-right: 30px;
+            }
+
             .task-list:not(.epm-issue-board) .epic-block > .epic-header:has([data-share-view="epic"]):has(.epic-stat-toggle) .epic-title-row {
                 gap: 0.15rem;
             }
+
             .epic-header:has([data-share-view="epic"]) .epic-stat-toggle {
                 margin-left: 0;
             }

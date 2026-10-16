@@ -608,6 +608,7 @@ Publication update (2026-10-14): the operator approved one combined design-syste
 1. `DONE-ga4-instrumentation.md`
    - Completed and merged in [PR #58](https://github.com/Juce-me/jira-execution-planner/pull/58). GA4/GTM dataLayer instrumentation implemented in app code on 2026-05-30. Use for audit context only.
    - Output: two-trigger GTM dataLayer contract (`pageview`/`userevent`), `GA4_ENABLED` transport gate with no in-app consent UI, and typed event params per `docs/README_ANALYTICS.md`.
+   - 2026-10-16 local repair: explicit per-occurrence DLV clearing, logout/auth-expiry identity/debug clearing, and a validator-compatible 25-parameter core. Full native mapping, Google tag sequencing, Enhanced Measurement and external receipt gates are in `SUPPORT-ga4-user-configuration.md`; instance-specific preparation and external receipt evidence stay in the private operator handoff.
 
 ## Legacy Unclassified Date-Only Plans
 

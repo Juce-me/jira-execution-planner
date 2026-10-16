@@ -447,7 +447,10 @@ test('an initialized enabled analytics session emits one privacy-safe auth lock 
         entry?.event_name === 'app_error_shown' && entry?.error_code === 'auth_required'
     )));
     expect(events).toHaveLength(1);
-    expect(events[0]).toEqual({
+    expect(events[0].debug_mode).toBeUndefined();
+    expect(events[0].ga4_user_id).toBeNull();
+    expect(Object.fromEntries(Object.entries(events[0]).filter(([, value]) => value !== undefined))).toEqual({
+        ga4_user_id: null,
         event: 'userevent',
         trigger: 'userevent',
         event_type: 'event',

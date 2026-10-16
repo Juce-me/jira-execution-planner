@@ -4,6 +4,8 @@
 
 > **Status:** Done. Executed and merged in [PR #58](https://github.com/Juce-me/jira-execution-planner/pull/58). Kept for audit context only.
 
+**Current accuracy (2026-10-16):** Historical implementation record. Its sparse flattened examples omit the explicit clearing entries now required by `isolateAnalyticsPayload`; follow `docs/README_ANALYTICS.md` and the support runbook for isolation, null User-ID, event-scope debug, 25-row MCP core versus full native mapping, and pending external verification. Original app tests did not prove GTM/GA4 delivery. Record instance-specific container findings, read-back and receipt evidence in the private operator handoff; this historical plan does not certify live delivery.
+
 **Revision notes:**
 - 2026-05-26 review update: clarify that direct/ad hoc `page_view` sends are replaced by the controlled `pageview` dataLayer trigger, `user_id` is pseudonymous only and must not identify a specific person in GA4, Basic/local bootstrap does not emit repeated `login`, and durable analytics docs/agent rules are part of the deliverables.
 - 2026-05-26 configuration update: allow GA4 Enhanced Measurement for scrolls, file downloads, site-search results, and form submits when analytics is enabled; keep GA4 default page URL/title metadata; and remove DSR deletion workflow from this implementation scope.

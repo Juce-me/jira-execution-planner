@@ -1,3 +1,5 @@
+const fs = require('node:fs');
+const path = require('node:path');
 const { test, expect } = require('@playwright/test');
 const { activeHomeTokenConnection, installDashboardFixture } = require('./epm_home_token_fixture');
 
@@ -13,6 +15,10 @@ async function installAnalyticsRoutes(page, context) {
 
 test('disabled analytics initializes dataLayer but does not request Google tags', async ({ page }) => {
     const googleRequests = [];
+    const cspErrors = [];
+    page.on('console', message => {
+        if (/Executing inline script violates/.test(message.text())) cspErrors.push(message.text());
+    });
     page.on('request', request => {
         const url = request.url();
         if (url.includes('googletagmanager.com') || url.includes('google-analytics.com')) {
@@ -21,11 +27,17 @@ test('disabled analytics initializes dataLayer but does not request Google tags'
     });
     await installDashboardFixture(page, { connection: activeHomeTokenConnection() });
     await installAnalyticsRoutes(page, { enabled: false });
+    await page.route(appBaseUrl, route => route.fulfill({
+        contentType: 'text/html',
+        headers: { 'Content-Security-Policy': "script-src 'self' https://*.googletagmanager.com" },
+        body: fs.readFileSync(path.join(__dirname, '..', '..', 'jira-dashboard.html'), 'utf8')
+    }));
 
     await page.goto(appBaseUrl, { waitUntil: 'domcontentloaded' });
 
     await expect.poll(() => page.evaluate(() => Array.isArray(window.dataLayer))).toBe(true);
     expect(googleRequests).toEqual([]);
+    expect(cspErrors).toEqual([]);
 });
 
 test('enabled analytics lazy-loads GTM from context and emits only app-owned triggers', async ({ page }) => {
@@ -154,7 +166,7 @@ test('enabled analytics lazy-loads GTM from context and emits only app-owned tri
     for (const push of pushes) {
         expect(['pageview', 'userevent']).toContain(push.event);
         expect(push.trigger).toBe(push.event);
-        expect(Object.keys(push).length).toBeLessThanOrEqual(25);
+        expect(Object.entries(push).filter(([key, value]) => value !== undefined && value !== null && !['event', 'trigger', 'event_type', 'event_name', 'ga4_user_id'].includes(key)).length).toBeLessThanOrEqual(25);
         expect(JSON.stringify(push)).not.toMatch(/https?:|jql=|ABC-\d+|@|Bearer|token|raw/i);
         if (push.event === 'pageview') {
             expect(push.page_name).toBeTruthy();
@@ -182,7 +194,7 @@ test('analytics kill switch stops app-owned sends in an open tab', async ({ page
     }));
 
     await page.goto(appBaseUrl, { waitUntil: 'domcontentloaded' });
-    await expect.poll(() => page.evaluate(() => window.dataLayer.some(entry => entry && entry.trigger))).toBe(true);
+    await expect.poll(() => page.evaluate(() => (window.dataLayer || []).some(entry => entry && entry.trigger))).toBe(true);
     await page.evaluate(() => {
         window.dataLayer.length = 0;
     });
@@ -213,10 +225,76 @@ test('analytics kill switch stops app-owned sends in an open tab', async ({ page
     });
 
     const state = await page.evaluate(() => ({
-        pushes: window.dataLayer.filter(entry => entry && entry.trigger),
+        pushes: window.dataLayer.filter(entry => entry?.event_name === 'settings_action'),
         disabled: window['ga-disable-G-6QERX19WB0']
     }));
     expect(state.pushes).toHaveLength(1);
     expect(state.pushes[0].workflow_action).toBe('open');
     expect(state.disabled).toBe(true);
+});
+
+test('browser DLV sequence clears sparse fields, logout identity and debug context', async ({ page }) => {
+    let context = { enabled: true, ga4UserId: 'synthetic-user', debugMode: true };
+    await installDashboardFixture(page, { connection: activeHomeTokenConnection() });
+    await installAnalyticsRoutes(page, () => context);
+    await page.goto(appBaseUrl, { waitUntil: 'domcontentloaded' });
+    await expect.poll(() => page.evaluate(() => typeof window.JepAnalytics?.trackEvent)).toBe('function');
+    await expect.poll(() => page.evaluate(() => window.dataLayer.some(entry => entry?.event_name === 'page_view'))).toBe(true);
+    const before = await page.evaluate(() => {
+        const model = {};
+        window.__analyticsSnapshots = [];
+        const originalPush = window.dataLayer.push.bind(window.dataLayer);
+        window.dataLayer.push = entry => {
+            Object.assign(model, entry);
+            if (['app_search', 'sort_changed', 'external_link_opened', 'settings_action', 'logout'].includes(entry.event_name)) {
+                window.__analyticsSnapshots.push({ ...model });
+            }
+            return originalPush(entry);
+        };
+        window.JepAnalytics.trackEvent('app_search', { feature_name: 'search', query_length_bucket: '1_5', result_count_bucket: '6_10' });
+        window.JepAnalytics.trackEvent('sort_changed', { feature_name: 'sorting', sort_key: 'priority', sort_direction: 'asc' });
+        window.JepAnalytics.trackEvent('external_link_opened', { feature_name: 'external_links', issue_count_bucket: '6_10', link_type: 'jira_issue_list' });
+        return window.__analyticsSnapshots;
+    });
+    expect(before).toHaveLength(3);
+    expect(before[0].ga4_user_id).toBe('synthetic-user');
+    expect(before[0].debug_mode).toBe(true);
+    expect(before[1].query_length_bucket).toBeUndefined();
+    expect(before[1].result_count_bucket).toBeUndefined();
+    expect(before[2].sort_key).toBeUndefined();
+    expect(before[2].issue_count_bucket).toBe('6_10');
+    context = { enabled: true, ga4UserId: null, debugMode: false };
+    await page.evaluate(async () => {
+        await window.JepAnalytics.refreshAnalyticsContext();
+        window.JepAnalytics.trackEvent('settings_action', { feature_name: 'settings', section: 'onboarding', module_id: 'planning', workflow_action: 'started' });
+        window.JepAnalytics.trackEvent('logout', { feature_name: 'auth', method: 'oauth' });
+    });
+    const after = await page.evaluate(() => window.__analyticsSnapshots);
+    expect(after).toHaveLength(5);
+    for (const entry of after.slice(3)) {
+        expect(entry.ga4_user_id).toBeNull();
+        expect(entry.debug_mode).toBeUndefined();
+        expect(entry.issue_count_bucket).toBeUndefined();
+    }
+    expect(after[4].module_id).toBeUndefined();
+    expect(after[4].section).toBeUndefined();
+});
+
+test('logical navigation emits one page_view occurrence for each accepted view change', async ({ page }) => {
+    await installDashboardFixture(page, { connection: activeHomeTokenConnection() });
+    await installAnalyticsRoutes(page, { enabled: true });
+    await page.goto(appBaseUrl, { waitUntil: 'domcontentloaded' });
+    const views = () => page.evaluate(() => (window.dataLayer || []).filter(entry => entry.event === 'pageview'));
+    await expect.poll(async () => (await views()).length).toBe(1);
+    await page.getByRole('radio', { name: 'EPM', exact: true }).first().click();
+    await expect.poll(async () => (await views()).length).toBe(2);
+    await page.getByRole('radio', { name: 'ENG', exact: true }).first().click();
+    await expect.poll(async () => (await views()).length).toBe(3);
+    await page.getByRole('radio', { name: 'Planning', exact: true }).first().click();
+    await expect.poll(async () => (await views()).length).toBe(4);
+    await page.getByRole('radio', { name: 'Statistics', exact: true }).first().click();
+    await expect.poll(async () => (await views()).length).toBe(5);
+    const occurrences = await views();
+    expect(occurrences.map(entry => entry.dashboard_view)).toEqual(['eng', 'epm', 'eng', 'eng', 'eng']);
+    expect(occurrences.map(entry => entry.eng_mode)).toEqual(['catch_up', undefined, 'catch_up', 'planning', 'statistics']);
 });

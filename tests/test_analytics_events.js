@@ -26,6 +26,15 @@ function populatedEntry(entry) {
         value !== undefined && !(key === 'ga4_user_id' && value === null)));
 }
 
+// Captures app-owned pushes only; the GTM start message is asserted by its own test.
+function captureAppPushes(pushed) {
+    return {
+        push(entry) {
+            if (entry.event !== 'gtm.js') pushed.push(populatedEntry(entry));
+        }
+    };
+}
+
 function resetDom() {
     delete global.window;
     delete global.document;
@@ -100,7 +109,7 @@ test('analytics lazy-loads GTM only from enabled context and pushes only through
     const { initAnalytics, setAnalyticsUser, trackPageview, trackEvent } = await loadAnalytics();
     const { appendedScripts } = resetDom();
     const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
+    global.window.dataLayer = captureAppPushes(pushed);
     global.window.gtag = () => {
         throw new Error('app analytics must not call gtag');
     };
@@ -148,11 +157,36 @@ test('analytics lazy-loads GTM only from enabled context and pushes only through
     ]);
 });
 
+test('analytics seeds the GTM start message once, before gtm.js is appended', async () => {
+    const { initAnalytics, refreshAnalyticsContext } = await loadAnalytics();
+    const { appendedScripts } = resetDom();
+    global.window.dataLayer = [];
+    const layerAtAppend = [];
+    const appendChild = global.document.head.appendChild;
+    global.document.head.appendChild = node => {
+        layerAtAppend.push([...global.window.dataLayer]);
+        return appendChild(node);
+    };
+    const fetchContext = async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN', measurementId: 'G-6QERX19WB0' });
+
+    await initAnalytics({ fetchContext });
+    await refreshAnalyticsContext();
+
+    assert.equal(appendedScripts.length, 1);
+    assert.equal(layerAtAppend.length, 1);
+    assert.equal(layerAtAppend[0].length, 1, 'gtm.start must already be in dataLayer when gtm.js is appended');
+    const [start] = layerAtAppend[0];
+    assert.deepEqual(Object.keys(start).sort(), ['event', 'gtm.start']);
+    assert.equal(start.event, 'gtm.js');
+    assert.equal(typeof start['gtm.start'], 'number');
+    assert.equal(global.window.dataLayer.filter(entry => entry.event === 'gtm.js').length, 1);
+});
+
 test('auth-required analytics sends no populated user and debug context in its fixed event', async () => {
     const { initAnalytics, trackAuthRequiredLock } = await loadAnalytics();
     resetDom();
     const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
+    global.window.dataLayer = captureAppPushes(pushed);
 
     await initAnalytics({
         fetchContext: async () => ({
@@ -180,7 +214,7 @@ test('analytics guards drop sends while context is disabled or uninitialized', a
     const { trackEvent, initAnalytics } = await loadAnalytics();
     resetDom();
     const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
+    global.window.dataLayer = captureAppPushes(pushed);
 
     trackEvent('settings_action', { feature_name: 'settings', section: 'epm', workflow_action: 'open' });
     await initAnalytics({ fetchContext: async () => ({ enabled: false }) });
@@ -208,7 +242,7 @@ test('analytics context refresh shuts off collection in an already-open tab', as
             ga4UserId: null
         }
     ];
-    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
+    global.window.dataLayer = captureAppPushes(pushed);
 
     await initAnalytics({ fetchContext: async () => contexts.shift() });
     trackEvent('settings_action', { feature_name: 'settings', section: 'epm', workflow_action: 'open' });
@@ -553,7 +587,7 @@ test('api_result accepts the jira_issue_priorities surface', async () => {
     const { initAnalytics, trackApiResult } = await loadAnalytics();
     resetDom();
     const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
+    global.window.dataLayer = captureAppPushes(pushed);
 
     await initAnalytics({
         fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
@@ -574,7 +608,7 @@ test('api_result accepts jira_team_capacity with the existing bucketed API contr
     const { initAnalytics, trackApiResult } = await loadAnalytics();
     resetDom();
     const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
+    global.window.dataLayer = captureAppPushes(pushed);
 
     await initAnalytics({
         fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
@@ -606,7 +640,7 @@ test('eng_board terminal api_result accepts only bounded scope and omits high-ca
     const { initAnalytics, trackApiResult } = await loadAnalytics();
     resetDom();
     const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
+    global.window.dataLayer = captureAppPushes(pushed);
     await initAnalytics({
         fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
     });
@@ -640,7 +674,7 @@ test('issue_priority_action pushes the eng priority transition contract through 
     const { initAnalytics, trackEvent } = await loadAnalytics();
     resetDom();
     const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
+    global.window.dataLayer = captureAppPushes(pushed);
 
     await initAnalytics({
         fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
@@ -764,7 +798,7 @@ test('api_result accepts the jira_issue_project_track surface', async () => {
     const { initAnalytics, trackApiResult } = await loadAnalytics();
     resetDom();
     const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
+    global.window.dataLayer = captureAppPushes(pushed);
 
     await initAnalytics({
         fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
@@ -785,7 +819,7 @@ test('issue_project_track_action pushes the eng project track contract through t
     const { initAnalytics, trackEvent } = await loadAnalytics();
     resetDom();
     const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
+    global.window.dataLayer = captureAppPushes(pushed);
 
     await initAnalytics({
         fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
@@ -820,7 +854,7 @@ test('api_result accepts the jira_issue_transitions surface', async () => {
     const { initAnalytics, trackApiResult } = await loadAnalytics();
     resetDom();
     const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
+    global.window.dataLayer = captureAppPushes(pushed);
 
     await initAnalytics({
         fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
@@ -841,7 +875,7 @@ test('issue_status_action pushes the eng status transition contract through the 
     const { initAnalytics, trackEvent } = await loadAnalytics();
     resetDom();
     const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
+    global.window.dataLayer = captureAppPushes(pushed);
 
     await initAnalytics({
         fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
@@ -878,7 +912,7 @@ test('external link helper emits bucketed Jira link events without raw URLs', as
     const { initAnalytics, trackExternalLinkOpened } = await loadAnalytics();
     resetDom();
     const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
+    global.window.dataLayer = captureAppPushes(pushed);
 
     await initAnalytics({
         fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
@@ -964,7 +998,7 @@ test('api result helper emits explicit allowlisted API surfaces only', async () 
     const { initAnalytics, trackApiResult } = await loadAnalytics();
     resetDom();
     const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
+    global.window.dataLayer = captureAppPushes(pushed);
 
     await initAnalytics({
         fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
@@ -1008,7 +1042,7 @@ test('api result helper emits eng_subtasks surface for story subtask loads', asy
     const { initAnalytics, trackApiResult } = await loadAnalytics();
     resetDom();
     const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
+    global.window.dataLayer = captureAppPushes(pushed);
 
     await initAnalytics({
         fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
@@ -1046,7 +1080,7 @@ test('api result helper emits only bounded Story readiness success and failure m
     const { initAnalytics, trackApiResult } = await loadAnalytics();
     resetDom();
     const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
+    global.window.dataLayer = captureAppPushes(pushed);
 
     await initAnalytics({
         fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
@@ -1079,7 +1113,7 @@ test('api result helper emits eng_issue_description and board_config_statuses su
     const { initAnalytics, trackApiResult } = await loadAnalytics();
     resetDom();
     const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
+    global.window.dataLayer = captureAppPushes(pushed);
 
     await initAnalytics({
         fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
@@ -1132,7 +1166,7 @@ test('tracked fetch suppresses intended abort telemetry but retains network fail
     resetDom();
     globalThis.JepAnalytics = analytics;
     const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
+    global.window.dataLayer = captureAppPushes(pushed);
     await initAnalytics({
         fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
     });
@@ -1265,7 +1299,7 @@ test('api_result accepts jira_issue_field_edits without raw field-edit data', as
     const { initAnalytics, trackApiResult } = await loadAnalytics();
     resetDom();
     const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
+    global.window.dataLayer = captureAppPushes(pushed);
     await initAnalytics({ fetchContext: async () => ({ enabled: true }) });
 
     trackApiResult('jira_issue_field_edits', {
@@ -1319,7 +1353,7 @@ test('board small-screen support request pushes one fixed userevent through the 
     const { trackBoardSmallScreenSupportRequest } = await loadDashboardAnalytics();
     resetDom();
     const pushed = [];
-    global.window.dataLayer = { push: entry => pushed.push(populatedEntry(entry)) };
+    global.window.dataLayer = captureAppPushes(pushed);
     await initAnalytics({ fetchContext: async () => ({ enabled: true }) });
 
     trackBoardSmallScreenSupportRequest('narrow');

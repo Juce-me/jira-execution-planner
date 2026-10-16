@@ -65,6 +65,9 @@ test('enabled analytics lazy-loads GTM from context and emits only app-owned tri
     await page.goto(appBaseUrl, { waitUntil: 'domcontentloaded' });
     await expect.poll(() => page.evaluate(() => typeof window.JepAnalytics?.trackEvent)).toBe('function');
     await expect.poll(() => googleRequests.includes('https://www.googletagmanager.com/gtm.js?id=GTM-NZJW2CFN')).toBe(true);
+    const gtmStarts = await page.evaluate(() => window.dataLayer.filter(entry => entry && entry.event === 'gtm.js'));
+    expect(gtmStarts).toHaveLength(1);
+    expect(typeof gtmStarts[0]['gtm.start']).toBe('number');
     await page.evaluate(() => {
         window.JepAnalytics.trackPageview('dashboard', {
             dashboard_view: 'eng',

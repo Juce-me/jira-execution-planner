@@ -12,7 +12,7 @@ This is the durable source of truth for Jira Delivery Planner analytics. The his
 - Analytics vendor: Google Analytics 4.
 - Active architecture: Google Tag Manager web container with `GA4_ENABLED`-gated loading, periodic context refresh for open tabs, and a stable two-event `dataLayer` contract.
 - Not in scope: server-side GTM, Measurement Protocol, Google Ads, remarketing, audiences, Google Signals, or ad personalization.
-- GTM schema policy: app code may push only `event=pageview` or `event=userevent` to `window.dataLayer`. GTM owns exactly two app-owned Custom Event triggers: one for `pageview`, one for `userevent`.
+- GTM schema policy: app code may push only `event=pageview` or `event=userevent` to `window.dataLayer`, plus the one standard GTM start message `{ 'gtm.start': <timestamp>, event: 'gtm.js' }` seeded once before `gtm.js` loads. Without that message the container loads but fires no tags. GTM owns exactly two app-owned Custom Event triggers: one for `pageview`, one for `userevent`.
 - Page-view policy: logical app views are measured through `dataLayer.push({ event: 'pageview', ... })`; GTM maps that to GA4 `page_view` with the fixed pageview property map.
 - Enhanced Measurement policy: GA4-managed `scroll` may fire when analytics is enabled. `view_search_results`, `file_download`, `form_start`, and `form_submit` may fire only after the runbook's managed-metadata safety gate proves their automatic parameters cannot expose Jira/Home/auth URLs, callback data, raw app-search terms, JQL, issue keys, tokens, local paths, or user-entered text. Outbound-click Enhanced Measurement stays off in v1 unless operator configuration and tests prove Atlassian/Jira/Home `link_url` values cannot be sent, because Jira issue-list links can expose URLs, JQL, and issue keys through managed click metadata. App code must not recreate reserved names as custom sends.
 - Privacy floor for app-owned events: no raw email, name, phone, free text, token, raw user agent, full IP address, Atlassian account id, workspace id, cloud id, Jira/Home URL, issue key, team/group/project/sprint name, Jira label, JQL, draft id, version id, local path, or config payload is sent as an app-owned GA4 event parameter or user property.
@@ -45,7 +45,7 @@ GA4 must not identify a specific person. The only allowed GA4 User-ID is the ser
 
 ## Per-Occurrence Isolation
 
-The external analytics bundle initializes `window.dataLayer` before loading GTM. The dashboard HTML contains no inline JavaScript bootstrap, so the existing `script-src 'self' https://*.googletagmanager.com` CSP permits app startup without an inline exception.
+The external analytics bundle initializes `window.dataLayer` and seeds the GTM start message before loading GTM. The dashboard HTML contains no inline JavaScript bootstrap, so the existing `script-src 'self' https://*.googletagmanager.com` CSP permits app startup without an inline exception.
 
 Verified against source/tests on 2026-10-16. `isolateAnalyticsPayload` in `frontend/src/analytics/events.js` replaces every absent approved parameter with explicit JavaScript `undefined`, sets absent `ga4_user_id` to JavaScript `null`, and clears absent `debug_mode` with `undefined`. `pushDataLayer` applies this in the same object push as the occurrence. Sparse examples below show only populated fields; omitted fields are clearing entries in the actual push. Never JSON-serialize the object before pushing: JSON removes `undefined` and would restore stale DLV behavior.
 

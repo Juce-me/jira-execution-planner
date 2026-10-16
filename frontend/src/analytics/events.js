@@ -191,7 +191,7 @@ export function sanitizeAnalyticsParams(params = {}, eventName = '') {
         assertSafeValue(name, value);
         clean[name] = value;
     }
-    if (Object.keys(clean).length > 25) {
+    if (Object.keys(clean).filter(name => EVENT_PARAMS.has(name) || name === 'debug_mode').length > 25) {
         throw new Error('analytics event parameters must stay at most 25');
     }
     return clean;
@@ -218,4 +218,15 @@ export function validateAnalyticsPayload(payload) {
     }
     sanitizeAnalyticsParams(payload, payload.event_name);
     return payload;
+}
+
+// DLV v2 merges successive pushes. Explicit undefined values replace old values
+// without sending blank/null custom parameters or resetting unrelated GTM state.
+export function isolateAnalyticsPayload(payload) {
+    return {
+        ...Object.fromEntries([...EVENT_PARAMS].map(name => [name, undefined])),
+        ga4_user_id: null,
+        debug_mode: undefined,
+        ...validateAnalyticsPayload(payload)
+    };
 }

@@ -47,9 +47,9 @@ test('app analytics source never sends direct gtag events', () => {
     }
 });
 
-test('dashboard html initializes dataLayer without hard-coded GTM container', () => {
+test('dashboard HTML loads analytics without CSP-blocked inline JavaScript', () => {
     const source = read('jira-dashboard.html');
-    assert.match(source, /window\.dataLayer\s*=/);
+    assert.doesNotMatch(source, /<script\b(?![^>]*\bsrc=)[^>]*>[\s\S]*?<\/script>/i);
     assert.doesNotMatch(source, /googletagmanager\.com\/gtm\.js/);
     assert.doesNotMatch(source, /GTM-NZJW2CFN/);
     assert.doesNotMatch(source, /frontend\/src\/analytics/);
@@ -335,7 +335,7 @@ test('onboarding module_id stays typed, mapped through GTM, and intentionally un
     assert.ok(runbook.includes('module_id'));
     assert.match(runbook, /Do not register `module_id` as a custom dimension[^.]*named report/i);
     assert.match(yaml, /data_layer_variable_name: "module_id"/);
-    assert.match(yaml, /^\s{8}module_id: "\{\{DLV - module_id\}\}"$/m);
+    assert.ok(runbook.includes('| `module_id` | `{{DLV - module_id}}` |')); // Native completion, outside the 25-row MCP core.
     assert.doesNotMatch(yaml, /custom_dimensions:[\s\S]*?parameter_name: "module_id"/);
     assert.equal((yaml.match(/event_name: "pageview"/g) || []).length, 1);
     assert.equal((yaml.match(/event_name: "userevent"/g) || []).length, 1);
@@ -666,4 +666,19 @@ test('automatic freshness and its status projection remain passive and analytics
         const source = read(filePath);
         assert.doesNotMatch(source, /trackEvent|trackProductEvent|trackApiResult|dataLayer|epic_refresh_action|ga4_event_name|event_group/, filePath);
     }
+});
+
+test('MCP core stays at 25 while native handoff covers every sparse app parameter', () => {
+    const source = read('frontend/src/analytics/events.js');
+    const yaml = read('docs/plans/SUPPORT-ga4-gtm-mcp-execution.yaml');
+    const runbook = read('docs/plans/SUPPORT-ga4-user-configuration.md');
+    const tagSections = yaml.split('  tags:')[1].split('  ecommerce:')[0].split('    - name:').slice(1);
+    const counts = tagSections.map(section => [...section.matchAll(/^        [a-z_]+:/gm)].length);
+    assert.deepEqual(counts, [5, 25]);
+    for (const name of jsSetValues(source, 'EVENT_PARAMS')) {
+        assert.ok(runbook.includes(`| \`${name}\` | \`{{DLV - ${name}}}\` |`), `Native mapping missing ${name}`);
+    }
+    assert.doesNotMatch(yaml.split('  tags:')[1], /^        (?:user_id|ga4_user_id):/m);
+    assert.match(yaml, /create_container_version_allowed: false/);
+    assert.match(yaml, /publish_allowed: false/);
 });

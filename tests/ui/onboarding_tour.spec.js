@@ -1459,9 +1459,9 @@ function assertNoUnsafePreviewAnalytics(events, contract, analyticsOptions) {
         expect(entry).not.toHaveProperty('issue_keys');
         expect(entry).not.toHaveProperty('step_id');
         expect(entry).not.toHaveProperty('raw_content');
-        expect(entry).not.toHaveProperty('priority_bucket');
-        expect(entry).not.toHaveProperty('value_state');
-        expect(entry).not.toHaveProperty('status_bucket');
+        expect(entry.priority_bucket).toBeUndefined();
+        expect(entry.value_state).toBeUndefined();
+        expect(entry.status_bucket).toBeUndefined();
         expect(JSON.stringify(entry)).not.toMatch(/SYN-(?:EPIC|STORY)|Highest|Medium|Committed|Flexible|To Do|Done/);
     });
 }

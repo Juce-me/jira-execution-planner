@@ -30,6 +30,10 @@ function findTarget(target, mode, root) {
     const { kind, key } = target || {};
     if (kind === 'alertTeam') return findAlertGroup(target, root);
     if (kind !== 'epic' && kind !== 'story') return null;
+    if (mode === 'board') {
+        const card = kind === 'epic' ? Array.from(root.querySelectorAll('.eng-board .ecard[data-epic-key]')).find(candidate => candidate.dataset.epicKey === key) : null;
+        return card ? { element: card, attribute: true, board: true } : null;
+    }
     if (mode === 'planning') {
         const row = Array.from(root.querySelectorAll(PLANNING_ROW_SELECTOR)).find(candidate => candidate.dataset.rowKind === kind && candidate.dataset.issueKey === key);
         if (row) return { element: row, attribute: true };
@@ -56,7 +60,25 @@ function paintShareReveal(element, win = window) {
 // moving when the settle check measures.
 // A Story also clears its own Epic's header by the header's height: while the page is still moving, that header may sit pushed up by the end
 // of its Epic instead of pinned, so its current position is no measure of where it will be.
-function alignBelowStickyStack({ element, belowEpicHeader = false }, win) {
+// A Board card sits in a column pane that scrolls on its own, inside a board that scrolls sideways: bring its column and then the card
+// into view within each, and leave the page alone.
+function alignBoardCard(card) {
+    const board = card.closest('.eng-board');
+    const column = card.closest('.col');
+    if (board && column) {
+        const boardRect = board.getBoundingClientRect();
+        const columnRect = column.getBoundingClientRect();
+        if (columnRect.left < boardRect.left || columnRect.right > boardRect.right) board.scrollLeft += columnRect.left - boardRect.left - SHARE_VIEW_FOCUS_MARGIN;
+    }
+    const body = card.closest('.col-body');
+    if (body && body.scrollHeight > body.clientHeight) {
+        const delta = card.getBoundingClientRect().top - body.getBoundingClientRect().top - SHARE_VIEW_FOCUS_MARGIN;
+        if (Math.abs(delta) > LANDING_TOLERANCE_PX) body.scrollTop += delta;
+    }
+}
+
+function alignBelowStickyStack({ element, belowEpicHeader = false, board = false }, win) {
+    if (board) { alignBoardCard(element); return; }
     const header = belowEpicHeader ? element.closest('.epic-block')?.querySelector('.epic-header') : null;
     const stackBottom = measureShareViewStickyBottom({ epicHeaders: false }) + (header ? header.getBoundingClientRect().height : 0);
     const delta = element.getBoundingClientRect().top - (stackBottom + SHARE_VIEW_FOCUS_MARGIN);

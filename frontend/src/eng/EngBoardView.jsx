@@ -106,7 +106,7 @@ export default function EngBoardView({
     statusTransitionSubmitting = false, onSubmitStatusTransition, onFilterBarHeightChange,
     loading = false, error = null, onRetry,
     strictColumns = null, authorityPending = false, stale = false,
-    onResolvedFocusChange, freshnessBridge, onInteractionChange,
+    onResolvedFocusChange, freshnessBridge, onInteractionChange, renderEpicShareControl,
 }) {
     const statusStyle = useStatusColourStyle();
     const boardPresentationRef = React.useRef(null);
@@ -1276,6 +1276,7 @@ export default function EngBoardView({
                                             workItemLabel={strictWorkItemLabel}
                                             issueFieldEdits={epicGroup.epic ? issueFieldEdits : null}
                                             jiraUrl={jiraUrl}
+                                            shareControl={renderEpicShareControl?.(epicGroup.key, column.id)}
                                         />
                                     ))}
                                 </div>

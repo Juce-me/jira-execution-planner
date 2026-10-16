@@ -111,7 +111,8 @@
 
         /* A shared-link reveal (the data-share-reveal attribute, no class hook) paints an overlay above the card's own backgrounds: held briefly, then a one-second fade. */
         .epic-block[data-share-reveal],
-        .alert-team-group[data-share-reveal] {
+        .alert-team-group[data-share-reveal],
+        .eng-board .ecard[data-share-reveal] {
             position: relative;
         }
 

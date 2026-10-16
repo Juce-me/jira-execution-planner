@@ -23,6 +23,7 @@ const SURFACE_BY_MODE = new Map([['catch-up', 'catch_up'], ['planning', 'plannin
 // The apply event's surface: the link's resolved mode, else the recipient's current ENG mode, else Catch Up.
 const surfaceFor = (mode, currentMode) => SURFACE_BY_MODE.get(mode) ?? SURFACE_BY_MODE.get(currentMode) ?? 'catch_up';
 const ANALYTICS_RESULT = Object.freeze({ done: 'success', partial: 'partial', dropped: 'rejected', cancelled: 'rejected' });
+const BOARD_TARGET_TIMEOUT_MS = 18000;   // under Stage D's own 20s budget
 const isVisible = () => typeof document === 'undefined' || document.visibilityState !== 'hidden';
 // What an action that did not finish leaves unapplied.
 const STEP_CATEGORIES = Object.freeze({ A: ['group', 'sprint'], B: ['mode', 'filters'], Cteams: ['teams'], Cfacets: ['filters'], D: ['focus'] });
@@ -192,7 +193,7 @@ export function createApplyController({ readOptions, now = clock }) {
                 teamsHydrated, expected: Boolean(o.engLoadsTasks),
             },
             d: {
-                cohortSettled: alertsReady, targetReady: focus?.kind === 'alertTeam' ? alertsReady : tasksReady, scopeMatches,
+                cohortSettled: alertsReady, targetReady: focus?.kind === 'alertTeam' ? alertsReady : mode === 'board' ? scopeMatches : tasksReady, scopeMatches,
                 recoveryIdle: !o.pendingConnectionRecoveryRef.current, visible: isVisible(),
             },
             focusResult, focusReached,
@@ -238,6 +239,8 @@ export function createApplyController({ readOptions, now = clock }) {
             const initialAlertScope = o.catchUpAlertScopeKey;
             reveal = revealShareViewFocus(target, {
                 mode: fresh.scope.mode,
+                // A Board loads its columns progressively, so its Epic card may take longer to appear than a task list's.
+                timeoutMs: fresh.scope.mode === 'board' ? BOARD_TARGET_TIMEOUT_MS : undefined,
                 onReached: () => { focusReached = true; controller.evaluate(); },
                 isLayoutSettled: () => locked.mode !== 'catch-up' || target.kind === 'alertTeam'
                     || cohortSettled(readOptions(), initialAlertScope),

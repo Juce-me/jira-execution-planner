@@ -556,8 +556,12 @@ test('focus: the Planning table never switches rows, so the target must be in th
     assert.deepEqual(planFor({ mode: 'planning', rows: 'story', focus: story }).reported, []);
 });
 
-test('focus: Board and Statistics have no target and the plan names focus', () => {
-    for (const mode of ['board', 'statistics']) {
+test('focus: a Board link targets an Epic card only; Statistics has no target', () => {
+    const board = link({ mode: 'board', focus: { kind: 'epic', key: 'DEMO-12' } });
+    assert.deepEqual(resolveShareViewFocus(board, 'board'), { kind: 'epic', key: 'DEMO-12' });
+    assert.deepEqual(planFor({ mode: 'board', focus: { kind: 'epic', key: 'DEMO-12' } }).reported, []);
+    assert.equal(resolveShareViewFocus(link({ mode: 'board', focus: { kind: 'story', key: 'DEMO-12' } }), 'board'), null, 'the Board has no Story cards');
+    for (const mode of ['statistics']) {
         const state = link({ mode, focus: { kind: 'epic', key: 'DEMO-12' } });
         assert.equal(resolveShareViewFocus(state, mode), null, mode);
         assert.deepEqual(planFor({ mode, focus: { kind: 'epic', key: 'DEMO-12' } }).reported, ['focus'], mode);

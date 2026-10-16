@@ -84,7 +84,7 @@ export function useShareViewApply(options) {
     const captureShareUrl = React.useCallback((focus = null) => {
         const o = optionsRef.current;
         if (isShareDisabled(o, selectApplyTerminal())) return { ok: false, reason: 'disabled' };
-        if (focus && (!['epic', 'alertTeam'].includes(focus.kind) || !['catch-up', 'planning'].includes(o.activeEngMode) || (focus.kind === 'alertTeam' && o.activeEngMode !== 'catch-up'))) return { ok: false, reason: 'invalid_state' };
+        if (focus && (!['epic', 'alertTeam'].includes(focus.kind) || !['catch-up', 'planning', 'board'].includes(o.activeEngMode) || (focus.kind === 'alertTeam' && o.activeEngMode !== 'catch-up'))) return { ok: false, reason: 'invalid_state' };
         const rowsMode = readPlanningRowsMode(document);
         const state = buildShareViewState({
             mode: o.activeEngMode, groupId: o.activeGroupId, sprintId: o.selectedSprint, snapshot: o.buildGroupStateSnapshot(),

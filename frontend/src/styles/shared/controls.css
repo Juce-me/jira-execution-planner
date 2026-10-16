@@ -698,6 +698,8 @@
 
         .epic-header:hover [data-share-view="epic"] > button,
         .epic-header:focus-within [data-share-view="epic"] > button,
+        .ecard:hover [data-share-view="epic"] > button,
+        .ecard:focus-within [data-share-view="epic"] > button,
         .alert-team-group:hover [data-share-view="epic"] > button,
         .alert-team-group:focus-within [data-share-view="epic"] > button,
         .planning-review-table tr:hover [data-share-view="epic"] > button,
@@ -710,15 +712,23 @@
         /* Beside an Epic key the action is shifted left of the key (measured in ShareViewButton) and takes no layout width of its own.
            Below the desktop breakpoint the title row is too tight to reserve the gap, so the action keeps its place after the key. */
         @media (min-width: 761px) {
-            [data-share-view="epic"][data-share-key-slot] {
+            .epic-title-row > [data-share-view="epic"][data-share-key-slot] {
                 flex: 0 0 0;
                 width: 0;
             }
 
-            [data-share-view="epic"][data-share-key-slot] > button {
+            .epic-title-row > [data-share-view="epic"][data-share-key-slot] > button {
                 position: relative;
                 left: var(--share-key-shift, 0px);
             }
+        }
+
+        /* On a Board card the action is a sibling of the native card trigger: it sits in the gap the key reserves, on the title row. */
+        .eng-board .ecard > [data-share-view="epic"] {
+            position: absolute;
+            top: calc(0.6rem - 2px);
+            left: var(--share-key-left, calc(100% - 0.7rem - 24px));
+            z-index: 1;
         }
 
         .alert-team-header > [data-share-view="epic"] {

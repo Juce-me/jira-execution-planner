@@ -664,6 +664,7 @@
            the four test_eng_board_styles.js already checks for; none of the five appear below. ── */
         /* The draggable card wrapper preserves fixed geometry; .ecard-open is its native panel trigger. */
         .eng-board .ecard {
+            position: relative;
             display: grid;
             gap: 0.35rem;
             width: 100%;
@@ -784,6 +785,11 @@
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
+        }
+
+        /* The copy action sits in this reserved gap on the key's left (see ShareViewButton). */
+        .eng-board .ecard:has([data-share-key-slot]) .ekey {
+            margin-left: 30px;
         }
 
         .eng-board .ekey {

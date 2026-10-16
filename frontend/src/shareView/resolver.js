@@ -171,6 +171,8 @@ function focusApplies(candidate, state, mode) {
     if (candidate.kind === 'alertTeam') {
         return mode === 'catch-up' && state.alerts !== 'off' && ALERT_ANCHORS.has(candidate.anchor);
     }
+    // The Board reveals Epic cards only; its Epics are the cards of the focused column.
+    if (mode === 'board') return candidate.kind === 'epic';
     if (!FOCUS_KINDS.has(candidate.kind) || (mode !== 'catch-up' && mode !== 'planning')) return false;
     // The Planning table never switches its Epics/Stories rows: the target must be in the link's rows.
     if (mode === 'planning' && linkValue(state, 'layout') === 'table') {

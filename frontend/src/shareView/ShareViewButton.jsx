@@ -9,7 +9,7 @@ const LABEL = 'Copy view link';
 
 // The same Share control serves header view copies and explicit Epic copies. It copies the captured URL; when the
 // clipboard is unavailable or refuses the write, the notice shows the URL in a read-only field.
-export default function ShareViewButton({ surface, share, sourceSurface, activeControlSurface, epicKey, alertTarget, scopeKey }) {
+export default function ShareViewButton({ surface, share, sourceSurface, activeControlSurface, epicKey, boardColumnId, alertTarget, scopeKey }) {
     const [copied, setCopied] = React.useState(false);
     const [local, setLocal] = React.useState(null);
     const wrapperRef = React.useRef(null);
@@ -21,7 +21,7 @@ export default function ShareViewButton({ surface, share, sourceSurface, activeC
     const ownsFeedback = ownedGenerationRef.current === copyGeneration;
 
     const targeted = Boolean(epicKey || alertTarget);
-    const identity = JSON.stringify([surface, scopeKey, sourceSurface, epicKey, alertTarget, share.shareDisabled]);
+    const identity = JSON.stringify([surface, scopeKey, sourceSurface, epicKey, boardColumnId, alertTarget, share.shareDisabled]);
     const destination = epicKey ? `Epic ${epicKey} link copied` : alertTarget ? 'Alert group link copied' : 'View link copied';
     const label = epicKey ? `Copy link to Epic ${epicKey}` : alertTarget ? 'Copy link to this alert group' : LABEL;
     const hint = epicKey ? 'Copy link to this Epic' : alertTarget ? 'Copy link to this alert group' : LABEL;
@@ -56,16 +56,22 @@ export default function ShareViewButton({ surface, share, sourceSurface, activeC
     // markup: it keeps its place after the link and is shifted left of the key by the measured distance, over a gap the key reserves.
     React.useLayoutEffect(() => {
         const wrapper = wrapperRef.current;
-        const key = epicKey ? wrapper?.previousElementSibling?.querySelector?.('.epic-key') : null;
+        const key = epicKey ? wrapper?.previousElementSibling?.querySelector?.('.epic-key, .ekey') : null;
         if (!wrapper || !key) return undefined;
-        const place = () => wrapper.getClientRects().length && wrapper.style.setProperty('--share-key-shift', `${key.getBoundingClientRect().left - wrapper.getBoundingClientRect().left - KEY_SLOT_PX}px`);
+        const place = () => {
+            if (!wrapper.getClientRects().length) return;
+            const keyLeft = key.getBoundingClientRect().left;
+            wrapper.style.setProperty('--share-key-shift', `${keyLeft - wrapper.getBoundingClientRect().left - KEY_SLOT_PX}px`);
+            // A Board card positions the action from its own left edge.
+            wrapper.style.setProperty('--share-key-left', `${keyLeft - wrapper.parentElement.getBoundingClientRect().left - KEY_SLOT_PX}px`);
+        };
         wrapper.setAttribute('data-share-key-slot', '');
         place();
         const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(place) : null;
         observer?.observe(key);
         observer?.observe(wrapper);
         observer?.observe(wrapper.parentElement);
-        return () => { observer?.disconnect(); wrapper.removeAttribute('data-share-key-slot'); wrapper.style.removeProperty('--share-key-shift'); };
+        return () => { observer?.disconnect(); wrapper.removeAttribute('data-share-key-slot'); wrapper.style.removeProperty('--share-key-shift'); wrapper.style.removeProperty('--share-key-left'); };
     }, [epicKey]);
     const report = (result) => trackShareViewAction({ workflowAction: 'copy_link', result, sourceSurface });
     const copy = async () => {
@@ -78,7 +84,7 @@ export default function ShareViewButton({ surface, share, sourceSurface, activeC
         setLocal(null);
         const isCurrent = () => attemptRef.current.mounted && attemptRef.current.active
             && attemptRef.current.generation === generation && owner.getSnapshot() === ownerGeneration;
-        const captured = epicKey ? share.captureShareUrl({ kind: 'epic', key: epicKey })
+        const captured = epicKey ? share.captureShareUrl(boardColumnId ? { kind: 'epic', key: epicKey, column: boardColumnId } : { kind: 'epic', key: epicKey })
             : alertTarget ? share.captureShareUrl({ kind: 'alertTeam', anchor: alertTarget.anchor, id: alertTarget.id })
                 : share.captureShareUrl();
         if (!captured.ok) {

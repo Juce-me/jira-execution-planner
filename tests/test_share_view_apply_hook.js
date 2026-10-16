@@ -269,7 +269,11 @@ test('explicit Epic copy targets the clicked Epic and refuses a dropped focus', 
     hook.render();
     assert.equal(hook.render().captureShareUrl().ok, true, 'the view alone fits');
     assert.deepEqual(hook.render().captureShareUrl({ kind: 'epic', key: 'ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZ-1234567890' }), { ok: false, reason: 'too_long' });
-    for (const mode of ['board', 'statistics']) {
+    const board = mountHook({ modules }, makeOptions({ activeEngMode: 'board' })); board.render();
+    const boardLink = board.render().captureShareUrl({ kind: 'epic', key: 'PROJ-2', column: 'col-9' });
+    assert.equal(boardLink.ok, true);
+    assert.match(boardLink.url, /mode=board.*&bcolumn=col-9&epic=PROJ-2$/);
+    for (const mode of ['statistics']) {
         const other = mountHook({ modules }, makeOptions({ activeEngMode: mode })); other.render();
         assert.deepEqual(other.render().captureShareUrl({ kind: 'epic', key: 'PROJ-2' }), { ok: false, reason: 'invalid_state' });
     }

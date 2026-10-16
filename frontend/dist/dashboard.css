@@ -940,6 +940,8 @@ h1 {
 }
 .epic-header:hover [data-share-view=epic] > button,
 .epic-header:focus-within [data-share-view=epic] > button,
+.ecard:hover [data-share-view=epic] > button,
+.ecard:focus-within [data-share-view=epic] > button,
 .alert-team-group:hover [data-share-view=epic] > button,
 .alert-team-group:focus-within [data-share-view=epic] > button,
 .planning-review-table tr:hover [data-share-view=epic] > button,
@@ -949,14 +951,20 @@ h1 {
   pointer-events: auto;
 }
 @media (min-width: 761px) {
-  [data-share-view=epic][data-share-key-slot] {
+  .epic-title-row > [data-share-view=epic][data-share-key-slot] {
     flex: 0 0 0;
     width: 0;
   }
-  [data-share-view=epic][data-share-key-slot] > button {
+  .epic-title-row > [data-share-view=epic][data-share-key-slot] > button {
     position: relative;
     left: var(--share-key-shift, 0px);
   }
+}
+.eng-board .ecard > [data-share-view=epic] {
+  position: absolute;
+  top: calc(0.6rem - 2px);
+  left: var(--share-key-left, calc(100% - 0.7rem - 24px));
+  z-index: 1;
 }
 .alert-team-header > [data-share-view=epic] {
   order: 1;
@@ -5245,6 +5253,7 @@ button.toggle.applied-filter.active {
   display: none;
 }
 .eng-board .ecard {
+  position: relative;
   display: grid;
   gap: 0.35rem;
   width: 100%;
@@ -5341,6 +5350,9 @@ button.toggle.applied-filter.active {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.eng-board .ecard:has([data-share-key-slot]) .ekey {
+  margin-left: 30px;
 }
 .eng-board .ekey {
   font-family: "IBM Plex Mono", monospace;
@@ -7835,7 +7847,8 @@ a.dependency-missing-item {
   }
 }
 .epic-block[data-share-reveal],
-.alert-team-group[data-share-reveal] {
+.alert-team-group[data-share-reveal],
+.eng-board .ecard[data-share-reveal] {
   position: relative;
 }
 [data-share-reveal]:not(tr)::after {

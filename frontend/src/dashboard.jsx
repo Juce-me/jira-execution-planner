@@ -5609,6 +5609,9 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 && (group.id !== group.name || ['unknown', 'Unknown Team'].includes(group.id)) && (
                 <ShareViewButton surface="epic" alertTarget={{ anchor, id: String(group.id) }} scopeKey={shareScopeKey} share={shareView} sourceSurface={analyticsToken(activeEngMode)} activeControlSurface="epic" />
             );
+            const renderBoardEpicShareControl = (epicKey, columnId) => selectedView === 'eng' && activeEngMode === 'board' && (
+                <ShareViewButton surface="epic" epicKey={epicKey} boardColumnId={columnId} scopeKey={shareScopeKey} share={shareView} sourceSurface={analyticsToken(activeEngMode)} activeControlSurface="epic" />
+            );
             const renderShareViewControl = (surface) => selectedView === 'eng' && activeEngMode !== 'scenario' && (
                 <ShareViewButton surface={surface} scopeKey={shareScopeKey} share={shareView} sourceSurface={analyticsToken(activeEngMode)} activeControlSurface={activeControlSurface} />
             );
@@ -6923,6 +6926,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                                 renderPriorityIcon={renderPriorityIcon}
                                 engFilters={boardFilters}
                                 onFacetChange={setEngBoardFilterSelection}
+                                renderEpicShareControl={renderBoardEpicShareControl}
                                 onFilterBarHeightChange={handleFilterBarHeightChange}
                                 jiraUrl={jiraUrl}
                                 backendUrl={BACKEND_URL}

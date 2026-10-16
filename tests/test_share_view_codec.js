@@ -84,7 +84,7 @@ test('exports match the binding interface', () => {
     assert.deepEqual(keysByMode, {
         'catch-up': ['teams', 'status', 'priority', 'track', 'lanes', 'initiatives', 'sort', 'alerts', 'alertTeam', 'focus'],
         planning: ['teams', 'status', 'priority', 'track', 'lanes', 'layout', 'rows', 'initiatives', 'sort', 'focus'],
-        board: ['scope', 'bpriority', 'bprojects', 'bassignee', 'btrack', 'bcolumn'],
+        board: ['scope', 'bpriority', 'bprojects', 'bassignee', 'btrack', 'bcolumn', 'focus'],
         statistics: ['teams', 'stats', 'from', 'to'],
     });
     const { find, ...categories } = plain(defaults.SHARE_VIEW_CATEGORY_BY_KEY);
@@ -532,7 +532,7 @@ test('encode: keys outside the mode are neither written nor dropped', () => {
         keys.forEach((key) => { state[key] = extras[key]; });
         return state;
     };
-    assert.deepEqual(encode(only('board', Object.keys(extras))), { ok: true, query: `${head('board')}&scope=component`, dropped: [] });
+    assert.deepEqual(encode(only('board', Object.keys(extras))), { ok: true, query: `${head('board')}&scope=component&epic=PROJ-1`, dropped: [] });
     assert.equal(encode(only('catch-up', Object.keys(extras))).query,
         `${head()}&teams=t1&status=all&priority=only:Low&track=none&lanes=tech&initiatives=1&sort=status&alerts=off&epic=PROJ-1`);
     assert.equal(encode({ ...only('statistics', Object.keys(extras)), stats: 'teams' }).query, `${head('statistics')}&teams=t1`);

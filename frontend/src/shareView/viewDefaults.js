@@ -93,7 +93,7 @@ export const SHARE_VIEW_DEFAULTS = Object.freeze({
 export const SHARE_VIEW_KEYS_BY_MODE = Object.freeze({
     'catch-up': Object.freeze(['teams', 'find', 'status', 'priority', 'track', 'lanes', 'initiatives', 'sort', 'alerts', 'alertTeam', 'focus']),
     planning: Object.freeze(['teams', 'find', 'status', 'priority', 'track', 'lanes', 'layout', 'rows', 'initiatives', 'sort', 'focus']),
-    board: Object.freeze(['scope', 'find', 'bpriority', 'bprojects', 'bassignee', 'btrack', 'bcolumn']),
+    board: Object.freeze(['scope', 'find', 'bpriority', 'bprojects', 'bassignee', 'btrack', 'bcolumn', 'focus']),
     statistics: Object.freeze(['teams', 'stats', 'from', 'to']),
 });
 export const SHARE_VIEW_PLANNING_KEYS_BY_LAYOUT = Object.freeze({

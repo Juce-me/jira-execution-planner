@@ -27,7 +27,7 @@ import IssuePersonEditor from '../issues/IssuePersonEditor.jsx';
 export default function EngBoardEpicCard({
     epicGroup, renderPriorityIcon, onOpen, onDragStart, onDragEnd, isDragging = false, isRejected = false,
     workItemLabel = 'stories',
-    issueFieldEdits = null, jiraUrl = '',
+    issueFieldEdits = null, jiraUrl = '', shareControl = null,
 }) {
     const epic = (epicGroup && epicGroup.epic) || {};
     const key = (epicGroup && epicGroup.key) || epic.key || '';
@@ -122,6 +122,8 @@ export default function EngBoardEpicCard({
                     : `${storyPoints} sp`}</span>
             </div>
             </button>
+            {/* A sibling of the card's native trigger, never inside it; positioned beside the key in board.css. */}
+            {shareControl}
             <div className="erow3">
                 {issueFieldEdits ? personEditor('assignee', 'Assignee', epic.assignee) : <span className="eperson"><span className="lbl">Assignee</span><b>{assigneeName}</b></span>}
                 {issueFieldEdits ? personEditor('deliveryOwner', 'Delivery owner', epic.deliveryOwner) : <span className="eperson"><span className="lbl">Delivery owner</span><b className={deliveryOwnerName ? '' : 'is-empty'}>{deliveryOwnerName || 'Not set'}</b></span>}

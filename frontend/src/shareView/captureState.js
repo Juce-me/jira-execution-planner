@@ -5,14 +5,16 @@ export const STATS_RANGE_KIND = Object.freeze({ cohort: 'quarter', excludedCapac
 
 // The Board's facet selection and explicitly focused column. A facet the selection leaves absent is neutral, and a single-option
 // or both-ticked state is neutral too, so only a narrowing facet is carried.
-function boardViewState(mode, snapshot) {
+function boardViewState(mode, snapshot, focusColumn) {
     if (mode !== 'board') return {};
     const selection = snapshot.engBoardFilterSelection || {};
     const out = {};
     BOARD_FACET_KEYS.forEach(([facet, key]) => { if (Array.isArray(selection[facet]) && selection[facet].length) out[key] = [...selection[facet]]; });
     if (Array.isArray(selection.assignee) && selection.assignee[0] === 'unassigned') out.bassignee = ['unassigned'];
     if (Array.isArray(selection.track) && selection.track.length < 2) out.btrack = [...selection.track];
-    if (snapshot.boardView?.focusedId) out.bcolumn = String(snapshot.boardView.focusedId);
+    // An explicit Epic target names its own column; otherwise the column the sender explicitly focused.
+    const column = focusColumn || snapshot.boardView?.focusedId;
+    if (column) out.bcolumn = String(column);
     return out;
 }
 
@@ -39,7 +41,7 @@ export function buildShareViewState({ mode, groupId, sprintId, snapshot, searchQ
         lanes: { product: snapshot.showProduct, tech: snapshot.showTech },
         initiatives: typeof snapshot.groupByInitiativeChoice === 'boolean' ? snapshot.groupByInitiativeChoice : undefined,
         sort, layout, rows: rowsMode || undefined,
-        ...boardViewState(mode, snapshot),
+        ...boardViewState(mode, snapshot, focus?.column),
         stats: statsView, ...range,
         alerts: rendered.length ? (snapshot.showAlertsPanel ? (expanded.length ? expanded : 'none') : 'off') : undefined,
         alertTeam: focus?.kind === 'alertTeam' ? { anchor: focus.anchor, id: focus.id } : undefined,

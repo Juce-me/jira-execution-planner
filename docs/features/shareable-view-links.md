@@ -19,7 +19,7 @@ To point at a particular Epic in Catch Up or Planning, use the chain-link action
 | --- | --- |
 | Catch Up | group, Sprint, Teams, search, Status, Priority and Project Track filters, Product/Tech lanes, Initiative grouping, Epic sort, which alert categories are expanded, and an Epic target only when copied from that Epic |
 | Planning | group, Sprint, Teams, search, filters, lanes, List or Table, Epics or Stories rows (Table), Initiative grouping and sort (List), and an Epic target only when copied from that Epic |
-| Board | group, Sprint, the Board scope (Sprint, Component or All work), search, the Board's Priority, Projects, Assignee and Project Track filters, and the column you explicitly focused (the opened column) |
+| Board | group, Sprint, the Board scope (Sprint, Component or All work), search, the Board's Priority, Projects, Assignee and Project Track filters, the column you explicitly focused (the opened column) and, from a card's copy action, one Epic card |
 | Statistics | group, Sprint, the Statistics view, its range, and Teams for the views that use them |
 
 A link never carries your saved preferences, Planning row selections or review drafts, Scenario content, EPM state, alert dismissals, Statistics display options, assignee filters, tokens or any account detail. It does contain ids (group, Team, Sprint, issue keys) and your search text, so treat it like any internal link. A link is not a permission: it cannot show anything the opener's own Jira access does not already allow.
@@ -70,7 +70,7 @@ Apply and omission notices name categories, never values from the link. Copy con
 
 - An explicit Epic copy refuses if fitting the query would require omitting that Epic, so it never silently copies a view-only link.
 - The query part of a link can contain at most 1,536 characters. When a view would not fit, the lowest-priority parts are left out in this order (search text, the focus target, alert categories, Initiative grouping, sort) and the notice names them; if it still does not fit, nothing is copied.
-- A Board or Statistics link has no focus target, and no link carries Statistics display options in this version. A Board link names the focused column only when you chose one; an unknown column falls back to the recipient's default focus.
+- A Statistics link has no focus target, and no link carries Statistics display options in this version. A Board link names the focused column only when you chose one, or the card's own column when you copy from a card, which also carries the current filters and reveals that card (its column scrolls to it) on arrival; the card's action sits between its summary and its key, and the card's panel is not opened; an unknown column falls back to the recipient's default focus.
 - Search text is part of the link. In the container deployment the access log records the request path only, never the query string or the Referer.
 
 Feedback uses the existing compact export surfaces: a neutral menu holds the full selectable URL for manual copying, while omissions, refused copies and unapplied link details use a compact warning. Each has a compact Dismiss action. Recovery banners are reserved for connection recovery.

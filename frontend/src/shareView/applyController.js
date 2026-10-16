@@ -93,6 +93,10 @@ function runStageB(o, state, scope) {
         SHARE_VIEW_ALERT_KEYS.forEach(key => o.alertFlags[key][1](Boolean(apply.alerts.expanded[key])));
     }
     if (has(apply, 'scope')) o.setBoardStrictScope(apply.scope);
+    if (has(apply, 'boardFilters')) {
+        o.setEngBoardFilterSelection(apply.boardFilters);
+        o.setBoardView(apply.boardColumn ? { fromLink: true, focusedId: apply.boardColumn } : null);
+    }
     return { reported, rows: has(apply, 'rows') ? apply.rows : null };
 }
 

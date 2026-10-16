@@ -401,14 +401,14 @@ test('Planning plan: the table carries rows, the list carries initiatives and so
 });
 
 test('Board plan: find and scope; the default scope needs no readiness', () => {
-    assert.deepEqual(planFor({ mode: 'board', find: 'x' }), { apply: { find: 'x', scope: SHARE_VIEW_DEFAULTS.scope }, reported: [] });
+    assert.deepEqual(planFor({ mode: 'board', find: 'x' }), { apply: { find: 'x', scope: SHARE_VIEW_DEFAULTS.scope, boardFilters: {}, boardColumn: null }, reported: [] });
     assert.equal(SHARE_VIEW_DEFAULTS.scope, '');
 });
 
 test('Board scope applies only when the Board is ready for the link group', () => {
     const calls = [];
     const ready = (value) => ({ ...CTX, boardScopeReady: (groupId, scope) => { calls.push([groupId, scope]); return value; } });
-    assert.deepEqual(planFor({ mode: 'board', scope: 'all_work' }, ready(true)).apply, { find: '', scope: 'all_work' });
+    assert.deepEqual(planFor({ mode: 'board', scope: 'all_work' }, ready(true)).apply, { find: '', scope: 'all_work', boardFilters: {}, boardColumn: null });
     assert.deepEqual(calls, [['dept/a', 'all_work']]);
     assert.deepEqual(planFor({ mode: 'board', scope: 'component' }, ready(true)).apply.scope, 'component');
     for (const [label, ctx] of [['not ready', ready(false)], ['truthy but not true', ready('yes')], ['no readiness callback', CTX]]) {
@@ -417,6 +417,13 @@ test('Board scope applies only when the Board is ready for the link group', () =
         assert.deepEqual(plan.reported, ['mode'], label);
     }
     assert.deepEqual(planFor({ mode: 'board', scope: '__proto__' }, ready(true)).reported, ['mode']);
+});
+
+test('Board plan carries its own facet selection and focused column, nothing else', () => {
+    const plan = planFor({ mode: 'board', bpriority: ['Major'], bprojects: ['tech', 'product'], bassignee: ['unassigned'], btrack: [], bcolumn: 'col-2' });
+    assert.deepEqual(plan.apply.boardFilters, { priority: ['Major'], projects: ['tech', 'product'], assignee: ['unassigned'], track: [] });
+    assert.equal(plan.apply.boardColumn, 'col-2');
+    assert.equal(Object.hasOwn(planFor({ mode: 'catch-up', bpriority: ['Major'] }).apply, 'boardFilters'), false);
 });
 
 test('Statistics plan: stats and range; keys outside the resolved mode are absent', () => {

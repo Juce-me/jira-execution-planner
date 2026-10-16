@@ -18,6 +18,10 @@ export const SHARE_VIEW_MODES = Object.freeze(['catch-up', 'planning', 'board', 
 // Board scope tokens; the empty string is the ordinary sprint scope (dashboard.jsx boardStrictScope).
 export const SHARE_VIEW_BOARD_SCOPES = Object.freeze(['component', 'all_work']);
 
+// Board facet option ids the link may name (the Board's own facets, eng/engBoardFilters.js); priority uses SHARE_VIEW_PRIORITY_IDS.
+export const SHARE_VIEW_BOARD_PROJECT_IDS = Object.freeze(['tech', 'product', 'other']);
+export const SHARE_VIEW_BOARD_ASSIGNEE_IDS = Object.freeze(['unassigned']);
+
 export const SHARE_VIEW_PLANNING_LAYOUTS = Object.freeze(['list', 'table']);
 
 // The Planning table's own row modes; the link spells them `epics` and `stories`.
@@ -89,7 +93,7 @@ export const SHARE_VIEW_DEFAULTS = Object.freeze({
 export const SHARE_VIEW_KEYS_BY_MODE = Object.freeze({
     'catch-up': Object.freeze(['teams', 'find', 'status', 'priority', 'track', 'lanes', 'initiatives', 'sort', 'alerts', 'alertTeam', 'focus']),
     planning: Object.freeze(['teams', 'find', 'status', 'priority', 'track', 'lanes', 'layout', 'rows', 'initiatives', 'sort', 'focus']),
-    board: Object.freeze(['scope', 'find']),
+    board: Object.freeze(['scope', 'find', 'bpriority', 'bprojects', 'bassignee', 'btrack', 'bcolumn']),
     statistics: Object.freeze(['teams', 'stats', 'from', 'to']),
 });
 export const SHARE_VIEW_PLANNING_KEYS_BY_LAYOUT = Object.freeze({
@@ -116,6 +120,11 @@ export const SHARE_VIEW_CATEGORY_BY_KEY = Object.freeze({
     lanes: 'filters',
     initiatives: 'filters',
     sort: 'filters',
+    bpriority: 'filters',
+    bprojects: 'filters',
+    bassignee: 'filters',
+    btrack: 'filters',
+    bcolumn: 'filters',
     alerts: 'focus',
     alertTeam: 'focus',
     epic: 'focus',

@@ -84,7 +84,7 @@ test('exports match the binding interface', () => {
     assert.deepEqual(keysByMode, {
         'catch-up': ['teams', 'status', 'priority', 'track', 'lanes', 'initiatives', 'sort', 'alerts', 'alertTeam', 'focus'],
         planning: ['teams', 'status', 'priority', 'track', 'lanes', 'layout', 'rows', 'initiatives', 'sort', 'focus'],
-        board: ['scope'],
+        board: ['scope', 'bpriority', 'bprojects', 'bassignee', 'btrack', 'bcolumn'],
         statistics: ['teams', 'stats', 'from', 'to'],
     });
     const { find, ...categories } = plain(defaults.SHARE_VIEW_CATEGORY_BY_KEY);
@@ -93,6 +93,7 @@ test('exports match the binding interface', () => {
         mode: 'mode', scope: 'mode', layout: 'mode', rows: 'mode', stats: 'mode', from: 'mode', to: 'mode',
         teams: 'teams',
         status: 'filters', priority: 'filters', track: 'filters', lanes: 'filters', initiatives: 'filters', sort: 'filters',
+        bpriority: 'filters', bprojects: 'filters', bassignee: 'filters', btrack: 'filters', bcolumn: 'filters',
         alerts: 'focus', alertTeam: 'focus', epic: 'focus', story: 'focus',
     });
     for (const frozen of [
@@ -1041,7 +1042,7 @@ test('source guard: viewDefaults imports its owner constants and uses them inste
 test('find: its place in the key tables', () => {
     assert.deepEqual(plain(defaults.SHARE_VIEW_KEYS_BY_MODE['catch-up']).slice(0, 2), ['teams', 'find']);
     assert.deepEqual(plain(defaults.SHARE_VIEW_KEYS_BY_MODE.planning).slice(0, 2), ['teams', 'find']);
-    assert.deepEqual(plain(defaults.SHARE_VIEW_KEYS_BY_MODE.board), ['scope', 'find']);
+    assert.deepEqual(plain(defaults.SHARE_VIEW_KEYS_BY_MODE.board).slice(0, 2), ['scope', 'find']);
     assert.equal(defaults.SHARE_VIEW_CATEGORY_BY_KEY.find, 'filters');
     assert.equal(defaults.SHARE_VIEW_DEFAULTS.find, '');
     assert.equal(plain(codec.SHARE_VIEW_QUERY_KEYS).includes('find'), true);
@@ -1092,6 +1093,16 @@ test('find: encode vectors, and a Board link carries only scope and find', () =>
     }
     assert.deepEqual(encode({ ...BASE, mode: 'board', scope: 'all_work', find: 'x y', status: null }),
         { ok: true, query: `${head('board')}&scope=all_work&find=x%20y`, dropped: [] });
+});
+
+test('Board facets and the focused column round trip and decode only their own vocabulary', () => {
+    const state = withMode({ mode: 'board', scope: 'component', bpriority: ['Major', 'Blocker'], bprojects: ['tech'], bassignee: ['unassigned'], btrack: [], bcolumn: 'In Progress' });
+    const query = assertRoundTrip('board facets', state);
+    assert.match(query, /&bpriority=Major,Blocker&bprojects=tech&bassignee=unassigned&btrack=none&bcolumn=In%20Progress/);
+    assert.match(query, stashPattern());
+    assert.deepEqual(decode('?v=1&bprojects=tech,nope&bassignee=anyone'), ok({}, ['filters']));
+    assert.deepEqual(decode('?v=1&btrack=committed'), ok({ btrack: ['committed'] }));
+    assert.equal(encode({ ...BASE, mode: 'catch-up', bpriority: ['Major'], bcolumn: 'x' }).query.includes('bpriority'), false, 'a Board key never rides a Catch Up link');
 });
 
 test('find: round trips, including the worst-case full states, and the stash pattern', () => {

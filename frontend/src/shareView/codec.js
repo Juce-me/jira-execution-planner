@@ -5,6 +5,8 @@
 import {
     SHARE_VIEW_ALERT_ANCHORS,
     SHARE_VIEW_ALERT_KEYS,
+    SHARE_VIEW_BOARD_ASSIGNEE_IDS,
+    SHARE_VIEW_BOARD_PROJECT_IDS,
     SHARE_VIEW_BOARD_SCOPES,
     SHARE_VIEW_CATEGORY_BY_KEY,
     SHARE_VIEW_DEFAULTS,
@@ -13,6 +15,7 @@ import {
     SHARE_VIEW_PLANNING_KEYS_BY_LAYOUT,
     SHARE_VIEW_PLANNING_LAYOUTS,
     SHARE_VIEW_PLANNING_ROWS,
+    SHARE_VIEW_PRIORITY_IDS,
     SHARE_VIEW_SORTS,
     SHARE_VIEW_STATS_KEYS_BY_VIEW,
     SHARE_VIEW_STATS_VIEWS,
@@ -25,7 +28,8 @@ export const SHARE_VIEW_MAX_QUERY = 1536;
 // Every key a link can carry, in the order the encoder writes them.
 export const SHARE_VIEW_QUERY_KEYS = Object.freeze([
     'v', 'mode', 'group', 'sprint', 'scope', 'layout', 'rows', 'stats', 'from', 'to', 'teams', 'find',
-    'status', 'priority', 'track', 'lanes', 'initiatives', 'sort', 'alerts', 'alertTeam', 'epic', 'story',
+    'status', 'priority', 'track', 'lanes', 'initiatives', 'sort', 'bpriority', 'bprojects', 'bassignee', 'btrack', 'bcolumn',
+    'alerts', 'alertTeam', 'epic', 'story',
 ]);
 
 const MAX_FURTHER_PAIRS = 40;
@@ -125,6 +129,12 @@ function parseTrack(raw) {
     return ids.every((id) => SHARE_VIEW_TRACK_IDS.includes(id)) ? ids : INVALID;
 }
 
+// A Board facet list: only ids from the Board's own vocabulary.
+const parseVocabList = (vocabulary) => (raw) => {
+    const ids = decodeList(raw, MAX_FACET_ATOM, MAX_FACET_ATOMS);
+    return ids && ids.every((id) => vocabulary.includes(id)) ? ids : INVALID;
+};
+
 function parseLanes(raw) {
     const lanes = [...new Set(raw.split(','))];
     if (!lanes.every((lane) => lane === 'product' || lane === 'tech')) return INVALID;
@@ -170,6 +180,11 @@ const SPEC = Object.freeze({
     lanes: { key: 'lanes', parse: parseLanes },
     initiatives: { key: 'initiatives', parse: (raw) => (raw === '1' ? true : raw === '0' ? false : INVALID) },
     sort: { key: 'sort', parse: parseToken(SHARE_VIEW_SORTS) },
+    bpriority: { key: 'bpriority', parse: parseVocabList(SHARE_VIEW_PRIORITY_IDS) },
+    bprojects: { key: 'bprojects', parse: parseVocabList(SHARE_VIEW_BOARD_PROJECT_IDS) },
+    bassignee: { key: 'bassignee', parse: parseVocabList(SHARE_VIEW_BOARD_ASSIGNEE_IDS) },
+    btrack: { key: 'btrack', parse: parseTrack },
+    bcolumn: { key: 'bcolumn', parse: parseAtom(MAX_ID) },
     layout: { key: 'layout', parse: parseToken(SHARE_VIEW_PLANNING_LAYOUTS) },
     rows: { key: 'rows', parse: parseRows },
     stats: { key: 'stats', parse: parseToken(SHARE_VIEW_STATS_VIEWS) },
@@ -290,6 +305,11 @@ function encodeTrack(value) {
     return ids.length ? ids.join(',') : 'none';
 }
 
+const encodeVocabList = (vocabulary) => (value) => {
+    if (!Array.isArray(value) || !value.length || !value.every((id) => vocabulary.includes(id))) return null;
+    return encodeAtoms(value, MAX_FACET_ATOM, MAX_FACET_ATOMS);
+};
+
 function encodeLanes(value) {
     const { product, tech } = SHARE_VIEW_DEFAULTS.lanes;
     if (!isRecord(value) || typeof value.product !== 'boolean' || typeof value.tech !== 'boolean') return null;
@@ -357,6 +377,11 @@ const ENCODERS = Object.freeze({
     lanes: (state) => one('lanes', encodeLanes(state.lanes)),
     initiatives: (state) => one('initiatives', encodeInitiatives(state.initiatives)),
     sort: (state) => one('sort', encodeSort(state.sort)),
+    bpriority: (state) => one('bpriority', encodeVocabList(SHARE_VIEW_PRIORITY_IDS)(state.bpriority)),
+    bprojects: (state) => one('bprojects', encodeVocabList(SHARE_VIEW_BOARD_PROJECT_IDS)(state.bprojects)),
+    bassignee: (state) => one('bassignee', encodeVocabList(SHARE_VIEW_BOARD_ASSIGNEE_IDS)(state.bassignee)),
+    btrack: (state) => one('btrack', encodeTrack(state.btrack)),
+    bcolumn: (state) => one('bcolumn', encodeAtom(state.bcolumn, MAX_ID)),
     alerts: (state) => one('alerts', encodeAlerts(state.alerts)),
     alertTeam: (state) => one('alertTeam', encodeAlertTeam(state.alertTeam, state)),
     focus: (state) => {

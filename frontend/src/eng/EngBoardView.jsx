@@ -154,9 +154,11 @@ export default function EngBoardView({
     // Derived during render, never written during render: a `view` that belongs to a different
     // board (group switch, settings save, star moved in the composer) is simply ignored in favour
     // of a fresh seed, so there is no re-seeding effect and no frame of wrong focus.
+    // A shared link names only the focused column, so its view carries no board identity: it seeds against this board (an unknown id
+    // falls back through resolveFocus) and the next focus change replaces it with an ordinary view.
     const seed = view && view.configStarredId === configStarredId
         ? view
-        : { configStarredId, starredId: configStarredId, focusedId: null };
+        : { configStarredId, starredId: configStarredId, focusedId: view?.fromLink ? view.focusedId : null };
     const starredId = seed.starredId;
     const focusedId = resolveFocus(columns, { preferred: seed.focusedId, starredId });
     React.useEffect(() => {

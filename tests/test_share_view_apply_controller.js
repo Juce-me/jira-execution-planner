@@ -80,7 +80,7 @@ function createRig({ link, search, options = {} } = {}) {
         setStatsView: spy('setStatsView'), setCohortStartQuarter: spy('setCohortStartQuarter'), setCohortEndQuarter: spy('setCohortEndQuarter'),
         setExcludedCapacityStartSprintId: spy('setExcludedCapacityStartSprintId'), setExcludedCapacityEndSprintId: spy('setExcludedCapacityEndSprintId'),
         setShowAlertsPanel: spy('setShowAlertsPanel'), setBoardStrictScope: spy('setBoardStrictScope'), setSelectedTeams: spy('setSelectedTeams'),
-        setEngStatusFilter: spy('setEngStatusFilter'), setEngPriorityFilter: spy('setEngPriorityFilter'), setEngProjectTrackFilter: spy('setEngProjectTrackFilter'),
+        setEngStatusFilter: spy('setEngStatusFilter'), setEngPriorityFilter: spy('setEngPriorityFilter'), setEngProjectTrackFilter: spy('setEngProjectTrackFilter'), setEngBoardFilterSelection: spy('setEngBoardFilterSelection'), setBoardView: spy('setBoardView'),
         alertFlags: Object.fromEntries(ALERT_KEYS.map(key => [key, [true, spy(`flag:${key}`)]])),
         ...options,
     };
@@ -540,6 +540,17 @@ test('Board scope is applied only when ready, and a Board link has no Teams or f
     assert.deepEqual(pending.log.filter(([name]) => name === 'setBoardStrictScope'), [], 'an unavailable scope is skipped');
     for (let step = 0; step < 4; step += 1) pending.tick(100);
     assert.deepEqual(pending.store.log.at(-1), ['finish', 'partial', ['mode']]);
+});
+
+test('a Board link writes its facet selection and a link-seeded focused column', () => {
+    const rig = createRig({ link: { version: 1, mode: 'board', group: 'grp-a', sprint: '41', bpriority: ['Major'], bcolumn: 'col-2' } });
+    rig.tick();
+    rig.take();
+    rig.tick();
+    const writes = rig.take();
+    assert.deepEqual(writes.filter(([name]) => name === 'setEngBoardFilterSelection' || name === 'setBoardView'), [
+        ['setEngBoardFilterSelection', { priority: ['Major'] }], ['setBoardView', { fromLink: true, focusedId: 'col-2' }],
+    ]);
 });
 
 test('Statistics writes its view and range, and a source-only view skips Stage C silently', () => {

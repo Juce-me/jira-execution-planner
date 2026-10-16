@@ -201,6 +201,10 @@ export function buildShareViewFieldPlan(state, scope, ctx = {}) {
     const take = (...keys) => keys.forEach((key) => { apply[key] = linkValue(state, key); });
     if (scope.mode === 'board') {
         take('find');
+        // The Board's own facet selection (an absent facet is neutral) and the focused column; an unknown column id is ignored by the Board.
+        const facets = { priority: state.bpriority, projects: state.bprojects, assignee: state.bassignee, track: state.btrack };
+        apply.boardFilters = Object.fromEntries(Object.entries(facets).filter(([, ids]) => ids !== undefined));
+        apply.boardColumn = state.bcolumn ?? null;
         const boardScope = resolveBoardScope(state, scope, ctx, reported);
         if (boardScope !== undefined) apply.scope = boardScope;
     } else if (scope.mode === 'statistics') {

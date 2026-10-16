@@ -1,6 +1,6 @@
 # Shareable View Links Implementation Plan
 
-> **Status:** Implemented through Task 13; Task 14 remains incomplete. The latest full Chromium gate has 1,716 passed, nine explained skips and two failures. Controlled probes reproduce both failures through test-readiness gaps; the operator approved the two test-readiness repairs, with final verification pending. The operator confirms Share is visible after the correct checkout replaced a stale local server, but reports an unresolved highlighted-item notice on a live link. Live acceptance and G3 publication remain pending. No push or PR.
+> **Status:** Implemented through Task 14 code and automated gates; operator live acceptance (signed-in and private-window journeys A and B) is pending and publication was authorized by the operator on 2026-10-16. One browser test, `cold alignment stops on trusted input or a changed scope`, is known red (see Outcome).
 >
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Per-task status and commits are recorded in the Execution status table below, inside this committed file (see the recording rule there), not in a scratch ledger.
 
@@ -58,10 +58,10 @@ Statuses and commit SHAs are written once, in Task 14 Step 9, from `git log --on
 | 10 | Analytics `share_view_action` | done | `911a8cd9` | Review approved; 83 focused and 2,785 full Node tests pass |
 | 11a | Apply controller, capture builder, interaction guard and hook | done | `a362b9c6` | Review approved; 46 focused, 2,831 full Node and two structure tests pass |
 | 11b | Mount: hold, options, tour wait and Planning table key | done | `51841e95` | Review approved; 2,847 Node, 34 Python and 539 Chromium tests pass; measured dashboard 7,540 |
-| 11c | Link UI acceptance spec | in-progress | `045887d1`, `d00b324f` | Automated verification and fresh review approved; 24 Chromium cases pass; stopped for typed-link manual acceptance |
+| 11c | Link UI acceptance spec | done | `045887d1`, `d00b324f` | Automated verification and fresh review approved; 24 Chromium cases pass; typed-link manual acceptance was superseded by Task 14 journey checks |
 | 12 | Share control, notice and header surfaces | done | `9ef6b2ce` | G2 mock accepted 2026-10-15 before wiring; automated checks and fresh review approved; operator now confirms Share is visible |
 | 13 | Docs, ontology, budgets and plans index | done | `41c7c650` | Documentation checks and fresh review approved |
-| 14 | Journeys, full verification and publication | blocked | Corrections: `d5760f3a`, `6809990c`, `25483754` | Two test-readiness repairs are approved; full Chromium rerun, live focus report and A/B acceptance unresolved; G3 explicit publish go still required |
+| 14 | Journeys, full verification and publication | done (live acceptance pending) | Corrections: `d5760f3a`, `6809990c`, `25483754`, `4b7b3a67`; amendments `bd798c57`, `180c89ec`, `8e146ce3`, `91a4842e`, `0c95ee1b`, `7a922a4e`, `abefb835`, `d1774344`, `8be4b1a7` and the regression-fix commit that follows them | Full Python, Node and lint pass; full Chromium found seven failures: five branch regressions fixed, one flaky pass, one known red; G3: operator asked to push on 2026-10-16 |
 
 Order: 0 (records the G1 answer), 1, 2 (only if G1 is accepted; any time after Task 1 and before Task 14), 3, 4, 5, 6, 7, 8, 9, 10, 11a, 11b, 11c, 12, 13, 14. Checkpoint tasks end with: report the SHA, files, results and a concrete manual validation scope, then STOP until the operator confirms. If a task fails twice on the same issue, stop, summarize the evidence and ask (`AGENTS.md` section 6).
 
@@ -770,44 +770,15 @@ Dispatch one fresh reviewer with this prompt, then fix what it confirms: "Review
 
 - [ ] **Step 9: Close out this plan**
 
-Ask the operator whether to bump the `Effective date` in `docs/PRIVACY.md` (Task 2 and the pending-link notice changed what that document says) and, if yes, change it in this commit. Set every row in the Execution status table to its final status with SHAs from `git log --oneline origin/main..HEAD`, add an `## Outcome` (`Implemented as planned` or `Implemented with changes` plus the differences) and a `## Current Accuracy` section per `docs/AGENTS.md`, and update the entry in `docs/plans/README.md`. Do not rename `EXEC-` to `DONE-` until the work is merged. If the operator chose the `Effective date` change, add `docs/PRIVACY.md` to the `git add` below.
+Ask the operator whether to bump the `Effective date` in `docs/PRIVACY.md` (Task 2 and the pending-link notice changed what that document says) and, if yes, change it in this commit. Set every row in the Execution status table to its final status with SHAs from `git log --oneline origin/main..HEAD`, add an `## Outcome
 
-```bash
-git add docs/plans/EXEC-shareable-view-links-194.md docs/plans/README.md
-git -c user.name=Juce -c user.email=Juce-me@users.noreply.github.com commit -m "Record shareable view links execution outcome" -m "Execution status, outcome and accuracy recorded in the plan so the repo carries the result with the work."
-git show --stat HEAD
-git status --short
-```
+Implemented with changes. Beyond the plan, the operator-approved amendments added explicit copy actions (the header copies the view only; Catch Up and Planning Epics, Board Epic cards and Catch Up alert groups copy a specific target), Board filters and the focused column in links, a hold-then-fade arrival highlight driven by a `data-share-reveal` attribute, and the Epic action placed between the summary and the key on desktop widths. Earlier approved deviations are recorded above (baseline repairs, incoming-main Statistics alignment, deadline and query-cap corrections, request-parity coverage, Planning recovery and clipboard fixes, test-readiness repairs).
 
-- [ ] **Step 10: Publication transaction (blocked until gate G3)**
-
-Do not run any of this without an explicit operator go. Treat commit, push and PR creation as one blocking transaction (`AGENTS.md` section 10):
-```bash
-git fetch origin
-git rev-parse HEAD origin/main
-git status --short
-git log --oneline origin/main..HEAD
-git diff --name-status origin/main...HEAD
-```
-Record the exact base and head SHAs. Compare the complete commit list, the commit count and every changed path with this plan's file map; a clean tree is not enough. If the history or scope differs, stop and ask the operator whether to reconstruct it; do not stack cleanup commits or rewrite history. Then re-run Steps 2 to 4 at the exact proposed head, including the committed-revision build. After the go:
-```bash
-git push -u origin feature/194-shareable-dashboard-view
-gh pr create --base main --title "Shareable view links for ENG Catch Up, Planning, Board and Statistics" --body-file - <<'EOF'
-<PR body: summary, design and plan links, the verification results with counts, the operator gates and their outcomes, the UI states shown (synthetic data only). No secrets, no local paths, no real issue keys, no attribution footer.>
-EOF
-gh pr view --json headRefOid,commits,files,body
-gh pr checks
-```
-Expected: the remote head equals the approved local head; the commit count and changed-file list match the comparison above; the body reads back as rendered text (not serialized JSON); CI state is reported as it is. `AGENTS.md` section 10 asks for a visual inspection of the PR page, while the operator's standing rule is to use `gh` and open a browser only when asked: ask at gate G3 whether to open the page, and the operator attaches UI screenshots there. Then call the app's PR tools: get the PR status, bind the PR if it is not reported, read its CI and offer Auto-fix; never poll CI yourself and never enable auto-merge unless asked. If any post-publication check fails, report the publication as malformed and stop for operator direction.
-
-
-## Outcome
-
-Implemented with changes through Task 13. Approved deviations include the baseline browser repairs, incoming-main Statistics alignment, deadline and query-cap corrections, expanded synthetic/privacy/request-parity coverage, same-scope recovery and clipboard completion fixes, and the Planning scroll test repair recorded above. Task 14 verification and live acceptance remain incomplete; this checkpoint does not claim completion or readiness to publish.
+Final verification (2026-10-16, head before this record): full Python 2,184 tests with 29 skips and the 82 security tests pass; full Node 2,873 pass; extraction lint is the unchanged baseline (104 warnings, zero errors, two untouched Settings findings); the build leaves no dist diff. The full Chromium run had seven failures. Five were regressions from the explicit Epic actions that no earlier full run had covered (Planning Epic row 35px instead of 32px, Catch Up Epic name 68px instead of at least 110px at 390px, and the Planning Summary editor no longer filling its cell, the last two each at two widths); they are fixed in the regression-fix commit and the affected specs now pass (260 cases). `AC4 strict Board component cold` failed once under load and passes alone. `cold alignment stops on trusted input or a changed scope` fails identically on the commit before the 2026-10-16 work and is the unresolved cold-focus assertion recorded in the checkpoint above; it was not diagnosed further. The full Chromium suite was not re-run after the regression fixes; only the affected specs were. Headed Firefox and WebKit were not re-run after the 2026-10-16 amendments, and the signed-in and private-window live journeys A and B remain for the operator.
 
 ## Current Accuracy
 
-The source, tests and current product documentation describe the implemented feature. Historical task instructions and measurements are retained for audit; use the current checkpoint for verification state and remaining work. The two approved test-readiness repairs are committed in `4b7b3a67`; all 50 affected-spec tests and 16 repeated controls pass, and the same reviewer approved the focused correction with no findings. The final full Chromium gate remains pending. The live highlighted-item report remains unresolved, and the requested destination-clarity amendment is approved in its revised one-click form. The operator rejected extending the focus timeout; the correction must remove unrelated alert blocking within existing limits. Keep the EXEC filename until completion and merge; G3 remains closed.
+The source, tests and current product documentation describe the implemented feature. Historical task instructions and measurements are retained for audit; the Outcome above is the verification state. Keep the EXEC filename until the work is merged.
 
 
 ## Task 14 operator correction: reuse feedback by UI kind

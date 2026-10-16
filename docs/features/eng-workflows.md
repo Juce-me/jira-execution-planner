@@ -152,7 +152,7 @@ Board search is separate and Epic-only. It matches Epic key, summary, assignee, 
 
 ## Share a view
 
-The header **Share** control copies a link to the current Catch Up, Planning, Board or Statistics view. See [Shareable View Links](shareable-view-links.md) for what a link carries and what a recipient sees.
+The header **Copy view link** control copies a link to the current Catch Up, Planning, Board or Statistics view, and Catch Up and Planning Epics, Board Epic cards and Catch Up alert groups each have their own copy action for a specific target. See [Shareable View Links](shareable-view-links.md) for what a link carries and what a recipient sees.
 
 ## Continue in Jira
 

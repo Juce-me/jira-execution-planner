@@ -1,6 +1,6 @@
 # Privacy Notice for Self-Hosted Deployments
 
-Effective date: 25 August 2026
+Effective date: 15 October 2026
 
 Jira Delivery Planner is self-hosted software. This project does not provide a
 central hosted application, user-account service, or database. The person or

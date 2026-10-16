@@ -74,3 +74,7 @@ Apply and omission notices name categories, never values from the link. Copy con
 - Search text is part of the link. In the container deployment the access log records the request path only, never the query string or the Referer.
 
 Feedback uses the existing compact export surfaces: a neutral menu holds the full selectable URL for manual copying, while omissions, refused copies and unapplied link details use a compact warning. Each has a compact Dismiss action. Recovery banners are reserved for connection recovery.
+
+## Highlight on arrival
+
+A revealed Epic, alert group or Planning row is painted with an overlay that holds at full strength briefly, then fades out over one second (a static tint with reduced motion). It is driven by the `data-share-reveal` attribute rather than a class. A revealed Story keeps the existing two-pulse card highlight.

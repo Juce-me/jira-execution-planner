@@ -843,7 +843,7 @@ async function coldFocus(page, { alerts = null } = {}) {
         window.__coldScrolls = [];
         window.__coldHighlights = [];
         document.addEventListener('animationstart', event => {
-            if (event.animationName === 'epicFlash' && event.target.matches?.('.epic-block[data-epic-key="ALP-100"]')) window.__coldHighlights.push(performance.now());
+            if (event.animationName === 'shareViewReveal' && event.target.matches?.('.epic-block[data-epic-key="ALP-100"]')) window.__coldHighlights.push(performance.now());
         }, true);
         window.scrollTo = (...args) => { window.__coldScrolls.push(args); return scrollTo(...args); };
     });

@@ -7817,6 +7817,35 @@ a.dependency-missing-item {
     background: transparent;
   }
 }
+.epic-block[data-share-reveal],
+.alert-team-group[data-share-reveal] {
+  position: relative;
+}
+[data-share-reveal]:not(tr)::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: var(--sticky-epic-z);
+  animation: shareViewReveal 1.6s ease-out;
+}
+@keyframes shareViewReveal {
+  0%, 35% {
+    background: rgba(255, 200, 0, 0.5);
+    box-shadow: inset 0 0 0 2px rgba(232, 163, 61, 0.9);
+  }
+  100% {
+    background: transparent;
+    box-shadow: inset 0 0 0 2px transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-share-reveal]:not(tr)::after {
+    animation: none;
+    background: rgba(255, 200, 0, 0.35);
+  }
+}
 .epic-excluded {
   opacity: 0.55;
   transition: opacity 0.2s ease;
@@ -9698,15 +9727,15 @@ input.story-points-editor.story-points-alert-highlight {
     z-index: 5;
   }
 }
-.planning-review-table tr.planning-review-confirmed td {
+.planning-review-table tr:is(.planning-review-confirmed, [data-share-reveal]) td {
   position: relative;
 }
-.planning-review-table tr.planning-review-confirmed td.planning-review-selection,
-.planning-review-table tr.planning-review-confirmed td.planning-review-key {
+.planning-review-table tr:is(.planning-review-confirmed, [data-share-reveal]) td.planning-review-selection,
+.planning-review-table tr:is(.planning-review-confirmed, [data-share-reveal]) td.planning-review-key {
   position: sticky;
 }
 @media (min-width: 1000px) {
-  .planning-review-table tr.planning-review-confirmed td.planning-review-summary {
+  .planning-review-table tr:is(.planning-review-confirmed, [data-share-reveal]) td.planning-review-summary {
     position: sticky;
   }
 }
@@ -9717,10 +9746,29 @@ input.story-points-editor.story-points-alert-highlight {
   pointer-events: none;
   animation: epicFlash 1.1s ease;
 }
+.planning-review-table tr[data-share-reveal] td::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  animation: planningShareReveal 1.6s ease-out;
+}
+@keyframes planningShareReveal {
+  0%, 35% {
+    background: rgba(255, 200, 0, 0.5);
+  }
+  100% {
+    background: transparent;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .planning-review-table tr.planning-review-confirmed td::after {
     animation: none;
     background: rgba(255, 255, 0, 0.25);
+  }
+  .planning-review-table tr[data-share-reveal] td::after {
+    animation: none;
+    background: rgba(255, 200, 0, 0.35);
   }
 }
 @media (hover: hover) {

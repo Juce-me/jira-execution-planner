@@ -5,6 +5,7 @@ const EXPAND_WAIT_MS = 350;     // .alert-card-body animates max-height for 0.35
 const FRAME_CAP_MS = 100;       // a longer frame (a hidden tab, a stalled main thread) does not count against the budget
 const SETTLE_FRAMES = 2;        // the compact header, the filter bar and the docked Planning header settle within two frames
 const LANDING_TOLERANCE_PX = 1; // the capture counts a node as visible only past T + SHARE_VIEW_FOCUS_MARGIN + 1, so a landing off by more than 1 px is corrected
+const SHARE_REVEAL_MS = 1700;   // the 1.6s hold-then-fade overlay plus a margin
 const TASK_HIGHLIGHT_MS = 2200; // the 1.8s pulse plus the margin dashboard.jsx gives it
 const INTERRUPTS = ['wheel', 'touchmove', 'pointerdown', 'touchstart', 'keydown'];
 // A bare keydown of one of these is not a deliberate interaction. The list is MODIFIER_KEYS in interactionGuard.js, the source of truth for it; this
@@ -12,9 +13,8 @@ const INTERRUPTS = ['wheel', 'touchmove', 'pointerdown', 'touchstart', 'keydown'
 const MODIFIER_KEYS = new Set(['Shift', 'Control', 'Alt', 'AltGraph', 'Meta', 'CapsLock', 'NumLock', 'ScrollLock', 'Fn', 'FnLock', 'OS']);
 const PLANNING_ROW_SELECTOR = 'tr[data-planning-row-key][data-row-kind][data-issue-key]';
 
-// Targets are found by comparing dataset values, never by building a selector from a link value. Each result names the existing class whose
-// animation paints on that target: `epic-flash` on the alert group and Epic block, `task-highlight` (a pseudo-element overlay) on the Story
-// card, `planning-review-confirmed` on the table row.
+// Targets are found by comparing dataset values, never by building a selector from a link value. Each result names what paints on that target: the `data-share-reveal` attribute on the alert group, Epic block and table row, `task-highlight` (a pseudo-element overlay) on the Story
+// card.
 function findAlertGroup({ anchor, id }, root) {
     const cardId = alertCardId(anchor);
     const card = Array.from(root.querySelectorAll('.alert-card')).find(candidate => candidate.id === cardId);
@@ -23,7 +23,7 @@ function findAlertGroup({ anchor, id }, root) {
     ));
     if (!group) return null;
     const collapsed = card.classList.contains('collapsed') || Boolean(group.closest('.alert-card-body')?.classList.contains('collapsed'));
-    return { element: group, className: 'epic-flash', collapsed, settle: true };
+    return { element: group, attribute: true, collapsed, settle: true };
 }
 
 function findTarget(target, mode, root) {
@@ -32,14 +32,24 @@ function findTarget(target, mode, root) {
     if (kind !== 'epic' && kind !== 'story') return null;
     if (mode === 'planning') {
         const row = Array.from(root.querySelectorAll(PLANNING_ROW_SELECTOR)).find(candidate => candidate.dataset.rowKind === kind && candidate.dataset.issueKey === key);
-        if (row) return { element: row, className: 'planning-review-confirmed' };
+        if (row) return { element: row, attribute: true };
     }
     if (kind === 'story') {
         const card = Array.from(root.querySelectorAll('.task-item[data-task-key]')).find(candidate => candidate.dataset.taskKey === key);
         return card ? { element: card, className: 'task-highlight', durationMs: TASK_HIGHLIGHT_MS, belowEpicHeader: true } : null;
     }
     const block = Array.from(root.querySelectorAll('.epic-block[data-epic-key]')).find(candidate => candidate.dataset.epicKey === key);
-    return block ? { element: block, className: 'epic-flash' } : null;
+    return block ? { element: block, attribute: true } : null;
+}
+
+const revealTimers = new WeakMap();
+// The hold-then-fade overlay is driven by an attribute, so no class hook is added for a one-off reveal.
+function paintShareReveal(element, win = window) {
+    win.clearTimeout(revealTimers.get(element));
+    element.removeAttribute('data-share-reveal');
+    void element.offsetWidth;
+    element.setAttribute('data-share-reveal', '');
+    revealTimers.set(element, win.setTimeout(() => { element.removeAttribute('data-share-reveal'); revealTimers.delete(element); }, SHARE_REVEAL_MS));
 }
 
 // Puts the target's top SHARE_VIEW_FOCUS_MARGIN below the sticky stack, give or take LANDING_TOLERANCE_PX. An instant jump: a smooth one would still be
@@ -128,7 +138,7 @@ export function revealShareViewFocus(target, { mode, root = document, win = wind
         settleFramesLeft -= 1;
         if (settleFramesLeft > 0) { schedule(); return; }
         alignBelowStickyStack(found, win);
-        blinkElement(found.element, found.className, found.durationMs);
+        if (found.attribute) paintShareReveal(found.element); else blinkElement(found.element, found.className, found.durationMs);
         reached = true;
         onReached();
         if (finished) return;

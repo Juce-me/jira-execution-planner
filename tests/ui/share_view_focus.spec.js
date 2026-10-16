@@ -131,7 +131,7 @@ const landing = (page, selectorKind) => page.evaluate((kind) => {
     const node = find();
     const parentHeader = node.closest('.epic-block')?.querySelector('.epic-header')?.getBoundingClientRect();
     return {
-        top: node.getBoundingClientRect().top, className: node.className, headerBottom: parentHeader?.bottom ?? null,
+        top: node.getBoundingClientRect().top, className: node.className, shareReveal: node.hasAttribute('data-share-reveal'), headerBottom: parentHeader?.bottom ?? null,
         stackBottom: window.__share.measureShareViewStickyBottom({ epicHeaders: kind === 'story' }), margin: window.__share.SHARE_VIEW_FOCUS_MARGIN,
         animations: document.getAnimations().map(animation => animation.animationName),
         cellAnimation: kind === 'row' ? getComputedStyle(node.cells[0], '::after').animationName : null,
@@ -146,22 +146,22 @@ const reveal = (page, target, mode) => page.evaluate(async ({ target, mode }) =>
 
 for (const compact of [false, true]) {
     test.describe(`reveal, ${compact ? 'compact header up' : 'main header'}`, () => {
-        test('an alert group lands at T + 12 and paints the epic-flash blink without moving focus', async ({ page }) => {
+        test('an alert group lands at T + 12 and paints the hold-then-fade share overlay without moving focus', async ({ page }) => {
             await load(page, catchUpHtml({ compact }));
             expect(await reveal(page, { kind: 'alertTeam', anchor: 'blocked', id: 't2' }, 'catch-up')).toEqual({ result: 'revealed', focusMoved: false });
             const landed = await landing(page, 'group');
             expect(Math.abs(landed.top - (landed.stackBottom + landed.margin))).toBeLessThanOrEqual(1);
-            expect(landed.className).toContain('epic-flash');
-            expect(landed.animations).toContain('epicFlash');
+            expect(landed.shareReveal).toBe(true);
+            expect(landed.animations).toContain('shareViewReveal');
         });
 
-        test('an Epic block lands at T + 12 and paints the epic-flash blink', async ({ page }) => {
+        test('an Epic block lands at T + 12 and paints the hold-then-fade share overlay', async ({ page }) => {
             await load(page, catchUpHtml({ compact }));
             expect((await reveal(page, { kind: 'epic', key: 'PROJ-6' }, 'catch-up')).result).toBe('revealed');
             const landed = await landing(page, 'epic');
             expect(Math.abs(landed.top - (landed.stackBottom + landed.margin))).toBeLessThanOrEqual(1);
-            expect(landed.className).toContain('epic-flash');
-            expect(landed.animations).toContain('epicFlash');
+            expect(landed.shareReveal).toBe(true);
+            expect(landed.animations).toContain('shareViewReveal');
         });
 
         test('a Story card lands below its pinned parent header and paints the task-highlight pulse', async ({ page }) => {
@@ -192,8 +192,8 @@ test('planning table: a row lands below the sticky stack at T + 12 and paints th
     expect((await reveal(page, { kind: 'epic', key: 'PROJ-40' }, 'planning')).result).toBe('revealed');
     const landed = await landing(page, 'row');
     expect(Math.abs(landed.top - (landed.stackBottom + landed.margin))).toBeLessThanOrEqual(1);
-    expect(landed.className).toContain('planning-review-confirmed');
-    expect(landed.cellAnimation).toBe('epicFlash');
+    expect(landed.shareReveal).toBe(true);
+    expect(landed.cellAnimation).toBe('planningShareReveal');
 });
 
 // The reveal listens like the apply guard: only events the reader produced count, and a bare modifier key is not one of them.

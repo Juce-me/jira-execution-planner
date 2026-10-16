@@ -56,9 +56,11 @@ test('an expanded alert group is scrolled to T + 12 once its transition could ha
         await flush();
         assert.equal(outcome.result, 'revealed');
         assert.equal(p.dom.window.scrollCalls.length, 1, 'already in place: the single correction pass does not scroll');
-        assert.ok(g.node.classList.contains('epic-flash'));
+        assert.ok(g.node.hasAttribute('data-share-reveal'));
         p.dom.stepMs(1300);
-        assert.equal(g.node.classList.contains('epic-flash'), false, 'the blink class is removed after the animation');
+        assert.ok(g.node.hasAttribute('data-share-reveal'), 'the hold-then-fade overlay is still painting 1.3s in');
+        p.dom.stepMs(500);
+        assert.equal(g.node.hasAttribute('data-share-reveal'), false, 'the blink class is removed after the animation');
         assert.equal(p.dom.listenerCount(), 0, 'every document listener is removed on finish');
     } finally { p.restore(); }
 });
@@ -172,8 +174,8 @@ test('V20: followup Story groups and future-routed Epic groups are revealed sepa
             await flush();
             assert.equal(outcome.result, 'revealed', anchor);
             const [hit, other] = kind ? [epics.node, stories.node] : [stories.node, epics.node];
-            assert.ok(hit.classList.contains('epic-flash'), `${anchor} blinks its own list`);
-            assert.equal(other.classList.contains('epic-flash'), false);
+            assert.ok(hit.hasAttribute('data-share-reveal'), `${anchor} blinks its own list`);
+            assert.equal(other.hasAttribute('data-share-reveal'), false);
         } finally { p.restore(); }
     }
 });
@@ -311,7 +313,7 @@ test('a hidden tab neither scrolls nor spends the budget; visibilitychange resum
     } finally { gap.restore(); }
 });
 
-test('each target kind blinks with the existing class that paints on it', async () => {
+test('each target kind paints with the existing class or the share reveal attribute', async () => {
     const seen = [];
     const story = page();
     try {
@@ -333,7 +335,7 @@ test('each target kind blinks with the existing class that paints on it', async 
         const { outcome } = run(epic, { kind: 'epic', key: 'PROJ-2' }, { mode: 'catch-up' });
         epic.dom.stepMs(300);
         await flush();
-        seen.push(['epic block', outcome.result, block.classList.contains('epic-flash')]);
+        seen.push(['epic block', outcome.result, block.hasAttribute('data-share-reveal')]);
     } finally { epic.restore(); }
     const table = page();
     try {
@@ -342,7 +344,7 @@ test('each target kind blinks with the existing class that paints on it', async 
         const { outcome } = run(table, { kind: 'epic', key: 'PROJ-3' }, { mode: 'planning' });
         table.dom.stepMs(300);
         await flush();
-        seen.push(['planning row', outcome.result, epicRow.classList.contains('planning-review-confirmed')]);
+        seen.push(['planning row', outcome.result, epicRow.hasAttribute('data-share-reveal')]);
     } finally { table.restore(); }
     const list = page();
     try {
@@ -466,10 +468,10 @@ test('V4: hostile ids are compared as data, so they neither throw nor match anot
             const { outcome } = run(p, target, { mode: 'catch-up' });
             p.dom.stepMs(700);
             await flush();
-            hits.push([outcome.result, node.classList.contains('epic-flash') || node.classList.contains('task-highlight')]);
+            hits.push([outcome.result, node.hasAttribute('data-share-reveal') || node.classList.contains('task-highlight')]);
         }
         assert.deepEqual(hits, [['revealed', true], ['revealed', true], ['revealed', true]]);
-        assert.equal(decoy.node.classList.contains('epic-flash'), false);
+        assert.equal(decoy.node.hasAttribute('data-share-reveal'), false);
         const { outcome } = run(p, { kind: 'epic', key: 'x"]' }, { mode: 'catch-up', timeoutMs: 200 });
         p.dom.stepMs(300);
         await flush();
@@ -500,6 +502,13 @@ test('the three reused highlight classes still paint through an animation', () =
     assert.match(css, /@keyframes epicFlash\s*\{\s*0%\s*\{\s*background:\s*rgba\(255,\s*255,\s*0,\s*0\.45\)/);
     assert.match(css, /\.task-item\.task-highlight::after\s*\{\s*animation:\s*taskHighlightPulse\s/);
     assert.match(css, /\.planning-review-table tr\.planning-review-confirmed td::after\s*\{[^}]*animation:\s*epicFlash\s/);
+});
+
+test('the share reveal overlay holds, then fades out over one second, and Epic, alert and row targets all use it', () => {
+    const css = readDashboardCssSource(REPO_ROOT);
+    assert.match(css, /\[data-share-reveal\]:not\(tr\)::after\s*\{[^}]*animation:\s*shareViewReveal\s+1\.6s/);
+    assert.match(css, /@keyframes shareViewReveal\s*\{\s*0%,\s*35%\s*\{[^}]*rgba\(255,\s*200,\s*0,\s*0\.5\)/);
+    assert.match(css, /tr\[data-share-reveal\] td::after\s*\{[^}]*animation:\s*planningShareReveal\s+1\.6s/);
 });
 
 

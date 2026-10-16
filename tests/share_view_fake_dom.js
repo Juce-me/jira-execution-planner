@@ -69,6 +69,10 @@ export function createFakeDom({ innerHeight = 800 } = {}) {
             this.offsetWidth = 0;
             const names = new Set(className.split(/\s+/).filter(Boolean));
             this.classList = { contains: name => names.has(name), add: name => names.add(name), remove: name => names.delete(name) };
+            const attributes = new Set();
+            this.setAttribute = name => { attributes.add(name); };
+            this.removeAttribute = name => { attributes.delete(name); };
+            this.hasAttribute = name => attributes.has(name);
             for (const child of children) this.append(child);
         }
         append(child) { child.parentElement = this; this.children.push(child); return child; }

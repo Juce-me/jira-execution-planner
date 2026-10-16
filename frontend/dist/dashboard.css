@@ -929,6 +929,7 @@ h1 {
 }
 [data-share-view=epic] {
   --control-height: 24px;
+  position: relative;
   display: inline-flex;
   flex: 0 0 24px;
   align-items: center;
@@ -939,11 +940,38 @@ h1 {
 }
 .epic-header:hover [data-share-view=epic] > button,
 .epic-header:focus-within [data-share-view=epic] > button,
+.alert-team-group:hover [data-share-view=epic] > button,
+.alert-team-group:focus-within [data-share-view=epic] > button,
 .planning-review-table tr:hover [data-share-view=epic] > button,
 .planning-review-table tr:focus-within [data-share-view=epic] > button,
 [data-share-view=epic][data-share-feedback=active] > button {
   opacity: 1;
   pointer-events: auto;
+}
+[data-share-view] > [data-share-view-message] {
+  position: absolute;
+  top: 0;
+  right: var(--share-message-right, calc(100% + 0.4rem));
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding: 0 0.6rem;
+  border-radius: 10px;
+  background: var(--text-primary);
+  color: #fff;
+  font-size: 0.7rem;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  z-index: var(--sticky-epic-z);
+}
+[data-share-view]:is(:hover, :focus-within) > [data-share-view-message],
+[data-share-view][data-share-feedback=active] > [data-share-view-message] {
+  opacity: 1;
+}
+.alert-team-header > [data-share-view=epic] {
+  order: 1;
+  margin-left: auto;
 }
 @media (hover: none), (pointer: coarse) {
   [data-share-view=epic] > button {

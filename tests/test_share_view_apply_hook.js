@@ -217,6 +217,19 @@ test('header copies view settings without a focus target at every scroll positio
     assert.equal(url, 'https://planner.example/?v=1&mode=planning&group=grp-a&sprint=41&rows=stories&find=login');
 }));
 
+test('an alert group target is shareable from Catch Up only, and carries the group with its card expanded', () => withBrowser(() => {
+    const { doubles, modules } = createDoubles();
+    doubles.snapshot = { phase: PHASES.ABSENT, stage: null, entry: null, hold: false, terminal: true, notice: null };
+    const hook = mountHook({ modules }, makeOptions());
+    hook.render();
+    const { ok, url } = hook.render().captureShareUrl({ kind: 'alertTeam', anchor: 'missing', id: 'team-1' });
+    assert.equal(ok, true);
+    assert.match(url, /[?&]alertTeam=missing:team-1(&|$)/);
+    const planning = mountHook({ modules }, makeOptions({ activeEngMode: 'planning' }));
+    planning.render();
+    assert.deepEqual(planning.render().captureShareUrl({ kind: 'alertTeam', anchor: 'missing', id: 'team-1' }), { ok: false, reason: 'invalid_state' });
+}));
+
 test('captureShareUrl refuses while disabled and passes an encoder failure through without a URL', () => withBrowser(() => {
     const { doubles, modules } = createDoubles();
     doubles.snapshot = { phase: PHASES.ABSENT, stage: null, entry: null, hold: false, terminal: true, notice: null };

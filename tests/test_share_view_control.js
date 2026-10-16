@@ -312,3 +312,10 @@ test('ordinary clipboard success announces its destination without rendering a f
         } finally { rig.unmount(); rig.restore(); }
     }
 });
+
+test('every alert group header carries its own share control for its card anchor', () => {
+    const panel = read('frontend/src/eng/EngAlertsPanel.jsx');
+    const anchors = [...panel.matchAll(/renderAlertShareControl\?\.\('(\w+)', group\)/g)].map(match => match[1]);
+    assert.deepEqual(anchors.sort(), ['backlog', 'blocked', 'done', 'empty', 'followup', 'followupEpics', 'missing', 'missingLabels', 'missingTeam', 'needsStories', 'waiting'].sort());
+    assert.equal((panel.match(/<div className="alert-team-header">/g) || []).length, anchors.length, 'no group header is left without it');
+});

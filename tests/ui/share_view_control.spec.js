@@ -713,7 +713,9 @@ test('Epic share discovery preserves title geometry and works by touch', async (
             const before = await title.boundingBox();
             const shape = await action.boundingBox();
             expect(shape.width).toBe(24); expect(shape.height).toBe(24);
-            expect(await action.getAttribute('title')).toBe('Copy link to this Epic');
+            expect(await action.getAttribute('title')).toBeNull();
+            const message = header.locator('[data-share-view-message]');
+            await expect(message).toHaveText('Copy link to this Epic');
             if (!touch) {
                 await expect(action).toHaveCSS('opacity', '0');
                 await title.hover();
@@ -736,6 +738,19 @@ test('Epic share discovery preserves title geometry and works by touch', async (
             expect((await page.evaluate(() => window.__copied))[0]).toContain('&epic=EPIC-1');
             await expect(header.locator('[data-share-view="epic"] .planning-review-sr-only')).toHaveText('Epic EPIC-1 link copied');
             expect(await header.locator('.jira-export-toast, .jira-export-menu').count()).toBe(0);
+            // The copied message reads between the summary and the key: it ends at the key's left edge and is not clipped by the header.
+            await expect(message).toHaveText('Epic EPIC-1 link copied');
+            await expect(message).toHaveCSS('opacity', '1');
+            const placed = await header.evaluate(node => {
+                const readout = node.querySelector('[data-share-view-message]').getBoundingClientRect();
+                const key = node.querySelector('.epic-key').getBoundingClientRect();
+                const name = node.querySelector('.epic-name').getBoundingClientRect();
+                const bounds = node.getBoundingClientRect();
+                return { endsBeforeKey: readout.right <= key.left + 1, insideHeader: readout.left >= bounds.left - 1, startsAfterNameStart: readout.left >= name.left - 1 };
+            });
+            expect(placed.endsBeforeKey).toBe(true);
+            expect(placed.insideHeader).toBe(true);
+            await explicitShot(page, `list-${touch ? 'touch' : 'desktop'}-copied`);
         } finally { await context.close(); }
     }
 });
@@ -1108,4 +1123,32 @@ test('genuine warnings match the Jira warning typography and wrapping across mai
             fs.writeFileSync(path.join(directory, `${process.env.JEP_WARNING_FONT_STAGE || 'after'}-${touch ? 'touch' : 'desktop'}-geometry.json`), JSON.stringify({ reference, geometry }, null, 2));
         } finally { await context.close(); }
     }
+});
+
+test('an alert group carries its own share control that copies the group and reads inside its header', async ({ page }) => {
+    await installClipboard(page);
+    const ctx = await mockDashboard(page);
+    const story = ctx.scenario.stories[0];
+    story.fields.customfield_10004 = null;
+    ctx.respond('/api/missing-info', ({ json }) => json({ issues: [{ ...story, fields: { ...story.fields, customfield_10101: story.fields.sprint, missingFields: ['Story Points'] } }], epics: [], count: 1, epicCount: 0 }));
+    await openCatchUp(page, ctx, { width: 1440, height: 900 });
+    await page.addStyleTag({ content: '*,*::before,*::after{animation:none!important;transition:none!important}' });
+    const group = page.locator('#eng-alert-missing .alert-team-group[data-alert-team]').first();
+    await expect(group).toBeVisible();
+    await group.hover();
+    const action = group.locator('[data-share-view-control]');
+    await expect(action).toHaveCSS('opacity', '1');
+    expect((await action.boundingBox()).height).toBe(24);
+    await action.click();
+    await expect.poll(() => page.evaluate(() => window.__copied.length)).toBe(1);
+    expect((await page.evaluate(() => window.__copied))[0]).toMatch(/&alertTeam=[A-Za-z]+:/);
+    const message = group.locator('[data-share-view-message]');
+    await expect(message).toHaveText('Alert group link copied');
+    const inside = await group.evaluate(node => {
+        const readout = node.querySelector('[data-share-view-message]').getBoundingClientRect();
+        const bounds = node.getBoundingClientRect();
+        return readout.left >= bounds.left && readout.right <= bounds.right;
+    });
+    expect(inside).toBe(true);
+    await explicitShot(page, 'alert-group-copied');
 });

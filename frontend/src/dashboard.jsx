@@ -5604,6 +5604,11 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
             const renderEpicShareControl = (epicKey) => selectedView === 'eng' && ['catch-up', 'planning'].includes(activeEngMode) && (
                 <ShareViewButton surface="epic" epicKey={epicKey} scopeKey={shareScopeKey} share={shareView} sourceSurface={analyticsToken(activeEngMode)} activeControlSurface="epic" />
             );
+            // A group named only by its display name has no stable id to share; the placeholders are the only name-ids a link may carry.
+            const renderAlertShareControl = (anchor, group) => selectedView === 'eng' && activeEngMode === 'catch-up'
+                && (group.id !== group.name || ['unknown', 'Unknown Team'].includes(group.id)) && (
+                <ShareViewButton surface="epic" alertTarget={{ anchor, id: String(group.id) }} scopeKey={shareScopeKey} share={shareView} sourceSurface={analyticsToken(activeEngMode)} activeControlSurface="epic" />
+            );
             const renderShareViewControl = (surface) => selectedView === 'eng' && activeEngMode !== 'scenario' && (
                 <ShareViewButton surface={surface} scopeKey={shareScopeKey} share={shareView} sourceSurface={analyticsToken(activeEngMode)} activeControlSurface={activeControlSurface} />
             );
@@ -6973,6 +6978,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                                             alertScopeTooLarge={alertScopeTooLarge}
                                             showAlertsPanel={showAlertsPanel}
                                             setShowAlertsPanel={setShowAlertsPanel}
+                                            renderAlertShareControl={renderAlertShareControl}
                                             collapsed={!showMissingAlert && !showBlockedAlert && !showPostponedAlert && !showBacklogAlert && !showMissingTeamAlert && !showMissingLabelsAlert && !showNeedsStoriesAlert && !showWaitingAlert && !showEmptyEpicAlert && !showDoneEpicAlert}
                                             alertProps={{
                                                 analysisEpicTeams,

@@ -4,6 +4,7 @@ import { trackShareViewAction } from '../analytics/dashboardAnalytics.js';
 import { shareViewCopyMessage, shareViewNoticeMessage } from './noticeCopy.js';
 
 const COPIED_MS = 2000;
+const KEY_SLOT_PX = 30;   // the gap the Epic key reserves on its left (epics.css) for the copy action
 const LABEL = 'Copy view link';
 
 // The same Share control serves header view copies and explicit Epic copies. It copies the captured URL; when the
@@ -11,7 +12,6 @@ const LABEL = 'Copy view link';
 export default function ShareViewButton({ surface, share, sourceSurface, activeControlSurface, epicKey, alertTarget, scopeKey }) {
     const [copied, setCopied] = React.useState(false);
     const [local, setLocal] = React.useState(null);
-    const [messageRight, setMessageRight] = React.useState(null);
     const wrapperRef = React.useRef(null);
     const timerRef = React.useRef(null);
     const active = surface === activeControlSurface;
@@ -52,17 +52,24 @@ export default function ShareViewButton({ surface, share, sourceSurface, activeC
         setLocal(null);
     }, [copyGeneration, ownsFeedback]);
 
-    // The inline message ends at the left edge of the Epic key, so it reads between the summary and the key; without a key it ends at the button.
-    const placeMessage = () => {
+    // An Epic header reads summary, copy action, key. The key sits inside the Jira title link, so the action cannot be its sibling in the
+    // markup: it keeps its place after the link and is shifted left of the key by the measured distance, over a gap the key reserves.
+    React.useLayoutEffect(() => {
         const wrapper = wrapperRef.current;
-        const key = wrapper?.previousElementSibling?.querySelector?.('.epic-key');
-        if (!wrapper || !key) { setMessageRight(null); return; }
-        setMessageRight(Math.max(0, wrapper.getBoundingClientRect().left - key.getBoundingClientRect().left) + 8);
-    };
+        const key = epicKey ? wrapper?.previousElementSibling?.querySelector?.('.epic-key') : null;
+        if (!wrapper || !key) return undefined;
+        const place = () => wrapper.getClientRects().length && wrapper.style.setProperty('--share-key-shift', `${key.getBoundingClientRect().left - wrapper.getBoundingClientRect().left - KEY_SLOT_PX}px`);
+        wrapper.setAttribute('data-share-key-slot', '');
+        place();
+        const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(place) : null;
+        observer?.observe(key);
+        observer?.observe(wrapper);
+        observer?.observe(wrapper.parentElement);
+        return () => { observer?.disconnect(); wrapper.removeAttribute('data-share-key-slot'); wrapper.style.removeProperty('--share-key-shift'); };
+    }, [epicKey]);
     const report = (result) => trackShareViewAction({ workflowAction: 'copy_link', result, sourceSurface });
     const copy = async () => {
         if (share.shareDisabled || !active) return;
-        placeMessage();
         const generation = ++attemptRef.current.generation;
         const ownerGeneration = owner.begin();
         ownedGenerationRef.current = ownerGeneration;
@@ -101,14 +108,14 @@ export default function ShareViewButton({ surface, share, sourceSurface, activeC
     const currentLocal = ownsFeedback ? local : null;
     const notice = currentLocal || (!epicKey && share.notice ? { message: shareViewNoticeMessage(share.notice) } : null);
     return (
-        <div ref={wrapperRef} onPointerEnter={targeted ? placeMessage : undefined} onFocus={targeted ? placeMessage : undefined} data-share-view={surface} data-share-feedback={currentLocal || (copied && ownsFeedback) ? 'active' : undefined}>
+        <div ref={wrapperRef} data-share-view={surface} data-share-feedback={currentLocal || (copied && ownsFeedback) ? 'active' : undefined}>
             <IconButton
                 size={targeted ? 'sm' : undefined}
                 variant="secondary compact"
                 className="header-icon-button"
                 onClick={copy}
                 disabled={share.shareDisabled}
-                title={targeted ? undefined : share.shareDisabled ? 'Sharing is available once the view has loaded' : copied && ownsFeedback ? destination : LABEL}
+                title={share.shareDisabled ? 'Sharing is available once the view has loaded' : copied && ownsFeedback ? destination : hint}
                 aria-label={label}
                 data-share-view-control=""
             >
@@ -128,11 +135,6 @@ export default function ShareViewButton({ surface, share, sourceSurface, activeC
             </IconButton>
             {/* The app's only visually hidden utility, defined with the Planning review styles. */}
             <span className="planning-review-sr-only" role="status">{copied && ownsFeedback ? destination : ''}</span>
-            {targeted && !share.shareDisabled && (
-                <span data-share-view-message="" aria-hidden="true" style={messageRight === null ? undefined : { '--share-message-right': `calc(100% + ${messageRight}px)` }}>
-                    {copied && ownsFeedback ? destination : hint}
-                </span>
-            )}
             {active && notice?.message && (
                 <div className={notice.url ? "jira-export-menu" : "jira-export-toast"} role="status">
                     <p>{notice.message}</p>

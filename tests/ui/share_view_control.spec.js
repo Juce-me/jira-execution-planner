@@ -713,9 +713,7 @@ test('Epic share discovery preserves title geometry and works by touch', async (
             const before = await title.boundingBox();
             const shape = await action.boundingBox();
             expect(shape.width).toBe(24); expect(shape.height).toBe(24);
-            expect(await action.getAttribute('title')).toBeNull();
-            const message = header.locator('[data-share-view-message]');
-            await expect(message).toHaveText('Copy link to this Epic');
+            expect(await action.getAttribute('title')).toBe('Copy link to this Epic');
             if (!touch) {
                 await expect(action).toHaveCSS('opacity', '0');
                 await title.hover();
@@ -725,11 +723,12 @@ test('Epic share discovery preserves title geometry and works by touch', async (
             expect(after).toEqual(before);
             const overlap = await header.evaluate(node => {
                 const action = node.querySelector('[data-share-view-control]').getBoundingClientRect();
-                const link = node.querySelector('.epic-link').getBoundingClientRect();
+                const link = node.querySelector('.epic-name').getBoundingClientRect();
+                const keyBox = node.querySelector('.epic-key').getBoundingClientRect();
                 const refresh = node.querySelector('.epic-refresh-button').getBoundingClientRect();
                 const intersects = other => action.left < other.right && action.right > other.left && action.top < other.bottom && action.bottom > other.top;
                 const text = node.querySelector('.epic-name');
-                return { link: intersects(link), refresh: intersects(refresh), textFits: text.scrollWidth <= text.clientWidth || getComputedStyle(text).textOverflow === 'ellipsis' };
+                return { link: intersects(link) || intersects(keyBox), refresh: intersects(refresh), textFits: text.scrollWidth <= text.clientWidth || getComputedStyle(text).textOverflow === 'ellipsis' };
             });
             expect(overlap).toEqual({ link: false, refresh: false, textFits: true });
             await explicitShot(page, `list-${touch ? 'touch' : 'desktop'}-discovered`);
@@ -738,18 +737,17 @@ test('Epic share discovery preserves title geometry and works by touch', async (
             expect((await page.evaluate(() => window.__copied))[0]).toContain('&epic=EPIC-1');
             await expect(header.locator('[data-share-view="epic"] .planning-review-sr-only')).toHaveText('Epic EPIC-1 link copied');
             expect(await header.locator('.jira-export-toast, .jira-export-menu').count()).toBe(0);
-            // The copied message reads between the summary and the key: it ends at the key's left edge and is not clipped by the header.
-            await expect(message).toHaveText('Epic EPIC-1 link copied');
-            await expect(message).toHaveCSS('opacity', '1');
+            // The action sits after the summary and before the key, clear of both.
             const placed = await header.evaluate(node => {
-                const readout = node.querySelector('[data-share-view-message]').getBoundingClientRect();
+                const button = node.querySelector('[data-share-view-control]').getBoundingClientRect();
                 const key = node.querySelector('.epic-key').getBoundingClientRect();
-                const name = node.querySelector('.epic-name').getBoundingClientRect();
-                const bounds = node.getBoundingClientRect();
-                return { endsBeforeKey: readout.right <= key.left + 1, insideHeader: readout.left >= bounds.left - 1, startsAfterNameStart: readout.left >= name.left - 1 };
+                const name = node.querySelector('.epic-name');
+                const nameBox = name.getBoundingClientRect();
+                const visibleNameRight = nameBox.left + Math.min(name.scrollWidth, nameBox.width);
+                return { afterSummary: button.left >= visibleNameRight - 1, beforeKey: button.right <= key.left + 1 };
             });
-            expect(placed.endsBeforeKey).toBe(true);
-            expect(placed.insideHeader).toBe(true);
+            // Below 761px the title row keeps the action after the key.
+            if (!touch) expect(placed).toEqual({ afterSummary: true, beforeKey: true });
             await explicitShot(page, `list-${touch ? 'touch' : 'desktop'}-copied`);
         } finally { await context.close(); }
     }
@@ -1142,13 +1140,6 @@ test('an alert group carries its own share control that copies the group and rea
     await action.click();
     await expect.poll(() => page.evaluate(() => window.__copied.length)).toBe(1);
     expect((await page.evaluate(() => window.__copied))[0]).toMatch(/&alertTeam=[A-Za-z]+:/);
-    const message = group.locator('[data-share-view-message]');
-    await expect(message).toHaveText('Alert group link copied');
-    const inside = await group.evaluate(node => {
-        const readout = node.querySelector('[data-share-view-message]').getBoundingClientRect();
-        const bounds = node.getBoundingClientRect();
-        return readout.left >= bounds.left && readout.right <= bounds.right;
-    });
-    expect(inside).toBe(true);
+    await expect(action).toHaveAttribute('title', 'Alert group link copied');
     await explicitShot(page, 'alert-group-copied');
 });

@@ -179,6 +179,13 @@
             min-width: 0;
         }
 
+        /* The copy action sits in this reserved gap on the key's left (see ShareViewButton). */
+        @media (min-width: 761px) {
+            .epic-title-row:has([data-share-key-slot]) .epic-key {
+                margin-left: 30px;
+            }
+        }
+
         .epic-title-row {
             display: flex;
             align-items: center;

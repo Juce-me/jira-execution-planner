@@ -707,28 +707,18 @@
             pointer-events: auto;
         }
 
-        /* In-app readout for the copy action: it ends at the Epic key, between the summary and the key. */
-        [data-share-view] > [data-share-view-message] {
-            position: absolute;
-            top: 0;
-            right: var(--share-message-right, calc(100% + 0.4rem));
-            height: 100%;
-            display: flex;
-            align-items: center;
-            padding: 0 0.6rem;
-            border-radius: 10px;
-            background: var(--text-primary);
-            color: #fff;
-            font-size: 0.7rem;
-            white-space: nowrap;
-            pointer-events: none;
-            opacity: 0;
-            z-index: var(--sticky-epic-z);
-        }
+        /* Beside an Epic key the action is shifted left of the key (measured in ShareViewButton) and takes no layout width of its own.
+           Below the desktop breakpoint the title row is too tight to reserve the gap, so the action keeps its place after the key. */
+        @media (min-width: 761px) {
+            [data-share-view="epic"][data-share-key-slot] {
+                flex: 0 0 0;
+                width: 0;
+            }
 
-        [data-share-view]:is(:hover, :focus-within) > [data-share-view-message],
-        [data-share-view][data-share-feedback="active"] > [data-share-view-message] {
-            opacity: 1;
+            [data-share-view="epic"][data-share-key-slot] > button {
+                position: relative;
+                left: var(--share-key-shift, 0px);
+            }
         }
 
         .alert-team-header > [data-share-view="epic"] {

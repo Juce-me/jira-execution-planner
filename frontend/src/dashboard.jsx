@@ -1,3 +1,4 @@
+import './shareView/entry.js';
 import { useEngScope } from './eng/useEngScope.js';
 import { SearchControl, ViewSwitch, SprintControl, GroupControl, TeamControl } from './eng/EngControls.jsx';
 import { EpicBlock } from './eng/EpicBlock.jsx';
@@ -19,6 +20,7 @@ import IconButton from './ui/IconButton.jsx';
 import EmptyState from './ui/EmptyState.jsx';
 import LoadingState from './ui/LoadingState.jsx';
 import JiraExportButton from './components/JiraExportButton.jsx';
+import ShareViewButton from './shareView/ShareViewButton.jsx';
 import ServerUnavailableBanner from './components/ServerUnavailableBanner.jsx';
 import { createSprintCatalogController, createSprintCatalogState, getCookie, getCurrentQuarter, isActiveHomeTokenConnection, loadCachedSprintCatalog, loadUiPrefs, saveUiPrefs, setCookie, shouldReconcileSprintCatalogSource, sprintCatalogSourcesEqual, sprintCatalogValidationKey } from './dashboardRuntime.js';
 import OnboardingTour, { isDashboardMobileViewport } from './onboarding/OnboardingTour.jsx';
@@ -157,6 +159,7 @@ import { fetchHomeTokenConnection } from './api/authApi.js';
 import { useDashboardFreshness } from './useDashboardFreshness.js';
 import DashboardFreshnessStatus from './components/DashboardFreshnessStatus.jsx';
 import { analyticsToken, buildPlanningReviewAnalyticsParams, bucketCount, exposeAnalyticsForTests, useDashboardAnalytics } from './analytics/dashboardAnalytics.js';
+import { useShareViewApply, useShareViewApplyTerminal, useShareViewHold, useShareViewPlanningTableKey } from './shareView/useShareViewApply.js';
 import { useEpmViewData } from './epm/useEpmViewData.js';
 import {
     DEFAULT_EPM_PROJECT_SORT,
@@ -1053,7 +1056,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
             const {
                 currentDashboardView, trackAppError, trackApiResult, trackEpmAction, trackFilterChanged,
                 trackIssueStatusAction, trackIssuePriorityAction, trackIssueProjectTrackAction, trackIssueFieldEditAction, trackEpicRefreshAction, trackPlanningCapacityAction, trackPlanningSelection, trackScenarioAction, trackSearch, trackSelectContent,
-                trackSettingsAction, trackSortChanged, trackStatsAction, trackProductEvent,
+                trackSettingsAction, trackSortChanged, trackStatsAction, trackProductEvent, trackShareViewAction, analyticsReady,
             } = useDashboardAnalytics(React, { authMode, selectedView, showPlanning, showStats, showScenario, showBoard, serverConnectionError });
             const {
                 groupsConfig,
@@ -1507,6 +1510,24 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                     void planningReviewGuardRef.current(commitSelection);
                 } else commitSelection();
             };
+            // Raw half of applyOrdinarySprint: no analytics, no guard, no selector side effects. The
+            // shareable-link apply calls it with the link's Department, Team list and Sprint.
+            const commitSprintSelection = (sprint, { groupId = activeGroupId, teams = selectedTeams, sprintChanged = true, projectTrackRange = false } = {}) => {
+                if (sprintChanged) {
+                    teamSelectionCarryForwardRef.current = groupId ? {
+                        scopeKey: buildTeamSelectionScopeKey({ sprintId: sprint.id, groupId }),
+                        selectedTeams: normalizeSelectedTeams(teams),
+                    } : null;
+                    setSelectedSprint(sprint.id);
+                    setSprintName(sprint.name);
+                }
+                if (projectTrackRange) {
+                    excludedCapacityForceRefreshRef.current = true;
+                    setExcludedCapacityStartSprintId(String(sprint.id));
+                    setExcludedCapacityEndSprintId(String(sprint.id));
+                    setExcludedCapacityRefreshNonce(previous => previous + 1);
+                }
+            };
             const applyOrdinarySprint = (sprint, boardScopeControl) => {
                 const sameOrdinarySelection = !boardStrictScope
                     && String(selectedSprint) === String(sprint.id);
@@ -1523,19 +1544,11 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                         source_surface: currentDashboardView(),
                         scope_type: boardScopeControl ? 'sprint' : currentDashboardView(),
                     });
-                    teamSelectionCarryForwardRef.current = activeGroupId ? {
-                        scopeKey: buildTeamSelectionScopeKey({ sprintId: sprint.id, groupId: activeGroupId }),
-                        selectedTeams: normalizeSelectedTeams(selectedTeams),
-                    } : null;
-                    setSelectedSprint(sprint.id);
-                    setSprintName(sprint.name);
                 }
-                if (projectTrackSprintId && (!sameOrdinarySelection || !projectTrackRangeMatches)) {
-                    excludedCapacityForceRefreshRef.current = true;
-                    setExcludedCapacityStartSprintId(projectTrackSprintId);
-                    setExcludedCapacityEndSprintId(projectTrackSprintId);
-                    setExcludedCapacityRefreshNonce(previous => previous + 1);
-                }
+                commitSprintSelection(sprint, {
+                    sprintChanged: !sameOrdinarySelection,
+                    projectTrackRange: Boolean(projectTrackSprintId) && (!sameOrdinarySelection || !projectTrackRangeMatches),
+                });
                 if (boardScopeControl) setBoardStrictScope('');
                 closeSprintSelector({ restoreFocus: true });
             };
@@ -2231,6 +2244,11 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 trackSettingsAction,
                 userCanEditSettings,
             });
+            // A pending shareable link holds the default-scope ENG load and the Catch Up tour's auto-start until it settles,
+            // and a link that seeds the Planning rows remounts the Planning table once so that it re-reads the seed.
+            const shareViewHold = useShareViewHold();
+            const shareViewTerminal = useShareViewApplyTerminal();
+            const shareViewPlanningTableKey = useShareViewPlanningTableKey();
             const onboardingActiveSurface = showGroupManage
                 ? 'settings'
                 : (selectedView === 'eng'
@@ -2247,6 +2265,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
             );
             const onboarding = useOnboardingController({
                 bootstrapReady: onboardingBootstrapReady,
+                applyTerminal: shareViewTerminal,
                 activeSurface: onboardingActiveSurface,
                 completedModules: groupPreferences.completedOnboardingModules,
                 setCompletedModules: (settlement) => setGroupPreferences((current) => ({
@@ -3458,6 +3477,11 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 if (groupPreferences.onboardingRequired) {
                     return;
                 }
+                // A pending shareable link holds the default-scope load. A pending Planning recovery capsule is the exception:
+                // only its own load can clear it, and the link waits for the capsule.
+                if (shareViewHold && !pendingPlanningAuthResumeRef.current) {
+                    return;
+                }
 
                 const pendingPlanningResume = pendingPlanningAuthResumeRef.current;
                 const recoveryScopeKey = pendingPlanningResume?.scopeKey === planningScopeKey
@@ -3528,7 +3552,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                     groupLoadVersionRef.current += 1;
                     abortSprintFetches();
                 };
-            }, [selectedView, isStatsSourceOnlyStatsView, boardScopeRequested, sprintCatalogReady || (sprintCatalogState.selectionPreserved && Boolean(selectedSprintInfo)), sprintsLoading, selectedSprint, selectedSprintInfo?.id, activeGroupId, activeGroupTeamIds.join('|'), groupsLoading, groupPreferences.onboardingRequired, configRefreshNonce, authResumeStagedRevision]);
+            }, [selectedView, isStatsSourceOnlyStatsView, boardScopeRequested, sprintCatalogReady || (sprintCatalogState.selectionPreserved && Boolean(selectedSprintInfo)), sprintsLoading, selectedSprint, selectedSprintInfo?.id, activeGroupId, activeGroupTeamIds.join('|'), groupsLoading, groupPreferences.onboardingRequired, configRefreshNonce, authResumeStagedRevision, shareViewHold]);
 
             useEffect(() => {
                 if (groupsLoading || !groupPreferences.onboardingRequired) return;
@@ -4089,12 +4113,16 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
 
 
 
+            // Persistence half of a Team selection (the scope's stored selection and the hydrated-selection marker),
+            // shared with the shareable-link apply. Callers set the React state themselves.
+            const persistTeamSelection = (nextSelectedTeams) => {
+                if (!teamSelectionScopeKey) return;
+                saveTeamSelectionState(window.localStorage, teamSelectionScopeKey, { selectedTeams: nextSelectedTeams });
+                teamSelectionHydratedSelectionRef.current = { scopeKey: teamSelectionScopeKey, selectedTeams: nextSelectedTeams };
+            };
             const toggleTeamSelection = (teamId) => {
                 if (teamId === 'all') {
-                    if (teamSelectionScopeKey) {
-                        saveTeamSelectionState(window.localStorage, teamSelectionScopeKey, { selectedTeams: ['all'] });
-                        teamSelectionHydratedSelectionRef.current = { scopeKey: teamSelectionScopeKey, selectedTeams: ['all'] };
-                    }
+                    persistTeamSelection(['all']);
                     setSelectedTeams(['all']);
                     trackFilterChanged('team', { selection_count_bucket: '0' });
                     return;
@@ -4108,10 +4136,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                     }
                     trackFilterChanged('team', { selection_count_bucket: bucketCount(next.size) });
                     const nextSelectedTeams = next.size ? Array.from(next) : ['all'];
-                    if (teamSelectionScopeKey) {
-                        saveTeamSelectionState(window.localStorage, teamSelectionScopeKey, { selectedTeams: nextSelectedTeams });
-                        teamSelectionHydratedSelectionRef.current = { scopeKey: teamSelectionScopeKey, selectedTeams: nextSelectedTeams };
-                    }
+                    persistTeamSelection(nextSelectedTeams);
                     return nextSelectedTeams;
                 });
             };
@@ -4361,7 +4386,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
             }, [trackProductEvent, trackSortChanged]);
             if (sprintCatalogState.browserContextId) planningReviewBrowserContextRef.current = sprintCatalogState.browserContextId;
             const planningReview = usePlanningSprintReview({
-                sprintId: selectedSprint, active: selectedView === 'eng' && showPlanning && planningLayout === 'table' && engWorkspaceConfigured,
+                sprintId: selectedSprint, active: selectedView === 'eng' && showPlanning && planningLayout === 'table' && engWorkspaceConfigured && !shareViewHold,
                 contextKey: `${authMode}|${jiraUrl}|${planningReviewBrowserContextRef.current}|${authResumeStagedRevision}`,
                 backendUrl: BACKEND_URL, rows: planningReviewRows, automaticHoldRef: planningAutomaticReadRef, onReviewAction: trackPlanningReviewAction,
             });
@@ -5538,6 +5563,29 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 trackSelectContent,
                 onEnterCatchUp: () => { if (planningAlertsDirtyRef.current) rearmCatchUpAlerts(); },
             });
+            const shareViewOptions = {
+                sharedConfigReady, groupsLoading, groupsFailed: Boolean(groupsError || boardGroupsReadFailed), onboardingRequired: groupPreferences.onboardingRequired,
+                adminSettingsGate, sprintCatalogState, homeTokenConnectionLoaded, savedViewIsEpm: savedInitialViewRef.current === 'epm', visibleControlGroups,
+                pendingShellAuthResumeRef, pendingPlanningAuthResumeRef, pendingConnectionRecoveryRef, tourRunning: onboarding.run,
+                planningReviewBusy: Boolean(planningReview.dirty || planningReview.saving || planningReview.pendingScopeChange),
+                activeGroupId, selectedSprint, planningScopeKey, teamSelectionScopeKey, selectedView, selectedTeams, tasksFetched,
+                tasksLoading: productTasksLoading || techTasksLoading, engLoadsTasks: selectedView === 'eng' && !isStatsSourceOnlyStatsView && !boardScopeRequested,
+                activeGroupRef, planningHydratedScopeRef, restoringGroupRef, teamSelectionHydratedScopeRef, lastLoadedSprintRef, loadEpochRef,
+                catchUpAlertLoadRef, catchUpAlertScopeKey, alertCohortRef, engSprintSelectorState, engCatchUpFacetModel,
+                restoredInitialEpmViewRef, setSelectedView, setActiveGroupId, commitSprintSelection, persistTeamSelection,
+                setShowPlanning, setShowStats, setShowScenario, setShowBoard, setSearchInput, setSearchQuery, setShowProduct, setShowTech,
+                setGroupByInitiativeChoice, setEngEpicSort, setPlanningLayout, setStatsView, setCohortStartQuarter, setCohortEndQuarter,
+                setExcludedCapacityStartSprintId, setExcludedCapacityEndSprintId, setShowAlertsPanel, setBoardStrictScope, setSelectedTeams,
+                setEngStatusFilter, setEngPriorityFilter, setEngProjectTrackFilter, setEngBoardFilterSelection, setBoardView,
+                alertFlags: {
+                    missing: [showMissingAlert, setShowMissingAlert], blocked: [showBlockedAlert, setShowBlockedAlert], followup: [showPostponedAlert, setShowPostponedAlert],
+                    backlog: [showBacklogAlert, setShowBacklogAlert], missingTeam: [showMissingTeamAlert, setShowMissingTeamAlert], missingLabels: [showMissingLabelsAlert, setShowMissingLabelsAlert],
+                    needsStories: [showNeedsStoriesAlert, setShowNeedsStoriesAlert], waiting: [showWaitingAlert, setShowWaitingAlert], empty: [showEmptyEpicAlert, setShowEmptyEpicAlert], done: [showDoneEpicAlert, setShowDoneEpicAlert],
+                },
+                activeEngMode, buildGroupStateSnapshot, searchQuery, engEpicSort, planningLayout, boardStrictScope,
+                excludedCapacityStartSprintId, excludedCapacityEndSprintId, alertCounts, trackShareViewAction, analyticsReady,
+            };
+            const shareView = useShareViewApply(shareViewOptions);
             const renderEngModeControl = () => (
                 <EngModeControl
                     activeMode={activeEngMode}
@@ -5550,6 +5598,22 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                     }}
                     selectedSprint={selectedSprint}
                 />
+            );
+
+            const shareScopeKey = JSON.stringify([selectedView, activeEngMode, activeGroupId, selectedSprint, planningLayout]);
+            const renderEpicShareControl = (epicKey) => selectedView === 'eng' && ['catch-up', 'planning'].includes(activeEngMode) && (
+                <ShareViewButton surface="epic" epicKey={epicKey} scopeKey={shareScopeKey} share={shareView} sourceSurface={analyticsToken(activeEngMode)} activeControlSurface="epic" />
+            );
+            // A group named only by its display name has no stable id to share; the placeholders are the only name-ids a link may carry.
+            const renderAlertShareControl = (anchor, group) => selectedView === 'eng' && activeEngMode === 'catch-up'
+                && (group.id !== group.name || ['unknown', 'Unknown Team'].includes(group.id)) && (
+                <ShareViewButton surface="epic" alertTarget={{ anchor, id: String(group.id) }} scopeKey={shareScopeKey} share={shareView} sourceSurface={analyticsToken(activeEngMode)} activeControlSurface="epic" />
+            );
+            const renderBoardEpicShareControl = (epicKey, columnId) => selectedView === 'eng' && activeEngMode === 'board' && (
+                <ShareViewButton surface="epic" epicKey={epicKey} boardColumnId={columnId} scopeKey={shareScopeKey} share={shareView} sourceSurface={analyticsToken(activeEngMode)} activeControlSurface="epic" />
+            );
+            const renderShareViewControl = (surface) => selectedView === 'eng' && activeEngMode !== 'scenario' && (
+                <ShareViewButton surface={surface} scopeKey={shareScopeKey} share={shareView} sourceSurface={analyticsToken(activeEngMode)} activeControlSurface={activeControlSurface} />
             );
 
             const renderEpmControls = (surface, { showProjectPicker = true, showStateControl = true } = {}) => (
@@ -6073,6 +6137,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                     />
             );
             const epicBlockProps = {
+                renderEpicShareControl,
                 statusTransitionActiveKey,
                 priorityTransitionActiveKey,
                 projectTrackTransitionActiveKey,
@@ -6153,6 +6218,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                                 <div className="header-actions-row">
                                     {renderViewSwitch()}
                                     {renderSearchControl('main')}
+                                    {renderShareViewControl('main')}
                                     {!(boardScopeRequested && !strictBoardActive) && (
                                         <JiraExportButton
                                             onboardingTarget="jira-export"
@@ -6275,6 +6341,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                                 <div className="compact-sticky-header-search">
                                     {renderSearchControl('compact', 'compact-sticky-header-search-field')}
                                 </div>
+                                {renderShareViewControl('compact')}
                             </>
                         )}
                     </div>
@@ -6859,6 +6926,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                                 renderPriorityIcon={renderPriorityIcon}
                                 engFilters={boardFilters}
                                 onFacetChange={setEngBoardFilterSelection}
+                                renderEpicShareControl={renderBoardEpicShareControl}
                                 onFilterBarHeightChange={handleFilterBarHeightChange}
                                 jiraUrl={jiraUrl}
                                 backendUrl={BACKEND_URL}
@@ -6890,13 +6958,13 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                             {shouldRenderEngTaskList && (
                                 <EngView
                                     selectedView={selectedView} sprintCatalogLoading={sprintsLoading} InitiativeIcon={InitiativeIcon}
-                                    planningTable={showPlanning && planningLayout === 'table' ? <PlanningReviewTable toolbarHost={planningToolbarHost} onInteractionChange={value => { if (planningInteractionRef.current === Boolean(value)) return; planningInteractionRef.current = Boolean(value); notifyPlanningInteraction(previous => previous + 1); }}
+                                    planningTable={showPlanning && planningLayout === 'table' ? <PlanningReviewTable key={shareViewPlanningTableKey} toolbarHost={planningToolbarHost} onInteractionChange={value => { if (planningInteractionRef.current === Boolean(value)) return; planningInteractionRef.current = Boolean(value); notifyPlanningInteraction(previous => previous + 1); }}
                                         epicGroups={epicGroups} visibleTasks={visibleTasksForList}
                                         selectedStoryKeys={new Set(Object.keys(selectedTasks).filter(key => selectedTasks[key]))}
                                         onToggleStory={task => toggleTaskSelection(task.key)} onSelectStories={selectPlanningReviewStories}
                                         jiraUrl={jiraUrl} sprintId={selectedSprint} review={planningReview} getTeamInfo={getTeamInfo} excludedEpicSet={excludedEpicSet}
                                         admittedTeamCount={planningReviewAdmittedCounts.teams} admittedProjectCount={planningReviewAdmittedCounts.projects}
-                                        renderPriorityIcon={renderPriorityIcon} renderFieldEditor={renderPlanningReviewFieldEditor} onReviewAction={trackPlanningReviewAction}
+                                        renderPriorityIcon={renderPriorityIcon} renderEpicShareControl={renderEpicShareControl} renderFieldEditor={renderPlanningReviewFieldEditor} onReviewAction={trackPlanningReviewAction}
                                         pendingOriginals={planningOriginals} onHoldRow={key => holdEditor('table', key)}
                                         confirmedEdit={confirmedEdit} onConfirmedEditHandled={ackConfirmed} isRowHeld={isHeld}
                                     /> : null}
@@ -6914,6 +6982,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                                             alertScopeTooLarge={alertScopeTooLarge}
                                             showAlertsPanel={showAlertsPanel}
                                             setShowAlertsPanel={setShowAlertsPanel}
+                                            renderAlertShareControl={renderAlertShareControl}
                                             collapsed={!showMissingAlert && !showBlockedAlert && !showPostponedAlert && !showBacklogAlert && !showMissingTeamAlert && !showMissingLabelsAlert && !showNeedsStoriesAlert && !showWaitingAlert && !showEmptyEpicAlert && !showDoneEpicAlert}
                                             alertProps={{
                                                 analysisEpicTeams,

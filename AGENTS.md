@@ -278,6 +278,8 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Keep local task changes in the checkout the user is actively viewing; use a secondary worktree only when the user explicitly asks for one.
 - For shared header/menu UI changes, add or update Playwright assertions for menu layering and icon/control geometry before reporting visual verification.
 - Before merging backend dependency or startup-path changes, launch `.venv/bin/python jira_server.py` and verify `/api/test`.
+- Before presenting a local build, verify the process listening on its port belongs to the intended checkout and serves its current bundle.
+- Keep view-link copying separate from explicit item-link copying so the destination is clear before the user clicks.
 - Treat Python dependency/runtime warnings before the Flask startup banner as failed server verification unless the warning is intentionally documented as benign.
 - In settings, the config modal footer Save must persist all dirty editable sections together; keep each endpoint payload scoped to its own section instead of mixing department, admin, preference, or EPM fields.
 - For cross-layer access or configuration changes, verify the backend response contract and the frontend render/edit/save gates together; do not treat backend route tests as enough when UI permissions control the user journey.
@@ -445,6 +447,8 @@ When the user corrects your approach, append a one-line rule here before ending 
 
 - Select existing inline person-field text on opening; typing shows only query matches (no Me fallback), and an explicit pointer/keyboard highlight survives refreshed results until the next input change.
 
+- Before asking to accept baseline test failures, explain each failure's cause, user impact, reproducibility and proposed remedy; do not treat pre-existing failures as automatically acceptable.
+- Use the existing copy icon confirmation for clipboard success; reserve recovery-warning banners for recovery and style feedback actions with existing compact controls.
 - Never use port 5050 from a worktree: it belongs to the main checkout's server and the OAuth redirect. Run a worktree server on another port (e.g. `--server_port 5051`) and never stop or replace a server that is not yours.
 
 - Keep instance-specific GTM exports, resource IDs, workspace metadata and validation captures out of tracked analytics handoffs; store them only in ignored scratch or a private operator handoff.

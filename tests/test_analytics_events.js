@@ -1473,6 +1473,137 @@ test('Planning review analytics excludes every custom column and issue value', a
     }
 });
 
+test('share_view_action is a canonical userevent whose params accept only their fixed tokens', async () => {
+    const { sanitizeAnalyticsParams, validateAnalyticsPayload } = await loadEvents();
+    for (const [workflowAction, results] of [['copy_link', ['success', 'failure']], ['apply_link', ['success', 'partial', 'rejected']]]) {
+        for (const result of results) {
+            for (const sourceSurface of ['catch_up', 'planning', 'board', 'statistics']) {
+                const params = { feature_name: 'share_view', workflow_action: workflowAction, result, source_surface: sourceSurface };
+                assert.deepEqual(sanitizeAnalyticsParams(params, 'share_view_action'), params);
+                assert.equal(validateAnalyticsPayload({
+                    event: 'userevent', trigger: 'userevent', event_type: 'event', event_name: 'share_view_action', ...params,
+                }).event_name, 'share_view_action');
+            }
+        }
+    }
+    assert.throws(
+        () => validateAnalyticsPayload({ event: 'userevent', trigger: 'userevent', event_type: 'event', event_name: 'share_view_action' }),
+        /feature_name is required/
+    );
+    // A link, id, key or name can never ride in any of the three free-valued params.
+    const base = { feature_name: 'share_view', workflow_action: 'copy_link', result: 'success', source_surface: 'catch_up' };
+    for (const value of ['http://localhost:5050/?v=1&mode=catch-up', '?v=1&group=dept%2Fa', 'v=1&sprint=4182', 'PROJ-123', 'Team Alpha', 'dept/a']) {
+        for (const name of ['workflow_action', 'result', 'source_surface']) {
+            assert.throws(
+                () => sanitizeAnalyticsParams({ ...base, [name]: value }, 'share_view_action'),
+                /unsafe analytics value/,
+                `${name} must reject ${value}`
+            );
+        }
+    }
+    for (const forbiddenKey of ['url', 'group', 'sprint', 'teams', 'find', 'query', 'link_url', 'page_location']) {
+        assert.throws(() => sanitizeAnalyticsParams({ ...base, [forbiddenKey]: 'catch_up' }, 'share_view_action'), /unsupported analytics parameter/);
+    }
+});
+
+test('share view analytics builder emits only the fixed bounded contract', async () => {
+    const { buildShareViewActionParams } = await loadDashboardAnalytics();
+    const hostile = {
+        url: 'https://example.invalid/?v=1&group=dept%2Fa&find=secret', groupId: 'dept/a', sprintId: '4182',
+        teamNames: ['Alpha Team'], find: 'secret', issueKey: 'PROJ-1', categories: ['teams', 'filters'], dropped: ['find'],
+    };
+    assert.deepEqual(buildShareViewActionParams({ workflowAction: 'copy_link', result: 'success', sourceSurface: 'catch_up', ...hostile }), {
+        feature_name: 'share_view', workflow_action: 'copy_link', result: 'success', source_surface: 'catch_up',
+    });
+    assert.deepEqual(buildShareViewActionParams({ workflowAction: 'apply_link', result: 'partial', sourceSurface: 'statistics', ...hostile }), {
+        feature_name: 'share_view', workflow_action: 'apply_link', result: 'partial', source_surface: 'statistics',
+    });
+    for (const [workflowAction, results] of [['copy_link', ['success', 'failure']], ['apply_link', ['success', 'partial', 'rejected']]]) {
+        for (const result of results) {
+            for (const sourceSurface of ['catch_up', 'planning', 'board', 'statistics']) {
+                assert.equal(buildShareViewActionParams({ workflowAction, result, sourceSurface })?.result, result);
+            }
+        }
+    }
+    for (const invalid of [
+        { workflowAction: 'copy_link', result: 'partial', sourceSurface: 'board' },
+        { workflowAction: 'copy_link', result: 'rejected', sourceSurface: 'board' },
+        { workflowAction: 'apply_link', result: 'failure', sourceSurface: 'board' },
+        { workflowAction: 'share', result: 'success', sourceSurface: 'board' },
+        { workflowAction: '__proto__', result: 'success', sourceSurface: 'board' },
+        { workflowAction: 'copy_link', result: 'success', sourceSurface: 'epm' },
+        { workflowAction: 'copy_link', result: 'success', sourceSurface: 'scenario' },
+        { workflowAction: 'copy_link', result: 'success', sourceSurface: 'stats' },
+        { workflowAction: 'copy_link', result: 'success', sourceSurface: 'https://example.invalid/' },
+        { workflowAction: 'copy_link', result: 'success' },
+        { result: 'success', sourceSurface: 'board' },
+        {},
+        undefined,
+    ]) {
+        assert.equal(buildShareViewActionParams(invalid), null, JSON.stringify(invalid));
+    }
+});
+
+test('share view action pushes one fixed userevent through the dataLayer and drops anything off-enum', async () => {
+    const { initAnalytics } = await loadAnalytics();
+    const { trackShareViewAction } = await loadDashboardAnalytics();
+    resetDom();
+    const pushed = [];
+    global.window.dataLayer = { push: entry => pushed.push(entry) };
+    await initAnalytics({ fetchContext: async () => ({ enabled: true }) });
+
+    trackShareViewAction({ workflowAction: 'copy_link', result: 'failure', sourceSurface: 'board', url: 'https://example.invalid/?v=1&find=secret' });
+    trackShareViewAction({ workflowAction: 'apply_link', result: 'failure', sourceSurface: 'board' });
+    trackShareViewAction({ workflowAction: 'apply_link', result: 'partial', sourceSurface: 'epm' });
+
+    // Sparse parameters are cleared explicitly (undefined or null), so compare the keys that carry a value.
+    const defined = entry => Object.fromEntries(Object.entries(entry).filter(([, value]) => value !== undefined && value !== null));
+    assert.deepEqual(pushed.map(defined), [{
+        event: 'userevent', trigger: 'userevent', event_type: 'event', event_name: 'share_view_action',
+        feature_name: 'share_view', workflow_action: 'copy_link', result: 'failure', source_surface: 'board',
+    }]);
+});
+
+test('useDashboardAnalytics exposes analyticsReady and trackShareViewAction; events sent before it flips are dropped', async () => {
+    const { createRuntime } = require('./react_hook_harness');
+    const { useDashboardAnalytics } = await loadDashboardAnalytics();
+    for (const enabled of [true, false]) {
+        resetDom();
+        const pushed = [];
+        global.window.dataLayer = { push: entry => pushed.push(entry) };
+        let releaseContext;
+        global.fetch = () => new Promise((resolve) => {
+            releaseContext = () => resolve({ ok: true, json: async () => ({ enabled }) });
+        });
+        const runtime = createRuntime();
+        const props = { authMode: 'oauth', selectedView: 'eng', showPlanning: false, showStats: false, showScenario: false, showBoard: false, serverConnectionError: '' };
+        const render = () => {
+            runtime.begin();
+            const result = useDashboardAnalytics(runtime.react, props);
+            runtime.commit();
+            return result;
+        };
+        const shareEvents = () => pushed.filter(entry => entry.event_name === 'share_view_action');
+        const outcome = { workflowAction: 'apply_link', result: 'success', sourceSurface: 'catch_up' };
+
+        let hook = render();
+        assert.equal(hook.analyticsReady, false);
+        assert.equal(typeof hook.trackShareViewAction, 'function');
+        hook.trackShareViewAction(outcome);
+        assert.equal(shareEvents().length, 0, 'before the analytics context resolves the dataLayer drops the event');
+
+        releaseContext();
+        await new Promise(resolve => setTimeout(resolve, 0));
+        hook = render();
+        assert.equal(hook.analyticsReady, true, 'ready flips once initAnalytics has settled');
+        hook.trackShareViewAction(outcome);
+        // Ready is not enabled: GA4_ENABLED=false still drops by design.
+        assert.equal(shareEvents().length, enabled ? 1 : 0);
+        runtime.unmount();
+        delete global.fetch;
+    }
+});
+
 // GTM DLV v2 keeps a model across pushes; omitted keys retain their old value.
 function installPersistentDataLayer() {
     const model = {};

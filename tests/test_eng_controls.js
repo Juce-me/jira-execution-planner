@@ -224,6 +224,7 @@ const expectedProps = {
         "projectTrackTransitionActiveKey",
         "projectTrackTransitionEnabled",
         "removeTask",
+        "renderEpicShareControl",
         "renderPriorityIcon",
         "retryStorySubtasks",
         "selectedTasks",

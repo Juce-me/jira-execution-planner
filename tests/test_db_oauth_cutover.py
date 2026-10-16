@@ -20,7 +20,7 @@ from backend.auth.jira_auth import refresh_oauth_token
 from backend.db import engine as db_engine
 from backend.db import models
 import jira_server
-from tests.oauth_test_helpers import install_oauth_session
+from tests.oauth_test_helpers import forbid_jira_http, install_oauth_session
 
 
 class FakeResponse:
@@ -106,11 +106,14 @@ class DbOauthCutoverTests(unittest.TestCase):
         access_token='access-123',
         refresh_token='refresh-123',
         account_id='account-123',
+        pending_share_view=None,
     ):
         client = client or self.client
         with client.session_transaction() as session:
             session['oauth_state'] = 'state-123'
             session['oauth_pkce_verifier'] = 'verifier-123'
+            if pending_share_view is not None:
+                session['pending_share_view'] = pending_share_view
         token_data = {
             'access_token': access_token,
             'refresh_token': refresh_token,
@@ -149,6 +152,7 @@ class DbOauthCutoverTests(unittest.TestCase):
                 token_version=str(connection.token_version),
                 browser_session_id=session_payload.get('db_browser_session_id'),
                 session_payload=session_payload,
+                location=response.headers['Location'],
             )
 
     def test_callback_writes_encrypted_db_tokens_and_returns_session_metadata(self):
@@ -977,6 +981,133 @@ class DbOauthCutoverTests(unittest.TestCase):
             'message': 'EPM configuration storage is unavailable.',
         })
         run_probe.assert_not_called()
+
+    SHARE_LINK = 'v=1&mode=board&group=default&sprint=4182&find=50%25%20off'
+
+    def _pending_share_view(self, age_seconds=5):
+        return {'q': self.SHARE_LINK, 't': int(time.time()) - age_seconds}
+
+    def _pending_share_view_in_session(self, client=None):
+        with (client or self.client).session_transaction() as session:
+            return session.get('pending_share_view')
+
+    def test_callback_applies_the_pending_share_view_and_keeps_the_db_session(self):
+        forbid_jira_http(self)
+        result = self._store_callback_through_route(pending_share_view=self._pending_share_view())
+
+        self.assertEqual(result.location, '/?' + self.SHARE_LINK)
+        with self.client.session_transaction() as session:
+            self.assertNotIn('pending_share_view', session)
+            self.assertNotIn('oauth_state', session)
+            self.assertNotIn('atlassian_oauth_session_id', session)
+            self.assertEqual(session['db_oauth_session'], {'db_browser_session_id': result.browser_session_id})
+        with self._db_route_mode():
+            status = self.client.get('/api/auth/status')
+        self.assertTrue(status.get_json()['authenticated'])
+
+    def test_callback_without_a_pending_share_view_redirects_to_root(self):
+        self.assertEqual(self._store_callback_through_route().location, '/')
+
+    def test_callback_failures_retain_the_pending_share_view_for_a_retry(self):
+        """Every failed callback keeps the stash, including the one that deletes the DB browser session."""
+        stash = self._pending_share_view()
+        cases = (
+            ('invalid_state', 'state-1', 'verifier-1', '/api/auth/atlassian/callback?state=wrong&code=abc', 'invalid_oauth_state'),
+            ('authorization_denial', 'state-2', 'verifier-2', '/api/auth/atlassian/callback?state=state-2&error=access_denied', 'oauth_authorization_failed'),
+            ('missing_code', 'state-3', 'verifier-3', '/api/auth/atlassian/callback?state=state-3', 'missing_oauth_code'),
+            ('missing_pkce', 'state-4', None, '/api/auth/atlassian/callback?state=state-4&code=abc', 'missing_pkce_verifier'),
+        )
+        for name, state_value, verifier, path, expected_error in cases:
+            with self.subTest(name=name):
+                with self.client.session_transaction() as session:
+                    session['oauth_state'] = state_value
+                    session['pending_share_view'] = stash
+                    if verifier is None:
+                        session.pop('oauth_pkce_verifier', None)
+                    else:
+                        session['oauth_pkce_verifier'] = verifier
+                with self._db_route_mode():
+                    response = self.client.get(path)
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.get_json()['error'], expected_error)
+                self.assertEqual(self._pending_share_view_in_session(), stash)
+
+        signed_in = self._store_callback_through_route()
+        with self.client.session_transaction() as session:
+            session['oauth_state'] = 'state-failure'
+            session['oauth_pkce_verifier'] = 'verifier-failure'
+            session['pending_share_view'] = stash
+        with self._db_route_mode(), patch.object(
+            jira_server,
+            'exchange_authorization_code',
+            side_effect=jira_server.AuthError('auth_required', 'Authentication failed.'),
+        ):
+            failed = self.client.get('/api/auth/atlassian/callback?state=state-failure&code=abc')
+        self.assertEqual(failed.status_code, 401)
+        with self.client.session_transaction() as session:
+            self.assertNotIn('db_oauth_session', session)
+            self.assertEqual(session['pending_share_view'], stash)
+        with self.factory() as session:
+            self.assertIsNone(session.get(models.BrowserSession, signed_in.browser_session_id))
+
+        retry = self._store_callback_through_route()
+        self.assertEqual(retry.location, '/?' + self.SHARE_LINK)
+        self.assertIsNone(self._pending_share_view_in_session())
+
+    def test_link_survives_the_whole_database_login_hop(self):
+        with self._db_route_mode():
+            entry = self.client.get('/?' + self.SHARE_LINK)
+        self.assertEqual((entry.status_code, entry.headers['Location']), (302, '/login'))
+        self.assertEqual(entry.headers['Cache-Control'], 'no-store')
+        self.assertEqual(self._pending_share_view_in_session()['q'], self.SHARE_LINK)
+
+        result = self._store_callback_through_route()
+        self.assertEqual(result.location, '/?' + self.SHARE_LINK)
+        with self._db_route_mode():
+            dashboard = self.client.get(result.location)
+            dashboard.close()
+        self.assertEqual(dashboard.status_code, 200)
+        with self.client.session_transaction() as session:
+            self.assertNotIn('pending_share_view', session)
+            self.assertEqual(session['db_oauth_session'], {'db_browser_session_id': result.browser_session_id})
+
+    def test_authenticated_database_session_consumes_or_clears_the_pending_share_view(self):
+        result = self._store_callback_through_route()
+
+        with self.client.session_transaction() as session:
+            session['pending_share_view'] = self._pending_share_view()
+        with self._db_route_mode():
+            login = self.client.get('/login')
+        self.assertEqual((login.status_code, login.headers['Location']), (302, '/?' + self.SHARE_LINK))
+        self.assertIsNone(self._pending_share_view_in_session())
+
+        with self.client.session_transaction() as session:
+            session['pending_share_view'] = self._pending_share_view(age_seconds=3600)
+        with self._db_route_mode():
+            dashboard = self.client.get('/jira-dashboard.html?' + self.SHARE_LINK)
+            dashboard.close()
+        self.assertEqual(dashboard.status_code, 200)
+        with self.client.session_transaction() as session:
+            self.assertNotIn('pending_share_view', session)
+            self.assertEqual(session['db_oauth_session'], {'db_browser_session_id': result.browser_session_id})
+
+    def test_logout_clears_the_pending_share_view_with_the_database_session(self):
+        result = self._store_callback_through_route()
+        with self.client.session_transaction() as session:
+            session['pending_share_view'] = self._pending_share_view()
+
+        with self._db_route_mode():
+            response = self.client.post(
+                '/api/auth/logout',
+                headers={'X-Requested-With': 'jira-execution-planner'},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        with self.client.session_transaction() as session:
+            self.assertNotIn('pending_share_view', session)
+            self.assertNotIn('db_oauth_session', session)
+        with self.factory() as session:
+            self.assertIsNone(session.get(models.BrowserSession, result.browser_session_id))
 
 
 if __name__ == '__main__':

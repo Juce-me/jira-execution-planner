@@ -13,6 +13,11 @@ const ISSUE_FIELD_EDIT_KINDS = new Set(['epic', 'story']);
 const ISSUE_FIELD_EDIT_SURFACES = new Set(['catch_up', 'planning', 'board']);
 const ISSUE_FIELD_EDIT_RESULTS = new Set(['success', 'unchanged', 'conflict', 'failure', 'unknown']);
 const BOARD_SMALL_SCREEN_REASONS = new Set(['short', 'narrow', 'touch']);
+const SHARE_VIEW_RESULTS = new Map([
+    ['copy_link', new Set(['success', 'failure'])],
+    ['apply_link', new Set(['success', 'partial', 'rejected'])],
+]);
+const SHARE_VIEW_SURFACES = new Set(['catch_up', 'planning', 'board', 'statistics']);
 
 export function analyticsToken(value, fallback = 'unknown') {
     return String(value || fallback).trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || fallback;
@@ -104,6 +109,23 @@ export function buildBoardSmallScreenSupportParams(reason) {
 export function trackBoardSmallScreenSupportRequest(reason) {
     const payload = buildBoardSmallScreenSupportParams(reason);
     if (payload) safeTrackEvent('board_action', payload);
+}
+
+// Share control: one copy event per click and one apply event per opened link. The fixed builder
+// carries enum tokens only and returns null, so nothing is sent, for any other value.
+export function buildShareViewActionParams({ workflowAction, result, sourceSurface } = {}) {
+    if (!SHARE_VIEW_RESULTS.get(workflowAction)?.has(result) || !SHARE_VIEW_SURFACES.has(sourceSurface)) return null;
+    return {
+        feature_name: 'share_view',
+        workflow_action: workflowAction,
+        result,
+        source_surface: sourceSurface,
+    };
+}
+
+export function trackShareViewAction(params) {
+    const payload = buildShareViewActionParams(params);
+    if (payload) safeTrackEvent('share_view_action', payload);
 }
 
 export function planningAnalyticsPayload(nextSelectedTasks, selectionTasks) {
@@ -341,6 +363,7 @@ export function useDashboardAnalytics(React, {
     }, [authMode, currentDashboardView, trackProductEvent]);
 
     return {
+        analyticsReady,
         bucketCount,
         currentDashboardView,
         trackAppError,
@@ -359,6 +382,7 @@ export function useDashboardAnalytics(React, {
         trackSearch,
         trackSelectContent,
         trackSettingsAction,
+        trackShareViewAction,
         trackSortChanged,
         trackStatsAction,
     };

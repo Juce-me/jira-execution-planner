@@ -95,7 +95,6 @@
   },
   "offenders": {
     "[\"frontend/src/styles/eng/board.css\",[],\".eng-board .ecard:hover\",1,\"box-shadow\",1]": "0 4px 12px var(--shadow)",
-    "[\"frontend/src/styles/eng/filter-bar.css\",[],\".initiative-grouping-control:hover .initiative-grouping-tooltip\",1,\"transform\",1]": "translate(-50%, 0)",
     "[\"frontend/src/styles/eng/issues.css\",[],\".task-priority-icon[data-priority]:hover::after\",1,\"transform\",1]": "translate(-50%, -100%)",
     "[\"frontend/src/styles/epm/project-board.css\",[\"@media (max-width: 640px)\"],\".epm-project-progress:hover .epm-project-progress-tooltip\",1,\"transform\",1]": "translateY(0)",
     "[\"frontend/src/styles/epm/project-board.css\",[],\".epm-project-progress:hover .epm-project-progress-tooltip\",1,\"transform\",1]": "translateX(-50%) translateY(0)",

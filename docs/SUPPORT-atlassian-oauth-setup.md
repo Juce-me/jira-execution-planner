@@ -110,7 +110,7 @@ Restart the Flask server after changing `.env`.
 2. Click `Sign in with Atlassian`.
 3. Complete Atlassian login. If Microsoft Entra SSO is enforced, Atlassian redirects through it automatically.
 4. Accept the Atlassian consent screen.
-5. Confirm the callback returns to the dashboard.
+5. Confirm the callback returns to the dashboard. If you opened a shared view link (`/?v=1&...`) while signed out, it is kept in the signed session cookie for up to 15 minutes and the callback returns to `/?<that query>` so the view opens after sign-in; the registered callback URL does not change.
 6. Open `http://localhost:5050/api/auth/status`; it should report authenticated state and must not include tokens.
 7. Open `http://localhost:5050/api/test`; it should use OAuth.
 

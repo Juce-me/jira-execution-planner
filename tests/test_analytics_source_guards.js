@@ -668,6 +668,52 @@ test('automatic freshness and its status projection remain passive and analytics
     }
 });
 
+test('share view analytics stays typed, private, documented and mapped through the two-trigger GTM contract', () => {
+    const eventsSource = read('frontend/src/analytics/events.js');
+    const dashboardAnalytics = read('frontend/src/analytics/dashboardAnalytics.js');
+    const analyticsDoc = read('docs/README_ANALYTICS.md');
+    const runbook = read('docs/plans/SUPPORT-ga4-user-configuration.md');
+    const yaml = read('docs/plans/SUPPORT-ga4-gtm-mcp-execution.yaml');
+
+    assert.ok(jsSetValues(eventsSource, 'EVENT_NAMES').has('share_view_action'));
+    for (const token of [
+        "['copy_link', new Set(['success', 'failure'])]",
+        "['apply_link', new Set(['success', 'partial', 'rejected'])]",
+        "new Set(['catch_up', 'planning', 'board', 'statistics'])",
+    ]) assert.ok(dashboardAnalytics.includes(token), `Expected fixed Share enum ${token}`);
+    const start = dashboardAnalytics.indexOf('export function buildShareViewActionParams');
+    const end = dashboardAnalytics.indexOf('\n}', start) + 2;
+    assert.ok(start >= 0 && end > start, 'Expected to locate buildShareViewActionParams');
+    for (const forbidden of ['url', 'URL', 'href', 'location', 'groupId', 'sprintId', 'teamId', 'teams', 'find', 'query', 'search', 'issueKey', 'categories', 'dropped', 'event_group', 'ga4_event_name', 'has_']) {
+        assert.equal(dashboardAnalytics.slice(start, end).includes(forbidden), false, `Builder must omit ${forbidden}`);
+    }
+
+    // No new dataLayer key: the four params are already mapped by the shared userevent tag, so the MCP YAML is untouched.
+    for (const key of ['feature_name', 'workflow_action', 'result', 'source_surface']) {
+        assert.ok(jsSetValues(eventsSource, 'EVENT_PARAMS').has(key));
+        assert.match(yaml, new RegExp(`data_layer_variable_name: "${key}"`));
+    }
+    assert.doesNotMatch(yaml, /share_view/);
+
+    assert.ok(analyticsDoc.includes('| `share_view_action` |'));
+    assert.ok(analyticsDoc.includes('`feature_name=share_view`'));
+    assert.ok(analyticsDoc.includes('Share adoption and how often recipients resolve only partially, to decide whether stored links are worth building'));
+    assert.ok(analyticsDoc.includes('### Shareable View Links'));
+    assert.ok(analyticsDoc.includes('link queries never reach GA4'));
+    for (const row of ['Share link URL strip before analytics initializes', 'Share notice (apply result and Share copy failures)', 'Share fallback link field']) {
+        assert.ok(analyticsDoc.includes(`| ${row}`), `Expected no-event allowlist row for ${row}`);
+    }
+    assert.ok(runbook.includes('`share_view_action`'));
+    assert.match(runbook, /Do not register new custom dimensions for Share[^.]*already registered/i);
+});
+
+test('share view source reaches analytics only through the fixed Share builder', () => {
+    const offenders = listSourceFiles(path.join(repoRoot, 'frontend', 'src', 'shareView'))
+        .filter(filePath => /dataLayer|gtag\s*\(|JepAnalytics|trackProductEvent|trackEvent\s*\(|analytics\/analytics\.js/.test(fs.readFileSync(filePath, 'utf8')))
+        .map(filePath => path.relative(repoRoot, filePath));
+    assert.deepEqual(offenders, []);
+});
+
 test('MCP core stays at 25 while native handoff covers every sparse app parameter', () => {
     const source = read('frontend/src/analytics/events.js');
     const yaml = read('docs/plans/SUPPORT-ga4-gtm-mcp-execution.yaml');

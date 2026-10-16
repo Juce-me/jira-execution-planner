@@ -13,6 +13,7 @@ import IssueCard from '../issues/IssueCard.jsx';
 
 export function EpicBlock({
     epicGroup,
+    renderEpicShareControl,
     statusTransitionActiveKey,
     priorityTransitionActiveKey,
     projectTrackTransitionActiveKey,
@@ -244,6 +245,7 @@ export function EpicBlock({
                                 <span className="epic-key">Unassigned</span>
                             </>
                         )}
+                        {epicGroup.key !== 'NO_EPIC' && renderEpicShareControl?.(epicGroup.key)}
                         {(showStats || showPlanning) && (
                             <button
                                 className={`epic-stat-toggle ${excludedEpicSet.has(normalizeEpicKey(epicGroup.key)) ? '' : 'active'}`}

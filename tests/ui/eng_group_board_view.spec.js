@@ -6058,3 +6058,49 @@ for (const width of [1280, 820]) {
         });
     }
 }
+
+test('a Board Epic card shares its own Epic, column and filters, and the link reveals that card', async ({ page }) => {
+    await page.addInitScript(() => {
+        window.__copied = [];
+        Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (text) => { window.__copied.push(text); } } });
+        window.__reveals = [];
+        new MutationObserver((records) => {
+            for (const record of records) {
+                if (record.attributeName === 'data-share-reveal' && record.target.hasAttribute('data-share-reveal')) window.__reveals.push(record.target.dataset.epicKey || '');
+            }
+        }).observe(document, { subtree: true, attributes: true, attributeFilter: ['data-share-reveal'] });
+    });
+    await openBoard(page);
+    const card = page.locator('.eng-board .col.is-focused .ecard').first();
+    await expect(card).toBeVisible();
+    const epicKey = await card.getAttribute('data-epic-key');
+    const columnId = await page.locator('.eng-board .col.is-focused').getAttribute('data-column-id');
+    await card.hover();
+    const action = card.locator('[data-share-view-control]');
+    await expect(action).toBeVisible();
+    // The action sits after the summary and before the key, clear of both, and the card keeps its fixed height.
+    const placed = await card.evaluate(node => {
+        const button = node.querySelector('[data-share-view-control]').getBoundingClientRect();
+        const key = node.querySelector('.ekey').getBoundingClientRect();
+        const title = node.querySelector('.etitle').getBoundingClientRect();
+        return { beforeKey: button.right <= key.left + 1, afterTitleStart: button.left >= title.left, noTitleOverlap: button.left >= title.right - 1 || button.right <= title.left + 1 };
+    });
+    expect(placed.beforeKey).toBe(true);
+    expect(placed.afterTitleStart).toBe(true);
+    await action.click();
+    await expect.poll(() => page.evaluate(() => window.__copied.length)).toBe(1);
+    const url = (await page.evaluate(() => window.__copied))[0];
+    const query = new URL(url).search;
+    expect(query).toContain('mode=board');
+    expect(query).toContain(`&epic=${epicKey}`);
+    expect(query).toContain(`&bcolumn=${encodeURIComponent(columnId)}`);
+    expect(await card.locator('.ecard-open [data-share-view-control]').count()).toBe(0);
+
+    // Opening the link lands on that column and paints the reveal on that card.
+    await page.evaluate(() => { window.__reveals.length = 0; });
+    // The shared fixture's `/` route only matches a bare origin, so the link URL is served the dashboard document directly.
+    await page.route(/https?:\/\/[^/]+\/\?v=[^#]*$/, route => route.fulfill({ status: 200, contentType: 'text/html', body: fs.readFileSync(path.join(__dirname, '..', '..', 'jira-dashboard.html'), 'utf8') }));
+    await page.goto(`${appBaseUrl}/${query}`, { waitUntil: 'networkidle' });
+    await expect.poll(() => page.evaluate(() => window.__reveals)).toContain(epicKey);
+    await expect(page.locator('.eng-board .col.is-focused')).toHaveAttribute('data-column-id', columnId);
+});

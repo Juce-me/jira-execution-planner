@@ -1956,6 +1956,7 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     expect(new Set(desktopControlLayout.checkboxTops).size).toBe(1);
     expect(desktopControlLayout.controlTops).toHaveLength(6);
     expect(new Set(desktopControlLayout.controlTops).size).toBe(1);
+    await captureSmokeScreenshot(page, 'statistics-lead-times-desktop');
     await page.setViewportSize({ width: 1280, height: 760 });
 
     // The merged quarter range group must lay Start/End out side by side (not stacked)
@@ -2049,6 +2050,17 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     });
     expect(reflow.controlsOverflow).toBeFalsy();
     expect(reflow.controlsVisible).toBeTruthy();
+    await waitForVisualSettled(page);
+    const endQuarterButton = quarterButton('End');
+    await endQuarterButton.click();
+    const endQuarterPanel = quarterRange.locator('[data-range-end="end"] .sprint-dropdown-panel');
+    await expect(endQuarterPanel).toBeVisible();
+    const quarterPanelBox = await endQuarterPanel.boundingBox();
+    const quarterToggleBox = await endQuarterButton.boundingBox();
+    expect(quarterPanelBox.width).toBeGreaterThanOrEqual(quarterToggleBox.width - 0.01);
+    expect(quarterPanelBox.x).toBeGreaterThanOrEqual(16);
+    expect(quarterPanelBox.x + quarterPanelBox.width).toBeLessThanOrEqual(359);
+    await endQuarterButton.click();
     await page.setViewportSize({ width: 1280, height: 760 });
 
     // 2026Q3 (not 2026Q2) so this lands on a range never fetched before: the debounced
@@ -2176,8 +2188,10 @@ test('stats sprint range End panels keep long options inside the narrow viewport
         const range = page.locator(`.stats-view.open [data-stats-range="${view.range}"]`);
         await expect(range).toBeVisible();
         await page.setViewportSize({ width: 375, height: 760 });
+        await waitForVisualSettled(page);
         const endToggle = range.getByRole('button', { name: 'End sprint' });
         await endToggle.click();
+        await waitForVisualSettled(page);
         const longOption = range.getByRole('listbox', { name: 'End sprint' })
             .getByRole('option', { name: longSprintName });
         await expect(longOption).toBeVisible();
@@ -2985,7 +2999,8 @@ test('Excluded Capacity summary shows product and tech shares instead of source 
     expect(controlRowGeometry.lefts.every(Number.isFinite)).toBeTruthy();
     expect(controlRowGeometry.lefts[0]).toBeLessThan(controlRowGeometry.lefts[1]);
     expect(controlRowGeometry.lefts[1]).toBeLessThan(controlRowGeometry.lefts[2]);
-    expect(controlRowGeometry.actionsRight).toBeLessThanOrEqual(controlRowGeometry.rowRight);
+    // Firefox can report a shared grid edge a few floating-point units apart.
+    expect(controlRowGeometry.actionsRight).toBeLessThanOrEqual(controlRowGeometry.rowRight + 0.01);
     expect(controlRowGeometry.controlTops).toHaveLength(4);
     expect(controlRowGeometry.controlTops.every(Number.isFinite)).toBeTruthy();
     expect(Math.max(...controlRowGeometry.controlTops) - Math.min(...controlRowGeometry.controlTops)).toBeLessThan(4);
@@ -3148,6 +3163,14 @@ test('open header dropdown toggles filter groups teams and sprints', async ({ pa
         await page.evaluate(() => window.scrollTo(0, 600));
         const compactHeader = page.locator('.compact-sticky-header.is-visible');
         await expect(compactHeader).toBeVisible();
+        const compactShare = compactHeader.getByRole('button', { name: 'Copy view link' });
+        await expect(compactShare).toHaveCount(1);
+        await expect(compactShare).toBeVisible();
+        const compactShareBox = await compactShare.boundingBox();
+        expect(compactShareBox.width).toBeCloseTo(38, 1);
+        expect(compactShareBox.height).toBeCloseTo(38, 1);
+        expect(compactShareBox.x).toBeGreaterThanOrEqual(0);
+        expect(compactShareBox.x + compactShareBox.width).toBeLessThanOrEqual(viewportWidth + 1);
         for (const dropdownCase of dropdownCases) {
             const dropdown = compactHeader.locator(`.${dropdownCase.kind}-dropdown.header-filter-dropdown`);
             await expect(dropdown).toHaveClass(new RegExp(`header-filter-dropdown--${dropdownCase.kind}`));
@@ -3177,6 +3200,9 @@ test('open header dropdown toggles filter groups teams and sprints', async ({ pa
         await waitForVisualSettled(page);
         const compactHeader = page.locator('.compact-sticky-header.is-visible');
         await expect(compactHeader).toBeVisible();
+        const narrowShareBox = await compactHeader.getByRole('button', { name: 'Copy view link' }).boundingBox();
+        expect(narrowShareBox.x).toBeGreaterThanOrEqual(0);
+        expect(narrowShareBox.x + narrowShareBox.width).toBeLessThanOrEqual(width + 1);
         const documentOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
         expect(documentOverflow).toBeLessThanOrEqual(1);
         await compactHeader.screenshot({ path: path.join(headerDropdownAfterDir, `stable-compact-header-${width}-after.png`) });
@@ -3197,6 +3223,8 @@ test('open header dropdown toggles filter groups teams and sprints', async ({ pa
         await waitForVisualSettled(page);
         await page.screenshot({ path: path.join(headerDropdownAfterDir, `stable-main-header-sprint-${width}-open.png`), fullPage: false });
         await page.keyboard.press('Escape');
+        // Escape queues focus restoration; finish it before the next resize/scroll.
+        await waitForVisualSettled(page);
     }
 
     expect(apiMocks.unexpectedCalls).toEqual([]);
@@ -3251,10 +3279,13 @@ test('multiple groups keep the main controls on one row and settings beside refr
     const jiraExport = headerActions.getByRole('button', { name: 'Open Jira issue menu' });
     const refresh = headerActions.getByRole('button', { name: 'Refresh tasks and sprints from Jira' });
     const settings = headerActions.getByRole('button', { name: 'Manage team groups' });
+    const share = headerActions.getByRole('button', { name: 'Copy view link' });
     await expect(jiraExport).toBeVisible();
     await expect(refresh).toBeVisible();
     await expect(settings).toBeVisible();
+    await expect(share).toBeVisible();
     await expect(headerActions.locator('.refresh-icon + .group-gear-button')).toHaveCount(1);
+    await expect(headerActions.locator('.control-search + [data-share-view] + .jira-export')).toHaveCount(1);
     const iconButtonGeometry = await headerActions.evaluate((row) => {
         const rowRect = row.getBoundingClientRect();
         const headerRect = row.closest('.subtitle').getBoundingClientRect();
@@ -3265,6 +3296,7 @@ test('multiple groups keep the main controls on one row and settings beside refr
             row.querySelector('.jira-export-icon-button'),
             row.querySelector('.refresh-icon'),
             row.querySelector('.group-gear-button'),
+            row.querySelector('[data-share-view-control]'),
         ];
         // The reserved freshness slot is its own flex line under the controls; the controls line ends one row gap above it.
         const slotRect = row.querySelector('.dashboard-freshness-slot').getBoundingClientRect();
@@ -3278,6 +3310,7 @@ test('multiple groups keep the main controls on one row and settings beside refr
                 row.querySelector('.jira-export-icon-button'),
                 row.querySelector('.refresh-icon'),
                 row.querySelector('.group-gear-button'),
+                row.querySelector('[data-share-view-control]'),
             ].map((control) => Math.abs(controlsBottom - control.getBoundingClientRect().bottom)),
             buttons: buttons.map((button) => {
             const rect = button.getBoundingClientRect();
@@ -3297,8 +3330,8 @@ test('multiple groups keep the main controls on one row and settings beside refr
     });
     expect(iconButtonGeometry.rightOverflow).toBeLessThanOrEqual(1);
     iconButtonGeometry.bottomDeltas.forEach((delta) => expect(delta).toBeLessThanOrEqual(1));
-    const [jiraGeometry, refreshGeometry, settingsGeometry] = iconButtonGeometry.buttons;
-    for (const geometry of [jiraGeometry, refreshGeometry, settingsGeometry]) {
+    const [jiraGeometry, refreshGeometry, settingsGeometry, shareGeometry] = iconButtonGeometry.buttons;
+    for (const geometry of [jiraGeometry, refreshGeometry, settingsGeometry, shareGeometry]) {
         expect(geometry.width).toBe(iconButtonGeometry.controlHeight);
         expect(geometry.height).toBe(iconButtonGeometry.controlHeight);
         expect(geometry.iconWidth).toBeCloseTo(18, 3);
@@ -3383,6 +3416,7 @@ test('multiple groups keep the main controls on one row and settings beside refr
     });
     expect(reportedViewportGeometry.rightOverflow).toBeLessThanOrEqual(1);
     expect(reportedViewportGeometry.buttonSizes).toEqual([
+        { width: 38, height: 38 },
         { width: 38, height: 38 },
         { width: 38, height: 38 },
         { width: 38, height: 38 },
@@ -5769,26 +5803,40 @@ for (const connected of [false, true]) test(`Task9 freshness reserved copy prese
     const measure = () => page.locator('.header-actions-row').evaluate(row => {
         const header = row.closest('.subtitle'), status = row.querySelector('[data-dashboard-freshness-status]'), style = getComputedStyle(row.closest('.container'));
         const documentScroll = document.documentElement.scrollWidth;
-        const tooltips = [...document.querySelectorAll('.initiative-grouping-tooltip')];
-        const tooltipStyles = tooltips.map(node => node.getAttribute('style'));
-        const tooltipHidden = tooltips.every(node => getComputedStyle(node).visibility === 'hidden');
-        let documentWithoutTooltip;
-        try {
-            tooltips.forEach(node => node.style.setProperty('display', 'none', 'important'));
-            documentWithoutTooltip = document.documentElement.scrollWidth;
-        } finally {
-            tooltips.forEach((node, index) => tooltipStyles[index] === null ? node.removeAttribute('style') : node.setAttribute('style', tooltipStyles[index]));
-        }
         return { headerHeight: header.getBoundingClientRect().height, title: (()=>{const node=header.querySelector('.subtitle-main'),range=document.createRange();range.selectNodeContents(node);const box=node.getBoundingClientRect();return {width:box.width,height:box.height,textBoxes:[...range.getClientRects()].map(rect=>({left:rect.left,right:rect.right,top:rect.top,bottom:rect.bottom})),scroll:node.scrollWidth,client:node.clientWidth};})(), searchWidth:row.querySelector('.search-input').getBoundingClientRect().width, rowHeight: row.getBoundingClientRect().height,
             sticky: ['--compact-header-offset','--planning-offset','--planning-sticky-top','--filterbar-sticky-top','--epic-sticky-top','--scenario-sticky-top'].map(key => style.getPropertyValue(key)),
             buttons: [...row.querySelectorAll('.header-icon-button')].map(node => { const box=node.getBoundingClientRect();return {width:box.width,height:box.height}; }),
             slotHeight: row.querySelector('.dashboard-freshness-slot').getBoundingClientRect().height, controlsBounds: [...row.querySelectorAll('.search-input,.header-icon-button,.view-mode-control,[data-dashboard-freshness-status]')].map(node => {const r=node.getBoundingClientRect();return {left:r.left,right:r.right};}),
             status: status ? { scroll:status.scrollWidth,client:status.clientWidth,whiteSpace:getComputedStyle(status).whiteSpace,minWidth:getComputedStyle(status).minWidth,height:status.getBoundingClientRect().height } : null,
-            documentScroll, documentWithoutTooltip, tooltipHidden, viewport: document.documentElement.clientWidth };
+            documentScroll, viewport: document.documentElement.clientWidth };
     });
     const before = {};
     const dir = path.join(repoRoot,'tmp/freshness-251/task-9-screenshots'); fs.mkdirSync(dir,{recursive:true});
-    for (const viewport of viewports) { await page.setViewportSize(viewport); for (const state of states) { await setSearchState(state); const key = `${viewport.width}-${state}`; before[key]=await measure(); await page.screenshot({path:path.join(dir,`header-reserved-before-${connected}-${key}.png`),fullPage:false}); } }
+    const initiativeControl = page.locator('.initiative-grouping-control');
+    const initiativeTooltip = initiativeControl.locator('.initiative-grouping-tooltip');
+    for (const viewport of viewports) {
+        await page.setViewportSize(viewport);
+        await setSearchState('rest');
+        await page.mouse.move(0, 0);
+        await waitForVisualSettled(page);
+        await expect(initiativeTooltip).toBeHidden();
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
+        await initiativeControl.hover();
+        await expect(initiativeTooltip).toBeVisible();
+        const tooltipBox = await initiativeTooltip.boundingBox();
+        expect(tooltipBox.x).toBeGreaterThanOrEqual(0);
+        expect(tooltipBox.x + tooltipBox.width).toBeLessThanOrEqual(viewport.width);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
+        await page.screenshot({ path: path.join(dir, `initiative-tooltip-${connected}-${viewport.width}.png`), fullPage: false });
+        await page.mouse.move(0, 0);
+        for (const state of states) {
+            await setSearchState(state);
+            const key = `${viewport.width}-${state}`;
+            before[key] = await measure();
+            expect(before[key].documentScroll).toBeLessThanOrEqual(viewport.width);
+            await page.screenshot({path:path.join(dir,`header-reserved-before-${connected}-${key}.png`),fullPage:false});
+        }
+    }
     await setSearchState('rest');
     ctx.respond(call => call.pathname === '/api/tasks-with-team-name' && !call.params.purpose, ({call,json}) => json({ ...taskPayload(call.params,ctx.scenario), ...(call.params.project==='product'?{capped:true}:{}) }));
     await lifecycle.returnAfter(13*60000);
@@ -5805,12 +5853,7 @@ for (const connected of [false, true]) test(`Task9 freshness reserved copy prese
             const height = await status.evaluate((node, text) => { const previous=node.textContent; node.textContent=text; const height=node.closest('.header-actions-row').getBoundingClientRect().height; node.textContent=previous; return height; }, copy);
             expect.soft(height).toBe(after.rowHeight);
         }
-        // Approved #251 baseline exception (2026-10-12): only the hidden Initiative tooltip at 755–1023px; no added overflow.
-        const baselineTooltipException = viewport.width >= 755 && viewport.width <= 1023;
-        if (baselineTooltipException) expect.soft(before[key].documentScroll).toBeLessThanOrEqual(after.viewport + 26);
-        expect.soft(after.documentScroll).toBeLessThanOrEqual(baselineTooltipException ? Math.max(after.viewport, before[key].documentScroll) : after.viewport);
-        expect.soft(after.documentWithoutTooltip).toBeLessThanOrEqual(after.viewport);
-        if (after.documentScroll > after.viewport) expect.soft(after.tooltipHidden).toBe(true);
+        expect.soft(after.documentScroll).toBeLessThanOrEqual(after.viewport);
         await expect(page.locator('.refresh-icon + .group-gear-button')).toHaveCount(1);
         await expect(page.locator('.compact-sticky-header [data-dashboard-freshness-status], .compact-sticky-header .refresh-icon')).toHaveCount(0);
         await page.screenshot({path:path.join(dir,`header-reserved-after-${connected}-${key}.png`),fullPage:false});

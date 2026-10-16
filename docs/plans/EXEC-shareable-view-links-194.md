@@ -1,0 +1,817 @@
+# Shareable View Links Implementation Plan
+
+> **Status:** Implemented through Task 14 code and automated gates; operator live acceptance (signed-in and private-window journeys A and B) is pending and publication was authorized by the operator on 2026-10-16. One browser test, `cold alignment stops on trusted input or a changed scope`, is known red (see Outcome).
+>
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Per-task status and commits are recorded in the Execution status table below, inside this committed file (see the recording rule there), not in a scratch ledger.
+
+**Goal:** A header Share control copies a readable, self-contained URL for the current ENG view (Catch Up, Planning, Board, Statistics); a recipient in the same workspace who opens it, signing in first if needed, lands in the same view bounded by their own Jira access.
+
+**Architecture:** A pure link codec and resolver in `frontend/src/shareView/`; an entry module that strips the link from the URL before React mounts; a staged apply machine driven by readiness signals and mounted after the App's own restore effects; a focus capture and reveal pair; one Share control rendered on both header surfaces; and a small server stash in the signed session cookie that carries the query through the OAuth login hop. No new route, no stored token.
+
+**Tech Stack:** Python 3.10+ and Flask (stash, redirects); React 19 and esbuild on Node 20.x; `node:test` unit tests bundled through esbuild into a `vm` sandbox; Playwright UI specs; `unittest`.
+
+**Spec:** [`SUPPORT-shareable-view-links-design-194.md`](SUPPORT-shareable-view-links-design-194.md) (validated 2026-10-14; executors read it first). Issue: [#194](https://github.com/Juce-me/jira-execution-planner/issues/194).
+
+**Base:** the code anchors in this plan were drafted against `origin/main` `bd5b2bc2` and re-verified against `origin/main` `4247a3b1` (PR #269, the design-system hover contract; PR #275, the Board card layout; PR #276, removal of the release update notice; PR #278, the people-editor search), which was merged into the branch at `31bf89bf` on 2026-10-14. If `origin/main` has moved again, sync and run the anchor sweep in Task 0 Step 3 before any task; the budget numbers below are for this base and shift by the same offset on another one (see the Budgets constraint).
+
+## How this plan is organized
+
+This file is the master: status, constraints, file map, contracts and the three lead-owned tasks (0, 13, 14). The code-bearing tasks live in six slice files grouped by area. A task's section is self-contained: an implementer reads this file's Global Constraints and Review Focus plus that task's section.
+
+| Slice file | Tasks |
+| --- | --- |
+| [`EXEC-shareable-view-links-194-server.md`](EXEC-shareable-view-links-194-server.md) | 1 Server login stash and shared corpus; 2 Log hygiene and privacy notice |
+| [`EXEC-shareable-view-links-194-codec.md`](EXEC-shareable-view-links-194-codec.md) | 3 View defaults and link codec |
+| [`EXEC-shareable-view-links-194-resolver-store.md`](EXEC-shareable-view-links-194-resolver-store.md) | 4 Resolver; 5 Store and entry |
+| [`EXEC-shareable-view-links-194-apply.md`](EXEC-shareable-view-links-194-apply.md) | 6 `dashboard.jsx` extractions; 9 Apply machine; 11a, 11b, 11c Apply hook, mount and acceptance spec |
+| [`EXEC-shareable-view-links-194-focus.md`](EXEC-shareable-view-links-194-focus.md) | 7 Alert anchors and focus capture; 8 Focus reveal and Planning rows seed |
+| [`EXEC-shareable-view-links-194-control.md`](EXEC-shareable-view-links-194-control.md) | 10 Analytics; 12 Share control, notice and header surfaces |
+
+## Execution status
+
+The operator declined a browser-failure waiver and instructed repair on 2026-10-15. The separate `bugfix/browser-baseline-layout` commit `4764991e` and its merge carrying this record are approved baseline-repair history before Task 1, in addition to the sixteen feature-task commits. Include their paths from the File map in the publication scope if they have not separately reached `origin/main`; do not treat these approved commits as unexplained feature-task history.
+
+The Task 9 pause-record documentation commit `4b46ea6d` and operator-approved separate Task 9 correction ("Enforce share link apply stage deadlines before readiness"), the earlier pause-record documentation commit `9bf40051`, checkpoint documentation commits required by the recording rule below, and the separate Task 3 corrective commit `883d29f6` ("Validate link pair cap before future version handling"), approved by the operator on 2026-10-15, are history exceptions in addition to the sixteen feature-task commits. Reconcile their exact SHAs from the log at Task 14. The Task 11c pause-record commits `45f758c9` and `873e3fdc`, plus the operator-approved separate test-only correction ("Correct synthetic fixtures and link acceptance coverage"), are also approved history exceptions. Record the correction SHA from the log at Task 14.
+
+Task 14 whole-branch review correction (operator-approved 2026-10-15): one additional corrective commit is an approved history exception limited to the confirmed same-scope Planning recovery epoch defect, stale clipboard completion feedback, the complete AC4 cold/warm request-parity matrix and corresponding supplied plan/design/ontology alignment. It preserves all scope/load readiness guards, adds no forced load or route, and changes no dashboard line count or budget pin. The prior unconditional newer-epoch contract and the narrower prescribed request tests were defects in the supplied plan as well as its implementation/verification. Task 14 Step 8 requires fixing these confirmed findings; record this correction's SHA from history during final closeout. This paragraph does not close execution rows or claim the final full browser/operator gates passed.
+
+Task 14 headed-glyph fixture correction (2026-10-15): the approved active-surface copy guard requires the synthetic painted-ink loop to activate each header surface before clicking it. The test and its supplied control-slice block now set the harness active surface explicitly; all glyph, geometry and clipboard assertions remain unchanged. The narrow test-only correction and this record are an additional approved history exception; reconcile its SHA during closeout. This does not claim final verification or operator journeys passed.
+
+Task 14 Planning verification repair (operator-approved 2026-10-15): the unchanged Planning row-scroll test could start its independent user-scroll case while the preceding smooth reveal still completed. A captured synthetic timeline confirms the old reveal overwrote the new scroll; the test and both motion helpers match `origin/main`. The narrow test-only repair waits for three consecutive animation frames with unchanged page scroll before that next subcase, retaining real smooth motion and every original assertion. No product behavior changes. This repair and required history record are an additional approved corrective exception; reconcile the SHA at closeout. Final verification and live acceptance remain incomplete.
+
+Task 14 readiness-test repairs (operator-approved 2026-10-15): controlled delayed metadata and header-observer delivery reproduced the two remaining full-Chromium symptoms. The Assignee test now waits for enabled/focused input before its existing selection and typing checks; the hoverless capacity test waits for actual compact-header activation and three stable target-geometry/scroll frames before its original touch tap. Every original action/assertion and production behavior remains. Independently released controlled gates verify the readiness boundaries without depending on the input/tap they block. This narrow two-test repair and required record are another approved corrective history exception; reconcile the SHA at closeout. Historical full-run interleavings were not captured; final full-suite and live acceptance remain pending.
+
+Statuses and commit SHAs are written once, in Task 14 Step 9, from `git log --oneline origin/main..HEAD`: every task's first step needs a clean tree, so plan files stay unmodified between tasks (if execution pauses early, record them then in a docs-only commit). Task 0 alone writes earlier, and only into its own row: the G1 answer and that the instruction chain was read, in its own documentation-only commit. Statuses: `planned`, `in-progress`, `done`, `blocked`, `declined`. Rename `EXEC-` to `DONE-` only after the work is merged (`docs/plans/AGENTS.md`).
+
+| Task | Title | Status | Commit | Operator gate |
+| --- | --- | --- | --- | --- |
+| 0 | Baseline and preflight | done | `b9ae6641` | G1: accepted 2026-10-15; instruction chain and related postmortems read; browser baseline repaired in `4764991e` |
+| 1 | Server login stash and shared corpus | done | `e7f9ede2` | Review approved; full Python 2,176 tests, 29 skips, no failures |
+| 2 | Log hygiene and privacy notice | done | `2ad069a5` | G1 accepted 2026-10-15; review approved; full Python 2,183 tests, 29 skips, no failures |
+| 3 | View defaults and codec | done | `345d69a5`, `883d29f6` | Pair-cap correction approved 2026-10-15; fresh review approved; 2,584 Node tests pass |
+| 4 | Resolver | done | `c511e805` | Review approved; 49 resolver and 2,633 full Node tests pass |
+| 5 | Store and entry | done | `60f89d12` | Review approved; 28 store, 2,661 full Node and 34 targeted Python tests pass |
+| 6 | `dashboard.jsx` behavior-preserving extractions | done | `bde1decd` | Automated checks and review approved; manual validation confirmed by the operator 2026-10-15 |
+| 7 | Alert anchors and focus capture | done | `698ff529` | Review approved; 18 focused and 2,698 full Node tests, 9 new and 49 existing Chromium cases pass |
+| 8 | Focus reveal and Planning rows seed | done | `21c82a18` | Review approved; 24 focused and 2,722 full Node tests, 22 focus and 168 Planning Chromium cases pass |
+| 9 | Apply machine (pure) | done | `17b6a2b6`, `d56cbc96` | Approved deadline correction and fresh review complete; 57 focused and 2,779 full Node tests pass |
+| 10 | Analytics `share_view_action` | done | `911a8cd9` | Review approved; 83 focused and 2,785 full Node tests pass |
+| 11a | Apply controller, capture builder, interaction guard and hook | done | `a362b9c6` | Review approved; 46 focused, 2,831 full Node and two structure tests pass |
+| 11b | Mount: hold, options, tour wait and Planning table key | done | `51841e95` | Review approved; 2,847 Node, 34 Python and 539 Chromium tests pass; measured dashboard 7,540 |
+| 11c | Link UI acceptance spec | done | `045887d1`, `d00b324f` | Automated verification and fresh review approved; 24 Chromium cases pass; typed-link manual acceptance was superseded by Task 14 journey checks |
+| 12 | Share control, notice and header surfaces | done | `9ef6b2ce` | G2 mock accepted 2026-10-15 before wiring; automated checks and fresh review approved; operator now confirms Share is visible |
+| 13 | Docs, ontology, budgets and plans index | done | `41c7c650` | Documentation checks and fresh review approved |
+| 14 | Journeys, full verification and publication | done (live acceptance pending) | Corrections: `d5760f3a`, `6809990c`, `25483754`, `4b7b3a67`; amendments `bd798c57`, `180c89ec`, `8e146ce3`, `91a4842e`, `0c95ee1b`, `7a922a4e`, `abefb835`, `d1774344`, `8be4b1a7` and the regression-fix commit that follows them | Full Python, Node and lint pass; full Chromium found seven failures: five branch regressions fixed, one flaky pass, one known red; G3: operator asked to push on 2026-10-16 |
+
+Order: 0 (records the G1 answer), 1, 2 (only if G1 is accepted; any time after Task 1 and before Task 14), 3, 4, 5, 6, 7, 8, 9, 10, 11a, 11b, 11c, 12, 13, 14. Checkpoint tasks end with: report the SHA, files, results and a concrete manual validation scope, then STOP until the operator confirms. If a task fails twice on the same issue, stop, summarize the evidence and ask (`AGENTS.md` section 6).
+
+Task 3 review correction (2026-10-15): the operator approved moving the pair-cap check before returning `newer`, adding `v=2` vectors for both 40 and 41 further pairs, and aligning the supplied codec and tests in the slice. Commit `883d29f6` resolves the plan-mandated contract conflict: `v=2` plus 40 pairs remains `newer`; 41 pairs is `invalid` with `too_many_pairs`. The new vector failed before the correction and passed afterward. Both the original and corrected codec passed 45 codec tests, 2,584 full Node tests, 26 stash tests, two structure tests and a reproducible committed build. Extraction lint remained at 104 warnings and four existing enforced findings; dedicated shareView lint was clean. Fresh review approved the correction before Task 4 started.
+
+Task 6 checkpoint (2026-10-15): `bde1decd` changes only `frontend/src/dashboard.jsx`, `tests/test_share_view_extraction_characterization.js`, `scripts/extraction_lint/owner_budgets.json` and regenerated dashboard bundle/map/manifest. All 13 characterization tests passed before extraction and unchanged afterward; six new helper contracts failed before extraction, then all 19 passed. Regression results: 2,680 Node tests, 34 targeted Python tests and 204 Chromium cases passed with no failures or flaky cases. Lint remained at 104 warnings, zero errors and the same four enforced baseline findings. The committed build is reproducible and dist/worktree checks are clean. Measured dashboard growth is 7,494 to 7,505 (+11, versus the design's original minus-8 estimate); aggregate pins moved from 34,096 to 34,107 in the same commit. An additional build before the UI run ensured it exercised the extracted source; the stated final and committed builds also ran. Fresh review approved the task. The operator confirmed all signed-in manual checks and continuation on 2026-10-15: Sprint changes preserve Teams and return focus, same-Sprint selection changes nothing, All/one/two Team toggles and reload persistence work, and Statistics Project Track range follows Sprint changes. No behavior difference was reported.
+
+Task 9 review pause (2026-10-15): commit `17b6a2b6` matches the supplied machine block and passes all 38 prescribed tests, 2,760 full Node tests, two structure tests and a reproducible committed build; lint remains the same 104 warnings and four enforced baseline findings. Review found two Important plan-mandated defects against the stated stage budgets. Stage A checks expiry only while its readiness gate is closed: with the gate open and resolution absent, it still waits at 5,000 ms and runs when resolution arrives at 6,000 ms. Stages B, C and D check readiness before expiry: focused probes first making B ready at 6,000 ms or C/D ready at 20,001 ms emitted a stage run despite expiry. The pure machine is not imported into the app yet. Proposed remedy: enforce an armed Stage A deadline regardless of gate state, prioritize B/C/D expiry before readiness-driven run actions, add boundary/late-readiness regression tests, align the supplied implementation/test blocks and rerun the machine, full Node, lint and build gates. Budgets stay unchanged. The operator approved the separate deadline correction on 2026-10-15, resolving this decision pause. The correction enforces the armed Stage A deadline with either gate state and checks B/C/D expiry before readiness-driven runs, preserving budgets, no-work skips, reporting and hold release. Nineteen added tests cover readiness immediately before, at and after deadlines, unresolved A with the gate open, and facets after Teams ran; the original 38 tests and titles, including the seeded fuzz, are unchanged. Before correction, 13 of the 57 focused tests failed; afterward, all 57 focused and 2,779 full Node tests and two structure tests passed. The supplied machine and test blocks match the files byte-for-byte. Lint remains at 104 warnings, zero errors and the same four enforced baseline findings; dedicated shareView lint has zero problems. Correction `d56cbc96` passed the build and committed-revision dist verification, and fresh review approved it before Task 10. The separate correction and pause-record commit `4b46ea6d` are approved history exceptions. Tasks 7 and 8 retain Minor direct-ESM module-type warning findings for Task 14 review; no correctness defect was found in either task.
+
+Task 11 review pause (2026-10-15): 11a `a362b9c6` adds the four apply/capture/guard/hook modules, four Node test files, the hook-harness line and regenerated build ID/manifest; 46 focused and 2,831 full Node tests plus two structure tests pass. 11b `51841e95` changes the dashboard, onboarding tour, freshness harness, two guard/wait tests, measured pins and regenerated bundle/map/manifest; 2,847 Node, 34 Python and 539 Chromium cases pass, and the committed build is reproducible. Dashboard growth is 7,505 to 7,540 (+35), aggregate 34,107 to 34,142, measured and pinned in the same commit. Lint is 105 warnings and zero errors, with the one planned temporary unused `shareView` warning and the same four enforced baseline findings.
+
+11c `045887d1` adds only `tests/ui/shareable_view_links.spec.js`; initial and final runs each passed all 23 cases. All eight negative controls failed the intended UI and Node checks and were restored. UI/Node failure counts by control: 1: 9/2; 2: 3/31; 3: 1/1; 4: 1/1; 5: 1/2; 6: 1/4; 7: 1/1; 8: 2/1. Control 2 has 31 rather than the earlier 21 machine failures because ten tests added by the approved deadline correction also detect its intentional early hold release; the original 21 and the three UI failures are unchanged. No assertion was relaxed, and no source/dist changes remain.
+
+Fresh review found one Important and two Minor plan-mandated defects in the supplied 11c spec: a fixture copies the configured real GTM container identifier despite the synthetic-only rule (the request is intercepted); the privacy assertion reads only Share events instead of every relevant app-owned analytics payload; and one recipient combines EPM and Scenario preferences instead of independently proving both journeys. Proposed single test-only correction: substitute a synthetic GTM identifier, inspect all relevant analytics payloads for link values, and exercise EPM and Scenario recipients independently; align the supplied spec and traceability text, then rerun affected negative controls, full acceptance and review. No application source change is proposed. Operator approved all three corrections and a separate test-only commit on 2026-10-15, resolving the decision pause. The corrected acceptance suite has 24 cases, with independent saved-EPM and saved-Scenario recipients and privacy checks over both app-owned analytics triggers. The corrective commit is an approved history exception; record its exact SHA at Task 14. Fresh review subsequently approved the correction as recorded below; the Task 11c typed-link manual checkpoint remains required before Task 12.
+
+Task 11c correction verification (2026-10-15): the operator authorized diagnosis and continuation after the two-attempt pause. The exact control 2 mutation and original command complete with stdout captured by a drained pipe: 57 tests, 26 passed and 31 failed (236 ms), with all 31 failure titles matching historical evidence. Redirecting the same command directly to a regular file reproducibly stalls after its test-10 output; changing reporter does not cure it. The output-destination dependency is isolated for this source/test arrangement; the internal Node cause remains unknown. No runtime, dependency, application or assertion change was needed. Subsequent subprocesses use bounded owned process groups and drained pipe capture.
+
+The supplied and actual corrected specs match byte-for-byte. Final acceptance passes all 24 Chromium cases, including independent EPM and Scenario recipients, after every temporary mutation is restored. Full Node passed 2,847 tests, structure passed two tests, and lint remained 105 warnings (including the one prescribed temporary unused `shareView` warning), zero errors and the same four enforced baseline findings. Affected controls 1 and 2 detect the same nine/two and three/31 UI/Node failures; the added Scenario case passes both. A new isolated non-Share pageview leak control fails the widened V1 privacy check exactly once; its source mutation is restored. Existing controls 3–8 remain valid on identical production sources. The final build reproduces the committed output; production source, dist and budget pins match the pre-correction base. The earlier privacy false positive and overlapping run are discarded and documented in execution evidence; no failing assertion was waived. The correction changes only the acceptance spec and these two plan files. Fresh review is approved in the checkpoint below; typed-link manual acceptance remains pending and Task 12 must not start.
+
+Task 11c manual checkpoint (2026-10-15): corrective commit `d00b324f` changes only `tests/ui/shareable_view_links.spec.js` and the master/apply plans. Fresh review approves both spec compliance and quality, with no new blocking findings; the recorded extraction-lint baseline remains for final verification. Tasks 11a `a362b9c6`, 11b `51841e95` and original 11c `045887d1` retain their scope and results above. Final corrected acceptance is 24 passed, full Node 2,847 passed, structure two passed, and Task 11b regression 539 Chromium cases passed. All eight original negative controls plus the non-Share privacy control detected their intended regressions and were restored. Committed-revision build and dist checks pass with a clean worktree; measured dashboard remains 7,540 lines, aggregate pin 34,142 (Task 11b growth +35 from 7,505), and server remains 6,459. The separate test correction and bounded pipe-capture remedy are the approved deviations; application code, dist and budgets did not change in this correction.
+
+Execution stops until the operator confirms the Task 11c Step 13 signed-in typed-link checks: URL stripping and the first request's link scope; search/status and Planning/Board modes; cancellation during loading without rollback; unknown group applying nothing. Use read-only live data, sign in personally, report modes/counts only and save no live screenshots. Task 12 and its separate G2 standalone-mock acceptance remain unstarted; no push or PR. This checkpoint documentation commit is a recording-rule history exception, with its SHA reconciled at Task 14.
+
+
+Task 12 G2 checkpoint (2026-10-15): the operator requested “build the button please” after the Task 11c manual checkpoint. Proceeding to the standalone mock follows that instruction; it does not claim the typed-link manual checks passed. The attempted local app startup could not reach the dashboard because the configured database migrations are behind this branch; no schema change was made. The live check remains outstanding for final journey validation.
+
+Task 12 Steps 0–2 are complete: all precondition anchors match, the instruction chain, design-system lookup and four named postmortems were read, and the exact supplied generator produced `assets/mockups/share-view-control-194.html` (396,482 UTF-8 bytes; the generator reported 396,475 JavaScript characters). The generator and capture commands run through Node 20 and exit zero. Both header Share controls measure 38 by 38 px with a 10 px radius; hovered overlay and ring are true, background image and transform are none. The first sandboxed Chromium launch failed before rendering; the same script succeeded with the required elevated execution. Four synthetic captures at 1440 and 390 px plus main/compact hover close-ups were inspected, and the standalone mock was opened for review. No source, test, dist, budget, token or new class changed. The generated HTML remains uncommitted until G2 acceptance, as required. This docs-only pause record is a recording-rule history exception. The G2 line in the control slice remains `Operator acceptance: pending`; no acceptance date is inferred from the request to build. Steps 3–12 must wait for acceptance of the concrete mock.
+
+
+Task 12 incoming-base pause (2026-10-15): after viewing the standalone mock and discussing the opening-link partial notice, the operator said “but it's about the opening the link, if I got it right, so the problem is not copying, it's openning — for the opening outdated links — with non existems teams or departments — sound good”. This accepts the mock in the ongoing build request; do not ask for G2 acceptance again. Transfer the date and quote to the control-slice gate line before Step 3 resumes. The implementation worker stopped without changing any file or starting tests.
+
+The required pre-edit fetch advanced `origin/main` from `a48e273a` to `778fb2aa` (PR #281, implementation `f3590b5a`). Incoming main enables Statistics for future Sprints by removing its disabled predicate from `EngModeControl`, its dashboard auto-exit effect and its auth-resume rejection. The Task 4 resolver contract, supplied implementation and tests still reject Statistics on a future Sprint; the literal `(resume.engMode === 'statistics' && isFutureSprintSelected)` required by the resolver's dashboard source guard is absent in incoming main. This is verified source/contract drift, not an unexplained baseline failure. No merge, failing test run or speculative compatibility fix was performed. The approved mock remains untracked and preserved; application sources, dist and pins are unchanged.
+
+Proposed operator decision: preserve main's future-Sprint Statistics behavior, update the resolver and its mode-availability/source-guard tests plus supplied plan/design contracts and traceability, then sync, sweep the anchors, measure the incoming minus-eight dashboard budget offset and regenerate dist before resuming Task 12. This changes the agreed resolver contract and therefore requires direction under the plan's drift-stop rule. Any mechanical merge conflicts, reproducibility and revised test counts must be verified rather than assumed. The pause record is a recording-rule history exception; publication history reconciliation remains Task 14's responsibility.
+
+### Operator gates
+
+- **G1 (Task 2):** the container access-log format change and the `find` key stand or fall together. G1 is answered at plan review, before Task 0 runs. **Answer: accepted by the operator on 2026-10-15.** Task 0 Step 1 copies `G1: accepted 2026-10-15` into the Task 0 row of the Execution status table. This plan is written for `accepted`. If G1 were declined, do not execute a partially edited plan: the plan is re-issued without `find` and without Task 2 (Tasks 3, 4, 11a, 11c, 12 and 13 change), and the pending-link cookie and link contents still get their `docs/PRIVACY.md` notice.
+- **G2 (Task 12):** the standalone mock of the Share control states is reviewed first; replace `Operator acceptance: pending` with `Operator acceptance: <date>` on Task 12's `Gate G2 (operator)` line (in the control slice file) before wiring; Task 12's Step 2 stops until that is done.
+- **G3 (Task 14):** nothing is pushed and no PR is opened without an explicit operator go (`AGENTS.md` section 10, publication transaction).
+- **Accepted by the operator at plan review on 2026-10-15** (design "Open items"; item 3 is gate G1 above): Share rendered on both header surfaces; the v1 trims (no Board focus, no Board facets, no Statistics display options, no assignee filters); the Planning rows seed as a one-shot initial value; Board `scope` links opening at most one strict stream; extracting the two `dashboard.jsx` helpers; the manifest budget moves in the ledger below; one transient lint warning in Task 11b.
+
+Operator approval (2026-10-15): “you can merge with the latest origin and proceed” authorizes the preceding concrete proposal. Merge `origin/main` `778fb2aac2c5cfbc80f23209452f60b708ac908b` into pre-merge feature HEAD `115beb470debf587c06f35b78fd60601f08f1a00`, retain future-Sprint Statistics, and align resolver, tests and supplied contracts before Task 12. This merge plus compatibility alignment is an approved publication-history exception; record its SHA at Task 14. Automated compatibility verification: 76 focused and 2,847 full Node tests passed; 14 structure/CSS extraction tests, 24 share-link Chromium acceptance cases and both incoming future-Sprint Statistics/onboarding Chromium cases passed. Extraction lint remains 105 warnings, zero errors, owner pins zero problems and the same four enforced baseline inventory findings. All 14 remaining Task 12 replacement blocks and seven Task 13 quotes plus both placement anchors match exactly once; four supplied resolver/controller implementation/test blocks match actual files byte-for-byte. The accepted mock regenerates byte-identically. Generated output was rebuilt, and measured dashboard/aggregate pins are 7,532/34,134. Historical test counts remain unchanged. No Task 12 wiring or G2 gate-line edit is included. The accepted mock remains preserved and untracked; live Task 11c checks remain outstanding.
+
+Task 14 destination-clarity extension (operator-requested 2026-10-15): the operator requested clearer Epic/Initiative destinations and explicit Epic-level sharing, then selected header **Preview target, then Copy**. The design's Destination clarity amendment records the concrete behavior and limited changed-owner inventory update. The subsequent operator decision replaces preview-first with one-click header view-only sharing and explicit hover/focus Epic actions, visible on touch. The control slice amendment below is the execution contract; no further design approval is pending. This design-record commit is an approved documentation history exception, not a completed implementation task. The private-window login return produced a focus-partial notice even though the Epic appeared after loading; reopening without login reached it correctly. Warm success does not close this reported cold-path defect.
+
+Task 14 Find-label sync (2026-10-15, standing operator authorization to merge latest origin): `origin/main` advanced to `6fbdc7bf` with the shared header label **Find in view** and synthetic example placeholders. Preserve that behavior. Conflicts are generated dashboard output/manifest and the additive aggregate budget only; regenerate dist rather than resolving generated text by hand. The combined measured dashboard is 7,539 lines, EngControls 473, unique owners 26,606 and App plus owners 34,145. Three legacy selector consumers in Share acceptance/structure checks now use the stable accessible Find label. The current destination-amendment source anchors each match once and all its existing file-map paths exist; completed tasks' historical replacement blocks are not re-executed. Sync verification: 2,858 full Node tests, 14 structure/CSS Python tests and 42 Chromium acceptance/header cases pass. Lint remains 104 warnings, zero errors, zero pin problems and the same four enforced baseline inventory findings. Build `4fbb0d23ed395711d52c29663ae658079db7615b97636e7fc8a8ee7631eac3b5` is generated from the combined source. An initial verification command used a nonexistent CSS test-module name; the correct `test_dashboard_css_extraction` command then passed all 14 tests, with no source failure or waiver. This merge, selector compatibility and record are another approved history exception; no timeout extension, publication or final verification is implied.
+
+Transient cross-control ownership (approved target-completion scope): `useShareViewApply` adds a stable per-hook `copyOwner` to its result. `createShareViewCopyOwner()` provides only `{ begin, getSnapshot, subscribe }`; `ShareViewButton` consumes it through `useSyncExternalStore` so a newer Epic/header attempt supersedes old visual/fallback feedback across separate controls. No module-global dashboard state, persistence, second clipboard/encoder or extra analytics is added. Exact regression: `a newer Epic copy owns feedback across separate controls and the header`. Scope/target tests cover late success and rejection. Narrow Planning measurement additionally found direct/nested link overflow of 2px/30px; the existing 0.15rem compact gap plus removal of the redundant capacity margin restores zero overflow, while retaining the original 1px clipping limit and fixed control sizes. The exact existing `67. Planning: the stat toggle and title text stay clear of the button, nothing clips at 390px` remains unchanged.
+
+Task 14 explicit-destination implementation (approved 2026-10-15): header Copy view link now omits automatic viewport targets; Catch Up/Planning List and real Planning Table Epic rows reuse ShareViewButton with an explicit Epic target. Hover/focus discovery reserves the compact slot and touch stays visible. Scope/surface/target/unmount guards suppress stale feedback, and global apply notices stay on the active header. The current exact tests and historical-title alignment are recorded in the control-slice amendment; earlier Task 12 quoted blocks remain historical. Measured dashboard 7,544, EpicBlock 406, unique owners 26,608 and combined 34,152 are pinned together. Changed-owner inventory review reduces baseline debt from four findings to two, leaving GroupBoardSettings untouched. Focused review, the separately reviewed cold-focus correction and final combined full Chromium/operator/publication gates remain outstanding. This source amendment is the approved corrective history exception; no final completion is implied.
+
+Explicit-destination amendment verification (2026-10-15): 2,861 full Node and 60 targeted Python tests pass; the final focused Chromium set passes 57 with three headed-only skips. Headed Firefox and WebKit each pass 90 with two unchanged opt-in runtime skips, including the small Epic and both header glyph checks. One unchanged Statistics hover-readout case failed in the first WebKit batch, passed in isolation, and the full unchanged headed gate then passed; no Statistics edit or waiver was made. Lint remains 104 warnings, zero errors, zero pin problems and two untouched Settings findings after approved Epic owner review. This records the UI amendment only; cold-focus correction, final full Chromium, focused review and operator/publication gates remain open.
+
+## Task 14 validation checkpoint (2026-10-15)
+
+This is a required recording-rule checkpoint, not final closeout or publication approval. History at `25483754` contains 46 commits beyond `origin/main` `778fb2aa`: sixteen feature-task commits plus thirty recorded plan, merge, checkpoint and corrective exceptions. The branch diff has 103 changed paths. The whole-branch review used one fresh reviewer; the same reviewer approved the focused corrections in `d5760f3a`, `6809990c` and `25483754`. This docs-only checkpoint is another recording-rule history exception. The root instruction learning about verifying the serving checkout records the operator's missing-button correction.
+
+| Gate | Latest actual result |
+| --- | --- |
+| Full Python | 2,184 tests, 29 unchanged skips, zero failures at the final application correction |
+| Security matrix modules | 82 passed |
+| Full Node | 2,858 passed, zero failures or skips |
+| Focused final application / structure checks | 95 / 14 passed |
+| Extraction lint | Baseline exit 1: 104 warnings, zero errors, owner pins zero problems, the same four enforced inventory findings; no waiver or repair of baseline lint |
+| Build and committed-revision dist | Reproducible build `a454596f5642e791151e4f940b457286a0ae766b81b5bdc7d40c5aaacc1cd663`; dist clean at `25483754` |
+| Full Chromium at `25483754` | 1,716 passed, nine explained skips, two failures in 14.3 minutes; repaired Planning scroll and Share cases pass; the full gate is failed |
+| Headed Firefox / WebKit | Each 84 passed, two unchanged opt-in runtime skips, zero failures after the glyph fixture repair; painted-ink case passes in both |
+| Measured budgets | `wc -l`: dashboard 7,539 and server 6,459; manifest dashboard 7,539, unique owners 26,602, App plus owners 34,141 |
+| Startup | Shell syntax passes. Basic/jsonfile preflight lacks Basic credentials in the configured DB/OAuth environment and is not claimed passed. Approved local migrations applied; correct-checkout server starts with no pre-banner Python/dependency warnings; signed-in browser API reports success |
+
+The two remaining full-run failures are `delayed metadata selects the existing text and delayed search results select the match` and `hoverless touch keeps the capacity Jira and pencil controls visible and operable`. Each passed alone and in eight instrumented four-worker repeats. In the subsequently approved bounded batch, CPU-throttled scheduling passed four cases per test. A controlled delayed metadata commit then reproduced the first exact symptom: the original selection poll passes while the input is disabled and unfocused; the first key goes to the page, leaving two letters. A held native header observer callback released during the touch reproduced the second exact symptom: layout changes between touch delivery and the compatibility click, which reaches a container and never opens the input. These prove concrete causal routes, while the historical full-run interleavings were not recorded. No test assertion or product behavior was changed. Proposed scope requiring approval: wait for enabled/focused Assignee input and settle actual compact-header state/target geometry before tapping; retain every existing assertion and actual touch interaction, then rerun affected specs and full Chromium. No further diagnosis or repair is implied by passing probes.
+
+The missing live Share control was a runtime mismatch: another checkout's stale server occupied the local port. Replacing it with this checkout restored one visible, enabled Share control without a code change; the operator confirmed visibility. A subsequent live link reported an unapplied highlighted item and no desired scroll. Its Catch Up link carries an Epic target. A single new signed-in diagnostic opening found 17 Epics and 24 Stories, one matching Epic, target top 130 pixels in a 720-pixel viewport after scrolling to 4,750, and no focus-partial notice. The operator identifies the failed opening as a private window through sign-in, confirms the Epic appears after data loads, and reports that reopening the same link without another sign-in reaches the correct position. The cold-path failure is not reproduced or waived. No live screenshots or issue identifiers are recorded. Signed-in and private-window journey acceptance remains incomplete.
+
+The operator approved updating the privacy Effective date to 2026-10-15; apply it in the final Step 9 closeout commit. Task 14 Steps 1–9 are not complete, so the prescribed outcome commit has not been made. G3 has no publication authorization.
+
+## Cold focus amendment (operator-approved 2026-10-15)
+
+This amendment supersedes historical cohort-only issue-target requirements and quoted implementation blocks below. Available Epic/Story targets reveal as soon as the locked group/Sprint's primary lanes, epoch, fetched Sprint and hydrated Teams are ready and Stage C's existing committed sequence or skip has completed. Alert-team targets retain full-cohort readiness. Stage D additionally checks the actual ENG surface, group, Sprint and resolved mode before starting and throughout correction, using the controller's existing current-options reader. No App state, request, auth/storage/schema or reading-order owner changes.
+
+`revealShareViewFocus` retains `{ cancel, done }`; optional `onReached` (default no-op) fires once after initial alignment, two-frame correction and one blink; optional `isLayoutSettled` (default true) reads current locked-scope cohort settlement. `done` still means cleanup complete (`revealed | missing | cancelled`). Catch Up issue targets keep the same handle alive for bounded geometry corrections, including intermediate alert renders. After cohort completion, observe the existing 350 ms expansion interval and stable target geometry/two-frame correction before cleanup; the first landing never waits for it. Trusted input, auth lock, recovery or changed surface/scope/mode cancels corrections immediately; no replay or later pullback.
+
+Every timer and measurement origin stays unchanged: overall 90 s; A/B 5 s; C/D 20 s; pre-start D from `armedActive`, running D from the original `dActive`; initial target search eight visible-frame seconds with the existing 100 ms frame cap. Search expiry cannot report missing after reach. The controller records private `focusReached`, and the machine acknowledges it before overall expiry, removes only D's owed focus category and preserves earlier Teams/Filters skips. A reach first delivered at/after expiry cannot defeat expiry; previously accepted reach remains success at cleanup. Deadline cleanup cancels the same handle without a new interval, grace or reset; no empty partial notice. Readiness at/after the pre-start bound cannot start D.
+
+Approved minimum: immediate available-item reveal, bounded correction, reached-at-bound success and no scripted pullback after interaction/cleanup. Arbitrarily late content beyond cleanup has no scripted guarantee; test Chromium/Firefox/WebKit native anchoring and report observed limits rather than adding unbounded scroll.
+
+Analytics impact: existing `userevent` / `share_view_action`, `feature_name=share_view`, `workflow_action=apply_link`, enum-only `result` and `source_surface`, once at terminal cleanup. Intermediate reach/alignment adds no trigger, event, identifier or GA4 registration; existing taxonomy/runbook contract remains.
+
+Named regressions (exact titles, cross-slice traceability):
+- `cold issue focus starts before unrelated alerts and aligns each partial result once`
+- `cold focus reached before the running bound succeeds and never scrolls after cleanup`
+- `cold alignment stops on trusted input or a changed scope`
+- `cold content beyond cleanup records native anchoring without scripted correction`
+- `issue focus uses own task readiness while alert targets retain the full cohort gate`
+- `reached focus survives running and overall deadline boundaries without hiding earlier skips`
+- `bounded alignment reaches once and waits through cohort expansion without restarting search`
+
+## Global Constraints
+
+Every task's requirements include this section. Values are copied from the design.
+
+- **Link:** plain query at `/`; `v=1` first; `v`, `mode`, `group`, `sprint` always written; every other key written only when it differs from its default constant, except that `stats=cohort` always writes `from` and `to`; an omitted key means its default constant, never the recipient's saved value. Modes: `catch-up`, `planning`, `board`, `statistics`. Search key is `find`; the keys `q`, `s`, `search`, `query`, `keyword` are never emitted.
+- **Caps:** whole query at most 1,536 characters; `v` plus at most 40 further pairs; first duplicate wins; allowed alphabet `[A-Za-z0-9._~%&=,:-]`; atoms are `encodeURIComponent` plus `!'()*` percent-encoded; decode never uses `URLSearchParams`; `find` at most 100 code points; at most 20 facet atoms of at most 100 chars; at most 12 Team ids.
+- **Stash:** TTL 900 seconds; cookie guard 3,300 bytes; query at most 1,536 bytes; pattern equals the shared corpus fixture; written only on GET in the final unauthenticated branch; consumed at exactly three exits (callback success and the two authenticated `/login` redirects); cleared on logout and on authenticated entry; redirect target is the literal `'/?' + q` or `'/'`; the stash 302 carries `Cache-Control: no-store`.
+- **Apply:** staged A scope, B fields, C data-dependent, D focus; the ENG task load is held until one commit after Stage B (not while a Planning recovery capsule is pending); raw setters and refs only; never `applyEngMode`, `clearEngFilters`, `resetEngFilters`, `navigateToAlertStory`, `handleAlertStoryClick`; no link value is ever interpolated into a selector; no mutating request outside the read allowlist (`/api/dependencies`, `/api/stats/*`, sprint-review `values/read`, `/api/performance/loads`, `/api/auth/refresh`); budgets 90 s overall, A and B 5 s each, C 20 s, D 20 s; a reload before the apply completes drops the link; no `sessionStorage` mirror.
+- **Focus:** capture treats an element as visible only past `T + 12 + 1`; a reveal lands the target at `T + 12` (`SHARE_VIEW_FOCUS_MARGIN`); no highlight CSS is added.
+- **Server:** no new route, no new `EndpointPolicy`; exactly one `@app.before_request` in `jira_server.py`; tests patch `jira_server.<name>` or the helper module, never `auth_routes.<name>` (`bind_server_globals` re-copies globals into the route modules on every request).
+- **Frontend:** exactly six `window.addEventListener('keydown', handler)` registrations in the guarded owner files (the interaction guard uses `document` capture listeners in `shareView/`); ESLint warnings never exceed the 106 ratchet (Task 11b adds one transient `no-unused-vars`, cleared in Task 12); Node tests are `tests/test_*.js` (support files are not named `test_*.js`); new `.json` fixtures under `tests/fixtures/` must be named `*-example-sanitized.json` or `*-template.json` or they are gitignored; the regenerated `frontend/dist/` is committed by every task that changes a file under `frontend/src` (the build id hashes the whole tree) and is never hand-edited; `npm ci` before `npm run build` in a fresh worktree.
+- **Generated output:** every task that changes a file under `frontend/src` rebuilds with `npm run build` and commits the regenerated `frontend/dist/` with `git add -A -- frontend/dist` (the build id hashes the whole `frontend/src` tree, so even an unimported new file changes `dashboard.js` and renames the `lazy-views-<build id>.json` manifest). Which other `dist` files change depends on esbuild's chunking and on the base: a task that adds the first import of a module, or edits code that lives in a shared or lazy chunk, can also re-hash `chunks/*.js` and `chunks/*.js.map` files (on `4247a3b1` Task 5's first import renames two chunks and their maps), each rename showing as a ` D` line and a `??` line before staging. Allowed after a build: `dashboard.js`, `dashboard.js.map`, the manifest rename, `dashboard.css` and `auth-focus-refresh.js` only when a stylesheet or the auth-refresh source changed, and renamed chunks, with as many ` D frontend/dist/chunks/` lines as `?? frontend/dist/chunks/` lines. Anything else is a stop (a lone chunk deletion or addition, a changed path outside `frontend/dist` that the task did not edit): re-check that `node_modules` came from `npm ci` inside this worktree. A commit check lists the paths outside `dist`: `git show --name-only --format= HEAD | rg -v '^frontend/dist/'` must print exactly the paths the step names, then `git status --short` and `make verify-dist-clean` print nothing.
+- **Budgets:** `scripts/extraction_lint/owner_budgets.json` pins `dashboard.jsx` by exact equality (`dashboard.lineCount`, `dashboard.lineCeiling` and `aggregates.appPlusOwners`, which is the dashboard plus `aggregates.uniqueOwners`), so every commit that changes the line count of `dashboard.jsx` moves those numbers to the measured values in the same commit (Tasks 5, 6, 11b and 12 each carry the step and a pin script that measures). `LEGACY_ENTRYPOINT_LINE_BUDGETS` in `tests/test_codebase_structure_budgets.py` holds ceilings (`jira_server.py` 6,487 and `dashboard.jsx` 7,573), not exact pins: on `origin/main` `4247a3b1` the files are 6,455 and 7,493 lines, and this plan's growth (+4 and +54) fits under both, so the plan never edits that dict. If a run reports `<file>: <N> lines exceeds budget <M>` for it (`main` tightened a ceiling after this plan was validated), raise that one entry to `<N>` in the same commit with a one-line reason naming issue #194 and add the test file to that commit. The expected sequence is the ledger below; always measure with `wc -l`.
+- **Design system (from `origin/main` PR #269):** look up an element's kind in `docs/design-system.md` and reuse its component and registered class hook (a new class for an existing kind is a review-stop); hover and focus use the foundation tokens, with no `transform` in `:hover` or `:active` and no `transition: all`; a new font-family, font-size, border-radius value or pill, chip, badge or button class needs a ratchet allowlist entry with a reason and a design-system map entry (follow "Adding an element or write" in `docs/design-system.md`, then `node scripts/generate_design_system_baseline.cjs`); hover and geometry changes ship with settled element-level Playwright assertions for every affected control kind, and an icon button's hover paint follows its visible border shape.
+- **Extraction lint on this base:** `origin/main` `4247a3b1` fails the extraction lint before any change of this plan (no CI job runs it): exit status 1, `0 errors`, 104 warnings, `owner budgets: 0 problems` on the first owner-budgets line and `enforced problems: 4`, namely four ENFORCED lines for `EpicBlock.jsx` and `GroupBoardSettings.jsx` (stale owner-budget digests left by PR #269). A separate bugfix refreshes those two digests; if it has landed on `origin/main` when Task 0 runs, the baseline is exit status 0 and no ENFORCED line instead. Task 0 records the output as the baseline, and `<B>` in the tasks means that baseline's enforced-problem count (4 or 0). Every lint expectation in the tasks means "unchanged from that baseline": a new ENFORCED line, any error, or a warning count above the stated one (never above the 106 ratchet) is a failure. Do not fix the baseline lines in this branch.
+- **Analytics:** two-trigger dataLayer contract; one new event `share_view_action` with fixed enums only; no URL, id, name or key in any payload; the GA4 page URL is never overridden.
+- **Repo hygiene:** commit with `git -c user.name=Juce -c user.email=Juce-me@users.noreply.github.com commit`; no `Co-Authored-By` trailer and no agent or tool branding anywhere (branches, commits, PRs, code, docs); no absolute local path, real email, hostname, secret, token or real Jira key in any committed file; synthetic or sanitized fixtures only; stage with explicit paths (the one exception is `git add -A -- frontend/dist`, because the build renames hashed chunk files and their deletions must be staged); every changed line traces to this plan; after every commit run `git show --stat HEAD` and `git status --short` and read them; never push without an explicit operator go.
+- **Commands:** `$PY` is `.venv/bin/python` (in a worktree without `.venv`, the interpreter named by `JEP_TEST_PYTHON`; a command may run in a fresh shell, so export it again or write the interpreter path in place of `$PY`). Python tests run as `env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $PY -m unittest ...` so a symlinked real `.env` cannot leak into tests; type the assignments inline, never through a shell variable, because the multi-word `ATLASSIAN_SCOPES` does not survive word splitting. Node runs the version in `.nvmrc` (`fnm exec --using 20`); when the shell's default `node -v` is not that major, prefix every `node`, `npm` and `npx` command in this plan with it, including the bare ones. Lint is `fnm exec --using 20 bash scripts/extraction_lint/run.sh` (the script is not executable and its budget step reads `JEP_TEST_PYTHON`). `make test` and `make test-security` hard-code `.venv/bin/python`, which a worktree without a venv lacks: use the explicit `unittest` forms in Tasks 0 and 14. Filter Playwright result lines with `grep -E '^ +[0-9]+ (passed|failed|flaky|skipped)'` because several spec titles contain those words. The UI specs read `frontend/dist/*`, so a built, committed `frontend/dist` must exist.
+- **Live data:** any operator live check is read-only and transient: numbers-only probes, no saved or published screenshots, the operator signs in themselves.
+
+### Budget ledger (expected values; measure, do not trust)
+
+| After | `dashboard.jsx` lines (manifest pin) | `appPlusOwners` | `jira_server.py` lines (under its ceiling) |
+| --- | --- | --- | --- |
+| Baseline `4247a3b1` | 7,493 | 34,095 | 6,455 |
+| Task 1 | 7,493 | 34,095 | 6,459 |
+| Task 5 | 7,494 | 34,096 | 6,459 |
+| Task 6 | 7,505 | 34,107 | 6,459 |
+| Task 11b | 7,540 | 34,142 | 6,459 |
+| Post-merge `778fb2aa` (measured; minus 8) | 7,532 | 34,134 | 6,459 |
+| Task 12 (measured plus 7) | 7,539 | 34,141 | 6,459 |
+| Find-label sync `6fbdc7bf` (measured owner plus 4) | 7,539 | 34,145 | 6,459 |
+| Explicit-destination amendment (measured dashboard plus 5, owner plus 2) | 7,544 | 34,152 | 6,459 |
+
+Historical pre-sync projection: `dashboard.jsx` plus 54 lines (7,547 against the legacy ceiling of 7,573) and `jira_server.py` plus 4 (6,459 against 6,487); only the manifest moves. The absolute numbers are for the base above. If Task 0 measures a different baseline, add the same offset to every row: the per-task deltas (+4 in Task 1, +1 in Task 5, +11 in Task 6, +35 in Task 11b, +7 in Task 12) are the contract, and each pin step measures instead of trusting a number. The precedent for growth inside an extraction budget is the data-freshness work (plus 48).
+
+Post-sync offset: incoming main removes 8 dashboard lines. Historical Task 0/6/11b measurements above remain unchanged; the pre-Task-12 measured pins were 7,532 / 34,134. Task 12 measured 7,539 / 34,141, before the subsequent Find-label sync adds four owner lines (App plus owners 34,145). Per-task growth is unchanged.
+
+## Review Focus
+
+The five input classes the design implies, and the task whose tests pin each:
+
+1. **First-run recipient** (onboarding popup open; the link's group is not the group they pick): the payload is held through the popup, then dropped with a notice, and the Catch Up tour does not auto-start before the link is terminal. Task 11c.
+2. **Recipient whose saved view is EPM** (or whose saved mode flags are Scenario): lands in the link's ENG view; the one-shot EPM restore is consumed. Task 11c.
+3. **Same-scope link** (group and Sprint already equal the current scope): Stage A writes no scope; Stages B and C still apply fields, Teams and facets, including an equal completed epoch after same-scope Planning recovery. Task 11c.
+4. **Ids with comma, colon, percent, plus, quote, space and non-ASCII** (a Team, group or status name): round-trip through the codec and still match the stash pattern. Task 3 (with the Task 1 corpus).
+5. **`navigator.clipboard` undefined, a rejected write, or an encoded URL over the cap**: a selectable fallback field or a refusal message, never a thrown error and never a truncated URL. Task 12 and Task 3.
+
+## Acceptance criteria and verification traceability
+
+Each acceptance criterion and each claim of the design's "Verification" table is pinned by the tests below. A test is named by its exact title (`test(...)`, `it(...)`, `def test_...` or a Playwright title) and the task whose steps create it; the design holds the full wording of every criterion and claim. A title that is not in the named task's text means the plan drifted: stop and report. Task 14 runs all of them as part of the full suites.
+
+### Acceptance criteria
+
+| AC | Criterion (short) | Tests: task and title |
+| --- | --- | --- |
+| AC1 | The copied URL reproduces every key that applies to the link's mode, whatever the recipient's saved view | Task 3: `round trip: every key, one at a time`<br>Task 3: `round trip: worst-case full Catch Up, Planning, Board and Statistics states`<br>Task 4: `Catch Up plan: find, lanes, initiatives, sort and alerts, each the default when omitted`<br>Task 4: `Statistics plan: stats and range; keys outside the resolved mode are absent`<br>Task 11a: `a scope-changing Catch Up link applies scope, fields, Teams and facets in four separate stages`<br>Task 11a: `Board scope is applied only when ready, and a Board link has no Teams or facets stage`<br>Task 11a: `Statistics writes its view and range, and a source-only view skips Stage C silently`<br>Task 11c: `a link for another Department and Sprint keeps its fields, Teams and filters through the group-state reset (V5)`<br>Task 11c: `a ${mode} link applies its mode and fields whatever the recipient's saved mode`<br>Task 12: `a click in the main header copies the link for the open view and sends one private event` |
+| AC2 | A signed-out recipient signs in and lands in the same view (900 s stash, 4,093-byte cookie, a failed callback keeps the stash) | Task 1: `test_full_login_return_chain_applies_the_link_once`<br>Task 1: `test_ttl_boundary_899_900_901_seconds`<br>Task 1: `test_failed_callback_keeps_the_stash_and_a_retry_applies_it`<br>Task 1: `test_pending_share_view_cookie_stays_under_the_browser_limit_through_the_login_hop` |
+| AC3 | An unresolved group or Sprint applies nothing else; other unresolved keys are skipped with one notice naming categories only | Task 4: `an unresolved group and sprint report both categories, group first`<br>Task 11a: `the first-run popup pauses the link; a group the recipient does not have drops it with the group category on the recipient surface`<br>Task 11a: `an unresolvable Sprint drops the link and applies nothing`<br>Task 11a: `a link that cannot start names no category, so the notice stays neutral`<br>Task 11c: `a first-run recipient is held through the Department popup, then the link is dropped and the Catch Up tour waits for it (RF1, V16)`<br>Task 12: `an opened link that cannot be applied shows its notice under the control, and Dismiss closes it`<br>Task 12: `notice copy reads its approved strings and names categories only` |
+| AC4 | Every mode/loading branch has cold/warm API request-multiset parity, no write outside the read allowlist, and strips the link before `gtm.js` | Task 14: `AC4 ${scenario.name} ${cache}: link and manual API request multisets match` (seven branches × two cache states)<br>Task 14: `AC4 logger counts two real aborted requests to the same URL separately`<br> Task 11c: `a scope-changing link issues no default-scope load and the requests of a manual run pre-seeded to the same state (V6)`<br>Task 11c: `opening a link performs no mutating request outside the read-only allowlist, and reaches no preference or write route (V1)`<br>Task 11c: `opening the link strips its keys from the URL before Tag Manager is requested (V3)` |
+| AC5 | A consumed link is stripped from the URL, so any reload finds none (connection recovery and reauth reload `/` like any reload, with no separate end-to-end test); an auth lock or an early reload drops a pending link; the reauth source guards stay unmodified | Task 5: `a reload with the stripped URL yields absent`<br>Task 11c: `the link overrides the staged auth and connection recovery capsules (V7)`<br>Task 11c: `a terminal auth lock drops the pending link and leaves the lock unchanged (V16)` |
+| AC6 | The Share control matches the header cluster on both surfaces; the painted-ink check passes in headed Firefox and WebKit | Task 12: `both surfaces carry the shared header icon-button classes and nothing else, with the 38 by 38 geometry of their siblings`<br>Task 12: `hover paints the foundation overlay and ring inside the visible rounded border, like its Refresh sibling, on both surfaces`<br>Task 12: `the link and copied glyphs are centred in their 38 by 38 frame at rest and on hover, on both surfaces`<br>Task 12: `Share adds no compact-header height, moves no sticky offset and adds no horizontal overflow`<br>Task 12: `the main and the compact Share controls hover like their header siblings in the real app`<br>Task 12: `Share control: painted glyph ink` |
+| AC7 | `decode(encode(state))` equals the state for every key and vector, and the encoder's output passes the stash validator through one corpus | Task 1: `test_every_corpus_accept_is_stashed_verbatim`<br>Task 1: `test_every_corpus_reject_and_stash_only_reject_is_not_stashed`<br>Task 3: `round trip: every key, one at a time`<br>Task 3: `round trip: worst-case full Catch Up, Planning, Board and Statistics states`<br>Task 3: `round trip: 400 random states built from awkward text`<br>Task 3: `corpus: the codec cap equals the stash cap and every encoder output matches the stash pattern`<br>Task 3: `corpus: queries the stash accepts are never invalid links`<br>Task 3: `corpus: every query the stash rejects is not applied by the decoder` |
+| AC8 | No link-derived value in analytics; access logs omit the query and the Referer; `docs/PRIVACY.md` lists the new data | Task 2: `test_entrypoint_access_log_format_has_no_query_referer_or_raw_client_atoms`<br>Task 2: `test_entrypoint_access_log_line_has_the_path_but_no_query_or_referer`<br>Task 2: `test_werkzeug_logs_redact_share_view_link_query`<br>Task 2, Step 10: Update `docs/PRIVACY.md` (a documented `rg` and diffstat check, not a test)<br>Task 11c: `opening a link performs no mutating request outside the read-only allowlist, and reaches no preference or write route (V1)`<br>Task 12: `a click in the main header copies the link for the open view and sends one private event` |
+
+### Verification claims
+
+| V | Claim | Tests: task and title |
+| --- | --- | --- |
+| V1 | No write on apply | Task 11b: `shareView reaches no write API, preference save or CSRF helper`<br>Task 11c: `opening a link performs no mutating request outside the read-only allowlist, and reaches no preference or write route (V1)` |
+| V2 | Redirect target always `/` | Task 1: `test_hostile_stale_or_corrupt_stash_values_always_redirect_to_root`<br>Task 1: `test_hostile_queries_in_a_fresh_stash_return_root`<br>Task 1: `test_authenticated_login_visit_without_a_usable_stash_redirects_to_root` |
+| V3 | Strip before Tag Manager | Task 11c: `opening the link strips its keys from the URL before Tag Manager is requested (V3)` |
+| V4 | No `clearEngFilters`, no selector interpolation | Task 7: `V4: the capture never clears filters, opens Jira, navigates, moves focus or builds a selector from a value`<br>Task 8: `V4: hostile ids are compared as data, so they neither throw nor match another node`<br>Task 8: `V4: the focus modules never clear filters, open Jira, navigate, move focus or build a selector from a value`<br>Task 11b: `the link apply never calls the App helpers that reset filters, emit analytics or leave the page`<br>Task 11b: `no shareView selector interpolates a value into its selector string` |
+| V5 | Staged apply survives group-state resets | Task 11a: `a scope-changing Catch Up link applies scope, fields, Teams and facets in four separate stages`<br>Task 11c: `a link for another Department and Sprint keeps its fields, Teams and filters through the group-state reset (V5)` |
+| V6 | Hold prevents a wasted load | Task 14: `AC4 ${scenario.name} ${cache}: link and manual API request multisets match`<br> Task 11c: `a scope-changing link issues no default-scope load and the requests of a manual run pre-seeded to the same state (V6)` |
+| V7 | Link overrides the capsules | Task 14: `a consumed same-scope Planning recovery capsule applies Teams and facets without a second epoch`<br>Task 14: `a same-scope Planning recovery capsule reuses its completed load and applies Teams facets and rows (V7, RF3)`<br> Task 11a: `a pending auth or Planning recovery capsule holds the link until the capsule is consumed`<br>Task 11c: `the link overrides the staged auth and connection recovery capsules (V7)` |
+| V8 | Cookie budget | Task 1: `test_cookie_guard_pops_the_stash_above_the_budget_and_keeps_the_rest`<br>Task 1: `test_pending_share_view_cookie_stays_under_the_browser_limit_through_the_login_hop`<br>Task 1: `test_cookie_guard_pops_a_replaced_stash_too` |
+| V9 | TTL | Task 1: `test_ttl_boundary_899_900_901_seconds` |
+| V10 | Group or sprint unresolved applies nothing | Task 4: `an unresolved group and sprint report both categories, group first`<br>Task 11a: `the first-run popup pauses the link; a group the recipient does not have drops it with the group category on the recipient surface`<br>Task 11a: `an unresolvable Sprint drops the link and applies nothing` |
+| V11 | No ids, names or tokens in the link | Task 3: `V11: no id, name or token key can appear in a link (parity with FORBIDDEN_VIEW_PAYLOAD_KEYS)`<br>Task 3: `test_no_link_key_is_a_forbidden_view_payload_key` |
+| V12 | Analytics fixed enums and no link values | Task 10: `share_view_action is a canonical userevent whose params accept only their fixed tokens`<br>Task 10: `share view analytics builder emits only the fixed bounded contract`<br>Task 10: `share view action pushes one fixed userevent through the dataLayer and drops anything off-enum`<br>Task 10: `useDashboardAnalytics exposes analyticsReady and trackShareViewAction; events sent before it flips are dropped`<br>Task 11c: `opening a link performs no mutating request outside the read-only allowlist, and reaches no preference or write route (V1)`<br>Task 12: `a click in the main header copies the link for the open view and sends one private event` |
+| V13 | Unavailable mode is reported, not forced | Task 4: `Planning needs a sprint that is not closed; Statistics and Board allow every sprint state`<br>Task 4: `scenario, epm and unknown modes fall back to Catch Up and report mode`<br>Task 11a: `a Planning link for a closed Sprint is applied as Catch Up and reports the mode`<br>Task 11a: `a future Sprint Statistics link retains Statistics: Teams follow its view and Catch Up facets are absent` |
+| V14 | Share visibility | Task 12: `the compact header takes the control over exactly when it appears and two controls are never on screen`<br>Task 12: `the control is hidden in EPM and in Scenario and returns in the ENG modes` |
+| V15 | EPM-saved recipient lands in ENG | Task 11a: `a recipient whose saved view is EPM waits for the Home token read, then lands in ENG without the one-shot restore`<br>Task 11c: `a recipient whose saved view is EPM ends in the link ENG view (V15, RF2)`<br>Task 11c: `a recipient whose saved flags are Scenario ends in the link ENG view (RF2)` |
+| V16 | Cancel and lifecycle | Task 9: `a deliberate interaction before Stage D starts cancels the link and keeps what was applied`<br>Task 9: `a dirty, saving or pending-scope Planning review cancels the link without a notice`<br>Task 9: `the overall budget ends an applying link as partial and names every step it still owed`<br>Task 11a: `a deliberate interaction before the reveal cancels the link without a notice; scrolling alone does not`<br>Task 11c: `a deliberate interaction while the scope loads cancels the link and keeps what was applied (V16)`<br>Task 11c: `a terminal auth lock drops the pending link and leaves the lock unchanged (V16)`<br>Task 11c: `a first-run recipient is held through the Department popup, then the link is dropped and the Catch Up tour waits for it (RF1, V16)` |
+| V17 | Encoding vectors | Task 3: `decode: every reviewed vector`<br>Task 3: `decode: unknown and prototype keys never reach the state, and nothing throws on junk`<br>Task 3: `decode: %2C stays inside an atom while a raw comma splits (the platform parser cannot tell them apart)`<br>Task 3: `RF4: ids with comma, colon, percent, plus, quote, space and non-ASCII round trip and match the stash pattern` |
+| V18 | Access-log format | Task 2: `test_entrypoint_access_log_format_has_no_query_referer_or_raw_client_atoms`<br>Task 2: `test_entrypoint_access_log_line_has_the_path_but_no_query_or_referer` |
+| V19 | Persistence per mode | Task 11c: `the link Department becomes the local favorite in JSON mode and never writes the server favorite in DB mode (V19)` |
+| V20 | Alert reveal | Task 7: `V20: a group inside a collapsed card or body is never visible, even though its box is on screen`<br>Task 7: `V20: followup story groups and future-routed Epic groups resolve to different anchors`<br>Task 7: `V20: a name-keyed group emits no alertTeam; the two placeholders and real ids still do`<br>Task 7: `V20: a collapsed card keeps an on-screen group box but is never the target`<br>Task 7: `V20: followup Story groups and future-routed Epic groups name different anchors; a name-keyed group names no Team`<br>Task 8: `V20: followup Story groups and future-routed Epic groups are revealed separately even when they share a Team id` |
+
+## File map
+
+Approved sync scope: incoming `778fb2aa` changes root instructions, Statistics documentation/analytics/ontology, two synthetic review images, `dashboard.jsx`, `EngModeControl.jsx`, its two UI specs, generated dist and owner-budget pins. Compatibility adds only the resolver behavior, one controller comment, their existing tests and master/resolver-store/apply/design contracts. No Task 12 control implementation is included.
+
+Generated from each task's own `Files` block; the task sections are authoritative. Every task that changes `frontend/src` also commits the regenerated `frontend/dist/`. The last column lists existing tests a task extends or re-runs as a regression gate.
+
+| Task | Creates | Modifies | Existing tests extended or re-run |
+| --- | --- | --- | --- |
+| Before Task 0 (already committed on the branch) | `docs/plans/SUPPORT-shareable-view-links-design-194.md`<br>`docs/plans/EXEC-shareable-view-links-194.md`<br>`docs/plans/EXEC-shareable-view-links-194-server.md`<br>`docs/plans/EXEC-shareable-view-links-194-codec.md`<br>`docs/plans/EXEC-shareable-view-links-194-resolver-store.md`<br>`docs/plans/EXEC-shareable-view-links-194-apply.md`<br>`docs/plans/EXEC-shareable-view-links-194-focus.md`<br>`docs/plans/EXEC-shareable-view-links-194-control.md` | `docs/plans/README.md`<br>`docs/plans/FUTURE-db-additional-features.md`<br>`docs/plans/GATE-05-home-write-capability.md` | |
+| Baseline repair before Task 1 (operator-authorized 2026-10-15) | | `AGENTS.md`<br>`docs/README_ANALYTICS.md`<br>`docs/design-system.md`<br>`docs/ontology.md`<br>`frontend/src/styles/eng/filter-bar.css`<br>`frontend/src/styles/shared/controls.css`<br>`frontend/src/styles/stats/excluded-capacity.css`<br>`frontend/dist/dashboard.css`<br>`tests/design_system_baseline.json`<br>`tests/test_design_system_hover_foundation.js`<br>`tests/ui/codebase_structure_smoke.spec.js`<br>`docs/plans/EXEC-shareable-view-links-194.md` (this merge record) | `tests/ui/codebase_structure_smoke.spec.js`<br>`tests/ui/ga4_tag_and_events.spec.js`<br>`tests/ui/eng_group_board_view.spec.js`<br>`tests/test_design_system_hover_foundation.js`<br>`tests/test_design_system_ratchets.js`<br>full Node suite and structure budgets |
+| 1 | `backend/auth/share_view_stash.py`<br>`tests/fixtures/share-view-query-corpus-example-sanitized.json`<br>`tests/test_share_view_stash.py` | `jira_server.py`<br>`backend/routes/auth_routes.py`<br>`tests/oauth_test_helpers.py` | `tests/test_auth_entry_page.py`<br>`tests/test_auth_routes.py`<br>`tests/test_db_oauth_cutover.py` |
+| 2 |  | `scripts/docker-entrypoint.sh`<br>`jira_server.py`<br>`docs/PRIVACY.md` | `tests/test_container_packaging.py`<br>`tests/test_logging_migration.py` |
+| 3 | `frontend/src/shareView/viewDefaults.js`<br>`frontend/src/shareView/codec.js`<br>`tests/test_share_view_codec.js`<br>`tests/test_share_view_stash.py` |  |  |
+| 4 | `frontend/src/shareView/resolver.js`<br>`tests/test_share_view_resolver.js` |  |  |
+| 5 | `frontend/src/shareView/store.js`<br>`frontend/src/shareView/entry.js`<br>`tests/test_share_view_store.js` | `frontend/src/dashboard.jsx`<br>`scripts/extraction_lint/owner_budgets.json` |  |
+| 6 | `tests/test_share_view_extraction_characterization.js` | `frontend/src/dashboard.jsx`<br>`scripts/extraction_lint/owner_budgets.json` |  |
+| 7 | `frontend/src/shareView/focusCapture.js`<br>`tests/test_share_view_alert_anchors.js`<br>`tests/test_share_view_focus_capture.js`<br>`tests/ui/share_view_focus.spec.js`<br>`tests/share_view_fake_dom.js`<br>`tests/share_view_alert_panel_fixture.js` | `frontend/src/eng/EngAlertsPanel.jsx` | `tests/ui/eng_alerts_panel_summary.spec.js` |
+| 8 | `frontend/src/shareView/focusReveal.js`<br>`tests/test_share_view_focus_reveal.js`<br>`tests/test_share_view_planning_rows_seed.js` | `frontend/src/eng/PlanningReviewTable.jsx`<br>`tests/ui/share_view_focus.spec.js` | `tests/ui/planning_review_table.spec.js` |
+| 9 | `frontend/src/shareView/applyMachine.js`<br>`tests/test_share_view_apply_machine.js` |  |  |
+| 10 |  | `frontend/src/analytics/events.js`<br>`frontend/src/analytics/dashboardAnalytics.js`<br>`docs/README_ANALYTICS.md`<br>`docs/plans/SUPPORT-ga4-user-configuration.md` | `tests/test_analytics_events.js`<br>`tests/test_analytics_source_guards.js` |
+| 11 | `frontend/src/shareView/applyController.js`<br>`frontend/src/shareView/captureState.js`<br>`frontend/src/shareView/interactionGuard.js`<br>`frontend/src/shareView/useShareViewApply.js`<br>`tests/test_share_view_apply_controller.js`<br>`tests/test_share_view_capture_state.js`<br>`tests/test_share_view_interaction_guard.js`<br>`tests/test_share_view_apply_hook.js`<br>`tests/test_share_view_source_guards.js`<br>`tests/test_share_view_onboarding_wait.js`<br>`tests/ui/shareable_view_links.spec.js` | `tests/react_hook_harness.js`<br>`frontend/src/dashboard.jsx`<br>`frontend/src/onboarding/useOnboardingTour.js`<br>`tests/test_dashboard_freshness_interactions.js`<br>`scripts/extraction_lint/owner_budgets.json` |  |
+| 12 | `assets/mockups/share-view-control-194.html`<br>`frontend/src/shareView/ShareViewButton.jsx`<br>`frontend/src/shareView/noticeCopy.js`<br>`tests/test_share_view_control.js`<br>`tests/ui/share_view_control_harness.jsx`<br>`tests/ui/share_view_control.spec.js` | `frontend/src/dashboard.jsx`<br>`frontend/src/styles/shared/controls.css`<br>`tests/ui/codebase_structure_smoke.spec.js`<br>`tests/ui/design_system_hover_eng.spec.js`<br>`scripts/extraction_lint/owner_budgets.json`<br>`docs/plans/EXEC-shareable-view-links-194-control.md` |  |
+| 13 | `docs/features/shareable-view-links.md` | `docs/features/README.md`<br>`docs/features/eng-workflows.md`<br>`README.md`<br>`docs/architecture.md`<br>`docs/SUPPORT-atlassian-oauth-setup.md`<br>`docs/ontology.md`<br>`docs/TODO.md`<br>`docs/plans/README.md` | |
+| 14 | | `docs/plans/EXEC-shareable-view-links-194.md`<br>`docs/plans/README.md` | |
+
+## Cross-task contracts
+
+Names one task produces and another consumes. Each is defined in the producing task and used with this spelling everywhere.
+
+| Producer | Names | Consumers |
+| --- | --- | --- |
+| Task 1 | `stash_share_view_query(request, session, *, now=None)`, `pop_share_view_target(session, *, now=None)`, `clear_share_view_stash(session)`, `SHARE_VIEW_QUERY_PATTERN`; fixture `tests/fixtures/share-view-query-corpus-example-sanitized.json` (`pattern`, `maxQueryBytes`, `accepts`, `rejects`) | Task 3 (corpus test), Task 13 |
+| Task 3 | `encodeShareView`, `decodeShareView`, `stripShareViewParams`, `SHARE_VIEW_MAX_QUERY`, `SHARE_VIEW_QUERY_KEYS`, `SHARE_VIEW_CATEGORY_BY_KEY`; `SHARE_VIEW_DEFAULTS`, `SHARE_VIEW_MODES`, `SHARE_VIEW_VERSION`, `SHARE_VIEW_KEYS_BY_MODE`, `SHARE_VIEW_ALERT_KEYS`, `SHARE_VIEW_ALERT_ANCHORS` | Tasks 4, 5, 7, 11a, 12 |
+| Task 4 | `resolveShareViewScope`, `buildShareViewFieldPlan`, `resolveShareViewTeams(state, group, mode)`, `resolveShareViewFacets(state, options, mode)`, `resolveShareViewFocus` | Task 11a |
+| Task 5 | `initShareViewFromLocation`, `getShareViewSnapshot`, `subscribeShareView`, `beginShareViewStage`, `markShareViewScopeCommitted`, `finishShareView` (returns a boolean), `dismissShareViewNotice`, `setPendingPlanningRowMode`, `takeInitialPlanningRowMode`, `resetShareViewForTests`, `SHARE_VIEW_PHASES` | Tasks 8, 11a, 11b |
+| Task 7 | `captureShareViewFocus`, `readPlanningRowsMode`, `alertCardId`, `measureShareViewStickyBottom`, `SHARE_VIEW_FOCUS_MARGIN`; `data-alert-team` on every alert team group | Tasks 8, 11a |
+| Task 8 | `revealShareViewFocus`; the Planning rows seed in `PlanningReviewTable.jsx` | Task 11a |
+| Task 9 | `stepApplyMachine` | Task 11a |
+| Task 10 | `trackShareViewAction`, `buildShareViewActionParams`; `analyticsReady` from `useDashboardAnalytics` | Task 11a and 11b |
+| Task 6 | `commitSprintSelection` and `persistTeamSelection`, closures inside `App()` shared with the click handlers | Tasks 11a and 11b |
+| Task 11 | `useShareViewHold`, `useShareViewApply` (result `{ notice, dismissNotice, captureShareUrl, shareDisabled, applyTerminal }`), `useShareViewApplyTerminal`, `useShareViewPlanningTableKey` | Task 12 |
+| Task 12 | `ShareViewButton`, `shareViewNoticeMessage`, `shareViewDroppedCategories` | Task 13 |
+
+Notice categories: `group`, `sprint`, `mode`, `teams`, `filters`, `focus`. Notice kinds: `dropped`, `partial`, `invalid`, `newer`. Apply result to event result: `done` to `success`, `partial` to `partial`, `dropped` and `cancelled` to `rejected`.
+
+---
+
+### Task 0: Baseline and preflight
+
+**Owner note:** First task; blocks everything. Documentation-only commit.
+
+**Files:**
+- Modify: `docs/plans/EXEC-shareable-view-links-194.md` (the Baseline table below, and the Task 0 row of the Execution status table for the G1 answer and the "read" note; every other row stays `planned` until Task 14 Step 9)
+
+**Interfaces:**
+- Produces: the recorded baseline numbers every later "no regression" claim compares against.
+
+**Forbidden regressions for this task:** none (no code changes).
+
+- [ ] **Step 1: Confirm the branch and the base**
+
+Run:
+```bash
+git branch --show-current
+git status --short
+git fetch origin
+git log --oneline origin/main..HEAD
+git diff --name-status origin/main...HEAD
+```
+Expected: the branch is `feature/194-shareable-dashboard-view`; `git status --short` prints nothing; the log shows only this feature's documentation commits; the name-status lists only files under `docs/plans/` (this plan, its slices, the design, the plans index, the FUTURE pointer and the GATE-05 review date). If `origin/main` moved, sync before continuing (for an app-made worktree use the app's `sync_with_base_branch` tool; otherwise merge `origin/main` into the branch), then re-run this step and Step 3. Never merge feature work into local `main`. Record the answer to gate G1 from plan review in the Task 0 row of the Execution status table (plan review gave `G1: accepted 2026-10-15`; if the operator has since reversed it, stop, because the plan must be re-issued). Compare `git rev-parse --short origin/main` with the base named in the header (`4247a3b1`); if it differs, the anchor sweep in Step 3 is mandatory.
+
+- [ ] **Step 2: Read the instruction chain and the related postmortems**
+
+Read root `AGENTS.md` (sections 1, 10 and 11), `docs/plans/AGENTS.md`, `docs/AGENTS.md`, `docs/design-system.md` (the element map and "Adding an element or write"), `docs/ontology.md` (the entries this work extends), the design `docs/plans/SUPPORT-shareable-view-links-design-194.md`, and these postmortems (the lesson that applies is in parentheses): `MRT009-sticky-layering-regressions.md` (do not change sticky offsets or z-index), `MRT010-startup-api-load-fanout-and-overscoped-payloads.md` (no redundant startup requests), `MRT020-project-track-filter-bar-bespoke-controls.md` and `MRT021-project-track-segmented-control-override.md` (reuse the shared control and its class hooks), `MRT023-alert-enrichment-blocked-first-screen.md` (alert work must not block the first screen), `MRT025-pr-publication-transaction-failures.md` (publication is one verified transaction), `MRT027-board-catalog-pagination.md` and `MRT031-board-discovery-page-token-budget.md` (Board scope and loading contracts), `MRT016-exec-02-plan-file-map-drift.md` (a task's file map must match its steps) and `MRT007-bundled-frontend-regression.md` (a bundled module must not use a binding before its declaration). Record "read" in the Task 0 row of the Execution status table.
+
+- [ ] **Step 3: Verify every existing file this plan modifies exists**
+
+Run:
+```bash
+for f in \
+  .nvmrc \
+  Makefile \
+  README.md \
+  backend/routes/auth_routes.py \
+  docs/PRIVACY.md \
+  docs/README_ANALYTICS.md \
+  docs/SUPPORT-atlassian-oauth-setup.md \
+  docs/TODO.md \
+  docs/architecture.md \
+  docs/features/README.md \
+  docs/features/eng-workflows.md \
+  docs/ontology.md \
+  docs/plans/EXEC-shareable-view-links-194-control.md \
+  docs/plans/FUTURE-db-additional-features.md \
+  docs/plans/GATE-05-home-write-capability.md \
+  docs/plans/README.md \
+  docs/plans/SUPPORT-ga4-user-configuration.md \
+  frontend/src/analytics/dashboardAnalytics.js \
+  frontend/src/analytics/events.js \
+  frontend/src/dashboard.jsx \
+  frontend/src/eng/EngAlertsPanel.jsx \
+  frontend/src/eng/PlanningReviewTable.jsx \
+  frontend/src/onboarding/useOnboardingTour.js \
+  frontend/src/styles/shared/controls.css \
+  jira_server.py \
+  package.json \
+  scripts/docker-entrypoint.sh \
+  scripts/extraction_lint/owner_budgets.json \
+  scripts/extraction_lint/run.sh \
+  tests/oauth_test_helpers.py \
+  tests/react_hook_harness.js \
+  tests/test_analytics_events.js \
+  tests/test_analytics_source_guards.js \
+  tests/test_auth_entry_page.py \
+  tests/test_auth_routes.py \
+  tests/test_container_packaging.py \
+  tests/test_dashboard_freshness_interactions.js \
+  tests/test_db_oauth_cutover.py \
+  tests/test_logging_migration.py \
+  tests/ui/codebase_structure_smoke.spec.js \
+  tests/ui/design_system_hover_eng.spec.js \
+  tests/ui/eng_alerts_panel_summary.spec.js \
+  tests/ui/planning_review_table.spec.js; do [ -e "$f" ] && echo "ok       $f" || echo "MISSING  $f"; done
+```
+Expected: no `MISSING` line. A missing file means the plan is stale: stop and report.
+
+Whenever `origin/main` is not `4247a3b1`, also run the anchor sweep: for every `Replace this` block in Tasks 1, 2, 5, 6, 7, 8, 10, 11a, 11b, 12 and 13 that quotes text from the base, run `rg -c --fixed-strings '<the first line of the quoted block>' <file>`. Each must print `1` at the point its task runs (a block that quotes text an earlier task creates matches after that task). Exception accepted by the operator on 2026-10-15: five first-line anchors were already nonunique on `4247a3b1`; require exactly one full quoted block match for the Task 10 `useDashboardAnalytics` return, the two Task 12 compact-header replacements in `codebase_structure_smoke.spec.js`, the Task 1 callback-test footer in `test_auth_routes.py`, and the Task 11b `shouldAutomaticallyStartOnboarding` signature. Every full quoted block must still match exactly once. A mismatch means `main` moved the text: stop and report; do not improvise the edit.
+
+- [ ] **Step 4: Prepare the toolchain**
+
+Run:
+```bash
+cat .nvmrc && fnm exec --using 20 node -v
+npm ci
+export JEP_TEST_PYTHON=<path to a Python interpreter that has the repo requirements, for example the main checkout's .venv/bin/python>
+export PY="$JEP_TEST_PYTHON"
+"$JEP_TEST_PYTHON" -c "import flask, itsdangerous; print('python ok')"
+```
+Expected: the Node version printed matches `.nvmrc`; `npm ci` succeeds; `python ok`. The interpreter path is a local choice; do not write it into any committed file. A command may run in a fresh shell, so export `JEP_TEST_PYTHON` and `PY` again or write the interpreter path in place of `$JEP_TEST_PYTHON` and `$PY`.
+
+- [ ] **Step 5: Record the baselines**
+
+Run each command and write the summary line into the Baseline table below.
+```bash
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $JEP_TEST_PYTHON -m unittest discover -s tests
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $JEP_TEST_PYTHON -m unittest tests.test_endpoint_policy_inventory tests.test_endpoint_security_matrix tests.test_network_bind_guards tests.test_security_headers tests.test_oauth_route_guards tests.test_backend_route_source_guards tests.test_route_move_preservation
+npm run test:frontend:unit
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $JEP_TEST_PYTHON -m unittest tests.test_codebase_structure_budgets
+fnm exec --using 20 bash scripts/extraction_lint/run.sh
+npm run build && make verify-dist-clean
+npx playwright test tests/ui/codebase_structure_smoke.spec.js tests/ui/ga4_tag_and_events.spec.js tests/ui/eng_group_board_view.spec.js --browser=chromium
+npx playwright test tests/ui/codebase_structure_smoke.spec.js --browser=firefox
+npx playwright test tests/ui/codebase_structure_smoke.spec.js --browser=webkit
+```
+Expected: all pass except the known baseline failures, which you record by name instead of fixing: the extraction lint, which on `origin/main` `4247a3b1` exits 1 with `0 errors`, 104 warnings and four ENFORCED owner-budget lines for `EpicBlock.jsx` and `GroupBoardSettings.jsx`, and exits 0 with no ENFORCED line on a base where the separate digest refresh has landed (record the exit status, the warning count and every ENFORCED line; later lint gates mean "unchanged from this"), and the environment-specific ones, which differ by machine and browser: the load-sensitive `test_local_postgresql_runner` signal tests (they pass alone) and any browser cases that fail on this machine. Record every failing title per browser with its count as the baseline (on the machine the replays used, headless Firefox and WebKit failed a few `codebase_structure_smoke.spec.js` cases, among them the two `Task9 freshness reserved copy` cases in WebKit at a document width of 782 px against 781 and 755 px, and `open header dropdown toggles filter groups teams and sprints` failed in WebKit even when run alone); every later run is compared with that recorded set, and a failure outside it is a regression. Record counts, not just "pass". A baseline failure unrelated to this work is recorded with its name and the run continues only if the operator agrees; do not fix it in this branch.
+
+| Gate | Command | Result | Date |
+| --- | --- | --- | --- |
+| Python suite | `unittest discover -s tests` | Exit 0; 2,124 tests run, 29 skipped, 0 failures/errors (129.163 s). Existing static-response ResourceWarnings observed. | 2026-10-15 |
+| Security matrix | the explicit `unittest` list above (`make test-security` needs `.venv`) | Exit 0; 82 tests run, 0 failures/errors, 0 skipped. | 2026-10-15 |
+| Node unit | `npm run test:frontend:unit` | Exit 0; 2,539 passed, 0 failed, 0 skipped. | 2026-10-15 |
+| Structure budgets | `tests.test_codebase_structure_budgets` | Exit 0; 2 tests passed. Measured dashboard/server lines: 7,493 / 6,455; manifest pins unchanged. | 2026-10-15 |
+| Extraction lint | `fnm exec --using 20 bash scripts/extraction_lint/run.sh` | Exit 1; 0 errors, 104 warnings; owner budgets: 0 problems; enforced problems: 4 (known baseline).<br>`ENFORCED owner budget: stale interface measurement frontend/src/eng/EpicBlock.jsx:EpicBlock:expandedInputCount`<br>`ENFORCED owner budget: unresolved inventory frontend/src/eng/EpicBlock.jsx:EpicBlock: bag epicGroup member alias epicInfo, forwarded input epicGroup, bag epicRefresh dynamic deep member, bag selectedTasks dynamic member, bag selectedTasks dynamic deep member, bag storySubtasksByKey dynamic member, bag storySubtasksByKey dynamic deep member`<br>`ENFORCED owner budget: stale interface measurement frontend/src/settings/GroupBoardSettings.jsx:default:expandedInputCount`<br>`ENFORCED owner budget: unresolved inventory frontend/src/settings/GroupBoardSettings.jsx:default: forwarded input board, forwarded input backendUrl, forwarded input epicsByStatus` | 2026-10-15 |
+| Build and dist | `npm run build && make verify-dist-clean` | Exit 0 for build and verify-dist-clean; no generated output changes. | 2026-10-15 |
+| UI baseline, Chromium | the three specs above | Exit 0; 271 passed, 2 skipped, 0 failed (6.1 min), approved outside sandbox. Initial sandbox launch was interrupted after macOS Mach-port permission failures. | 2026-10-15 |
+| UI baseline, Firefox | `codebase_structure_smoke.spec.js` | Exit 1; 39 passed, 3 failed, 2 skipped (2.6 min). Failures: `Statistics subviews render extracted panels and preserve stats API ownership`; `stats sprint range End panels keep long options inside the narrow viewport`; `Excluded Capacity summary shows product and tech shares instead of source copy`. Resolved by the operator-requested repair below; no waiver granted. | 2026-10-15 |
+| UI baseline, WebKit | `codebase_structure_smoke.spec.js` | Exit 1; 40 passed, 2 failed, 2 skipped (2.3 min). Failures: `Task9 freshness reserved copy preserves responsive header geometry ENG only`; `Task9 freshness reserved copy preserves responsive header geometry with ENG EPM switch`. Resolved by the operator-requested repair below; no waiver granted. | 2026-10-15 |
+
+
+**Current browser baseline after repair (`4764991e`, 2026-10-15):** the original table above is retained as pre-repair evidence. Quarter triggers keep their existing width without Firefox intrinsic wrapper growth; narrow menu minimums are capped by the existing maximum; the Initiative tooltip is end-aligned with an opacity-only reveal; the grid-edge assertion tolerates only 0.01 CSS px of floating-point noise. The dropdown checks settle responsive layout and queued Escape focus restoration before the next action. A synthetic probe confirmed that racing Escape with scroll returns to position 0, while settling focus first preserves position 600 and compact-header visibility. No product focus, view-state, API or analytics behavior changed.
+
+| Repaired gate | Final result |
+| --- | --- |
+| Chromium, all three baseline specs | Exit 0; 271 passed, 2 skipped, 0 failed (6.0 min). |
+| Firefox, full smoke spec | Exit 0; 42 passed, 2 skipped, 0 failed (2.5 min); final header-dropdown ordering additionally verified with 1 passed. |
+| WebKit, full smoke spec | Exit 0; 42 passed, 2 skipped, 0 failed (2.4 min). |
+| Node, CSS contracts and structure budgets | Full Node suite 2,539 passed; focused CSS foundation/ratchets 38 passed; structure budgets 2 passed. CSS allowances shrink from 19 to 18; no new scale or class allowance. |
+| Committed-revision build and dist | `npm run build` and `make verify-dist-clean` exit 0 at `4764991e`; generated CSS committed. |
+
+Later browser no-regression claims use the repaired zero-failure results, not the historical failures above. Both existing performance skips remain unchanged. The extraction-lint baseline remains four enforced inventory problems and 104 warnings, with no new line. Synthetic before/after screenshots were inspected; no live data was used. An initial Scenario-axis timeout passed unchanged in isolation and in the final full Firefox run; no Scenario assertion or behavior was changed and no failure waiver is recorded.
+
+- [ ] **Step 6: Run the startup gate sweep (auth work)**
+
+Run `rg --files docs/plans | rg '/GATE-'`, open each `GATE-*` file, and follow `docs/plans/AGENTS.md` "Startup Gate Sweep": update `Checked on` and `Last result` only if the next review date has arrived; run a gate command only when its required inputs exist; never mark a gate passed without its documented `PASS` output.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add docs/plans/EXEC-shareable-view-links-194.md
+git -c user.name=Juce -c user.email=Juce-me@users.noreply.github.com commit -m "Record baseline for shareable view links plan" -m "Baseline gate results measured before any code change, so later no-regression claims compare against recorded numbers."
+git show --stat HEAD
+git status --short
+```
+Expected: one file changed (two if Step 6 changed `docs/plans/GATE-05-home-write-capability.md`; add it to the `git add` then); clean tree.
+
+---
+
+## Task index
+
+The code-bearing tasks, in execution order, with the slice that holds each section.
+
+| Task | Delivers | Slice |
+| --- | --- | --- |
+| 1 | `backend/auth/share_view_stash.py`, its wiring into the entry redirect, the callback, both authenticated `/login` redirects and logout, and the shared corpus fixture | server |
+| 2 | Access-log format without query or Referer (path rendered with `%(U)r`), redaction of `/?v=` in development logs, the privacy notice (gate G1) | server |
+| 3 | `viewDefaults.js` and `codec.js`: every key, defaults, encoding, decoding, over-cap rules | codec |
+| 4 | `resolver.js`: scope, field plan, Teams, facets and focus resolution, all pure | resolver-store |
+| 5 | `store.js`, `entry.js` and the first import in `dashboard.jsx`: strip before mount, snapshot store, one-shot Planning rows seed | resolver-store |
+| 6 | `commitSprintSelection` and `persistTeamSelection` extracted from `dashboard.jsx` handlers, characterization-tested first | apply |
+| 7 | `data-alert-team` on every alert team group; `focusCapture.js` | focus |
+| 8 | `focusReveal.js`; the Planning rows seed in `PlanningReviewTable.jsx` | focus |
+| 9 | `applyMachine.js`: the pure stage, lifecycle and budget machine | apply |
+| 10 | `share_view_action` allowlist entry, builder, `trackShareViewAction`, `analyticsReady`, analytics docs | control |
+| 11a | `applyController.js`, `captureState.js`, `interactionGuard.js`, `useShareViewApply.js` | apply |
+| 11b | The hold, the options object, the onboarding wait and the Planning table key in `dashboard.jsx` | apply |
+| 11c | `tests/ui/shareable_view_links.spec.js` with eight negative controls (Task 11 checkpoint) | apply |
+| 12 | The mock (gate G2), `ShareViewButton.jsx`, `noticeCopy.js`, header placement on both surfaces, header test updates | control |
+
+---
+
+### Task 13: Docs, ontology, budgets and plans index
+
+**Owner note:** Depends on Tasks 1 to 12. Documentation and budget bookkeeping only; no behavior change.
+
+**Files:**
+- Create: `docs/features/shareable-view-links.md`
+- Modify: `docs/features/README.md`, `docs/features/eng-workflows.md`, `README.md`, `docs/architecture.md`, `docs/SUPPORT-atlassian-oauth-setup.md`, `docs/ontology.md`, `docs/TODO.md`, `docs/plans/README.md`
+- Verify (no edit unless a measurement moved): `tests/test_codebase_structure_budgets.py`, `scripts/extraction_lint/owner_budgets.json`
+
+**Interfaces:**
+- Consumes: the final names, file paths and user-facing strings from Tasks 1 to 12. The apply-result notice strings live in `frontend/src/shareView/noticeCopy.js` (`shareViewNoticeMessage`); read them there rather than retyping from memory.
+
+**Forbidden regressions for this task:** `docs/security/endpoints.md` is left unchanged (it has drifted from `backend/security/policy.py` and no route was added); do not touch application code; do not restate real project names, issue keys, paths or emails in any doc; the repository's source guard for `docs/features/eng-workflows.md` pins its headings and several phrases, so add the pointer under a new heading and rename no existing heading.
+
+- [ ] **Step 1: Verify every path and symbol the docs will name**
+
+Run:
+```bash
+for f in frontend/src/shareView/viewDefaults.js frontend/src/shareView/codec.js frontend/src/shareView/resolver.js frontend/src/shareView/store.js frontend/src/shareView/entry.js frontend/src/shareView/applyMachine.js frontend/src/shareView/applyController.js frontend/src/shareView/captureState.js frontend/src/shareView/interactionGuard.js frontend/src/shareView/useShareViewApply.js frontend/src/shareView/focusCapture.js frontend/src/shareView/focusReveal.js frontend/src/shareView/ShareViewButton.jsx frontend/src/shareView/noticeCopy.js backend/auth/share_view_stash.py tests/fixtures/share-view-query-corpus-example-sanitized.json tests/ui/shareable_view_links.spec.js tests/ui/share_view_focus.spec.js tests/ui/share_view_control.spec.js tests/ui/share_view_control_harness.jsx assets/mockups/share-view-control-194.html; do [ -e "$f" ] && echo "ok       $f" || echo "MISSING  $f"; done
+rg -n "export (function|const) (encodeShareView|decodeShareView|stripShareViewParams|resolveShareViewScope|buildShareViewFieldPlan|resolveShareViewTeams|resolveShareViewFacets|resolveShareViewFocus|captureShareViewFocus|revealShareViewFocus|stepApplyMachine|createApplyController|resolveApplyPlan|buildShareViewState|armInteractionGuard|useShareViewApply|useShareViewHold|useShareViewApplyTerminal|useShareViewPlanningTableKey|initShareViewFromLocation|getShareViewSnapshot|shareViewNoticeMessage|shareViewDroppedCategories)" frontend/src/shareView
+rg -n "^def (stash_share_view_query|pop_share_view_target|clear_share_view_stash)" backend/auth/share_view_stash.py
+rg -n "commitSprintSelection|persistTeamSelection" frontend/src/dashboard.jsx | head -4
+```
+Expected: no `MISSING` line; every exported name is found. A name or path that differs from this task's text means the docs must follow the code, not the reverse: fix the doc text and note the difference in the commit body.
+
+- [ ] **Step 2: Create the feature guide**
+
+Create `docs/features/shareable-view-links.md`:
+
+```markdown
+# Shareable View Links
+
+Share the ENG view you are looking at as one link. A teammate who opens it, signing in first if needed, lands in the same view. The link carries selectors only (which view, group, Sprint, Teams, filters, search, and where to scroll); everything the teammate sees is loaded with their own Jira sign-in.
+
+## Share a view
+
+1. Set up the view: choose the Sprint, group and Teams, apply filters or search, and scroll to the alerts group, Epic or Story you want to point at.
+2. Press **Share** in the header. After you scroll past the main header, the same control appears in the compact bar beside Search.
+3. The link is copied and the icon turns into a check for two seconds. If your browser blocks the clipboard, the link appears under the control in a selectable field instead.
+4. Paste it into chat.
+
+Share is available in Catch Up, Planning, Board and Statistics. It is hidden in EPM and Scenario, and disabled while the view is still loading.
+
+## What a link carries
+
+| Mode | Carried |
+| --- | --- |
+| Catch Up | group, Sprint, Teams, search, Status, Priority and Project Track filters, Product/Tech lanes, Initiative grouping, Epic sort, which alert categories are expanded, and one focus target (an alerts team group, an Epic or a Story) |
+| Planning | group, Sprint, Teams, search, filters, lanes, List or Table, Epics or Stories rows (Table), Initiative grouping and sort (List), and one Epic or Story focus target |
+| Board | group, Sprint, the Board scope (Sprint, Component or All work) and search |
+| Statistics | group, Sprint, the Statistics view, its range, and Teams for the views that use them |
+
+A link never carries your saved preferences, Planning row selections or review drafts, Scenario content, EPM state, alert dismissals, Board filters, Statistics display options, assignee filters, tokens or any account detail. It does contain ids (group, Team, Sprint, issue keys) and your search text, so treat it like any internal link. A link is not a permission: it cannot show anything the opener's own Jira access does not already allow.
+
+## When you open a link
+
+- It applies in four stages: the Department and Sprint, then the mode and its options, then Teams and filters once the data has loaded, then a scroll to the target. Your own saved scope is never loaded first.
+- Opening a link replaces your own current view with the shared one, the same as clicking those controls yourself; your next visit starts from it.
+- A link equal to your current view changes nothing. A recipient whose saved view is EPM or Scenario lands in the link's ENG view.
+- If the group or Sprint in the link is not available to you, nothing from the link is applied and a notice says so. If other parts do not apply (a Team you cannot see, a filter value that no longer exists, a mode the Sprint does not allow, a target that is not on screen), the rest is applied and the notice names what was skipped; it never shows a value from the link.
+- A click, a tap or a key press while it applies stops the link and keeps what was applied. Scrolling alone does not, until the scroll to the target begins. Reloading the page before it finishes drops the link; open it again.
+- A first-time user is held through the Department popup; the link is dropped if its group is not among the Departments they picked. The Catch Up tour starts after the link has finished.
+- If you open a link while signed out, you sign in and then land in the shared view. The link is kept for up to 15 minutes.
+- The link has 90 seconds in total; the Department and Sprint step and the options step have 5 seconds each, the data step and the scroll 20 seconds each.
+
+@@NOTICE_TABLE@@
+
+## Limits
+
+- A link has to stay under 1,536 characters. When a view would not fit, the lowest-priority parts are left out in this order (search text, the focus target, alert categories, Initiative grouping, sort) and the notice names them; if it still does not fit, nothing is copied.
+- A Board or Statistics link has no focus target, and no link carries Board filters or Statistics display options in this version.
+- Search text is part of the link. In the container deployment the access log records the request path only, never the query string or the Referer.
+```
+Adjust any sentence that Tasks 1 to 12 made untrue; the guide describes shipped behavior.
+
+- [ ] **Step 3: Fill the notice table from the code**
+
+Read `frontend/src/shareView/noticeCopy.js` and replace the `@@NOTICE_TABLE@@` line in the guide with a section `## What the notices mean` holding a two-column table (`Notice` and `What happened`), one row per message string exactly as `shareViewNoticeMessage` and the Share-side messages render them (apply kinds `partial`, `dropped`, `invalid`, `newer`; the refused over-cap copy; the clipboard fallback; the category names group, Sprint, mode, Teams, filters, focus as the code words them). Do not paraphrase the strings: copy them.
+
+- [ ] **Step 4: Link the guide from the indexes**
+
+In `docs/features/README.md` replace
+```
+- [ENG Workflows](eng-workflows.md)
+```
+with
+```
+- [ENG Workflows](eng-workflows.md)
+- [Shareable View Links](shareable-view-links.md)
+```
+In `docs/features/eng-workflows.md` replace
+```
+## Continue in Jira
+```
+with
+```
+## Share a view
+
+The header **Share** control copies a link to the current Catch Up, Planning, Board or Statistics view. See [Shareable View Links](shareable-view-links.md) for what a link carries and what a recipient sees.
+
+## Continue in Jira
+```
+In `README.md` replace
+```
+- ✅ **Alerts** - [Feature guide](docs/features/alerts.md)
+```
+with
+```
+- ✅ **Alerts** - [Feature guide](docs/features/alerts.md)
+- ✅ **Shareable view links** - Share the current Catch Up, Planning, Board or Statistics view as one link; the recipient signs in and lands in the same view with their own access ([Feature guide](docs/features/shareable-view-links.md))
+```
+and replace
+```
+- [Alerts](docs/features/alerts.md)
+- [Statistics](docs/features/statistics.md)
+```
+with
+```
+- [Alerts](docs/features/alerts.md)
+- [Shareable View Links](docs/features/shareable-view-links.md)
+- [Statistics](docs/features/statistics.md)
+```
+Run `rg -n "shareable-view-links" README.md docs/features` and confirm each of the four links resolves to the new file.
+
+- [ ] **Step 5: Architecture and sign-in setup notes**
+
+In `docs/architecture.md` replace
+```
+  - `backend/routes/auth_routes.py` for Atlassian OAuth, session recovery, CSRF,
+    and auth status.
+```
+with
+```
+  - `backend/routes/auth_routes.py` for Atlassian OAuth, session recovery, CSRF,
+    and auth status. The OAuth return carries a shared view link's query through
+    the login hop via `backend/auth/share_view_stash.py`.
+```
+and insert this top-level bullet immediately after the line `  - Includes a small auth-refresh script before the bundled app.` (before `- Frontend source:`)
+```
+- Shareable view links: `frontend/src/shareView/` holds the link codec, the
+  recipient resolver, the pre-mount URL entry and store, the staged apply
+  machine and hook, focus capture and reveal, and the Share control. The design
+  is `docs/plans/SUPPORT-shareable-view-links-design-194.md`.
+```
+In `docs/SUPPORT-atlassian-oauth-setup.md` replace
+```
+5. Confirm the callback returns to the dashboard.
+```
+with
+```
+5. Confirm the callback returns to the dashboard. If you opened a shared view link (`/?v=1&...`) while signed out, it is kept in the signed session cookie for up to 15 minutes and the callback returns to `/?<that query>` so the view opens after sign-in; the registered callback URL does not change.
+```
+
+- [ ] **Step 6: Ontology**
+
+In `docs/ontology.md` insert a new section immediately before `## Dashboard feature ownership`, following the format of the neighbouring sections (a `Verified on:` line, then bold-named entries with aliases, entry points, contracts, tests and relationships). Use the verification date of the day this step runs and confirm every symbol with the `rg` commands from Step 1:
+
+```markdown
+## Shareable view links
+
+Verified on: <YYYY-MM-DD> against the named symbols (code read plus the unit, Flask and Playwright suites named below).
+
+- **Share view link** (aliases: shareable link, view link; UI: the header Share control): a readable query URL at `/` (`?v=1&mode=...`) selecting a recipient's ENG mode, group, Sprint, Teams, filters, search and one focus target. Codec: `encodeShareView`, `decodeShareView`, `stripShareViewParams` in [`codec.js`](../frontend/src/shareView/codec.js); defaults and vocabularies: [`viewDefaults.js`](../frontend/src/shareView/viewDefaults.js); contract and security rules: [design](plans/SUPPORT-shareable-view-links-design-194.md); tests: `tests/test_share_view_codec.js` and the shared corpus `tests/fixtures/share-view-query-corpus-example-sanitized.json`. Produces the URL the Share control copies; consumed by the entry module and the stash.
+- **Share view resolver**: pure resolution of a decoded link against the recipient's visible groups, validated Sprint catalog, Team ids and facet options. Entry points: `resolveShareViewScope`, `buildShareViewFieldPlan`, `resolveShareViewTeams`, `resolveShareViewFacets`, `resolveShareViewFocus` in [`resolver.js`](../frontend/src/shareView/resolver.js). Depends on `viewDefaults.js`; consumed by the apply controller; test: `tests/test_share_view_resolver.js`.
+- **Share view entry and store** (alias: pending link): [`entry.js`](../frontend/src/shareView/entry.js) is the first import of `dashboard.jsx`; it strips the link keys from the URL before React mounts and seeds the module store in [`store.js`](../frontend/src/shareView/store.js) (`getShareViewSnapshot`, `subscribeShareView`, `finishShareView`). The store holds the phase, the hold flag and the one-shot Planning rows seed. Test: `tests/test_share_view_store.js`.
+- **Share view apply** (alias: link apply): [`stepApplyMachine`](../frontend/src/shareView/applyMachine.js) decides the stage, drops, cancels and budgets; [`createApplyController`](../frontend/src/shareView/applyController.js) and `resolveApplyPlan` run Stage A (scope), B (fields), C (Teams and facets) and D (focus) through raw setters; [`useShareViewApply`](../frontend/src/shareView/useShareViewApply.js) mounts it after the App's own restore effects; `useShareViewHold` holds the ENG task load while a link is pending; `useShareViewApplyTerminal` lets the onboarding tour wait; `useShareViewPlanningTableKey` remounts an open Planning table; [`armInteractionGuard`](../frontend/src/shareView/interactionGuard.js) cancels on a deliberate interaction. The two App closures `commitSprintSelection` and `persistTeamSelection` in `dashboard.jsx` are shared with the click handlers. Depends on the resolver, the store, the codec and the focus modules; tests: `tests/test_share_view_apply_machine.js`, `tests/test_share_view_apply_controller.js`, `tests/test_share_view_apply_hook.js`, `tests/test_share_view_interaction_guard.js`, `tests/test_share_view_onboarding_wait.js`, `tests/test_share_view_source_guards.js`, `tests/ui/shareable_view_links.spec.js`.
+- **Share view capture**: [`buildShareViewState`](../frontend/src/shareView/captureState.js) builds the committed view state the encoder turns into a link; `captureShareUrl()` on the apply hook returns `{ ok, url, dropped }` synchronously. Test: `tests/test_share_view_capture_state.js`.
+- **Share focus**: [`captureShareViewFocus`](../frontend/src/shareView/focusCapture.js) reads the topmost visible alerts team group, Epic, Story or Planning row at Share time; [`revealShareViewFocus`](../frontend/src/shareView/focusReveal.js) scrolls to and highlights it at apply time; both share `SHARE_VIEW_FOCUS_MARGIN`. Alert groups carry `data-alert-team` in [`EngAlertsPanel.jsx`](../frontend/src/eng/EngAlertsPanel.jsx); the Planning table seeds its row mode from the store in [`PlanningReviewTable.jsx`](../frontend/src/eng/PlanningReviewTable.jsx). Tests: `tests/test_share_view_alert_anchors.js`, `tests/test_share_view_focus_capture.js`, `tests/test_share_view_focus_reveal.js`, `tests/test_share_view_planning_rows_seed.js`, `tests/ui/share_view_focus.spec.js`.
+- **Share control**: [`ShareViewButton.jsx`](../frontend/src/shareView/ShareViewButton.jsx), rendered on the main and compact header surfaces of `dashboard.jsx` through `renderShareViewControl`; notice copy: [`noticeCopy.js`](../frontend/src/shareView/noticeCopy.js) (`shareViewNoticeMessage`, `shareViewDroppedCategories`); the notice reuses the connection-recovery banner, placed by one attribute-scoped rule (`[data-share-view] > .server-unavailable-banner`); the reviewed mock `assets/mockups/share-view-control-194.html`; analytics event `share_view_action` (`docs/README_ANALYTICS.md`). Tests: `tests/test_share_view_control.js`, `tests/ui/share_view_control.spec.js` with `tests/ui/share_view_control_harness.jsx`.
+- **Pending-link stash** (alias: login return): [`share_view_stash.py`](../backend/auth/share_view_stash.py) stores a validated query in the signed session cookie from the unauthenticated dashboard entry (`redirect_unauthenticated_oauth_dashboard_entry` in `jira_server.py`) and returns it at the OAuth callback and the two authenticated `/login` redirects in [`auth_routes.py`](../backend/routes/auth_routes.py). Limits: 1,536 bytes, 900 seconds, 3,300 bytes of cookie. Tests: `tests/test_share_view_stash.py`, `tests/test_auth_entry_page.py`, `tests/test_auth_routes.py`, `tests/test_db_oauth_cutover.py`.
+```
+Then in the same file replace the tail of the `Coverage:` paragraph
+```
+and the remaining `App()` responsibility inventory and Statistics state coupling (2026-10-08). Other application areas remain unmapped.
+```
+with
+```
+the remaining `App()` responsibility inventory and Statistics state coupling (2026-10-08), and shareable view links (<YYYY-MM-DD>). Other application areas remain unmapped.
+```
+Finally update the `## Dashboard extraction verification` current-measurement paragraph (the one that begins `Current #251 measurement`) by replacing the App-cap figure (`7,493` on the validated base) and the `App plus owners` figure (`34,095`) with the values now pinned in `scripts/extraction_lint/owner_budgets.json` (read them; do not guess; the legacy ceilings in `tests/test_codebase_structure_budgets.py` are unchanged by this plan), and add the sentence `Shareable view links (issue #194) moved the pins by the net measured lines recorded in the Budget ledger of EXEC-shareable-view-links-194.`
+
+- [ ] **Step 7: Park the deferred scope**
+
+In `docs/TODO.md`, under `## Deferred`, add these bullets after the last existing bullet of that section:
+```
+- Shareable view links v2 candidates (parked from issue #194): a Board Epic panel link (needs a Share action inside the modal panel and a request consumed after the Board columns contain the key), Board facets and Statistics display options in links, stored or short links with revocation and expiry (`docs/plans/FUTURE-db-additional-features.md`).
+- Share control and pending-link keyboard polish — won't do for now (keyboard users are not a priority; touch is). The Share notice does not close on Escape, focus does not return to the Share control after Dismiss, the fallback link field takes focus when it opens, and a pending link cannot be cancelled with Escape (the interaction guard ignores modifier keys only). Related: `frontend/src/shareView/ShareViewButton.jsx`, `frontend/src/shareView/interactionGuard.js`, `docs/plans/EXEC-shareable-view-links-194.md`.
+```
+
+- [ ] **Step 8: Update the plans index**
+
+In `docs/plans/README.md`, in the `## Shareable view links (issue #194)` section, change the implementation-plan bullet's status text from `ready 2026-10-15, operator accepted the defaults and gate G1; implementation not started` to `implemented through Task 13; Task 14 verification pending` and keep its six slice links and gate list (Task 14 Step 9 sets the final `implemented, awaiting merge`). Do not rename the file to `DONE-` until the work is merged.
+
+- [ ] **Step 9: Reconcile the line budgets**
+
+Run:
+```bash
+wc -l frontend/src/dashboard.jsx jira_server.py
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $JEP_TEST_PYTHON -m unittest tests.test_codebase_structure_budgets tests.test_backend_route_source_guards tests.test_endpoint_policy_inventory
+fnm exec --using 20 bash scripts/extraction_lint/run.sh
+```
+Expected: the two line counts equal the Budget ledger's last row (7,539 and 6,459 after the approved `778fb2aa` sync), the `dashboard.jsx` count equals the manifest pin in `scripts/extraction_lint/owner_budgets.json`, and both counts are at or under their legacy ceilings in `tests/test_codebase_structure_budgets.py`; the three test modules pass and the lint matches the Task 0 baseline (no new ENFORCED line, no error, at most 104 warnings). If the `dashboard.jsx` count moved after the last pin edit, move the manifest pin in this commit and record the net change per task in the ledger.
+
+- [ ] **Step 10: Check the docs for local data and run the doc-linked tests**
+
+Run:
+```bash
+rg -n "/Users/|[A-Za-z0-9._-]+@[A-Za-z0-9.-]+\.[a-z]{2,}" docs/features/shareable-view-links.md docs/ontology.md docs/TODO.md docs/architecture.md docs/SUPPORT-atlassian-oauth-setup.md docs/plans/README.md || echo "no local data"
+npm run test:frontend:unit
+```
+Expected: `no local data`; the Node suite passes (`test_analytics_source_guards.js` cross-checks README_ANALYTICS, the runbook and the YAML; nothing in this task should break it).
+
+- [ ] **Step 11: Commit**
+
+```bash
+git add docs/features/shareable-view-links.md docs/features/README.md docs/features/eng-workflows.md README.md docs/architecture.md docs/SUPPORT-atlassian-oauth-setup.md docs/ontology.md docs/TODO.md docs/plans/README.md
+git add -u -- tests/test_codebase_structure_budgets.py scripts/extraction_lint/owner_budgets.json
+git -c user.name=Juce -c user.email=Juce-me@users.noreply.github.com commit -m "Document shareable view links and reconcile budgets" -m "Feature guide, indexes, architecture and sign-in notes, ontology entries with verification date, parked v2 scope, and the final line-budget measurements, so the repo describes what shipped."
+git show --stat HEAD
+git status --short
+```
+Expected: only the listed docs (and the two budget files if a pin moved) changed; a clean tree.
+
+---
+
+### Task 14: Journeys, full verification and publication
+
+**Owner note:** Last task; depends on Tasks 1 to 13. Publication is blocked by gate G3.
+
+**Files:**
+- Modify: `docs/plans/EXEC-shareable-view-links-194.md` (statuses, Outcome, Current Accuracy)
+- Modify: `docs/plans/README.md` (the plan index entry)
+
+**Interfaces:**
+- Consumes: every earlier task's tests and the Verification table of the design (V1 to V20).
+
+**Forbidden regressions for this task:** everything in the design's "Forbidden regressions".
+
+- [ ] **Step 1: Confirm every task is done**
+
+Run `git log --oneline origin/main..HEAD`. After the plan's own documentation commits and any merge of `origin/main`, it must show one commit for each of Tasks 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11a, 11b, 11c, 12 and 13, sixteen feature-task commits in all (plus the approved baseline-repair commit and merge, pause-record documentation commits `9bf40051` and `4b46ea6d`, required checkpoint documentation commits, and Task 3, Task 9 and the operator-approved Task 11c test-only corrective commits recorded above if not already in `origin/main`), in the order the Execution status table lists them (Task 2 may sit anywhere after Task 1). A missing, extra or out-of-order commit is a deviation to report before going on. Rows recorded during the approved Task 3 pause, correction and required checkpoints retain their recorded statuses; later task rows remain `planned` until Step 9 reconciles all statuses and SHAs from this log. Count the sixteen feature-task commits separately from the approved history exceptions above.
+
+- [ ] **Step 2: Full backend gates**
+
+```bash
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $JEP_TEST_PYTHON -m unittest discover -s tests
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $JEP_TEST_PYTHON -m unittest tests.test_endpoint_policy_inventory tests.test_endpoint_security_matrix tests.test_network_bind_guards tests.test_security_headers tests.test_oauth_route_guards tests.test_backend_route_source_guards tests.test_route_move_preservation
+```
+Expected: the full suite passes with no more skips and no new failures than the Task 0 baseline (the recorded environment-specific failures aside) and no new warning before the Flask startup banner; the security modules pass; `test_endpoint_policy_inventory` still pins "no new route".
+
+- [ ] **Step 3: Full frontend gates**
+
+```bash
+npm run test:frontend:unit
+fnm exec --using 20 bash scripts/extraction_lint/run.sh
+npm ci && npm run build && make verify-dist-clean
+```
+Expected: the Node count is the baseline plus this plan's new tests, all passing; ESLint warnings do not exceed the 106 ratchet (104 expected after Task 12); `verify-dist-clean` reports a clean diff after the build.
+
+- [ ] **Step 4: Full Chromium UI run**
+
+```bash
+JEP_TEST_PYTHON="$JEP_TEST_PYTHON" npx playwright test tests/ui --browser=chromium --workers=4
+```
+Expected: the run takes about 8 minutes; read the final summary line. No test is skipped or loosened to pass. `tests/ui` has no CI job by decision; this local run is the gate.
+
+- [ ] **Step 5: Headed Firefox and WebKit for the control**
+
+```bash
+JEP_TEST_PYTHON="$JEP_TEST_PYTHON" npx playwright test tests/ui/share_view_control.spec.js tests/ui/codebase_structure_smoke.spec.js --browser=firefox --headed
+JEP_TEST_PYTHON="$JEP_TEST_PYTHON" npx playwright test tests/ui/share_view_control.spec.js tests/ui/codebase_structure_smoke.spec.js --browser=webkit --headed
+```
+Expected: the painted-ink and geometry checks pass in both engines (headless runs and Chromium place glyph ink differently). Compare any failure with the Task 0 Firefox and WebKit baselines: the two known `Task9 freshness reserved copy` WebKit cases are baseline, not regressions. Look at the failure screenshots before changing any assertion.
+
+- [ ] **Step 6: Startup verification**
+
+```bash
+sh -n scripts/docker-entrypoint.sh
+env JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile APP_ENVIRONMENT_KEY=local ATLASSIAN_SCOPES='read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access' $JEP_TEST_PYTHON scripts/check_startup_preflight.py
+```
+Expected: no output from `sh -n`. The preflight passes when a local `.env` supplies `JIRA_URL` and the credentials; without one it prints `FAIL auth_config: JIRA_URL is required`, an environment gap and not a regression, so record "preflight not run: no local credentials". If a local `.env`, database and Postgres are available (see the operator's worktree notes), launch `.venv/bin/python jira_server.py` and check `curl http://localhost:5050/api/test`; any Python dependency or runtime warning before the Flask banner is a failed verification. If no local credentials exist, record "not run: no local credentials" instead of claiming it.
+
+- [ ] **Step 7: Walk the five journeys**
+
+| Journey | Automated coverage | Operator live check |
+| --- | --- | --- |
+| A. Signed-in recipient opens a link | `tests/ui/shareable_view_links.spec.js` (V1, V3, V5, V6) | Open the Share link in a second tab of the operator's own signed-in dashboard |
+| B. Unauthenticated recipient (login return) | Task 1 chain tests (`tests/test_auth_entry_page.py`, `tests/test_auth_routes.py`, `tests/test_db_oauth_cutover.py`) plus the UI spec applying the returned `/?v=` URL | Open a link in a private window, sign in yourself, confirm you land in the shared view |
+| C. Expired-session recipient | `TestAuthEntryPage` (`/login?reason=session_expired` keeps the stash) | Optional |
+| D. First-run recipient | Review Focus line 1 UI test (Task 11c) | Optional (needs a user with no saved groups) |
+| E. Basic mode (local) | Task 1 inertness tests; the UI spec runs in the Basic fixture | Not applicable |
+
+Live checks are read-only and transient: the operator signs in themselves; report numbers only (the mode, counts of visible Epics and Stories, whether the notice appeared); never save or publish screenshots of live data and delete any taken.
+
+- [ ] **Step 8: One whole-branch review**
+
+Dispatch one fresh reviewer with this prompt, then fix what it confirms: "Review the branch diff `git diff origin/main...HEAD` against `docs/plans/SUPPORT-shareable-view-links-design-194.md` and `docs/plans/EXEC-shareable-view-links-194.md` (and its slices) for correctness, execution safety and verification quality. Findings first, ordered Blocker, P1, P2, Minor, each with file:line, the failure scenario and the concrete change. Check: every changed line traces to the plan; no new route; the stash redirect target is always `/` or `/?<validated query>`; apply never calls the forbidden helpers or interpolates link values into selectors; the budgets and the manifest agree; no local path, email or secret is committed."
+
+- [ ] **Step 9: Close out this plan**
+
+Ask the operator whether to bump the `Effective date` in `docs/PRIVACY.md` (Task 2 and the pending-link notice changed what that document says) and, if yes, change it in this commit. Set every row in the Execution status table to its final status with SHAs from `git log --oneline origin/main..HEAD`, add an `## Outcome
+
+Implemented with changes. Beyond the plan, the operator-approved amendments added explicit copy actions (the header copies the view only; Catch Up and Planning Epics, Board Epic cards and Catch Up alert groups copy a specific target), Board filters and the focused column in links, a hold-then-fade arrival highlight driven by a `data-share-reveal` attribute, and the Epic action placed between the summary and the key on desktop widths. Earlier approved deviations are recorded above (baseline repairs, incoming-main Statistics alignment, deadline and query-cap corrections, request-parity coverage, Planning recovery and clipboard fixes, test-readiness repairs).
+
+Final verification (2026-10-16, head before this record): full Python 2,184 tests with 29 skips and the 82 security tests pass; full Node 2,873 pass; extraction lint is the unchanged baseline (104 warnings, zero errors, two untouched Settings findings); the build leaves no dist diff. The full Chromium run had seven failures. Five were regressions from the explicit Epic actions that no earlier full run had covered (Planning Epic row 35px instead of 32px, Catch Up Epic name 68px instead of at least 110px at 390px, and the Planning Summary editor no longer filling its cell, the last two each at two widths); they are fixed in the regression-fix commit and the affected specs now pass (260 cases). `AC4 strict Board component cold` failed once under load and passes alone. `cold alignment stops on trusted input or a changed scope` fails identically on the commit before the 2026-10-16 work and is the unresolved cold-focus assertion recorded in the checkpoint above; it was not diagnosed further. The full Chromium suite was not re-run after the regression fixes; only the affected specs were. Headed Firefox and WebKit were not re-run after the 2026-10-16 amendments, and the signed-in and private-window live journeys A and B remain for the operator.
+
+## Current Accuracy
+
+The source, tests and current product documentation describe the implemented feature. Historical task instructions and measurements are retained for audit; the Outcome above is the verification state. Keep the EXEC filename until the work is merged.
+
+
+## Task 14 operator correction: reuse feedback by UI kind
+
+Approved 2026-10-15. This correction supersedes the earlier recovery-banner presentation and the historical mock's feedback fragments; earlier supplied source/test blocks remain historical. Ordinary clipboard success uses only the existing two-second checkmark, destination-specific accessible status and copied tooltip. It creates no popup or Dismiss. Real omissions/refusals/apply warnings reuse `.jira-export-toast`; manual selectable URL reuses the neutral `.jira-export-menu`; Dismiss reuses `secondary compact`. Only attribute-scoped placement and margin resets are added; recovery surfaces remain reserved for recovery. Current scope/surface/target/unmount/newer-copy guards, header-only apply notices and fixed-enum analytics remain unchanged. No new event is needed: this is existing copy/apply outcome presentation with the established No-Event Allowlist for feedback and dismissal.
+
+Files: `frontend/src/shareView/ShareViewButton.jsx`, `frontend/src/styles/shared/controls.css`, `frontend/src/styles/eng/export.css`, `tests/test_share_view_control.js`, `tests/ui/share_view_control.spec.js`, `tests/ui/share_view_control_harness.jsx`, `docs/design-system.md`, `docs/ontology.md`, `docs/features/shareable-view-links.md`, these master/control/design records, root `AGENTS.md` concrete correction learning and regenerated `frontend/dist`. Shared export CSS supplies the canonical manual-menu body typography as verified below, without changing existing Jira menu-item appearance or logic. Dashboard/owner pins stay at their measured values.
+
+Exact new checks: `ordinary clipboard success announces its destination without rendering a feedback surface`; `ordinary copy success leaves work unobscured on main, compact and Epic controls`; `Share feedback reuses export surfaces and compact actions by semantic kind`; `manual and warning feedback controls stay compact and hit-testable on touch main and compact headers`; `Epic List and Table manual feedback keeps the URL and compact dismissal above the sticky layers`.
+
+Exact title updates: `ShareViewButton renders the header icon-button contract with data-attribute hooks and reuses the shared banner for its notice` becomes `ShareViewButton renders the header icon-button contract and compact export warning notice`; `the accepted mock preserves header markup with the approved Copy view link label amendment` becomes `the historical mock preserves unchanged header markup and feedback copy`; `the Dismiss button keeps the shared banner hover: the foundation overlay and ring, stationary and readable` becomes `the compact Dismiss button keeps the foundation overlay and ring, stationary and readable`. Existing success tests retain destination/ownership assertions through the accessible status instead of the obsolete visible success popup. Other warning/fallback/dismissal/geometry assertions remain, using export surface selectors and bounded compact-action geometry.
+
+Verification: red-before-green component/browser behavior, synthetic settled before/after images, full Node, relevant Python structure/CSS checks, extraction lint, targeted Chromium Share/acceptance checks, headed Firefox/WebKit glyph and geometry checks, build plus committed rebuild/dist clean. Final full Chromium, cold-focus work, publication and final closeout are separate root-owned gates.
+
+Required shared typography completion (2026-10-15): `frontend/src/styles/eng/export.css` is now in scope to give `.jira-export-menu` canonical body typography taken from measured existing `.jira-export-menu-item` values and their defining global button rules. This avoids inherited Epic serif/size differences without a Share-local font override, new typography value or changed existing Jira menu-item geometry. Measured canonical values: existing IBM Plex Mono, 0.875rem (14px), normal line height and menu-item text-secondary ink; sentence case and zero tracking reuse the existing export feedback body defaults. All body typography belongs to the shared menu, with no Share-local typography override. The original Jira menu is 192 × 73.9375px and its two items are each 178.8125 × 30.375px in the synthetic reference; the browser check compares those original inherited-style bounds and item typography with the shared canonical style on the same mount. Stop if unchanged Jira appearance cannot be preserved. Existing export logic remains untouched.
+
+Epic feedback placement completion: the existing Back to top control must have no rectangle overlap with the fixed manual/warning panel. Preserve that control and all global z-indexes; place the Epic feedback above its measured full bounds using existing control/spacing values. Extend the existing List/Table desktop/touch feedback test with full panel/Back-to-top non-overlap, five input hit points and paragraph line-edge hit checks; center-only evidence is insufficient.
+
+Placement evidence: the 390px synthetic List Back to top is 29.375px high with a 20px bottom inset; the old panel bottom 884 overlapped its 850.625–880px bounds. Epic feedback now uses `bottom: calc(2rem + var(--control-height))` (the existing Epic control token is 24px), reserving 56px and clearing that 49.375px footprint with 6.625px separation. The non-overlap check remains exact and runs in desktop/touch List/Table and headed engines.
+
+Final visual verification (2026-10-15): whole-panel interior ownership grid, five input points, paragraph line edges and exact Back-to-top non-overlap supplement center/action checks. A controlled native tap-color probe measured a 24px browser feedback rectangle present at 134ms and absent by 268ms; final default-native touch evidence waits 300ms for that measured paint, with no product touch-style or layer change. The earlier screenshot patch position was not reproduced exactly, so no historical compositor interleaving is claimed. Final synthetic images were inspected before final headed verification.
+
+Correction outcome (2026-10-15): implemented with semantic feedback reuse and the shared typography/placement completions above. Final verification: 2,862 Node tests and 14 Python structure/CSS checks passed; targeted Chromium Share/link acceptance passed 93 with three headed-only skips; headed Firefox and WebKit Share/structure each passed 94 with two unchanged opt-in runtime skips, and the final Firefox strengthened paint-grid/settlement/glyph set passed seven more cases. CSS baseline is unchanged (18 offender identities, 40 hooks); lint remains the unchanged 104 warnings, zero errors, zero pin problems and two unrelated GroupBoardSettings findings. No owner pin changed. Build and committed reproducibility are checked for this correction; focused review, paused cold-focus work and final combined/operator/publication gates remain separate.
+
+
+P2 warning typography amendment (2026-10-15): focused review found that `.jira-export-toast` inherited monospace on the main header but serif on compact/Epic hosts. Add only its existing canonical `'IBM Plex Mono', monospace` font family in the shared `export.css` owner. No Share-local override, new typography value, class, palette, control or ownership change. Preserve checkmark-only two-second success and original Jira/manual menu appearance and geometry. Exact new mounted regression title: `genuine warnings match the Jira warning typography and wrapping across main compact List Epic and Table Epic hosts on desktop and touch`. Compare against a genuine existing Jira overflow warning, drive genuine capture refusals in the actual app hosts, and verify font, size, line height, ink, case/tracking, text wrapping/bounds, hit testing and compact Dismiss. Run red before the declaration; then scoped final-source Chromium and headed Firefox/WebKit parity/geometry/success/manual checks plus all three painted-glyph cases, full Node, 14 Python structure/CSS checks, unchanged CSS/lint baselines, build and committed reproducibility. Historical whole-engine counts above remain historical; final combined Chromium, cold-focus restoration and publication remain root-owned.
+
+P2 correction outcome (2026-10-15): implemented with one shared warning font declaration and the fail-first mounted eight-context parity/wrapping regression. Final-source checks: Node 2,862 passed; Python structure/CSS 14 passed; scoped Chromium six passed with three headed-only skips; headed Firefox and WebKit each nine passed, including all three glyph cases. Original Jira menu/item appearance and boxes, selectable manual URL and checkmark-only success checks passed unchanged. Synthetic compact/List/Table warning images were inspected; warnings share the main reference font and line breaks, Dismiss is compact, and Epic panels clear Back to top. CSS baseline remains 18 offenders/40 hooks; lint retains 104 warnings, zero errors, zero pin problems and the same two Settings findings. Dashboard 7,544, EpicBlock 406, uniqueOwners 26,608 and combined 34,152 are unchanged. Focused reviewer approval and the separate combined/cold-focus/operator/publication gates remain pending.
+
+
+Task 14 main sync (2026-10-15): fetched and merged origin/main `cfe5c435288a6adb3fa7e9eb9ba862a2b2509bbb` (four incoming Board status-update commits). Preserved both instruction-rule intents; generated dist was rebuilt from merged source. The 43 existing file-map paths and nine current amendment anchors passed the sweep. Full Node: 2,863 passed; Python structure/CSS: 14 passed; seven synthetic Chromium Board/link checks passed. The first browser launch was blocked by sandbox Mach-port permissions; the authorized external-sandbox rerun passed. Extraction lint remains 104 warnings, zero errors, zero pin problems and the same two unrelated Settings inventory findings. Measured dashboard 7,544 and EpicBlock 406 remain unchanged. Build passed; committed reproducibility is checked after the merge. Paused cold-focus work was preserved separately for an explicitly incomplete checkpoint. Task 14 and publication remain incomplete.
+
+
+Operator-requested incomplete checkpoint (2026-10-15): saved the paused cold-link focus correction after main sync `54ce45b7`. This is a checkpoint, not Task 14 completion or release acceptance. The correction removes unrelated alert-cohort blocking for issue targets within the existing timing limits. The focused 111 Node checks, full 2,867 Node tests and 14 Python structure/CSS checks pass again on this checkpoint source; npm build passes; early mounted scrolling passed, but the mounted one-highlight assertion has repeatedly observed zero animation starts and remains unresolved. No new cold browser diagnostic, timeout extension, assertion waiver or product remedy is authorized by this checkpoint. The operator chose manual inspection instead of the proposed diagnostic; that acceptance remains pending. Final full Chromium, live signed-in/private-window acceptance, final review/closeout and G3 publication remain open.
+
+Checkpoint lint result: unchanged 104 warnings, zero errors, zero pin problems and the same two GroupBoardSettings inventory findings (exit 1); no baseline fix or waiver. Dist is regenerated from checkpoint source, and committed reproducibility is checked after saving it.

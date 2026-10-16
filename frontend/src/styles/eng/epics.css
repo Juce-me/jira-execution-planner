@@ -109,6 +109,32 @@
             100% { background: transparent; }
         }
 
+        /* A shared-link reveal (the data-share-reveal attribute, no class hook) paints an overlay above the card's own backgrounds: held briefly, then a one-second fade. */
+        .epic-block[data-share-reveal],
+        .alert-team-group[data-share-reveal],
+        .eng-board .ecard[data-share-reveal] {
+            position: relative;
+        }
+
+        [data-share-reveal]:not(tr)::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            pointer-events: none;
+            z-index: var(--sticky-epic-z);
+            animation: shareViewReveal 1.6s ease-out;
+        }
+
+        @keyframes shareViewReveal {
+            0%, 35% { background: rgba(255, 200, 0, 0.5); box-shadow: inset 0 0 0 2px rgba(232, 163, 61, 0.9); }
+            100% { background: transparent; box-shadow: inset 0 0 0 2px transparent; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            [data-share-reveal]:not(tr)::after { animation: none; background: rgba(255, 200, 0, 0.35); }
+        }
+
         .epic-excluded {
             opacity: 0.55;
             transition: opacity 0.2s ease;
@@ -152,6 +178,13 @@
             flex: 1 1 auto;
             gap: 0.15rem;
             min-width: 0;
+        }
+
+        /* The copy action sits in this reserved gap on the key's left (see ShareViewButton). */
+        @media (min-width: 761px) {
+            .epic-title-row:has([data-share-key-slot]) .epic-key {
+                margin-left: 30px;
+            }
         }
 
         .epic-title-row {
@@ -515,4 +548,26 @@
             overflow: hidden;
             clip: rect(0, 0, 0, 0);
             white-space: nowrap;
+        }
+
+        /* On narrow screens a header without the Planning capacity toggle keeps its full title width: the action leaves the title row for
+           the corner column under Refresh. Planning headers keep it in the row, which already reserves the Refresh lane above. */
+        @media (max-width: 760px) {
+            .epic-header:not(:has(.epic-stat-toggle)) .epic-title-row > [data-share-view="epic"] {
+                position: absolute;
+                top: 36px;
+                right: 0;
+            }
+
+            .epic-header:not(:has(.epic-stat-toggle)):has([data-share-view="epic"]) .epic-meta {
+                padding-right: 30px;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header:has([data-share-view="epic"]):has(.epic-stat-toggle) .epic-title-row {
+                gap: 0.15rem;
+            }
+
+            .epic-header:has([data-share-view="epic"]) .epic-stat-toggle {
+                margin-left: 0;
+            }
         }

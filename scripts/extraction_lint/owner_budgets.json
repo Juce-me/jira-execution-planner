@@ -19,8 +19,8 @@
   },
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
-    "lineCount": 7485,
-    "lineCeiling": 7485
+    "lineCount": 7554,
+    "lineCeiling": 7554
   },
   "modules": [
     {
@@ -18564,8 +18564,8 @@
       "exports": [
         "EpicBlock"
       ],
-      "lineCount": 404,
-      "lineCeiling": 404,
+      "lineCount": 406,
+      "lineCeiling": 406,
       "interfaces": [
         {
           "exportName": "EpicBlock",
@@ -18614,6 +18614,7 @@
             "projectTrackTransitionActiveKey",
             "projectTrackTransitionEnabled",
             "removeTask",
+            "renderEpicShareControl",
             "renderPriorityIcon",
             "retryStorySubtasks",
             "selectedTasks",
@@ -18731,6 +18732,7 @@
             "projectTrackTransitionActiveKey",
             "projectTrackTransitionEnabled",
             "removeTask",
+            "renderEpicShareControl",
             "renderPriorityIcon",
             "retryStorySubtasks",
             "selectedTasks",
@@ -18758,13 +18760,13 @@
             "transitionResult"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 117,
+          "expandedInputCount": 118,
           "returnCount": 0,
-          "propCount": 65,
+          "propCount": 66,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 117,
+          "expandedInputCeiling": 118,
           "returnCeiling": 0,
-          "propCeiling": 65,
+          "propCeiling": 66,
           "unresolved": [
             "bag epicGroup member alias epicInfo",
             "forwarded input epicGroup",
@@ -18776,7 +18778,7 @@
           ],
           "inventory": {
             "source": "frontend/src/eng/EpicBlock.jsx:14",
-            "sourceDigest": "24c0a39c507efb65c6adf60f7e12fac16360d85167290b82bd083290b8a9a7e8",
+            "sourceDigest": "fa623383856a17f0f74f732ba15886a5553bd2ffc15c70f87ab0b442481121e6",
             "reviewed": true,
             "memberNames": [
               "canEditSharedConfiguration",
@@ -18871,6 +18873,7 @@
               "projectTrackTransitionActiveKey",
               "projectTrackTransitionEnabled",
               "removeTask",
+              "renderEpicShareControl",
               "renderPriorityIcon",
               "retryStorySubtasks",
               "selectedTasks",
@@ -18897,13 +18900,13 @@
               "transitionOptionsLoading",
               "transitionResult"
             ],
-            "rationale": "epicInfo aliases epicGroup.epic; status/priority accept their existing string-or-name-object forms and person values expose existing displayName. Rows/tasks remain synthetic-or-loaded hierarchy records passed unchanged to StoryRequirementCard/IssueCard. epicRefresh.epicStates is indexed only by epicGroup.key; leavingKeys.has uses task.key and refreshEpic remains the current callback. selectedTasks and storySubtasksByKey retain task-key indexing. Every App binding is passed explicitly in the frozen 65-binding ledger; epicBlockProps is initialized after epicRefresh before render, while its retained renderer invokes it only later. No getter or state ownership changes."
+            "rationale": "epicInfo aliases epicGroup.epic; status/priority accept their existing string-or-name-object forms and person values expose existing displayName. Rows/tasks remain synthetic-or-loaded hierarchy records passed unchanged to StoryRequirementCard/IssueCard. epicRefresh.epicStates is indexed only by epicGroup.key; leavingKeys.has uses task.key and refreshEpic remains the current callback. selectedTasks and storySubtasksByKey retain task-key indexing. Every App binding is passed explicitly in the 66-binding ledger; epicBlockProps is initialized after epicRefresh before render, while its retained renderer invokes it only later. No getter or state ownership changes. Issue #194 adds renderEpicShareControl, invoked only for the row Epic key; it owns no data or clipboard behavior."
           },
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "EpicBlock",
-              "line": 5890,
+              "line": 5833,
               "phase": "render"
             }
           ],
@@ -19147,16 +19150,16 @@
       "ceiling": 2792
     },
     "eng": {
-      "measured": 1785,
-      "ceiling": 1785
+      "measured": 1787,
+      "ceiling": 1787
     },
     "uniqueOwners": {
-      "measured": 26606,
-      "ceiling": 26606
+      "measured": 26608,
+      "ceiling": 26608
     },
     "appPlusOwners": {
-      "measured": 34091,
-      "ceiling": 34091
+      "measured": 34162,
+      "ceiling": 34162
     }
   },
   "transfer": {

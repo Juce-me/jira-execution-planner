@@ -108,6 +108,61 @@ class TestLoggingMigration(unittest.TestCase):
         self.assertNotIn('state-secret', output)
         self.assertNotIn('code-secret', output)
 
+    @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
+    def test_werkzeug_logs_redact_share_view_link_query(self):
+        werkzeug_logger = logging.getLogger('werkzeug')
+        request_lines = (
+            'GET /?v=1&mode=board&find=secret-text HTTP/1.1',
+            'GET /jira-dashboard.html?v=1&mode=board&find=secret-text HTTP/1.1',
+            'HEAD /?v=1&find=say%20"hi"%20secret-text HTTP/1.1',
+        )
+
+        for request_line in request_lines:
+            with self.subTest(request_line=request_line):
+                with self.assertLogs('werkzeug', level='INFO') as captured:
+                    werkzeug_logger.info('127.0.0.1 - - [14/Oct/2026 12:00:00] "%s" 200 -', request_line)
+
+                output = '\n'.join(captured.output)
+                self.assertRegex(output, r'"(GET|HEAD) /(jira-dashboard\.html)?\?\[redacted\] HTTP/1\.1" 200 -')
+                self.assertNotIn('secret-text', output)
+                self.assertNotIn('mode=board', output)
+
+    @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
+    def test_development_server_request_line_for_a_share_view_link_is_redacted(self):
+        # Werkzeug decodes %22 to a literal quote in the logged path, so the redaction must not stop at one.
+        from werkzeug.serving import WSGIRequestHandler
+
+        handler = WSGIRequestHandler.__new__(WSGIRequestHandler)
+        handler.client_address = ('127.0.0.1', 50000)
+        handler.command = 'GET'
+        handler.request_version = 'HTTP/1.1'
+        handler.path = '/?v=1&mode=board&find=say%20%22hi%22%20secret-text'
+
+        with self.assertLogs('werkzeug', level='INFO') as captured:
+            handler.log_request(200, 512)
+
+        output = '\n'.join(captured.output)
+        self.assertIn('"GET /?[redacted] HTTP/1.1" 200 512', output)
+        self.assertNotIn('secret-text', output)
+
+    @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
+    def test_werkzeug_logs_keep_ordinary_dashboard_requests_readable(self):
+        werkzeug_logger = logging.getLogger('werkzeug')
+        request_lines = (
+            'GET / HTTP/1.1',
+            'GET /?perf=1 HTTP/1.1',
+            'GET /?mode=board&v=1 HTTP/1.1',
+            'GET /api/tasks/?v=1 HTTP/1.1',
+            'GET /frontend/dist/dashboard.js?v=1 HTTP/1.1',
+        )
+
+        for request_line in request_lines:
+            with self.subTest(request_line=request_line):
+                with self.assertLogs('werkzeug', level='INFO') as captured:
+                    werkzeug_logger.info('127.0.0.1 - - [14/Oct/2026 12:00:00] "%s" 200 -', request_line)
+
+                self.assertIn('"%s" 200 -' % request_line, '\n'.join(captured.output))
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -22,6 +22,7 @@ export default function EngAlertsPanel({
     setShowAlertsPanel,
     collapsed,
     alertProps = {},
+    renderAlertShareControl,
 }) {
     const {
         analysisEpicTeams,
@@ -211,8 +212,9 @@ export default function EngAlertsPanel({
                                                         const keys = group.items.map(item => item.task.key);
                                                         const teamLink = buildKeyListLink(keys);
                                                         return (
-                                                            <div key={group.id} className="alert-team-group">
+                                                            <div key={group.id} className="alert-team-group" data-alert-team={group.id}>
                                                                 <div className="alert-team-header">
+                                                                    {renderAlertShareControl?.('missing', group)}
                                                                     {teamLink ? (
                                                                         <a
                                                                             className="alert-team-link"
@@ -320,8 +322,9 @@ export default function EngAlertsPanel({
                                                         const keys = group.items.map(item => item.key);
                                                         const teamLink = buildKeyListLink(keys, { addSprint: true });
                                                         return (
-                                                            <div key={group.id} className="alert-team-group">
+                                                            <div key={group.id} className="alert-team-group" data-alert-team={group.id}>
                                                                 <div className="alert-team-header">
+                                                                    {renderAlertShareControl?.('blocked', group)}
                                                                     {teamLink ? (
                                                                         <a
                                                                             className="alert-team-link"
@@ -419,8 +422,9 @@ export default function EngAlertsPanel({
                                                         const keys = group.items.map(item => item.key);
                                                         const teamLink = buildKeyListLink(keys, { addSprint: true });
                                                         return (
-                                                            <div key={group.id} className="alert-team-group">
+                                                            <div key={group.id} className="alert-team-group" data-alert-team={group.id}>
                                                                 <div className="alert-team-header">
+                                                                    {renderAlertShareControl?.('followup', group)}
                                                                     {teamLink ? (
                                                                         <a
                                                                             className="alert-team-link"
@@ -497,8 +501,9 @@ export default function EngAlertsPanel({
                                                         <>
                                                             <div className="alert-section-title">Epics with only future-sprint stories</div>
                                                             {postponedEpicTeams.map(group => (
-                                                                <div key={`future-epic-${group.id}`} className="alert-team-group">
+                                                                <div key={`future-epic-${group.id}`} className="alert-team-group" data-alert-team={group.id} data-alert-kind="epic">
                                                                     <div className="alert-team-header">
+                                                                        {renderAlertShareControl?.('followupEpics', group)}
                                                                         {jiraUrl ? (
                                                                             <a
                                                                                 className="alert-team-link"
@@ -594,8 +599,9 @@ export default function EngAlertsPanel({
                                                         const keys = group.items.map(item => item.key);
                                                         const teamLink = buildKeyListLink(keys);
                                                         return (
-                                                            <div key={`backlog-${group.id}`} className="alert-team-group">
+                                                            <div key={`backlog-${group.id}`} className="alert-team-group" data-alert-team={group.id}>
                                                                 <div className="alert-team-header">
+                                                                    {renderAlertShareControl?.('backlog', group)}
                                                                     {teamLink ? (
                                                                         <a className="alert-team-link" href={teamLink} target="_blank" rel="noopener noreferrer">
                                                                             <span className="alert-pill team">{group.name}</span>
@@ -651,8 +657,9 @@ export default function EngAlertsPanel({
                                                         const keys = group.items.map(item => item.key);
                                                         const teamLink = buildKeyListLink(keys);
                                                         return (
-                                                            <div key={`missing-team-${group.id}`} className="alert-team-group">
+                                                            <div key={`missing-team-${group.id}`} className="alert-team-group" data-alert-team={group.id}>
                                                                 <div className="alert-team-header">
+                                                                    {renderAlertShareControl?.('missingTeam', group)}
                                                                     {teamLink ? (
                                                                         <a className="alert-team-link" href={teamLink} target="_blank" rel="noopener noreferrer">
                                                                             <span className="alert-pill team">{group.name}</span>
@@ -703,8 +710,9 @@ export default function EngAlertsPanel({
                                                         const keys = group.items.map(item => item.key);
                                                         const teamLink = buildKeyListLink(keys);
                                                         return (
-                                                            <div key={`missing-labels-${group.id}`} className="alert-team-group">
+                                                            <div key={`missing-labels-${group.id}`} className="alert-team-group" data-alert-team={group.id}>
                                                                 <div className="alert-team-header">
+                                                                    {renderAlertShareControl?.('missingLabels', group)}
                                                                     {teamLink ? (
                                                                         <a className="alert-team-link" href={teamLink} target="_blank" rel="noopener noreferrer">
                                                                             <span className="alert-pill team">{group.name}</span>
@@ -754,8 +762,9 @@ export default function EngAlertsPanel({
                                                     {needsStoriesTeams.map(group => {
                                                         const teamLink = buildKeyListLink(group.items.map(entry => entry.epic.key));
                                                         return (
-                                                            <div key={`needs-stories-${group.id}`} className="alert-team-group">
+                                                            <div key={`needs-stories-${group.id}`} className="alert-team-group" data-alert-team={group.id}>
                                                                 <div className="alert-team-header">
+                                                                    {renderAlertShareControl?.('needsStories', group)}
                                                                     {teamLink ? (
                                                                         <a className="alert-team-link" href={teamLink} target="_blank" rel="noopener noreferrer">
                                                                             <span className="alert-pill team">{group.name}</span>
@@ -816,8 +825,9 @@ export default function EngAlertsPanel({
                                                         const keys = group.items.map(item => item.key);
                                                         const teamLink = buildKeyListLink(keys);
                                                         return (
-                                                            <div key={group.id} className="alert-team-group">
+                                                            <div key={group.id} className="alert-team-group" data-alert-team={group.id}>
                                                                 <div className="alert-team-header">
+                                                                    {renderAlertShareControl?.('waiting', group)}
                                                                     {teamLink ? (
                                                                         <a
                                                                             className="alert-team-link"
@@ -929,8 +939,9 @@ export default function EngAlertsPanel({
                                                         const keys = group.items.map(item => item.key);
                                                         const teamLink = buildKeyListLink(keys);
                                                         return (
-                                                            <div key={group.id} className="alert-team-group">
+                                                            <div key={group.id} className="alert-team-group" data-alert-team={group.id}>
                                                                 <div className="alert-team-header">
+                                                                    {renderAlertShareControl?.('empty', group)}
                                                                     {teamLink ? (
                                                                         <a
                                                                             className="alert-team-link"
@@ -1043,8 +1054,9 @@ export default function EngAlertsPanel({
                                                         const keys = group.items.map(item => item.key);
                                                         const teamLink = buildKeyListLink(keys);
                                                         return (
-                                                            <div key={group.id} className="alert-team-group">
+                                                            <div key={group.id} className="alert-team-group" data-alert-team={group.id}>
                                                                 <div className="alert-team-header">
+                                                                    {renderAlertShareControl?.('done', group)}
                                                                     {teamLink ? (
                                                                         <a
                                                                             className="alert-team-link"

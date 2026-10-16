@@ -1,5 +1,6 @@
 import threading
 import time
+from unittest.mock import patch
 
 from flask import session
 
@@ -42,6 +43,20 @@ def install_oauth_session(client, session_id="session-1", **overrides):
                 flask_session["db_oauth_session"]["db_token_version"] = token_version
     jira_server.OAUTH_TOKEN_STORE[session_id] = oauth_session_payload(**overrides)
     jira_server.OAUTH_REFRESH_LOCKS.setdefault(session_id, threading.Lock())
+
+
+def forbid_jira_http(testcase):
+    """Fail the test if the flow under test reaches Jira: no current_jira_request and no HTTP verb."""
+    for target, name in (
+        (jira_server, "current_jira_request"),
+        (jira_server.HTTP_SESSION, "post"),
+        (jira_server.HTTP_SESSION, "put"),
+        (jira_server.HTTP_SESSION, "delete"),
+        (jira_server.HTTP_SESSION, "request"),
+    ):
+        patcher = patch.object(target, name, side_effect=AssertionError(f"{name} must not be called"))
+        patcher.start()
+        testcase.addCleanup(patcher.stop)
 
 
 def push_oauth_request(app, path="/", session_id="session-1", **overrides):

@@ -27,7 +27,8 @@ state scoped to the selected sprint, team group, view, and EPM project scope.
   - Uses credentialed CORS with explicit allowed origins.
 - Extracted backend routes:
   - `backend/routes/auth_routes.py` for Atlassian OAuth, session recovery, CSRF,
-    and auth status.
+    and auth status. The OAuth return carries a shared view link's query through
+    the login hop via `backend/auth/share_view_stash.py`.
   - `backend/routes/settings_routes.py` for config, sprint, Jira catalog, board,
     field, issue-type, priority-weight, and selected-project APIs.
   - `backend/routes/eng_routes.py` for ENG task loading, dependencies, missing
@@ -47,6 +48,10 @@ state scoped to the selected sprint, team group, view, and EPM project scope.
   - HTML-first shell that loads `/frontend/dist/dashboard.css` and
     `frontend/dist/dashboard.js` (an ES module entry, `#dashboard-entry`).
   - Includes a small auth-refresh script before the bundled app.
+- Shareable view links: `frontend/src/shareView/` holds the link codec, the
+  recipient resolver, the pre-mount URL entry and store, the staged apply
+  machine and hook, focus capture and reveal, and the Share control. The design
+  is `docs/plans/SUPPORT-shareable-view-links-design-194.md`.
 - Frontend source: `frontend/src/dashboard.jsx`
   - Large React app shell that still owns cross-view state and orchestration.
   - Imports extracted feature modules from `api/`, `eng/`, `epm/`, `settings/`,

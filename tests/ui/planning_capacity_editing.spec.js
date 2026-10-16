@@ -1119,6 +1119,19 @@ test('hoverless touch keeps the capacity Jira and pencil controls visible and op
         await card.evaluate(node => {
             window.scrollTo(0, Math.max(0, window.scrollY + node.getBoundingClientRect().top - 160));
         });
+        await expect(touchPage.locator('.compact-sticky-header')).toHaveClass(/is-visible/);
+        await card.getByRole('button', { name: 'Edit Alpha capacity' }).evaluate(node => new Promise(resolve => {
+            let previous = '';
+            let stableFrames = 0;
+            const sample = () => {
+                const rect = node.getBoundingClientRect();
+                const current = JSON.stringify([rect.x, rect.y, rect.width, rect.height, window.scrollY]);
+                stableFrames = current === previous ? stableFrames + 1 : 0;
+                previous = current;
+                if (stableFrames >= 3) resolve(); else requestAnimationFrame(sample);
+            };
+            requestAnimationFrame(sample);
+        }));
         await card.getByRole('button', { name: 'Edit Alpha capacity' }).tap({ timeout: 5000 });
         await expect(card.getByRole('spinbutton', { name: 'Alpha Jira total planned capacity' })).toBeFocused();
         await expect(touchPage.locator('.team-capacity-action-rail')).toHaveCount(0);

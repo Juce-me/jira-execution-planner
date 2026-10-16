@@ -999,6 +999,18 @@ test('the page scrolls to a moved row only when it would be off-screen, never af
     await confirmAndProbe(page, ['DEMO-60']);
     await expect.poll(() => visible('DEMO-60')).toBe(true);
     expect(await page.evaluate(() => window.scrollY), 'the page moved up to the row').toBeLessThan(before);
+    // Visibility can become true before the prior smooth reveal finishes; settle it before the independent user-scroll case.
+    await page.evaluate(() => new Promise(resolve => {
+        let previous = window.scrollY;
+        let stableFrames = 0;
+        const sample = () => {
+            const current = window.scrollY;
+            stableFrames = current === previous ? stableFrames + 1 : 0;
+            previous = current;
+            if (stableFrames >= 3) resolve(); else requestAnimationFrame(sample);
+        };
+        requestAnimationFrame(sample);
+    }));
 
     // The user scrolled since the click: the row blinks but the page stays where the user left it.
     await page.evaluate(() => { window.scrollTo(0, document.body.scrollHeight); window.priorityEdit.start('DEMO-59', 'Highest'); });

@@ -130,6 +130,7 @@ Required tests after the gate passes:
 
 ## Last Check Notes
 
+- 2026-10-13: Shareable view links (issue #194) design sweep found none of the four required Home-write probe inputs and no approved disposable Home project. No mutation probe ran; the design changes only the OAuth login return path and ENG view state, adds no Home/Townsquare route or mutation, and does not depend on this gate. Keep blocked with `FAIL insufficient_home_write_probe_input`; the next review stays 2026-10-19.
 - 2026-09-30: Per-epic refresh (issue #213) execution baseline sweep found none of the four required Home-write probe inputs and no approved disposable Home project. No mutation probe ran; the feature is read-only Jira epic and story refresh under the signed-in user's OAuth context and adds no Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-09-23: Candidate-sprint-label execution found none of the four required Home-write probe inputs and no approved disposable Home project. No mutation probe ran; this implementation changes read-only Jira Epic discovery and client classification only. Keep blocked with `FAIL insufficient_home_write_probe_input`.
 - 2026-09-21: Persistent Sprint/Team catalog Task 0 baseline review found none of the

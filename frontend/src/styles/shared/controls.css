@@ -90,7 +90,9 @@
             padding: 0.4rem 0.9rem;
         }
 
-        .header-actions-row button.header-icon-button {
+        .header-actions-row button.header-icon-button,
+        .compact-sticky-header button.header-icon-button,
+        [data-share-view="epic"] > button.header-icon-button {
             width: var(--control-height);
             min-width: var(--control-height);
             height: var(--control-height);
@@ -114,11 +116,29 @@
             }
         }
 
-        .header-actions-row button.header-icon-button svg {
+        .header-actions-row button.header-icon-button svg,
+        .compact-sticky-header button.header-icon-button svg,
+        [data-share-view="epic"] > button.header-icon-button svg {
             width: 18px;
             min-width: 18px;
             height: 18px;
             flex: none;
+        }
+
+        /* Feedback reuses the export menu for a manual URL and export toast for real warnings.
+           Keep header placement tied to its existing positioned ancestor and bound it to the viewport. */
+        [data-share-view] > :is(.jira-export-menu, .jira-export-toast) {
+            width: min(18rem, 100%);
+            min-width: 0;
+            margin: 0;
+        }
+
+        [data-share-view] > :is(.jira-export-menu, .jira-export-toast) > p {
+            margin: 0;
+        }
+
+        [data-share-view] > :is(.jira-export-menu, .jira-export-toast) > button {
+            margin: 0;
         }
 
         .secondary.compact {
@@ -603,6 +623,11 @@
                 --sprint-dropdown-max-width: calc(100vw - 4rem);
             }
 
+            [data-stats-range] .sprint-dropdown-panel {
+                /* A long trigger must not override the panel's viewport width limit. */
+                min-width: min(100%, var(--sprint-dropdown-max-width));
+            }
+
             /* The ENG mode switch carries five options at 416px and its controls row is 342px at
                a 390px viewport, so without this the document itself scrolls sideways (MRT020's
                guard, at eng_compact_layout_visual.spec.js "ENG epic rows stay readable on narrow
@@ -655,4 +680,80 @@
             .compact-sticky-header .eng-mode-control .segmented-control-button {
                 flex-shrink: 0;
             }
+        }
+
+        /* Reuse the header control at the shared small IconButton size. Its reserved slot never moves on discovery. */
+        [data-share-view="epic"] {
+            --control-height: 24px;
+            position: relative;
+            display: inline-flex;
+            flex: 0 0 24px;
+            align-items: center;
+        }
+
+        /* A Planning table row is 32px tall: the action fits its content box instead of growing the row. */
+        .planning-review-table [data-share-view="epic"] {
+            --control-height: 20px;
+            flex-basis: 20px;
+        }
+
+        [data-share-view="epic"] > button {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .epic-header:hover [data-share-view="epic"] > button,
+        .epic-header:focus-within [data-share-view="epic"] > button,
+        .ecard:hover [data-share-view="epic"] > button,
+        .ecard:focus-within [data-share-view="epic"] > button,
+        .alert-team-group:hover [data-share-view="epic"] > button,
+        .alert-team-group:focus-within [data-share-view="epic"] > button,
+        .planning-review-table tr:hover [data-share-view="epic"] > button,
+        .planning-review-table tr:focus-within [data-share-view="epic"] > button,
+        [data-share-view="epic"][data-share-feedback="active"] > button {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        /* Beside an Epic key the action is shifted left of the key (measured in ShareViewButton) and takes no layout width of its own.
+           Below the desktop breakpoint the title row is too tight to reserve the gap, so the action keeps its place after the key. */
+        @media (min-width: 761px) {
+            .epic-title-row > [data-share-view="epic"][data-share-key-slot] {
+                flex: 0 0 0;
+                width: 0;
+            }
+
+            .epic-title-row > [data-share-view="epic"][data-share-key-slot] > button {
+                position: relative;
+                left: var(--share-key-shift, 0px);
+            }
+        }
+
+        /* On a Board card the action is a sibling of the native card trigger: it sits in the gap the key reserves, on the title row. */
+        .eng-board .ecard > [data-share-view="epic"] {
+            position: absolute;
+            top: calc(0.6rem - 2px);
+            left: var(--share-key-left, calc(100% - 0.7rem - 24px));
+            z-index: 1;
+        }
+
+        .alert-team-header > [data-share-view="epic"] {
+            order: 1;
+            margin-left: auto;
+        }
+
+        @media (hover: none), (pointer: coarse) {
+            [data-share-view="epic"] > button {
+                opacity: 1;
+                pointer-events: auto;
+            }
+        }
+
+        [data-share-view="epic"] > :is(.jira-export-menu, .jira-export-toast) {
+            position: fixed;
+            top: auto;
+            /* Clear the existing Back to top footprint without changing its sticky layer. */
+            bottom: calc(2rem + var(--control-height));
+            right: 1rem;
+            width: min(18rem, calc(100vw - 2rem));
         }

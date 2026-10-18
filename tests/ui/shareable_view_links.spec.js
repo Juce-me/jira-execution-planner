@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
-const { installDashboardShell } = require('./epm_home_token_fixture');
+const { installDashboardShell, activeHomeTokenConnection } = require('./epm_home_token_fixture');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
@@ -833,10 +833,10 @@ for (const [name, prefs] of [
 }
 
 // Real dashboard cold-focus regression. Only synthetic API members are held; the controller/reveal run unchanged.
-async function coldFocus(page, { alerts = null } = {}) {
+async function coldFocus(page, { alerts = null, homeToken } = {}) {
     const missing = deferred();
     const tasks = deferred();
-    const calls = await installLinkFixture(page, { analytics: ANALYTICS_ENABLED, taskGate: tasks, coldAlerts: { missing, alerts } });
+    const calls = await installLinkFixture(page, { analytics: ANALYTICS_ENABLED, taskGate: tasks, coldAlerts: { missing, alerts }, homeToken });
     await page.addInitScript(() => {
         if (window.__coldScrolls) return;
         const scrollTo = window.scrollTo.bind(window);
@@ -911,12 +911,21 @@ test('cold focus reached before the running bound succeeds and never scrolls aft
     expect((await applyEvents(page)).map(event => event.result)).toEqual(['success']);
 });
 
-test('cold alignment stops on trusted input or a changed scope', async ({ page }) => {
-    test.setTimeout(60000);
-    for (const interruption of ['wheel', 'pointer', 'key', 'sprint', 'group', 'mode', 'surface', 'recovery', 'auth']) {
-        const { missing, calls } = await coldFocus(page);
+for (const interruption of ['wheel', 'pointer', 'key', 'sprint', 'group', 'mode', 'surface', 'recovery', 'auth']) {
+    test(`cold alignment stops on trusted input or a changed scope (${interruption})`, async ({ page }) => {
+        // A surface departure needs an available destination; disconnected EPM is restored to ENG by the App.
+        const homeToken = interruption === 'surface' ? activeHomeTokenConnection() : undefined;
+        const { missing, calls } = await coldFocus(page, { homeToken });
         await expect.poll(() => page.evaluate(() => scrollY), { timeout: 3000 }).toBeGreaterThan(500);
         await expectColdLanding(page);
+        await expect.poll(() => calls.some(call => call.pathname === '/api/missing-info')).toBe(true);
+        const readAppliedState = () => page.evaluate(() => {
+            const { selectedView, activeEngMode, activeGroupId, selectedSprint, selectedTeams, searchQuery, engEpicSort, planningLayout } = window.__shareViewOptions;
+            return { selectedView, activeEngMode, activeGroupId, selectedSprint, selectedTeams, searchQuery, engEpicSort, planningLayout };
+        });
+        const applied = await readAppliedState();
+        expect(await shareState(page)).toMatchObject({ terminal: false });
+        if (interruption === 'surface') await expect(page.getByRole('radiogroup', { name: 'Dashboard view' }).getByRole('radio', { name: 'EPM', exact: true })).toHaveAttribute('aria-checked', 'false');
         if (interruption === 'wheel') { await page.mouse.move(900, 600); await page.mouse.wheel(0, 400); }
         else if (interruption === 'pointer') await page.mouse.click(1000, 600);
         else if (interruption === 'key') await page.keyboard.press('ArrowDown');
@@ -932,19 +941,32 @@ test('cold alignment stops on trusted input or a changed scope', async ({ page }
                 window.dispatchEvent(new CustomEvent('jep:authentication-required', { detail: window.__JEP_AUTH_REQUIRED__ }));
             }
         }, interruption);
+        if (interruption === 'surface') await expect(page.getByRole('radiogroup', { name: 'Dashboard view' }).getByRole('radio', { name: 'EPM', exact: true })).toHaveAttribute('aria-checked', 'true');
         await expect.poll(() => shareState(page).then(value => value?.terminal)).toBe(true);
+        const expected = { ...applied,
+            ...(interruption === 'sprint' ? { selectedSprint: 42 } : {}),
+            ...(interruption === 'group' ? { activeGroupId: 'grp-b' } : {}),
+            ...(interruption === 'mode' ? { activeEngMode: 'planning' } : {}),
+            ...(interruption === 'surface' ? { selectedView: 'epm' } : {}),
+        };
+        expect(await readAppliedState()).toEqual(expected);
+        const prefs = await readPrefs(page);
         await page.waitForTimeout(100);
         const scrolls = await page.evaluate(() => window.__coldScrolls.length);
         missing.resolve();
+        await expect.poll(() => calls.some(call => call.pathname === '/api/missing-info' && call.completed)).toBe(true);
         await page.waitForTimeout(600);
         expect(await page.evaluate(() => window.__coldScrolls.length), interruption).toBe(scrolls);
+        expect(await shareState(page)).toMatchObject({ terminal: true });
+        expect(await readAppliedState()).toEqual(expected);
+        expect(await readPrefs(page)).toEqual(prefs);
         expect(mutatingCalls(calls), interruption).toEqual([]);
+        expect((await applyEvents(page)).map(event => event.result)).toEqual([interruption === 'auth' ? 'rejected' : 'success']);
         if (interruption === 'auth') {
-            expect((await applyEvents(page)).map(event => event.result)).toEqual(['rejected']);
             expect(await page.evaluate(() => window.__JEP_AUTH_REQUIRED__.locked)).toBe(true);
         }
-    }
-});
+    });
+}
 
 test('cold content beyond cleanup records native anchoring without scripted correction', async ({ page }, testInfo) => {
     test.setTimeout(35000);

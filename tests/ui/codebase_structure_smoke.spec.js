@@ -957,15 +957,16 @@ async function installApiMocks(page, calls, options = {}) {
             });
         }
         if (url.pathname === '/api/projects/selected') return json({ selected: [] });
+        // The saved name directory warms at bootstrap; live membership remains Settings-only.
+        if (url.pathname === '/api/team-catalog') return json({
+            catalog: {
+                'team-alpha': { id: 'team-alpha', name: 'Alpha Team' },
+                'team-beta': { id: 'team-beta', name: 'Beta Team' },
+            },
+            meta: { updatedAt: '2026-09-02T09:00:00Z', sprintId: String(selectedSprintId), source: 'sprint' },
+        });
         if (options.allowSettingsModalLookups) {
             if (url.pathname === '/api/projects') return json({ projects: [] });
-            if (url.pathname === '/api/team-catalog') return json({
-                catalog: {
-                    'team-alpha': { id: 'team-alpha', name: 'Alpha Team' },
-                    'team-beta': { id: 'team-beta', name: 'Beta Team' },
-                },
-                meta: { updatedAt: '2026-09-02T09:00:00Z', sprintId: String(selectedSprintId), source: 'sprint' },
-            });
             if (url.pathname === '/api/fields') return json({ fields: [] });
             // Settings open validates Sprint Team membership via GET /api/teams since #196 (11c18401).
             if (url.pathname === '/api/teams') return json({
@@ -2833,12 +2834,12 @@ for (const width of [1280, 375]) test(`Project Track hides duplicate totals for 
     // Two selected teams still need a summary, even when only one has Story Points.
     const teams = page.locator('.view-selector .team-dropdown').first();
     await teams.locator('.team-dropdown-toggle').click();
-    await teams.getByRole('checkbox', { name: 'team-beta', exact: true }).check();
+    await teams.getByRole('checkbox', { name: 'Beta Team', exact: true }).check();
     await teams.locator('.team-dropdown-toggle').click();
     await expect(statsView.locator('.project-track-totals .stacked-bar-row-total')).toHaveText('5 SP');
     await expect(byTeamCard.locator('.stacked-bar-row')).toHaveCount(1);
     await teams.locator('.team-dropdown-toggle').click();
-    await teams.getByRole('checkbox', { name: 'team-beta', exact: true }).uncheck();
+    await teams.getByRole('checkbox', { name: 'Beta Team', exact: true }).uncheck();
     await teams.locator('.team-dropdown-toggle').click();
     await expect(statsView.locator('.project-track-totals')).toHaveCount(0);
 
@@ -3428,7 +3429,7 @@ test('multiple groups keep the main controls on one row and settings beside refr
     expect(apiMocks.unexpectedCalls).toEqual([]);
 });
 
-test('settings modal lookup mocks require explicit opt-in', async ({ page }) => {
+test('Settings-only lookup mocks require opt-in while the Team directory is available at startup', async ({ page }) => {
     const calls = [];
     const apiMocks = await installApiMocks(page, calls);
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
@@ -3442,10 +3443,9 @@ test('settings modal lookup mocks require explicit opt-in', async ({ page }) => 
         return statuses;
     });
 
-    expect(statuses).toEqual([500, 500, 500]);
+    expect(statuses).toEqual([500, 200, 500]);
     expect(apiMocks.unexpectedCalls).toEqual([
         'GET /api/projects',
-        'GET /api/team-catalog',
         'GET /api/fields',
     ]);
 });
@@ -3863,7 +3863,12 @@ test('Statistics preserves per-mode cold-load request contracts and cached reope
         await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
         if (!['excludedCapacity', 'monoCrossShare', 'projectTrack'].includes(mode)) await waitForCallCount(calls, isTaskListRequest, 2);
         await settleContract(page);
-        expect(requestMultiset(calls)).toEqual(coldModeRequestContracts[mode].map(call => JSON.stringify(call)).sort());
+        // Extend the frozen ledger by exactly one cached directory read; no live Team discovery.
+        const expectedRequests = [...coldModeRequestContracts[mode], canonicalContract({
+            body: null, csrf: 'absent', method: 'GET', params: {},
+            pathname: '/api/team-catalog', requestedWith: null,
+        })];
+        expect(requestMultiset(calls)).toEqual(expectedRequests.map(call => JSON.stringify(call)).sort());
         const statsBeforeReopen = requestMultiset(calls.filter(call => call.pathname.startsWith('/api/stats/')));
         if (mode === 'burnout') {
             const tabs = page.locator('.view-selector .eng-mode-control');

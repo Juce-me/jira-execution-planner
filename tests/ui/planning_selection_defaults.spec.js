@@ -216,6 +216,7 @@ async function installPlanningFixture(page, {
             return json(route, groupsConfigPayload);
         }
         if (url.pathname === '/api/projects/selected') return json(route, { selected: [] });
+        if (url.pathname === '/api/team-catalog') return json(route, { catalog: {}, meta: {} });
         if (url.pathname === '/api/stats/priority-weights-config') return json(route, { weights: [], source: 'test' });
         if (url.pathname === '/api/sprints') {
             return json(route, {
@@ -450,6 +451,89 @@ async function planningCardLayout(page, key) {
         };
     });
 }
+
+test('Team selector uses saved names before tasks load and keeps them during Refresh', async ({ page }, testInfo) => {
+    const { calls, releaseConfig } = await installPlanningFixture(page, { delayConfig: true });
+    await page.addInitScript(() => {
+        const key = 'jira_dashboard_ui_prefs_v1';
+        localStorage.setItem(key, JSON.stringify({ ...JSON.parse(localStorage.getItem(key)), selectedTeams: ['team-alpha'] }));
+    });
+    let catalogReads = 0;
+    await page.route('**/api/team-catalog?*', route => {
+        catalogReads += 1;
+        return json(route, { catalog: { 'team-alpha': { id: 'team-alpha', name: 'Alpha Team' } }, meta: {} });
+    });
+    let releaseTasks;
+    let taskGate = new Promise(resolve => { releaseTasks = resolve; });
+    let pendingTasks = 0;
+    await page.route('**/api/tasks-with-team-name?*', async route => {
+        pendingTasks += 1;
+        await taskGate;
+        return route.fallback();
+    });
+    await page.goto(appBaseUrl);
+    await expectConfigBootstrapHoldsJiraWork(page, () => calls.map(call => call.pathname));
+    expect(catalogReads).toBe(0);
+    releaseConfig();
+    const toggle = page.locator('.team-dropdown-toggle').first();
+    const label = toggle.locator('.team-dropdown-selection-label');
+    await expect.poll(() => pendingTasks).toBeGreaterThan(0);
+    await expect(toggle).toBeVisible();
+    await expect(label).toHaveText('Alpha Team');
+    await page.screenshot({ path: testInfo.outputPath('team-selector-loading.png'), animations: 'disabled' });
+    expect(catalogReads).toBe(1);
+    expect(calls.filter(call => call.pathname === '/api/teams')).toHaveLength(0);
+
+    releaseTasks();
+    const refresh = page.getByRole('button', { name: 'Refresh tasks and sprints from Jira', exact: true });
+    await expect(refresh).toBeEnabled();
+    await expect(label).toHaveText('Alpha Team');
+    await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Planning', exact: true }).check();
+    taskGate = new Promise(resolve => { releaseTasks = resolve; });
+    const initialPending = pendingTasks;
+    await refresh.click();
+    await expect.poll(() => pendingTasks).toBeGreaterThan(initialPending);
+    await expect(label).toHaveText('Alpha Team');
+    await page.screenshot({ path: testInfo.outputPath('team-selector-refreshing.png'), animations: 'disabled' });
+    releaseTasks();
+    await expect(refresh).toBeEnabled();
+    await expect(label).toHaveText('Alpha Team');
+    await toggle.click();
+    await expect(page.locator('.team-dropdown-option', { hasText: 'Alpha Team' })).toBeVisible();
+});
+
+test('Team selector retains task-derived names when the directory contains only an ID placeholder', async ({ page }) => {
+    await installPlanningFixture(page);
+    let catalogReads = 0;
+    await page.route('**/api/team-catalog?*', route => {
+        catalogReads += 1;
+        return json(route, { catalog: { 'team-alpha': { id: 'team-alpha', name: 'team-alpha' } }, meta: {} });
+    });
+    await page.goto(appBaseUrl);
+    const toggle = page.locator('.team-dropdown-toggle').first();
+    const refresh = page.getByRole('button', { name: 'Refresh tasks and sprints from Jira', exact: true });
+    await expect(refresh).toBeEnabled();
+    await expect.poll(() => catalogReads).toBe(1);
+    await toggle.click();
+    await page.locator('.team-dropdown-option', { hasText: 'Alpha Team' }).locator('input').check();
+    await toggle.locator('input').press('Escape');
+    const label = toggle.locator('.team-dropdown-selection-label');
+    await expect(label).toHaveText('Alpha Team');
+    let releaseTasks;
+    const taskGate = new Promise(resolve => { releaseTasks = resolve; });
+    let pendingTasks = 0;
+    await page.route('**/api/tasks-with-team-name?*', async route => {
+        pendingTasks += 1;
+        await taskGate;
+        return route.fallback();
+    });
+    await refresh.click();
+    await expect.poll(() => pendingTasks).toBeGreaterThan(0);
+    await expect(label).toHaveText('Alpha Team');
+    releaseTasks();
+    await expect(refresh).toBeEnabled();
+    await expect(label).toHaveText('Alpha Team');
+});
 
 test('new future planning sprint defaults to all selected stories', async ({ page }) => {
     await installPlanningFixture(page);

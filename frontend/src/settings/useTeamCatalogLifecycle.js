@@ -63,6 +63,7 @@ export default function useTeamCatalogLifecycle({
     const lifecycleKeyRef = React.useRef(currentLifecycleKey);
     lifecycleKeyRef.current = currentLifecycleKey;
     const directoryReadGenerationRef = React.useRef(0);
+    const directoryBootstrappedRef = React.useRef(false);
     const hydrationInFlightRef = React.useRef(null);
 
     const retireMembershipOwner = React.useCallback((ownerKey = null) => {
@@ -387,14 +388,13 @@ export default function useTeamCatalogLifecycle({
     };
 
     React.useEffect(() => {
-        const modalGeneration = modalGenerationRef.current;
-        if (!showSettings) return undefined;
-        setTeamCatalogReady(false);
-        void loadTeamCatalog({ shouldApplyResult: () => modalGenerationRef.current === modalGeneration });
-        return () => {
-            retireMembershipOwner();
-        };
-    }, [showSettings]);
+        if (!showSettings && (!selectedSprintInfo || directoryBootstrappedRef.current)) return;
+        directoryBootstrappedRef.current = true;
+        // Names belong to the workspace, not the Settings modal or Sprint membership.
+        // Warm the persisted directory without waiting for task discovery.
+        if (showSettings) setTeamCatalogReady(false);
+        void loadTeamCatalog();
+    }, [selectedSprintInfo?.id, showSettings]);
 
     React.useEffect(() => {
         if (!showSettings) return undefined;

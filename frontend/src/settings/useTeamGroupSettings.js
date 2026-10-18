@@ -936,7 +936,7 @@ export function useTeamGroupSettings({
         generation: teamMembershipState.generation,
     }), [teamNameDirectory, teamMembershipState, configuredTeamIds]);
     const teamNameLookup = React.useMemo(() => Object.fromEntries(
-        availableTeams.map(team => [team.id, team.name || team.id])
+        availableTeams.filter(team => team.name && team.name !== team.id).map(team => [team.id, team.name])
     ), [availableTeams]);
 
     const resolveTeamName = (teamId) => {

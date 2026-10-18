@@ -13,7 +13,7 @@ const dashboardHtml = fs.readFileSync(path.join(repoRoot, 'jira-dashboard.html')
 const SHARE_LABEL = 'Copy view link';
 const DISMISS_MINIMUM_CONTRAST = 4.5;
 const SYNTHETIC_URL = 'http://127.0.0.1:5050/?v=1&mode=catch-up&group=synthetic-group&sprint=3001';
-const APP_URL_PREFIX = /^http:\/\/127\.0\.0\.1:5050\/\?v=1&mode=catch-up&group=group-alpha&sprint=3001(&|$)/;
+const APP_URL_PREFIX = new RegExp(`^${appBaseUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/\\?v=1&mode=catch-up&group=group-alpha&sprint=3001(&|$)`);
 
 let harnessHtml;
 
@@ -641,7 +641,7 @@ test.describe('Share control: in the app', () => {
     test('an opened link that cannot be applied shows its notice under the control, and Dismiss closes it', async ({ page }) => {
         await mockDashboard(page);
         // The shared fixture routes `/` with a pattern that never matches a URL with a query.
-        await page.route(/^http:\/\/127\.0\.0\.1:5050\/\?v=1&/, route => route.fulfill({ status: 200, contentType: 'text/html', body: dashboardHtml }));
+        await page.route(url => url.href.startsWith(`${appBaseUrl}/?v=1&`), route => route.fulfill({ status: 200, contentType: 'text/html', body: dashboardHtml }));
         await page.setViewportSize({ width: 1440, height: 900 });
         await page.goto(`${appBaseUrl}/?v=1&mode=catch-up&group=missing-group&sprint=3001`);
         const notice = shareNotice(page, 'main');

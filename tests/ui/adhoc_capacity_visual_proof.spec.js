@@ -192,6 +192,7 @@ async function installApiMocks(page, calls) {
             });
         }
         if (url.pathname === '/api/projects/selected') return json(route, { selected: [] });
+        if (url.pathname === '/api/team-catalog') return json(route, { catalog: {}, meta: {} });
         if (url.pathname === '/api/board-config') return json(route, { boardId: '5494', boardName: 'Synthetic Board', source: 'test' });
         if (url.pathname === '/api/stats/priority-weights-config') return json(route, { weights: [], source: 'test' });
         if (url.pathname === '/api/capacity/config') return json(route, { project: '', fieldId: '', fieldName: '' });

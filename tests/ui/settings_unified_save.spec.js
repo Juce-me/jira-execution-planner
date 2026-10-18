@@ -150,6 +150,7 @@ async function mockConfigSettings(page, {
         meta: { updatedAt: '2026-09-02T09:00:00Z', sprintId: '42', source: 'sprint' },
     },
     teamCatalogLoadGate = null,
+    teamCatalogLoadGateAt = 1,
     teamCatalogSaveGate = null,
     sprintsLoadGate = null,
     teamsLoadGate = null,
@@ -355,7 +356,7 @@ async function mockConfigSettings(page, {
         if (url.pathname === '/api/team-catalog' && request.method() === 'GET') {
             teamCatalogGetCount += 1;
             const catalogSnapshot = JSON.parse(JSON.stringify(persistedTeamCatalog));
-            if (teamCatalogLoadGate && teamCatalogGetCount === 1) await teamCatalogLoadGate.promise;
+            if (teamCatalogLoadGate && teamCatalogGetCount === teamCatalogLoadGateAt) await teamCatalogLoadGate.promise;
             if (teamCatalogLoadResponse) {
                 return json(teamCatalogLoadResponse.body, teamCatalogLoadResponse.status || 200);
             }
@@ -932,16 +933,18 @@ test('stale cache load after cancel and reopen cannot commit the retired modal r
         sourceBundle: true,
         initialTeamCatalog: { catalog: {}, meta: {} },
         teamCatalogLoadGate,
+        teamCatalogLoadGateAt: 2,
     });
 
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await expect.poll(() => calls.filter(call => call.method === 'GET' && call.pathname === '/api/team-catalog').length).toBe(1);
     await page.getByRole('button', { name: 'Manage team groups' }).click();
     const dialog = page.getByRole('dialog').first();
-    await expect.poll(() => calls.filter(call => call.method === 'GET' && call.pathname === '/api/team-catalog').length).toBe(1);
+    await expect.poll(() => calls.filter(call => call.method === 'GET' && call.pathname === '/api/team-catalog').length).toBe(2);
 
     await dialog.getByRole('button', { name: 'Cancel' }).click();
     await page.getByRole('button', { name: 'Manage team groups' }).click();
-    await expect.poll(() => calls.filter(call => call.method === 'GET' && call.pathname === '/api/team-catalog').length).toBe(2);
+    await expect.poll(() => calls.filter(call => call.method === 'GET' && call.pathname === '/api/team-catalog').length).toBe(3);
     await expect(dialog).toContainText('Teams: Cached');
 
     teamCatalogLoadGate.resolve();

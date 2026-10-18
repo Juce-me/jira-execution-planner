@@ -1,6 +1,6 @@
 # Planning Review Group Columns And Sprint Views Design (#267)
 
-> **Status:** Design revised 2026-10-18 after a five-pass independent validation of the 2026-10-17 rewrite; it supersedes the 2026-10-16 Sprint pin-chain design (both kept in git history). Operator-directed rules are listed under Direction, and the operator's answers of 2026-10-18 are under Resolved Questions. Items marked **Decision (my call)** are the author's recommendation and may be overruled in the `EXEC-*` plan review. All validation findings are applied below; **this revision has not been re-validated**, and a focused re-check of the write contract, the client state machine and the adoption script is recommended before an `EXEC-*` plan is written. The design is not executable until an `EXEC-*` plan exists. Written from issue #267 and the code on `origin/main` (`cb1b3c4d`). Nothing is implemented. The file name keeps the original issue slug so links stay stable.
+> **Status:** Design revised 2026-10-18 after a five-pass independent validation of the 2026-10-17 rewrite; it supersedes the 2026-10-16 Sprint pin-chain design (both kept in git history). Operator-directed rules are listed under Direction, and the operator's answers of 2026-10-18 are under Resolved Questions. Items marked **Decision (my call)** are the author's recommendation and may be overruled in the `EXEC-*` plan review. All validation findings are applied below. The Story relations section (derived columns) was added after the validation. **This revision has not been re-validated**, and a focused re-check of the write contract, the client state machine, the derived columns and the adoption script is recommended before an `EXEC-*` plan is written. The design is not executable until an `EXEC-*` plan exists. Written from issue #267 and the code on `origin/main` (`cb1b3c4d`). Nothing is implemented. The file name keeps the original issue slug so links stay stable.
 
 ## Issue
 
@@ -12,8 +12,9 @@
 - An Epic is a cross-Sprint entity, so a custom value belongs to the issue and is the same in every Sprint (one value per issue, per group).
 - The view (column order and hidden columns) stays per Sprint, is shared across users of the group, and is preserved for earlier Sprints. A Sprint that has not saved a view inherits one; the first change saved in it makes that Sprint's view its own. A user who opens a Sprint sees the view it inherits (the nearest earlier saved view, see View resolution), changes it, saves on top, and everyone sees the result.
 - A small dismissible hint shows where an inherited view came from.
-- Hide (this Sprint's view) and Archive (every Sprint) stay two separate verbs; Archive gets a clear warning.
+- Hide (this Sprint's view, separately for the Epic view and the Story view) and Archive (every Sprint) stay two separate verbs; Archive gets a clear warning.
 - Column order is kept, including for columns added later.
+- Stories are Sprint entities and Epics are cross-Sprint (2026-10-18). A Story number column that sums is shown on Epic rows as the read-only sum of the Epic's Stories, marked with a superscript "S"; an Epic column is shown on every Story row as the parent Epic's value, read-only, marked with a superscript "E". Never the reverse. Both are automatic, visible by default, and by default the last column of the other view.
 - Existing per-Sprint tables should not leave two permanent column sources; every configured Department group gets its own copy of the saved data, rolled out in a quiesced cutover.
 - Sprints are ordered by numeric Sprint id, because ids only increase and Sprint names can be anything, not only quarters. Duplicating a group does not copy its review columns. Re-creating a group with a deleted group's id reattaches the old data.
 
@@ -29,6 +30,7 @@
 - `frontend/src/dashboard.jsx` is exactly at its extraction-lint line ceiling (7554 of 7554 in `scripts/extraction_lint/owner_budgets.json`).
 - The current Sprint catalog admits only quarter names (`_format_quarter_sprint`, `^\d{4}Q[1-4]$`, `backend/services/sprints.py`); the design deliberately does not depend on names.
 - Planning is disabled for closed Sprints (`EngModeControl`, `isCompletedSprintSelected`; the share resolver mirrors it), so only active and future Sprints can change a view.
+- The dashboard hands the Planning hook the Epic rows and the Story rows together (`planningReviewRows` in `dashboard.jsx`), so values for both kinds are loaded whichever mode is shown. Epic rows already sum their in-scope Stories' points (`buildPlanningReviewRows`, labelled "Sprint SP" in the Epic view), where the Stories are those visible in the current Sprint scope and filters. Story rows carry `epicKey`, and the matching Epic row is in the same set. Custom columns are shown only in their own mode; `apply_layouts` allows only built-in ids plus custom ids of the same row kind; `planningReviewTotals` sums custom number columns over the displayed rows and skips synthetic rows; `save_review` rejects a cell whose column row kind differs from the cell's row kind; and no superscript marker exists anywhere in the frontend.
 - The controller applies a save response as `data.columns || state.columns`, flags a stale schema when `schema.schemaRevision !== state.schemaRevision`, holds `saved*` values while dirty and restores from `current*` in `discard`, `reapply` and `loadCurrent`, and its API layer keeps only `schemaConflict` and `cellConflicts` from a 409 body (`usePlanningSprintReview.js`, `frontend/src/api/sprintReviewApi.js`).
 - Existing hint and notice text is `.planning-review-guidance`; the Archive confirmation currently reads "It leaves this table for everyone" (`PlanningReviewColumnMenu.jsx`) and the Add popover note reads "Shared with everyone reviewing this Sprint." (`PlanningReviewTable.jsx`).
 
@@ -37,6 +39,7 @@
 - Columns and values added for a Department group appear in every Sprint for that group, and a value entered in any Sprint is the issue's value everywhere in that group.
 - A Sprint with no saved view shows the nearest earlier Sprint's saved view; the first layout saved in it gives it its own view; earlier Sprints' views never change because of a later Sprint.
 - A column added anywhere keeps a sensible position in every saved view.
+- A Story number column rolls up into the Epic rows and an Epic column is inherited by its Stories, both read-only and without storing anything.
 - No extra Jira requests, no catalog read, and a small, stated, bounded database cost.
 
 ## Non-Goals
@@ -45,6 +48,7 @@
 - Matching renamed, cloned or moved Epics by anything other than the immutable Jira issue id.
 - Per-user views or per-user columns; any change to Jira-owned fields.
 - Rewriting existing per-Sprint review rows in the application; a reset, choose-source or delete-view action for views.
+- Cross-Sprint Epic totals (they would need Stories outside the table's scope); a Story overriding an inherited Epic value; storing any derived value.
 
 ## Anti-Goals
 
@@ -64,6 +68,7 @@
 | Cell values | Workspace + group + issue | Every authenticated user, subject to per-issue Jira authorization | New group cells table |
 | Views (column `order`, `hidden`; per row kind) | Workspace + group + Sprint | Every authenticated user | New Sprint view table |
 | Totals (`aggregation`) | Column property, so group-wide | Same as columns | Group schema table |
+| Derived columns (Story sum on Epic rows, Epic value on Story rows) | Computed in the client from loaded cells | Not stored | Nothing |
 | Hint dismissal | One browser | Nobody | Dashboard preference state |
 
 Column ids are the lineage: a column keeps one immutable UUID, and a saved view refers to it by id. The group id is the storage key and is stable on rename.
@@ -96,9 +101,24 @@ Resolution is two one-row indexed reads and never writes. Ties cannot occur: the
 
 - A saved view stores the full order of built-in and custom columns, as today.
 - `add` carries an optional `after` inside its `column` object (added to the strict key list): `null` means append, `'summary'` means directly after the pinned columns (what the boundary "+" and `insertColumnId` already use), or an id. A valid id is a same-kind built-in id or a same-kind group column id, archived ones included, including a column added earlier in the same request; anything else is rejected, and the stored string is bounded.
-- Placement is computed by the client in `buildPlanningReviewColumns`, not stored: start from the view's saved `order` (empty for the default arrangement) plus any built-ins missing from it in their default sequence; then fold the group's custom columns missing from that base, archived ones included so chains resolve, in creation order (the `order` field; the UI never emits `reorder`), each through `insertColumnId(base, id, after)`. A column whose anchor is absent lands at the end. Hidden is unaffected, and a new column is visible unless the view lists it as hidden.
+- Placement is computed by the client in `buildPlanningReviewColumns`, not stored: start from the view's saved `order` (empty for the default arrangement) plus any built-ins missing from it in their default sequence; then fold the viewed row kind's own custom columns missing from that base, archived ones included so chains resolve, in creation order (the `order` field; the UI never emits `reorder`), each through `insertColumnId(base, id, after)`. A column whose anchor is absent lands at the end. Hidden is unaffected, and a new column is visible unless the view lists it as hidden.
 - Adding a column in the UI also saves a layout in the creating Sprint (existing behavior), so that Sprint gets its own view with the column at the chosen position. This matches the issue: a future Sprint that is edited becomes the main one. Other Sprints' saved views lack the column and place it by the fold. The group's default order among custom columns (`order`, `reorder`) is unchanged.
+- Derived columns (see Story relations) do not use the anchor: absent from a view's saved `order`, they go last in creation order and are visible unless that view hides them.
 - **Decision (my call, confirm):** this is the author's reading of "keep the order of the columns".
+
+### Story relations (derived columns)
+
+Stories belong to Sprints and Epics span them, so the two kinds are related by two read-only display rules and nothing else. A derived column is computed in the client from cells that are already loaded; it adds no storage, no column kind, no endpoint and no read.
+
+- **Up (Story to Epic).** A Story-kind number column with `aggregation: 'sum'` also appears in the Epic view (number columns default to a sum, so a Story number column rolls up unless its total is switched off). An Epic row shows the sum of that column over the Epic's Stories in the current scope (the Sprint and the current filters, the same Stories that feed "Sprint SP"). Story text columns and Story number columns without a sum do not appear in the Epic view.
+- **Down (Epic to Story).** Every Epic-kind column, number or text, also appears in the Story view. A Story row shows the parent Epic's value, found by `epicKey` among the loaded Epic rows. It is repeated per Story and never summed, so the Story view's totals row has no total for it.
+- **Never reversed.** Nothing from the Epic is divided among Stories and no Story value is written into an Epic column. A derived cell is never editable and never written; the server already rejects a cell whose column row kind differs from the cell's row kind.
+- **Marker.** The header shows a superscript after the column name: "S" on a Story column in the Epic view, "E" on an Epic column in the Story view. The header's accessible name adds "Story property" or "Epic property", and a hover or focus readout, using the existing in-app readout pattern behind `EpicHeaderValueReadout` and never a native `title`, says "Story property, summed from this Epic's Stories in this Sprint" or "Epic property, inherited from the parent Epic". The frontend has no superscript marker today, so this is a new element kind to register in `docs/design-system.md` and the ratchets; it reuses the heading's typography.
+- **Placement and visibility.** Derived columns are automatic and visible by default, and by default the last columns of the other view, in creation order; they do not use the `after` anchor. A saved view's `order` can place them anywhere, so `apply_layouts` allows the custom ids of both row kinds in either kind's layout. Hide is stored per row kind in the Sprint's view (`layouts[kind].hidden`), so hiding a derived column in the Epic view leaves the Story view unchanged and vice versa. A derived column's menu offers Hide and the drag grip only; rename, archive and the total belong to the source column in its own view. Archiving the source removes its derived column everywhere, and derived columns do not count toward the 30 active.
+- **Totals and sorting.** The Epic view's total for a rolled-up column is the sum of the Epic rows' values, which equals the in-scope Story total because the "No Epic" group row shows the sum of its own Stories (the totals function counts that synthetic row for rolled-up columns only). Sorting uses the derived value, with empties last as for other columns.
+- **Edge cases.** A Story with no Epic shows blank for an Epic-derived column; an "awaiting creation" placeholder row shows blank; an Epic with no in-scope Stories shows blank, not 0; a Story with a blank value counts as 0 in a sum; a derived cell shows the source cell's effective value, so an unsaved edit appears in both views. A Story carried over to the next Sprint keeps its value (one value per issue) and counts in each Sprint's Epic sum where it is in scope.
+- **Sprint semantics.** An Epic's sum differs between Sprints and with the filters, exactly as Sprint SP does; there is no cross-Sprint Epic total.
+- **Code touched.** `buildPlanningReviewColumns` flags derived columns from both kinds' definitions and places them last; `reviewValue`, `sortPlanningReviewRows` and `planningReviewTotals` handle them; `CustomCell` renders a read-only variant; the heading renders the marker; `PlanningReviewColumnMenu` limits a derived column to Hide; `apply_layouts` allows custom ids of both kinds. Both row sets are already loaded and authorized, so statement counts and Jira authorization passes are unchanged.
 
 ### Read contract
 
@@ -180,6 +200,7 @@ Three tables and one migration, group-scoped read and write contract, view resol
 - No Jira write path, no change to `authorize_issues`, no change to column ids, cell identity (`issue_id`, `row_kind`, `column_id`) or per-cell `baseRevision` semantics.
 - No write on read; no catalog or Jira read from review code.
 - The application never modifies or deletes the legacy review rows.
+- A derived cell is never editable, never stored and never sent in a write; existing Sprint SP, Story Points and Accepted behavior is unchanged.
 - Planning Table chrome, sticky stack and column menus untouched apart from the hint row, the Archive copy, the Add note and the group guard; any new class is registered in `docs/design-system.md` and the ratchets.
 
 ### Files allowed to touch (all verified to exist; `Create` marked)
@@ -194,7 +215,7 @@ Root `AGENTS.md` learnings to update when the plan executes: layout shared per w
 
 ### Expected behavior (specimen)
 
-For Department group X: in Sprint A (active) a user adds Epic column "Risk" after "Status" (the UI saves the column and A's layout together, so A has its own view), sets Epic E's value, and arranges columns. Sprint B (future) opened for X shows "Risk" with E's value (columns and values are group-wide) in A's arrangement, with the hint "Showing the layout last saved in A". Hiding "Status" in B and saving gives B its own view; A is unchanged. Sprint C then shows B's view. Editing E's value in C changes it in A and B too and creates no view for C, so C still inherits B. A column "Owner" added in C also saves C's layout, and appears in A's and B's saved views after the column that preceded it when it was created, else at the end. If Sprint A had never saved a view, it would still show the default arrangement, not B's. Group Y sees none of it.
+For Department group X: in Sprint A (active) a user adds Epic column "Risk" after "Status" (the UI saves the column and A's layout together, so A has its own view), sets Epic E's value, and arranges columns. Sprint B (future) opened for X shows "Risk" with E's value (columns and values are group-wide) in A's arrangement, with the hint "Showing the layout last saved in A". Hiding "Status" in B and saving gives B its own view; A is unchanged. Sprint C then shows B's view. Editing E's value in C changes it in A and B too and creates no view for C, so C still inherits B. A column "Owner" added in C also saves C's layout, and appears in A's and B's saved views after the column that preceded it when it was created, else at the end. If Sprint A had never saved a view, it would still show the default arrangement, not B's. Group Y sees none of it. In Stories mode, E's Stories show "Risk" with the E marker as the last column, read-only, holding E's value; a Story number column "Effort" added in Stories mode appears in Epics mode with the S marker as the last column, showing each Epic's sum over its in-scope Stories; hiding "Risk" in Stories mode leaves the Epics view untouched.
 
 ### Acceptance criteria
 
@@ -221,13 +242,21 @@ For Department group X: in Sprint A (active) a user adds Epic column "Risk" afte
 21. Analytics: a No-Event Allowlist row for the hint dismissal in `docs/README_ANALYTICS.md` with its required fields, pinned by `tests/test_analytics_source_guards.js`; column and view actions reuse the existing review action events.
 22. Playwright stubs converted to a query-tolerant pattern in the three specs that stub the review routes, copy assertions updated, and `shareable_view_links.spec.js` asserts the link's `groupId` on the review GET.
 23. Structure budgets: `dashboard.jsx` is net zero lines or `owner_budgets.json` is re-synced, and `test_codebase_structure_budgets` passes.
-24. Full Python suite, `npm run test:frontend:unit`, `npm run build` with a clean diff, and the full Chromium `tests/ui` run required before push by `AGENTS.md`; headed Firefox/WebKit if the dismiss glyph is an emoji or the hint changes form-control geometry.
+24. Derived rules (model tests, no server): a Story number column with a sum shows on Epic rows as the sum over the in-scope Stories (Sprint and filters); Story text columns and non-sum Story columns do not appear in the Epic view; every Epic column shows on Story rows as the parent Epic's value; nothing flows the other way and no derived cell is writable.
+25. Derived totals: a rolled-up column's Epic-view total equals the in-scope Story total including the "No Epic" row; an Epic-derived column has no total in the Story view (an Epic value 5 inherited by four Stories never totals 20).
+26. Marker and read-only: "S" and "E" superscripts after the column name, an accessible name that says Story or Epic property, an in-app readout and no native `title`, no input or edit affordance on derived cells; Playwright asserts header geometry with the marker at desktop and narrow widths and settled hover; the marker is registered in `docs/design-system.md` and the ratchets.
+27. Placement and hide: derived columns default last in creation order; a saved order can place them; `apply_layouts` accepts custom ids of both kinds; hiding a derived column in the Epic view leaves the Story view unchanged and the reverse; a derived column's menu offers Hide and the grip only.
+28. Edge cases: a Story without an Epic, an "awaiting creation" placeholder and an Epic without in-scope Stories show blank; a blank Story value counts as 0; a carried-over Story keeps its value and counts in each Sprint's sum; archiving the source removes its derived column in both views; sorting by a derived column uses the derived value; an unsaved source edit shows in both views.
+29. No extra cost: statement counts and the Jira authorization passes are unchanged with derived columns present.
+30. Full Python suite, `npm run test:frontend:unit`, `npm run build` with a clean diff, and the full Chromium `tests/ui` run required before push by `AGENTS.md`; headed Firefox/WebKit if the dismiss glyph is an emoji or the hint changes form-control geometry.
 
 ## Open Questions
 
-None from the operator's side. Small calls the author made and the operator may overrule: the anchor reading of "keep the order of the columns", the hint and Add-note copy, the group-gone message, the view cap number, the merge rules (casefold label, latest aggregation, later clear wins, keep highest 30 instead of aborting), and the 128-character group id bound.
+None from the operator's side. Small calls the author made and the operator may overrule: the anchor reading of "keep the order of the columns", the hint and Add-note copy, the group-gone message, the view cap number, the merge rules (casefold label, latest aggregation, later clear wins, keep highest 30 instead of aborting), the 128-character group id bound, and for derived columns: the menu limited to Hide and the grip, the readout copy, blank rather than 0 for an Epic without in-scope Stories, the "No Epic" row summing its own Stories, and blank placeholder rows.
 
 ## Resolved Questions
+
+- Operator direction of 2026-10-18 on Stories: the rules are agreed (Story sum up to Epic rows, Epic value down to Story rows, never reversed, automatic and visible); a superscript "S" or "E" marks a derived column; Hide is separate per Epic and Story view; a derived column is read-only and by default the last column of the other view. Interpretations recorded and confirmed by the operator on 2026-10-18: "couldn't intersect" is read as "could"; "Epic and Sprint" is read as the Epic view and the Story view; "a story type property added to the epic table … last column in the Story view with E" is read as an Epic-kind column shown last in the Story view with E, read-only.
 
 - Operator answers of 2026-10-18: every configured Department group gets its own saved data from the existing per-Sprint tables; numeric Sprint id order is acceptable and is kept after the quarter-name alternative was offered (ids only increase; names can be anything); duplicating a group does not copy its review columns; re-creating a group with a deleted group's id reattaches the old data, documented and tested; the adoption rollout is a quiesced cutover.
 - Operator direction of 2026-10-17 (see Direction) is the basis of this design: group-wide columns, one value per issue, per-Sprint shared views, a dismissible inheritance hint, an Archive warning, preserved column order.

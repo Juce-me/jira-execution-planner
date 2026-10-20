@@ -188,6 +188,7 @@ async function installCapacityFixture(page, options = {}) {
             result: 'success',
         })),
         patchStatus: options.patchStatus || 200,
+        groups: options.groups === 2 ? 2 : 1,
     };
 
     if (options.controlCapacityPatches || options.controlCapacityReads) {
@@ -318,12 +319,19 @@ async function installCapacityFixture(page, options = {}) {
                     teamIds: state.stories.map(issue => issue.fields.teamId),
                     labels: ['capacity_test'],
                     excludedCapacityEpics: [],
-                }],
+                }, ...(state.groups === 2 ? [{
+                    // `groups: 2` adds a second configured group so the header group control is usable; nothing is scoped to it.
+                    id: 'group-capacity-b',
+                    name: 'Second Capacity Department',
+                    teamIds: ['team-second-only'],
+                    labels: ['capacity_second'],
+                    excludedCapacityEpics: [],
+                }] : [])],
                 preferences: {
                     onboardingRequired: false,
                     customized: true,
-                    visibleGroupIds: ['group-capacity'],
-                    effectiveVisibleGroupIds: ['group-capacity'],
+                    visibleGroupIds: state.groups === 2 ? ['group-capacity', 'group-capacity-b'] : ['group-capacity'],
+                    effectiveVisibleGroupIds: state.groups === 2 ? ['group-capacity', 'group-capacity-b'] : ['group-capacity'],
                     activeGroupId: 'group-capacity',
                 },
             });
@@ -405,6 +413,18 @@ async function openPlanning(page, options = {}) {
     await expect(page.locator('.planning-panel.open')).toBeVisible();
     await expect(page.locator('.planning-team-capacity-cards .team-stat-card')).toHaveCount(options.teamCount || 3);
     return fixture;
+}
+
+// Group-scoped review stubs: the group comes from the GET query or the values-read/PATCH body, and each group has its own
+// schema (none has columns by default). `derived: true` gives group-capacity a Story number sum column, which rolls up onto
+// Epic rows; it stays off so the existing Epic-mode tests see no derived columns.
+async function stubGroupReview(page, { derived = false } = {}) {
+    const groupOf = request => request.method() === 'GET' ? new URL(request.url()).searchParams.get('groupId') : requestBody(request)?.groupId ?? null;
+    const columnsFor = groupId => derived && groupId === 'group-capacity' ? [{ id: 'effort', rowKind: 'story', label: 'Effort', type: 'number', aggregation: 'sum', order: 0 }] : [];
+    const reviewGroups = [];
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/, route => { const groupId = groupOf(route.request()); reviewGroups.push(groupId); return json(route, { schemaRevision: 1, columns: columnsFor(groupId), layouts: {}, capabilities: { canRead: true, canSave: true } }); });
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review\/values\/read(?:\?.*)?$/, route => { reviewGroups.push(groupOf(route.request())); return json(route, { cells: [], unavailableIssueIds: [] }); });
+    return reviewGroups;
 }
 
 function capacityCalls(calls, method) {
@@ -1802,8 +1822,7 @@ for (const teamCount of [1, 6, 7]) {
 test('automatic Planning capacity editor defers primary work and cancels a late guarded capacity read', async ({ page }) => {
     const { installLifecycleControl, deferred } = require('./eng_epic_refresh_fixture'); const lifecycle = await installLifecycleControl(page);
     const { calls, state } = await openPlanning(page, { prefs: { planningLayout: 'table' } });
-    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/, route => json(route, { schemaRevision: 1, columns: [], layouts: {}, capabilities: { canRead: true, canSave: true } }));
-    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review\/values\/read(?:\?.*)?$/, route => json(route, { cells: [], unavailableIssueIds: [] }));
+    await stubGroupReview(page);
     await page.waitForLoadState('networkidle');
     await page.getByRole('button', { name: 'Show panel', exact: true }).click();
     const card = page.locator('.planning-team-capacity-cards .team-stat-card').filter({ hasText: 'Alpha' });
@@ -1824,8 +1843,7 @@ test('automatic Planning capacity editor defers primary work and cancels a late 
 for (const status of [429, 500, 401]) test(`automatic Planning capacity ${status} holds clean values and never replays`, async ({ page }) => {
     const { installLifecycleControl } = require('./eng_epic_refresh_fixture'); const lifecycle = await installLifecycleControl(page);
     const { calls, state } = await openPlanning(page, { prefs: { planningLayout: 'table' } });
-    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/, route => json(route, { schemaRevision: 1, columns: [], layouts: {}, capabilities: { canRead: true, canSave: true } }));
-    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review\/values\/read(?:\?.*)?$/, route => json(route, { cells: [], unavailableIssueIds: [] }));
+    await stubGroupReview(page);
     await page.getByRole('button', { name: 'Show panel', exact: true }).click();
     const card = page.locator('.planning-team-capacity-cards .team-stat-card').filter({ hasText: 'Alpha' }); await card.hover();
     await expect(card.getByRole('button', { name: 'Edit Alpha capacity', exact: true })).toBeEnabled(); await page.waitForLoadState('networkidle');

@@ -279,9 +279,11 @@ function catchUpPrefs(extra = {}) {
 }
 
 // Opens Catch Up and waits until every epic and the first epic's last story are rendered.
-async function openCatchUp(page, ctx, { width, height, prefs } = {}) {
+// `seedPrefs: false` skips the init script that rewrites the saved preferences on every navigation, so a test can prove
+// that a preference the app saved survives a reload (the test then seeds what it needs itself).
+async function openCatchUp(page, ctx, { width, height, prefs, seedPrefs = true } = {}) {
     if (width || height) await page.setViewportSize({ width: width || 1400, height: height || 1000 });
-    await page.addInitScript((value) => {
+    if (seedPrefs) await page.addInitScript((value) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(value));
     }, catchUpPrefs(prefs));
     await page.goto(appBaseUrl, { waitUntil: 'networkidle' });

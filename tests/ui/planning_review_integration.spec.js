@@ -47,6 +47,12 @@ function requestBody(request) {
     }
 }
 
+// The Department group a review request is scoped to: the GET query, or the values-read/PATCH body.
+function reviewGroupOf(request) {
+    if (request.method() === 'GET') return new URL(request.url()).searchParams.get('groupId');
+    return requestBody(request)?.groupId ?? null;
+}
+
 function makeStory(key, status, sprintId = futureSprintId, sprintName = futureSprintName, epicKey = 'PLAN-EPIC') {
     return {
         id: String(8000 + Number(key.split('-').pop())),
@@ -107,6 +113,7 @@ async function installPlanningFixture(page, {
     capacityProject = '',
     planningLayout = 'list',
     longTable = false,
+    groups = 1,
 } = {}) {
     const calls = [];
     let futureProductTaskAttempts = 0;
@@ -129,7 +136,14 @@ async function installPlanningFixture(page, {
             teamIds: scopeTeamIds,
             labels: ['alpha_label'],
             excludedCapacityEpics: []
-        }],
+        }, ...(groups === 2 ? [{
+            // `groups: 2` adds a second configured group so the header group control is usable; nothing is scoped to it.
+            id: 'group-beta',
+            name: 'Beta Department',
+            teamIds: ['team-beta-only'],
+            labels: ['beta_label'],
+            excludedCapacityEpics: []
+        }] : [])],
         preferences: {
             onboardingRequired,
             onboardingDone: !onboardingRequired,
@@ -138,7 +152,7 @@ async function installPlanningFixture(page, {
                 : ['catch-up', 'configuration', 'planning', 'board', 'statistics'],
             customized: false,
             visibleGroupIds: [],
-            effectiveVisibleGroupIds: ['group-alpha'],
+            effectiveVisibleGroupIds: groups === 2 ? ['group-alpha', 'group-beta'] : ['group-alpha'],
             activeGroupId: 'group-alpha',
         },
     };
@@ -964,22 +978,26 @@ for (const width of [1280,390]) test(`document scroll docks table headings below
     await expect(heading).toHaveCount(0);await expect(page.locator('.planning-review-docked-footer')).toHaveCount(0);
 });
 
-async function automaticPlanningFixture(page, { longTable = false } = {}) {
+// Review columns are per Department group: group-alpha has the Epic "Cost" column, any other group has none. `derived: true`
+// adds a Story number sum column (a rollup on Epic rows); it stays off so the existing Epic-mode tests see no derived columns.
+async function automaticPlanningFixture(page, { longTable = false, derived = false, groups = 1 } = {}) {
     const { installLifecycleControl } = require('./eng_epic_refresh_fixture');
     const lifecycle = await installLifecycleControl(page);
-    const fixture = await installPlanningFixture(page, { longTable });
-    const state = { remote: false, readGate: null, schemaStatus: 200, readStatus: 200, schemaReads: 0, values: [], primary: [], saveCalls: [], saveGate: null, saveStatus: 200, canRead: true, unavailable: [], limit: null };
-    const columns = [{ id: 'cost', rowKind: 'epic', label: 'Cost', type: 'number', aggregation: 'sum', order: 0 }];
+    const fixture = await installPlanningFixture(page, { longTable, groups });
+    const state = { remote: false, readGate: null, schemaStatus: 200, readStatus: 200, schemaReads: 0, values: [], primary: [], saveCalls: [], saveGate: null, saveStatus: 200, canRead: true, unavailable: [], limit: null, reviewGroups: [] };
+    const alphaColumns = [{ id: 'cost', rowKind: 'epic', label: 'Cost', type: 'number', aggregation: 'sum', order: 0 }, ...(derived ? [{ id: 'effort', rowKind: 'story', label: 'Effort', type: 'number', aggregation: 'sum', order: 1 }] : [])];
+    const columnsFor = groupId => groupId === 'group-alpha' ? alphaColumns : [];
     await page.route('**/api/capacity*', route => json(route, { enabled: false }));
     await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/, async route => {
+        const groupId = reviewGroupOf(route.request()); state.reviewGroups.push(groupId); const columns = columnsFor(groupId);
         if (route.request().method() === 'PATCH') { const payload = requestBody(route.request()); state.saveCalls.push(payload); if (state.saveGate) await state.saveGate; if (state.saveStatus === 'network') return route.abort('failed'); return json(route, state.saveStatus === 409 ? { error: 'review_conflict', schemaConflict: false, cellConflicts: [{ issueId: '7001', columnId: 'cost' }] } : { schemaRevision: 1, columns, layouts: {}, cells: payload.cellChanges.map(cell => ({ ...cell, revision: 2 })) }, state.saveStatus); }
         state.schemaReads++; return json(route, { schemaRevision: state.remote ? 2 : 1, columns, layouts: {}, capabilities: { canRead: state.canRead, canSave: state.canRead } }, state.schemaStatus);
     });
     await page.route(/\/api\/eng\/sprints\/[^/?]+\/review\/values\/read(?:\?.*)?$/, async route => {
-        const batch = requestBody(route.request()); state.values.push(batch);
+        const batch = requestBody(route.request()); state.values.push(batch); state.reviewGroups.push(batch.groupId);
         if (state.readGate) await state.readGate;
         if (state.limit && batch.issueIds.length > state.limit) return json(route, { error: 'response_limit' }, 413);
-        return json(route, { cells: batch.rowKind === 'epic' ? [{ rowKind: 'epic', issueId: '7001', columnId: 'cost', value: state.remote ? '8' : '1', revision: state.remote ? 2 : 1 }] : [], unavailableIssueIds: state.unavailable }, state.readStatus);
+        return json(route, { cells: batch.rowKind === 'epic' && columnsFor(batch.groupId).length ? [{ rowKind: 'epic', issueId: '7001', columnId: 'cost', value: state.remote ? '8' : '1', revision: state.remote ? 2 : 1 }] : [], unavailableIssueIds: state.unavailable }, state.readStatus);
     });
     await page.route('**/api/tasks-with-team-name*', route => {
         const url = new URL(route.request().url());

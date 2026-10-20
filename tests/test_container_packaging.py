@@ -32,6 +32,14 @@ class ContainerPackagingTests(unittest.TestCase):
         ):
             self.assertIn(required, dockerfile)
 
+    def test_dockerfile_copies_the_review_adoption_script_for_one_off_jobs(self):
+        dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf8")
+
+        self.assertIn(
+            "COPY scripts/check_startup_preflight.py scripts/docker-entrypoint.sh scripts/adopt_legacy_sprint_reviews.py ./scripts/",
+            dockerfile,
+        )
+
     def test_dockerfile_defaults_to_container_network_bind(self):
         dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf8")
 

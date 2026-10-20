@@ -35,7 +35,7 @@ COPY assets ./assets
 RUN python -m pip install --no-cache-dir -e .
 
 COPY --from=frontend-build /app/frontend/dist ./frontend/dist
-COPY scripts/check_startup_preflight.py scripts/docker-entrypoint.sh ./scripts/
+COPY scripts/check_startup_preflight.py scripts/docker-entrypoint.sh scripts/adopt_legacy_sprint_reviews.py ./scripts/
 RUN chmod +x /app/scripts/docker-entrypoint.sh && chown -R appuser:appuser /app
 
 USER appuser

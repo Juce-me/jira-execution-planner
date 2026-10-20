@@ -280,6 +280,33 @@ configuration.
 
 Use `RUN_DB_MIGRATIONS=true` only when a single app container is the agreed migration owner for an internal deployment. For multi-replica deployments, run Alembic in a separate release job or init step, then start web containers with `RUN_DB_MIGRATIONS=false`.
 
+**Review adoption cutover (#267).** Planning Sprint review columns are now shared per Department group instead of per workspace/Sprint. The migration to the new head creates empty group tables and does not move data; existing review columns stay hidden until `scripts/adopt_legacy_sprint_reviews.py` adopts them into every configured group. Run the cutover with application writers quiesced, as for migration `20260827_0008`. The image's entrypoint ends in a fixed `exec gunicorn` and ignores arguments, so every one-off job below needs an entrypoint override (a command-only override still starts gunicorn), the same database URL and connection-mode variables the migration job uses, and a database identity with `UPDATE`, `DELETE` and `TRUNCATE` on `workspace_sprint_reviews` and `sprint_review_cells` (the script takes `LOCK ... IN SHARE MODE` on them) and `INSERT` on the new group review tables. Use placeholders for `<id>` and `<digest>`; the script prints counts and column, Sprint and group ids only.
+
+1. Before the cutover, while the old app still serves: every workspace that holds legacy review rows must have a configured Department group. The script refuses a workspace with legacy rows and no group, and the quiesced app cannot create one.
+2. Back up the database.
+3. Record the current `RUN_DB_MIGRATIONS` value and set it to `false`.
+4. Stop every replica, so nothing serves.
+5. Run Alembic as a one-off job from the new image: `python -m alembic -c backend/db/alembic.ini upgrade head`.
+6. Run `python scripts/adopt_legacy_sprint_reviews.py --list` to see, per workspace, whether legacy rows and group rows exist.
+7. For every workspace with legacy rows, run the dry run `python scripts/adopt_legacy_sprint_reviews.py --workspace-id <id>`, review the report, then run `python scripts/adopt_legacy_sprint_reviews.py --workspace-id <id> --apply --expected-sha256 <digest>` with the digest the dry run printed. `--apply` recomputes under table locks, refuses when group review rows already exist for the workspace, and writes every group in one transaction; legacy rows are never modified. Exit code 0 is success, 2 is a lock timeout with nothing written, and 1 is any other refusal or failure with nothing written.
+8. Run `--list` again and confirm every workspace with legacy rows now shows group rows before the app starts.
+9. Restore the recorded `RUN_DB_MIGRATIONS` value and start the new app. Open browser tabs must reload; the old bundle sends no `groupId` and gets a 400.
+
+Rollback depends on how far the cutover got:
+
+| Failure point | State | Recovery |
+| --- | --- | --- |
+| Backup or Alembic upgrade | Nothing serves | Fix and re-run, or restore the backup |
+| Dry run | Nothing written | Fix the input |
+| `--apply` | The single transaction rolls back; legacy rows untouched | Re-run |
+| Abort the release after the upgrade | The old image fails its startup preflight against the new head and cannot downgrade a revision it does not know | Run `python -m alembic -c backend/db/alembic.ini downgrade 20261001_0018` from the new image first, then restart the old image |
+| After `--apply`, before the new app serves | Only adopted data exists | Clean redo from the new image: `downgrade 20261001_0018`, `upgrade head`, then re-run the script |
+| After the new app served and users wrote | A re-run refuses because group rows exist | Forward fix only; a downgrade loses the entries made since |
+
+Environments that auto-migrate with `RUN_DB_MIGRATIONS=true`, including local runners, reach the new head without an adoption step and hide existing review columns until the script is run by hand with the steps above.
+
+Junk Sprint views: each group is capped at 500 Sprint views and the app has no delete action. An operator can purge rows by hand, after a backup and a review of the exact rows. In a one-off database session, first run `SELECT id, sprint_id, view_revision FROM group_sprint_review_views WHERE workspace_id = '<id>' AND group_id = '<group id>' AND sprint_id IN ('<sprint id>');`, check the result, then run the same `WHERE` clause with `DELETE FROM group_sprint_review_views` inside a transaction and commit only if the deleted count matches. Deleting a view makes that Sprint inherit again from earlier Sprints; it removes no cells or columns. Run it with application writers stopped or idle.
+
 OAuth2 Proxy may protect the ingress perimeter, but it does not replace app-level Atlassian OAuth. The app still needs Atlassian OAuth 2.0 (3LO) for Jira REST reads and the per-user Home token connection for Home/Townsquare EPM metadata.
 
 Needs SRE ownership or confirmation:

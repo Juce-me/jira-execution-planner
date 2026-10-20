@@ -728,3 +728,27 @@ test('a Settings Save that changes the active group while the review is dirty pr
         assert.equal(prompts, before);
     } finally { global.fetch = realFetch; }
 });
+
+test('a save refused by a per-group column limit keeps the draft and says "per group" without blocking the group (#267)', async () => {
+    for (const code of ['review_column_limit', 'review_schema_limit']) {
+        const c = await fixture({ saveReview: async () => { const error = new Error('Review request failed.'); error.status = 400; error.code = code; throw error; } });
+        await c.setScope(scope());
+        c.setCell(row(1), column, '3');
+        assert.equal(await c.save(), false, code);
+        const state = c.getState();
+        assert.match(state.error, /per group/, code);
+        assert.equal(state.groupBlocked, false, code);
+        assert.equal(state.dirty, true, `${code} keeps the draft`);
+    }
+});
+
+test('a group re-created from the default flow reuses the deleted group id, so its review data reattaches (#267 AC 14)', async () => {
+    const { buildGroupId } = await import('../frontend/src/settings/groupConfigUtils.js');
+    let groups = [{ id: 'group-alpha', name: 'Alpha' }];
+    const created = buildGroupId('New Group', new Set(groups.map(group => group.id)));
+    groups = [...groups, { id: created, name: 'New Group' }];
+    groups = groups.map(group => group.id === created ? { ...group, name: 'Platform' } : group);   // rename keeps the id
+    assert.deepEqual(groups.map(group => group.id), ['group-alpha', 'new-group']);
+    groups = groups.filter(group => group.id !== created);   // delete
+    assert.equal(buildGroupId('New Group', new Set(groups.map(group => group.id))), created, 'the next default group takes the same creation-slot id');
+});

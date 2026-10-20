@@ -1156,3 +1156,208 @@ test('the priority menu on the last Planning row overlays the table fully on scr
     await menu.getByRole('menuitem').first().click();
     await expect(menu).toHaveCount(0);
 });
+
+// #267: inherited views per Department group and Sprint. Sprint 4002 inherits the active Sprint's view and 5003 inherits
+// 4002's, for every group, until a layout save gives the Sprint its own view. Columns are empty, so nothing else changes.
+async function inheritedViewFixture(page, { groups = 2, longTable = false, analytics = false, preferences = null } = {}) {
+    const fixture = await installPlanningFixture(page, { groups, longTable, planningLayout: null, scopeTeamIds: ['team-alpha', 'team-beta'] });
+    const state = { gets: [], patches: [], patchError: null, own: {}, sources: { [futureSprintId]: { sprintId: String(activeSprintId), viewRevision: 1 }, [secondFutureSprintId]: { sprintId: String(futureSprintId), viewRevision: 2 } }, preferencePosts: [] };
+    const sprintOf = request => new URL(request.url()).pathname.split('/')[4];
+    const view = (groupId, sprintId) => state.own[`${groupId}:${sprintId}`] ? { viewRevision: state.own[`${groupId}:${sprintId}`], inheritedFrom: null } : { viewRevision: 0, inheritedFrom: state.sources[sprintId] || null };
+    if (analytics) await page.route('**/api/analytics/context', route => json(route, { enabled: true }));
+    await page.route('**/api/groups-preferences', route => { const payload = requestBody(route.request()); state.preferencePosts.push(payload); return json(route, { preferences: { customized: true, preferenceExists: true, onboardingRequired: false, onboardingDone: true, completedOnboardingModules: ['catch-up', 'configuration', 'planning', 'board', 'statistics'], visibleGroupIds: payload.visibleGroupIds, activeGroupId: payload.activeGroupId, effectiveVisibleGroupIds: ['group-alpha', 'group-beta'] } }); });
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/, route => {
+        const request = route.request(), sprintId = sprintOf(request), groupId = reviewGroupOf(request);
+        if (request.method() === 'PATCH') {
+            const payload = requestBody(request); state.patches.push({ sprintId, groupId, payload });
+            if (state.patchError) return json(route, { error: state.patchError }, 400);
+            const layouts = Object.fromEntries(payload.schemaChanges.filter(change => change.action === 'layout').map(change => [change.rowKind, { order: change.order, hidden: change.hidden }]));
+            if (Object.keys(layouts).length) state.own[`${groupId}:${sprintId}`] = (state.own[`${groupId}:${sprintId}`] || 0) + 1;
+            return json(route, { schemaVersion: 1, sprintId, groupId, schemaRevision: 1, columns: [], cells: [], ...(Object.keys(layouts).length ? { layouts, ...view(groupId, sprintId) } : {}) });
+        }
+        state.gets.push({ sprintId, groupId });
+        return json(route, { schemaVersion: 1, sprintId, groupId, schemaRevision: 1, columns: [], layouts: {}, ...view(groupId, sprintId), capabilities: { canRead: true, canSave: true } });
+    });
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review\/values\/read(?:\?.*)?$/, route => json(route, { cells: [], unavailableIssueIds: [] }));
+    return { fixture, state };
+}
+const hintLine = page => page.locator('.planning-review-hint');
+const selectSprint = async (page, name) => { await page.locator('.sprint-dropdown').first().locator('.sprint-dropdown-toggle').click(); await page.locator('.sprint-dropdown-option', { hasText: name }).click(); };
+const selectGroup = async (page, name) => { await page.locator('.view-selector .group-dropdown-toggle').click(); await page.locator('.view-selector .group-dropdown-option', { hasText: name }).click(); };
+const savedPrefs = page => page.evaluate(() => JSON.parse(localStorage.getItem('jira_dashboard_ui_prefs_v1') || '{}'));
+const lastGet = state => state.gets.at(-1);
+
+test('the inherited-view hint names its source Sprint; its dismissal survives Sprint and group switches and reload, and returns when the source is re-saved', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const { state } = await inheritedViewFixture(page);
+    await openPlanning(page, { expectStories: false });
+    await expect(hintLine(page)).toHaveText(`Layout inherited from ${activeSprintName}.`);
+    expect(lastGet(state)).toEqual({ sprintId: String(futureSprintId), groupId: 'group-alpha' });
+    await page.getByRole('button', { name: 'Dismiss layout hint', exact: true }).click();
+    await expect(hintLine(page)).toHaveCount(0);
+    await expect.poll(async () => (await savedPrefs(page)).planningInheritedHintDismissals).toEqual({ [`${futureSprintId}:group-alpha`]: { sourceSprintId: String(activeSprintId), viewRevision: 1 } });
+    // Another Sprint has its own hint; coming back keeps this one dismissed.
+    await selectSprint(page, secondFutureSprintName);
+    await expect(hintLine(page)).toHaveText(`Layout inherited from ${futureSprintName}.`);
+    await selectSprint(page, futureSprintName);
+    await expect.poll(() => lastGet(state)).toEqual({ sprintId: String(futureSprintId), groupId: 'group-alpha' });
+    await expect(page.locator('.planning-review-table')).toBeVisible(); await expect(hintLine(page)).toHaveCount(0);
+    // Another group has its own hint for the same Sprint.
+    await selectGroup(page, 'Beta Department');
+    await expect.poll(() => lastGet(state)).toEqual({ sprintId: String(futureSprintId), groupId: 'group-beta' });
+    await expect(hintLine(page)).toHaveText(`Layout inherited from ${activeSprintName}.`);
+    await selectGroup(page, 'Alpha Department');
+    await expect.poll(() => lastGet(state)).toEqual({ sprintId: String(futureSprintId), groupId: 'group-alpha' });
+    await expect(hintLine(page)).toHaveCount(0);
+    // A reload keeps the dismissal (no init script rewrites the saved preferences here).
+    const gets = state.gets.length;
+    await page.reload(); await expect(page.locator('.planning-review-table')).toBeVisible();
+    await expect.poll(() => state.gets.length).toBeGreaterThan(gets);
+    expect(lastGet(state)).toEqual({ sprintId: String(futureSprintId), groupId: 'group-alpha' });
+    await expect(page.locator('.planning-review-state-note', { hasText: 'Loading…' })).toHaveCount(0);
+    await expect(hintLine(page)).toHaveCount(0);
+    // Re-saving the source Sprint's view brings the hint back.
+    state.sources[futureSprintId] = { sprintId: String(activeSprintId), viewRevision: 2 };
+    await page.reload(); await expect(page.locator('.planning-review-table')).toBeVisible();
+    await expect(hintLine(page)).toHaveText(`Layout inherited from ${activeSprintName}.`);
+});
+
+for (const width of [1280, 390]) test(`the docked table header stays below the sticky stack with the hint shown and after it is dismissed at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    // 390px uses the one-group fixture: with two visible groups the compact header's search covers Catch Up (docs/TODO.md).
+    await inheritedViewFixture(page, { groups: width === 390 ? 1 : 2, longTable: true });
+    await openPlanning(page, { expectStories: false });
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    const scroll = page.locator('.planning-review-scroll'), stack = page.locator('.planning-review-sticky-stack'), heading = page.locator('.planning-review-docked-header');
+    const gap = async () => { const h = await heading.boundingBox(), s = await stack.boundingBox(); return Math.abs(h.y - s.y - s.height); };
+    for (const state of ['shown', 'dismissed']) {
+        await page.evaluate(() => scrollTo(0, 0));
+        if (state === 'shown') await expect(hintLine(page)).toHaveCount(1);
+        else { await page.getByRole('button', { name: 'Dismiss layout hint', exact: true }).click(); await expect(hintLine(page)).toHaveCount(0); }
+        const hintGeometry = state === 'shown' ? await hintLine(page).evaluate(node => { const r = node.getBoundingClientRect(), s = document.querySelector('.planning-review-scroll').getBoundingClientRect(); return { height: Math.round(r.height), above: r.bottom <= s.top, inside: r.left >= 0 && r.right <= innerWidth }; }) : null;
+        if (hintGeometry) expect(hintGeometry).toEqual({ height: 24, above: true, inside: true });
+        await scroll.evaluate(node => scrollTo(0, scrollY + node.getBoundingClientRect().top + 250));
+        await expect(heading).toBeVisible();
+        await expect.poll(gap, state).toBeLessThan(2);
+        await page.screenshot({ path: `tmp/267-ui/dashboard-docked-hint-${state}-${width}.png`, fullPage: false, animations: 'disabled' });
+    }
+});
+
+test('a header group change while the review is dirty prompts: Stay keeps the draft and reports nothing, Discard and Save proceed', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const { state } = await inheritedViewFixture(page, { analytics: true });
+    await openPlanning(page, { expectStories: false });
+    const groupEvents = () => page.evaluate(() => (window.dataLayer || []).filter(entry => entry?.event_name === 'filter_changed' && entry?.filter_type === 'group').length);
+    const dialog = page.getByRole('dialog', { name: 'Save this Sprint review?' });
+    const save = page.getByRole('button', { name: 'Save review', exact: true });
+    const addColumn = async label => { await page.getByRole('button', { name: '+ Add column', exact: true }).click(); await page.getByLabel('Column name', { exact: true }).fill(label); await page.getByRole('button', { name: 'Add column', exact: true }).click(); await expect(save).toBeEnabled(); };
+    await addColumn('Local column');
+    const events = await groupEvents();
+    await selectGroup(page, 'Beta Department');
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText('Save or discard them before changing Sprint or group.');
+    await dialog.getByRole('button', { name: 'Stay', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page.locator('.view-selector .group-dropdown-toggle')).toContainText('Alpha Department');
+    await expect(save).toBeEnabled();
+    expect(await groupEvents()).toBe(events);
+    expect(state.gets.filter(get => get.groupId === 'group-beta')).toHaveLength(0);
+    // Discard proceeds to the other group and reports the change once.
+    await selectGroup(page, 'Beta Department');
+    await dialog.getByRole('button', { name: 'Discard', exact: true }).click();
+    await expect(page.locator('.view-selector .group-dropdown-toggle')).toContainText('Beta Department');
+    await expect.poll(() => lastGet(state)?.groupId).toBe('group-beta');
+    await expect(save).toHaveCount(0);
+    expect(await groupEvents()).toBe(events + 1);
+    expect(state.patches).toHaveLength(0);
+    // Save proceeds and saves the draft under the group it was made in.
+    await addColumn('Beta column');
+    await selectGroup(page, 'Alpha Department');
+    await dialog.getByRole('button', { name: 'Save review', exact: true }).click();
+    await expect(page.locator('.view-selector .group-dropdown-toggle')).toContainText('Alpha Department');
+    expect(state.patches.map(patch => patch.groupId)).toEqual(['group-beta']);
+    expect(state.patches[0].payload.groupId).toBe('group-beta');
+    await expect.poll(() => lastGet(state)?.groupId).toBe('group-alpha');
+    expect(await groupEvents()).toBe(events + 2);
+});
+
+test('a Settings Save that changes the active group while the review is dirty prompts; Stay sends no preference write and keeps Settings open', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const { state } = await inheritedViewFixture(page);
+    await openPlanning(page, { expectStories: false });
+    await page.getByRole('button', { name: '+ Add column', exact: true }).click(); await page.getByLabel('Column name', { exact: true }).fill('Local column'); await page.getByRole('button', { name: 'Add column', exact: true }).click();
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const settings = page.locator('.group-modal');
+    await settings.locator('.group-list-item', { hasText: 'Beta Department' }).click();
+    await settings.locator('.group-list-item.active').getByRole('button', { name: 'Set Beta Department as your favorite Department' }).click();
+    await settings.getByRole('button', { name: /^Save$/ }).click();
+    const dialog = page.getByRole('dialog', { name: 'Save this Sprint review?' });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: 'Stay', exact: true }).click();
+    await expect(settings).toBeVisible();
+    await expect(settings.getByText('Settings were not saved: the Planning review has unsaved changes.')).toBeVisible();
+    expect(state.preferencePosts).toHaveLength(0);
+    // Discard lets the same Save proceed.
+    await settings.getByRole('button', { name: /^Save$/ }).click();
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: 'Discard', exact: true }).click();
+    await expect.poll(() => state.preferencePosts.length).toBe(1);
+    expect(state.preferencePosts[0].activeGroupId).toBe('group-beta');
+    await expect.poll(() => lastGet(state)?.groupId).toBe('group-beta');
+    expect(state.patches).toHaveLength(0);
+});
+
+// AC 14 (UI half). The id reuse itself (add "New Group", rename, delete, add again from the default flow gives `new-group`
+// again) is pinned in node by tests/test_planning_sprint_review.js on buildGroupId; this drives the catalog through the
+// same states and proves the review reads and writes follow the group id, not its name or a visibility preference.
+test('a re-created group id reattaches its review columns and values, and hiding the group from the selector does not stop reads or writes', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const base = { version: 1, source: 'workspace_db', defaultGroupId: 'group-alpha', configRevision: 1 };
+    const alpha = { id: 'group-alpha', name: 'Alpha Department', teamIds: ['team-alpha'], labels: ['alpha_label'], excludedCapacityEpics: [] };
+    const slot = name => ({ id: 'new-group', name, teamIds: ['team-alpha'], labels: ['alpha_label'], excludedCapacityEpics: [] });
+    const preferences = (visibleGroupIds, effective) => ({ onboardingRequired: false, onboardingDone: true, completedOnboardingModules: ['catch-up', 'configuration', 'planning', 'board', 'statistics'], customized: visibleGroupIds.length > 0, visibleGroupIds, effectiveVisibleGroupIds: effective, activeGroupId: 'group-alpha' });
+    let catalog = { ...base, groups: [alpha, slot('Platform')], preferences: preferences([], ['group-alpha', 'new-group']) };
+    const gets = [], patches = [];
+    await installPlanningFixture(page, { planningLayout: null, scopeTeamIds: ['team-alpha', 'team-beta'] });
+    await page.route('**/api/groups-config', route => route.request().method() === 'GET' ? json(route, catalog) : route.fallback());
+    const risk = { id: 'risk', rowKind: 'epic', label: 'Risk', type: 'number', aggregation: 'sum', archived: false, order: 0 };
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/, route => {
+        const request = route.request(), groupId = reviewGroupOf(request);
+        if (request.method() === 'PATCH') { const payload = requestBody(request); patches.push(payload); return json(route, { schemaVersion: 1, groupId, schemaRevision: 1, columns: groupId === 'new-group' ? [risk] : [], cells: payload.cellChanges.map(cell => ({ ...cell, revision: 2 })) }); }
+        gets.push(groupId);
+        return json(route, { schemaVersion: 1, groupId, schemaRevision: 1, viewRevision: 0, inheritedFrom: null, columns: groupId === 'new-group' ? [risk] : [], layouts: {}, capabilities: { canRead: true, canSave: true } });
+    });
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review\/values\/read(?:\?.*)?$/, route => { const body = requestBody(route.request()); return json(route, { cells: body.groupId === 'new-group' && body.rowKind === 'epic' ? [{ issueId: '7001', rowKind: 'epic', columnId: 'risk', value: '5', revision: 1 }] : [], unavailableIssueIds: [] }); });
+    const riskCell = page.getByRole('textbox', { name: 'Risk for PLAN-EPIC', exact: true });
+    await openPlanning(page, { expectStories: false });
+    // The renamed creation slot ("Platform", id new-group) holds a Risk value.
+    await selectGroup(page, 'Platform');
+    await expect(riskCell).toHaveValue('5');
+    expect(gets.at(-1)).toBe('new-group');
+    // Deleted: the review never asks for it.
+    catalog = { ...catalog, configRevision: 2, groups: [alpha], preferences: preferences([], ['group-alpha']) };
+    await page.reload(); await expect(page.locator('.planning-review-table')).toBeVisible();
+    await expect.poll(() => gets.at(-1)).toBe('group-alpha');
+    const afterDelete = gets.length;
+    // Re-created from the default flow: the same id under the default name reads the same columns and values.
+    catalog = { ...catalog, configRevision: 3, groups: [alpha, slot('New Group')], preferences: preferences([], ['group-alpha', 'new-group']) };
+    await page.reload(); await expect(page.locator('.planning-review-table')).toBeVisible();
+    expect(gets.slice(afterDelete)).not.toContain('new-group');
+    await selectGroup(page, 'New Group');
+    await expect(riskCell).toHaveValue('5');
+    expect(gets.at(-1)).toBe('new-group');
+    await riskCell.fill('6'); await page.getByRole('button', { name: 'Save review', exact: true }).click();
+    await expect.poll(() => patches.length).toBe(1);
+    expect(patches[0].groupId).toBe('new-group');
+    // A visibility preference hiding the other group from the selector does not change which group the review reads and writes.
+    catalog = { ...catalog, configRevision: 4, preferences: { ...preferences(['new-group'], ['new-group']), activeGroupId: 'new-group' } };
+    const beforeHide = gets.length;
+    await page.reload(); await expect(page.locator('.planning-review-table')).toBeVisible();
+    await expect.poll(() => gets.length).toBeGreaterThan(beforeHide);
+    expect(gets.slice(beforeHide)).not.toContain('group-alpha');
+    await expect(riskCell).toHaveValue('5');
+    expect(gets.at(-1)).toBe('new-group');
+    await riskCell.fill('7'); await page.getByRole('button', { name: 'Save review', exact: true }).click();
+    await expect.poll(() => patches.length).toBe(2);
+    expect(patches[1].groupId).toBe('new-group');
+});

@@ -70,7 +70,8 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # net of the legacy listener removal (+48).
     # Issue #267 C2 re-syncs to the measured size (the owner manifest held 7554) and adds the
     # Planning review group-scope hook import and call, plus the Settings guard ref (+3).
-    "frontend/src/dashboard.jsx": 7557,
+    # Issue #267 D3b passes the group name, Sprint-name resolver and hint dismissal props to the review table (+1).
+    "frontend/src/dashboard.jsx": 7558,
 }
 
 

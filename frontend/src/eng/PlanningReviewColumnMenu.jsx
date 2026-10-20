@@ -31,7 +31,7 @@ function RenameField({ column, review, onError, onFinish, onRenamed }) {
 // Per-column actions, opened from the header cell. Every column but the pinned Summary can be hidden; the pinned Key only hides;
 // review (custom) columns can also be renamed, totalled and archived. A derived column (the other row kind's column shown
 // read-only here) only moves and hides: its subject, name, total and archive belong to the source column in its own view.
-export default function PlanningReviewColumnMenu({ column, editable, review, canMoveLeft, canMoveRight, onMove, onHide, onError, onClose, onTrack }) {
+export default function PlanningReviewColumnMenu({ column, editable, review, groupName, canMoveLeft, canMoveRight, onMove, onHide, onError, onClose, onTrack }) {
     const rootRef = React.useRef(null);
     const [renaming, setRenaming] = React.useState(false);
     const [confirming, setConfirming] = React.useState(false);
@@ -61,7 +61,7 @@ export default function PlanningReviewColumnMenu({ column, editable, review, can
             <MenuOption label="Hide column" aligned={aligned} locked={!editable} onClick={onHide} />
             {custom && (confirming
                 ? <div className="planning-review-column-row planning-review-column-confirm">
-                    <span>Archive “{column.label}”? It leaves this table for everyone and cannot be restored here.</span>
+                    <span>Archive “{column.label}”? It leaves this table in every Sprint for {groupName || 'this group'} and cannot be restored here.</span>
                     <span className="planning-review-column-confirm-actions">
                         <button type="button" className="planning-action-button" onClick={archive}>Archive</button>
                         <button type="button" className="planning-action-button" onClick={() => { setConfirming(false); focusDialog(); }}>Cancel</button>

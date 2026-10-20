@@ -117,6 +117,11 @@ export function selectedStoryPoints(row, selectedKeys = new Set()) {
 }
 
 export const DEFAULT_REVIEW_HIDDEN_COLUMNS = ['components', 'project', 'capacity', 'projectTrack'];
+// Column limits accumulate across every Sprint for a Department group: the table's own check and the server's codes share this copy.
+export const REVIEW_LIMIT_MESSAGES = {
+    review_column_limit: 'This row mode supports up to 30 active custom columns per group.',
+    review_schema_limit: 'Review columns are limited to 240 per group, archived ones included.',
+};
 
 // New or moved column ids go after `afterId`; 'summary' means directly after the pinned columns; anything else appends.
 export function insertColumnId(order, id, afterId = null) {

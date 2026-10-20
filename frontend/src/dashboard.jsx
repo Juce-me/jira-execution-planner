@@ -2407,7 +2407,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
             const activeGroup = React.useMemo(() => {
                 return (visibleControlGroups || []).find(group => group.id === activeGroupId) || null;
             }, [visibleControlGroups, activeGroupId]);
-            const { reviewGroupId, reviewGroupReady, guardedSetActiveGroupId, inheritedHintDismissals } = usePlanningGroupScope({ planningReviewGuardRef, activeGroup, groupsLoading, activeGroupId, setActiveGroupId, savedPrefs: savedPrefsRef.current });
+            const { reviewGroupId, reviewGroupReady, guardedSetActiveGroupId, inheritedHintDismissals, dismissInheritedHint } = usePlanningGroupScope({ planningReviewGuardRef, activeGroup, groupsLoading, activeGroupId, setActiveGroupId, savedPrefs: savedPrefsRef.current });
             const activeGroupTeamLabels = React.useMemo(() => {
                 return activeGroup?.teamLabels || {};
             }, [activeGroup]);
@@ -6970,6 +6970,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                                         renderPriorityIcon={renderPriorityIcon} renderEpicShareControl={renderEpicShareControl} renderFieldEditor={renderPlanningReviewFieldEditor} onReviewAction={trackPlanningReviewAction}
                                         pendingOriginals={planningOriginals} onHoldRow={key => holdEditor('table', key)}
                                         confirmedEdit={confirmedEdit} onConfirmedEditHandled={ackConfirmed} isRowHeld={isHeld}
+                                        groupName={activeGroup?.name} resolveSprintName={id => availableSprints.find(sprint => String(sprint.id) === String(id))?.name} inheritedHintDismissals={inheritedHintDismissals} onDismissInheritedHint={dismissInheritedHint}
                                     /> : null}
                                     productTasksLoading={productTasksLoading}
                                     techTasksLoading={techTasksLoading}

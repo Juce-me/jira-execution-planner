@@ -19,8 +19,8 @@
   },
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
-    "lineCount": 7557,
-    "lineCeiling": 7557
+    "lineCount": 7558,
+    "lineCeiling": 7558
   },
   "modules": [
     {
@@ -19166,8 +19166,8 @@
       "ceiling": 26614
     },
     "appPlusOwners": {
-      "measured": 34171,
-      "ceiling": 34171
+      "measured": 34172,
+      "ceiling": 34172
     }
   },
   "transfer": {

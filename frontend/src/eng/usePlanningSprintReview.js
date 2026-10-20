@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { fetchSprintReview, readSprintReviewValues, saveSprintReview } from '../api/sprintReviewApi.js';
-import { reviewCellKey, validateReviewValue, parseReviewNumber } from './planningReviewTableModel.js';
+import { reviewCellKey, validateReviewValue, parseReviewNumber, REVIEW_LIMIT_MESSAGES } from './planningReviewTableModel.js';
 
 export function applyReviewSchemaChanges(columns, changes) {
     let result = columns.map(column => ({ ...column }));
@@ -201,6 +201,7 @@ export function createPlanningSprintReviewController({ backendUrl = '', fetchSch
                 if (error.status === 409) { writeEpoch += 1; emit({ conflict: error.conflict || {}, error: 'The shared review changed. Your draft is preserved.' }); }
                 else if (error.name !== 'AuthenticationRequiredError') {
                     if (GROUP_BLOCKED_MESSAGES[error.code]) emit({ groupBlocked: true, error: GROUP_BLOCKED_MESSAGES[error.code] });
+                    else if (REVIEW_LIMIT_MESSAGES[error.code]) emit({ error: REVIEW_LIMIT_MESSAGES[error.code] });
                     else emit({ unconfirmed: Boolean(error.unconfirmed), error: error.unconfirmed ? 'Save outcome is unconfirmed. Refresh review before deliberately resolving your draft.' : 'Review could not be saved. Your draft is preserved.' });
                 }
             }

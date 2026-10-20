@@ -657,6 +657,67 @@ class GroupReviewContractTests(ReviewFixture, unittest.TestCase):
         spy.assert_not_called()
 
 
+class ReviewStatementCountTests(ReviewFixture, unittest.TestCase):
+    """Statements per call, pinned to the design's Performance table (AC 19).
+
+    The fixture is an existing group schema with one story column; every count is
+    measured with before_cursor_execute on the engine both review sessions share.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.add()
+        self.revision = 1
+
+    def statements(self, fn, *args, **kwargs):
+        captured = []
+        engine = db_engine.get_engine(self.url)
+        listener = lambda conn, cursor, statement, *rest: captured.append(statement)
+        event.listen(engine, 'before_cursor_execute', listener)
+        try:
+            fn(*args, **kwargs)
+        finally:
+            event.remove(engine, 'before_cursor_execute', listener)
+        return captured
+
+    def assert_count(self, expected, fn, *args, **kwargs):
+        captured = self.statements(fn, *args, **kwargs)
+        self.assertEqual(len(captured), expected, captured)
+        return captured
+
+    def new_column(self):
+        return {'action': 'add', 'column': {**self.column, 'id': str(uuid.uuid4()), 'label': 'Another'}}
+
+    def test_get_and_values_read(self):
+        self.assert_count(2, self.load)
+        self.save(schemas=[self.layout()], view=0, sprint='9')
+        self.assert_count(2, self.load)
+        self.save([self.cell()])
+        self.assert_count(2, self.read, ['101'])
+
+    def test_empty_patch_reads_config_and_schema_only(self):
+        captured = self.assert_count(2, self.save)
+        self.assertFalse([s for s in captured if s.lstrip().upper().startswith(('INSERT', 'UPDATE'))])
+
+    def test_cell_only_patch_is_four_plus_upserts(self):
+        # The design fixture: one new cell on an existing group schema is 5 (4 plus one insert).
+        captured = self.assert_count(5, self.save, [self.cell()])
+        self.assertFalse([s for s in captured if 'group_sprint_review_views' in s])
+        # Updating the same cell is also 4 plus one upsert.
+        self.assert_count(5, self.save, [self.cell('2', base=1)])
+
+    def test_column_only_patch(self):
+        self.assert_count(4, self.save, schemas=[{'action': 'rename', 'columnId': self.column['id'], 'label': 'Renamed'}])
+
+    def test_layout_only_patch_first_and_existing_view(self):
+        self.assert_count(6, self.save, schemas=[self.layout()], view=0)
+        self.assert_count(5, self.save, schemas=[self.layout(order=['priority'])], view=1)
+
+    def test_add_plus_layout_patch_first_and_existing_view(self):
+        self.assert_count(7, self.save, schemas=[self.new_column(), self.layout()], view=0)
+        self.assert_count(6, self.save, schemas=[self.new_column(), self.layout(order=['priority'])], base=2, view=1)
+
+
 class GroupReviewMigrationTests(unittest.TestCase):
     TABLES = ('workspace_group_review_schemas', 'group_review_cells', 'group_sprint_review_views')
 

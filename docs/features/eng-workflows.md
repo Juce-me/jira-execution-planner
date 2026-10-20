@@ -49,6 +49,8 @@ If expected work is missing, check in this order:
 5. Save the Department configuration.
 6. Choose **Refresh** to load the Jira scope again.
 
+The Teams selector loads saved Team names after configuration bootstrap, independently of task loading and opening Settings. Refresh retains known names while Jira work loads; an ID-only catalog placeholder does not replace a previously resolved name. This name lookup does not grant Sprint membership or change Department scope.
+
 ### Team labels (aliases)
 
 Each Team in a Department's **Group labels** tab (**Team labels** pane) may have one to three Jira Epic-label aliases instead of a single label. Any of a Team's configured aliases discovers and classifies the same Epics — this lets an old label stay in place while a new one is adopted, without losing history. Order is preserved for display and export but does not affect matching, and an Epic carrying more than one of a Team's aliases still counts as one match for that Team (one alert group, one Story requirement).

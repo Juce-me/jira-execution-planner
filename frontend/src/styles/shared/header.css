@@ -264,10 +264,12 @@
         }
 
         .subtitle-main {
-            display: inline-flex;
+            display: inline-grid;
+            grid-template-columns: auto auto;
             align-items: center;
-            gap: 0.5rem;
-            flex-wrap: wrap;
+            justify-content: start;
+            column-gap: 0.5rem;
+            row-gap: 0.15rem;
         }
 
         .subtitle-logo {
@@ -279,7 +281,9 @@
         }
 
         .subtitle-secondary {
-            font-size: 0.4375rem;
-            letter-spacing: 0.12em;
+            grid-column: 2;
+            font-size: 0.5625rem;
+            letter-spacing: 0.08em;
+            text-transform: none;
             opacity: 0.85;
         }

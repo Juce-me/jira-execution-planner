@@ -113,7 +113,7 @@ Everything under Global Constraints, plus: existing Sprint SP, Story Points and 
 
 ## Execution status
 
-Updated 2026-10-20. Tasks A1 to D3b are implemented and committed locally on `feature/267-group-review-columns` (unpushed); E1 (records) is in progress and E2 (full verification, Gates 6 and 7, Definition of Done) is pending. Evidence is per-task report summaries; the DoD table below is filled by E2 only.
+Updated 2026-10-20. Tasks A1 to D3b are implemented and committed locally on `feature/267-group-review-columns` (unpushed); E1 (records) and the final-review fixes are committed; E2 (full verification) ran at `dad6ef71` and `8e929d00`; the Definition of Done table below records the evidence and the gates that stay open.
 
 | Task | State | Commit | Evidence |
 | --- | --- | --- | --- |
@@ -128,10 +128,10 @@ Updated 2026-10-20. Tasks A1 to D3b are implemented and committed locally on `fe
 | D2 Playwright fixtures and harness (no behavior change) | done | `5376ab2c` | four specs 229 passed |
 | D3a derived columns, marker, readout | done | `80c75277` | unit 2923 OK; four specs 224 passed, 1 headed-only skip |
 | D3b hint, group copy, anchor wiring, blocked state | done | `701adb8c` | unit 2925 OK; budgets OK; six specs 361 passed, 3 skipped |
-| E1 records | in progress | pending | docs, ownership contract, ontology, learnings, analytics rows and guard test |
-| E2 full verification and DoD | pending | | Gates 6 and 7 and the headed Firefox and WebKit checks stay open until run |
+| E1 records | complete | `3730b2fe` | docs, ownership contract, ontology, learnings, analytics rows and guard test |
+| E2 full verification and DoD | complete with open gates | `dad6ef71`, `8e929d00` | Gate 7 rehearsal, headed Firefox/WebKit marker geometry, CI PostgreSQL run and delivery stay open |
 
-Also on the branch: `0566c318` merges `origin/main` (needed by the rewritten share-link interruption spec); the committed `frontend/dist` mirrors main's build until E2 rebuilds it.
+Also on the branch: `0566c318` merges `origin/main` (needed by the rewritten share-link interruption spec); `frontend/dist` was rebuilt in `dad6ef71` and `8e929d00` (reproducible build, `make verify-dist-clean` clean).
 
 ## Divergences found during execution
 
@@ -296,18 +296,20 @@ A (A1, A2, A3 sequential) then B and C in parallel (D-I: B = `scripts/`, `Docker
 
 ## Definition of Done record
 
-| Gate | Task coverage | AC | Evidence ids | Command results | Before / after | Screenshot ids | Limits | Accepted by / date |
+Verified 2026-10-20 at implementation head `8e929d00` (base: `origin/main` `f8167ad9`, merged in `0566c318`). Node 20.x, Python 3.14.7 locally (CI runs 3.10 and 3.11; touched Python parses under 3.10 rules). A skipped or unrun required check keeps its gate open; "Accepted by" stays empty until the operator accepts.
+
+| Gate | Task coverage | AC | Evidence | Command results | Before / after | Screenshots | Limits | Accepted by / date |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 Group-wide columns and values | A2, D3 (reattach UI) | 1, 2, 14, 15, 16 | | | | | | |
-| 2 Sprint views and write contract | A2, C1 | 3, 4, 5, 6, 7, 12 | | | | | | |
-| 3 Column order, Archive, Hide | A2 (server archive), D1, D3 | 8, 9 | | | | | | |
-| 4 Hint, group changes, errors | C1, C2, D3 | 10, 11, 13, 26 | | | | | | |
-| 5 Derived Epic/Story columns | D1, D3 | 27 to 32 | | | | | | |
-| 6 Storage, counts, concurrency | A1, A2, A3 | 17 to 21 | | | statement counts | | | |
-| 7 Adoption and cutover | B1, B2 | 22 | | | | | | |
-| 8 Records and analytics | E1 | 23 | | | | | | |
-| 9 Suites, budgets, fixtures | C1, C2, D2, D3, E2 | 24, 25, 33 | | | | | | |
-| 10 Delivery | operator-triggered | none | | | | | | |
+| 1 Group-wide columns and values | A2, D3b | 1, 2, 14, 15, 16 | `d69db071`, `701adb8c`, `8e929d00` | `tests.test_sprint_review` and routes OK (group isolation, cross-workspace, unavailable issues, hiding preference row server test) | | | AC 14 UI half is a stubbed-catalog Playwright test plus a node `buildGroupId` test, not a full Settings add/rename/delete/add flow; operator acceptance of that divergence pending. Hidden-group guarantee is server-side only (UI cannot select a hidden group) | open |
+| 2 Sprint views and write contract | A2, C1 | 3, 4, 5, 6, 7, 12 | `d69db071`, `d96d0072` | service, route and controller suites OK; patched-`search` precedence test; node controller tests 2927/2927 | | | Post-PATCH column refresh is an automatic load and can be skipped if a new draft starts first (recovers via reapply) | pass pending acceptance |
+| 3 Column order, Archive, Hide | A2, D1, D3b | 8, 9 | `fec8207f`, `701adb8c` | model tests; Playwright Archive copy and geometry; `schemaChanges` anchor assertions | | `tmp/267-ui` (not committed) | Headed Firefox/WebKit geometry for the marker not run | open |
+| 4 Hint, group changes, errors | C1, C2, D3b | 10, 11, 13, 26 | `d96d0072`, `701adb8c`, `8e929d00` | six-spec Chromium run 361 passed, 3 skipped; headed Firefox and WebKit at 2x: dismiss glyph within 0.19px of frame centre (implementer-reported) | | hint shown/dismissed 375 and 1280, group-blocked | Settings Save Stay/prompt proven at hook level only; modal focus-trap vs scope dialog untested; hint line wraps (no truncation) with a long Sprint name | open |
+| 5 Derived Epic/Story columns | D1, D3a | 27 to 32 | `fec8207f`, `80c75277` | model 28/28; four specs 224 passed, 1 skipped (headed-only) | | derived Epic/Story views at 1280 and 390 | Headed Firefox/WebKit marker geometry and painted ink not run | open |
+| 6 Storage, counts, concurrency | A1, A2, A3 | 17 to 21 | `c612501d`, `b65b9ea7`, `11c1a523` | CI runner module set on a throwaway PostgreSQL 18 at head: 77 tests OK, 0 skipped; statement counts pinned and equal the design table; offline render and parity tests OK; server starts at head with no warning before the banner and `/api/test` answers 401 `auth_required` (unauthenticated, OAuth mode) | counts: GET 2, values 2, empty PATCH 2, new cell 5 (4 before), column-only 4, layout-only 5, first view 6, add+layout 6/7 | | No GitHub CI run observed (nothing pushed); the local operator database was deliberately not migrated | open pending CI |
+| 7 Adoption and cutover | B1, B2 | 22 | `11c1a523`, `8189c9a5` | 23 script tests OK; PostgreSQL race trio OK on throwaway server | | | Cutover rehearsal on a copy of a database with legacy data not done | open |
+| 8 Records and analytics | E1 | 23 | `3730b2fe` | analytics guard 34/34; budgets OK; ontology paths resolve | | | | pass pending acceptance |
+| 9 Suites, budgets, fixtures | C1, C2, D2, D3, E2 | 24, 25, 33 | `dad6ef71`, `8e929d00` | `make test` 2256 OK/37 skipped (skips are the opt-in PostgreSQL tests, run separately above); `make test-security` 82 OK; `npm run test:frontend:unit` 2927/2927; `npm ci` + `npm run build` reproducible, `make verify-dist-clean` clean; full Chromium `tests/ui` 1781 passed, 12 skipped, 0 failed (run at `dad6ef71`; later fixes re-ran the touched specs, 325 passed/1 skipped) | | | Extraction lint reports 6 enforced hook-interface problems unrelated to this work (backendUrl/BACKEND_URL inputs in `GroupBoardSettings.jsx`, `useTeamCatalogLifecycle.js`, other members of `useTeamGroupSettings.js`; they arrived with `origin/main`); no CI runs the lint | open pending full Chromium re-run at the final head and headed browsers |
+| 10 Delivery | operator-triggered | none | | | | | Merge commit `0566c318` carries a personal author email and must be redone with the noreply identity before publication (needs operator approval to rewrite unpushed history) | open |
 
 ## Subagent protocol
 

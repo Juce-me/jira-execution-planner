@@ -854,3 +854,52 @@ class SprintReviewCell(Base):
     column_id: Mapped[str] = mapped_column(String(36), nullable=False)
     value: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     revision: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class WorkspaceGroupReviewSchema(Base):
+    """Department-group review column schema, one row per workspace and group."""
+    __tablename__ = 'workspace_group_review_schemas'
+    __table_args__ = (
+        UniqueConstraint('workspace_id', 'group_id', name='uq_group_review_schema_workspace_group'),
+        CheckConstraint('schema_revision >= 0', name='ck_group_review_schema_revision'),
+    )
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(String(36), ForeignKey('workspaces.id', ondelete='CASCADE'), nullable=False)
+    group_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    schema_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default='0')
+    columns: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default=text("'[]'"))
+
+
+class GroupReviewCell(Base):
+    """One value per issue, row kind and column within a group schema."""
+    __tablename__ = 'group_review_cells'
+    __table_args__ = (
+        UniqueConstraint('schema_id', 'issue_id', 'row_kind', 'column_id', name='uq_group_review_cell_identity'),
+        CheckConstraint("row_kind IN ('epic', 'story')", name='ck_group_review_cell_row_kind'),
+        CheckConstraint('revision >= 1', name='ck_group_review_cell_revision'),
+    )
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=_uuid)
+    schema_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), ForeignKey('workspace_group_review_schemas.id', ondelete='CASCADE'), nullable=False)
+    issue_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    row_kind: Mapped[str] = mapped_column(String(8), nullable=False)
+    column_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    value: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class GroupSprintReviewView(Base):
+    """Per-Sprint shared layouts; sprint_order is the id left-padded to 128 digits."""
+    __tablename__ = 'group_sprint_review_views'
+    __table_args__ = (
+        UniqueConstraint('workspace_id', 'group_id', 'sprint_id', name='uq_group_sprint_review_view'),
+        CheckConstraint('length(sprint_order) = 128', name='ck_group_sprint_review_view_order'),
+        CheckConstraint('view_revision >= 1', name='ck_group_sprint_review_view_revision'),
+        Index('ix_group_sprint_review_views_order', 'workspace_id', 'group_id', 'sprint_order'),
+    )
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(String(36), ForeignKey('workspaces.id', ondelete='CASCADE'), nullable=False)
+    group_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    sprint_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    sprint_order: Mapped[str] = mapped_column(String(128), nullable=False)
+    layouts: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default=text("'{}'"))
+    view_revision: Mapped[int] = mapped_column(Integer, nullable=False)

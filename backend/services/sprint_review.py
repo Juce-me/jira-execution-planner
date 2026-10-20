@@ -22,6 +22,12 @@ MAX_CHANGED_CELLS = 100
 MAX_READ_ISSUES = 500
 MAX_REQUEST_BYTES = 256 * 1024
 MAX_RESPONSE_BYTES = 1024 * 1024
+SPRINT_ORDER_WIDTH = 128
+
+
+def sprint_order(sprint_id: str) -> str:
+    """Left-pad a decimal Sprint id so string order equals numeric order."""
+    return sprint_id.rjust(SPRINT_ORDER_WIDTH, '0')
 
 
 class ReviewError(ValueError):

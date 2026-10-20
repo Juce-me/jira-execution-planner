@@ -7,6 +7,8 @@ Races are deterministic: the first writer pauses inside its transaction while it
 holds the group schema row lock, the test proves the second writer is waiting on a
 PostgreSQL lock, and only then releases the first writer.
 """
+import contextlib
+import io
 import os
 from threading import Event, Thread, current_thread
 import time
@@ -22,6 +24,7 @@ from sqlalchemy.engine import make_url
 from backend.auth.context import RequestAuthContext
 from backend.db import engine as db_engine, models
 from backend.services import sprint_review as review
+from scripts import adopt_legacy_sprint_reviews as adopt
 
 GROUP_TABLES = ('workspace_group_review_schemas', 'group_review_cells', 'group_sprint_review_views')
 LEGACY_TABLES = ('workspace_sprint_reviews', 'sprint_review_cells')
@@ -233,6 +236,134 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
                                   self.url, self.search)
         self.assertEqual(sorted((c['issueId'], c['value'], c['revision']) for c in data['cells']),
                          [('101', '2.000', 2), ('102', '1.000', 1), ('103', '1.000', 1)])
+
+    # Adoption races (B1, AC 20): the script's table locks against an application writer
+    def seed_legacy(self):
+        column = {'id': str(uuid.uuid4()), 'rowKind': 'story', 'label': 'Legacy', 'type': 'number',
+                  'aggregation': 'sum', 'archived': False, 'order': 0}
+        with db_engine.session_scope(self.url) as session:
+            legacy = models.WorkspaceSprintReview(workspace_id=self.workspace_id, sprint_id='16', schema_revision=1,
+                                                  columns=[column], layouts={'story': {'order': ['status', column['id']], 'hidden': []}})
+            session.add(legacy)
+            session.flush()
+            session.add(models.SprintReviewCell(review_id=legacy.id, issue_id='201', row_kind='story',
+                                                column_id=column['id'], value='1.000', revision=1))
+        env = patch.dict(os.environ, {'DATABASE_URL': self.url})
+        env.start()
+        self.addCleanup(env.stop)
+        return column['id']
+
+    def legacy_rows(self):
+        with db_engine.session_scope(self.url) as session:
+            return (sorted((r.id, r.sprint_id, r.schema_revision, repr(r.columns), repr(r.layouts))
+                           for r in session.query(models.WorkspaceSprintReview).all()),
+                    sorted((c.id, c.issue_id, c.column_id, c.value, c.revision) for c in session.query(models.SprintReviewCell).all()))
+
+    def adopt(self, *args):
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            code = adopt.main(['--workspace-id', self.workspace_id, *args])
+        return code, output.getvalue()
+
+    def adoption_digest(self):
+        code, output = self.adopt()
+        self.assertEqual(code, 0)
+        return next(token for token in output.split() if token.startswith('sha256:'))
+
+    @contextlib.contextmanager
+    def held_writer(self, action, hold=15):
+        """Run an application writer until it holds the schema row lock inside its transaction."""
+        entered, release, results = Event(), Event(), {}
+
+        def run():
+            try:
+                results['value'] = action()
+            except Exception as error:  # noqa: BLE001 - returned to the test for assertion
+                results['value'] = error
+
+        holder = Thread(target=run)
+        original = review.apply_schema
+
+        def paused(columns, changes):
+            if current_thread() is holder:
+                entered.set()
+                if not release.wait(hold):
+                    raise AssertionError('holder never released')
+            return original(columns, changes)
+
+        with patch.object(review, 'apply_schema', paused):
+            holder.start()
+            try:
+                self.assertTrue(entered.wait(8), 'writer never reached its locked transaction')
+                yield results
+            finally:
+                release.set()
+                holder.join(10)
+        self.assertFalse(holder.is_alive())
+
+    def test_adoption_refuses_with_zero_writes_after_an_open_writer_commits(self):
+        self.seed_legacy()
+        digest, legacy = self.adoption_digest(), self.legacy_rows()
+        first, second = self.overlap(lambda: self.add(), lambda: self.adopt('--apply', '--expected-sha256', digest))
+        self.assertEqual(first['schemaRevision'], 1)
+        self.assertIsInstance(second, ValueError)
+        self.assertIn('already exist', str(second))
+        self.assertEqual(self.rows(), ([('group-x', 1, [self.column['id']])], []))
+        with db_engine.session_scope(self.url) as session:
+            self.assertEqual(session.execute(text('SELECT count(*) FROM group_review_cells')).scalar(), 0)
+        self.assertEqual(self.legacy_rows(), legacy)
+
+    def test_writer_blocks_on_adoption_locks_then_sees_the_adopted_rows(self):
+        legacy_column = self.seed_legacy()
+        digest = self.adoption_digest()
+        entered, release, results = Event(), Event(), {}
+
+        def paused(_session):
+            entered.set()
+            if not release.wait(8):
+                raise AssertionError('script never released')
+
+        def run(name, action):
+            try:
+                results[name] = action()
+            except Exception as error:  # noqa: BLE001 - returned to the test for assertion
+                results[name] = error
+
+        script = Thread(target=run, args=('script', lambda: self.adopt('--apply', '--expected-sha256', digest)))
+        writer = Thread(target=run, args=('writer', lambda: self.save(schemas=[self.layout()], base=0, view=0, sprint='40')))
+        with patch.object(adopt, '_before_write', paused):
+            script.start()
+            try:
+                self.assertTrue(entered.wait(8), 'script never reached its locked transaction')
+                writer.start()
+                self.wait_until_blocked()
+                self.assertNotIn('writer', results)
+            finally:
+                release.set()
+                script.join(10)
+                if writer.ident is not None:
+                    writer.join(10)
+        self.assertFalse(script.is_alive() or writer.is_alive())
+        self.assertEqual(results['script'][0], 0)
+        saved = results['writer']
+        self.assertNotIsInstance(saved, Exception)
+        self.assertEqual(([c['id'] for c in saved['columns']], saved['schemaRevision'], saved['viewRevision']),
+                         ([legacy_column], 1, 1))
+        schemas, views = self.rows()
+        self.assertEqual(schemas, [('group-x', 1, [legacy_column])])
+        self.assertEqual([(v[0], v[1]) for v in views], [('16', 1), ('40', 1)])
+
+    def test_writer_holding_past_lock_timeout_makes_adoption_exit_2(self):
+        self.seed_legacy()
+        digest = self.adoption_digest()
+        with self.held_writer(self.add) as held:
+            started = time.monotonic()
+            code, _ = self.adopt('--apply', '--expected-sha256', digest)
+            elapsed = time.monotonic() - started
+        self.assertEqual(code, 2)
+        self.assertGreaterEqual(elapsed, 4.5)
+        self.assertLess(elapsed, 12)
+        self.assertEqual(held['value']['schemaRevision'], 1)
+        self.assertEqual(self.rows(), ([('group-x', 1, [self.column['id']])], []))
 
     # Migration
     def test_model_database_parity(self):

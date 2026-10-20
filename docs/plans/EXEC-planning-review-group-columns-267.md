@@ -113,22 +113,42 @@ Everything under Global Constraints, plus: existing Sprint SP, Story Points and 
 
 ## Execution status
 
-Updated 2026-10-20. Phase 0 complete; execution started.
+Updated 2026-10-20. Tasks A1 to D3b are implemented and committed locally on `feature/267-group-review-columns` (unpushed); E1 (records) is in progress and E2 (full verification, Gates 6 and 7, Definition of Done) is pending. Evidence is per-task report summaries; the DoD table below is filled by E2 only.
 
 | Task | State | Commit | Evidence |
 | --- | --- | --- | --- |
-| A1 migration and models | pending | | |
-| A2 services, routes, groupId contract, CI wiring | pending | | |
-| A3 statement counts and PostgreSQL race tests | pending | | |
-| B1 adoption script and race trio | pending | | |
-| B2 Dockerfile, README, INSTALL | pending | | |
-| C1 API and controller | pending | | |
-| C2 group guard, activation, dismissal state | pending | | |
-| D1 model: derived, placement, totals | pending | | |
-| D2 Playwright fixtures and harness (no behavior change) | pending | | |
-| D3 table UI and specs | pending | | |
-| E1 records | pending | | |
-| E2 full verification and DoD | pending | | |
+| A1 migration and models | done | `c612501d` | 43 migration and model tests OK; offline render, parity and legacy-row survival across downgrade |
+| A2 services, routes, groupId contract, CI wiring | done | `d69db071` | 93 targeted tests OK; `make test-security` 82 OK; full Python suite OK at the time |
+| A3 statement counts and PostgreSQL race tests | done | `b65b9ea7` | statement counts equal the design table; 9 PostgreSQL tests OK on a throwaway server (skipped without the opt-in) |
+| B1 adoption script and race trio | done | `11c1a523` | 23 script tests OK; PostgreSQL module 12 OK on a throwaway server |
+| B2 Dockerfile, README, INSTALL | done | `8189c9a5` | 13 packaging tests OK; Gate 7 rehearsal still open |
+| C1 API and controller | done | `d96d0072` (with C2) | node unit suite green; committed with C2 so no commit leaves the review specs red |
+| C2 group guard, activation, dismissal state | done | `d96d0072` (with C1) | node unit 2914 OK; budgets OK; two review specs 87 passed |
+| D1 model: derived, placement, totals | done | `fec8207f` | model tests 28 OK; unit 2923 OK |
+| D2 Playwright fixtures and harness (no behavior change) | done | `5376ab2c` | four specs 229 passed |
+| D3a derived columns, marker, readout | done | `80c75277` | unit 2923 OK; four specs 224 passed, 1 headed-only skip |
+| D3b hint, group copy, anchor wiring, blocked state | done | `701adb8c` | unit 2925 OK; budgets OK; six specs 361 passed, 3 skipped |
+| E1 records | in progress | pending | docs, ownership contract, ontology, learnings, analytics rows and guard test |
+| E2 full verification and DoD | pending | | Gates 6 and 7 and the headed Firefox and WebKit checks stay open until run |
+
+Also on the branch: `0566c318` merges `origin/main` (needed by the rewritten share-link interruption spec); the committed `frontend/dist` mirrors main's build until E2 rebuilds it.
+
+## Divergences found during execution
+
+Each is accepted by the operator or controller; the task reports under `.superpowers/sdd/` are authoritative.
+
+- A2: `ensure_group_configured` takes an optional `database_url`; the capability helper is public as `require_review_context`; `apply_schema` and `apply_layouts` no longer shape-check, so callers (including the adoption script) call `validate_schema_changes` first.
+- A2: every new column stores `after` (null when absent), a 1-64 character string; `rename`, `archive` and `aggregation` column ids need UUID shape in the stateless pass; a whitespace-padded `groupId` is `400 invalid_review_request`, never `review_group_unknown`; the values read skips the cell query when a group has no active column of that kind.
+- A2: existing tests were rewritten (not re-signatured) where the design changes semantics: another Sprint now sees values and inherits the view, and archived columns' cells are no longer read back.
+- B1: `--workspace-id` is required except with `--list`; the digest covers content rows only (empty legacy rows are skipped); catalog group ids must already pass `group_identity`; every group gets a schema row even when nothing is adopted; unknown ids in legacy layouts and orphan cells are dropped and counted; the report prints group ids; the dry run sets the same session timeouts but takes no locks.
+- C1: the post-PATCH forced refresh runs only when the response `schemaRevision` differs from the held one (silent, not manual); a 200 without `layouts` sets saved values from the latest known server view; `groupBlocked` also clears on a successful automatic load; the controller treats an empty `groupId` as an ordinary scope value.
+- C1 and C2 were committed together because C1 alone left 20 Playwright failures until the dashboard passed `groupId`.
+- C2: the group guard reaches the Settings hooks through `groupChangeGuardRef` (so `tests/test_use_team_group_settings.js`, outside the brief, pins 17 inputs); Stay on a Settings Save throws "Settings were not saved: the Planning review has unsaved changes." and the shared-groups part of the same Save is already committed; the first-run preference save is guarded and first-run cancel stays automatic; `reviewGroupReady` joins the hook's return value; the guard prompts only when the target group differs.
+- D1: `derivedValue` returns `{ scaled, value, complete }`; `ctx.isLoaded(id, rowKind)` and the derived context are optional last arguments; a blank derived total is `null`; an Epic with no in-scope Stories or no stored value is blank but complete; a custom column already in a saved order keeps its position and ignores `after`; `nativeAnchorFor` returns `null` for a corner over an empty order and `'summary'` when no native id precedes.
+- D2: the second Department group in the fixtures is opt-in (`groups: 2`); a pre-existing 390px compact-header overlap (search field over the Catch Up radio with two or more visible groups) is recorded in `docs/TODO.md`, not fixed.
+- D3a: the marker is registered through its design-system Element-map row only (a name without a hook suffix keeps the class-hook ratchet exact); the marker and heading button share the "<label>, Story property" accessible name; the letter sits in a `<span>` above a square `::before` hit area (a rounded one missed corner hit tests); marker type is the heading's family and weight at `0.62rem`; a pen hover does not open the readout (a tap pins it).
+- D3b: limit codes map in the controller (two lines changed in C1's file) with one shared `REVIEW_LIMIT_MESSAGES`; the hint dismiss reuses `IconButton` and `planning-review-column-action`, with only the `planning-review-hint` wrapper new; a layout effect compensates the reading position when the hint appears or disappears (WebKit has no scroll anchoring); table-local sort, open menu and add anchor reset on a group change; AC 14's UI half is a stubbed-catalog Playwright test plus a node `buildGroupId` test, not a full Settings flow.
+- Design text: `nativeAnchorFor(order, afterId, derivedIds)` has no `kind` parameter; the movable-id closure lives in the table; the second `dashboard.jsx` ceiling is 7573; review PostgreSQL tests are skipped in CI unless the runner opts in (the runner now does).
 
 ## Order
 

@@ -124,8 +124,8 @@ opens the 300px Add popover, anchored to the table without shifting the page lay
 inside the viewport. Its subject names the active row mode (Add column · Epics or
 Stories); the name field takes focus, with the shared Number | Text segmented control
 and Add column beside it (Enter adds, Escape cancels) and the note that the column is
-shared with everyone reviewing the Sprint. A new column is appended after the last
-movable column. Below, Show hidden lists the hidden optional Jira columns and hidden
+shared with everyone in this Department group. A new column from the corner + lands after the last
+native (non-derived) column of the viewed row mode. Below, Show hidden lists the hidden optional Jira columns and hidden
 review columns as one-line rows in the Filters popover grammar; a row shows its column
 again and the popover stays open. Archived review columns are not listed and cannot be
 restored from the UI. Escape or an outside click dismisses either popup.
@@ -134,7 +134,9 @@ edge after Summary or after any movable column (and until 9px once it is showing
 16×24px + button on a 2px blue edge line appears, and that cell's chevron steps aside
 while it does. Clicking it opens the same Add popover anchored at that boundary; a new
 column, or one restored from Show hidden, is placed directly after the left neighbour
-(after the pinned columns for the Summary boundary). Edges of columns scrolled under the frozen columns are not offered; the last column's edge is, even at maximum scroll. It works on the docked header. It is
+(after the pinned columns for the Summary boundary). The position is saved with the column as an
+anchor (the nearest preceding native column, or the pinned columns), so every Sprint places it the same way;
+a boundary + after a derived column anchors to the native column before it. Edges of columns scrolled under the frozen columns are not offered; the last column's edge is, even at maximum scroll. It works on the docked header. It is
 not shown on touch devices (the corner + is the touch path), while a column grip is being
 dragged, while a popup is open, after any scroll until the pointer moves again, outside the
 header row, or when the review cannot be edited.
@@ -144,7 +146,7 @@ step the column past its nearest visible neighbour like dragging does and stay o
 every column except the pinned Summary also offers Hide column, which closes the
 menu (Key is pinned first, so its menu holds only Hide column). Review columns add Rename (an inline field: Enter or leaving it saves, Escape
 cancels and keeps the menu open), Show total (numbers only, a pressed toggle for the
-footer Σ) and Archive column…, which asks inline first and closes the menu (archiving is refused, and the reason shown under the toolbar, while the column still has unsaved cell drafts).
+footer Σ) and Archive column…, which asks inline first ("it leaves this table in every Sprint for <group> and cannot be restored here") and closes the menu (archiving is refused, and the reason shown under the toolbar, while the column still has unsaved cell drafts).
 The menu does not repeat the column name (it opens directly under that heading) or a usage hint;
 only review columns carry a small "Shared review column" title, and only a menu with a toggle
 row keeps a checkbox gutter, so plain actions start at the left edge.
@@ -162,14 +164,14 @@ the row never grows for a status line. Arrow keys on a focused handle move it pa
 visible neighbour, stepping over hidden columns; the headers are the only place to
 reorder. Hide column in a column's menu and Show hidden in the Add popover control
 optional visibility.
-Order and visibility are shared per workspace + Sprint, separately for Epics and
-Stories, and remain drafts until Save review. Reload/Refresh loads the saved view;
-concurrent layout saves use the same schema revision conflict protection. Save
-accepts layout changes only when its response confirms their exact order and
-visibility; missing or mismatched confirmation preserves the draft and requires
-explicit refresh/reapply recovery.
-Schema and values are shared within workspace + Sprint, independent of Department
-and Team filters. Epic and Story cells are separate and use immutable Jira IDs.
+Order and visibility are shared per workspace + Department group + Sprint, separately for Epics and
+Stories (one saved view per Sprint holding both), and remain drafts until Save review. Reload/Refresh loads the Sprint's
+view; concurrent layout saves are protected by the Sprint view's own revision. Save
+accepts layout changes only when the response confirms their exact order and
+visibility (the Sprint's view response); missing or mismatched confirmation preserves the draft and requires
+explicit refresh/reapply recovery. See Group columns and Sprint views below.
+Columns and values are shared within workspace + Department group across every Sprint (one value per issue), independent of Team
+filters. Epic and Story cells are separate and use immutable Jira IDs.
 Numbers allow at most one decimal place (up to 999999999.9) and show without trailing
 zeros (12, 12.5); totals stay exact across visible rows, and values stored earlier with
 more decimals still read and total exactly;
@@ -177,8 +179,10 @@ blank values are distinct from zero. Heading clicks cycle ascending, descending
 and off; Shift-click adds up to five ordered sort criteria, and the position number
 shows only with two or more criteria. Custom changes remain local until Save review.
 
-Dirty drafts survive filter, Department, mode and layout changes. Sprint changes
-require Save, Discard or Stay. Browser exit uses the browser's unsaved-change
+Dirty drafts survive filter, mode and layout changes. Sprint and Department group changes
+require Save, Discard or Stay (the dialog says "before changing Sprint or group"), including the group
+changes made from the header dropdown and the Settings Save; automatic group changes (a hidden active
+group, a share-link apply, first run) discard a dirty draft without a notice. Browser exit uses the browser's unsaved-change
 prompt. Refresh, including the app-header Refresh, preserves drafts; conflicts offer deliberate Load current or
 Reapply. Unconfirmed writes are never automatically replayed.
 
@@ -190,11 +194,15 @@ request context and authorize every real issue through current-user Jira search.
 They require the normal requested-with and CSRF protections, including values
 reads. All API 401 responses use the terminal global authentication recovery.
 
-API: GET `/api/eng/sprints/<sprint_id>/review` returns definitions, shared layouts and
-capabilities. POST `/review/values/read` returns requested authorized cells.
-PATCH `/review` atomically applies schema and per-cell revision changes. Limits
-are 30 active columns per row kind, 100 changed cells per save, 500 issues per
-read, 256 KiB requests and 1 MiB responses. Larger reads show bounded progress.
+API: GET `/api/eng/sprints/<sprint_id>/review?groupId=<id>` returns the group's definitions, the Sprint's resolved
+layouts, `viewRevision`, `inheritedFrom` and capabilities. POST `/review/values/read` returns requested authorized cells
+for the group's active columns. PATCH `/review` atomically applies schema, layout and per-cell revision changes (`groupId`
+and `baseViewRevision` travel in the body). `groupId` is required on all three, 1-128 characters and equal to its
+stripped form; PATCH validates it against the shared Department group catalog (`400 review_group_unknown`), and a
+view-cap breach is `400 review_view_limit`. Both 409 sites carry `schemaConflict`, `viewConflict`, `cellConflicts`,
+`columns` and `schemaRevision`. Limits are 30 active columns per row kind, 240 columns per group (archived included),
+500 saved Sprint views per group, 100 changed cells per save, 500 issues per read, 256 KiB requests and 1 MiB
+responses. Larger reads show bounded progress.
 
 Summary and Team edits use the existing signed-in Jira OAuth field controller,
 with stale-value and mapping-revision checks. Team options require actual Jira
@@ -203,8 +211,8 @@ clearing and subtask Team writes are unsupported. Epic Team editing changes the
 Epic's own Team, separately from the read-only Teams in scope.
 
 Migration `20261001_0017` adds the dedicated review tables; `20261001_0018`
-adds shared column layouts without changing existing definitions or values. It is not applied to
-production by this implementation. Authenticated live Team editing and release
+adds shared column layouts without changing existing definitions or values; `20261020_0019` adds the group tables
+(see below). None is applied to production by this implementation. Authenticated live Team editing and release
 acceptance require separate verification with an approved disposable Jira issue.
 
 Story Points edits use only the in-cell input: Enter saves to Jira, Escape cancels, and leaving the input discards the unsaved value. No Save/Cancel buttons are shown.
@@ -216,3 +224,64 @@ In expanded Table mode, Collapse panel is part of the selection control line, wi
 Custom-cell inputs use a compact fixed height and vertical alignment; focus changes their border without adding a glow or changing column/row geometry.
 
 The spreadsheet uses the page’s vertical scroll; its wrapper only scrolls horizontally. While rows are on screen, column headings dock below the measured Filters/capacity stack and totals dock at the viewport bottom until the natural total row becomes visible. Both rows use measured column widths and synchronized horizontal positions, including horizontal scrolling from the bottom total row. Rows above the docked headings are clipped so they cannot peek beside the narrower controls. Frozen identification columns, sorting, reordering, editing and shared review drafts are preserved.
+
+## Group columns and Sprint views (#267)
+
+Review columns and values belong to a Department group, not to a Sprint. In
+`workspace_group_review_schemas` one row per workspace and group id holds the column
+definitions (label, type, total, archived, default order and creation anchor); `group_review_cells` holds one value per
+issue, row kind and column, shared by every Sprint; `group_sprint_review_views` holds one saved
+view (column `order` and `hidden`, per row kind) per workspace, group and Sprint. The group id is the storage key and is stable on
+rename; a group's visibility preference never gates its review data; a group re-created with a deleted
+group's id (including the default "New Group" slot) silently reattaches the old columns, values and views, and archiving the
+unwanted columns is the recovery. Editing a value in any Sprint changes it in all of them and creates no view; renaming a
+column, changing its total or archiving it never creates a view either.
+
+**View resolution.** The Sprint's own saved view wins; otherwise the nearest earlier saved view by numeric Sprint
+id (one `<=` lookup on `sprint_order`, the id left-padded to 128 digits; no catalog or Jira read); otherwise
+the default arrangement. Inheritance is whole-row: a view holding only one row kind leaves the other kind at its default. The first layout save in a
+Sprint writes its own view and freezes inheritance for both kinds (the client adds the other kind's layout to that save when it
+holds one). Adding a column always saves the creating Sprint's layout, so that Sprint gets its own view.
+
+**Hint.** A Sprint that inherits shows one line above the table, "Layout inherited from <Sprint>" (or "an earlier
+Sprint" when the source is missing from the loaded Sprint catalog), with a small dismiss button. The dismissal is a private browser
+preference (`planningInheritedHintDismissals`, newest 50, keyed by Sprint and group) that holds only for that source Sprint and view
+revision; the line is hidden while a capability, error, form or recovery line shows, and while the review has a layout draft. It is a
+recorded exception to "no persistent instructional text". There is no reset, choose-source or delete-view action.
+
+**Archive versus Hide.** Hide is per Sprint view and row kind and is reversible from Show hidden. Archive is group-wide, for every Sprint
+and every user, cannot be restored from the UI, frees an active slot but still counts toward the 240-column cap, and removes the
+column's derived twin everywhere.
+
+**Derived Epic and Story columns.** Computed in the client from loaded cells; nothing is stored, sent or editable. A Story number
+column whose total is a sum also appears in the Epic view as a sum over the Epic's in-scope Stories (blank until every
+in-scope Story is loaded, while a manual refresh loads, when no Story has a stored value, and for unavailable Stories; turning Show total
+off removes the rollup in every Sprint). Every Epic column also appears in the Story view as the parent Epic's value, repeated per
+Story and never summed or totalled. Derived columns are visible by default, last in the other view, and keep their position in
+a saved layout; their menu offers only Move left, Move right and Hide, and hiding is per row kind. A superscript marker
+("S" on a Story column in the Epic view, "E" on an Epic column in the Story view) sits before the name on numeric columns and
+after it on text columns, is a native button with a 24px hit area that does not change the 32px header, and opens a readout on mouse
+hover, focus or a tap that pins it ("Story property, summed from this Epic's Stories in this Sprint and the current filters" or "Epic
+property, inherited from the parent Epic"). Totals and sorting use the derived value; an Epic with no in-scope Stories, a Story with no Epic
+and an awaiting-creation placeholder show blank.
+
+**Adoption cutover.** The migration creates the group tables empty and leaves the legacy per-Sprint tables untouched and
+unread, so existing review columns disappear from the UI until `scripts/adopt_legacy_sprint_reviews.py` is run (a dry run by
+default; `--apply` needs the dry run's `--expected-sha256` digest and runs in a quiesced window). It copies each
+workspace's legacy columns, values and views into every configured Department group. See the cutover runbook, rollback table and
+purge note in [README.md](../../README.md) and [INSTALL.md](../../INSTALL.md). A database that auto-migrates on start hides legacy
+columns until the script is run by hand.
+
+**Known limits.**
+- Sprint id is the ordering proxy: a Sprint created out of order, or renamed or reused out of order, can inherit a later Sprint's
+  view; a quarter whose id changes (future to active) can orphan its saved view; the hint falls back to "an earlier Sprint" when
+  the source is gone.
+- Any user can fill the 500-view cap (an accepted insider risk; the purge runbook is in INSTALL.md); at the cap a Sprint with no view of its
+  own cannot add a column and its cell draft rolls back with it (Discard is the exit). The 240-column ceiling per group is permanent.
+- A column action by anyone interrupts dirty column drafts elsewhere in the group, and a layout change interrupts dirty layout drafts of the
+  same Sprint; cell-only drafts are not interrupted.
+- At cutover adopted columns surface as derived columns in every group's views, "highest Sprint id wins" collapses per-Sprint value
+  history (the report counts what is dropped), archive-intent and cap-excluded keys lose their cells, and an adopted single-kind
+  view makes later Sprints show the default arrangement for the other kind.
+- A layout saved while Show total is off loses that derived column's position; the corner + can land a new column second rather
+  than last when a Sprint's view moved a native column to the front.

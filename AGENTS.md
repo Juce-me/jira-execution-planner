@@ -397,7 +397,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Preserve chart bar/strip geometry, semantic fills and readable in-app readouts when changing button hover; verify actual charts without altering unrelated controls.
 - Build UI mockups from verbatim repository CSS (tokens, fonts, sizes, grid columns, breakpoints) and existing DOM classes; do not approximate styling or add dark modes the app lacks.
 - Keep Planning spreadsheet columns and cell padding compact without stretching a short table; widen only the spreadsheet region and preserve the header, capacity panel, and filters at their original width.
-- Manage Planning review columns from the header: a persistent corner "+" (Add column and Show hidden), a pointer-only hover boundary "+" that inserts at that position, and a per-column chevron menu that does not repeat the column name or a usage hint; do not add toolbar "+ Column"/"Columns" buttons (`docs/plans/EXEC-planning-review-table-chrome-217.md`).
+- Manage Planning review columns from the header: a persistent corner "+" (Add column and Show hidden), a pointer-only hover boundary "+" that inserts at that position (persisted as a native-column anchor, so every Sprint places the column alike), and a per-column chevron menu that does not repeat the column name or a usage hint; do not add toolbar "+ Column"/"Columns" buttons (`docs/plans/EXEC-planning-review-table-chrome-217.md`).
 - Planning spreadsheet statuses must use StatusPill with getIssueStatusClassName in both passive and OAuth editing profiles; verify the actual editor controls in geometry tests.
 
 - Planning spreadsheet metadata belongs in explicit columns, with parent Epic summary linked to Jira for Stories and totals pinned inside the viewport; do not hide it behind a Fields menu.
@@ -406,7 +406,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 
 - Open the Planning Add column popover and column menus anchored to their header cell; opening one must not move the table or other page content.
 
-- In Planning Sprint review, share column order and optional visibility per workspace/Sprint/row kind; allow custom columns between Jira columns, keep Key/Summary pinned, save layout drafts through Save review, and default optional Component/Project/Capacity/Project Track columns to hidden unless saved visibility explicitly overrides it.
+- In Planning Sprint review, share column definitions and values per workspace + Department group and column order/optional visibility per workspace/group/Sprint/row kind (a Sprint without its own view inherits the nearest earlier by numeric Sprint id, whole row, and its first layout save freezes it); allow custom columns between Jira columns, keep Key/Summary pinned, save layout drafts through Save review, and default optional Component/Project/Capacity/Project Track columns to hidden unless saved visibility explicitly overrides it.
 
 - Edit Planning table Summary directly inside its cell with Enter/blur save and Escape cancel; never open a Summary popup with large Save/Cancel controls.
 
@@ -418,9 +418,9 @@ When the user corrects your approach, append a one-line rule here before ending 
 
 - In Planning table headers, reset inherited global button margins on sort buttons and drag handles; keep custom and Story Points inputs compact and vertically centered within the existing Epic row height, with fixed focus geometry and no inherited focus shadow instead of padding every column to text-field width.
 
-- Default Planning to Table when no valid layout preference exists; keep Table chrome minimal: Epics/Stories in the Filters row, Save and Discard only while the review is dirty, no options menu or persistent instructional text, and the app-header Refresh also reloads the review; Planned Teams Effort is a collapsed strip in Table view, and the Accepted column (selected Story Points) carries its accepted numbers inside the table.
+- Default Planning to Table when no valid layout preference exists; keep Table chrome minimal: Epics/Stories in the Filters row, Save and Discard only while the review is dirty, no options menu or persistent instructional text (the dismissible inherited-view hint is the one recorded exception, as a private per-viewer preference), and the app-header Refresh also reloads the review; Planned Teams Effort is a collapsed strip in Table view, and the Accepted column (selected Story Points) carries its accepted numbers inside the table.
 
-- Clear Planning column-layout drafts only after the save response confirms their exact order and visibility; missing layout acknowledgement must preserve the draft as unconfirmed.
+- Clear Planning column-layout drafts only after the Sprint's view response confirms their exact order and visibility; missing layout acknowledgement must preserve the draft as unconfirmed.
 
 - In Planning tables, align numeric headers, values, editors and totals right; align text columns left.
 
@@ -453,3 +453,10 @@ When the user corrects your approach, append a one-line rule here before ending 
 
 - Keep instance-specific GTM exports, resource IDs, workspace metadata and validation captures out of tracked analytics handoffs; store them only in ignored scratch or a private operator handoff.
 - Use `localhost` for local browser and analytics validation URLs.
+
+- Treat a Department group id as the storage key for its review columns, values and views: group visibility preferences never gate review reads or writes, `groupId` is validated against the shared catalog on PATCH only and is never authority, and a group re-created with a deleted group's id reattaches the old data (archiving is the recovery); say so in any UI or doc that creates or deletes groups.
+- Derived Epic/Story review columns are computed in the client from loaded cells and are never stored, editable or sent; only a Story number column with a sum total rolls up, every Epic column shows down, a rollup is blank until all its Stories are loaded, and nothing reads or writes through the derived id (anchors and layout saves use native ids; `nativeAnchorFor`).
+- Derived-column markers keep the header at 32px and the heading edge delta at 0: a zero-height inline-block with an absolute 24x24 hit area, before the name on numeric columns and after it on text columns, one focusable copy only (the docked copy is `aria-hidden`), verified with `elementFromPoint` and painted-ink checks rather than `boundingBox`; shared readouts gain behavior only behind an opt-in mode.
+- Re-verify sticky and docked-header offsets and reading position with the inherited-view hint row both present and dismissed (WebKit has no scroll anchoring, so the hint's appearance must compensate); never change sticky offsets or z-index otherwise (MRT009).
+- Planning review Archive is group-wide for every Sprint and user, is not restorable from the UI and still counts toward the 240-column group cap; its confirmation copy must say so, and Hide stays per Sprint view.
+- When a task grows a file registered in `scripts/extraction_lint/owner_budgets.json`, re-sync that file's ceiling, aggregates, `unresolved` inventory and `sourceDigest` deliberately in the same commit and run `tests.test_codebase_structure_budgets`; never golf unrelated lines to hold a ceiling, and note that no CI runs the lint.

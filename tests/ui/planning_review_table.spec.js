@@ -12,12 +12,28 @@ test.beforeAll(() => {
         import { createRoot } from 'react-dom/client';
         import PlanningReviewTable, { PlanningReviewScopeDialog } from './frontend/src/eng/PlanningReviewTable.jsx';
         import { createPlanningSprintReviewController } from './frontend/src/eng/usePlanningSprintReview.js';
+        import { recordInheritedHintDismissal } from './frontend/src/eng/usePlanningGroupScope.js';
         const stories = Array.from({length:window.longReview?60:3},(_,i)=>i+1).map(id => ({id:String(id),key:'DEMO-'+id,fields:{summary:'Story '+id,customfield_10004:window.zeroStory&&id===3?null:id,teamId:'alpha',teamName:window.longNames?(id===1?'Research Long Named Alpha Engineering Team':'Research Long Named Beta Engineering Team'):'Alpha',projectKey:'DEMO',status:{name:'To Do'},priority:{name:'High'}}}));
         const epics=[{key:'DEMO-10',epic:{id:'10',key:'DEMO-10',summary:window.longNames?'Automate detailed calculations and adjustments across multiple supported integrations':'Epic summary',status:{name:'To Do'},priority:{name:'High'},teamName:'Own Team'},tasks:stories.slice(0,2),requirements:[]},{key:'DEMO-20',epic:{id:'20',key:'DEMO-20',summary:window.longNames?'Readiness Epic with a deliberately long title that must truncate beside its chip':'Readiness Epic'},tasks:[],requirements:[{id:'required',team:{name:'Beta'}}]}];
         const columns=Array.from({length:8},(_,i)=>({id:'cost'+i,rowKind:'story',label:'Cost '+i,type:'number',aggregation:'sum',archived:false,order:i}));
-        let saveCount=0; let savedSchema={schemaRevision:1,columns,layouts:{},capabilities:{canRead:true,canSave:true}};
-        const controller=createPlanningSprintReviewController({fetchSchema:async()=>savedSchema,readValues:async(_,__,body)=>({cells:body.issueIds.flatMap(id=>columns.map(column=>({issueId:id,rowKind:body.rowKind,columnId:column.id,value:id==='1'?'2.000':'10.000',revision:1})))}),saveReview:async(_,__,payload)=>{saveCount++; savedSchema={...savedSchema,schemaRevision:savedSchema.schemaRevision+1,columns:controller.getState().columns,layouts:controller.getState().layouts}; return {...savedSchema,cells:payload.cellChanges.map(cell=>({...cell,revision:2}))}}});
-        window.reviewActions=[]; window.holdCalls=[]; window.harness={state:()=>controller.getState(),saveCount:()=>saveCount,reload:()=>controller.refresh(),actions:()=>window.reviewActions};
+        // Synthetic group-scoped review server: one schema per Department group (the second has no columns), values only for the
+        // group's original columns, and a save that stores the controller's columns and layouts under the payload's group.
+        // window.harnessOptions switches: viewRevision/inheritedFrom (group-alpha schema response), groupName, sprintNames, derived, groupId, sprintId.
+        // window.valuesGate, when a promise, holds every values read until it settles (blank-while-loading checks).
+        // window.saveError, when set to an error code, makes the next saves fail with that code (group-blocked and limit checks).
+        // options.active=false keeps the review inactive; options.capabilities overrides the stub's capabilities.
+        const options=window.harnessOptions||{};
+        const capabilities=options.capabilities||{canRead:true,canSave:true};
+        const viewKeys={...('viewRevision' in options?{viewRevision:options.viewRevision}:{}),...('inheritedFrom' in options?{inheritedFrom:options.inheritedFrom}:{})};
+        const schemas={'group-alpha':{schemaRevision:1,columns,layouts:{},capabilities,...viewKeys},'group-beta':{schemaRevision:1,columns:[],layouts:{},capabilities}};
+        const valueColumns={'group-alpha':columns,'group-beta':[]};
+        const groupNames={'group-alpha':'Alpha Department','group-beta':'Beta Department'};
+        const sprintNames=options.sprintNames===undefined?{'90':'Sprint 90','100':'Sprint 100','110':'Sprint 110'}:options.sprintNames;
+        const requests=[]; let saveCount=0; let setHarnessScope=()=>{};
+        const controller=createPlanningSprintReviewController({fetchSchema:async(_,sprintId,{groupId}={})=>{requests.push({kind:'schema',sprintId,groupId}); return schemas[groupId]},readValues:async(_,sprintId,body)=>{requests.push({kind:'values',sprintId,groupId:body.groupId,rowKind:body.rowKind,issueIds:[...body.issueIds]}); if(window.valuesGate) await window.valuesGate; return {cells:body.issueIds.flatMap(id=>(valueColumns[body.groupId]||[]).map(column=>({issueId:id,rowKind:body.rowKind,columnId:column.id,value:id==='1'?'2.000':'10.000',revision:1})))}},saveReview:async(_,sprintId,payload)=>{saveCount++; requests.push({kind:'save',sprintId,groupId:payload.groupId,payload}); if(window.saveError){const error=new Error('Review request failed.');error.status=400;error.code=window.saveError;throw error;} const current=schemas[payload.groupId]; const layoutSave=payload.schemaChanges.some(change=>change.action==='layout'); schemas[payload.groupId]={...current,schemaRevision:current.schemaRevision+1,columns:controller.getState().columns,layouts:controller.getState().layouts,...(layoutSave?{viewRevision:(current.viewRevision||0)+1,inheritedFrom:null}:{})}; return {...schemas[payload.groupId],cells:payload.cellChanges.map(cell=>({...cell,revision:2}))}}});
+        window.reviewActions=[]; window.holdCalls=[]; window.harness={state:()=>controller.getState(),saveCount:()=>saveCount,reload:()=>controller.refresh(),actions:()=>window.reviewActions,
+            requests:()=>requests,setGroup:groupId=>setHarnessScope(scope=>({...scope,groupId})),setSprint:sprintId=>setHarnessScope(scope=>({...scope,sprintId:String(sprintId)})),
+            setSchema:(groupId,patch)=>{schemas[groupId]={...schemas[groupId],...patch}},guard:()=>controller.guardScopeChange(()=>{}),save:()=>controller.save(),dismissals:()=>window.hintDismissals||{}};
         function App(){
             const state=React.useSyncExternalStore(controller.subscribe,controller.getState,controller.getState);
             const [selected,setSelected]=React.useState(new Set());
@@ -27,16 +43,22 @@ test.beforeAll(() => {
             React.useEffect(()=>{window.heldRows=0;window.priorityEdit={start:(key,name)=>{setPending(map=>new Map(map).set(key,{priority:{name:'High'}}));setPrio(map=>({...map,[key]:name}))},confirm:(key,scrolled=false)=>{setPending(map=>{const next=new Map(map);next.delete(key);return next});setConfirmed(event=>({keys:[...new Set([...(event?.keys||[]),key])],latest:key,scrolled:new Set([...(event?.scrolled||[]),...(scrolled?[key]:[])])}))}}},[]);
             const withPrio=task=>prio[task.key]?{...task,fields:{...task.fields,priority:{name:prio[task.key]}}}:task;
             const shown=stories.map(withPrio);const shownEpics=epics.map(group=>({...group,tasks:group.tasks.map(withPrio)}));
-            React.useEffect(()=>{controller.setScope({sprintId:'100',contextKey:'actor',active:true,rows:[...stories.map(task=>({issueId:task.id,rowKind:'story'})),...epics.map(group=>({issueId:group.epic.id,rowKind:'epic'}))]});},[]);
-            return <div className="container"><div id="reference">Header reference</div><button id="layout" onClick={()=>setVisible(!visible)}>Layout</button>{visible&&<PlanningReviewTable epicGroups={shownEpics} visibleTasks={shown} pendingOriginals={pending} confirmedEdit={confirmed} onConfirmedEditHandled={handled=>setConfirmed(event=>{const left=(event?.keys||[]).filter(key=>!handled.includes(key));return left.length?{...event,keys:left}:null})} isRowHeld={()=>window.heldRows>0} selectedStoryKeys={selected} onToggleStory={task=>setSelected(previous=>{const next=new Set(previous);if(next.has(task.key))next.delete(task.key);else next.add(task.key);return next})} onSelectStories={(tasks,on)=>setSelected(previous=>{const next=new Set(previous);tasks.forEach(task=>on?next.add(task.key):next.delete(task.key));return next})} jiraUrl="https://jira.example" review={{...state,...controller}} onReviewAction={action=>window.reviewActions.push(action)} onHoldRow={key=>window.holdCalls.push(key)} admittedTeamCount={2} admittedProjectCount={2} renderFieldEditor={({row,field,value})=>field==='assignee'?<input className="issue-person-editor-trigger" aria-label={'assignee for '+row.key} defaultValue={String(value)} />:field==='team'||field==='inclusion'?<button className={field==='inclusion'?'epic-stat-toggle '+(row.key==='DEMO-2'?'':'active'):'planning-action-button'} aria-label={field+' for '+row.key}>{field==='inclusion'?(row.key==='DEMO-2'?'Excluded':'Included'):row.team?.name||'Unknown Team'}</button>:value}/>}<PlanningReviewScopeDialog review={{...state,...controller}}/></div>
+            const [scope,setScope]=React.useState({sprintId:String(options.sprintId||'100'),groupId:options.groupId||'group-alpha'});setHarnessScope=setScope;
+            // Hint dismissals live in App state, as in the dashboard, so they survive Sprint and group switches.
+            const [dismissals,setDismissals]=React.useState({});window.hintDismissals=dismissals;
+            React.useEffect(()=>{controller.setScope({sprintId:scope.sprintId,groupId:scope.groupId,contextKey:'actor',active:options.active!==false,rows:[...stories.map(task=>({issueId:task.id,rowKind:'story'})),...epics.map(group=>({issueId:group.epic.id,rowKind:'epic'}))]});},[scope.sprintId,scope.groupId]);
+            // Group and Sprint props for the table; derived columns stay off unless a test opts in.
+            const groupProps={groupName:'groupName' in options?options.groupName:groupNames[scope.groupId],resolveSprintName:sprintId=>sprintNames?.[String(sprintId)],derived:options.derived===true,inheritedHintDismissals:dismissals,onDismissInheritedHint:hint=>setDismissals(map=>recordInheritedHintDismissal(map,hint))};
+            return <div className="container"><div id="reference">Header reference</div><button id="layout" onClick={()=>setVisible(!visible)}>Layout</button>{visible&&<PlanningReviewTable epicGroups={shownEpics} visibleTasks={shown} pendingOriginals={pending} confirmedEdit={confirmed} onConfirmedEditHandled={handled=>setConfirmed(event=>{const left=(event?.keys||[]).filter(key=>!handled.includes(key));return left.length?{...event,keys:left}:null})} isRowHeld={()=>window.heldRows>0} selectedStoryKeys={selected} onToggleStory={task=>setSelected(previous=>{const next=new Set(previous);if(next.has(task.key))next.delete(task.key);else next.add(task.key);return next})} onSelectStories={(tasks,on)=>setSelected(previous=>{const next=new Set(previous);tasks.forEach(task=>on?next.add(task.key):next.delete(task.key));return next})} jiraUrl="https://jira.example" review={{...state,...controller}} {...groupProps} onReviewAction={action=>window.reviewActions.push(action)} onHoldRow={key=>window.holdCalls.push(key)} admittedTeamCount={2} admittedProjectCount={2} renderFieldEditor={({row,field,value})=>field==='assignee'?<input className="issue-person-editor-trigger" aria-label={'assignee for '+row.key} defaultValue={String(value)} />:field==='team'||field==='inclusion'?<button className={field==='inclusion'?'epic-stat-toggle '+(row.key==='DEMO-2'?'':'active'):'planning-action-button'} aria-label={field+' for '+row.key}>{field==='inclusion'?(row.key==='DEMO-2'?'Excluded':'Included'):row.team?.name||'Unknown Team'}</button>:value}/>}<PlanningReviewScopeDialog review={{...state,...controller}}/></div>
         }
         createRoot(document.getElementById('root')).render(<App/>);
     ` }, bundle: true, write: false, format: 'iife', define: { 'process.env.NODE_ENV': '"test"' } }).outputFiles[0].text;
     css = process.env.JEP_HOVER_CSS_PATH ? fs.readFileSync(process.env.JEP_HOVER_CSS_PATH,'utf8') : esbuild.buildSync({ entryPoints: [path.join(root, 'frontend/src/styles/dashboard.css')], bundle: true, write: false }).outputFiles[0].text;
 });
-async function install(page, longReview = false, longNames = false, zeroStory = false, motion = false) {
+// `options` sets window.harnessOptions (see the harness): group and Sprint, view revision and source, group name, Sprint names, derived.
+async function install(page, longReview = false, longNames = false, zeroStory = false, motion = false, options = {}) {
     await page.setContent(`<meta name="viewport" content="width=device-width, initial-scale=1"><style>${css} ${motion ? '' : '*,*::before,*::after{animation:none!important;transition:none!important}'}</style><div id="root"></div>`);
-    await page.evaluate(({longReview,longNames,zeroStory}) => {window.longReview=longReview;window.longNames=longNames;window.zeroStory=zeroStory},{longReview,longNames,zeroStory});
+    await page.evaluate(({longReview,longNames,zeroStory,options}) => {window.longReview=longReview;window.longNames=longNames;window.zeroStory=zeroStory;window.harnessOptions=options},{longReview,longNames,zeroStory,options});
     await page.addScriptTag({ content: js });
     await expect(page.getByRole('region', { name: 'Planning Sprint review' })).toBeVisible();
     await expect(page.getByText('Loading review…')).toHaveCount(0);
@@ -343,7 +365,7 @@ test('Add column popover is a compact form in the shared popover grammar with a 
     expect((await popup.boundingBox()).width).toBeLessThanOrEqual(320);
     await expect(popup.locator('.pop-subject')).toHaveText('Add column · Stories');
     await expect(popup.locator('.pop-facet')).toHaveText(['Show hidden']);
-    await expect(popup.getByText('Shared with everyone reviewing this Sprint.',{exact:true})).toBeVisible();
+    await expect(popup.getByText('Shared with everyone in this Department group.',{exact:true})).toBeVisible();
     await expect(popup.getByRole('button',{name:/^Move /})).toHaveCount(0);
     await expect(popup.getByRole('button',{name:'Done',exact:true})).toHaveCount(0);
     await expect(popup.getByRole('textbox')).toHaveCount(1);
@@ -1096,7 +1118,7 @@ test('Archive column… asks first, Cancel keeps the column and Archive removes 
     await columnMenuButton(page, 'Cost 7').click();
     const popup = columnMenu(page, 'Cost 7');
     await popup.getByRole('button', { name: 'Archive column…', exact: true }).click();
-    await expect(popup.getByText('Archive “Cost 7”?')).toBeVisible();
+    await expect(popup.getByText('Archive “Cost 7”? It leaves this table in every Sprint for Alpha Department and cannot be restored here.', { exact: true })).toBeVisible();
     await popup.getByRole('button', { name: 'Cancel', exact: true }).click();
     await expect(popup.getByText('Archive “Cost 7”?')).toHaveCount(0);
     await expect(page.getByRole('columnheader', { name: 'Cost 7', exact: true })).toBeVisible();
@@ -1150,7 +1172,7 @@ test('the Add popover holds the form, the shared note and Show hidden, and addin
     const type = popup.getByRole('radiogroup', { name: 'Column type', exact: true });
     await expect(type).toHaveClass(/eng-mode-control/);
     await expect(popup.getByRole('button', { name: 'Add column', exact: true })).toBeVisible();
-    await expect(popup.getByText('Shared with everyone reviewing this Sprint.', { exact: true })).toBeVisible();
+    await expect(popup.getByText('Shared with everyone in this Department group.', { exact: true })).toBeVisible();
     await popup.getByRole('button', { name: 'Capacity', exact: true }).click();
     await expect(page.getByRole('columnheader', { name: 'Capacity', exact: true })).toBeVisible();
     await expect(popup.getByRole('button', { name: 'Capacity', exact: true })).toHaveCount(0);
@@ -1632,4 +1654,565 @@ test('boundary feedback paints only the visible dot without moving the placement
     expect(hover.hit.box).toEqual(rest.hit.box);expect(hover.dot.box).toEqual(rest.dot.box);expect(hover.dot.ranges).toEqual(rest.dot.ranges);expect(hover.dot.font).toBe(rest.dot.font);
     expect(hover.hit.shadow).toBe('none');expect(hover.hit.background).toBe('rgba(0, 0, 0, 0)');
     expect(hover.dot.background).toBe(rest.dot.background);expect(hover.dot.color).toBe(rest.dot.color);expect(rest.dot.shadow).toBe('none');expect(hover.dot.shadow).toContain('rgb(47, 128, 237)');expect(outside).toBeGreaterThan(4);
+});
+
+// Derived columns (#267): a Story number sum shown read-only on Epic rows (marker S) and an Epic column shown on its
+// Stories (marker E). The harness keeps them off unless a test passes `derived: true`.
+const derivedInstall = (page, options = {}) => { const { longReview = false, ...rest } = options; return install(page, longReview, false, false, false, { derived: true, ...rest }); };
+const realHeader = page => page.locator('table.planning-review-table:not(.planning-review-docked-table) thead');
+const derivedHeading = (page, name) => realHeader(page).locator('th', { has: page.locator(`.planning-review-derived-marker[aria-label="${name}"]`) });
+const markerIn = th => th.locator('.planning-review-derived-marker');
+const STORY_SENTENCE = "Story property, summed from this Epic's Stories in this Sprint and the current filters";
+const EPIC_SENTENCE = 'Epic property, inherited from the parent Epic';
+async function addReviewColumn(page, name, type) {
+    await page.getByRole('button', { name: '+ Add column', exact: true }).click();
+    const dialog = addDialog(page);
+    await dialog.getByLabel('Column name', { exact: true }).fill(name);
+    await dialog.getByRole('radio', { name: type, exact: true }).click();
+    await dialog.getByRole('button', { name: 'Add column', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+}
+// Epic columns Risk (number) and Notes (text) with values on DEMO-10, so the Story view shows them as derived columns.
+async function addEpicSources(page, notes = 'Detailed rollout notes for the integration Epic that run far past the column width') {
+    await addReviewColumn(page, 'Risk', 'Number');
+    await page.getByRole('textbox', { name: 'Risk for DEMO-10', exact: true }).fill('7');
+    await addReviewColumn(page, 'Notes', 'Text');
+    await page.getByRole('textbox', { name: 'Notes for DEMO-10', exact: true }).fill(notes);
+    await page.locator('#reference').click();
+}
+const derivedCell = (page, rowKey, columnId) => page.locator(`tbody tr[data-review-row="${rowKey}"] td.planning-review-${columnId}`);
+const columnIdOf = (page, label) => page.evaluate(name => window.harness.state().columns.find(column => column.label === name).id, label);
+
+test('derived Story sums come last on Epic rows, read-only, with a leading S marker, the No Epic sum and rollup totals', async ({ page }) => {
+    await page.setViewportSize({ width: 2400, height: 900 }); await derivedInstall(page);
+    const names = Array.from({ length: 8 }, (_, index) => `Cost ${index}, Story property`);
+    expect((await headings(page)).slice(-8)).toEqual(names);
+    const th = derivedHeading(page, 'Cost 0, Story property');
+    await expect(th).toHaveClass(/planning-review-custom/); await expect(th).toHaveClass(/planning-review-numeric/);
+    // The marker leads a right-aligned label and sits beside the heading button, not inside it.
+    expect(await th.evaluate(node => [...node.querySelector('.planning-review-head').children].filter(child => !child.classList.contains('planning-review-sr-only')).map(child => child.className.split(' ')[0]))).toEqual(['planning-review-derived-marker', 'planning-review-heading', 'planning-review-drag', 'planning-review-popover-anchor']);
+    await expect(markerIn(th)).toHaveText('S');
+    expect(await th.locator('.planning-review-heading .planning-review-derived-marker').count()).toBe(0);
+    await expect(derivedCell(page, 'epic:10', 'cost0')).toHaveText('12');
+    await expect(derivedCell(page, 'group:no-epic', 'cost0')).toHaveText('10');
+    await expect(derivedCell(page, 'epic:20', 'cost0')).toHaveText('');
+    await expect(page.locator('tfoot .planning-review-cost0')).toHaveText('22');
+    await expect(page.locator('tbody td.planning-review-custom').first()).toHaveClass(/planning-review-numeric/);
+    // Read-only: no input, editor, button or editable text in any derived cell; no native title on the marker or heading.
+    expect(await page.locator('tbody td.planning-review-custom :is(input, textarea, button, [contenteditable])').count()).toBe(0);
+    expect(await th.evaluate(node => [node, node.querySelector('.planning-review-derived-marker'), node.querySelector('.planning-review-heading')].some(item => item.hasAttribute('title')))).toBe(false);
+    // Built-in parent columns in the Story view stay unmarked, and Story columns show no marker in their own view.
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await page.getByRole('button', { name: '+ Add column', exact: true }).click();
+    for (const label of ['Capacity', 'Project Track']) await addDialog(page).getByRole('button', { name: label, exact: true }).click();
+    await addDialog(page).getByLabel('Column name', { exact: true }).press('Escape');
+    for (const name of ['Epic', 'Capacity', 'Project Track', 'Cost 0']) await expect(realHeader(page).getByRole('columnheader', { name, exact: true })).toHaveCount(1);
+    await expect(page.locator('thead .planning-review-derived-marker')).toHaveCount(0);
+    // Turning the Story column's total off removes its rollup.
+    await columnMenuButton(page, 'Cost 0').click();
+    await columnMenu(page, 'Cost 0').getByRole('button', { name: 'Show total', exact: true }).click();
+    await page.keyboard.press('Escape');
+    await page.getByRole('radio', { name: 'Epics', exact: true }).click();
+    expect(await headings(page)).not.toContain('Cost 0, Story property');
+    expect((await headings(page)).slice(-7)).toEqual(names.slice(1));
+});
+
+test('derived Epic columns come last on Story rows with an E marker before numeric and after text names, and no total', async ({ page }) => {
+    await page.setViewportSize({ width: 2400, height: 900 }); await derivedInstall(page);
+    await addEpicSources(page);
+    const [risk, notes] = [await columnIdOf(page, 'Risk'), await columnIdOf(page, 'Notes')];
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    expect((await headings(page)).slice(-2)).toEqual(['Risk, Epic property', 'Notes, Epic property']);
+    const order = th => th.evaluate(node => [...node.querySelector('.planning-review-head').children].filter(child => !child.classList.contains('planning-review-sr-only')).map(child => child.className.split(' ')[0]).slice(0, 2));
+    expect(await order(derivedHeading(page, 'Risk, Epic property'))).toEqual(['planning-review-derived-marker', 'planning-review-heading']);
+    expect(await order(derivedHeading(page, 'Notes, Epic property'))).toEqual(['planning-review-heading', 'planning-review-derived-marker']);
+    await expect(markerIn(derivedHeading(page, 'Notes, Epic property'))).toHaveText('E');
+    expect(await markerIn(derivedHeading(page, 'Notes, Epic property')).evaluate(node => document.getElementById(node.getAttribute('aria-describedby'))?.textContent)).toBe(EPIC_SENTENCE);
+    // Each Story repeats its Epic's (unsaved) value; an orphan Story and the awaiting-creation placeholder stay blank.
+    for (const row of ['story:1', 'story:2']) await expect(derivedCell(page, row, risk)).toHaveText('7');
+    await expect(derivedCell(page, 'story:3', risk)).toHaveText('');
+    await expect(derivedCell(page, 'requirement:required', risk)).toHaveText('');
+    await expect(page.locator(`tfoot .planning-review-${risk}`)).toHaveText('');
+    expect(await page.locator(`tbody :is(td.planning-review-${risk}, td.planning-review-${notes}) :is(input, textarea, button, [contenteditable])`).count()).toBe(0);
+    // Derived text is bounded by its column and ellipsized, with the full value in the in-app readout.
+    const text = derivedCell(page, 'story:1', notes).locator('.planning-review-truncated-value');
+    const bounds = await text.evaluate(node => { const cell = node.closest('td').getBoundingClientRect(), style = getComputedStyle(node.closest('td')), rect = node.getBoundingClientRect(); return { clipped: node.scrollWidth > node.clientWidth + 1, inside: rect.right <= cell.right - parseFloat(style.paddingRight) + 0.5, cellWidth: cell.width, overflow: style.textOverflow || getComputedStyle(node).textOverflow }; });
+    expect(bounds.clipped, JSON.stringify(bounds)).toBe(true); expect(bounds.inside, JSON.stringify(bounds)).toBe(true); expect(bounds.cellWidth, JSON.stringify(bounds)).toBeLessThanOrEqual(200);
+    expect(await text.evaluate(node => getComputedStyle(node).textOverflow)).toBe('ellipsis');
+    await text.hover();
+    await expect(page.getByRole('tooltip').filter({ hasText: 'Detailed rollout notes' })).toBeVisible();
+});
+
+for (const width of [390, 1280]) test(`derived headings stay 32px with a 24px marker hit area and shared value edges at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 }); await derivedInstall(page);
+    await expect(derivedCell(page, 'epic:10', 'cost0')).toHaveText('12');
+    await expect(page.locator('tfoot .planning-review-cost0')).toHaveText('22');
+    const audit = async () => (await page.evaluate(alignmentAudit)).filter(column => /, (Story|Epic) property$/.test(column.column));
+    const check = columns => { for (const column of columns) { const detail = JSON.stringify(column); expect(column.bodyDelta, detail).not.toBeNull(); expect(Math.abs(column.bodyDelta), detail).toBeLessThan(1); } };
+    const epicColumns = await audit();
+    expect(epicColumns).toHaveLength(8); check(epicColumns);
+    for (const column of epicColumns) { expect(column.totalDelta, JSON.stringify(column)).not.toBeNull(); expect(Math.abs(column.totalDelta), JSON.stringify(column)).toBeLessThan(1); }
+    expect([...new Set(await realHeader(page).locator('th').evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().height)))]).toEqual([32]);
+    const th = derivedHeading(page, 'Cost 0, Story property');
+    await th.scrollIntoViewIfNeeded();
+    // The hit area is the marker's 24x24 ::before: every point inside reaches the marker, points beside it do not.
+    const hit = await markerIn(th).evaluate(node => {
+        const box = node.getBoundingClientRect(), before = getComputedStyle(node, '::before');
+        const top = box.top + parseFloat(before.top), left = box.left + parseFloat(before.left), size = [parseFloat(before.width), parseFloat(before.height)];
+        const reaches = (x, y) => document.elementFromPoint(x, y)?.closest('.planning-review-derived-marker') === node;
+        const misses = []; for (const dx of [1, 6, 12, 18, 23]) for (const dy of [1, 6, 12, 18, 23]) if (!reaches(left + dx, top + dy)) misses.push([dx, dy, document.elementFromPoint(left + dx, top + dy)?.className]);
+        const cell = node.closest('th').getBoundingClientRect();
+        return { box: [box.width, box.height], size, inside: misses.length ? misses : true, left: reaches(left - 2, top + 12), withinCell: top >= cell.top - 0.5 && top + size[1] <= cell.bottom + 0.5 };
+    });
+    expect(hit, JSON.stringify(hit)).toEqual({ box: [24, 0], size: [24, 24], inside: true, left: false, withinCell: true });
+    await th.screenshot({ path: path.join(root, `tmp/267-ui/derived-story-heading-${width}.png`), animations: 'disabled' });
+    await page.locator('.planning-review-scroll').screenshot({ path: path.join(root, `tmp/267-ui/derived-epic-view-${width}.png`), animations: 'disabled' });
+    // The Story view: E markers on a numeric (leading) and a text (trailing) Epic column.
+    await page.getByRole('radio', { name: 'Epics', exact: true }).click();
+    await addEpicSources(page, 'ok');
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await expect(derivedCell(page, 'story:1', await columnIdOf(page, 'Risk'))).toHaveText('7');
+    const storyColumns = await audit();
+    expect(storyColumns.map(column => column.column)).toEqual(['Risk, Epic property', 'Notes, Epic property']); check(storyColumns);
+    expect([...new Set(await realHeader(page).locator('th').evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().height)))]).toEqual([32]);
+    const notes = derivedHeading(page, 'Notes, Epic property'); await notes.scrollIntoViewIfNeeded();
+    await notes.screenshot({ path: path.join(root, `tmp/267-ui/derived-epic-heading-${width}.png`), animations: 'disabled' });
+    await page.locator('.planning-review-scroll').screenshot({ path: path.join(root, `tmp/267-ui/derived-story-view-${width}.png`), animations: 'disabled' });
+});
+
+test('the derived marker names its column everywhere and opens its readout by hover, click pin and focus-visible', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 }); await derivedInstall(page);
+    const name = 'Cost 0, Story property', th = derivedHeading(page, name), marker = markerIn(th), letter = marker.locator('span');
+    await th.scrollIntoViewIfNeeded();
+    await expect(th).toHaveAttribute('aria-label', name);
+    await expect(th.locator('.planning-review-heading')).toHaveAttribute('aria-label', name);
+    await expect(marker).toHaveAttribute('aria-label', name);
+    await expect(page.getByRole('button', { name: `Move ${name} column`, exact: true })).toHaveCount(1);
+    expect(await marker.evaluate(node => document.getElementById(node.getAttribute('aria-describedby'))?.textContent)).toBe(STORY_SENTENCE);
+    const tooltip = page.getByRole('tooltip');
+    // Mouse hover opens it and leaving closes it.
+    await letter.hover(); await expect(tooltip).toHaveText(STORY_SENTENCE);
+    // Settled hover paints a tinted circle on the hit area only: no lift, no shadow, the header stays 32px.
+    await expect.poll(() => marker.evaluate(node => getComputedStyle(node, '::before').backgroundImage)).toContain('radial-gradient');
+    expect(await marker.evaluate(node => ({ transform: getComputedStyle(node).transform, shadow: getComputedStyle(node).boxShadow, height: node.closest('th').getBoundingClientRect().height }))).toEqual({ transform: 'none', shadow: 'none', height: 32 });
+    await page.mouse.move(5, 5); await expect(tooltip).toHaveCount(0);
+    // A click pins it past the pointer leaving; a second click unpins; an outside pointer-down closes a pinned one.
+    await letter.click(); await page.mouse.move(5, 5); await page.waitForTimeout(200); await expect(tooltip).toHaveCount(1);
+    await letter.click(); await page.mouse.move(5, 5); await expect(tooltip).toHaveCount(0);
+    await letter.click(); await page.mouse.move(5, 5); await page.locator('#reference').click(); await expect(tooltip).toHaveCount(0);
+    // Keyboard focus (focus-visible) opens it; Escape closes it.
+    await th.locator('.planning-review-heading').focus(); await page.keyboard.press('Shift+Tab');
+    await expect(marker).toBeFocused(); await expect(tooltip).toHaveText(STORY_SENTENCE);
+    await page.keyboard.press('Escape'); await expect(tooltip).toHaveCount(0);
+    // The column menu and its popover carry the same name.
+    await columnMenuButton(page, name).click();
+    await expect(columnMenu(page, name)).toBeVisible();
+    await page.keyboard.press('Escape');
+});
+
+test('one focusable marker and one readout exist across the real and docked headers', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 700 }); await derivedInstall(page, { longReview: true });
+    // The Story view is the long one: an Epic column shown on its Stories.
+    await addReviewColumn(page, 'Risk', 'Number'); await page.locator('#reference').click();
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    const name = 'Risk, Epic property';
+    const markers = page.locator(`.planning-review-derived-marker[aria-label="${name}"]`);
+    const focusable = () => markers.evaluateAll(nodes => nodes.filter(node => node.tabIndex >= 0 && node.getAttribute('aria-hidden') !== 'true').length);
+    await expect(markers).toHaveCount(1); expect(await focusable()).toBe(1);
+    const real = markerIn(derivedHeading(page, name));
+    await derivedHeading(page, name).scrollIntoViewIfNeeded();
+    // A readout pinned on the real header closes when the header docks; the real copy leaves the tab order.
+    await real.locator('span').click(); await expect(page.getByRole('tooltip')).toHaveCount(1);
+    await page.evaluate(() => scrollTo(0, 500));
+    const docked = page.locator('.planning-review-docked-header');
+    await expect(docked).toBeVisible();
+    await expect(page.getByRole('tooltip')).toHaveCount(0);
+    await expect(markers).toHaveCount(2); expect(await focusable()).toBe(1);
+    await expect(real).toHaveAttribute('tabindex', '-1'); await expect(real).toHaveAttribute('aria-hidden', 'true');
+    const dockedMarker = docked.locator(`.planning-review-derived-marker[aria-label="${name}"]`);
+    await dockedMarker.locator('span').hover(); await expect(page.getByRole('tooltip')).toHaveCount(1);
+    await dockedMarker.locator('span').click(); await page.mouse.move(5, 5); await page.waitForTimeout(200); await expect(page.getByRole('tooltip')).toHaveCount(1);
+    await page.evaluate(() => scrollTo(0, 0));
+    await expect(docked).toHaveCount(0); await expect(page.getByRole('tooltip')).toHaveCount(0);
+    expect(await focusable()).toBe(1);
+});
+
+test('a derived column menu offers only moves and Hide, and Hide is separate per view', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 }); await derivedInstall(page);
+    const name = 'Cost 0, Story property';
+    await columnMenuButton(page, name).click();
+    const popup = columnMenu(page, name);
+    expect(await menuItems(popup)).toEqual(['Move left', 'Move right', 'Hide column']);
+    await expect(popup.locator('.pop-subject')).toHaveCount(0);
+    await expect(popup).not.toContainText('Shared review column');
+    // A saved order can place a derived column; it survives the save and a reload.
+    const before = (await headings(page)).indexOf(name);
+    await popup.getByRole('button', { name: 'Move left', exact: true }).click();
+    expect((await headings(page)).indexOf(name)).toBe(before - 1);
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Save review', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => window.harness.state().dirty)).toBe(false);
+    await page.evaluate(() => window.harness.reload());
+    expect((await headings(page)).indexOf(name)).toBe(before - 1);
+    // Hiding it in the Epic view leaves the Story view alone.
+    await hideColumn(page, name);
+    expect(await headings(page)).not.toContain(name);
+    expect(await page.evaluate(() => window.harness.state().layouts.epic.hidden)).toContain('cost0');
+    expect(await page.evaluate(() => window.harness.state().layouts.story?.hidden || [])).not.toContain('cost0');
+    expect(await page.evaluate(() => window.harness.actions())).toContain('column_visibility_changed');
+    // Show hidden names it and shows its superscript.
+    await page.getByRole('button', { name: '+ Add column', exact: true }).click();
+    const row = addDialog(page).getByRole('button', { name, exact: true });
+    await expect(row).toHaveCount(1); await expect(row.locator('sup')).toHaveText('S');
+    await page.keyboard.press('Escape');
+    await addReviewColumn(page, 'Risk', 'Number');
+    const risk = await columnIdOf(page, 'Risk');
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await expect(realHeader(page).getByRole('columnheader', { name: 'Cost 0', exact: true })).toHaveCount(1);
+    // And hiding a derived column in the Story view leaves the Epic view alone.
+    const epicHidden = await page.evaluate(() => window.harness.state().layouts.epic.hidden);
+    await hideColumn(page, 'Risk, Epic property');
+    expect(await page.evaluate(() => window.harness.state().layouts.story.hidden)).toContain(risk);
+    expect(await page.evaluate(() => window.harness.state().layouts.epic.hidden)).toEqual(epicHidden);
+    await page.getByRole('radio', { name: 'Epics', exact: true }).click();
+    await expect(realHeader(page).getByRole('columnheader', { name: 'Risk', exact: true })).toHaveCount(1);
+});
+
+test('derived values stay blank until their sources load and during a manual refresh', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 }); await derivedInstall(page);
+    const cell = derivedCell(page, 'epic:10', 'cost0'), noEpic = derivedCell(page, 'group:no-epic', 'cost0'), total = page.locator('tfoot .planning-review-cost0');
+    await expect(cell).toHaveText('12'); await expect(total).toHaveText('22');
+    const hold = () => page.evaluate(() => { window.valuesGate = new Promise(resolve => { window.releaseValues = resolve; }); });
+    const release = () => page.evaluate(() => { window.valuesGate = null; window.releaseValues(); });
+    await hold();
+    await page.evaluate(() => { window.refreshing = window.harness.reload(); });
+    await expect.poll(() => page.evaluate(() => window.harness.state().forceLoading)).toBe(true);
+    await expect(cell).toHaveText(''); await expect(noEpic).toHaveText(''); await expect(total).toHaveText('');
+    await release(); await page.evaluate(() => window.refreshing);
+    await expect(cell).toHaveText('12'); await expect(noEpic).toHaveText('10'); await expect(total).toHaveText('22');
+    // A scope change reloads every row: nothing shows until the Stories are loaded again.
+    await hold();
+    await page.evaluate(() => window.harness.setSprint('110'));
+    await expect.poll(() => page.evaluate(() => window.harness.requests().filter(item => item.kind === 'values' && item.sprintId === '110').length)).toBeGreaterThan(0);
+    await expect(cell).toHaveText(''); await expect(total).toHaveText('');
+    await release();
+    await expect(cell).toHaveText('12'); await expect(total).toHaveText('22');
+});
+
+test('derived columns add no requests: switching rows reads nothing and Story sums do not change the values reads', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 }); await derivedInstall(page);
+    await expect(derivedCell(page, 'epic:10', 'cost0')).toHaveText('12');
+    const before = await page.evaluate(() => window.harness.requests().length);
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click(); await page.getByRole('radio', { name: 'Epics', exact: true }).click();
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await page.waitForTimeout(200);
+    expect(await page.evaluate(() => window.harness.requests().length)).toBe(before);
+    const reads = () => page.evaluate(() => window.harness.requests().filter(item => item.kind !== 'save').map(item => `${item.kind}:${item.rowKind || ''}:${(item.issueIds || []).length}`));
+    const withSums = await reads();
+    await derivedInstall(page, { groupId: 'group-beta' });
+    await expect(page.locator('thead .planning-review-derived-marker')).toHaveCount(0);
+    expect(await reads()).toEqual(withSums);
+});
+
+test.describe('touch derived marker', () => {
+    test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+    test.skip(({ browserName }) => browserName === 'firefox', 'Firefox does not support mobile emulation (isMobile)');
+    test('one tap opens the readout, a second tap closes it and an outside tap closes it', async ({ page }) => {
+        await derivedInstall(page);
+        const th = derivedHeading(page, 'Cost 0, Story property'), letter = markerIn(th).locator('span'), tooltip = page.getByRole('tooltip');
+        await th.scrollIntoViewIfNeeded();
+        await letter.tap(); await expect(tooltip).toHaveText(STORY_SENTENCE);
+        await page.waitForTimeout(200); await expect(tooltip).toHaveCount(1);
+        await letter.tap(); await expect(tooltip).toHaveCount(0);
+        await page.waitForTimeout(200); await expect(tooltip).toHaveCount(0);
+        await letter.tap(); await expect(tooltip).toHaveCount(1);
+        await page.locator('#reference').tap(); await expect(tooltip).toHaveCount(0);
+        await page.screenshot({ path: path.join(root, 'tmp/267-ui/derived-marker-touch-390.png'), fullPage: false, animations: 'disabled' });
+    });
+});
+
+// #267: group-wide copy, the sent add anchor, the inherited-view hint and group-blocked saves.
+const inheritedView = { viewRevision: 0, inheritedFrom: { sprintId: '90', viewRevision: 3 } };
+const hintRow = page => page.locator('.planning-review-hint');
+const dismissHint = page => page.getByRole('button', { name: 'Dismiss layout hint', exact: true });
+const longGroupName = 'Platform Reliability and Developer Experience Engineering Department';
+const longColumnLabel = 'Customer commitment confidence after the quarterly dependency review with vendor';   // 80 characters
+
+test('the Archive confirmation names the group, with "this group" when the group has no name', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 }); await install(page, false, false, false, false, { groupName: '' });
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await columnMenuButton(page, 'Cost 7').click();
+    await columnMenu(page, 'Cost 7').getByRole('button', { name: 'Archive column…', exact: true }).click();
+    await expect(columnMenu(page, 'Cost 7').locator('.planning-review-column-confirm > span').first()).toHaveText('Archive “Cost 7”? It leaves this table in every Sprint for this group and cannot be restored here.');
+});
+
+for (const width of [1280, 390]) test(`the Archive confirmation wraps inside the menu for the longest label and a long group name at ${width}px`, async ({ page }) => {
+    expect(Array.from(longColumnLabel)).toHaveLength(80);
+    await page.setViewportSize({ width, height: 900 }); await install(page, false, false, false, false, { groupName: longGroupName });
+    await page.evaluate(label => { window.harness.setSchema('group-alpha', { columns: window.harness.state().columns.map(column => column.id === 'cost7' ? { ...column, label } : column) }); return window.harness.reload(); }, longColumnLabel);
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    const button = columnMenuButton(page, longColumnLabel); await button.scrollIntoViewIfNeeded(); await button.hover(); await button.click();
+    const popup = columnMenu(page, longColumnLabel);
+    await popup.getByRole('button', { name: 'Archive column…', exact: true }).click();
+    const text = popup.locator('.planning-review-column-confirm > span').first();
+    await expect(text).toHaveText(`Archive “${longColumnLabel}”? It leaves this table in every Sprint for ${longGroupName} and cannot be restored here.`);
+    const fit = await popup.evaluate(node => {
+        const panel = node.getBoundingClientRect(), span = node.querySelector('.planning-review-column-confirm > span'), box = span.getBoundingClientRect();
+        const actions = [...node.querySelectorAll('.planning-review-column-confirm-actions button')].map(item => item.getBoundingClientRect());
+        return { inside: box.left >= panel.left - 0.5 && box.right <= panel.right + 0.5, clipped: span.scrollWidth - span.clientWidth, panelOverflow: node.scrollWidth - node.clientWidth, inViewport: panel.left >= 0 && panel.right <= innerWidth,
+            actionsInside: actions.every(item => item.left >= panel.left && item.right <= panel.right && item.top >= box.bottom - 0.5) };
+    });
+    expect(fit).toEqual({ inside: true, clipped: 0, panelOverflow: 0, inViewport: true, actionsInside: true });
+    await popup.screenshot({ path: path.join(root, `tmp/267-ui/archive-confirm-${width}.png`), animations: 'disabled' });
+});
+
+test('an Epics-mode corner add anchors on the last native column, so the column lands before the derived block in every Sprint', async ({ page }) => {
+    await page.setViewportSize({ width: 2400, height: 900 }); await derivedInstall(page);
+    const derivedIds = await page.locator('table.planning-review-table thead th').evaluateAll(nodes => nodes.filter(node => node.querySelector('.planning-review-derived-marker')).map(node => node.dataset.columnId));
+    expect(derivedIds).toHaveLength(8);
+    await page.getByRole('button', { name: '+ Add column', exact: true }).click();
+    await addDialog(page).getByLabel('Column name', { exact: true }).fill('Risk'); await addDialog(page).getByRole('button', { name: 'Add column', exact: true }).click();
+    const changes = await page.evaluate(() => window.harness.state().schemaChanges);
+    const add = changes.find(change => change.action === 'add'), layout = changes.find(change => change.action === 'layout');
+    expect(layout.rowKind).toBe('epic');
+    expect(typeof add.column.after).toBe('string'); expect(derivedIds).not.toContain(add.column.after); expect(['key', 'summary']).not.toContain(add.column.after);
+    // The creating Sprint's layout inserts after the same sent anchor, ahead of the derived columns.
+    const index = layout.order.indexOf(add.column.id);
+    expect(layout.order[index - 1]).toBe(add.column.after);
+    expect(layout.order.slice(index + 1)).toEqual(derivedIds);
+    const visible = await headings(page); expect(visible[visible.indexOf('Risk') + 1]).toBe('Cost 0, Story property');
+    await page.getByRole('button', { name: 'Save review', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => window.harness.state().dirty)).toBe(false);
+    const saved = (await page.evaluate(() => window.harness.requests())).filter(request => request.kind === 'save').at(-1);
+    expect(saved.payload.schemaChanges.find(change => change.action === 'add').column.after).toBe(add.column.after);
+});
+
+test('a boundary + after a derived column opens at that column but anchors on the nearest preceding native column', async ({ page }) => {
+    await page.setViewportSize({ width: 2400, height: 900 }); await derivedInstall(page);
+    const boundary = (await liveBoundaries(page)).find(item => item.id === 'cost1');
+    expect(boundary, 'the cost1 boundary is on screen').toBeTruthy();
+    await moveToBoundary(page, boundary, 2); await overlayHit(page).click();
+    const popup = addDialog(page); await expect(popup).toBeVisible();
+    const box = await popup.boundingBox();
+    expect(box.x).toBeLessThanOrEqual(boundary.right + 1); expect(box.x + box.width).toBeGreaterThan(boundary.right);
+    await popup.getByLabel('Column name', { exact: true }).fill('Mid'); await popup.getByRole('button', { name: 'Add column', exact: true }).click();
+    const changes = await page.evaluate(() => window.harness.state().schemaChanges);
+    const add = changes.find(change => change.action === 'add'), layout = changes.find(change => change.action === 'layout');
+    expect(add.column.after).not.toMatch(/^cost/);
+    const index = layout.order.indexOf(add.column.id);
+    expect(layout.order[index - 1]).toBe(add.column.after);
+    expect(layout.order[index + 1]).toBe('cost0');
+});
+
+test('the inherited-view hint names its source Sprint in one sentence, after every message line, only for an inherited view', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 }); await install(page, false, false, false, false, inheritedView);
+    await expect(hintRow(page)).toHaveCount(1);
+    await expect(hintRow(page).locator('p.planning-review-guidance')).toHaveText('Layout inherited from Sprint 90.');
+    expect(await hintRow(page).evaluate(node => node.textContent.split('.').length - 1)).toBe(1);
+    await expect(dismissHint(page)).toHaveClass(/icon-button--sm/);
+    expect(await hintRow(page).evaluate(node => [node, ...node.querySelectorAll('*')].some(item => item.hasAttribute('title')))).toBe(false);
+    // Every capability, error, form-error and recovery line renders before it; it sits directly above the spreadsheet.
+    expect(await hintRow(page).evaluate(node => node.nextElementSibling?.classList.contains('planning-review-scroll'))).toBe(true);
+    for (const options of [{}, { viewRevision: 2, inheritedFrom: null }]) {
+        await install(page, false, false, false, false, options);
+        await expect(hintRow(page)).toHaveCount(0);
+    }
+    await install(page, false, false, false, false, { ...inheritedView, sprintNames: null });
+    await expect(hintRow(page).locator('p')).toHaveText('Layout inherited from an earlier Sprint.');
+});
+
+test('the hint hides while a layout action is pending or another message line shows, and returns after Discard', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 }); await install(page, false, false, false, false, inheritedView);
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    const discard = async () => { await page.getByRole('button', { name: 'Discard', exact: true }).click(); await page.getByRole('button', { name: 'Discard', exact: true }).click(); };
+    await hideColumn(page, 'Priority');
+    await expect(hintRow(page)).toHaveCount(0);
+    await discard(); await expect(hintRow(page)).toHaveCount(1);
+    // A cell edit is not a layout action.
+    await page.getByRole('textbox', { name: 'Cost 0 for DEMO-1', exact: true }).fill('3');
+    await expect(hintRow(page)).toHaveCount(1);
+    await page.evaluate(() => { window.saveError = 'review_unexpected'; });
+    await page.getByRole('button', { name: 'Save review', exact: true }).click();
+    await expect(page.getByRole('alert').filter({ hasText: 'Review could not be saved. Your draft is preserved.' })).toBeVisible();
+    await expect(hintRow(page)).toHaveCount(0);
+    await page.evaluate(() => { window.saveError = null; });
+    await discard(); await expect(hintRow(page)).toHaveCount(1);
+    await install(page, false, false, false, false, { ...inheritedView, capabilities: { canRead: true, canSave: false } });
+    await expect(page.getByText('Review saving is unavailable in this deployment.', { exact: true })).toBeVisible();
+    await expect(hintRow(page)).toHaveCount(0);
+});
+
+test('"Review saving is unavailable" never shows while the review is inactive', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 }); await install(page, false, false, false, false, { active: false });
+    await page.waitForTimeout(150);
+    expect(await page.evaluate(() => window.harness.state().schemaLoaded)).toBe(false);
+    await expect(page.getByText('Review saving is unavailable in this deployment.', { exact: true })).toHaveCount(0);
+});
+
+for (const width of [375, 1280]) test(`the hint row keeps one line with a 24px dismiss control and a settled flat hover at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 }); await install(page, false, false, false, false, inheritedView);
+    const geometry = () => hintRow(page).evaluate(node => {
+        const row = node.getBoundingClientRect(), text = node.querySelector('p'), range = document.createRange(); range.selectNodeContents(text);
+        const ink = range.getBoundingClientRect(), button = node.querySelector('button').getBoundingClientRect(), region = node.closest('.planning-review-region').getBoundingClientRect();
+        return { rowHeight: Math.round(row.height), lines: new Set([...range.getClientRects()].map(rect => Math.round(rect.top))).size, textClipped: text.scrollWidth - text.clientWidth, textBeforeButton: ink.right <= button.left, button: [button.width, button.height],
+            centred: Math.abs((button.top + button.height / 2) - (ink.top + ink.height / 2)) < 1.5, inside: row.left >= region.left - 0.5 && row.right <= region.right + 0.5 && button.right <= innerWidth, pageOverflow: document.documentElement.scrollWidth - innerWidth };
+    });
+    const rest = await geometry();
+    expect(rest).toEqual({ rowHeight: 24, lines: 1, textClipped: 0, textBeforeButton: true, button: [24, 24], centred: true, inside: true, pageOverflow: 0 });
+    await page.screenshot({ path: path.join(root, `tmp/267-ui/hint-shown-${width}.png`), fullPage: false, animations: 'disabled' });
+    await dismissHint(page).hover();
+    await expect.poll(() => dismissHint(page).evaluate(node => getComputedStyle(node).backgroundImage)).toContain('radial-gradient');
+    const hover = await dismissHint(page).evaluate(node => { const style = getComputedStyle(node); return { transform: style.transform, shadow: style.boxShadow, spacing: style.letterSpacing }; });
+    expect(hover.transform).toBe('none'); expect(hover.shadow).toBe('none'); expect(['normal', '0px']).toContain(hover.spacing);
+    expect(await geometry()).toEqual(rest);
+    await dismissHint(page).click();
+    await expect(hintRow(page)).toHaveCount(0);
+    await page.mouse.move(0, 0);
+    await page.screenshot({ path: path.join(root, `tmp/267-ui/hint-dismissed-${width}.png`), fullPage: false, animations: 'disabled' });
+});
+
+test('the docked header and the reading position hold when the hint appears or disappears on refresh, a layout draft and save', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 700 }); await install(page, true, false, false, false, inheritedView);
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await expect(hintRow(page)).toHaveCount(1);
+    await page.evaluate(() => scrollTo(0, 900));
+    const docked = page.locator('.planning-review-docked-header'); await expect(docked).toBeVisible();
+    const row = page.locator('tbody tr[data-issue-key="DEMO-30"]');
+    const top = () => row.evaluate(node => Math.round(node.getBoundingClientRect().top));
+    const dockAligned = () => page.evaluate(() => { const head = document.querySelector('.planning-review-docked-header'), real = document.querySelector('table.planning-review-table:not(.planning-review-docked-table) thead th:nth-child(3)'), copy = head?.querySelector('thead th:nth-child(3)'); return Boolean(head) && Math.abs(head.getBoundingClientRect().top) < 1 && Math.abs(real.getBoundingClientRect().left - copy.getBoundingClientRect().left) < 1; });
+    const before = await top(); expect(await dockAligned()).toBe(true);
+    // Refresh: the source is gone, then back.
+    await page.evaluate(() => { window.harness.setSchema('group-alpha', { inheritedFrom: null, viewRevision: 1 }); return window.harness.reload(); });
+    await expect(hintRow(page)).toHaveCount(0);
+    await expect.poll(top).toBe(before); await expect.poll(dockAligned).toBe(true);
+    await page.evaluate(() => { window.harness.setSchema('group-alpha', { inheritedFrom: { sprintId: '90', viewRevision: 3 }, viewRevision: 0 }); return window.harness.reload(); });
+    await expect(hintRow(page)).toHaveCount(1);
+    await expect.poll(top).toBe(before); await expect.poll(dockAligned).toBe(true);
+    // A layout draft from the docked header hides it; saving keeps it hidden (the Sprint now has its own view).
+    await docked.locator('th', { hasText: 'Priority' }).hover(); await docked.getByRole('button', { name: 'Priority column options', exact: true }).click();
+    await columnMenu(page, 'Priority').getByRole('button', { name: 'Hide column', exact: true }).click();
+    await expect(hintRow(page)).toHaveCount(0);
+    await expect.poll(top).toBe(before); await expect.poll(dockAligned).toBe(true);
+    expect(await page.evaluate(() => window.harness.save())).toBe(true);
+    await expect(hintRow(page)).toHaveCount(0);
+    await expect.poll(top).toBe(before); await expect.poll(dockAligned).toBe(true);
+});
+
+for (const [code, message, draft] of [['review_group_unknown', 'This Department group is no longer configured.', 'cell'], ['review_view_limit', 'This group has reached its limit of saved Sprint views.', 'column']]) test(`${code} keeps the draft, disables Save and leaves Discard as the exit`, async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 }); await install(page, false, false, false, false, draft === 'column' ? inheritedView : {});
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await page.evaluate(value => { window.saveError = value; }, code);
+    if (draft === 'cell') await page.getByRole('textbox', { name: 'Cost 0 for DEMO-1', exact: true }).fill('3');
+    else { await page.getByRole('button', { name: '+ Add column', exact: true }).click(); await addDialog(page).getByLabel('Column name', { exact: true }).fill('Risk'); await addDialog(page).getByRole('button', { name: 'Add column', exact: true }).click(); }
+    const save = page.getByRole('button', { name: 'Save review', exact: true });
+    await save.click();
+    await expect(page.getByRole('alert').filter({ hasText: message })).toBeVisible();
+    await expect(save).toBeDisabled();
+    expect(await page.evaluate(() => ({ blocked: window.harness.state().groupBlocked, dirty: window.harness.state().dirty }))).toEqual({ blocked: true, dirty: true });
+    await page.screenshot({ path: path.join(root, `tmp/267-ui/group-blocked-${code}-1280.png`), fullPage: false, animations: 'disabled' });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({ path: path.join(root, `tmp/267-ui/group-blocked-${code}-390.png`), fullPage: false, animations: 'disabled' });
+    await page.getByRole('button', { name: 'Discard', exact: true }).click(); await page.getByRole('button', { name: 'Discard', exact: true }).click();
+    await expect(save).toHaveCount(0);
+    await expect(page.getByRole('alert').filter({ hasText: message })).toHaveCount(0);
+    expect(await page.evaluate(() => window.harness.state().groupBlocked)).toBe(false);
+    if (draft === 'column') await expect(hintRow(page)).toHaveCount(1);
+});
+
+test('a group-blocked Save stays disabled until a group change or a successful reload', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 }); await install(page);
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    const save = page.getByRole('button', { name: 'Save review', exact: true });
+    const block = async () => {
+        await page.evaluate(() => { window.saveError = 'review_group_unknown'; });
+        await page.getByRole('textbox', { name: 'Cost 0 for DEMO-1', exact: true }).fill('3');
+        await save.click(); await expect(save).toBeDisabled();
+        await page.evaluate(() => { window.saveError = null; });
+    };
+    await block();
+    await page.evaluate(() => window.harness.reload());
+    await expect(save).toBeEnabled(); expect(await page.evaluate(() => window.harness.state().groupBlocked)).toBe(false);
+    await save.click(); await expect(save).toHaveCount(0);
+    await block();
+    await page.evaluate(() => window.harness.setGroup('group-beta'));
+    await expect.poll(() => page.evaluate(() => ({ group: window.harness.state().groupId, blocked: window.harness.state().groupBlocked, error: window.harness.state().error }))).toEqual({ group: 'group-beta', blocked: false, error: '' });
+});
+
+test('limit messages say "per group"', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 }); await install(page);
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    // Twenty-two more Story columns reach the 30 active columns of this row kind for the group.
+    await page.evaluate(() => { const columns = window.harness.state().columns; window.harness.setSchema('group-alpha', { columns: [...columns, ...Array.from({ length: 22 }, (_, i) => ({ id: `extra${i}`, rowKind: 'story', label: `Extra ${i}`, type: 'number', aggregation: 'sum', archived: false, order: 8 + i }))] }); return window.harness.reload(); });
+    await page.getByRole('button', { name: '+ Add column', exact: true }).click();
+    await addDialog(page).getByLabel('Column name', { exact: true }).fill('One more'); await addDialog(page).getByRole('button', { name: 'Add column', exact: true }).click();
+    await expect(addDialog(page).getByRole('alert')).toHaveText('This row mode supports up to 30 active custom columns per group.');
+    await page.keyboard.press('Escape');
+    await page.evaluate(() => { window.saveError = 'review_schema_limit'; });
+    await page.getByRole('textbox', { name: 'Cost 0 for DEMO-1', exact: true }).fill('3');
+    await page.getByRole('button', { name: 'Save review', exact: true }).click();
+    await expect(page.getByRole('alert').filter({ hasText: 'Review columns are limited to 240 per group, archived ones included.' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Save review', exact: true })).toBeEnabled();
+});
+
+test.describe('hint by touch', () => {
+    test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+    test.skip(({ browserName }) => browserName === 'firefox', 'Firefox does not support mobile emulation (isMobile)');
+    test('a tap dismisses the hint for this group and Sprint; it survives Sprint and group switches and returns when the source is re-saved', async ({ page }) => {
+        await install(page, false, false, false, false, inheritedView);
+        await expect(hintRow(page)).toHaveCount(1);
+        await dismissHint(page).tap();
+        await expect(hintRow(page)).toHaveCount(0);
+        expect(await page.evaluate(() => window.harness.dismissals())).toEqual({ '100:group-alpha': { sourceSprintId: '90', viewRevision: 3 } });
+        await page.evaluate(() => window.harness.setSprint('110'));
+        await expect(hintRow(page)).toHaveCount(1);
+        await page.evaluate(() => window.harness.setSprint('100'));
+        await expect.poll(() => page.evaluate(() => window.harness.state().schemaLoaded && window.harness.state().sprintId)).toBe('100');
+        await expect(hintRow(page)).toHaveCount(0);
+        await page.evaluate(() => window.harness.setGroup('group-beta'));
+        await expect.poll(() => page.evaluate(() => window.harness.state().schemaLoaded && window.harness.state().groupId)).toBe('group-beta');
+        await page.evaluate(() => window.harness.setGroup('group-alpha'));
+        await expect.poll(() => page.evaluate(() => window.harness.state().schemaLoaded && window.harness.state().groupId)).toBe('group-alpha');
+        await expect(hintRow(page)).toHaveCount(0);
+        await page.evaluate(() => { window.harness.setSchema('group-alpha', { inheritedFrom: { sprintId: '90', viewRevision: 4 } }); return window.harness.reload(); });
+        await expect(hintRow(page)).toHaveCount(1);
+    });
+});
+
+// Painted ink of the hint's dismiss glyph inside its 24px hover frame. Glyph placement is only representative headed:
+// run with `--headed` in Firefox and WebKit, the engines the app is reviewed in, at the 2x device scale set here.
+async function paintedInk(page, locator, inset = 3) {
+    const rect = await locator.evaluate(node => { const box = node.getBoundingClientRect(); return { x: box.x, y: box.y, w: box.width, h: box.height }; });
+    const x0 = Math.floor(rect.x) - 2, y0 = Math.floor(rect.y) - 2, width = Math.ceil(rect.x + rect.w) + 2 - x0, height = Math.ceil(rect.y + rect.h) + 2 - y0;
+    const image = await page.screenshot({ clip: { x: x0, y: y0, width, height }, animations: 'disabled' });
+    return page.evaluate(async ({ base64, x0: originX, y0: originY, rect: box, inset: edge, width: clipWidth }) => {
+        const img = new Image(); img.src = `data:image/png;base64,${base64}`; await img.decode();
+        const scale = img.width / clipWidth, canvas = document.createElement('canvas'); canvas.width = img.width; canvas.height = img.height;
+        const context = canvas.getContext('2d'); context.drawImage(img, 0, 0);
+        const data = context.getImageData(0, 0, img.width, img.height).data, pixel = (x, y) => { const o = (y * img.width + x) * 4; return [data[o], data[o + 1], data[o + 2]]; };
+        const left = Math.ceil((box.x + edge - originX) * scale), top = Math.ceil((box.y + edge - originY) * scale), right = Math.floor((box.x + box.w - edge - originX) * scale), bottom = Math.floor((box.y + box.h - edge - originY) * scale);
+        const ground = pixel(left, top); let minX = Infinity, minY = Infinity, maxX = -1, maxY = -1;
+        for (let y = top; y < bottom; y += 1) for (let x = left; x < right; x += 1) { const p = pixel(x, y); if (Math.max(...p.map((channel, i) => Math.abs(channel - ground[i]))) > 30) { minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y); } }
+        return { painted: maxX >= 0, scale, dx: originX + ((minX + maxX + 1) / 2) / scale - (box.x + box.w / 2), dy: originY + ((minY + maxY + 1) / 2) / scale - (box.y + box.h / 2) };
+    }, { base64: image.toString('base64'), x0, y0, rect, inset, width });
+}
+
+test.describe('hint dismiss glyph', () => {
+    test.use({ deviceScaleFactor: 2 });
+    test('the dismiss glyph is centred in its hover frame at rest and on hover', async ({ page }, testInfo) => {
+        test.skip(testInfo.project.use.headless !== false, 'Glyph ink placement is only representative headed.');
+        await page.setViewportSize({ width: 1280, height: 900 }); await install(page, false, false, false, false, inheritedView);
+        const button = dismissHint(page);
+        for (const state of ['rest', 'hover']) {
+            if (state === 'hover') await button.hover(); else await page.mouse.move(2, 2);
+            await page.waitForTimeout(300);
+            const ink = await paintedInk(page, button);
+            console.log(JSON.stringify({ browser: testInfo.project.name, state, ...ink }));
+            expect(ink.painted, state).toBe(true); expect(ink.scale, state).toBe(2);
+            expect(Math.abs(ink.dx), `${state} horizontal offset`).toBeLessThanOrEqual(0.75);
+            expect(Math.abs(ink.dy), `${state} vertical offset`).toBeLessThanOrEqual(0.75);
+        }
+        // A deliberate 3px shift must fail the same tolerance.
+        await button.evaluate(node => { node.querySelector('svg').style.transform = 'translateX(3px)'; });
+        expect(Math.abs((await paintedInk(page, button)).dx)).toBeGreaterThan(0.75);
+    });
 });

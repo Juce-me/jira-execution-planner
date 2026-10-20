@@ -35,6 +35,7 @@ export function useTeamGroupSettings({
     clearServerConnectionError,
     firstRunConfigurationActive,
     getTeamOptions,
+    groupChangeGuardRef,
     markConnectionBootstrapHealthy,
     reportServerConnectionError,
     savedPrefsRef,
@@ -153,6 +154,7 @@ export function useTeamGroupSettings({
         trackSettingsAction,
         bucketCount,
         useBackendPreferences: personalGroupPreferencesEnabled,
+        groupChangeGuardRef,
     });
 
     const loadGroupsConfig = async () => {

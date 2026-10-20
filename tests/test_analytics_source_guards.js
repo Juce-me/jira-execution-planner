@@ -728,3 +728,31 @@ test('MCP core stays at 25 while native handoff covers every sparse app paramete
     assert.match(yaml, /create_container_version_allowed: false/);
     assert.match(yaml, /publish_allowed: false/);
 });
+
+test('group review columns add no analytics event and document their no-event rows (#267)', () => {
+    const analyticsDoc = read('docs/README_ANALYTICS.md');
+    const analyticsSource = read('frontend/src/analytics/dashboardAnalytics.js');
+    const rows = [
+        'Inherited-view hint and its dismissal',
+        'Derived Epic and Story review columns',
+        'Derived column marker and readout',
+        'Group-switch dialog copy for the Planning review',
+    ];
+    for (const row of rows) {
+        const line = analyticsDoc.split('\n').find(candidate => candidate.startsWith(`| ${row} |`));
+        assert.ok(line, `Expected no-event allowlist row for ${row}`);
+        assert.ok(line.includes('trigger none'), `${row}: trigger`);
+        assert.ok(line.includes('`event_type=none`'), `${row}: event_type`);
+        assert.ok(line.includes('canonical `event_name=none`'), `${row}: event_name`);
+        assert.ok(line.includes('`feature_name=planning_review`'), `${row}: feature_name`);
+        assert.ok(line.includes('typed params none'), `${row}: typed params`);
+        assert.ok(line.endsWith('| 2026-10-20 |'), `${row}: reviewed on`);
+    }
+    const derived = analyticsDoc.split('\n').find(candidate => candidate.startsWith('| Derived Epic and Story review columns |'));
+    assert.ok(derived.includes('`column_visibility_changed` with `mode` only'));
+    assert.ok(derived.includes('existing review action events'));
+    // No new event or review action name: the shipped set is unchanged by the group columns work.
+    for (const name of ['inherited_hint', 'hint_dismissed', 'derived_column', 'group_changed', 'marker']) {
+        assert.doesNotMatch(analyticsSource, new RegExp(`'[a-z_]*${name}[a-z_]*'`));
+    }
+});

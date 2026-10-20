@@ -31,11 +31,14 @@ def _payload():
     return payload
 
 
-def _run(operation):
+def _run(operation, allowed_args=(), require_capability=False):
+    """Query names are allowed per route; capability is checked before a body is parsed."""
     try:
-        if request.args:
+        if set(request.args) - set(allowed_args) or any(len(request.args.getlist(name)) != 1 for name in request.args):
             raise sprint_review.ReviewError()
         context = get_jira_server().current_request_auth_context()
+        if require_capability:
+            sprint_review.require_review_context(context)
         return _response(operation(context))
     except sprint_review.ReviewError as error:
         payload = {'error': error.code, **error.details}
@@ -60,14 +63,15 @@ def _run(operation):
 
 @bp.route('/api/eng/sprints/<sprint_id>/review', methods=['GET'])
 def get_review(sprint_id):
-    return _run(lambda context: sprint_review.load_review(context, sprint_id))
+    return _run(lambda context: sprint_review.load_review(context, sprint_id, request.args.get('groupId')),
+                allowed_args=('groupId',))
 
 
 @bp.route('/api/eng/sprints/<sprint_id>/review/values/read', methods=['POST'])
 def read_review_values(sprint_id):
-    return _run(lambda context: sprint_review.read_values(context, sprint_id, _payload()))
+    return _run(lambda context: sprint_review.read_values(context, sprint_id, _payload()), require_capability=True)
 
 
 @bp.route('/api/eng/sprints/<sprint_id>/review', methods=['PATCH'])
 def patch_review(sprint_id):
-    return _run(lambda context: sprint_review.save_review(context, sprint_id, _payload()))
+    return _run(lambda context: sprint_review.save_review(context, sprint_id, _payload()), require_capability=True)

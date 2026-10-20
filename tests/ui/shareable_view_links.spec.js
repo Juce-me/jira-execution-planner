@@ -769,6 +769,8 @@ for (const scenario of MATRIX_CASES) {
                 }
                 if (scenario.mode === 'planning') {
                     expect(reviewCalls(run.calls)).toHaveLength(1);
+                    // The link applies its Department before the review read, so the one review GET is scoped to the link group.
+                    expect(reviewCalls(run.calls)[0].params.groupId).toBe('grp-b');
                     const values = run.calls.filter(call => call.pathname === '/api/eng/sprints/42/review/values/read');
                     expect(values.length).toBeGreaterThan(0);
                     expect(values.every(call => JSON.parse(call.body).issueIds.every(id => id === '9200' || id.startsWith('BET-')))).toBe(true);

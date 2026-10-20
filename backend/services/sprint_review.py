@@ -1,20 +1,24 @@
-"""Bounded Jira authorization and atomic workspace/Sprint custom reviews.
+"""Bounded Jira authorization and atomic Department-group custom reviews.
 
-The schema row is the transaction fence, including first-create races. Serializing
-that short database transaction does not reject disjoint cell revisions.
+Columns and values belong to a workspace + Department group; views (column order and
+hidden columns) belong to a group + Sprint and resolve to the nearest earlier saved view.
+The group schema row is the transaction fence for every writer, including first-create
+races. Serializing that short database transaction does not reject disjoint cell revisions.
 """
 from copy import deepcopy
 from decimal import Decimal, InvalidOperation
 import re
+import unicodedata
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from backend.auth.db_context import is_db_auth_context
 from backend.auth.jira_auth import AuthError
 from backend.db import engine as db_engine, models
+from backend.services import shared_group_config
 from backend.services.eng_board_stream import EngBoardRequestBudget, EngBoardRequestDeadline, EngBoardRequestTransport
 
 MAX_ACTIVE_COLUMNS = 30
@@ -22,6 +26,13 @@ MAX_CHANGED_CELLS = 100
 MAX_READ_ISSUES = 500
 MAX_REQUEST_BYTES = 256 * 1024
 MAX_RESPONSE_BYTES = 1024 * 1024
+SPRINT_ORDER_WIDTH = 128
+MAX_GROUP_VIEWS = 500
+
+
+def sprint_order(sprint_id: str) -> str:
+    """Left-pad a decimal Sprint id so string order equals numeric order."""
+    return sprint_id.rjust(SPRINT_ORDER_WIDTH, '0')
 
 
 class ReviewError(ValueError):
@@ -37,7 +48,8 @@ def capabilities(context):
             'reason': None if enabled else 'Shared review saving requires database-backed OAuth.'}
 
 
-def _context(context):
+def require_review_context(context):
+    """Authentication and storage capability, checked before any request body is parsed."""
     if context is None or context.auth_mode != 'atlassian_oauth' or not context.user_id or not context.workspace_id:
         raise AuthError('auth_required')
     if not capabilities(context)['canSave']:
@@ -46,6 +58,14 @@ def _context(context):
 
 def sprint_identity(value):
     if not isinstance(value, str) or len(value) > 128 or re.fullmatch(r'[1-9][0-9]*', value) is None:
+        raise ReviewError()
+    return value
+
+
+def group_identity(value):
+    """A Department group id selector: 1-128 chars, already stripped, no control characters."""
+    if (not isinstance(value, str) or not 1 <= len(value) <= 128 or value != value.strip()
+            or any(unicodedata.category(ch) == 'Cc' for ch in value)):
         raise ReviewError()
     return value
 
@@ -111,58 +131,101 @@ def normalize_value(value, column):
         raise ReviewError() from None
 
 
-def apply_schema(columns, changes):
-    result = deepcopy(columns)
+def _id_list(ids, limit):
+    if not isinstance(ids, list) or len(ids) > limit or any(not isinstance(i, str) for i in ids) or len(ids) != len(set(ids)):
+        raise ReviewError()
+
+
+def validate_schema_changes(changes):
+    """Stateless shape checks for every schema action, run before Jira authorization.
+
+    State checks (duplicate id, column lookup, reorder set, anchor and layout-id
+    membership, limits) stay in apply_schema and apply_layouts, inside the transaction.
+    """
     if not isinstance(changes, list) or len(changes) > 120:
         raise ReviewError()
     for change in changes:
-        if not isinstance(change, dict):
-            raise ReviewError()
-        action = change.get('action')
+        action = change.get('action') if isinstance(change, dict) else None
         if action == 'add':
             _keys(change, ('action', 'column'))
             column = change.get('column')
-            _keys(column, ('id', 'rowKind', 'label', 'type', 'aggregation', 'archived', 'order'))
-            identity = _column_id(column.get('id'))
-            kind = row_kind(column.get('rowKind'))
+            _keys(column, ('id', 'rowKind', 'label', 'type', 'aggregation', 'archived', 'order', 'after'))
+            _column_id(column.get('id'))
+            row_kind(column.get('rowKind'))
+            _label(column.get('label'))
             type_name = column.get('type')
-            if type_name not in ('number', 'text') or any(c['id'] == identity for c in result):
-                raise ReviewError()
             aggregation = column.get('aggregation', 'sum' if type_name == 'number' else 'none')
-            if aggregation not in ('sum', 'none') or type_name == 'text' and aggregation != 'none' or column.get('archived', False) is not False:
+            after = column.get('after')
+            if type_name not in ('number', 'text') or aggregation not in ('sum', 'none') or type_name == 'text' and aggregation != 'none' or column.get('archived', False) is not False:
                 raise ReviewError()
-            result.append({'id': identity, 'rowKind': kind, 'label': _label(column.get('label')),
-                           'type': type_name, 'aggregation': aggregation, 'archived': False,
-                           'order': sum(c['rowKind'] == kind for c in result)})
+            if after is not None and (not isinstance(after, str) or not 1 <= len(after) <= 64):
+                raise ReviewError()
+        elif action == 'layout':
+            _keys(change, ('action', 'rowKind', 'order', 'hidden'))
+            row_kind(change.get('rowKind'))
+            for field in ('order', 'hidden'):
+                if field not in change:
+                    raise ReviewError()
+                _id_list(change[field], 254)
+        elif action == 'reorder':
+            _keys(change, ('action', 'rowKind', 'columnIds'))
+            row_kind(change.get('rowKind'))
+            _id_list(change.get('columnIds'), 240)
+        elif action in ('rename', 'archive', 'aggregation'):
+            field = {'rename': 'label', 'archive': 'archived', 'aggregation': 'aggregation'}[action]
+            _keys(change, ('action', 'columnId', field))
+            _column_id(change.get('columnId'))
+            value = change.get(field)
+            if action == 'rename':
+                _label(value)
+            elif action == 'archive':
+                if value is not True:
+                    raise ReviewError()
+            elif value not in ('sum', 'none'):
+                raise ReviewError()
+        else:
+            raise ReviewError()
+
+
+def apply_schema(columns, changes):
+    """Apply column actions to a schema; changes must have passed validate_schema_changes."""
+    result = deepcopy(columns)
+    for change in changes:
+        action = change['action']
+        if action == 'add':
+            column = change['column']
+            identity, kind, type_name = column['id'], column['rowKind'], column['type']
+            after = column.get('after')
+            if any(c['id'] == identity for c in result):
+                raise ReviewError()
+            # An anchor is 'summary', a same-kind built-in or a same-kind group column (archived or added earlier in this request).
+            if after is not None and after != 'summary' and after not in REVIEW_LAYOUT_BUILTINS[kind] \
+                    and not any(c['id'] == after and c['rowKind'] == kind for c in result):
+                raise ReviewError()
+            result.append({'id': identity, 'rowKind': kind, 'label': column['label'].strip(),
+                           'type': type_name, 'aggregation': column.get('aggregation', 'sum' if type_name == 'number' else 'none'),
+                           'archived': False, 'order': sum(c['rowKind'] == kind for c in result), 'after': after})
         elif action == 'layout':
             continue
         elif action == 'reorder':
-            _keys(change, ('action', 'rowKind', 'columnIds'))
-            kind = row_kind(change.get('rowKind'))
-            ids = change.get('columnIds')
+            kind, ids = change['rowKind'], change['columnIds']
             expected = [c['id'] for c in result if c['rowKind'] == kind and not c['archived']]
-            if not isinstance(ids, list) or any(not isinstance(i, str) for i in ids) or len(ids) != len(expected) or set(ids) != set(expected):
+            if len(ids) != len(expected) or set(ids) != set(expected):
                 raise ReviewError()
             for column in result:
                 if column['id'] in ids:
                     column['order'] = ids.index(column['id'])
-        elif action in ('rename', 'archive', 'aggregation'):
+        else:
             field = {'rename': 'label', 'archive': 'archived', 'aggregation': 'aggregation'}[action]
-            _keys(change, ('action', 'columnId', field))
-            column = next((c for c in result if c['id'] == change.get('columnId')), None)
+            column = next((c for c in result if c['id'] == change['columnId']), None)
             if column is None:
                 raise ReviewError()
-            value = change.get(field)
+            value = change[field]
             if action == 'rename':
-                value = _label(value)
-            elif action == 'archive':
-                if value is not True:
-                    raise ReviewError()
-            elif value not in ('sum', 'none') or column['type'] == 'text' and value != 'none':
+                value = value.strip()
+            elif action == 'aggregation' and column['type'] == 'text' and value != 'none':
                 raise ReviewError()
             column[field] = value
-        else:
-            raise ReviewError()
     for kind in ('epic', 'story'):
         if sum(c['rowKind'] == kind and not c['archived'] for c in result) > MAX_ACTIVE_COLUMNS:
             raise ReviewError('review_column_limit')
@@ -179,21 +242,19 @@ REVIEW_LAYOUT_BUILTINS = {
 
 
 def apply_layouts(layouts, columns, changes):
+    """Merge layout actions over a view; changes must have passed validate_schema_changes."""
     result = deepcopy(layouts or {})
+    # Derived columns let a view place custom columns of either row kind.
+    custom = {c['id'] for c in columns}
     for change in changes:
-        if change.get('action') != 'layout':
+        if change['action'] != 'layout':
             continue
-        _keys(change, ('action', 'rowKind', 'order', 'hidden'))
-        kind = row_kind(change.get('rowKind'))
-        custom = {c['id'] for c in columns if c['rowKind'] == kind}
+        kind = change['rowKind']
         allowed = REVIEW_LAYOUT_BUILTINS[kind] | custom
         # Every column but the pinned Summary can be hidden; Key is pinned first, so it hides but is never part of the order.
-        hideable = allowed | {'key'}
-        for field, accepted in (('order', allowed), ('hidden', hideable)):
-            ids = change.get(field, [])
-            if not isinstance(ids, list) or len(ids) > 254 or any(not isinstance(i, str) for i in ids) or len(ids) != len(set(ids)) or not set(ids) <= accepted:
-                raise ReviewError()
-        result[kind] = {'order': list(change.get('order', [])), 'hidden': list(change.get('hidden', []))}
+        if not set(change['order']) <= allowed or not set(change['hidden']) <= allowed | {'key'}:
+            raise ReviewError()
+        result[kind] = {'order': list(change['order']), 'hidden': list(change['hidden'])}
     return result
 
 
@@ -204,7 +265,7 @@ def authorize_issues(context, ids, search=None, requested_kinds=None):
     row kinds. No Basic fallback, per-issue fan-out, or saved value establishes
     access. Completion is mandatory.
     """
-    _context(context)
+    require_review_context(context)
     ids = issue_ids(ids)
     if not ids:
         return set()
@@ -271,26 +332,63 @@ def authorize_issues(context, ids, search=None, requested_kinds=None):
     return found
 
 
-def _review_query(context, sprint_id):
-    return select(models.WorkspaceSprintReview).where(
-        models.WorkspaceSprintReview.workspace_id == context.workspace_id,
-        models.WorkspaceSprintReview.sprint_id == sprint_id)
+def ensure_group_configured(context, group_id, database_url=None):
+    """PATCH-only membership check against the shared Department group catalog (read-only)."""
+    try:
+        with db_engine.session_scope(database_url) as session:
+            config = shared_group_config.current_shared_groups_config(session, context)
+    except (AttributeError, TypeError, ValueError):
+        raise ReviewError('review_unavailable', 503) from None
+    groups = config.get('groups')
+    if not groups:
+        raise ReviewError('review_group_unknown')
+    if not isinstance(groups, list) or any(not isinstance(group, dict) for group in groups):
+        raise ReviewError('review_unavailable', 503)
+    if group_id not in {str(group.get('id') or '').strip() for group in groups}:
+        raise ReviewError('review_group_unknown')
 
 
-def _schema(row, sprint_id):
-    return {'schemaVersion': 1, 'sprintId': sprint_id, 'schemaRevision': row.schema_revision if row else 0,
-            'columns': deepcopy(row.columns) if row else [], 'layouts': deepcopy(row.layouts) if row else {}}
+def _schema_query(context, group_id):
+    return select(models.WorkspaceGroupReviewSchema).where(
+        models.WorkspaceGroupReviewSchema.workspace_id == context.workspace_id,
+        models.WorkspaceGroupReviewSchema.group_id == group_id)
 
 
-def load_review(context, sprint_id, database_url=None):
+def _views(workspace_id, group_id):
+    return (models.GroupSprintReviewView.workspace_id == workspace_id,
+            models.GroupSprintReviewView.group_id == group_id)
+
+
+def resolve_view(session, workspace_id, group_id, sprint_id):
+    """One <= lookup: the Sprint's own view, else the nearest earlier saved view, else none."""
+    row = session.scalars(select(models.GroupSprintReviewView).where(
+        *_views(workspace_id, group_id),
+        models.GroupSprintReviewView.sprint_order <= sprint_order(sprint_id),
+    ).order_by(models.GroupSprintReviewView.sprint_order.desc()).limit(1)).first()
+    if row is None:
+        return {}, 0, None
+    if row.sprint_id == sprint_id:
+        return deepcopy(row.layouts), row.view_revision, None
+    return deepcopy(row.layouts), 0, {'sprintId': row.sprint_id, 'viewRevision': row.view_revision}
+
+
+def _base(row, sprint_id, group_id):
+    return {'schemaVersion': 1, 'sprintId': sprint_id, 'groupId': group_id,
+            'columns': deepcopy(row.columns) if row else [], 'schemaRevision': row.schema_revision if row else 0}
+
+
+def load_review(context, sprint_id, group_id, database_url=None):
     sprint_identity(sprint_id)
+    group_identity(group_id)
     caps = capabilities(context)
     if not caps['canRead']:
-        return {**_schema(None, sprint_id), 'capabilities': caps}
-    _context(context)
+        return {**_base(None, sprint_id, group_id), 'viewRevision': 0, 'layouts': {}, 'inheritedFrom': None, 'capabilities': caps}
+    require_review_context(context)
     with db_engine.session_scope(database_url) as session:
-        row = session.scalar(_review_query(context, sprint_id))
-        return {**_schema(row, sprint_id), 'capabilities': caps}
+        row = session.scalar(_schema_query(context, group_id))
+        layouts, view_revision, inherited_from = resolve_view(session, context.workspace_id, group_id, sprint_id)
+        return {**_base(row, sprint_id, group_id), 'viewRevision': view_revision, 'layouts': layouts,
+                'inheritedFrom': inherited_from, 'capabilities': caps}
 
 
 def _cell(cell):
@@ -299,40 +397,52 @@ def _cell(cell):
 
 
 def read_values(context, sprint_id, payload, database_url=None, search=None):
-    _context(context)
+    require_review_context(context)
     sprint_identity(sprint_id)
-    _keys(payload, ('issueIds', 'rowKind'))
+    _keys(payload, ('groupId', 'issueIds', 'rowKind'))
+    group_id = group_identity(payload.get('groupId'))
     ids, kind = issue_ids(payload.get('issueIds')), row_kind(payload.get('rowKind'))
     allowed = authorize_issues(context, ids, search, {identity: {kind} for identity in ids})
     with db_engine.session_scope(database_url) as session:
-        row = session.scalar(_review_query(context, sprint_id))
-        cells = [] if row is None or not allowed else session.scalars(select(models.SprintReviewCell).where(
-            models.SprintReviewCell.review_id == row.id, models.SprintReviewCell.row_kind == kind,
-            models.SprintReviewCell.issue_id.in_(allowed)).limit(MAX_RESPONSE_BYTES // 100 + 1)).all()
+        row = session.scalar(_schema_query(context, group_id))
+        # Group-wide accumulation: only active columns' cells are read back.
+        active = [c['id'] for c in row.columns if c['rowKind'] == kind and not c['archived']] if row else []
+        cells = [] if not active or not allowed else session.scalars(select(models.GroupReviewCell).where(
+            models.GroupReviewCell.schema_id == row.id, models.GroupReviewCell.row_kind == kind,
+            models.GroupReviewCell.column_id.in_(active),
+            models.GroupReviewCell.issue_id.in_(allowed)).limit(MAX_RESPONSE_BYTES // 100 + 1)).all()
         if len(cells) > MAX_RESPONSE_BYTES // 100:
             raise ReviewError('review_response_limit', 413)
         return {'cells': [_cell(cell) for cell in cells], 'unavailableIssueIds': [i for i in ids if i not in allowed]}
 
 
-def _locked_review(session, context, sprint_id):
+def _locked_schema(session, context, group_id):
     dialect = session.bind.dialect.name
     insert = postgres_insert if dialect == 'postgresql' else sqlite_insert if dialect == 'sqlite' else None
     if insert is None:
         raise ReviewError('review_storage_unavailable', 503)
-    session.execute(insert(models.WorkspaceSprintReview).values(
-        id=str(uuid.uuid4()), workspace_id=context.workspace_id, sprint_id=sprint_id,
-        schema_revision=0, columns=[]).on_conflict_do_nothing(index_elements=['workspace_id', 'sprint_id']))
-    return session.scalar(_review_query(context, sprint_id).with_for_update())
+    session.execute(insert(models.WorkspaceGroupReviewSchema).values(
+        id=str(uuid.uuid4()), workspace_id=context.workspace_id, group_id=group_id,
+        schema_revision=0, columns=[]).on_conflict_do_nothing(index_elements=['workspace_id', 'group_id']))
+    return session.scalar(_schema_query(context, group_id).with_for_update())
+
+
+def _conflict(row, schema_conflict, view_conflict, cell_conflicts):
+    return ReviewError('review_conflict', 409, schemaConflict=schema_conflict, viewConflict=view_conflict,
+                       cellConflicts=cell_conflicts, columns=deepcopy(row.columns), schemaRevision=row.schema_revision)
 
 
 def save_review(context, sprint_id, payload, database_url=None, search=None):
-    _context(context)
+    require_review_context(context)
     sprint_identity(sprint_id)
-    _keys(payload, ('baseSchemaRevision', 'schemaChanges', 'cellChanges'))
+    _keys(payload, ('groupId', 'baseSchemaRevision', 'baseViewRevision', 'schemaChanges', 'cellChanges'))
+    group_id = group_identity(payload.get('groupId'))
     base = revision(payload.get('baseSchemaRevision'))
+    base_view = revision(payload.get('baseViewRevision', 0))
     schema_changes, changes = payload.get('schemaChanges', []), payload.get('cellChanges', [])
     if not isinstance(schema_changes, list) or not isinstance(changes, list) or len(changes) > MAX_CHANGED_CELLS:
         raise ReviewError()
+    validate_schema_changes(schema_changes)
     identities, ids = set(), []
     for change in changes:
         _keys(change, ('issueId', 'rowKind', 'columnId', 'value', 'baseRevision'))
@@ -348,43 +458,67 @@ def save_review(context, sprint_id, payload, database_url=None, search=None):
         identities.add(identity)
         if change['issueId'] not in ids:
             ids.append(change['issueId'])
+    ensure_group_configured(context, group_id, database_url)
     requested_kinds = {identity: {c['rowKind'] for c in changes if c['issueId'] == identity} for identity in ids}
     allowed = authorize_issues(context, ids, search, requested_kinds)
     if len(allowed) != len(ids):
         raise ReviewError('review_issues_unavailable', 403, unavailableIssueIds=[i for i in ids if i not in allowed])
+    layout_actions = any(change['action'] == 'layout' for change in schema_changes)
+    column_actions = any(change['action'] != 'layout' for change in schema_changes)
     with db_engine.session_scope(database_url) as session:
-        row = _locked_review(session, context, sprint_id)
-        schema_conflict = bool(schema_changes and base != row.schema_revision)
-        existing = session.scalars(select(models.SprintReviewCell).where(
-            models.SprintReviewCell.review_id == row.id, models.SprintReviewCell.issue_id.in_(ids))).all() if ids else []
+        if not schema_changes and not changes:
+            # An empty request creates no row and takes no lock.
+            return {**_base(session.scalar(_schema_query(context, group_id)), sprint_id, group_id), 'cells': []}
+        # (1) lock the schema row; (2) select the Sprint's view row for a layout action.
+        row = _locked_schema(session, context, group_id)
+        view = session.scalar(select(models.GroupSprintReviewView).where(
+            *_views(context.workspace_id, group_id),
+            models.GroupSprintReviewView.sprint_id == sprint_id)) if layout_actions else None
+        # (3) one conflict predicate at the first 409 site.
+        schema_conflict = bool(column_actions and base != row.schema_revision)
+        view_conflict = bool(layout_actions and base_view != (view.view_revision if view else 0))
+        existing = session.scalars(select(models.GroupReviewCell).where(
+            models.GroupReviewCell.schema_id == row.id, models.GroupReviewCell.issue_id.in_(ids))).all() if ids else []
         cell_map = {(c.issue_id, c.row_kind, c.column_id): c for c in existing}
         conflicts = []
         for change in changes:
             cell = cell_map.get((change['issueId'], change['rowKind'], change['columnId']))
             if change['baseRevision'] != (cell.revision if cell else 0):
                 conflicts.append(_cell(cell) if cell else {**{k: change[k] for k in ('issueId', 'rowKind', 'columnId')}, 'value': None, 'revision': 0})
-        if schema_conflict or conflicts:
-            raise ReviewError('review_conflict', 409, schemaConflict=schema_conflict,
-                              schemaRevision=row.schema_revision, columns=deepcopy(row.columns), cellConflicts=conflicts)
+        if schema_conflict or view_conflict or conflicts:
+            raise _conflict(row, schema_conflict, view_conflict, conflicts)
+        # (4) column actions, layouts against the post-action columns, then cell normalization.
         columns = apply_schema(row.columns, schema_changes)
-        layouts = apply_layouts(row.layouts, columns, schema_changes)
+        layouts = apply_layouts(view.layouts if view else {}, columns, schema_changes) if layout_actions else None
         column_map = {c['id']: c for c in columns}
         normalized = []
         for change in changes:
             column = column_map.get(change['columnId'])
             if column is None or column['archived'] or column['rowKind'] != change['rowKind']:
-                raise ReviewError('review_conflict', 409, schemaConflict=True, schemaRevision=row.schema_revision,
-                                  columns=deepcopy(row.columns), cellConflicts=[])
+                raise _conflict(row, True, False, [])
             normalized.append(normalize_value(change['value'], column))
-        if schema_changes:
+        # (5) the view cap, on the insert path only.
+        if layout_actions and view is None and session.scalar(
+                select(func.count()).select_from(models.GroupSprintReviewView).where(
+                    *_views(context.workspace_id, group_id))) >= MAX_GROUP_VIEWS:
+            raise ReviewError('review_view_limit')
+        # (6) write.
+        if column_actions:
             row.columns = columns
-            row.layouts = layouts
             row.schema_revision += 1
+        if layout_actions:
+            if view is None:
+                view = models.GroupSprintReviewView(workspace_id=context.workspace_id, group_id=group_id, sprint_id=sprint_id,
+                                                    sprint_order=sprint_order(sprint_id), layouts=layouts, view_revision=1)
+                session.add(view)
+            else:
+                view.layouts = layouts
+                view.view_revision += 1
         saved = []
         for change, value in zip(changes, normalized):
             cell = cell_map.get((change['issueId'], change['rowKind'], change['columnId']))
             if cell is None:
-                cell = models.SprintReviewCell(review_id=row.id, issue_id=change['issueId'], row_kind=change['rowKind'],
+                cell = models.GroupReviewCell(schema_id=row.id, issue_id=change['issueId'], row_kind=change['rowKind'],
                                               column_id=change['columnId'], value=value, revision=1)
                 session.add(cell)
             else:
@@ -392,4 +526,7 @@ def save_review(context, sprint_id, payload, database_url=None, search=None):
                 cell.revision += 1
             saved.append(_cell(cell))
         session.flush()
-        return {**_schema(row, sprint_id), 'cells': saved}
+        result = {**_base(row, sprint_id, group_id), 'cells': saved}
+        if layout_actions:
+            result.update(layouts=deepcopy(layouts), viewRevision=view.view_revision, inheritedFrom=None)
+        return result

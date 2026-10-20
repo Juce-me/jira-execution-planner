@@ -8843,6 +8843,17 @@ input.story-points-editor.story-points-alert-highlight {
 .planning-review-guidance {
   margin-block: 0.5rem;
 }
+.planning-review-hint {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+  margin-block: 0.5rem;
+}
+.planning-review-hint .planning-review-guidance {
+  min-width: 0;
+  margin: 0;
+}
 .planning-review-state-cluster {
   display: inline-flex;
   align-items: center;
@@ -9649,6 +9660,70 @@ input.story-points-editor.story-points-alert-highlight {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+.planning-review-table td.planning-review-custom .planning-review-truncated-value {
+  width: 0;
+  min-width: 100%;
+  max-width: 100%;
+}
+.planning-review-derived-marker {
+  position: relative;
+  display: inline-block;
+  box-sizing: border-box;
+  width: 24px;
+  height: 0;
+  vertical-align: top;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.62rem;
+  line-height: 1;
+  letter-spacing: normal;
+  text-align: inherit;
+  text-transform: none;
+  box-shadow: none;
+  transition: none;
+  cursor: pointer;
+}
+.planning-review-numeric .planning-review-derived-marker {
+  padding-right: 3px;
+}
+.planning-review-text .planning-review-derived-marker {
+  padding-left: 3px;
+}
+.planning-review-derived-marker::before {
+  content: "";
+  position: absolute;
+  top: -4px;
+  left: 0;
+  width: 24px;
+  height: 24px;
+}
+.planning-review-derived-marker > span {
+  position: relative;
+}
+.planning-review-derived-marker:focus-visible {
+  outline: none;
+}
+.planning-review-derived-marker:focus-visible::before {
+  outline: 2px solid #93c5fd;
+  outline-offset: -2px;
+}
+@media (hover: hover) {
+  .planning-review-derived-marker:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
+    box-shadow: none;
+  }
+  .planning-review-derived-marker:hover:where(:not(:disabled)):where(:not([aria-disabled=true]))::before {
+    background-image:
+      radial-gradient(
+        circle closest-side,
+        #f7f5f0 100%,
+        transparent 100%);
+  }
 }
 .planning-review-teamsInScope .planning-review-truncated-value {
   width: 220px;

@@ -493,6 +493,29 @@ class DbMigrationTests(unittest.TestCase):
         self.assertNotIn('INSERT INTO workspace_sprint_catalogs', sql)
         self.assertNotIn('INSERT INTO workspace_sprint_team_catalogs', sql)
 
+    def test_group_review_migration_postgresql_offline_sql(self):
+        config = self._config('postgresql+psycopg://user@db.example:5432/planner?sslmode=require')
+        output = io.StringIO()
+        config.output_buffer = output
+        with patch.dict(os.environ, {'DATABASE_CONNECTION_MODE': 'url'}, clear=False):
+            command.upgrade(config, '20261001_0018:20261020_0019', sql=True)
+        sql = output.getvalue()
+        for required in (
+            'CREATE TABLE workspace_group_review_schemas',
+            'CREATE TABLE group_review_cells',
+            'CREATE TABLE group_sprint_review_views',
+            'ON DELETE CASCADE',
+            'length(sprint_order) = 128',
+            'view_revision >= 1',
+            'schema_revision >= 0',
+            "row_kind IN ('epic', 'story')",
+            'CREATE INDEX',
+            '(workspace_id, group_id, sprint_order)',
+        ):
+            self.assertIn(required, sql)
+        self.assertNotIn('DROP TABLE', sql)
+        self.assertNotIn('workspace_sprint_reviews', sql)
+
     def test_workspace_config_migration_is_data_neutral_and_reversible(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir, 'workspace-config.db')}"

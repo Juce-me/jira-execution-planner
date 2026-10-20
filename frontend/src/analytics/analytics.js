@@ -79,6 +79,8 @@ function pushDataLayer(payload) {
 function appendGtmScript(containerId) {
     if (!containerId || typeof document === 'undefined' || !document.head) return;
     if (document.querySelector?.(`[data-analytics-gtm="${containerId}"]`)) return;
+    // GTM only starts its tags after this message is in dataLayer, so it precedes the script.
+    ensureDataLayer()?.push({ 'gtm.start': Date.now(), event: 'gtm.js' });
     const script = document.createElement('script');
     script.async = true;
     script.src = `https://www.googletagmanager.com/gtm.js?id=${encodeURIComponent(containerId)}`;

@@ -23,6 +23,8 @@ RICE = (Reach x Impact x Confidence) / Effort
 | 22 | JQL builder (replace regex) | Backend | 5 | 1 | 50% | 2 | **1.25** |
 | 25 | Frontend tests | Frontend | 3 | 2 | 50% | 3 | **1.0** |
 
+- Compact sticky header at 390px with two or more visible Department groups: the "Find in view" search field covers the "Catch Up" mode radio and blocks its click (found while building the two-group Playwright fixture for #267; the existing 390px sticky-heading test in `tests/ui/planning_review_integration.spec.js` stays on the one-group fixture until fixed). Needs a product fix with geometry checks on every sibling control of that header.
+
 ## Deferred
 - Design-system Part 2 global hover foundation is implemented locally; acceptance remains open in [EXEC plan](plans/EXEC-design-system-part-2.md). Part 3 surface migration is implemented locally in its [EXEC plan](plans/EXEC-design-system-part-3.md); the original integrated verification passed; current hover-refinement evidence and the resolved WebKit search-clear test race are recorded there. Acceptance remains open. See [design](plans/SUPPORT-design-system-hover-contract-design.md).
 - Design-system spec #3: shared Button, font-size/radius/spacing scales and JSX inline-style migration; separate follow-up. Keyboard-only focus behavior, keyframe deduplication and entrance animations remain deferred; touch actions stay required.

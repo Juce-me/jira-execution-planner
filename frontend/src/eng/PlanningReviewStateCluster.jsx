@@ -7,7 +7,8 @@ export default function PlanningReviewStateCluster({ review, editable, onSave, o
     if (!review.dirty && !review.saving) {
         return review.loading ? <span className="planning-review-state-cluster"><span className="planning-review-state-note" role="status">Loading…</span></span> : null;
     }
-    const blocked = !editable || review.loading || review.saving || review.unconfirmed || Boolean(review.conflict);
+    // A group-blocked save (group gone or view cap) keeps the draft; Discard, a group change or a reload clears it.
+    const blocked = !editable || review.loading || review.saving || review.unconfirmed || Boolean(review.conflict) || review.groupBlocked;
     return <span className="planning-review-state-cluster">
         <span className="planning-review-sr-only" role="status">{review.saving ? 'Saving…' : 'Unsaved changes'}</span>
         {confirming

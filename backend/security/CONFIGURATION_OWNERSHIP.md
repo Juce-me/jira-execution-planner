@@ -9,7 +9,7 @@ write access, bootstrap precedence, and frontend edit gates must change together
 | Configuration | Canonical storage | Read access | Write access | Sharing rule |
 | --- | --- | --- | --- | --- |
 | Administrator settings | `workspace_dashboard_configs` | Authenticated workspace users | `shared_admin_write` | One effective value per workspace; only tool admins configure it when `SETTINGS_ADMIN_ONLY=true` |
-| Department groups, group labels, memberships, exclusions, and department board layouts | `workspace_group_configs` | `authenticated_read` | `user_write` | One shared catalog per workspace; every authenticated user sees and may configure it |
+| Department groups, group labels, memberships, exclusions, and department board layouts | `workspace_group_configs` | `authenticated_read` | `user_write` | One shared catalog per workspace; every authenticated user sees and may configure it. A group's id is also the storage key for its Sprint review columns, values and views; the server never gates that data on the group's visibility (the UI cannot pick a hidden group as the review scope, because the active group resolves only from visible groups), and a group re-created with a deleted group's id reattaches the old review data |
 | Group visibility, favorite/star, and active group | `user_group_preferences` | Current user | `user_write` | Private to one user in one workspace; never copied into shared group configuration |
 | EPM scope, label prefix, issue types, and project-label mappings | Current user's default private `view_configs` payload | Current user | `user_write` | Private to the owning user; never stored in workspace administrator configuration |
 | EPM tab and selected sprint UI state | Private browser preferences; preserve existing private-view values | Current user | Current user only | Never stored in workspace administrator or shared group configuration |
@@ -18,7 +18,7 @@ write access, bootstrap precedence, and frontend edit gates must change together
 | Derived Sprint catalog | `workspace_sprint_catalogs` | `authenticated_read` | Authenticated Jira refresh runtime only | Shared per workspace and configured Jira source Board; complete validated empty lists are authoritative |
 | Derived per-Sprint Team membership | `workspace_sprint_team_catalogs` | `authenticated_read` | Authenticated Jira refresh runtime only | Shared per workspace and Sprint, but valid only for the persisted effective-scope digest; membership is distinct from Team names |
 | Workspace user directory and tool-admin grants | `users`, `auth_connections` (via `/api/admin/users*`) | Explicit tool admin only, regardless of `SETTINGS_ADMIN_ONLY` | `tool_admin`, explicit tool admin only | Non-admins never read other users; the only exposure is `adminContacts` (tool-admin display names) in `/api/config` while the workspace is unconfigured |
-| ENG Sprint review definitions and custom cells | `workspace_sprint_reviews`, `sprint_review_cells` | Authenticated workspace users, cells additionally require current-user Jira issue authorization | `user_write` with requested-with and CSRF | Shared per workspace + Sprint; independent Epic/Story cells use immutable Jira IDs; Team/Department are filters, never storage keys |
+| ENG Sprint review columns, values and Sprint views | `workspace_group_review_schemas`, `group_review_cells`, `group_sprint_review_views` (legacy `workspace_sprint_reviews`, `sprint_review_cells` retired from reading) | Authenticated workspace users, cells additionally require current-user Jira issue authorization | `user_write` with requested-with and CSRF | Columns and values are shared per workspace + Department group; views (column order and hidden columns) per workspace + group + Sprint; independent Epic/Story cells use immutable Jira IDs; Team is a filter, never a storage key |
 | Debug load observations | `load_performance` | Explicit tool admin in the current workspace/environment | Authenticated `user_write`, debug-enabled only | Derived operational history, retained 30 days; workspace identity comes from auth context, never the browser payload; no configuration or issue content |
 
 ## Exact Boundaries
@@ -100,20 +100,26 @@ administrator fields.
 
 ## ENG Sprint Reviews
 
-ENG custom review definitions and cells use dedicated review tables, separate from administrator
-configuration, Department groups, private views, and Scenario drafts. GET returns schema and
-capabilities only. Batched values reads and saves authorize every requested immutable issue ID
+ENG custom review columns, values and Sprint views use dedicated review tables, separate from administrator
+configuration, the Department group catalog, private views, and Scenario drafts. A Department group id is
+the one key they take from the catalog: review rows belong to a workspace and a group id, never to a user,
+and review code never reads or writes group configuration or preference rows beyond the read-only check of
+a `groupId` selector. A group hidden by a user's visibility preference stays fully readable and writable.
+GET returns the schema, the Sprint's layouts, `viewRevision`, `inheritedFrom` and capabilities only. Batched values reads and saves authorize every requested immutable issue ID
 through the current user's OAuth Jira REST context; workspace sharing never grants Jira access.
 Inaccessible or nonexistent issues cannot expose saved cells. No Basic, service integration, Home,
 or local token-store fallback is supported. Other profiles return saving-unavailable guidance.
 
-A workspace/Sprint parent-row transaction fence protects first-create, schema, and cell races.
-Schema changes require the current schema revision. Cell changes require only their own current
+A workspace/group schema-row transaction fence protects first-create, schema, view, and cell races.
+Schema changes require the current schema revision; layout changes require the Sprint's current view revision. Cell changes require only their own current
 revisions, so disjoint saves may succeed despite another user's cell changes. Conflicts roll back
 the complete transaction. Archived column definitions and values retain their immutable identity.
-Bounds are 30 active columns per row kind, 100 changed cells, 500 read issues, 256 KiB requests,
-1 MiB responses, and ten enhanced Jira search pages within a cooperative fifteen-second budget.
-No request can return partially authorized data. Browser-supplied workspace/user authority is rejected.
+Bounds are 30 active columns per row kind and 240 columns per group (archived ones included, no purge),
+500 saved Sprint views per group, a `groupId` of 1-128 characters, 100 changed cells, 500 read issues,
+256 KiB requests, 1 MiB responses, and ten enhanced Jira search pages within a cooperative fifteen-second
+budget. No request can return partially authorized data. Browser-supplied workspace/user authority is
+rejected; the one browser-supplied selector is `groupId`, checked against the shared Department group
+catalog on PATCH only (reads never consult it), and it is a storage key, never authority.
 
 ## HTTP Meaning
 
@@ -131,7 +137,7 @@ No request can return partially authorized data. Browser-supplied workspace/user
 
 Before merging a database, rights, or configuration change, verify all of these together:
 
-1. The model/table key matches the ownership scope (`workspace_id`, or `workspace_id + user_id`).
+1. The model/table key matches the ownership scope (`workspace_id`, `workspace_id + user_id`, or `workspace_id + group_id` for Sprint review data, whose legacy tables have no user columns).
 2. Route policies match the matrix above for both reads and writes.
 3. Request identity comes from `RequestAuthContext`, never the payload.
 4. `/api/config` and section GET routes resolve the same canonical source.
@@ -141,4 +147,4 @@ Before merging a database, rights, or configuration change, verify all of these 
    concurrency, and preservation of unrelated private/shared fields.
 8. Migrations do not infer private-to-shared ownership or publish one user's configuration to others.
 
-Sprint review column order and optional visibility are shared per workspace/Sprint/row kind in `WorkspaceSprintReview.layouts`, under the same authenticated-user save rights and optimistic schema revision as custom definitions. They are not private user preferences. Key and Summary stay pinned first; every column except Summary can be hidden, and Key is never part of the saved order.
+Sprint review column order and optional visibility are shared per workspace/group/Sprint in `GroupSprintReviewView.layouts` (one row per Sprint holding both row kinds), under the same authenticated-user save rights as custom definitions and an optimistic per-view revision. A Sprint without a view of its own inherits the nearest earlier saved view by numeric Sprint id, whole row, and its first layout save freezes that inheritance. They are not private user preferences. Key and Summary stay pinned first; every column except Summary can be hidden, and Key is never part of the saved order.

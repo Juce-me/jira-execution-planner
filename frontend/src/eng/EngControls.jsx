@@ -350,8 +350,7 @@ export function GroupControl({
                                         key={group.id}
                                         className="group-dropdown-option"
                                         onClick={() => {
-                                            trackFilterChanged('group', { group_count_bucket: bucketCount(group?.teamIds?.length || 0), scope_type: currentDashboardView() });
-                                            setActiveGroupId(group.id);
+                                            setActiveGroupId(group.id, () => trackFilterChanged('group', { group_count_bucket: bucketCount(group?.teamIds?.length || 0), scope_type: currentDashboardView() }));
                                             setShowGroupDropdown(false);
                                         }}
                                     >

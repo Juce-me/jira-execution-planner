@@ -162,6 +162,9 @@ test('enabled analytics lazy-loads GTM from context and emits only app-owned tri
 
     const pushes = await page.evaluate(() => window.dataLayer.filter(entry => entry && entry.trigger));
     expect(googleRequests).toContain('https://www.googletagmanager.com/gtm.js?id=GTM-NZJW2CFN');
+    const gtmStarts = await page.evaluate(() => window.dataLayer.filter(entry => entry && entry['gtm.start'] !== undefined));
+    expect(gtmStarts).toHaveLength(1);
+    expect(gtmStarts[0]).toMatchObject({ event: 'gtm.js', 'gtm.start': expect.any(Number) });
     expect(pushes.length).toBeGreaterThanOrEqual(10);
     for (const push of pushes) {
         expect(['pageview', 'userevent']).toContain(push.event);

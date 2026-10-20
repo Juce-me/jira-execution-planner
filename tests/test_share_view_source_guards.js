@@ -125,8 +125,92 @@ test('the ENG task-load effect holds for a pending link, with the Planning recov
 
 test('the Planning review read holds with the link, so it never reads the review of the recipient saved Sprint', () => {
     const call = between(dashboard, 'const planningReview = usePlanningSprintReview({', '\n            });');
-    assert.ok(call.includes("active: selectedView === 'eng' && showPlanning && planningLayout === 'table' && engWorkspaceConfigured && !shareViewHold,"));
+    assert.ok(call.includes("active: selectedView === 'eng' && showPlanning && planningLayout === 'table' && engWorkspaceConfigured && !shareViewHold && reviewGroupReady, groupId: reviewGroupId,"));
     assert.ok(dashboard.indexOf('const shareViewHold = useShareViewHold();') < dashboard.indexOf('const planningReview = usePlanningSprintReview({'));
+    // The review scope comes from the resolved group (#267), derived before the review hook runs.
+    const scope = dashboard.indexOf('} = usePlanningGroupScope({ planningReviewGuardRef, activeGroup, groupsLoading,');
+    assert.ok(scope > dashboard.indexOf('const activeGroup = React.useMemo(() => {'));
+    assert.ok(scope < dashboard.indexOf('const planningReview = usePlanningSprintReview({'));
+});
+
+// Every setActiveGroupId writer, pinned by its code (#267). User-initiated changes go through the review guard;
+// automatic and forced ones call the raw setter and discard a dirty review like a context change.
+const GROUP_WRITERS = {
+    'frontend/src/eng/EngControls.jsx': {
+        "setActiveGroupId(group.id, () => trackFilterChanged('group', { group_count_bucket: bucketCount(group?.teamIds?.length || 0), scope_type: currentDashboardView() }));": 'user: header dropdown (guarded setter, analytics inside the guarded callback)',
+    },
+    'frontend/src/eng/usePlanningGroupScope.js': {
+        'const apply = () => { onCommit?.(); setActiveGroupId(next); };': 'the guarded setter: commits only after the review guard proceeds',
+    },
+    'frontend/src/settings/useGroupVisibilityPreferences.js': {
+        'setActiveGroupId(nextActiveGroupId);': 'automatic: hide-the-active-group effect',
+        'setActiveGroupId(nextPreferences.activeGroupId);': 'user: first-run Department save (guarded before the persist call)',
+        'setActiveGroupId(prev => resolveVisibleActiveGroupId(normalized, effectiveIds, nextPreferences.activeGroupId || prev));': 'automatic: apply local preferences',
+        'setActiveGroupId(nextPreferences.activeGroupId || null);': 'user: Settings Save (guarded before the persist call)',
+    },
+    'frontend/src/settings/useTeamGroupSettings.js': {
+        'setActiveGroupId(prev => {': 'automatic: favorite re-resolution on load/Retry and after a groups save (two updaters)',
+    },
+    'frontend/src/settings/useFirstRunConfiguration.js': {
+        'setActiveGroupId(captured?.activeGroupId || null);': 'automatic: first-run cancel',
+    },
+    'frontend/src/shareView/applyController.js': {
+        'o.setActiveGroupId(scope.group.id);': 'automatic: share-link apply (cancels while the review is busy)',
+    },
+    'frontend/src/dashboard.jsx': {
+        'if (groupAvailable) setActiveGroupId(requestedGroup);': 'automatic: auth resume',
+        'setActiveGroupId(null);': 'automatic: onboarding required',
+    },
+};
+
+function sourceFiles(directory) {
+    return fs.readdirSync(path.join(repoRoot, directory), { withFileTypes: true }).flatMap(entry => {
+        const relative = `${directory}/${entry.name}`;
+        if (entry.isDirectory()) return sourceFiles(relative);
+        return /\.(jsx?|mjs)$/.test(entry.name) ? [relative] : [];
+    });
+}
+
+test('every setActiveGroupId writer is classified, and only the pinned writers exist', () => {
+    const found = {};
+    for (const file of sourceFiles('frontend/src')) {
+        for (const line of read(file).split('\n')) {
+            if (/\bsetActiveGroupId\(/.test(line)) (found[file] ||= []).push(line.trim());
+        }
+    }
+    const expected = Object.fromEntries(Object.entries(GROUP_WRITERS).map(([file, writers]) => [file, Object.keys(writers)]));
+    assert.deepEqual(Object.keys(found).sort(), Object.keys(expected).sort());
+    for (const [file, lines] of Object.entries(found)) {
+        assert.deepEqual([...new Set(lines)].sort(), [...expected[file]].sort(), file);
+    }
+    assert.equal(found['frontend/src/settings/useTeamGroupSettings.js'].length, 2);
+    assert.equal(found['frontend/src/dashboard.jsx'].length, 2);
+});
+
+test('the header dropdown gets the guarded setter and every automatic writer the raw one', () => {
+    assert.ok(between(dashboard, '<GroupControl', '/>').includes('setActiveGroupId={guardedSetActiveGroupId}'));
+    assert.ok(between(dashboard, '} = useTeamGroupSettings({', '});').includes('                setActiveGroupId,\n'));
+    assert.ok(between(dashboard, '} = useFirstRunConfiguration({', '});').includes('                setActiveGroupId,\n'));
+    assert.ok(between(dashboard, 'const shareViewOptions = {', '};').includes(' setActiveGroupId, '));
+    assert.equal((dashboard.match(/guardedSetActiveGroupId/g) || []).length, 2, 'defined once, passed only to the header dropdown');
+    const controls = read('frontend/src/eng/EngControls.jsx');
+    assert.equal(controls.includes("trackFilterChanged('group'"), true);
+    assert.equal(controls.match(/trackFilterChanged\('group'/g).length, 1, 'group analytics fire only inside the guarded callback');
+});
+
+test('Settings Saves that change the active group run the review guard before the persist call', () => {
+    const hook = read('frontend/src/settings/useGroupVisibilityPreferences.js');
+    for (const [start, end] of [
+        ['const saveFirstRunGroupPreferences = React.useCallback(', 'const persistGroupPreferences = React.useCallback('],
+        ['const persistGroupPreferences = React.useCallback(', '    return {\n'],
+    ]) {
+        const body = between(hook, start, end);
+        const guard = body.indexOf('await confirmActiveGroupChange(');
+        assert.ok(guard > 0, start);
+        assert.ok(guard < body.lastIndexOf('await requestSaveGroupPreferences('), start);
+        assert.ok(guard < body.indexOf('Saving(true)'), `${start}: the guard runs before the save starts`);
+    }
+    assert.ok(between(dashboard, '} = useTeamGroupSettings({', '});').includes('groupChangeGuardRef: planningReviewGuardRef,'));
 });
 
 test('the early link hooks precede both of their consumers and the Catch Up tour waits for the link', () => {

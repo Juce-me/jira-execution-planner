@@ -1802,8 +1802,8 @@ for (const teamCount of [1, 6, 7]) {
 test('automatic Planning capacity editor defers primary work and cancels a late guarded capacity read', async ({ page }) => {
     const { installLifecycleControl, deferred } = require('./eng_epic_refresh_fixture'); const lifecycle = await installLifecycleControl(page);
     const { calls, state } = await openPlanning(page, { prefs: { planningLayout: 'table' } });
-    await page.route('**/api/eng/sprints/*/review', route => json(route, { schemaRevision: 1, columns: [], layouts: {}, capabilities: { canRead: true, canSave: true } }));
-    await page.route('**/api/eng/sprints/*/review/values/read', route => json(route, { cells: [], unavailableIssueIds: [] }));
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/, route => json(route, { schemaRevision: 1, columns: [], layouts: {}, capabilities: { canRead: true, canSave: true } }));
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review\/values\/read(?:\?.*)?$/, route => json(route, { cells: [], unavailableIssueIds: [] }));
     await page.waitForLoadState('networkidle');
     await page.getByRole('button', { name: 'Show panel', exact: true }).click();
     const card = page.locator('.planning-team-capacity-cards .team-stat-card').filter({ hasText: 'Alpha' });
@@ -1824,8 +1824,8 @@ test('automatic Planning capacity editor defers primary work and cancels a late 
 for (const status of [429, 500, 401]) test(`automatic Planning capacity ${status} holds clean values and never replays`, async ({ page }) => {
     const { installLifecycleControl } = require('./eng_epic_refresh_fixture'); const lifecycle = await installLifecycleControl(page);
     const { calls, state } = await openPlanning(page, { prefs: { planningLayout: 'table' } });
-    await page.route('**/api/eng/sprints/*/review', route => json(route, { schemaRevision: 1, columns: [], layouts: {}, capabilities: { canRead: true, canSave: true } }));
-    await page.route('**/api/eng/sprints/*/review/values/read', route => json(route, { cells: [], unavailableIssueIds: [] }));
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/, route => json(route, { schemaRevision: 1, columns: [], layouts: {}, capabilities: { canRead: true, canSave: true } }));
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review\/values\/read(?:\?.*)?$/, route => json(route, { cells: [], unavailableIssueIds: [] }));
     await page.getByRole('button', { name: 'Show panel', exact: true }).click();
     const card = page.locator('.planning-team-capacity-cards .team-stat-card').filter({ hasText: 'Alpha' }); await card.hover();
     await expect(card.getByRole('button', { name: 'Edit Alpha capacity', exact: true })).toBeEnabled(); await page.waitForLoadState('networkidle');

@@ -19,8 +19,8 @@
   },
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
-    "lineCount": 7554,
-    "lineCeiling": 7554
+    "lineCount": 7557,
+    "lineCeiling": 7557
   },
   "modules": [
     {
@@ -6019,8 +6019,8 @@
       "exports": [
         "useGroupVisibilityPreferences"
       ],
-      "lineCount": 317,
-      "lineCeiling": 317,
+      "lineCount": 322,
+      "lineCeiling": 322,
       "interfaces": [
         {
           "exportName": "useGroupVisibilityPreferences",
@@ -6029,6 +6029,7 @@
             "applyPreferenceGroupsSnapshot",
             "backendUrl",
             "bucketCount",
+            "groupChangeGuardRef",
             "groupDraft",
             "groupsConfig",
             "groupsLoading",
@@ -6068,6 +6069,8 @@
             "applyPreferenceGroupsSnapshot",
             "backendUrl",
             "bucketCount",
+            "groupChangeGuardRef",
+            "groupChangeGuardRef.current",
             "groupDraft",
             "groupDraft.defaultGroupId",
             "groupDraft.groups",
@@ -6079,11 +6082,11 @@
             "useBackendPreferences"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 13,
+          "expandedInputCount": 15,
           "returnCount": 24,
           "propCount": 0,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 13,
+          "expandedInputCeiling": 15,
           "returnCeiling": 24,
           "propCeiling": 0,
           "unresolved": [
@@ -6093,13 +6096,15 @@
           ],
           "inventory": {
             "source": "frontend/src/settings/useGroupVisibilityPreferences.js:30",
-            "sourceDigest": "f23bdf4d9e7a07f40e99a7e9010427a30ddb92abfc196130099d42c831616214",
+            "sourceDigest": "319d5225dfff0c58a674d770365cee4a0a365fb99d91319ad35ab368fa0a9abc",
             "reviewed": true,
             "memberNames": [
               "activeGroupId",
               "applyPreferenceGroupsSnapshot",
               "backendUrl",
               "bucketCount",
+              "groupChangeGuardRef",
+              "groupChangeGuardRef.current",
               "groupDraft",
               "groupDraft.defaultGroupId",
               "groupDraft.groups",
@@ -6110,7 +6115,7 @@
               "trackSettingsAction",
               "useBackendPreferences"
             ],
-            "rationale": "backendUrl and activeGroupId are strings. groupVisibilityUtils.js consumes groupsConfig groups[].id/source/defaultGroupId/preferences.activeGroupId and retains the original group records; no callable dependency members forwarded."
+            "rationale": "backendUrl and activeGroupId are strings. groupVisibilityUtils.js consumes groupsConfig groups[].id/source/defaultGroupId/preferences.activeGroupId and retains the original group records; no callable dependency members forwarded. #267 C2 adds groupChangeGuardRef, the Planning review guard ref forwarded to the Settings Saves that move the active group."
           },
           "callers": [
             {
@@ -10058,8 +10063,8 @@
         "useTeamGroupSelectionEffect",
         "useTeamGroupSettings"
       ],
-      "lineCount": 1480,
-      "lineCeiling": 1480,
+      "lineCount": 1482,
+      "lineCeiling": 1482,
       "interfaces": [
         {
           "exportName": "useTeamGroupLabelEffects",
@@ -10096,8 +10101,8 @@
             "bag activeTeamResultsLimited dynamic member"
           ],
           "inventory": {
-            "source": "frontend/src/settings/useTeamGroupSettings.js:1454",
-            "sourceDigest": "73964f6e8a9e47de78c45fe2751dfe3050a6d158e2bdb39566a6ea04581f3a9b",
+            "source": "frontend/src/settings/useTeamGroupSettings.js:1456",
+            "sourceDigest": "edc5d16857d36cb3fc29fdd652f16154f14145607334f411ffe801912e19b9b7",
             "reviewed": true,
             "memberNames": [
               "activeGroupDraft",
@@ -10191,8 +10196,8 @@
             "forwarded input BACKEND_URL"
           ],
           "inventory": {
-            "source": "frontend/src/settings/useTeamGroupSettings.js:1311",
-            "sourceDigest": "73964f6e8a9e47de78c45fe2751dfe3050a6d158e2bdb39566a6ea04581f3a9b",
+            "source": "frontend/src/settings/useTeamGroupSettings.js:1313",
+            "sourceDigest": "edc5d16857d36cb3fc29fdd652f16154f14145607334f411ffe801912e19b9b7",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -10267,8 +10272,8 @@
           "propCeiling": 0,
           "unresolved": [],
           "inventory": {
-            "source": "frontend/src/settings/useTeamGroupSettings.js:1286",
-            "sourceDigest": "73964f6e8a9e47de78c45fe2751dfe3050a6d158e2bdb39566a6ea04581f3a9b"
+            "source": "frontend/src/settings/useTeamGroupSettings.js:1288",
+            "sourceDigest": "edc5d16857d36cb3fc29fdd652f16154f14145607334f411ffe801912e19b9b7"
           },
           "callers": [
             {
@@ -10289,6 +10294,7 @@
             "clearServerConnectionError",
             "firstRunConfigurationActive",
             "getTeamOptions",
+            "groupChangeGuardRef",
             "markConnectionBootstrapHealthy",
             "reportServerConnectionError",
             "savedPrefsRef",
@@ -10468,6 +10474,7 @@
             "clearServerConnectionError",
             "firstRunConfigurationActive",
             "getTeamOptions",
+            "groupChangeGuardRef",
             "markConnectionBootstrapHealthy",
             "reportServerConnectionError",
             "savedPrefsRef",
@@ -10489,11 +10496,11 @@
             "trackSettingsAction"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 24,
+          "expandedInputCount": 25,
           "returnCount": 158,
           "propCount": 0,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 24,
+          "expandedInputCeiling": 25,
           "returnCeiling": 158,
           "propCeiling": 0,
           "unresolved": [
@@ -10502,7 +10509,7 @@
           ],
           "inventory": {
             "source": "frontend/src/settings/useTeamGroupSettings.js:32",
-            "sourceDigest": "73964f6e8a9e47de78c45fe2751dfe3050a6d158e2bdb39566a6ea04581f3a9b",
+            "sourceDigest": "edc5d16857d36cb3fc29fdd652f16154f14145607334f411ffe801912e19b9b7",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -10510,6 +10517,7 @@
               "clearServerConnectionError",
               "firstRunConfigurationActive",
               "getTeamOptions",
+              "groupChangeGuardRef",
               "markConnectionBootstrapHealthy",
               "reportServerConnectionError",
               "savedPrefsRef",
@@ -10530,7 +10538,7 @@
               "teamMembershipState.validated",
               "trackSettingsAction"
             ],
-            "rationale": "BACKEND_URL is the module-constant API base string forwarded to the Team group request wrappers and selectedSprintInfo is the selected Sprint record forwarded to the Team availability helper; neither is a dependency bag. The remaining inputs are state cells, refs, setters and callbacks declared before the call, plus the handler-only getTeamOptions getter."
+            "rationale": "BACKEND_URL is the module-constant API base string forwarded to the Team group request wrappers and selectedSprintInfo is the selected Sprint record forwarded to the Team availability helper; neither is a dependency bag. The remaining inputs are state cells, refs, setters and callbacks declared before the call, plus the handler-only getTeamOptions getter. #267 C2 adds groupChangeGuardRef, the Planning review guard ref forwarded to the Settings Saves that move the active group."
           },
           "callers": [
             {
@@ -18120,8 +18128,8 @@
         "TeamControl",
         "ViewSwitch"
       ],
-      "lineCount": 473,
-      "lineCeiling": 473,
+      "lineCount": 472,
+      "lineCeiling": 472,
       "interfaces": [
         {
           "exportName": "GroupControl",
@@ -18189,7 +18197,7 @@
           ],
           "inventory": {
             "source": "frontend/src/eng/EngControls.jsx:267",
-            "sourceDigest": "101922878a429c19ecdcce7fde58c321c8ab475653e6e42f70495310115206fd",
+            "sourceDigest": "d40b5b52e0587f1dc51ed8d9928c272a88ac0e14f50ae144f1f63fcaaacbd4cc",
             "reviewed": true,
             "memberNames": [
               "activeControlSurface",
@@ -18265,7 +18273,7 @@
           "unresolved": [],
           "inventory": {
             "source": "frontend/src/eng/EngControls.jsx:9",
-            "sourceDigest": "101922878a429c19ecdcce7fde58c321c8ab475653e6e42f70495310115206fd"
+            "sourceDigest": "d40b5b52e0587f1dc51ed8d9928c272a88ac0e14f50ae144f1f63fcaaacbd4cc"
           },
           "callers": [
             {
@@ -18361,7 +18369,7 @@
           ],
           "inventory": {
             "source": "frontend/src/eng/EngControls.jsx:73",
-            "sourceDigest": "101922878a429c19ecdcce7fde58c321c8ab475653e6e42f70495310115206fd",
+            "sourceDigest": "d40b5b52e0587f1dc51ed8d9928c272a88ac0e14f50ae144f1f63fcaaacbd4cc",
             "reviewed": true,
             "memberNames": [
               "activeControlSurface",
@@ -18470,8 +18478,8 @@
             "forwarded input showTeamDropdown"
           ],
           "inventory": {
-            "source": "frontend/src/eng/EngControls.jsx:383",
-            "sourceDigest": "101922878a429c19ecdcce7fde58c321c8ab475653e6e42f70495310115206fd",
+            "source": "frontend/src/eng/EngControls.jsx:382",
+            "sourceDigest": "d40b5b52e0587f1dc51ed8d9928c272a88ac0e14f50ae144f1f63fcaaacbd4cc",
             "reviewed": true,
             "memberNames": [
               "activeControlSurface",
@@ -18540,7 +18548,7 @@
           "unresolved": [],
           "inventory": {
             "source": "frontend/src/eng/EngControls.jsx:48",
-            "sourceDigest": "101922878a429c19ecdcce7fde58c321c8ab475653e6e42f70495310115206fd"
+            "sourceDigest": "d40b5b52e0587f1dc51ed8d9928c272a88ac0e14f50ae144f1f63fcaaacbd4cc"
           },
           "callers": [
             {
@@ -19142,24 +19150,24 @@
       "ceiling": 5766
     },
     "settings": {
-      "measured": 16567,
-      "ceiling": 16567
+      "measured": 16574,
+      "ceiling": 16574
     },
     "stats": {
       "measured": 2792,
       "ceiling": 2792
     },
     "eng": {
-      "measured": 1787,
-      "ceiling": 1787
+      "measured": 1786,
+      "ceiling": 1786
     },
     "uniqueOwners": {
-      "measured": 26608,
-      "ceiling": 26608
+      "measured": 26614,
+      "ceiling": 26614
     },
     "appPlusOwners": {
-      "measured": 34162,
-      "ceiling": 34162
+      "measured": 34171,
+      "ceiling": 34171
     }
   },
   "transfer": {

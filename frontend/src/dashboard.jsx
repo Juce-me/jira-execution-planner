@@ -54,6 +54,7 @@ import PlanningOverviewPanel from './eng/PlanningOverviewPanel.jsx';
 import PlanningReviewTable, { PlanningReviewScopeDialog } from './eng/PlanningReviewTable.jsx';
 import { buildPlanningReviewRows, planningReviewScopeCounts } from './eng/planningReviewTableModel.js';
 import { usePlanningSprintReview } from './eng/usePlanningSprintReview.js';
+import { usePlanningGroupScope } from './eng/usePlanningGroupScope.js';
 import PlanningCapacityBar from './eng/PlanningCapacityBar.jsx';
 import PlanningProjectSplitBar from './eng/PlanningProjectSplitBar.jsx';
 import PlanningTeamCapacityCards from './eng/PlanningTeamCapacityCards.jsx';
@@ -1223,6 +1224,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 clearServerConnectionError,
                 firstRunConfigurationActive,
                 getTeamOptions: () => teamOptions,
+                groupChangeGuardRef: planningReviewGuardRef,
                 markConnectionBootstrapHealthy,
                 reportServerConnectionError,
                 savedPrefsRef,
@@ -2405,6 +2407,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
             const activeGroup = React.useMemo(() => {
                 return (visibleControlGroups || []).find(group => group.id === activeGroupId) || null;
             }, [visibleControlGroups, activeGroupId]);
+            const { reviewGroupId, reviewGroupReady, guardedSetActiveGroupId, inheritedHintDismissals } = usePlanningGroupScope({ planningReviewGuardRef, activeGroup, groupsLoading, activeGroupId, setActiveGroupId, savedPrefs: savedPrefsRef.current });
             const activeGroupTeamLabels = React.useMemo(() => {
                 return activeGroup?.teamLabels || {};
             }, [activeGroup]);
@@ -3194,7 +3197,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                     epmTab,
                     epmSelectedProjectId,
                     epmProjectSort,
-                    engEpicSort, planningLayout, planningTeamsEffortExpanded: teamsEffortExpanded,
+                    engEpicSort, planningLayout, planningTeamsEffortExpanded: teamsEffortExpanded, planningInheritedHintDismissals: inheritedHintDismissals,
                     selectedSprint, sprintName, sprintCatalog: sprintCatalogCacheRef.current,
                     selectedTeams,
                     activeGroupId,
@@ -3250,7 +3253,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 epmTab,
                 epmSelectedProjectId,
                 epmProjectSort,
-                engEpicSort, planningLayout, teamsEffortExpanded,
+                engEpicSort, planningLayout, teamsEffortExpanded, inheritedHintDismissals,
                 selectedSprint, sprintName,
                 selectedTeams,
                 activeGroupId,
@@ -4386,7 +4389,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
             }, [trackProductEvent, trackSortChanged]);
             if (sprintCatalogState.browserContextId) planningReviewBrowserContextRef.current = sprintCatalogState.browserContextId;
             const planningReview = usePlanningSprintReview({
-                sprintId: selectedSprint, active: selectedView === 'eng' && showPlanning && planningLayout === 'table' && engWorkspaceConfigured && !shareViewHold,
+                sprintId: selectedSprint, active: selectedView === 'eng' && showPlanning && planningLayout === 'table' && engWorkspaceConfigured && !shareViewHold && reviewGroupReady, groupId: reviewGroupId,
                 contextKey: `${authMode}|${jiraUrl}|${planningReviewBrowserContextRef.current}|${authResumeStagedRevision}`,
                 backendUrl: BACKEND_URL, rows: planningReviewRows, automaticHoldRef: planningAutomaticReadRef, onReviewAction: trackPlanningReviewAction,
             });
@@ -5718,7 +5721,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                     filteredControlGroups={filteredControlGroups}
                     trackFilterChanged={trackFilterChanged}
                     currentDashboardView={currentDashboardView}
-                    setActiveGroupId={setActiveGroupId}
+                    setActiveGroupId={guardedSetActiveGroupId}
                     groupsConfig={groupsConfig}
                     groupPreferences={groupPreferences}
                 />

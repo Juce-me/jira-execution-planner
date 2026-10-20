@@ -38,6 +38,7 @@ export function useGroupVisibilityPreferences({
     trackSettingsAction,
     bucketCount,
     useBackendPreferences = true,
+    groupChangeGuardRef,
 }) {
     const [groupPreferences, setGroupPreferences] = React.useState(EMPTY_GROUP_PREFERENCES);
     const [groupPreferencesSaving, setGroupPreferencesSaving] = React.useState(false);
@@ -48,6 +49,8 @@ export function useGroupVisibilityPreferences({
     const [firstRunError, setFirstRunError] = React.useState('');
     const firstRunSaveInFlightRef = React.useRef(false);
     const groupPreferencesBaselineRef = React.useRef('');
+    // A save that moves the active group runs the Planning review guard first (#267); false means Stay.
+    const confirmActiveGroupChange = nextGroupId => (String(nextGroupId || '') === String(activeGroupId || '') || !groupChangeGuardRef?.current ? Promise.resolve(true) : groupChangeGuardRef.current(() => {}));
 
     const firstRunGroupsSignature = React.useMemo(() => (
         (groupsConfig.groups || []).map(group => (
@@ -166,6 +169,7 @@ export function useGroupVisibilityPreferences({
         const isEligible = hasGroupScope(selectedGroup);
         if (!selectedGroupId || !isEligible) return { ok: false, invalidSelection: true };
         firstRunSaveInFlightRef.current = true;
+        if (!await confirmActiveGroupChange(selectedGroupId)) { firstRunSaveInFlightRef.current = false; return { ok: false, stayed: true }; }
         setFirstRunSaving(true);
         setFirstRunError('');
         try {
@@ -217,9 +221,10 @@ export function useGroupVisibilityPreferences({
             firstRunSaveInFlightRef.current = false;
             setFirstRunSaving(false);
         }
-    }, [backendUrl, firstRunFavoriteGroupId, groupsConfig, setActiveGroupId, trackSettingsAction, bucketCount, applyPreferenceGroupsSnapshot]);
+    }, [backendUrl, firstRunFavoriteGroupId, groupsConfig, setActiveGroupId, trackSettingsAction, bucketCount, applyPreferenceGroupsSnapshot, activeGroupId, groupChangeGuardRef]);
 
     const persistGroupPreferences = React.useCallback(async (normalized) => {
+        if (useBackendPreferences && !await confirmActiveGroupChange(favoriteGroupDraftId)) throw new Error('Settings were not saved: the Planning review has unsaved changes.');
         setGroupPreferencesSaving(true);
         try {
             if (!useBackendPreferences) {
@@ -286,7 +291,7 @@ export function useGroupVisibilityPreferences({
         } finally {
             setGroupPreferencesSaving(false);
         }
-    }, [backendUrl, visibleGroupDraftIds, favoriteGroupDraftId, activeGroupId, setActiveGroupId, trackSettingsAction, bucketCount, useBackendPreferences, applyPreferenceGroupsSnapshot]);
+    }, [backendUrl, visibleGroupDraftIds, favoriteGroupDraftId, activeGroupId, setActiveGroupId, trackSettingsAction, bucketCount, useBackendPreferences, applyPreferenceGroupsSnapshot, groupChangeGuardRef]);
 
     return {
         groupPreferences,

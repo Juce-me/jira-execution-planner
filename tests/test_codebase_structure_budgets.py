@@ -68,7 +68,9 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # Issue #251 data freshness adds the lifecycle hook call, owner-ref assignment, handle
     # pass-through, status readout, projection calls and shared EPM availability,
     # net of the legacy listener removal (+48).
-    "frontend/src/dashboard.jsx": 7573,
+    # Issue #267 C2 re-syncs to the measured size (the owner manifest held 7554) and adds the
+    # Planning review group-scope hook import and call, plus the Settings guard ref (+3).
+    "frontend/src/dashboard.jsx": 7557,
 }
 
 

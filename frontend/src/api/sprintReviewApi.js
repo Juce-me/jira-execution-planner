@@ -35,7 +35,7 @@ async function request(backendUrl, sprintId, suffix, method, payload, { signal, 
             const error = new Error(data.message || 'Review request failed.');
             error.status = response.status;
             error.code = data.code || data.error;
-            if (response.status === 409) error.conflict = { schemaConflict: data.schemaConflict, cellConflicts: data.cellConflicts || [] };
+            if (response.status === 409) error.conflict = { schemaConflict: data.schemaConflict, viewConflict: data.viewConflict, cellConflicts: data.cellConflicts || [] };
             throw error;
         }
         return data;
@@ -49,6 +49,6 @@ async function request(backendUrl, sprintId, suffix, method, payload, { signal, 
     }
 }
 
-export const fetchSprintReview = (backendUrl, sprintId, options) => request(backendUrl, sprintId, '', 'GET', null, options);
+export const fetchSprintReview = (backendUrl, sprintId, { groupId, ...options } = {}) => request(backendUrl, sprintId, groupId == null ? '' : `?groupId=${encodeURIComponent(groupId)}`, 'GET', null, options);
 export const readSprintReviewValues = (backendUrl, sprintId, payload, options) => request(backendUrl, sprintId, '/values/read', 'POST', payload, options);
 export const saveSprintReview = (backendUrl, sprintId, payload, options) => request(backendUrl, sprintId, '', 'PATCH', payload, options);

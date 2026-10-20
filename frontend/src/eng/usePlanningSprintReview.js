@@ -25,8 +25,11 @@ export function applyReviewLayoutChanges(layouts = {}, changes = []) {
     return result;
 }
 
+const GROUP_BLOCKED_MESSAGES = { review_group_unknown: 'This Department group is no longer configured.', review_view_limit: 'This group has reached its limit of saved Sprint views.' };
+const responseView = data => ({ viewRevision: Number.isInteger(data.viewRevision) ? data.viewRevision : 0, inheritedFrom: data.inheritedFrom == null ? null : data.inheritedFrom });
+
 export function createPlanningSprintReviewController({ backendUrl = '', fetchSchema = fetchSprintReview, readValues = readSprintReviewValues, saveReview = saveSprintReview, onReviewAction } = {}) {
-    let state = { sprintId: '', contextKey: '', columns: [], cells: {}, schemaRevision: 0, schemaChanges: [], drafts: {}, capabilities: { canRead: false, canSave: false }, dirty: false, loading: false, saving: false, error: '', conflict: null, unconfirmed: false, progress: null, pendingScopeChange: false };
+    let state = { sprintId: '', groupId: '', contextKey: '', savedViewRevision: 0, currentViewRevision: 0, savedInheritedFrom: null, currentInheritedFrom: null, groupBlocked: false, forceLoading: false, columns: [], cells: {}, schemaRevision: 0, schemaChanges: [], drafts: {}, capabilities: { canRead: false, canSave: false }, dirty: false, loading: false, saving: false, error: '', conflict: null, unconfirmed: false, progress: null, pendingScopeChange: false };
     let currentRows = [], active = false, generation = 0, pendingScope = null, disposed = false;
     let loadedIds = new Set();
     let loadQueued = null, runningRead = null, deferredRead = false, writeEpoch = 0;
@@ -38,21 +41,22 @@ export function createPlanningSprintReviewController({ backendUrl = '', fetchSch
         state = { ...state, ...patch };
         state.dirty = state.schemaChanges.length > 0 || Object.keys(state.drafts).length > 0;
         state.layouts = applyReviewLayoutChanges(state.savedLayouts, state.schemaChanges);
+        state.viewRevision = state.savedViewRevision; state.inheritedFrom = state.savedInheritedFrom;
         state.columns = applyReviewSchemaChanges(state.savedColumns || [], state.schemaChanges);
         state.cells = { ...(state.savedCells || {}), ...Object.fromEntries(Object.entries(state.drafts).filter(([, cell]) => cell.valid !== false)) };
         listeners.forEach(listener => listener());
     };
-    const reset = (sprintId, contextKey) => {
+    const reset = (sprintId, contextKey, groupId) => {
         generation += 1;
         pendingScope?.resolve(false); pendingScope = null; settleQueued('ignored'); runningRead = null;
         lifetime.abort(); lifetime = new AbortController(); loadedIds = new Set(); deferredRead = false;
-        state = { ...state, sprintId: String(sprintId || ''), contextKey, savedColumns: [], savedLayouts: {}, currentLayouts: {}, savedCells: {}, schemaRevision: 0, schemaChanges: [], drafts: {}, columns: [], cells: {}, capabilities: { canRead: false, canSave: false }, loading: false, saving: false, error: '', conflict: null, unconfirmed: false, progress: null, pendingScopeChange: false, schemaLoaded: false, currentSchemaRevision: 0, currentColumns: [], unavailableIssueIds: [] };
+        state = { ...state, sprintId: String(sprintId || ''), groupId, contextKey, savedColumns: [], savedLayouts: {}, currentLayouts: {}, savedViewRevision: 0, currentViewRevision: 0, savedInheritedFrom: null, currentInheritedFrom: null, groupBlocked: false, forceLoading: false, savedCells: {}, schemaRevision: 0, schemaChanges: [], drafts: {}, columns: [], cells: {}, capabilities: { canRead: false, canSave: false }, loading: false, saving: false, error: '', conflict: null, unconfirmed: false, progress: null, pendingScopeChange: false, schemaLoaded: false, currentSchemaRevision: 0, currentColumns: [], unavailableIssueIds: [] };
         emit({});
     };
     async function load({ force = false, options = {} } = {}) {
         const automatic = options.automatic === true;
         const outcome = status => automatic ? { status } : status === 'ok';
-        if (!active || !state.sprintId || !state.contextKey || disposed || state.saving || (automatic && (blockedDuringOwnRead() || options.signal?.aborted || options.shouldApply?.() === false))) return outcome('ignored');
+        if (!active || !state.sprintId || !state.groupId || !state.contextKey || disposed || state.saving || (automatic && (blockedDuringOwnRead() || options.signal?.aborted || options.shouldApply?.() === false))) return outcome('ignored');
         if (runningRead) {
             loadQueued ||= { force: false, options: {}, waiters: [], manual: false };
             loadQueued.force ||= force;
@@ -72,7 +76,8 @@ export function createPlanningSprintReviewController({ backendUrl = '', fetchSch
             });
         }
         const thisGeneration = generation, thisEpoch = writeEpoch;
-        const sprintId = state.sprintId;
+        const { sprintId, groupId } = state;
+        const restore = !automatic && force ? { savedCells: state.savedCells, unavailableIssueIds: state.unavailableIssueIds, loadedIds } : null;
         const read = {}; runningRead = read;
         const controller = new AbortController();
         const lifetimeSignal = lifetime.signal;
@@ -83,15 +88,19 @@ export function createPlanningSprintReviewController({ backendUrl = '', fetchSch
         let staged = { ...state }, stagedIds = new Set(loadedIds);
         const current = () => generation === thisGeneration && !disposed && !signal.aborted && (!automatic || thisEpoch === writeEpoch && (!blockedDuringOwnRead() && options.shouldApply?.() !== false));
         const publish = patch => { if (automatic) staged = { ...staged, ...patch }; else { emit(patch); staged = state; } };
-        if (!automatic) emit({ loading: true, error: '', progress: { completed: 0, total: 0 } });
+        if (!automatic) emit({ loading: true, forceLoading: force, error: '', progress: { completed: 0, total: 0 } });
         try {
             if (force || !state.schemaLoaded) {
-                const schema = await fetchSchema(backendUrl, sprintId, { signal });
+                const schema = await fetchSchema(backendUrl, sprintId, { signal, groupId });
                 if (!current()) return outcome('ignored');
-                // Refresh retains every draft and its original revision until explicit recovery.
-                publish({ savedColumns: state.dirty ? state.savedColumns : schema.columns || [], currentColumns: schema.columns || [], savedLayouts: state.dirty ? state.savedLayouts : schema.layouts || {}, currentLayouts: schema.layouts || {}, schemaRevision: state.dirty ? state.schemaRevision : schema.schemaRevision, currentSchemaRevision: schema.schemaRevision, capabilities: schema.capabilities || {}, schemaLoaded: true, ...(state.dirty && schema.schemaRevision !== state.schemaRevision ? { conflict: { schemaConflict: true }, error: 'The shared columns changed. Your draft is preserved.' } : {}) });
+                const view = responseView(schema);
+                // Refresh retains every draft and its original revision until explicit recovery; only a
+                // pending column action conflicts on schemaRevision and only a pending layout on viewRevision.
+                const schemaConflict = state.dirty && state.schemaChanges.some(change => change.action !== 'layout') && schema.schemaRevision !== state.schemaRevision;
+                const viewConflict = state.dirty && state.schemaChanges.some(change => change.action === 'layout') && view.viewRevision !== state.savedViewRevision;
+                publish({ savedColumns: state.dirty ? state.savedColumns : schema.columns || [], currentColumns: schema.columns || [], savedLayouts: state.dirty ? state.savedLayouts : schema.layouts || {}, currentLayouts: schema.layouts || {}, schemaRevision: state.dirty ? state.schemaRevision : schema.schemaRevision, currentSchemaRevision: schema.schemaRevision, savedViewRevision: state.dirty ? state.savedViewRevision : view.viewRevision, currentViewRevision: view.viewRevision, savedInheritedFrom: state.dirty ? state.savedInheritedFrom : view.inheritedFrom, currentInheritedFrom: view.inheritedFrom, capabilities: schema.capabilities || {}, schemaLoaded: true, ...(schemaConflict || viewConflict ? { conflict: { schemaConflict, viewConflict }, error: schemaConflict ? 'The shared columns changed. Your draft is preserved.' : 'The shared review changed. Your draft is preserved.' } : {}) });
             }
-            if (!staged.capabilities.canRead) { if (automatic && current()) { loadedIds = stagedIds; emit(staged); } return outcome('ok'); }
+            if (!staged.capabilities.canRead) { if (automatic && current()) { loadedIds = stagedIds; emit({ ...staged, groupBlocked: false }); } else if (!automatic) emit({ groupBlocked: false }); return outcome('ok'); }
             const requested = [...currentRows.filter(row => !row.synthetic && row.issueId && ['epic', 'story'].includes(row.rowKind)), ...(force ? Object.values(state.drafts).map(cell => ({ issueId: cell.issueId, rowKind: cell.rowKind })) : [])];
             const batches = [];
             for (const rowKind of ['epic', 'story']) {
@@ -104,7 +113,7 @@ export function createPlanningSprintReviewController({ backendUrl = '', fetchSch
             for (const batch of batches) {
                 if (!current()) return outcome('ignored');
                 let data;
-                try { data = await readValues(backendUrl, sprintId, batch, { signal }); }
+                try { data = await readValues(backendUrl, sprintId, { groupId, ...batch }, { signal }); }
                 catch (error) {
                     if (error.status !== 413 || batch.issueIds.length < 2) throw error;
                     const middle = Math.ceil(batch.issueIds.length / 2);
@@ -128,17 +137,19 @@ export function createPlanningSprintReviewController({ backendUrl = '', fetchSch
             }
             if (!current()) return outcome('ignored');
             loadedIds = stagedIds; deferredRead = false;
-            if (automatic) emit(staged);
+            emit(automatic ? { ...staged, groupBlocked: false } : { groupBlocked: false });
             return outcome('ok');
         } catch (error) {
             if (automatic && error.name === 'AuthenticationRequiredError') throw error;
+            // A manual refresh that fails part-way restores the pre-refresh cells, so no mixed-vintage cells remain.
+            if (restore && generation === thisGeneration && !disposed) { loadedIds = restore.loadedIds; emit({ savedCells: restore.savedCells, unavailableIssueIds: restore.unavailableIssueIds }); }
             if (!automatic && generation === thisGeneration && error.name !== 'AbortError' && error.name !== 'AuthenticationRequiredError') emit({ error: 'Review could not be loaded. Your draft is preserved.' });
             return outcome(error.name === 'AbortError' || !current() ? 'ignored' : 'failed');
         } finally {
             lifetimeSignal.removeEventListener('abort', abort); options.signal?.removeEventListener('abort', abort);
             if (runningRead === read) {
                 runningRead = null;
-                if (!automatic) emit({ loading: false, progress: null });
+                if (!automatic) emit({ loading: false, forceLoading: false, progress: null });
                 if (loadQueued) {
                     const queued = loadQueued; loadQueued = null;
                     void load(queued).then(result => queued.waiters.splice(0).forEach(waiter => waiter.resolve(result)), error => queued.waiters.splice(0).forEach(waiter => waiter.reject(error)));
@@ -148,14 +159,21 @@ export function createPlanningSprintReviewController({ backendUrl = '', fetchSch
     }
     async function save() {
         if (!state.dirty) return true;
-        if (state.saving || state.loading || !state.capabilities.canSave || state.unconfirmed || state.conflict) return false;
+        if (state.saving || state.loading || !state.capabilities.canSave || state.unconfirmed || state.conflict || state.groupBlocked) return false;
         const changes = Object.values(state.drafts);
         if (changes.some(cell => cell.valid === false)) { emit({ error: 'Correct invalid review cells before saving.' }); return false; }
         if (changes.length > 100) { emit({ error: 'Save supports up to 100 changed cells. Keep this draft and reduce the changed cells before saving.' }); return false; }
         const thisGeneration = generation;
+        let refreshColumns = false;
+        const layoutKinds = new Set(state.schemaChanges.filter(change => change.action === 'layout').map(change => change.rowKind));
+        const columnAction = state.schemaChanges.some(change => change.action !== 'layout');
+        // A first layout save in an inheriting Sprint sends the displayed view's other kinds too; never stored in schemaChanges.
+        const injected = layoutKinds.size > 0 && state.savedViewRevision === 0 && state.savedInheritedFrom !== null
+            ? ['epic', 'story'].filter(rowKind => !layoutKinds.has(rowKind) && state.savedLayouts?.[rowKind]).map(rowKind => ({ action: 'layout', rowKind, order: [...(state.savedLayouts[rowKind].order || [])], hidden: [...(state.savedLayouts[rowKind].hidden || [])] }))
+            : [];
         emit({ saving: true, error: '' });
         try {
-            const data = await saveReview(backendUrl, state.sprintId, { baseSchemaRevision: state.schemaRevision, schemaChanges: state.schemaChanges, cellChanges: changes.map(({ issueId, rowKind, columnId, value, baseRevision }) => ({ issueId, rowKind, columnId, value, baseRevision })) });
+            const data = await saveReview(backendUrl, state.sprintId, { groupId: state.groupId, baseSchemaRevision: state.schemaRevision, baseViewRevision: state.savedViewRevision, schemaChanges: [...state.schemaChanges, ...injected], cellChanges: changes.map(({ issueId, rowKind, columnId, value, baseRevision }) => ({ issueId, rowKind, columnId, value, baseRevision })) });
             if (generation !== thisGeneration) return false;
             const layoutConfirmed = state.schemaChanges.filter(change => change.action === 'layout').every(change => {
                 const saved = data.layouts?.[change.rowKind];
@@ -168,15 +186,29 @@ export function createPlanningSprintReviewController({ backendUrl = '', fetchSch
             writeEpoch += 1;
             const savedCells = { ...state.savedCells };
             for (const cell of data.cells || data.cellChanges || []) savedCells[reviewCellKey(cell.rowKind, cell.issueId, cell.columnId)] = cell;
-            emit({ savedLayouts: data.layouts || state.layouts, currentLayouts: data.layouts || state.layouts, savedColumns: data.columns || state.columns, currentColumns: data.columns || state.columns, savedCells, schemaRevision: data.schemaRevision, currentSchemaRevision: data.schemaRevision, schemaChanges: [], drafts: {}, unconfirmed: false, conflict: null });
+            // Apply only the keys present: a 200 without a layout action keeps the best known view, and
+            // one without a column action records columns as current and refreshes to read a fresh column's cells.
+            const saved = responseView(data);
+            const view = 'layouts' in data ? { savedLayouts: data.layouts, currentLayouts: data.layouts, savedViewRevision: saved.viewRevision, currentViewRevision: saved.viewRevision, savedInheritedFrom: saved.inheritedFrom, currentInheritedFrom: saved.inheritedFrom }
+                : { savedLayouts: state.currentLayouts, savedViewRevision: state.currentViewRevision, savedInheritedFrom: state.currentInheritedFrom };
+            const columns = columnAction ? { savedColumns: data.columns || state.columns, currentColumns: data.columns || state.columns, schemaRevision: data.schemaRevision, currentSchemaRevision: data.schemaRevision }
+                : 'columns' in data ? { currentColumns: data.columns, currentSchemaRevision: data.schemaRevision } : {};
+            refreshColumns = !columnAction && 'schemaRevision' in data && data.schemaRevision !== state.schemaRevision;
+            emit({ ...view, ...columns, savedCells, schemaChanges: [], drafts: {}, unconfirmed: false, conflict: null });
             return true;
         } catch (error) {
             if (generation === thisGeneration) {
                 if (error.status === 409) { writeEpoch += 1; emit({ conflict: error.conflict || {}, error: 'The shared review changed. Your draft is preserved.' }); }
-                else if (error.name !== 'AuthenticationRequiredError') emit({ unconfirmed: Boolean(error.unconfirmed), error: error.unconfirmed ? 'Save outcome is unconfirmed. Refresh review before deliberately resolving your draft.' : 'Review could not be saved. Your draft is preserved.' });
+                else if (error.name !== 'AuthenticationRequiredError') {
+                    if (GROUP_BLOCKED_MESSAGES[error.code]) emit({ groupBlocked: true, error: GROUP_BLOCKED_MESSAGES[error.code] });
+                    else emit({ unconfirmed: Boolean(error.unconfirmed), error: error.unconfirmed ? 'Save outcome is unconfirmed. Refresh review before deliberately resolving your draft.' : 'Review could not be saved. Your draft is preserved.' });
+                }
             }
             return false;
-        } finally { if (generation === thisGeneration) emit({ saving: false }); }
+        } finally {
+            if (generation === thisGeneration) emit({ saving: false });
+            if (refreshColumns && generation === thisGeneration) void load({ force: true, options: { automatic: true } }).catch(() => {});
+        }
     }
     const controller = {
         getState: () => state,
@@ -187,16 +219,19 @@ export function createPlanningSprintReviewController({ backendUrl = '', fetchSch
             return load({ options: { ...options, automatic: true } });
         },
         subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
-        async setScope({ sprintId, contextKey, active: nextActive, rows = [], deferRead = false }) {
+        async setScope({ sprintId, groupId, contextKey, active: nextActive, rows = [], deferRead = false }) {
+            const nextGroupId = String(groupId || '');
             const contextChanged = contextKey !== state.contextKey;
+            const groupChanged = nextGroupId !== state.groupId;
             const sprintChanged = String(sprintId || '') !== state.sprintId;
-            if (contextChanged) { reset(sprintId, contextKey); emit({ schemaLoaded: false, unavailableIssueIds: [] }); }
+            // A group change discards like a context change: drafts are bound to the group they were loaded under.
+            if (contextChanged || groupChanged) { reset(sprintId, contextKey, nextGroupId); emit({ schemaLoaded: false, unavailableIssueIds: [] }); }
             else if (sprintChanged) {
                 if (state.dirty) return false;
-                reset(sprintId, contextKey); emit({ schemaLoaded: false, unavailableIssueIds: [] });
+                reset(sprintId, contextKey, nextGroupId); emit({ schemaLoaded: false, unavailableIssueIds: [] });
             }
             currentRows = rows; active = nextActive;
-            deferredRead = deferRead && !contextChanged && !sprintChanged;
+            deferredRead = deferRead && !contextChanged && !sprintChanged && !groupChanged;
             return deferredRead ? false : load();
         },
         setCell(row, column, input) {
@@ -223,7 +258,7 @@ export function createPlanningSprintReviewController({ backendUrl = '', fetchSch
             return true;
         },
         save,
-        discard() { if (state.saving) return false; writeEpoch += 1; emit({ savedLayouts: state.currentLayouts || state.savedLayouts, schemaChanges: [], drafts: {}, conflict: null, error: '', unconfirmed: false, schemaRevision: state.currentSchemaRevision ?? state.schemaRevision, savedColumns: state.currentColumns?.length || state.schemaChanges.length ? state.currentColumns || state.savedColumns : state.savedColumns }); return true; },
+        discard() { if (state.saving) return false; writeEpoch += 1; emit({ savedLayouts: state.currentLayouts || state.savedLayouts, savedViewRevision: state.currentViewRevision, savedInheritedFrom: state.currentInheritedFrom, groupBlocked: false, schemaChanges: [], drafts: {}, conflict: null, error: '', unconfirmed: false, schemaRevision: state.currentSchemaRevision ?? state.schemaRevision, savedColumns: state.currentColumns?.length || state.schemaChanges.length ? state.currentColumns || state.savedColumns : state.savedColumns }); return true; },
         refresh: options => load({ force: true, options }),
         async loadCurrent() { if (!await load({ force: true })) return false; return controller.discard(); },
         async reapply() {
@@ -231,7 +266,7 @@ export function createPlanningSprintReviewController({ backendUrl = '', fetchSch
             const unavailableColumns = state.schemaChanges.some(change => change.action === 'add' && state.currentColumns.some(column => column.id === change.column.id) || change.action !== 'add' && change.action !== 'reorder' && change.action !== 'layout' && !state.currentColumns.some(column => column.id === change.columnId)) || Object.values(state.drafts).some(cell => ![...state.currentColumns, ...state.schemaChanges.filter(change => change.action === 'add').map(change => change.column)].some(column => column.id === cell.columnId && !column.archived));
             if (unavailableColumns) { emit({ error: 'The shared column definitions changed. Load current, or copy the draft into available columns.' }); return false; }
             const drafts = Object.fromEntries(Object.entries(state.drafts).map(([key, cell]) => [key, { ...cell, baseRevision: state.savedCells[key]?.revision ?? 0 }]));
-            emit({ drafts, savedLayouts: state.currentLayouts || {}, savedColumns: state.currentColumns, schemaRevision: state.currentSchemaRevision, conflict: null, unconfirmed: false, error: '' });
+            emit({ drafts, savedLayouts: state.currentLayouts || {}, savedViewRevision: state.currentViewRevision, savedInheritedFrom: state.currentInheritedFrom, savedColumns: state.currentColumns, schemaRevision: state.currentSchemaRevision, conflict: null, unconfirmed: false, error: '' });
             return true;
         },
         guardScopeChange(callback) {
@@ -252,14 +287,14 @@ export function createPlanningSprintReviewController({ backendUrl = '', fetchSch
     return controller;
 }
 
-export default function usePlanningSprintReview({ sprintId, active = false, contextKey, backendUrl = '', rows = [], onReviewAction, automaticHoldRef }) {
+export default function usePlanningSprintReview({ sprintId, groupId, active = false, contextKey, backendUrl = '', rows = [], onReviewAction, automaticHoldRef }) {
     const actionRef = React.useRef(onReviewAction); actionRef.current = onReviewAction;
     const controller = React.useMemo(() => createPlanningSprintReviewController({ backendUrl, onReviewAction: (action, params) => actionRef.current?.(action, params) }), [backendUrl]);
     const state = React.useSyncExternalStore(controller.subscribe, controller.getState, controller.getState);
     controller.setRows(rows);
     const deferRead = automaticHoldRef?.current > 0;
     const rowSignature = rows.filter(row => !row.synthetic && row.issueId).map(row => `${row.rowKind}:${row.issueId}`).sort().join('|');
-    React.useEffect(() => { void controller.setScope({ sprintId, active, contextKey, rows, deferRead }); }, [controller, sprintId, active, contextKey, rowSignature]);
+    React.useEffect(() => { void controller.setScope({ sprintId, groupId, active, contextKey, rows, deferRead }); }, [controller, sprintId, groupId, active, contextKey, rowSignature]);
     React.useEffect(() => {
         const leave = event => { if (controller.getState().dirty || controller.getState().saving) { event.preventDefault(); event.returnValue = ''; } };
         window.addEventListener('beforeunload', leave);

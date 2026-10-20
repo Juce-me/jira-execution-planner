@@ -303,7 +303,7 @@ async function bounds(page) {
 }
 test('Planning switch preserves selection, header geometry and loaded datasets', async ({ page }) => {
     const fixture = await installPlanningFixture(page);
-    await page.route('**/api/eng/sprints/*/review', route => json(route, { schemaVersion:1,sprintId:String(futureSprintId),schemaRevision:0,columns:[],capabilities:{canRead:false,canSave:false,reason:'Shared review saving requires database-backed OAuth.'} }));
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/, route => json(route, { schemaVersion:1,sprintId:String(futureSprintId),schemaRevision:0,columns:[],capabilities:{canRead:false,canSave:false,reason:'Shared review saving requires database-backed OAuth.'} }));
     await openPlanning(page);
     const before = await bounds(page);
     const loads = fixture.calls.filter(call => ['/api/tasks-with-team-name','/api/eng/story-readiness','/api/dependencies','/api/eng/board'].includes(call.pathname)).length;
@@ -333,8 +333,8 @@ test('Planning switch preserves selection, header geometry and loaded datasets',
 test('the app-header Refresh also reloads the shared review', async ({ page }) => {
     await installPlanningFixture(page);
     let reads = 0;
-    await page.route('**/api/eng/sprints/*/review', route => { reads += 1; return json(route, { schemaVersion:1,sprintId:String(futureSprintId),schemaRevision:0,columns:[],capabilities:{canRead:true,canSave:true} }); });
-    await page.route('**/api/eng/sprints/*/review/values/read', route => json(route, {cells:[],unavailableIssueIds:[]}));
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/, route => { reads += 1; return json(route, { schemaVersion:1,sprintId:String(futureSprintId),schemaRevision:0,columns:[],capabilities:{canRead:true,canSave:true} }); });
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review\/values\/read(?:\?.*)?$/, route => json(route, {cells:[],unavailableIssueIds:[]}));
     await openPlanning(page);
     await page.getByRole('button',{name:'Show Planning table',exact:true}).click();
     await expect.poll(() => reads).toBeGreaterThan(0);
@@ -347,8 +347,8 @@ test('the app-header Refresh also reloads the shared review', async ({ page }) =
 
 test('dirty noninitial Sprint review survives Jira catalog refresh and guards an explicit Sprint change', async ({ page }) => {
     await installPlanningFixture(page);
-    await page.route('**/api/eng/sprints/*/review', route => json(route, { schemaVersion:1,sprintId:String(futureSprintId),schemaRevision:0,columns:[],capabilities:{canRead:true,canSave:true} }));
-    await page.route('**/api/eng/sprints/*/review/values/read', route => json(route, {cells:[],unavailableIssueIds:[]}));
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/, route => json(route, { schemaVersion:1,sprintId:String(futureSprintId),schemaRevision:0,columns:[],capabilities:{canRead:true,canSave:true} }));
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review\/values\/read(?:\?.*)?$/, route => json(route, {cells:[],unavailableIssueIds:[]}));
     await openPlanning(page);
     await page.getByRole('button',{name:'Show Planning table',exact:true}).click();
     await page.getByRole('button',{name:'+ Add column',exact:true}).click();
@@ -373,8 +373,8 @@ test('catalog capability loss preserves drafts and recovery invalidates a queued
     await page.route('**/api/sprints*', route => unavailable
         ? json(route, {error:'sprint_board_required'}, 409)
         : json(route, {sprints:[{id:activeSprintId,name:activeSprintName,state:'active'},{id:futureSprintId,name:futureSprintName,state:'future'}],cache:{backend:'postgresql',identity:'sc1:synthetic-board',browserContextId:'bc1:synthetic-actor',catalogVersion:1,validatedAt:'2026-10-01T09:00:00Z'}}));
-    await page.route('**/api/eng/sprints/*/review', route => json(route, { schemaVersion:1,sprintId:String(futureSprintId),schemaRevision:0,columns:[],capabilities:{canRead:true,canSave:true} }));
-    await page.route('**/api/eng/sprints/*/review/values/read', route => json(route, {cells:[],unavailableIssueIds:[]}));
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/, route => json(route, { schemaVersion:1,sprintId:String(futureSprintId),schemaRevision:0,columns:[],capabilities:{canRead:true,canSave:true} }));
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review\/values\/read(?:\?.*)?$/, route => json(route, {cells:[],unavailableIssueIds:[]}));
     await openPlanning(page);
     await page.getByRole('button',{name:'Show Planning table',exact:true}).click();
     await page.getByRole('button',{name:'+ Add column',exact:true}).click();
@@ -396,7 +396,7 @@ test('catalog capability loss preserves drafts and recovery invalidates a queued
 test('review 401 locks the mounted dashboard and never replays the failed read', async ({ page }) => {
     await installPlanningFixture(page);
     let reviewReads = 0;
-    await page.route('**/api/eng/sprints/*/review', route => {
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/, route => {
         reviewReads++;
         return json(route, {error:'auth_required',loginUrl:'https://unsafe.example/login'}, 401);
     });
@@ -415,7 +415,7 @@ test('review 401 locks the mounted dashboard and never replays the failed read',
 
 for (const authMode of ['basic', 'atlassian_oauth']) test(`table status chips retain shared presentation in ${authMode}`, async ({ page }) => {
     await installPlanningFixture(page, {authMode});
-    await page.route('**/api/eng/sprints/*/review', route => json(route, {schemaRevision:0,columns:[],capabilities:{canRead:false,canSave:false}}));
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/, route => json(route, {schemaRevision:0,columns:[],capabilities:{canRead:false,canSave:false}}));
     await openPlanning(page);
     await page.getByRole('button',{name:'Show Planning table',exact:true}).click();
     const chip = page.locator('.planning-review-status .task-status').first();
@@ -433,7 +433,7 @@ for (const authMode of ['basic', 'atlassian_oauth']) test(`table status chips re
 for (const width of [390, 1280]) test(`Story rows match compact Epic row height with the real Jira editor at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     await installPlanningFixture(page, { authMode: 'atlassian_oauth' });
-    await page.route('**/api/eng/sprints/*/review', route => json(route, { schemaRevision: 0, columns: [], capabilities: { canRead: false, canSave: false } }));
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/, route => json(route, { schemaRevision: 0, columns: [], capabilities: { canRead: false, canSave: false } }));
     await page.route('**/api/issues/PLAN-1/editable-fields?*', route => json(route, { editable: true, currentValue: 1, mappingRevision: 'synthetic', baseUpdated: 'synthetic' }));
     let savedPoints;
     await page.route('**/api/issues/PLAN-1/field', route => {
@@ -487,7 +487,7 @@ for (const width of [390, 1280]) test(`Story rows match compact Epic row height 
 
  test('Stories expose Epic and explicit metadata, totals stay visible and Story Points save through Jira editor', async ({page}) => {
     await installPlanningFixture(page,{authMode:'atlassian_oauth'});
-    await page.route('**/api/eng/sprints/*/review',route=>json(route,{schemaRevision:0,columns:[],capabilities:{canRead:false,canSave:false}}));
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/,route=>json(route,{schemaRevision:0,columns:[],capabilities:{canRead:false,canSave:false}}));
     let saved;
     await page.route('**/api/issues/PLAN-1/editable-fields?*',route=>json(route,{editable:true,currentValue:1,mappingRevision:'synthetic',baseUpdated:'synthetic'}));
     await page.route('**/api/issues/PLAN-1/field',route=>{saved=route.request().postDataJSON();return json(route,{value:saved.value,result:'updated',mappingRevision:'synthetic'});});
@@ -522,7 +522,7 @@ for (const authMode of ['basic','atlassian_oauth']) for(const width of [390,1280
     const summary='[D] Adding new fields in logs and updating the migration implementation for the next sprint review';
     await page.setViewportSize({width,height:900});
     await installPlanningFixture(page,{authMode,summary});
-    await page.route('**/api/eng/sprints/*/review',route=>json(route,{schemaRevision:0,columns:[],capabilities:{canRead:false,canSave:false}}));
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/,route=>json(route,{schemaRevision:0,columns:[],capabilities:{canRead:false,canSave:false}}));
     await page.route('**/api/issues/PLAN-EPIC/editable-fields?*',route=>json(route,{editable:true,currentValue:summary,mappingRevision:'synthetic',baseUpdated:'synthetic'}));
     await openPlanning(page);await page.getByRole('button',{name:'Show Planning table',exact:true}).click();
     const cell=page.locator('tbody .planning-review-summary').first();
@@ -546,7 +546,7 @@ for(const width of [390,1280]) test(`Summary edits inside its cell with Enter, b
     const summary='Original summary';let saved=[];
     await page.setViewportSize({width,height:900});
     await installPlanningFixture(page,{authMode:'atlassian_oauth',summary});
-    await page.route('**/api/eng/sprints/*/review',route=>json(route,{schemaRevision:0,columns:[],capabilities:{canRead:false,canSave:false}}));
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/,route=>json(route,{schemaRevision:0,columns:[],capabilities:{canRead:false,canSave:false}}));
     await page.route('**/api/issues/PLAN-EPIC/editable-fields?*',route=>json(route,{editable:true,currentValue:saved.at(-1)||summary,mappingRevision:'synthetic',baseUpdated:'synthetic'}));
     await page.route('**/api/issues/PLAN-EPIC/field',route=>{saved.push(route.request().postDataJSON().value);return json(route,{value:saved.at(-1),result:'updated',mappingRevision:'synthetic'});});
     await openPlanning(page);await page.getByRole('button',{name:'Show Planning table',exact:true}).click();
@@ -582,7 +582,7 @@ test('Summary loading and saving show a spinner inside the input and never chang
     await page.setViewportSize({width:1280,height:900});
     await installPlanningFixture(page,{authMode:'atlassian_oauth',summary});
     await page.route('**/epm-burst.svg',route=>route.fulfill({path:'assets/epm-burst.svg',contentType:'image/svg+xml'}));
-    await page.route('**/api/eng/sprints/*/review',route=>json(route,{schemaRevision:0,columns:[],capabilities:{canRead:false,canSave:false}}));
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/,route=>json(route,{schemaRevision:0,columns:[],capabilities:{canRead:false,canSave:false}}));
     await page.route('**/api/issues/PLAN-EPIC/editable-fields?*',async route=>{await gate;return json(route,{editable:true,currentValue:summary,mappingRevision:'synthetic',baseUpdated:'synthetic'});});
     await page.route('**/api/issues/PLAN-EPIC/field',async route=>{await saveGate;return json(route,{value:'Edited',result:'updated',mappingRevision:'synthetic'});});
     await openPlanning(page);await page.getByRole('button',{name:'Show Planning table',exact:true}).click();
@@ -610,7 +610,7 @@ test('Summary loading and saving show a spinner inside the input and never chang
 
 test('Summary conflict stays inside the cell and reloads before another edit',async({page})=>{
     let writes=0,reads=0;await installPlanningFixture(page,{authMode:'atlassian_oauth',summary:'Original summary'});
-    await page.route('**/api/eng/sprints/*/review',route=>json(route,{schemaRevision:0,columns:[],capabilities:{canRead:false,canSave:false}}));
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/,route=>json(route,{schemaRevision:0,columns:[],capabilities:{canRead:false,canSave:false}}));
     await page.route('**/api/issues/PLAN-EPIC/editable-fields?*',route=>{reads++;return json(route,{editable:true,currentValue:reads===1?'Original summary':'Current Jira summary',mappingRevision:'synthetic',baseUpdated:'synthetic'});});
     await page.route('**/api/issues/PLAN-EPIC/field',route=>{writes++;return json(route,{error:'stale_issue'},409);});
     await openPlanning(page);await page.getByRole('button',{name:'Show Planning table',exact:true}).click();
@@ -729,8 +729,8 @@ test('compact Table panel fits narrow screens and restores normal Planning in Sc
 
 // Column menus and the Add popover are editing controls: give the review a saving-capable profile.
 async function allowReviewSaving(page) {
-    await page.route('**/api/eng/sprints/*/review', route => json(route, { schemaVersion:1,sprintId:String(futureSprintId),schemaRevision:0,columns:[],capabilities:{canRead:true,canSave:true} }));
-    await page.route('**/api/eng/sprints/*/review/values/read', route => json(route, {cells:[],unavailableIssueIds:[]}));
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/, route => json(route, { schemaVersion:1,sprintId:String(futureSprintId),schemaRevision:0,columns:[],capabilities:{canRead:true,canSave:true} }));
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review\/values\/read(?:\?.*)?$/, route => json(route, {cells:[],unavailableIssueIds:[]}));
 }
 
 for (const width of [1280, 390]) test(`first Table scroll activates the sticky Filters then capacity stack without losing state at ${width}px`,async({page})=>{
@@ -971,11 +971,11 @@ async function automaticPlanningFixture(page, { longTable = false } = {}) {
     const state = { remote: false, readGate: null, schemaStatus: 200, readStatus: 200, schemaReads: 0, values: [], primary: [], saveCalls: [], saveGate: null, saveStatus: 200, canRead: true, unavailable: [], limit: null };
     const columns = [{ id: 'cost', rowKind: 'epic', label: 'Cost', type: 'number', aggregation: 'sum', order: 0 }];
     await page.route('**/api/capacity*', route => json(route, { enabled: false }));
-    await page.route('**/api/eng/sprints/*/review', async route => {
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/, async route => {
         if (route.request().method() === 'PATCH') { const payload = requestBody(route.request()); state.saveCalls.push(payload); if (state.saveGate) await state.saveGate; if (state.saveStatus === 'network') return route.abort('failed'); return json(route, state.saveStatus === 409 ? { error: 'review_conflict', schemaConflict: false, cellConflicts: [{ issueId: '7001', columnId: 'cost' }] } : { schemaRevision: 1, columns, layouts: {}, cells: payload.cellChanges.map(cell => ({ ...cell, revision: 2 })) }, state.saveStatus); }
         state.schemaReads++; return json(route, { schemaRevision: state.remote ? 2 : 1, columns, layouts: {}, capabilities: { canRead: state.canRead, canSave: state.canRead } }, state.schemaStatus);
     });
-    await page.route('**/api/eng/sprints/*/review/values/read', async route => {
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review\/values\/read(?:\?.*)?$/, async route => {
         const batch = requestBody(route.request()); state.values.push(batch);
         if (state.readGate) await state.readGate;
         if (state.limit && batch.issueIds.length > state.limit) return json(route, { error: 'response_limit' }, 413);
@@ -1098,7 +1098,7 @@ test('automatic Planning table retains document anchor, horizontal offset, selec
 
 test('the priority menu on the last Planning row overlays the table fully on screen without resizing it', async ({page}) => {
     await installPlanningFixture(page,{authMode:'atlassian_oauth'});
-    await page.route('**/api/eng/sprints/*/review',route=>json(route,{schemaRevision:0,columns:[],capabilities:{canRead:false,canSave:false}}));
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/,route=>json(route,{schemaRevision:0,columns:[],capabilities:{canRead:false,canSave:false}}));
     const priorities=['Blocker','Critical','Major','Minor','Low','Trivial'].map((name,index)=>({id:String(index+1),name}));
     await page.route('**/api/issues/priorities/options*',route=>json(route,{priorities}));
     await openPlanning(page);

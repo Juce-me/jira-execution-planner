@@ -6019,8 +6019,8 @@
       "exports": [
         "useGroupVisibilityPreferences"
       ],
-      "lineCount": 322,
-      "lineCeiling": 322,
+      "lineCount": 330,
+      "lineCeiling": 330,
       "interfaces": [
         {
           "exportName": "useGroupVisibilityPreferences",
@@ -6096,7 +6096,7 @@
           ],
           "inventory": {
             "source": "frontend/src/settings/useGroupVisibilityPreferences.js:30",
-            "sourceDigest": "319d5225dfff0c58a674d770365cee4a0a365fb99d91319ad35ab368fa0a9abc",
+            "sourceDigest": "4ff602ba244ddd42a2834a32f07adc02cd6d8b8fd089e5168679d796e6c51e48",
             "reviewed": true,
             "memberNames": [
               "activeGroupId",
@@ -19150,8 +19150,8 @@
       "ceiling": 5766
     },
     "settings": {
-      "measured": 16574,
-      "ceiling": 16574
+      "measured": 16582,
+      "ceiling": 16582
     },
     "stats": {
       "measured": 2792,
@@ -19162,12 +19162,12 @@
       "ceiling": 1786
     },
     "uniqueOwners": {
-      "measured": 26614,
-      "ceiling": 26614
+      "measured": 26622,
+      "ceiling": 26622
     },
     "appPlusOwners": {
-      "measured": 34172,
-      "ceiling": 34172
+      "measured": 34180,
+      "ceiling": 34180
     }
   },
   "transfer": {

@@ -224,7 +224,10 @@ export function useGroupVisibilityPreferences({
     }, [backendUrl, firstRunFavoriteGroupId, groupsConfig, setActiveGroupId, trackSettingsAction, bucketCount, applyPreferenceGroupsSnapshot, activeGroupId, groupChangeGuardRef]);
 
     const persistGroupPreferences = React.useCallback(async (normalized) => {
-        if (useBackendPreferences && !await confirmActiveGroupChange(favoriteGroupDraftId)) throw new Error('Settings were not saved: the Planning review has unsaved changes.');
+        // Guard the group the save will apply (#267 D-D): a null draft keeps the current group. The server
+        // can still resolve another group, so the response is guarded again before it is applied.
+        const targetGroupId = favoriteGroupDraftId || activeGroupId || null;
+        if (useBackendPreferences && !await confirmActiveGroupChange(targetGroupId)) throw new Error('Settings were not saved: the Planning review has unsaved changes.');
         setGroupPreferencesSaving(true);
         try {
             if (!useBackendPreferences) {
@@ -272,6 +275,9 @@ export function useGroupVisibilityPreferences({
             const snapshot = preferencePayload.groupsConfigSnapshot
                 ? normalizeGroupPreferences(preferencePayload.groupsConfigSnapshot)
                 : null;
+            const appliedGroupId = nextPreferences.activeGroupId || null;
+            // Stay on a server-resolved group keeps the active group; the saved preferences still apply.
+            const keepActiveGroup = String(appliedGroupId || '') !== String(targetGroupId || '') && !await confirmActiveGroupChange(appliedGroupId);
             if (snapshot) {
                 applyPreferenceGroupsSnapshot?.({ ...snapshot, preferences: nextPreferences });
             }
@@ -279,7 +285,9 @@ export function useGroupVisibilityPreferences({
             setVisibleGroupDraftIds(nextPreferences.visibleGroupIds || []);
             setFavoriteGroupDraftId(nextPreferences.activeGroupId || null);
             groupPreferencesBaselineRef.current = groupPreferencesSignature(nextPreferences);
-            setActiveGroupId(nextPreferences.activeGroupId || null);
+            if (!keepActiveGroup) {
+                setActiveGroupId(nextPreferences.activeGroupId || null);
+            }
             trackSettingsAction('departments', 'preference_change', {
                 result: 'success',
                 selection_count_bucket: bucketCount(visibleGroupDraftIds.length),

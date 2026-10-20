@@ -197,7 +197,8 @@ def _plan(reviews):
         discarded_refs.update(m['ref'] for m in group if m['archived'])
         candidates.append({'kind': key[0], 'type': key[2], 'id': live[0]['id'], 'label': live[0]['label'],
                            'aggregation': latest['aggregation'] if key[2] == 'number' else 'none',
-                           'members': live, 'first': live[0]['rank'], 'latest': latest['rank']})
+                           'members': live, 'archived': [m for m in group if m['archived']],
+                           'first': live[0]['rank'], 'latest': latest['rank']})
     kept, excluded = [], []
     for kind in KINDS:
         ranked = sorted((c for c in candidates if c['kind'] == kind), key=lambda c: c['latest'], reverse=True)
@@ -273,8 +274,9 @@ def _plan(reviews):
     count = lambda kind: sum(c['rowKind'] == kind for c in columns)  # noqa: E731
     report.append(f"columns adopted: epic {count('epic')}, story {count('story')}")
     for c in kept:
-        if len(c['members']) > 1:
-            report.append(f"merged {c['id']}: " + ' '.join(f"{m['id']}@{m['sprint']}" for m in c['members']))
+        if len(c['members']) + len(c['archived']) > 1:
+            report.append(f"merged {c['id']}: " + ' '.join(f"{m['id']}@{m['sprint']}" for m in c['members'])
+                          + ('; archived ' + ' '.join(f"{m['id']}@{m['sprint']}" for m in c['archived']) if c['archived'] else ''))
     intent_keys = sum(1 for group in members.values() if group[-1]['archived'])
     report.append(f"archive intent: keys {intent_keys}, cells dropped {dropped['intent']}")
     report.append(f"archived members discarded: {len(discarded_refs)}, cells dropped {dropped['archived']}")

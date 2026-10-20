@@ -717,7 +717,7 @@ test('a Settings Save that changes the active group while the review is dirty pr
         assert.deepEqual(await hook.saveFirstRunGroupPreferences({ groupsSnapshot: groups, selectedGroupId: 'g2' }), { ok: false, stayed: true });
         assert.equal(prompts, 1); assert.equal(requests, 0);
         // The Settings Save path: the favorite draft is the server-side active group after the save.
-        await assert.rejects(hook.persistGroupPreferences(groups), /not saved/);
+        await assert.rejects(renderProbeWithFavoriteDraft(useGroupVisibilityPreferences, args, 'g2').persistGroupPreferences(groups), /not saved/);
         assert.equal(prompts, 2); assert.equal(requests, 0, 'Stay sends no preference request');
         answer = true;
         await hook.saveFirstRunGroupPreferences({ groupsSnapshot: groups, selectedGroupId: 'g2' });
@@ -726,6 +726,58 @@ test('a Settings Save that changes the active group while the review is dirty pr
         const before = prompts;
         await hook.saveFirstRunGroupPreferences({ groupsSnapshot: groups, selectedGroupId: 'g1' });
         assert.equal(prompts, before);
+    } finally { global.fetch = realFetch; }
+});
+
+function renderProbeWithFavoriteDraft(useHook, args, favoriteGroupDraftId) {
+    const React = require('react');
+    const { renderToString } = require('react-dom/server');
+    let result;
+    function Probe() {
+        result = useHook(args);
+        if (result.favoriteGroupDraftId !== favoriteGroupDraftId) result.setFavoriteGroupDraftId(favoriteGroupDraftId);
+        return null;
+    }
+    renderToString(React.createElement(Probe));
+    return result;
+}
+
+test('a Settings Save guards the group it will apply: equal or null drafts never prompt, and a server-resolved group is guarded too (#267 D-D)', async () => {
+    const { useGroupVisibilityPreferences } = bundleHook('../frontend/src/settings/useGroupVisibilityPreferences.js');
+    const realFetch = global.fetch;
+    const groups = { groups: [{ id: 'g1', teamIds: ['t1'] }, { id: 'g2', teamIds: ['t2'] }, { id: 'g3', teamIds: ['t3'] }] };
+    const run = async ({ draft, serverGroupId = draft, answers = [], status = 200 }) => {
+        const log = { prompts: 0, requests: 0, applied: [] };
+        global.fetch = async url => {
+            if (String(url).includes('/api/auth/csrf')) return { ok: true, status: 200, json: async () => ({ csrfToken: 'x' }) };
+            log.requests += 1;
+            return { ok: status === 200, status, json: async () => (status === 200 ? { preferences: { customized: true, preferenceExists: true, visibleGroupIds: ['g1', 'g2', 'g3'], activeGroupId: serverGroupId } } : {}) };
+        };
+        const args = {
+            backendUrl: '', groupsConfig: groups, groupsLoading: false, groupDraft: groups, activeGroupId: 'g1', setActiveGroupId: value => log.applied.push(value),
+            applyPreferenceGroupsSnapshot: () => {}, trackSettingsAction: () => {}, bucketCount: () => '1', useBackendPreferences: true,
+            groupChangeGuardRef: { current: () => { const answer = answers[log.prompts]; log.prompts += 1; return Promise.resolve(answer); } },
+        };
+        log.result = renderProbeWithFavoriteDraft(useGroupVisibilityPreferences, args, draft).persistGroupPreferences(groups);
+        await log.result.catch(() => {});
+        return log;
+    };
+    try {
+        let log = await run({ draft: 'g1' });
+        assert.deepEqual([log.prompts, log.requests, log.applied], [0, 1, ['g1']], 'the current group never prompts');
+        log = await run({ draft: 'g2', answers: [false] });
+        assert.deepEqual([log.prompts, log.requests, log.applied], [1, 0, []], 'a different group prompts and Stay sends nothing');
+        await assert.rejects(log.result, /not saved/);
+        log = await run({ draft: 'g2', answers: [true] });
+        assert.deepEqual([log.prompts, log.requests, log.applied], [1, 1, ['g2']], 'proceeding applies the confirmed group without a second prompt');
+        log = await run({ draft: 'g2', serverGroupId: 'g3', answers: [true, false] });
+        assert.deepEqual([log.prompts, log.requests, log.applied], [2, 1, []], 'a server-resolved group other than the confirmed one is guarded again; Stay keeps the active group');
+        log = await run({ draft: 'g2', serverGroupId: 'g3', answers: [true, true] });
+        assert.deepEqual([log.prompts, log.applied], [2, ['g3']]);
+        log = await run({ draft: 'g2', serverGroupId: 'g1', answers: [true] });
+        assert.deepEqual([log.prompts, log.applied], [1, ['g1']], 'a server resolution back to the current group needs no second prompt');
+        log = await run({ draft: null, status: 400 });
+        assert.deepEqual([log.prompts, log.requests, log.applied], [0, 1, []], 'a null draft changes nothing, so it never prompts');
     } finally { global.fetch = realFetch; }
 });
 

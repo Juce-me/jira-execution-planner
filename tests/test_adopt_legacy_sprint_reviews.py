@@ -352,7 +352,7 @@ class AdoptionTests(unittest.TestCase):
         self.assertIn('archive intent: keys 1, cells dropped 2', output)
         self.assertIn('archived members discarded: 1, cells dropped 1', output)
         self.assertIn('conflicting cell values dropped: 3', output)
-        self.assertIn(f'merged {a["id"]}: {a["id"]}@17 {b["id"]}@19', output)
+        self.assertIn(f'merged {a["id"]}: {a["id"]}@17 {b["id"]}@19; archived {x["id"]}@18\n', output)
         self.assertIn(f'merged {d1["id"]}: {d1["id"]}@18 {d2["id"]}@18', output)
         self.assertIn('columns adopted: epic 1, story 3', output)
         self.assertIn('derived: story sum rollups 1, epic inherited 1', output)
@@ -444,16 +444,18 @@ class AdoptionTests(unittest.TestCase):
     def test_output_has_counts_and_ids_only(self):
         secret = col('ConfidentialLabel', type_='text')
         merged = col('confidentiallabel', type_='text')
+        archived = col('CONFIDENTIALLABEL', type_='text', archived=True)
+        self.legacy('16', [archived], {}, [('424242424241', 'story', archived['id'], 'ArchivedValue')])
         self.legacy('17', [secret], {'story': {'order': [secret['id']], 'hidden': []}},
                     [('424242424242', 'story', secret['id'], 'ConfidentialValue')])
         self.legacy('18', [merged], {}, [('424242424243', 'story', merged['id'], 'OtherValue')])
         _, dry = self.adopt()
         _, applied = self.apply()
         for output in (dry, applied):
-            for leaked in ('ConfidentialLabel', 'confidentiallabel', 'ConfidentialValue', 'OtherValue',
-                           '424242424242', '424242424243', 'Platform', 'Payments'):
+            for leaked in ('ConfidentialLabel', 'confidentiallabel', 'CONFIDENTIALLABEL', 'ConfidentialValue', 'OtherValue',
+                           'ArchivedValue', '424242424241', '424242424242', '424242424243', 'Platform', 'Payments'):
                 self.assertNotIn(leaked, output)
-            self.assertIn(f'merged {secret["id"]}: {secret["id"]}@17 {merged["id"]}@18', output)
+            self.assertIn(f'merged {secret["id"]}: {secret["id"]}@17 {merged["id"]}@18; archived {archived["id"]}@16', output)
 
     def test_workspace_isolation_and_list(self):
         self.simple()

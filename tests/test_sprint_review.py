@@ -337,6 +337,22 @@ class GroupReviewContractTests(ReviewFixture, unittest.TestCase):
         x = self.load('3', group='group-x')
         self.assertEqual((x['schemaRevision'], x['columns'][0]['label'], x['columns'][0]['archived']), (3, 'Renamed', True))
 
+    def test_group_hidden_by_user_preference_still_reads_and_writes_without_preference_writes(self):
+        # AC 14: visibility is a personal display preference; the server never gates review access on it.
+        with db_engine.session_scope(self.url) as session:
+            session.add(models.UserGroupPreference(workspace_id=self.workspace, user_id=self.context.user_id, visible_group_ids=['group-y'], active_group_id='group-y', customized=True))
+
+        def rows():
+            with db_engine.session_scope(self.url) as session:
+                return [(row.visible_group_ids, row.active_group_id, row.updated_at) for row in session.query(models.UserGroupPreference).all()], \
+                       [(row.workspace_id, row.payload, row.updated_at) for row in session.query(models.WorkspaceGroupConfig).order_by(models.WorkspaceGroupConfig.workspace_id).all()]
+        before = rows()
+        self.add(group='group-x')
+        self.assertEqual(self.save([self.cell('4')], group='group-x')['cells'][0]['value'], '4.000')
+        self.assertEqual(self.load(group='group-x')['columns'][0]['id'], self.column['id'])
+        self.assertEqual(self.read(['101'], group='group-x')['cells'][0]['value'], '4.000')
+        self.assertEqual(rows(), before)
+
     def test_one_value_per_issue_across_sprints_and_cross_sprint_cell_conflict(self):
         self.add(sprint='30')
         self.save([self.cell('2')], sprint='30')

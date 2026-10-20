@@ -1015,6 +1015,23 @@ async function automaticPlanningFixture(page, { longTable = false, derived = fal
     return { lifecycle, fixture, state };
 }
 
+test('the dashboard table shows derived columns by default: a Story sum on Epics (S) and the Epic value on its Stories (E)', async ({ page }) => {
+    const { state } = await automaticPlanningFixture(page, { derived: true });
+    const values = state.values.length;
+    const scroll = page.locator('.planning-review-scroll');
+    const rollup = scroll.locator('thead th[aria-label="Effort, Story property"]');
+    await expect(rollup).toHaveCount(1);
+    await expect(rollup.locator('.planning-review-derived-marker')).toHaveText('S');
+    expect(await rollup.locator('.planning-review-derived-marker').evaluate(node => node.nextElementSibling?.nextElementSibling?.classList.contains('planning-review-heading'))).toBe(true);
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    const inherited = scroll.locator('thead th[aria-label="Cost, Epic property"]');
+    await expect(inherited.locator('.planning-review-derived-marker')).toHaveText('E');
+    const storyRow = scroll.locator('tbody tr[data-row-kind="story"][data-epic-key="PLAN-EPIC"]').first();
+    await expect(storyRow.locator('td.planning-review-cost')).toHaveText('1');
+    expect(await storyRow.locator('td.planning-review-cost input').count()).toBe(0);
+    expect(state.values.length).toBe(values);
+});
+
 test('automatic Planning current-row reconciliation stages one forced review with no indirect loading', async ({ page }, testInfo) => {
     const { lifecycle, state } = await automaticPlanningFixture(page);
     const { deferred } = require('./eng_epic_refresh_fixture'); const gate = deferred();

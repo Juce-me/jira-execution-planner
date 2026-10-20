@@ -1,13 +1,16 @@
 import * as React from 'react';
 import { createPortal } from 'react-dom';
 
-export default function EpicHeaderValueReadout({ value, suppressed = false, measureSelector = '', nativeSelector = '', children }) {
+// `alwaysOn` (default off, existing users unchanged) opens the readout regardless of truncation: on mouse hover, on
+// focus-visible, or pinned by a click or tap; a second click or tap, an outside pointer-down or Escape closes it.
+export default function EpicHeaderValueReadout({ value, suppressed = false, measureSelector = '', nativeSelector = '', alwaysOn = false, children }) {
     const triggerRef = React.useRef(null);
     const readoutRef = React.useRef(null);
     const closeTimerRef = React.useRef(null);
     const triggerHoveredRef = React.useRef(false);
     const readoutHoveredRef = React.useRef(false);
     const focusWithinRef = React.useRef(false);
+    const pinnedRef = React.useRef(false);
     const [truncated, setTruncated] = React.useState(false);
     const [visible, setVisible] = React.useState(false);
     const [position, setPosition] = React.useState({ left: 8, top: 8, placed: false, above: false });
@@ -23,7 +26,7 @@ export default function EpicHeaderValueReadout({ value, suppressed = false, meas
         cancelClose();
         closeTimerRef.current = window.setTimeout(() => {
             closeTimerRef.current = null;
-            if (!triggerHoveredRef.current && !readoutHoveredRef.current && !focusWithinRef.current) {
+            if (!triggerHoveredRef.current && !readoutHoveredRef.current && !focusWithinRef.current && !pinnedRef.current) {
                 setVisible(false);
             }
         }, 80);
@@ -36,8 +39,8 @@ export default function EpicHeaderValueReadout({ value, suppressed = false, meas
             node.scrollWidth > node.clientWidth + 1 || node.scrollHeight > node.clientHeight + 1
         ));
         setTruncated(previous => (previous === next ? previous : next));
-        if (!next) setVisible(false);
-    }, [measureSelector]);
+        if (!next && !alwaysOn) setVisible(false);
+    }, [measureSelector, alwaysOn]);
 
     React.useLayoutEffect(() => {
         measureTruncation();
@@ -127,6 +130,7 @@ export default function EpicHeaderValueReadout({ value, suppressed = false, meas
             if (event.key !== 'Escape') return;
             triggerHoveredRef.current = false;
             readoutHoveredRef.current = false;
+            pinnedRef.current = false;
             setVisible(false);
         };
         document.addEventListener('keydown', dismissOnEscape, true);
@@ -134,29 +138,49 @@ export default function EpicHeaderValueReadout({ value, suppressed = false, meas
     }, [suppressed, visible]);
 
     React.useEffect(() => {
-        if (suppressed) setVisible(false);
+        if (!alwaysOn || !visible || suppressed) return undefined;
+        const dismissOutside = event => {
+            if (triggerRef.current?.contains(event.target) || readoutRef.current?.contains(event.target)) return;
+            triggerHoveredRef.current = false;
+            readoutHoveredRef.current = false;
+            pinnedRef.current = false;
+            setVisible(false);
+        };
+        document.addEventListener('pointerdown', dismissOutside, true);
+        return () => document.removeEventListener('pointerdown', dismissOutside, true);
+    }, [alwaysOn, suppressed, visible]);
+
+    React.useEffect(() => {
+        if (!suppressed) return;
+        pinnedRef.current = false;
+        setVisible(false);
     }, [suppressed]);
 
     React.useEffect(() => () => cancelClose(), [cancelClose]);
 
     const show = () => {
         cancelClose();
-        if (truncated && !suppressed) {
+        if ((truncated || alwaysOn) && !suppressed) {
             setVisible(true);
         }
     };
+    // In always-on mode only a mouse hovers it open; touch opens it by the tap that pins it, so the two never stack.
+    const hoverPointer = event => !alwaysOn || event.pointerType === 'mouse';
     const pointerProps = {
-        onPointerEnter: () => {
+        onPointerEnter: event => {
+            if (!hoverPointer(event)) return;
             triggerHoveredRef.current = true;
             show();
         },
-        onPointerLeave: () => {
+        onPointerLeave: event => {
+            if (!hoverPointer(event)) return;
             triggerHoveredRef.current = false;
             scheduleClose();
         },
     };
     const focusProps = {
-        onFocus: () => {
+        onFocus: event => {
+            if (alwaysOn && !event.target.matches?.(':focus-visible')) return;
             focusWithinRef.current = true;
             show();
         },
@@ -166,8 +190,15 @@ export default function EpicHeaderValueReadout({ value, suppressed = false, meas
             scheduleClose();
         },
     };
+    const pinProps = alwaysOn ? {
+        onClick: () => {
+            pinnedRef.current = !pinnedRef.current;
+            if (pinnedRef.current) show();
+            else scheduleClose();
+        },
+    } : {};
     const describedBy = truncated ? `epic-full-value-${readoutId}` : undefined;
-    const readout = visible && truncated && !suppressed ? createPortal(
+    const readout = visible && (truncated || alwaysOn) && !suppressed ? createPortal(
         <span
             ref={readoutRef}
             id={`epic-full-value-${readoutId}`}
@@ -200,6 +231,7 @@ export default function EpicHeaderValueReadout({ value, suppressed = false, meas
                 describedBy,
                 pointerProps,
                 focusProps,
+                pinProps,
                 discoveryProps: {
                     ref: triggerRef,
                     ...pointerProps,

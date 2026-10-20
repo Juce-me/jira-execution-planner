@@ -18,6 +18,7 @@ test.beforeAll(() => {
         // Synthetic group-scoped review server: one schema per Department group (the second has no columns), values only for the
         // group's original columns, and a save that stores the controller's columns and layouts under the payload's group.
         // window.harnessOptions switches: viewRevision/inheritedFrom (group-alpha schema response), groupName, sprintNames, derived, groupId, sprintId.
+        // window.valuesGate, when a promise, holds every values read until it settles (blank-while-loading checks).
         const options=window.harnessOptions||{};
         const capabilities={canRead:true,canSave:true};
         const viewKeys={...('viewRevision' in options?{viewRevision:options.viewRevision}:{}),...('inheritedFrom' in options?{inheritedFrom:options.inheritedFrom}:{})};
@@ -26,7 +27,7 @@ test.beforeAll(() => {
         const groupNames={'group-alpha':'Alpha Department','group-beta':'Beta Department'};
         const sprintNames=options.sprintNames===undefined?{'90':'Sprint 90','100':'Sprint 100','110':'Sprint 110'}:options.sprintNames;
         const requests=[]; let saveCount=0; let setHarnessScope=()=>{};
-        const controller=createPlanningSprintReviewController({fetchSchema:async(_,sprintId,{groupId}={})=>{requests.push({kind:'schema',sprintId,groupId}); return schemas[groupId]},readValues:async(_,sprintId,body)=>{requests.push({kind:'values',sprintId,groupId:body.groupId,rowKind:body.rowKind,issueIds:[...body.issueIds]}); return {cells:body.issueIds.flatMap(id=>(valueColumns[body.groupId]||[]).map(column=>({issueId:id,rowKind:body.rowKind,columnId:column.id,value:id==='1'?'2.000':'10.000',revision:1})))}},saveReview:async(_,sprintId,payload)=>{saveCount++; requests.push({kind:'save',sprintId,groupId:payload.groupId,payload}); const current=schemas[payload.groupId]; const layoutSave=payload.schemaChanges.some(change=>change.action==='layout'); schemas[payload.groupId]={...current,schemaRevision:current.schemaRevision+1,columns:controller.getState().columns,layouts:controller.getState().layouts,...(layoutSave?{viewRevision:(current.viewRevision||0)+1,inheritedFrom:null}:{})}; return {...schemas[payload.groupId],cells:payload.cellChanges.map(cell=>({...cell,revision:2}))}}});
+        const controller=createPlanningSprintReviewController({fetchSchema:async(_,sprintId,{groupId}={})=>{requests.push({kind:'schema',sprintId,groupId}); return schemas[groupId]},readValues:async(_,sprintId,body)=>{requests.push({kind:'values',sprintId,groupId:body.groupId,rowKind:body.rowKind,issueIds:[...body.issueIds]}); if(window.valuesGate) await window.valuesGate; return {cells:body.issueIds.flatMap(id=>(valueColumns[body.groupId]||[]).map(column=>({issueId:id,rowKind:body.rowKind,columnId:column.id,value:id==='1'?'2.000':'10.000',revision:1})))}},saveReview:async(_,sprintId,payload)=>{saveCount++; requests.push({kind:'save',sprintId,groupId:payload.groupId,payload}); const current=schemas[payload.groupId]; const layoutSave=payload.schemaChanges.some(change=>change.action==='layout'); schemas[payload.groupId]={...current,schemaRevision:current.schemaRevision+1,columns:controller.getState().columns,layouts:controller.getState().layouts,...(layoutSave?{viewRevision:(current.viewRevision||0)+1,inheritedFrom:null}:{})}; return {...schemas[payload.groupId],cells:payload.cellChanges.map(cell=>({...cell,revision:2}))}}});
         window.reviewActions=[]; window.holdCalls=[]; window.harness={state:()=>controller.getState(),saveCount:()=>saveCount,reload:()=>controller.refresh(),actions:()=>window.reviewActions,
             requests:()=>requests,setGroup:groupId=>setHarnessScope(scope=>({...scope,groupId})),setSprint:sprintId=>setHarnessScope(scope=>({...scope,sprintId:String(sprintId)})),
             setSchema:(groupId,patch)=>{schemas[groupId]={...schemas[groupId],...patch}}};
@@ -1648,4 +1649,279 @@ test('boundary feedback paints only the visible dot without moving the placement
     expect(hover.hit.box).toEqual(rest.hit.box);expect(hover.dot.box).toEqual(rest.dot.box);expect(hover.dot.ranges).toEqual(rest.dot.ranges);expect(hover.dot.font).toBe(rest.dot.font);
     expect(hover.hit.shadow).toBe('none');expect(hover.hit.background).toBe('rgba(0, 0, 0, 0)');
     expect(hover.dot.background).toBe(rest.dot.background);expect(hover.dot.color).toBe(rest.dot.color);expect(rest.dot.shadow).toBe('none');expect(hover.dot.shadow).toContain('rgb(47, 128, 237)');expect(outside).toBeGreaterThan(4);
+});
+
+// Derived columns (#267): a Story number sum shown read-only on Epic rows (marker S) and an Epic column shown on its
+// Stories (marker E). The harness keeps them off unless a test passes `derived: true`.
+const derivedInstall = (page, options = {}) => { const { longReview = false, ...rest } = options; return install(page, longReview, false, false, false, { derived: true, ...rest }); };
+const realHeader = page => page.locator('table.planning-review-table:not(.planning-review-docked-table) thead');
+const derivedHeading = (page, name) => realHeader(page).locator('th', { has: page.locator(`.planning-review-derived-marker[aria-label="${name}"]`) });
+const markerIn = th => th.locator('.planning-review-derived-marker');
+const STORY_SENTENCE = "Story property, summed from this Epic's Stories in this Sprint and the current filters";
+const EPIC_SENTENCE = 'Epic property, inherited from the parent Epic';
+async function addReviewColumn(page, name, type) {
+    await page.getByRole('button', { name: '+ Add column', exact: true }).click();
+    const dialog = addDialog(page);
+    await dialog.getByLabel('Column name', { exact: true }).fill(name);
+    await dialog.getByRole('radio', { name: type, exact: true }).click();
+    await dialog.getByRole('button', { name: 'Add column', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+}
+// Epic columns Risk (number) and Notes (text) with values on DEMO-10, so the Story view shows them as derived columns.
+async function addEpicSources(page, notes = 'Detailed rollout notes for the integration Epic that run far past the column width') {
+    await addReviewColumn(page, 'Risk', 'Number');
+    await page.getByRole('textbox', { name: 'Risk for DEMO-10', exact: true }).fill('7');
+    await addReviewColumn(page, 'Notes', 'Text');
+    await page.getByRole('textbox', { name: 'Notes for DEMO-10', exact: true }).fill(notes);
+    await page.locator('#reference').click();
+}
+const derivedCell = (page, rowKey, columnId) => page.locator(`tbody tr[data-review-row="${rowKey}"] td.planning-review-${columnId}`);
+const columnIdOf = (page, label) => page.evaluate(name => window.harness.state().columns.find(column => column.label === name).id, label);
+
+test('derived Story sums come last on Epic rows, read-only, with a leading S marker, the No Epic sum and rollup totals', async ({ page }) => {
+    await page.setViewportSize({ width: 2400, height: 900 }); await derivedInstall(page);
+    const names = Array.from({ length: 8 }, (_, index) => `Cost ${index}, Story property`);
+    expect((await headings(page)).slice(-8)).toEqual(names);
+    const th = derivedHeading(page, 'Cost 0, Story property');
+    await expect(th).toHaveClass(/planning-review-custom/); await expect(th).toHaveClass(/planning-review-numeric/);
+    // The marker leads a right-aligned label and sits beside the heading button, not inside it.
+    expect(await th.evaluate(node => [...node.querySelector('.planning-review-head').children].filter(child => !child.classList.contains('planning-review-sr-only')).map(child => child.className.split(' ')[0]))).toEqual(['planning-review-derived-marker', 'planning-review-heading', 'planning-review-drag', 'planning-review-popover-anchor']);
+    await expect(markerIn(th)).toHaveText('S');
+    expect(await th.locator('.planning-review-heading .planning-review-derived-marker').count()).toBe(0);
+    await expect(derivedCell(page, 'epic:10', 'cost0')).toHaveText('12');
+    await expect(derivedCell(page, 'group:no-epic', 'cost0')).toHaveText('10');
+    await expect(derivedCell(page, 'epic:20', 'cost0')).toHaveText('');
+    await expect(page.locator('tfoot .planning-review-cost0')).toHaveText('22');
+    await expect(page.locator('tbody td.planning-review-custom').first()).toHaveClass(/planning-review-numeric/);
+    // Read-only: no input, editor, button or editable text in any derived cell; no native title on the marker or heading.
+    expect(await page.locator('tbody td.planning-review-custom :is(input, textarea, button, [contenteditable])').count()).toBe(0);
+    expect(await th.evaluate(node => [node, node.querySelector('.planning-review-derived-marker'), node.querySelector('.planning-review-heading')].some(item => item.hasAttribute('title')))).toBe(false);
+    // Built-in parent columns in the Story view stay unmarked, and Story columns show no marker in their own view.
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await page.getByRole('button', { name: '+ Add column', exact: true }).click();
+    for (const label of ['Capacity', 'Project Track']) await addDialog(page).getByRole('button', { name: label, exact: true }).click();
+    await addDialog(page).getByLabel('Column name', { exact: true }).press('Escape');
+    for (const name of ['Epic', 'Capacity', 'Project Track', 'Cost 0']) await expect(realHeader(page).getByRole('columnheader', { name, exact: true })).toHaveCount(1);
+    await expect(page.locator('thead .planning-review-derived-marker')).toHaveCount(0);
+    // Turning the Story column's total off removes its rollup.
+    await columnMenuButton(page, 'Cost 0').click();
+    await columnMenu(page, 'Cost 0').getByRole('button', { name: 'Show total', exact: true }).click();
+    await page.keyboard.press('Escape');
+    await page.getByRole('radio', { name: 'Epics', exact: true }).click();
+    expect(await headings(page)).not.toContain('Cost 0, Story property');
+    expect((await headings(page)).slice(-7)).toEqual(names.slice(1));
+});
+
+test('derived Epic columns come last on Story rows with an E marker before numeric and after text names, and no total', async ({ page }) => {
+    await page.setViewportSize({ width: 2400, height: 900 }); await derivedInstall(page);
+    await addEpicSources(page);
+    const [risk, notes] = [await columnIdOf(page, 'Risk'), await columnIdOf(page, 'Notes')];
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    expect((await headings(page)).slice(-2)).toEqual(['Risk, Epic property', 'Notes, Epic property']);
+    const order = th => th.evaluate(node => [...node.querySelector('.planning-review-head').children].filter(child => !child.classList.contains('planning-review-sr-only')).map(child => child.className.split(' ')[0]).slice(0, 2));
+    expect(await order(derivedHeading(page, 'Risk, Epic property'))).toEqual(['planning-review-derived-marker', 'planning-review-heading']);
+    expect(await order(derivedHeading(page, 'Notes, Epic property'))).toEqual(['planning-review-heading', 'planning-review-derived-marker']);
+    await expect(markerIn(derivedHeading(page, 'Notes, Epic property'))).toHaveText('E');
+    expect(await markerIn(derivedHeading(page, 'Notes, Epic property')).evaluate(node => document.getElementById(node.getAttribute('aria-describedby'))?.textContent)).toBe(EPIC_SENTENCE);
+    // Each Story repeats its Epic's (unsaved) value; an orphan Story and the awaiting-creation placeholder stay blank.
+    for (const row of ['story:1', 'story:2']) await expect(derivedCell(page, row, risk)).toHaveText('7');
+    await expect(derivedCell(page, 'story:3', risk)).toHaveText('');
+    await expect(derivedCell(page, 'requirement:required', risk)).toHaveText('');
+    await expect(page.locator(`tfoot .planning-review-${risk}`)).toHaveText('');
+    expect(await page.locator(`tbody :is(td.planning-review-${risk}, td.planning-review-${notes}) :is(input, textarea, button, [contenteditable])`).count()).toBe(0);
+    // Derived text is bounded by its column and ellipsized, with the full value in the in-app readout.
+    const text = derivedCell(page, 'story:1', notes).locator('.planning-review-truncated-value');
+    const bounds = await text.evaluate(node => { const cell = node.closest('td').getBoundingClientRect(), style = getComputedStyle(node.closest('td')), rect = node.getBoundingClientRect(); return { clipped: node.scrollWidth > node.clientWidth + 1, inside: rect.right <= cell.right - parseFloat(style.paddingRight) + 0.5, cellWidth: cell.width, overflow: style.textOverflow || getComputedStyle(node).textOverflow }; });
+    expect(bounds.clipped, JSON.stringify(bounds)).toBe(true); expect(bounds.inside, JSON.stringify(bounds)).toBe(true); expect(bounds.cellWidth, JSON.stringify(bounds)).toBeLessThanOrEqual(200);
+    expect(await text.evaluate(node => getComputedStyle(node).textOverflow)).toBe('ellipsis');
+    await text.hover();
+    await expect(page.getByRole('tooltip').filter({ hasText: 'Detailed rollout notes' })).toBeVisible();
+});
+
+for (const width of [390, 1280]) test(`derived headings stay 32px with a 24px marker hit area and shared value edges at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 }); await derivedInstall(page);
+    await expect(derivedCell(page, 'epic:10', 'cost0')).toHaveText('12');
+    await expect(page.locator('tfoot .planning-review-cost0')).toHaveText('22');
+    const audit = async () => (await page.evaluate(alignmentAudit)).filter(column => /, (Story|Epic) property$/.test(column.column));
+    const check = columns => { for (const column of columns) { const detail = JSON.stringify(column); expect(column.bodyDelta, detail).not.toBeNull(); expect(Math.abs(column.bodyDelta), detail).toBeLessThan(1); } };
+    const epicColumns = await audit();
+    expect(epicColumns).toHaveLength(8); check(epicColumns);
+    for (const column of epicColumns) { expect(column.totalDelta, JSON.stringify(column)).not.toBeNull(); expect(Math.abs(column.totalDelta), JSON.stringify(column)).toBeLessThan(1); }
+    expect([...new Set(await realHeader(page).locator('th').evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().height)))]).toEqual([32]);
+    const th = derivedHeading(page, 'Cost 0, Story property');
+    await th.scrollIntoViewIfNeeded();
+    // The hit area is the marker's 24x24 ::before: every point inside reaches the marker, points beside it do not.
+    const hit = await markerIn(th).evaluate(node => {
+        const box = node.getBoundingClientRect(), before = getComputedStyle(node, '::before');
+        const top = box.top + parseFloat(before.top), left = box.left + parseFloat(before.left), size = [parseFloat(before.width), parseFloat(before.height)];
+        const reaches = (x, y) => document.elementFromPoint(x, y)?.closest('.planning-review-derived-marker') === node;
+        const misses = []; for (const dx of [1, 6, 12, 18, 23]) for (const dy of [1, 6, 12, 18, 23]) if (!reaches(left + dx, top + dy)) misses.push([dx, dy, document.elementFromPoint(left + dx, top + dy)?.className]);
+        const cell = node.closest('th').getBoundingClientRect();
+        return { box: [box.width, box.height], size, inside: misses.length ? misses : true, left: reaches(left - 2, top + 12), withinCell: top >= cell.top - 0.5 && top + size[1] <= cell.bottom + 0.5 };
+    });
+    expect(hit, JSON.stringify(hit)).toEqual({ box: [24, 0], size: [24, 24], inside: true, left: false, withinCell: true });
+    await th.screenshot({ path: path.join(root, `tmp/267-ui/derived-story-heading-${width}.png`), animations: 'disabled' });
+    await page.locator('.planning-review-scroll').screenshot({ path: path.join(root, `tmp/267-ui/derived-epic-view-${width}.png`), animations: 'disabled' });
+    // The Story view: E markers on a numeric (leading) and a text (trailing) Epic column.
+    await page.getByRole('radio', { name: 'Epics', exact: true }).click();
+    await addEpicSources(page, 'ok');
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await expect(derivedCell(page, 'story:1', await columnIdOf(page, 'Risk'))).toHaveText('7');
+    const storyColumns = await audit();
+    expect(storyColumns.map(column => column.column)).toEqual(['Risk, Epic property', 'Notes, Epic property']); check(storyColumns);
+    expect([...new Set(await realHeader(page).locator('th').evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().height)))]).toEqual([32]);
+    const notes = derivedHeading(page, 'Notes, Epic property'); await notes.scrollIntoViewIfNeeded();
+    await notes.screenshot({ path: path.join(root, `tmp/267-ui/derived-epic-heading-${width}.png`), animations: 'disabled' });
+    await page.locator('.planning-review-scroll').screenshot({ path: path.join(root, `tmp/267-ui/derived-story-view-${width}.png`), animations: 'disabled' });
+});
+
+test('the derived marker names its column everywhere and opens its readout by hover, click pin and focus-visible', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 }); await derivedInstall(page);
+    const name = 'Cost 0, Story property', th = derivedHeading(page, name), marker = markerIn(th), letter = marker.locator('span');
+    await th.scrollIntoViewIfNeeded();
+    await expect(th).toHaveAttribute('aria-label', name);
+    await expect(th.locator('.planning-review-heading')).toHaveAttribute('aria-label', name);
+    await expect(marker).toHaveAttribute('aria-label', name);
+    await expect(page.getByRole('button', { name: `Move ${name} column`, exact: true })).toHaveCount(1);
+    expect(await marker.evaluate(node => document.getElementById(node.getAttribute('aria-describedby'))?.textContent)).toBe(STORY_SENTENCE);
+    const tooltip = page.getByRole('tooltip');
+    // Mouse hover opens it and leaving closes it.
+    await letter.hover(); await expect(tooltip).toHaveText(STORY_SENTENCE);
+    // Settled hover paints a tinted circle on the hit area only: no lift, no shadow, the header stays 32px.
+    await expect.poll(() => marker.evaluate(node => getComputedStyle(node, '::before').backgroundImage)).toContain('radial-gradient');
+    expect(await marker.evaluate(node => ({ transform: getComputedStyle(node).transform, shadow: getComputedStyle(node).boxShadow, height: node.closest('th').getBoundingClientRect().height }))).toEqual({ transform: 'none', shadow: 'none', height: 32 });
+    await page.mouse.move(5, 5); await expect(tooltip).toHaveCount(0);
+    // A click pins it past the pointer leaving; a second click unpins; an outside pointer-down closes a pinned one.
+    await letter.click(); await page.mouse.move(5, 5); await page.waitForTimeout(200); await expect(tooltip).toHaveCount(1);
+    await letter.click(); await page.mouse.move(5, 5); await expect(tooltip).toHaveCount(0);
+    await letter.click(); await page.mouse.move(5, 5); await page.locator('#reference').click(); await expect(tooltip).toHaveCount(0);
+    // Keyboard focus (focus-visible) opens it; Escape closes it.
+    await th.locator('.planning-review-heading').focus(); await page.keyboard.press('Shift+Tab');
+    await expect(marker).toBeFocused(); await expect(tooltip).toHaveText(STORY_SENTENCE);
+    await page.keyboard.press('Escape'); await expect(tooltip).toHaveCount(0);
+    // The column menu and its popover carry the same name.
+    await columnMenuButton(page, name).click();
+    await expect(columnMenu(page, name)).toBeVisible();
+    await page.keyboard.press('Escape');
+});
+
+test('one focusable marker and one readout exist across the real and docked headers', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 700 }); await derivedInstall(page, { longReview: true });
+    // The Story view is the long one: an Epic column shown on its Stories.
+    await addReviewColumn(page, 'Risk', 'Number'); await page.locator('#reference').click();
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    const name = 'Risk, Epic property';
+    const markers = page.locator(`.planning-review-derived-marker[aria-label="${name}"]`);
+    const focusable = () => markers.evaluateAll(nodes => nodes.filter(node => node.tabIndex >= 0 && node.getAttribute('aria-hidden') !== 'true').length);
+    await expect(markers).toHaveCount(1); expect(await focusable()).toBe(1);
+    const real = markerIn(derivedHeading(page, name));
+    await derivedHeading(page, name).scrollIntoViewIfNeeded();
+    // A readout pinned on the real header closes when the header docks; the real copy leaves the tab order.
+    await real.locator('span').click(); await expect(page.getByRole('tooltip')).toHaveCount(1);
+    await page.evaluate(() => scrollTo(0, 500));
+    const docked = page.locator('.planning-review-docked-header');
+    await expect(docked).toBeVisible();
+    await expect(page.getByRole('tooltip')).toHaveCount(0);
+    await expect(markers).toHaveCount(2); expect(await focusable()).toBe(1);
+    await expect(real).toHaveAttribute('tabindex', '-1'); await expect(real).toHaveAttribute('aria-hidden', 'true');
+    const dockedMarker = docked.locator(`.planning-review-derived-marker[aria-label="${name}"]`);
+    await dockedMarker.locator('span').hover(); await expect(page.getByRole('tooltip')).toHaveCount(1);
+    await dockedMarker.locator('span').click(); await page.mouse.move(5, 5); await page.waitForTimeout(200); await expect(page.getByRole('tooltip')).toHaveCount(1);
+    await page.evaluate(() => scrollTo(0, 0));
+    await expect(docked).toHaveCount(0); await expect(page.getByRole('tooltip')).toHaveCount(0);
+    expect(await focusable()).toBe(1);
+});
+
+test('a derived column menu offers only moves and Hide, and Hide is separate per view', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 }); await derivedInstall(page);
+    const name = 'Cost 0, Story property';
+    await columnMenuButton(page, name).click();
+    const popup = columnMenu(page, name);
+    expect(await menuItems(popup)).toEqual(['Move left', 'Move right', 'Hide column']);
+    await expect(popup.locator('.pop-subject')).toHaveCount(0);
+    await expect(popup).not.toContainText('Shared review column');
+    // A saved order can place a derived column; it survives the save and a reload.
+    const before = (await headings(page)).indexOf(name);
+    await popup.getByRole('button', { name: 'Move left', exact: true }).click();
+    expect((await headings(page)).indexOf(name)).toBe(before - 1);
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Save review', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => window.harness.state().dirty)).toBe(false);
+    await page.evaluate(() => window.harness.reload());
+    expect((await headings(page)).indexOf(name)).toBe(before - 1);
+    // Hiding it in the Epic view leaves the Story view alone.
+    await hideColumn(page, name);
+    expect(await headings(page)).not.toContain(name);
+    expect(await page.evaluate(() => window.harness.state().layouts.epic.hidden)).toContain('cost0');
+    expect(await page.evaluate(() => window.harness.state().layouts.story?.hidden || [])).not.toContain('cost0');
+    expect(await page.evaluate(() => window.harness.actions())).toContain('column_visibility_changed');
+    // Show hidden names it and shows its superscript.
+    await page.getByRole('button', { name: '+ Add column', exact: true }).click();
+    const row = addDialog(page).getByRole('button', { name, exact: true });
+    await expect(row).toHaveCount(1); await expect(row.locator('sup')).toHaveText('S');
+    await page.keyboard.press('Escape');
+    await addReviewColumn(page, 'Risk', 'Number');
+    const risk = await columnIdOf(page, 'Risk');
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await expect(realHeader(page).getByRole('columnheader', { name: 'Cost 0', exact: true })).toHaveCount(1);
+    // And hiding a derived column in the Story view leaves the Epic view alone.
+    const epicHidden = await page.evaluate(() => window.harness.state().layouts.epic.hidden);
+    await hideColumn(page, 'Risk, Epic property');
+    expect(await page.evaluate(() => window.harness.state().layouts.story.hidden)).toContain(risk);
+    expect(await page.evaluate(() => window.harness.state().layouts.epic.hidden)).toEqual(epicHidden);
+    await page.getByRole('radio', { name: 'Epics', exact: true }).click();
+    await expect(realHeader(page).getByRole('columnheader', { name: 'Risk', exact: true })).toHaveCount(1);
+});
+
+test('derived values stay blank until their sources load and during a manual refresh', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 }); await derivedInstall(page);
+    const cell = derivedCell(page, 'epic:10', 'cost0'), noEpic = derivedCell(page, 'group:no-epic', 'cost0'), total = page.locator('tfoot .planning-review-cost0');
+    await expect(cell).toHaveText('12'); await expect(total).toHaveText('22');
+    const hold = () => page.evaluate(() => { window.valuesGate = new Promise(resolve => { window.releaseValues = resolve; }); });
+    const release = () => page.evaluate(() => { window.valuesGate = null; window.releaseValues(); });
+    await hold();
+    await page.evaluate(() => { window.refreshing = window.harness.reload(); });
+    await expect.poll(() => page.evaluate(() => window.harness.state().forceLoading)).toBe(true);
+    await expect(cell).toHaveText(''); await expect(noEpic).toHaveText(''); await expect(total).toHaveText('');
+    await release(); await page.evaluate(() => window.refreshing);
+    await expect(cell).toHaveText('12'); await expect(noEpic).toHaveText('10'); await expect(total).toHaveText('22');
+    // A scope change reloads every row: nothing shows until the Stories are loaded again.
+    await hold();
+    await page.evaluate(() => window.harness.setSprint('110'));
+    await expect.poll(() => page.evaluate(() => window.harness.requests().filter(item => item.kind === 'values' && item.sprintId === '110').length)).toBeGreaterThan(0);
+    await expect(cell).toHaveText(''); await expect(total).toHaveText('');
+    await release();
+    await expect(cell).toHaveText('12'); await expect(total).toHaveText('22');
+});
+
+test('derived columns add no requests: switching rows reads nothing and Story sums do not change the values reads', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 }); await derivedInstall(page);
+    await expect(derivedCell(page, 'epic:10', 'cost0')).toHaveText('12');
+    const before = await page.evaluate(() => window.harness.requests().length);
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click(); await page.getByRole('radio', { name: 'Epics', exact: true }).click();
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await page.waitForTimeout(200);
+    expect(await page.evaluate(() => window.harness.requests().length)).toBe(before);
+    const reads = () => page.evaluate(() => window.harness.requests().filter(item => item.kind !== 'save').map(item => `${item.kind}:${item.rowKind || ''}:${(item.issueIds || []).length}`));
+    const withSums = await reads();
+    await derivedInstall(page, { groupId: 'group-beta' });
+    await expect(page.locator('thead .planning-review-derived-marker')).toHaveCount(0);
+    expect(await reads()).toEqual(withSums);
+});
+
+test.describe('touch derived marker', () => {
+    test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+    test.skip(({ browserName }) => browserName === 'firefox', 'Firefox does not support mobile emulation (isMobile)');
+    test('one tap opens the readout, a second tap closes it and an outside tap closes it', async ({ page }) => {
+        await derivedInstall(page);
+        const th = derivedHeading(page, 'Cost 0, Story property'), letter = markerIn(th).locator('span'), tooltip = page.getByRole('tooltip');
+        await th.scrollIntoViewIfNeeded();
+        await letter.tap(); await expect(tooltip).toHaveText(STORY_SENTENCE);
+        await page.waitForTimeout(200); await expect(tooltip).toHaveCount(1);
+        await letter.tap(); await expect(tooltip).toHaveCount(0);
+        await page.waitForTimeout(200); await expect(tooltip).toHaveCount(0);
+        await letter.tap(); await expect(tooltip).toHaveCount(1);
+        await page.locator('#reference').tap(); await expect(tooltip).toHaveCount(0);
+        await page.screenshot({ path: path.join(root, 'tmp/267-ui/derived-marker-touch-390.png'), fullPage: false, animations: 'disabled' });
+    });
 });

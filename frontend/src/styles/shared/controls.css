@@ -40,8 +40,8 @@
 
         .dashboard-freshness-slot {
             display: grid;
-            flex: 0 0 100%;
-            order: 1;
+            flex: 1 1 11rem;
+            min-width: 0;
             contain: inline-size;
         }
 
@@ -58,7 +58,7 @@
         .dashboard-freshness-status {
             flex: 1 1 auto;
             min-width: 0;
-            align-self: center;
+            align-self: start;
             overflow-wrap: anywhere;
         }
 

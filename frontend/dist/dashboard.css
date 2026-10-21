@@ -339,8 +339,9 @@ h1 {
   z-index: calc(var(--sticky-control-overlay-z) + 1);
 }
 .subtitle-main {
+  flex: 1 1 auto;
   display: inline-grid;
-  grid-template-columns: auto auto;
+  grid-template-columns: auto 1fr;
   align-items: center;
   justify-content: start;
   column-gap: 0.5rem;
@@ -353,8 +354,16 @@ h1 {
   vertical-align: middle;
   flex: 0 0 auto;
 }
-.subtitle-secondary {
+.subtitle-detail {
   grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 0.5rem;
+  row-gap: 0.15rem;
+  min-width: 0;
+}
+.subtitle-secondary {
   font-size: 0.56rem;
   letter-spacing: 0.08em;
   text-transform: none;
@@ -402,8 +411,8 @@ h1 {
 }
 .dashboard-freshness-slot {
   display: grid;
-  flex: 0 0 100%;
-  order: 1;
+  flex: 1 1 11rem;
+  min-width: 0;
   contain: inline-size;
 }
 .dashboard-freshness-slot > span {
@@ -417,7 +426,7 @@ h1 {
 .dashboard-freshness-status {
   flex: 1 1 auto;
   min-width: 0;
-  align-self: center;
+  align-self: start;
   overflow-wrap: anywhere;
 }
 .header-actions-row > .group-gear-button,

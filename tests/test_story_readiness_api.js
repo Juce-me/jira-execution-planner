@@ -144,6 +144,27 @@ test('story readiness lifecycle helpers reject stale scopes and classify only tr
     }
 });
 
+test('awaited Stories are answered only for a Sprint state without readiness or a current READY snapshot', async () => {
+    const source = fs.readFileSync(hookPath, 'utf8');
+    const transformed = source
+        .replace("import * as React from 'react';\n", '')
+        .replace("import { fetchEpicReadiness, fetchStoryReadiness } from '../api/engApi.js';\n", 'const fetchEpicReadiness = null; const fetchStoryReadiness = null;\n')
+        .replace("import { mergeReadinessEpic, patchReadinessEpicField } from './epicRefreshAlerts.js';\n", 'const mergeReadinessEpic = null; const patchReadinessEpicField = null;\n')
+        .replaceAll('export const ', 'const ')
+        .replaceAll('export function ', 'function ');
+    const { storyReadinessAnswersAwaited, STORY_READINESS_STATUS } = new Function(`${transformed}; return { storyReadinessAnswersAwaited, STORY_READINESS_STATUS };`)();
+    const scope = { groupId: 'g1', sprintId: '42', sprintName: 'Sprint 42', sprintState: 'active' };
+    const snapshot = { schemaVersion: 1, complete: true, scope, epics: [] };
+    const ready = { scopeKey: 'g1|42', scope, status: STORY_READINESS_STATUS.READY, snapshot };
+
+    assert.equal(storyReadinessAnswersAwaited({ ...ready, scopeKey: '', status: STORY_READINESS_STATUS.IDLE, snapshot: null }), true, 'a closed Sprint has no awaited Stories to wait for');
+    assert.equal(storyReadinessAnswersAwaited(ready), true);
+    assert.equal(storyReadinessAnswersAwaited({ ...ready, status: STORY_READINESS_STATUS.IDLE, snapshot: null }), false, 'a view that does not load readiness cannot answer');
+    assert.equal(storyReadinessAnswersAwaited({ ...ready, status: STORY_READINESS_STATUS.LOADING, snapshot: null }), false);
+    assert.equal(storyReadinessAnswersAwaited({ ...ready, status: STORY_READINESS_STATUS.UNAVAILABLE, snapshot: null }), false);
+    assert.equal(storyReadinessAnswersAwaited({ ...ready, scope: { ...scope, sprintId: '43' } }), false, 'a snapshot left over from the previous Sprint is not an answer');
+});
+
 test('per-epic readiness API is a separate GET with the epic key and refresh, and the department request stays untouched', async () => {
     const calls = [];
     const api = loadApi({

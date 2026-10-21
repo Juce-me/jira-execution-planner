@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { isAuthenticationRequiredError } from '../api/authRequired.js';
 import { aggregateCohortSummary, buildCohortGridModel, buildCompletedEpicsBars, buildOpenEpicsBars, buildQuarterOptions, deriveAssigneeOptions, deriveProjectOptions, filterCohortIssues, getCurrentQuarterLabel, normalizeCohortStatus } from '../cohort/cohortUtils.js';
-import { buildDefaultExcludedCapacityRange, buildEpicTeamCrossShareLineSeries, buildEpicTeamModeOverall, buildEpicTeamModeSprintRows, buildEffortTypeSplitRows, buildExcludedCapacityLineSeries, buildExcludedCapacityTimeSeries, buildExcludedEpicCatalog, compareSprintsChronologically, getSprintRange, loadExcludedCapacityStatsSourceChunks, mergeExcludedCapacityStatsSourceChunks, summarizeEffortTypeSplitTotals } from './excludedCapacityStats.js';
+import { buildDefaultExcludedCapacityRange, buildEpicTeamCrossShareLineSeries, buildEpicTeamModeOverall, buildEpicTeamModeSprintRows, buildEffortTypeSplitRows, buildExcludedCapacityLineSeries, buildExcludedCapacityTimeSeries, buildExcludedEpicCatalog, getSprintRange, loadExcludedCapacityStatsSourceChunks, mergeExcludedCapacityStatsSourceChunks, sortSprintsNewestFirst, summarizeEffortTypeSplitTotals } from './excludedCapacityStats.js';
 import { buildBurnoutChartModel } from './burnoutChartUtils.js';
 import { buildLocalStatsFromTasks, computePriorityWeighted, computeRate, getPriorityLabel } from './statsUtils.js';
 import { buildProjectTrackSprintSeries, summarizeProjectTrackTotals, buildProjectTrackBreakdownRows, buildProjectTrackColumnSplit, inScopeEpicKeys as projectTrackInScopeEpicKeys } from './projectTrackStats.js';
@@ -564,7 +564,7 @@ export function useStatsDerivedB({
     }, [cohortGridModel, cohortSelectedRow]);
 
     const excludedCapacitySprintOptions = React.useMemo(() => {
-        return (availableSprints || []).slice().sort(compareSprintsChronologically);
+        return sortSprintsNewestFirst(availableSprints);
     }, [availableSprints]);
     const excludedCapacityDefaultRange = React.useMemo(() => {
         return buildDefaultExcludedCapacityRange(excludedCapacitySprintOptions, selectedSprint);

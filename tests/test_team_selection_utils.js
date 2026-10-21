@@ -203,3 +203,84 @@ test('scoped team selection preserves a valid team across sprint change', async 
         }
     );
 });
+
+test('team dropdown lists All Teams first, then teams alphabetically', async () => {
+    const { buildTeamDropdownOptions } = await import('../frontend/src/teamSelectionUtils.mjs');
+    const teamOptions = [
+        { id: 'all', name: 'All Teams' },
+        { id: 't-dist', name: 'R&D Distribution' },
+        { id: 't-bsw-ui', name: 'R&D BSW UI' },
+        { id: 't-aaew', name: 'R&D AAEW' },
+        { id: 't-bsw-fin', name: 'R&D BSW FinancialTools v-team' }
+    ];
+
+    assert.deepEqual(
+        buildTeamDropdownOptions({ teamOptions, workKnown: false }).map(team => team.name),
+        ['All Teams', 'R&D AAEW', 'R&D BSW FinancialTools v-team', 'R&D BSW UI', 'R&D Distribution']
+    );
+    assert.deepEqual(teamOptions.map(team => team.id), ['all', 't-dist', 't-bsw-ui', 't-aaew', 't-bsw-fin'], 'the source options keep their configured order');
+});
+
+test('team dropdown drops teams with no stories or awaited stories once the sprint work is known', async () => {
+    const { buildTeamDropdownOptions } = await import('../frontend/src/teamSelectionUtils.mjs');
+    const getTeamInfo = task => ({ id: task.teamId, name: task.teamName });
+    const teamOptions = [
+        { id: 'all', name: 'All Teams' },
+        { id: 'alpha', name: 'Alpha' },
+        { id: 'beta', name: 'Beta' },
+        { id: 'gamma', name: 'Gamma' },
+        { id: 'delta', name: 'Delta' }
+    ];
+
+    const options = buildTeamDropdownOptions({
+        teamOptions,
+        tasks: [{ teamId: 'beta', teamName: 'Beta' }],
+        getTeamInfo,
+        readinessEpics: [{ key: 'EPIC-1', missingTeams: [{ id: 'gamma', name: 'Gamma' }] }],
+        workKnown: true
+    });
+
+    assert.deepEqual(options.map(team => team.id), ['all', 'beta', 'gamma']);
+});
+
+test('team dropdown keeps every team while sprint work or awaited stories are unknown', async () => {
+    const { buildTeamDropdownOptions } = await import('../frontend/src/teamSelectionUtils.mjs');
+    const teamOptions = [
+        { id: 'all', name: 'All Teams' },
+        { id: 'alpha', name: 'Alpha' },
+        { id: 'beta', name: 'Beta' }
+    ];
+
+    assert.deepEqual(
+        buildTeamDropdownOptions({ teamOptions, tasks: [], getTeamInfo: () => ({}), workKnown: false }).map(team => team.id),
+        ['all', 'alpha', 'beta']
+    );
+});
+
+test('team dropdown keeps a selected team that has no work so it can be unticked', async () => {
+    const { buildTeamDropdownOptions } = await import('../frontend/src/teamSelectionUtils.mjs');
+    const teamOptions = [
+        { id: 'all', name: 'All Teams' },
+        { id: 'alpha', name: 'Alpha' },
+        { id: 'beta', name: 'Beta' }
+    ];
+
+    assert.deepEqual(
+        buildTeamDropdownOptions({
+            teamOptions, tasks: [], getTeamInfo: () => ({}), readinessEpics: [], workKnown: true, selectedTeamIds: new Set(['beta'])
+        }).map(team => team.id),
+        ['all', 'beta']
+    );
+});
+
+test('team dropdown with no work in the sprint offers only All Teams', async () => {
+    const { buildTeamDropdownOptions } = await import('../frontend/src/teamSelectionUtils.mjs');
+
+    assert.deepEqual(
+        buildTeamDropdownOptions({
+            teamOptions: [{ id: 'all', name: 'All Teams' }, { id: 'alpha', name: 'Alpha' }],
+            tasks: [], getTeamInfo: () => ({}), readinessEpics: [], workKnown: true
+        }),
+        [{ id: 'all', name: 'All Teams' }]
+    );
+});

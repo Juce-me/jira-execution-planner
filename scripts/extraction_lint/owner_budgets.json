@@ -19,8 +19,8 @@
   },
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
-    "lineCount": 7558,
-    "lineCeiling": 7558
+    "lineCount": 7568,
+    "lineCeiling": 7568
   },
   "modules": [
     {
@@ -15832,7 +15832,7 @@
           ],
           "inventory": {
             "source": "frontend/src/stats/useStatsData.js:57",
-            "sourceDigest": "25e3d0f6ccb86988da9016cb977e439953f2dea8ae2646920e49ba440c51a75e",
+            "sourceDigest": "b84392637362f0883c15cea413c4fbc9c80e34b5d9ddba7481c90a3fda557537",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -16223,7 +16223,7 @@
           ],
           "inventory": {
             "source": "frontend/src/stats/useStatsData.js:335",
-            "sourceDigest": "25e3d0f6ccb86988da9016cb977e439953f2dea8ae2646920e49ba440c51a75e",
+            "sourceDigest": "b84392637362f0883c15cea413c4fbc9c80e34b5d9ddba7481c90a3fda557537",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -16687,7 +16687,7 @@
           ],
           "inventory": {
             "source": "frontend/src/stats/useStatsData.js:1141",
-            "sourceDigest": "25e3d0f6ccb86988da9016cb977e439953f2dea8ae2646920e49ba440c51a75e",
+            "sourceDigest": "b84392637362f0883c15cea413c4fbc9c80e34b5d9ddba7481c90a3fda557537",
             "reviewed": true,
             "memberNames": [
               "burndownMetric",
@@ -19240,8 +19240,8 @@
       "ceiling": 26869
     },
     "appPlusOwners": {
-      "measured": 34427,
-      "ceiling": 34427
+      "measured": 34437,
+      "ceiling": 34437
     }
   },
   "transfer": {

@@ -214,6 +214,66 @@ def _capped(row):
     return any(lane['completeness'] == 'capped' for lane in row.lanes)
 
 
+PHASE_KEYS = ('waitMs', 'indexMs', 'focusedMs', 'restMs')
+WEEKLY_BREACH_MS = 4000
+
+
+def board_phases(row):
+    """Split a complete Board load into four phases that add up to its duration.
+
+    `firstFocusedContentMs` is stamped by the browser when the focused column's final frame has painted and
+    `focusedCompleteMs` by the server when it emitted that frame, so their difference is what happened before
+    the stream started (setup, catalog reads, network) plus the paint. Returns None where that would be negative.
+    """
+    if row.surface != 'eng_board' or not _complete(row):
+        return None
+    first, focused_done, index = row.first_content_ms, row.focused_complete_ms, row.index_ms
+    if first is None or focused_done is None or index is None:
+        return None
+    phases = {'waitMs': first - focused_done, 'indexMs': index,
+              'focusedMs': focused_done - index, 'restMs': row.duration_ms - first}
+    if any(value < 0 for value in phases.values()):
+        return None
+    return {key: round(value, 2) for key, value in phases.items()}
+
+
+def _week_start(moment):
+    day = moment.date()
+    return day - timedelta(days=day.weekday())
+
+
+def _weekly(rows, now):
+    """Median phase times per UTC calendar week (Monday start), for one Board scope at a time."""
+    board = [row for row in rows if row.surface == 'eng_board']
+    scopes = {row.scope_type for row in board}
+    if len(scopes) > 1:
+        return dict(scopeType=None, mixedScopes=True, weeks=[])
+    by_week = defaultdict(list)
+    for row in board:
+        by_week[_week_start(row.recorded_at)].append(row)
+    weeks = []
+    for start in sorted(by_week):
+        group = by_week[start]
+        measured = [(row, board_phases(row)) for row in group]
+        measured = [(row, phases) for row, phases in measured if phases]
+        if not measured:
+            continue
+        loads = [row for row, _phases in measured]
+        totals = [row.duration_ms for row in loads]
+        weeks.append(dict(
+            weekStart=start.isoformat(), loads=len(loads),
+            medianMs=_percentile(totals, .5), p95Ms=_percentile(totals, .95),
+            phases={key: _percentile([phases[key] for _row, phases in measured], .5) for key in PHASE_KEYS},
+            medianJiraRequests=_percentile([row.jira_requests for row in loads if row.jira_requests is not None], .5),
+            retries=sum(row.jira_retries or 0 for row in loads),
+            medianPayloadBytes=_percentile([row.payload_bytes for row in loads if row.payload_bytes is not None], .5),
+            breachCount=sum(value > WEEKLY_BREACH_MS for value in totals),
+            errors=sum(row.outcome == 'error' for row in group),
+            cancelled=sum(row.outcome == 'cancelled' for row in group),
+            partial=start + timedelta(days=7) > now.date()))
+    return dict(scopeType=next(iter(scopes)) if scopes and weeks else None, mixedScopes=False, weeks=weeks)
+
+
 def _cohort_key(row):
     if row.surface == 'eng_board':
         return (row.surface, row.scope_type, row.cache_state, row.revision, row.scope_cohort_digest)
@@ -245,8 +305,9 @@ def _summary(rows):
                 contextual=bool(unknown_count or mixed_cohorts), mixedCohorts=mixed_cohorts)
 
 
-def load_report(session, workspace_id, filters=None, *, limit=QUERY_LIMIT, environment=None):
+def load_report(session, workspace_id, filters=None, *, limit=QUERY_LIMIT, environment=None, now=None):
     filters = filters or {}
+    now = now or datetime.now(timezone.utc)
     if set(filters) - {'groupId', 'sprintId', 'surface', 'scopeType', 'cacheState', 'revision',
                        'scopeCohortDigest'}:
         raise ValueError('Invalid filters')
@@ -263,7 +324,7 @@ def load_report(session, workspace_id, filters=None, *, limit=QUERY_LIMIT, envir
             raise ValueError('Invalid cohort digest')
     query = session.query(LoadPerformance).filter(
         LoadPerformance.workspace_id == workspace_id,
-        LoadPerformance.recorded_at >= datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS),
+        LoadPerformance.recorded_at >= now - timedelta(days=RETENTION_DAYS),
     )
     if environment is not None:
         query = query.filter(LoadPerformance.environment == environment)
@@ -314,7 +375,7 @@ def load_report(session, workspace_id, filters=None, *, limit=QUERY_LIMIT, envir
         for day in trend:
             day.update(avgMs=None, p50Ms=None, p95Ms=None, p50FirstContentMs=None,
                        p95FirstContentMs=None, breachCount=0, contextual=True, mixedCohorts=True)
-    return dict(summary=summary, trend=trend,
+    return dict(summary=summary, trend=trend, weekly=_weekly(rows, now),
                 samples=[dict(loadId=row.load_id, groupId=row.group_id, sprintId=row.sprint_id,
                               surface=row.surface, outcome=row.outcome, durationMs=row.duration_ms,
                               dependencyDurationMs=row.dependency_duration_ms,
@@ -327,7 +388,7 @@ def load_report(session, workspace_id, filters=None, *, limit=QUERY_LIMIT, envir
                               jiraPages=row.jira_pages, jiraRetries=row.jira_retries,
                               completeness=row.completeness, cacheState=row.cache_state,
                               peakChildSearches=row.peak_child_searches,
-                              scopeCohortDigest=row.scope_cohort_digest,
+                              scopeCohortDigest=row.scope_cohort_digest, phases=board_phases(row),
                               lanes=row.lanes, recordedAt=row.recorded_at.replace(tzinfo=timezone.utc).isoformat(),
                               revision=row.revision, environment=row.environment) for row in rows[:200]],
                 filters=options, targetMs=2000, sloMs=4000, truncated=truncated, queryLimit=limit,

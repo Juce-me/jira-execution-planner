@@ -37,6 +37,14 @@ def board_observation(duration=1000, scope_type='all_work', outcome='success'):
                 peakChildSearches=2, scopeCohortDigest='a' * 64)
 
 
+def phased_board(duration, index, first, focused, scope_type='component', **overrides):
+    """A Board load whose phases are realistic: the focused column lands after the first byte."""
+    payload = board_observation(duration, scope_type=scope_type)
+    payload.update(indexMs=index, firstFocusedContentMs=first, focusedCompleteMs=focused,
+                   dependencyDurationMs=None, **overrides)
+    return payload
+
+
 class LoadPerformanceTests(unittest.TestCase):
     def setUp(self):
         self.engine = create_engine('sqlite://')
@@ -190,6 +198,68 @@ class LoadPerformanceTests(unittest.TestCase):
         self.assertEqual(sample['firstFocusedContentMs'], 150)
         self.assertEqual(sample['peakChildSearches'], 2)
         self.assertEqual(sample['scopeCohortDigest'], 'a' * 64)
+
+    def test_board_sample_splits_the_load_into_four_phases_that_add_up(self):
+        self.save(phased_board(11210, 1800, 8780, 3520))
+        sample = performance.load_report(self.session, 'workspace-a')['samples'][0]
+        self.assertEqual({'waitMs': 5260, 'indexMs': 1800, 'focusedMs': 1720, 'restMs': 2430},
+                         sample['phases'])
+        self.assertEqual(11210, sum(sample['phases'].values()))
+
+    def test_phases_are_absent_when_they_cannot_be_derived_honestly(self):
+        # first focused content before the focused column completed would make the wait negative.
+        self.save(board_observation(1000))
+        self.save(phased_board(2000, 100, 900, 300, outcome='cancelled',
+                               completeness='partial'))
+        self.save(observation())
+        samples = performance.load_report(self.session, 'workspace-a')['samples']
+        self.assertEqual([None, None, None], [sample['phases'] for sample in samples])
+
+    def test_weekly_stats_group_complete_board_loads_by_utc_monday(self):
+        now = datetime(2026, 10, 21, 12, 0, tzinfo=timezone.utc)   # a Wednesday
+        for days_ago, total, retries in ((9, 8000, 0), (8, 10000, 0), (7, 12000, 2),
+                                         (2, 9000, 0), (1, 11000, 0)):
+            payload = phased_board(total, 1000, total - 3000, 3000, jiraRetries=retries,
+                                   jiraRequests=18, payloadBytes=600000)
+            self.save(payload, now=now - timedelta(days=days_ago))
+        weekly = performance.load_report(self.session, 'workspace-a', {'scopeType': 'component'},
+                                         now=now)['weekly']
+        self.assertEqual('component', weekly['scopeType'])
+        self.assertFalse(weekly['mixedScopes'])
+        first, second = weekly['weeks']
+        self.assertEqual(('2026-10-12', 3), (first['weekStart'], first['loads']))
+        self.assertEqual(('2026-10-19', 2), (second['weekStart'], second['loads']))
+        self.assertEqual((10000, 2), (first['medianMs'], first['retries']))
+        self.assertEqual(10000, second['medianMs'])   # median of 9000 and 11000
+        self.assertEqual({'waitMs': 4000, 'indexMs': 1000, 'focusedMs': 2000, 'restMs': 3000},
+                         first['phases'])
+        self.assertEqual(18, first['medianJiraRequests'])
+        self.assertEqual(600000, first['medianPayloadBytes'])
+        self.assertFalse(first['partial'])
+        self.assertTrue(second['partial'])   # the week still has days to run
+
+    def test_weekly_stats_need_one_scope_and_ignore_loads_that_are_not_complete(self):
+        now = datetime(2026, 10, 21, 12, 0, tzinfo=timezone.utc)
+        self.save(phased_board(10000, 1000, 7000, 3000), now=now - timedelta(hours=3))
+        self.save(phased_board(10000, 1000, 7000, 3000, scope_type='all_work'),
+                  now=now - timedelta(hours=2))
+        mixed = performance.load_report(self.session, 'workspace-a', now=now)['weekly']
+        self.assertTrue(mixed['mixedScopes'])
+        self.assertEqual([], mixed['weeks'])
+        self.assertIsNone(mixed['scopeType'])
+
+        failed = phased_board(10000, 1000, 7000, 3000, outcome='error', completeness='partial')
+        self.save(failed, now=now - timedelta(hours=1))
+        cancelled = phased_board(10000, 1000, 7000, 3000, outcome='cancelled', completeness='partial')
+        self.save(cancelled, now=now - timedelta(minutes=30))
+        week = performance.load_report(self.session, 'workspace-a', {'scopeType': 'component'},
+                                       now=now)['weekly']['weeks'][0]
+        self.assertEqual((1, 1, 1), (week['loads'], week['errors'], week['cancelled']))
+
+    def test_weekly_stats_are_empty_without_board_loads(self):
+        self.save(observation())
+        weekly = performance.load_report(self.session, 'workspace-a')['weekly']
+        self.assertEqual({'scopeType': None, 'mixedScopes': False, 'weeks': []}, weekly)
 
     def test_board_scope_validation_matches_sprint_ownership(self):
         for scope_type in ('all_work', 'component'):

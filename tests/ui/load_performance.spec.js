@@ -3,6 +3,7 @@ const { buildSync } = require('esbuild');
 const fs = require('node:fs');
 const path = require('node:path');
 const { expectConfigBootstrapHoldsJiraWork, installDashboardFixture } = require('./epm_home_token_fixture');
+const { hoverEvidence } = require('./design_system_hover_helpers');
 
 const root = path.resolve(__dirname, '../..');
 const origin = 'http://performance.test';
@@ -17,6 +18,39 @@ const payload = {
     samples: [{ loadId: 'sample-load', recordedAt: '2026-09-08T12:00:00Z', groupId: 'sample-group', sprintId: '42', surface: 'eng_sprint', outcome: 'success', durationMs: 12000, firstContentMs: 1500, revision: 'test-revision', environment: 'test', lanes: [
         { project: 'Product', durationMs: 11000, issueCount: 320, epicCount: 20, storyCount: 300, payloadBytes: 42000, cacheState: 'miss', completeness: 'unknown', stages: { jira: 10000 }, jiraRequests: 4, jiraPages: 4, jiraRetries: 0 },
     ] }],
+};
+
+const phaseSet = (wait, index, focused, rest) => ({ waitMs: wait, indexMs: index, focusedMs: focused, restMs: rest });
+const boardWeek = (weekStart, parts, extra = {}) => {
+    const total = parts.reduce((sum, value) => sum + value, 0);
+    return { weekStart, loads: 12, medianMs: total, p95Ms: Math.round(total * 1.2), phases: phaseSet(...parts), medianJiraRequests: 18,
+        retries: 0, medianPayloadBytes: 682270, breachCount: 12, errors: 0, cancelled: 0, partial: false, ...extra };
+};
+const boardSample = (loadId, recordedAt, parts, revision) => ({
+    loadId, recordedAt, groupId: 'sample-group', sprintId: null, surface: 'eng_board', scopeType: 'component', outcome: 'success',
+    durationMs: parts.reduce((sum, value) => sum + value, 0), phases: phaseSet(...parts), indexMs: parts[1],
+    firstFocusedContentMs: parts[0] + parts[1] + parts[2], focusedCompleteMs: parts[1] + parts[2], issueCount: 449, epicCount: 165,
+    payloadBytes: 682270, jiraRequests: 18, jiraPages: 11, jiraRetries: 0, cacheState: 'miss', completeness: 'complete',
+    peakChildSearches: 2, revision, environment: 'staging', lanes: [],
+});
+const boardPayload = {
+    enabled: true, contextual: false,
+    summary: { sampleCount: 36, eligibleCount: 36, avgMs: 10000, p50Ms: 10000, p95Ms: 12000, breachCount: 36, errorCount: 0, cancelledCount: 0, cappedCount: 0, unknownCount: 0 },
+    trend: [],
+    weekly: { scopeType: 'component', mixedScopes: false, weeks: [
+        boardWeek('2026-10-05', [4800, 1700, 1600, 1400]),
+        boardWeek('2026-10-12', [5300, 1800, 1700, 1500]),
+        boardWeek('2026-10-19', [5200, 1800, 1700, 1600], { partial: true, loads: 4 }),
+    ] },
+    filters: { groups: ['sample-group'], sprints: [], surfaces: ['eng_board', 'eng_sprint'], scopeTypes: ['component'], cacheStates: ['miss'], revisions: ['rev-old', 'rev-new'], scopeCohortDigests: [] },
+    samples: [
+        boardSample('load-a', '2026-10-21T13:41:00+00:00', [900, 1800, 900, 1100], 'rev-new'),
+        boardSample('load-b', '2026-10-21T09:35:00+00:00', [5260, 1800, 1720, 2430], 'rev-old'),
+        boardSample('load-c', '2026-10-20T11:03:00+00:00', [5200, 1800, 1800, 1700], 'rev-old'),
+        boardSample('load-d', '2026-10-19T15:20:00+00:00', [5500, 1900, 1700, 1400], 'rev-old'),
+        boardSample('load-e', '2026-10-13T10:00:00+00:00', [5300, 1800, 1700, 1500], 'rev-old'),
+    ],
+    truncated: false, samplesTruncated: false,
 };
 
 test.beforeAll(() => {
@@ -130,7 +164,7 @@ test('real dashboard emits one measured load after both lanes and delayed depend
             scrollWidth: label.scrollWidth, clientWidth: label.clientWidth };
     }));
     expect(controls.map(control => control.label)).toEqual([
-        'Group', 'Sprint', 'Surface', 'Scope', 'Cache', 'Revision', 'Configuration cohort',
+        'Group', 'Surface', 'Scope', 'Sprint', 'Cache', 'Revision', 'Configuration cohort',
     ]);
     for (const control of controls) {
         expect(control.right).toBeLessThanOrEqual(control.groupRight);
@@ -165,7 +199,7 @@ test('nonadmin cannot see Performance even when general settings editing is open
 
 async function openPanel(page, response = payload) {
     await page.route(`${origin}/api/admin/performance?**`, route => route.fulfill({ json: response }));
-    await page.route(`${origin}/`, route => route.fulfill({ contentType: 'text/html', body: `<html><head><style>${css}</style></head><body><main style="max-width:900px;margin:20px auto;padding:20px;background:white" id="root"></main><script>${script}</script></body></html>` }));
+    await page.route(`${origin}/`, route => route.fulfill({ contentType: 'text/html', body: `<!doctype html><html><head><style>${css}</style></head><body><main style="max-width:900px;margin:20px auto;padding:20px;background:white" id="root"></main><script>${script}</script></body></html>` }));
     await page.goto(origin);
 }
 
@@ -235,3 +269,133 @@ for (const enabled of [true, false]) {
         await page.screenshot({ path: path.join(root, `tmp/load-performance/empty-${enabled}.png`), fullPage: true, animations: 'disabled' });
     });
 }
+
+async function openBoardWeeks(page, viewport = { width: 1000, height: 1100 }) {
+    await page.setViewportSize(viewport);
+    await openPanel(page, boardPayload);
+    await page.getByLabel('Performance surface', { exact: true }).selectOption('eng_board');
+    await expect(page.getByRole('heading', { name: 'Where a Board load spends its time, by week' })).toBeVisible();
+}
+
+test('Board weekly view stacks four phases per week and follows the selected week', async ({ page }) => {
+    await openBoardWeeks(page);
+    fs.mkdirSync(path.join(root, 'tmp/load-performance'), { recursive: true });
+    await page.screenshot({ path: path.join(root, 'tmp/load-performance/board-weeks.png'), fullPage: true, animations: 'disabled' });
+    await expect(page.locator('.performance-week-segment')).toHaveCount(12);
+    await expect(page.locator('.performance-settings table').first().locator('tbody tr')).toHaveCount(3);
+    await expect(page.locator('.performance-summary')).toContainText('Week of Oct 19 (so far)');
+    await expect(page.getByRole('heading', { name: 'Loads in the week of Oct 19 (so far)' })).toBeVisible();
+    await expect(page.locator('.performance-loads tbody tr')).toHaveCount(5);   // four loads and one revision divider
+    await expect(page.locator('.performance-revision-change')).toContainText('Revision changed: loads above ran on rev-new, loads below on rev-old');
+
+    await page.getByRole('button', { name: 'Oct 12', exact: true }).click();
+    await expect(page.locator('.performance-summary')).toContainText('Week of Oct 12:');
+    await expect(page.locator('.performance-loads tbody tr')).toHaveCount(1);
+    await expect(page.locator('.performance-week-selection')).toHaveCount(1);
+    await page.locator('.performance-week-hit[data-week-hit="2026-10-05"]').click();
+    await expect(page.locator('.performance-summary')).toContainText('Week of Oct 5:');
+    await expect(page.getByText('Showing 0 of 12 loads.')).toBeVisible();
+
+    // The legend isolates a phase and a second press restores every phase.
+    const epicIndex = page.getByRole('button', { name: 'Epic index', exact: true });
+    await epicIndex.click();
+    await expect(page.locator('.performance-week-segment.is-dimmed')).toHaveCount(9);
+    await expect(page.getByRole('button', { name: 'Focused column', exact: true })).toHaveAttribute('aria-pressed', 'false');
+    await expect(epicIndex).toHaveAttribute('aria-pressed', 'true');
+    await epicIndex.click();
+    await expect(page.locator('.performance-week-segment.is-dimmed')).toHaveCount(0);
+});
+
+test('Board loads list sorts by total, expands details and keeps the revision divider only in time order', async ({ page }) => {
+    await openBoardWeeks(page);
+    const totals = () => page.locator('.performance-loads tbody tr:not(.performance-revision-change):not(.performance-load-detail) td.num:nth-child(3)').allTextContents();
+    expect(await totals()).toEqual(['4.70s', '11.21s', '10.50s', '10.50s']);
+    await page.getByRole('button', { name: 'Total', exact: true }).click();
+    expect(await totals()).toEqual(['11.21s', '10.50s', '10.50s', '4.70s']);
+    await expect(page.locator('.performance-revision-change')).toHaveCount(0);
+    await expect(page.locator('th[aria-sort="descending"]')).toContainText('Total');
+    await page.getByRole('button', { name: 'Total', exact: true }).click();
+    expect(await totals()).toEqual(['4.70s', '10.50s', '10.50s', '11.21s']);
+
+    const toggle = page.locator('.performance-load-toggle').first();
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator('.performance-load-detail')).toContainText('peak child searches 2');
+    await expect(page.locator('.performance-load-detail')).toContainText('666 KB');
+});
+
+test('Board weekly view asks for one scope when scopes are mixed', async ({ page }) => {
+    await page.setViewportSize({ width: 1000, height: 800 });
+    await openPanel(page, { ...boardPayload, weekly: { scopeType: null, mixedScopes: true, weeks: [] } });
+    await page.getByLabel('Performance surface', { exact: true }).selectOption('eng_board');
+    await expect(page.getByRole('status')).toContainText('Choose one Scope');
+    await expect(page.locator('.performance-week-chart')).toHaveCount(0);
+});
+
+test('weekly chart labels and marks stay inside the drawing, and the page never scrolls sideways', async ({ page }) => {
+    for (const viewport of [{ width: 1000, height: 1100 }, { width: 390, height: 900 }]) {
+        await openBoardWeeks(page, viewport);
+        const clipped = await page.locator('.performance-week-svg').evaluate(svg => {
+            const box = svg.getBoundingClientRect();
+            return [...svg.querySelectorAll('text, path, rect:not(.performance-week-hit)')].map(node => ({ node: node.textContent || node.getAttribute('class'), rect: node.getBoundingClientRect() }))
+                .filter(({ rect }) => rect.left < box.left - 0.5 || rect.right > box.right + 0.5 || rect.top < box.top - 0.5 || rect.bottom > box.bottom + 0.5)
+                .map(({ node }) => node);
+        });
+        expect(clipped, `${viewport.width}px`).toEqual([]);
+        const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+        expect(overflow, `${viewport.width}px page overflow`).toBeLessThanOrEqual(0);
+        const columns = await page.locator('.performance-week-segment').evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().height));
+        expect(columns.every(height => height > 0)).toBe(true);
+    }
+});
+
+test('weekly chart readout names every phase, stays inside the viewport and above the settings layer', async ({ page }) => {
+    await openBoardWeeks(page, { width: 700, height: 900 });
+    for (const week of ['2026-10-05', '2026-10-19']) {
+        const hit = page.locator(`.performance-week-hit[data-week-hit="${week}"]`);
+        const box = await hit.boundingBox();
+        for (const [fx, fy] of [[0.1, 0.1], [0.9, 0.5], [0.95, 0.95]]) {
+            await page.mouse.move(box.x + box.width * fx, box.y + box.height * fy);
+            const bubble = page.locator('.performance-week-hover-bubble');
+            await expect(bubble).toBeVisible();
+            const rect = await bubble.boundingBox();
+            const viewport = page.viewportSize();
+            expect(rect.x, `${week} ${fx} left edge`).toBeGreaterThanOrEqual(0);
+            expect(rect.x + rect.width, `${week} ${fx} right edge`).toBeLessThanOrEqual(viewport.width);
+            expect(rect.y, `${week} ${fy} top edge`).toBeGreaterThanOrEqual(0);
+            expect(rect.y + rect.height, `${week} ${fy} bottom edge`).toBeLessThanOrEqual(viewport.height);
+            expect(rect.width, 'sized to content, not a wide fixed box').toBeLessThanOrEqual(260);
+        }
+    }
+    const bubble = page.locator('.performance-week-hover-bubble');
+    for (const text of ['Before first byte', 'Epic index', 'Focused column', 'Other columns + render', 'Median', 'Jira calls 18 · retries 0']) await expect(bubble).toContainText(text);
+    expect(await bubble.evaluate(node => ({ pointerEvents: getComputedStyle(node).pointerEvents, zIndex: Number(getComputedStyle(node).zIndex) }))).toEqual({ pointerEvents: 'none', zIndex: expect.any(Number) });
+    expect(await bubble.evaluate(node => Number(getComputedStyle(node).zIndex))).toBeGreaterThan(9100);
+    expect(await page.locator('.performance-week-chart [title], .performance-week-chart title').count()).toBe(0);
+    await page.mouse.move(2, 2);
+    await expect(bubble).toHaveCount(0);
+});
+
+test('weekly view controls hover inside their own box and move nothing', async ({ page }, testInfo) => {
+    await openBoardWeeks(page);
+    await hoverEvidence(page, page.locator('.performance-sort').first(), testInfo, 'performance-sort-header', { foundation: true });
+    await hoverEvidence(page, page.locator('.performance-week-pick').first(), testInfo, 'performance-week-pick', { foundation: true });
+    await hoverEvidence(page, page.locator('.performance-load-toggle').first(), testInfo, 'performance-load-toggle', { foundation: true });
+    const legend = page.locator('.performance-week-legend-item').first();
+    const rest = await legend.boundingBox();
+    await legend.hover();
+    expect(await legend.boundingBox()).toEqual(rest);
+    expect(await legend.evaluate(node => ({ shadow: getComputedStyle(node).boxShadow, transform: getComputedStyle(node).transform }))).toEqual({ shadow: 'none', transform: 'none' });
+});
+
+test('secondary filters sit behind a disclosure that opens itself while one is active', async ({ page }) => {
+    await page.setViewportSize({ width: 1000, height: 800 });
+    await openPanel(page, boardPayload);
+    const disclosure = page.locator('.performance-more-filters');
+    await expect(disclosure).not.toHaveAttribute('open', '');
+    await expect(page.getByLabel('Performance cache', { exact: true })).toBeHidden();
+    await disclosure.locator('summary').click();
+    await page.getByLabel('Performance cache', { exact: true }).selectOption('miss');
+    await expect(disclosure.locator('summary')).toContainText('1 active');
+    await expect(disclosure).toHaveAttribute('open', '');
+});

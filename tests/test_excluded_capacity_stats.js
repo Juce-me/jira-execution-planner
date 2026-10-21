@@ -705,3 +705,18 @@ test('getSprintQuarterLabel groups by explicit sprint quarter before date fallba
         '2026 Q1'
     );
 });
+
+test('sortSprintsNewestFirst lists unscheduled and future Sprints before archived ones without mutating the catalog', async () => {
+    const { sortSprintsNewestFirst } = await loadModule();
+    const catalog = [
+        { id: 1, name: '2025Q3', startDate: '2025-07-01' },
+        { id: 2, name: '2026Q1', startDate: '2026-01-01' },
+        { id: 3, name: '2026Q3' },
+        { id: 4, name: '2025Q4', startDate: '2025-10-01' }
+    ];
+    const before = catalog.map(sprint => sprint.id);
+
+    assert.deepEqual(sortSprintsNewestFirst(catalog).map(sprint => sprint.name), ['2026Q3', '2026Q1', '2025Q4', '2025Q3']);
+    assert.deepEqual(catalog.map(sprint => sprint.id), before);
+    assert.deepEqual(sortSprintsNewestFirst(undefined), []);
+});

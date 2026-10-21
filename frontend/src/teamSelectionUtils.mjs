@@ -68,6 +68,31 @@ export function buildTeamOptionsForScope({
     return [allTeams, ...taskTeams];
 }
 
+const teamNameOrder = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
+
+// The dropdown's view of the team options: "All Teams" first, then alphabetical. Once the Sprint's Stories and awaited Stories are
+// known (`workKnown`), a team with neither is dropped unless it is selected, so it can still be unticked. `teamOptions` itself stays
+// whole: it validates the stored selection.
+export function buildTeamDropdownOptions({
+    teamOptions = [],
+    tasks = [],
+    getTeamInfo = () => ({}),
+    readinessEpics = [],
+    workKnown = false,
+    selectedTeamIds = new Set()
+} = {}) {
+    const selected = new Set(selectedTeamIds);
+    const withWork = new Set();
+    if (workKnown) {
+        (tasks || []).forEach(task => withWork.add(String(getTeamInfo(task)?.id ?? '').trim()));
+        (readinessEpics || []).forEach(epic => (epic?.missingTeams || []).forEach(team => withWork.add(String(team?.id ?? '').trim())));
+    }
+    const teams = teamOptions
+        .filter(team => team.id !== 'all' && (!workKnown || withWork.has(String(team.id)) || selected.has(team.id)))
+        .sort((a, b) => teamNameOrder.compare(a.name, b.name));
+    return [...teamOptions.filter(team => team.id === 'all'), ...teams];
+}
+
 export function sanitizeSelectedTeamsForScope(selectedTeams, {
     activeGroupTeamIds = [],
     availableTeamIds = []

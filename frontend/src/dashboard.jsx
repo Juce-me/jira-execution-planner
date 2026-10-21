@@ -59,7 +59,7 @@ import PlanningCapacityBar from './eng/PlanningCapacityBar.jsx';
 import PlanningProjectSplitBar from './eng/PlanningProjectSplitBar.jsx';
 import PlanningTeamCapacityCards from './eng/PlanningTeamCapacityCards.jsx';
 import { ENG_TASK_LOAD_OUTCOME, useEngSprintData } from './eng/useEngSprintData.js';
-import { useStoryReadiness } from './eng/useStoryReadiness.js';
+import { storyReadinessAnswersAwaited, useStoryReadiness } from './eng/useStoryReadiness.js';
 import { storyReadinessStatusMessage, useEngWorkHierarchy } from './eng/useEngWorkHierarchy.js';
 import { strictEngBoardMutationProps, strictEngBoardViewProps, useStrictEngBoardOwner, useStrictEngBoardPresentation } from './eng/useStrictEngBoardIntegration.js';
 import { useEngStatusTransitions } from './eng/useEngStatusTransitions.js';
@@ -181,6 +181,7 @@ import {
 } from './planningSelectionState.mjs';
 import { buildTeamSelectionScopeKey, loadTeamSelectionState, reconcileTeamSelectionState, resolveTeamSelectionHydrationState, saveTeamSelectionState } from './teamSelectionPersistence.mjs';
 import {
+    buildTeamDropdownOptions,
     buildTeamOptionsForScope,
     sanitizeSelectedTeamsForScope,
     selectedTeamSelectionsEqual
@@ -3701,14 +3702,15 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 onAuthRecoveryRequired: () => trackAppError('auth', 'session_recovery', 'reauth'),
                 strictBoardActive: boardScopeRequested,
             });
+            const sprintWorkLoaded = tasksFetched
+                && !loading
+                && !productTasksLoading
+                && !techTasksLoading
+                && String(lastLoadedSprintRef.current ?? '') === String(selectedSprint ?? '');
             const storyReadiness = useStoryReadiness({
                 backendUrl: BACKEND_URL,
                 enabled: selectedView === 'eng' && (isCatchUpMode || showPlanning),
-                primaryReady: tasksFetched
-                    && !loading
-                    && !productTasksLoading
-                    && !techTasksLoading
-                    && String(lastLoadedSprintRef.current ?? '') === String(selectedSprint ?? ''),
+                primaryReady: sprintWorkLoaded,
                 groupId: activeGroupId,
                 sprintId: selectedSprint,
                 sprintName: selectedSprintInfo?.name || '',
@@ -3956,13 +3958,19 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                     getTeamInfo
                 });
             }, [capacityTasks, activeGroupTeamIds, teamNameLookup]);
+            // The dropdown alone drops a team with no Story or awaited Story in the Sprint; `teamOptions` stays whole for the stored selection.
+            const teamWorkKnown = sprintWorkLoaded && storyReadinessAnswersAwaited(storyReadiness);
             const filteredTeamOptions = React.useMemo(() => {
+                const dropdownOptions = buildTeamDropdownOptions({
+                    teamOptions, tasks: capacityTasks, getTeamInfo, readinessEpics: storyReadiness.snapshot?.epics || [],
+                    workKnown: teamWorkKnown, selectedTeamIds: selectedTeams
+                });
                 const query = teamDropdownQuery.trim().toLowerCase();
-                if (!query) return teamOptions;
-                return teamOptions.filter(team =>
+                if (!query) return dropdownOptions;
+                return dropdownOptions.filter(team =>
                     String(team?.name || '').toLowerCase().includes(query)
                 );
-            }, [teamOptions, teamDropdownQuery]);
+            }, [teamOptions, capacityTasks, storyReadiness.snapshot, teamWorkKnown, selectedTeams, teamDropdownQuery]);
             const teamNameById = React.useMemo(() => {
                 const map = new Map();
                 teamOptions.forEach(team => {
@@ -6215,7 +6223,10 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                             <span className="subtitle-main">
                                 <img src="epm-burst.svg" alt="" className="subtitle-logo" aria-hidden="true" />
                                 Jira Delivery Planner
-                                {jiraUrl && <span className="subtitle-secondary">{jiraUrl}</span>}
+                                <span className="subtitle-detail">
+                                    {jiraUrl && <span className="subtitle-secondary">{jiraUrl}</span>}
+                                    <DashboardFreshnessStatus freshness={freshness} />
+                                </span>
                             </span>
                             <div className="header-actions">
                                 <div className="header-actions-row">
@@ -6233,7 +6244,6 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                                             sourceSurface={selectedView === 'epm' ? 'epm' : (showScenario ? 'scenario' : showStats ? 'stats' : showPlanning ? 'planning' : showBoard ? 'board' : 'catch_up')}
                                         />
                                     )}
-                                    <DashboardFreshnessStatus freshness={freshness} />
                                     <IconButton
                                         variant="secondary compact"
                                         className="header-icon-button refresh-icon"

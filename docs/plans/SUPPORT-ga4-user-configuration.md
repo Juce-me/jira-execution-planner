@@ -74,6 +74,8 @@ Confirmed API-backed MCP scope:
 
 Project-specific rule: this repo intentionally uses two app-owned dataLayer trigger names, `pageview` and `userevent`. Do not convert it to a single top-level `userevent` trigger filtered by `event_type`. The latest planner skill supports that generic pattern, but this repository's root `AGENTS.md`, implementation plan, and analytics contract require the two-trigger GTM contract.
 
+Each of the two Custom Event triggers has exactly one condition: its event name (`pageview` or `userevent`). Never add a second condition on `{{DLV - trigger}}`, `{{DLV - event_type}}`, `{{Event}}`, `{{DLV - event_name}}` or any other variable. With those extra conditions the GA4 tags did not send `collect` hits on the deployed app; removing them restored collection. Before any apply or publish, read back both triggers and fail if either has more than the event-name condition.
+
 MCP publish gates:
 1. Dry-run diff reviewed by the operator.
 2. GTM quick preview or Tag Assistant validation passes.

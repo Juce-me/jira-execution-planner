@@ -161,6 +161,18 @@ test('strict framing rejects sequence, shape, UTF-8, frame and generation limits
     }
 });
 
+test('terminal diagnostics accept up to four concurrent child searches and reject a fifth', async () => {
+    const withPeak = peak => {
+        const terminal = complete();
+        terminal.diagnostics.peakChildSearches = peak;
+        return terminal;
+    };
+    const run = peak => harness(async () => streamedResponse([encoded(start()), encoded(withPeak(peak))]).response)
+        .exports.streamEngBoard({ departmentId: 'department-1', scope: 'all_work' });
+    assert.equal((await run(4)).diagnostics.peakChildSearches, 4);
+    await assert.rejects(() => run(5), error => error.code === 'invalid_frame');
+});
+
 test('frame and generation byte ceilings accept the exact bound and reject one byte over', async () => {
     const first = encoded(start());
     const terminal = encoded(complete());

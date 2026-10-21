@@ -8,6 +8,8 @@ import {
 export const ENG_BOARD_PROTOCOL_VERSION = 1;
 export const ENG_BOARD_MAX_FRAME_BYTES = 8 * 1024 * 1024;
 export const ENG_BOARD_MAX_GENERATION_BYTES = 32 * 1024 * 1024;
+// Mirrors ENG_BOARD_MAX_CHILD_SEARCHES in backend/services/eng_board_stream.py; a terminal frame reporting more is invalid.
+export const ENG_BOARD_MAX_CHILD_SEARCHES = 4;
 
 const MAX = Object.freeze({
     identity: 256, name: 512, summary: 4096, url: 2048, timestamp: 128,
@@ -165,7 +167,7 @@ function diagnostics(value, expectedCompleteness = null) {
     number(value.jiraRequests, { integer: true });
     number(value.jiraPages, { integer: true });
     number(value.jiraRetries, { integer: true });
-    number(value.peakChildSearches, { integer: true, maximum: 2 });
+    number(value.peakChildSearches, { integer: true, maximum: ENG_BOARD_MAX_CHILD_SEARCHES });
     oneOf(value.cacheState, ['hit', 'miss', 'mixed', 'unknown']);
     oneOf(value.completeness, ['complete', 'partial']);
     if (expectedCompleteness && value.completeness !== expectedCompleteness) fail();

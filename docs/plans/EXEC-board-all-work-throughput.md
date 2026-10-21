@@ -25,6 +25,22 @@ Three facts constrain every option below.
 2. **Page size is not a lever.** `/rest/api/3/search/jql` returned exactly 100 rows for `maxResults` of 100, 500, 1,000, and 5,000, for both the two-field discovery scan and the full child projection. 100 rows per round trip is a hard ceiling.
 3. **There is no server-side Board cache.** `cacheState` is a literal `'miss'` in [`_diagnostics`](../../backend/routes/eng_board_routes.py). Every Board request re-reads the department from Jira.
 
+## Execution record: pre-header capture and child concurrency (2026-10-21)
+
+A browser profile and the in-app load report of one Component load (`scope=component`, 165 Epics, 449 work items, 682,270 bytes, 18 Jira requests, 11 search pages, 0 retries) showed 11.2 s end to end with the main thread about 92% idle: 5.6 s before the first byte, 1.80 s of Epic index, and 3.5 s more for the remaining columns. Every Jira call, a tiny issue-type read included, cost about 0.8 s, so the load is a chain of roughly 13 serial round trips, not payload or app computation.
+
+The baselines above start at `_frame_stream` and leave out the capture phase before it. For this load that phase was half the total: five serial `project/search` pages (a scan of the whole accessible catalog to check three configured projects), then `issuetype`, then `field`.
+
+Changed, ahead of the slices below:
+
+- `_capture_shape` reads the project access check, `issuetype` and `field` concurrently (`_run_catalog_reads`), raising the first failure in the old order. The context-free Basic adapter stays serial.
+- The access check asks `project/search` only for the configured keys (`keys` filter, at most 50 per request), one request for a normal Department instead of one per 100 projects. Jira omits projects the user cannot browse, so the denial rule is unchanged. Not yet confirmed against live Jira: the first load after deploy must still return 200 for an accessible Department and 403 for a foreign key.
+- `ENG_BOARD_MAX_CHILD_SEARCHES` is four, mirrored in `frontend/src/api/engBoardApi.js` and `backend/services/load_performance.py`. The frontend frame validator rejects a larger `peakChildSearches`, so a browser tab holding an older bundle shows `invalid_frame` on its next Board load until reloaded. Four stays inside a user's share of Jira's rate limits; watch `Jira retries` in Settings -> Performance and drop the constant to three if retries appear.
+
+Synthetic model of the measured load (`tmp/perf-profile/bench_board_load.py`, a fixed 0.8 s per fake Jira call, not live data): 11.25 s before, 4.82 s after (first byte 5.63 -> 0.81 s, children 4.02 -> 2.41 s). The live result comes from the load report after deploy.
+
+Not done: the caching contract (Slice 3), per-page authority checks, sharded team discovery, and the POST transport remain as written.
+
 ## Slice 1 — POST search transport
 
 GET forces `MAX_ENCODED_REQUEST_BYTES`, and that single constant is what dictates `MAX_BATCH_SIZE = 40`, the Component batch splitter, the Epic key batch splitter, and the `paged_search_bytes` token estimate. Every one of those is a workaround for a URL length limit that POST does not have.

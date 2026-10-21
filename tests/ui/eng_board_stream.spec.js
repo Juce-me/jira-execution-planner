@@ -249,7 +249,8 @@ test('deployment-equivalent concurrent streams meet synthetic timing and work ce
     expect(timing.maxFirstContentMs).toBeLessThan(2000);
     expect(timing.fullCompletionP95Ms).toBeLessThanOrEqual(4000);
     for (const sample of samples) {
-        expect(sample.diagnostics.peakChildSearches).toBe(2);
+        // Three column searches, all admitted: the limit is four.
+        expect(sample.diagnostics.peakChildSearches).toBe(3);
         expect(sample.diagnostics.jiraRequests).toBe(3);
         expect(sample.diagnostics.jiraPages).toBe(3);
         expect(sample.diagnostics.completeness).toBe('complete');

@@ -18,7 +18,10 @@ from backend.jira_client import JiraCircuitBreaker
 ENG_BOARD_PROTOCOL_VERSION = 1
 ENG_BOARD_MAX_FRAME_BYTES = 8 * 1024 * 1024
 ENG_BOARD_MAX_GENERATION_BYTES = 32 * 1024 * 1024
-ENG_BOARD_MAX_CHILD_SEARCHES = 2
+# Child searches in flight per Board request. A measured load is a chain of roughly 0.8 s Jira round trips and the
+# columns hydrate independently, so each worker takes a column's pages off that chain. Four keeps one Board load
+# well inside a user's share of Jira's rate limits; Jira retries and 429s surface as `jiraRetries` in the load report.
+ENG_BOARD_MAX_CHILD_SEARCHES = 4
 ENG_BOARD_REQUEST_BUDGET_SECONDS = 30.0
 ENG_BOARD_JIRA_CONNECT_TIMEOUT_SECONDS = 5.0
 ENG_BOARD_JIRA_READ_TIMEOUT_SECONDS = 30.0
@@ -149,7 +152,7 @@ class EngBoardChildScheduler:
     def __init__(self, searches, *, budget=None,
                  max_concurrency=ENG_BOARD_MAX_CHILD_SEARCHES):
         if max_concurrency != ENG_BOARD_MAX_CHILD_SEARCHES:
-            raise ValueError('ENG Board child concurrency must be exactly two')
+            raise ValueError(f'ENG Board child concurrency must be exactly {ENG_BOARD_MAX_CHILD_SEARCHES}')
         self.budget = budget or EngBoardRequestBudget.start()
         self._pending = iter(searches)
         self._pool = ThreadPoolExecutor(
@@ -395,7 +398,7 @@ def _diagnostics(value, expected_completeness=None):
     _number(value['durationMs'])
     for key in ('jiraRequests', 'jiraPages', 'jiraRetries'):
         _number(value[key], integer=True)
-    _number(value['peakChildSearches'], integer=True, maximum=2)
+    _number(value['peakChildSearches'], integer=True, maximum=ENG_BOARD_MAX_CHILD_SEARCHES)
     _one_of(value['cacheState'], ('hit', 'miss', 'mixed', 'unknown'))
     _one_of(value['completeness'], ('complete', 'partial'))
     if expected_completeness and value['completeness'] != expected_completeness:

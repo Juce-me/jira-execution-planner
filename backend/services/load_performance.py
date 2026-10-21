@@ -14,6 +14,9 @@ from backend.db.models import LoadPerformance
 
 RETENTION_DAYS = 30
 QUERY_LIMIT = 10000
+# eng_board_stream imports this module through jira_client, so the Board search limit is mirrored here and
+# tests/test_load_performance.py pins the two together.
+MAX_PEAK_CHILD_SEARCHES = 4
 STAGES = frozenset({'cache', 'collect', 'total', 'jira-search', 'normalize-tasks',
                     'epic-enrichment', 'epic-counts-distribution', 'build-response',
                     'parse-params', 'auth-headers', 'epic-details', 'epic-counts',
@@ -84,7 +87,7 @@ def _validate_board_load(payload):
     _optional_number(payload, 'payloadBytes', 1000000000, integer=True)
     for key in ('jiraRequests', 'jiraPages', 'jiraRetries'):
         _optional_number(payload, key, 100000, integer=True)
-    _optional_number(payload, 'peakChildSearches', 2, integer=True)
+    _optional_number(payload, 'peakChildSearches', MAX_PEAK_CHILD_SEARCHES, integer=True)
     if payload['completeness'] not in ('complete', 'partial'):
         raise ValueError('Invalid Board completeness')
     if payload['cacheState'] not in ('hit', 'miss', 'mixed', 'unknown'):

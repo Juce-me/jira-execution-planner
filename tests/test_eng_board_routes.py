@@ -89,6 +89,15 @@ def board_snapshot(**overrides):
     return eng_board_routes.BoardSnapshot(**values)
 
 
+def catalog_json_by_path():
+    """Answer `_jira_json` by path: the catalog reads run side by side, so their call order is not fixed."""
+    answers = {
+        '/rest/api/3/issuetype': [{'id': '10001', 'name': 'Story', 'hierarchyLevel': 0, 'subtask': False}],
+        '/rest/api/3/field': [],
+    }
+    return lambda _server, path, *_args, **_kwargs: answers[path]
+
+
 def epic(key, status):
     return {
         'key': key,
@@ -366,6 +375,105 @@ class EngBoardRouteContractTests(unittest.TestCase):
 
         self.assertEqual('board_permission_denied', raised.exception.code)
         self.assertEqual(403, raised.exception.status)
+
+    def test_project_access_check_asks_jira_only_for_the_configured_keys(self):
+        server = SimpleNamespace(current_jira_get=Mock(return_value=FakeResponse({
+            'values': [{'key': 'ABC'}, {'key': 'XYZ'}], 'isLast': True,
+        })))
+        dashboard = {'projects': {'selected': [
+            {'key': 'ABC', 'type': 'product'}, {'key': 'XYZ', 'type': 'tech'},
+        ]}}
+
+        projects = eng_board_routes._resolve_projects(
+            server, dashboard, db_context(), EngBoardRequestTransport(),
+        )
+
+        self.assertEqual((('ABC', 'product'), ('XYZ', 'tech')), projects)
+        self.assertEqual(1, server.current_jira_get.call_count)
+        self.assertEqual(
+            ['ABC', 'XYZ'], server.current_jira_get.call_args.kwargs['params']['keys'],
+        )
+
+    def test_project_access_check_splits_more_than_fifty_keys_across_requests(self):
+        keys = [f'P{index}' for index in range(120)]
+        seen = []
+
+        def metadata(_path, **kwargs):
+            requested = kwargs['params']['keys']
+            seen.append(list(requested))
+            return FakeResponse({'values': [{'key': key} for key in requested], 'isLast': True})
+
+        server = SimpleNamespace(current_jira_get=Mock(side_effect=metadata))
+        dashboard = {'projects': {'selected': [{'key': key, 'type': 'product'} for key in keys]}}
+
+        projects = eng_board_routes._resolve_projects(
+            server, dashboard, db_context(), EngBoardRequestTransport(),
+        )
+
+        self.assertEqual(keys, [key for key, _kind in projects])
+        self.assertEqual([50, 50, 20], [len(chunk) for chunk in seen])
+        self.assertEqual(keys, [key for chunk in seen for key in chunk])
+
+    def test_capture_shape_reads_the_catalogs_concurrently(self):
+        # Each call waits for the other two: a serial capture never gets all three in flight and the barrier breaks.
+        in_flight = threading.Barrier(3, timeout=2)
+        paths = []
+
+        def metadata(path, **_kwargs):
+            paths.append(path)
+            in_flight.wait()
+            if path == '/rest/api/3/project/search':
+                return FakeResponse({'values': [{'key': 'ABC'}], 'isLast': True})
+            if path == '/rest/api/3/issuetype':
+                return FakeResponse([
+                    {'id': '10001', 'name': 'Story', 'hierarchyLevel': 0, 'subtask': False},
+                ])
+            return FakeResponse([])
+
+        group = {'id': 'department-a', 'missingInfoComponents': ['Component A'], 'board': {
+            'columns': [
+                {'id': 'col-11111111', 'name': 'To do', 'statuses': ['To Do'], 'colour': '#597ef7'},
+                {'id': 'col-22222222', 'name': 'Done', 'statuses': ['Done'], 'colour': '#52c41a'},
+            ], 'doneEpicRetentionDays': 28,
+        }}
+        server = SimpleNamespace(current_jira_get=Mock(side_effect=metadata))
+
+        shape = eng_board_routes._capture_shape(
+            server, board_query(scope='component', focused_column_id=None), EngBoardRequestTransport(),
+            {'projects': {'selected': [{'key': 'ABC', 'type': 'product'}]}}, group, group,
+            context=db_context(),
+        )
+
+        self.assertCountEqual(
+            ['/rest/api/3/project/search', '/rest/api/3/issuetype', '/rest/api/3/field'], paths,
+        )
+        self.assertEqual((('ABC', 'product'),), shape['projects'])
+        self.assertEqual(('10001',), tuple(shape['issueTypeIds']))
+
+    def test_capture_shape_reports_the_first_failing_catalog_in_serial_order(self):
+        def metadata(path, **_kwargs):
+            if path == '/rest/api/3/project/search':
+                return FakeResponse({'values': [{'key': 'OTHER'}], 'isLast': True})
+            if path == '/rest/api/3/issuetype':
+                return FakeResponse([], status_code=503)
+            return FakeResponse([], status_code=503)
+
+        group = {'id': 'department-a', 'missingInfoComponents': ['Component A'], 'board': {
+            'columns': [
+                {'id': 'col-11111111', 'name': 'To do', 'statuses': ['To Do'], 'colour': '#597ef7'},
+                {'id': 'col-22222222', 'name': 'Done', 'statuses': ['Done'], 'colour': '#52c41a'},
+            ], 'doneEpicRetentionDays': 28,
+        }}
+        server = SimpleNamespace(current_jira_get=Mock(side_effect=metadata))
+
+        with self.assertRaises(eng_board_routes.BoardRouteError) as raised:
+            eng_board_routes._capture_shape(
+                server, board_query(scope='component', focused_column_id=None), EngBoardRequestTransport(),
+                {'projects': {'selected': [{'key': 'ABC', 'type': 'product'}]}}, group, group,
+                context=db_context(),
+            )
+
+        self.assertEqual('board_permission_denied', raised.exception.code)
 
     def _request_with_real_project_resolution(self, scope, dashboard, *, accessible=('ABC',),
                                               saved_board=None):
@@ -669,10 +777,7 @@ class EngBoardRouteContractTests(unittest.TestCase):
             with patch.object(eng_board_routes, '_load_authority', return_value=load_result), patch.object(
                 eng_board_routes, '_resolve_projects', return_value=(('ABC', 'product'),),
             ), patch.object(
-                eng_board_routes, '_jira_json', side_effect=(
-                    [{'id': '10001', 'name': 'Story', 'hierarchyLevel': 0, 'subtask': False}],
-                    [],
-                ),
+                eng_board_routes, '_jira_json', side_effect=catalog_json_by_path(),
             ):
                 boards.append(eng_board_routes._capture_snapshot(
                     server, query, EngBoardRequestTransport(), b'test-secret',
@@ -705,10 +810,7 @@ class EngBoardRouteContractTests(unittest.TestCase):
         with patch.object(eng_board_routes, '_load_authority', return_value=load_result), patch.object(
             eng_board_routes, '_resolve_projects', return_value=(('ABC', 'product'),),
         ), patch.object(
-            eng_board_routes, '_jira_json', side_effect=(
-                [{'id': '10001', 'name': 'Story', 'hierarchyLevel': 0, 'subtask': False}],
-                [],
-            ),
+            eng_board_routes, '_jira_json', side_effect=catalog_json_by_path(),
         ):
             snapshot = eng_board_routes._capture_snapshot(
                 server, query, EngBoardRequestTransport(), b'test-secret',
@@ -726,10 +828,7 @@ class EngBoardRouteContractTests(unittest.TestCase):
         with patch.object(eng_board_routes, '_load_authority', return_value=load_result), patch.object(
             eng_board_routes, '_resolve_projects', return_value=(('ABC', 'product'),),
         ), patch.object(
-            eng_board_routes, '_jira_json', side_effect=(
-                [{'id': '10001', 'name': 'Story', 'hierarchyLevel': 0, 'subtask': False}],
-                [],
-            ),
+            eng_board_routes, '_jira_json', side_effect=catalog_json_by_path(),
         ):
             with self.assertRaises(eng_board_routes.BoardRouteError) as raised:
                 eng_board_routes._capture_snapshot(

@@ -322,10 +322,19 @@ class LoadPerformanceTests(unittest.TestCase):
         self.assertEqual(1, unscoped['summary']['sampleCount'])
         self.assertEqual('miss', unscoped['samples'][0]['cacheState'])
 
+    def test_peak_child_search_bound_matches_the_board_scheduler_limit(self):
+        from backend.services.eng_board_stream import ENG_BOARD_MAX_CHILD_SEARCHES
+        self.assertEqual(ENG_BOARD_MAX_CHILD_SEARCHES, performance.MAX_PEAK_CHILD_SEARCHES)
+
+    def test_board_schema_accepts_the_four_child_search_peak(self):
+        payload = board_observation()
+        payload['peakChildSearches'] = 4
+        self.assertEqual(4, performance.validate_load(payload)['peakChildSearches'])
+
     def test_board_schema_rejects_incomplete_success_and_unbounded_diagnostics(self):
         for key, value in (
             ('sprintId', 'fabricated'), ('scopeCohortDigest', 'not-a-digest'),
-            ('peakChildSearches', 3), ('cacheState', 'unknown'),
+            ('peakChildSearches', 5), ('cacheState', 'unknown'),
             ('focusedCompleteMs', 1001),
         ):
             payload = board_observation()

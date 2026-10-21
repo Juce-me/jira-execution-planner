@@ -5858,6 +5858,7 @@ for (const connected of [false, true]) test(`Task9 freshness reserved copy prese
             buttons: [...row.querySelectorAll('.header-icon-button')].map(node => { const box=node.getBoundingClientRect();return {width:box.width,height:box.height}; }),
             slotHeight: header.querySelector('.dashboard-freshness-slot').getBoundingClientRect().height, slotInTitle: header.querySelector('.subtitle-main').contains(header.querySelector('.dashboard-freshness-slot')), besideUrl: (() => { const url = header.querySelector('.subtitle-secondary')?.getBoundingClientRect(), shown = status?.getBoundingClientRect(); return url && shown ? { gap: shown.left - url.right, overlap: Math.min(shown.bottom, url.bottom) - Math.max(shown.top, url.top), below: shown.top - url.bottom } : null; })(), controlsBounds: [...header.querySelectorAll('.search-input,.header-icon-button,.view-mode-control,[data-dashboard-freshness-status]')].map(node => {const r=node.getBoundingClientRect();return {left:r.left,right:r.right};}),
             status: status ? { scroll:status.scrollWidth,client:status.clientWidth,whiteSpace:getComputedStyle(status).whiteSpace,minWidth:getComputedStyle(status).minWidth,height:status.getBoundingClientRect().height } : null,
+            blocks: (() => { const box = selector => { const r = header.querySelector(selector).getBoundingClientRect(); return { top: r.top, bottom: r.bottom, right: r.right, height: r.height }; }; return { main: box('.subtitle-main'), logo: box('.subtitle-logo'), url: box('.subtitle-secondary'), slot: box('.dashboard-freshness-slot'), rowLeft: row.getBoundingClientRect().left }; })(),
             documentScroll, viewport: document.documentElement.clientWidth };
     });
     const before = {};
@@ -5903,6 +5904,11 @@ for (const connected of [false, true]) test(`Task9 freshness reserved copy prese
             const height = await status.evaluate((node, text) => { const previous=node.textContent; node.textContent=text; const height=node.closest('.subtitle').getBoundingClientRect().height; node.textContent=previous; return height; }, copy);
             expect.soft(height).toBe(after.headerHeight);
         }
+        const { main, logo, url, slot, rowLeft } = after.blocks;
+        expect.soft(logo.height, `${key}: the logo is the large mark`).toBeGreaterThanOrEqual(32);
+        expect.soft(logo.top < slot.top && logo.bottom > slot.top, `${key}: the logo spans the title and readout rows`).toBe(true);
+        expect.soft(url.bottom, `${key}: the URL sits above the readout, never beside it`).toBeLessThanOrEqual(slot.top);
+        if (rowLeft >= main.right) expect.soft(main.height, `${key}: beside the controls the title block is no taller than they are`).toBeLessThanOrEqual(after.rowHeight);
         expect.soft(after.documentScroll).toBeLessThanOrEqual(after.viewport);
         await expect(page.locator('.refresh-icon + .group-gear-button')).toHaveCount(1);
         await expect(page.locator('.compact-sticky-header [data-dashboard-freshness-status], .compact-sticky-header .refresh-icon')).toHaveCount(0);

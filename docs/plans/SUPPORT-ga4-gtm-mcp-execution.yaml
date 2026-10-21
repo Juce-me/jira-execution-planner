@@ -105,8 +105,8 @@ gtm_web:
     - "Event"
 
   data_layer_variables:
-    - { name: "DLV - trigger", data_layer_variable_name: "trigger", version: 2, purpose: "trigger audit/filter" }
-    - { name: "DLV - event_type", data_layer_variable_name: "event_type", version: 2, purpose: "trigger filter" }
+    - { name: "DLV - trigger", data_layer_variable_name: "trigger", version: 2, purpose: "audit only; never a trigger condition" }
+    - { name: "DLV - event_type", data_layer_variable_name: "event_type", version: 2, purpose: "audit only; never a trigger condition" }
     - { name: "DLV - event_name", data_layer_variable_name: "event_name", version: 2, purpose: "GA4 event name source" }
     - { name: "DLV - ga4_user_id", data_layer_variable_name: "ga4_user_id", version: 2, purpose: "GA4 User-ID mapping only" }
     - { name: "DLV - debug_mode", data_layer_variable_name: "debug_mode", version: 2, purpose: "debug-mode transport flag only" }
@@ -189,18 +189,15 @@ gtm_web:
     - { name: "DLV - workflow_action", data_layer_variable_name: "workflow_action", version: 2, purpose: "approved event parameter" }
 
   triggers:
+    # Each trigger has exactly one condition: the Custom Event name. Never add `filters`
+    # (for example on DLV - trigger or DLV - event_type): extra conditions stopped the
+    # GA4 tags from sending collect hits on the deployed app.
     - name: "CE - pageview"
       type: "custom_event"
       event_name: "pageview"
-      filters:
-        - { variable: "DLV - trigger", operator: "equals", value: "pageview" }
-        - { variable: "DLV - event_type", operator: "equals", value: "pageview" }
     - name: "CE - userevent"
       type: "custom_event"
       event_name: "userevent"
-      filters:
-        - { variable: "DLV - trigger", operator: "equals", value: "userevent" }
-        - { variable: "DLV - event_type", operator: "equals", value: "event" }
 
   # Validator-compatible static core only. Full sparse native completion is in
   # SUPPORT-ga4-user-configuration.md and scripts/print_analytics_gtm_mappings.mjs.
@@ -305,6 +302,7 @@ validation:
     - "only_data_layer_events_pageview_and_userevent"
     - "normal_product_events_use_reusable_userevent_path"
     - "no_per_event_gtm_tag_or_trigger_explosion"
+    - "custom_event_triggers_have_event_name_condition_only"
     - "event_name_used_as_ga4_event_name_not_parameter"
     - "ga4_user_id_mapped_only_to_user_id_in_manual_google_tag_setup"
     - "each_ga4_hit_has_at_most_25_event_parameters"

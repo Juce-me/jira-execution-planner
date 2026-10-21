@@ -75,13 +75,17 @@ class PrototypeSearches:
             self.condition.notify_all()
 
 
+# More columns than the child-search limit, so the limit and not the column count decides how many searches run.
+PROTOTYPE_COLUMNS = ('todo', 'doing', 'done', 'review', 'qa', 'blocked')
+
+
 def create_prototype_app(searches, *, now_fn=time.monotonic, budget_seconds=30):
     app = Flask(__name__)
 
     @app.get('/api/eng/board')
     def stream():
         focused = request.args.get('focusedColumnId') or 'todo'
-        columns = [focused] + [value for value in ('todo', 'doing', 'done') if value != focused]
+        columns = [focused] + [value for value in PROTOTYPE_COLUMNS if value != focused]
 
         def frames():
             writer = EngBoardStreamWriter()
@@ -400,6 +404,22 @@ class EngBoardStreamWriterTests(unittest.TestCase):
 
 
 class EngBoardPrototypeTests(unittest.TestCase):
+    def test_diagnostics_peak_child_searches_is_bounded_by_the_search_limit(self):
+        def writer_after_start():
+            writer = EngBoardStreamWriter()
+            writer.write(start_frame())
+            return writer
+
+        at_limit = complete_frame(diagnostics={
+            **diagnostics(), 'peakChildSearches': ENG_BOARD_MAX_CHILD_SEARCHES,
+        })
+        self.assertTrue(writer_after_start().prepare(at_limit))
+        beyond = complete_frame(diagnostics={
+            **diagnostics(), 'peakChildSearches': ENG_BOARD_MAX_CHILD_SEARCHES + 1,
+        })
+        with self.assertRaises(EngBoardFrameError):
+            writer_after_start().prepare(beyond)
+
     def test_core_workload_ceilings_accept_exact_bound_and_reject_or_split_next(self):
         for limit in (eng_board.MAX_EPICS, eng_board.MAX_CHILDREN):
             with self.subTest(limit=limit):
@@ -549,28 +569,37 @@ class EngBoardPrototypeTests(unittest.TestCase):
         self.assertEqual(['focused', 'next'], list(scheduler.results()))
         budget.check()
 
-    def test_one_get_runs_two_searches_and_retirement_admits_no_third(self):
+    def test_child_search_limit_is_exactly_four(self):
+        self.assertEqual(4, ENG_BOARD_MAX_CHILD_SEARCHES)
+        for other in (1, 2, 3, 5):
+            with self.subTest(other=other), self.assertRaises(ValueError):
+                EngBoardChildScheduler([lambda _timeout: None], max_concurrency=other)
+
+    def test_one_get_runs_four_searches_and_retirement_admits_no_fifth(self):
         searches = PrototypeSearches()
         app = create_prototype_app(searches)
 
         response = app.test_client().get(
             '/api/eng/board?focusedColumnId=doing', buffered=False,
         )
-        iterator = iter(response.response)
-        self.assertEqual('start', __import__('json').loads(next(iterator))['type'])
-        self.assertTrue(searches.wait_started(2))
-        self.assertCountEqual(['doing', 'todo'], searches.started)
-        self.assertEqual(ENG_BOARD_MAX_CHILD_SEARCHES, searches.peak)
+        try:
+            iterator = iter(response.response)
+            self.assertEqual('start', __import__('json').loads(next(iterator))['type'])
+            self.assertTrue(searches.wait_started(4))
+            self.assertCountEqual(['doing', 'todo', 'done', 'review'], searches.started)
+            self.assertEqual(ENG_BOARD_MAX_CHILD_SEARCHES, searches.peak)
 
-        searches.release('doing')
-        self.assertEqual('doing', __import__('json').loads(next(iterator))['columnId'])
-        response.close()
-        searches.release('todo', 'done')
+            searches.release('doing')
+            self.assertEqual('doing', __import__('json').loads(next(iterator))['columnId'])
+            response.close()
+        finally:
+            # A failed assertion must not leave a held search spinning: its non-daemon thread would hang the interpreter.
+            searches.release(*PROTOTYPE_COLUMNS)
 
         deadline = time.monotonic() + 1
         while searches.running and time.monotonic() < deadline:
             time.sleep(0.01)
-        self.assertCountEqual(['doing', 'todo'], searches.started)
+        self.assertCountEqual(['doing', 'todo', 'done', 'review'], searches.started)
         self.assertEqual(0, searches.running)
 
     def test_budget_uses_bounded_jira_timeout_and_deadline_is_sanitized(self):
@@ -581,20 +610,20 @@ class EngBoardPrototypeTests(unittest.TestCase):
         try:
             iterator = iter(response.response)
             next(iterator)
-            self.assertTrue(searches.wait_started(2))
-            self.assertEqual([(5.0, 30.0), (5.0, 30.0)], searches.timeouts)
+            self.assertTrue(searches.wait_started(4))
+            self.assertEqual([(5.0, 30.0)] * 4, searches.timeouts)
 
             now[0] = 30.0
             error = __import__('json').loads(next(iterator))
             self.assertEqual('error', error['type'])
             self.assertEqual('deadline_exceeded', error['code'])
             self.assertEqual('partial', error['diagnostics']['completeness'])
-            self.assertEqual(2, error['diagnostics']['peakChildSearches'])
-            self.assertEqual(2, error['diagnostics']['jiraRequests'])
-            self.assertEqual(2, error['diagnostics']['jiraPages'])
+            self.assertEqual(4, error['diagnostics']['peakChildSearches'])
+            self.assertEqual(4, error['diagnostics']['jiraRequests'])
+            self.assertEqual(4, error['diagnostics']['jiraPages'])
         finally:
             response.close()
-            searches.release('todo', 'doing', 'done')
+            searches.release(*PROTOTYPE_COLUMNS)
 
         budget = EngBoardRequestBudget.start(30, now_fn=lambda: now[0])
         now[0] = 59.999

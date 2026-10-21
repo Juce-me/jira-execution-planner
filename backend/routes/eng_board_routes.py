@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 import json
 import logging
@@ -31,6 +32,7 @@ LOGGER = logging.getLogger(__name__)
 _QUERY_KEYS = {'departmentId', 'scope', 'sprintId', 'focusedColumnId', 'refresh'}
 _PROJECT_CATALOG_PAGE_SIZE = 100
 _PROJECT_CATALOG_MAX_PAGES = 101
+_PROJECT_KEYS_PER_REQUEST = 50  # Jira's documented ceiling for the project search `keys` filter
 _CANDIDATE_INDEX_BYTES = 8 * 1024 * 1024
 _TERMINAL_RESERVE_BYTES = 1024
 _MAX_ROUTE_SEQUENCE = (
@@ -180,36 +182,50 @@ def _jira_json(server, path, context, transport, *, params=None, phase='catalog'
         raise BoardJiraUnavailable('jira_unavailable') from None
 
 
-def _accessible_project_catalog(server, context, transport):
-    keys = set()
-    start_at = 0
-    for _page in range(_PROJECT_CATALOG_MAX_PAGES):
-        # Project search is offset-paged; only enhanced issue search uses tokens.
-        params = {'maxResults': _PROJECT_CATALOG_PAGE_SIZE, 'orderBy': 'key', 'startAt': start_at}
-        body = _jira_json(
-            server, '/rest/api/3/project/search', context, transport,
-            params=params,
-        )
-        if not isinstance(body, dict) or not isinstance(body.get('values'), list) or not isinstance(body.get('isLast'), bool):
-            raise BoardRouteError('board_config_invalid', 409)
-        values = body['values']
-        if body.get('startAt', start_at) != start_at:
-            raise BoardRouteError('board_config_invalid', 409)
-        if len(values) > _PROJECT_CATALOG_PAGE_SIZE:
-            raise BoardRouteError('board_config_invalid', 409)
-        for row in values:
-            if not isinstance(row, dict) or not str(row.get('key') or '').strip():
+def _accessible_project_catalog(server, context, transport, keys=None):
+    """Return the accessible project keys, or only those of ``keys`` when given.
+
+    Jira omits projects the user cannot browse from a filtered search, so asking for just the configured
+    keys answers the same question as scanning the whole catalog, in one request instead of one per 100 projects.
+    """
+    found = set()
+    chunks = [None] if keys is None else [
+        tuple(keys[start:start + _PROJECT_KEYS_PER_REQUEST])
+        for start in range(0, len(keys), _PROJECT_KEYS_PER_REQUEST)
+    ]
+    for chunk in chunks:
+        start_at = 0
+        for _page in range(_PROJECT_CATALOG_MAX_PAGES):
+            # Project search is offset-paged; only enhanced issue search uses tokens.
+            params = {'maxResults': _PROJECT_CATALOG_PAGE_SIZE, 'orderBy': 'key', 'startAt': start_at}
+            if chunk is not None:
+                params['keys'] = list(chunk)
+            body = _jira_json(
+                server, '/rest/api/3/project/search', context, transport,
+                params=params,
+            )
+            if not isinstance(body, dict) or not isinstance(body.get('values'), list) or not isinstance(body.get('isLast'), bool):
                 raise BoardRouteError('board_config_invalid', 409)
-            key = str(row['key']).strip().upper()
-            if key in keys:
+            values = body['values']
+            if body.get('startAt', start_at) != start_at:
                 raise BoardRouteError('board_config_invalid', 409)
-            keys.add(key)
-        if body['isLast']:
-            return keys
-        if not values:
-            raise BoardRouteError('board_config_invalid', 409)
-        start_at += len(values)
-    raise BoardRouteError('board_scope_too_large', 422)
+            if len(values) > _PROJECT_CATALOG_PAGE_SIZE:
+                raise BoardRouteError('board_config_invalid', 409)
+            for row in values:
+                if not isinstance(row, dict) or not str(row.get('key') or '').strip():
+                    raise BoardRouteError('board_config_invalid', 409)
+                key = str(row['key']).strip().upper()
+                if key in found:
+                    raise BoardRouteError('board_config_invalid', 409)
+                found.add(key)
+            if body['isLast']:
+                break
+            if not values:
+                raise BoardRouteError('board_config_invalid', 409)
+            start_at += len(values)
+        else:
+            raise BoardRouteError('board_scope_too_large', 422)
+    return found
 
 
 def _load_authority(context, query):
@@ -318,10 +334,24 @@ def _resolve_projects(server, dashboard_payload, context, transport):
             board_data = _jira_json(server, f'/rest/agile/1.0/board/{board_id}', context, transport)
             fallback = str((board_data.get('location') or {}).get('projectKey') or '').strip()
     projects = eng_board.normalize_projects(selected, saved_board_project_key=fallback)
-    accessible = _accessible_project_catalog(server, context, transport)
+    accessible = _accessible_project_catalog(
+        server, context, transport, keys=[key for key, _kind in projects],
+    )
     if any(key not in accessible for key, _kind in projects):
         raise BoardRouteError('board_permission_denied', 403)
     return projects
+
+
+def _run_catalog_reads(reads, *, concurrent):
+    """Run independent catalog reads side by side; a failure is raised in the order the reads were given.
+
+    Only a captured auth context lets a worker thread call Jira, so the context-free Basic adapter stays serial.
+    """
+    if not concurrent:
+        return [read() for read in reads]
+    with ThreadPoolExecutor(max_workers=len(reads), thread_name_prefix='eng-board-catalog') as pool:
+        futures = [pool.submit(read) for read in reads]
+    return [future.result() for future in futures]
 
 
 def _capture_shape(server, query, transport, dashboard, group, raw_group, *, context):
@@ -340,9 +370,11 @@ def _capture_shape(server, query, transport, dashboard, group, raw_group, *, con
     teams = _configured_teams(group)
     if query.scope == 'sprint' and not validated['components'] and not teams:
         raise BoardRouteError('board_team_scope_required', 409)
-    projects = _resolve_projects(server, dashboard, context, transport)
-    issue_types = _jira_json(server, '/rest/api/3/issuetype', context, transport)
-    fields = _jira_json(server, '/rest/api/3/field', context, transport)
+    projects, issue_types, fields = _run_catalog_reads((
+        lambda: _resolve_projects(server, dashboard, context, transport),
+        lambda: _jira_json(server, '/rest/api/3/issuetype', context, transport),
+        lambda: _jira_json(server, '/rest/api/3/field', context, transport),
+    ), concurrent=context is not None)
     issue_type_ids = eng_board.resolve_issue_type_ids(
         issue_types, dashboard.get('issueTypes'), key_present='issueTypes' in dashboard,
     )

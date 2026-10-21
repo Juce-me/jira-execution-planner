@@ -2055,7 +2055,7 @@ for (const width of [375, 1280]) test(`the hint row keeps one line with a 24px d
         const row = node.getBoundingClientRect(), text = node.querySelector('p'), range = document.createRange(); range.selectNodeContents(text);
         const ink = range.getBoundingClientRect(), button = node.querySelector('button').getBoundingClientRect(), region = node.closest('.planning-review-region').getBoundingClientRect();
         return { rowHeight: Math.round(row.height), lines: new Set([...range.getClientRects()].map(rect => Math.round(rect.top))).size, textClipped: text.scrollWidth - text.clientWidth, textBeforeButton: ink.right <= button.left, button: [button.width, button.height],
-            centred: Math.abs((button.top + button.height / 2) - (ink.top + ink.height / 2)) < 1.5, inside: row.left >= region.left - 0.5 && row.right <= region.right + 0.5 && button.right <= innerWidth, pageOverflow: document.documentElement.scrollWidth - innerWidth };
+            centred: Math.abs((button.top + button.height / 2) - (ink.top + ink.height / 2)) < 1.5, inside: row.left >= region.left - 0.5 && row.right <= region.right + 0.5 && button.right <= innerWidth, pageOverflow: document.documentElement.scrollWidth - document.documentElement.getBoundingClientRect().width };
     });
     const rest = await geometry();
     expect(rest).toEqual({ rowHeight: 24, lines: 1, textClipped: 0, textBeforeButton: true, button: [24, 24], centred: true, inside: true, pageOverflow: 0 });

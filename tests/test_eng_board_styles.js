@@ -27,6 +27,7 @@ test('Board card activation delegates hover to the card wrapper and retains keyb
 const JS_WRITTEN_CUSTOM_PROPERTIES = {
     '--board-column-accent': 'frontend/src/eng/EngBoardView.jsx',
     '--board-scrollbar-width': 'frontend/src/eng/EngBoardView.jsx',
+    '--board-gutter-width': 'frontend/src/eng/EngBoardView.jsx',
     '--board-chrome-left': 'frontend/src/eng/EngBoardView.jsx',
     '--board-chrome-width': 'frontend/src/eng/EngBoardView.jsx',
     '--board-chrome-space': 'frontend/src/eng/EngBoardView.jsx',

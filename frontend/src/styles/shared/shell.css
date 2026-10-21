@@ -44,6 +44,9 @@
             --scenario-sticky-top: 0px;
         }
 
+        /* Reserve the vertical scrollbar's width in every view mode, so a mode that scrolls and one that does not (Board, Catch Up, Planning) never shift the centred shell; narrow viewports (phones, overlay scrollbars) keep their full width. */
+        @media (min-width: 601px) { html { scrollbar-gutter: stable; } }
+
         body {
             font-family: 'Crimson Pro', serif;
             background: var(--bg-primary);

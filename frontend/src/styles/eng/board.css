@@ -178,8 +178,11 @@
            centre; subtracting half the board width pins the left edge to the viewport edge.
            --board-scrollbar-width (published by EngBoardView, 0 until it is) takes the vertical
            scrollbar back out of `100vw`, which is the arithmetic D16 and D29 are both about:
-           `100vw` counts the scrollbar and documentElement.clientWidth does not. */
+           `100vw` counts the scrollbar and the root's width does not. From 601px up html reserves
+           a scrollbar gutter even while the page does not scroll, and --board-gutter-width carries
+           that instead, so the media query below, not JS, decides which one applies on a resize. */
         .eng-board .board {
+            --board-bleed-offset: var(--board-scrollbar-width, 0px);
             --onboarding-spotlight-max-height: var(--board-strip-h);
             display: flex;
             gap: 0.5rem;
@@ -189,8 +192,14 @@
             scroll-behavior: smooth;
             scrollbar-width: thin;
             padding-bottom: 0.85rem;
-            width: calc(100vw - var(--board-scrollbar-width, 0px));
-            margin-left: calc(50% - (100vw - var(--board-scrollbar-width, 0px)) / 2);
+            width: calc(100vw - var(--board-bleed-offset));
+            margin-left: calc(50% - (100vw - var(--board-bleed-offset)) / 2);
+        }
+
+        @media (min-width: 601px) {
+            .eng-board .board {
+                --board-bleed-offset: var(--board-gutter-width, 0px);
+            }
         }
 
         .eng-board .board.is-chrome-pinned .col::before {

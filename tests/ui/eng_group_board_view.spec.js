@@ -3545,8 +3545,8 @@ async function boardGeometry(page) {
         const focused = document.querySelector('.eng-board .col.is-focused');
         const focusedRect = focused.getBoundingClientRect();
         return {
-            docWidth: document.documentElement.clientWidth,
-            docOverflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            docWidth: document.documentElement.getBoundingClientRect().width,
+            docOverflowX: document.documentElement.scrollWidth - document.documentElement.getBoundingClientRect().width,
             boardWidth: Math.round(board.getBoundingClientRect().width),
             boardLeft: Math.round(board.getBoundingClientRect().left),
             focusedWidth: focusedRect.width,
@@ -4170,7 +4170,7 @@ test('at 1040 an open column is still 660, because the board is measured against
 test('the board bleeds to the viewport while the controls row stays at container width, centred', async ({ page }) => {
     await openBoard(page, { width: 1440 });
     const measured = await page.evaluate(() => {
-        const docWidth = document.documentElement.clientWidth;
+        const docWidth = document.documentElement.getBoundingClientRect().width;
         const board = document.querySelector('.eng-board .board').getBoundingClientRect();
         const controls = document.querySelector('.view-filters').getBoundingClientRect();
         const container = document.querySelector('.container').getBoundingClientRect();
@@ -4192,6 +4192,84 @@ test('the board bleeds to the viewport while the controls row stays at container
     expect(measured.controlsWidth).toBeLessThanOrEqual(measured.containerWidth);
     expect(measured.containerLeft).toBe(measured.containerRight);
     expect(measured.docOverflowX).toBeLessThanOrEqual(1);
+});
+
+test('switching view modes never moves the centred container or the header controls', async ({ page }) => {
+    await openBoard(page, { width: 1280, height: 900 });
+    const frame = () => page.evaluate(() => {
+        const edges = (selector) => {
+            const rect = document.querySelector(selector).getBoundingClientRect();
+            return { left: rect.left, right: rect.right, top: rect.top };
+        };
+        return {
+            container: edges('.container'),
+            subtitle: edges('.subtitle-main'),
+            search: edges('.header-actions-row .control-search'),
+            modes: edges('.view-selector .eng-mode-control'),
+        };
+    });
+    const settled = async () => {
+        await page.evaluate(async () => {
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            await Promise.all(document.getAnimations({ subtree: true })
+                .filter(animation => animation.effect.getComputedTiming().iterations !== Infinity)
+                .map(animation => animation.finished.catch(() => undefined)));
+        });
+        await page.waitForTimeout(400);
+    };
+    await settled();
+    const board = await frame();
+
+    for (const mode of ['Catch Up', 'Planning', 'Statistics', 'Scenario', 'Board']) {
+        await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: mode }).click();
+        await settled();
+        expect(await frame(), `${mode} keeps every header edge where Board has it`).toEqual(board);
+    }
+});
+
+test('focusing the search field never moves the title block or the rows below the header', async ({ page }) => {
+    await openBoard(page, { width: 1280, height: 900 });
+    const frame = () => page.evaluate(() => {
+        const box = (selector) => {
+            const rect = document.querySelector(selector).getBoundingClientRect();
+            return { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+        };
+        return {
+            header: box('header'),
+            title: box('.subtitle-main'),
+            logo: box('.subtitle-logo'),
+            url: box('.subtitle-secondary'),
+            search: { ...box('.header-actions-row .control-search'), right: document.querySelector('.header-actions-row .control-search').getBoundingClientRect().right },
+            below: box('.view-selector'),
+        };
+    });
+    const settled = async () => {
+        await page.evaluate(async () => {
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            await Promise.all(document.getAnimations({ subtree: true })
+                .filter(animation => animation.effect.getComputedTiming().iterations !== Infinity)
+                .map(animation => animation.finished.catch(() => undefined)));
+        });
+        await page.waitForTimeout(400);
+    };
+    for (const width of [1280, 1100, 1028, 960, 800]) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.locator('body').click({ position: { x: 2, y: 400 } });
+        await settled();
+        const idle = await frame();
+        await page.getByRole('textbox', { name: 'Find in view' }).first().focus();
+        await settled();
+        const focused = await frame();
+        if (width === 1280) {
+            await page.screenshot({ path: path.join(screenshotDir, 'header-search-focused.png'), clip: { x: 0, y: 0, width: 1280, height: 140 }, animations: 'disabled' });
+            expect(focused.search.width - idle.search.width, 'the focused field still widens, over the space to its left').toBe(140);
+        }
+        expect(focused.search.right, `${width}px: the focused field keeps its right edge`).toBe(idle.search.right);
+        expect(focused.search.width, `${width}px: the focused field widens`).toBeGreaterThan(idle.search.width);
+        expect(focused.title, `${width}px: the title block stays put while the search field is focused`).toEqual(idle.title);
+        expect(focused.below, `${width}px: the controls row stays put`).toEqual(idle.below);
+        expect(focused.header, `${width}px: the header keeps its box`).toEqual(idle.header);
+    }
 });
 
 /* ── The folded rails are the chart (D9) ────────────────────────────────────────────────────── */
@@ -5189,8 +5267,8 @@ test('a resize never leaves the board wider than the viewport, even before anyth
         const measured = await page.evaluate(() => {
             const rect = document.querySelector('.eng-board .board').getBoundingClientRect();
             return {
-                docWidth: document.documentElement.clientWidth,
-                docOverflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+                docWidth: document.documentElement.getBoundingClientRect().width,
+                docOverflowX: document.documentElement.scrollWidth - document.documentElement.getBoundingClientRect().width,
                 left: Math.round(rect.left),
                 width: Math.round(rect.width),
             };
@@ -5355,17 +5433,15 @@ test('the column header is a named region and adds no second tab stop beside Fol
     await expect(col(page, 'col-1a2b3c4d').locator('.fold')).toHaveAttribute('aria-label', /To do/);
 });
 
-test('leaving Board removes the scrollbar-width custom property it published', async ({ page }) => {
+test('leaving Board removes the scrollbar-width and gutter-width custom properties it published', async ({ page }) => {
     await openBoard(page);
-    expect(await page.evaluate(
-        () => document.documentElement.style.getPropertyValue('--board-scrollbar-width'),
-    )).not.toBe('');
+    const published = () => page.evaluate(() => ['--board-scrollbar-width', '--board-gutter-width']
+        .map(name => document.documentElement.style.getPropertyValue(name)));
+    expect((await published()).every(value => value !== '')).toBe(true);
 
     await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Catch Up' }).click();
     await expect(page.locator('.eng-board')).toHaveCount(0);
-    expect(await page.evaluate(
-        () => document.documentElement.style.getPropertyValue('--board-scrollbar-width'),
-    )).toBe('');
+    expect(await published()).toEqual(['', '']);
 });
 
 test('All work preserves bounded partial cards after a hard limit and retries only on request', async ({ page }) => {

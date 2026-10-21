@@ -5623,8 +5623,9 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
             const renderBoardEpicShareControl = (epicKey, columnId) => selectedView === 'eng' && activeEngMode === 'board' && (
                 <ShareViewButton surface="epic" epicKey={epicKey} boardColumnId={columnId} scopeKey={shareScopeKey} share={shareView} sourceSurface={analyticsToken(activeEngMode)} activeControlSurface="epic" />
             );
-            const renderShareViewControl = (surface) => selectedView === 'eng' && activeEngMode !== 'scenario' && (
-                <ShareViewButton surface={surface} scopeKey={shareScopeKey} share={shareView} sourceSurface={analyticsToken(activeEngMode)} activeControlSurface={activeControlSurface} />
+            const renderShareViewControl = (surface) => selectedView === 'eng' && (activeEngMode === 'scenario'
+                ? <span className="header-icon-reserve" aria-hidden="true" />
+                : <ShareViewButton surface={surface} scopeKey={shareScopeKey} share={shareView} sourceSurface={analyticsToken(activeEngMode)} activeControlSurface={activeControlSurface} />
             );
 
             const renderEpmControls = (surface, { showProjectPicker = true, showStateControl = true } = {}) => (

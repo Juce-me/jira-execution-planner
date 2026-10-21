@@ -70,6 +70,13 @@
             align-self: flex-end;
         }
 
+        /* Holds the Share button's slot where Scenario hides it, so the search and the title block stay put when the view mode changes. */
+        .header-icon-reserve {
+            flex: 0 0 var(--control-height);
+            width: var(--control-height);
+            height: var(--control-height);
+        }
+
         .sticky-search-shell {
             display: none;
         }
@@ -205,13 +212,24 @@
         }
 
         .control-search {
-            min-width: 220px;
-            width: 220px;
-            transition: width 0.2s ease;
+            --control-search-width: 220px;
+            --control-search-grow: 140px;
+            min-width: var(--control-search-width);
+            width: var(--control-search-width);
+            transition: width 0.2s ease, margin-left 0.2s ease;
         }
 
         .control-search:focus-within {
-            width: 360px;
+            width: calc(var(--control-search-width) + var(--control-search-grow));
+        }
+
+        /* In the header the focused field widens over the free space to its left. The negative margin keeps its footprint in
+           the row at the idle width, so nothing beside it reflows: the title block, which wraps its reserved freshness line
+           by width, would otherwise grow taller and push the rows below it down. */
+        @media (min-width: 601px) {
+            .header-actions-row .control-search:focus-within {
+                margin-left: calc(-1 * var(--control-search-grow));
+            }
         }
 
         .refresh-icon {

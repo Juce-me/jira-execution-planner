@@ -572,11 +572,15 @@ export default function EngBoardView({
         if (!element || !element.children.length) return;
 
         // The one number the CSS bleed cannot compute for itself: `100vw` counts the vertical
-        // scrollbar and documentElement.clientWidth does not (D16, D29).
-        document.documentElement.style.setProperty(
-            '--board-scrollbar-width',
-            `${Math.max(0, window.innerWidth - document.documentElement.clientWidth)}px`,
-        );
+        // scrollbar (D16, D29). The root's own width is read, not clientWidth, which leaves out the
+        // gutter html reserves from 601px up whether or not the page scrolls. That gutter is a
+        // constant, so it gets its own property, which board.css picks by the same breakpoint and a
+        // resize across it is therefore never a frame behind; below it only a real scrollbar counts.
+        const rootStyle = document.documentElement.style;
+        const taken = `${Math.max(0, window.innerWidth - document.documentElement.getBoundingClientRect().width)}px`;
+        const reserved = window.matchMedia('(min-width: 601px)').matches;
+        rootStyle.setProperty('--board-scrollbar-width', reserved ? '0px' : taken);
+        if (reserved) rootStyle.setProperty('--board-gutter-width', taken);
 
         // Only widths and the gap are read, never absolute positions, so the padding still in place
         // from the previous pass cannot skew the measurement and does not need clearing first.
@@ -975,10 +979,11 @@ export default function EngBoardView({
         };
     }, [clearBoardChrome, scheduleBoardChrome, syncPaneMode]);
 
-    // --board-scrollbar-width is published on documentElement, which outlives this component, so
-    // leaving Board would otherwise strand it there for the rest of the session.
+    // --board-scrollbar-width and --board-gutter-width are published on documentElement, which
+    // outlives this component, so leaving Board would otherwise strand them there for the session.
     React.useEffect(() => () => {
         document.documentElement.style.removeProperty('--board-scrollbar-width');
+        document.documentElement.style.removeProperty('--board-gutter-width');
     }, []);
 
     const requestSmallScreenSupport = () => {

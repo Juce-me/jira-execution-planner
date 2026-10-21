@@ -72,7 +72,7 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # Planning review group-scope hook import and call, plus the Settings guard ref (+3).
     # Issue #267 D3b passes the group name, Sprint-name resolver and hint dismissal props to the review table (+1).
     # Team/Sprint selector fixes: dropdown-only Team options import and memo, shared sprintWorkLoaded flag, readout moved into the title block (+10).
-    "frontend/src/dashboard.jsx": 7568,
+    "frontend/src/dashboard.jsx": 7569,
 }
 
 

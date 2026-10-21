@@ -848,7 +848,7 @@ test('the bar uses at most two rows below 720px with Board help and Clear all su
 test('the filter bar is container-width and centred while the board itself is full-bleed', async ({ page }) => {
     await openBoard(page, { width: 1440, height: 900 });
     const geometry = await page.evaluate(() => {
-        const docWidth = document.documentElement.clientWidth;
+        const docWidth = document.documentElement.getBoundingClientRect().width;
         const bar = document.querySelector('.filterbar');
         const container = bar.closest('.container').getBoundingClientRect();
         const board = document.querySelector('.eng-board .board').getBoundingClientRect();

@@ -97,7 +97,9 @@ test('the dashboard renders the Share control on both header surfaces through on
     const source = read('frontend/src/dashboard.jsx');
     assert.ok(source.includes("import ShareViewButton from './shareView/ShareViewButton.jsx';"));
     assert.equal(source.split('renderShareViewControl(').length - 1, 2, 'one call per surface; the definition is an arrow assignment');
-    assert.ok(source.includes("const renderShareViewControl = (surface) => selectedView === 'eng' && activeEngMode !== 'scenario' && ("));
+    // Scenario hides the control but keeps its slot, so the header's search never shifts when the mode changes.
+    assert.ok(source.includes("const renderShareViewControl = (surface) => selectedView === 'eng' && (activeEngMode === 'scenario'"));
+    assert.ok(source.includes('? <span className="header-icon-reserve" aria-hidden="true" />'));
     assert.ok(source.includes('<ShareViewButton surface={surface} scopeKey={shareScopeKey} share={shareView} sourceSurface={analyticsToken(activeEngMode)} activeControlSurface={activeControlSurface} />'));
 
     const actions = source.slice(source.indexOf('className="header-actions-row"'), source.indexOf('className="view-selector"'));

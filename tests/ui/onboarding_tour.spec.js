@@ -1705,8 +1705,10 @@ test('production Board and Statistics onboarding target the Board canvas and rea
     await expect(boardTarget.locator('.col.is-focused .ecard').first()).toBeVisible();
     const boardTargetRect = await boardTarget.evaluate(node => node.getBoundingClientRect().toJSON());
     const boardSpotlightRect = await page.locator('.onboarding-tour-spotlight').evaluate(node => node.getBoundingClientRect().toJSON());
-    expect(boardTargetRect.width).toBeGreaterThanOrEqual(1279);
-    expect(boardSpotlightRect.width).toBeGreaterThanOrEqual(1279);
+    // The Board bleeds to the layout viewport, which is the viewport less the scrollbar gutter html reserves.
+    const layoutWidth = await page.evaluate(() => document.documentElement.getBoundingClientRect().width);
+    expect(boardTargetRect.width).toBeGreaterThanOrEqual(layoutWidth - 1);
+    expect(boardSpotlightRect.width).toBeGreaterThanOrEqual(layoutWidth - 1);
     expect(boardSpotlightRect.height).toBeGreaterThanOrEqual(351);
     expect(boardSpotlightRect.height).toBeLessThanOrEqual(353);
     await expect(page.locator('[data-onboarding-tour]')).toHaveAttribute('data-onboarding-state', 'interactive_closed');

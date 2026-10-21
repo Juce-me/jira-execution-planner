@@ -152,6 +152,8 @@ Project Track remains an Epic-owned field even in these Story-oriented modes. It
 
 Board search is separate and Epic-only. It matches Epic key, summary, assignee, and Delivery Owner, then combines that result with Board's own facet filters. There is no single global search predicate shared by Board and Catch Up/Planning.
 
+The header does not move when you change modes or focus the find field. The page keeps its scrollbar gutter reserved in every mode from 601px up, so Board (which does not scroll) and the other modes sit at the same left edge; Scenario keeps the empty slot of the Share button; and the focused find field widens over the free space to its left instead of squeezing the title block, so the rows below stay put.
+
 ## Share a view
 
 The header **Copy view link** control copies a link to the current Catch Up, Planning, Board or Statistics view, and Catch Up and Planning Epics, Board Epic cards and Catch Up alert groups each have their own copy action for a specific target. See [Shareable View Links](shareable-view-links.md) for what a link carries and what a recipient sees.

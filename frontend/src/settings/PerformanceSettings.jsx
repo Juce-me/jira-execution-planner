@@ -1,9 +1,8 @@
 import * as React from 'react';
 import { fetchAdminPerformance } from '../api/performanceApi.js';
 import { isAuthenticationRequiredError } from '../api/authRequired.js';
-
-const seconds = value => Number.isFinite(value) ? `${(value / 1000).toFixed(2)}s` : 'Unknown';
-const count = value => Number.isFinite(value) ? value : 'Unknown';
+import PerformanceBoardWeeks from './PerformanceBoardWeeks.jsx';
+import { count, seconds } from './performanceFormat.js';
 
 export function PerformanceTrend({ trend = [] }) {
     const rows = trend.filter(row => Number.isFinite(row.avgMs) && Number.isFinite(row.p95Ms));
@@ -78,31 +77,41 @@ export default function PerformanceSettings({ backendUrl }) {
         return () => controller.abort();
     }, [backendUrl, filters, refresh]);
     const summary = data?.summary;
+    const secondaryActive = ['sprintId', 'cacheState', 'revision', 'scopeCohortDigest'].filter(key => filters[key]).length;
+    const renderFilter = ([key, label, values]) => <div className="stats-control-group" key={key}>
+        <label htmlFor={`performance-${key}`}>{label}</label><select id={`performance-${key}`} aria-label={`Performance ${label.toLowerCase()}`} value={filters[key]} onChange={event => setFilters(previous => ({ ...previous, [key]: event.target.value }))}>
+            <option value="">All</option>{(values || []).map(value => <option key={value} value={value}>{value}</option>)}
+        </select>
+    </div>;
     return <section className="performance-settings" aria-label="Load performance" aria-busy={loading}>
         <h3>Load performance</h3>
         <p className="performance-intro">Selected group loads · 30-day history · 2s target · 4s p95 SLO</p>
         <div className="stats-controls">
             {[
-                ['groupId', 'Group', options.groups], ['sprintId', 'Sprint', options.sprints],
-                ['surface', 'Surface', options.surfaces], ['scopeType', 'Scope', options.scopeTypes],
-                ['cacheState', 'Cache', options.cacheStates],
-                ['revision', 'Revision', options.revisions],
-                ['scopeCohortDigest', 'Configuration cohort', options.scopeCohortDigests],
-            ].map(([key, label, values]) => <div className="stats-control-group" key={key}>
-                <label htmlFor={`performance-${key}`}>{label}</label><select id={`performance-${key}`} aria-label={`Performance ${label.toLowerCase()}`} value={filters[key]} onChange={event => setFilters(previous => ({ ...previous, [key]: event.target.value }))}>
-                    <option value="">All</option>{(values || []).map(value => <option key={value} value={value}>{value}</option>)}
-                </select>
-            </div>)}
+                ['groupId', 'Group', options.groups], ['surface', 'Surface', options.surfaces],
+                ['scopeType', 'Scope', options.scopeTypes],
+            ].map(renderFilter)}
             <button type="button" className="btn btn-secondary" disabled={loading} onClick={() => setRefresh(value => value + 1)}>Refresh</button>
         </div>
+        <details className="performance-more-filters" open={secondaryActive > 0 || undefined}>
+            <summary>More filters (sprint, cache, revision, configuration cohort){secondaryActive ? ` \u00b7 ${secondaryActive} active` : ''}</summary>
+            <div className="stats-controls">
+                {[
+                    ['sprintId', 'Sprint', options.sprints], ['cacheState', 'Cache', options.cacheStates],
+                    ['revision', 'Revision', options.revisions],
+                    ['scopeCohortDigest', 'Configuration cohort', options.scopeCohortDigests],
+                ].map(renderFilter)}
+            </div>
+        </details>
         {loading && <p role="status">Loading performance history…</p>}
         {error && <p role="alert">{error}</p>}
         {data?.enabled === false && <p role="status">Collection is paused or database storage is unavailable.</p>}
         {data?.enabled && summary?.sampleCount === 0 && <p role="status">No loads recorded in this selection yet. Open ENG and refresh a group to collect a measurement.</p>}
         {data?.truncated && <p role="status">History reached the {data.queryLimit} observation limit. Narrow the filters before comparing trends.</p>}
-        {summary?.sampleCount > 0 && <>
+        {summary?.sampleCount > 0 && (filters.surface === 'eng_board'
+            ? <PerformanceBoardWeeks weekly={data.weekly} samples={data.samples || []} />
+            : <>
             <p className="performance-summary">Average <strong>{seconds(summary.avgMs)}</strong> · p50 {seconds(summary.p50Ms)} · p95 <strong>{seconds(summary.p95Ms)}</strong> · {summary.eligibleCount} complete successful samples / {summary.sampleCount} observations</p>
-            {filters.surface === 'eng_board' && <p>First focused content p50 {seconds(summary.p50FirstContentMs)} · p95 {seconds(summary.p95FirstContentMs)}. Full-load duration includes requested dependency loading.</p>}
             <p>{summary.breachCount} loads above 4s · {summary.errorCount} errors · {summary.cancelledCount} cancelled · {summary.cappedCount} capped · {summary.unknownCount || 0} completeness unverified</p>
             {(data.contextual || summary.contextual) && <p role="status">Contextual timings — completeness unverified.</p>}
             {summary.mixedCohorts && <p role="status">Choose one surface, scope, cache, revision and configuration cohort before comparing latency percentiles.</p>}
@@ -117,6 +126,6 @@ export default function PerformanceSettings({ backendUrl }) {
             {data.samplesTruncated && <p>Showing the 200 most recent observations. Narrow the filters to investigate older loads.</p>}
             {(data.samples || []).map(sample => <LoadDetails key={sample.loadId} sample={sample} />)}
             {!data.samples?.length && <p>No observations in this selection.</p>}
-        </>}
+        </>)}
     </section>;
 }

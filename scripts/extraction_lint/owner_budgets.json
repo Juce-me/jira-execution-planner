@@ -4959,8 +4959,8 @@
         "PerformanceTrend",
         "default"
       ],
-      "lineCount": 122,
-      "lineCeiling": 122,
+      "lineCount": 131,
+      "lineCeiling": 131,
       "interfaces": [
         {
           "exportName": "PerformanceTrend",
@@ -4983,14 +4983,14 @@
           "propCeiling": 1,
           "unresolved": [],
           "inventory": {
-            "source": "frontend/src/settings/PerformanceSettings.jsx:8",
-            "sourceDigest": "b97cffd0d70bd5a350eb1cdc0bd42cdf89fe0ff2f06a078e550b471df0ab7f85"
+            "source": "frontend/src/settings/PerformanceSettings.jsx:7",
+            "sourceDigest": "f5886d7f5358e562dcac02fcd5bfcc8a4f645667e2b04dc2116bfbdd7d5de2aa"
           },
           "callers": [
             {
               "path": "frontend/src/settings/PerformanceSettings.jsx",
               "symbol": "PerformanceTrend",
-              "line": 115,
+              "line": 124,
               "phase": "render"
             }
           ],
@@ -5019,8 +5019,8 @@
             "forwarded input backendUrl"
           ],
           "inventory": {
-            "source": "frontend/src/settings/PerformanceSettings.jsx:56",
-            "sourceDigest": "b97cffd0d70bd5a350eb1cdc0bd42cdf89fe0ff2f06a078e550b471df0ab7f85",
+            "source": "frontend/src/settings/PerformanceSettings.jsx:55",
+            "sourceDigest": "f5886d7f5358e562dcac02fcd5bfcc8a4f645667e2b04dc2116bfbdd7d5de2aa",
             "reviewed": true,
             "memberNames": [
               "backendUrl"
@@ -19142,6 +19142,80 @@
       "lineCount": 96,
       "lineCeiling": 96,
       "interfaces": []
+    },
+    {
+      "id": "settings.PerformanceBoardWeeks",
+      "path": "frontend/src/settings/PerformanceBoardWeeks.jsx",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "PHASES",
+        "default",
+        "niceMaximum",
+        "phaseTotal"
+      ],
+      "lineCount": 205,
+      "lineCeiling": 205,
+      "interfaces": [
+        {
+          "exportName": "default",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "samples",
+            "weekly"
+          ],
+          "expandedInputNames": [
+            "samples",
+            "weekly",
+            "weekly.mixedScopes",
+            "weekly.weeks"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 4,
+          "returnCount": 0,
+          "propCount": 2,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 4,
+          "returnCeiling": 0,
+          "propCeiling": 2,
+          "unresolved": [],
+          "inventory": {
+            "source": "frontend/src/settings/PerformanceBoardWeeks.jsx:191",
+            "sourceDigest": "10df951f384f8dd6bfcef5e4d69556972cda8938174ffccecec64d90a1507ecb"
+          },
+          "callers": [
+            {
+              "path": "frontend/src/settings/PerformanceSettings.jsx",
+              "symbol": "PerformanceBoardWeeks",
+              "line": 112,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "settings.performanceFormat",
+      "path": "frontend/src/settings/performanceFormat.js",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "count",
+        "loadTime",
+        "seconds",
+        "secondsShort",
+        "sizeLabel",
+        "weekLabel",
+        "weekStartOf"
+      ],
+      "lineCount": 33,
+      "lineCeiling": 33,
+      "interfaces": []
     }
   ],
   "aggregates": {
@@ -19150,8 +19224,8 @@
       "ceiling": 5766
     },
     "settings": {
-      "measured": 16582,
-      "ceiling": 16582
+      "measured": 16829,
+      "ceiling": 16829
     },
     "stats": {
       "measured": 2792,
@@ -19162,12 +19236,12 @@
       "ceiling": 1786
     },
     "uniqueOwners": {
-      "measured": 26622,
-      "ceiling": 26622
+      "measured": 26869,
+      "ceiling": 26869
     },
     "appPlusOwners": {
-      "measured": 34180,
-      "ceiling": 34180
+      "measured": 34427,
+      "ceiling": 34427
     }
   },
   "transfer": {

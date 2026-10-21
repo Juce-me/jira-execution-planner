@@ -2,6 +2,8 @@
 
 Status: Implemented and accepted by the user on 2026-09-08; issue #137 baseline instrumentation. This record is retained for audit. The All work feature is a separate implementation.
 
+Current accuracy (2026-10-21): partially accurate. The sample, filter and storage contract below still holds. With Surface set to `eng_board`, Settings -> Admin -> Performance no longer shows the daily average/p95 chart and the expandable evidence list; it shows a weekly phase view instead (see the Performance weekly Board stats entry in `docs/ontology.md`). Other selections keep the layout described here, with the secondary filters behind a disclosure.
+
 Goal: Measure real selected-group sprint loads through rendering, persist debug observations, and expose workspace-admin trends and slow-load evidence. Target <=2 seconds, SLO p95 <=4 seconds. This slice does not implement All work or claim capped legacy data is complete.
 
 Architecture: A frontend generation owns concurrent Product/Tech requests and terminates once with success/error/cancelled. Each lane captures duration, unique issue/Epic counts, bytes, cache and backend stages. Collection defaults on when a database is configured; an explicit false debug environment switch disables it. A separate SQL table stores bounded observations with server-derived workspace/environment/revision. Percentiles use raw samples; cache/scope/revision filters prevent mixing workloads. Admin details retain failed/capped observations.

@@ -50,6 +50,13 @@ export function storyReadinessScopeMatches(snapshot, scope) {
         && requested.sprintState === returned.sprintState;
 }
 
+// Whether awaited Stories are final for the held scope: a Sprint state without readiness has none to wait for; otherwise the
+// department snapshot must be READY for this exact scope, not left over from the previous Sprint.
+export function storyReadinessAnswersAwaited(readiness) {
+    return !readiness.scopeKey
+        || (readiness.status === STORY_READINESS_STATUS.READY && storyReadinessScopeMatches(readiness.snapshot, readiness.scope));
+}
+
 export function classifyStoryReadinessError(error = {}) {
     const status = Number(error.status) || 0;
     const code = String(error.code || '');

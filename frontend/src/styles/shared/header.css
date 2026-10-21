@@ -264,8 +264,9 @@
         }
 
         .subtitle-main {
+            flex: 1 1 auto;
             display: inline-grid;
-            grid-template-columns: auto auto;
+            grid-template-columns: auto 1fr;
             align-items: center;
             justify-content: start;
             column-gap: 0.5rem;
@@ -280,8 +281,17 @@
             flex: 0 0 auto;
         }
 
-        .subtitle-secondary {
+        .subtitle-detail {
             grid-column: 2;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: baseline;
+            column-gap: 0.5rem;
+            row-gap: 0.15rem;
+            min-width: 0;
+        }
+
+        .subtitle-secondary {
             font-size: 0.56rem;
             letter-spacing: 0.08em;
             text-transform: none;

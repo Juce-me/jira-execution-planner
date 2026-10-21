@@ -49,7 +49,7 @@ If expected work is missing, check in this order:
 5. Save the Department configuration.
 6. Choose **Refresh** to load the Jira scope again.
 
-The Teams selector loads saved Team names after configuration bootstrap, independently of task loading and opening Settings. Refresh retains known names while Jira work loads; an ID-only catalog placeholder does not replace a previously resolved name. This name lookup does not grant Sprint membership or change Department scope.
+The Teams selector loads saved Team names after configuration bootstrap, independently of task loading and opening Settings. Refresh retains known names while Jira work loads; an ID-only catalog placeholder does not replace a previously resolved name. This name lookup does not grant Sprint membership or change Department scope. The dropdown lists All Teams first, then teams alphabetically, and drops a configured team with no Story or awaited Story in the selected Sprint once both are known (while Stories load, or readiness has not answered for an active or future Sprint, every team stays listed); a selected team stays listed so it can be unticked. Only the dropdown list changes: `teamOptions` still validates the stored selection and the toggle keeps reserving the longest configured name.
 
 ### Team labels (aliases)
 

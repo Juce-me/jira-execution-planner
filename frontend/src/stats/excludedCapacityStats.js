@@ -195,6 +195,11 @@ export function compareSprintsChronologically(a, b) {
     return String(a?.name || '').localeCompare(String(b?.name || ''));
 }
 
+// Unscheduled and future Sprints first, archived last: the header Sprint selector's order.
+export function sortSprintsNewestFirst(sprints) {
+    return (sprints || []).slice().sort((a, b) => compareSprintsChronologically(b, a));
+}
+
 export function buildDefaultExcludedCapacityRange(sprints, selectedSprintId) {
     const ordered = (sprints || []).slice().sort(compareSprintsChronologically);
     if (!ordered.length) return { startSprintId: '', endSprintId: '' };

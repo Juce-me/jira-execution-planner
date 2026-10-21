@@ -2275,6 +2275,50 @@ test('Lead Times capacity exclusions re-slice locally and replace the legacy inc
     expect(apiMocks.unexpectedCalls).toEqual([]);
 });
 
+test('Statistics sprint range lists Sprints newest first, in the header Sprint selector order', async ({ page }) => {
+    const calls = [];
+    const sprints = [
+        { id: 34627, name: '2026Q4', state: 'future', startDate: '2026-10-01', endDate: '2026-12-31' },
+        { id: selectedSprintId, name: selectedSprintName, state: 'active', startDate: '2026-04-01', endDate: '2026-06-30' },
+        { id: 34600, name: '2026Q1 Sprint 41', state: 'closed', startDate: '2026-01-01', endDate: '2026-03-31' },
+        { id: 34500, name: '2025Q4 Sprint 40', state: 'closed', startDate: '2025-10-01', endDate: '2025-12-31' },
+    ];
+    await installApiMocks(page, calls, { excludedCapacityEpics: ['BAU-EPIC'], sprints });
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.addInitScript((prefs) => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
+    }, {
+        selectedView: 'eng', planningLayout: 'list',
+        selectedSprint: selectedSprintId,
+        sprintName: selectedSprintName,
+        activeGroupId: 'grp-default',
+        selectedTeams: ['all'],
+        showStats: true,
+        statsView: 'projectTrack',
+        excludedCapacityStartSprintId: String(selectedSprintId),
+        excludedCapacityEndSprintId: String(selectedSprintId),
+    });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await waitForCallCount(calls, call => call.pathname === '/api/stats/excluded-capacity-source', 1);
+
+    await page.locator('.view-selector .sprint-selector-control .sprint-dropdown-toggle').click();
+    const headerNames = (await page.locator('.view-selector .sprint-selector-control .sprint-dropdown-option').allTextContents())
+        .map(text => text.replace(/^\[[ACF]\]\s*/, ''));
+    expect(headerNames).toEqual(['2026Q4', selectedSprintName, '2026Q1 Sprint 41', '2025Q4 Sprint 40']);
+    await page.keyboard.press('Escape');
+
+    const rangeGroup = page.locator('.stats-view.open [data-stats-range="project-track-sprint"]');
+    for (const end of ['Start sprint', 'End sprint']) {
+        const toggle = rangeGroup.getByRole('button', { name: end });
+        await toggle.click();
+        await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+        const rangeNames = await rangeGroup.getByRole('listbox', { name: end }).getByRole('option').allTextContents();
+        expect(rangeNames).toEqual(headerNames);
+        await toggle.press('Escape');
+        await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    }
+});
+
 test('Project Track tab renders filter bar, mode title, totals, per-sprint and breakdown charts', async ({ page }) => {
     const calls = [];
     const apiMocks = await installApiMocks(page, calls, {
@@ -3287,6 +3331,8 @@ test('multiple groups keep the main controls on one row and settings beside refr
     await expect(share).toBeVisible();
     await expect(headerActions.locator('.refresh-icon + .group-gear-button')).toHaveCount(1);
     await expect(headerActions.locator('.control-search + [data-share-view] + .jira-export')).toHaveCount(1);
+    await expect(headerActions.locator('.dashboard-freshness-slot')).toHaveCount(0);
+    await expect(page.locator('.subtitle-main .subtitle-detail .dashboard-freshness-slot')).toHaveCount(1);
     const iconButtonGeometry = await headerActions.evaluate((row) => {
         const rowRect = row.getBoundingClientRect();
         const headerRect = row.closest('.subtitle').getBoundingClientRect();
@@ -3299,9 +3345,8 @@ test('multiple groups keep the main controls on one row and settings beside refr
             row.querySelector('.group-gear-button'),
             row.querySelector('[data-share-view-control]'),
         ];
-        // The reserved freshness slot is its own flex line under the controls; the controls line ends one row gap above it.
-        const slotRect = row.querySelector('.dashboard-freshness-slot').getBoundingClientRect();
-        const controlsBottom = slotRect.top - Number.parseFloat(getComputedStyle(row).rowGap);
+        // The freshness readout lives in the title block, so the controls line is the whole actions row.
+        const controlsBottom = rowRect.bottom;
         return {
             controlHeight,
             rightOverflow: rowRect.right - headerRect.right,
@@ -5806,12 +5851,12 @@ for (const connected of [false, true]) test(`Task9 freshness reserved copy prese
     const states = ['rest', 'focused', 'applied'];
     const setSearchState = async state => { const search = page.locator('.header-actions-row .search-input'); await search.fill(state === 'applied' ? 'synthetic' : ''); if (state === 'focused') await search.focus(); else await search.blur(); await waitForVisualSettled(page); };
     const measure = () => page.locator('.header-actions-row').evaluate(row => {
-        const header = row.closest('.subtitle'), status = row.querySelector('[data-dashboard-freshness-status]'), style = getComputedStyle(row.closest('.container'));
+        const header = row.closest('.subtitle'), status = header.querySelector('[data-dashboard-freshness-status]'), style = getComputedStyle(row.closest('.container'));
         const documentScroll = document.documentElement.scrollWidth;
         return { headerHeight: header.getBoundingClientRect().height, title: (()=>{const node=header.querySelector('.subtitle-main'),range=document.createRange();range.selectNodeContents(node);const box=node.getBoundingClientRect();return {width:box.width,height:box.height,textBoxes:[...range.getClientRects()].map(rect=>({left:rect.left,right:rect.right,top:rect.top,bottom:rect.bottom})),scroll:node.scrollWidth,client:node.clientWidth};})(), searchWidth:row.querySelector('.search-input').getBoundingClientRect().width, rowHeight: row.getBoundingClientRect().height,
             sticky: ['--compact-header-offset','--planning-offset','--planning-sticky-top','--filterbar-sticky-top','--epic-sticky-top','--scenario-sticky-top'].map(key => style.getPropertyValue(key)),
             buttons: [...row.querySelectorAll('.header-icon-button')].map(node => { const box=node.getBoundingClientRect();return {width:box.width,height:box.height}; }),
-            slotHeight: row.querySelector('.dashboard-freshness-slot').getBoundingClientRect().height, controlsBounds: [...row.querySelectorAll('.search-input,.header-icon-button,.view-mode-control,[data-dashboard-freshness-status]')].map(node => {const r=node.getBoundingClientRect();return {left:r.left,right:r.right};}),
+            slotHeight: header.querySelector('.dashboard-freshness-slot').getBoundingClientRect().height, slotInTitle: header.querySelector('.subtitle-main').contains(header.querySelector('.dashboard-freshness-slot')), besideUrl: (() => { const url = header.querySelector('.subtitle-secondary')?.getBoundingClientRect(), shown = status?.getBoundingClientRect(); return url && shown ? { gap: shown.left - url.right, overlap: Math.min(shown.bottom, url.bottom) - Math.max(shown.top, url.top), below: shown.top - url.bottom } : null; })(), controlsBounds: [...header.querySelectorAll('.search-input,.header-icon-button,.view-mode-control,[data-dashboard-freshness-status]')].map(node => {const r=node.getBoundingClientRect();return {left:r.left,right:r.right};}),
             status: status ? { scroll:status.scrollWidth,client:status.clientWidth,whiteSpace:getComputedStyle(status).whiteSpace,minWidth:getComputedStyle(status).minWidth,height:status.getBoundingClientRect().height } : null,
             documentScroll, viewport: document.documentElement.clientWidth };
     });
@@ -5853,10 +5898,10 @@ for (const connected of [false, true]) test(`Task9 freshness reserved copy prese
         expect.soft(after.headerHeight).toBe(before[key].headerHeight);expect.soft(after.rowHeight).toBe(before[key].rowHeight);expect.soft(after.sticky).toEqual(before[key].sticky);
         expect.soft(after.buttons).toEqual(before[key].buttons);expect.soft(after.buttons.every(box=>box.width===38&&box.height===38)).toBe(true);
         expect.soft(after.status.scroll).toBeLessThanOrEqual(after.status.client);expect.soft(after.status.whiteSpace).not.toBe('nowrap');expect.soft(after.status.minWidth).toBe('0px');
-        expect.soft(after.searchWidth).toBe(before[key].searchWidth); expect.soft(after.slotHeight).toBe(before[key].slotHeight); expect.soft(after.controlsBounds.every(box => box.left >= 0 && box.right <= after.viewport + 1)).toBe(true);
+        expect.soft(after.searchWidth).toBe(before[key].searchWidth); expect.soft(after.slotHeight).toBe(before[key].slotHeight); expect.soft(after.slotInTitle).toBe(true); expect.soft(after.besideUrl.gap >= 0 && after.besideUrl.overlap > 0 || after.besideUrl.below >= 0).toBe(true); expect.soft(after.controlsBounds.every(box => box.left >= 0 && box.right <= after.viewport + 1)).toBe(true);
         for (const copy of ['Updates pending', 'Could not check; showing previous data', 'Cached data; check unavailable', 'Checked 24h ago; freshness unconfirmed', 'Checked 24h ago; partial results; coverage unknown']) {
-            const height = await status.evaluate((node, text) => { const previous=node.textContent; node.textContent=text; const height=node.closest('.header-actions-row').getBoundingClientRect().height; node.textContent=previous; return height; }, copy);
-            expect.soft(height).toBe(after.rowHeight);
+            const height = await status.evaluate((node, text) => { const previous=node.textContent; node.textContent=text; const height=node.closest('.subtitle').getBoundingClientRect().height; node.textContent=previous; return height; }, copy);
+            expect.soft(height).toBe(after.headerHeight);
         }
         expect.soft(after.documentScroll).toBeLessThanOrEqual(after.viewport);
         await expect(page.locator('.refresh-icon + .group-gear-button')).toHaveCount(1);

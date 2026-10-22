@@ -2,7 +2,7 @@
 
 **Date**: 2026-10-22
 **Severity**: High
-**Status**: Resolved locally; publication pending
+**Status**: Resolved; delivered by the pull request that closes #299
 **Author**: Team
 
 ## Impact

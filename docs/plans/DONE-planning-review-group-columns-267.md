@@ -1,8 +1,10 @@
 # Planning review group columns and Sprint views (#267) Implementation Plan
 
+> **Status:** Done. Executed and merged in [PR #290](https://github.com/Juce-me/jira-execution-planner/pull/290) (2026-10-20). The gates this plan's record lists as open at that point (the Gate 7 cutover rehearsal, headed Firefox and WebKit marker geometry, a CI PostgreSQL run) were not formally closed here; the follow-up plan [DONE-planning-review-adoption-merge-mode.md](DONE-planning-review-adoption-merge-mode.md) (#299) records a rehearsal of the adoption restore and a run of the repository's CI PostgreSQL runner script. Kept for audit context only.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-Status: In progress. Reviewed once (2026-10-20); operator approved on 2026-10-20 with every recommendation below accepted.
+Status: Done (merged in PR #290). Reviewed once (2026-10-20); operator approved on 2026-10-20 with every recommendation below accepted.
 Type: feature (backend, migration, script, UI)
 Branch: `feature/267-group-review-columns` (the design branch renamed on 2026-10-20; no rebase or merge of `origin/main` yet, which must happen before publication and rebuilds `frontend/dist`)
 Written: 2026-10-20 from the design, three read-only symbol re-verifications, one independent plan review (findings applied below) and the governing docs.

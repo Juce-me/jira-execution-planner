@@ -1,10 +1,10 @@
 # Planning review adoption merge mode Implementation Plan
 
-> **Status:** Done. Executed on `bugfix/299-review-adoption-merge-mode` for issue [#299](https://github.com/Juce-me/jira-execution-planner/issues/299) (commits `87ae9078` to `59c8eb8d`), accepted by the operator on 2026-10-22; no PR yet. Kept for audit context only.
+> **Status:** Done. Executed on `bugfix/299-review-adoption-merge-mode` for issue [#299](https://github.com/Juce-Me/jira-execution-planner/issues/299), accepted by the operator on 2026-10-22 and delivered by the pull request that closes it. Kept for audit context only.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-Status: Approved 2026-10-22 by the operator, with the recommended answer taken for D-1 to D-12 (D-8: postmortem yes; issue [#299](https://github.com/Juce-me/jira-execution-planner/issues/299) created 2026-10-22). Validated once (three independent read-only reviews, findings applied; this revision is not re-validated). Executed 2026-10-22: Tasks 1 to 7 done plus one review-fix commit (`c7de86ff`); verification evidence in Task 7 and the log; local only (not yet pushed); accepted by the operator on 2026-10-22, and renamed from `EXEC-` to `DONE-` on that instruction.
+Status: Approved 2026-10-22 by the operator, with the recommended answer taken for D-1 to D-12 (D-8: postmortem yes; issue [#299](https://github.com/Juce-me/jira-execution-planner/issues/299) created 2026-10-22). Validated once (three independent read-only reviews, findings applied; this revision is not re-validated). Executed 2026-10-22: Tasks 1 to 7 done plus one review-fix commit (`c7de86ff`); verification evidence in Task 7 and the log; delivered by the pull request that closes issue #299; accepted by the operator on 2026-10-22, and renamed from `EXEC-` to `DONE-` on that instruction.
 Type: bugfix (operator script, tests, docs; no application code, route, model or migration change)
 Branch: `bugfix/299-review-adoption-merge-mode`. At the operator's direction the agent-generated worktree branch was renamed to this `bugfix/` name (instead of the `feature/` name D-8 proposed) and fast-forwarded to `origin/main` `41c47562` on 2026-10-22, zero commits ahead. `origin/main` is nine commits past the base below; none touches the script, `sprint_review.py` or the adoption tests (empty diff checked 2026-10-22), but Task 1 re-verifies every cited symbol.
 Written: 2026-10-22 against `origin/main` `919eadac` from the #267 design and plan, `scripts/adopt_legacy_sprint_reviews.py`, `backend/services/sprint_review.py`, `tests/test_adopt_legacy_sprint_reviews.py`, a read-only look at a local database that hit the problem, and the downstream release chart.
@@ -290,12 +290,12 @@ One independent read-only pass over `origin/main..HEAD` (script, tests, docs) fo
 - **Downstream:** the release repository must sync this change and add an adoption/restore step to its own runbook (its migration Job stays migrate-only; its image already carries the script).
 - **Separate plan (D-9):** a non-blocking startup or preflight warning when legacy data exists and a merge would still insert something.
 - **Not run, with the reason:** `make verify-dist-clean` and the frontend suites (no frontend change on this branch).
-- **Delivery:** nothing is pushed and no PR exists; publication follows `AGENTS.md` section 10 only when the operator asks.
+- **Delivery:** pushed and opened as the pull request that closes #299, on the operator's instruction (2026-10-22), after the `AGENTS.md` section 10 pre-push gate at the then head: the full Python suite passed (2,379 tests, 42 skipped) and Chromium `tests/ui` had 1,824 passed, 12 skipped and 1 failed. The one failure, `scenario_draft_history.spec.js:840` (Escape after opening Scenario draft History should return focus to the History button), is pre-existing and unrelated: the History button is disabled while the draft fetch started by opening History is pending, `closeScenarioDraftHistory` calls `focus()` immediately, and nothing refocuses once the button re-enables; it fails 5 of 5 alone, and frontend, `tests/ui`, backend, `jira_server.py` and `package.json` are identical to `origin/main`. It is noted in the PR and left for its own change.
 - **Residual risks:** the two-group PostgreSQL race test's timing under heavy load; label matching can pair two unrelated columns (the report names every pair by id); no automatic undo (the pre-run backup is the rollback).
 
 ## Outcome
 
-Implemented with changes, locally on `bugfix/299-review-adoption-merge-mode` (issue #299): all tasks done, one review-fix commit, verified as recorded under Task 7; the changes are the digest simplification, the whole-run ceiling, the dropped `expire_all` and renamed tests, each recorded in the execution log and the implementation review. Not yet pushed; accepted by the operator on 2026-10-22.
+Implemented with changes, locally on `bugfix/299-review-adoption-merge-mode` (issue #299): all tasks done, one review-fix commit, verified as recorded under Task 7; the changes are the digest simplification, the whole-run ceiling, the dropped `expire_all` and renamed tests, each recorded in the execution log and the implementation review. Delivered by the pull request that closes #299; accepted by the operator on 2026-10-22.
 
 ## Current Accuracy
 

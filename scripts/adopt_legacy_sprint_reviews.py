@@ -7,10 +7,12 @@ workspace, and writes every group in one transaction. Legacy rows are never modi
 Output carries counts and column, Sprint and group ids only.
 
 --merge adopts into groups that already hold rows. It never overwrites, clears, renames or resurrects anything in a
-group: legacy columns claim a group column by id, then by label and type; live cells and views win; a column the group
-archived stays archived. The dry run plans read-only; --apply (with its digest) then locks each written group's schema
+group: legacy columns claim a group column by id, then by kind, label and type; live cells and views win; a column the
+group archived stays archived. The dry run plans read-only; --apply (with its digest) then locks each written group's schema
 row, the lock every app save takes first, re-reads everything, re-plans, and writes only if the re-plan's digest equals
-the reviewed one. It can run while the app serves; a second run is a no-op.
+the reviewed one. On PostgreSQL it can run while the app serves (SQLite has no row locks, so only the digest re-check
+guards it). A second run is a no-op, except that it adds a column again after a label-matched column was renamed in the
+group and a Sprint view again after the view row was purged.
 """
 
 from __future__ import annotations
@@ -42,7 +44,7 @@ INSERT_CHUNK_ROWS = 100
 READ_CHUNK_ISSUES = 500
 MAX_TOTAL_COLUMNS = 240  # mirrors the total column limit in sprint_review.apply_schema
 MERGE_RULE_VERSION = 'adopt-legacy-sprint-reviews/2-merge'
-MERGE_MAX_INSERT_ROWS = 100_000  # per group, columns plus cells plus views; a larger plan aborts before any lock
+MERGE_MAX_INSERT_ROWS = 100_000  # per run, columns plus cells plus views over all groups; a larger plan aborts before any lock
 GROUP_TABLES = ('workspace_group_review_schemas', 'group_review_cells', 'group_sprint_review_views')
 LEGACY_TABLES = ('workspace_sprint_reviews', 'sprint_review_cells')
 REQUIRED_TABLES = ('workspaces', 'workspace_group_configs') + LEGACY_TABLES + GROUP_TABLES
@@ -183,6 +185,12 @@ def _well_formed(column):
             and column.get('aggregation', 'none') in ('sum', 'none'))
 
 
+def _well_formed_group(column):
+    """A group column as the app writes it: the legacy shape plus a boolean `archived` and an integer `order`."""
+    return (_well_formed(column) and isinstance(column.get('archived'), bool)
+            and isinstance(column.get('order'), int) and not isinstance(column.get('order'), bool))
+
+
 def _read_group_state(session, workspace_id, groups, issue_ids):
     """Per group: schema columns and revision, cell identities on the given issues, and the Sprint ids with a view.
 
@@ -196,7 +204,7 @@ def _read_group_state(session, workspace_id, groups, issue_ids):
             models.WorkspaceGroupReviewSchema.workspace_id == workspace_id,
             models.WorkspaceGroupReviewSchema.group_id.in_(groups))).all():
         columns = deepcopy(columns) if isinstance(columns, list) else None
-        malformed += 1 if columns is None else sum(not _well_formed(column) for column in columns)
+        malformed += 1 if columns is None else sum(not _well_formed_group(column) for column in columns)
         state[group].update(exists=True, revision=revision, columns=columns or [])
         schema_group[schema_id] = group
     if malformed:
@@ -275,10 +283,10 @@ def _match_group_columns(candidates, group_columns):
     """Resolve each legacy key to at most one group column: by id first, then by label and type.
 
     A group column is claimed by one key at most, and a group-archived column keeps its archive. Returns the matched
-    group column and the skipped (group-archived) keys, both by candidate index."""
+    group column and, for each skipped (group-archived) key, the archived column's id, both by candidate index."""
     by_id = {column['id']: column for column in group_columns}
     position = {column['id']: index for index, column in enumerate(group_columns)}
-    matched, skipped, claimed = {}, set(), set()
+    matched, skipped, claimed = {}, {}, set()
     ambiguous = mismatched = 0
     for index, candidate in enumerate(candidates):
         found = {by_id[member['id']]['id'] for member in candidate['members'] + candidate['archived'] if member['id'] in by_id}
@@ -289,7 +297,7 @@ def _match_group_columns(candidates, group_columns):
             if (column['rowKind'], column['type']) != (candidate['kind'], candidate['type']):
                 mismatched += 1
             elif column.get('archived', False) is True:
-                skipped.add(index)
+                skipped[index] = column['id']
                 claimed.add(column['id'])
             else:
                 matched[index] = column
@@ -311,7 +319,7 @@ def _match_group_columns(candidates, group_columns):
             matched[index] = column
             claimed.add(column['id'])
         elif same:
-            skipped.add(index)
+            skipped[index] = min(same, key=lambda c: (c.get('order', 0), position[c['id']]))['id']
     return matched, skipped
 
 
@@ -326,7 +334,7 @@ def _resolve_group(normalized, state=None):
     merge = state is not None
     state = state or {'exists': False, 'revision': 0, 'columns': [], 'cells': set(), 'view_sprints': []}
     group_columns = state['columns']
-    matched, skipped = _match_group_columns(candidates, group_columns) if merge else ({}, set())
+    matched, skipped = _match_group_columns(candidates, group_columns) if merge else ({}, {})
     report = []
     kept, excluded = [], []
     for kind in KINDS:
@@ -444,6 +452,7 @@ def _resolve_group(normalized, state=None):
         report.append(f"columns added: epic {count('epic')}, story {count('story')}")
         report += merged
         report.append(f"group-archived keys skipped: {len(skipped)}, cells dropped {dropped['group_archived']}")
+        report += [f"skipped {candidates[index]['id']} -> {archived_id}" for index, archived_id in sorted(skipped.items())]
         report.append(f"archive intent: keys {intent_keys}, cells dropped {dropped['intent']}")
         report.append(f"archived members discarded: {len(discarded_refs)}, cells dropped {dropped['archived']}")
         report.append(f"cap excluded: keys {len(excluded)}, cells dropped {dropped['cap']}; members {excluded_members or 'none'}")
@@ -500,11 +509,10 @@ def _build_merge(session, workspace_id, only_groups):
     normalized = _normalize(reviews)
     state = _read_group_state(session, workspace_id, groups, {cell[1] for review in reviews for cell in review['cells']})
     plans = {group: _resolve_group(normalized, state[group]) for group in groups}
-    for group, result in plans.items():
-        size = len(result['added']) + len(result['cells']) + len(result['views'])
-        if size > MERGE_MAX_INSERT_ROWS:
-            raise ValueError(f'group {group} would insert {size} rows, above the {MERGE_MAX_INSERT_ROWS} ceiling; '
-                             'no database changes applied')
+    size = sum(len(result['added']) + len(result['cells']) + len(result['views']) for result in plans.values())
+    if size > MERGE_MAX_INSERT_ROWS:
+        raise ValueError(f'the plan would insert {size} rows, above the {MERGE_MAX_INSERT_ROWS} ceiling; '
+                         'merge the groups separately with --group; no database changes applied')
     # What gets written is what the digest covers. A group with nothing to insert contributes only that fact, so an
     # edit there cannot invalidate it; for a written group `revision` carries the base revision it was planned from.
     digest = _fingerprint({
@@ -606,8 +614,7 @@ def _merge(args, database_url):
     with db_engine.session_scope(database_url) as session:
         _set_timeouts(session)
         rows = _lock_merge(session, args.workspace_id, [g for g in plan['groups'] if not plan['plans'][g]['empty']])
-        # Everything read before the locks is stale now: expire it and re-plan from the locked state.
-        session.expire_all()
+        # A new session: nothing from the read-only plan is reused, and all state below is read after every lock.
         again = _build_merge(session, args.workspace_id, only)
         if again is None or again['digest'] != args.expected_sha256:
             raise ValueError('digest mismatch; the data changed since the dry run; no database changes applied')
@@ -621,7 +628,7 @@ def _merge_status(session, workspace_id):
     """needs-merge when a merge would still insert something, adopted when not, error when it cannot be planned."""
     try:
         plan = _build_merge(session, workspace_id, None)
-    except ValueError:
+    except (ValueError, KeyError, TypeError):  # a data-shape failure in one workspace must not stop the survey
         return 'error'
     return 'adopted' if plan is None or plan['empty'] else 'needs-merge'
 
@@ -663,6 +670,8 @@ def main(argv=None):
         raise ValueError('--expected-sha256 is required with --apply')
     if args.expected_sha256 and not args.expected_sha256.startswith('sha256:'):
         raise ValueError('--expected-sha256 must carry the sha256: prefix')
+    if args.list and (args.merge or args.group):
+        raise ValueError('--list does not take --merge or --group')
     if args.group and not args.merge:
         raise ValueError('--group requires --merge')
     database_url = db_engine.resolve_database_url(required=True)

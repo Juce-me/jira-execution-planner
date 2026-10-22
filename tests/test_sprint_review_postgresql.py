@@ -470,6 +470,8 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
 
         merge = Thread(target=run, args=('merge', lambda: self.adopt('--merge', '--apply', '--expected-sha256', digest)))
         writer = Thread(target=run, args=('writer', lambda: self.save(schemas=[self.layout()], base=0, view=0, sprint='40')))
+        # Both waits must be seen inside the merge's 5 s lock timeout; the writer starts waiting after the merge, so its own 5 s
+        # timeout (set in the test URL) outlasts it and it proceeds once the merge rolls back.
         with self.held_writer(hold_group_y) as held:
             merge.start()
             try:
@@ -490,6 +492,18 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
         self.assertEqual([(v[0], v[1]) for v in views], [('40', 1)])  # the writer's own view; no merged Sprint 16 view
         with db_engine.session_scope(self.url) as session:
             self.assertEqual(session.execute(text('SELECT count(*) FROM group_review_cells')).scalar(), 0)
+
+    def test_a_writer_committing_between_the_phases_aborts_the_merge_with_zero_writes(self):
+        self.seed_legacy()
+        digest = self.merge_digest()
+        legacy = self.legacy_rows()
+        with patch.object(adopt, '_before_lock', lambda: self.add()):  # an application save commits after the plan
+            with self.assertRaisesRegex(ValueError, 'data changed since the dry run'):
+                self.adopt('--merge', '--apply', '--expected-sha256', digest)
+        self.assertEqual(self.rows(), ([('group-x', 1, [self.column['id']])], []))  # only the writer's column, nothing merged
+        with db_engine.session_scope(self.url) as session:
+            self.assertEqual(session.execute(text('SELECT count(*) FROM group_review_cells')).scalar(), 0)
+        self.assertEqual(self.legacy_rows(), legacy)
 
     # Migration
     def test_model_database_parity(self):

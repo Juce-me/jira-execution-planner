@@ -272,8 +272,8 @@ workspace's legacy columns, values and views into every configured Department gr
 purge note in [README.md](../../README.md) and [INSTALL.md](../../INSTALL.md). A database that auto-migrates on start hides legacy
 columns until the script is run by hand. Once any group row exists (any save after the release), `--apply` refuses; `--merge` then
 restores the legacy columns, values and views without overwriting anything live (a legacy column claims a group column by id, then by
-label and type; live cells and views win; a column the group archived stays archived), can run while the app serves, and a second run is
-a no-op. `--list` reports `pending`, `needs-merge`, `adopted` or `error` per workspace. See the restore steps in
+kind, label and type; live cells and views win; a column the group archived stays archived), can run while the app serves, and a second run is
+a no-op. `--list` reports `nothing to adopt`, `pending`, `needs-merge`, `adopted` or `error` per workspace. See the restore steps in
 [README.md](../../README.md) and [INSTALL.md](../../INSTALL.md).
 
 **Known limits.**
@@ -289,6 +289,6 @@ a no-op. `--list` reports `pending`, `needs-merge`, `adopted` or `error` per wor
   view makes later Sprints show the default arrangement for the other kind.
 - A layout saved while Show total is off loses that derived column's position; the corner + can land a new column second rather
   than last when a Sprint's view moved a native column to the front.
-- `--merge` adds a column again after a label-matched column was renamed or archived in the group, and an inserted legacy view
+- `--merge` adds a column again after a label-matched column was renamed in the group (archiving it does not) or a purged Sprint view row (the way to free the view cap), and an inserted legacy view
   changes the layout that later Sprints without their own view inherit (the report names the Sprint-id intervals). It has no automatic
   undo: the pre-run backup is the rollback.

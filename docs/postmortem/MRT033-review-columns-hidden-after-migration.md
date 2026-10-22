@@ -30,7 +30,7 @@ The first reading, that a Sprint changing from future to active had orphaned the
 
 ## Resolution
 
-`scripts/adopt_legacy_sprint_reviews.py --merge` adopts legacy columns, values and Sprint views into groups that already hold rows, without overwriting, clearing, renaming or resurrecting anything created after the release (id claim first, then label and type; live cells and views win; a group-archived column stays archived). The apply locks only the groups it writes through the same schema-row lock every app save takes first, re-reads and re-plans under the locks, and writes only if the reviewed digest still matches. `--group` limits the targets, a second run is a no-op, and `--list` now reports `pending`, `needs-merge`, `adopted` or `error`. The runbook, rollback table, privileges and a label-lookup query are in `README.md` and `INSTALL.md`.
+`scripts/adopt_legacy_sprint_reviews.py --merge` adopts legacy columns, values and Sprint views into groups that already hold rows, without overwriting, clearing, renaming or resurrecting anything created after the release (id claim first, then kind, label and type; live cells and views win; a group-archived column stays archived). The apply locks only the groups it writes through the same schema-row lock every app save takes first, re-reads and re-plans under the locks, and writes only if the reviewed digest still matches. `--group` limits the targets, a second run is a no-op, and `--list` now reports `pending`, `needs-merge`, `adopted` or `error`. The runbook, rollback table, privileges and a label-lookup query are in `README.md` and `INSTALL.md`.
 
 ## Verification
 

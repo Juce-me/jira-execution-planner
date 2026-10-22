@@ -608,6 +608,53 @@ class AdoptionTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, '2 group columns are malformed'):
                 adopt._read_group_state(session, self.workspace, ['group-x'], set())
 
+    def test_read_group_state_requires_the_app_shape_of_group_columns_without_leaking_labels(self):
+        good = group_col(1, 'GroupSecretLabel')
+        shapes = {'a missing archived flag': {k: v for k, v in good.items() if k != 'archived'},
+                  'a non-boolean archived flag': dict(good, archived=1),
+                  'a missing order': {k: v for k, v in good.items() if k != 'order'},
+                  'a boolean order': dict(good, order=True)}
+        for name, column in shapes.items():
+            with self.subTest(name):
+                with db_engine.session_scope(self.url) as session:
+                    session.query(models.WorkspaceGroupReviewSchema).delete()
+                    session.add(models.WorkspaceGroupReviewSchema(id=str(uuid.uuid4()), workspace_id=self.workspace,
+                                                                  group_id='group-x', schema_revision=1, columns=[column]))
+                with db_engine.session_scope(self.url) as session:
+                    with self.assertRaisesRegex(ValueError, '^1 group columns are malformed$'):
+                        adopt._read_group_state(session, self.workspace, ['group-x'], set())
+
+    def test_list_reports_error_for_a_malformed_group_column_and_keeps_surveying(self):
+        self.simple()
+        self.live_group('group-x', [{k: v for k, v in group_col(1, 'Risk').items() if k != 'archived'}], revision=1)
+        other = self.golden_workspace(uid(31))
+        self.legacy('17', [col('Risk')], {}, [('101', 'story', uid(5), '1')], workspace=other)
+        odd = self.golden_workspace(uid(32))  # an unhashable layout id raises a TypeError while planning
+        self.legacy('17', [col('Risk')], {'story': {'order': [['not', 'hashable']], 'hidden': []}}, [], workspace=odd)
+        self.live_group('group-x', [group_col(2, 'Other')], revision=1, workspace=odd)
+        output = self.list_output()
+        self.assertIn(f'workspace {self.workspace} legacy_reviews=1 group_schemas=1 group_views=0 status=error', output)
+        self.assertIn(f'workspace {other} legacy_reviews=1 group_schemas=0 group_views=0 status=pending', output)
+        self.assertIn(f'workspace {odd} legacy_reviews=1 group_schemas=1 group_views=0 status=error', output)
+
+    def test_list_takes_neither_merge_nor_group(self):
+        for flags in (['--merge'], ['--group', 'group-x'], ['--merge', '--group', 'nope']):
+            with self.assertRaisesRegex(ValueError, '--list does not take --merge or --group'):
+                adopt.main(['--list', *flags])
+
+    def test_a_database_error_during_the_merge_write_is_sanitized_and_rolls_back(self):
+        self.legacy('17', [col('Risk', identity=uid(1))], {}, [('101', 'story', uid(1), 'ConfidentialValue')])
+        digest = self.merge_digest()
+
+        def failing(session, model, rows):
+            raise DBAPIError('INSERT INTO group_review_cells ...', {'value': 'ConfidentialValue'}, Exception('ConfidentialValue'))
+        with patch.object(adopt, '_insert', failing):
+            with self.assertRaises(ValueError) as caught:
+                self.merge('--apply', '--expected-sha256', digest)
+        self.assertRegex(str(caught.exception), r'^adoption aborted by the database \(\w+\); no database changes applied$')
+        self.assertNotIn('Confidential', str(caught.exception))
+        self.assertEqual(self.workspace_state(), {'schemas': {}, 'cells': [], 'views': []})
+
     def test_resolution_against_an_empty_state_equals_the_fresh_resolution(self):
         workspace = self.golden_workspace(uid(1))
         self.golden_rich_fixture(workspace)
@@ -945,15 +992,19 @@ class AdoptionTests(unittest.TestCase):
                                 (bad, 'legacy_reviews=2 group_schemas=1 group_views=0 status=error')):
             self.assertIn(f'workspace {workspace} {line}', output)
 
-    def test_a_plan_above_the_row_ceiling_aborts_before_any_lock(self):
+    def test_a_plan_above_the_row_ceiling_aborts_before_any_lock_and_groups_can_be_merged_separately(self):
         column = col('Risk')
         self.legacy('17', [column], {}, [(str(100 + number), 'story', column['id'], '1') for number in range(5)])
         locked = []
-        with patch.object(adopt, 'MERGE_MAX_INSERT_ROWS', 4), \
+        with patch.object(adopt, 'MERGE_MAX_INSERT_ROWS', 8), \
                 patch.object(review, '_locked_schema', side_effect=lambda *args: locked.append(args)):
-            with self.assertRaisesRegex(ValueError, 'group group-x would insert 6 rows, above the 4 ceiling'):
-                self.merge_apply()
-        self.assertEqual(locked, [])
+            with self.assertRaisesRegex(ValueError, 'the plan would insert 12 rows, above the 8 ceiling; merge the groups separately'):
+                self.merge_apply()  # two groups of 6 rows each: the run as a whole is over the ceiling
+            self.assertEqual(locked, [])
+        with patch.object(adopt, 'MERGE_MAX_INSERT_ROWS', 8):
+            self.assertEqual(self.merge_apply('--group', 'group-x')[0], 0)  # 6 rows, under the ceiling
+            self.assertEqual(self.merge_apply('--group', 'group-y')[0], 0)
+        self.assertEqual(sorted(self.workspace_state()['schemas']), ['group-x', 'group-y'])
 
     def test_merge_output_has_counts_and_ids_only_even_with_secrets_on_both_sides(self):
         self.legacy('17', [col('LegacySecretLabel', type_='text', identity=uid(1))], {},
@@ -1126,6 +1177,7 @@ class AdoptionMergeResolutionTests(unittest.TestCase):
         result = self.resolve(reviews, self.state([archived], revision=3))
         self.assertEqual((result['added'], result['matched'], result['cells'], result['empty']), ([], [], [], True))
         self.assertIn('group-archived keys skipped: 1, cells dropped 1', result['report'])
+        self.assertIn(f'skipped {uid(1)} -> {uid(1)}', result['report'])  # claimed by id
         live, gone = self.column(2, 'Intent'), self.column(3, 'intent', archived=True)  # intent changes nothing
         reviews = [self.legacy(17, [live], cells=[('101', 'story', uid(2), 'a')]), self.legacy(18, [gone])]
         result = self.resolve(reviews, self.state([self.group_column(2, 'Intent')], revision=1))
@@ -1171,6 +1223,7 @@ class AdoptionMergeResolutionTests(unittest.TestCase):
         self.assertEqual((result['added'], result['cells'], result['matched'], result['empty']), ([], [], [], True))
         self.assertEqual(result['columns'], [archived])
         self.assertIn('group-archived keys skipped: 1, cells dropped 2', result['report'])
+        self.assertIn(f'skipped {uid(1)} -> {uid(10)}', result['report'])  # matched by label
         live = self.group_column(11, 'Risk')  # a live column with the label beats the archived one
         result = self.resolve(reviews, self.state([archived, live], revision=4))
         self.assertEqual(result['matched'], [(uid(1), uid(11))])

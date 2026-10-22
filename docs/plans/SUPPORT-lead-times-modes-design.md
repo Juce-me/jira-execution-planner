@@ -130,7 +130,7 @@ Project, Exclude: the same five groups as today (Mode takes the slot the Assigne
 Switching mode swaps only the selection control, clears the selected heatmap row, and loads that mode's data (client
 cache hit when the same request was already made). The bar keeps one row and the same height in every mode, with no
 clipped or overflowing label. The stretchy selects (Mode, Number of epics, Project) share the free space, so their
-widths and the positions of the controls after them may move by a few pixels when the fixed-width quarter range is
+widths and the positions of the controls after them may move (about 46 px, measured below) when the fixed-width quarter range is
 swapped for the Number-of-epics select; that flex is accepted, a change of row count or height is not. The
 Playwright geometry assertions state exactly this.
 
@@ -294,13 +294,17 @@ unless it says otherwise.
   freezes exact Created bodies, so the client omits `mode` for Created (see Request). The client cache key for Created
   is likewise unchanged; only the closed modes prefix their keys.
 - **Empty scope short-circuits.** `build_missing_info_scope_clause` returns an empty string when there are no
-  Components and no Teams, which would make a project-wide query. The closed modes then make no Jira call, return
+  Components and no Teams, which would make a project-wide query. The closed modes then make no Jira search request, return
   `issues: []` and `meta.scope = 'none'`, and the panel says `Scope: none configured (no Components or Teams)`.
-- **The unresolved pass is bounded.** Epics without `resolutiondate` need one changelog request each (4 workers,
-  10 s budget), so the pass must be small. `closed`: the unresolved query adds `updated >= <closed range start>`, a safe
-  superset because closing an Epic updates it. `last_n`: the resolved pass runs first; when it fills the ceiling, the
-  unresolved pass adds `updated >=` the day before the ceiling-th resolution date; when it does not fill the ceiling,
-  every unresolved Epic is a candidate. The Task 1 probe gate becomes latency-based.
+- **The unresolved pass is bounded by status history.** Epics without `resolutiondate` need one changelog request each
+  (4 workers, 10 s budget), so the pass must be small. `closed`: the unresolved query adds
+  `status CHANGED TO <closed status> DURING (<start - 1 day>, <end + 2 days>)` for each closed status; `last_n`: the
+  resolved passes run first and the unresolved query adds `status CHANGED TO ... AFTER <the day before the ceiling-th
+  resolution day>` when the resolved rows fill the ceiling, and no bound when they do not. Both are safe supersets
+  (the repository's Board already queries `status CHANGED TO ... AFTER`); an earlier idea, `updated >=`, was dropped
+  because a bulk edit of old Epics would flood the candidate set. One shared page counter (80) bounds the whole
+  closed request, a non-200 on any pass is an error (never a warning), and the Task 1 probe gate is latency-based and
+  also parses every JQL form the query uses.
 - **Long-lived Epics need the full changelog.** The embedded changelog is partial. In the closed modes the terminal-date
   lookup reuses the repository's full-changelog paging when `changelog.total` exceeds the embedded histories; Created
   mode keeps today's lookup.
@@ -310,8 +314,11 @@ unless it says otherwise.
 - **Stated semantics.** An Epic Killed, reopened and Killed again gets its first terminal transition date when it has no
   `resolutiondate` (existing rule); Last N ranks by calendar day then key (codepoint order on both sides), so Epics
   sharing the boundary day are cut by key, not by time of day.
-- **Mode/data mismatch guard.** Cached or in-flight data from another mode must never render under a new mode. The
-  derived layer treats `cohortData` as empty unless its `meta.mode` (absent means `created`) equals the current mode.
+- **Mode/data mismatch guard.** Cached or in-flight data from another mode must never render under a new mode, in either
+  direction. The derived layer uses `cohortData` only when its `meta.mode` (absent means `created`) equals the current
+  mode, and exposes `cohortAwaitingMode` for the in-between state: the panel shows the loading line, and the warnings,
+  the empty message, the Project-filter prune and the selected-row prune are all held while it is true, so a Project
+  selection survives Created, Closed and back to Created. The Mode dropdown's handler clears the selected row.
 - **Closed modes ignore the `open` and `postponed` status toggles** (forced off), so a persisted `postponed: true`
   cannot reveal anything and cannot be stuck on with its chip hidden.
 - **Empty and shortfall states.** The panel receives the scope, whether the fetched set was empty, and the shortfall.
@@ -321,5 +328,11 @@ unless it says otherwise.
   `Middle lead time of the most recently closed epics` in `last_n`; Created keeps today's notes.
 - **Share links.** `lead` and `n` apply to the Lead Times view only. An invalid `lead` is dropped and reported; the
   link then applies as Created with its own `from`/`to`. Applying a link also resets the inactive modes' selections to
-  their defaults (the link states the whole view). `lead=last_n` without a valid `n` applies 30 and reports.
+  their defaults (the link states the whole view). `lead=last_n` without a valid `n` applies 30 and reports. A Last N
+  link carries no `from`/`to`; the resolver gives it the default quarter pair so the apply step still writes the mode.
 - **Closed-mode Jira link.** When the chart lists more than 250 Epics the link is hidden and a `.stats-note` says why.
+- **Control bar widths (measured on the real CSS at 966 px usable).** Created and Closed fit one row at 955.5 px; Last N fits
+  at 811 px, the stretchy Mode and Number-of-epics selects widen to about 187 px each and Group By and Project move about
+  46 px left. Row count and height must be equal in all modes at 1280 px; at 375 px labels must not clip (4 / 4 / 3 rows).
+- **Closed-mode ties.** The Last N resolved pass completes the boundary day instead of cutting by time of day, so the
+  kept set is the first N by day then key.

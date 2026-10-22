@@ -226,7 +226,7 @@ test('Statistics cohort pills, range menus and native selectors retain real cont
     await surfaceHover(page, selected, testInfo, 'stats-cohort-selected', {pill:true,selected:true});
     await selected.click();
     await surfaceHover(page, view.locator('.cohort-status-actions .stats-toggle:not(.active)').first(), testInfo, 'stats-cohort-ordinary', {foundation:true});
-    const start = view.getByRole('button',{name:'Start quarter',exact:true});
+    const start = view.getByRole('button',{name:'Start created quarter',exact:true});
     await surfaceHover(page,start,testInfo,'stats-quarter-range',{foundation:true});
     await start.click();
     const ordinaryOption = view.locator('.sprint-dropdown-option:not(.selected)').first();

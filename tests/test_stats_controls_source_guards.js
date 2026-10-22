@@ -33,15 +33,34 @@ test('implemented stats ranges use StatsRangeControl and Lead Times headings sha
     const end = statsPanel.indexOf('<div className="stats-actions cohort-status-actions">', start);
     assert.ok(start >= 0 && end > start, 'Expected the Lead Times controls block');
     const controls = statsPanel.slice(start, end);
-    ['Group By', 'Project', 'Assignee', 'Exclude'].forEach((label) => {
+    ['Group By', 'Project', 'Exclude'].forEach((label) => {
         assert.ok(controls.includes(`<div className="controls-label">${label}</div>`), label);
     });
     assert.ok(controls.includes('aria-label="Project"'));
-    assert.ok(controls.includes('aria-label="Assignee"'));
     assert.ok(controls.includes('aria-label="Exclude Ad Hoc"'));
     assert.ok(controls.includes('aria-label="Exclude Excluded Capacity"'));
     assert.ok(controls.includes('<span>Ad Hoc</span>'));
     assert.ok(controls.includes('<span>Excluded Capacity</span>'));
     assert.equal(controls.includes('<span>Exclude Ad Hoc</span>'), false);
     assert.equal(controls.includes('<span>Exclude Excluded Capacity</span>'), false);
+});
+
+test('Lead Times has no Assignee filter in the cohort, stats or dashboard sources', () => {
+    const sources = ['frontend/src/cohort', 'frontend/src/stats']
+        .flatMap((dir) => fs.readdirSync(dir, { recursive: true })
+            .filter((name) => /\.(jsx?|mjs)$/.test(name))
+            .map((name) => `${dir}/${name}`))
+        .concat(['frontend/src/jiraExportUtils.mjs', 'frontend/src/dashboard.jsx']);
+    assert.ok(sources.length > 20, 'Expected the cohort and stats sources to be scanned');
+    // The Board's own assigneeKey sort helper and the burnout* names are unrelated and out of scope.
+    const forbidden = /\bcohortAssignee\w*|\bsetCohortAssignee\w*|\bderiveAssigneeOptions\b|\bassigneeKey\b/;
+    sources.forEach((file) => {
+        assert.equal(forbidden.test(fs.readFileSync(file, 'utf8')), false, file);
+    });
+    const controls = statsPanel.slice(
+        statsPanel.indexOf('<div className="stats-controls cohort-controls">'),
+        statsPanel.indexOf('<div className="stats-actions cohort-status-actions">'),
+    );
+    assert.equal(controls.includes('aria-label="Assignee"'), false);
+    assert.equal(controls.includes('<div className="controls-label">Assignee</div>'), false);
 });

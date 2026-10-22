@@ -145,8 +145,8 @@ test('parity control: clock normalization is scoped to the exact app-owned reado
     expect(changed).not.toBe(before);
 });
 
-function statsRangeFixture(prefix = 'excluded-capacity-sprint', end = 'start', expanded = false, target = false) {
-    const label = prefix === 'lead-times-quarter' ? 'Quarter range' : 'Sprint range';
+function statsRangeFixture(prefix = 'excluded-capacity-sprint', end = 'start', expanded = false, target = false, quarterLabel = 'Created quarter range') {
+    const label = prefix === 'lead-times-quarter' ? quarterLabel : 'Sprint range';
     const id = `${prefix}-${end}-listbox`;
     return `<section id="root"><div role="group" aria-label="${label}" data-stats-range="${prefix}"><div class="view-filters"><div class="control-field"><span class="control-label">Start</span><div class="sprint-dropdown" data-range-end="${end}"><button class="sprint-dropdown-toggle" aria-haspopup="listbox" aria-expanded="${expanded}" aria-controls="${id}">Start</button>${target ? `<div id="${id}" role="listbox">Options</div>` : ''}</div></div></div></div></section>`;
 }
@@ -159,6 +159,8 @@ test('parity control: only exact closed Stats range listboxes may be deferred', 
         }
     }
     await capture(page, statsRangeFixture('project-track-sprint', 'end', true, true), 'open-valid');
+    const closed = await capture(page, statsRangeFixture('lead-times-quarter', 'start', false, false, 'Closed quarter range'), 'closed-quarter');
+    expect(closed).toContain('aria-controls="lead-times-quarter-start-listbox"');
 });
 
 test('parity control: Stats range exceptions reject unknown, mismatched, open and duplicate references', async ({ page }) => {
@@ -170,6 +172,8 @@ test('parity control: Stats range exceptions reject unknown, mismatched, open an
         fixture.replace('aria-haspopup="listbox"', 'aria-haspopup="menu"'),
         fixture.replace('role="group"', 'role="region"'),
         fixture.replace('aria-label="Sprint range"', 'aria-label="Unknown range"'),
+        statsRangeFixture('lead-times-quarter', 'start', false, false, 'Quarter range'),
+        statsRangeFixture('excluded-capacity-sprint').replace('aria-label="Sprint range"', 'aria-label="Created quarter range"'),
         fixture.replace('aria-controls=', 'aria-describedby='),
         fixture.replace('class="sprint-dropdown-toggle"', 'class="other-toggle"'),
         fixture.replace('class="control-field"', 'class="other-field"'),

@@ -41,14 +41,33 @@ It also supports:
 
 ### Lead Times
 
-Shows epic cohorts and open-epic aging from a selected start quarter.
+Shows epic cohorts and lead times for a selected set of Epics. A **Mode** dropdown (first control) chooses which Epics the view is built from; exactly one selection control follows it, then the shared filters (Group By, Project, Exclude, status chips). There is no Assignee filter.
+
+| Mode | Selection control | Epics |
+| --- | --- | --- |
+| **Created** (default) | **Created quarter** start and end | Epics created within the quarter range, open or closed, matching the Department's Teams or Components |
+| **Closed** | **Closed quarter** start and end | Epics whose terminal date falls within the quarter range |
+| **Last N** | **Number of epics** (30, 50 or 60) | The newest N closed Epics, counted after the filters |
+
+Created mode is unchanged: its request, its data, its cache and its parts behave as before this change; the **Quarter** label is now **Created quarter**.
 
 Main parts:
 - cohort heatmap by created period and elapsed period; its hover detail renders above the graph panel
-- longest-open epics view
-- filters for project, assignee, grouping mode, and status
+- longest-open epics view (Created mode only)
+- Completed Epics list with load more, and a Jira link
+- filters for project, grouping mode, and status
 
-`Postponed` is treated as terminal rather than open in this view.
+`Postponed` is treated as terminal rather than open in Created mode.
+
+#### Closed and Last N
+
+- **Closed Epic** means status Done, Killed or Incomplete. Postponed Epics are excluded entirely from both closed modes, including a saved Postponed status toggle; the status chips show only Done, Killed and Incomplete there. The terminal date is Jira `resolutiondate`, falling back to the changelog for a closed Epic without one (the closed modes read the full changelog for that fallback).
+- **Scope** is the Board's exact-Component scope, with no Team matching. A Department with no Components falls back to its Teams; one with neither shows `Scope: none configured (no Components or Teams)` and sends no Jira search. The scope is stated above the chart (`Scope: Components` or `Scope: Teams (no Components configured)`). A scope too large for one Jira search is a 400 that the panel shows as an error, never a silent shortfall.
+- **Last N** asks the server for a bounded window of the most recently closed Epics (200 by default, set with `EPIC_COHORT_LAST_N_WINDOW`, never below 60), then applies the Project, Exclude and status filters in the browser and keeps the newest N by closing day, then Epic key. Changing N or a filter never refetches. When the server window was full and the filters leave fewer than N Epics in it, the panel says `Showing X of N` and names the window; when the window was not full, fewer than N simply means fewer closed Epics exist in scope, and no note is shown.
+- **Hidden parts:** the closed modes show no Open Epics list, no Workflow Status card and no Open column in the heatmap.
+- **Overflow column:** an Epic that took longer to close than the grid's column budget lands in a trailing `Q+12+` (Quarter grouping) or `M+24+` (Month grouping) column instead of vanishing.
+- **Jira link:** the Completed Epics link in the closed modes lists exactly the Epics the chart lists (`key in (...)`, up to 250 keys); above 250 the link is omitted and a note says why.
+- Mode, each mode's own selection and the Last N count are saved per Department group and can be shared in a link (see [Shareable view links](shareable-view-links.md)).
 
 ### Excluded Capacity
 
@@ -99,6 +118,8 @@ Main parts:
 
 ## Lead Time Definition
 
+The definition below applies to every mode; the closed modes list only closed Epics.
+
 Each epic gets a `leadTimeDays` value.
 
 - terminal epic: `terminal date - created date`
@@ -121,11 +142,11 @@ Statistics use the currently selected sprint and active team scope.
 Important behavior:
 - Teams and Priority derive from the already loaded sprint task data
 - Burndown uses a separate on-demand API call
-- Lead Times uses a separate on-demand cohort API call
+- Lead Times uses a separate on-demand cohort API call per mode; the request for Created mode carries no `mode` and is unchanged, and a mode already fetched is not requested again when you return to it
 - Excluded Capacity uses cached progressive stats-source requests for the Start Sprint / End Sprint range
 - Mono vs Cross reuses the cached progressive stats-source data and the same sprint range
 - Project Track reuses that same cached stats-source data and sprint range (no second fetch); only its time-in-phase section makes a separate, bounded, client-cached changelog request per distinct in-scope epic set
-- changing UI-only controls such as row selection or view grouping does not refetch the lead-time dataset
+- changing UI-only controls such as row selection or view grouping does not refetch the lead-time dataset; neither does a Last N count or a filter change
 
 ## Implementation ownership
 

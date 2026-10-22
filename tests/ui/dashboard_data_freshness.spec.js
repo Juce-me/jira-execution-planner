@@ -763,7 +763,7 @@ for (const failure of [null,500,409,'null']) test(`automatic EPM ${failure || 's
     await page.screenshot({path:testInfo.outputPath('epm-after.png')});
 });
 
-async function setupStatsFreshness(page, view) {
+async function setupStatsFreshness(page, view, {cohortMode}={}) {
     const {catchUpPrefs,appBaseUrl,groupsConfigPayload,SPRINT_ID}=require('./eng_epic_refresh_fixture');
     const lifecycle=await installLifecycleControl(page),ctx=await mockDashboard(page);
     ctx.respond('/api/groups-config',({json})=>json({...groupsConfigPayload,groups:groupsConfigPayload.groups.map(group=>({...group,excludedCapacityEpics:['EPIC-1']}))}));
@@ -772,14 +772,15 @@ async function setupStatsFreshness(page, view) {
     ctx.scenario.stories.forEach(story => Object.assign(story.fields, {customfield_10101:story.fields.sprint,epicProjectTrack:'Committed',epicStatus:'In Progress',epicAssignee:{displayName:'Synthetic Epic Lead'}}));
     ctx.scenario.stories.find(story=>story.key==='E2-S01').fields.status={name:'Done'};
     ctx.scenario.stories.find(story=>story.key==='E2-S02').fields.projectKey='TECH';
-    const data=()=> view==='burnout'?{range:{startDate:'2026-05-01',endDate:'2026-05-14'},issuesMeta:ctx.scenario.stories.map(story=>({issueKey:story.key,createdDate:'2026-04-27',teamAtStart:{id:'team-alpha',name:'Alpha Team'},assignee:{id:'synthetic-owner',name:'Synthetic Owner'}})),events:[{issueKey:'E2-S01',date:'2026-05-04',bucket:'done',teamId:'team-alpha',teamName:'Alpha Team'},...(remote?[{issueKey:'E3-S01',date:'2026-05-07',bucket:'done',teamId:'team-alpha',teamName:'Alpha Team'}]:[])],assignees:[{id:'synthetic-owner',name:'Synthetic Owner'}]}:
+    const closedCohort=mode=>({range:mode==='closed'?{startDate:'2026-01-01',endDate:'2026-06-30'}:null,issues:[{key:'SYN-C1',summary:'Synthetic closed cohort Epic',projectKey:'PROD',status:'done',jiraStatus:'Done',createdDate:'2026-01-10',terminalDate:'2026-02-20',leadTimeDays:41,assignee:{id:'synthetic-owner',name:'Synthetic Owner'}},{key:'SYN-C2',summary:'Synthetic second closed cohort Epic',projectKey:'PROD',status:'done',jiraStatus:'Done',createdDate:'2026-01-10',terminalDate:'2026-03-05',leadTimeDays:54,assignee:{id:'synthetic-owner',name:'Synthetic Owner'}},...(remote?[{key:'SYN-C3',summary:'Synthetic remote closed cohort Epic',projectKey:'PROD',status:'done',jiraStatus:'Done',createdDate:'2026-01-10',terminalDate:'2026-04-10',leadTimeDays:90,assignee:{id:'synthetic-owner',name:'Synthetic Owner'}}]:[])],meta:{warnings:[],mode,scope:'components',windowCeiling:mode==='last_n'?200:null,windowFull:mode==='last_n'?false:null}});
+    const data=mode=> view==='cohort'&&mode?closedCohort(mode):view==='burnout'?{range:{startDate:'2026-05-01',endDate:'2026-05-14'},issuesMeta:ctx.scenario.stories.map(story=>({issueKey:story.key,createdDate:'2026-04-27',teamAtStart:{id:'team-alpha',name:'Alpha Team'},assignee:{id:'synthetic-owner',name:'Synthetic Owner'}})),events:[{issueKey:'E2-S01',date:'2026-05-04',bucket:'done',teamId:'team-alpha',teamName:'Alpha Team'},...(remote?[{issueKey:'E3-S01',date:'2026-05-07',bucket:'done',teamId:'team-alpha',teamName:'Alpha Team'}]:[])],assignees:[{id:'synthetic-owner',name:'Synthetic Owner'}]}:
         view==='cohort'?{range:{startDate:'2026-01-01',endDate:'2026-06-30'},issues:[{key:'SYN-1',summary:'Synthetic open cohort Epic',projectKey:'PROD',status:'open',jiraStatus:'In Progress',createdDate:'2026-01-10',assignee:{id:'synthetic-owner',name:'Synthetic Owner'}},{key:'SYN-2',summary:'Synthetic done cohort Epic',projectKey:'PROD',status:'done',jiraStatus:'Done',createdDate:'2026-01-10',terminalDate:'2026-01-20',leadTimeDays:10,assignee:{id:'synthetic-owner',name:'Synthetic Owner'}},...(remote?[{key:'SYN-3',summary:'Synthetic remote cohort Epic',projectKey:'PROD',status:'done',jiraStatus:'Done',createdDate:'2026-01-10',terminalDate:'2026-01-30',leadTimeDays:20,assignee:{id:'synthetic-owner',name:'Synthetic Owner'}}]:[])],meta:{warnings:[]}}:
         {issues:ctx.scenario.stories,meta:{warnings:[]}};
-    if(source)ctx.respond(source,({json})=>json({data:data(),cached:false}));
+    if(source)ctx.respond(source,({json,call})=>json({data:data(call.body?.mode),cached:false}));
     ctx.respond('/api/stats/project-track-phase-durations',({json})=>json({epics:[{key:'EPIC-3',summary:'Synthetic held phase Epic',created:'2026-04-01',currentValue:'Committed',durations:{'No track':3,Committed:8},transitions:[{date:'2026-04-04',from:null,to:'Committed'}]}],meta:{processedEpicCount:1,truncated:false}}));
     const activateRemote=()=>{remote=true;const story=ctx.scenario.stories.find(story=>story.key==='E3-S01');Object.assign(story.fields,{summary:'Synthetic accepted Statistics Story',status:{name:'Done'},customfield_10004:11});ctx.scenario.stories.find(story=>story.key==='E1-S01').fields.customfield_10004=12;if(view==='burnout')ctx.scenario.stories.push({...story,id:'E3-S02',key:'E3-S02',fields:{...story.fields,summary:'Synthetic newly discovered Burnout scope Story',status:{name:'To Do'},customfield_10004:1}});};
     await page.route('**/frontend/dist/dashboard.js',route=>route.fulfill({status:200,contentType:'application/javascript',body:dashboardBundle}));
-    await page.addInitScript(value=>localStorage.setItem('jira_dashboard_ui_prefs_v1',JSON.stringify(value)),catchUpPrefs({showStats:true,statsView:view,groupByInitiativeChoice:false,cohortStartQuarter:'2026Q1',cohortEndQuarter:'2026Q2',excludedCapacityStartSprintId:String(SPRINT_ID),excludedCapacityEndSprintId:String(SPRINT_ID),projectTrackMode:'epic',projectTrackCapacitySide:'both',projectTrackExcludeExcludedCapacity:false,showProduct:true,showTech:true}));
+    await page.addInitScript(value=>localStorage.setItem('jira_dashboard_ui_prefs_v1',JSON.stringify(value)),catchUpPrefs({showStats:true,statsView:view,groupByInitiativeChoice:false,cohortStartQuarter:'2026Q1',cohortEndQuarter:'2026Q2',cohortMode,cohortClosedStartQuarter:'2026Q1',cohortClosedEndQuarter:'2026Q2',cohortLastN:30,excludedCapacityStartSprintId:String(SPRINT_ID),excludedCapacityEndSprintId:String(SPRINT_ID),projectTrackMode:'epic',projectTrackCapacitySide:'both',projectTrackExcludeExcludedCapacity:false,showProduct:true,showTech:true}));
     await page.goto(appBaseUrl);await expect(page.locator('.stats-view.open')).toBeVisible();await settle(page);
     if(source)await expect.poll(()=>ctx.calls.filter(call=>call.pathname===source).length).toBeGreaterThan(0);
     await page.addStyleTag({content:'*,*::before,*::after{animation:none!important;transition:none!important}'});
@@ -825,6 +826,21 @@ for(const view of ['teams','priority','burnout','cohort','excludedCapacity','mon
     if(heldPhase)expect(await panel.locator('.project-track-phase-section').innerText()).toBe(heldPhase);
     await evidence(testInfo,'stats-accepted-witness',{view,before:metricBefore,after:await metric.innerText(),retainedNodes:await panel.locator(witness.nodes).count(),innerScroll:before.scroll});
     await page.screenshot({path:testInfo.outputPath('stats-after.png')});
+});
+// The closed modes' automatic return refresh is the same read as the explicit one: same body, one request, no other stats source.
+for(const cohortMode of ['closed','last_n'])test(`automatic Statistics cohort ${cohortMode} return refresh sends the explicit read body once`,async({page})=>{
+    const {ctx,lifecycle,source,activateRemote}=await setupStatsFreshness(page,'cohort',{cohortMode}),panel=page.locator('.stats-view.open'),metric=panel.locator(statsWitnesses.cohort.metric).first();
+    await expect(metric).toHaveText('2');
+    const explicit=ctx.calls.filter(call=>call.pathname===source);
+    expect(explicit).toHaveLength(1);
+    expect(explicit[0].body).toMatchObject({mode:cohortMode,refresh:false});
+    const since=ctx.calls.length;
+    activateRemote();await lifecycle.returnAfter(13*60*1000);
+    await expect(metric).toHaveText('3');await settle(page);
+    const automatic=ctx.calls.slice(since).filter(call=>call.pathname===source);
+    expect(automatic).toHaveLength(1);
+    expect(automatic[0].body).toEqual(explicit[0].body);
+    expect(ctx.calls.slice(since).filter(call=>call.pathname.startsWith('/api/stats/')&&call.pathname!==source)).toHaveLength(0);
 });
 for(const view of ['burnout','cohort','excludedCapacity','monoCrossShare','projectTrack'])test(`automatic Statistics ${view} holds loaded charts on recoverable failure`,async({page})=>{
     const {ctx,lifecycle,source}=await setupStatsFreshness(page,view);const panel=page.locator('.stats-view.open');const before=await panel.innerText();

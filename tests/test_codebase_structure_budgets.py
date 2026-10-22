@@ -63,7 +63,11 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # handling, import, the epic-alerts branch and the per-epic enrichment block moved to
     # backend/services/epic_refresh.py (+24 added, -19 removed lines; net +5 over the line above).
     # Merge of origin/main into feature/217-sprint-review-table: both lines above are additive; the merged file is 6487 lines.
-    "jira_server.py": 6487,
+    # Lead Times modes Tasks 2-3: closed-mode adapter (fetch_closed_epic_cohort_data), the extracted
+    # _normalize_cohort_issues tail, the full-changelog option, parse_epic_cohort_request and the
+    # route branch (+128 over the line above; the query building and selection live in
+    # backend/services/epic_cohort_closed.py).
+    "jira_server.py": 6615,
     # App decomposition ratchets the entrypoint to its exact measured size.
     # Issue #251 data freshness adds the lifecycle hook call, owner-ref assignment, handle
     # pass-through, status readout, projection calls and shared EPM availability,
@@ -72,7 +76,10 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # Planning review group-scope hook import and call, plus the Settings guard ref (+3).
     # Issue #267 D3b passes the group name, Sprint-name resolver and hint dismissal props to the review table (+1).
     # Team/Sprint selector fixes: dropdown-only Team options import and memo, shared sprintWorkLoaded flag, readout moved into the title block (+10).
-    "frontend/src/dashboard.jsx": 7569,
+    # Lead Times modes Task 4: the Assignee filter leaves the dashboard (-8).
+    # Lead Times modes Task 6: mode, closed range and N thread through the per-group state, saved prefs and the stats hooks (+20).
+    # Lead Times modes Task 7: the new Mode, selection and notes props reach StatsPanel (+12).
+    "frontend/src/dashboard.jsx": 7593,
 }
 
 

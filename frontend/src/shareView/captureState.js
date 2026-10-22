@@ -1,7 +1,17 @@
+import { resolveLeadTimesLastN, resolveLeadTimesMode } from '../cohort/cohortUtils.js';
 import { SHARE_VIEW_ALERT_KEYS, SHARE_VIEW_VERSION } from './viewDefaults.js';
 
 // The Statistics views that carry a range: a quarter pair (Lead Times) or a Sprint pair (the three source-only views).
 export const STATS_RANGE_KIND = Object.freeze({ cohort: 'quarter', excludedCapacity: 'sprint', monoCrossShare: 'sprint', projectTrack: 'sprint' });
+
+// Lead Times carries only its active mode's selection: Created its quarters, Closed `lead` and its own quarters,
+// Last N `lead` and `n` with no quarters.
+function leadTimesRange(snapshot) {
+    const lead = resolveLeadTimesMode(snapshot.cohortMode);
+    if (lead === 'closed') return { lead, from: snapshot.cohortClosedStartQuarter, to: snapshot.cohortClosedEndQuarter };
+    if (lead === 'last_n') return { lead, n: resolveLeadTimesLastN(snapshot.cohortLastN) };
+    return { from: snapshot.cohortStartQuarter, to: snapshot.cohortEndQuarter };
+}
 
 // The Board's facet selection and explicitly focused column. A facet the selection leaves absent is neutral, and a single-option
 // or both-ticked state is neutral too, so only a narrowing facet is carried.
@@ -28,7 +38,7 @@ export function buildShareViewState({ mode, groupId, sprintId, snapshot, searchQ
     const expanded = rendered.filter(key => alertFlags[key][0]);
     const statsView = snapshot.statsView;
     const rangeKind = Object.hasOwn(STATS_RANGE_KIND, statsView) ? STATS_RANGE_KIND[statsView] : null;
-    const range = rangeKind === 'quarter' ? { from: snapshot.cohortStartQuarter, to: snapshot.cohortEndQuarter }
+    const range = rangeKind === 'quarter' ? leadTimesRange(snapshot)
         : rangeKind === 'sprint' && sprintRange.start && sprintRange.end ? { from: String(sprintRange.start), to: String(sprintRange.end) }
             : {};
     const candidate = {

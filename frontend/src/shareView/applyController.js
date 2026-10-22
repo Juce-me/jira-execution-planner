@@ -8,6 +8,7 @@ import {
 } from './resolver.js';
 import { revealShareViewFocus } from './focusReveal.js';
 import { createApplyMachine, stepApplyMachine } from './applyMachine.js';
+import { LEAD_TIMES_LAST_N_OPTIONS, getCurrentQuarterLabel } from '../cohort/cohortUtils.js';
 import { STATS_RANGE_KIND } from './captureState.js';
 import { readPendingAuthenticationRequired } from '../api/authRequired.js';
 import { selectedTeamSelectionsEqual } from '../teamSelectionUtils.mjs';
@@ -62,11 +63,26 @@ function runStageA(o, state, { scope, teams }, scopeChange) {
     });
 }
 
-function writeRange(o, view, range) {
+// Lead Times writes every mode's own selection: the link's for the mode it names, the default for the others,
+// so a link never inherits the viewer's previous Closed range or count.
+function writeLeadTimes(o, apply) {
+    const { range, lead, n } = apply;
+    const defaultRange = { from: getCurrentQuarterLabel(), to: getCurrentQuarterLabel() };
+    const created = lead === 'created' ? range : defaultRange;
+    const closed = lead === 'closed' ? range : defaultRange;
+    o.setCohortMode(lead);
+    o.setCohortStartQuarter(created.from);
+    o.setCohortEndQuarter(created.to);
+    o.setCohortClosedStartQuarter(closed.from);
+    o.setCohortClosedEndQuarter(closed.to);
+    o.setCohortLastN(lead === 'last_n' ? n : LEAD_TIMES_LAST_N_OPTIONS[0]);
+}
+
+function writeRange(o, apply) {
+    const { stats: view, range } = apply;
     const kind = has(STATS_RANGE_KIND, view) ? STATS_RANGE_KIND[view] : null;
     if (kind === 'quarter') {
-        o.setCohortStartQuarter(range.from);
-        o.setCohortEndQuarter(range.to);
+        writeLeadTimes(o, apply);
     } else if (kind === 'sprint') {
         o.setExcludedCapacityStartSprintId(String(range.from));
         o.setExcludedCapacityEndSprintId(String(range.to));
@@ -88,7 +104,7 @@ function runStageB(o, state, scope) {
     if (has(apply, 'sort')) o.setEngEpicSort(apply.sort);
     if (has(apply, 'layout')) o.setPlanningLayout(apply.layout);
     if (has(apply, 'stats')) o.setStatsView(apply.stats);
-    if (apply.range) writeRange(o, apply.stats, apply.range);
+    if (apply.range) writeRange(o, apply);
     if (has(apply, 'alerts')) {
         o.setShowAlertsPanel(apply.alerts.panel);
         SHARE_VIEW_ALERT_KEYS.forEach(key => o.alertFlags[key][1](Boolean(apply.alerts.expanded[key])));

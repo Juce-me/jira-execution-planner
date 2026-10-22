@@ -108,3 +108,15 @@ test('a Statistics capture carries the view, its range and Teams', () => {
     const unsetRange = received({ mode: 'statistics', snapshot: { ...input().snapshot, statsView: 'monoCrossShare' } });
     assert.equal(Object.hasOwn(unsetRange.state, 'to'), false);
 });
+
+test('a Lead Times capture carries only the active mode: Created its range, Closed lead and its range, Last N lead and n', () => {
+    const cohort = (patch) => received({ mode: 'statistics', snapshot: { ...input().snapshot, statsView: 'cohort', selectedTeams: ['t1'], cohortClosedStartQuarter: '2025Q4', cohortClosedEndQuarter: '2026Q1', cohortLastN: 50, ...patch } }).state;
+    const head = { version: 1, mode: 'statistics', group: 'grp-a', sprint: '4182', teams: ['t1'], stats: 'cohort' };
+    assert.deepEqual(cohort({ cohortMode: 'created' }), { ...head, from: '2026Q3', to: '2026Q4' });
+    assert.deepEqual(cohort({}), { ...head, from: '2026Q3', to: '2026Q4' }, 'a snapshot without a mode is Created');
+    assert.deepEqual(cohort({ cohortMode: 'closed' }), { ...head, from: '2025Q4', to: '2026Q1', lead: 'closed' });
+    assert.deepEqual(cohort({ cohortMode: 'last_n' }), { ...head, lead: 'last_n', n: 50 });
+    assert.deepEqual(cohort({ cohortMode: 'last_n', cohortLastN: 45 }), { ...head, lead: 'last_n', n: 30 }, 'an invalid N falls back to 30');
+    const teams = received({ mode: 'statistics', snapshot: { ...input().snapshot, statsView: 'teams', cohortMode: 'closed' } }).state;
+    assert.equal(Object.hasOwn(teams, 'lead'), false);
+});

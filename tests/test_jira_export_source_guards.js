@@ -38,3 +38,11 @@ test('Jira export control is mounted once in the shared dashboard header', () =>
     assert.ok(!epmViewSource.includes('jiraExportButton'), 'Did not expect EPM view to own export placement');
     assert.ok(!epmRollupPanelSource.includes('jiraExportButton'), 'Did not expect EPM rollup panel to own export placement');
 });
+
+test('Lead Times links closed-mode charts through the listed keys and keeps the Created JQL builder', () => {
+    const charts = fs.readFileSync('frontend/src/cohort/LeadTimesEpicCharts.jsx', 'utf8');
+    assert.match(charts, /buildJiraClosedEpicsSearchUrl\(\s*jiraUrl,\s*cohortCompletedBars\.map/);
+    assert.match(charts, /cohortMode === 'created'\s*\?\s*buildCohortSearchUrl\(/);
+    assert.match(charts, /cohortCompletedBars\.length > DEFAULT_MAX_JQL_KEYS/);
+    assert.match(charts, /<div className="stats-note">/);
+});

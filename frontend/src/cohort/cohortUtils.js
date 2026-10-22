@@ -1,5 +1,27 @@
 const TERMINAL_STATUS_KEYS = new Set(['done', 'killed', 'incomplete', 'postponed']);
 
+export const LEAD_TIMES_MODES = Object.freeze(['created', 'closed', 'last_n']);
+export const LEAD_TIMES_LAST_N_OPTIONS = Object.freeze([30, 50, 60]);
+
+export function resolveLeadTimesMode(value) {
+    return LEAD_TIMES_MODES.includes(value) ? value : 'created';
+}
+
+export function resolveLeadTimesLastN(value) {
+    const parsed = Number(value);
+    return LEAD_TIMES_LAST_N_OPTIONS.includes(parsed) ? parsed : LEAD_TIMES_LAST_N_OPTIONS[0];
+}
+
+// The Created body is exactly what Lead Times has always sent (frozen by the request-contract specs);
+// only the closed modes add `mode`, and Last N takes no quarters.
+export function buildCohortRequest({ mode, startQuarter, endQuarter, teamIds, components, adHocCapacityEpics }) {
+    if (mode === 'last_n') {
+        return { mode, teamIds, components, adHocCapacityEpics, refresh: false };
+    }
+    const body = { startQuarter, endQuarter, teamIds, components, adHocCapacityEpics, refresh: false };
+    return mode === 'closed' ? { mode, ...body } : body;
+}
+
 export function parseIsoDate(value) {
     if (!value || typeof value !== 'string') return null;
     const parsed = new Date(`${value}T00:00:00`);
@@ -133,8 +155,8 @@ function nextPeriodStart(dateValue, groupBy) {
 export function filterCohortIssues(issues, filters = {}) {
     const source = Array.isArray(issues) ? issues : [];
     const projectFilter = String(filters.projectKey || 'all');
-    const assigneeFilter = String(filters.assigneeKey || 'all');
     const excludeAdHoc = Boolean(filters.excludeAdHoc);
+    const closedOnly = Boolean(filters.closedOnly);
     const statusToggles = filters.statusToggles || {};
     const excludedKeys = filters.excludeEpicKeys instanceof Set
         ? filters.excludeEpicKeys
@@ -150,12 +172,10 @@ export function filterCohortIssues(issues, filters = {}) {
         if (excludeAdHoc && String(issue?.capacityType || '') === 'ad_hoc') {
             return false;
         }
-        const assignee = issue?.assignee || {};
-        const assigneeKey = String(assignee?.id || assignee?.name || 'unassigned');
-        if (assigneeFilter !== 'all' && assigneeKey !== assigneeFilter) {
+        const status = normalizeCohortStatus(issue?.status);
+        if (closedOnly && (status === 'open' || status === 'postponed')) {
             return false;
         }
-        const status = normalizeCohortStatus(issue?.status);
         if (statusToggles && Object.prototype.hasOwnProperty.call(statusToggles, status)) {
             return Boolean(statusToggles[status]);
         }
@@ -204,24 +224,42 @@ export function deriveProjectOptions(issues) {
     return [{ value: 'all', label: 'All Projects' }, ...Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label))];
 }
 
-export function deriveAssigneeOptions(issues) {
-    const source = Array.isArray(issues) ? issues : [];
-    const map = new Map();
-    source.forEach((issue) => {
-        const assignee = issue?.assignee || {};
-        const value = String(assignee?.id || assignee?.name || 'unassigned');
-        const label = String(assignee?.name || 'Unassigned');
-        const current = map.get(value) || { value, label, count: 0 };
-        current.count += 1;
-        map.set(value, current);
+const compareKeys = (left, right) => {
+    const a = String(left || '');
+    const b = String(right || '');
+    if (a < b) return -1;
+    return a > b ? 1 : 0;
+};
+
+// Newest terminal day first, ties by Epic key in codepoint order (the server ranks the same way).
+export function selectLastClosedEpics(issues, count) {
+    const limit = Math.max(0, Math.floor(Number(count)) || 0);
+    return (Array.isArray(issues) ? issues : [])
+        .map((issue) => ({ issue, day: parseIsoDate(issue?.terminalDate) }))
+        .filter((entry) => entry.day)
+        .sort((a, b) => (b.day - a.day) || compareKeys(a.issue?.key, b.issue?.key))
+        .slice(0, limit)
+        .map((entry) => entry.issue);
+}
+
+export function createdRangeOf(issues) {
+    let earliest = null;
+    let latest = null;
+    (Array.isArray(issues) ? issues : []).forEach((issue) => {
+        const created = parseIsoDate(issue?.createdDate);
+        if (!created) return;
+        if (!earliest || created < earliest) earliest = created;
+        if (!latest || created > latest) latest = created;
     });
-    return [{ value: 'all', label: 'All Assignees', count: source.length }, ...Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label))];
+    return earliest ? { startDate: toIsoDate(earliest), endDate: toIsoDate(latest) } : null;
 }
 
 export function buildCohortGridModel(issues, options = {}) {
     const source = Array.isArray(issues) ? issues : [];
     const groupBy = options.groupBy === 'month' ? 'month' : 'quarter';
     const maxColumnsBudget = Math.max(1, Number(options.maxColumns) || (groupBy === 'month' ? 30 : 12));
+    const overflowColumn = Boolean(options.overflowColumn);
+    let overflowUsed = false;
     const rangeStartDate = parseIsoDate(options.rangeStartDate);
     const rangeEndDate = parseIsoDate(options.rangeEndDate);
     const rowMap = new Map();
@@ -241,7 +279,8 @@ export function buildCohortGridModel(issues, options = {}) {
             openCount: 0,
             cells: new Map(),
             sampleByCell: new Map(),
-            statusByCell: new Map()
+            statusByCell: new Map(),
+            overflow: null
         };
         row.totalCreated += 1;
         if (createdDate < row.startDate) {
@@ -254,7 +293,18 @@ export function buildCohortGridModel(issues, options = {}) {
             row.openCount += 1;
         } else if (terminalDate) {
             const elapsed = computeElapsedPeriods(createdDate, terminalDate, groupBy);
-            if (elapsed !== null && elapsed <= maxColumnsBudget) {
+            if (overflowColumn && elapsed !== null && elapsed >= maxColumnsBudget) {
+                // Elapsed past the budget is summed into one trailing column instead of vanishing from every cell.
+                const bucket = row.overflow || (row.overflow = {
+                    count: 0, samples: [], statusCounts: { done: 0, killed: 0, incomplete: 0, postponed: 0 }
+                });
+                bucket.count += 1;
+                bucket.statusCounts[status] = (bucket.statusCounts[status] || 0) + 1;
+                if (bucket.samples.length < 5) {
+                    bucket.samples.push({ key: issue?.key || '', summary: issue?.summary || '', status, terminalDate: issue?.terminalDate || '' });
+                }
+                overflowUsed = true;
+            } else if (elapsed !== null && elapsed <= maxColumnsBudget) {
                 maxElapsed = Math.max(maxElapsed, elapsed);
                 row.cells.set(elapsed, (row.cells.get(elapsed) || 0) + 1);
                 const statusCounts = row.statusByCell.get(elapsed) || {
@@ -296,7 +346,8 @@ export function buildCohortGridModel(issues, options = {}) {
                     openCount: 0,
                     cells: new Map(),
                     sampleByCell: new Map(),
-                    statusByCell: new Map()
+                    statusByCell: new Map(),
+                    overflow: null
                 });
             }
             const next = nextPeriodStart(cursor, groupBy);
@@ -311,10 +362,26 @@ export function buildCohortGridModel(issues, options = {}) {
         key: elapsedLabel(index, groupBy),
         label: elapsedLabel(index, groupBy)
     }));
+    if (overflowUsed) {
+        // Appended at its array position, so columns[i].index === i holds for every consumer.
+        const overflowLabel = `${elapsedLabel(maxColumnsBudget, groupBy)}+`;
+        columns.push({ index: columns.length, key: overflowLabel, label: overflowLabel, overflow: true });
+    }
 
     let maxCellCount = 0;
     const normalizedRows = rows.map((row) => {
         const cells = columns.map((column) => {
+            if (column.overflow) {
+                const bucket = row.overflow;
+                const overflowCount = bucket ? bucket.count : 0;
+                maxCellCount = Math.max(maxCellCount, overflowCount);
+                return {
+                    index: column.index,
+                    count: overflowCount,
+                    samples: bucket ? bucket.samples : [],
+                    statusCounts: bucket ? bucket.statusCounts : { done: 0, killed: 0, incomplete: 0, postponed: 0 }
+                };
+            }
             const count = row.cells.get(column.index) || 0;
             maxCellCount = Math.max(maxCellCount, count);
             return {

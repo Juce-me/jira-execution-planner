@@ -19,8 +19,8 @@
   },
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
-    "lineCount": 7569,
-    "lineCeiling": 7569
+    "lineCount": 7593,
+    "lineCeiling": 7593
   },
   "modules": [
     {
@@ -14527,8 +14527,8 @@
         "resetStatsTransientRefs",
         "snapshotStatsGroupState"
       ],
-      "lineCount": 114,
-      "lineCeiling": 114,
+      "lineCount": 126,
+      "lineCeiling": 126,
       "interfaces": []
     },
     {
@@ -14540,8 +14540,8 @@
       "exports": [
         "useStatsState"
       ],
-      "lineCount": 168,
-      "lineCeiling": 168,
+      "lineCount": 177,
+      "lineCeiling": 177,
       "interfaces": [
         {
           "exportName": "useStatsState",
@@ -14560,15 +14560,18 @@
             "burnoutError",
             "burnoutLoading",
             "burnoutTaskFilter",
-            "cohortAssigneeFilter",
             "cohortCacheRef",
+            "cohortClosedEndQuarter",
+            "cohortClosedStartQuarter",
             "cohortData",
             "cohortEndQuarter",
             "cohortError",
             "cohortExcludeAdHoc",
             "cohortExcludeCapacity",
             "cohortGroupBy",
+            "cohortLastN",
             "cohortLoading",
+            "cohortMode",
             "cohortProjectFilter",
             "cohortSelectedRow",
             "cohortStartQuarter",
@@ -14604,14 +14607,17 @@
             "setBurnoutError",
             "setBurnoutLoading",
             "setBurnoutTaskFilter",
-            "setCohortAssigneeFilter",
+            "setCohortClosedEndQuarter",
+            "setCohortClosedStartQuarter",
             "setCohortData",
             "setCohortEndQuarter",
             "setCohortError",
             "setCohortExcludeAdHoc",
             "setCohortExcludeCapacity",
             "setCohortGroupBy",
+            "setCohortLastN",
             "setCohortLoading",
+            "setCohortMode",
             "setCohortProjectFilter",
             "setCohortSelectedRow",
             "setCohortStartQuarter",
@@ -14651,11 +14657,14 @@
             "savedPrefsRef.current",
             "savedPrefsRef.current.burndownMetric",
             "savedPrefsRef.current.burnoutAssigneeFilter",
-            "savedPrefsRef.current.cohortAssigneeFilter",
+            "savedPrefsRef.current.cohortClosedEndQuarter",
+            "savedPrefsRef.current.cohortClosedStartQuarter",
             "savedPrefsRef.current.cohortEndQuarter",
             "savedPrefsRef.current.cohortExcludeAdHoc",
             "savedPrefsRef.current.cohortExcludeCapacity",
             "savedPrefsRef.current.cohortGroupBy",
+            "savedPrefsRef.current.cohortLastN",
+            "savedPrefsRef.current.cohortMode",
             "savedPrefsRef.current.cohortProjectFilter",
             "savedPrefsRef.current.cohortStartQuarter",
             "savedPrefsRef.current.cohortStatusToggles",
@@ -14674,19 +14683,19 @@
             "savedPrefsRef.current.statsView"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 29,
-          "returnCount": 87,
+          "expandedInputCount": 32,
+          "returnCount": 93,
           "propCount": 0,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 29,
-          "returnCeiling": 87,
+          "expandedInputCeiling": 32,
+          "returnCeiling": 93,
           "propCeiling": 0,
           "unresolved": [
             "bag savedPrefsRef member alias saved"
           ],
           "inventory": {
             "source": "frontend/src/stats/useStatsState.js:4",
-            "sourceDigest": "d455176b96ad454225911c95e57cf3c83cfdb484d85d076fca44e3cee0ed2f7f",
+            "sourceDigest": "caf66018dc1e228673dcaee848f868bdae866aa10ccdd0b2a41af012e7bb5de2",
             "reviewed": true,
             "memberNames": [
               "resolveBurndownMetric",
@@ -14697,7 +14706,6 @@
               "savedPrefsRef.current",
               "savedPrefsRef.current.burndownMetric",
               "savedPrefsRef.current.burnoutAssigneeFilter",
-              "savedPrefsRef.current.cohortAssigneeFilter",
               "savedPrefsRef.current.cohortEndQuarter",
               "savedPrefsRef.current.cohortExcludeAdHoc",
               "savedPrefsRef.current.cohortExcludeCapacity",
@@ -14719,13 +14727,13 @@
               "savedPrefsRef.current.excludedCapacitySelectedEpicKeys.map",
               "savedPrefsRef.current.excludedCapacitySelectedEpicKeys.filter"
             ],
-            "rationale": "saved aliases only savedPrefsRef.current.excludedCapacitySelectedEpicKeys inside its lazy initializer; it is tested with Array.isArray, normalized with String(key || '').trim().toUpperCase(), and filtered with Boolean. The current preference record is read synchronously during hook render or lazy initialization. No callbacks, getters, effects, requests or storage are owned here."
+            "rationale": "saved aliases only savedPrefsRef.current.excludedCapacitySelectedEpicKeys inside its lazy initializer; it is tested with Array.isArray, normalized with String(key || '').trim().toUpperCase(), and filtered with Boolean. The current preference record is read synchronously during hook render or lazy initialization. No callbacks, getters, effects, requests or storage are owned here. Lead Times modes Task 4 reviewed change: the savedPrefsRef.current.cohortAssigneeFilter read is removed with the Assignee filter; a stale saved value is never read. Lead Times modes Task 6 reviewed change: four more plain savedPrefsRef.current reads (cohortMode, cohortClosedStartQuarter, cohortClosedEndQuarter, cohortLastN) seed the new state; each is resolved by resolveLeadTimesMode, resolveLeadTimesLastN or the current-quarter fallback."
           },
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useStatsState",
-              "line": 975,
+              "line": 923,
               "phase": "hook execution"
             }
           ],
@@ -14733,973 +14741,790 @@
             {
               "name": "statsView",
               "lines": [
-                976,
-                1588,
-                2803,
-                2922,
-                3305,
-                3362,
-                4375,
-                4467,
-                4498,
-                4501,
-                4503,
-                4510,
-                4589,
-                4770,
-                4774,
-                4909,
-                4983,
-                5040,
-                5163,
-                5170,
-                5179,
-                5715,
-                5729,
-                5730,
-                5731,
-                7662,
-                9393,
-                9409,
-                9420,
-                9431,
-                9444,
-                9467,
-                9477,
-                9674,
-                9684,
-                9776,
-                9786,
-                9938,
-                9956
+                924,
+                1543,
+                2721,
+                2840,
+                3225,
+                3284,
+                4209,
+                4243,
+                4361,
+                5561,
+                6008,
+                6809
               ]
             },
             {
               "name": "setStatsView",
               "lines": [
-                2862,
-                9396
+                2780,
+                5603,
+                6810
               ]
             },
             {
               "name": "statsGraphMode",
               "lines": [
-                2803,
-                2923,
-                3306,
-                3363,
-                9411,
-                9423
+                2721,
+                2841,
+                3226,
+                3285,
+                6811
               ]
             },
             {
               "name": "setStatsGraphMode",
               "lines": [
-                2862,
-                9412
+                2780,
+                6812
               ]
             },
             {
               "name": "burnoutData",
               "lines": [
-                2803,
-                2924,
-                4478,
-                4493,
-                4498,
-                5604,
-                5615,
-                5618,
-                5628
+                2721,
+                2842,
+                4204,
+                4358,
+                6929
               ]
             },
             {
               "name": "setBurnoutData",
               "lines": [
-                1700,
-                2862,
-                4376,
-                4379,
-                4390,
-                4397,
-                4434,
-                4440,
-                4444,
-                6253,
-                8656
+                1647,
+                2780,
+                4208,
+                4887,
+                5986
               ]
             },
             {
               "name": "burnoutLoading",
               "lines": [
-                2803,
-                2925,
-                9452
+                2721,
+                2843,
+                6008,
+                6825
               ]
             },
             {
               "name": "setBurnoutLoading",
               "lines": [
-                1702,
-                2862,
-                4376,
-                4381,
-                4385,
-                4392,
-                4399,
-                4413,
-                4448
+                1649,
+                2780,
+                4208
               ]
             },
             {
               "name": "burnoutError",
               "lines": [
-                2803,
-                2926,
-                9453
+                2721,
+                2844,
+                6826
               ]
             },
             {
               "name": "setBurnoutError",
               "lines": [
-                1701,
-                2862,
-                4376,
-                4380,
-                4386,
-                4391,
-                4398,
-                4414,
-                4439,
-                4443
+                1648,
+                2780,
+                4208
               ]
             },
             {
               "name": "burnoutAssigneeFilter",
               "lines": [
-                2803,
-                2927,
-                3307,
-                3364,
-                4480,
-                4485,
-                4488,
-                4493,
-                4498,
-                4507,
-                5619,
-                5629,
-                9445
+                2721,
+                2845,
+                3227,
+                3286,
+                4204,
+                4228,
+                4357,
+                6818
               ]
             },
             {
               "name": "setBurnoutAssigneeFilter",
               "lines": [
-                2862,
-                4481,
-                4491,
-                9446
+                2780,
+                4207,
+                6819
               ]
             },
             {
               "name": "burndownMetric",
               "lines": [
-                2803,
-                2928,
-                3308,
-                3365,
-                5624,
-                5634,
-                5646,
-                9448
+                2721,
+                2846,
+                3228,
+                3287,
+                4357,
+                6821
               ]
             },
             {
               "name": "setBurndownMetric",
               "lines": [
-                2862,
-                9449
+                2780,
+                6822
               ]
             },
             {
               "name": "cohortData",
               "lines": [
-                2803,
-                2929,
-                4595,
-                4596,
-                4617,
-                4618,
-                4619,
-                4653,
-                4655
+                2721,
+                2847,
+                4230
               ]
             },
             {
               "name": "setCohortData",
               "lines": [
-                1704,
-                2862,
-                4511,
-                4515,
-                4522,
-                4561,
-                4571,
-                6253,
-                8656
+                1651,
+                2780,
+                4238,
+                4887,
+                5986
               ]
             },
             {
               "name": "cohortLoading",
               "lines": [
-                2803,
-                2930,
-                10077,
-                10078,
-                10079,
-                10087
+                2721,
+                2848,
+                6008,
+                6916
               ]
             },
             {
               "name": "setCohortLoading",
               "lines": [
-                1706,
-                2862,
-                4511,
-                4517,
-                4524,
-                4538,
-                4574
+                1653,
+                2780,
+                4239
               ]
             },
             {
               "name": "cohortError",
               "lines": [
-                2803,
-                2931,
-                10078,
-                10079,
-                10087
+                2721,
+                2849,
+                6917
               ]
             },
             {
               "name": "setCohortError",
               "lines": [
-                1705,
-                2862,
-                4511,
-                4516,
-                4523,
-                4539,
-                4562,
-                4567,
-                4569
+                1652,
+                2780,
+                4238
               ]
             },
             {
               "name": "cohortStartQuarter",
               "lines": [
-                2803,
-                2932,
-                3309,
-                3366,
-                4368,
-                4372,
-                4512,
-                4589,
-                9944,
-                9953,
-                10056,
-                10118
+                2721,
+                2850,
+                3229,
+                3288,
+                4205,
+                4232,
+                6008,
+                6887
               ]
             },
             {
               "name": "setCohortStartQuarter",
               "lines": [
-                2862,
-                9947,
-                9953
+                2780,
+                5603,
+                6889
               ]
             },
             {
               "name": "cohortEndQuarter",
               "lines": [
-                2803,
-                2933,
-                3310,
-                3367,
-                4369,
-                4372,
-                4513,
-                4589,
-                9945,
-                9948,
-                10057,
-                10119
+                2721,
+                2851,
+                3230,
+                3289,
+                4205,
+                4230,
+                6008,
+                6888
               ]
             },
             {
               "name": "setCohortEndQuarter",
               "lines": [
-                2862,
-                9948,
-                9952
+                2780,
+                5603,
+                6890
+              ]
+            },
+            {
+              "name": "cohortMode",
+              "lines": [
+                2721,
+                2852,
+                3231,
+                3290,
+                4205,
+                4230,
+                6008,
+                6891
+              ]
+            },
+            {
+              "name": "setCohortMode",
+              "lines": [
+                2780,
+                6892
+              ]
+            },
+            {
+              "name": "cohortClosedStartQuarter",
+              "lines": [
+                2721,
+                2853,
+                3232,
+                3291,
+                4205,
+                4230,
+                6008,
+                6893
+              ]
+            },
+            {
+              "name": "setCohortClosedStartQuarter",
+              "lines": [
+                2780,
+                6894
+              ]
+            },
+            {
+              "name": "cohortClosedEndQuarter",
+              "lines": [
+                2721,
+                2854,
+                3233,
+                3292,
+                4205,
+                4230,
+                6008,
+                6895
+              ]
+            },
+            {
+              "name": "setCohortClosedEndQuarter",
+              "lines": [
+                2780,
+                6896
+              ]
+            },
+            {
+              "name": "cohortLastN",
+              "lines": [
+                2721,
+                2855,
+                3234,
+                3293,
+                4230,
+                6897
+              ]
+            },
+            {
+              "name": "setCohortLastN",
+              "lines": [
+                2780,
+                6898
               ]
             },
             {
               "name": "cohortGroupBy",
               "lines": [
-                2803,
-                2934,
-                3311,
-                3368,
-                4615,
-                4616,
-                4619,
-                4621,
-                4623,
-                4625,
-                4627,
-                9963,
-                10120
+                2721,
+                2856,
+                3235,
+                3294,
+                4231,
+                6900
               ]
             },
             {
               "name": "setCohortGroupBy",
               "lines": [
-                2862,
-                9964
+                2780,
+                6901
               ]
             },
             {
               "name": "cohortProjectFilter",
               "lines": [
-                2803,
-                2935,
-                3312,
-                3369,
-                4599,
-                4600,
-                4601,
-                4605,
-                4611,
-                4670,
-                4671,
-                4673,
-                9973,
-                10122
+                2721,
+                2857,
+                3236,
+                3295,
+                4231,
+                6902
               ]
             },
             {
               "name": "setCohortProjectFilter",
               "lines": [
-                2862,
-                4672,
-                9975
-              ]
-            },
-            {
-              "name": "cohortAssigneeFilter",
-              "lines": [
-                2803,
-                2936,
-                3313,
-                3370,
-                4606,
-                4611,
-                4676,
-                4677,
-                4679,
-                9989,
-                10125
-              ]
-            },
-            {
-              "name": "setCohortAssigneeFilter",
-              "lines": [
-                2862,
-                4678,
-                9991
+                2780,
+                4239,
+                6903
               ]
             },
             {
               "name": "cohortExcludeAdHoc",
               "lines": [
-                2803,
-                2937,
-                3314,
-                3371,
-                4607,
-                4611,
-                10009
+                2721,
+                2858,
+                3237,
+                3296,
+                4230,
+                6905
               ]
             },
             {
               "name": "setCohortExcludeAdHoc",
               "lines": [
-                2862,
-                10010
+                2780,
+                6906
               ]
             },
             {
               "name": "cohortExcludeCapacity",
               "lines": [
-                2803,
-                2938,
-                3315,
-                3372,
-                4608,
-                4611,
-                10018
+                2721,
+                2859,
+                3238,
+                3297,
+                4230,
+                6907
               ]
             },
             {
               "name": "setCohortExcludeCapacity",
               "lines": [
-                2862,
-                10019
+                2780,
+                6908
               ]
             },
             {
               "name": "cohortStatusToggles",
               "lines": [
-                2803,
-                2939,
-                3316,
-                3373,
-                4609,
-                4611,
-                10031
+                2721,
+                2860,
+                3239,
+                3298,
+                4232,
+                6910
               ]
             },
             {
               "name": "setCohortStatusToggles",
               "lines": [
-                2862,
-                10033
+                2780,
+                6911
               ]
             },
             {
               "name": "cohortSelectedRow",
               "lines": [
-                2803,
-                2940,
-                4622,
-                4623,
-                4626,
-                4627,
-                4664,
-                4665,
-                4666,
-                4667,
-                4682,
-                4683,
-                4687,
-                10107,
-                10121
+                2721,
+                2861,
+                4232,
+                6921
               ]
             },
             {
               "name": "setCohortSelectedRow",
               "lines": [
-                1707,
-                2862,
-                4685,
-                9949,
-                9954,
-                9964,
-                9976,
-                9992,
-                10010,
-                10019,
-                10037,
-                10098,
-                10109
+                1654,
+                2780,
+                4239,
+                6899
               ]
             },
             {
               "name": "excludedCapacityData",
               "lines": [
-                4922,
-                4923,
-                5166,
-                5168,
-                9609,
-                9713
+                4233,
+                6852
               ]
             },
             {
               "name": "setExcludedCapacityData",
               "lines": [
-                1708,
-                4771,
-                4775,
-                4781,
-                4787,
-                4799,
-                4863,
-                4878,
-                4888,
-                6253,
-                6255,
-                8597,
-                8656
+                1655,
+                4240,
+                4887,
+                4889,
+                5931,
+                5986
               ]
             },
             {
               "name": "excludedCapacityLoading",
               "lines": [
-                9607,
-                9622,
-                9711,
-                9719
+                6008,
+                6851
               ]
             },
             {
               "name": "setExcludedCapacityLoading",
               "lines": [
-                1710,
-                4771,
-                4777,
-                4783,
-                4789,
-                4801,
-                4854,
-                4891
+                1657,
+                4241
               ]
             },
             {
               "name": "excludedCapacityError",
               "lines": [
-                9612,
-                9613,
-                9615,
-                9622,
-                9625,
-                9716,
-                9717,
-                9719,
-                9722
+                6853
               ]
             },
             {
               "name": "setExcludedCapacityError",
               "lines": [
-                1709,
-                4771,
-                4776,
-                4782,
-                4788,
-                4800,
-                4855,
-                4884,
-                4886,
-                8598
+                1656,
+                4240,
+                5932
               ]
             },
             {
               "name": "excludedCapacityStartSprintId",
               "lines": [
-                1592,
-                3317,
-                3374,
-                4698,
-                4699,
-                4704,
-                4713,
-                4719,
-                4722,
-                9473,
-                9680,
-                9782
+                1547,
+                3240,
+                3299,
+                4235,
+                5612,
+                6008,
+                6832
               ]
             },
             {
               "name": "setExcludedCapacityStartSprintId",
               "lines": [
-                1610,
-                4705,
-                9475,
-                9682,
-                9784
+                1535,
+                4241,
+                5604,
+                6834
               ]
             },
             {
               "name": "excludedCapacityEndSprintId",
               "lines": [
-                1593,
-                3318,
-                3375,
-                4701,
-                4702,
-                4707,
-                4714,
-                4720,
-                4722,
-                9474,
-                9681,
-                9783
+                1548,
+                3241,
+                3300,
+                4233,
+                5612,
+                6008,
+                6833
               ]
             },
             {
               "name": "setExcludedCapacityEndSprintId",
               "lines": [
-                1611,
-                4708,
-                9476,
-                9683,
-                9785
+                1536,
+                4240,
+                5604,
+                6835
               ]
             },
             {
               "name": "excludedCapacitySelectedEpicKeys",
               "lines": [
-                3319,
-                3376,
-                5060,
-                5063,
-                5066,
-                5068,
-                5069,
-                5072,
-                5074,
-                5075,
-                5076
+                3242,
+                3301,
+                4235
               ]
             },
             {
               "name": "setExcludedCapacitySelectedEpicKeys",
               "lines": [
-                5061,
-                5070,
-                5188,
-                5197,
-                5200
+                4241
               ]
             },
             {
               "name": "excludedCapacityChartMode",
               "lines": [
-                3320,
-                3377,
-                5122,
-                5131,
-                5170,
-                5179,
-                9547
+                3243,
+                3302,
+                4233,
+                6845
               ]
             },
             {
               "name": "setExcludedCapacityChartMode",
               "lines": [
-                9554
+                6846
               ]
             },
             {
               "name": "excludedCapacityMetric",
               "lines": [
-                3321,
-                3378,
-                9563,
-                9637,
-                9659
+                3244,
+                3303,
+                6847
               ]
             },
             {
               "name": "setExcludedCapacityMetric",
               "lines": [
-                9569
+                6848
               ]
             },
             {
               "name": "effortSplitVisibleBuckets",
               "lines": [
-                9638
+                6857
               ]
             },
             {
               "name": "setEffortSplitVisibleBuckets",
               "lines": [
-                5203
+                4239
               ]
             },
             {
               "name": "excludedCapacityIsolatedTeam",
               "lines": [
-                5170,
-                5174,
-                5176,
-                5179,
-                9661,
-                9763
+                4234,
+                6862
               ]
             },
             {
               "name": "setExcludedCapacityIsolatedTeam",
               "lines": [
-                5171,
-                5177,
-                9662,
-                9764
+                4241,
+                6863
               ]
             },
             {
               "name": "excludedCapacityEpicDropdownOpen",
               "lines": [
-                5209,
-                5218,
-                9484,
-                9487,
-                9494
+                4233,
+                6837
               ]
             },
             {
               "name": "setExcludedCapacityEpicDropdownOpen",
               "lines": [
-                5213,
-                9485
+                4240,
+                6838
               ]
             },
             {
               "name": "excludedCapacityRefreshNonce",
               "lines": [
-                4917
+                4234
               ]
             },
             {
               "name": "setExcludedCapacityRefreshNonce",
               "lines": [
-                1612,
-                6253,
-                6255,
-                8599
+                1537,
+                4887,
+                4889,
+                5933,
+                6009
               ]
             },
             {
               "name": "issuePeopleStatsRevision",
               "lines": [
-                4474,
-                4589
+                4206,
+                4236
               ]
             },
             {
               "name": "setIssuePeopleStatsRevision",
               "lines": [
-                6253
+                4887,
+                6009
               ]
             },
             {
               "name": "excludedCapacityEpicDropdownRef",
               "lines": [
-                5211,
-                9479
+                4234,
+                6836
               ]
             },
             {
               "name": "projectTrackCapacitySide",
               "lines": [
-                3322,
-                4931,
-                4940,
-                9793
+                3245,
+                4236,
+                6868
               ]
             },
             {
               "name": "setProjectTrackCapacitySide",
               "lines": [
-                9800
+                6869
               ]
             },
             {
               "name": "projectTrackMode",
               "lines": [
-                3323,
-                4932,
-                4941,
-                4962,
-                4964,
-                4978,
-                4980,
-                4983,
-                5041,
-                9849,
-                9867,
-                9886,
-                9894,
-                9903
+                3246,
+                4237,
+                6874
               ]
             },
             {
               "name": "setProjectTrackMode",
               "lines": [
-                9856
+                6875
               ]
             },
             {
               "name": "projectTrackExcludeAdHoc",
               "lines": [
-                3324,
-                4933,
-                4942,
-                9814
+                3247,
+                4236,
+                6870
               ]
             },
             {
               "name": "setProjectTrackExcludeAdHoc",
               "lines": [
-                9822
+                6871
               ]
             },
             {
               "name": "projectTrackExcludeExcludedCapacity",
               "lines": [
-                3325,
-                4934,
-                4943,
-                9830
+                3248,
+                4236,
+                6872
               ]
             },
             {
               "name": "setProjectTrackExcludeExcludedCapacity",
               "lines": [
-                9838
+                6873
               ]
             },
             {
               "name": "projectTrackPhaseData",
               "lines": [
-                5045,
-                5046,
-                9914,
-                9916
+                4237,
+                6883
               ]
             },
             {
               "name": "setProjectTrackPhaseData",
               "lines": [
-                4987,
-                4994,
-                5021,
-                5027
+                4242
               ]
             },
             {
               "name": "projectTrackPhaseLoading",
               "lines": [
-                9906,
-                9909,
-                9912
+                6881
               ]
             },
             {
               "name": "setProjectTrackPhaseLoading",
               "lines": [
-                4989,
-                4996,
-                5006,
-                5029
+                4242
               ]
             },
             {
               "name": "projectTrackPhaseError",
               "lines": [
-                9909,
-                9910,
-                9912
+                6882
               ]
             },
             {
               "name": "setProjectTrackPhaseError",
               "lines": [
-                4988,
-                4995,
-                5007,
-                5022,
-                5026
+                4242
               ]
             },
             {
               "name": "projectTrackPhaseCacheRef",
               "lines": [
-                4992,
-                5020
+                4237
               ]
             },
             {
               "name": "projectTrackPhaseAbortRef",
               "lines": [
-                4999,
-                5000,
-                5003
+                4237
               ]
             },
             {
               "name": "burnoutTaskFilter",
               "lines": [
-                5411,
-                5415,
-                5420,
-                5764,
-                5765,
-                7420,
-                9460
+                4324,
+                4328,
+                4333,
+                4395,
+                4396,
+                5331,
+                6828
               ]
             },
             {
               "name": "setBurnoutTaskFilter",
               "lines": [
-                1703,
-                4502,
-                4506,
-                7629,
-                7661,
-                9461
+                1650,
+                4238,
+                5528,
+                5560,
+                6933
               ]
             },
             {
               "name": "burnoutCacheRef",
               "lines": [
-                1699,
-                4395,
-                4433,
-                6253,
-                8593,
-                8655
+                1646,
+                4204,
+                4887,
+                5926,
+                5985
               ]
             },
             {
               "name": "cohortCacheRef",
               "lines": [
-                1699,
-                4520,
-                4560,
-                6253,
-                8593,
-                8655
+                1646,
+                4229,
+                4887,
+                5926,
+                5985
               ]
             },
             {
               "name": "excludedCapacityCacheRef",
               "lines": [
-                1699,
-                4797,
-                4810,
-                4837,
-                4877,
-                6161,
-                6253,
-                6255,
-                8593,
-                8655
+                1646,
+                4232,
+                4795,
+                4887,
+                4889,
+                5926,
+                5985
               ]
             },
             {
               "name": "excludedCapacityForceRefreshRef",
               "lines": [
-                1609,
-                4792,
-                4794,
-                8596
+                1534,
+                4234,
+                5930
               ]
             }
           ],
@@ -15718,8 +15543,8 @@
         "useStatsDerivedB",
         "useStatsDerivedC"
       ],
-      "lineCount": 1396,
-      "lineCeiling": 1396,
+      "lineCount": 1421,
+      "lineCeiling": 1421,
       "interfaces": [
         {
           "exportName": "useStatsDerivedA",
@@ -15732,7 +15557,10 @@
             "burnoutAssigneeFilter",
             "burnoutCacheRef",
             "burnoutData",
+            "cohortClosedEndQuarter",
+            "cohortClosedStartQuarter",
             "cohortEndQuarter",
+            "cohortMode",
             "cohortStartQuarter",
             "getTeamInfo",
             "groupPreferences",
@@ -15781,7 +15609,10 @@
             "burnoutCacheRef.current[burnoutQueryKey]",
             "burnoutData",
             "burnoutData.assignees",
+            "cohortClosedEndQuarter",
+            "cohortClosedStartQuarter",
             "cohortEndQuarter",
+            "cohortMode",
             "cohortStartQuarter",
             "getTeamInfo",
             "groupPreferences",
@@ -15817,11 +15648,11 @@
             "tasksFetched"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 50,
+          "expandedInputCount": 53,
           "returnCount": 9,
           "propCount": 0,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 50,
+          "expandedInputCeiling": 53,
           "returnCeiling": 9,
           "propCeiling": 0,
           "unresolved": [
@@ -15832,7 +15663,7 @@
           ],
           "inventory": {
             "source": "frontend/src/stats/useStatsData.js:57",
-            "sourceDigest": "b84392637362f0883c15cea413c4fbc9c80e34b5d9ddba7481c90a3fda557537",
+            "sourceDigest": "058d853648d3f2804af1eecc29ee5f8c9812d9b361b703f2de87442b2a0dae11",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -15886,13 +15717,13 @@
               "statsView",
               "tasksFetched"
             ],
-            "rationale": "BACKEND_URL is forwarded only as the existing API wrapper base URL. burnoutCacheRef.current indexes burnoutQueryKey; cached is the stored Stats payload tested for presence and passed unchanged to setBurnoutData. No dynamic callback or getter is supplied. issueEditStateRef aggregate read methods keep the same captured token and deferred timing. Task 3 reviewed change: unchanged bindings/aliases except removal of panel-owned burnoutChartRef/pointer and exact scroll effect; retained memo/fetch/cache ownership unchanged. Task 10 (#251) reviewed change: automaticRefreshRef is a ref read at fetch time and never a dependency; it supplies the automatic job (shouldApply) and the explicit-refresh recorder, and held data is kept on failure. Issue #262 reviewed change: single-Team summary derives one boolean from the existing scoped Team ids; cache, forwarded inputs, effects and dynamic-bag reads are unchanged."
+            "rationale": "BACKEND_URL is forwarded only as the existing API wrapper base URL. burnoutCacheRef.current indexes burnoutQueryKey; cached is the stored Stats payload tested for presence and passed unchanged to setBurnoutData. No dynamic callback or getter is supplied. issueEditStateRef aggregate read methods keep the same captured token and deferred timing. Task 3 reviewed change: unchanged bindings/aliases except removal of panel-owned burnoutChartRef/pointer and exact scroll effect; retained memo/fetch/cache ownership unchanged. Task 10 (#251) reviewed change: automaticRefreshRef is a ref read at fetch time and never a dependency; it supplies the automatic job (shouldApply) and the explicit-refresh recorder, and held data is kept on failure. Issue #262 reviewed change: single-Team summary derives one boolean from the existing scoped Team ids; cache, forwarded inputs, effects and dynamic-bag reads are unchanged. Lead Times modes Task 6 reviewed change: cohortMode and the closed quarters are plain inputs that only choose which key cohortQueryKey builds; no new bag reads, aliases or forwarded inputs."
           },
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useStatsDerivedA",
-              "line": 4190,
+              "line": 4202,
               "phase": "hook execution"
             }
           ],
@@ -15900,56 +15731,57 @@
             {
               "name": "effectiveStatsData",
               "lines": [
-                4460
+                4359
               ]
             },
             {
               "name": "burnoutTaskTeamByIssueKey",
               "lines": [
-                4459
+                4358
               ]
             },
             {
               "name": "burnoutTaskStatusByIssueKey",
               "lines": [
-                4459
+                4358
               ]
             },
             {
               "name": "burnoutIssueWeightByKey",
               "lines": [
-                4459
+                4358
               ]
             },
             {
               "name": "burnoutScopedTeamIds",
               "lines": [
-                4217,
-                8229
+                4229,
+                6928
               ]
             },
             {
               "name": "burnoutScopedTeamSignature",
               "lines": [
-                4217
+                4229,
+                6008
               ]
             },
             {
               "name": "cohortScopedTeamSignature",
               "lines": [
-                4219
+                4231
               ]
             },
             {
               "name": "burnoutQueryKey",
               "lines": [
-                4216
+                4228
               ]
             },
             {
               "name": "cohortQueryKey",
               "lines": [
-                4219
+                4231
               ]
             }
           ],
@@ -15972,13 +15804,16 @@
             "burnoutQueryKey",
             "burnoutScopedTeamIds",
             "burnoutScopedTeamSignature",
-            "cohortAssigneeFilter",
             "cohortCacheRef",
+            "cohortClosedEndQuarter",
+            "cohortClosedStartQuarter",
             "cohortData",
             "cohortEndQuarter",
             "cohortExcludeAdHoc",
             "cohortExcludeCapacity",
             "cohortGroupBy",
+            "cohortLastN",
+            "cohortMode",
             "cohortProjectFilter",
             "cohortQueryKey",
             "cohortScopedTeamSignature",
@@ -16008,7 +15843,6 @@
             "projectTrackPhaseData",
             "scope",
             "setBurnoutTaskFilter",
-            "setCohortAssigneeFilter",
             "setCohortData",
             "setCohortError",
             "setCohortLoading",
@@ -16032,14 +15866,18 @@
           ],
           "returnNames": [
             "clearExcludedCapacityEpicSelection",
-            "cohortAssigneeOptions",
             "cohortAverageLeadDays",
+            "cohortAwaitingMode",
             "cohortCompletedBars",
+            "cohortDisplayedIssues",
+            "cohortFetchedCount",
             "cohortGridModel",
+            "cohortLastNShortfall",
             "cohortMedianLeadDays",
             "cohortOpenBars",
             "cohortProjectOptions",
             "cohortQuarterOptions",
+            "cohortScope",
             "cohortSelectedRowLabel",
             "cohortStatusControls",
             "cohortSummary",
@@ -16098,13 +15936,15 @@
             "burnoutQueryKey",
             "burnoutScopedTeamIds",
             "burnoutScopedTeamSignature",
-            "cohortAssigneeFilter",
             "cohortCacheRef",
             "cohortCacheRef.current",
             "cohortCacheRef.current[cohortQueryKey]",
+            "cohortClosedEndQuarter",
+            "cohortClosedStartQuarter",
             "cohortData",
             "cohortData.issues",
             "cohortData.meta",
+            "cohortData.meta.mode",
             "cohortData.meta.warnings",
             "cohortData.range",
             "cohortData.range.endDate",
@@ -16113,6 +15953,8 @@
             "cohortExcludeAdHoc",
             "cohortExcludeCapacity",
             "cohortGroupBy",
+            "cohortLastN",
+            "cohortMode",
             "cohortProjectFilter",
             "cohortQueryKey",
             "cohortScopedTeamSignature",
@@ -16174,7 +16016,6 @@
             "scope.teamOptions",
             "scope.techProjectKeys",
             "setBurnoutTaskFilter",
-            "setCohortAssigneeFilter",
             "setCohortData",
             "setCohortError",
             "setCohortLoading",
@@ -16197,12 +16038,12 @@
             "trackApiResult"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 120,
-          "returnCount": 41,
+          "expandedInputCount": 123,
+          "returnCount": 45,
           "propCount": 0,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 120,
-          "returnCeiling": 41,
+          "expandedInputCeiling": 123,
+          "returnCeiling": 45,
           "propCeiling": 0,
           "unresolved": [
             "forwarded input BACKEND_URL",
@@ -16222,8 +16063,8 @@
             "bag projectTrackPhaseCacheRef dynamic deep member"
           ],
           "inventory": {
-            "source": "frontend/src/stats/useStatsData.js:335",
-            "sourceDigest": "b84392637362f0883c15cea413c4fbc9c80e34b5d9ddba7481c90a3fda557537",
+            "source": "frontend/src/stats/useStatsData.js:341",
+            "sourceDigest": "058d853648d3f2804af1eecc29ee5f8c9812d9b361b703f2de87442b2a0dae11",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -16249,7 +16090,6 @@
               "burnoutQueryKey",
               "burnoutScopedTeamIds",
               "burnoutScopedTeamSignature",
-              "cohortAssigneeFilter",
               "cohortCacheRef",
               "cohortCacheRef.current",
               "cohortCacheRef.current[cohortQueryKey]",
@@ -16325,7 +16165,6 @@
               "scope.teamOptions",
               "scope.techProjectKeys",
               "setBurnoutTaskFilter",
-              "setCohortAssigneeFilter",
               "setCohortData",
               "setCohortError",
               "setCohortLoading",
@@ -16347,13 +16186,13 @@
               "statsView",
               "trackApiResult"
             ],
-            "rationale": "BACKEND_URL is forwarded only as the existing API wrapper base URL. cohortCacheRef.current indexes cohortQueryKey; excludedCapacityCacheRef.current indexes progressive scoped sprint keys; projectTrackPhaseCacheRef.current indexes projectTrackPhaseSignature. Cached payload aliases are checked for presence and passed unchanged to existing setters or merge helpers. node aliases the dropdown DOM ref and only calls contains(event.target); forceRefresh aliases a boolean ref. Forwarded sprint ids, isolated team and selected epic keys retain the existing helper argument and setter contracts. All asynchronous callbacks and abort/generation guards are unchanged. Task 3 reviewed change: unchanged bindings/aliases except removal of panel-owned burnoutChartRef/pointer and exact scroll effect; retained memo/fetch/cache ownership unchanged. Task 10 (#251) reviewed change: automaticRefreshRef is a ref read at fetch time and never a dependency; it supplies the automatic job (job.shouldApply) and the explicit-refresh recorder, and held data is kept on failure. Issue #262 reviewed change: single-Team summary derives one boolean from the existing scoped Team ids; cache, forwarded inputs, effects and dynamic-bag reads are unchanged."
+            "rationale": "BACKEND_URL is forwarded only as the existing API wrapper base URL. cohortCacheRef.current indexes cohortQueryKey; excludedCapacityCacheRef.current indexes progressive scoped sprint keys; projectTrackPhaseCacheRef.current indexes projectTrackPhaseSignature. Cached payload aliases are checked for presence and passed unchanged to existing setters or merge helpers. node aliases the dropdown DOM ref and only calls contains(event.target); forceRefresh aliases a boolean ref. Forwarded sprint ids, isolated team and selected epic keys retain the existing helper argument and setter contracts. All asynchronous callbacks and abort/generation guards are unchanged. Task 3 reviewed change: unchanged bindings/aliases except removal of panel-owned burnoutChartRef/pointer and exact scroll effect; retained memo/fetch/cache ownership unchanged. Task 10 (#251) reviewed change: automaticRefreshRef is a ref read at fetch time and never a dependency; it supplies the automatic job (job.shouldApply) and the explicit-refresh recorder, and held data is kept on failure. Issue #262 reviewed change: single-Team summary derives one boolean from the existing scoped Team ids; cache, forwarded inputs, effects and dynamic-bag reads are unchanged. Lead Times modes Task 4 reviewed change: the Assignee filter members (cohortAssigneeFilter, setCohortAssigneeFilter) are removed with their effect; every other binding, alias, cache index and forwarded input is unchanged. Lead Times modes Task 6 reviewed change: cohortMode, the closed quarters and cohortLastN are plain inputs; cohortData.meta.mode is read once to decide whether the data belongs to the current mode (cohortModeData aliases cohortData or null); the request body is built by buildCohortRequest from the same inputs; no other binding, cache index or forwarded input changes."
           },
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useStatsDerivedB",
-              "line": 4213,
+              "line": 4225,
               "phase": "hook execution"
             }
           ],
@@ -16361,247 +16200,265 @@
             {
               "name": "cohortQuarterOptions",
               "lines": [
-                8196
+                6886
               ]
             },
             {
               "name": "cohortProjectOptions",
               "lines": [
-                8206
-              ]
-            },
-            {
-              "name": "cohortAssigneeOptions",
-              "lines": [
-                8209
+                6904
               ]
             },
             {
               "name": "cohortSummary",
               "lines": [
-                8217
+                6912
               ]
             },
             {
               "name": "cohortWorkflowStatusTotal",
               "lines": [
-                8218
+                6913
               ]
             },
             {
               "name": "cohortGridModel",
               "lines": [
-                8225
+                6920
               ]
             },
             {
               "name": "cohortOpenBars",
               "lines": [
-                8227
+                6922
               ]
             },
             {
               "name": "cohortCompletedBars",
               "lines": [
-                8228
+                6923
               ]
             },
             {
               "name": "cohortAverageLeadDays",
               "lines": [
-                8219
+                6914
               ]
             },
             {
               "name": "cohortMedianLeadDays",
               "lines": [
-                8220
+                6915
               ]
             },
             {
               "name": "cohortWarnings",
               "lines": [
-                8223
+                6918
               ]
             },
             {
               "name": "cohortStatusControls",
               "lines": [
-                8214
+                6909
               ]
             },
             {
               "name": "cohortSelectedRowLabel",
               "lines": [
-                8224
+                6919
+              ]
+            },
+            {
+              "name": "cohortScope",
+              "lines": [
+                6924
+              ]
+            },
+            {
+              "name": "cohortFetchedCount",
+              "lines": [
+                6925
+              ]
+            },
+            {
+              "name": "cohortAwaitingMode",
+              "lines": [
+                6926
+              ]
+            },
+            {
+              "name": "cohortLastNShortfall",
+              "lines": [
+                6927
               ]
             },
             {
               "name": "excludedCapacitySprintOptions",
               "lines": [
-                8141
+                6831
               ]
             },
             {
               "name": "excludedCapacitySprintRange",
               "lines": [
-                8174
+                6864
               ]
             },
             {
               "name": "effortSplitSprintLabel",
               "lines": [
-                8165
+                6855
               ]
             },
             {
               "name": "excludedCapacityEpicOptions",
               "lines": [
-                8169
+                6859
               ]
             },
             {
               "name": "projectTrackSeries",
               "lines": [
-                8187
+                6877
               ]
             },
             {
               "name": "projectTrackTotals",
               "lines": [
-                8186
+                6876
               ]
             },
             {
               "name": "projectTrackBreakdown",
               "lines": [
-                8190
+                6880
               ]
             },
             {
               "name": "projectTrackColumnSplit",
               "lines": [
-                8189
-              ]
-            },
-            {
-              "name": "projectTrackRangeLabel",
-              "lines": [
-                8188
-              ]
-            },
-            {
-              "name": "projectTrackPhaseEpics",
-              "lines": [
-                8195
-              ]
-            },
-            {
-              "name": "projectTrackPhaseSummary",
-              "lines": [
-                8194
-              ]
-            },
-            {
-              "name": "excludedCapacityEpicCatalog",
-              "lines": [
-                8152
-              ]
-            },
-            {
-              "name": "excludedCapacityEffectiveFilters",
-              "lines": [
-                8153
-              ]
-            },
-            {
-              "name": "excludedCapacityFilterLabel",
-              "lines": [
-                8149
-              ]
-            },
-            {
-              "name": "effortSplitRows",
-              "lines": [
-                8166
-              ]
-            },
-            {
-              "name": "excludedCapacityRows",
-              "lines": [
-                8170
-              ]
-            },
-            {
-              "name": "excludedCapacityLineSeries",
-              "lines": [
-                8171
-              ]
-            },
-            {
-              "name": "excludedCapacityModeOverall",
-              "lines": [
-                8175
-              ]
-            },
-            {
-              "name": "excludedCapacityModeSprintRows",
-              "lines": [
-                8176
-              ]
-            },
-            {
-              "name": "excludedCapacityModeTeamLineSeries",
-              "lines": [
-                8177
-              ]
-            },
-            {
-              "name": "effortSplitTotals",
-              "lines": [
-                8160
-              ]
-            },
-            {
-              "name": "excludedCapacityWarnings",
-              "lines": [
-                8164
-              ]
-            },
-            {
-              "name": "formatExcludedPoints",
-              "lines": [
-                8159
-              ]
-            },
-            {
-              "name": "toggleExcludedCapacityEpicKey",
-              "lines": [
-                8154
-              ]
-            },
-            {
-              "name": "clearExcludedCapacityEpicSelection",
-              "lines": [
-                8151
-              ]
-            },
-            {
-              "name": "selectAllExcludedCapacityEpics",
-              "lines": [
-                8150
-              ]
-            },
-            {
-              "name": "toggleEffortSplitBucket",
-              "lines": [
-                8168
+                6879
               ]
             },
             {
               "name": "projectTrackSingleTeam",
               "lines": [
+                6879
+              ]
+            },
+            {
+              "name": "projectTrackRangeLabel",
+              "lines": [
+                6878
+              ]
+            },
+            {
+              "name": "projectTrackPhaseEpics",
+              "lines": [
+                6885
+              ]
+            },
+            {
+              "name": "projectTrackPhaseSummary",
+              "lines": [
+                6884
+              ]
+            },
+            {
+              "name": "excludedCapacityEpicCatalog",
+              "lines": [
+                6842
+              ]
+            },
+            {
+              "name": "excludedCapacityEffectiveFilters",
+              "lines": [
+                6843
+              ]
+            },
+            {
+              "name": "excludedCapacityFilterLabel",
+              "lines": [
+                6839
+              ]
+            },
+            {
+              "name": "effortSplitRows",
+              "lines": [
+                6856
+              ]
+            },
+            {
+              "name": "excludedCapacityRows",
+              "lines": [
+                6860
+              ]
+            },
+            {
+              "name": "excludedCapacityLineSeries",
+              "lines": [
+                6861
+              ]
+            },
+            {
+              "name": "excludedCapacityModeOverall",
+              "lines": [
+                6865
+              ]
+            },
+            {
+              "name": "excludedCapacityModeSprintRows",
+              "lines": [
+                6866
+              ]
+            },
+            {
+              "name": "excludedCapacityModeTeamLineSeries",
+              "lines": [
+                6867
+              ]
+            },
+            {
+              "name": "effortSplitTotals",
+              "lines": [
+                6850
+              ]
+            },
+            {
+              "name": "excludedCapacityWarnings",
+              "lines": [
+                6854
+              ]
+            },
+            {
+              "name": "formatExcludedPoints",
+              "lines": [
+                6849
+              ]
+            },
+            {
+              "name": "toggleExcludedCapacityEpicKey",
+              "lines": [
                 6844
+              ]
+            },
+            {
+              "name": "clearExcludedCapacityEpicSelection",
+              "lines": [
+                6841
+              ]
+            },
+            {
+              "name": "selectAllExcludedCapacityEpics",
+              "lines": [
+                6840
+              ]
+            },
+            {
+              "name": "toggleEffortSplitBucket",
+              "lines": [
+                6858
               ]
             }
           ],
@@ -16686,8 +16543,8 @@
             "bag priorityOrder dynamic deep member"
           ],
           "inventory": {
-            "source": "frontend/src/stats/useStatsData.js:1141",
-            "sourceDigest": "b84392637362f0883c15cea413c4fbc9c80e34b5d9ddba7481c90a3fda557537",
+            "source": "frontend/src/stats/useStatsData.js:1166",
+            "sourceDigest": "058d853648d3f2804af1eecc29ee5f8c9812d9b361b703f2de87442b2a0dae11",
             "reviewed": true,
             "memberNames": [
               "burndownMetric",
@@ -16722,7 +16579,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useStatsDerivedC",
-              "line": 4457,
+              "line": 4356,
               "phase": "hook execution"
             }
           ],
@@ -16730,85 +16587,85 @@
             {
               "name": "priorityTeamIds",
               "lines": [
-                5632
+                5230
               ]
             },
             {
               "name": "priorityRows",
               "lines": [
-                8127
+                6817
               ]
             },
             {
               "name": "priorityRadar",
               "lines": [
-                8126
+                6816
               ]
             },
             {
               "name": "statsTeamRows",
               "lines": [
-                8124
+                6814
               ]
             },
             {
               "name": "statsBarColumns",
               "lines": [
-                8125
+                6815
               ]
             },
             {
               "name": "statsTotals",
               "lines": [
-                8123
+                6813
               ]
             },
             {
               "name": "burnoutAssigneeOptions",
               "lines": [
-                8130
+                6820
               ]
             },
             {
               "name": "burnoutChartModel",
               "lines": [
-                8137
+                6827
               ]
             },
             {
               "name": "burnoutTotals",
               "lines": [
-                8134
+                6824
               ]
             },
             {
               "name": "burndownMetricIsStoryPoints",
               "lines": [
-                8133
+                6823
               ]
             },
             {
               "name": "formatBurndownValue",
               "lines": [
-                8139
+                6829
               ]
             },
             {
               "name": "buildBurnoutTaskFilter",
               "lines": [
-                8140
+                6830
               ]
             },
             {
               "name": "canRenderStatsPanel",
               "lines": [
-                8118
+                6808
               ]
             },
             {
               "name": "isLeadTimesFocusMode",
               "lines": [
-                8283
+                6987
               ]
             }
           ],
@@ -16826,8 +16683,8 @@
         "StatsPanel",
         "default"
       ],
-      "lineCount": 962,
-      "lineCeiling": 962,
+      "lineCount": 1020,
+      "lineCeiling": 1020,
       "interfaces": [
         {
           "exportName": "StatsPanel",
@@ -16872,22 +16729,28 @@
             "stats.burnoutTotals",
             "stats.canRenderStatsPanel",
             "stats.clearExcludedCapacityEpicSelection",
-            "stats.cohortAssigneeFilter",
-            "stats.cohortAssigneeOptions",
             "stats.cohortAverageLeadDays",
+            "stats.cohortAwaitingMode",
+            "stats.cohortClosedEndQuarter",
+            "stats.cohortClosedStartQuarter",
             "stats.cohortCompletedBars",
             "stats.cohortEndQuarter",
             "stats.cohortError",
             "stats.cohortExcludeAdHoc",
             "stats.cohortExcludeCapacity",
+            "stats.cohortFetchedCount",
             "stats.cohortGridModel",
             "stats.cohortGroupBy",
+            "stats.cohortLastN",
+            "stats.cohortLastNShortfall",
             "stats.cohortLoading",
             "stats.cohortMedianLeadDays",
+            "stats.cohortMode",
             "stats.cohortOpenBars",
             "stats.cohortProjectFilter",
             "stats.cohortProjectOptions",
             "stats.cohortQuarterOptions",
+            "stats.cohortScope",
             "stats.cohortSelectedRow",
             "stats.cohortSelectedRowLabel",
             "stats.cohortStartQuarter",
@@ -16944,11 +16807,14 @@
             "stats.selectAllExcludedCapacityEpics",
             "stats.setBurndownMetric",
             "stats.setBurnoutAssigneeFilter",
-            "stats.setCohortAssigneeFilter",
+            "stats.setCohortClosedEndQuarter",
+            "stats.setCohortClosedStartQuarter",
             "stats.setCohortEndQuarter",
             "stats.setCohortExcludeAdHoc",
             "stats.setCohortExcludeCapacity",
             "stats.setCohortGroupBy",
+            "stats.setCohortLastN",
+            "stats.setCohortMode",
             "stats.setCohortProjectFilter",
             "stats.setCohortSelectedRow",
             "stats.setCohortStartQuarter",
@@ -16974,17 +16840,17 @@
             "stats.toggleExcludedCapacityEpicKey"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 127,
+          "expandedInputCount": 136,
           "returnCount": 0,
           "propCount": 9,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 127,
+          "expandedInputCeiling": 136,
           "returnCeiling": 0,
           "propCeiling": 9,
           "unresolved": [],
           "inventory": {
-            "source": "frontend/src/stats/StatsPanel.jsx:21",
-            "sourceDigest": "ea51b66335cf81701f64f85d2f16d0f2043406f43476787487808779fbb9e9a8"
+            "source": "frontend/src/stats/StatsPanel.jsx:27",
+            "sourceDigest": "78ab0846cbdb9963a3a7803e01ecf819aaf3db557d96477ddccaafa4507d4ff9"
           },
           "callers": [],
           "remainingAppReaders": [],
@@ -17033,22 +16899,28 @@
             "stats.burnoutTotals",
             "stats.canRenderStatsPanel",
             "stats.clearExcludedCapacityEpicSelection",
-            "stats.cohortAssigneeFilter",
-            "stats.cohortAssigneeOptions",
             "stats.cohortAverageLeadDays",
+            "stats.cohortAwaitingMode",
+            "stats.cohortClosedEndQuarter",
+            "stats.cohortClosedStartQuarter",
             "stats.cohortCompletedBars",
             "stats.cohortEndQuarter",
             "stats.cohortError",
             "stats.cohortExcludeAdHoc",
             "stats.cohortExcludeCapacity",
+            "stats.cohortFetchedCount",
             "stats.cohortGridModel",
             "stats.cohortGroupBy",
+            "stats.cohortLastN",
+            "stats.cohortLastNShortfall",
             "stats.cohortLoading",
             "stats.cohortMedianLeadDays",
+            "stats.cohortMode",
             "stats.cohortOpenBars",
             "stats.cohortProjectFilter",
             "stats.cohortProjectOptions",
             "stats.cohortQuarterOptions",
+            "stats.cohortScope",
             "stats.cohortSelectedRow",
             "stats.cohortSelectedRowLabel",
             "stats.cohortStartQuarter",
@@ -17105,11 +16977,14 @@
             "stats.selectAllExcludedCapacityEpics",
             "stats.setBurndownMetric",
             "stats.setBurnoutAssigneeFilter",
-            "stats.setCohortAssigneeFilter",
+            "stats.setCohortClosedEndQuarter",
+            "stats.setCohortClosedStartQuarter",
             "stats.setCohortEndQuarter",
             "stats.setCohortExcludeAdHoc",
             "stats.setCohortExcludeCapacity",
             "stats.setCohortGroupBy",
+            "stats.setCohortLastN",
+            "stats.setCohortMode",
             "stats.setCohortProjectFilter",
             "stats.setCohortSelectedRow",
             "stats.setCohortStartQuarter",
@@ -17135,17 +17010,17 @@
             "stats.toggleExcludedCapacityEpicKey"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 127,
+          "expandedInputCount": 136,
           "returnCount": 0,
           "propCount": 9,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 127,
+          "expandedInputCeiling": 136,
           "returnCeiling": 0,
           "propCeiling": 9,
           "unresolved": [],
           "inventory": {
-            "source": "frontend/src/stats/StatsPanel.jsx:21",
-            "sourceDigest": "ea51b66335cf81701f64f85d2f16d0f2043406f43476787487808779fbb9e9a8"
+            "source": "frontend/src/stats/StatsPanel.jsx:27",
+            "sourceDigest": "78ab0846cbdb9963a3a7803e01ecf819aaf3db557d96477ddccaafa4507d4ff9"
           },
           "callers": [],
           "remainingAppReaders": [],
@@ -19228,20 +19103,20 @@
       "ceiling": 16829
     },
     "stats": {
-      "measured": 2792,
-      "ceiling": 2792
+      "measured": 2896,
+      "ceiling": 2896
     },
     "eng": {
       "measured": 1786,
       "ceiling": 1786
     },
     "uniqueOwners": {
-      "measured": 26869,
-      "ceiling": 26869
+      "measured": 26973,
+      "ceiling": 26973
     },
     "appPlusOwners": {
-      "measured": 34438,
-      "ceiling": 34438
+      "measured": 34566,
+      "ceiling": 34566
     }
   },
   "transfer": {

@@ -21,7 +21,6 @@ const EXPECTED = {
     "B": [
         "cohortQuarterOptions",
         "cohortProjectOptions",
-        "cohortAssigneeOptions",
         "cohortSummary",
         "cohortWorkflowStatusTotal",
         "cohortGridModel",
@@ -32,6 +31,11 @@ const EXPECTED = {
         "cohortWarnings",
         "cohortStatusControls",
         "cohortSelectedRowLabel",
+        "cohortDisplayedIssues",
+        "cohortScope",
+        "cohortFetchedCount",
+        "cohortAwaitingMode",
+        "cohortLastNShortfall",
         "excludedCapacitySprintOptions",
         "excludedCapacitySprintRange",
         "effortSplitSprintLabel",
@@ -92,6 +96,9 @@ const INPUT_NAMES = [
     "capacityTasks",
     "cohortEndQuarter",
     "cohortStartQuarter",
+    "cohortMode",
+    "cohortClosedStartQuarter",
+    "cohortClosedEndQuarter",
     "excludedEpicSet",
     "getTeamInfo",
     "groupPreferences",
@@ -123,12 +130,12 @@ const INPUT_NAMES = [
     "burnoutQueryKey",
     "burnoutScopedTeamIds",
     "burnoutScopedTeamSignature",
-    "cohortAssigneeFilter",
     "cohortCacheRef",
     "cohortData",
     "cohortExcludeAdHoc",
     "cohortExcludeCapacity",
     "cohortGroupBy",
+    "cohortLastN",
     "cohortProjectFilter",
     "cohortQueryKey",
     "cohortScopedTeamSignature",
@@ -154,7 +161,6 @@ const INPUT_NAMES = [
     "projectTrackPhaseData",
     "selectedSprint",
     "setBurnoutTaskFilter",
-    "setCohortAssigneeFilter",
     "setCohortData",
     "setCohortError",
     "setCohortLoading",
@@ -192,10 +198,9 @@ const EFFECT_DEPS = [
     "[burnoutData, burnoutAssigneeFilter]",
     "[showStats, statsView]",
     "[selectedSprintInfo?.name, burnoutAssigneeFilter, burnoutQueryKey]",
-    "[showStats, statsView, cohortStartQuarter, cohortEndQuarter, cohortQueryKey, cohortScopedTeamSignature, burnoutScopedTeamSignature, activeGroupMissingComponents, adHocEpicSignature, groupPreferences.onboardingRequired, adminSettingsGate.status, issuePeopleStatsRevision]",
-    "[cohortProjectFilter, cohortProjectOptions]",
-    "[cohortAssigneeFilter, cohortAssigneeOptions]",
-    "[cohortGridModel, cohortSelectedRow]",
+    "[showStats, statsView, cohortMode, cohortStartQuarter, cohortEndQuarter, cohortClosedStartQuarter, cohortClosedEndQuarter, cohortQueryKey, cohortScopedTeamSignature, burnoutScopedTeamSignature, activeGroupMissingComponents, adHocEpicSignature, groupPreferences.onboardingRequired, adminSettingsGate.status, issuePeopleStatsRevision]",
+    "[cohortProjectFilter, cohortProjectOptions, cohortAwaitingMode]",
+    "[cohortGridModel, cohortSelectedRow, cohortAwaitingMode]",
     "[ excludedCapacitySprintOptions, excludedCapacityDefaultRange, excludedCapacityStartSprintId, excludedCapacityEndSprintId ]",
     "[ showStats, statsView, excludedCapacityQueryKey, excludedCapacitySprintIdsSignature, excludedCapacityScopedTeamSignature, excludedCapacityEpicOptions, adHocEpicSignature, activeGroupId, activeGroupTeamIds.length, excludedCapacityRefreshNonce, groupPreferences.onboardingRequired, adminSettingsGate.status ]",
     "[ showStats, statsView, projectTrackMode, projectTrackPhaseSignature, ]",
@@ -221,8 +226,9 @@ function inputs() {
         teamNameById:new Map(), teamOptions:[], capacityTasks:[], availableSprints:[],
         burnoutTaskTeamByIssueKey:new Map(), burnoutTaskStatusByIssueKey:new Map(), burnoutIssueWeightByKey:new Map(),
         burnoutScopedTeamIds:[], groupPreferences:{onboardingRequired:false}, adminSettingsGate:{status:'clear'},
-        isAllTeamsSelected:true, showStats:false, statsView:'teams', burnoutAssigneeFilter:'all', cohortAssigneeFilter:'all', cohortProjectFilter:'all',
+        isAllTeamsSelected:true, showStats:false, statsView:'teams', burnoutAssigneeFilter:'all', cohortProjectFilter:'all',
         cohortStartQuarter:'2026Q1', cohortEndQuarter:'2026Q1', cohortGroupBy:'quarter', cohortStatusToggles:{},
+        cohortMode:'created', cohortLastN:30, cohortClosedStartQuarter:'2026Q1', cohortClosedEndQuarter:'2026Q1',
         cohortExcludeAdHoc:false, cohortExcludeCapacity:true, projectTrackMode:'epic', projectTrackCapacitySide:'all',
         excludedCapacityStartSprintId:'', excludedCapacityEndSprintId:'', burndownMetric:'storyPoints',
         priorityAxis:[], priorityOrder:{}, effectivePriorityWeightMap:{},
@@ -241,9 +247,9 @@ for (const layer of ['A','B','C']) test('Statistics layer '+layer+' preserves it
     if(layer==='B') {assert.deepEqual(result.excludedCapacitySprintRange,[]);assert.equal(result.effortSplitSprintLabel,'No sprint range selected');}
     if(layer==='C') {assert.equal(result.canRenderStatsPanel,false);assert.equal(result.isLeadTimesFocusMode,false);}
 });
-test('Statistics layers preserve all fifteen retained effect dependencies and remain separate', () => {
+test('Statistics layers preserve all fourteen retained effect dependencies and remain separate', () => {
     const source=fs.readFileSync(path.join(__dirname,'../frontend/src/stats/useStatsData.js'),'utf8');
-    assert.equal((source.match(/useEffect\(\(\) =>/g)||[]).length,15);
+    assert.equal((source.match(/useEffect\(\(\) =>/g)||[]).length,14);
     for(const dep of EFFECT_DEPS) assert.ok(source.replace(/\s+/g,' ').includes(dep), 'Missing frozen dependency '+dep);
     for(const layer of ['A','B','C']) assert.equal((source.match(new RegExp('useStatsDerived'+layer+'\\(', 'g'))||[]).length,1);
     assert.ok(source.includes('perfCountersRef.current.statsBuild'));
@@ -342,7 +348,7 @@ for (const view of ['burnout','cohort']) test(`Statistics ${view} manual identic
     const effects=[],refs=[];let cursor=0;
     const fakeReact={useMemo:fn=>fn(),useRef:initial=>refs[cursor++]||(refs[cursor-1]={current:initial}),useEffect:fn=>effects.push(fn)};
     const hooks=loadHooks({reactRuntime:fakeReact}),value=inputs(),changes=[];let recorded=0;
-    Object.assign(value,{showStats:true,statsView:view,tasksFetched:true,burnoutAssigneeFilter:'missing',cohortAssigneeFilter:'missing',cohortProjectFilter:'missing',cohortQueryKey:'synthetic-cohort',burnoutQueryKey:'synthetic-burnout',burnoutIssueKeys:['DEMO-1'],burnoutScopedTeamIds:[],issueEditStateRef:{current:{beginRead:()=>({}),finishRead(){},isCurrentAggregateRead:()=>true}},setBurnoutAssigneeFilter:v=>changes.push(['burnout',v]),setCohortAssigneeFilter:v=>changes.push(['assignee',v]),setCohortProjectFilter:v=>changes.push(['project',v])});
+    Object.assign(value,{showStats:true,statsView:view,tasksFetched:true,burnoutAssigneeFilter:'missing',cohortProjectFilter:'missing',cohortQueryKey:'synthetic-cohort',burnoutQueryKey:'synthetic-burnout',burnoutIssueKeys:['DEMO-1'],burnoutScopedTeamIds:[],issueEditStateRef:{current:{beginRead:()=>({}),finishRead(){},isCurrentAggregateRead:()=>true}},setBurnoutAssigneeFilter:v=>changes.push(['burnout',v]),setCohortAssigneeFilter:v=>changes.push(['assignee',v]),setCohortProjectFilter:v=>changes.push(['project',v])});
     value.scope.capacityTasks=[{key:'DEMO-1',fields:{epicKey:'DEMO-E1',status:{name:'Open'},customfield_10004:3}}];value.scope.selectedSprintInfo={name:'Synthetic Sprint'};
     const payload=view==='burnout'?{issuesMeta:[],events:[],assignees:[]}:{issues:[],meta:{warnings:[]}};
     value.setBurnoutData=data=>value.burnoutData=data;value.setCohortData=data=>value.cohortData=data;
@@ -564,3 +570,178 @@ for (const [view, source, change] of [
         } finally { release(); await nextStatsTick(); runtime.close(); await nextStatsTick(); global.fetch = priorFetch; global.window = priorWindow; }
     });
 }
+
+// ---- Lead Times modes (Task 6): request shape, keys, mode/data mismatch, Last N after filters ----
+const cohortEpic = (key, { project = 'PROD', created = '2026-01-10', terminal = '2026-02-10', status = 'Done' } = {}) => ({
+    key, projectKey: project, createdDate: created, terminalDate: terminal, status, jiraStatus: status, leadTimeDays: 30,
+});
+const closedStatusToggles = { done: true, open: false, killed: false, incomplete: false, postponed: false };
+const lastNPayload = (issues, meta = {}) => ({ range: null, issues, meta: { warnings: [], mode: 'last_n', scope: 'components', windowCeiling: 200, windowFull: true, ...meta } });
+const dayOf = (offset) => new Date(Date.UTC(2026, 0, 1 + offset)).toISOString().slice(0, 10);
+
+test('cohortQueryKey keeps the Created key and prefixes the closed modes; N is never part of a key', () => {
+    const keyOf = (overrides) => renderLayer('A', Object.assign(inputs(), { cohortStartQuarter: '2026Q1', cohortEndQuarter: '2026Q2', cohortClosedStartQuarter: '2025Q4', cohortClosedEndQuarter: '2026Q1', cohortLastN: 30 }, overrides)).cohortQueryKey;
+    const created = keyOf({ cohortMode: 'created' });
+    assert.ok(created.startsWith('2026Q1::2026Q2::'), created);
+    const suffix = created.split('::').slice(2).join('::');
+    assert.equal(keyOf({ cohortMode: 'closed' }), `closed::2025Q4::2026Q1::${suffix}`);
+    assert.equal(keyOf({ cohortMode: 'last_n' }), `last_n::::::${suffix}`);
+    assert.equal(keyOf({ cohortMode: 'last_n', cohortLastN: 60 }), keyOf({ cohortMode: 'last_n', cohortLastN: 30 }));
+});
+
+test('Lead Times status chips: Created keeps five, the closed modes keep Done, Killed and Incomplete', () => {
+    const keys = (mode) => renderLayer('B', Object.assign(inputs(), { cohortMode: mode, cohortLastN: 30, cohortClosedStartQuarter: '2026Q1', cohortClosedEndQuarter: '2026Q1' })).cohortStatusControls.map((item) => item.key);
+    assert.deepEqual(keys('created'), ['done', 'open', 'killed', 'incomplete', 'postponed']);
+    assert.deepEqual(keys('closed'), ['done', 'killed', 'incomplete']);
+    assert.deepEqual(keys('last_n'), ['done', 'killed', 'incomplete']);
+});
+
+test('Last N shows the newest N Epics that pass the filters and reports a shortfall only with a full window', () => {
+    const closedAndKilled = [
+        ...Array.from({ length: 60 }, (_, index) => cohortEpic(`D-${index}`, { terminal: dayOf(index) })),
+        ...Array.from({ length: 10 }, (_, index) => cohortEpic(`K-${index}`, { terminal: dayOf(100 + index), status: 'Killed' })),
+    ];
+    const render = (issues, overrides = {}, meta = {}) => renderLayer('B', Object.assign(inputs(), {
+        cohortMode: 'last_n', cohortLastN: 30, cohortData: lastNPayload(issues, meta), cohortStatusToggles: closedStatusToggles,
+        cohortExcludeCapacity: false, ...overrides,
+    }));
+    const full = render(closedAndKilled);
+    assert.equal(full.cohortDisplayedIssues.length, 30);
+    assert.deepEqual(full.cohortDisplayedIssues.slice(0, 2).map((item) => item.key), ['D-59', 'D-58']);
+    assert.ok(full.cohortDisplayedIssues.every((item) => item.status === 'Done'), 'Killed toggled off must not use up N');
+    assert.equal(full.cohortLastNShortfall, null);
+    assert.equal(full.cohortSummary.total, 30);
+    assert.equal(full.cohortFetchedCount, 70);
+    assert.equal(full.cohortScope, 'components');
+
+    const short = Array.from({ length: 40 }, (_, index) => cohortEpic(index < 20 ? `D-${index}` : `K-${index}`, { terminal: dayOf(index), status: index < 20 ? 'Done' : 'Killed' }));
+    assert.deepEqual(render(short, {}, { windowCeiling: 120 }).cohortLastNShortfall, { shown: 20, requested: 30, ceiling: 120 });
+    assert.equal(render(short, {}, { windowFull: false }).cohortLastNShortfall, null);
+    assert.equal(render(short, { cohortMode: 'closed' }, { mode: 'closed', windowFull: true }).cohortLastNShortfall, null);
+});
+
+test('closed modes ignore a persisted open or Postponed toggle', () => {
+    const issues = [cohortEpic('D-1'), cohortEpic('P-1', { status: 'Postponed' }), cohortEpic('O-1', { status: 'open', terminal: null })];
+    const result = renderLayer('B', Object.assign(inputs(), {
+        cohortMode: 'closed', cohortClosedStartQuarter: '2026Q1', cohortClosedEndQuarter: '2026Q1',
+        cohortData: { range: null, issues, meta: { warnings: [], mode: 'closed', scope: 'components' } },
+        cohortStatusToggles: { done: true, open: true, killed: true, incomplete: true, postponed: true }, cohortExcludeCapacity: false,
+    }));
+    assert.deepEqual(result.cohortDisplayedIssues.map((item) => item.key), ['D-1']);
+});
+
+test('data from another mode is never used: mismatch in either direction awaits the right data', () => {
+    const createdPayload = { range: { startDate: '2026-01-01', endDate: '2026-03-31' }, issues: [cohortEpic('C-1', { status: 'open', terminal: null })], meta: { warnings: ['created warning'] } };
+    const closedUnderCreated = renderLayer('B', Object.assign(inputs(), { cohortMode: 'closed', cohortData: createdPayload, cohortStatusToggles: closedStatusToggles }));
+    assert.equal(closedUnderCreated.cohortAwaitingMode, true);
+    assert.deepEqual(closedUnderCreated.cohortDisplayedIssues, []);
+    assert.equal(closedUnderCreated.cohortFetchedCount, 0);
+    assert.deepEqual(closedUnderCreated.cohortWarnings, []);
+    assert.equal(closedUnderCreated.cohortLastNShortfall, null);
+    const createdUnderClosed = renderLayer('B', Object.assign(inputs(), { cohortMode: 'created', cohortData: lastNPayload([cohortEpic('D-1')]), cohortStatusToggles: { done: true, open: true } }));
+    assert.equal(createdUnderClosed.cohortAwaitingMode, true);
+    assert.deepEqual(createdUnderClosed.cohortDisplayedIssues, []);
+    const matching = renderLayer('B', Object.assign(inputs(), { cohortMode: 'created', cohortData: createdPayload, cohortStatusToggles: { done: true, open: true } }));
+    assert.equal(matching.cohortAwaitingMode, false);
+    assert.equal(matching.cohortFetchedCount, 1);
+    assert.equal(renderLayer('B', Object.assign(inputs(), { cohortMode: 'created', cohortData: null })).cohortAwaitingMode, false);
+});
+
+test('closed-mode heatmap rows span the displayed Epics and keep long-lived Epics in the overflow column', () => {
+    const issues = [
+        cohortEpic('A-1', { project: 'A', created: '2023-02-10', terminal: '2026-02-01' }),
+        cohortEpic('B-1', { project: 'B', created: '2025-08-01', terminal: '2025-09-01' }),
+        cohortEpic('B-2', { project: 'B', created: '2026-01-20', terminal: '2026-02-20' }),
+    ];
+    const render = (project) => renderLayer('B', Object.assign(inputs(), {
+        cohortMode: 'closed', cohortClosedStartQuarter: '2026Q1', cohortClosedEndQuarter: '2026Q1', cohortProjectFilter: project,
+        cohortData: { range: null, issues, meta: { warnings: [], mode: 'closed', scope: 'components' } },
+        cohortStatusToggles: closedStatusToggles, cohortExcludeCapacity: false,
+    })).cohortGridModel;
+    const all = render('all');
+    assert.equal(all.rows[0].key, '2023Q1');
+    assert.equal(all.rows[all.rows.length - 1].key, '2026Q1');
+    assert.equal(all.columns[all.columns.length - 1].label, 'Q+12+');
+    const onlyB = render('B');
+    assert.equal(onlyB.rows[0].key, '2025Q3', 'the span follows the displayed Epics, not the server window');
+    assert.equal(onlyB.columns.some((column) => column.overflow), false);
+});
+
+test('Project filter survives Created to Closed and back, and is still pruned when its data is for the right mode', () => {
+    const effects = [], fakeReact = { useMemo: (fn) => fn(), useRef: (initial) => ({ current: initial }), useEffect: (fn) => effects.push(fn) };
+    const hooks = loadHooks({ reactRuntime: fakeReact });
+    const run = (overrides) => {
+        effects.length = 0;
+        const value = Object.assign(inputs(), overrides);
+        const cleared = [];
+        value.setCohortProjectFilter = (next) => cleared.push(next);
+        hooks.useStatsDerivedB(value);
+        const pruneEffects = effects.filter((fn) => /setCohortProjectFilter\(["']all["']\)/.test(fn.toString()));
+        assert.equal(pruneEffects.length, 1, 'the Project prune effect must be found');
+        pruneEffects.forEach((fn) => fn());
+        return cleared;
+    };
+    const createdPayload = { range: null, issues: [cohortEpic('C-1', { project: 'PROD' })], meta: { warnings: [] } };
+    const closedPayload = { range: null, issues: [cohortEpic('X-1', { project: 'OTHER' })], meta: { warnings: [], mode: 'closed', scope: 'components' } };
+    assert.deepEqual(run({ cohortMode: 'closed', cohortProjectFilter: 'PROD', cohortData: createdPayload }), [], 'Created data under Closed must not reset Project');
+    assert.deepEqual(run({ cohortMode: 'created', cohortProjectFilter: 'PROD', cohortData: closedPayload }), [], 'Closed data under Created must not reset Project');
+    assert.deepEqual(run({ cohortMode: 'closed', cohortProjectFilter: 'PROD', cohortData: closedPayload }), ['all'], 'a project missing from matching data is still pruned');
+    assert.deepEqual(run({ cohortMode: 'created', cohortProjectFilter: 'PROD', cohortData: createdPayload }), []);
+});
+
+for (const mode of ['created', 'closed', 'last_n']) test(`cohort ${mode} reads send one request shape, explicit and automatic`, async () => {
+    const buildBodies = async (automatic) => {
+        const effects = [], fakeReact = { useMemo: (fn) => fn(), useRef: (initial) => ({ current: initial }), useEffect: (fn) => effects.push(fn) };
+        const hooks = loadHooks({ reactRuntime: fakeReact }), value = inputs(), bodies = [];
+        let settle; const settled = new Promise((resolve) => { settle = resolve; });
+        Object.assign(value, {
+            showStats: true, statsView: 'cohort', cohortMode: mode, cohortLastN: 50, cohortQueryKey: `key-${mode}`,
+            cohortStartQuarter: '2026Q1', cohortEndQuarter: '2026Q2', cohortClosedStartQuarter: '2025Q4', cohortClosedEndQuarter: '2026Q1',
+            burnoutScopedTeamIds: ['T1'], activeGroupMissingComponents: ['Alpha'], activeGroupAdHocCapacityEpics: ['TECH-9'],
+            issueEditStateRef: { current: { beginRead: () => ({}), finishRead() {}, isCurrentAggregateRead: () => true } },
+            automaticRefreshRef: { current: automatic ? { source: 'stats_cohort', job: { signal: new AbortController().signal, shouldApply: () => true }, settle } : null },
+        });
+        const priorFetch = global.fetch, priorWindow = global.window;
+        global.window = { setTimeout: (fn, ms) => setTimeout(fn, ms === 120 ? 1 : 30000), clearTimeout };
+        global.fetch = async (url, options) => { bodies.push(JSON.parse(options.body)); return new Response(JSON.stringify({ data: { issues: [], meta: { warnings: [] } }, cached: false })); };
+        try {
+            hooks.useStatsDerivedB(value);
+            const cleanup = effects.find((fn) => fn.toString().includes('const fetchCohort'))();
+            if (automatic) await settled; else await new Promise((resolve) => setTimeout(resolve, 30));
+            cleanup?.();
+        } finally { global.fetch = priorFetch; global.window = priorWindow; }
+        return bodies;
+    };
+    const explicit = await buildBodies(false), automatic = await buildBodies(true);
+    const shared = { teamIds: ['T1'], components: ['Alpha'], adHocCapacityEpics: ['TECH-9'], refresh: false };
+    const expected = mode === 'created' ? { startQuarter: '2026Q1', endQuarter: '2026Q2', ...shared }
+        : mode === 'closed' ? { mode: 'closed', startQuarter: '2025Q4', endQuarter: '2026Q1', ...shared }
+            : { mode: 'last_n', ...shared };
+    assert.equal(explicit.length, 1);
+    assert.equal(automatic.length, 1);
+    assert.equal(JSON.stringify(explicit[0]), JSON.stringify(expected));
+    assert.equal(JSON.stringify(automatic[0]), JSON.stringify(expected));
+});
+
+test('cohort reads reuse a cached mode instead of fetching again and need quarters only for Created and Closed', async () => {
+    const effects = [], fakeReact = { useMemo: (fn) => fn(), useRef: (initial) => ({ current: initial }), useEffect: (fn) => effects.push(fn) };
+    const hooks = loadHooks({ reactRuntime: fakeReact }), value = inputs(), errors = [];
+    value.automaticRefreshRef = { current: null };
+    Object.assign(value, { showStats: true, statsView: 'cohort', cohortMode: 'last_n', cohortQueryKey: 'last_n::::::sig', cohortStartQuarter: '', cohortEndQuarter: '', cohortClosedStartQuarter: '', cohortClosedEndQuarter: '' });
+    value.cohortCacheRef.current['last_n::::::sig'] = { issues: [], meta: { mode: 'last_n', warnings: [] } };
+    value.setCohortError = (message) => errors.push(message);
+    const priorFetch = global.fetch; let fetches = 0; global.fetch = async () => { fetches++; return new Response('{}'); };
+    try {
+        hooks.useStatsDerivedB(value);
+        effects.find((fn) => fn.toString().includes('const fetchCohort'))();
+        await new Promise((resolve) => setTimeout(resolve, 20));
+    } finally { global.fetch = priorFetch; }
+    assert.equal(fetches, 0, 'a cached Last N window is not fetched again');
+    assert.equal(errors.includes('Start and end quarter are required.'), false, 'Last N needs no quarters');
+
+    effects.length = 0; errors.length = 0;
+    Object.assign(value, { cohortMode: 'closed', cohortQueryKey: '' });
+    hooks.useStatsDerivedB(value);
+    effects.find((fn) => fn.toString().includes('const fetchCohort'))();
+    assert.ok(errors.includes('Start and end quarter are required.'), 'Closed still needs its quarters');
+});

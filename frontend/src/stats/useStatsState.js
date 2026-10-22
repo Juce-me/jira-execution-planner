@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { getCurrentQuarterLabel } from '../cohort/cohortUtils.js';
+import { getCurrentQuarterLabel, resolveLeadTimesLastN, resolveLeadTimesMode } from '../cohort/cohortUtils.js';
 
 export function useStatsState({ savedPrefsRef, resolveStatsView, resolveStatsGraphMode, resolveBurndownMetric, resolveCohortGroupBy }) {
     const [statsView, setStatsView] = useState(resolveStatsView(savedPrefsRef.current.statsView));
@@ -14,9 +14,12 @@ export function useStatsState({ savedPrefsRef, resolveStatsView, resolveStatsGra
     const [cohortError, setCohortError] = useState('');
     const [cohortStartQuarter, setCohortStartQuarter] = useState(savedPrefsRef.current.cohortStartQuarter || getCurrentQuarterLabel());
     const [cohortEndQuarter, setCohortEndQuarter] = useState(savedPrefsRef.current.cohortEndQuarter || getCurrentQuarterLabel());
+    const [cohortMode, setCohortMode] = useState(resolveLeadTimesMode(savedPrefsRef.current.cohortMode));
+    const [cohortClosedStartQuarter, setCohortClosedStartQuarter] = useState(savedPrefsRef.current.cohortClosedStartQuarter || getCurrentQuarterLabel());
+    const [cohortClosedEndQuarter, setCohortClosedEndQuarter] = useState(savedPrefsRef.current.cohortClosedEndQuarter || getCurrentQuarterLabel());
+    const [cohortLastN, setCohortLastN] = useState(resolveLeadTimesLastN(savedPrefsRef.current.cohortLastN));
     const [cohortGroupBy, setCohortGroupBy] = useState(resolveCohortGroupBy(savedPrefsRef.current.cohortGroupBy));
     const [cohortProjectFilter, setCohortProjectFilter] = useState(savedPrefsRef.current.cohortProjectFilter || 'all');
-    const [cohortAssigneeFilter, setCohortAssigneeFilter] = useState(savedPrefsRef.current.cohortAssigneeFilter || 'all');
     const [cohortExcludeAdHoc, setCohortExcludeAdHoc] = useState(Boolean(savedPrefsRef.current.cohortExcludeAdHoc));
     const [cohortExcludeCapacity, setCohortExcludeCapacity] = useState(savedPrefsRef.current.cohortExcludeCapacity ?? true);
     const [cohortStatusToggles, setCohortStatusToggles] = useState(() => ({
@@ -101,12 +104,18 @@ export function useStatsState({ savedPrefsRef, resolveStatsView, resolveStatsGra
         setCohortStartQuarter,
         cohortEndQuarter,
         setCohortEndQuarter,
+        cohortMode,
+        setCohortMode,
+        cohortClosedStartQuarter,
+        setCohortClosedStartQuarter,
+        cohortClosedEndQuarter,
+        setCohortClosedEndQuarter,
+        cohortLastN,
+        setCohortLastN,
         cohortGroupBy,
         setCohortGroupBy,
         cohortProjectFilter,
         setCohortProjectFilter,
-        cohortAssigneeFilter,
-        setCohortAssigneeFilter,
         cohortExcludeAdHoc,
         setCohortExcludeAdHoc,
         cohortExcludeCapacity,

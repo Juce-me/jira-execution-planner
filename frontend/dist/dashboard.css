@@ -12149,6 +12149,9 @@ input.story-points-editor.story-points-alert-highlight {
   box-sizing: border-box;
   transform: none;
 }
+.cohort-panel > .cohort-section {
+  min-width: 0;
+}
 .cohort-section-title {
   display: flex;
   justify-content: space-between;

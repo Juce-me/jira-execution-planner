@@ -30,6 +30,7 @@ from requests import Session
 from sqlalchemy.exc import OperationalError
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
 from backend.services.request_performance import measure_task_load, mark_task_cache_hit, submit_with_performance
+from backend.services import epic_cohort_closed
 from backend.epm import config as epm_config
 from backend.epm import home as epm_home
 from backend.epm import aggregate as epm_aggregate
@@ -1227,7 +1228,34 @@ def resolve_epic_cohort_range(start_quarter, end_quarter, reference_date=None):
     return start_date, min(requested_end, today)
 
 
-def _build_epic_cohort_cache_key(start_quarter, end_quarter, team_ids, projects, components=None, ad_hoc_epics=None):
+EPIC_COHORT_MODES = ('created', 'closed', 'last_n')
+
+
+def parse_epic_cohort_request(payload, reference_date=None):
+    """Validate an epic-cohort request body; raises ValueError with the client-facing message.
+
+    An absent ``mode`` is ``created``. ``closed`` keeps the requested quarter end (a terminal date is never
+    in the future, and the cap would hide the newest closes for part of the day); ``last_n`` takes no quarters.
+    """
+    mode = payload['mode'] if 'mode' in payload else 'created'
+    if not isinstance(mode, str) or mode not in EPIC_COHORT_MODES:
+        raise ValueError('mode must be created, closed or last_n')
+    if mode == 'last_n':
+        if payload.get('startQuarter') is not None or payload.get('endQuarter') is not None:
+            raise ValueError('last_n does not take startQuarter or endQuarter')
+        return {'mode': mode, 'startQuarter': '', 'endQuarter': '', 'startDate': None, 'endDate': None}
+    start_quarter = str(payload.get('startQuarter') or '').strip()
+    end_quarter = str(payload.get('endQuarter') or '').strip()
+    if not start_quarter or not end_quarter:
+        raise ValueError('startQuarter and endQuarter are required')
+    start_date, end_date = resolve_epic_cohort_range(start_quarter, end_quarter, reference_date)
+    if mode == 'closed':
+        end_date = quarter_dates_from_label(end_quarter)[1]
+    return {'mode': mode, 'startQuarter': start_quarter, 'endQuarter': end_quarter,
+            'startDate': start_date, 'endDate': end_date}
+
+
+def _build_epic_cohort_cache_key(start_quarter, end_quarter, team_ids, projects, components=None, ad_hoc_epics=None, mode='created'):
     normalized_teams = ','.join(normalize_team_ids(team_ids or []))
     normalized_projects = ','.join(sorted(str(project or '').strip() for project in (projects or []) if str(project or '').strip()))
     normalized_components = ','.join(
@@ -1238,7 +1266,7 @@ def _build_epic_cohort_cache_key(start_quarter, end_quarter, team_ids, projects,
         )
     )
     normalized_ad_hoc = ','.join(sorted(normalize_epic_keys(ad_hoc_epics or [])))
-    return (
+    key = (
         f'{str(start_quarter or "").strip().upper()}'
         f'::{str(end_quarter or "").strip().upper()}'
         f'::{normalized_teams or "all"}'
@@ -1246,6 +1274,7 @@ def _build_epic_cohort_cache_key(start_quarter, end_quarter, team_ids, projects,
         f'::{normalized_components or "no-components"}'
         f'::{normalized_ad_hoc or "no-adhoc"}'
     )
+    return key if mode == 'created' else f'{mode}::{key}'
 
 
 TEAM_FIELD_CACHE = None
@@ -5104,7 +5133,7 @@ def _escape_jql_literal(value):
     return str(value or '').replace('\\', '\\\\').replace('"', '\\"')
 
 
-def _cohort_fetch_terminal_date_from_changelog(issue_key, target_status, headers, context=None):
+def _cohort_fetch_terminal_date_from_changelog(issue_key, target_status, headers, context=None, *, full_changelog=False):
     response = current_jira_get(
         f'/rest/api/3/issue/{issue_key}',
         params={'fields': 'status', 'expand': 'changelog'},
@@ -5114,11 +5143,120 @@ def _cohort_fetch_terminal_date_from_changelog(issue_key, target_status, headers
     if response.status_code != 200:
         return issue_key, None, f'changelog fetch failed ({response.status_code})'
     data = response.json() or {}
-    changelog = (data.get('changelog') or {}).get('histories') or []
+    changelog_block = data.get('changelog') or {}
+    changelog = changelog_block.get('histories') or []
+    total = changelog_block.get('total')
+    if full_changelog and isinstance(total, int) and total > len(changelog):
+        # The embedded changelog is partial; long-lived Epics (the point of the closed modes) need all of it.
+        changelog = _fetch_full_issue_changelog(issue_key, changelog, context=context)
     resolved = resolve_terminal_date_from_history(changelog, target_status)
     if not resolved:
         return issue_key, None, 'terminal transition not found in changelog'
     return issue_key, resolved, None
+
+
+def _normalize_cohort_issues(all_issues, headers, team_field_id, ad_hoc_key_set, context, warnings, *, today, truncated=False, full_changelog=False):
+    """Enrich terminal dates from the changelog and normalize Jira Epics for the cohort views.
+
+    ``truncated`` is the flag accumulated by the caller (page cap); the returned flag is that value OR anything
+    the enrichment sets, so a page-cap truncation is never overwritten.
+    """
+    terminal_candidates = []
+    for issue in all_issues:
+        fields_data = issue.get('fields') or {}
+        status_name = normalize_epic_status(raw_status_name := str((fields_data.get('status') or {}).get('name') or '').strip())
+        if not is_terminal_epic_status(status_name):
+            continue
+        if fields_data.get('resolutiondate'):
+            continue
+        terminal_candidates.append((str(issue.get('key') or '').strip(), status_name))
+
+    resolved_terminal_dates = {}
+    if terminal_candidates:
+        max_targets = max(1, int(EPIC_COHORT_ENRICH_MAX_ISSUES))
+        workers = max(1, int(EPIC_COHORT_ENRICH_WORKERS))
+        timeout_budget = max(1.0, float(EPIC_COHORT_ENRICH_TIMEOUT_SECONDS))
+        if len(terminal_candidates) > max_targets:
+            warnings.append(f'changelog enrichment capped at {max_targets} issues')
+            terminal_candidates = terminal_candidates[:max_targets]
+            truncated = True
+
+        future_map = {}
+        timed_out = []
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            for issue_key, status_name in terminal_candidates:
+                if not issue_key:
+                    continue
+                future = pool.submit(_cohort_fetch_terminal_date_from_changelog, issue_key, status_name, headers, context, full_changelog=full_changelog)
+                future_map[future] = issue_key
+            try:
+                for future in as_completed(future_map, timeout=timeout_budget):
+                    issue_key, resolved_date, warning = future.result()
+                    if resolved_date:
+                        resolved_terminal_dates[issue_key] = resolved_date
+                    if warning:
+                        warnings.append(f'{issue_key}: {warning}')
+            except FuturesTimeoutError:
+                warnings.append('changelog enrichment timeout budget exceeded')
+                truncated = True
+            for future, issue_key in future_map.items():
+                if future.done():
+                    continue
+                future.cancel()
+                timed_out.append(issue_key)
+        if timed_out:
+            warnings.append(f'changelog enrichment timed out for {len(timed_out)} issues')
+
+    normalized_issues = []
+    for issue in all_issues:
+        fields_data = issue.get('fields') or {}
+        issue_key = str(issue.get('key') or '').strip()
+        if not issue_key:
+            continue
+
+        created_dt = parse_jira_datetime(fields_data.get('created'))
+        created_date = created_dt.date() if created_dt else None
+        if not created_date:
+            continue
+
+        raw_status_name = str((fields_data.get('status') or {}).get('name') or '').strip()
+        status_name = normalize_epic_status(raw_status_name)
+        resolution_dt = parse_jira_datetime(fields_data.get('resolutiondate'))
+        terminal_date = resolution_dt.date() if resolution_dt else None
+        if not terminal_date and is_terminal_epic_status(status_name):
+            terminal_date = resolved_terminal_dates.get(issue_key)
+
+        lead_time_days = None
+        if terminal_date:
+            lead_time_days = max(0, (terminal_date - created_date).days)
+        elif status_name == 'open':
+            lead_time_days = max(0, (today - created_date).days)
+
+        project = fields_data.get('project') or {}
+        raw_team = fields_data.get(team_field_id) if team_field_id else None
+        team_payload = normalize_team_value_for_burnout(raw_team)
+        assignee_payload = normalize_assignee_value(fields_data.get('assignee'))
+
+        normalized_issue = {
+            'key': issue_key,
+            'summary': fields_data.get('summary') or '',
+            'projectKey': project.get('key') or '',
+            'team': team_payload,
+            'assignee': assignee_payload,
+            'createdDate': created_date.isoformat(),
+            'terminalDate': terminal_date.isoformat() if terminal_date else None,
+            'status': status_name,
+            'jiraStatus': raw_status_name or status_name,
+            'leadTimeDays': lead_time_days,
+            'createdQuarter': assign_to_period(created_date, 'quarter'),
+            'createdMonth': assign_to_period(created_date, 'month'),
+            'terminalDateSource': 'resolutiondate' if resolution_dt else ('changelog' if terminal_date else None)
+        }
+        if issue_key in ad_hoc_key_set:
+            normalized_issue['capacityType'] = 'ad_hoc'
+        normalized_issues.append(normalized_issue)
+
+    return normalized_issues, truncated
 
 
 def fetch_epic_cohort_data(start_date, end_date, headers, team_field_id, team_ids=None, component_names=None, context=None, ad_hoc_capacity_epics=None):
@@ -5193,102 +5331,10 @@ def fetch_epic_cohort_data(start_date, end_date, headers, team_field_id, team_id
             warnings.append(f'result truncated at {max_pages} pages')
             break
 
-    terminal_candidates = []
-    for issue in all_issues:
-        fields_data = issue.get('fields') or {}
-        status_name = normalize_epic_status(raw_status_name := str((fields_data.get('status') or {}).get('name') or '').strip())
-        if not is_terminal_epic_status(status_name):
-            continue
-        if fields_data.get('resolutiondate'):
-            continue
-        terminal_candidates.append((str(issue.get('key') or '').strip(), status_name))
-
-    resolved_terminal_dates = {}
-    if terminal_candidates:
-        max_targets = max(1, int(EPIC_COHORT_ENRICH_MAX_ISSUES))
-        workers = max(1, int(EPIC_COHORT_ENRICH_WORKERS))
-        timeout_budget = max(1.0, float(EPIC_COHORT_ENRICH_TIMEOUT_SECONDS))
-        if len(terminal_candidates) > max_targets:
-            warnings.append(f'changelog enrichment capped at {max_targets} issues')
-            terminal_candidates = terminal_candidates[:max_targets]
-            truncated = True
-
-        future_map = {}
-        timed_out = []
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            for issue_key, status_name in terminal_candidates:
-                if not issue_key:
-                    continue
-                future = pool.submit(_cohort_fetch_terminal_date_from_changelog, issue_key, status_name, headers, context)
-                future_map[future] = issue_key
-            try:
-                for future in as_completed(future_map, timeout=timeout_budget):
-                    issue_key, resolved_date, warning = future.result()
-                    if resolved_date:
-                        resolved_terminal_dates[issue_key] = resolved_date
-                    if warning:
-                        warnings.append(f'{issue_key}: {warning}')
-            except FuturesTimeoutError:
-                warnings.append('changelog enrichment timeout budget exceeded')
-                truncated = True
-            for future, issue_key in future_map.items():
-                if future.done():
-                    continue
-                future.cancel()
-                timed_out.append(issue_key)
-        if timed_out:
-            warnings.append(f'changelog enrichment timed out for {len(timed_out)} issues')
-
-    today = date.today()
-
-    normalized_issues = []
-    for issue in all_issues:
-        fields_data = issue.get('fields') or {}
-        issue_key = str(issue.get('key') or '').strip()
-        if not issue_key:
-            continue
-
-        created_dt = parse_jira_datetime(fields_data.get('created'))
-        created_date = created_dt.date() if created_dt else None
-        if not created_date:
-            continue
-
-        raw_status_name = str((fields_data.get('status') or {}).get('name') or '').strip()
-        status_name = normalize_epic_status(raw_status_name)
-        resolution_dt = parse_jira_datetime(fields_data.get('resolutiondate'))
-        terminal_date = resolution_dt.date() if resolution_dt else None
-        if not terminal_date and is_terminal_epic_status(status_name):
-            terminal_date = resolved_terminal_dates.get(issue_key)
-
-        lead_time_days = None
-        if terminal_date:
-            lead_time_days = max(0, (terminal_date - created_date).days)
-        elif status_name == 'open':
-            lead_time_days = max(0, (today - created_date).days)
-
-        project = fields_data.get('project') or {}
-        raw_team = fields_data.get(team_field_id) if team_field_id else None
-        team_payload = normalize_team_value_for_burnout(raw_team)
-        assignee_payload = normalize_assignee_value(fields_data.get('assignee'))
-
-        normalized_issue = {
-            'key': issue_key,
-            'summary': fields_data.get('summary') or '',
-            'projectKey': project.get('key') or '',
-            'team': team_payload,
-            'assignee': assignee_payload,
-            'createdDate': created_date.isoformat(),
-            'terminalDate': terminal_date.isoformat() if terminal_date else None,
-            'status': status_name,
-            'jiraStatus': raw_status_name or status_name,
-            'leadTimeDays': lead_time_days,
-            'createdQuarter': assign_to_period(created_date, 'quarter'),
-            'createdMonth': assign_to_period(created_date, 'month'),
-            'terminalDateSource': 'resolutiondate' if resolution_dt else ('changelog' if terminal_date else None)
-        }
-        if issue_key in ad_hoc_key_set:
-            normalized_issue['capacityType'] = 'ad_hoc'
-        normalized_issues.append(normalized_issue)
+    normalized_issues, truncated = _normalize_cohort_issues(
+        all_issues, headers, team_field_id, ad_hoc_key_set, context, warnings,
+        today=date.today(), truncated=truncated,
+    )
 
     payload = {
         'range': {
@@ -5303,6 +5349,97 @@ def fetch_epic_cohort_data(start_date, end_date, headers, team_field_id, team_id
         }
     }
     return payload, None
+
+
+def fetch_closed_epic_cohort_data(mode, start_date, end_date, headers, team_field_id, team_ids=None, component_names=None, context=None, ad_hoc_capacity_epics=None):
+    """Closed-mode counterpart of fetch_epic_cohort_data; see backend/services/epic_cohort_closed.py."""
+    ceiling = epic_cohort_closed.LAST_N_WINDOW
+
+    def empty_payload(scope, warnings):
+        return {
+            'range': {'startDate': start_date.isoformat(), 'endDate': end_date.isoformat()} if mode == 'closed' else None,
+            'issues': [],
+            'meta': {
+                'warnings': warnings, 'truncated': False, 'paginationMode': 'nextPageToken/isLast',
+                'mode': mode, 'scope': scope,
+                'windowCeiling': ceiling if mode == 'last_n' else None,
+                'windowFull': False if mode == 'last_n' else None,
+            },
+        }, None
+
+    scoped_projects = _cohort_project_scope()
+    if not scoped_projects:
+        return empty_payload('none', ['no projects configured for cohort query'])
+    scoped_team_ids = normalize_team_ids(team_ids or [])
+    scoped_components = [str(name or '').strip() for name in (component_names or []) if str(name or '').strip()]
+    if scoped_components:
+        scope = 'components'
+    elif scoped_team_ids:
+        scope = 'teams'
+    else:
+        return empty_payload('none', [])
+
+    project_clause = ', '.join(f'"{_escape_jql_literal(project)}"' for project in scoped_projects)
+    ad_hoc_key_set = set(normalize_epic_keys(ad_hoc_capacity_epics or [])[:EPIC_COHORT_ADHOC_MAX_EPICS])
+    fields = ['summary', 'created', 'status', 'resolutiondate', 'assignee', 'project']
+    if team_field_id and team_field_id not in fields:
+        fields.append(team_field_id)
+
+    def make_pair(batch, since):
+        if scope == 'components':
+            scope_clause = build_missing_info_scope_clause([], list(batch))
+        else:
+            scope_clause = build_missing_info_scope_clause(scoped_team_ids, [], team_field_name='Team[Team]')
+        return epic_cohort_closed.build_closed_epic_jqls(
+            project_clause, scope_clause, mode=mode, start_date=start_date, end_date=end_date,
+            unresolved_since=since)
+
+    warnings = []
+    pages_used = 0
+
+    def search_pages(jql, *, stop_when=None):
+        nonlocal pages_used
+        rows, token = [], None
+        while True:
+            if pages_used >= epic_cohort_closed.MAX_TOTAL_PAGES:
+                return rows, 'page_cap'
+            request = {'jql': jql, 'fields': fields, 'maxResults': 100}
+            if token:
+                request['nextPageToken'] = token
+            response = jira_search_request(request, context=context)
+            if response.status_code != 200:
+                raise epic_cohort_closed.EpicCohortSearchError(response)
+            pages_used += 1
+            data = response.json() or {}
+            rows.extend(data.get('issues') or [])
+            token = data.get('nextPageToken')
+            if bool(data.get('isLast', True)) or not token:
+                return rows, 'done'
+            if stop_when is not None and stop_when(rows):
+                return rows, 'max_rows'
+
+    def normalize(rows):
+        return _normalize_cohort_issues(
+            rows, headers, team_field_id, ad_hoc_key_set, context, warnings,
+            today=date.today(), full_changelog=True)
+
+    try:
+        batches = epic_cohort_closed.scope_batches(scoped_components, make_pair, fields)
+        result = epic_cohort_closed.fetch_closed_epics(
+            search_pages, normalize, mode=mode, start_date=start_date, end_date=end_date,
+            batches=batches, make_pair=make_pair, ceiling=ceiling, warnings=warnings)
+    except epic_cohort_closed.EpicCohortSearchError as exc:
+        return None, exc.response
+
+    return {
+        'range': {'startDate': start_date.isoformat(), 'endDate': end_date.isoformat()} if mode == 'closed' else None,
+        'issues': result['issues'],
+        'meta': {
+            'warnings': result['warnings'], 'truncated': result['truncated'],
+            'paginationMode': 'nextPageToken/isLast', 'mode': mode, 'scope': scope,
+            'windowCeiling': ceiling if mode == 'last_n' else None, 'windowFull': result['windowFull'],
+        },
+    }, None
 
 
 def build_missing_info_scope_clause(team_ids, component_names, team_field_name='Team[Team]'):
@@ -5852,14 +5989,13 @@ def get_burnout_stats():
 
 def get_epic_cohort_stats():
     payload = request.get_json(silent=True) or {}
-    start_quarter = str(payload.get('startQuarter') or '').strip()
-    end_quarter = str(payload.get('endQuarter') or '').strip()
-    if not start_quarter or not end_quarter:
-        return jsonify({'error': 'startQuarter and endQuarter are required'}), 400
     try:
-        start_date, end_date = resolve_epic_cohort_range(start_quarter, end_quarter)
+        parsed = parse_epic_cohort_request(payload)
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
+    mode = parsed['mode']
+    start_quarter, end_quarter = parsed['startQuarter'], parsed['endQuarter']
+    start_date, end_date = parsed['startDate'], parsed['endDate']
 
     raw_team_ids = payload.get('teamIds')
     team_ids = normalize_team_ids(raw_team_ids if isinstance(raw_team_ids, list) else [])
@@ -5869,7 +6005,10 @@ def get_epic_cohort_stats():
     ad_hoc_epics = normalize_epic_keys(raw_ad_hoc_epics if isinstance(raw_ad_hoc_epics, list) else [])[:EPIC_COHORT_ADHOC_MAX_EPICS]
     refresh = _cohort_parse_bool(payload.get('refresh'))
     scoped_projects = _cohort_project_scope()
-    cache_key = _build_epic_cohort_cache_key(start_quarter, end_quarter, team_ids, scoped_projects, component_names, ad_hoc_epics=ad_hoc_epics)
+    # A closed mode in Component scope ignores Teams, so they must not split its cache entries.
+    key_team_ids = [] if mode != 'created' and component_names else team_ids
+    cache_key = _build_epic_cohort_cache_key(
+        start_quarter, end_quarter, key_team_ids, scoped_projects, component_names, ad_hoc_epics=ad_hoc_epics, mode=mode)
     auth_context = current_request_auth_context()
     cache_generation = get_jira_issue_cache_generation()
     cache_enabled = jira_home_process_cache_enabled(auth_context)
@@ -5886,22 +6025,39 @@ def get_epic_cohort_stats():
         })
 
     try:
-        team_field_id = resolve_team_field_id(None, context=auth_context)
-        cohort_payload, error_response = fetch_epic_cohort_data(
-            start_date,
-            end_date,
-            None,
-            team_field_id,
-            team_ids=team_ids,
-            component_names=component_names,
-            context=auth_context,
-            ad_hoc_capacity_epics=ad_hoc_epics,
-        )
+        if mode == 'created':
+            team_field_id = resolve_team_field_id(None, context=auth_context)
+            cohort_payload, error_response = fetch_epic_cohort_data(
+                start_date,
+                end_date,
+                None,
+                team_field_id,
+                team_ids=team_ids,
+                component_names=component_names,
+                context=auth_context,
+                ad_hoc_capacity_epics=ad_hoc_epics,
+            )
+        else:
+            # With neither Components nor Teams the closed query makes no search request, so it needs no field.
+            team_field_id = resolve_team_field_id(None, context=auth_context) if (component_names or team_ids) else None
+            cohort_payload, error_response = fetch_closed_epic_cohort_data(
+                mode,
+                start_date,
+                end_date,
+                None,
+                team_field_id,
+                team_ids=team_ids,
+                component_names=component_names,
+                context=auth_context,
+                ad_hoc_capacity_epics=ad_hoc_epics,
+            )
         if error_response is not None:
             return jsonify({
                 'error': 'Failed to fetch epic cohort stats',
                 'details': error_response.text
             }), error_response.status_code
+    except epic_cohort_closed.EpicCohortScopeError:
+        return jsonify({'error': 'Component scope too large for Lead Times'}), 400
     except AuthError:
         payload, status = oauth_auth_required_payload()
         return jsonify(payload), status

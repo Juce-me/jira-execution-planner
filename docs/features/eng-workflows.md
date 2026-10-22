@@ -38,7 +38,7 @@ At least one configured Team or Jira Component is required for first-run eligibi
 2. **Epic-only and empty-Epic discovery:** the Epic must match either its Jira Team or the Department's exact mapped team label (any one of that Team's configured aliases), and it must match either its Jira Sprint value, the exact selected-sprint-name label, or that label's `_candidate` form. The suffix comparison ignores case but requires the whole label.
 3. **Future sprint ready path:** the Epic requires both the configured mapped Team label and either the exact selected-sprint-name label or its `_candidate` form. One does not replace the other.
 
-Configured Jira Components broaden Missing Information and Lead Times through configured-Team or Component matching. They also define Board's cross-sprint **Component** choice and the Component-owned half of **All work**, at the Epic boundary only. They never make Stories appear in the main Product/Tech list.
+Configured Jira Components broaden Missing Information and Lead Times (Created mode) through configured-Team or Component matching; the Lead Times Closed and Last N modes match the Department's Components only (its Teams only when no Components are configured). They also define Board's cross-sprint **Component** choice and the Component-owned half of **All work**, at the Epic boundary only. They never make Stories appear in the main Product/Tech list.
 
 If expected work is missing, check in this order:
 

@@ -330,6 +330,36 @@ class OAuthStatsRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json()["data"], {"quarters": []})
         mock_fetch.assert_called_once()
 
+    def test_epic_cohort_closed_modes_post_are_oauth_ready(self):
+        closed_payload = ({"range": None, "issues": [], "meta": {"mode": "closed", "scope": "components"}}, None)
+        bodies = [
+            {"mode": "closed", "startQuarter": "2026Q1", "endQuarter": "2026Q2", "components": ["Alpha"]},
+            {"mode": "last_n", "components": ["Alpha"]},
+        ]
+        for body in bodies:
+            with self.subTest(mode=body["mode"]), \
+                 patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+                 patch.object(jira_server, "resolve_team_field_id", return_value="customfield_team"), \
+                 patch.object(jira_server, "fetch_closed_epic_cohort_data", return_value=closed_payload) as mock_fetch:
+                jira_server.EPIC_COHORT_CACHE.clear()
+                response = self.client.post(
+                    "/api/stats/epic-cohort",
+                    headers={"X-Requested-With": "jira-execution-planner"},
+                    json=body,
+                )
+
+                self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+                mock_fetch.assert_called_once()
+                self.assertTrue(mock_fetch.call_args.kwargs["context"] is not None)
+
+    def test_epic_cohort_closed_modes_require_oauth_requested_with_header(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"):
+            for body in ({"mode": "closed", "startQuarter": "2026Q1", "endQuarter": "2026Q2"}, {"mode": "last_n"}):
+                with self.subTest(mode=body["mode"]):
+                    response = self.client.post("/api/stats/epic-cohort", json=body)
+                    self.assertEqual(response.status_code, 403)
+                    self.assertEqual(response.get_json()["error"], "csrf_required")
+
     def test_epic_cohort_post_requires_oauth_requested_with_header(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"):
             response = self.client.post("/api/stats/epic-cohort", json={

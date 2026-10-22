@@ -4,7 +4,7 @@ import CohortGrid from '../cohort/CohortGrid.jsx';
 import LeadTimesEpicCharts from '../cohort/LeadTimesEpicCharts.jsx';
 import LeadTimesWorkflowStatusCard from '../cohort/LeadTimesWorkflowStatusCard.jsx';
 import SegmentedControl from '../ui/SegmentedControl.jsx';
-import { compareQuarterLabels } from '../cohort/cohortUtils.js';
+import { LEAD_TIMES_LAST_N_OPTIONS, compareQuarterLabels, resolveLeadTimesLastN, resolveLeadTimesMode } from '../cohort/cohortUtils.js';
 import { buildRadarPoints, computeRate, formatPercent, getRateClass, resolveProjectTrackColor } from './statsUtils.js';
 import StatsDeliverySummary from './StatsDeliverySummary.jsx';
 import StatsPriorityView from './StatsPriorityView.jsx';
@@ -17,6 +17,12 @@ import ProjectTrackBreakdownChart from './ProjectTrackBreakdownChart.jsx';
 import ProjectTrackPhaseChart from './ProjectTrackPhaseChart.jsx';
 import StatsRangeControl from './StatsRangeControl.jsx';
 import { analyticsToken } from '../analytics/dashboardAnalytics.js';
+
+const COHORT_SCOPE_NOTES = {
+    components: 'Scope: Components',
+    teams: 'Scope: Teams (no Components configured)',
+    none: 'Scope: none configured (no Components or Teams)'
+};
 
 export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
     showStats, jiraUrl, activeGroupMissingComponents, priorityAxis, resolveStatsTeamColor
@@ -106,15 +112,20 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
         cohortEndQuarter,
         setCohortStartQuarter,
         setCohortEndQuarter,
+        cohortMode,
+        setCohortMode,
+        cohortClosedStartQuarter,
+        setCohortClosedStartQuarter,
+        cohortClosedEndQuarter,
+        setCohortClosedEndQuarter,
+        cohortLastN,
+        setCohortLastN,
         setCohortSelectedRow,
         cohortGroupBy,
         setCohortGroupBy,
         cohortProjectFilter,
         setCohortProjectFilter,
         cohortProjectOptions,
-        cohortAssigneeFilter,
-        setCohortAssigneeFilter,
-        cohortAssigneeOptions,
         cohortExcludeAdHoc,
         setCohortExcludeAdHoc,
         cohortExcludeCapacity,
@@ -134,9 +145,24 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
         cohortSelectedRow,
         cohortOpenBars,
         cohortCompletedBars,
+        cohortScope,
+        cohortFetchedCount,
+        cohortAwaitingMode,
+        cohortLastNShortfall,
         burnoutScopedTeamIds,
         burnoutData,
     } = stats;
+    // Created and Closed share one quarter control; Last N swaps it for a count.
+    const closedQuarterMode = cohortMode === 'closed';
+    const quarterStart = closedQuarterMode ? cohortClosedStartQuarter : cohortStartQuarter;
+    const quarterEnd = closedQuarterMode ? cohortClosedEndQuarter : cohortEndQuarter;
+    const setQuarterStart = closedQuarterMode ? setCohortClosedStartQuarter : setCohortStartQuarter;
+    const setQuarterEnd = closedQuarterMode ? setCohortClosedEndQuarter : setCohortEndQuarter;
+    const cohortBusy = cohortLoading || cohortAwaitingMode;
+    const cohortScopeNote = cohortMode === 'created' ? '' : COHORT_SCOPE_NOTES[cohortScope] || '';
+    const cohortShortfallNote = cohortLastNShortfall
+        ? `Showing ${cohortLastNShortfall.shown} of ${cohortLastNShortfall.requested}: filters leave fewer than ${cohortLastNShortfall.requested} Epics in ${cohortLastNShortfall.ceiling != null ? `the most recent ${cohortLastNShortfall.ceiling} closed` : 'the recent closed window'}.`
+        : '';
     const { buildStatLink, buildPriorityStatLink } = links;
     const { trackStatsAction, trackStatsAnalyticsAction } = analytics;
     const setBurnoutTaskFilter = onSelectBurnoutTask;
@@ -763,24 +789,59 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
 
                     <div className={`stats-view ${statsView === 'cohort' ? 'open' : ''}`}>
                         <div className="stats-controls cohort-controls">
-                            <StatsRangeControl
-                                idPrefix="lead-times-quarter"
-                                kindLabel="Quarter"
-                                options={cohortQuarterOptions.map((quarter) => ({ value: quarter, label: quarter }))}
-                                startValue={cohortStartQuarter}
-                                endValue={cohortEndQuarter}
-                                onStartChange={(nextStart) => {
-                                    setCohortStartQuarter(nextStart);
-                                    if (compareQuarterLabels(nextStart, cohortEndQuarter) > 0) setCohortEndQuarter(nextStart);
-                                    setCohortSelectedRow(null);
-                                }}
-                                onEndChange={(nextEnd) => {
-                                    setCohortEndQuarter(nextEnd);
-                                    if (compareQuarterLabels(cohortStartQuarter, nextEnd) > 0) setCohortStartQuarter(nextEnd);
-                                    setCohortSelectedRow(null);
-                                }}
-                                active={statsView === 'cohort'}
-                            />
+                            <div className="stats-control-group">
+                                <div className="controls-label">Mode</div>
+                                <select
+                                    className="scenario-input"
+                                    aria-label="Lead Times mode"
+                                    value={cohortMode}
+                                    onChange={(event) => {
+                                        setCohortMode(resolveLeadTimesMode(event.target.value));
+                                        setCohortSelectedRow(null);
+                                    }}
+                                >
+                                    <option value="created">Created</option>
+                                    <option value="closed">Closed</option>
+                                    <option value="last_n">Last N</option>
+                                </select>
+                            </div>
+                            {cohortMode === 'last_n' ? (
+                                <div className="stats-control-group">
+                                    <div className="controls-label">Number of epics</div>
+                                    <select
+                                        className="scenario-input"
+                                        aria-label="Number of epics"
+                                        value={cohortLastN}
+                                        onChange={(event) => {
+                                            setCohortLastN(resolveLeadTimesLastN(event.target.value));
+                                            setCohortSelectedRow(null);
+                                        }}
+                                    >
+                                        {LEAD_TIMES_LAST_N_OPTIONS.map((count) => (
+                                            <option key={count} value={count}>{count}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            ) : (
+                                <StatsRangeControl
+                                    idPrefix="lead-times-quarter"
+                                    kindLabel={closedQuarterMode ? 'Closed quarter' : 'Created quarter'}
+                                    options={cohortQuarterOptions.map((quarter) => ({ value: quarter, label: quarter }))}
+                                    startValue={quarterStart}
+                                    endValue={quarterEnd}
+                                    onStartChange={(nextStart) => {
+                                        setQuarterStart(nextStart);
+                                        if (compareQuarterLabels(nextStart, quarterEnd) > 0) setQuarterEnd(nextStart);
+                                        setCohortSelectedRow(null);
+                                    }}
+                                    onEndChange={(nextEnd) => {
+                                        setQuarterEnd(nextEnd);
+                                        if (compareQuarterLabels(quarterStart, nextEnd) > 0) setQuarterStart(nextEnd);
+                                        setCohortSelectedRow(null);
+                                    }}
+                                    active={statsView === 'cohort'}
+                                />
+                            )}
                             <div className="stats-control-group">
                                 <div className="controls-label">Group By</div>
                                 <SegmentedControl
@@ -804,24 +865,6 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                                 >
                                     {cohortProjectOptions.map((item) => (
                                         <option key={item.value} value={item.value}>{item.label}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div className="stats-control-group">
-                                <div className="controls-label">Assignee</div>
-                                <select
-                                    className="scenario-input"
-                                    aria-label="Assignee"
-                                    value={cohortAssigneeFilter}
-                                    onChange={(event) => {
-                                        setCohortAssigneeFilter(event.target.value);
-                                        setCohortSelectedRow(null);
-                                    }}
-                                >
-                                    {cohortAssigneeOptions.map((item) => (
-                                        <option key={item.value} value={item.value}>
-                                            {item.label}{item.value !== 'all' ? ` (${item.count})` : ''}
-                                        </option>
                                     ))}
                                 </select>
                             </div>
@@ -850,6 +893,9 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                             </div>
                         </div>
 
+                        {cohortScopeNote && <div className="stats-note">{cohortScopeNote}</div>}
+                        {cohortShortfallNote && <div className="stats-note">{cohortShortfallNote}</div>}
+
                         <div className="stats-actions cohort-status-actions">
                             {cohortStatusControls.map((item) => (
                                 <button
@@ -877,32 +923,42 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                                     {cohortSummary.done} done · {cohortSummary.killed} killed · {cohortSummary.incomplete} incomplete
                                 </div>
                             </div>
-                            <LeadTimesWorkflowStatusCard
-                                jiraUrl={jiraUrl}
-                                cohortStartQuarter={cohortStartQuarter}
-                                cohortEndQuarter={cohortEndQuarter}
-                                cohortSummary={cohortSummary}
-                                cohortWorkflowStatusTotal={cohortWorkflowStatusTotal}
-                            />
+                            {cohortMode === 'created' && (
+                                <LeadTimesWorkflowStatusCard
+                                    jiraUrl={jiraUrl}
+                                    cohortStartQuarter={cohortStartQuarter}
+                                    cohortEndQuarter={cohortEndQuarter}
+                                    cohortSummary={cohortSummary}
+                                    cohortWorkflowStatusTotal={cohortWorkflowStatusTotal}
+                                />
+                            )}
                             <div className="stats-card">
                                 <h4>Avg Lead Time</h4>
                                 <div className="stat-value">
                                     {cohortAverageLeadDays === null ? '—' : `${cohortAverageLeadDays.toFixed(1)}d`}
                                 </div>
-                                <div className="stats-note">Terminal epics with lead time</div>
+                                <div className="stats-note">
+                                    {cohortMode === 'closed' ? 'Epics closed in the selected range'
+                                        : cohortMode === 'last_n' ? 'Most recently closed epics'
+                                            : 'Terminal epics with lead time'}
+                                </div>
                             </div>
                             <div className="stats-card">
                                 <h4>Median Lead Time</h4>
                                 <div className="stat-value">
                                     {cohortMedianLeadDays === null ? '—' : `${cohortMedianLeadDays.toFixed(1)}d`}
                                 </div>
-                                <div className="stats-note">Middle terminal lead time</div>
+                                <div className="stats-note">
+                                    {cohortMode === 'closed' ? 'Middle lead time of epics closed in the selected range'
+                                        : cohortMode === 'last_n' ? 'Middle lead time of the most recently closed epics'
+                                            : 'Middle terminal lead time'}
+                                </div>
                             </div>
                         </div>
 
-                        {cohortLoading && <div className="stats-note">Loading lead time cohorts…</div>}
-                        {!cohortLoading && cohortError && <div className="stats-note cohort-error">{cohortError}</div>}
-                        {!cohortLoading && !cohortError && cohortWarnings.length > 0 && (
+                        {cohortBusy && <div className="stats-note">Loading lead time cohorts…</div>}
+                        {!cohortBusy && cohortError && <div className="stats-note cohort-error">{cohortError}</div>}
+                        {!cohortBusy && !cohortError && cohortWarnings.length > 0 && (
                             <div className="cohort-warnings">
                                 {cohortWarnings.map((warning, index) => (
                                     <div key={`${warning}-${index}`}>• {warning}</div>
@@ -910,7 +966,7 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                             </div>
                         )}
 
-                        {!cohortLoading && !cohortError && (
+                        {!cohortBusy && !cohortError && (
                             <div className="cohort-panel">
                                 <div className="cohort-section cohort-section-fullbleed">
                                     <div className="cohort-section-title">
@@ -930,6 +986,8 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                                     </div>
                                     <CohortGrid
                                         model={cohortGridModel}
+                                        showOpen={cohortMode === 'created'}
+                                        emptyMessage={cohortMode !== 'created' && cohortScope !== null && cohortFetchedCount === 0 ? 'No closed epics in this scope.' : undefined}
                                         selectedRowKey={cohortSelectedRow}
                                         onSelectRow={(rowKey) => {
                                             setCohortSelectedRow((prev) => (prev === rowKey ? null : rowKey));
@@ -937,6 +995,7 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                                     />
                                 </div>
                                 <LeadTimesEpicCharts
+                                    cohortMode={cohortMode}
                                     cohortOpenBars={cohortOpenBars}
                                     cohortCompletedBars={cohortCompletedBars}
                                     cohortSelectedRowLabel={cohortSelectedRowLabel}
@@ -948,7 +1007,6 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                                     cohortProjectFilter={cohortProjectFilter}
                                     activeGroupMissingComponents={activeGroupMissingComponents}
                                     burnoutScopedTeamIds={burnoutScopedTeamIds}
-                                    cohortAssigneeFilter={cohortAssigneeFilter}
                                 />
                             </div>
                         )}

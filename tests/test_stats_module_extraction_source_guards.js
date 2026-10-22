@@ -244,3 +244,24 @@ test('cohort capacity exclusions replace the legacy inclusive filter at every st
     assert.equal((savedPrefs.match(/cohortExcludeAdHoc/g) || []).length >= 2, true);
     assert.equal((savedPrefs.match(/cohortExcludeCapacity/g) || []).length >= 2, true);
 });
+
+test('Lead Times mode state is threaded through every per-group persistence site', () => {
+    const fields = [
+        ['cohortMode', 'setCohortMode(resolveLeadTimesMode(nextState.cohortMode))'],
+        ['cohortClosedStartQuarter', 'setCohortClosedStartQuarter(nextState.cohortClosedStartQuarter || getCurrentQuarterLabel())'],
+        ['cohortClosedEndQuarter', 'setCohortClosedEndQuarter(nextState.cohortClosedEndQuarter || getCurrentQuarterLabel())'],
+        ['cohortLastN', 'setCohortLastN(resolveLeadTimesLastN(nextState.cohortLastN))'],
+    ];
+    const defaultStateSlice = sliceBetween(statsGroupSource, 'export function buildDefaultStatsGroupState', 'export function snapshotStatsGroupState');
+    const snapshotObjectSlice = sliceBetween(statsGroupSource, 'export function snapshotStatsGroupState', 'export function applyStatsGroupState');
+    const snapshotDepsSlice = sliceBetween(dashboardSource, 'const groupStateSnapshot = React.useMemo(() => buildGroupStateSnapshot(), [', ']);');
+    const applyStateSlice = sliceBetween(statsGroupSource, 'export function applyStatsGroupState', 'export function resetStatsTransientRefs');
+    const saveUiPrefsSlice = sliceBetween(dashboardSource, 'saveUiPrefs({', ']);');
+    for (const [field, applyCall] of fields) {
+        assert.ok(defaultStateSlice.includes(`${field}:`), `${field} must be seeded in the default group state`);
+        assert.ok(snapshotObjectSlice.includes(`${field},`), `${field} must be captured by the group snapshot`);
+        assert.ok(snapshotDepsSlice.includes(`${field},`), `${field} must be in the groupStateSnapshot useMemo dependency array (a missing field goes stale silently)`);
+        assert.ok(applyStateSlice.includes(applyCall), `${field} must be restored by applyStatsGroupState`);
+        assert.ok((saveUiPrefsSlice.match(new RegExp(`\\b${field}\\b`, 'g')) || []).length >= 2, `${field} must be in the saveUiPrefs payload and its dependency array`);
+    }
+});

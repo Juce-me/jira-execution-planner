@@ -61,13 +61,12 @@ test('collectJiraExportKeysFromTasks returns unique sorted epic and story keys f
         issueType: 'Epic',
         projectKey: 'PROD',
         components: ['Backend API', 'R&D "Data"'],
-        teamIds: ['team-alpha', 'team-beta'],
-        assigneeKey: 'alpha-lead'
+        teamIds: ['team-alpha', 'team-beta']
     });
     const cohortJql = decodeURIComponent(new URL(cohortUrl).searchParams.get('jql'));
     assert.equal(
         cohortJql,
-        'issuetype = "Epic" AND created >= "2026-01-01" AND created < "2026-07-01" AND project = "PROD" AND status in ("In Progress", "Awaiting Validation") AND component in ("Backend API", "R&D \\"Data\\"") AND "Team[Team]" in ("team-alpha", "team-beta") AND assignee in ("alpha-lead")'
+        'issuetype = "Epic" AND created >= "2026-01-01" AND created < "2026-07-01" AND project = "PROD" AND status in ("In Progress", "Awaiting Validation") AND component in ("Backend API", "R&D \\"Data\\"") AND "Team[Team]" in ("team-alpha", "team-beta")'
     );
     assert.equal(cohortJql.includes('key in'), false);
 
@@ -137,4 +136,17 @@ test('collectJiraExportKeysFromScenarioIssues can export visible epics or story 
 
     assert.deepEqual(collectJiraExportKeysFromScenarioIssues(issues, 'epics'), ['EPIC-1', 'EPIC-2']);
     assert.deepEqual(collectJiraExportKeysFromScenarioIssues(issues, 'stories'), ['STORY-1', 'STORY-2', 'STORY-3']);
+});
+
+test('buildJiraClosedEpicsSearchUrl links the listed keys and stays empty above the key limit', async () => {
+    const { buildJiraClosedEpicsSearchUrl, DEFAULT_MAX_JQL_KEYS } = await import('../frontend/src/jiraExportUtils.mjs');
+    assert.equal(DEFAULT_MAX_JQL_KEYS, 250);
+    const url = buildJiraClosedEpicsSearchUrl('https://jira.example.com/', ['PROD-3', 'prod-1', 'PROD-1', 'TECH-2']);
+    assert.equal(decodeURIComponent(new URL(url).searchParams.get('jql')), 'key in (PROD-1, PROD-3, TECH-2)');
+    const keys = (count) => Array.from({ length: count }, (_, index) => `PROD-${index + 1}`);
+    assert.notEqual(buildJiraClosedEpicsSearchUrl('https://jira.example.com', keys(250)), '');
+    assert.equal(buildJiraClosedEpicsSearchUrl('https://jira.example.com', keys(251)), '');
+    assert.equal(buildJiraClosedEpicsSearchUrl('https://jira.example.com', keys(3), 2), '');
+    assert.equal(buildJiraClosedEpicsSearchUrl('https://jira.example.com', []), '');
+    assert.equal(buildJiraClosedEpicsSearchUrl('', ['PROD-1']), '');
 });

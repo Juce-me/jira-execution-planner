@@ -247,6 +247,18 @@ test('Lead Times capacity exclusions change local state without an app-owned eve
     assert.ok(read('docs/README_ANALYTICS.md').includes('Lead Times capacity cohort filter'));
 });
 
+test('Lead Times Mode and Last N controls change local state without an app-owned event', () => {
+    const source = readOwnerSource(['frontend/src/stats/StatsPanel.jsx'], { anchor: 'export function StatsPanel(' });
+    const start = source.indexOf('aria-label="Lead Times mode"');
+    const end = source.indexOf('<StatsRangeControl', start);
+    assert.ok(start >= 0 && end > start, 'Expected the Lead Times Mode and Last N controls block');
+    const controls = source.slice(start, end);
+    assert.ok(controls.includes('setCohortMode(resolveLeadTimesMode(event.target.value))'));
+    assert.ok(controls.includes('setCohortLastN(resolveLeadTimesLastN(event.target.value))'));
+    assert.equal(/trackFilterChanged|trackStatsAction|trackStatsAnalyticsAction|trackEvent|trackChartAction|trackSelectContent/.test(controls), false);
+    assert.ok(read('docs/README_ANALYTICS.md').includes('Lead Times Mode and per-mode selection controls'));
+});
+
 test('personal group favorite analytics omit identity and retain existing event ownership', () => {
     const preferencesSource = read('frontend/src/settings/useGroupVisibilityPreferences.js');
     const dashboardSource = read('frontend/src/dashboard.jsx');

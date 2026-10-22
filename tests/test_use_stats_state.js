@@ -32,12 +32,18 @@ const EXPECTED_RETURN_NAMES = [
     "setCohortStartQuarter",
     "cohortEndQuarter",
     "setCohortEndQuarter",
+    "cohortMode",
+    "setCohortMode",
+    "cohortClosedStartQuarter",
+    "setCohortClosedStartQuarter",
+    "cohortClosedEndQuarter",
+    "setCohortClosedEndQuarter",
+    "cohortLastN",
+    "setCohortLastN",
     "cohortGroupBy",
     "setCohortGroupBy",
     "cohortProjectFilter",
     "setCohortProjectFilter",
-    "cohortAssigneeFilter",
-    "setCohortAssigneeFilter",
     "cohortExcludeAdHoc",
     "setCohortExcludeAdHoc",
     "cohortExcludeCapacity",
@@ -116,8 +122,9 @@ function renderHook(savedPrefs = {}) {
 }
 const expectedEmpty = {
     statsView:'teams',statsGraphMode:'weighted',burnoutData:null,burnoutLoading:false,burnoutError:'',burnoutAssigneeFilter:'all',burndownMetric:'storyPoints',
-    cohortData:null,cohortLoading:false,cohortError:'',cohortStartQuarter:'2026Q1',cohortEndQuarter:'2026Q1',cohortGroupBy:'quarter',
-    cohortProjectFilter:'all',cohortAssigneeFilter:'all',cohortExcludeAdHoc:false,cohortExcludeCapacity:true,
+    cohortData:null,cohortLoading:false,cohortError:'',cohortStartQuarter:'2026Q1',cohortEndQuarter:'2026Q1',
+    cohortMode:'created',cohortClosedStartQuarter:'2026Q1',cohortClosedEndQuarter:'2026Q1',cohortLastN:30,cohortGroupBy:'quarter',
+    cohortProjectFilter:'all',cohortExcludeAdHoc:false,cohortExcludeCapacity:true,
     cohortStatusToggles:{done:true,open:true,killed:false,incomplete:false,postponed:false},cohortSelectedRow:null,
     excludedCapacityData:null,excludedCapacityLoading:false,excludedCapacityError:'',excludedCapacityStartSprintId:'',excludedCapacityEndSprintId:'',
     excludedCapacitySelectedEpicKeys:null,excludedCapacityChartMode:'teams',excludedCapacityMetric:'percent',
@@ -136,8 +143,8 @@ function assertCells(result,expected) {
     assert.deepEqual(result.excludedCapacityCacheRef.current,{});
     assert.equal(result.excludedCapacityForceRefreshRef.current,false);
 }
-test('Stats state returns the frozen 87 flat names with exact empty initializers',()=>{
-    const result=renderHook();assert.equal(EXPECTED_RETURN_NAMES.length,87);assert.deepEqual(Object.keys(result),EXPECTED_RETURN_NAMES);assertCells(result,expectedEmpty);
+test('Stats state returns the frozen 93 flat names with exact empty initializers',()=>{
+    const result=renderHook();assert.equal(EXPECTED_RETURN_NAMES.length,93);assert.deepEqual(Object.keys(result),EXPECTED_RETURN_NAMES);assertCells(result,expectedEmpty);
 });
 test('Stats state preserves partial saved preferences and original epic key normalization',()=>{
     assertCells(renderHook({statsView:'projectTrack',statsGraphMode:'absolute',burnoutAssigneeFilter:'person',burndownMetric:'issueCount',
@@ -147,7 +154,7 @@ test('Stats state preserves partial saved preferences and original epic key norm
         excludedCapacityChartMode:'group',excludedCapacityMetric:'storyPoints',projectTrackCapacitySide:'both',projectTrackMode:'team',
         projectTrackExcludeAdHoc:1,projectTrackExcludeExcludedCapacity:1}),
     {...expectedEmpty,statsView:'projectTrack',statsGraphMode:'absolute',burnoutAssigneeFilter:'person',burndownMetric:'issueCount',
-        cohortStartQuarter:'2025Q3',cohortEndQuarter:'2025Q4',cohortGroupBy:'month',cohortProjectFilter:'AAA',cohortAssigneeFilter:'person',
+        cohortStartQuarter:'2025Q3',cohortEndQuarter:'2025Q4',cohortGroupBy:'month',cohortProjectFilter:'AAA',
         cohortExcludeAdHoc:true,cohortExcludeCapacity:false,cohortStatusToggles:{done:true,open:false,killed:false,incomplete:false,postponed:true},
         excludedCapacityStartSprintId:'s1',excludedCapacityEndSprintId:'s2',excludedCapacitySelectedEpicKeys:['AAA-1','AAA-1'],
         excludedCapacityChartMode:'group',excludedCapacityMetric:'storyPoints',projectTrackCapacitySide:'both',projectTrackMode:'team',
@@ -155,7 +162,7 @@ test('Stats state preserves partial saved preferences and original epic key norm
 });
 test('invalid values and falsy fallbacks match App while empty epic selection remains empty',()=>{
     assertCells(renderHook({statsView:'invalid',statsGraphMode:'invalid',burnoutAssigneeFilter:0,burndownMetric:'invalid',cohortStartQuarter:'',cohortEndQuarter:0,
-        cohortGroupBy:'invalid',cohortProjectFilter:false,cohortAssigneeFilter:'',cohortExcludeCapacity:0,excludedCapacityStartSprintId:0,
+        cohortGroupBy:'invalid',cohortProjectFilter:false,cohortExcludeCapacity:0,excludedCapacityStartSprintId:0,
         excludedCapacityEndSprintId:false,excludedCapacitySelectedEpicKeys:[],excludedCapacityChartMode:'invalid',excludedCapacityMetric:'invalid',
         projectTrackCapacitySide:'invalid',projectTrackMode:'invalid'}),{...expectedEmpty,cohortExcludeCapacity:0,excludedCapacitySelectedEpicKeys:[]});
     assert.equal(renderHook({excludedCapacitySelectedEpicKeys:'AAA-1'}).excludedCapacitySelectedEpicKeys,null);
@@ -168,4 +175,10 @@ test('state owner contains no effects getters or dashboard import and keeps inva
     const app=fs.readFileSync(path.join(__dirname,'../frontend/src/dashboard.jsx'),'utf8');
     assert.match(app,/setIssuePeopleStatsRevision\(value => value \+ 1\)/);
     assert.match(app,/useStatsState\(\{ savedPrefsRef, resolveStatsView, resolveStatsGraphMode, resolveBurndownMetric, resolveCohortGroupBy \}\);\s*const isStatsSourceOnlyStatsView/);
+});
+
+test('Stats state restores the Lead Times mode selections and falls back for invalid saved values',()=>{
+    assertCells(renderHook({cohortMode:'closed',cohortClosedStartQuarter:'2025Q4',cohortClosedEndQuarter:'2026Q1',cohortLastN:'50'}),
+        {...expectedEmpty,cohortMode:'closed',cohortClosedStartQuarter:'2025Q4',cohortClosedEndQuarter:'2026Q1',cohortLastN:50});
+    assertCells(renderHook({cohortMode:'bogus',cohortClosedStartQuarter:'',cohortClosedEndQuarter:0,cohortLastN:45}),expectedEmpty);
 });

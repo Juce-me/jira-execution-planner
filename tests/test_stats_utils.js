@@ -328,3 +328,453 @@ test('buildLocalStatsFromTasks counts Tech-project Ad Hoc stories as Product', a
     assert.equal(plain.projects.product.done, 0);
     assert.equal(plain.projects.tech.done, 1);
 });
+
+// ---- buildCohortGridModel characterization (Lead Times modes Task 5): today's output, pinned before the overflow option ----
+const GRID_ISSUES = [
+    { key: 'A-1', summary: 'Epic A-1', createdDate: '2025-01-10', status: 'done', terminalDate: '2025-02-15' },
+    { key: 'A-2', summary: 'Epic A-2', createdDate: '2025-01-20', status: 'done', terminalDate: '2025-05-01' },
+    { key: 'A-3', summary: 'Epic A-3', createdDate: '2025-02-03', status: 'killed', terminalDate: '2025-11-20' },
+    { key: 'A-4', summary: 'Epic A-4', createdDate: '2025-02-10', status: 'done', terminalDate: '2026-03-01' },
+    { key: 'A-5', summary: 'Epic A-5', createdDate: '2025-04-02', status: 'open', terminalDate: null },
+    { key: 'A-6', summary: 'Epic A-6', createdDate: '2025-07-05', status: 'incomplete', terminalDate: '2025-07-06' },
+];
+const GRID_GOLDEN_QUARTER = {
+    "groupBy": "quarter",
+    "columns": [
+        {
+            "index": 0,
+            "key": "Q+0",
+            "label": "Q+0"
+        },
+        {
+            "index": 1,
+            "key": "Q+1",
+            "label": "Q+1"
+        },
+        {
+            "index": 2,
+            "key": "Q+2",
+            "label": "Q+2"
+        },
+        {
+            "index": 3,
+            "key": "Q+3",
+            "label": "Q+3"
+        }
+    ],
+    "rows": [
+        {
+            "key": "2025Q1",
+            "label": "2025Q1",
+            "totalCreated": 4,
+            "openCount": 0,
+            "cells": [
+                {
+                    "index": 0,
+                    "count": 1,
+                    "samples": [
+                        {
+                            "key": "A-1",
+                            "summary": "Epic A-1",
+                            "status": "done",
+                            "terminalDate": "2025-02-15"
+                        }
+                    ],
+                    "statusCounts": {
+                        "done": 1,
+                        "killed": 0,
+                        "incomplete": 0,
+                        "postponed": 0
+                    }
+                },
+                {
+                    "index": 1,
+                    "count": 1,
+                    "samples": [
+                        {
+                            "key": "A-2",
+                            "summary": "Epic A-2",
+                            "status": "done",
+                            "terminalDate": "2025-05-01"
+                        }
+                    ],
+                    "statusCounts": {
+                        "done": 1,
+                        "killed": 0,
+                        "incomplete": 0,
+                        "postponed": 0
+                    }
+                },
+                {
+                    "index": 2,
+                    "count": 0,
+                    "samples": [],
+                    "statusCounts": {
+                        "done": 0,
+                        "killed": 0,
+                        "incomplete": 0,
+                        "postponed": 0
+                    }
+                },
+                {
+                    "index": 3,
+                    "count": 1,
+                    "samples": [
+                        {
+                            "key": "A-3",
+                            "summary": "Epic A-3",
+                            "status": "killed",
+                            "terminalDate": "2025-11-20"
+                        }
+                    ],
+                    "statusCounts": {
+                        "done": 0,
+                        "killed": 1,
+                        "incomplete": 0,
+                        "postponed": 0
+                    }
+                }
+            ]
+        },
+        {
+            "key": "2025Q2",
+            "label": "2025Q2",
+            "totalCreated": 1,
+            "openCount": 1,
+            "cells": [
+                {
+                    "index": 0,
+                    "count": 0,
+                    "samples": [],
+                    "statusCounts": {
+                        "done": 0,
+                        "killed": 0,
+                        "incomplete": 0,
+                        "postponed": 0
+                    }
+                },
+                {
+                    "index": 1,
+                    "count": 0,
+                    "samples": [],
+                    "statusCounts": {
+                        "done": 0,
+                        "killed": 0,
+                        "incomplete": 0,
+                        "postponed": 0
+                    }
+                },
+                {
+                    "index": 2,
+                    "count": 0,
+                    "samples": [],
+                    "statusCounts": {
+                        "done": 0,
+                        "killed": 0,
+                        "incomplete": 0,
+                        "postponed": 0
+                    }
+                },
+                {
+                    "index": 3,
+                    "count": 0,
+                    "samples": [],
+                    "statusCounts": {
+                        "done": 0,
+                        "killed": 0,
+                        "incomplete": 0,
+                        "postponed": 0
+                    }
+                }
+            ]
+        },
+        {
+            "key": "2025Q3",
+            "label": "2025Q3",
+            "totalCreated": 1,
+            "openCount": 0,
+            "cells": [
+                {
+                    "index": 0,
+                    "count": 1,
+                    "samples": [
+                        {
+                            "key": "A-6",
+                            "summary": "Epic A-6",
+                            "status": "incomplete",
+                            "terminalDate": "2025-07-06"
+                        }
+                    ],
+                    "statusCounts": {
+                        "done": 0,
+                        "killed": 0,
+                        "incomplete": 1,
+                        "postponed": 0
+                    }
+                },
+                {
+                    "index": 1,
+                    "count": 0,
+                    "samples": [],
+                    "statusCounts": {
+                        "done": 0,
+                        "killed": 0,
+                        "incomplete": 0,
+                        "postponed": 0
+                    }
+                },
+                {
+                    "index": 2,
+                    "count": 0,
+                    "samples": [],
+                    "statusCounts": {
+                        "done": 0,
+                        "killed": 0,
+                        "incomplete": 0,
+                        "postponed": 0
+                    }
+                },
+                {
+                    "index": 3,
+                    "count": 0,
+                    "samples": [],
+                    "statusCounts": {
+                        "done": 0,
+                        "killed": 0,
+                        "incomplete": 0,
+                        "postponed": 0
+                    }
+                }
+            ]
+        },
+        {
+            "key": "2025Q4",
+            "label": "2025Q4",
+            "totalCreated": 0,
+            "openCount": 0,
+            "cells": [
+                {
+                    "index": 0,
+                    "count": 0,
+                    "samples": [],
+                    "statusCounts": {
+                        "done": 0,
+                        "killed": 0,
+                        "incomplete": 0,
+                        "postponed": 0
+                    }
+                },
+                {
+                    "index": 1,
+                    "count": 0,
+                    "samples": [],
+                    "statusCounts": {
+                        "done": 0,
+                        "killed": 0,
+                        "incomplete": 0,
+                        "postponed": 0
+                    }
+                },
+                {
+                    "index": 2,
+                    "count": 0,
+                    "samples": [],
+                    "statusCounts": {
+                        "done": 0,
+                        "killed": 0,
+                        "incomplete": 0,
+                        "postponed": 0
+                    }
+                },
+                {
+                    "index": 3,
+                    "count": 0,
+                    "samples": [],
+                    "statusCounts": {
+                        "done": 0,
+                        "killed": 0,
+                        "incomplete": 0,
+                        "postponed": 0
+                    }
+                }
+            ]
+        }
+    ],
+    "maxCellCount": 1,
+    "totals": {
+        "created": 6,
+        "resolvedWithDate": 4
+    }
+};
+const GRID_GOLDEN_MONTH = {
+    "columns": [
+        "M+0",
+        "M+1",
+        "M+2",
+        "M+3",
+        "M+4"
+    ],
+    "rows": [
+        [
+            "2025-01",
+            2,
+            0,
+            "01001"
+        ],
+        [
+            "2025-02",
+            2,
+            0,
+            "00000"
+        ],
+        [
+            "2025-03",
+            0,
+            0,
+            "00000"
+        ],
+        [
+            "2025-04",
+            1,
+            1,
+            "00000"
+        ],
+        [
+            "2025-05",
+            0,
+            0,
+            "00000"
+        ],
+        [
+            "2025-06",
+            0,
+            0,
+            "00000"
+        ],
+        [
+            "2025-07",
+            1,
+            0,
+            "10000"
+        ],
+        [
+            "2025-08",
+            0,
+            0,
+            "00000"
+        ]
+    ],
+    "maxCellCount": 1,
+    "totals": {
+        "created": 6,
+        "resolvedWithDate": 3
+    }
+};
+
+test('buildCohortGridModel keeps its quarter and month output without the overflow option', async () => {
+    const { buildCohortGridModel } = await import('../frontend/src/cohort/cohortUtils.js');
+    const quarter = buildCohortGridModel(GRID_ISSUES, { groupBy: 'quarter', maxColumns: 3, rangeStartDate: '2025-01-01', rangeEndDate: '2025-12-31' });
+    assert.deepEqual(JSON.parse(JSON.stringify(quarter)), GRID_GOLDEN_QUARTER);
+    const month = buildCohortGridModel(GRID_ISSUES, { groupBy: 'month', maxColumns: 4, rangeStartDate: '2025-01-01', rangeEndDate: '2025-08-31' });
+    assert.deepEqual({
+        columns: month.columns.map((column) => column.label),
+        rows: month.rows.map((row) => [row.key, row.totalCreated, row.openCount, row.cells.map((cell) => cell.count).join('')]),
+        maxCellCount: month.maxCellCount,
+        totals: month.totals,
+    }, GRID_GOLDEN_MONTH);
+});
+
+test('Lead Times mode and Last N resolvers fall back to Created and 30', async () => {
+    const { LEAD_TIMES_MODES, LEAD_TIMES_LAST_N_OPTIONS, resolveLeadTimesMode, resolveLeadTimesLastN } = await import('../frontend/src/cohort/cohortUtils.js');
+    assert.deepEqual([...LEAD_TIMES_MODES], ['created', 'closed', 'last_n']);
+    assert.deepEqual([...LEAD_TIMES_LAST_N_OPTIONS], [30, 50, 60]);
+    assert.equal(resolveLeadTimesMode(undefined), 'created');
+    assert.equal(resolveLeadTimesMode('foo'), 'created');
+    assert.equal(resolveLeadTimesMode('closed'), 'closed');
+    assert.equal(resolveLeadTimesMode('last_n'), 'last_n');
+    assert.equal(resolveLeadTimesLastN('50'), 50);
+    assert.equal(resolveLeadTimesLastN(60), 60);
+    assert.equal(resolveLeadTimesLastN(45), 30);
+    assert.equal(resolveLeadTimesLastN(undefined), 30);
+    assert.equal(resolveLeadTimesLastN(''), 30);
+});
+
+test('buildCohortRequest keeps the Created body byte-identical and adds mode only for the closed modes', async () => {
+    const { buildCohortRequest } = await import('../frontend/src/cohort/cohortUtils.js');
+    const shared = { teamIds: ['T1'], components: ['Alpha'], adHocCapacityEpics: ['TECH-9'] };
+    const created = buildCohortRequest({ mode: 'created', startQuarter: '2026Q1', endQuarter: '2026Q2', ...shared });
+    assert.deepEqual(Object.keys(created), ['startQuarter', 'endQuarter', 'teamIds', 'components', 'adHocCapacityEpics', 'refresh']);
+    assert.equal(JSON.stringify(created), JSON.stringify({
+        startQuarter: '2026Q1', endQuarter: '2026Q2', teamIds: ['T1'], components: ['Alpha'], adHocCapacityEpics: ['TECH-9'], refresh: false,
+    }));
+    assert.deepEqual(buildCohortRequest({ mode: 'closed', startQuarter: '2025Q4', endQuarter: '2026Q1', ...shared }), {
+        mode: 'closed', startQuarter: '2025Q4', endQuarter: '2026Q1', ...shared, refresh: false,
+    });
+    const lastN = buildCohortRequest({ mode: 'last_n', startQuarter: '2026Q1', endQuarter: '2026Q2', ...shared });
+    assert.deepEqual(lastN, { mode: 'last_n', ...shared, refresh: false });
+    assert.equal('startQuarter' in lastN, false);
+});
+
+test('selectLastClosedEpics ranks by terminal day then key in codepoint order and skips undated Epics', async () => {
+    const { selectLastClosedEpics } = await import('../frontend/src/cohort/cohortUtils.js');
+    const epic = (key, terminalDate) => ({ key, terminalDate });
+    const issues = [epic('a-1', '2026-02-10'), epic('Z-1', '2026-02-10'), epic('B-1', '2026-02-11'), epic('C-1', '2026-02-09'), epic('U-1', null), epic('G-1', 'garbage')];
+    assert.deepEqual(selectLastClosedEpics(issues, 3).map((item) => item.key), ['B-1', 'Z-1', 'a-1']);
+    assert.deepEqual(selectLastClosedEpics(issues, 50).map((item) => item.key), ['B-1', 'Z-1', 'a-1', 'C-1']);
+    assert.deepEqual(selectLastClosedEpics(issues, 0), []);
+    assert.deepEqual(selectLastClosedEpics(null, 5), []);
+});
+
+test('createdRangeOf spans the earliest to the latest valid created date', async () => {
+    const { createdRangeOf } = await import('../frontend/src/cohort/cohortUtils.js');
+    const epic = (createdDate) => ({ createdDate });
+    assert.deepEqual(createdRangeOf([epic('2025-06-10'), epic('2023-02-01'), epic('nope'), epic('2026-01-31')]), { startDate: '2023-02-01', endDate: '2026-01-31' });
+    assert.deepEqual(createdRangeOf([epic('2025-06-10')]), { startDate: '2025-06-10', endDate: '2025-06-10' });
+    assert.equal(createdRangeOf([epic('bad'), {}]), null);
+    assert.equal(createdRangeOf([]), null);
+});
+
+test('filterCohortIssues closedOnly drops open and Postponed Epics whatever the toggles say', async () => {
+    const { filterCohortIssues } = await import('../frontend/src/cohort/cohortUtils.js');
+    const issues = ['done', 'killed', 'incomplete', 'postponed', 'In Progress'].map((status, index) => ({ key: `K-${index}`, status }));
+    const toggles = { done: true, killed: true, incomplete: true, postponed: true, open: true };
+    assert.deepEqual(filterCohortIssues(issues, { statusToggles: toggles }).map((item) => item.key), ['K-0', 'K-1', 'K-2', 'K-3', 'K-4']);
+    assert.deepEqual(filterCohortIssues(issues, { statusToggles: toggles, closedOnly: true }).map((item) => item.key), ['K-0', 'K-1', 'K-2']);
+});
+
+const OVERFLOW_ISSUES = [
+    { key: 'L-1', summary: 'Long one', createdDate: '2022-02-10', status: 'done', terminalDate: '2026-08-15' },
+    { key: 'L-2', summary: 'Long two', createdDate: '2022-05-01', status: 'killed', terminalDate: '2027-01-05' },
+    { key: 'L-3', summary: 'Long three', createdDate: '2022-02-12', status: 'done', terminalDate: '2025-08-01' },
+    { key: 'S-1', summary: 'Short one', createdDate: '2026-01-10', status: 'done', terminalDate: '2026-02-01' },
+];
+
+test('overflow column carries over-budget Epics and keeps column index equal to array position', async () => {
+    const { buildCohortGridModel } = await import('../frontend/src/cohort/cohortUtils.js');
+    const withOverflow = buildCohortGridModel(OVERFLOW_ISSUES, { groupBy: 'quarter', maxColumns: 12, overflowColumn: true, rangeStartDate: '2022-01-01', rangeEndDate: '2026-12-31' });
+    assert.deepEqual(withOverflow.columns.map((column) => column.label), ['Q+0', 'Q+12+']);
+    withOverflow.columns.forEach((column, position) => assert.equal(column.index, position));
+    assert.equal(withOverflow.columns[1].overflow, true);
+    const rows = Object.fromEntries(withOverflow.rows.map((row) => [row.key, row]));
+    assert.equal(rows['2022Q1'].totalCreated, 2);
+    assert.equal(rows['2022Q1'].cells[1].count, 2);
+    assert.equal(rows['2022Q1'].cells[1].samples.length, 2);
+    assert.deepEqual(rows['2022Q1'].cells[1].statusCounts, { done: 2, killed: 0, incomplete: 0, postponed: 0 });
+    assert.equal(rows['2022Q2'].cells[1].statusCounts.killed, 1);
+    assert.equal(rows['2026Q1'].cells[0].count, 1);
+    assert.equal(rows['2026Q1'].cells[1].count, 0);
+    assert.equal(withOverflow.totals.resolvedWithDate, 4);
+
+    const withoutOverflow = buildCohortGridModel(OVERFLOW_ISSUES, { groupBy: 'quarter', maxColumns: 12, rangeStartDate: '2022-01-01', rangeEndDate: '2026-12-31' });
+    assert.deepEqual(withoutOverflow.columns.map((column) => column.label), ['Q+0']);
+    assert.equal(withoutOverflow.totals.resolvedWithDate, 1);
+    assert.equal(withoutOverflow.rows.find((row) => row.key === '2022Q1').totalCreated, 2);
+});
+
+test('overflow column uses the month budget label and only exists when something overflows', async () => {
+    const { buildCohortGridModel } = await import('../frontend/src/cohort/cohortUtils.js');
+    const month = buildCohortGridModel(OVERFLOW_ISSUES, { groupBy: 'month', maxColumns: 24, overflowColumn: true, rangeStartDate: '2022-01-01', rangeEndDate: '2026-12-31' });
+    assert.equal(month.columns[month.columns.length - 1].label, 'M+24+');
+    const inBudgetOnly = buildCohortGridModel([OVERFLOW_ISSUES[3]], { groupBy: 'quarter', maxColumns: 12, overflowColumn: true, rangeStartDate: '2026-01-01', rangeEndDate: '2026-12-31' });
+    assert.deepEqual(inBudgetOnly.columns.map((column) => column.label), ['Q+0']);
+});

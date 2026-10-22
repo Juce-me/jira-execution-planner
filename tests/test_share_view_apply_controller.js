@@ -78,6 +78,7 @@ function createRig({ link, search, options = {} } = {}) {
         setSearchInput: spy('setSearchInput'), setSearchQuery: spy('setSearchQuery'), setShowProduct: spy('setShowProduct'), setShowTech: spy('setShowTech'),
         setGroupByInitiativeChoice: spy('setGroupByInitiativeChoice'), setEngEpicSort: spy('setEngEpicSort'), setPlanningLayout: spy('setPlanningLayout'),
         setStatsView: spy('setStatsView'), setCohortStartQuarter: spy('setCohortStartQuarter'), setCohortEndQuarter: spy('setCohortEndQuarter'),
+        setCohortMode: spy('setCohortMode'), setCohortClosedStartQuarter: spy('setCohortClosedStartQuarter'), setCohortClosedEndQuarter: spy('setCohortClosedEndQuarter'), setCohortLastN: spy('setCohortLastN'),
         setExcludedCapacityStartSprintId: spy('setExcludedCapacityStartSprintId'), setExcludedCapacityEndSprintId: spy('setExcludedCapacityEndSprintId'),
         setShowAlertsPanel: spy('setShowAlertsPanel'), setBoardStrictScope: spy('setBoardStrictScope'), setSelectedTeams: spy('setSelectedTeams'),
         setEngStatusFilter: spy('setEngStatusFilter'), setEngPriorityFilter: spy('setEngPriorityFilter'), setEngProjectTrackFilter: spy('setEngProjectTrackFilter'), setEngBoardFilterSelection: spy('setEngBoardFilterSelection'), setBoardView: spy('setBoardView'),
@@ -559,7 +560,8 @@ test('Statistics writes its view and range, and a source-only view skips Stage C
     cohort.take();
     cohort.tick();
     assert.deepEqual(cohort.take().filter(([name]) => /^set(Stats|Cohort|Excluded)/.test(name)), [
-        ['setStatsView', 'cohort'], ['setCohortStartQuarter', THIS_QUARTER], ['setCohortEndQuarter', THIS_QUARTER],
+        ['setStatsView', 'cohort'], ['setCohortMode', 'created'], ['setCohortStartQuarter', THIS_QUARTER], ['setCohortEndQuarter', THIS_QUARTER],
+        ['setCohortClosedStartQuarter', THIS_QUARTER], ['setCohortClosedEndQuarter', THIS_QUARTER], ['setCohortLastN', 30],
     ]);
 
     const sourceOnly = createRig({ link: { version: 1, mode: 'statistics', group: 'grp-b', sprint: '41', stats: 'projectTrack', from: '40', to: '41' }, options: { engLoadsTasks: false } });
@@ -573,6 +575,24 @@ test('Statistics writes its view and range, and a source-only view skips Stage C
     sourceOnly.tick();
     assert.deepEqual(sourceOnly.take(), [], 'no Teams or facets where no task list loads');
     assert.deepEqual(sourceOnly.store.log.at(-1), ['finish', 'done', []]);
+});
+
+test('a Lead Times link writes its own mode selection and resets the others to their defaults', () => {
+    const written = (link) => {
+        const rig = createRig({ link: { version: 1, mode: 'statistics', group: 'grp-a', sprint: '41', stats: 'cohort', teams: ['t1'], ...link } });
+        rig.tick();
+        rig.take();
+        rig.tick();
+        return rig.take().filter(([name]) => /^setCohort/.test(name));
+    };
+    assert.deepEqual(written({ lead: 'closed', from: '2025Q4', to: THIS_QUARTER }), [
+        ['setCohortMode', 'closed'], ['setCohortStartQuarter', THIS_QUARTER], ['setCohortEndQuarter', THIS_QUARTER],
+        ['setCohortClosedStartQuarter', '2025Q4'], ['setCohortClosedEndQuarter', THIS_QUARTER], ['setCohortLastN', 30],
+    ]);
+    assert.deepEqual(written({ lead: 'last_n', n: 50 }), [
+        ['setCohortMode', 'last_n'], ['setCohortStartQuarter', THIS_QUARTER], ['setCohortEndQuarter', THIS_QUARTER],
+        ['setCohortClosedStartQuarter', THIS_QUARTER], ['setCohortClosedEndQuarter', THIS_QUARTER], ['setCohortLastN', 50],
+    ]);
 });
 
 test('a Sprint range is ordered by the catalog start dates, not by the Sprint names', () => {

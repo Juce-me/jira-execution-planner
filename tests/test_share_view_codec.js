@@ -85,12 +85,12 @@ test('exports match the binding interface', () => {
         'catch-up': ['teams', 'status', 'priority', 'track', 'lanes', 'initiatives', 'sort', 'alerts', 'alertTeam', 'focus'],
         planning: ['teams', 'status', 'priority', 'track', 'lanes', 'layout', 'rows', 'initiatives', 'sort', 'focus'],
         board: ['scope', 'bpriority', 'bprojects', 'bassignee', 'btrack', 'bcolumn', 'focus'],
-        statistics: ['teams', 'stats', 'from', 'to'],
+        statistics: ['teams', 'stats', 'from', 'to', 'lead', 'n'],
     });
     const { find, ...categories } = plain(defaults.SHARE_VIEW_CATEGORY_BY_KEY);
     assert.deepEqual(categories, {
         group: 'group', sprint: 'sprint',
-        mode: 'mode', scope: 'mode', layout: 'mode', rows: 'mode', stats: 'mode', from: 'mode', to: 'mode',
+        mode: 'mode', scope: 'mode', layout: 'mode', rows: 'mode', stats: 'mode', from: 'mode', to: 'mode', lead: 'mode', n: 'mode',
         teams: 'teams',
         status: 'filters', priority: 'filters', track: 'filters', lanes: 'filters', initiatives: 'filters', sort: 'filters',
         bpriority: 'filters', bprojects: 'filters', bassignee: 'filters', btrack: 'filters', bcolumn: 'filters',
@@ -642,7 +642,7 @@ test('encode: junk values never throw and never produce a link the decoder would
         undefined, null, 0, 1, NaN, '', ' ', 'x', 'all', [], [1], [null], ['a'], {}, { only: 1 }, { hidden: ['a'] }, { product: 'x' },
         { product: true, tech: true }, true, () => 1, { anchor: 'blocked' }, { kind: 'epic' }, { kind: 'story', key: 'PROJ-1' }, 'ab'.repeat(300),
     ];
-    const keys = ['scope', 'teams', 'status', 'priority', 'track', 'lanes', 'initiatives', 'sort', 'layout', 'rows', 'stats', 'from', 'to', 'alerts', 'alertTeam', 'focus'];
+    const keys = ['scope', 'teams', 'status', 'priority', 'track', 'lanes', 'initiatives', 'sort', 'layout', 'rows', 'stats', 'from', 'to', 'lead', 'n', 'alerts', 'alertTeam', 'focus'];
     const random = mulberry32(7);
     for (let run = 0; run < 3000; run += 1) {
         const state = { ...BASE, mode: defaults.SHARE_VIEW_MODES[Math.floor(random() * 4)] };
@@ -1152,4 +1152,54 @@ test('find: strip removes it, and a reset clears search to its default', () => {
         },
     });
     assert.deepEqual(plain(resets.facts), { searchQuery: true, searchInput: true });
+});
+
+test('Lead Times link: Created keeps its range only, Closed adds lead=closed, Last N carries lead and n and no range', () => {
+    const cohort = { ...BASE, mode: 'statistics', stats: 'cohort', teams: ['all'] };
+    const created = encode({ ...cohort, from: '2026Q3', to: '2026Q4' });
+    assert.equal(created.ok, true);
+    assert.ok(created.query.includes('stats=cohort&from=2026Q3&to=2026Q4'), created.query);
+    assert.equal(/\blead=|\bn=/.test(created.query), false, 'a Created link stays exactly what it was before the modes existed');
+    assert.deepEqual(decode(`?${created.query}`), ok({ mode: 'statistics', group: 'dept/a', sprint: '4182', stats: 'cohort', from: '2026Q3', to: '2026Q4' }));
+
+    const closed = encode({ ...cohort, lead: 'closed', from: '2025Q4', to: '2026Q1' });
+    assert.ok(closed.query.includes('lead=closed'), closed.query);
+    assert.ok(closed.query.includes('from=2025Q4&to=2026Q1'), closed.query);
+    assert.equal(/\bn=/.test(closed.query), false, 'n is never written without lead=last_n');
+    assert.equal(decode(`?${closed.query}`).state.lead, 'closed');
+
+    const lastN = encode({ ...cohort, lead: 'last_n', n: 50, from: '2025Q4', to: '2026Q1' });
+    assert.ok(lastN.query.includes('lead=last_n&n=50'), lastN.query);
+    assert.equal(/\bfrom=|\bto=/.test(lastN.query), false, 'a Last N link carries no quarters');
+    const decoded = decode(`?${lastN.query}`);
+    assert.equal(decoded.state.lead, 'last_n');
+    assert.strictEqual(decoded.state.n, 50, 'n decodes to a number');
+    assert.equal(Object.hasOwn(decoded.state, 'from'), false);
+    assert.deepEqual(decoded.reported, []);
+});
+
+test('Lead Times link keys apply to the Lead Times view only', () => {
+    const other = encode({ ...BASE, mode: 'statistics', stats: 'teams', teams: ['all'], lead: 'closed', n: 30, from: '2026Q3', to: '2026Q4' });
+    assert.equal(/\blead=|\bn=|\bfrom=/.test(other.query), false, other.query);
+    const catchUp = encode({ ...BASE, lead: 'closed', n: 30 });
+    assert.equal(/\blead=|\bn=/.test(catchUp.query), false, catchUp.query);
+});
+
+test('Lead Times link decode: an unknown lead or n is dropped and reported, a missing n is left to the resolver', () => {
+    const stats = 'v=1&mode=statistics&group=g&sprint=4182&stats=cohort';
+    for (const bad of ['lead=foo', 'lead=created', 'lead=', 'lead=Closed']) {
+        const result = decode(`?${stats}&${bad}`);
+        assert.deepEqual(result.reported, ['mode'], bad);
+        assert.equal(Object.hasOwn(result.state, 'lead'), false, bad);
+    }
+    for (const bad of ['n=7', 'n=30.5', 'n=030', 'n=', 'n=-30', 'n=sixty']) {
+        const result = decode(`?${stats}&lead=last_n&${bad}`);
+        assert.deepEqual(result.reported, ['mode'], bad);
+        assert.equal(result.state.lead, 'last_n', bad);
+        assert.equal(Object.hasOwn(result.state, 'n'), false, bad);
+    }
+    const missing = decode(`?${stats}&lead=last_n`);
+    assert.deepEqual(missing.reported, []);
+    assert.equal(Object.hasOwn(missing.state, 'n'), false);
+    for (const good of [30, 50, 60]) assert.strictEqual(decode(`?${stats}&lead=last_n&n=${good}`).state.n, good);
 });

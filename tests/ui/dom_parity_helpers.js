@@ -74,14 +74,15 @@ async function captureDomParity(page, label, selector) {
             if (!dropdown?.matches('.sprint-dropdown[data-range-end]') || !field?.matches('.control-field')
                 || !filters?.matches('.view-filters') || !group?.matches('[data-stats-range][role="group"]')) return false;
             const prefix = group.getAttribute('data-stats-range');
+            // Lead Times shares one quarter control between its Created and Closed modes.
             const labels = new Map([
-                ['excluded-capacity-sprint', 'Sprint range'],
-                ['mono-cross-sprint', 'Sprint range'],
-                ['project-track-sprint', 'Sprint range'],
-                ['lead-times-quarter', 'Quarter range'],
+                ['excluded-capacity-sprint', ['Sprint range']],
+                ['mono-cross-sprint', ['Sprint range']],
+                ['project-track-sprint', ['Sprint range']],
+                ['lead-times-quarter', ['Created quarter range', 'Closed quarter range']],
             ]);
             const end = dropdown.getAttribute('data-range-end');
-            return labels.has(prefix) && group.getAttribute('aria-label') === labels.get(prefix)
+            return labels.has(prefix) && labels.get(prefix).includes(group.getAttribute('aria-label'))
                 && ['start', 'end'].includes(end) && id === `${prefix}-${end}-listbox`;
         }
         sources.forEach((source, index) => {

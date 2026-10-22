@@ -6,8 +6,9 @@ const esbuild = require('esbuild');
 
 const KEYS = ['statsView', 'statsGraphMode', 'burnoutData', 'burnoutLoading', 'burnoutError',
     'burnoutAssigneeFilter', 'burndownMetric', 'cohortData', 'cohortLoading', 'cohortError',
-    'cohortStartQuarter', 'cohortEndQuarter', 'cohortGroupBy', 'cohortProjectFilter',
-    'cohortAssigneeFilter', 'cohortExcludeAdHoc', 'cohortExcludeCapacity', 'cohortStatusToggles', 'cohortSelectedRow'];
+    'cohortStartQuarter', 'cohortEndQuarter', 'cohortMode', 'cohortClosedStartQuarter', 'cohortClosedEndQuarter', 'cohortLastN',
+    'cohortGroupBy', 'cohortProjectFilter',
+    'cohortExcludeAdHoc', 'cohortExcludeCapacity', 'cohortStatusToggles', 'cohortSelectedRow'];
 const SCENARIO_KEYS = ['scenarioData', 'scenarioError', 'scenarioLaneMode', 'scenarioCollapsedLanes',
     'scenarioEpicFocus', 'scenarioRangeOverride', 'scenarioScrollTop', 'scenarioScrollLeft',
     'scenarioViewportHeight', 'scenarioHoverKey', 'scenarioFlashKey', 'scenarioLayout', 'scenarioEdgeRender', 'scenarioTooltip'];
@@ -32,10 +33,11 @@ function frozenTime(callback) {
 const defaults = () => ({ statsView: 'teams', statsGraphMode: 'weighted', burnoutData: null,
     burnoutLoading: false, burnoutError: '', burnoutAssigneeFilter: 'all', burndownMetric: 'storyPoints',
     cohortData: null, cohortLoading: false, cohortError: '', cohortStartQuarter: '2026Q1', cohortEndQuarter: '2026Q1',
-    cohortGroupBy: 'quarter', cohortProjectFilter: 'all', cohortAssigneeFilter: 'all', cohortExcludeAdHoc: false,
+    cohortMode: 'created', cohortClosedStartQuarter: '2026Q1', cohortClosedEndQuarter: '2026Q1', cohortLastN: 30,
+    cohortGroupBy: 'quarter', cohortProjectFilter: 'all', cohortExcludeAdHoc: false,
     cohortExcludeCapacity: true, cohortStatusToggles: { done:true,open:true,killed:false,incomplete:false,postponed:false }, cohortSelectedRow:null });
 
-test('Stats seam freezes the 19 ordered keys and empty/invalid saved preference defaults', () => frozenTime(() => {
+test('Stats seam freezes the 22 ordered keys and empty/invalid saved preference defaults', () => frozenTime(() => {
     const seam = load('frontend/src/stats/statsGroupState.js');
     assert.deepEqual(seam.STATS_GROUP_STATE_KEYS, KEYS);
     assert.deepEqual(seam.buildDefaultStatsGroupState({}, resolvers), defaults());
@@ -47,7 +49,7 @@ test('partial and falsy saved preferences retain the original truthy and nullish
         burnoutAssigneeFilter:'',cohortStartQuarter:'2025Q2',cohortEndQuarter:'',cohortGroupBy:'month',cohortProjectFilter:'AAA',
         cohortAssigneeFilter:'person',cohortExcludeAdHoc:'yes',cohortExcludeCapacity:false,cohortStatusToggles:{done:false,killed:true} }, resolvers),
     { ...defaults(), statsView:'cohort',statsGraphMode:'absolute',burndownMetric:'issueCount',cohortStartQuarter:'2025Q2',
-        cohortGroupBy:'month',cohortProjectFilter:'AAA',cohortAssigneeFilter:'person',cohortExcludeAdHoc:true,cohortExcludeCapacity:false,
+        cohortGroupBy:'month',cohortProjectFilter:'AAA',cohortExcludeAdHoc:true,cohortExcludeCapacity:false,
         cohortStatusToggles:{done:false,open:true,killed:true,incomplete:false,postponed:false} });
 }));
 test('snapshot preserves exact actual values and excludes unrelated state', () => {
@@ -63,7 +65,7 @@ test('setter sequence resets loading and preserves exact original fallback expre
     const setters=Object.fromEntries(KEYS.map(key => ['set'+key[0].toUpperCase()+key.slice(1),value => calls.push([key,value])]));
     seam.applyStatsGroupState({ ...defaults(), burnoutData:0,burnoutLoading:true,burnoutError:0,burnoutAssigneeFilter:false,
         cohortData:false,cohortLoading:true,cohortError:false,cohortStartQuarter:'',cohortEndQuarter:0,
-        cohortProjectFilter:0,cohortAssigneeFilter:'',cohortExcludeAdHoc:1,cohortExcludeCapacity:0,cohortSelectedRow:false },setters,resolvers);
+        cohortProjectFilter:0,cohortExcludeAdHoc:1,cohortExcludeCapacity:0,cohortSelectedRow:false },setters,resolvers);
     assert.deepEqual(calls, Object.entries({...defaults(),cohortExcludeAdHoc:true,cohortExcludeCapacity:0}));
     calls.length=0;
     seam.applyStatsGroupState({...defaults(),burnoutData:{marker:'burnout'},cohortData:{marker:'cohort'},cohortSelectedRow:{marker:'row'}},setters,resolvers);
@@ -92,4 +94,19 @@ test('composed group defaults snapshots and setter calls retain Stats then Scena
     assert.match(app,/\.\.\.snapshotStatsGroupState\([\s\S]*?\.\.\.scenarioGroupValues,\s*hideExcludedStats,/);
     assert.match(app,/applyStatsGroupState\([\s\S]*?applyScenarioGroupState\([^\n]*\);\s*setHideExcludedStats\(nextState.hideExcludedStats \?\? true\)/);
     for(const key of KEYS) { assert.match(app,new RegExp('\\b'+key+'\\b')); assert.match(app,new RegExp('\\bset'+key[0].toUpperCase()+key.slice(1)+'\\b')); }
+}));
+
+test('Lead Times mode state keeps valid saved values and falls back to Created, the current quarter and 30', () => frozenTime(() => {
+    const seam = load('frontend/src/stats/statsGroupState.js');
+    assert.deepEqual(seam.buildDefaultStatsGroupState({ cohortMode: 'closed', cohortClosedStartQuarter: '2025Q4', cohortClosedEndQuarter: '2026Q1', cohortLastN: '50' }, resolvers),
+        { ...defaults(), cohortMode: 'closed', cohortClosedStartQuarter: '2025Q4', cohortClosedEndQuarter: '2026Q1', cohortLastN: 50 });
+    assert.deepEqual(seam.buildDefaultStatsGroupState({ cohortMode: 'bogus', cohortClosedStartQuarter: '', cohortLastN: 45 }, resolvers), defaults());
+    const calls = [];
+    const setters = Object.fromEntries(KEYS.map(key => ['set' + key[0].toUpperCase() + key.slice(1), value => calls.push([key, value])]));
+    seam.applyStatsGroupState({ ...defaults(), cohortMode: 'bogus', cohortLastN: 45, cohortClosedStartQuarter: '', cohortClosedEndQuarter: 0 }, setters, resolvers);
+    const applied = Object.fromEntries(calls);
+    assert.deepEqual([applied.cohortMode, applied.cohortLastN, applied.cohortClosedStartQuarter, applied.cohortClosedEndQuarter], ['created', 30, '2026Q1', '2026Q1']);
+    calls.length = 0;
+    seam.applyStatsGroupState({ ...defaults(), cohortMode: 'last_n', cohortLastN: 60 }, setters, resolvers);
+    assert.deepEqual([Object.fromEntries(calls).cohortMode, Object.fromEntries(calls).cohortLastN], ['last_n', 60]);
 }));

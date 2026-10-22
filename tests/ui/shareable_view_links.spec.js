@@ -211,6 +211,11 @@ async function installLinkFixture(page, {
             sprintId: url.pathname.split('/')[4], schemaRevision: 0, columns: [], capabilities: { canRead: true, canSave: false } });
         if (matrix && url.pathname.endsWith('/review/values/read')) return cachedReply({ cells: [], unavailableIssueIds: [] });
         if (matrix && url.pathname === '/api/stats/excluded-capacity-source') return cachedReply({ data: { issues: [], epics: {}, sprints: SPRINTS } });
+        if (matrix && url.pathname === '/api/stats/epic-cohort') {
+            const mode = cacheBody?.mode;
+            return cachedReply({ data: { range: mode === 'last_n' ? null : { startDate: '2026-01-01', endDate: '2026-12-31' }, issues: [],
+                meta: { warnings: [], ...(mode ? { mode, scope: 'components', windowCeiling: mode === 'last_n' ? 200 : null, windowFull: mode === 'last_n' ? false : null } : {}) } } });
+        }
         if (url.pathname === '/api/stats/priority-weights-config') return reply({ weights: [], source: 'test' });
         if (url.pathname === '/api/eng/story-readiness') return reply({ schemaVersion: 1, complete: true, scope: {}, epics: [] });
         if (url.pathname === '/api/tasks-with-team-name') {
@@ -513,7 +518,9 @@ test('the link Department becomes the local favorite in JSON mode and never writ
 for (const [mode, query, radio, flags] of [
     ['planning', 'mode=planning&group=grp-b&sprint=42&layout=table', 'Planning', { showPlanning: true, planningLayout: 'table' }],
     ['board', 'mode=board&group=grp-a&sprint=41&find=story', 'Board', { showBoard: true, searchQuery: 'story' }],
-    ['statistics', `mode=statistics&group=grp-a&sprint=41&stats=cohort&from=${quarterLabel(-1)}&to=${quarterLabel(0)}`, 'Statistics', { showStats: true, statsView: 'cohort', cohortStartQuarter: quarterLabel(-1), cohortEndQuarter: quarterLabel(0) }],
+    ['statistics', `mode=statistics&group=grp-a&sprint=41&stats=cohort&from=${quarterLabel(-1)}&to=${quarterLabel(0)}`, 'Statistics', { showStats: true, statsView: 'cohort', cohortMode: 'created', cohortStartQuarter: quarterLabel(-1), cohortEndQuarter: quarterLabel(0) }],
+    ['statistics Lead Times Closed', `mode=statistics&group=grp-a&sprint=41&stats=cohort&lead=closed&from=${quarterLabel(-2)}&to=${quarterLabel(-1)}`, 'Statistics', { showStats: true, statsView: 'cohort', cohortMode: 'closed', cohortClosedStartQuarter: quarterLabel(-2), cohortClosedEndQuarter: quarterLabel(-1), cohortStartQuarter: quarterLabel(0), cohortEndQuarter: quarterLabel(0), cohortLastN: 30 }],
+    ['statistics Lead Times Last N', 'mode=statistics&group=grp-a&sprint=41&stats=cohort&lead=last_n&n=50', 'Statistics', { showStats: true, statsView: 'cohort', cohortMode: 'last_n', cohortLastN: 50, cohortClosedStartQuarter: quarterLabel(0), cohortClosedEndQuarter: quarterLabel(0) }],
 ]) {
     test(`a ${mode} link applies its mode and fields whatever the recipient's saved mode`, async ({ page }) => {
         await installLinkFixture(page, { analytics: ANALYTICS_ENABLED, prefs: { showScenario: true } });
@@ -521,7 +528,7 @@ for (const [mode, query, radio, flags] of [
         await expect.poll(() => applyEvents(page).then(events => events.length)).toBe(1);
         await expect(engMode(page, radio)).toHaveAttribute('aria-checked', 'true');
         expect(await readPrefs(page)).toMatchObject({ showScenario: false, ...flags });
-        expect((await applyEvents(page))[0]).toMatchObject({ result: 'success', source_surface: mode });
+        expect((await applyEvents(page))[0]).toMatchObject({ result: 'success', source_surface: mode.split(' ')[0] });
     });
 }
 
@@ -689,6 +696,14 @@ const MATRIX_CASES = [
     ...['component', 'all_work'].map(scope => ({ name: `strict Board ${scope}`, mode: 'board', query: `&scope=${scope}`,
         flags: { showBoard: true }, endpoint: '/api/eng/board', strict: scope })),
     { name: 'task-loading Statistics', mode: 'statistics', flags: { showStats: true, statsView: 'teams' }, endpoint: '/api/tasks-with-team-name' },
+    { name: 'Lead Times Created', mode: 'statistics', query: '&stats=cohort', flags: { showStats: true, statsView: 'cohort', cohortMode: 'created' }, endpoint: '/api/stats/epic-cohort', requestModes: [undefined] },
+    { name: 'Lead Times Closed', mode: 'statistics', query: `&stats=cohort&lead=closed&from=${quarterLabel(-2)}&to=${quarterLabel(-1)}`,
+        flags: { showStats: true, statsView: 'cohort', cohortMode: 'closed', cohortClosedStartQuarter: quarterLabel(-2), cohortClosedEndQuarter: quarterLabel(-1) }, endpoint: '/api/stats/epic-cohort', requestModes: ['closed'] },
+    { name: 'Lead Times Last N', mode: 'statistics', query: '&stats=cohort&lead=last_n&n=50', flags: { showStats: true, statsView: 'cohort', cohortMode: 'last_n', cohortLastN: 50 }, endpoint: '/api/stats/epic-cohort', requestModes: ['last_n'] },
+    // The recipient already sits in Lead Times Closed on another Department and Sprint: the link must not let that saved view read first.
+    { name: 'Lead Times Last N over a saved Closed view', mode: 'statistics', query: '&stats=cohort&lead=last_n&n=50',
+        recipientPrefs: { showStats: true, statsView: 'cohort', cohortMode: 'closed', cohortClosedStartQuarter: quarterLabel(-2), cohortClosedEndQuarter: quarterLabel(-1) },
+        flags: { showStats: true, statsView: 'cohort', cohortMode: 'last_n', cohortLastN: 50 }, endpoint: '/api/stats/epic-cohort', requestModes: ['last_n'] },
     { name: 'source-only Statistics Project Track', mode: 'statistics', query: '&stats=projectTrack&from=42&to=42',
         flags: { showStats: true, statsView: 'projectTrack', excludedCapacityStartSprintId: '42', excludedCapacityEndSprintId: '42' }, endpoint: '/api/stats/excluded-capacity-source', sourceOnly: true },
 ];
@@ -707,7 +722,7 @@ async function matrixRun(browser, scenario, { linked = false, backendCache = new
     // it has no persisted preference key. Only the initial value changes in the synthetic bundle.
     const calls = await installLinkFixture(page, { matrix: true, backendCache, analytics: ANALYTICS_ENABLED,
         ...(linked ? {} : MANUAL_DEPARTMENT_B), strictScope: linked ? '' : scenario.strict || '', statsRefresh: !linked && Boolean(scenario.sourceOnly),
-        prefs: { ...(linked ? { selectedSprint: 40, sprintName: 'Sprint 40' } : manualPrefs), ...(sprintCatalog ? { sprintCatalog } : {}) },
+        prefs: { ...(linked ? { selectedSprint: 40, sprintName: 'Sprint 40', ...scenario.recipientPrefs } : manualPrefs), ...(sprintCatalog ? { sprintCatalog } : {}) },
     });
     await page.goto(`${appBaseUrl}${linked ? `/?v=1&mode=${scenario.mode}&group=grp-b&sprint=42${scenario.query || ''}` : '/'}`, { waitUntil: 'domcontentloaded' });
     if (linked) await expect.poll(() => applyEvents(page).then(events => events.map(event => event.result))).toEqual(['success']);
@@ -763,6 +778,12 @@ for (const scenario of MATRIX_CASES) {
                     await expect(run.page.getByText('Excluded capacity fetch failed', { exact: false })).toHaveCount(0);
                 } else {
                     expect(taskCalls(run.calls).every(call => call.params.groupId === 'grp-b' && call.params.sprint === '42')).toBe(true);
+                }
+                // Lead Times: exactly one read, in the link's mode, scoped to the link's Department Teams (never the recipient's saved view).
+                if (scenario.requestModes) {
+                    const bodies = scoped.map(call => JSON.parse(call.body));
+                    expect(bodies.map(body => body.mode)).toEqual(scenario.requestModes);
+                    expect(bodies.every(body => body.teamIds.every(id => ['team-b1', 'team-b2'].includes(id)))).toBe(true);
                 }
                 for (const call of run.calls.filter(call => call.pathname === '/api/dependencies')) {
                     expect(JSON.parse(call.body).keys.every(key => key.startsWith('BET-'))).toBe(true);
@@ -829,6 +850,35 @@ for (const [name, prefs] of [
             await expect.poll(() => applyEvents(recipient).then(events => events.map(event => event.result))).toEqual(['success']);
             const target = name === 'Planning Table' ? recipient.locator('tr[data-row-kind="epic"][data-issue-key="ALP-100"]') : recipient.locator('.epic-block[data-epic-key="ALP-100"]');
             await expect(target).toBeVisible();
+            expect(await recipient.evaluate(() => window.__shareViewProbe.notice)).toBe(null);
+        } finally { await source.close(); await recipient.close(); }
+    });
+}
+
+// A Lead Times link carries only the mode the sender is in; the recipient lands in that mode with that selection.
+const LEAD_TIMES_SENDER = { showStats: true, statsView: 'cohort', cohortStartQuarter: quarterLabel(-1), cohortEndQuarter: quarterLabel(-1), cohortClosedStartQuarter: quarterLabel(-3), cohortClosedEndQuarter: quarterLabel(-2), cohortLastN: 60 };
+for (const [name, mode, carried, absent, landed] of [
+    ['Created', 'created', [`from=${quarterLabel(-1)}`, `to=${quarterLabel(-1)}`], ['lead=', 'n='], { cohortMode: 'created', cohortStartQuarter: quarterLabel(-1), cohortEndQuarter: quarterLabel(-1) }],
+    ['Closed', 'closed', ['lead=closed', `from=${quarterLabel(-3)}`, `to=${quarterLabel(-2)}`], ['n='], { cohortMode: 'closed', cohortClosedStartQuarter: quarterLabel(-3), cohortClosedEndQuarter: quarterLabel(-2), cohortStartQuarter: quarterLabel(0) }],
+    ['Last N', 'last_n', ['lead=last_n', 'n=60'], ['from=', 'to='], { cohortMode: 'last_n', cohortLastN: 60, cohortClosedStartQuarter: quarterLabel(0) }],
+]) {
+    test(`a Lead Times ${name} link copied by the sender opens in that mode for the recipient`, async ({ browser }) => {
+        const source = await browser.newPage();
+        const recipient = await browser.newPage();
+        try {
+            await installLinkFixture(source, { analytics: ANALYTICS_ENABLED, prefs: { ...LEAD_TIMES_SENDER, cohortMode: mode } });
+            await source.goto(appBaseUrl, { waitUntil: 'domcontentloaded' });
+            await expect.poll(() => source.evaluate(() => window.__shareViewProbe?.shareDisabled)).toBe(false);
+            const { ok, url } = await source.evaluate(() => window.__shareViewProbe.captureShareUrl());
+            expect(ok).toBe(true);
+            const query = new URL(url).search;
+            carried.forEach(part => expect(query).toContain(part));
+            absent.forEach(part => expect(query).not.toContain(part));
+            await installLinkFixture(recipient, { analytics: ANALYTICS_ENABLED, prefs: { cohortMode: mode === 'closed' ? 'last_n' : 'closed', cohortLastN: 30 } });
+            await recipient.goto(url, { waitUntil: 'domcontentloaded' });
+            await expect.poll(() => applyEvents(recipient).then(events => events.map(event => event.result))).toEqual(['success']);
+            await expect(engMode(recipient, 'Statistics')).toHaveAttribute('aria-checked', 'true');
+            expect(await readPrefs(recipient)).toMatchObject({ statsView: 'cohort', ...landed });
             expect(await recipient.evaluate(() => window.__shareViewProbe.notice)).toBe(null);
         } finally { await source.close(); await recipient.close(); }
     });

@@ -151,6 +151,21 @@ function makeOpenCohortEpic(index) {
     };
 }
 
+// A closed Epic for the Closed and Last N modes: terminal day `index` days into 2026, created a year earlier.
+function makeClosedCohortEpic(index, { status = 'done', project = index % 2 === 0 ? 'PROD' : 'TECH', created = '2025-01-15', terminal = new Date(Date.UTC(2026, 0, 1 + index)).toISOString().slice(0, 10) } = {}) {
+    return {
+        key: `${project}-CLOSED-${index + 1}`,
+        summary: `Closed cohort epic ${index + 1}`,
+        projectKey: project,
+        status,
+        jiraStatus: status === 'done' ? 'Done' : status === 'killed' ? 'Killed' : 'Incomplete',
+        createdDate: created,
+        terminalDate: terminal,
+        leadTimeDays: 300 + index,
+        assignee: { id: `${project.toLowerCase()}-lead`, name: `${project} Lead` },
+    };
+}
+
 function makeCompletedCohortEpic(index) {
     const projectKey = index % 2 === 0 ? 'PROD' : 'TECH';
     const createdDay = String((index % 28) + 1).padStart(2, '0');
@@ -1034,6 +1049,22 @@ async function installApiMocks(page, calls, options = {}) {
                         { id: 'alpha-owner', name: 'Alpha Team Owner', events: 1 },
                         { id: 'beta-owner', name: 'Beta Team Owner', events: 2 },
                     ],
+                },
+            });
+        }
+        if (url.pathname === '/api/stats/epic-cohort' && calls[calls.length - 1].body?.mode) {
+            const mode = calls[calls.length - 1].body.mode;
+            if (options.cohortHold?.[mode]) await options.cohortHold[mode].promise;
+            return json({
+                cached: false,
+                data: {
+                    range: mode === 'closed' ? { startDate: '2026-01-01', endDate: '2026-03-31' } : null,
+                    issues: (mode === 'closed' ? options.cohortClosedIssues : options.cohortLastNIssues) || [],
+                    meta: {
+                        warnings: [], mode, scope: options.cohortScope || 'components',
+                        windowCeiling: mode === 'last_n' ? (options.cohortCeiling || 200) : null,
+                        windowFull: mode === 'last_n' ? Boolean(options.cohortWindowFull) : null,
+                    },
                 },
             });
         }
@@ -1984,11 +2015,11 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     // End Quarter reconciliation: last-control-wins, one debounced request per change, and no
     // request is ever sent with an inverted (start > end) pair.
     const quarterRange = cohortControls.locator('[data-stats-range="lead-times-quarter"]');
-    const quarterButton = (end) => quarterRange.getByRole('button', { name: `${end} quarter` });
+    const quarterButton = (end) => quarterRange.getByRole('button', { name: `${end} created quarter` });
     const pickQuarter = async (end, quarter) => {
         const button = quarterButton(end);
         await button.click();
-        await quarterRange.getByRole('listbox', { name: `${end} quarter` })
+        await quarterRange.getByRole('listbox', { name: `${end} created quarter` })
             .getByRole('option', { name: quarter })
             .click();
     };
@@ -2022,7 +2053,7 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     // Escape closes and returns focus to the toggle.
     const startQuarterButton = quarterButton('Start');
     await startQuarterButton.press('ArrowDown');
-    const startListbox = quarterRange.getByRole('listbox', { name: 'Start quarter' });
+    const startListbox = quarterRange.getByRole('listbox', { name: 'Start created quarter' });
     await expect(startListbox).toBeVisible();
     const selectedOption = startListbox.locator('[role="option"][aria-selected="true"]');
     await expect(selectedOption).toBeFocused();
@@ -2273,6 +2304,368 @@ test('Lead Times capacity exclusions re-slice locally and replace the legacy inc
     await expect(view.getByRole('checkbox', { name: 'Exclude Ad Hoc' })).toBeChecked();
     await expect(view.getByRole('checkbox', { name: 'Exclude Excluded Capacity' })).not.toBeChecked();
     expect(apiMocks.unexpectedCalls).toEqual([]);
+});
+
+const LEAD_TIMES_PREFS = {
+    selectedView: 'eng', planningLayout: 'list', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
+    activeGroupId: 'grp-default', selectedTeams: ['all'], showPlanning: false, showScenario: false,
+    showStats: true, statsView: 'cohort', cohortStartQuarter: '2026Q1', cohortEndQuarter: '2026Q1',
+    cohortClosedStartQuarter: '2026Q1', cohortClosedEndQuarter: '2026Q1',
+};
+
+async function openLeadTimes(page, calls, options = {}, prefs = {}) {
+    const apiMocks = await installApiMocks(page, calls, { useCommittedDist: true, ...options });
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.addInitScript((value) => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(value));
+    }, { ...LEAD_TIMES_PREFS, ...prefs });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    return apiMocks;
+}
+
+// Element-level geometry of the Lead Times bar: row tops, group boxes, whether the painted label text
+// stays inside its group (a text Range, because .controls-label is a block box), and control heights.
+function leadTimesBarGeometry(page) {
+    return page.locator('.stats-view.open .cohort-controls').evaluate((bar) => {
+        const box = (node) => {
+            const rect = node.getBoundingClientRect();
+            return { left: Math.round(rect.left), top: Math.round(rect.top), width: Math.round(rect.width), height: Math.round(rect.height) };
+        };
+        const groups = [...bar.querySelectorAll(':scope > .stats-control-group')];
+        const labels = groups.map((group) => {
+            const label = group.querySelector(':scope > .controls-label');
+            const range = document.createRange();
+            range.selectNodeContents(label);
+            const text = range.getBoundingClientRect();
+            const groupBox = group.getBoundingClientRect();
+            return { text: label.textContent, clipped: text.right > groupBox.right + 0.5 || text.left < groupBox.left - 0.5 };
+        });
+        const clipped = (node) => node.scrollWidth > node.clientWidth + 1;
+        return {
+            bar: box(bar),
+            rowTops: [...new Set(groups.map((group) => box(group).top))],
+            groups: groups.map(box),
+            labels,
+            selects: [...bar.querySelectorAll('select')].map((node) => ({ label: node.getAttribute('aria-label'), height: box(node).height, clipped: clipped(node) })),
+            toggles: [...bar.querySelectorAll('.sprint-dropdown-toggle')].map((node) => ({ height: box(node).height, clipped: clipped(node) })),
+            groupBy: bar.querySelector('.eng-mode-control') ? box(bar.querySelector('.eng-mode-control')) : null,
+            exclusion: box(bar.querySelector('.cohort-exclusion-options')),
+        };
+    });
+}
+
+test('Lead Times mode switch swaps exactly one selection control and keeps the bar on one row', async ({ page }) => {
+    const calls = [];
+    const apiMocks = await openLeadTimes(page, calls, {
+        cohortClosedIssues: Array.from({ length: 4 }, (_, index) => makeClosedCohortEpic(index)),
+        cohortLastNIssues: Array.from({ length: 4 }, (_, index) => makeClosedCohortEpic(index)),
+    });
+    await waitForCallCount(calls, (call) => call.pathname === '/api/stats/epic-cohort', 1);
+    const view = page.locator('.stats-view.open');
+    const modeSelect = view.getByRole('combobox', { name: 'Lead Times mode' });
+    await expect(view.getByRole('combobox', { name: 'Assignee' })).toHaveCount(0);
+
+    const expectations = {
+        created: { range: 'Created quarter', count: false },
+        closed: { range: 'Closed quarter', count: false },
+        last_n: { range: null, count: true },
+    };
+    const seen = {};
+    for (const mode of ['created', 'closed', 'last_n']) {
+        await modeSelect.selectOption(mode);
+        await expect(modeSelect).toHaveValue(mode);
+        if (mode !== 'created') await waitForCallCount(calls, (call) => call.pathname === '/api/stats/epic-cohort' && call.body?.mode === mode, 1);
+        await expect(view.getByText('Loading lead time cohorts…')).toHaveCount(0);
+        await waitForVisualSettled(page);
+        const { range, count } = expectations[mode];
+        await expect(view.locator('[data-stats-range="lead-times-quarter"]')).toHaveCount(range ? 1 : 0);
+        if (range) await expect(view.locator('[data-stats-range="lead-times-quarter"] .controls-label')).toHaveText(range);
+        await expect(view.getByRole('combobox', { name: 'Number of epics' })).toHaveCount(count ? 1 : 0);
+        await expect(view.locator('.cohort-controls > .stats-control-group')).toHaveCount(5);
+        await expect(view.locator('.cohort-controls .eng-mode-control')).toHaveCount(1);
+        seen[mode] = await leadTimesBarGeometry(page);
+        if (process.env.JEP_STATS_SCREENSHOT_DIR) {
+            // Element captures (never fullPage) for the visual review of the swapped control and the heatmap.
+            fs.mkdirSync(process.env.JEP_STATS_SCREENSHOT_DIR, { recursive: true });
+            await view.locator('.cohort-controls').screenshot({ path: path.join(process.env.JEP_STATS_SCREENSHOT_DIR, `lead-times-bar-${mode}.png`) });
+            await view.locator('.cohort-panel .cohort-section').first().screenshot({ path: path.join(process.env.JEP_STATS_SCREENSHOT_DIR, `lead-times-heatmap-${mode}.png`) });
+        }
+        // MRT021: every control keeps one row, a fixed height and a label that stays inside its group.
+        expect(seen[mode].rowTops, `${mode} bar rows`).toHaveLength(1);
+        expect(seen[mode].labels.filter((label) => label.clipped), `${mode} clipped labels`).toEqual([]);
+        const projectSelect = seen[mode].selects.find((item) => item.label === 'Project');
+        seen[mode].selects.forEach((item) => {
+            expect(item.height, `${item.label} height`).toBe(projectSelect.height);
+            expect(item.clipped, `${item.label} text clipped`).toBe(false);
+        });
+        seen[mode].toggles.forEach((item) => expect(item.clipped).toBe(false));
+        if (seen[mode].toggles.length) expect(new Set(seen[mode].toggles.map((item) => item.height)).size).toBe(1);
+    }
+    // One row and one height in every mode; the stretchy selects may move the controls after them sideways.
+    expect(seen.closed.bar.height).toBe(seen.created.bar.height);
+    expect(seen.last_n.bar.height).toBe(seen.created.bar.height);
+    expect(seen.closed.groupBy.height).toBe(seen.created.groupBy.height);
+    expect(seen.last_n.groupBy.height).toBe(seen.created.groupBy.height);
+    expect(seen.last_n.groups[0].left).toBe(seen.created.groups[0].left);
+
+    await page.setViewportSize({ width: 375, height: 812 });
+    for (const mode of ['last_n', 'closed', 'created']) {
+        await modeSelect.selectOption(mode);
+        await waitForVisualSettled(page);
+        const narrow = await leadTimesBarGeometry(page);
+        expect(narrow.labels.filter((label) => label.clipped), `${mode} clipped labels at 375px`).toEqual([]);
+        narrow.selects.forEach((item) => expect(item.clipped, `${item.label} at 375px`).toBe(false));
+    }
+    expect(apiMocks.unexpectedCalls).toEqual([]);
+});
+
+// A month heatmap with many columns used to widen its grid cell (min-width: auto on a grid item) past the
+// Statistics panel, so the table was never scaled down and spilled out of the page. It must shrink into the panel.
+for (const mode of ['last_n', 'created']) test(`Lead Times ${mode} heatmap with many month columns scales into its panel`, async ({ page }) => {
+    const calls = [];
+    const months = Array.from({ length: 24 }, (_, index) => `${2024 + Math.floor((index + 10) / 12)}-${String(((index + 10) % 12) + 1).padStart(2, '0')}-15`);
+    const closedIssues = months.map((created, index) => makeClosedCohortEpic(index, { created, terminal: '2026-09-20' }));
+    await openLeadTimes(page, calls, { cohortIssues: closedIssues, cohortLastNIssues: closedIssues, cohortWindowFull: false },
+        { cohortMode: mode, cohortGroupBy: 'month', cohortStartQuarter: '2024Q1', cohortEndQuarter: '2026Q4' });
+    await waitForCallCount(calls, (call) => call.pathname === '/api/stats/epic-cohort', 1);
+    await page.setViewportSize({ width: 1000, height: 900 });
+    const view = page.locator('.stats-view.open');
+    await expect(view.locator('.cohort-grid thead th').nth(20)).toBeAttached();
+    await waitForVisualSettled(page);
+    const layout = await view.evaluate((node) => {
+        const section = node.querySelector('.cohort-section-fullbleed').getBoundingClientRect();
+        const frame = node.querySelector('.cohort-grid-scale-frame');
+        return {
+            viewRight: Math.round(node.getBoundingClientRect().right),
+            sectionRight: Math.round(section.right),
+            scaled: frame.classList.contains('is-scaled'),
+            pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            columns: node.querySelectorAll('.cohort-grid thead th').length,
+        };
+    });
+    if (process.env.JEP_STATS_SCREENSHOT_DIR) {
+        fs.mkdirSync(process.env.JEP_STATS_SCREENSHOT_DIR, { recursive: true });
+        await view.locator('.cohort-panel .cohort-section').first().screenshot({ path: path.join(process.env.JEP_STATS_SCREENSHOT_DIR, `lead-times-wide-heatmap-${mode}.png`) });
+    }
+    expect(layout.columns).toBeGreaterThan(20);
+    expect(layout.sectionRight, 'the heatmap card stays inside the Statistics panel').toBeLessThanOrEqual(layout.viewRight + 1);
+    expect(layout.scaled, 'a table wider than its card is scaled down').toBe(true);
+    expect(layout.pageOverflow, 'the page must not scroll sideways').toBeLessThanOrEqual(0);
+});
+
+// MRT018 for the closed modes: Epics created years before they closed fall in the trailing overflow column instead of
+// vanishing, and a long heatmap and a long Completed list stay inside the Statistics panel at desktop and phone widths.
+for (const mode of ['closed', 'last_n']) for (const [width, height] of [[1280, 900], [375, 812]]) {
+    test(`Lead Times ${mode} keeps long-lived Epics and long lists inside the panel at ${width}px`, async ({ page }) => {
+        const calls = [];
+        const epics = Array.from({ length: 40 }, (_, index) => makeClosedCohortEpic(index, {
+            created: `${2021 + Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, '0')}-15`, terminal: '2026-09-20',
+        }));
+        const issues = { closed: 'cohortClosedIssues', last_n: 'cohortLastNIssues' }[mode];
+        await openLeadTimes(page, calls, { [issues]: epics, cohortWindowFull: false },
+            { cohortMode: mode, cohortLastN: 60, cohortGroupBy: 'month', cohortClosedStartQuarter: '2026Q3', cohortClosedEndQuarter: '2026Q3', cohortExcludeCapacity: false });
+        await waitForCallCount(calls, (call) => call.body?.mode === mode, 1);
+        await page.setViewportSize({ width, height });
+        const view = page.locator('.stats-view.open');
+        const grid = view.locator('.cohort-grid');
+        await expect(grid.locator('thead th', { hasText: 'M+24+' })).toHaveCount(1);
+        const rows = grid.locator('tbody tr');
+        expect(await rows.count()).toBeGreaterThan(30);
+        // Every Epic is in the overflow column: its cells sum to the 40 Epics, none lost past the 24-month budget.
+        const overflowIndex = await grid.locator('thead th').evaluateAll((cells) => cells.findIndex((cell) => cell.textContent.includes('M+24+')));
+        const overflowTotal = await rows.evaluateAll((trs, index) => trs.reduce((sum, row) => sum + (Number(row.children[index]?.textContent.trim()) || 0), 0), overflowIndex);
+        expect(overflowTotal).toBe(40);
+
+        const completed = view.locator('.cohort-section', { hasText: 'Completed Epics' });
+        await expect(completed.locator('.cohort-open-row')).toHaveCount(30);
+        await expect(completed.getByRole('button', { name: /Load 10 more from 40/ })).toBeVisible();
+        await waitForVisualSettled(page);
+        const layout = await completed.locator('.cohort-open-row').last().evaluate((lastRow) => {
+            const statsPanel = document.querySelector('.stats-panel.open');
+            const statsView = document.querySelector('.stats-view.open');
+            const section = statsView.querySelector('.cohort-section-fullbleed').getBoundingClientRect();
+            return {
+                statsViewOverflow: getComputedStyle(statsView).overflow,
+                statsViewMaxHeight: getComputedStyle(statsView).maxHeight,
+                panelBottom: statsPanel.getBoundingClientRect().bottom + window.scrollY,
+                lastRowBottom: lastRow.getBoundingClientRect().bottom + window.scrollY,
+                documentHeight: document.documentElement.scrollHeight,
+                sectionRight: Math.round(section.right),
+                viewRight: Math.round(statsView.getBoundingClientRect().right),
+            };
+        });
+        expect(layout.statsViewOverflow).toBe('visible');
+        expect(layout.statsViewMaxHeight).toBe('none');
+        expect(layout.panelBottom).toBeGreaterThanOrEqual(layout.lastRowBottom);
+        expect(layout.documentHeight).toBeGreaterThanOrEqual(layout.lastRowBottom);
+        expect(layout.sectionRight, 'the heatmap card stays inside the Statistics panel').toBeLessThanOrEqual(layout.viewRight + 1);
+    });
+}
+
+test('Lead Times closed modes hide the open-work parts that Created shows', async ({ page }) => {
+    const calls = [];
+    await openLeadTimes(page, calls, {
+        cohortIssues: [makeOpenCohortEpic(1), makeCompletedCohortEpic(1)],
+        cohortClosedIssues: [makeClosedCohortEpic(1), makeClosedCohortEpic(2, { status: 'killed' })],
+        cohortLastNIssues: [makeClosedCohortEpic(1), makeClosedCohortEpic(2, { status: 'killed' })],
+    });
+    await waitForCallCount(calls, (call) => call.pathname === '/api/stats/epic-cohort', 1);
+    const view = page.locator('.stats-view.open');
+    const modeSelect = view.getByRole('combobox', { name: 'Lead Times mode' });
+    const chips = view.locator('.cohort-status-actions .stats-toggle');
+    await expect(chips).toHaveText(['Done', 'In Progress', 'Killed', 'Incomplete', 'Postponed']);
+    await expect(view.getByRole('heading', { name: 'Workflow Status', exact: true })).toBeVisible();
+    await expect(view.locator('.cohort-section', { hasText: 'Open Epics (All Cohorts)' })).toHaveCount(1);
+    await expect(view.locator('.cohort-grid th', { hasText: /^Open$/ })).toHaveCount(1);
+    for (const mode of ['closed', 'last_n']) {
+        await modeSelect.selectOption(mode);
+        await waitForCallCount(calls, (call) => call.body?.mode === mode, 1);
+        await expect(chips).toHaveText(['Done', 'Killed', 'Incomplete']);
+        await expect(view.getByRole('heading', { name: 'Workflow Status', exact: true })).toHaveCount(0);
+        await expect(view.locator('.cohort-section', { hasText: 'Open Epics' })).toHaveCount(0);
+        await expect(view.locator('.cohort-grid th', { hasText: /^Open$/ })).toHaveCount(0);
+        await expect(view.locator('.cohort-section', { hasText: 'Completed Epics' })).toHaveCount(1);
+    }
+});
+
+test('Lead Times Postponed Epics never appear in the closed modes even with a saved Postponed toggle', async ({ page }) => {
+    const calls = [];
+    await openLeadTimes(page, calls, {
+        cohortLastNIssues: [makeClosedCohortEpic(1), { ...makeClosedCohortEpic(2), key: 'PROD-POSTPONED-1', status: 'postponed', jiraStatus: 'Postponed' }],
+    }, { cohortMode: 'last_n', cohortStatusToggles: { done: true, open: true, killed: true, incomplete: true, postponed: true } });
+    await waitForCallCount(calls, (call) => call.body?.mode === 'last_n', 1);
+    const view = page.locator('.stats-view.open');
+    await expect(view.locator('.cohort-summary .stats-card').first().locator('.stat-value')).toHaveText('1');
+    await expect(view.getByText('PROD-POSTPONED-1')).toHaveCount(0);
+    await expect(view.locator('.cohort-status-actions .stats-toggle', { hasText: 'Postponed' })).toHaveCount(0);
+});
+
+test('Lead Times Last N counts after the filters and never refetches for N or a filter', async ({ page }) => {
+    const calls = [];
+    const done = Array.from({ length: 60 }, (_, index) => makeClosedCohortEpic(index));
+    const killed = Array.from({ length: 10 }, (_, index) => makeClosedCohortEpic(100 + index, { status: 'killed' }));
+    await openLeadTimes(page, calls, { cohortLastNIssues: [...done, ...killed], cohortWindowFull: true, cohortCeiling: 120 }, { cohortMode: 'last_n', cohortExcludeCapacity: false });
+    await waitForCallCount(calls, (call) => call.body?.mode === 'last_n', 1);
+    const view = page.locator('.stats-view.open');
+    const total = view.locator('.cohort-summary .stats-card').first().locator('.stat-value');
+    const lastN = view.getByRole('combobox', { name: 'Number of epics' });
+    await expect(lastN).toHaveValue('30');
+    await expect(total).toHaveText('30');
+    await lastN.selectOption('60');
+    await expect(total).toHaveText('60');
+    await view.locator('.cohort-status-actions .stats-toggle', { hasText: 'Killed' }).click();
+    await expect(total).toHaveText('60');
+    await lastN.selectOption('30');
+    await expect(view.getByText('KILLED', { exact: false }).first()).toBeAttached();
+    await expect(total).toHaveText('30');
+    expect(calls.filter((call) => call.pathname === '/api/stats/epic-cohort')).toHaveLength(1);
+
+    // Fewer than N pass the filters inside a full window: say so, with the window's own ceiling.
+    await view.locator('.cohort-status-actions .stats-toggle', { hasText: 'Done' }).click();
+    await view.locator('.cohort-status-actions .stats-toggle', { hasText: 'Killed' }).click();
+    await expect(total).toHaveText('0');
+    await expect(view.getByText('Showing 0 of 30: filters leave fewer than 30 Epics in the most recent 120 closed.')).toBeVisible();
+    expect(calls.filter((call) => call.pathname === '/api/stats/epic-cohort')).toHaveLength(1);
+});
+
+test('Lead Times never shows another mode data while a mode loads, and Project survives the round trip', async ({ page }) => {
+    const calls = [];
+    const hold = createDeferred();
+    await openLeadTimes(page, calls, {
+        cohortIssues: [makeOpenCohortEpic(1), makeOpenCohortEpic(2), makeCompletedCohortEpic(1), makeCompletedCohortEpic(2)],
+        cohortClosedIssues: [makeClosedCohortEpic(1, { project: 'PROD' }), makeClosedCohortEpic(2, { project: 'TECH' })],
+        cohortHold: { closed: hold },
+    });
+    await waitForCallCount(calls, (call) => call.pathname === '/api/stats/epic-cohort', 1);
+    const view = page.locator('.stats-view.open');
+    const modeSelect = view.getByRole('combobox', { name: 'Lead Times mode' });
+    const project = view.getByRole('combobox', { name: 'Project' });
+    await project.selectOption('TECH');
+    await expect(view.getByText('TECH-DONE-2', { exact: true })).toBeVisible();
+    await modeSelect.selectOption('closed');
+    await waitForCallCount(calls, (call) => call.body?.mode === 'closed', 1);
+    // The closed response is held: Created data, Created warnings and the empty message must not render.
+    await expect(view.getByText('Loading lead time cohorts…')).toBeVisible();
+    await expect(view.getByText('TECH-DONE-2', { exact: true })).toHaveCount(0);
+    await expect(view.locator('.cohort-empty')).toHaveCount(0);
+    hold.resolve();
+    await expect(view.getByText('Loading lead time cohorts…')).toHaveCount(0);
+    await expect(view.getByText('TECH-CLOSED-3', { exact: true })).toBeVisible();
+    await modeSelect.selectOption('created');
+    await expect(view.getByText('TECH-DONE-2', { exact: true })).toBeVisible();
+    await expect(project).toHaveValue('TECH');
+});
+
+test('Lead Times states its scope and the closed empty message, outside the control bar', async ({ page }) => {
+    const calls = [];
+    await openLeadTimes(page, calls, { cohortClosedIssues: [], cohortScope: 'none' }, { cohortMode: 'closed' });
+    await waitForCallCount(calls, (call) => call.body?.mode === 'closed', 1);
+    const view = page.locator('.stats-view.open');
+    const note = view.getByText('Scope: none configured (no Components or Teams)', { exact: true });
+    await expect(note).toBeVisible();
+    expect(await note.evaluate((node) => Boolean(node.closest('.cohort-controls')))).toBe(false);
+    // The Completed Epics chart keeps its own empty message; the heatmap carries the closed-mode wording.
+    await expect(view.locator('.cohort-section', { hasText: 'Cohort Heatmap' }).locator('.cohort-empty')).toHaveText('No closed epics in this scope.');
+});
+
+test('Lead Times sends one request shape per mode and does not refetch for a mode it has seen', async ({ page }) => {
+    const calls = [];
+    await openLeadTimes(page, calls, {
+        cohortClosedIssues: [makeClosedCohortEpic(1)], cohortLastNIssues: [makeClosedCohortEpic(1)],
+    });
+    await waitForCallCount(calls, (call) => call.pathname === '/api/stats/epic-cohort', 1);
+    const view = page.locator('.stats-view.open');
+    const modeSelect = view.getByRole('combobox', { name: 'Lead Times mode' });
+    const cohortBodies = () => callsFor(calls, '/api/stats/epic-cohort', 'POST').map((call) => call.body);
+    await modeSelect.selectOption('closed');
+    await waitForCallCount(calls, (call) => call.body?.mode === 'closed', 1);
+    await modeSelect.selectOption('last_n');
+    await waitForCallCount(calls, (call) => call.body?.mode === 'last_n', 1);
+    await modeSelect.selectOption('created');
+    await modeSelect.selectOption('closed');
+    await modeSelect.selectOption('last_n');
+    await page.waitForTimeout(400);
+    const bodies = cohortBodies();
+    expect(bodies).toHaveLength(3);
+    expect(bodies[0]).not.toHaveProperty('mode');
+    expect(bodies[0]).toMatchObject({ startQuarter: '2026Q1', endQuarter: '2026Q1', refresh: false });
+    expect(bodies[1]).toMatchObject({ mode: 'closed', startQuarter: '2026Q1', endQuarter: '2026Q1', refresh: false });
+    expect(bodies[2]).toMatchObject({ mode: 'last_n', refresh: false });
+    expect(bodies[2]).not.toHaveProperty('startQuarter');
+    expect(bodies[2]).not.toHaveProperty('endQuarter');
+});
+
+for (const mode of ['closed', 'last_n']) test(`Lead Times ${mode} Completed Epics link opens exactly the listed Epics, and no link above 250`, async ({ page }) => {
+    const calls = [];
+    const epics = (count) => Array.from({ length: count }, (_, index) => makeClosedCohortEpic(index));
+    const issues = { closed: 'cohortClosedIssues', last_n: 'cohortLastNIssues' }[mode];
+    await openLeadTimes(page, calls, { [issues]: epics(40), cohortWindowFull: false }, { cohortMode: mode, cohortLastN: 60 });
+    await waitForCallCount(calls, (call) => call.body?.mode === mode, 1);
+    const view = page.locator('.stats-view.open');
+    const link = view.getByRole('link', { name: 'Open all completed epics in Jira' });
+    await expect(link).toBeVisible();
+    // 40 listed Epics, 30 visible rows: the link carries all 40, not only the visible page.
+    await expect(view.locator('.cohort-section', { hasText: 'Completed Epics' }).locator('.cohort-open-row')).toHaveCount(30);
+    const jql = decodeURIComponent(new URL(await link.getAttribute('href')).searchParams.get('jql'));
+    const expected = epics(40).map((epic) => epic.key).sort();
+    expect(jql).toBe(`key in (${expected.join(', ')})`);
+    await expect(view.getByText('Too many epics to open in Jira as one list')).toHaveCount(0);
+
+    // A Project filter narrows the chart and the link with it.
+    await view.getByRole('combobox', { name: 'Project' }).selectOption('TECH');
+    const narrowed = decodeURIComponent(new URL(await link.getAttribute('href')).searchParams.get('jql'));
+    expect(narrowed).toBe(`key in (${expected.filter((key) => key.startsWith('TECH-')).join(', ')})`);
+});
+
+test('Lead Times closed modes drop the Completed Epics Jira link above 250 Epics and say why', async ({ page }) => {
+    const calls = [];
+    const epics = Array.from({ length: 251 }, (_, index) => makeClosedCohortEpic(index, { project: 'PROD' }));
+    await openLeadTimes(page, calls, { cohortClosedIssues: epics }, { cohortMode: 'closed', cohortExcludeCapacity: false });
+    await waitForCallCount(calls, (call) => call.body?.mode === 'closed', 1);
+    const view = page.locator('.stats-view.open');
+    await expect(view.locator('.cohort-summary .stats-card').first().locator('.stat-value')).toHaveText('251');
+    await expect(view.getByRole('link', { name: 'Open all completed epics in Jira' })).toHaveCount(0);
+    await expect(view.getByText('Too many epics to open in Jira as one list (limit 250).')).toBeVisible();
 });
 
 test('Statistics sprint range lists Sprints newest first, in the header Sprint selector order', async ({ page }) => {
@@ -3962,6 +4355,27 @@ test('Statistics preserves analytics event contracts', async ({ page }) => {
     await page.locator('.stats-view.open').getByRole('checkbox', { name: 'Exclude Ad Hoc', exact: true }).check();
     await settleContract(page);
     expect(await events()).toEqual(before);
+
+    // Mode and N are untracked controls: a switch to a never-fetched mode adds only the stats_source read's own api_result,
+    // an N change and a return to a cached mode add nothing.
+    const view = page.locator('.stats-view.open');
+    const modeSelect = view.getByRole('combobox', { name: 'Lead Times mode' });
+    const untracked = ['stats_action', 'filter_changed', 'chart_action', 'select_content'];
+    const delta = async (action) => {
+        const start = (await events()).length;
+        await action();
+        await settleContract(page);
+        return (await events()).slice(start);
+    };
+    for (const mode of ['closed', 'last_n']) {
+        const added = await delta(() => modeSelect.selectOption(mode));
+        expect(added.length, `${mode} read`).toBeGreaterThan(0);
+        expect(added.filter(event => event.event_name !== 'api_result' || event.api_surface !== 'stats_source'), `${mode} extra events`).toEqual([]);
+        expect(added.map(event => event.event_name).filter(name => untracked.includes(name))).toEqual([]);
+    }
+    expect(await delta(() => view.getByRole('combobox', { name: 'Number of epics' }).selectOption('60'))).toEqual([]);
+    expect(await delta(() => modeSelect.selectOption('created'))).toEqual([]);
+    expect(await delta(() => modeSelect.selectOption('closed'))).toEqual([]);
 });
 
 test('Statistics preserves group state across A B A', async ({ page }) => {
@@ -3990,8 +4404,8 @@ test('Statistics preserves group state across A B A', async ({ page }) => {
         await tabs.getByRole('radio', { name: 'Lead Times' }).click();
         await settleContract(page);
         for (const [endpoint, quarter] of [['End', end], ['Start', start]]) {
-            await quarterRange().getByRole('button', { name: `${endpoint} quarter`, exact: true }).click();
-            await quarterRange().getByRole('listbox', { name: `${endpoint} quarter`, exact: true }).getByRole('option', { name: quarter, exact: true }).click();
+            await quarterRange().getByRole('button', { name: `${endpoint} created quarter`, exact: true }).click();
+            await quarterRange().getByRole('listbox', { name: `${endpoint} created quarter`, exact: true }).getByRole('option', { name: quarter, exact: true }).click();
             await settleContract(page);
         }
         await page.locator('.stats-view.open .stats-control-group', { hasText: 'Group By' }).getByRole('radio', { name: grouping, exact: true }).click();
@@ -4000,8 +4414,8 @@ test('Statistics preserves group state across A B A', async ({ page }) => {
     const assertCohort = async (start, end, grouping) => {
         await tabs.getByRole('radio', { name: 'Lead Times' }).click();
         await settleContract(page);
-        await expect(quarterRange().getByRole('button', { name: 'Start quarter', exact: true })).toContainText(start);
-        await expect(quarterRange().getByRole('button', { name: 'End quarter', exact: true })).toContainText(end);
+        await expect(quarterRange().getByRole('button', { name: 'Start created quarter', exact: true })).toContainText(start);
+        await expect(quarterRange().getByRole('button', { name: 'End created quarter', exact: true })).toContainText(end);
         await expect(page.locator('.stats-view.open .stats-control-group', { hasText: 'Group By' }).getByRole('radio', { name: grouping, exact: true })).toHaveAttribute('aria-checked', 'true');
         await tabs.getByRole('radio', { name: 'Burndown' }).click();
         await settleContract(page);
@@ -4057,6 +4471,41 @@ test('Statistics preserves group state across A B A', async ({ page }) => {
     await expect(tabs.getByRole('radio', { name: 'Burndown' })).toHaveAttribute('aria-checked', 'true');
     expect(requestMultiset(calls.filter(call => call.pathname.startsWith('/api/stats/')))).toEqual(statsBeforeReopen);
     expect(requestMultiset(calls.filter(call => call.pathname.startsWith('/api/stats/')))).toEqual(groupReturnRequestContract.map(call => JSON.stringify(call)).sort());
+
+    // Lead Times Mode, its Closed range and the Last N count are per-Department state too (after the frozen request contract above).
+    const leadTimes = () => page.locator('.stats-view.open');
+    const modeSelect = () => leadTimes().getByRole('combobox', { name: 'Lead Times mode' });
+    const closedRange = () => leadTimes().locator('[data-stats-range="lead-times-quarter"]');
+    const openLeadTimesTab = async () => {
+        await tabs.getByRole('radio', { name: 'Lead Times' }).click();
+        await settleContract(page);
+    };
+    await openLeadTimesTab();
+    await expect(modeSelect()).toHaveValue('created');
+    await modeSelect().selectOption('last_n');
+    await leadTimes().getByRole('combobox', { name: 'Number of epics' }).selectOption('60');
+    await settleContract(page);
+    await switchGroup('Group A');
+    await openLeadTimesTab();
+    await expect(modeSelect()).toHaveValue('created');
+    await modeSelect().selectOption('closed');
+    for (const [endpoint, quarter] of [['End', '2026Q2'], ['Start', '2025Q4']]) {
+        await closedRange().getByRole('button', { name: `${endpoint} closed quarter`, exact: true }).click();
+        await closedRange().getByRole('listbox', { name: `${endpoint} closed quarter`, exact: true }).getByRole('option', { name: quarter, exact: true }).click();
+        await settleContract(page);
+    }
+    await switchGroup('Group B');
+    await openLeadTimesTab();
+    await expect(modeSelect()).toHaveValue('last_n');
+    await expect(leadTimes().getByRole('combobox', { name: 'Number of epics' })).toHaveValue('60');
+    await switchGroup('Group A');
+    await openLeadTimesTab();
+    await expect(modeSelect()).toHaveValue('closed');
+    await expect(closedRange().getByRole('button', { name: 'Start closed quarter', exact: true })).toContainText('2025Q4');
+    await expect(closedRange().getByRole('button', { name: 'End closed quarter', exact: true })).toContainText('2026Q2');
+    await modeSelect().selectOption('created');
+    await expect(closedRange().getByRole('button', { name: 'Start created quarter', exact: true })).toContainText('2026Q1');
+    await expect(closedRange().getByRole('button', { name: 'End created quarter', exact: true })).toContainText('2026Q3');
 });
 
 // Frozen from original App at d0f8bc79 before extraction; each mode has its own ledger.

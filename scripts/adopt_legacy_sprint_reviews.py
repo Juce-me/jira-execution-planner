@@ -158,9 +158,8 @@ def _review_rules(call, *args):
         raise ValueError(f'adopted data failed review validation ({error.code})') from None
 
 
-def _plan(reviews):
-    """Apply the design's merge, cell and view rules; returns columns, cells, views and the report."""
-    report = []
+def _normalize(reviews):
+    """Group the legacy columns by key and classify them (archive intent, archived members, cap candidates)."""
     members, id_keys, malformed = {}, {}, 0
     for review in reviews:
         if not isinstance(review['columns'], list) or not isinstance(review['layouts'], dict) \
@@ -199,6 +198,16 @@ def _plan(reviews):
                            'aggregation': latest['aggregation'] if key[2] == 'number' else 'none',
                            'members': live, 'archived': [m for m in group if m['archived']],
                            'first': live[0]['rank'], 'latest': latest['rank']})
+    return {'reviews': reviews, 'members': members, 'kind_of': kind_of, 'rank_of': rank_of,
+            'intent_refs': intent_refs, 'discarded_refs': discarded_refs, 'candidates': candidates}
+
+
+def _resolve_group(normalized):
+    """Apply the design's merge, cap, cell and view rules; returns columns, cells, views and the report."""
+    reviews, members, candidates = normalized['reviews'], normalized['members'], normalized['candidates']
+    kind_of, rank_of = normalized['kind_of'], normalized['rank_of']
+    intent_refs, discarded_refs = normalized['intent_refs'], normalized['discarded_refs']
+    report = []
     kept, excluded = [], []
     for kind in KINDS:
         ranked = sorted((c for c in candidates if c['kind'] == kind), key=lambda c: c['latest'], reverse=True)
@@ -299,7 +308,7 @@ def _build(session, workspace_id):
     if not groups:
         raise ValueError('legacy review rows exist but no Department group is configured; configure one first')
     digest = _fingerprint({'rule': RULE_VERSION, 'workspaceId': workspace_id, 'groups': groups, 'reviews': reviews})
-    plan = _plan(reviews)
+    plan = _resolve_group(_normalize(reviews))
     legacy_cells = sum(len(review['cells']) for review in reviews)
     plan['report'].insert(0, f'legacy reviews {len(reviews)} (skipped empty {skipped}), legacy cells {legacy_cells}')
     plan['report'].insert(0, f"workspace {workspace_id} groups {len(groups)}: {' '.join(groups)}")

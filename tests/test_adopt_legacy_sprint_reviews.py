@@ -4,6 +4,7 @@ Legacy fixtures are built through the retained legacy models because save_review
 writes only the new group tables. All data is synthetic.
 """
 import contextlib
+import hashlib
 import io
 import os
 from pathlib import Path
@@ -32,6 +33,11 @@ def col(label='Estimate', kind='story', type_='number', aggregation=None, archiv
     aggregation = aggregation or ('sum' if type_ == 'number' else 'none')
     return {'id': identity or str(uuid.uuid4()), 'rowKind': kind, 'label': label, 'type': type_,
             'aggregation': aggregation, 'archived': archived, 'order': 0}
+
+
+def uid(number):
+    """A fixed, canonical UUID so golden output (ids and digest) is reproducible."""
+    return f'00000000-0000-4000-8000-{number:012d}'
 
 
 class AdoptionTests(unittest.TestCase):
@@ -487,6 +493,88 @@ class AdoptionTests(unittest.TestCase):
             self.apply()
         self.assertEqual(self.legacy_state(), before)
 
+    # Golden state of the fresh path: pins stdout, digest and written rows before the planner is split
+    # (docs/plans/EXEC-planning-review-adoption-merge-mode.md, Task 2a). Workspace, row and column ids are fixed.
+    def golden_workspace(self, identity):
+        with db_engine.session_scope(self.url) as session:
+            session.add(models.Workspace(id=identity, environment_key='synthetic-golden-' + identity[-4:], name='Synthetic'))
+            session.flush()
+            session.add(models.WorkspaceGroupConfig(workspace_id=identity, payload={
+                'version': 1, 'groups': [dict(g) for g in GROUPS], 'defaultGroupId': 'group-x'}))
+        return identity
+
+    def golden_put(self, workspace, sprint, columns=(), layouts=None, cells=()):
+        self.legacy(sprint, list(columns), layouts, list(cells), workspace=workspace, identity=uid(9000 + int(sprint)))
+
+    def golden_rich_fixture(self, workspace):
+        c = lambda number, label, kind='story', type_='number', archived=False: col(  # noqa: E731
+            label, kind=kind, type_=type_, archived=archived, identity=uid(number))
+        epic_cap, cap0, cap0_again, cap1 = c(1000, 'EpicCap0', 'epic'), c(2000, 'StoryCap0'), c(2100, 'storycap0'), c(2001, 'StoryCap1')
+        intent_live, intent_archived = c(3000, 'IntentKey', type_='text'), c(3001, 'intentkey', type_='text', archived=True)
+        discard_archived, discard_live = c(3100, 'DiscardKey', archived=True), c(3101, 'discardkey')
+        shared_a, shared_b = c(3200, 'Shared'), c(3201, 'shared')
+        put = lambda *args, **kwargs: self.golden_put(workspace, *args, **kwargs)  # noqa: E731
+        # Cap-excluded keys (one Epic, two Story), including two members of one key with cells on the same issue;
+        # an archive-intent key (latest member archived) with a kind-mismatched cell; layouts naming excluded,
+        # intent, unknown and duplicate ids and `key` in both lists.
+        put('10', [epic_cap, cap0, cap1, intent_live],
+            {'story': {'order': ['status', cap0['id'], cap1['id'], 'key', 'status', intent_live['id']],
+                       'hidden': ['key', 'project', cap0['id']]},
+             'epic': {'order': [epic_cap['id'], 'status'], 'hidden': []}},
+            [('701', 'story', cap0['id'], '1.000'), ('711', 'epic', epic_cap['id'], '8.000'), ('712', 'story', cap1['id'], '7.000'),
+             ('702', 'story', intent_live['id'], 'a'), ('703', 'epic', intent_live['id'], 'x')])
+        put('11', [cap0_again], {}, [('701', 'story', cap0_again['id'], '2.000')])
+        # An archived member before a live one for the same issue (the live value is kept, the archived one counted).
+        put('12', [discard_archived], {}, [('704', 'story', discard_archived['id'], '1.000')])
+        put('13', [discard_live], {}, [('704', 'story', discard_live['id'], '9.000')])
+        # Same-issue conflicts in an adopted key (a later clear wins), a kind-mismatched cell, an orphan cell for an
+        # undefined column and one for a column that belongs to another legacy row.
+        put('14', [shared_a], {}, [('705', 'story', shared_a['id'], '1.000'), ('706', 'story', shared_a['id'], '5.000'),
+                                  ('708', 'epic', shared_a['id'], '1.000')])
+        put('15', [shared_b], {}, [('705', 'story', shared_b['id'], '2.000'), ('706', 'story', shared_b['id'], None),
+                                  ('709', 'story', cap0['id'], 'foreign'), ('707', 'story', uid(9999), 'undefined')])
+        epics = [c(1000 + i, f'Epic{i:02d}', 'epic') for i in range(1, 31)]
+        stories = [c(2000 + i, f'Story{i:02d}') for i in range(2, 30)]
+        put('20', epics + stories, {'story': {'order': ['status', stories[0]['id'], 'priority'], 'hidden': ['key']}},
+            [('710', 'epic', epics[0]['id'], '3.000'), ('710', 'story', stories[0]['id'], '4.500')])
+        put('21', [], {'epic': {'order': ['status', 'assignee'], 'hidden': ['key']}})
+        put('22')  # empty: skipped
+        put('23', [], {'story': {'order': ['gone', 'status'], 'hidden': []}})
+        put('30', [intent_archived], {}, [('702', 'story', intent_archived['id'], 'b')])
+
+    def golden_run(self, workspace, view_limit=None):
+        limit = patch.object(review, 'MAX_GROUP_VIEWS', view_limit) if view_limit else contextlib.nullcontext()
+        with limit:
+            code, dry = self.adopt(workspace=workspace)
+            self.assertEqual(code, 0)
+            digest = next(token for token in dry.split() if token.startswith('sha256:'))
+            code, applied = self.adopt('--apply', '--expected-sha256', digest, workspace=workspace)
+        self.assertEqual(code, 0)
+        return dry, applied
+
+    def golden_state(self):
+        fingerprint = lambda rows: (len(rows), hashlib.sha256(repr(rows).encode('utf-8')).hexdigest()[:16])  # noqa: E731
+        schemas, cells, views = self.group_state()
+        return fingerprint(schemas), fingerprint(cells), fingerprint(views)
+
+    def test_golden_state_fresh_path_rich_workspace(self):
+        workspace = self.golden_workspace(uid(1))
+        self.golden_rich_fixture(workspace)
+        dry, applied = self.golden_run(workspace, view_limit=3)
+        self.assertEqual((dry, applied, self.golden_state()), GOLDEN_RICH)
+
+    def test_golden_state_fresh_path_archive_only_workspace(self):
+        workspace = self.golden_workspace(uid(2))
+        self.golden_put(workspace, '40', [col('Gone', identity=uid(4000), archived=True)])
+        dry, applied = self.golden_run(workspace)
+        self.assertEqual((dry, applied, self.golden_state()), GOLDEN_ARCHIVE_ONLY)
+
+    def test_golden_state_fresh_path_layout_only_workspace(self):
+        workspace = self.golden_workspace(uid(3))
+        self.golden_put(workspace, '50', [], {'story': {'order': ['status', 'gone'], 'hidden': ['key']}})
+        dry, applied = self.golden_run(workspace)
+        self.assertEqual((dry, applied, self.golden_state()), GOLDEN_LAYOUT_ONLY)
+
     # Process isolation
     def test_fresh_interpreter_import_does_not_load_jira_server(self):
         code = ("import importlib.util, sys; sys.path.insert(0, sys.argv[1]); "
@@ -509,6 +597,66 @@ class AdoptionTests(unittest.TestCase):
         self.assertEqual(refused.returncode, 1)
         self.assertIn('ValueError', refused.stderr)
         self.assertTrue(self.empty())
+
+
+# Captured from the unmodified script and checked against counts derived by hand from the fixtures
+# (rich workspace: 10 reviews with content and 1 empty, 18 cells = 7 mapped [5 kept, 2 conflicts] + 1 archived + 3 intent
+# + 4 cap + 3 orphan). Each tuple is (dry-run stdout, apply stdout, (schemas, cells, views) as (row count, sha256 prefix)).
+_RICH_REPORT = (
+    f'workspace {uid(1)} groups 2: group-x group-y\n'
+    'legacy reviews 10 (skipped empty 1), legacy cells 18\n'
+    'columns adopted: epic 30, story 30\n'
+    f'merged {uid(3101)}: {uid(3101)}@13; archived {uid(3100)}@12\n'
+    f'merged {uid(3200)}: {uid(3200)}@14 {uid(3201)}@15\n'
+    'archive intent: keys 1, cells dropped 3\n'
+    'archived members discarded: 1, cells dropped 1\n'
+    f'cap excluded: keys 3, cells dropped 4; members {uid(1000)}@10 {uid(2000)}@10 {uid(2100)}@11 {uid(2001)}@10\n'
+    'conflicting cell values dropped: 2\n'
+    'orphan cells dropped: 3\n'
+    'views: 3 written per group, skipped by cap 1 (Sprints 10)\n'
+    'derived: story sum rollups 30, epic inherited 30\n'
+    'group group-x: workspace_group_review_schemas=1 group_review_cells=5 group_sprint_review_views=3\n'
+    'group group-y: workspace_group_review_schemas=1 group_review_cells=5 group_sprint_review_views=3\n'
+    'sha256:d585664cead27674b5760b5e74caf30ec3bad5867e2e718c0156cacc788010ba\n')
+GOLDEN_RICH = (_RICH_REPORT + 'dry-run only; no database changes applied\n', _RICH_REPORT + 'applied: 2 groups\n',
+               ((2, '23cfad495609ff7d'), (10, 'cd803b24729363bf'), (6, '8e3eb23b5ae831c7')))
+
+# An archive-only workspace and a layout-only workspace still get an empty revision-1 schema row in every group.
+_ARCHIVE_ONLY_REPORT = (
+    f'workspace {uid(2)} groups 2: group-x group-y\n'
+    'legacy reviews 1 (skipped empty 0), legacy cells 0\n'
+    'columns adopted: epic 0, story 0\n'
+    'archive intent: keys 1, cells dropped 0\n'
+    'archived members discarded: 0, cells dropped 0\n'
+    'cap excluded: keys 0, cells dropped 0; members none\n'
+    'conflicting cell values dropped: 0\n'
+    'orphan cells dropped: 0\n'
+    'views: 0 written per group, skipped by cap 0\n'
+    'derived: story sum rollups 0, epic inherited 0\n'
+    'group group-x: workspace_group_review_schemas=1 group_review_cells=0 group_sprint_review_views=0\n'
+    'group group-y: workspace_group_review_schemas=1 group_review_cells=0 group_sprint_review_views=0\n'
+    'sha256:38da22ea2bbee8604164aea9d0fd75aaf5e40794eb308283373388a88faf1418\n')
+GOLDEN_ARCHIVE_ONLY = (_ARCHIVE_ONLY_REPORT + 'dry-run only; no database changes applied\n',
+                       _ARCHIVE_ONLY_REPORT + 'applied: 2 groups\n',
+                       ((2, '011ca447e5f7b66c'), (0, '4f53cda18c2baa0c'), (0, '4f53cda18c2baa0c')))
+
+_LAYOUT_ONLY_REPORT = (
+    f'workspace {uid(3)} groups 2: group-x group-y\n'
+    'legacy reviews 1 (skipped empty 0), legacy cells 0\n'
+    'columns adopted: epic 0, story 0\n'
+    'archive intent: keys 0, cells dropped 0\n'
+    'archived members discarded: 0, cells dropped 0\n'
+    'cap excluded: keys 0, cells dropped 0; members none\n'
+    'conflicting cell values dropped: 0\n'
+    'orphan cells dropped: 0\n'
+    'views: 1 written per group, skipped by cap 0\n'
+    'derived: story sum rollups 0, epic inherited 0\n'
+    'group group-x: workspace_group_review_schemas=1 group_review_cells=0 group_sprint_review_views=1\n'
+    'group group-y: workspace_group_review_schemas=1 group_review_cells=0 group_sprint_review_views=1\n'
+    'sha256:0c129877fe175ecc2934ee693dd6c742c931faf3923acce1aafbc459be1fb01d\n')
+GOLDEN_LAYOUT_ONLY = (_LAYOUT_ONLY_REPORT + 'dry-run only; no database changes applied\n',
+                      _LAYOUT_ONLY_REPORT + 'applied: 2 groups\n',
+                      ((2, '2227f9ae11ea6f9d'), (0, '4f53cda18c2baa0c'), (2, 'd503cd3128994d50')))
 
 
 if __name__ == '__main__':

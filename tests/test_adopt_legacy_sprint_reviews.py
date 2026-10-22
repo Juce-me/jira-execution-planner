@@ -13,7 +13,7 @@ import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import uuid
 
 from sqlalchemy import event, text
@@ -652,14 +652,21 @@ class AdoptionTests(unittest.TestCase):
             row = session.query(models.WorkspaceGroupReviewSchema).filter_by(workspace_id=self.workspace, group_id=group).first()
             return row.schema_revision if row else 0
 
-    def live_schema(self, step, group='group-x', sprint='17'):
-        context = RequestAuthContext(
+    def live_context(self):
+        return RequestAuthContext(
             auth_mode='atlassian_oauth', user_id='synthetic-user', stable_subject='synthetic-user',
             atlassian_account_id='synthetic-account', workspace_id=self.workspace,
             auth_connection_id='synthetic-db-connection', cloud_id='synthetic-cloud',
             site_url='https://synthetic.example.test', token_version='1', account_status='active', is_admin=False)
-        return review.save_review(context, sprint, {'groupId': group, 'baseSchemaRevision': self.live_revision(group),
-                                                    'schemaChanges': [step], 'cellChanges': []}, self.url)
+
+    def live_search(self, payload, **kwargs):
+        ids = payload['jql'].split('(')[1].split(')')[0].split(',')
+        return Mock(status_code=200, json=lambda: {'issues': [
+            {'id': issue, 'fields': {'issuetype': {'name': 'Story', 'subtask': False}}} for issue in ids], 'isLast': True})
+
+    def live_schema(self, step, group='group-x', sprint='17'):
+        return review.save_review(self.live_context(), sprint, {'groupId': group, 'baseSchemaRevision': self.live_revision(group),
+                                                                'schemaChanges': [step], 'cellChanges': []}, self.url)
 
     def workspace_state(self, workspace=None):
         workspace = workspace or self.workspace
@@ -1006,6 +1013,38 @@ class AdoptionTests(unittest.TestCase):
         self.assertTrue(set(before) <= set(self.cells()))
         self.assertEqual(self.schema('group-y')[0], 2)  # the untouched group got the late column too
         self.assertIn(('104', 'story', uid(3), '4', 1), self.cells('group-y'))
+
+    def test_after_a_merge_reads_return_the_merged_data_and_stale_clients_conflict(self):
+        self.legacy('17', [col('Risk', identity=uid(1))], {'story': {'order': ['status', uid(1)], 'hidden': []}},
+                    [('101', 'story', uid(1), '1.000'), ('102', 'story', uid(1), '2.000')])
+        self.live_group('group-x', [group_col(10, 'Other')], revision=2, views=[('200', {'story': {'order': ['status'], 'hidden': []}})])
+        context, search = self.live_context(), Mock(side_effect=self.live_search)
+        self.assertEqual(self.merge_apply('--group', 'group-x')[0], 0)
+        loaded = review.load_review(context, '17', 'group-x', self.url)
+        self.assertEqual([c['id'] for c in loaded['columns']], [uid(10), uid(1)])
+        self.assertEqual((loaded['schemaRevision'], loaded['viewRevision'], loaded['inheritedFrom']), (3, 1, None))
+        self.assertEqual(loaded['layouts'], {'story': {'order': ['status', uid(1)], 'hidden': []}})
+        values = review.read_values(context, '17', {'groupId': 'group-x', 'issueIds': ['101', '102'], 'rowKind': 'story'}, self.url, search)
+        self.assertEqual(sorted((c['issueId'], c['value'], c['revision']) for c in values['cells']),
+                         [('101', '1.000', 1), ('102', '2.000', 1)])
+
+        def conflict(payload):  # a client that loaded before the merge still holds schema revision 2, view 0, cell revision 0
+            with self.assertRaises(review.ReviewError) as caught:
+                review.save_review(context, '17', payload, self.url, search)
+            self.assertEqual((caught.exception.code, caught.exception.status), ('review_conflict', 409))
+            return caught.exception.details
+        added = {'action': 'add', 'column': {'id': uid(30), 'rowKind': 'story', 'label': 'Late', 'type': 'number', 'aggregation': 'sum'}}
+        self.assertTrue(conflict({'groupId': 'group-x', 'baseSchemaRevision': 2, 'schemaChanges': [added], 'cellChanges': []})['schemaConflict'])
+        layout = {'action': 'layout', 'rowKind': 'story', 'order': ['status'], 'hidden': []}
+        self.assertTrue(conflict({'groupId': 'group-x', 'baseSchemaRevision': 3, 'baseViewRevision': 0,
+                                  'schemaChanges': [layout], 'cellChanges': []})['viewConflict'])
+        draft = {'issueId': '101', 'rowKind': 'story', 'columnId': uid(1), 'value': '9', 'baseRevision': 0}
+        details = conflict({'groupId': 'group-x', 'baseSchemaRevision': 3, 'schemaChanges': [], 'cellChanges': [draft]})
+        self.assertEqual([(c['issueId'], c['value'], c['revision']) for c in details['cellConflicts']], [('101', '1.000', 1)])
+        untouched = dict(draft, issueId='103')  # a draft on a cell the merge did not insert is unaffected
+        saved = review.save_review(context, '17', {'groupId': 'group-x', 'baseSchemaRevision': 3, 'schemaChanges': [],
+                                                   'cellChanges': [untouched]}, self.url, search)
+        self.assertEqual([(c['issueId'], c['revision']) for c in saved['cells']], [('103', 1)])
 
     def test_read_group_state_treats_an_untouched_row_as_absent(self):
         self.live_group('group-x', [], revision=0)

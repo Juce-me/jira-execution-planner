@@ -100,8 +100,8 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
             return ([(s.group_id, s.schema_revision, [c['id'] for c in s.columns]) for s in schemas],
                     sorted((v.sprint_id, v.view_revision, v.layouts) for v in session.query(models.GroupSprintReviewView).all()))
 
-    def wait_until_blocked(self):
-        """Wait until another backend waits on a lock while touching the group schema table."""
+    def wait_until_blocked(self, count=1):
+        """Wait until `count` other backends wait on a lock while touching the group schema table."""
         deadline = time.monotonic() + 4
         query = text("""
             SELECT count(*) FROM pg_stat_activity
@@ -111,7 +111,7 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
         """)
         while time.monotonic() < deadline:
             with self.admin.connect() as conn:
-                if conn.execute(query).scalar():
+                if conn.execute(query).scalar() >= count:
                     return
             time.sleep(0.02)
         raise AssertionError('second writer never waited on the group schema row lock')
@@ -364,6 +364,132 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
         self.assertLess(elapsed, 12)
         self.assertEqual(held['value']['schemaRevision'], 1)
         self.assertEqual(self.rows(), ([('group-x', 1, [self.column['id']])], []))
+
+    # Merge-mode races (#299): per-group schema row locks against application writers
+    def merge_digest(self):
+        code, output = self.adopt('--merge')
+        self.assertEqual(code, 0)
+        return next(token for token in output.split() if token.startswith('sha256:'))
+
+    def test_merge_holds_the_group_schema_lock_and_a_writer_then_sees_the_merged_rows(self):
+        legacy_column = self.seed_legacy()
+        digest = self.merge_digest()
+        entered, release, results = Event(), Event(), {}
+
+        def paused(_session):
+            entered.set()
+            if not release.wait(8):
+                raise AssertionError('script never released')
+
+        def run(name, action):
+            try:
+                results[name] = action()
+            except Exception as error:  # noqa: BLE001 - returned to the test for assertion
+                results[name] = error
+
+        script = Thread(target=run, args=('script', lambda: self.adopt('--merge', '--apply', '--expected-sha256', digest)))
+        writer = Thread(target=run, args=('writer', lambda: self.save(schemas=[self.layout()], base=0, view=0, sprint='40')))
+        with patch.object(adopt, '_before_write', paused):
+            script.start()
+            try:
+                self.assertTrue(entered.wait(8), 'merge never reached its locked transaction')
+                writer.start()
+                self.wait_until_blocked()
+                self.assertNotIn('writer', results)
+            finally:
+                release.set()
+                script.join(10)
+                if writer.ident is not None:
+                    writer.join(10)
+        self.assertFalse(script.is_alive() or writer.is_alive())
+        self.assertEqual(results['script'][0], 0)
+        saved = results['writer']
+        self.assertNotIsInstance(saved, Exception)
+        self.assertEqual(([c['id'] for c in saved['columns']], saved['schemaRevision'], saved['viewRevision']),
+                         ([legacy_column], 1, 1))
+        schemas, views = self.rows()
+        self.assertEqual(schemas, [('group-x', 1, [legacy_column])])
+        self.assertEqual([(v[0], v[1]) for v in views], [('16', 1), ('40', 1)])
+
+    def test_writer_holding_the_schema_lock_past_lock_timeout_makes_merge_exit_2_with_zero_writes(self):
+        self.seed_legacy()
+        self.add()
+        digest = self.merge_digest()
+        other = self.new_column('Other')
+        with self.held_writer(lambda: self.save(schemas=[{'action': 'add', 'column': other}], base=1)) as held:
+            started = time.monotonic()
+            code, _ = self.adopt('--merge', '--apply', '--expected-sha256', digest)
+            elapsed = time.monotonic() - started
+        self.assertEqual(code, 2)
+        self.assertGreaterEqual(elapsed, 4.5)
+        self.assertLess(elapsed, 12)
+        self.assertEqual(held['value']['schemaRevision'], 2)
+        self.assertEqual(self.rows(), ([('group-x', 2, [self.column['id'], other['id']])], []))
+        with db_engine.session_scope(self.url) as session:
+            self.assertEqual(session.execute(text('SELECT count(*) FROM group_review_cells')).scalar(), 0)
+
+    def test_merge_takes_no_exclusive_lock_on_the_group_tables(self):
+        self.seed_legacy()
+        digest = self.merge_digest()
+        modes = {}
+
+        def inspect_locks(session):
+            rows = session.execute(text("""
+                SELECT c.relname, l.mode FROM pg_locks l JOIN pg_class c ON c.oid = l.relation
+                WHERE l.pid = pg_backend_pid() AND c.relname = ANY(:tables)
+            """), {'tables': list(GROUP_TABLES + LEGACY_TABLES)}).all()
+            for name, mode in rows:
+                modes.setdefault(name, set()).add(mode)
+        with patch.object(adopt, '_before_write', inspect_locks):
+            self.assertEqual(self.adopt('--merge', '--apply', '--expected-sha256', digest)[0], 0)
+        strong = {'ShareLock', 'ShareRowExclusiveLock', 'ExclusiveLock', 'AccessExclusiveLock', 'ShareUpdateExclusiveLock'}
+        for table in GROUP_TABLES:
+            self.assertFalse(modes.get(table, set()) & strong, table)
+        for table in LEGACY_TABLES:
+            self.assertIn('ShareLock', modes[table])
+        self.assertIn('RowShareLock', modes['workspace_group_review_schemas'])  # SELECT ... FOR UPDATE on the schema row
+
+    def test_merge_holds_the_first_group_lock_while_waiting_on_a_second_held_by_a_writer(self):
+        with db_engine.session_scope(self.url) as session:
+            config = session.query(models.WorkspaceGroupConfig).filter_by(workspace_id=self.workspace_id).one()
+            config.payload = {'version': 1, 'defaultGroupId': 'group-x',
+                              'groups': [{'id': 'group-x', 'name': 'Platform'}, {'id': 'group-y', 'name': 'Payments'}]}
+        self.seed_legacy()
+        digest = self.merge_digest()
+        other = self.new_column('Other')
+        hold_group_y = lambda: review.save_review(self.context, '17', {  # noqa: E731
+            'groupId': 'group-y', 'baseSchemaRevision': 0, 'schemaChanges': [{'action': 'add', 'column': other}], 'cellChanges': []},
+            self.url, self.search)
+        results = {}
+
+        def run(name, action):
+            try:
+                results[name] = action()
+            except Exception as error:  # noqa: BLE001 - returned to the test for assertion
+                results[name] = error
+
+        merge = Thread(target=run, args=('merge', lambda: self.adopt('--merge', '--apply', '--expected-sha256', digest)))
+        writer = Thread(target=run, args=('writer', lambda: self.save(schemas=[self.layout()], base=0, view=0, sprint='40')))
+        with self.held_writer(hold_group_y) as held:
+            merge.start()
+            try:
+                self.wait_until_blocked(1)  # the merge holds group-x and waits for group-y's row
+                writer.start()
+                self.wait_until_blocked(2)  # a group-x writer now waits for the merge
+                self.assertNotIn('writer', results)
+            finally:
+                merge.join(15)
+                if writer.ident is not None:
+                    writer.join(15)
+        self.assertFalse(merge.is_alive() or writer.is_alive())
+        self.assertEqual(results['merge'][0], 2)  # timed out waiting for group-y; nothing written, nothing deadlocked
+        self.assertNotIsInstance(results['writer'], Exception)
+        self.assertEqual(held['value']['schemaRevision'], 1)
+        schemas, views = self.rows()
+        self.assertEqual(sorted(schemas), [('group-x', 0, []), ('group-y', 1, [other['id']])])
+        self.assertEqual([(v[0], v[1]) for v in views], [('40', 1)])  # the writer's own view; no merged Sprint 16 view
+        with db_engine.session_scope(self.url) as session:
+            self.assertEqual(session.execute(text('SELECT count(*) FROM group_review_cells')).scalar(), 0)
 
     # Migration
     def test_model_database_parity(self):

@@ -503,8 +503,10 @@ class AdoptionTests(unittest.TestCase):
                 'version': 1, 'groups': [dict(g) for g in GROUPS], 'defaultGroupId': 'group-x'}))
         return identity
 
+    golden_row_base = 9000
+
     def golden_put(self, workspace, sprint, columns=(), layouts=None, cells=()):
-        self.legacy(sprint, list(columns), layouts, list(cells), workspace=workspace, identity=uid(9000 + int(sprint)))
+        self.legacy(sprint, list(columns), layouts, list(cells), workspace=workspace, identity=uid(self.golden_row_base + int(sprint)))
 
     def golden_rich_fixture(self, workspace):
         c = lambda number, label, kind='story', type_='number', archived=False: col(  # noqa: E731
@@ -617,6 +619,411 @@ class AdoptionTests(unittest.TestCase):
             fresh, merged = adopt._resolve_group(normalized), adopt._resolve_group(normalized, empty)
         for key in ('columns', 'added', 'cells', 'views', 'revision', 'empty'):
             self.assertEqual(merged[key], fresh[key], key)
+
+    # Merge mode (#299)
+    def merge(self, *args, workspace=None):
+        return self.adopt('--merge', *args, workspace=workspace)
+
+    def merge_digest(self, *args, workspace=None):
+        code, output = self.merge(*args, workspace=workspace)
+        self.assertEqual(code, 0)
+        self.assertIn('dry-run only; no database changes applied', output)
+        return next(token for token in output.split() if token.startswith('sha256:'))
+
+    def merge_apply(self, *args, workspace=None):
+        digest = self.merge_digest(*args, workspace=workspace)
+        return self.merge('--apply', '--expected-sha256', digest, *args, workspace=workspace)
+
+    def live_group(self, group='group-x', columns=(), revision=1, cells=(), views=(), workspace=None):
+        workspace = workspace or self.workspace
+        with db_engine.session_scope(self.url) as session:
+            schema = models.WorkspaceGroupReviewSchema(id=str(uuid.uuid4()), workspace_id=workspace, group_id=group,
+                                                       schema_revision=revision, columns=list(columns))
+            session.add(schema)
+            session.flush()
+            session.add_all([models.GroupReviewCell(schema_id=schema.id, issue_id=issue, row_kind=kind, column_id=column_id,
+                                                    value=value, revision=1) for issue, kind, column_id, value in cells])
+            session.add_all([models.GroupSprintReviewView(workspace_id=workspace, group_id=group, sprint_id=sprint,
+                                                          sprint_order=review.sprint_order(sprint), layouts=layouts, view_revision=1)
+                             for sprint, layouts in views])
+
+    def live_revision(self, group='group-x'):
+        with db_engine.session_scope(self.url) as session:
+            row = session.query(models.WorkspaceGroupReviewSchema).filter_by(workspace_id=self.workspace, group_id=group).first()
+            return row.schema_revision if row else 0
+
+    def live_schema(self, step, group='group-x', sprint='17'):
+        context = RequestAuthContext(
+            auth_mode='atlassian_oauth', user_id='synthetic-user', stable_subject='synthetic-user',
+            atlassian_account_id='synthetic-account', workspace_id=self.workspace,
+            auth_connection_id='synthetic-db-connection', cloud_id='synthetic-cloud',
+            site_url='https://synthetic.example.test', token_version='1', account_status='active', is_admin=False)
+        return review.save_review(context, sprint, {'groupId': group, 'baseSchemaRevision': self.live_revision(group),
+                                                    'schemaChanges': [step], 'cellChanges': []}, self.url)
+
+    def workspace_state(self, workspace=None):
+        workspace = workspace or self.workspace
+        with db_engine.session_scope(self.url) as session:
+            schemas = session.query(models.WorkspaceGroupReviewSchema).filter_by(workspace_id=workspace).all()
+            group_of = {schema.id: schema.group_id for schema in schemas}
+            cells = session.query(models.GroupReviewCell).filter(models.GroupReviewCell.schema_id.in_(list(group_of))).all() if group_of else []
+            views = session.query(models.GroupSprintReviewView).filter_by(workspace_id=workspace).all()
+            return {'schemas': {s.group_id: (s.schema_revision, repr(s.columns)) for s in schemas},
+                    'cells': sorted((group_of[c.schema_id], c.issue_id, c.row_kind, c.column_id, repr(c.value), c.revision) for c in cells),
+                    'views': sorted((v.group_id, v.sprint_id, v.sprint_order, v.view_revision, repr(v.layouts)) for v in views)}
+
+    def list_output(self, *args):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.assertEqual(adopt.main(['--list', *args]), 0)
+        return output.getvalue()
+
+    def test_merge_into_empty_groups_equals_fresh_adoption(self):
+        fresh = self.golden_workspace(uid(1))
+        self.golden_rich_fixture(fresh)
+        self.golden_row_base = 19000
+        merged = self.golden_workspace(uid(2))
+        self.golden_rich_fixture(merged)
+        with patch.object(review, 'MAX_GROUP_VIEWS', 3):
+            self.assertEqual(self.adopt('--apply', '--expected-sha256', self.digest(fresh), workspace=fresh)[0], 0)
+            self.assertEqual(self.merge_apply(workspace=merged)[0], 0)
+        self.assertEqual(self.workspace_state(merged), self.workspace_state(fresh))
+        self.assertEqual((len(self.workspace_state(fresh)['cells']), len(self.workspace_state(fresh)['views'])), (10, 6))
+
+    def test_created_row_ends_at_revision_one_including_views_only(self):
+        workspace = self.golden_workspace(uid(3))
+        self.golden_put(workspace, '50', [], {'story': {'order': ['status', 'gone'], 'hidden': ['key']}})
+        self.assertEqual(self.merge_apply(workspace=workspace)[0], 0)
+        state = self.workspace_state(workspace)
+        self.assertEqual(state['schemas'], {'group-x': (1, '[]'), 'group-y': (1, '[]')})
+        self.assertEqual([view[:2] for view in state['views']], [('group-x', '50'), ('group-y', '50')])
+
+    def test_an_empty_plan_group_is_neither_locked_nor_written(self):
+        risk = col('Risk', identity=uid(1))
+        self.legacy('17', [risk], {}, [('101', 'story', uid(1), '1.000')])
+        self.live_group('group-x', [group_col(1, 'Risk')], revision=2, cells=[('101', 'story', uid(1), '1.000')])
+        before = self.workspace_state()
+        locked, real = [], review._locked_schema
+        with patch.object(review, '_locked_schema', side_effect=lambda session, context, group: (locked.append(group), real(session, context, group))[1]):
+            self.assertEqual(self.merge_apply()[0], 0)
+        self.assertEqual(locked, ['group-y'])
+        after = self.workspace_state()
+        self.assertEqual(after['schemas']['group-x'], before['schemas']['group-x'])
+        self.assertEqual(after['schemas']['group-y'][0], 1)
+        self.assertEqual([c for c in after['cells'] if c[0] == 'group-x'], before['cells'])
+
+    def test_groups_are_locked_in_sorted_order(self):
+        self.set_groups([{'id': 'group-z', 'name': 'Z'}, {'id': 'group-m', 'name': 'M'}, {'id': 'group-a', 'name': 'A'}])
+        self.simple()
+        locked, real = [], review._locked_schema
+        with patch.object(review, '_locked_schema', side_effect=lambda session, context, group: (locked.append(group), real(session, context, group))[1]):
+            self.assertEqual(self.merge_apply()[0], 0)
+        self.assertEqual(locked, ['group-a', 'group-m', 'group-z'])
+
+    def test_merge_lock_order_and_lock_timeout_mapping(self):
+        class LockNotAvailable(Exception):
+            sqlstate = '55P03'
+
+        class FakeSession:
+            def __init__(self, dialect, fail=False):
+                self.bind = SimpleNamespace(dialect=SimpleNamespace(name=dialect))
+                self.statements, self.fail = [], fail
+
+            def execute(self, statement, params=None):
+                self.statements.append(str(statement))
+                if self.fail and 'LOCK TABLE' in str(statement):
+                    raise DBAPIError(str(statement), params, LockNotAvailable())
+
+        calls = []
+        locked = lambda session, context, group: (calls.append((group, context.workspace_id)), SimpleNamespace(id=group))[1]  # noqa: E731
+        with patch.object(review, '_locked_schema', locked):
+            session = FakeSession('postgresql')
+            rows = adopt._lock_merge(session, 'w1', ['group-z', 'group-a'])
+            self.assertEqual(session.statements, ['LOCK TABLE workspace_sprint_reviews IN SHARE MODE',
+                                                  'LOCK TABLE sprint_review_cells IN SHARE MODE'])  # no lock on the group tables
+            self.assertEqual((calls, sorted(rows)), ([('group-a', 'w1'), ('group-z', 'w1')], ['group-a', 'group-z']))
+            with self.assertRaises(adopt.AdoptionLockTimeout):
+                adopt._lock_merge(FakeSession('postgresql', fail=True), 'w1', ['group-a'])
+            sqlite = FakeSession('sqlite')
+            adopt._lock_merge(sqlite, 'w1', ['group-a'])
+            self.assertEqual(sqlite.statements, [])
+
+        def timing_out(session, context, group):
+            raise DBAPIError('lock', None, LockNotAvailable())
+        with patch.object(review, '_locked_schema', timing_out), self.assertRaises(adopt.AdoptionLockTimeout):
+            adopt._lock_merge(FakeSession('postgresql'), 'w1', ['group-a'])
+
+    def test_merge_dry_run_writes_nothing_and_apply_requires_a_matching_digest(self):
+        self.simple()
+        before = self.workspace_state()
+        digest = self.merge_digest()
+        self.assertEqual(self.workspace_state(), before)
+        with self.assertRaisesRegex(ValueError, 'expected-sha256 is required'):
+            self.merge('--apply')
+        with self.assertRaisesRegex(ValueError, 'sha256: prefix'):
+            self.merge('--apply', '--expected-sha256', 'abc')
+        with self.assertRaisesRegex(ValueError, 'digest mismatch; no database changes applied'):
+            self.merge('--apply', '--expected-sha256', 'sha256:' + '0' * 64)
+        self.assertEqual(self.workspace_state(), before)
+        code, output = self.merge('--apply', '--expected-sha256', digest)
+        self.assertEqual(code, 0)
+        self.assertIn('applied: 2 groups written, 0 unchanged', output)
+
+    def test_merge_digest_precedence_a_stale_digest_exits_1_and_a_fresh_one_finds_nothing_to_merge(self):
+        self.simple()
+        first = self.merge_digest()
+        self.assertEqual(self.merge('--apply', '--expected-sha256', first)[0], 0)
+        applied = self.workspace_state()
+        with self.assertRaisesRegex(ValueError, 'digest mismatch; no database changes applied'):
+            self.merge('--apply', '--expected-sha256', first)
+        code, output = self.merge('--apply', '--expected-sha256', self.merge_digest())
+        self.assertEqual(code, 0)
+        self.assertIn('nothing to merge; no database changes applied', output)
+        self.assertEqual(self.workspace_state(), applied)
+
+    def test_merge_digest_ignores_unrelated_live_edits_but_changes_with_a_column_or_a_decision(self):
+        self.legacy('17', [col('Risk', identity=uid(1))], {}, [('101', 'story', uid(1), '1.000'), ('102', 'story', uid(1), '2.000')])
+        self.live_group('group-x', [group_col(10, 'Risk')], revision=2)
+        base = self.merge_digest()
+
+        def edit(change):
+            with db_engine.session_scope(self.url) as session:
+                schema = session.query(models.WorkspaceGroupReviewSchema).filter_by(
+                    workspace_id=self.workspace, group_id='group-x').one()
+                change(session, schema)
+        edit(lambda session, schema: session.add(models.GroupReviewCell(  # an issue the legacy data never mentions
+            schema_id=schema.id, issue_id='999', row_kind='story', column_id=uid(10), value='9', revision=1)))
+        self.assertEqual(self.merge_digest(), base)
+        edit(lambda session, schema: session.add(models.GroupReviewCell(  # flips an insert into a skip
+            schema_id=schema.id, issue_id='101', row_kind='story', column_id=uid(10), value='live', revision=1)))
+        flipped = self.merge_digest()
+        self.assertNotEqual(flipped, base)
+        edit(lambda session, schema: setattr(schema, 'schema_revision', 3))  # a column change in a group being written
+        self.assertNotEqual(self.merge_digest(), flipped)
+
+    def test_merge_digest_ignores_a_column_change_in_a_group_with_nothing_to_merge(self):
+        self.legacy('17', [col('Risk', identity=uid(1))], {}, [('101', 'story', uid(1), '1.000')])
+        self.live_group('group-x', [group_col(1, 'Risk')], revision=2, cells=[('101', 'story', uid(1), '1.000')])  # complete
+        base = self.merge_digest()  # group-y has no rows, so it is the group being written
+        self.live_schema({'action': 'add', 'column': {'id': uid(20), 'rowKind': 'story', 'label': 'Live', 'type': 'number', 'aggregation': 'sum'}})
+        self.assertEqual(self.live_revision(), 3)
+        self.assertEqual(self.merge_digest(), base)
+        self.assertEqual(self.merge('--apply', '--expected-sha256', base)[0], 0)
+        self.assertEqual(self.schema('group-x')[0], 3)  # the written group was group-y; group-x kept its own revision
+        self.assertEqual(self.schema('group-y')[0], 1)
+
+    def test_a_live_save_between_the_phases_aborts_with_zero_writes_and_keeps_the_live_column(self):
+        self.legacy('17', [col('Risk', identity=uid(1))], {}, [('101', 'story', uid(1), '1.000')])
+        self.live_group('group-x', [group_col(10, 'Other')], revision=2)
+        digest = self.merge_digest()
+        live_column = {'action': 'add', 'column': {'id': uid(20), 'rowKind': 'story', 'label': 'Live', 'type': 'number', 'aggregation': 'sum'}}
+        with patch.object(adopt, '_before_lock', lambda: self.live_schema(live_column)):
+            with self.assertRaisesRegex(ValueError, 'data changed since the dry run'):
+                self.merge('--apply', '--expected-sha256', digest)
+        state = self.workspace_state()
+        self.assertEqual(state['schemas']['group-x'][0], 3)  # the live save only
+        self.assertIn(uid(20), state['schemas']['group-x'][1])  # the live column survived
+        self.assertNotIn(uid(1), state['schemas']['group-x'][1])  # nothing was merged
+        self.assertNotIn('group-y', state['schemas'])  # no lock-created row was committed
+        self.assertEqual(state['cells'], [])
+
+    def test_an_unrelated_live_cell_between_the_phases_still_applies(self):
+        self.legacy('17', [col('Risk', identity=uid(1))], {}, [('101', 'story', uid(1), '1.000')])
+        self.live_group('group-x', [group_col(10, 'Other')], revision=2)
+        digest = self.merge_digest()
+
+        def unrelated_cell():
+            with db_engine.session_scope(self.url) as session:
+                schema = session.query(models.WorkspaceGroupReviewSchema).filter_by(workspace_id=self.workspace, group_id='group-x').one()
+                session.add(models.GroupReviewCell(schema_id=schema.id, issue_id='999', row_kind='story', column_id=uid(10), value='9', revision=1))
+        with patch.object(adopt, '_before_lock', unrelated_cell):
+            self.assertEqual(self.merge('--apply', '--expected-sha256', digest)[0], 0)
+        state = self.workspace_state()
+        self.assertIn(uid(1), state['schemas']['group-x'][1])
+        self.assertIn(('group-x', '999', 'story', uid(10), "'9'", 1), state['cells'])
+
+    def test_a_failure_in_a_later_group_rolls_back_every_group(self):
+        self.simple()
+        real, calls = adopt._insert, []
+
+        def failing(session, model, rows):
+            calls.append(model.__tablename__)
+            if len(calls) > 2:  # the first group's cells and views went in
+                raise RuntimeError('boom')
+            return real(session, model, rows)
+        with patch.object(adopt, '_insert', failing):
+            with self.assertRaises(RuntimeError):
+                self.merge_apply()
+        self.assertEqual(self.workspace_state(), {'schemas': {}, 'cells': [], 'views': []})
+
+    def test_every_preexisting_live_row_is_byte_identical_after_apply(self):
+        risk, late = col('Risk', identity=uid(1)), col('Late', identity=uid(2))
+        self.legacy('17', [risk, late], {}, [('101', 'story', uid(1), '1'), ('102', 'story', uid(2), '2')])
+        self.live_group('group-x', [group_col(10, 'Risk')], revision=4, cells=[('101', 'story', uid(10), 'live')],
+                        views=[('200', {'story': {'order': ['status'], 'hidden': []}})])
+
+        def rows():
+            with db_engine.session_scope(self.url) as session:
+                schema = session.query(models.WorkspaceGroupReviewSchema).filter_by(workspace_id=self.workspace, group_id='group-x').one()
+                return ((schema.id, schema.schema_revision, repr(schema.columns)),
+                        {c.id: (c.issue_id, c.row_kind, c.column_id, c.value, c.revision)
+                         for c in session.query(models.GroupReviewCell).filter_by(schema_id=schema.id).all()},
+                        {v.id: (v.sprint_id, v.sprint_order, v.view_revision, repr(v.layouts))
+                         for v in session.query(models.GroupSprintReviewView).filter_by(workspace_id=self.workspace, group_id='group-x').all()})
+        (schema_id, revision, columns), cells, views = rows()
+        self.assertEqual(self.merge_apply()[0], 0)
+        (after_id, after_revision, after_columns), after_cells, after_views = rows()
+        self.assertEqual((after_id, after_revision), (schema_id, revision + 1))  # "Late" was added
+        self.assertTrue(after_columns.startswith(columns[:-1]))  # the live column is untouched, a column follows it
+        self.assertEqual({key: value for key, value in after_cells.items() if key in cells}, cells)
+        self.assertEqual({key: value for key, value in after_views.items() if key in views}, views)
+
+    def test_applying_the_merge_twice_is_a_noop_and_list_says_adopted(self):
+        self.simple()
+        self.live_group('group-x', [group_col(10, 'Other')], revision=2)
+        self.assertIn('status=needs-merge', self.list_output('--workspace-id', self.workspace))
+        self.assertEqual(self.merge_apply()[0], 0)
+        applied = self.workspace_state()
+        self.assertIn('status=adopted', self.list_output('--workspace-id', self.workspace))
+        code, output = self.merge_apply()
+        self.assertEqual(code, 0)
+        self.assertIn('nothing to merge', output)
+        self.assertEqual(self.workspace_state(), applied)
+
+    def test_rerun_after_renaming_a_label_matched_column_adds_a_duplicate(self):
+        self.legacy('17', [col('Risk', identity=uid(1))], {}, [('101', 'story', uid(1), '1')])
+        self.live_group('group-x', [group_col(10, 'Risk')], revision=2)
+        self.live_group('group-y', [group_col(10, 'Risk')], revision=2)
+        self.assertEqual(self.merge_apply()[0], 0)
+        self.assertIn('nothing to merge', self.merge_apply()[1])
+        with db_engine.session_scope(self.url) as session:  # a label match leaves no marker: renaming it forgets the pairing
+            schema = session.query(models.WorkspaceGroupReviewSchema).filter_by(workspace_id=self.workspace, group_id='group-x').one()
+            schema.columns = [dict(column, label='Points') for column in schema.columns]
+        output = self.merge()[1]
+        self.assertIn('group group-x: columns added: epic 0, story 1', output)  # the documented limit
+        self.assertIn('group group-y: columns added: epic 0, story 0', output)
+
+    def test_group_filter_limits_the_targets_and_an_unknown_group_aborts(self):
+        self.simple()
+        self.assertEqual(self.merge_apply('--group', 'group-y')[0], 0)
+        self.assertEqual(sorted(self.workspace_state()['schemas']), ['group-y'])
+        with self.assertRaisesRegex(ValueError, 'unknown group ids: nope'):
+            self.merge('--group', 'nope')
+        with self.assertRaisesRegex(ValueError, '--group requires --merge'):
+            self.adopt('--group', 'group-y')
+        with self.assertRaisesRegex(ValueError, '--group needs valid group ids'):
+            self.merge('--group', ' padded ')
+
+    def test_list_statuses_and_a_bad_workspace_does_not_abort_the_survey(self):
+        nothing, pending, needs, done, bad = (self.golden_workspace(uid(number)) for number in (11, 12, 13, 14, 15))
+
+        def put(workspace, label='Risk', sprint='17'):
+            column = col(label)
+            self.legacy(sprint, [column], {'story': {'order': ['status', column['id']], 'hidden': []}},
+                        [('101', 'story', column['id'], '1')], workspace=workspace)
+        put(pending)
+        put(needs)
+        self.live_group('group-x', [group_col(10, 'Other')], revision=1, workspace=needs)
+        put(done)
+        self.assertEqual(self.apply(done)[0], 0)
+        repeated = col('Risk', identity=uid(77))
+        self.legacy('17', [repeated], {}, [], workspace=bad)
+        self.legacy('18', [dict(repeated, label='Different')], {}, [], workspace=bad)
+        self.live_group('group-x', [group_col(10, 'Other')], revision=1, workspace=bad)
+        output = self.list_output()
+        for workspace, line in ((nothing, 'legacy_reviews=0 group_schemas=0 group_views=0 status=nothing to adopt'),
+                                (pending, 'legacy_reviews=1 group_schemas=0 group_views=0 status=pending'),
+                                (needs, 'legacy_reviews=1 group_schemas=1 group_views=0 status=needs-merge'),
+                                (done, 'legacy_reviews=1 group_schemas=2 group_views=2 status=adopted'),
+                                (bad, 'legacy_reviews=2 group_schemas=1 group_views=0 status=error')):
+            self.assertIn(f'workspace {workspace} {line}', output)
+
+    def test_a_plan_above_the_row_ceiling_aborts_before_any_lock(self):
+        column = col('Risk')
+        self.legacy('17', [column], {}, [(str(100 + number), 'story', column['id'], '1') for number in range(5)])
+        locked = []
+        with patch.object(adopt, 'MERGE_MAX_INSERT_ROWS', 4), \
+                patch.object(review, '_locked_schema', side_effect=lambda *args: locked.append(args)):
+            with self.assertRaisesRegex(ValueError, 'group group-x would insert 6 rows, above the 4 ceiling'):
+                self.merge_apply()
+        self.assertEqual(locked, [])
+
+    def test_merge_output_has_counts_and_ids_only_even_with_secrets_on_both_sides(self):
+        self.legacy('17', [col('LegacySecretLabel', type_='text', identity=uid(1))], {},
+                    [('987654321', 'story', uid(1), 'LegacySecretValue')])
+        self.live_group('group-x', [group_col(10, 'legacysecretlabel', type_='text'), group_col(11, 'GroupSecretLabel', type_='text')],
+                        revision=2, cells=[('987654322', 'story', uid(11), 'GroupSecretValue')])
+        dry = self.merge()[1]
+        applied = self.merge_apply()[1]
+        for text_ in (dry, applied):
+            for secret in ('SecretLabel', 'SecretValue', '98765432', 'secretlabel'):
+                self.assertNotIn(secret, text_)
+
+    def test_merge_never_modifies_legacy_rows(self):
+        self.simple()
+        self.legacy('18', [col('Gone', archived=True)], {'epic': {'order': [], 'hidden': []}})
+        before = self.legacy_state()
+        self.merge_apply()
+        self.merge_apply()
+        self.assertEqual(self.legacy_state(), before)
+
+    def test_merge_workspace_isolation_with_the_same_group_id_in_two_workspaces(self):
+        other = self.golden_workspace(uid(21))
+        self.legacy('17', [col('Risk', identity=uid(1))], {}, [('101', 'story', uid(1), '1')])
+        self.legacy('17', [col('Else', identity=uid(2))], {}, [('201', 'story', uid(2), '2')], workspace=other)
+        # In the other workspace the same group id archived this very column id: it must not leak into this plan.
+        self.live_group('group-x', [group_col(1, 'Risk', archived=True)], revision=3, workspace=other)
+        elsewhere = self.workspace_state(other)
+        self.assertEqual(self.merge_apply()[0], 0)
+        self.assertIn(uid(1), self.workspace_state()['schemas']['group-x'][1])
+        self.assertEqual(self.workspace_state(other), elsewhere)
+
+    def test_default_mode_still_refuses_with_a_merge_pointer(self):
+        self.simple()
+        digest = self.digest()
+        self.live_group('group-x', [group_col(10, 'Other')], revision=1)
+        before = self.workspace_state()
+        with self.assertRaisesRegex(ValueError, 'already exist.*re-run with --merge'):
+            self.adopt('--apply', '--expected-sha256', digest)
+        self.assertEqual(self.workspace_state(), before)
+
+    def test_merge_after_fresh_adoption_and_live_use_restores_only_missing_data(self):
+        alpha, beta = col('Alpha', identity=uid(1)), col('Beta', identity=uid(2))
+        self.legacy('17', [alpha, beta], {}, [('101', 'story', uid(1), '1'), ('102', 'story', uid(2), '2')])
+        self.assertEqual(self.apply()[0], 0)  # the fresh adoption
+        self.live_schema({'action': 'rename', 'columnId': uid(1), 'label': 'Renamed'})
+        self.live_schema({'action': 'archive', 'columnId': uid(2), 'archived': True})
+        self.live_schema({'action': 'add', 'column': {'id': uid(30), 'rowKind': 'story', 'label': 'Live', 'type': 'number', 'aggregation': 'sum'}})
+        self.legacy('18', [col('Alpha', identity=uid(1)), col('Late', identity=uid(3))], {},
+                    [('103', 'story', uid(1), '3'), ('104', 'story', uid(3), '4')])  # a late legacy row appears
+        before = self.cells()
+        self.assertEqual(self.merge_apply()[0], 0)
+        revision, columns = self.schema()
+        self.assertEqual(revision, 5)
+        self.assertEqual([(c['id'], c['label'], c['archived']) for c in columns],
+                         [(uid(1), 'Renamed', False), (uid(2), 'Beta', True), (uid(30), 'Live', False), (uid(3), 'Late', False)])
+        self.assertEqual(sorted(set(self.cells()) - set(before)), [('103', 'story', uid(1), '3', 1), ('104', 'story', uid(3), '4', 1)])
+        self.assertTrue(set(before) <= set(self.cells()))
+        self.assertEqual(self.schema('group-y')[0], 2)  # the untouched group got the late column too
+        self.assertIn(('104', 'story', uid(3), '4', 1), self.cells('group-y'))
+
+    def test_read_group_state_treats_an_untouched_row_as_absent(self):
+        self.live_group('group-x', [], revision=0)
+        self.live_group('group-y', [], revision=0, views=[('9', {})])
+        with db_engine.session_scope(self.url) as session:
+            state = adopt._read_group_state(session, self.workspace, ['group-x', 'group-y'], set())
+        self.assertEqual((state['group-x']['exists'], state['group-y']['exists']), (False, True))
+
+    def test_merge_runs_from_the_repo_root_with_exit_codes(self):
+        self.simple()
+        base = [sys.executable, 'scripts/adopt_legacy_sprint_reviews.py', '--workspace-id', self.workspace, '--merge']
+        dry = subprocess.run(base, capture_output=True, text=True, timeout=120, cwd=str(ROOT), env=dict(os.environ))
+        self.assertEqual(dry.returncode, 0, dry.stderr)
+        self.assertIn('dry-run only; no database changes applied', dry.stdout)
+        refused = subprocess.run(base + ['--apply'], capture_output=True, text=True, timeout=120, cwd=str(ROOT), env=dict(os.environ))
+        self.assertEqual(refused.returncode, 1)
+        self.assertIn('ValueError', refused.stderr)
+        self.assertTrue(self.empty())
 
     # Process isolation
     def test_fresh_interpreter_import_does_not_load_jira_server(self):
@@ -808,6 +1215,8 @@ class AdoptionMergeResolutionTests(unittest.TestCase):
         done = self.state([self.group_column(10, 'Risk')], revision=4, cells={('101', 'story', uid(10))})
         self.assertTrue(self.resolve(reviews, done)['empty'])
 
+
+group_col = AdoptionMergeResolutionTests.group_column
 
 # Captured from the unmodified script and checked against counts derived by hand from the fixtures
 # (rich workspace: 10 reviews with content and 1 empty, 18 cells = 7 mapped [5 kept, 2 conflicts] + 1 archived + 3 intent

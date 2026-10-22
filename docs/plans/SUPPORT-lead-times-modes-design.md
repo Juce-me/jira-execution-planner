@@ -3,7 +3,7 @@
 | Field | Value |
 | --- | --- |
 | Date | 2026-10-22 |
-| Status | Approved by the operator 2026-10-22; implemented by [EXEC-lead-times-modes.md](EXEC-lead-times-modes.md) (not started) |
+| Status | Approved by the operator 2026-10-22; implemented by [DONE-lead-times-modes.md](DONE-lead-times-modes.md) (accepted 2026-10-22) |
 | Branch | `feature/lead-times-modes` (from `origin/main`) |
 | Type | Feature (Statistics > Lead Times): frontend, one backend route, share links, docs |
 

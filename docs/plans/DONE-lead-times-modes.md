@@ -1,11 +1,13 @@
 # Lead Times Modes Implementation Plan
 
+> **Status:** Done. Implemented, verified and accepted by the operator on 2026-10-22. Executed on `feature/lead-times-modes` in the layered commits `b39b307c` (backend), `9dd0c6ac` (frontend model, state and UI), `ecc5c4c9` (share links and the regenerated `frontend/dist`) and `0e11579c` (tests, registry and docs); not pushed or merged at the time of this note. The Execution status table and its numbered rulings are the record of what ran and where it diverged (ruling 9: layered commits instead of one per task); the task checkboxes below were not ticked. Kept for audit context only; shipped code, tests and `docs/features/statistics.md` are the source of truth.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 | Field | Value |
 | --- | --- |
 | Date | 2026-10-22 (revised twice the same day, after two rounds of four independent validation reviews) |
-| Status | Planned, awaiting operator review; no implementation started |
+| Status | Done (accepted 2026-10-22); see the top note and the Execution status table |
 | Branch | `feature/lead-times-modes` (from `origin/main`; no issue number yet, rename to `feature/<issue>-lead-times-modes` if one exists) |
 | Spec | [SUPPORT-lead-times-modes-design.md](SUPPORT-lead-times-modes-design.md) (operator-approved 2026-10-22, including its "Amendments from the plan validation"; read it first, it wins on intent) |
 

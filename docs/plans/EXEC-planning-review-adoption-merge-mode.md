@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-Status: Approved 2026-10-22 by the operator, with the recommended answer taken for D-1 to D-12 (D-8: postmortem yes; issue [#299](https://github.com/Juce-me/jira-execution-planner/issues/299) created 2026-10-22). Validated once (three independent read-only reviews, findings applied; this revision is not re-validated). Task 1 done 2026-10-22 (branch cut, symbols re-verified, baseline green); Task 2a is next; no code written.
+Status: Approved 2026-10-22 by the operator, with the recommended answer taken for D-1 to D-12 (D-8: postmortem yes; issue [#299](https://github.com/Juce-me/jira-execution-planner/issues/299) created 2026-10-22). Validated once (three independent read-only reviews, findings applied; this revision is not re-validated). Tasks 1 and 2a done 2026-10-22 (branch cut, symbols re-verified, baseline green, golden-state tests committed); Task 2b is next; the script is unchanged.
 Type: bugfix (operator script, tests, docs; no application code, route, model or migration change)
 Branch: `bugfix/299-review-adoption-merge-mode`. At the operator's direction the agent-generated worktree branch was renamed to this `bugfix/` name (instead of the `feature/` name D-8 proposed) and fast-forwarded to `origin/main` `41c47562` on 2026-10-22, zero commits ahead. `origin/main` is nine commits past the base below; none touches the script, `sprint_review.py` or the adoption tests (empty diff checked 2026-10-22), but Task 1 re-verifies every cited symbol.
 Written: 2026-10-22 against `origin/main` `919eadac` from the #267 design and plan, `scripts/adopt_legacy_sprint_reviews.py`, `backend/services/sprint_review.py`, `tests/test_adopt_legacy_sprint_reviews.py`, a read-only look at a local database that hit the problem, and the downstream release chart.
@@ -154,7 +154,7 @@ Group G after the release: a live Epic number column "Risk" (id N1, created by a
 
 Files: `tests/test_adopt_legacy_sprint_reviews.py`.
 
-- [ ] One new test runs the fresh path on a rich synthetic workspace and compares the full stdout (workspace id masked) plus `group_state()` to a golden value. The fixture covers: an orphan cell and a kind-mismatched cell; same-issue conflicts on cap-excluded, archive-intent and archived keys; an Epic-kind cap and a both-kind cap; layouts with unknown ids, duplicate ids, `key` in `hidden`, and ids of excluded or intent columns; `{}` layouts and a patched `MAX_GROUP_VIEWS`; two groups; an archive-only workspace and a layout-only workspace (the degenerate cases where fresh writes revision-1 rows). Commit this against the unmodified script so it demonstrably passes on the old code.
+- [x] One golden test per workspace (three in all) runs the fresh path on a rich synthetic workspace and compares the full stdout (workspace id masked) plus `group_state()` to a golden value. The fixture covers: an orphan cell and a kind-mismatched cell; same-issue conflicts on cap-excluded, archive-intent and archived keys; an Epic-kind cap and a both-kind cap; layouts with unknown ids, duplicate ids, `key` in `hidden`, and ids of excluded or intent columns; `{}` layouts and a patched `MAX_GROUP_VIEWS`; two groups; an archive-only workspace and a layout-only workspace (the degenerate cases where fresh writes revision-1 rows). Commit this against the unmodified script so it demonstrably passes on the old code.
 
 ### Task 2b: Split the planner (no behavior change)
 
@@ -201,7 +201,7 @@ Files: the doc list above.
 | Task | Status | Commit | Divergences |
 | --- | --- | --- | --- |
 | 1 | done 2026-10-22 | none (no commit step) | Branch is `bugfix/299-...` by operator direction, not `feature/`. Baseline: adoption 23 OK, runner contract 14 OK, PostgreSQL module 12 OK on a throwaway database. |
-| 2a | not started | | |
+| 2a | done 2026-10-22 | `b64da786` | Three golden tests (rich, archive-only, layout-only workspace) instead of one; stdout compared in full including the digest, written rows compared as row counts plus sha256 prefixes. Expected counts derived by hand before capture; five temporary script mutations (cap bound, cell winner, orphan counter, view slice, written revision) each fail the goldens. Adoption file at HEAD: 26 tests OK. |
 | 2b | not started | | |
 | 3 | not started | | |
 | 4 | not started | | |
@@ -274,4 +274,4 @@ Not executed.
 
 ## Current Accuracy
 
-Approved plan only; Task 1 has not started and nothing in it describes shipped behavior.
+Approved plan. Tasks 1 and 2a are done (tests only); nothing in it describes shipped script behavior yet.

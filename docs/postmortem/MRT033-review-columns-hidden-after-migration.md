@@ -35,9 +35,10 @@ The first reading, that a Sprint changing from future to active had orphaned the
 ## Verification
 
 - Golden-state tests pin the unchanged fresh path; a randomized differential run of the original planner against the split one (4000 cases) and against an empty-state merge shows identical results.
-- 68 SQLite tests in `tests/test_adopt_legacy_sprint_reviews.py` and 16 PostgreSQL tests in `tests/test_sprint_review_postgresql.py` (real lock waits, lock timeout exit 2, no table-level lock on the group tables, no deadlock with a concurrent writer).
-- Mutation checks: 28 deliberate breakages of the planner, the merge rules, the write path and the locking each fail at least one test; one revealed that the digest over-invalidated on edits in unrelated groups, which was fixed.
-- A review Blocker was reproduced before fixing: a row read before the lock in the same session was reused after it, which would have overwritten a concurrent column save while the digest still matched. The apply now plans in a separate read-only session and re-reads from the locked state.
+- 72 SQLite tests in `tests/test_adopt_legacy_sprint_reviews.py` and 17 PostgreSQL tests in `tests/test_sprint_review_postgresql.py` (real lock waits, lock timeout exit 2, no table-level lock on the group tables, no deadlock with a concurrent writer, a writer committing between the plan and the locks). The full Python suite (2,379 tests), the security modules and the repository's CI PostgreSQL runner script pass at the code head.
+- Mutation checks: 33 deliberate breakages of the planner, the merge rules, the write path and the locking each fail at least one test; one revealed that the digest over-invalidated on edits in unrelated groups, which was fixed.
+- A rehearsal on a throwaway copy of the local database reproduced the incident and the restore end to end, and a 99,600-cell probe at the 100,000-row ceiling measured about 15 s and 360 MiB for the apply. An independent review of the implementation found no data-safety defect; its smaller findings (data-shape containment in `--list`, a wrong archive claim in the docs, a whole-run ceiling) were fixed.
+- A plan-review Blocker was reproduced before fixing: a row read before the lock in the same session was reused after it, which would have overwritten a concurrent column save while the digest still matched. The apply now plans in a separate read-only session and re-reads from the locked state.
 
 ## Lessons learned
 

@@ -346,33 +346,49 @@ h1 {
 .subtitle-main {
   flex: 1 1 auto;
   display: inline-grid;
-  grid-template-columns: auto 1fr;
-  align-items: center;
+  grid-template-columns: auto auto 1fr;
+  align-items: baseline;
   justify-content: start;
   column-gap: 0.5rem;
   row-gap: 0.15rem;
 }
 .subtitle-logo {
-  width: 0.82rem;
-  height: 0.82rem;
+  grid-row: 1 / span 2;
+  grid-column: 1;
+  align-self: center;
+  width: 2.25rem;
+  height: 2.25rem;
   display: inline-block;
   vertical-align: middle;
   flex: 0 0 auto;
 }
 .subtitle-detail {
-  grid-column: 2;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  column-gap: 0.5rem;
-  row-gap: 0.15rem;
-  min-width: 0;
+  display: contents;
+}
+.subtitle-main .dashboard-freshness-slot {
+  grid-row: 2;
+  grid-column: 2 / -1;
+  align-self: start;
 }
 .subtitle-secondary {
+  grid-row: 1;
+  grid-column: 3;
   font-size: 0.56rem;
   letter-spacing: 0.08em;
   text-transform: none;
   opacity: 0.85;
+}
+@media (max-width: 420px) {
+  .subtitle-logo {
+    grid-row: 1 / span 3;
+  }
+  .subtitle-secondary {
+    grid-row: 2;
+    grid-column: 2 / -1;
+  }
+  .subtitle-main .dashboard-freshness-slot {
+    grid-row: 3;
+  }
 }
 
 /* frontend/src/styles/shared/controls.css */

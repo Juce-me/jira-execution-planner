@@ -90,9 +90,11 @@ lead times) never appear in today's view because creation date bounds the query.
 - **A11. Ad hoc Epics in the closed modes** are tagged `capacityType: "ad_hoc"` when they match the Component scope, but
   the Created-mode widening (`OR key in (<ad hoc keys>)`) is not applied: the closed modes are Component scope
   only, as decided. An ad hoc Epic outside the Components therefore does not appear there.
-- **A10. Mode control reuses `SegmentedControl` with the `eng-mode-control` hook**, as Group By does. The
-  Number-of-epics dropdown reuses the existing dropdown/select hooks the Project filter and `StatsRangeControl`
-  use. No new classes (project rule: a new class for an existing control kind is a review-stop; register anything
+- **A10. Mode is a dropdown** (operator, 2026-10-22: "dropdown as assignee"): a `select.scenario-input` in a
+  `.stats-control-group`, the same kind as Project and the Assignee filter it replaces in the bar. A segmented
+  Mode group would not fit the bar (about 957 of 966 px are used today) and would wrap Exclude in Created and Closed
+  but not in Last N. The Number-of-epics dropdown is the same kind of select; the quarter modes keep
+  `StatsRangeControl`. No new classes (project rule: a new class for an existing control kind is a review-stop; register anything
   genuinely new in `docs/design-system.md` and the ratchet allowlists).
 
 ## Current state (verified 2026-10-22 against `origin/main`)
@@ -122,17 +124,21 @@ lead times) never appear in today's view because creation date bounds the query.
 
 ### Controls
 
-Row 1, left to right: **Mode** (segmented, `Created | Closed | Last N`), the mode's selection control, Group By,
-Project, Exclude. Row 2: status chips (only Done, Killed and Incomplete in the closed modes, A5). Then the four cards, the
-heatmap and the Epic charts. Switching mode swaps only the selection control, clears the selected heatmap row, and
-loads that mode's data (client cache hit when the same request was already made). The control bar must not shift
-or reflow other controls on a switch (the header-stability learning applies to the header; the same standard
-applies here: the swapped control occupies one slot, verified by geometry assertions).
+Row 1, left to right: **Mode** (dropdown: `Created`, `Closed`, `Last N`), the mode's selection control, Group By,
+Project, Exclude: the same five groups as today (Mode takes the slot the Assignee filter leaves). Row 2: status chips
+(only Done, Killed and Incomplete in the closed modes, A5). Then the four cards, the heatmap and the Epic charts.
+Switching mode swaps only the selection control, clears the selected heatmap row, and loads that mode's data (client
+cache hit when the same request was already made). The bar keeps one row and the same height in every mode, with no
+clipped or overflowing label. The stretchy selects (Mode, Number of epics, Project) share the free space, so their
+widths and the positions of the controls after them may move by a few pixels when the fixed-width quarter range is
+swapped for the Number-of-epics select; that flex is accepted, a change of row count or height is not. The
+Playwright geometry assertions state exactly this.
 
 ### Request
 
-`POST /api/stats/epic-cohort` gains `mode` (`created` default when absent, so existing callers and cached clients are
-unchanged), `startQuarter`/`endQuarter` for `created` and `closed`. `last_n` carries no N and no quarters: N is client-only
+`POST /api/stats/epic-cohort` gains `mode`. The client omits it for `created` (the Created request body stays
+byte-identical; the server treats an absent `mode` as `created`) and sends it for `closed` and `last_n`. A present
+`mode` that is null, empty or unknown is a 400. `startQuarter`/`endQuarter` are sent for `created` and `closed`. `last_n` carries no N and no quarters: N is client-only
 state (the server returns the recent window, see below). Invalid combinations (unknown `mode`, quarters sent with
 `last_n`, missing quarters for the other modes) answer 400 with the existing error shape. The `end quarter cannot be after the current quarter` rule
 applies to `closed` as well. `assignee` data may stay in the payload (Completed Epics rows still show an assignee
@@ -278,3 +284,42 @@ automatic read sends the identical request shape as the explicit read.
    `docs/README_ANALYTICS.md` (allowlist row, A9), `docs/features/shareable-view-links.md`, and the
    `docs/plans/README.md` index. Full Python suite, full Node suite, `npm run build`, and the full Chromium
    `tests/ui` run before push, per the repository gate.
+
+## Amendments from the plan validation (2026-10-22)
+
+Four independent read-only reviews of the plan against the source found these; each is a decision of this design
+unless it says otherwise.
+
+- **Created request unchanged.** The cold-start request multiset in `tests/ui/codebase_structure_smoke.spec.js`
+  freezes exact Created bodies, so the client omits `mode` for Created (see Request). The client cache key for Created
+  is likewise unchanged; only the closed modes prefix their keys.
+- **Empty scope short-circuits.** `build_missing_info_scope_clause` returns an empty string when there are no
+  Components and no Teams, which would make a project-wide query. The closed modes then make no Jira call, return
+  `issues: []` and `meta.scope = 'none'`, and the panel says `Scope: none configured (no Components or Teams)`.
+- **The unresolved pass is bounded.** Epics without `resolutiondate` need one changelog request each (4 workers,
+  10 s budget), so the pass must be small. `closed`: the unresolved query adds `updated >= <closed range start>`, a safe
+  superset because closing an Epic updates it. `last_n`: the resolved pass runs first; when it fills the ceiling, the
+  unresolved pass adds `updated >=` the day before the ceiling-th resolution date; when it does not fill the ceiling,
+  every unresolved Epic is a candidate. The Task 1 probe gate becomes latency-based.
+- **Long-lived Epics need the full changelog.** The embedded changelog is partial. In the closed modes the terminal-date
+  lookup reuses the repository's full-changelog paging when `changelog.total` exceeds the embedded histories; Created
+  mode keeps today's lookup.
+- **Window edges.** The resolved query widens the closed range by one day on each side (JQL dates use the requesting
+  user's timezone; `terminalDate` uses the response's offset) and the post-filter on the computed terminal date makes
+  that safe. The closed range end is not capped at today.
+- **Stated semantics.** An Epic Killed, reopened and Killed again gets its first terminal transition date when it has no
+  `resolutiondate` (existing rule); Last N ranks by calendar day then key (codepoint order on both sides), so Epics
+  sharing the boundary day are cut by key, not by time of day.
+- **Mode/data mismatch guard.** Cached or in-flight data from another mode must never render under a new mode. The
+  derived layer treats `cohortData` as empty unless its `meta.mode` (absent means `created`) equals the current mode.
+- **Closed modes ignore the `open` and `postponed` status toggles** (forced off), so a persisted `postponed: true`
+  cannot reveal anything and cannot be stuck on with its chip hidden.
+- **Empty and shortfall states.** The panel receives the scope, whether the fetched set was empty, and the shortfall.
+  An empty fetched set shows the heatmap's own empty message with closed-mode wording; there is no third empty box.
+- **Card notes name the mode.** Avg and Median Lead Time notes read `Epics closed in the selected range` and
+  `Middle lead time of epics closed in the selected range` in `closed`, and `Most recently closed epics` and
+  `Middle lead time of the most recently closed epics` in `last_n`; Created keeps today's notes.
+- **Share links.** `lead` and `n` apply to the Lead Times view only. An invalid `lead` is dropped and reported; the
+  link then applies as Created with its own `from`/`to`. Applying a link also resets the inactive modes' selections to
+  their defaults (the link states the whole view). `lead=last_n` without a valid `n` applies 30 and reports.
+- **Closed-mode Jira link.** When the chart lists more than 250 Epics the link is hidden and a `.stats-note` says why.

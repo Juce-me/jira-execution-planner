@@ -5601,7 +5601,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 restoredInitialEpmViewRef, setSelectedView, setActiveGroupId, commitSprintSelection, persistTeamSelection,
                 setShowPlanning, setShowStats, setShowScenario, setShowBoard, setSearchInput, setSearchQuery, setShowProduct, setShowTech,
                 setGroupByInitiativeChoice, setEngEpicSort, setPlanningLayout, setStatsView, setCohortStartQuarter, setCohortEndQuarter,
-                setExcludedCapacityStartSprintId, setExcludedCapacityEndSprintId, setShowAlertsPanel, setBoardStrictScope, setSelectedTeams,
+                setCohortMode, setCohortClosedStartQuarter, setCohortClosedEndQuarter, setCohortLastN, setExcludedCapacityStartSprintId, setExcludedCapacityEndSprintId, setShowAlertsPanel, setBoardStrictScope, setSelectedTeams,
                 setEngStatusFilter, setEngPriorityFilter, setEngProjectTrackFilter, setEngBoardFilterSelection, setBoardView,
                 alertFlags: {
                     missing: [showMissingAlert, setShowMissingAlert], blocked: [showBlockedAlert, setShowBlockedAlert], followup: [showPostponedAlert, setShowPostponedAlert],

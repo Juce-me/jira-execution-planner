@@ -11,6 +11,8 @@ import {
     SHARE_VIEW_CATEGORY_BY_KEY,
     SHARE_VIEW_DEFAULTS,
     SHARE_VIEW_KEYS_BY_MODE,
+    SHARE_VIEW_LEAD_TIMES_COUNTS,
+    SHARE_VIEW_LEAD_TIMES_LEADS,
     SHARE_VIEW_MODES,
     SHARE_VIEW_PLANNING_KEYS_BY_LAYOUT,
     SHARE_VIEW_PLANNING_LAYOUTS,
@@ -27,7 +29,7 @@ export const SHARE_VIEW_MAX_QUERY = 1536;
 
 // Every key a link can carry, in the order the encoder writes them.
 export const SHARE_VIEW_QUERY_KEYS = Object.freeze([
-    'v', 'mode', 'group', 'sprint', 'scope', 'layout', 'rows', 'stats', 'from', 'to', 'teams', 'find',
+    'v', 'mode', 'group', 'sprint', 'scope', 'layout', 'rows', 'stats', 'from', 'to', 'lead', 'n', 'teams', 'find',
     'status', 'priority', 'track', 'lanes', 'initiatives', 'sort', 'bpriority', 'bprojects', 'bassignee', 'btrack', 'bcolumn',
     'alerts', 'alertTeam', 'epic', 'story',
 ]);
@@ -150,6 +152,9 @@ function parseRows(raw) {
 // checks, belong to the resolver; the codec only checks the shape.
 const parseRangeEnd = (raw) => (QUARTER.test(raw) || SPRINT_ID.test(raw) ? raw : INVALID);
 
+// The Last N count is one of the model's own options, spelled without padding or sign.
+const parseCount = (raw) => (SHARE_VIEW_LEAD_TIMES_COUNTS.map(String).includes(raw) ? Number(raw) : INVALID);
+
 function parseAlerts(raw) {
     if (raw === 'off' || raw === 'none') return raw;
     const keys = [...new Set(raw.split(','))];
@@ -190,6 +195,8 @@ const SPEC = Object.freeze({
     stats: { key: 'stats', parse: parseToken(SHARE_VIEW_STATS_VIEWS) },
     from: { key: 'from', parse: parseRangeEnd },
     to: { key: 'to', parse: parseRangeEnd },
+    lead: { key: 'lead', parse: parseToken(SHARE_VIEW_LEAD_TIMES_LEADS) },
+    n: { key: 'n', parse: parseCount },
     alerts: { key: 'alerts', parse: parseAlerts },
     alertTeam: { key: 'alertTeam', parse: parseAlertTeam },
     epic: { key: 'focus', parse: parseIssueKey('epic') },
@@ -285,6 +292,10 @@ const encodeScope = encodeToken(SHARE_VIEW_BOARD_SCOPES, SHARE_VIEW_DEFAULTS.sco
 const encodeSort = encodeToken(SHARE_VIEW_SORTS, SHARE_VIEW_DEFAULTS.sort);
 const encodeLayout = encodeToken(SHARE_VIEW_PLANNING_LAYOUTS, SHARE_VIEW_DEFAULTS.layout);
 const encodeStats = encodeToken(SHARE_VIEW_STATS_VIEWS, SHARE_VIEW_DEFAULTS.stats);
+const encodeLead = encodeToken(SHARE_VIEW_LEAD_TIMES_LEADS, SHARE_VIEW_DEFAULTS.lead);
+
+// `n` only means something with lead=last_n, so it is never written for another mode.
+const encodeCount = (state) => (state.lead !== 'last_n' ? undefined : SHARE_VIEW_LEAD_TIMES_COUNTS.includes(state.n) ? String(state.n) : null);
 
 function encodeTeams(value) {
     if (!Array.isArray(value) || !value.length) return null;
@@ -348,6 +359,8 @@ function encodeAlertTeam(value, state) {
 // which moves with the clock, and a link must not change meaning with the date it is opened on. A
 // Sprint range equal to the default (the link's own Sprint) is omitted, because that default is stable.
 function encodeRange(state) {
+    // A Last N link names no quarters: its window is the most recent closed Epics, not a date range.
+    if (state.stats === 'cohort' && state.lead === 'last_n') return undefined;
     const { from, to } = state;
     const quarters = state.stats === 'cohort';
     const shape = quarters ? QUARTER : SPRINT_ID;
@@ -369,6 +382,8 @@ const ENCODERS = Object.freeze({
     rows: (state) => one('rows', encodeRows(state.rows)),
     stats: (state) => one('stats', encodeStats(state.stats)),
     range: encodeRange,
+    lead: (state) => one('lead', encodeLead(state.lead)),
+    n: (state) => one('n', encodeCount(state)),
     teams: (state) => one('teams', encodeTeams(state.teams)),
     find: (state) => one('find', encodeFind(state.find)),
     status: (state) => one('status', encodeFacet(state.status, SHARE_VIEW_DEFAULTS.status)),
@@ -401,7 +416,7 @@ function applicableKeys(state) {
     }
     if (state.mode === 'statistics') {
         const view = SHARE_VIEW_STATS_VIEWS.includes(state.stats) ? state.stats : SHARE_VIEW_DEFAULTS.stats;
-        ['teams', 'from', 'to'].forEach((key) => { if (!SHARE_VIEW_STATS_KEYS_BY_VIEW[view].includes(key)) keys.delete(key); });
+        ['teams', 'from', 'to', 'lead', 'n'].forEach((key) => { if (!SHARE_VIEW_STATS_KEYS_BY_VIEW[view].includes(key)) keys.delete(key); });
     }
     return keys;
 }

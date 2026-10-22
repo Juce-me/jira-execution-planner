@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "buildId": "e5a0046f504e5eff26e541305c02c5f37ebe7ea3b9c30168646cad02a98a2a44",
+  "buildId": "d78faac447265d8db2db2684549b0357c4193777fe4716910d5691a54b08b597",
   "views": {
     "stats": {
-      "path": "chunks/StatsPanel-3K66BNXL.js",
+      "path": "chunks/StatsPanel-CIUXSDQQ.js",
       "exportName": "default"
     },
     "scenario": {

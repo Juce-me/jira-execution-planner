@@ -2,7 +2,7 @@
 // docs/plans/SUPPORT-shareable-view-links-design-194.md, "Link contract" and "Apply machine").
 // A link only selects among values the recipient already owns. A miss is reported as a notice
 // category and its key is skipped; nothing here widens a miss into a value that changes the view.
-import { buildQuarterOptions, compareQuarterLabels, getCurrentQuarterLabel } from '../cohort/cohortUtils.js';
+import { LEAD_TIMES_LAST_N_OPTIONS, buildQuarterOptions, compareQuarterLabels, getCurrentQuarterLabel } from '../cohort/cohortUtils.js';
 import { buildDefaultExcludedCapacityRange, compareSprintsChronologically } from '../stats/excludedCapacityStats.js';
 import { PRIORITY_AXIS } from '../stats/statsConstants.js';
 import {
@@ -153,6 +153,11 @@ function sprintRange(from, to, sprints) {
 function resolveStatsRange(state, view, scope, ctx, reported) {
     const quarterBased = view === 'cohort';
     if (!quarterBased && !SPRINT_RANGE_STATS_VIEWS.has(view)) return null;
+    // A Last N link names no quarters: whatever it carries is ignored and the default pair stands.
+    if (quarterBased && linkValue(state, 'lead') === 'last_n') {
+        const currentQuarter = ctx.currentQuarter || getCurrentQuarterLabel();
+        return { from: currentQuarter, to: currentQuarter };
+    }
     const currentQuarter = ctx.currentQuarter || getCurrentQuarterLabel();
     let fallback = { from: currentQuarter, to: currentQuarter };
     if (!quarterBased) {
@@ -165,6 +170,15 @@ function resolveStatsRange(state, view, scope, ctx, reported) {
     const range = quarterBased ? quarterRange(from, to, currentQuarter) : sprintRange(from, to, ctx.sprints);
     if (!range) reported.push('mode');
     return range || fallback;
+}
+
+// Lead Times: the link's mode and, for Last N only, its count; a Last N link without a valid count falls back to
+// the first option and reports `mode`.
+function resolveLeadTimesMode(state, apply, reported) {
+    apply.lead = linkValue(state, 'lead');
+    const [fallback] = LEAD_TIMES_LAST_N_OPTIONS;
+    apply.n = apply.lead === 'last_n' && state.n !== undefined ? state.n : fallback;
+    if (apply.lead === 'last_n' && state.n === undefined) reported.push('mode');
 }
 
 function focusApplies(candidate, state, mode) {
@@ -212,6 +226,7 @@ export function buildShareViewFieldPlan(state, scope, ctx = {}) {
     } else if (scope.mode === 'statistics') {
         take('stats');
         apply.range = resolveStatsRange(state, apply.stats, scope, ctx, reported);
+        if (apply.stats === 'cohort') resolveLeadTimesMode(state, apply, reported);
     } else {
         take('find', 'lanes');
         if (scope.mode === 'planning') {

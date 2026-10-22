@@ -33,6 +33,8 @@ RULE_VERSION = 'adopt-legacy-sprint-reviews/1'
 LOCK_TIMEOUT = '5s'
 STATEMENT_TIMEOUT = '60s'
 INSERT_CHUNK_ROWS = 100
+READ_CHUNK_ISSUES = 500
+MAX_TOTAL_COLUMNS = 240  # mirrors the total column limit in sprint_review.apply_schema
 GROUP_TABLES = ('workspace_group_review_schemas', 'group_review_cells', 'group_sprint_review_views')
 LEGACY_TABLES = ('workspace_sprint_reviews', 'sprint_review_cells')
 REQUIRED_TABLES = ('workspaces', 'workspace_group_configs') + LEGACY_TABLES + GROUP_TABLES
@@ -151,6 +153,41 @@ def _well_formed(column):
             and column.get('aggregation', 'none') in ('sum', 'none'))
 
 
+def _read_group_state(session, workspace_id, groups, issue_ids):
+    """Per group: schema columns and revision, cell identities on the given issues, and the Sprint ids with a view.
+
+    Plain values only, never ORM entities: the merge re-reads after taking its locks, and an identity-mapped instance
+    would keep what was read before them."""
+    state = {group: {'exists': False, 'revision': 0, 'columns': [], 'cells': set(), 'view_sprints': []} for group in groups}
+    schema_group, malformed = {}, 0
+    for schema_id, group, revision, columns in session.execute(select(
+            models.WorkspaceGroupReviewSchema.id, models.WorkspaceGroupReviewSchema.group_id,
+            models.WorkspaceGroupReviewSchema.schema_revision, models.WorkspaceGroupReviewSchema.columns).where(
+            models.WorkspaceGroupReviewSchema.workspace_id == workspace_id,
+            models.WorkspaceGroupReviewSchema.group_id.in_(groups))).all():
+        columns = deepcopy(columns) if isinstance(columns, list) else None
+        malformed += 1 if columns is None else sum(not _well_formed(column) for column in columns)
+        state[group].update(exists=True, revision=revision, columns=columns or [])
+        schema_group[schema_id] = group
+    if malformed:
+        raise ValueError(f'{malformed} group columns are malformed')
+    ids = sorted(issue_ids)
+    for start in range(0, len(ids) if schema_group else 0, READ_CHUNK_ISSUES):
+        for schema_id, issue_id, kind, column_id in session.execute(select(
+                models.GroupReviewCell.schema_id, models.GroupReviewCell.issue_id, models.GroupReviewCell.row_kind,
+                models.GroupReviewCell.column_id).where(
+                models.GroupReviewCell.schema_id.in_(list(schema_group)),
+                models.GroupReviewCell.issue_id.in_(ids[start:start + READ_CHUNK_ISSUES]))).all():
+            state[schema_group[schema_id]]['cells'].add((issue_id, kind, column_id))
+    for group, sprint in session.execute(select(models.GroupSprintReviewView.group_id, models.GroupSprintReviewView.sprint_id).where(
+            models.GroupSprintReviewView.workspace_id == workspace_id,
+            models.GroupSprintReviewView.group_id.in_(groups))).all():
+        state[group]['view_sprints'].append(sprint)
+    for entry in state.values():
+        entry['view_sprints'].sort(key=int)
+    return state
+
+
 def _review_rules(call, *args):
     try:
         return call(*args)
@@ -202,27 +239,88 @@ def _normalize(reviews):
             'intent_refs': intent_refs, 'discarded_refs': discarded_refs, 'candidates': candidates}
 
 
-def _resolve_group(normalized):
-    """Apply the design's merge, cap, cell and view rules; returns columns, cells, views and the report."""
+def _match_group_columns(candidates, group_columns):
+    """Resolve each legacy key to at most one group column: by id first, then by label and type.
+
+    A group column is claimed by one key at most, and a group-archived column keeps its archive. Returns the matched
+    group column and the skipped (group-archived) keys, both by candidate index."""
+    by_id = {column['id']: column for column in group_columns}
+    position = {column['id']: index for index, column in enumerate(group_columns)}
+    matched, skipped, claimed = {}, set(), set()
+    ambiguous = mismatched = 0
+    for index, candidate in enumerate(candidates):
+        found = {by_id[member['id']]['id'] for member in candidate['members'] + candidate['archived'] if member['id'] in by_id}
+        if len(found) > 1:
+            ambiguous += 1
+        elif found:
+            column = by_id[found.pop()]
+            if (column['rowKind'], column['type']) != (candidate['kind'], candidate['type']):
+                mismatched += 1
+            elif column.get('archived', False) is True:
+                skipped.add(index)
+                claimed.add(column['id'])
+            else:
+                matched[index] = column
+                claimed.add(column['id'])
+    if ambiguous:
+        raise ValueError(f'{ambiguous} legacy columns match more than one group column by id')
+    if mismatched:
+        raise ValueError(f'{mismatched} legacy column ids match a group column of another kind or type')
+    for index, candidate in enumerate(candidates):
+        if index in matched or index in skipped:
+            continue
+        label = candidate['label'].strip().casefold()
+        same = [column for column in group_columns if column['id'] not in claimed
+                and (column['rowKind'], column['type']) == (candidate['kind'], candidate['type'])
+                and column['label'].strip().casefold() == label]
+        live = [column for column in same if column.get('archived', False) is not True]
+        if live:
+            column = min(live, key=lambda c: (c.get('order', 0), position[c['id']]))
+            matched[index] = column
+            claimed.add(column['id'])
+        elif same:
+            skipped.add(index)
+    return matched, skipped
+
+
+def _resolve_group(normalized, state=None):
+    """Apply the design's merge, cap, cell and view rules; returns columns, cells, views and the report.
+
+    `state` is one group's current columns, revision, cell identities and view Sprint ids (see _read_group_state);
+    without it the group is empty, which is the fresh adoption path."""
     reviews, members, candidates = normalized['reviews'], normalized['members'], normalized['candidates']
     kind_of, rank_of = normalized['kind_of'], normalized['rank_of']
     intent_refs, discarded_refs = normalized['intent_refs'], normalized['discarded_refs']
+    merge = state is not None
+    state = state or {'exists': False, 'revision': 0, 'columns': [], 'cells': set(), 'view_sprints': []}
+    group_columns = state['columns']
+    matched, skipped = _match_group_columns(candidates, group_columns) if merge else ({}, set())
     report = []
     kept, excluded = [], []
     for kind in KINDS:
-        ranked = sorted((c for c in candidates if c['kind'] == kind), key=lambda c: c['latest'], reverse=True)
-        kept += ranked[:sprint_review.MAX_ACTIVE_COLUMNS]
-        excluded += ranked[sprint_review.MAX_ACTIVE_COLUMNS:]
+        active = sum(c['rowKind'] == kind and c.get('archived', False) is not True for c in group_columns)
+        slots = max(0, sprint_review.MAX_ACTIVE_COLUMNS - active)
+        ranked = sorted((c for i, c in enumerate(candidates) if c['kind'] == kind and i not in matched and i not in skipped),
+                        key=lambda c: c['latest'], reverse=True)
+        kept += ranked[:slots]
+        excluded += ranked[slots:]
+    room = max(0, MAX_TOTAL_COLUMNS - len(group_columns))
+    if len(kept) > room:
+        ranked = sorted(kept, key=lambda c: c['latest'], reverse=True)
+        kept, excluded = ranked[:room], excluded + ranked[room:]
     kept.sort(key=lambda c: c['first'])
     remap = {m['ref']: c['id'] for c in kept for m in c['members']}
+    remap.update({m['ref']: column['id'] for index, column in matched.items() for m in candidates[index]['members']})
     cap_refs = {m['ref'] for c in excluded for m in c['members']}
+    skipped_refs = {m['ref'] for index in skipped for m in candidates[index]['members']}
 
     adds = [{'action': 'add', 'column': {'id': c['id'], 'rowKind': c['kind'], 'label': c['label'],
                                          'type': c['type'], 'aggregation': c['aggregation']}} for c in kept]
     _review_rules(sprint_review.validate_schema_changes, adds)
-    columns = _review_rules(sprint_review.apply_schema, [], adds)
+    columns = _review_rules(sprint_review.apply_schema, group_columns, adds)
+    added = columns[len(group_columns):]
 
-    winners, dropped = {}, {'conflict': 0, 'archived': 0, 'intent': 0, 'cap': 0, 'orphan': 0}
+    winners, dropped = {}, {'conflict': 0, 'archived': 0, 'intent': 0, 'cap': 0, 'orphan': 0, 'group_archived': 0}
     for review in reviews:
         for _sprint, issue_id, kind, column_id, value, _revision in review['cells']:
             ref = (review['id'], column_id)
@@ -239,9 +337,13 @@ def _resolve_group(normalized):
                 dropped['intent'] += 1
             elif ref in cap_refs:
                 dropped['cap'] += 1
+            elif ref in skipped_refs:
+                dropped['group_archived'] += 1
             else:
                 dropped['orphan'] += 1
     cells = [(issue_id, kind, column_id, value) for (issue_id, kind, column_id), (_rank, value) in sorted(winners.items())]
+    live_cells = sum((issue_id, kind, column_id) in state['cells'] for issue_id, kind, column_id, _value in cells)
+    cells = [cell for cell in cells if cell[:3] not in state['cells']]
 
     views, cross_kind = [], 0
     for review in reviews:
@@ -272,32 +374,62 @@ def _resolve_group(normalized):
             views.append((review['sprintId'], changes))
     if cross_kind:
         raise ValueError(f'{cross_kind} legacy layout ids are not of their layout row kind')
-    limit = sprint_review.MAX_GROUP_VIEWS
-    skipped_views = [sprint for sprint, _ in views[:-limit]] if len(views) > limit else []
-    views = views[-limit:]
+    # A live view wins whole; the rest take the free slots, highest Sprint order first (views[-0:] would be the whole list).
+    live_views = set(state['view_sprints'])
+    fresh_views = [(sprint, changes) for sprint, changes in views if sprint not in live_views]
+    slots = max(0, sprint_review.MAX_GROUP_VIEWS - len(state['view_sprints']))
+    cut = max(0, len(fresh_views) - slots)
+    skipped_views = [sprint for sprint, _ in fresh_views[:cut]]
     written_views = []
-    for sprint, changes in views:
+    for sprint, changes in fresh_views[cut:]:
         _review_rules(sprint_review.validate_schema_changes, changes)
         written_views.append((sprint, _review_rules(sprint_review.apply_layouts, {}, columns, changes)))
 
-    count = lambda kind: sum(c['rowKind'] == kind for c in columns)  # noqa: E731
-    report.append(f"columns adopted: epic {count('epic')}, story {count('story')}")
+    count = lambda kind: sum(c['rowKind'] == kind for c in added)  # noqa: E731
+    rollups = sum(c['rowKind'] == 'story' and c['type'] == 'number' and c['aggregation'] == 'sum' for c in added)
+    merged = []
     for c in kept:
         if len(c['members']) + len(c['archived']) > 1:
-            report.append(f"merged {c['id']}: " + ' '.join(f"{m['id']}@{m['sprint']}" for m in c['members'])
+            merged.append(f"merged {c['id']}: " + ' '.join(f"{m['id']}@{m['sprint']}" for m in c['members'])
                           + ('; archived ' + ' '.join(f"{m['id']}@{m['sprint']}" for m in c['archived']) if c['archived'] else ''))
     intent_keys = sum(1 for group in members.values() if group[-1]['archived'])
-    report.append(f"archive intent: keys {intent_keys}, cells dropped {dropped['intent']}")
-    report.append(f"archived members discarded: {len(discarded_refs)}, cells dropped {dropped['archived']}")
     excluded_members = ' '.join(f"{m['id']}@{m['sprint']}" for c in excluded for m in c['members'])
-    report.append(f"cap excluded: keys {len(excluded)}, cells dropped {dropped['cap']}; members {excluded_members or 'none'}")
-    report.append(f"conflicting cell values dropped: {dropped['conflict']}")
-    report.append(f"orphan cells dropped: {dropped['orphan']}")
-    report.append(f"views: {len(written_views)} written per group, skipped by cap {len(skipped_views)}"
-                  + (f" (Sprints {', '.join(skipped_views)})" if skipped_views else ''))
-    rollups = sum(c['rowKind'] == 'story' and c['type'] == 'number' and c['aggregation'] == 'sum' for c in columns)
-    report.append(f"derived: story sum rollups {rollups}, epic inherited {count('epic')}")
-    return {'columns': columns, 'cells': cells, 'views': written_views, 'report': report}
+    revision = state['revision'] + (1 if added else 0) if state['exists'] else 1
+    if not merge:
+        report.append(f"columns adopted: epic {count('epic')}, story {count('story')}")
+        report += merged
+        report.append(f"archive intent: keys {intent_keys}, cells dropped {dropped['intent']}")
+        report.append(f"archived members discarded: {len(discarded_refs)}, cells dropped {dropped['archived']}")
+        report.append(f"cap excluded: keys {len(excluded)}, cells dropped {dropped['cap']}; members {excluded_members or 'none'}")
+        report.append(f"conflicting cell values dropped: {dropped['conflict']}")
+        report.append(f"orphan cells dropped: {dropped['orphan']}")
+        report.append(f"views: {len(written_views)} written per group, skipped by cap {len(skipped_views)}"
+                      + (f" (Sprints {', '.join(skipped_views)})" if skipped_views else ''))
+        report.append(f"derived: story sum rollups {rollups}, epic inherited {count('epic')}")
+    else:
+        report.append(f"columns matched: {len(matched)}")
+        report += [f"matched {candidates[index]['id']} -> {column['id']}" for index, column in sorted(matched.items())]
+        report.append(f"columns added: epic {count('epic')}, story {count('story')}")
+        report += merged
+        report.append(f"group-archived keys skipped: {len(skipped)}, cells dropped {dropped['group_archived']}")
+        report.append(f"archive intent: keys {intent_keys}, cells dropped {dropped['intent']}")
+        report.append(f"archived members discarded: {len(discarded_refs)}, cells dropped {dropped['archived']}")
+        report.append(f"cap excluded: keys {len(excluded)}, cells dropped {dropped['cap']}; members {excluded_members or 'none'}")
+        report.append(f"cells: inserted {len(cells)}, skipped as live {live_cells}")
+        report.append(f"conflicting cell values dropped: {dropped['conflict']}")
+        report.append(f"orphan cells dropped: {dropped['orphan']}")
+        report.append(f"views: inserted {len(written_views)}, skipped as live {len(views) - len(fresh_views)}, "
+                      f"skipped by cap {len(skipped_views)}" + (f" (Sprints {', '.join(skipped_views)})" if skipped_views else '')
+                      + f", slots left {max(0, slots - len(written_views))}")
+        boundaries = sorted(live_views | {sprint for sprint, _ in written_views}, key=int)
+        for sprint, _layouts in written_views:
+            following = next((b for b in boundaries if int(b) > int(sprint)), None)
+            report.append(f"view {sprint} governs Sprint ids [{sprint}, {following or 'open'})")
+        report.append(f"schema revision: {state['revision']} -> {revision}" if added else 'schema revision: unchanged')
+        report.append(f"derived: story sum rollups {rollups}, epic inherited {count('epic')}")
+    return {'columns': columns, 'added': added, 'cells': cells, 'views': written_views, 'report': report,
+            'matched': sorted((candidates[index]['id'], column['id']) for index, column in matched.items()),
+            'revision': revision, 'empty': not (added or cells or written_views)}
 
 
 def _build(session, workspace_id):

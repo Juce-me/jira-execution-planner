@@ -575,6 +575,49 @@ class AdoptionTests(unittest.TestCase):
         dry, applied = self.golden_run(workspace)
         self.assertEqual((dry, applied, self.golden_state()), GOLDEN_LAYOUT_ONLY)
 
+    # Group state reader (merge mode, #299)
+    def test_read_group_state_returns_plain_values_for_the_requested_groups_and_issues(self):
+        group_column = {'id': uid(1), 'rowKind': 'story', 'label': 'Risk', 'type': 'number', 'aggregation': 'sum',
+                        'archived': False, 'order': 0, 'after': None}
+        with db_engine.session_scope(self.url) as session:
+            schema = models.WorkspaceGroupReviewSchema(id=str(uuid.uuid4()), workspace_id=self.workspace, group_id='group-x',
+                                                       schema_revision=3, columns=[group_column])
+            session.add(schema)
+            session.flush()
+            session.add_all([models.GroupReviewCell(schema_id=schema.id, issue_id=issue, row_kind='story', column_id=uid(1),
+                                                    value=value, revision=1)
+                             for issue, value in (('101', '1'), ('102', None), ('999', '9'))])
+            session.add_all([models.GroupSprintReviewView(workspace_id=self.workspace, group_id='group-x', sprint_id=sprint,
+                                                          sprint_order=review.sprint_order(sprint), layouts={}, view_revision=1)
+                             for sprint in ('100', '9', '10')])
+        with db_engine.session_scope(self.url) as session:
+            state = adopt._read_group_state(session, self.workspace, ['group-x', 'group-y'], {'101', '102'})
+            self.assertEqual(len(session.identity_map), 0)  # nothing an identity map could keep stale after a lock
+        self.assertEqual(state['group-x'], {'exists': True, 'revision': 3, 'columns': [group_column],
+                                            'cells': {('101', 'story', uid(1)), ('102', 'story', uid(1))},
+                                            'view_sprints': ['9', '10', '100']})
+        self.assertEqual(state['group-y'], {'exists': False, 'revision': 0, 'columns': [], 'cells': set(), 'view_sprints': []})
+
+    def test_read_group_state_aborts_on_malformed_group_columns_with_a_count(self):
+        with db_engine.session_scope(self.url) as session:
+            session.add(models.WorkspaceGroupReviewSchema(id=str(uuid.uuid4()), workspace_id=self.workspace, group_id='group-x',
+                                                          schema_revision=1, columns=[{'id': 'x'}, {'id': 'y'}]))
+        with db_engine.session_scope(self.url) as session:
+            with self.assertRaisesRegex(ValueError, '2 group columns are malformed'):
+                adopt._read_group_state(session, self.workspace, ['group-x'], set())
+
+    def test_resolution_against_an_empty_state_equals_the_fresh_resolution(self):
+        workspace = self.golden_workspace(uid(1))
+        self.golden_rich_fixture(workspace)
+        with db_engine.session_scope(self.url) as session:
+            reviews, _skipped = adopt._legacy(session, workspace)
+        normalized = adopt._normalize(reviews)
+        empty = {'exists': False, 'revision': 0, 'columns': [], 'cells': set(), 'view_sprints': []}
+        with patch.object(review, 'MAX_GROUP_VIEWS', 3):
+            fresh, merged = adopt._resolve_group(normalized), adopt._resolve_group(normalized, empty)
+        for key in ('columns', 'added', 'cells', 'views', 'revision', 'empty'):
+            self.assertEqual(merged[key], fresh[key], key)
+
     # Process isolation
     def test_fresh_interpreter_import_does_not_load_jira_server(self):
         code = ("import importlib.util, sys; sys.path.insert(0, sys.argv[1]); "
@@ -597,6 +640,173 @@ class AdoptionTests(unittest.TestCase):
         self.assertEqual(refused.returncode, 1)
         self.assertIn('ValueError', refused.stderr)
         self.assertTrue(self.empty())
+
+
+class AdoptionMergeResolutionTests(unittest.TestCase):
+    """Resolution of legacy data against a group that already holds rows (merge mode, #299). Pure functions."""
+
+    @staticmethod
+    def legacy(sprint, columns=(), layouts=None, cells=()):
+        return {'id': uid(7000 + int(sprint)), 'sprintId': str(sprint), 'schemaRevision': 1, 'columns': list(columns),
+                'layouts': layouts or {}, 'cells': [[str(sprint), *cell, 1] for cell in cells]}
+
+    @staticmethod
+    def column(number, label, kind='story', type_='number', archived=False):
+        return col(label, kind=kind, type_=type_, archived=archived, identity=uid(number))
+
+    @staticmethod
+    def group_column(number, label, kind='story', type_='number', archived=False, order=0, aggregation=None):
+        return {'id': uid(number), 'rowKind': kind, 'label': label, 'type': type_, 'archived': archived, 'order': order,
+                'after': None, 'aggregation': aggregation or ('sum' if type_ == 'number' else 'none')}
+
+    @staticmethod
+    def state(columns=(), revision=0, exists=None, cells=(), views=()):
+        columns = list(columns)
+        return {'exists': (bool(columns) or revision > 0) if exists is None else exists, 'revision': revision,
+                'columns': columns, 'cells': set(cells), 'view_sprints': sorted(views, key=int)}
+
+    @staticmethod
+    def resolve(reviews, state=None):
+        return adopt._resolve_group(adopt._normalize(reviews), state)
+
+    def test_claim_by_id_survives_rename_and_archive_intent(self):
+        risk = self.column(1, 'Risk')
+        reviews = [self.legacy(17, [risk], cells=[('101', 'story', uid(1), '1.000')])]
+        renamed = self.group_column(1, 'Points', order=2)
+        result = self.resolve(reviews, self.state([renamed], revision=3))
+        self.assertEqual((result['added'], result['matched'], result['revision']), ([], [(uid(1), uid(1))], 3))
+        self.assertEqual((result['cells'], result['columns']), ([('101', 'story', uid(1), '1.000')], [renamed]))
+        archived = self.group_column(1, 'Points', archived=True)  # archived in the group: skipped, never resurrected
+        result = self.resolve(reviews, self.state([archived], revision=3))
+        self.assertEqual((result['added'], result['matched'], result['cells'], result['empty']), ([], [], [], True))
+        self.assertIn('group-archived keys skipped: 1, cells dropped 1', result['report'])
+        live, gone = self.column(2, 'Intent'), self.column(3, 'intent', archived=True)  # intent changes nothing
+        reviews = [self.legacy(17, [live], cells=[('101', 'story', uid(2), 'a')]), self.legacy(18, [gone])]
+        result = self.resolve(reviews, self.state([self.group_column(2, 'Intent')], revision=1))
+        self.assertEqual((result['added'], result['matched'], result['cells']), ([], [], []))
+        self.assertIn('archive intent: keys 1, cells dropped 1', result['report'])
+
+    def test_claim_by_id_requires_the_same_kind_and_type_and_aborts_on_ambiguity(self):
+        story = self.column(1, 'Risk')
+        for other in (self.group_column(1, 'Risk', kind='epic'), self.group_column(1, 'Risk', type_='text')):
+            with self.assertRaisesRegex(ValueError, '1 legacy column ids match a group column of another kind or type'):
+                self.resolve([self.legacy(17, [story])], self.state([other], revision=1))
+        again = self.column(2, 'risk')  # the same key under another id
+        with self.assertRaisesRegex(ValueError, '1 legacy columns match more than one group column by id'):
+            self.resolve([self.legacy(17, [story]), self.legacy(18, [again])],
+                         self.state([self.group_column(1, 'Risk'), self.group_column(2, 'Risk')], revision=1))
+
+    def test_label_match_is_one_to_one_lowest_order_then_position(self):
+        risk = self.column(1, 'Risk')
+        reviews = [self.legacy(17, [risk], cells=[('101', 'story', uid(1), '1.000')])]
+        late, early, tied = self.group_column(10, 'Risk', order=3), self.group_column(11, ' risk ', order=1), self.group_column(12, 'RISK', order=1)
+        result = self.resolve(reviews, self.state([late, early, tied], revision=2))
+        self.assertEqual((result['matched'], result['added']), ([(uid(1), uid(11))], []))
+        self.assertEqual(result['cells'], [('101', 'story', uid(11), '1.000')])
+        other_type, other_kind = self.group_column(13, 'Risk', type_='text'), self.group_column(14, 'Risk', kind='epic')
+        result = self.resolve(reviews, self.state([other_type, other_kind], revision=2))  # no match: a new column
+        self.assertEqual(([c['id'] for c in result['added']], result['matched']), ([uid(1)], []))
+
+    def test_a_renamed_adopted_column_is_never_claimed_twice(self):
+        risk, impact = self.column(1, 'Risk'), self.column(2, 'Impact')
+        reviews = [self.legacy(17, [risk], cells=[('101', 'story', uid(1), '1.000')]),
+                   self.legacy(18, [impact], cells=[('101', 'story', uid(2), '2.000')])]
+        renamed = self.group_column(1, 'Impact')  # adopted earlier as Risk, renamed since
+        result = self.resolve(reviews, self.state([renamed], revision=2))
+        self.assertEqual(result['matched'], [(uid(1), uid(1))])
+        self.assertEqual([c['id'] for c in result['added']], [uid(2)])
+        self.assertEqual(sorted(result['cells']), [('101', 'story', uid(1), '1.000'), ('101', 'story', uid(2), '2.000')])
+
+    def test_a_group_archived_column_is_not_resurrected_and_its_cells_are_counted(self):
+        risk = self.column(1, 'Risk')
+        reviews = [self.legacy(17, [risk], cells=[('101', 'story', uid(1), '1'), ('102', 'story', uid(1), '2')])]
+        archived = self.group_column(10, 'risk', archived=True)
+        result = self.resolve(reviews, self.state([archived], revision=4))
+        self.assertEqual((result['added'], result['cells'], result['matched'], result['empty']), ([], [], [], True))
+        self.assertEqual(result['columns'], [archived])
+        self.assertIn('group-archived keys skipped: 1, cells dropped 2', result['report'])
+        live = self.group_column(11, 'Risk')  # a live column with the label beats the archived one
+        result = self.resolve(reviews, self.state([archived, live], revision=4))
+        self.assertEqual(result['matched'], [(uid(1), uid(11))])
+
+    def test_a_matched_column_keeps_every_property_of_the_group_column(self):
+        risk = col('Risk', aggregation='sum', identity=uid(1))
+        group = self.group_column(10, 'RISK', order=5, aggregation='none')
+        result = self.resolve([self.legacy(17, [risk])], self.state([group], revision=2))
+        self.assertEqual((result['columns'], result['added'], result['matched']), ([group], [], [(uid(1), uid(10))]))
+
+    def test_new_column_slots_count_existing_active_and_total_columns_across_kinds(self):
+        fresh = [self.column(1, 'A'), self.column(2, 'B'), self.column(3, 'C')]
+        reviews = [self.legacy(18, [fresh[0]]), self.legacy(19, [fresh[1]]), self.legacy(20, [fresh[2]])]
+        full = [self.group_column(100 + i, f'G{i}', order=i) for i in range(29)]  # one Story slot left
+        result = self.resolve(reviews, self.state(full, revision=1))
+        self.assertEqual([c['id'] for c in result['added']], [uid(3)])
+        self.assertIn(f'cap excluded: keys 2, cells dropped 0; members {uid(2)}@19 {uid(1)}@18', result['report'])
+        crowded = ([self.group_column(1000 + i, f'AE{i}', kind='epic', archived=True) for i in range(100)]
+                   + [self.group_column(2000 + i, f'AS{i}', archived=True) for i in range(100)]
+                   + [self.group_column(3000 + i, f'LE{i}', kind='epic') for i in range(20)]
+                   + [self.group_column(4000 + i, f'LS{i}') for i in range(19)])  # 239 columns, one total slot left
+        new_epic, new_story = self.column(5, 'NewE', kind='epic'), self.column(6, 'NewS')
+        result = self.resolve([self.legacy(18, [new_epic]), self.legacy(19, [new_story])], self.state(crowded, revision=1))
+        self.assertEqual(([c['label'] for c in result['added']], len(result['columns'])), (['NewS'], 240))
+        self.assertIn(f'cap excluded: keys 1, cells dropped 0; members {uid(5)}@18', result['report'])
+
+    def test_the_total_column_cap_mirrors_apply_schema(self):
+        self.assertEqual(adopt.MAX_TOTAL_COLUMNS, 240)
+        archived = [self.group_column(i, f'C{i}', archived=True) for i in range(1, 242)]
+        review.apply_schema(archived[:240], [])
+        with self.assertRaises(review.ReviewError) as caught:
+            review.apply_schema(archived, [])
+        self.assertEqual(caught.exception.code, 'review_schema_limit')
+
+    def test_a_live_cell_wins_including_a_retained_null(self):
+        risk = self.column(1, 'Risk')
+        reviews = [self.legacy(17, [risk], cells=[(issue, 'story', uid(1), value) for issue, value in (('101', '1'), ('102', '2'), ('103', '3'))])]
+        live = {('101', 'story', uid(10)), ('102', 'story', uid(10))}  # 102 is a retained NULL
+        result = self.resolve(reviews, self.state([self.group_column(10, 'Risk')], revision=2, cells=live))
+        self.assertEqual(result['cells'], [('103', 'story', uid(10), '3')])
+        self.assertIn('cells: inserted 1, skipped as live 2', result['report'])
+
+    def test_a_live_view_wins_whole_and_an_older_legacy_view_is_inserted_remapped(self):
+        risk = self.column(1, 'Risk')
+        reviews = [self.legacy(100, [risk], {'story': {'order': ['status', uid(1)], 'hidden': []}}),
+                   self.legacy(200, layouts={'story': {'order': ['status'], 'hidden': ['key']}})]
+        result = self.resolve(reviews, self.state([self.group_column(10, 'Risk')], revision=2, views=['200']))
+        self.assertEqual(result['views'], [('100', {'story': {'order': ['status', uid(10)], 'hidden': []}})])
+        self.assertIn('views: inserted 1, skipped as live 1, skipped by cap 0, slots left 498', result['report'])
+        self.assertIn('view 100 governs Sprint ids [100, 200)', result['report'])
+
+    def test_zero_free_view_slots_insert_nothing(self):
+        reviews = [self.legacy(sprint, layouts={'story': {'order': ['status'], 'hidden': []}}) for sprint in (100, 101)]
+        with patch.object(review, 'MAX_GROUP_VIEWS', 2):
+            result = self.resolve(reviews, self.state(revision=1, exists=True, views=['500', '600']))
+            self.assertEqual(result['views'], [])
+            self.assertIn('views: inserted 0, skipped as live 0, skipped by cap 2 (Sprints 100, 101), slots left 0', result['report'])
+        with patch.object(review, 'MAX_GROUP_VIEWS', 0):  # the fresh path too (views[-0:] is the whole list)
+            self.assertEqual(self.resolve(reviews)['views'], [])
+
+    def test_the_report_names_view_intervals_and_remaining_slots(self):
+        reviews = [self.legacy(sprint, layouts={'story': {'order': ['status'], 'hidden': []}}) for sprint in (100, 200, 400)]
+        with patch.object(review, 'MAX_GROUP_VIEWS', 5):
+            result = self.resolve(reviews, self.state(revision=1, exists=True, views=['300']))
+        self.assertEqual([sprint for sprint, _ in result['views']], ['100', '200', '400'])
+        for line in ('view 100 governs Sprint ids [100, 200)', 'view 200 governs Sprint ids [200, 300)',
+                     'view 400 governs Sprint ids [400, open)',
+                     'views: inserted 3, skipped as live 0, skipped by cap 0, slots left 1'):
+            self.assertIn(line, result['report'])
+
+    def test_revision_rules_and_the_empty_plan(self):
+        risk = self.column(1, 'Risk')
+        reviews = [self.legacy(17, [risk], cells=[('101', 'story', uid(1), '1')])]
+        self.assertEqual(self.resolve(reviews, self.state())['revision'], 1)  # no row yet: created at 1
+        self.assertEqual(self.resolve(reviews, self.state(revision=4, exists=True))['revision'], 5)  # a column is added
+        self.assertEqual(self.resolve(reviews, self.state(revision=0, exists=True))['revision'], 1)
+        matched = self.state([self.group_column(10, 'Risk')], revision=4)
+        result = self.resolve(reviews, matched)  # matched column: only a cell is inserted, no revision change
+        self.assertEqual((result['revision'], result['added'], len(result['cells'])), (4, [], 1))
+        self.assertIn('schema revision: unchanged', result['report'])
+        done = self.state([self.group_column(10, 'Risk')], revision=4, cells={('101', 'story', uid(10))})
+        self.assertTrue(self.resolve(reviews, done)['empty'])
 
 
 # Captured from the unmodified script and checked against counts derived by hand from the fixtures

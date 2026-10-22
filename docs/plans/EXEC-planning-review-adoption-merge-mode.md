@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-Status: Approved 2026-10-22 by the operator, with the recommended answer taken for D-1 to D-12 (D-8: postmortem yes; issue [#299](https://github.com/Juce-me/jira-execution-planner/issues/299) created 2026-10-22). Validated once (three independent read-only reviews, findings applied; this revision is not re-validated). Tasks 1 and 2a done 2026-10-22 (branch cut, symbols re-verified, baseline green, golden-state tests committed); Task 2b is next; the script is unchanged.
+Status: Approved 2026-10-22 by the operator, with the recommended answer taken for D-1 to D-12 (D-8: postmortem yes; issue [#299](https://github.com/Juce-me/jira-execution-planner/issues/299) created 2026-10-22). Validated once (three independent read-only reviews, findings applied; this revision is not re-validated). Tasks 1, 2a and 2b done 2026-10-22 (baseline green, golden-state tests committed, planner split with no behavior change); Task 3 is next.
 Type: bugfix (operator script, tests, docs; no application code, route, model or migration change)
 Branch: `bugfix/299-review-adoption-merge-mode`. At the operator's direction the agent-generated worktree branch was renamed to this `bugfix/` name (instead of the `feature/` name D-8 proposed) and fast-forwarded to `origin/main` `41c47562` on 2026-10-22, zero commits ahead. `origin/main` is nine commits past the base below; none touches the script, `sprint_review.py` or the adoption tests (empty diff checked 2026-10-22), but Task 1 re-verifies every cited symbol.
 Written: 2026-10-22 against `origin/main` `919eadac` from the #267 design and plan, `scripts/adopt_legacy_sprint_reviews.py`, `backend/services/sprint_review.py`, `tests/test_adopt_legacy_sprint_reviews.py`, a read-only look at a local database that hit the problem, and the downstream release chart.
@@ -160,13 +160,13 @@ Files: `tests/test_adopt_legacy_sprint_reviews.py`.
 
 Files: `scripts/adopt_legacy_sprint_reviews.py`.
 
-- [ ] Split `_plan` into `_normalize(reviews)` (shape checks, malformed, repeated-id and cross-kind-layout aborts, key groups, candidates before the cap) and `_resolve_group(normalized, state)` (matching, cap slots, `apply_schema`, per-target cell winners with the dropped counters, layout remap, view cap, report). Cell winners and drop counters stay per target after the remap, exactly as today. The fresh path resolves once with an empty state and reuses the result for every group. Fix the view slice for zero slots while here only if a test needs it (the fresh path's limit is never 0). The golden test and all 23 existing tests pass unmodified. Commit.
+- [x] Split `_plan` into `_normalize(reviews)` (the malformed-review, malformed-column and repeated-id aborts, key groups, archive intent, archived members, candidates before the cap) and `_resolve_group(normalized)` (cap ranking, `apply_schema`, per-target cell winners with the dropped counters, the layout shape and cross-kind aborts and remap, view cap, report). The layout aborts stay in `_resolve_group` so the order of checks, and with it the error precedence, is unchanged. Cell winners and drop counters stay per target after the remap, exactly as today. The fresh path resolves once and reuses the result for every group. The `state` parameter is added in Task 3 (an unused argument now would be dead code), and the view-slice fix for zero slots also belongs to Task 3 (the fresh path's limit is never 0). The golden tests and all 23 existing tests pass unmodified. Commit.
 
 ### Task 3: Group state reader and resolution (pure functions)
 
 Files: `scripts/adopt_legacy_sprint_reviews.py`, `tests/test_adopt_legacy_sprint_reviews.py`.
 
-- [ ] `_read_group_state` returns projected tuples (never ORM entities) with group-column shape validation; extend `_resolve_group` with the rules above. Tests call `_resolve_group` directly with synthetic state (class `AdoptionMergeResolutionTests`): `test_claim_by_id_survives_rename_and_archive_intent`; `test_claim_by_id_requires_same_kind_and_type_and_aborts_on_ambiguity`; `test_label_match_is_injective_lowest_order_then_position`; `test_renamed_adopted_column_never_double_claimed`; `test_group_archived_column_is_not_resurrected_and_cells_counted`; `test_matched_column_keeps_group_properties`; `test_cap_slots_use_existing_active_and_total_counts_across_kinds`; `test_live_cell_wins_including_retained_null`; `test_live_view_wins_whole_row_and_older_legacy_view_is_inserted_remapped`; `test_view_slots_zero_inserts_nothing`; `test_malformed_group_columns_abort_with_a_count`; `test_report_names_view_intervals_and_remaining_slots`. Commit.
+- [ ] `_read_group_state` returns projected tuples (never ORM entities) with group-column shape validation; extend `_resolve_group` with a `state` parameter and the rules above, and fix the view slice for zero slots (`views[-0:]` is the whole list). Tests call `_resolve_group` directly with synthetic state (class `AdoptionMergeResolutionTests`): `test_claim_by_id_survives_rename_and_archive_intent`; `test_claim_by_id_requires_same_kind_and_type_and_aborts_on_ambiguity`; `test_label_match_is_injective_lowest_order_then_position`; `test_renamed_adopted_column_never_double_claimed`; `test_group_archived_column_is_not_resurrected_and_cells_counted`; `test_matched_column_keeps_group_properties`; `test_cap_slots_use_existing_active_and_total_counts_across_kinds`; `test_live_cell_wins_including_retained_null`; `test_live_view_wins_whole_row_and_older_legacy_view_is_inserted_remapped`; `test_view_slots_zero_inserts_nothing`; `test_malformed_group_columns_abort_with_a_count`; `test_report_names_view_intervals_and_remaining_slots`. Commit.
 
 ### Task 4: Writer, locks, digest, CLI and `--list`
 
@@ -202,7 +202,7 @@ Files: the doc list above.
 | --- | --- | --- | --- |
 | 1 | done 2026-10-22 | none (no commit step) | Branch is `bugfix/299-...` by operator direction, not `feature/`. Baseline: adoption 23 OK, runner contract 14 OK, PostgreSQL module 12 OK on a throwaway database. |
 | 2a | done 2026-10-22 | `b64da786` | Three golden tests (rich, archive-only, layout-only workspace) instead of one; stdout compared in full including the digest, written rows compared as row counts plus sha256 prefixes. Expected counts derived by hand before capture; five temporary script mutations (cap bound, cell winner, orphan counter, view slice, written revision) each fail the goldens. Adoption file at HEAD: 26 tests OK. |
-| 2b | not started | | |
+| 2b | done 2026-10-22 | `b23e5237` | `_plan` removed (its one caller was `_build`); no `state` parameter yet (Task 3). Layout aborts stay in `_resolve_group` to keep the error precedence. Verified: golden tests and all 23 existing tests unmodified (26 OK); PostgreSQL module 12 OK on a throwaway database; randomized differential run of the old `_plan` (from the Task 2a head) against the new pipeline, 4000 cases (1062 successful plans, 2938 error paths), 0 mismatches in results, exception types and messages, and the harness reports 144 mismatches when the cap bound is changed. |
 | 3 | not started | | |
 | 4 | not started | | |
 | 5 | not started | | |
@@ -274,4 +274,4 @@ Not executed.
 
 ## Current Accuracy
 
-Approved plan. Tasks 1 and 2a are done (tests only); nothing in it describes shipped script behavior yet.
+Approved plan. Tasks 1, 2a and 2b are done (tests and a behavior-preserving refactor); no merge behavior exists yet.

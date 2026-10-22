@@ -69,7 +69,7 @@ The first reading, that a Sprint changing from future to active had orphaned the
 ## References
 
 - Issue [#299](https://github.com/Juce-me/jira-execution-planner/issues/299)
-- [`EXEC-planning-review-adoption-merge-mode.md`](../plans/EXEC-planning-review-adoption-merge-mode.md) and its validation record
+- [`DONE-planning-review-adoption-merge-mode.md`](../plans/DONE-planning-review-adoption-merge-mode.md) and its validation record
 - [`SUPPORT-planning-review-sprint-inheritance-design-267.md`](../plans/SUPPORT-planning-review-sprint-inheritance-design-267.md)
 - [`adopt_legacy_sprint_reviews.py`](../../scripts/adopt_legacy_sprint_reviews.py)
 - [`test_adopt_legacy_sprint_reviews.py`](../../tests/test_adopt_legacy_sprint_reviews.py), [`test_sprint_review_postgresql.py`](../../tests/test_sprint_review_postgresql.py)

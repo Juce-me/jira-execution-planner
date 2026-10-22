@@ -494,7 +494,7 @@ class AdoptionTests(unittest.TestCase):
         self.assertEqual(self.legacy_state(), before)
 
     # Golden state of the fresh path: pins stdout, digest and written rows before the planner is split
-    # (docs/plans/EXEC-planning-review-adoption-merge-mode.md, Task 2a). Workspace, row and column ids are fixed.
+    # (docs/plans/DONE-planning-review-adoption-merge-mode.md, Task 2a). Workspace, row and column ids are fixed.
     def golden_workspace(self, identity):
         with db_engine.session_scope(self.url) as session:
             session.add(models.Workspace(id=identity, environment_key='synthetic-golden-' + identity[-4:], name='Synthetic'))

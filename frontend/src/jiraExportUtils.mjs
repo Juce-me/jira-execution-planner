@@ -1,4 +1,4 @@
-const DEFAULT_MAX_JQL_KEYS = 250;
+export const DEFAULT_MAX_JQL_KEYS = 250;
 
 function normalizeIssueKind(issueKind) {
     return issueKind === 'epics' ? 'epics' : 'stories';
@@ -77,6 +77,13 @@ export function buildJiraIssueSearchUrl(jiraUrl, keys = []) {
     const jql = buildJiraKeyInJql(keys);
     if (!baseUrl || !jql) return '';
     return `${baseUrl}/issues/?jql=${encodeURIComponent(jql)}`;
+}
+
+// The Epics a closed-mode Lead Times chart lists, as one key list; empty when none or too many for one link.
+export function buildJiraClosedEpicsSearchUrl(jiraUrl, keys = [], maxKeys = DEFAULT_MAX_JQL_KEYS) {
+    const normalized = normalizeJiraExportKeys(keys);
+    if (!normalized.length || normalized.length > maxKeys) return '';
+    return buildJiraIssueSearchUrl(jiraUrl, normalized);
 }
 
 export function buildJiraIssueSearchUrlFromJql(jiraUrl, jql) {
@@ -180,7 +187,6 @@ export function buildJiraCohortIssueSearchUrl({
     components = [],
     teamIds = [],
     teamFieldName = 'Team[Team]',
-    assigneeKey = '',
 } = {}) {
     const dateClauses = cohortDateClauses({ startQuarter, endQuarter, groupBy, rowKey });
     const normalizedStatuses = uniqueJqlValues(statuses);
@@ -197,10 +203,6 @@ export function buildJiraCohortIssueSearchUrl({
     pushInClause(clauses, 'status', normalizedStatuses);
     pushInClause(clauses, 'component', components);
     pushInClause(clauses, `"${escapeJqlLiteral(teamFieldName)}"`, teamIds);
-    const normalizedAssignee = String(assigneeKey || '').trim();
-    if (normalizedAssignee && normalizedAssignee !== 'all') {
-        pushInClause(clauses, 'assignee', [normalizedAssignee]);
-    }
     return buildJiraIssueSearchUrlFromJql(jiraUrl, clauses.join(' AND '));
 }
 

@@ -1,4 +1,4 @@
-import { getCurrentQuarterLabel } from '../cohort/cohortUtils.js';
+import { getCurrentQuarterLabel, resolveLeadTimesLastN, resolveLeadTimesMode } from '../cohort/cohortUtils.js';
 
 export const STATS_GROUP_STATE_KEYS = [
     'statsView',
@@ -13,9 +13,12 @@ export const STATS_GROUP_STATE_KEYS = [
     'cohortError',
     'cohortStartQuarter',
     'cohortEndQuarter',
+    'cohortMode',
+    'cohortClosedStartQuarter',
+    'cohortClosedEndQuarter',
+    'cohortLastN',
     'cohortGroupBy',
     'cohortProjectFilter',
-    'cohortAssigneeFilter',
     'cohortExcludeAdHoc',
     'cohortExcludeCapacity',
     'cohortStatusToggles',
@@ -36,9 +39,12 @@ export function buildDefaultStatsGroupState(savedPrefs, { resolveStatsView, reso
         cohortError: '',
         cohortStartQuarter: savedPrefs.cohortStartQuarter || getCurrentQuarterLabel(),
         cohortEndQuarter: savedPrefs.cohortEndQuarter || getCurrentQuarterLabel(),
+        cohortMode: resolveLeadTimesMode(savedPrefs.cohortMode),
+        cohortClosedStartQuarter: savedPrefs.cohortClosedStartQuarter || getCurrentQuarterLabel(),
+        cohortClosedEndQuarter: savedPrefs.cohortClosedEndQuarter || getCurrentQuarterLabel(),
+        cohortLastN: resolveLeadTimesLastN(savedPrefs.cohortLastN),
         cohortGroupBy: resolveCohortGroupBy(savedPrefs.cohortGroupBy),
         cohortProjectFilter: savedPrefs.cohortProjectFilter || 'all',
-        cohortAssigneeFilter: savedPrefs.cohortAssigneeFilter || 'all',
         cohortExcludeAdHoc: Boolean(savedPrefs.cohortExcludeAdHoc),
         cohortExcludeCapacity: savedPrefs.cohortExcludeCapacity ?? true,
         cohortStatusToggles: {
@@ -54,7 +60,7 @@ export function buildDefaultStatsGroupState(savedPrefs, { resolveStatsView, reso
 }
 
 export function snapshotStatsGroupState(values) {
-    const { statsView, statsGraphMode, burnoutData, burnoutLoading, burnoutError, burnoutAssigneeFilter, burndownMetric, cohortData, cohortLoading, cohortError, cohortStartQuarter, cohortEndQuarter, cohortGroupBy, cohortProjectFilter, cohortAssigneeFilter, cohortExcludeAdHoc, cohortExcludeCapacity, cohortStatusToggles, cohortSelectedRow } = values;
+    const { statsView, statsGraphMode, burnoutData, burnoutLoading, burnoutError, burnoutAssigneeFilter, burndownMetric, cohortData, cohortLoading, cohortError, cohortStartQuarter, cohortEndQuarter, cohortMode, cohortClosedStartQuarter, cohortClosedEndQuarter, cohortLastN, cohortGroupBy, cohortProjectFilter, cohortExcludeAdHoc, cohortExcludeCapacity, cohortStatusToggles, cohortSelectedRow } = values;
     return {
         statsView,
         statsGraphMode,
@@ -68,9 +74,12 @@ export function snapshotStatsGroupState(values) {
         cohortError,
         cohortStartQuarter,
         cohortEndQuarter,
+        cohortMode,
+        cohortClosedStartQuarter,
+        cohortClosedEndQuarter,
+        cohortLastN,
         cohortGroupBy,
         cohortProjectFilter,
-        cohortAssigneeFilter,
         cohortExcludeAdHoc,
         cohortExcludeCapacity,
         cohortStatusToggles,
@@ -91,9 +100,12 @@ export function applyStatsGroupState(nextState, setters, { resolveStatsView, res
     setters.setCohortError(nextState.cohortError || '');
     setters.setCohortStartQuarter(nextState.cohortStartQuarter || getCurrentQuarterLabel());
     setters.setCohortEndQuarter(nextState.cohortEndQuarter || getCurrentQuarterLabel());
+    setters.setCohortMode(resolveLeadTimesMode(nextState.cohortMode));
+    setters.setCohortClosedStartQuarter(nextState.cohortClosedStartQuarter || getCurrentQuarterLabel());
+    setters.setCohortClosedEndQuarter(nextState.cohortClosedEndQuarter || getCurrentQuarterLabel());
+    setters.setCohortLastN(resolveLeadTimesLastN(nextState.cohortLastN));
     setters.setCohortGroupBy(resolveCohortGroupBy(nextState.cohortGroupBy));
     setters.setCohortProjectFilter(nextState.cohortProjectFilter || 'all');
-    setters.setCohortAssigneeFilter(nextState.cohortAssigneeFilter || 'all');
     setters.setCohortExcludeAdHoc(Boolean(nextState.cohortExcludeAdHoc));
     setters.setCohortExcludeCapacity(nextState.cohortExcludeCapacity ?? true);
     setters.setCohortStatusToggles({

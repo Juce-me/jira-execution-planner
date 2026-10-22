@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { isAuthenticationRequiredError } from '../api/authRequired.js';
-import { aggregateCohortSummary, buildCohortGridModel, buildCompletedEpicsBars, buildOpenEpicsBars, buildQuarterOptions, deriveAssigneeOptions, deriveProjectOptions, filterCohortIssues, getCurrentQuarterLabel, normalizeCohortStatus } from '../cohort/cohortUtils.js';
+import { aggregateCohortSummary, buildCohortGridModel, buildCohortRequest, buildCompletedEpicsBars, buildOpenEpicsBars, buildQuarterOptions, createdRangeOf, deriveProjectOptions, filterCohortIssues, getCurrentQuarterLabel, normalizeCohortStatus, selectLastClosedEpics } from '../cohort/cohortUtils.js';
 import { buildDefaultExcludedCapacityRange, buildEpicTeamCrossShareLineSeries, buildEpicTeamModeOverall, buildEpicTeamModeSprintRows, buildEffortTypeSplitRows, buildExcludedCapacityLineSeries, buildExcludedCapacityTimeSeries, buildExcludedEpicCatalog, getSprintRange, loadExcludedCapacityStatsSourceChunks, mergeExcludedCapacityStatsSourceChunks, sortSprintsNewestFirst, summarizeEffortTypeSplitTotals } from './excludedCapacityStats.js';
 import { buildBurnoutChartModel } from './burnoutChartUtils.js';
 import { buildLocalStatsFromTasks, computePriorityWeighted, computeRate, getPriorityLabel } from './statsUtils.js';
@@ -57,7 +57,8 @@ function runAutomaticStatsRead(automatic, source, issueEditStateRef, request, co
 export function useStatsDerivedA({
     scope, automaticRefreshRef, BACKEND_URL, activeGroupMissingComponents, activeGroupTeamIds,
     activeGroupTeamSet, burnoutAssigneeFilter, burnoutCacheRef, burnoutData,
-    cohortEndQuarter, cohortStartQuarter, getTeamInfo, groupPreferences,
+    cohortClosedEndQuarter, cohortClosedStartQuarter, cohortEndQuarter, cohortMode, cohortStartQuarter,
+    getTeamInfo, groupPreferences,
     isCompletedSprintSelected, issueEditStateRef, issuePeopleStatsRevision, normalizeEpicKey,
     normalizeStatus, perfCountersRef, perfEnabled, setBurnoutAssigneeFilter,
     setBurnoutData, setBurnoutError, setBurnoutLoading, showStats,
@@ -187,11 +188,16 @@ export function useStatsDerivedA({
         return `${sprintLabel}::${burnoutClosureScopeKey}::${burnoutScopedTeamSignature || 'all'}::${burnoutIssueKeysSignature}`;
     }, [selectedSprintInfo?.name, burnoutClosureScopeKey, burnoutScopedTeamSignature, burnoutIssueKeysSignature]);
     const cohortQueryKey = React.useMemo(() => {
-        const startQuarter = String(cohortStartQuarter || '').trim();
-        const endQuarter = String(cohortEndQuarter || '').trim();
+        // Created keeps its original key; the closed modes prefix theirs, and Last N is keyed by scope alone (N is client-only).
+        const scopeKey = `${cohortScopedTeamSignature}::${adHocEpicSignature || 'no-adhoc'}`;
+        if (cohortMode === 'last_n') return `last_n::::::${scopeKey}`;
+        const closedMode = cohortMode === 'closed';
+        const startQuarter = String((closedMode ? cohortClosedStartQuarter : cohortStartQuarter) || '').trim();
+        const endQuarter = String((closedMode ? cohortClosedEndQuarter : cohortEndQuarter) || '').trim();
         if (!startQuarter || !endQuarter) return '';
-        return `${startQuarter}::${endQuarter}::${cohortScopedTeamSignature}::${adHocEpicSignature || 'no-adhoc'}`;
-    }, [cohortStartQuarter, cohortEndQuarter, cohortScopedTeamSignature, adHocEpicSignature]);
+        const key = `${startQuarter}::${endQuarter}::${scopeKey}`;
+        return closedMode ? `closed::${key}` : key;
+    }, [cohortMode, cohortStartQuarter, cohortEndQuarter, cohortClosedStartQuarter, cohortClosedEndQuarter, cohortScopedTeamSignature, adHocEpicSignature]);
 
     useEffect(() => {
         if (!showStats || statsView !== 'burnout') return;
@@ -336,16 +342,16 @@ export function useStatsDerivedB({
     scope, automaticRefreshRef, BACKEND_URL, EMPTY_ARRAY, EXCLUDED_CAPACITY_STATS_SOURCE_CONCURRENCY,
     activeGroup, activeGroupAdHocCapacityEpics, activeGroupMissingComponents, activeGroupTeamIds,
     adminSettingsGate, availableSprints, burnoutAssigneeFilter, burnoutQueryKey,
-    burnoutScopedTeamIds, burnoutScopedTeamSignature, cohortAssigneeFilter, cohortCacheRef,
-    cohortData, cohortEndQuarter, cohortExcludeAdHoc, cohortExcludeCapacity,
-    cohortGroupBy, cohortProjectFilter, cohortQueryKey, cohortScopedTeamSignature,
+    burnoutScopedTeamIds, burnoutScopedTeamSignature, cohortCacheRef,
+    cohortClosedEndQuarter, cohortClosedStartQuarter, cohortData, cohortEndQuarter, cohortExcludeAdHoc, cohortExcludeCapacity,
+    cohortGroupBy, cohortLastN, cohortMode, cohortProjectFilter, cohortQueryKey, cohortScopedTeamSignature,
     cohortSelectedRow, cohortStartQuarter, cohortStatusToggles, excludedCapacityCacheRef,
     excludedCapacityChartMode, excludedCapacityData, excludedCapacityEndSprintId, excludedCapacityEpicDropdownOpen,
     excludedCapacityEpicDropdownRef, excludedCapacityForceRefreshRef, excludedCapacityIsolatedTeam, excludedCapacityRefreshNonce,
     excludedCapacitySelectedEpicKeys, excludedCapacityStartSprintId, groupPreferences, issueEditStateRef,
     issuePeopleStatsRevision, projectTrackCapacitySide, projectTrackExcludeAdHoc, projectTrackExcludeExcludedCapacity,
     projectTrackMode, projectTrackPhaseAbortRef, projectTrackPhaseCacheRef, projectTrackPhaseData,
-    setBurnoutTaskFilter, setCohortAssigneeFilter, setCohortData, setCohortError,
+    setBurnoutTaskFilter, setCohortData, setCohortError,
     setCohortLoading, setCohortProjectFilter, setCohortSelectedRow, setEffortSplitVisibleBuckets,
     setExcludedCapacityData, setExcludedCapacityEndSprintId, setExcludedCapacityEpicDropdownOpen, setExcludedCapacityError,
     setExcludedCapacityIsolatedTeam, setExcludedCapacityLoading, setExcludedCapacitySelectedEpicKeys, setExcludedCapacityStartSprintId,
@@ -371,20 +377,22 @@ export function useStatsDerivedB({
 
     useEffect(() => {
         if (!showStats || statsView !== 'cohort') return;
+        const activeStartQuarter = cohortMode === 'closed' ? cohortClosedStartQuarter : cohortStartQuarter;
+        const activeEndQuarter = cohortMode === 'closed' ? cohortClosedEndQuarter : cohortEndQuarter;
         const automatic = automaticRefreshRef?.current;
         if (automatic && automatic.job.shouldApply()) {
             if (automatic.source !== 'stats_cohort') return;
-            if (groupPreferences.onboardingRequired || adminSettingsGate.status !== 'clear' || !cohortStartQuarter || !cohortEndQuarter) { automatic.settle([{ source: 'stats_cohort', status: 'ignored', checkKind: 'unknown', coverage: 'unknown', requestStartedAtMs: 0 }]); return; }
+            if (groupPreferences.onboardingRequired || adminSettingsGate.status !== 'clear' || (cohortMode !== 'last_n' && (!activeStartQuarter || !activeEndQuarter))) { automatic.settle([{ source: 'stats_cohort', status: 'ignored', checkKind: 'unknown', coverage: 'unknown', requestStartedAtMs: 0 }]); return; }
             return runAutomaticStatsRead(automatic, 'stats_cohort', issueEditStateRef,
-                signal => requestEpicCohortStats(BACKEND_URL, { startQuarter: cohortStartQuarter, endQuarter: cohortEndQuarter,
-                    teamIds: burnoutScopedTeamIds, components: activeGroupMissingComponents, adHocCapacityEpics: activeGroupAdHocCapacityEpics, refresh: false }, { signal, suppressAbortResult: true }),
+                signal => requestEpicCohortStats(BACKEND_URL, buildCohortRequest({ mode: cohortMode, startQuarter: activeStartQuarter, endQuarter: activeEndQuarter,
+                    teamIds: burnoutScopedTeamIds, components: activeGroupMissingComponents, adHocCapacityEpics: activeGroupAdHocCapacityEpics }), { signal, suppressAbortResult: true }),
                 data => { automaticCohortDataRef.current = data; cohortCacheRef.current[cohortQueryKey] = data; setCohortData(data); });
         }
         automaticCohortDataRef.current = null;
         if (groupPreferences.onboardingRequired || adminSettingsGate.status !== 'clear') { setCohortData(null); setCohortError(''); setCohortLoading(false); return; }
-        const startQuarter = String(cohortStartQuarter || '').trim();
-        const endQuarter = String(cohortEndQuarter || '').trim();
-        if (!startQuarter || !endQuarter) {
+        const startQuarter = String(activeStartQuarter || '').trim();
+        const endQuarter = String(activeEndQuarter || '').trim();
+        if (cohortMode !== 'last_n' && (!startQuarter || !endQuarter)) {
             setCohortData(null);
             setCohortError('Start and end quarter are required.');
             setCohortLoading(false);
@@ -413,14 +421,14 @@ export function useStatsDerivedB({
             try {
                 const response = await requestEpicCohortStats(
                     BACKEND_URL,
-                    {
+                    buildCohortRequest({
+                        mode: cohortMode,
                         startQuarter,
                         endQuarter,
                         teamIds: burnoutScopedTeamIds,
                         components: activeGroupMissingComponents,
-                        adHocCapacityEpics: activeGroupAdHocCapacityEpics,
-                        refresh: false
-                    },
+                        adHocCapacityEpics: activeGroupAdHocCapacityEpics
+                    }),
                     { signal: controller.signal }
                 );
                 if (!response.ok) {
@@ -460,47 +468,64 @@ export function useStatsDerivedB({
                 // ignore abort errors
             }
         };
-    }, [showStats, statsView, cohortStartQuarter, cohortEndQuarter, cohortQueryKey, cohortScopedTeamSignature, burnoutScopedTeamSignature, activeGroupMissingComponents, adHocEpicSignature, groupPreferences.onboardingRequired, adminSettingsGate.status, issuePeopleStatsRevision]);
+    }, [showStats, statsView, cohortMode, cohortStartQuarter, cohortEndQuarter, cohortClosedStartQuarter, cohortClosedEndQuarter, cohortQueryKey, cohortScopedTeamSignature, burnoutScopedTeamSignature, activeGroupMissingComponents, adHocEpicSignature, groupPreferences.onboardingRequired, adminSettingsGate.status, issuePeopleStatsRevision]);
 
     const cohortQuarterOptions = React.useMemo(() => {
         return buildQuarterOptions(getCurrentQuarterLabel(), 16);
     }, []);
+    // Cached or in-flight data from another mode must never render under the current one: it is "awaiting".
+    const cohortAwaitingMode = cohortData != null && (cohortData.meta?.mode ?? 'created') !== cohortMode;
+    const cohortModeData = cohortAwaitingMode ? null : cohortData;
     const cohortIssues = React.useMemo(() => {
-        return Array.isArray(cohortData?.issues) ? cohortData.issues : [];
-    }, [cohortData]);
+        return Array.isArray(cohortModeData?.issues) ? cohortModeData.issues : [];
+    }, [cohortModeData]);
     const cohortProjectOptions = React.useMemo(() => deriveProjectOptions(cohortIssues), [cohortIssues]);
-    const cohortAssigneeSourceIssues = React.useMemo(() => {
-        if (cohortProjectFilter === 'all') return cohortIssues;
-        return cohortIssues.filter((issue) => String(issue?.projectKey || '') === cohortProjectFilter);
-    }, [cohortIssues, cohortProjectFilter]);
-    const cohortAssigneeOptions = React.useMemo(() => deriveAssigneeOptions(cohortAssigneeSourceIssues), [cohortAssigneeSourceIssues]);
     const cohortFilteredIssues = React.useMemo(() => {
         return filterCohortIssues(cohortIssues, {
             projectKey: cohortProjectFilter,
-            assigneeKey: cohortAssigneeFilter,
             excludeAdHoc: cohortExcludeAdHoc,
             excludeEpicKeys: cohortExcludeCapacity ? excludedEpicSet : EMPTY_ARRAY,
-            statusToggles: cohortStatusToggles
+            statusToggles: cohortStatusToggles,
+            closedOnly: cohortMode !== 'created'
         });
-    }, [cohortIssues, cohortProjectFilter, cohortAssigneeFilter, cohortExcludeAdHoc, cohortExcludeCapacity, cohortStatusToggles, excludedEpicSet]);
-    const cohortSummary = React.useMemo(() => aggregateCohortSummary(cohortFilteredIssues), [cohortFilteredIssues]);
+    }, [cohortIssues, cohortProjectFilter, cohortExcludeAdHoc, cohortExcludeCapacity, cohortStatusToggles, excludedEpicSet, cohortMode]);
+    // Last N counts after the filters: the server sends one bounded window, the newest N that pass them are shown.
+    const cohortDisplayedIssues = React.useMemo(() => {
+        return cohortMode === 'last_n' ? selectLastClosedEpics(cohortFilteredIssues, cohortLastN) : cohortFilteredIssues;
+    }, [cohortMode, cohortFilteredIssues, cohortLastN]);
+    const cohortCreatedRange = React.useMemo(() => {
+        return cohortMode === 'created' ? null : createdRangeOf(cohortDisplayedIssues);
+    }, [cohortMode, cohortDisplayedIssues]);
+    const cohortScope = cohortModeData?.meta?.scope ?? null;
+    const cohortFetchedCount = cohortIssues.length;
+    const cohortLastNShortfall = React.useMemo(() => {
+        if (cohortMode !== 'last_n' || cohortModeData?.meta?.windowFull !== true) return null;
+        const shown = cohortDisplayedIssues.length;
+        if (shown >= cohortLastN) return null;
+        return { shown, requested: cohortLastN, ceiling: cohortModeData.meta.windowCeiling ?? null };
+    }, [cohortMode, cohortModeData, cohortDisplayedIssues, cohortLastN]);
+    const cohortSummary = React.useMemo(() => aggregateCohortSummary(cohortDisplayedIssues), [cohortDisplayedIssues]);
     const cohortWorkflowStatusTotal = (cohortSummary.inProgress || 0) + (cohortSummary.postponed || 0) + (cohortSummary.awaitingValidation || 0);
-    const cohortGridModel = React.useMemo(() => buildCohortGridModel(cohortFilteredIssues, {
+    // Created rows follow the requested creation range; the closed modes span the displayed Epics themselves.
+    const cohortRangeStartDate = cohortMode === 'created' ? cohortModeData?.range?.startDate : cohortCreatedRange?.startDate;
+    const cohortRangeEndDate = cohortMode === 'created' ? cohortModeData?.range?.endDate : cohortCreatedRange?.endDate;
+    const cohortGridModel = React.useMemo(() => buildCohortGridModel(cohortDisplayedIssues, {
         groupBy: cohortGroupBy,
         maxColumns: cohortGroupBy === 'month' ? 24 : 12,
-        rangeStartDate: cohortData?.range?.startDate,
-        rangeEndDate: cohortData?.range?.endDate
-    }), [cohortFilteredIssues, cohortGroupBy, cohortData?.range?.startDate, cohortData?.range?.endDate]);
-    const cohortOpenBars = React.useMemo(() => buildOpenEpicsBars(cohortFilteredIssues, {
+        overflowColumn: cohortMode !== 'created',
+        rangeStartDate: cohortRangeStartDate,
+        rangeEndDate: cohortRangeEndDate
+    }), [cohortDisplayedIssues, cohortGroupBy, cohortMode, cohortRangeStartDate, cohortRangeEndDate]);
+    const cohortOpenBars = React.useMemo(() => buildOpenEpicsBars(cohortDisplayedIssues, {
         groupBy: cohortGroupBy,
         rowKey: cohortSelectedRow
-    }), [cohortFilteredIssues, cohortGroupBy, cohortSelectedRow]);
-    const cohortCompletedBars = React.useMemo(() => buildCompletedEpicsBars(cohortFilteredIssues, {
+    }), [cohortDisplayedIssues, cohortGroupBy, cohortSelectedRow]);
+    const cohortCompletedBars = React.useMemo(() => buildCompletedEpicsBars(cohortDisplayedIssues, {
         groupBy: cohortGroupBy,
         rowKey: cohortSelectedRow
-    }), [cohortFilteredIssues, cohortGroupBy, cohortSelectedRow]);
+    }), [cohortDisplayedIssues, cohortGroupBy, cohortSelectedRow]);
     const cohortAverageLeadDays = React.useMemo(() => {
-        const resolved = cohortFilteredIssues.filter((issue) => {
+        const resolved = cohortDisplayedIssues.filter((issue) => {
             const statusKey = normalizeCohortStatus(issue?.status);
             if (statusKey === 'open') return false;
             return Number.isFinite(Number(issue?.leadTimeDays));
@@ -508,9 +533,9 @@ export function useStatsDerivedB({
         if (!resolved.length) return null;
         const total = resolved.reduce((sum, issue) => sum + Number(issue?.leadTimeDays || 0), 0);
         return total / resolved.length;
-    }, [cohortFilteredIssues]);
+    }, [cohortDisplayedIssues]);
     const cohortMedianLeadDays = React.useMemo(() => {
-        const values = cohortFilteredIssues
+        const values = cohortDisplayedIssues
             .filter((issue) => {
                 const statusKey = normalizeCohortStatus(issue?.status);
                 if (statusKey === 'open') return false;
@@ -522,18 +547,22 @@ export function useStatsDerivedB({
         const middle = Math.floor(values.length / 2);
         if (values.length % 2 === 1) return values[middle];
         return (values[middle - 1] + values[middle]) / 2;
-    }, [cohortFilteredIssues]);
+    }, [cohortDisplayedIssues]);
     const cohortWarnings = React.useMemo(() => {
-        const warnings = cohortData?.meta?.warnings;
+        const warnings = cohortModeData?.meta?.warnings;
         return Array.isArray(warnings) ? warnings : [];
-    }, [cohortData]);
-    const cohortStatusControls = React.useMemo(() => ([
+    }, [cohortModeData]);
+    const cohortStatusControls = React.useMemo(() => (cohortMode === 'created' ? [
         { key: 'done', label: 'Done' },
         { key: 'open', label: 'In Progress' },
         { key: 'killed', label: 'Killed' },
         { key: 'incomplete', label: 'Incomplete' },
         { key: 'postponed', label: 'Postponed' }
-    ]), []);
+    ] : [
+        { key: 'done', label: 'Done' },
+        { key: 'killed', label: 'Killed' },
+        { key: 'incomplete', label: 'Incomplete' }
+    ]), [cohortMode]);
     const cohortSelectedRowLabel = React.useMemo(() => {
         if (!cohortSelectedRow) return '';
         const row = (cohortGridModel?.rows || []).find((item) => item.key === cohortSelectedRow);
@@ -542,26 +571,21 @@ export function useStatsDerivedB({
 
     useEffect(() => {
         if (cohortData && automaticCohortDataRef.current === cohortData) return;
+        if (cohortAwaitingMode) return;
         if (cohortProjectFilter === 'all') return;
         const exists = cohortProjectOptions.some((item) => item.value === cohortProjectFilter);
         if (!exists) setCohortProjectFilter('all');
-    }, [cohortProjectFilter, cohortProjectOptions]);
+    }, [cohortProjectFilter, cohortProjectOptions, cohortAwaitingMode]);
 
     useEffect(() => {
         if (cohortData && automaticCohortDataRef.current === cohortData) return;
-        if (cohortAssigneeFilter === 'all') return;
-        const exists = cohortAssigneeOptions.some((item) => item.value === cohortAssigneeFilter);
-        if (!exists) setCohortAssigneeFilter('all');
-    }, [cohortAssigneeFilter, cohortAssigneeOptions]);
-
-    useEffect(() => {
-        if (cohortData && automaticCohortDataRef.current === cohortData) return;
+        if (cohortAwaitingMode) return;
         if (!cohortSelectedRow) return;
         const exists = (cohortGridModel?.rows || []).some((row) => row.key === cohortSelectedRow);
         if (!exists) {
             setCohortSelectedRow(null);
         }
-    }, [cohortGridModel, cohortSelectedRow]);
+    }, [cohortGridModel, cohortSelectedRow, cohortAwaitingMode]);
 
     const excludedCapacitySprintOptions = React.useMemo(() => {
         return sortSprintsNewestFirst(availableSprints);
@@ -1125,10 +1149,11 @@ export function useStatsDerivedB({
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [excludedCapacityEpicDropdownOpen]);
     return {
-        cohortQuarterOptions, cohortProjectOptions, cohortAssigneeOptions, cohortSummary,
+        cohortQuarterOptions, cohortProjectOptions, cohortSummary,
         cohortWorkflowStatusTotal, cohortGridModel, cohortOpenBars, cohortCompletedBars,
         cohortAverageLeadDays, cohortMedianLeadDays, cohortWarnings, cohortStatusControls,
-        cohortSelectedRowLabel, excludedCapacitySprintOptions, excludedCapacitySprintRange, effortSplitSprintLabel,
+        cohortSelectedRowLabel, cohortDisplayedIssues, cohortScope, cohortFetchedCount, cohortAwaitingMode, cohortLastNShortfall,
+        excludedCapacitySprintOptions, excludedCapacitySprintRange, effortSplitSprintLabel,
         excludedCapacityEpicOptions, projectTrackSeries, projectTrackTotals, projectTrackBreakdown,
         projectTrackColumnSplit, projectTrackSingleTeam, projectTrackRangeLabel, projectTrackPhaseEpics, projectTrackPhaseSummary,
         excludedCapacityEpicCatalog, excludedCapacityEffectiveFilters, excludedCapacityFilterLabel, effortSplitRows,

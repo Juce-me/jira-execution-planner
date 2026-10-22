@@ -14,7 +14,7 @@ function getHeatLevel(count, maxValue) {
     return 1;
 }
 
-function CohortGrid({ model, selectedRowKey, onSelectRow }) {
+function CohortGrid({ model, selectedRowKey, onSelectRow, showOpen = true, emptyMessage = 'No cohort records for current filters.' }) {
     const [tooltip, setTooltip] = React.useState(null);
     const wrapRef = React.useRef(null);
     const frameRef = React.useRef(null);
@@ -70,7 +70,7 @@ function CohortGrid({ model, selectedRowKey, onSelectRow }) {
     }, [model]);
 
     if (!model || !Array.isArray(model.rows) || model.rows.length === 0) {
-        return <div className="cohort-empty">No cohort records for current filters.</div>;
+        return <div className="cohort-empty">{emptyMessage}</div>;
     }
 
     const tooltipStatusCounts = tooltip?.cell?.statusCounts || {};
@@ -97,7 +97,7 @@ function CohortGrid({ model, selectedRowKey, onSelectRow }) {
                             <tr>
                                 <th className="cohort-row-head">Created</th>
                                 <th className="cohort-row-total">Created</th>
-                                <th className="cohort-row-total">Open</th>
+                                {showOpen && <th className="cohort-row-total">Open</th>}
                                 {model.columns.map((column) => (
                                     <th key={column.key}>{column.label}</th>
                                 ))}
@@ -114,7 +114,7 @@ function CohortGrid({ model, selectedRowKey, onSelectRow }) {
                                     >
                                         <td className="cohort-row-title">{row.label}</td>
                                         <td className="cohort-row-metric">{row.totalCreated}</td>
-                                        <td className="cohort-row-metric">{row.openCount}</td>
+                                        {showOpen && <td className="cohort-row-metric">{row.openCount}</td>}
                                         {row.cells.map((cell) => {
                                             const column = model.columns[cell.index];
                                             const level = getHeatLevel(cell.count, model.maxCellCount);

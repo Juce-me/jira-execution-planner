@@ -15,6 +15,12 @@
             transform: none;
         }
 
+        /* A grid item defaults to min-width: auto, so a wide heatmap table would widen its card past the panel and
+           the grid could never scale it down; let the card shrink to the panel instead. */
+        .cohort-panel > .cohort-section {
+            min-width: 0;
+        }
+
         .cohort-section-title {
             display: flex;
             justify-content: space-between;

@@ -315,9 +315,19 @@ test('ordinary clipboard success announces its destination without rendering a f
     }
 });
 
-test('every alert group header carries its own share control for its card anchor', () => {
+test('every alert group label is its own copy-link control for its card anchor, with no separate icon', () => {
     const panel = read('frontend/src/eng/EngAlertsPanel.jsx');
-    const anchors = [...panel.matchAll(/renderAlertShareControl\?\.\('(\w+)', group\)/g)].map(match => match[1]);
+    const anchors = [...panel.matchAll(/renderTeamCount\('(\w+)', group, /g)].map(match => match[1]);
     assert.deepEqual(anchors.sort(), ['backlog', 'blocked', 'done', 'empty', 'followup', 'followupEpics', 'missing', 'missingLabels', 'missingTeam', 'needsStories', 'waiting'].sort());
     assert.equal((panel.match(/<div className="alert-team-header">/g) || []).length, anchors.length, 'no group header is left without it');
+    assert.equal(panel.includes('renderAlertShareControl?.(\'') , false, 'the control is rendered only through the label helper, never as a sibling icon');
+    assert.match(panel, /const renderTeamCount = \(anchor, group, text\) => renderAlertShareControl\?\.\(anchor, group, text\) \|\| <span>\{text\}<\/span>;/);
+    assert.match(read('frontend/src/dashboard.jsx'), /renderAlertShareControl = \(anchor, group, labelText\)[\s\S]*?labelText=\{labelText\}/);
+});
+
+test('ShareViewButton with labelText renders the count text as the only control', () => {
+    const markup = render({ surface: 'epic', activeControlSurface: 'epic', alertTarget: { anchor: 'blocked', id: 't1' }, labelText: '2 stories blocked' });
+    assert.match(markup, /<button type="button" class="alert-team-count"[^>]*aria-label="Copy link to this alert group: 2 stories blocked"[^>]*>2 stories blocked<\/button>/);
+    assert.equal((markup.match(/<button/g) || []).length, 1);
+    assert.equal(markup.includes('data-share-view-icon="link"'), false, 'no link icon beside the label');
 });

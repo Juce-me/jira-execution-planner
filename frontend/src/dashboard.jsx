@@ -5631,9 +5631,9 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 <ShareViewButton surface="epic" epicKey={epicKey} scopeKey={shareScopeKey} share={shareView} sourceSurface={analyticsToken(activeEngMode)} activeControlSurface="epic" />
             );
             // A group named only by its display name has no stable id to share; the placeholders are the only name-ids a link may carry.
-            const renderAlertShareControl = (anchor, group) => selectedView === 'eng' && activeEngMode === 'catch-up'
+            const renderAlertShareControl = (anchor, group, labelText) => selectedView === 'eng' && activeEngMode === 'catch-up'
                 && (group.id !== group.name || ['unknown', 'Unknown Team'].includes(group.id)) && (
-                <ShareViewButton surface="epic" alertTarget={{ anchor, id: String(group.id) }} scopeKey={shareScopeKey} share={shareView} sourceSurface={analyticsToken(activeEngMode)} activeControlSurface="epic" />
+                <ShareViewButton surface="epic" alertTarget={{ anchor, id: String(group.id) }} labelText={labelText} scopeKey={shareScopeKey} share={shareView} sourceSurface={analyticsToken(activeEngMode)} activeControlSurface="epic" />
             );
             const renderBoardEpicShareControl = (epicKey, columnId) => selectedView === 'eng' && activeEngMode === 'board' && (
                 <ShareViewButton surface="epic" epicKey={epicKey} boardColumnId={columnId} scopeKey={shareScopeKey} share={shareView} sourceSurface={analyticsToken(activeEngMode)} activeControlSurface="epic" />
@@ -7030,7 +7030,6 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                                                 blockedAlertTeams,
                                                 blockedTasks: visibleAlertCollections.blockedTasks,
                                                 buildKeyListLink,
-                                                buildTeamStatusLink,
                                                 consolidatedMissingStories: visibleAlertCollections.consolidatedMissingStories,
                                                 dismissAlertItem,
                                                 doneEpicTeams,

@@ -7,9 +7,10 @@ const COPIED_MS = 2000;
 const KEY_SLOT_PX = 30;   // the gap the Epic key reserves on its left (epics.css) for the copy action
 const LABEL = 'Copy view link';
 
+// An alert group passes `labelText`: its own count text is then the control, so the group has no second copy affordance.
 // The same Share control serves header view copies and explicit Epic copies. It copies the captured URL; when the
 // clipboard is unavailable or refuses the write, the notice shows the URL in a read-only field.
-export default function ShareViewButton({ surface, share, sourceSurface, activeControlSurface, epicKey, boardColumnId, alertTarget, scopeKey }) {
+export default function ShareViewButton({ surface, share, sourceSurface, activeControlSurface, epicKey, boardColumnId, alertTarget, scopeKey, labelText }) {
     const [copied, setCopied] = React.useState(false);
     const [local, setLocal] = React.useState(null);
     const wrapperRef = React.useRef(null);
@@ -115,6 +116,26 @@ export default function ShareViewButton({ surface, share, sourceSurface, activeC
     const notice = currentLocal || (!epicKey && share.notice ? { message: shareViewNoticeMessage(share.notice) } : null);
     return (
         <div ref={wrapperRef} data-share-view={surface} data-share-feedback={currentLocal || (copied && ownsFeedback) ? 'active' : undefined}>
+            {labelText ? (
+                <button
+                    type="button"
+                    className="alert-team-count"
+                    onClick={copy}
+                    disabled={share.shareDisabled}
+                    title={share.shareDisabled ? 'Sharing is available once the view has loaded' : copied && ownsFeedback ? destination : hint}
+                    aria-label={`${label}: ${labelText}`}
+                    data-share-view-control=""
+                >
+                    {copied && ownsFeedback ? (
+                        <>
+                            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" data-share-view-icon="copied">
+                                <path d="M5 12.25l4.5 4.5L19 7.25" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                            Link copied
+                        </>
+                    ) : labelText}
+                </button>
+            ) : (
             <IconButton
                 size={targeted ? 'sm' : undefined}
                 variant="secondary compact"
@@ -139,6 +160,7 @@ export default function ShareViewButton({ surface, share, sourceSurface, activeC
                     </svg>
                 )}
             </IconButton>
+            )}
             {/* The app's only visually hidden utility, defined with the Planning review styles. */}
             <span className="planning-review-sr-only" role="status">{copied && ownsFeedback ? destination : ''}</span>
             {active && notice?.message && (

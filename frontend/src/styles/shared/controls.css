@@ -724,8 +724,6 @@
         .epic-header:focus-within [data-share-view="epic"] > button,
         .ecard:hover [data-share-view="epic"] > button,
         .ecard:focus-within [data-share-view="epic"] > button,
-        .alert-team-group:hover [data-share-view="epic"] > button,
-        .alert-team-group:focus-within [data-share-view="epic"] > button,
         .planning-review-table tr:hover [data-share-view="epic"] > button,
         .planning-review-table tr:focus-within [data-share-view="epic"] > button,
         [data-share-view="epic"][data-share-feedback="active"] > button {
@@ -753,11 +751,6 @@
             top: calc(0.6rem - 2px);
             left: var(--share-key-left, calc(100% - 0.7rem - 24px));
             z-index: 1;
-        }
-
-        .alert-team-header > [data-share-view="epic"] {
-            order: 1;
-            margin-left: auto;
         }
 
         @media (hover: none), (pointer: coarse) {

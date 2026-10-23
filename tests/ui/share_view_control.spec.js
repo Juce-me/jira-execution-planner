@@ -1126,7 +1126,7 @@ test('genuine warnings match the Jira warning typography and wrapping across mai
     }
 });
 
-test('an alert group carries its own share control that copies the group and reads inside its header', async ({ page }) => {
+test('an alert group count text is its copy-link control, always visible, and copies only that group card', async ({ page }) => {
     await installClipboard(page);
     const ctx = await mockDashboard(page);
     const story = ctx.scenario.stories[0];
@@ -1136,13 +1136,15 @@ test('an alert group carries its own share control that copies the group and rea
     await page.addStyleTag({ content: '*,*::before,*::after{animation:none!important;transition:none!important}' });
     const group = page.locator('#eng-alert-missing .alert-team-group[data-alert-team]').first();
     await expect(group).toBeVisible();
-    await group.hover();
     const action = group.locator('[data-share-view-control]');
+    await expect(group.locator('[data-share-view-control]')).toHaveCount(1);
+    await expect(action).toHaveClass(/alert-team-count/);
     await expect(action).toHaveCSS('opacity', '1');
-    expect((await action.boundingBox()).height).toBe(24);
+    expect((await action.boundingBox()).height).toBeLessThanOrEqual(24);
     await action.click();
     await expect.poll(() => page.evaluate(() => window.__copied.length)).toBe(1);
     expect((await page.evaluate(() => window.__copied))[0]).toMatch(/&alertTeam=[A-Za-z]+:/);
+    expect((await page.evaluate(() => window.__copied))[0]).toMatch(/[?&]alerts=missing(&|$)/);
     await expect(action).toHaveAttribute('title', 'Alert group link copied');
     await explicitShot(page, 'alert-group-copied');
 });

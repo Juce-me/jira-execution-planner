@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-Status: Draft, revision R2 (2026-10-23), validated once by three independent read-only reviews whose findings are applied (see Validation record). Not started. Execution is blocked until the operator answers D-1 to D-8.
+Status: Revision R2 (2026-10-23), validated once by three independent read-only reviews whose findings are applied (see Validation record). Decisions D-1 to D-8 resolved by the operator on 2026-10-23 (recommendations taken). Not started: execution begins only on the operator's go-ahead.
 Type: improvement (one Alembic data revision, a shared planner module, the operator script retargeted onto it, tests, docs)
 Branch: `bugfix/299-review-adoption-merge-mode`, pull request #300, by the operator's direction of 2026-10-22 ("use the same branch and add to the same pr, it's unmerged yet"). When implementation lands the pull request grows beyond its current title and "Closes #299" description; both are updated then.
 Written: 2026-10-22 and revised 2026-10-23 against `origin/main` `41c47562` plus the unmerged #299 branch (the `--merge` engine in `scripts/adopt_legacy_sprint_reviews.py`), `backend/db/migrations/env.py`, `backend/db/alembic.ini`, `backend/services/sprint_review.py`, the existing revisions, `scripts/docker-entrypoint.sh`, `runners/local/run.sh`, `INSTALL.md`, `docs/postmortem/MRT033-review-columns-hidden-after-migration.md`.
@@ -22,7 +22,7 @@ Written: 2026-10-22 and revised 2026-10-23 against `origin/main` `41c47562` plus
 
 ## Direction (operator, 2026-10-22)
 
-"I need hidden columns to be unhidden or available to select in the app after the merge." Then, on being told the approved design keeps adoption manual: "Yes, plan automatic adoption on release as a new plan; I know it reverses D-9." Then: "use the same branch and add to the same pr, it's unmerged yet." Then: "validate the plan with subagents."
+"I need hidden columns to be unhidden or available to select in the app after the merge." Then, on being told the approved design keeps adoption manual: "Yes, plan automatic adoption on release as a new plan; I know it reverses D-9." Then: "use the same branch and add to the same pr, it's unmerged yet." Then: "validate the plan with subagents." Then, after validation: "Take the recommendations for D-1 to D-8."
 
 ## Expected behavior
 
@@ -47,9 +47,9 @@ Verified by this author unless marked "reviewer-verified" (a reviewer's experime
 - No other open pull request adds a revision; `20261020_0019` is the head on `origin/main`. `tests/test_db_migrations.py` pins the offline range `20261001_0018:20261020_0019`, but other tests upgrade to `head` and will run the new revision.
 - `scripts/extraction_lint/owner_budgets.json` registers only `frontend/` paths; no file in this plan is registered.
 
-## Decisions for the operator
+## Decisions (resolved 2026-10-23)
 
-Recommendations are marked; reply "take the recommendations" to accept all.
+The operator took the recommendation for D-1 to D-8: D-1 (a) Alembic data revision; D-2 (a) adopt only groups that hold no review row when locked; D-3 classify by origin (database errors fail the upgrade, planner data errors skip the workspace); D-4 moot, because it applies only to D-2 (b); D-5 shared module with injected rules; D-6 frozen rules snapshot in the revision; D-7 fail-closed kill switch; D-8 log plus `--list` as the record. The options and their reasons stay below as the record.
 
 - **D-1 Mechanism.** (a) Alembic data revision (recommended): once-only, runs in every release path, transactional with the schema steps, no chart change. (b) `--auto` CLI run from the entrypoint, `run.sh` and a new chart Job: no migration coupling, but the migrate-only chart path does nothing until the downstream repository adds a step, and it needs its own once-marker. (c) Run at web startup: every replica races, a write path in the serving process. (d) Lazy adoption at first group access: covers only groups without rows, turns reads into writes, needs a marker table.
 - **D-2 Scope.** (a) Adopt a group only when it holds no review row (no schema row, so no cells or views) at the moment its schema row is locked (recommended); every other group is untouched and logged, and `--list` then reports its workspace `needs-merge` for the script. This removes the unattended hazards below, and it makes a replay (`downgrade 20261020_0019`, then `upgrade`) a no-op for adopted groups. (b) Every configured group through the full merge semantics: restores a group a user already saved into, but unattended it can pair a legacy label with a live column of the same name without review, insert older legacy views that change what live Sprints inherit (merge-mode D-11 (ii) is the safe variant), re-add a column the group renamed or refill a slot the group freed (the merge-mode plan's three non-idempotence exceptions, which bite on the first automatic run of a hand-adopted database), and fill the 500-view cap. In both options a configured group created after the release that holds no rows receives the legacy columns, the same as the original cutover would have done at run time.
@@ -211,4 +211,4 @@ Three independent read-only reviews on 2026-10-23: Alembic and database mechanic
 
 | Task | Status | Commit | Notes |
 | --- | --- | --- | --- |
-| 1 to 6 | not started | | Waiting for the operator's answers to D-1 to D-8. |
+| 1 to 6 | not started | | Decisions D-1 to D-8 resolved on 2026-10-23; waiting for the operator's go-ahead to start Task 1. |

@@ -1,6 +1,6 @@
 # Local PostgreSQL Runner
 
-This source-checkout-only runner starts PostgreSQL in Docker, applies Alembic migrations, runs startup preflight, and then runs Flask from `.venv`. It is localhost-only and is not part of the application image, release archive, or production startup path.
+This source-checkout-only runner starts PostgreSQL in Docker, applies Alembic migrations, runs startup preflight, and then runs Flask from `.venv`. It is localhost-only and is not part of the application image, release archive, or production startup path. The Alembic step also adopts legacy Planning review data automatically (revision `20261023_0020`; see `INSTALL.md`), so saved review columns survive a migrating start.
 
 ## Run
 

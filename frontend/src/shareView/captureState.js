@@ -35,7 +35,9 @@ const BOARD_FACET_KEYS = [['priority', 'bpriority'], ['projects', 'bprojects']];
 
 export function buildShareViewState({ mode, groupId, sprintId, snapshot, searchQuery, sort, layout, rowsMode, boardStrictScope, sprintRange, alertFlags, alertCounts, focus }) {
     const rendered = SHARE_VIEW_ALERT_KEYS.filter(key => Number(alertCounts?.[key] || 0) > 0);
-    const expanded = rendered.filter(key => alertFlags[key][0]);
+    // A link to one alert group opens only that group's card; every other card is folded.
+    const targetKey = focus?.kind === 'alertTeam' ? (focus.anchor === 'followupEpics' ? 'followup' : focus.anchor) : null;
+    const expanded = targetKey && rendered.includes(targetKey) ? [targetKey] : rendered.filter(key => alertFlags[key][0]);
     const statsView = snapshot.statsView;
     const rangeKind = Object.hasOwn(STATS_RANGE_KIND, statsView) ? STATS_RANGE_KIND[statsView] : null;
     const range = rangeKind === 'quarter' ? leadTimesRange(snapshot)
@@ -53,7 +55,7 @@ export function buildShareViewState({ mode, groupId, sprintId, snapshot, searchQ
         sort, layout, rows: rowsMode || undefined,
         ...boardViewState(mode, snapshot, focus?.column),
         stats: statsView, ...range,
-        alerts: rendered.length ? (snapshot.showAlertsPanel ? (expanded.length ? expanded : 'none') : 'off') : undefined,
+        alerts: rendered.length ? (snapshot.showAlertsPanel || targetKey ? (expanded.length ? expanded : 'none') : 'off') : undefined,
         alertTeam: focus?.kind === 'alertTeam' ? { anchor: focus.anchor, id: focus.id } : undefined,
         focus: focus && focus.kind !== 'alertTeam' ? { kind: focus.kind, key: focus.key } : undefined,
     };

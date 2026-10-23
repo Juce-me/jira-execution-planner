@@ -523,8 +523,9 @@ def upgrade():
                     'scripts/adopt_legacy_sprint_reviews.py to adopt them', KILL_SWITCH, count)
         return
     summary = adopt_all(connection)
-    LOG.warning('review adoption: %d workspace(s) hold legacy review rows; adopted %d, skipped %d, inserted %d rows',
-                summary['legacy_workspaces'], len(summary['adopted']), len(summary['skipped']), summary['rows'])
+    if summary['legacy_workspaces']:
+        LOG.warning('review adoption: %d workspace(s) hold legacy review rows; adopted %d, skipped %d, inserted %d rows',
+                    summary['legacy_workspaces'], len(summary['adopted']), len(summary['skipped']), summary['rows'])
 
 
 def downgrade():

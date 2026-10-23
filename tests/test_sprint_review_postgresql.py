@@ -8,9 +8,12 @@ holds the group schema row lock, the test proves the second writer is waiting on
 PostgreSQL lock, and only then releases the first writer.
 """
 import contextlib
+import importlib.util
 import io
 import os
+from pathlib import Path
 from threading import Event, Thread, current_thread
+from types import SimpleNamespace
 import time
 import unittest
 import uuid
@@ -28,6 +31,8 @@ from scripts import adopt_legacy_sprint_reviews as adopt
 
 GROUP_TABLES = ('workspace_group_review_schemas', 'group_review_cells', 'group_sprint_review_views')
 LEGACY_TABLES = ('workspace_sprint_reviews', 'sprint_review_cells')
+REVISION_FILE = Path('backend/db/migrations/versions/20261023_0020_adopt_legacy_sprint_reviews.py')
+PARENT_REVISION = '20261020_0019'
 
 
 @unittest.skipUnless(os.environ.get('REQUIRE_POSTGRES_REVIEW_CONCURRENCY') == '1',
@@ -584,3 +589,200 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
         self.assertEqual(set(inspect(engine).get_table_names()), before)
         self.assertEqual(legacy_rows(), expected)
         self.assertEqual(self.rows(), ([], []))
+
+    # Automatic adoption on upgrade (revision 20261023_0020)
+    def revision_module(self):
+        spec = importlib.util.spec_from_file_location('adopt_revision_0020_pg', REVISION_FILE)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def rewind(self):
+        """Un-stamp the adoption revision (its downgrade is a no-op) so the next upgrade runs it."""
+        command.downgrade(self.config, PARENT_REVISION)
+
+    def stamped(self):
+        with db_engine.get_engine(self.url).connect() as conn:
+            return conn.execute(text('SELECT version_num FROM alembic_version')).scalar()
+
+    def legacy_column(self, label='Estimate', archived=False):
+        return {'id': str(uuid.uuid4()), 'rowKind': 'story', 'label': label, 'type': 'number', 'aggregation': 'sum',
+                'archived': archived, 'order': 0}
+
+    def seed_review_legacy(self, workspace_id=None, column=None, sprint='17', plain=False):
+        column = column or self.legacy_column()
+        with db_engine.session_scope(self.url) as session:
+            row = models.WorkspaceSprintReview(
+                workspace_id=workspace_id or self.workspace_id, sprint_id=sprint, schema_revision=1, columns=[column],
+                layouts={} if plain else {'story': {'order': ['status', column['id']], 'hidden': []}})
+            session.add(row)
+            session.flush()
+            if not plain:
+                session.add(models.SprintReviewCell(review_id=row.id, issue_id='101', row_kind='story', column_id=column['id'],
+                                                    value='1.000', revision=1))
+        return column
+
+    def hold_group_row(self, workspace_id=None, group='group-x'):
+        """An open transaction that inserted the group's schema row and has not committed: a writer holding its lock."""
+        conn = db_engine.get_engine(self.url).connect()
+        transaction = conn.begin()
+        conn.execute(text("INSERT INTO workspace_group_review_schemas (id, workspace_id, group_id, schema_revision, columns) "
+                          "VALUES (:id, :w, :g, 0, '[]')"), {'id': str(uuid.uuid4()), 'w': workspace_id or self.workspace_id, 'g': group})
+        return conn, transaction
+
+    def test_upgrade_adopts_on_postgresql_and_the_app_reads_it_back(self):
+        self.rewind()
+        column = self.seed_review_legacy()
+        command.upgrade(self.config, 'head')
+        self.assertEqual(self.stamped(), '20261023_0020')
+        self.assertEqual(self.rows(), ([('group-x', 1, [column['id']])],
+                                       [('17', 1, {'story': {'order': ['status', column['id']], 'hidden': []}})]))
+        loaded = review.load_review(self.context, '17', 'group-x', self.url)
+        self.assertEqual([c['id'] for c in loaded['columns']], [column['id']])
+        values = review.read_values(self.context, '17', {'groupId': 'group-x', 'issueIds': ['101'], 'rowKind': 'story'},
+                                    self.url, self.search)
+        self.assertEqual([(c['issueId'], c['value'], c['revision']) for c in values['cells']], [('101', '1.000', 1)])
+
+    def test_a_lock_timeout_fails_the_upgrade_unstamped_and_a_rerun_succeeds(self):
+        self.rewind()
+        self.seed_review_legacy()
+        conn, transaction = self.hold_group_row()
+        try:
+            with self.assertRaisesRegex(Exception, 'database error 55P03') as caught:
+                command.upgrade(self.config, 'head')
+            self.assertIsNone(caught.exception.__cause__)
+            self.assertIsNone(caught.exception.__context__)
+        finally:
+            transaction.rollback()
+            conn.close()
+        self.assertEqual(self.stamped(), PARENT_REVISION)
+        self.assertEqual(self.rows(), ([], []))
+        command.upgrade(self.config, 'head')
+        self.assertEqual(self.stamped(), '20261023_0020')
+        self.assertEqual(len(self.rows()[0]), 1)
+
+    def test_a_later_workspace_failure_rolls_back_the_earlier_workspace(self):
+        first, second = 'aaaaaaaa-0000-4000-8000-000000000001', 'bbbbbbbb-0000-4000-8000-000000000002'
+        with db_engine.session_scope(self.url) as session:
+            for identity in (first, second):
+                session.add(models.Workspace(id=identity, environment_key='order-' + identity, name='Synthetic'))
+                session.flush()
+                session.add(models.WorkspaceGroupConfig(workspace_id=identity, payload={
+                    'version': 1, 'groups': [{'id': 'group-x', 'name': 'Platform'}], 'defaultGroupId': 'group-x'}))
+        self.rewind()
+        self.seed_review_legacy(workspace_id=first)
+        self.seed_review_legacy(workspace_id=second)
+        conn, transaction = self.hold_group_row(second)
+        try:
+            with self.assertRaisesRegex(Exception, 'database error 55P03'):
+                command.upgrade(self.config, 'head')
+        finally:
+            transaction.rollback()
+            conn.close()
+        self.assertEqual(self.stamped(), PARENT_REVISION)
+        with db_engine.session_scope(self.url) as session:  # the first workspace's adoption was rolled back with the failure
+            self.assertEqual(session.query(models.WorkspaceGroupReviewSchema).count(), 0)
+            self.assertEqual(session.query(models.GroupSprintReviewView).count(), 0)
+        command.upgrade(self.config, 'head')
+        with db_engine.session_scope(self.url) as session:
+            self.assertEqual(sorted(row.workspace_id for row in session.query(models.WorkspaceGroupReviewSchema).all()),
+                             [first, second])
+
+    def test_a_group_that_gains_rows_while_the_step_waits_is_left_untouched(self):
+        self.rewind()
+        self.seed_review_legacy()
+        conn, transaction = self.hold_group_row()
+        outcome = {}
+
+        def upgrade():
+            try:
+                command.upgrade(self.config, 'head')
+                outcome['result'] = 'ok'
+            except Exception as error:  # noqa: BLE001 - returned to the test for assertion
+                outcome['result'] = error
+
+        thread = Thread(target=upgrade)
+        thread.start()
+        try:
+            self.wait_until_blocked()
+            live = self.new_column('Live')
+            live.update(archived=False, order=0, after=None)
+            conn.execute(text('UPDATE workspace_group_review_schemas SET schema_revision = 3, columns = CAST(:c AS json) '
+                              'WHERE group_id = :g'), {'c': __import__('json').dumps([live]), 'g': 'group-x'})
+            transaction.commit()
+        finally:
+            conn.close()
+            thread.join(30)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(outcome['result'], 'ok')
+        self.assertEqual(self.rows(), ([('group-x', 3, [live['id']])], []))
+        with db_engine.session_scope(self.url) as session:
+            self.assertEqual(session.execute(text('SELECT count(*) FROM group_review_cells')).scalar(), 0)
+
+    def test_session_timeouts_are_restored_inside_the_transaction_and_set_for_the_step(self):
+        revision = self.revision_module()
+        self.seed_review_legacy()
+        seen = {}
+        original = revision._lock_legacy
+
+        def watching(connection):
+            seen['lock_timeout'] = connection.execute(text('SHOW lock_timeout')).scalar()
+            seen['statement_timeout'] = connection.execute(text('SHOW statement_timeout')).scalar()
+            original(connection)
+
+        with db_engine.get_engine(self.url).begin() as conn:
+            conn.execute(text("SET LOCAL lock_timeout = '7s'"))
+            conn.execute(text("SET LOCAL statement_timeout = '33s'"))
+            with patch.object(revision, '_lock_legacy', watching):
+                summary = revision.adopt_all(conn)
+            self.assertEqual(conn.execute(text('SHOW lock_timeout')).scalar(), '7s')
+            self.assertEqual(conn.execute(text('SHOW statement_timeout')).scalar(), '33s')
+        self.assertEqual(seen, {'lock_timeout': '5s', 'statement_timeout': '1min'})
+        self.assertEqual(summary['adopted'], {self.workspace_id: ['group-x']})
+
+    def test_a_group_with_an_empty_plan_is_never_locked_and_leaves_no_row(self):
+        self.rewind()
+        self.seed_review_legacy(column=self.legacy_column(archived=True), plain=True)  # an archive intent plans nothing
+        command.upgrade(self.config, 'head')
+        self.assertEqual(self.stamped(), '20261023_0020')
+        self.assertEqual(self.rows(), ([], []))
+
+    def test_the_revision_takes_the_same_schema_row_lock_as_the_app(self):
+        revision = self.revision_module()
+        engine = db_engine.get_engine(self.url)
+        statements = []
+
+        def capture(connection, cursor, statement, parameters, context, executemany):
+            statements.append(' '.join(statement.lower().split()))
+
+        event.listen(engine, 'before_cursor_execute', capture)
+        try:
+            with db_engine.session_scope(self.url) as session:
+                review._locked_schema(session, SimpleNamespace(workspace_id=self.workspace_id), 'app-group')
+            app = list(statements)
+            del statements[:]
+            with engine.begin() as conn:
+                revision._locked_schema(conn, self.workspace_id, 'rev-group')
+            ours = list(statements)
+        finally:
+            event.remove(engine, 'before_cursor_execute', capture)
+
+        def shape(items):
+            insert = next(s for s in items if s.startswith('insert into workspace_group_review_schemas'))
+            select = next(s for s in items if s.startswith('select') and 'for update' in s)
+            return (insert.split(' on conflict ', 1)[1].split(' returning')[0], 'from workspace_group_review_schemas' in select,
+                    'workspace_group_review_schemas.workspace_id = %(' in select.replace('$1', '%(')
+                    or 'workspace_id = ' in select, select.endswith('for update'))
+
+        self.assertEqual(shape(ours), shape(app))
+        self.assertEqual(shape(app)[0], '(workspace_id, group_id) do nothing')
+
+    def test_a_well_formed_downgrade_below_the_group_tables_adopts_again(self):
+        column = self.seed_review_legacy()
+        command.downgrade(self.config, '20261001_0018')
+        command.upgrade(self.config, 'head')
+        self.assertEqual(self.rows()[0], [('group-x', 1, [column['id']])])
+        with db_engine.session_scope(self.url) as session:
+            self.assertEqual(session.query(models.WorkspaceSprintReview).count(), 1)
+            self.assertEqual(session.query(models.SprintReviewCell).count(), 1)
+

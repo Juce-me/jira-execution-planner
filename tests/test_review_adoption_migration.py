@@ -33,7 +33,7 @@ REVISION_FILE = ROOT / 'backend' / 'db' / 'migrations' / 'versions' / '20261023_
 PARENT, HEAD = '20261020_0019', '20261023_0020'
 GROUPS = [{'id': 'group-x', 'name': 'Platform'}, {'id': 'group-y', 'name': 'Payments'}]
 SECRET_LABEL, SECRET_VALUE = 'Secret-Label-Zq', 'Secret-Value-4711'
-LOGGER = 'alembic.review_adoption'
+LOGGER = 'review_adoption'
 
 
 def uid(number):

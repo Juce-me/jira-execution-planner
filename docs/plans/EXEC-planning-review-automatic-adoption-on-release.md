@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-Status: Revision R2 (2026-10-23), validated once by three independent read-only reviews whose findings are applied (see Validation record). Decisions D-1 to D-8 resolved by the operator on 2026-10-23 (recommendations taken). Not started: execution begins only on the operator's go-ahead.
+Status: In execution (2026-10-23). Revision R2, validated once by three independent read-only reviews whose findings are applied (see Validation record). Decisions D-1 to D-8 resolved by the operator on 2026-10-23 (recommendations taken); the operator then said "commit this version and proceed with implementation if it's ready". Tasks 1 to 5 are done locally; Task 6 (full verification and publication) is in progress.
 Type: improvement (one Alembic data revision, a shared planner module, the operator script retargeted onto it, tests, docs)
 Branch: `bugfix/299-review-adoption-merge-mode`, pull request #300, by the operator's direction of 2026-10-22 ("use the same branch and add to the same pr, it's unmerged yet"). When implementation lands the pull request grows beyond its current title and "Closes #299" description; both are updated then.
 Written: 2026-10-22 and revised 2026-10-23 against `origin/main` `41c47562` plus the unmerged #299 branch (the `--merge` engine in `scripts/adopt_legacy_sprint_reviews.py`), `backend/db/migrations/env.py`, `backend/db/alembic.ini`, `backend/services/sprint_review.py`, the existing revisions, `scripts/docker-entrypoint.sh`, `runners/local/run.sh`, `INSTALL.md`, `docs/postmortem/MRT033-review-columns-hidden-after-migration.md`.
@@ -207,8 +207,27 @@ Three independent read-only reviews on 2026-10-23: Alembic and database mechanic
 - **Not applied:** `transaction_per_migration` in `env.py` (a global change outside this plan's files); a separate audit table (offered as D-8's alternative).
 - **Reviewer claims relied on without re-proof:** the savepoint, lock and aborted-transaction behaviors are reviewer-verified and are re-proven by the Task 1 PostgreSQL tests before implementation depends on them.
 
-## Execution status (fill during execution)
+## Execution status
 
 | Task | Status | Commit | Notes |
 | --- | --- | --- | --- |
-| 1 to 6 | not started | | Decisions D-1 to D-8 resolved on 2026-10-23; waiting for the operator's go-ahead to start Task 1. |
+| 1 contract tests | done 2026-10-23 | `fd81bca3` | 26 SQLite tests written first; they failed for the right reason (no revision). The PostgreSQL tests were written with Task 4 instead, so they could run against a real server. |
+| 2 planner extraction | done 2026-10-23 | `91a10668` | The 72 script tests and the 17 PostgreSQL review tests pass unmodified; a 4,000-case randomized differential of the pre-extraction script against the extracted planner (fresh path, empty state and a random live state per case) shows 0 mismatches. |
+| 3 revision | done 2026-10-23 | `5939a31a` | Revision, frozen rules, frozen Core tables, parity, tripwire and import-isolation tests, and a 12-seed differential against the script's adapter. |
+| 4 PostgreSQL and rehearsal | done 2026-10-23 | `b5392e2b` | Eight new PostgreSQL tests; the repository's CI PostgreSQL runner script passes (90 tests, previously 82); seven mutations of the safety properties are each caught; rehearsals and scale probe below. |
+| 5 docs | done 2026-10-23 | the docs commit after `b5392e2b` | INSTALL, README, feature doc, ontology, MRT033 and its index, the three related plans, `.env.example`, the local runner README and the analytics allowlist row. |
+| 6 full verification and delivery | in progress | | Full Python suite, structure budgets, full Chromium run, publication transaction. |
+
+## Execution log
+
+Divergences from the plan, and evidence.
+
+- **Logger name.** The revision logs through `review_adoption`, not a child of `alembic`: `env.py` calls `fileConfig`, which clears the handlers of every existing `alembic.*` logger, so a test (or any handler) attached before the command would be dropped. The repository's root logger (WARNING, console handler) prints it on stderr; a subprocess test proves it.
+- **Error chaining.** `_guarded` re-raises the sanitized error after leaving the exception handler, so no driver text (statement, parameters) is chained into `__cause__` or `__context__`; PostgreSQL and SQLite tests assert both are `None` and that planted values never appear.
+- **Offline note.** Alembic's `MigrationContext` has no `static_output`; the revision calls `context.impl.static_output`.
+- **Summary line.** The final per-run summary is logged only when legacy data exists, so an empty upgrade stays silent.
+- **Reviewer-claimed behaviors re-proven** by the PostgreSQL tests: a lock timeout fails the upgrade as SQLSTATE 55P03 with the revision unstamped; a later workspace's failure rolls back the earlier workspace; a group that gains rows while the step waits is left untouched; the transaction-local timeouts are set for the step and restored inside the transaction; a group with an empty plan is never locked and leaves no revision-0 row; the revision's lock statements have the same shape as `sprint_review._locked_schema`.
+- **Mutations caught** (each fails at least one test): dropping the post-lock re-check, leaking driver errors, skipping the timeout restore, a per-workspace instead of whole-run budget, locking empty-plan groups, adopting groups that hold rows, and letting one skip stop the run.
+- **Rehearsals** on throwaway copies of the local database (all dropped): at `20261020_0019` with legacy rows and no group rows, `alembic upgrade head` adopted both workspaces (18 rows), `scripts/check_startup_preflight.py` reported `migrations: at head`, `--list` showed `adopted`, and the legacy-versus-group query returned zero rows; from `20261001_0018` the single run (0019 plus the revision) gave the same result; with legacy rows plus live group rows (the incident state) no pre-existing group row changed (0 differences over 12 rows) and only a workspace without group rows was adopted, with the groups that held rows logged. The server started from this checkout on port 5051 against a migrated copy; `/api/test` answered 401 in OAuth mode without a session (the token-encryption preflight line failed only because that shell had no synthetic key).
+- **Scale probe** (PostgreSQL 16, four workspaces with three groups and 11,000 legacy cells each): `alembic upgrade head` adopted three workspaces (99,018 rows) in 6.9 s wall time with a 126 MiB peak resident set, and skipped the fourth before reading it (11,000 legacy cells against 982 remaining budget rows).
+- **Ownership contract.** `backend/security/CONFIGURATION_OWNERSHIP.md` was read and is unchanged: the revision reads `workspace_group_configs` read-only, as the script already does, and writes only the group review tables the contract assigns to Sprint reviews. **Analytics:** an allowlist row was added to `docs/README_ANALYTICS.md`; `tests/test_analytics_source_guards.js` passes.

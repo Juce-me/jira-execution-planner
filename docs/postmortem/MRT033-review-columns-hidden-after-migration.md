@@ -2,7 +2,7 @@
 
 **Date**: 2026-10-22
 **Severity**: High
-**Status**: Resolved; delivered by the pull request that closes #299
+**Status**: Resolved; delivered by the pull request that closes #299, which also carries the automatic adoption on upgrade (revision `20261023_0020`)
 **Author**: Team
 
 ## Impact
@@ -32,6 +32,8 @@ The first reading, that a Sprint changing from future to active had orphaned the
 
 `scripts/adopt_legacy_sprint_reviews.py --merge` adopts legacy columns, values and Sprint views into groups that already hold rows, without overwriting, clearing, renaming or resurrecting anything created after the release (id claim first, then kind, label and type; live cells and views win; a group-archived column stays archived). The apply locks only the groups it writes through the same schema-row lock every app save takes first, re-reads and re-plans under the locks, and writes only if the reviewed digest still matches. `--group` limits the targets, a second run is a no-op, and `--list` now reports `pending`, `needs-merge`, `adopted` or `error`. The runbook, rollback table, privileges and a label-lookup query are in `README.md` and `INSTALL.md`.
 
+Follow-up, same pull request: the operator then asked for the release itself to restore the columns. Revision `20261023_0020` runs the adoption once on upgrade for every group that holds no review row, on a frozen snapshot of the review rules, under a whole-run row budget, with database errors failing the upgrade (sanitized to a SQLSTATE) and planner data errors skipping the workspace, and `REVIEW_ADOPTION_ON_UPGRADE=false` as a kill switch. Groups that hold rows stay with `--merge`. Plan: [`EXEC-planning-review-automatic-adoption-on-release.md`](../plans/EXEC-planning-review-automatic-adoption-on-release.md).
+
 ## Verification
 
 - Golden-state tests pin the unchanged fresh path; a randomized differential run of the original planner against the split one (4000 cases) and against an empty-state merge shows identical results.
@@ -50,7 +52,7 @@ The first reading, that a Sprint changing from future to active had orphaned the
 
 ## Prevention
 
-- `--merge` is the supported restore; the runbook says to run adoption or the merge after the first sync of any environment that migrates automatically.
+- Revision `20261023_0020` adopts automatically on upgrade, so no environment that migrates needs an extra step to see its saved columns; `--merge` remains the restore for groups that hold rows, and `--list` is the durable check.
 - A non-blocking startup or preflight warning when legacy data exists and a merge would still insert something is not part of this change (decision D-9 of the plan); it would address the silent hiding itself.
 
 ## Action items
@@ -58,7 +60,8 @@ The first reading, that a Sprint changing from future to active had orphaned the
 - [x] Add `--merge` and `--group` to the adoption script, with `--list` statuses.
 - [x] Document the restore, privileges, label lookup and rollback.
 - [x] Pin the fresh path with golden-state tests before changing it.
-- [ ] Add an adoption/restore step to the downstream release repository's own runbook after it syncs this change.
+- [x] Adopt automatically on upgrade (revision `20261023_0020`).
+- [ ] Downstream release repository: sync the image; no chart change is needed for adoption, set `REVIEW_ADOPTION_ON_UPGRADE=false` only where it must be off, and check the migration Job's memory limit and retry policy (the step peaked near 126 MiB at the 100,000-row budget in the local probe).
 - [ ] Decide on the startup warning for unadopted legacy data (separate plan).
 - [ ] Decide whether a rule belongs in root `AGENTS.md` section 11 (needs the operator's wording).
 

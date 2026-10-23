@@ -2,6 +2,8 @@
 
 > **Status:** Done. Executed and merged in [PR #290](https://github.com/Juce-me/jira-execution-planner/pull/290) (2026-10-20). The gates this plan's record lists as open at that point (the Gate 7 cutover rehearsal, headed Firefox and WebKit marker geometry, a CI PostgreSQL run) were not formally closed here; the follow-up plan [DONE-planning-review-adoption-merge-mode.md](DONE-planning-review-adoption-merge-mode.md) (#299) records a rehearsal of the adoption restore and a run of the repository's CI PostgreSQL runner script. Kept for audit context only.
 
+> **Current accuracy (2026-10-23):** the adoption this plan describes as a manual, quiesced script is now also run automatically on upgrade by revision `20261023_0020` (see [EXEC-planning-review-automatic-adoption-on-release.md](EXEC-planning-review-automatic-adoption-on-release.md)); the cutover steps describe the manual path.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 Status: Done (merged in PR #290). Reviewed once (2026-10-20); operator approved on 2026-10-20 with every recommendation below accepted.

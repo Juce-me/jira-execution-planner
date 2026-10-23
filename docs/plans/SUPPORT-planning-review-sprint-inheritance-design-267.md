@@ -165,6 +165,8 @@ The shipped table stores columns, layouts and values per `(workspace, Sprint)` w
 
 **Decision (confirmed 2026-10-18): a one-time adoption script copies the saved data into every configured Department group, run in a quiesced cutover, and the legacy tables are then retired from reading.** The target is always empty at that moment, which keeps the script simple. That holds for the fresh path; `--merge` (#299) adopts into groups that already hold rows.
 
+> **Update (2026-10-23):** revision `20261023_0020` now runs the adoption automatically on upgrade, once, for every group that holds no review row ([EXEC-planning-review-automatic-adoption-on-release.md](EXEC-planning-review-automatic-adoption-on-release.md)). The script described below remains the manual tool and the restore for groups that hold rows.
+
 Script conventions follow `scripts/promote_legacy_shared_admin_config.py`, under an importable name such as `scripts/adopt_legacy_sprint_reviews.py` with a way to list workspaces that hold legacy rows: required `--workspace-id`; dry run by default; `--apply` requires `--expected-sha256` with the `sha256:` prefix; a refusal raises `ValueError` (exit 1) and only a lock timeout returns 2; a physical-table preflight confirms every required table exists. It reads groups through `current_shared_groups_config` with a context carrying only `workspace_id`, never the bound validator in `jira_server.py` (importing it loads the repo `.env`), and applies the route's id rules itself (an id must equal its stripped form), aborting with a count on a malformed or over-128-character id or a non-numeric legacy Sprint id (none can exist). When legacy rows exist and no group is configured it refuses; when no legacy rows exist it reports that nothing needs adopting and exits 0; legacy rows with no columns, layouts or cells (an empty PATCH leaves one) are skipped and do not count as legacy data. It reuses `apply_schema`, `apply_layouts` and `MAX_ACTIVE_COLUMNS`.
 
 - **Refusal, not no-op.** `--apply` refuses before any write if any group schema, cell or view row exists for the workspace, so a repeated run, a run after use of the new tables and a rollback-then-forward all refuse with zero writes. A group added later starts empty because nothing re-runs the script (a `--merge` run, #299, would fill it unless `--group` names the others). `--merge` is the opt-in forward fix for this refusal; the default stays a refusal. All groups are written in one transaction.
@@ -184,7 +186,7 @@ Script conventions follow `scripts/promote_legacy_shared_admin_config.py`, under
 | Dry run | Nothing written | Fix the input |
 | `--apply` | The single transaction rolls back; legacy untouched | Re-run |
 | Abort the release after the upgrade | The old image fails its startup preflight against the new head and cannot downgrade a revision it does not know | Run `alembic downgrade 20261001_0018` from the new image first, then restart the old image |
-| After `--apply`, before the new app serves | Only adopted data exists | Clean redo from the new image: `alembic downgrade 20261001_0018`, `upgrade head`, re-run |
+| After `--apply`, before the new app serves | Only adopted data exists | Clean redo from the new image: `alembic downgrade 20261001_0018`, `upgrade head` (which adopts again by itself since 2026-10-23; re-run the script only for a skipped workspace) |
 | After the new app served and users wrote | A re-run refuses (group rows exist) | Restore with `--merge` (#299); a downgrade loses the entries made since |
 
 ## Performance

@@ -6240,8 +6240,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                                 <img src="epm-burst.svg" alt="" className="subtitle-logo" aria-hidden="true" />
                                 Jira Delivery Planner
                                 <span className="subtitle-detail">
-                                    {jiraUrl && <span className="subtitle-secondary">{jiraUrl}</span>}
-                                    <DashboardFreshnessStatus freshness={freshness} />
+                                    <DashboardFreshnessStatus freshness={freshness} jiraUrl={jiraUrl} />
                                 </span>
                             </span>
                             <div className="header-actions">

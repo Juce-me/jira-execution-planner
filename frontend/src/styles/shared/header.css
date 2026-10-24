@@ -263,7 +263,7 @@
             z-index: calc(var(--sticky-control-overlay-z) + 1);
         }
 
-        /* Logo on the left spanning both rows; the title and the Jira URL share the first row, the freshness readout owns the second. */
+        /* Logo on the left spanning both rows; the title owns the first row, the second row is the freshness slot, which shows the Jira URL until there is a status. */
         .subtitle-main {
             flex: 1 1 auto;
             display: inline-grid;
@@ -296,27 +296,12 @@
             align-self: start;
         }
 
+        /* Lives in the freshness slot, whose height the reserved readout copies set: a tight line box keeps the URL from ever growing it. */
         .subtitle-secondary {
-            grid-row: 1;
-            grid-column: 3;
             font-size: 0.56rem;
+            line-height: 1.2;
             letter-spacing: 0.08em;
             text-transform: none;
             opacity: 0.85;
         }
 
-        /* Title and URL no longer fit side by side: the URL takes its own row so the title stays on one line. */
-        @media (max-width: 420px) {
-            .subtitle-logo {
-                grid-row: 1 / span 3;
-            }
-
-            .subtitle-secondary {
-                grid-row: 2;
-                grid-column: 2 / -1;
-            }
-
-            .subtitle-main .dashboard-freshness-slot {
-                grid-row: 3;
-            }
-        }

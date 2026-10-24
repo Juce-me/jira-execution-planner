@@ -468,16 +468,23 @@
             outline-offset: 3px;
         }
 
+        /* The rows share one set of columns, so a category reads as a table: Issue | what to fix | status | action | dismiss.
+           The note column exists only where some row has a note. */
         .alert-stories {
-            display: flex;
-            flex-direction: column;
-            gap: 0.4rem;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 0 auto auto auto;
+            column-gap: 0.55rem;
+        }
+
+        .alert-stories:has(> .alert-story > .alert-story-note) {
+            grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) auto auto auto;
         }
 
         .alert-story {
-            display: flex;
+            display: grid;
+            grid-template-columns: subgrid;
+            grid-column: 1 / -1;
             align-items: center;
-            gap: 0.55rem;
             min-height: 32px;
             padding: 0.15rem 0;
             border: 0;
@@ -489,12 +496,35 @@
         }
 
 
+        .alert-story > .alert-story-main { grid-column: 1; }
+        .alert-story > .alert-story-note { grid-column: 2; }
+        .alert-story > .alert-pill { grid-column: 3; }
+        .alert-story > .alert-action { grid-column: 4; }
+        .alert-story > .alert-remove { grid-column: 5; justify-self: end; }
+
+        /* The Jira key is secondary to the summary: same place, smaller. */
+        .alert-story .epic-key {
+            font-size: 0.72rem;
+            font-weight: 400;
+            margin-right: 0.45rem;
+        }
+
+        /* Narrow screens cannot hold the table: each row stacks its cells, with the summary on its own line. */
         @media (max-width: 760px) {
-            .alert-story {
-                flex-wrap: wrap;
+            .alert-stories,
+            .alert-stories:has(> .alert-story > .alert-story-note) {
+                display: flex;
+                flex-direction: column;
             }
 
-            .alert-story > .alert-story-main {
+            .alert-story {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 0.25rem 0.55rem;
+            }
+
+            .alert-story > .alert-story-main,
+            .alert-story > .alert-story-note {
                 flex: 1 1 100%;
             }
         }
@@ -593,10 +623,8 @@
         .alert-story-note {
             color: var(--text-secondary);
             font-size: 0.8rem;
-            margin-top: 0.1rem;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+            line-height: 1.25;
+            min-width: 0;
         }
 
         .alert-action {

@@ -1012,7 +1012,7 @@ test('the readout is the real filtered count and an empty result says so', async
     await facetOption(page, 'projects', 'tech').click();
     await closeFilters(page);
     await expect(page.locator('.task-list:not(.epm-issue-board) .epic-block')).toHaveCount(1);
-    await expect(page.locator('.epic-key')).toHaveText(/PRODUCT-EPIC/);
+    await expect(page.locator('.epic-header .epic-key')).toHaveText(/PRODUCT-EPIC/);
 });
 
 test('a status with no story in scope is absent from the facet', async ({ page }) => {

@@ -17,6 +17,12 @@ The dashboard uses alert panels to highlight work that needs attention in the cu
 Analytics allowlist reason: no analytics event is added for automatic request scheduling or Epic classification guidance; neither is a new user action. Existing alert and filter events retain their current contract.
 Search-driven alert filtering is covered by the existing privacy-bounded `app_search` event. Other filter changes retain the existing `filter_changed` contract. Alert filtering adds no event and never sends query or alert contents.
 
+## Layout
+
+The alerts toolbar (Hide/Show Alerts and the count chips) and every alert card sit in one bordered frame, so the block reads as its own area above the task list. Each category is a single header row: chevron, title, a one-line truncated hint, and a dark count chip that opens exactly the issues listed under it in Jira. Under it, each Team is a small team pill plus its count text, then flat rows that read as a table sharing one set of columns: Issue (small grey key, then summary) | what to fix (the note, where a category has one) | status pill | action | dismiss. On narrow screens each row stacks. The count text copies a link to that group (see [Shareable View Links](shareable-view-links.md)); the per-Team Jira link was removed, and the category chip is the Jira link.
+
+Analytics allowlist reason: no analytics event is added; copying an alert group link reports through the existing `share_view_action` event (`workflow_action=copy_link`).
+
 ## Current Alert Panels
 
 ### Missing Story Points

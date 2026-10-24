@@ -583,7 +583,7 @@ test('Stories Required reuses the existing alert row style and focuses the local
     await localAction.hover();
     const styles = await localAction.evaluate((node) => {
         const computed = getComputedStyle(node);
-        const note = getComputedStyle(node.nextElementSibling);
+        const note = getComputedStyle(node.closest('.alert-story').querySelector('.alert-story-note'));
         return {
             backgroundColor: computed.backgroundColor,
             boxShadow: computed.boxShadow,

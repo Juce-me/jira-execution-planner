@@ -81,6 +81,16 @@ test('an alert focus is captured as an alertTeam and a Planning capture keeps it
     assert.deepEqual(planning.state, { version: 1, mode: 'planning', group: 'grp-a', sprint: '4182', rows: 'story', focus: { kind: 'epic', key: 'PROJ-1' } });
 });
 
+test('a link to one alert group opens only that group\'s card and the panel, folding every other card', () => {
+    const counts = { missing: 2, blocked: 1, followup: 1, done: 3 };
+    const blocked = buildShareViewState(input({ alertFlags: noFlags, alertCounts: counts, focus: { kind: 'alertTeam', anchor: 'blocked', id: 't1' } }));
+    assert.deepEqual(blocked.alerts, ['blocked']);
+    const epics = buildShareViewState(input({ alertFlags: noFlags, alertCounts: counts, focus: { kind: 'alertTeam', anchor: 'followupEpics', id: 't1' } }));
+    assert.deepEqual(epics.alerts, ['followup']);
+    const hidden = buildShareViewState(input({ alertFlags: noFlags, alertCounts: counts, snapshot: { ...input().snapshot, showAlertsPanel: false }, focus: { kind: 'alertTeam', anchor: 'missing', id: 't1' } }));
+    assert.deepEqual(hidden.alerts, ['missing']);
+});
+
 test('alerts lists only the categories that rendered and are expanded, none when all rendered ones are collapsed, off when the panel is hidden', () => {
     const flags = { ...noFlags, blocked: [false, () => {}], done: [false, () => {}] };
     const counts = { missing: 2, blocked: 1, done: 3 };

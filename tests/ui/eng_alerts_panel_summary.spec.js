@@ -445,3 +445,68 @@ test('ENG Waiting for Stories ignores an Analysis epic that belongs to another s
     await expect(page.locator('#eng-alert-waiting')).toHaveCount(0);
     await expect(page.locator('.alerts-panel-summary')).not.toContainText('Waiting');
 });
+
+test('ENG alerts sit in one frame with compact category headers and one-line rows', async ({ page }) => {
+    await openEng(page, { width: 1280, height: 900 }, true);
+
+    const shell = page.locator('.alerts-panel-shell');
+    await expect(shell.locator('> .alerts-panel-toolbar')).toBeVisible();
+    await expect(shell.locator('> #eng-alert-panels')).toBeVisible();
+    const frame = await shell.evaluate(node => {
+        const style = window.getComputedStyle(node);
+        return { border: style.borderTopWidth, radius: style.borderTopLeftRadius };
+    });
+    expect(frame).toEqual({ border: '1px', radius: '10px' });
+
+    for (const card of await page.locator('.alert-card').all()) {
+        const look = await card.evaluate(node => {
+            const style = window.getComputedStyle(node);
+            const title = node.querySelector('.alert-title').getBoundingClientRect();
+            const subtitle = node.querySelector('.alert-subtitle');
+            const header = node.querySelector('.alert-card-header').getBoundingClientRect();
+            return { shadow: style.boxShadow, leftBar: style.borderLeftWidth, headerHeight: header.height, subtitleOneLine: subtitle.getBoundingClientRect().height <= title.height + 2 };
+        });
+        expect(look.shadow).toBe('none');
+        expect(look.leftBar).toBe('0px');
+        expect(look.headerHeight).toBeLessThanOrEqual(44);
+        expect(look.subtitleOneLine).toBe(true);
+    }
+
+    const rowHeights = await page.locator('.alert-story').evaluateAll(rows => rows.map(row => row.getBoundingClientRect().height));
+    expect(rowHeights.length).toBeGreaterThan(0);
+    rowHeights.forEach(height => expect(height).toBeLessThanOrEqual(48));
+    await waitForVisualSettled(page);
+    await page.locator('.alerts-panel-shell').screenshot({ path: `${screenshotDir}/frame-open.png` });
+});
+
+test('ENG alert group count text is the only copy-link control and links to one folded-open card', async ({ page }) => {
+    await page.addInitScript(() => {
+        window.__copied = null;
+        Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (text) => { window.__copied = text; } } });
+    });
+    await openEng(page, { width: 1280, height: 900 }, true);
+
+    const blocked = page.locator('#eng-alert-blocked .alert-team-group').first();
+    const header = blocked.locator('.alert-team-header');
+    await expect(header.locator('button')).toHaveCount(1);
+    await expect(header.locator('[data-share-view-icon="link"]')).toHaveCount(0);
+    await expect(header.locator('a')).toHaveCount(0);
+    const count = header.locator('button.alert-team-count');
+    await expect(count).toHaveText(/\d+ stor(y|ies) blocked/);
+    const geometry = await count.evaluate(node => {
+        const rect = node.getBoundingClientRect();
+        return { clipped: node.scrollWidth > node.clientWidth + 1, height: rect.height, pill: node.parentElement.previousElementSibling.getBoundingClientRect().right <= rect.left + 1 };
+    });
+    expect(geometry.clipped).toBe(false);
+    expect(geometry.pill).toBe(true);
+
+    await count.evaluate(node => node.scrollIntoView({ block: 'center' }));
+    await waitForVisualSettled(page);
+    await page.screenshot({ path: `${screenshotDir}/group-label.png` });
+    await count.click();
+    await expect(count).toContainText('Link copied');
+    const url = await page.evaluate(() => window.__copied);
+    expect(url).toMatch(/[?&]alerts=blocked(&|$)/);
+    expect(url).toMatch(/alertTeam=blocked(:|%3A)/);
+    await expect(count).toHaveText(/\d+ stor(y|ies) blocked/, { timeout: 4000 });
+});

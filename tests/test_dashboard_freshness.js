@@ -421,6 +421,11 @@ test('leaf status owns one foreground age timer, freezes running copy, and never
     doc.visibilityState = 'hidden'; doc.focused = true; win.dispatch('focus'); assert.equal(timeouts.size, 0);
     doc.visibilityState = 'visible'; doc.dispatch('visibilitychange'); assert.equal(timeouts.size, 1);
     freshness.state = { checks: {} }; assert.equal(render().text, undefined, 'the reserved slot makes no initial freshness claim');
+    // The Jira URL fills the slot only while no status text exists and no check is running.
+    const urlOf = () => { cursor = 0; return module.exports.default({ freshness, jiraUrl: 'https://jira.example' }).children.find(child => child?.props?.className === 'subtitle-secondary')?.children[0]; };
+    assert.equal(urlOf(), 'https://jira.example');
+    freshness.state = { checks: {}, running: true }; assert.equal(urlOf(), undefined, 'a running check shows status, not the URL');
+    freshness.state = { checks: { eng_product: { lastCheckedAtMs: 0, checkKind: 'forced', coverage: 'unknown' } } }; assert.equal(urlOf(), undefined, 'status text replaces the URL');
     cleanup(); assert.equal(timeouts.size, 0); assert.equal(win.count(), 0); assert.equal(doc.count(), 0);
     const source = fs.readFileSync('frontend/src/components/DashboardFreshnessStatus.jsx', 'utf8'); assert.doesNotMatch(source, /freshness\.(request|update|acceptChecks)|fetch|setInterval|aria-live|role="status"/);
 });
@@ -438,7 +443,7 @@ test('freshness mounted composition guards all Settings composers through their 
     for (const name of ['scenarioHasUnsavedChanges','scenarioEditMode','scenarioDraftMeta','scenarioState.scenarioDragStateRef','scenarioState.scenarioLoading','showGroupManage','isGroupDraftDirty','groupSaving','epmConfigSaving','groupVisibilitySaving','workspaceConfigConflict','groupsConfigConflict','onboarding.run','onboarding.pending']) assert.ok(composition.includes(name),name);
     const realtime=fs.readFileSync('frontend/src/scenario/useScenarioRealtime.js','utf8'),drag=fs.readFileSync('frontend/src/scenario/useScenarioDrag.js','utf8');
     assert.doesNotMatch(realtime+drag,/hasFocus|visibilityState|freshness\./);assert.ok(drag.includes('scenarioDragStateRef.current = dragState;'));
-    assert.ok(app.includes('<DashboardFreshnessStatus freshness={freshness} />'));assert.doesNotMatch(app,/longAbsenceRefreshRef|AUTH_LONG_ABSENCE_EVENT/);
+    assert.ok(app.includes('<DashboardFreshnessStatus freshness={freshness} jiraUrl={jiraUrl} />'));assert.doesNotMatch(app,/longAbsenceRefreshRef|AUTH_LONG_ABSENCE_EVENT/);
 });
 
 for (const mode of ['throw', 'empty', 'missing']) test(`current scope ${mode} settles missing sources without a retry loop`, async () => {

@@ -403,8 +403,9 @@ test('mounted Story requirement, summary, subtasks and retries preserve their ki
         ctx.respond('/api/eng/story-readiness',({json})=>json({schemaVersion:1,complete:true,scope:{groupId:'group-alpha',sprintId:'3001',sprintName:'2026Q2 Sprint 42',sprintState:'active'},epics:[{key:'REQUIRED-1',summary:'Synthetic requirement epic',status:{name:'In Progress'},projectClass:'product',projectKey:'PROD',missingTeams:[{id:'team-alpha',name:'Alpha Team',reason:'no_stories'}]}]}));
         ctx.respond('/api/issues/subtasks',({json})=>json({error:'synthetic read unavailable'},502));
     }});
-    const passiveCount=await hoverEvidence(page,page.locator('div.alert-chip').first(),testInfo,'catch-up-passive-alert-count');
-    if(process.env.JEP_HOVER_CAPTURE_ONLY!=='1') {expect(passiveCount.hover.shadow).toBe(passiveCount.rest.shadow);expect(passiveCount.hover.background).toBe(passiveCount.rest.background);}
+    // Every category count chip is the category's Jira link, so it takes the existing link-chip hover ring.
+    const categoryChip=await hoverEvidence(page,page.locator('a.alert-chip').first(),testInfo,'catch-up-category-alert-chip',{unchangedFill:false});
+    if(process.env.JEP_HOVER_CAPTURE_ONLY!=='1') {expect(categoryChip.hover.shadow).not.toBe(categoryChip.rest.shadow);}
     const requirement=page.locator('.story-requirement-card').first();
     const proof=await hoverEvidence(page,requirement,testInfo,'catch-up-story-requirement');
     if(process.env.JEP_HOVER_CAPTURE_ONLY!=='1') {

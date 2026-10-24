@@ -1547,7 +1547,7 @@ test('30. an alert the user dismissed stays dismissed after a refresh', async ({
     await expectRefreshSettled(page, 'EPIC-1');
     await expect(taskCard(page, 'E1-S05')).toContainText('E1-S05 retitled by the server');
     await expect(missingRows(page)).toHaveCount(1);
-    await expect(missingRows(page).first()).toContainText('E1-S05 · E1-S05 retitled by the server');
+    await expect(missingRows(page).first()).toContainText('E1-S05 E1-S05 retitled by the server');
     await expect(missingRows(page).filter({ hasText: 'E1-S04' })).toHaveCount(0);
 });
 

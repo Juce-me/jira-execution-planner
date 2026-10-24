@@ -248,7 +248,7 @@ export default function EngAlertsPanel({
                                                                                         navigateToStory();
                                                                                     }}
                                                                                 >
-                                                                                    <span className="epic-key">{task.key}</span>{task.fields.summary}
+                                                                                    <span className="epic-key">{task.key}</span>{' '}{task.fields.summary}
                                                                                 </a>
                                                                             </div>
                                                                             <span className="alert-pill status">Missing: {missingFields.join(', ')}</span>
@@ -339,7 +339,7 @@ export default function EngAlertsPanel({
                                                                                             handleAlertStoryClick(task.key);
                                                                                         }}
                                                                                     >
-                                                                                        <span className="epic-key">{task.key}</span>{task.fields.summary}
+                                                                                        <span className="epic-key">{task.key}</span>{' '}{task.fields.summary}
                                                                                     </a>
                                                                                 </div>
                                                                                 <button
@@ -416,7 +416,7 @@ export default function EngAlertsPanel({
                                                                                         handleAlertStoryClick(task.key);
                                                                                     }}
                                                                                 >
-                                                                                    <span className="epic-key">{task.key}</span>{task.fields.summary}
+                                                                                    <span className="epic-key">{task.key}</span>{' '}{task.fields.summary}
                                                                                 </a>
                                                                             </div>
                                                                             <span className="alert-pill status">Postponed</span>
@@ -466,10 +466,10 @@ export default function EngAlertsPanel({
                                                                                             rel="noopener noreferrer"
                                                                                             onClick={(event) => event.stopPropagation()}
                                                                                         >
-                                                                                            <span className="epic-key">{epic.key}</span>{epic.summary}
+                                                                                            <span className="epic-key">{epic.key}</span>{' '}{epic.summary}
                                                                                         </a>
                                                                                     ) : (
-                                                                                        <div className="alert-story-link"><span className="epic-key">{epic.key}</span>{epic.summary}</div>
+                                                                                        <div className="alert-story-link"><span className="epic-key">{epic.key}</span>{' '}{epic.summary}</div>
                                                                                     )}
                                                                                 </div>
                                                                                 <div className="alert-story-note">Move epic sprint to a future sprint (not in current scope).</div>
@@ -535,7 +535,7 @@ export default function EngAlertsPanel({
                                                                         <div key={epic.key} className="alert-story">
                                                                             <div className="alert-story-main" role="button" tabIndex={0} onClick={() => handleAlertStoryClick(epic.key)}>
                                                                                 <a className="alert-story-link" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer" onClick={(event) => { event.preventDefault(); event.stopPropagation(); handleAlertStoryClick(epic.key); }}>
-                                                                                    <span className="epic-key">{epic.key}</span>{epic.summary}
+                                                                                    <span className="epic-key">{epic.key}</span>{' '}{epic.summary}
                                                                                 </a>
                                                                             </div>
                                                                             <div className="alert-story-note">
@@ -579,7 +579,7 @@ export default function EngAlertsPanel({
                                                                     {group.items.map(epic => (
                                                                         <div key={epic.key} className="alert-story">
                                                                             <div className="alert-story-main" role="button" tabIndex={0} onClick={() => handleAlertStoryClick(epic.key)}>
-                                                                                <a className="alert-story-link" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer" onClick={(event) => { event.preventDefault(); event.stopPropagation(); handleAlertStoryClick(epic.key); }}><span className="epic-key">{epic.key}</span>{epic.summary}</a>
+                                                                                <a className="alert-story-link" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer" onClick={(event) => { event.preventDefault(); event.stopPropagation(); handleAlertStoryClick(epic.key); }}><span className="epic-key">{epic.key}</span>{' '}{epic.summary}</a>
                                                                             </div>
                                                                             <div className="alert-story-note">Add the Jira Team field before planning labels can be applied.</div>
                                                                             <button className="task-remove alert-remove" onClick={(event) => { event.stopPropagation(); dismissAlertItem(epic.key); }} title="Dismiss from alerts" type="button">×</button>
@@ -619,7 +619,7 @@ export default function EngAlertsPanel({
                                                                     {group.items.map(epic => (
                                                                         <div key={epic.key} className="alert-story">
                                                                             <div className="alert-story-main" role="button" tabIndex={0} onClick={() => handleAlertStoryClick(epic.key)}>
-                                                                                <a className="alert-story-link" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer" onClick={(event) => { event.preventDefault(); event.stopPropagation(); handleAlertStoryClick(epic.key); }}><span className="epic-key">{epic.key}</span>{epic.summary}</a>
+                                                                                <a className="alert-story-link" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer" onClick={(event) => { event.preventDefault(); event.stopPropagation(); handleAlertStoryClick(epic.key); }}><span className="epic-key">{epic.key}</span>{' '}{epic.summary}</a>
                                                                             </div>
                                                                             <div className="alert-story-note">Add the selected sprint label or its _candidate form, plus the mapped team label on the epic.</div>
                                                                             <button className="task-remove alert-remove" onClick={(event) => { event.stopPropagation(); dismissAlertItem(epic.key); }} title="Dismiss from alerts" type="button">×</button>
@@ -661,7 +661,7 @@ export default function EngAlertsPanel({
                                                                         return (
                                                                         <div key={entry.id} className="alert-story">
                                                                             <div className="alert-story-main">
-                                                                                <button className="alert-story-link alert-story-local-link" type="button" onClick={() => handleStoryRequirementClick(entry)}><span className="epic-key">{epic.key}</span>{epic.summary}</button>
+                                                                                <button className="alert-story-link alert-story-local-link" type="button" onClick={() => handleStoryRequirementClick(entry)}><span className="epic-key">{epic.key}</span>{' '}{epic.summary}</button>
                                                                             </div>
                                                                             <div className="alert-story-note">{getFuturePlanningNeedsStoriesReasonText(entry.reason)}</div>
                                                                             <button className="task-remove alert-remove" onClick={(event) => { event.stopPropagation(); dismissStoryRequirement(entry); }} title="Dismiss this Story requirement from alerts" type="button">×</button>
@@ -727,7 +727,7 @@ export default function EngAlertsPanel({
                                                                                         handleAlertStoryClick(epic.key);
                                                                                     }}
                                                                                 >
-                                                                                    <span className="epic-key">{epic.key}</span>{epic.summary}
+                                                                                    <span className="epic-key">{epic.key}</span>{' '}{epic.summary}
                                                                                 </a>
                                                                             </div>
                                                                             <div className="alert-story-note">Waiting for description to create stories.</div>
@@ -821,7 +821,7 @@ export default function EngAlertsPanel({
                                                                                         handleAlertStoryClick(epic.key);
                                                                                     }}
                                                                                 >
-                                                                                    <span className="epic-key">{epic.key}</span>{epic.summary}
+                                                                                    <span className="epic-key">{epic.key}</span>{' '}{epic.summary}
                                                                                 </a>
                                                                             </div>
                                                                             {epic.status?.name && (
@@ -916,7 +916,7 @@ export default function EngAlertsPanel({
                                                                                         handleAlertStoryClick(epic.key);
                                                                                     }}
                                                                                 >
-                                                                                    <span className="epic-key">{epic.key}</span>{epic.summary}
+                                                                                    <span className="epic-key">{epic.key}</span>{' '}{epic.summary}
                                                                                 </a>
                                                                             </div>
                                                                             {epic.assignee?.displayName && (

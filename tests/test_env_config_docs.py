@@ -56,7 +56,7 @@ class EnvConfigDocsTests(unittest.TestCase):
             if line.strip().lower().startswith("urllib3==")
         ]
 
-        self.assertEqual(urllib3_pins, ["urllib3==2.7.0"])
+        self.assertEqual(urllib3_pins, ["urllib3==2.8.0"])
         for doc_path in (REPO_ROOT / "README.md", REPO_ROOT / "INSTALL.md", REPO_ROOT / "AGENTS.md"):
             with self.subTest(path=doc_path.name):
                 text = doc_path.read_text(encoding="utf8")

@@ -164,6 +164,14 @@ Documentation and process
 - [ ] This document renamed to `executed` with `Outcome` and `Current Accuracy`; divergences recorded.
 - [ ] Publication follows the section 10 transaction in `AGENTS.md`: base and head SHAs, commit list and changed paths compared against the plan, PR body via `--body-file -`, remote head verified, CI state reported; PR notes include before/after screenshots.
 
+Follow-up 1 checks
+- [x] All ten categories map to the summary-pill tone and the header icon (`tests/test_alert_pin.js`, `tests/test_alert_pin_bar.js` header render check); Playwright asserts icon, accent colour and tint per category (10 specs).
+- [x] Pin stays exactly 40px with a long summary at 1280 and 375 for the blocked, missing, following and done tones, `scrollWidth <= clientWidth`; screenshots looked at (tmp only).
+- [x] Epic headers still never paint over the pin (existing spec green).
+- [x] Title click after scrolling deep lands the alert row at or below the stack and within 24px, pin kept (no remount), row count unchanged; panel hidden and category collapsed are expanded first; a key in two categories lands the pinned category's row; a resolved row falls back to the block, a gone block to the alert list, with no page error; tap and Enter work.
+- [x] Discrimination: a broken row lookup fails 8 of the 10 locate specs; removing the `[data-tone]` rule fails the 10 per-category tone specs.
+- [x] Gates: node 3038 pass, design-system 60 pass, budgets OK, Python 2413 OK (50 skipped), Chromium `tests/ui` 1910 passed, 12 skipped, 0 failed (18.9m); `npm run build` clean.
+
 ## Divergences found during execution
 
 - (i) `alert-story--pinned` is NOT registered in `classHooks`/`classHookMap` and has no ratchet entry (the hook-registry guard rejects it); it is documented as a row-layout modifier in `docs/design-system.md`.
@@ -178,3 +186,10 @@ Documentation and process
 - (x) The Back button reuses `planning-review-column-action` (Task 6 fix).
 - (xi) Back also expands the pinned category (Task 6 fix).
 - (xii) An extra `alertCohortSettled` state adds one render per cohort settle (deferred, unmeasured).
+- (xiii) Follow-up 1 (operator review in the real app): the pin gained its category tone and icon, and its title scrolls to the alert's own row; see "Follow-up 1 (2026-10-25)". Within it: no existing highlight fits alert rows (`task-highlight` paints only `.task-item`), so the locate click scrolls without one; the header icons moved into `ALERT_CATEGORY_STYLE` (one source for headers and pin) instead of a source guard; the pin gained `padding-inline: 0.5rem` so the accent does not touch the Back button.
+
+### Follow-up 1 (2026-10-25)
+
+The operator looked at the pinned row in the real app and asked for two changes: (1) the row "looks odd, something is missing", it needs a focus such as an icon or contrast to be noticeable; (2) once the page has scrolled, clicking the pinned alert's title should scroll back to that alert in the list.
+
+Built: (1) the pin takes its category's summary-pill tone (`data-tone` on `.alert-story--pinned`: a 3px inset left accent, the pill's 0.1 tint layered over `--bg-primary`, the tone colour on the label only) and shows the card header's icon before the label; the icons live in `ALERT_CATEGORY_STYLE` (`eng/alertPin.js`), read by both the card headers and the pin. The 40px box, z-index and opaque base are unchanged. (2) the title (`alert-story-main`) is a `role="button"` control like the list rows' own (click, tap, Enter, Space). It reuses the block reveal (panel shown, pinned category expanded, two frames), then lands the row found by `data-alert-id` inside the pinned category with `alertLandingTop`; `findPinTarget` falls back to the block, then the alert list, never throws. The pin stays, nothing is dismissed, Back and `×` are unchanged.

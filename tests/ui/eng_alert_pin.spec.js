@@ -1091,8 +1091,8 @@ test.describe('pinned category tone and icon', () => {
     }
 });
 
-// Follow-up 1: clicking the pin's title (alert-story-main) scrolls back to the alert's own row in the list.
-const rowSelector = (sectionId, identity) => `#${sectionId} .alert-story[data-alert-id="${identity}"]`;
+// Follow-up 2: clicking the pin's title (alert-story-main) does what the alert row's own title does: it goes to the Story or Epic
+// (or the Story requirement) in the Catch Up list. The pin stays, nothing is dismissed.
 const listRowCount = page => page.locator('#eng-alert-panels .alert-story').count();
 const pinMain = page => pin(page).locator('.alert-story-main');
 
@@ -1102,140 +1102,118 @@ async function scrollDeep(page) {
     expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(600);
 }
 
-test.describe('pin title locates the alert row', () => {
-    test('after scrolling deep into the task list, lands that alert row under the stack; the pin stays and nothing is dismissed', async ({ page }) => {
-        const errors = [];
-        page.on('pageerror', error => errors.push(error.message));
+// The ghost Story requirements render at the end of the list, so a deep scroll would already show them: stop in the first Epic instead.
+async function scrollToFirstEpic(page) {
+    await page.evaluate(() => window.scrollTo(0, document.querySelector('.epic-block').getBoundingClientRect().top + window.scrollY + 200));
+    await settle(page);
+}
+
+// The target is in the viewport, at or below the sticky stack, and its own paint is what shows at its centre (not the pin, not an Epic header).
+async function expectRevealed(page, selector) {
+    await page.waitForFunction(sel => Boolean(document.querySelector(sel)), selector);
+    await settle(page);
+    const stack = await readStack(page, { target: selector });
+    const hit = await page.evaluate((sel) => {
+        const node = document.querySelector(sel);
+        const rect = node.getBoundingClientRect();
+        return node.contains(document.elementFromPoint(rect.left + Math.min(rect.width / 2, 40), rect.top + Math.min(rect.height / 2, 12)));
+    }, selector);
+    expect(stack.pinStuck, 'the pin is stuck under the filter bar').toBe(true);
+    expect(stack.target.top, `${selector} is not under the sticky stack`).toBeGreaterThanOrEqual(stack.stackBottom - 0.5);
+    expect(stack.target.top, `${selector} is not under the pin`).toBeGreaterThanOrEqual(stack.pin.bottom - 0.5);
+    expect(stack.target.bottom, `${selector} is inside the viewport`).toBeLessThanOrEqual(await page.evaluate(() => window.innerHeight));
+    expect(hit, `${selector} is not covered`).toBe(true);
+    return stack;
+}
+
+async function openFromPin(page, { sectionId, key, target, note, action = main => main.click(), scrollAway = scrollDeep }) {
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await clickPrimary(page, sectionId, key);
+    await settle(page);
+    const totalBefore = await listRowCount(page);
+    await scrollAway(page);
+    // The target starts out of view, so only the pin click can bring it in.
+    const outOfView = await page.evaluate((sel) => {
+        const rect = document.querySelector(sel)?.getBoundingClientRect();
+        return !rect || rect.bottom <= 200 || rect.top >= window.innerHeight;
+    }, target);
+    expect(outOfView, `${target} starts out of view`).toBe(true);
+    await watchPin(page);
+    await action(pinMain(page));
+    const stack = await expectRevealed(page, target);
+    await expectPinned(page, { key, note });
+    expect(await pinChanges(page)).toEqual({ removed: 0, replaced: 0 });
+    expect(await listRowCount(page)).toBe(totalBefore);
+    expect(errors).toEqual([]);
+    return stack;
+}
+
+test.describe('pin title opens the Story or Epic', () => {
+    test('Story alert: after scrolling away, the title lands that Story under the stack; the pin stays and nothing is dismissed', async ({ page }) => {
         await openPinDashboard(page);
-        const totalBefore = await listRowCount(page);
-        await clickPrimary(page, 'eng-alert-blocked', 'PIN-3');
-        await settle(page);
-        await scrollDeep(page);
-        await watchPin(page);
-        await pinMain(page).click();
-        const stack = await expectLanded(page, rowSelector('eng-alert-blocked', 'PIN-3'));
-        expect(stack.target.top).toBeGreaterThanOrEqual(stack.pin.bottom - 0.5);
-        await expectPinned(page, { key: 'PIN-3', note: 'Blocked' });
-        expect(await pinChanges(page)).toEqual({ removed: 0, replaced: 0 });
-        expect(await listRowCount(page)).toBe(totalBefore);
-        expect(errors).toEqual([]);
+        await openFromPin(page, { sectionId: 'eng-alert-blocked', key: 'PIN-3', target: '.task-item[data-issue-key="PIN-3"]', note: 'Blocked' });
+        await expect(page.locator('.task-item[data-issue-key="PIN-3"]')).toHaveClass(/task-highlight/);
     });
 
-    test('works with the alerts panel hidden and the category collapsed: it expands them first', async ({ page }) => {
+    test('Epic alert: the title lands that Epic under the stack', async ({ page }) => {
         await openPinDashboard(page);
-        const totalBefore = await listRowCount(page);
-        await clickPrimary(page, 'eng-alert-blocked', 'PIN-4');
-        await settle(page);
+        await openFromPin(page, { sectionId: 'eng-alert-waiting', key: 'PIN-W1', target: '[data-issue-key="PIN-W1"]', note: 'Waiting' });
+    });
+
+    test('Stories required alert: the title lands the Story requirement under the stack', async ({ page }) => {
+        await openPinDashboard(page);
+        await openFromPin(page, { sectionId: 'eng-alert-needs-stories', key: 'PIN-R2', target: '[data-story-requirement-id*="PIN-R2"]', note: 'Stories required', scrollAway: scrollToFirstEpic });
+    });
+
+    test('a target hidden by filters is revealed', async ({ page }) => {
+        await openPinDashboard(page);
+        await clickPrimary(page, 'eng-alert-done', 'PIN-D1');
+        await expectPinned(page, { key: 'PIN-D1', note: 'Ready to close' });
         await page.evaluate(() => window.scrollTo(0, 0));
         await settle(page);
-        await page.locator('#eng-alert-blocked .alert-toggle').click();
-        await expect(page.locator('#eng-alert-blocked')).toHaveClass(/collapsed/);
-        await page.getByRole('button', { name: /Hide Alerts/ }).click();
-        await expect(page.locator('#eng-alert-panels')).toHaveCount(0);
+        await page.getByRole('button', { name: 'Filters', exact: true }).click();
+        await page.locator('.popover .pop-group[data-facet="status"] .pop-opt[data-option="Done"]').click();
+        await page.keyboard.press('Escape');
+        await expect(page.locator('[data-issue-key="PIN-D1"]')).toHaveCount(0);
         await scrollDeep(page);
         await pinMain(page).click();
-        await expect(page.locator('#eng-alert-panels')).toBeVisible();
-        await expect(page.locator('#eng-alert-blocked .alert-card-body')).not.toHaveClass(/collapsed/);
-        await expectLanded(page, rowSelector('eng-alert-blocked', 'PIN-4'));
-        await expectPinned(page, { key: 'PIN-4', note: 'Blocked' });
-        expect(await listRowCount(page)).toBe(totalBefore);
+        await expectRevealed(page, '[data-issue-key="PIN-D1"]');
+        await expectPinned(page, { key: 'PIN-D1', note: 'Ready to close' });
     });
 
-    for (const [pinned, other] of [['eng-alert-blocked', 'eng-alert-missing'], ['eng-alert-missing', 'eng-alert-blocked']]) {
-        test(`a key in two categories: pinned under ${category(pinned).label}, it lands that category's row`, async ({ page }) => {
-            await openPinDashboard(page, { dualKey: true, blockedKeys: ['PIN-4'] });
-            await expect(page.locator(rowSelector(other, 'PIN-4'))).toHaveCount(1);
-            await clickPrimary(page, pinned, 'PIN-4');
-            await settle(page);
-            await scrollDeep(page);
-            await pinMain(page).click();
-            const stack = await expectLanded(page, rowSelector(pinned, 'PIN-4'));
-            const otherTop = await page.locator(rowSelector(other, 'PIN-4')).evaluate(node => node.getBoundingClientRect().top);
-            expect(Math.abs(otherTop - stack.target.top)).toBeGreaterThan(24);
-            await expectPinned(page, { key: 'PIN-4', note: category(pinned).label });
-        });
-    }
-
-    test('resolved by a real Story Points edit: the row is gone, so it lands on the block without throwing or dismissing', async ({ page }) => {
-        const errors = [];
-        page.on('pageerror', error => errors.push(error.message));
-        const { calls } = await openPinDashboard(page);
-        await clickPrimary(page, 'eng-alert-missing', 'PIN-1');
-        const input = page.locator('.task-item[data-issue-key="PIN-1"]').getByRole('textbox', { name: 'Story Points' });
-        await expect(input).toBeFocused();
-        await input.fill('5');
-        await input.press('Enter');
-        await expect.poll(() => calls.filter(call => call.pathname === '/api/issues/PIN-1/field' && call.method === 'POST').length).toBe(1);
-        await expect(page.locator(rowSelector('eng-alert-missing', 'PIN-1'))).toHaveCount(0);
-        await expect(page.locator(rowSelector('eng-alert-missing', 'PIN-2'))).toHaveCount(1);
-        await settle(page);
-        const totalBefore = await listRowCount(page);
-        await scrollDeep(page);
-        await pinMain(page).click();
-        await expectLanded(page, '#eng-alert-missing');
-        await expectPinned(page, { key: 'PIN-1', note: 'Missing info' });
-        expect(await listRowCount(page)).toBe(totalBefore);
-        expect(errors).toEqual([]);
-    });
-
-    test('the category gone too: it lands on the alert list', async ({ page }) => {
-        const errors = [];
-        page.on('pageerror', error => errors.push(error.message));
+    test('keyboard: Enter on the focused title lands the Story', async ({ page }) => {
         await openPinDashboard(page);
-        await clickPrimary(page, 'eng-alert-blocked', 'PIN-3');
-        await settle(page);
-        await page.evaluate(() => window.scrollTo(0, 0));
-        await settle(page);
-        await dismissFromList(page, 'eng-alert-blocked', 'PIN-4');
-        await dismissFromList(page, 'eng-alert-blocked', 'PIN-3');
-        await expect(page.locator('#eng-alert-blocked')).toHaveCount(0);
-        await expectPinned(page, { key: 'PIN-3' });
-        await scrollDeep(page);
-        await pinMain(page).click();
-        await expectLanded(page, '.alerts-panel-shell');
-        await expectPinned(page, { key: 'PIN-3' });
-        expect(errors).toEqual([]);
+        await openFromPin(page, { sectionId: 'eng-alert-blocked', key: 'PIN-3', target: '.task-item[data-issue-key="PIN-3"]', action: async (main) => { await main.focus(); await page.keyboard.press('Enter'); } });
     });
 
-    test('keyboard: Enter on the focused title locates the row', async ({ page }) => {
-        await openPinDashboard(page);
-        await clickPrimary(page, 'eng-alert-blocked', 'PIN-3');
-        await settle(page);
-        await scrollDeep(page);
-        await pinMain(page).focus();
-        await page.keyboard.press('Enter');
-        await expectLanded(page, rowSelector('eng-alert-blocked', 'PIN-3'));
-        await expectPinned(page, { key: 'PIN-3' });
-    });
-
-    test('touch: tapping the title locates the row', async ({ browser }) => {
+    test('touch: tapping the title lands the Story', async ({ browser }) => {
         const context = await browser.newContext({ hasTouch: true, isMobile: true, viewport: { width: 375, height: 800 } });
         const page = await context.newPage();
         await openPinDashboard(page, { viewport: { width: 375, height: 800 } });
-        await clickPrimary(page, 'eng-alert-blocked', 'PIN-3', { tap: true });
-        await settle(page);
-        await scrollDeep(page);
-        await pinMain(page).tap();
-        await expectLanded(page, rowSelector('eng-alert-blocked', 'PIN-3'));
-        await expectPinned(page, { key: 'PIN-3' });
+        await openFromPin(page, { sectionId: 'eng-alert-blocked', key: 'PIN-3', target: '.task-item[data-issue-key="PIN-3"]', action: main => main.tap() });
         await context.close();
     });
 
-    for (const width of [1280, 375]) {
-        test(`at ${width}px each tone's title lands its own row next to the pin (screenshots)`, async ({ page }) => {
-            await openPinDashboard(page, { viewport: { width, height: 800 }, longSummaries: true });
-            for (const [sectionId, key, tone] of [['eng-alert-blocked', 'PIN-3', 'blocked'], ['eng-alert-missing', 'PIN-1', 'missing'], ['eng-alert-waiting', 'PIN-W1', 'following'], ['eng-alert-done', 'PIN-D1', 'done']]) {
-                await page.evaluate(() => window.scrollTo(0, 0));
-                await settle(page);
-                await clickPrimary(page, sectionId, key);
-                await settle(page);
-                await scrollDeep(page);
-                await pinMain(page).click();
-                await expectLanded(page, rowSelector(sectionId, key));
-                await page.mouse.move(1, 1);
-                await settle(page);
-                await page.screenshot({ path: path.join(screenshotDir, `locate-${tone}-${width}.png`) });
-            }
-        });
-    }
+    // An Empty epic has no row in the list: the list-row title and the pin title both fall back the same way (no scroll, no popup, no error).
+    test('no target in the list: the pin title does what the row title does, without throwing', async ({ page }) => {
+        const errors = [];
+        page.on('pageerror', error => errors.push(error.message));
+        const popups = [];
+        page.context().on('page', popup => popups.push(popup));
+        await openPinDashboard(page);
+        await page.evaluate(() => window.scrollTo(0, 500));
+        await settle(page);
+        await alertRow(page, 'eng-alert-empty', 'PIN-E1').locator('.alert-story-link').dispatchEvent('click');
+        await settle(page);
+        await expectPinned(page, { key: 'PIN-E1' });
+        const afterRow = { scrollY: await page.evaluate(() => window.scrollY), popups: popups.length };
+        await watchPin(page);
+        await pinMain(page).click();
+        await settle(page);
+        expect({ scrollY: await page.evaluate(() => window.scrollY), popups: popups.length }).toEqual(afterRow);
+        await expectPinned(page, { key: 'PIN-E1' });
+        expect(await pinChanges(page)).toEqual({ removed: 0, replaced: 0 });
+        expect(errors).toEqual([]);
+    });
 });

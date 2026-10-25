@@ -19,7 +19,7 @@ export default function EngView({
     alertPinStyle,
     onPinBack,
     onPinClose,
-    onPinLocate,
+    onPinOpen,
     InitiativeIcon,
     visibleTasksForList = [],
     hierarchyCounts = null,
@@ -68,7 +68,7 @@ export default function EngView({
                 </div>
             )}
 
-            {alertPin && <AlertPinBar pin={alertPin} style={alertPinStyle} onBack={onPinBack} onClose={onPinClose} onLocate={onPinLocate} />}
+            {alertPin && <AlertPinBar pin={alertPin} style={alertPinStyle} onBack={onPinBack} onClose={onPinClose} onOpen={onPinOpen} />}
 
             {loading ? (
                 <LoadingState

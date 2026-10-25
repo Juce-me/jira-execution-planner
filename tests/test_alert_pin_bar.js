@@ -88,7 +88,7 @@ test('the pinned modifier styles each tone with the summary pill tint, a left ac
     assert.doesNotMatch(alertsCss, /\.alert-story--pinned[^{]*\{[^}]*transition:\s*all/);
 });
 
-// Follow-up 1: the pin's title is the locate control, built like the list rows' alert-story-main.
+// The pin's title is a control built like the list rows' alert-story-main; follow-up 2: it opens the alert's Story or Epic (onOpen).
 function findMain(node) {
     if (!node || typeof node !== 'object') return null;
     if (Array.isArray(node)) { for (const child of node) { const hit = findMain(child); if (hit) return hit; } return null; }
@@ -96,12 +96,12 @@ function findMain(node) {
     return findMain(node.props?.children);
 }
 
-test('the pin title is a button-role main that calls onLocate on click, Enter and Space only', () => {
+test('the pin title is a button-role main that calls onOpen on click, Enter and Space only', () => {
     const AlertPinBar = load('AlertPinBar.jsx');
-    const markup = renderToStaticMarkup(React.createElement(AlertPinBar, { pin, onBack: () => {}, onClose: () => {}, onLocate: () => {} }));
+    const markup = renderToStaticMarkup(React.createElement(AlertPinBar, { pin, onBack: () => {}, onClose: () => {}, onOpen: () => {} }));
     assert.match(markup, /<div class="alert-story-main" role="button" tabindex="0">/);
     const calls = [];
-    const main = findMain(AlertPinBar({ pin, onBack: () => {}, onClose: () => {}, onLocate: () => calls.push('locate') }));
+    const main = findMain(AlertPinBar({ pin, onBack: () => {}, onClose: () => {}, onOpen: () => calls.push('open') }));
     assert.ok(main, 'alert-story-main found');
     main.props.onClick({});
     for (const key of ['Enter', ' ', 'Tab', 'a']) {
@@ -109,14 +109,20 @@ test('the pin title is a button-role main that calls onLocate on click, Enter an
         main.props.onKeyDown(event);
         assert.equal(event.prevented, key === 'Enter' || key === ' ', `${JSON.stringify(key)} prevented`);
     }
-    assert.deepEqual(calls, ['locate', 'locate', 'locate']);
+    assert.deepEqual(calls, ['open', 'open', 'open']);
 });
 
-test('EngView passes the locate handler to the pin, and the dashboard locates through the block reveal and findPinTarget', () => {
-    assert.match(engViewSource, /<AlertPinBar[^>]*onLocate=\{onPinLocate\}/);
+test('EngView passes the open handler to the pin, and the dashboard opens the pin through the list rows\' own handlers', () => {
+    assert.match(engViewSource, /<AlertPinBar[^>]*onOpen=\{onPinOpen\}/);
+    assert.doesNotMatch(engViewSource, /onLocate|onPinLocate/);
     const dashboard = fs.readFileSync(path.join(root, 'frontend', 'src', 'dashboard.jsx'), 'utf8');
-    assert.match(dashboard, /const locateAlertPin = \(\) => revealAlertBlock\(alertPin\?\.sectionId, true, \(\) => findPinTarget\(document, alertPin, CSS\.escape\)\);/);
-    assert.match(dashboard, /onPinLocate=\{locateAlertPin\}/);
+    const match = dashboard.match(/const openAlertPinTarget = \(\) => ([^;]+);/);
+    assert.ok(match, 'openAlertPinTarget declaration');
+    assert.match(match[1], /alertPin\?\.kind === 'requirement' \? handleStoryRequirementClick\(\{ id: alertPin\.identity \}\)/);
+    assert.match(match[1], /handleAlertStoryClick\(alertPin\.key, false\)/);
+    assert.doesNotMatch(match[1], /pinAlert|setAlertPin|dismiss/);
+    assert.match(dashboard, /onPinOpen=\{openAlertPinTarget\}/);
+    assert.doesNotMatch(dashboard, /findPinTarget|locateAlertPin|onPinLocate/);
 });
 
 // Follow-up 2: the pin is a rounded bordered card like the filter bar card (the app's 10px radius and border, no new value).

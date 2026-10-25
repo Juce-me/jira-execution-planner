@@ -121,30 +121,7 @@ test('source: every alert-story-link, alert-action and Stories-required closure 
     assert.equal(pinnedActions, actions);
 });
 
-// Follow-up 1: each alert row's container carries data-alert-id equal to the identity its own handlers pin, so the pin can find its row.
-test('every alert row container carries data-alert-id equal to the pin identity of its handlers', () => {
-    const pins = [];
-    const tree = alertsPanelTree({ overrides: { pinAlert: spec => pins.push(spec), handleAlertStoryClick: () => {}, handleStoryRequirementClick: () => {} } });
-    const rows = [];
-    const walkRows = (node, inRow) => {
-        if (Array.isArray(node)) return node.forEach(child => walkRows(child, inRow));
-        if (!node || typeof node !== 'object' || !node.props) return;
-        const isRow = typeof node.props.className === 'string' && node.props.className.split(' ').includes('alert-story');
-        if (isRow) rows.push(node);
-        walkRows(node.props.children, inRow || isRow);
-    };
-    walkRows(tree, false);
-    assert.ok(rows.length >= 11, `expected a row per list, found ${rows.length}`);
-    for (const row of rows) {
-        const handlers = collect(row.props.children);
-        assert.ok(handlers.length, 'row has a pinning handler');
-        for (const node of handlers) {
-            for (const handler of ['onClick', 'onKeyDown']) {
-                if (typeof node.props[handler] !== 'function') continue;
-                const before = pins.length;
-                node.props[handler]({ key: 'Enter', preventDefault() {}, stopPropagation() {} });
-                for (const spec of pins.slice(before)) assert.equal(row.props['data-alert-id'], spec.identity, `${spec.sectionId} row id`);
-            }
-        }
-    }
+// Follow-up 2: nothing looks alert rows up by id any more, so the rows carry no data-alert-id.
+test('alert row containers carry no data-alert-id', () => {
+    assert.doesNotMatch(source, /data-alert-id/);
 });

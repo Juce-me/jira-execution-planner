@@ -4,8 +4,8 @@ import { ALERT_CATEGORY_STYLE } from './alertPin.js';
 
 // A static snapshot of the alert the user opened: no status pill, pills or actions. The back button reuses the
 // unframed hint-dismiss control (design-system "Inherited-view hint and its dismiss"). The category's summary-pill tone and header icon mark it;
-// its title scrolls back to the alert's own row (onLocate).
-export default function AlertPinBar({ pin, style, onBack, onClose, onLocate }) {
+// its title goes to the alert's Story or Epic in the list, like the alert row's own title (onOpen).
+export default function AlertPinBar({ pin, style, onBack, onClose, onOpen }) {
     const { tone = 'following', icon } = ALERT_CATEGORY_STYLE[pin.sectionId] || {};
     return (
         <div className="alert-story alert-story--pinned" data-alert-pin data-tone={tone} style={style}>
@@ -16,11 +16,11 @@ export default function AlertPinBar({ pin, style, onBack, onClose, onLocate }) {
                 className="alert-story-main"
                 role="button"
                 tabIndex={0}
-                onClick={() => onLocate?.()}
+                onClick={() => onOpen?.()}
                 onKeyDown={(event) => {
                     if (event.key === 'Enter' || event.key === ' ') {
                         event.preventDefault();
-                        onLocate?.();
+                        onOpen?.();
                     }
                 }}
             >

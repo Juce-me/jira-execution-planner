@@ -660,6 +660,18 @@ test('review number cells show no trailing zeros and reject more than one decima
     await expect(page.locator('tfoot .planning-review-cost0')).toHaveText('21.2');
 });
 
+test('a trailing dot while typing a review number is not an error and drops on commit', async ({page}) => {
+    await install(page);await page.getByRole('radio',{name:'Stories',exact:true}).click();
+    const input=page.getByRole('textbox',{name:'Cost 0 for DEMO-1',exact:true});
+    await input.click();await input.fill('1.');
+    await expect(input).toHaveValue('1.');
+    await expect(page.getByRole('alert').filter({hasText:'one decimal place'})).toHaveCount(0);
+    await expect(input).toHaveAttribute('aria-invalid','false');
+    await input.press('Enter');
+    await expect(input).toHaveValue('1');
+    await expect(page.locator('tfoot .planning-review-cost0')).toHaveText('21');
+});
+
 for(const width of [390,1280]) test(`custom number editors stay inside stable compact rows at ${width}px`,async({page})=>{
     await page.setViewportSize({width,height:900});await install(page);await page.getByRole('radio',{name:'Stories',exact:true}).click();
     const input=page.getByRole('textbox',{name:'Cost 0 for DEMO-1',exact:true});

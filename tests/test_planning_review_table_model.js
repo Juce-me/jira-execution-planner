@@ -18,7 +18,10 @@ test('review numbers accept at most one decimal place and display without traili
     const { validateReviewValue, formatReviewDisplay, parseReviewNumber } = await model();
     const number = { type: 'number' };
     for (const input of ['', '0', '12', '12.5', '-3.2', '999999999.9', '-999999999.9']) assert.equal(validateReviewValue(number, input).valid, true, input);
-    for (const input of ['1.25', '0.001', '12.000', '999999999.99', '1000000000', '1e3', '.5', '2.']) assert.equal(validateReviewValue(number, input).valid, false, input);
+    for (const input of ['1.25', '0.001', '12.000', '999999999.99', '1000000000', '1e3', '.5', '2..', '.', '-.']) assert.equal(validateReviewValue(number, input).valid, false, input);
+    // A trailing dot is a typing step, not a mistake: it is accepted and dropped from the stored value.
+    for (const [input, stored] of [['1.', '1'], ['-3.', '-3'], ['999999999.', '999999999'], [' 2. ', '2']]) assert.deepEqual([validateReviewValue(number, input).valid, validateReviewValue(number, input).value], [true, stored], input);
+    assert.equal(validateReviewValue(number, '1000000000.').valid, false);
     assert.match(validateReviewValue(number, '1.25').error, /999999999\.9 with at most one decimal place/);
     // Stored values written earlier may carry three decimals: they still parse exactly for totals and sorting.
     assert.equal(parseReviewNumber('0.001').valid, true);

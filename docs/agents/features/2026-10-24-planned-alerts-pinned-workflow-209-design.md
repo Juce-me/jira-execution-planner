@@ -163,3 +163,18 @@ Documentation and process
 - [ ] The existing list-`×` confetti gaps are listed in the PR notes as out of scope.
 - [ ] This document renamed to `executed` with `Outcome` and `Current Accuracy`; divergences recorded.
 - [ ] Publication follows the section 10 transaction in `AGENTS.md`: base and head SHAs, commit list and changed paths compared against the plan, PR body via `--body-file -`, remote head verified, CI state reported; PR notes include before/after screenshots.
+
+## Divergences found during execution
+
+- (i) `alert-story--pinned` is NOT registered in `classHooks`/`classHookMap` and has no ratchet entry (the hook-registry guard rejects it); it is documented as a row-layout modifier in `docs/design-system.md`.
+- (ii) Scroll landing uses `alertLandingTop` with the dashboard's own offsets via a per-render ref, not `measureStickyBottom`.
+- (iii) While the alert cohort is loading, `×` always dismisses (even for a resolved identity) and never celebrates.
+- (iv) The pin's note slot shows the category label.
+- (v) Reduced-motion scroll to the top is instant.
+- (vi) The compact-header landing band is asserted as "not covered" (about 25px below the stack), not the 24px bound.
+- (vii) One confetti burst per `×`, for the pinned category only (a second category emptied by global dismissal gets none).
+- (viii) `z-index` (`--sticky-filterbar-z`) and a background were added on the modifier so Epic headers (z 50) never paint over the pin.
+- (ix) Block-gone is computed in `resolvePinClose` before the dismissal as "no other identity left in the section"; equivalent to the design's after-commit evaluation because global per-key dismissal only removes the pinned identity.
+- (x) The Back button reuses `planning-review-column-action` (Task 6 fix).
+- (xi) Back also expands the pinned category (Task 6 fix).
+- (xii) An extra `alertCohortSettled` state adds one render per cohort settle (deferred, unmeasured).

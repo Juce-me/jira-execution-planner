@@ -69,16 +69,50 @@ Record per task: status, commit hash, divergences, verification output. Empty un
 - Registration formats. Class hook: `docs/design-system.md` has one fenced JSON block (opens at line 87) with `classHooks` (sorted string array starting line 91, e.g. `"alert-pill"` at 93) and `classHookMap` (objects `{ "class": "alert-pill", "paths": ["frontend/src/styles/eng/alerts.css"] }`, at 503-506). A new class needs both entries, the CSS path being the file defining it. No-Event Allowlist row (`docs/README_ANALYTICS.md`, table at 153): `| Feature action | Primary anchors | Reason | Reviewed on |`, for example the row "Derived column marker and readout" with backticked repo paths in anchors, a reason beginning "Presentation only: trigger none; `event_type=none`; canonical `event_name=none`; `feature_name=<feature>`; typed params none." and ending "No GA4 runbook change.", then the date.
 - Baseline (Step 4), all green, nothing pre-existing failing: `node --test tests/test_*.js` tests 2983, pass 2983, fail 0; `.venv/bin/python -m unittest tests.test_codebase_structure_budgets` Ran 2 tests, OK; Playwright `eng_alerts_panel_summary` + `eng_alert_loading_order` (chromium) 23 passed.
 
+#### Tasks 1-7 (done 2026-10-25)
+
+- Task 1 (`5dd9c2e1` Add pure helpers for the pinned alert decisions (#209)): review clean. Minors deferred: `resolvePinClose` treats an absent section id as empty (callers pass all ten sections); one redundant `scrollTargetTop` assertion pair.
+- Task 2 (`1d449e60` Hold the pinned alert in dashboard state and its sticky tier (#209)): review clean. Ruling: `alertCohortSettled` state flipped beside the `alertCohortRef` set/clear sites supplies `loading`. Ruling: `owner_budgets.json` re-synced and dist committed in the same commit (dashboard.jsx grew). Minors deferred: block-gone computed before the dismissal (equivalent, see Divergences ix); brittle wiring test counting three `setAlertPin(null)` sites; category-to-palette map duplicated in `closeAlertPin` and `dismissAlertItem`.
+- Task 3 (`02f4c920` Render the pinned alert bar under the filter bar (#209)): review clean. Ruling: `alert-story--pinned` not registered in the design-system registry (Divergences i). `--sticky-filterbar-z` and a background added on the modifier. Minors deferred to Tasks 6-7 and done there: z-index proof, 24px hit areas, 375px single line.
+- Task 4 (`2a8c2a96` Pin the alert from every row click and action link (#209)): review clean. Minors deferred: lazy-regex source guard could mask one unpinned `alert-action`; panel-tree fixture stubs `React.useCallback` globally.
+- Task 5 (`9714937e` Scroll back to the alert block and keep targets clear of the pin (#209), fix `2b201918` Measure the landing sticky stack for alert target scrolls (#209)): review found 2 Important issues (alert-target scrolls measured a stack that misses `.filterbar-wrap` and counts a non-landing Epic header; the 24px criterion would fail). Fix round 1 of 5 addressed both; re-review clean. Landing now uses `alertLandingTop`. Minors deferred: tall-Epic `scrollToTaskItem` clearance not covered by a spec.
+- Task 6 (`c2b42100` Give the pinned alert dismiss its 24px hit area (#209); `70b278af` Cover the pinned alert workflow with UI specs (#209); `4320af4e` Neutralize the global button surface on the pinned alert back button (#209); `01b4b5e3` Expand the pinned category when going back to the alert list (#209); `cd62600c` Wait on real responses in the pinned alert specs (#209)): review found 2 Important issues (reload-pending and pin-lifetime steps used `waitForLoadState('networkidle')`, a no-op after first load, so assertions ran before the reload landed). Fix round 1 of 5 replaced them with real-response waits; re-review clean. 61 pin specs and 23 existing alert specs pass. Rulings: a second category emptied by global dismissal gets no burst; the compact-header edge lands about 25px below the stack and is asserted as "not covered"; the pin sits 2px below the filter bar in flow and flush when stuck. Minors deferred: `watchPin` installs after `clickPrimary` in the filter-clearing step; confusing diagnostics on `Promise.all` response-wait rejection.
+- Task 7 (`804b6f20` Document the pinned alert workflow and sync budgets (#209)): docs only, no dist and no budget change. Gates: `node --test tests/test_*.js` 3027 pass, 0 fail; `.venv/bin/python -m unittest discover -s tests` 2413 tests OK (50 skipped) including `tests.test_codebase_structure_budgets`; `node --test tests/test_design_system_*.js` 60 pass; `npx playwright test tests/ui --browser=chromium --workers=4` 1888 passed, 12 skipped, 0 failed (17.4m); `npm run build` clean. `scripts/extraction_lint/run.sh` reports 6 owner-budget problems, all in `frontend/src/settings/` files this branch does not touch (pre-existing). Step 5 (authenticated localhost) not run.
+- Final review fix wave: share-view focus capture counts the pin (`[data-alert-pin]` in `frontend/src/shareView/focusCapture.js`, test in `tests/test_share_view_focus_capture.js`); `node --test tests/test_*.js` 3028 pass after it.
+- Task 8 (publication): not started; blocked on explicit user confirmation.
+
+#### Divergences from the plan and design
+
+- (i) `alert-story--pinned` is NOT registered in `classHooks`/`classHookMap` and has no ratchet entry (the hook-registry guard rejects it); it is documented as a row-layout modifier in `docs/design-system.md`.
+- (ii) Scroll landing uses `alertLandingTop` with the dashboard's own offsets via a per-render ref, not `measureStickyBottom`.
+- (iii) While the alert cohort is loading, `×` always dismisses (even for a resolved identity) and never celebrates.
+- (iv) The pin's note slot shows the category label.
+- (v) Reduced-motion scroll to the top is instant.
+- (vi) The compact-header landing band is asserted as "not covered" (about 25px below the stack), not the 24px bound.
+- (vii) One confetti burst per `×`, for the pinned category only (a second category emptied by global dismissal gets none).
+- (viii) `z-index` (`--sticky-filterbar-z`) and a background were added on the modifier so Epic headers (z 50) never paint over the pin.
+- (ix) Block-gone is computed in `resolvePinClose` before the dismissal as "no other identity left in the section"; equivalent to the design's after-commit evaluation because global per-key dismissal only removes the pinned identity.
+- (x) The Back button reuses `planning-review-column-action` (Task 6 fix).
+- (xi) Back also expands the pinned category (Task 6 fix).
+- (xii) An extra `alertCohortSettled` state adds one render per cohort settle (deferred, unmeasured).
+
+#### Known limitations (for the PR notes)
+
+- Tall-Epic `scrollToTaskItem` clearance is not covered by a spec.
+- Chromium only: Firefox and WebKit were not run.
+- The authenticated-localhost check was not run (the operator signs in).
+- The existing list-`×` confetti gaps (Backlog, Missing team, Missing labels, Stories required) are out of scope and unchanged.
+
 ---
 
 ### Task 0: Baseline and open questions
 
 **Files:** none changed (ledger only).
 
-- [ ] **Step 1:** Confirm `git branch --show-current` is `feature/209-alerts-pinned-workflow` and `git log --oneline origin/main..HEAD` shows only the design commit.
-- [ ] **Step 2:** Read `docs/design-system.md`, `docs/features/alerts.md`, `docs/postmortem/MRT009`, `MRT029` and `docs/README_ANALYTICS.md` (No-Event Allowlist table); note the exact registration format for a modifier class and an allowlist row in the ledger.
-- [ ] **Step 3:** Find every reader of `alertDismissedRef` (`rg -n alertDismissedRef frontend/src`) and record what it gates. If a pin-driven dismissal would change that behavior, record the decision in the ledger before Task 2.
-- [ ] **Step 4:** Baseline run, recording summary lines: `node --test tests/test_*.js`; `.venv/bin/python -m unittest tests.test_codebase_structure_budgets`; `npx playwright test tests/ui/eng_alerts_panel_summary.spec.js tests/ui/eng_alert_loading_order.spec.js --browser=chromium`. Any pre-existing failure gets its cause, impact and reproducibility written down before proceeding (AGENTS.md section 11).
+- [x] **Step 1:** Confirm `git branch --show-current` is `feature/209-alerts-pinned-workflow` and `git log --oneline origin/main..HEAD` shows only the design commit.
+- [x] **Step 2:** Read `docs/design-system.md`, `docs/features/alerts.md`, `docs/postmortem/MRT009`, `MRT029` and `docs/README_ANALYTICS.md` (No-Event Allowlist table); note the exact registration format for a modifier class and an allowlist row in the ledger.
+- [x] **Step 3:** Find every reader of `alertDismissedRef` (`rg -n alertDismissedRef frontend/src`) and record what it gates. If a pin-driven dismissal would change that behavior, record the decision in the ledger before Task 2.
+- [x] **Step 4:** Baseline run, recording summary lines: `node --test tests/test_*.js`; `.venv/bin/python -m unittest tests.test_codebase_structure_budgets`; `npx playwright test tests/ui/eng_alerts_panel_summary.spec.js tests/ui/eng_alert_loading_order.spec.js --browser=chromium`. Any pre-existing failure gets its cause, impact and reproducibility written down before proceeding (AGENTS.md section 11).
 
 ### Task 1: Pure pin helpers (`alertPin.js`)
 
@@ -94,16 +128,16 @@ Record per task: status, commit hash, divergences, verification output. Empty un
   - `scrollTargetTop({ elementTop, scrollY, stickyBottom, guard = 12 }): number` (absolute `scrollTo` top so the element's top sits at `stickyBottom + guard`, never negative)
 - Consumes: nothing.
 
-- [ ] **Step 1: Write failing tests** in `tests/test_alert_pin.js` (`node:test`, ESM like `tests/test_alert_epic_navigation.js`), with synthetic data:
+- [x] **Step 1: Write failing tests** in `tests/test_alert_pin.js` (`node:test`, ESM like `tests/test_alert_epic_navigation.js`), with synthetic data:
   - `resolvePinClose` table, one test per row: live and sibling remains → `{ dismiss: true, celebrate: false, scroll: 'block' }`; live and last in section → `{ dismiss: true, celebrate: true, scroll: 'top' }`; not live (resolved) and last → `{ dismiss: false, celebrate: true, scroll: 'top' }`; not live and sibling remains → `{ dismiss: false, celebrate: false, scroll: 'block' }`; `loading: true` → `{ dismiss: true, celebrate: false, scroll: 'block-or-top' }` regardless of emptiness (Review Focus 1).
   - Same key in two sections: dismissing from `eng-alert-missing` leaves the pin's own section decision independent of `eng-alert-blocked` contents (Review Focus 2).
   - `alertIdentitiesBySection` maps each of the ten sections, including a requirement entry id.
   - `pinScopeKey` differs for different group or sprint and is equal for equal values regardless of catalog fields.
   - `scrollTargetTop`: element 500 below viewport top, `scrollY` 1000, `stickyBottom` 120, guard 12 → `1368`; clamps to 0.
-- [ ] **Step 2:** Run `node --test tests/test_alert_pin.js`; expect FAIL (module missing).
-- [ ] **Step 3:** Implement the module to the signatures above. `resolvePinClose` is the single place the decision is made; the count excludes the pin's own identity.
-- [ ] **Step 4:** Run `node --test tests/test_alert_pin.js`; expect all PASS.
-- [ ] **Step 5:** Commit `Add pure helpers for the pinned alert decisions (#209)`.
+- [x] **Step 2:** Run `node --test tests/test_alert_pin.js`; expect FAIL (module missing).
+- [x] **Step 3:** Implement the module to the signatures above. `resolvePinClose` is the single place the decision is made; the count excludes the pin's own identity.
+- [x] **Step 4:** Run `node --test tests/test_alert_pin.js`; expect all PASS.
+- [x] **Step 5:** Commit `Add pure helpers for the pinned alert decisions (#209)`.
 
 ### Task 2: Pin state, lifetime and sticky tier in `dashboard.jsx`
 
@@ -113,13 +147,13 @@ Record per task: status, commit hash, divergences, verification output. Empty un
 - Consumes: everything from Task 1.
 - Produces in `dashboard.jsx` (passed to `EngView` as props `alertPin`, `onPinBack`, `onPinClose`, and to `EngAlertsPanel` via `alertProps.pinAlert`): `pinAlert(spec)` where `spec` is the `createAlertPin` input; `closeAlertPin()`; `alertPin` state (`AlertPin | null`).
 
-- [ ] **Step 1: Write failing source-guard tests** in `tests/test_alert_pin_wiring.js` (pattern: `tests/test_share_view_alert_anchors.js`, reading source text): (a) `epicStickyTop` expression includes `pinHeight`; (b) `pinHeight` is defined from `isCatchUpMode` and the pin in the same render (no `useEffect` sets it); (c) the pin-clearing effect depends on the `pinScopeKey` inputs and not on `selectedTeams` (Review Focus 3); (d) `dismissAlertItem` accepts an option that suppresses its built-in `triggerAlertCelebration`; (e) the pin is cleared in the same effect that clears `dismissedStoryRequirementIds`.
-- [ ] **Step 2:** Run `node --test tests/test_alert_pin_wiring.js`; expect FAIL.
-- [ ] **Step 3:** Add `alertPin` state beside `alertCelebrationPieces` (`dashboard.jsx` near line 971). Define `pinHeight = isCatchUpMode && alertPin ? PIN_HEIGHT : 0` before `epicStickyTop` (near line 4442) and add it to that sum. Pass `top = compactStickyTop + filterBarHeight` to the host as a CSS variable.
-- [ ] **Step 4:** Implement `pinAlert` (replace-on-click, one pin) and `closeAlertPin`: compute `identitiesBySection` from `visibleAlertCollections` and `needsStoriesEntries`; call `resolvePinClose` with `loading` true when the alert cohort is loading or invalidated (reuse the existing loading signals; name them in the ledger); when `dismiss`, call `dismissAlertItem(identity, { suppressCelebration: true })` or `dismissStoryRequirement(entry)` for `kind: 'requirement'`; clear the pin; when `celebrate`, call `triggerAlertCelebration({ types: [palette type for the section, falling back to the default palette] })`; scroll per Task 5. Add the suppress option to `dismissAlertItem` without changing its default behavior.
-- [ ] **Step 5:** Add the clearing effect keyed on `pinScopeKey({ groupId: activeGroupId, sprintId: selectedSprint })` and on leaving Catch Up, in the same effect that clears `dismissedStoryRequirementIds`. Task refreshes and alert reloads must not touch it.
-- [ ] **Step 6:** Run `node --test tests/test_alert_pin_wiring.js tests/test_alert_pin.js`; expect PASS. Run `npm run build`; expect no errors.
-- [ ] **Step 7:** Commit `Hold the pinned alert in dashboard state and its sticky tier (#209)`.
+- [x] **Step 1: Write failing source-guard tests** in `tests/test_alert_pin_wiring.js` (pattern: `tests/test_share_view_alert_anchors.js`, reading source text): (a) `epicStickyTop` expression includes `pinHeight`; (b) `pinHeight` is defined from `isCatchUpMode` and the pin in the same render (no `useEffect` sets it); (c) the pin-clearing effect depends on the `pinScopeKey` inputs and not on `selectedTeams` (Review Focus 3); (d) `dismissAlertItem` accepts an option that suppresses its built-in `triggerAlertCelebration`; (e) the pin is cleared in the same effect that clears `dismissedStoryRequirementIds`.
+- [x] **Step 2:** Run `node --test tests/test_alert_pin_wiring.js`; expect FAIL.
+- [x] **Step 3:** Add `alertPin` state beside `alertCelebrationPieces` (`dashboard.jsx` near line 971). Define `pinHeight = isCatchUpMode && alertPin ? PIN_HEIGHT : 0` before `epicStickyTop` (near line 4442) and add it to that sum. Pass `top = compactStickyTop + filterBarHeight` to the host as a CSS variable.
+- [x] **Step 4:** Implement `pinAlert` (replace-on-click, one pin) and `closeAlertPin`: compute `identitiesBySection` from `visibleAlertCollections` and `needsStoriesEntries`; call `resolvePinClose` with `loading` true when the alert cohort is loading or invalidated (reuse the existing loading signals; name them in the ledger); when `dismiss`, call `dismissAlertItem(identity, { suppressCelebration: true })` or `dismissStoryRequirement(entry)` for `kind: 'requirement'`; clear the pin; when `celebrate`, call `triggerAlertCelebration({ types: [palette type for the section, falling back to the default palette] })`; scroll per Task 5. Add the suppress option to `dismissAlertItem` without changing its default behavior.
+- [x] **Step 5:** Add the clearing effect keyed on `pinScopeKey({ groupId: activeGroupId, sprintId: selectedSprint })` and on leaving Catch Up, in the same effect that clears `dismissedStoryRequirementIds`. Task refreshes and alert reloads must not touch it.
+- [x] **Step 6:** Run `node --test tests/test_alert_pin_wiring.js tests/test_alert_pin.js`; expect PASS. Run `npm run build`; expect no errors.
+- [x] **Step 7:** Commit `Hold the pinned alert in dashboard state and its sticky tier (#209)`.
 
 ### Task 3: Pin bar component, host and styling
 
@@ -129,12 +163,12 @@ Record per task: status, commit hash, divergences, verification output. Empty un
 - Consumes: Task 2 props.
 - Produces: `AlertPinBar({ pin, top, onBack, onClose })` rendering `<div class="alert-story alert-story--pinned" data-alert-pin>`: `IconButton` (`icon-button--sm`, accessible name "Back to alerts") | key and summary link-less text with ellipsis | note | `<button class="task-remove alert-remove" title="Dismiss from alerts" type="button">×</button>`.
 
-- [ ] **Step 1: Write failing render test** (extend `tests/test_alert_pin.js` or a new section in `tests/test_alert_pin_wiring.js`) using `renderToStaticMarkup`: markup contains exactly one `alert-story--pinned`, the back button before the title, one `alert-remove`, no status pill and no `alert-action`. Also a design-system test expectation: `alert-story--pinned` is registered (run `node --test tests/test_design_system_*.js` and read which guard names the missing class).
-- [ ] **Step 2:** Run it; expect FAIL.
-- [ ] **Step 3:** Implement `AlertPinBar.jsx`. Host it in `EngView.jsx` immediately after the filter bar and before the `loading ? ... : error ? ... : ...` ternary, so loading and an empty alerts panel do not unmount it (spec "Where the pin lives").
-- [ ] **Step 4:** Add the CSS: `.alert-story--pinned` sets only `grid-template-columns` (back | title | note | dismiss), `height: var(--alert-pin-height)` (`40px`), `position: sticky`, `top: var(--alert-pin-top)`, `white-space: nowrap`, ellipsis on the title, and the 24px hit area for the back button and `×` within the modifier; use foundation hover and focus tokens, no transform in `:hover`, no `transition: all`. A z-index from the existing `--sticky-*` variables is only allowed if the geometry test shows it is needed; record it in the ledger.
-- [ ] **Step 5:** Register the class in the `docs/design-system.md` class-hook JSON block and the ratchet baseline with the reason "pin modifier of `.alert-story`, grid template and fixed height only". Run `node --test tests/test_design_system_*.js`; expect PASS.
-- [ ] **Step 6:** `npm run build`, then commit `Render the pinned alert bar under the filter bar (#209)`.
+- [x] **Step 1: Write failing render test** (extend `tests/test_alert_pin.js` or a new section in `tests/test_alert_pin_wiring.js`) using `renderToStaticMarkup`: markup contains exactly one `alert-story--pinned`, the back button before the title, one `alert-remove`, no status pill and no `alert-action`. Also a design-system test expectation: `alert-story--pinned` is registered (run `node --test tests/test_design_system_*.js` and read which guard names the missing class).
+- [x] **Step 2:** Run it; expect FAIL.
+- [x] **Step 3:** Implement `AlertPinBar.jsx`. Host it in `EngView.jsx` immediately after the filter bar and before the `loading ? ... : error ? ... : ...` ternary, so loading and an empty alerts panel do not unmount it (spec "Where the pin lives").
+- [x] **Step 4:** Add the CSS: `.alert-story--pinned` sets only `grid-template-columns` (back | title | note | dismiss), `height: var(--alert-pin-height)` (`40px`), `position: sticky`, `top: var(--alert-pin-top)`, `white-space: nowrap`, ellipsis on the title, and the 24px hit area for the back button and `×` within the modifier; use foundation hover and focus tokens, no transform in `:hover`, no `transition: all`. A z-index from the existing `--sticky-*` variables is only allowed if the geometry test shows it is needed; record it in the ledger.
+- [ ] **Step 5:** Register the class in the `docs/design-system.md` class-hook JSON block and the ratchet baseline with the reason "pin modifier of `.alert-story`, grid template and fixed height only". Run `node --test tests/test_design_system_*.js`; expect PASS. Not done as written: see Divergences (i).
+- [x] **Step 6:** `npm run build`, then commit `Render the pinned alert bar under the filter bar (#209)`.
 
 ### Task 4: Pin from every alert interaction
 
@@ -142,11 +176,11 @@ Record per task: status, commit hash, divergences, verification output. Empty un
 
 **Interfaces:** Consumes `alertProps.pinAlert(spec)` from Task 2. Produces: every row's primary click and every action link calls it with `{ kind, identity, sectionId, key, title, note }`.
 
-- [ ] **Step 1: Write failing tests.** Source guard: every `className="alert-story-link"`, `alert-action` and Stories-required button closure contains a `pinAlert(` call (count must match the inventory you list in the ledger from `rg -n "alert-story-link|alert-action|handleStoryRequirementClick" frontend/src/eng/EngAlertsPanel.jsx`; the reviewed estimate is about 25 sites). Rendered test using the panel fixture: supply a recording `pinAlert` and simulate each closure by invoking the rendered handlers (extend the fixture's `SETTERS` with `pinAlert`); assert the call payload per category, including `sectionId` and, for Stories required, `kind: 'requirement'` with `identity === entry.id`.
-- [ ] **Step 2:** Run; expect FAIL.
-- [ ] **Step 3:** Add one local helper in the panel (for example `pinFor(item, sectionId, kind)`) and call it from each closure before the existing navigate or link behavior. External Jira links keep opening exactly as today; the pin call must not `preventDefault`. Include the future-routed Epic row's padding click and its link (`stopPropagation` link at the future-routed Epic row).
-- [ ] **Step 4:** Run `node --test tests/test_*.js`; expect PASS (confirm the existing `tests/test_share_view_alert_anchors.js` still passes).
-- [ ] **Step 5:** Commit `Pin the alert from every row click and action link (#209)`.
+- [x] **Step 1: Write failing tests.** Source guard: every `className="alert-story-link"`, `alert-action` and Stories-required button closure contains a `pinAlert(` call (count must match the inventory you list in the ledger from `rg -n "alert-story-link|alert-action|handleStoryRequirementClick" frontend/src/eng/EngAlertsPanel.jsx`; the reviewed estimate is about 25 sites). Rendered test using the panel fixture: supply a recording `pinAlert` and simulate each closure by invoking the rendered handlers (extend the fixture's `SETTERS` with `pinAlert`); assert the call payload per category, including `sectionId` and, for Stories required, `kind: 'requirement'` with `identity === entry.id`.
+- [x] **Step 2:** Run; expect FAIL.
+- [x] **Step 3:** Add one local helper in the panel (for example `pinFor(item, sectionId, kind)`) and call it from each closure before the existing navigate or link behavior. External Jira links keep opening exactly as today; the pin call must not `preventDefault`. Include the future-routed Epic row's padding click and its link (`stopPropagation` link at the future-routed Epic row).
+- [x] **Step 4:** Run `node --test tests/test_*.js`; expect PASS (confirm the existing `tests/test_share_view_alert_anchors.js` still passes).
+- [x] **Step 5:** Commit `Pin the alert from every row click and action link (#209)`.
 
 ### Task 5: Scrolling, expansion and target clearance
 
@@ -154,32 +188,32 @@ Record per task: status, commit hash, divergences, verification output. Empty un
 
 **Interfaces:** Consumes `scrollTargetTop`, `measureStickyBottom`. Produces: `scrollToAlertTarget(element)`; `onPinBack()`; the close handler's scroll step.
 
-- [ ] **Step 1: Write failing test** (in `tests/test_alert_epic_navigation.js`): `STICKY_STACK_SELECTORS` includes the pin selector `[data-alert-pin]`, and `measureStickyBottom` counts a sticky element carrying it (follow that file's existing fake-DOM style).
-- [ ] **Step 2:** Run `node --test tests/test_alert_epic_navigation.js`; expect FAIL.
-- [ ] **Step 3:** Add `[data-alert-pin]` to `STICKY_STACK_SELECTORS`. Implement `scrollToAlertTarget` with `scrollTargetTop` and `prefersReducedMotion`. `onPinBack` calls `setShowAlertsPanel(true)` then scrolls `.alerts-panel-shell`; the block scroll calls `setShowAlertsPanel(true)`, the category's `setExpanded(true)` (from the `alertSummaryActions` map), waits two animation frames, then scrolls to the section `sectionId`. `resolvePinClose` outcome `top` scrolls to 0 (instant under reduced motion) outside `triggerAlertCelebration`; `block-or-top` scrolls to the block if its element exists, else 0.
-- [ ] **Step 4:** In `scrollToTaskItem`, after the existing centered `scrollIntoView`, adjust once if the target top is above `measureStickyBottom() + 12` (no change when the pin is absent). Do not touch `scroll-margin-top: 6rem` on alert cards.
-- [ ] **Step 5:** Run `node --test tests/test_*.js`; expect PASS. `npm run build`.
-- [ ] **Step 6:** Commit `Scroll back to the alert block and keep targets clear of the pin (#209)`.
+- [x] **Step 1: Write failing test** (in `tests/test_alert_epic_navigation.js`): `STICKY_STACK_SELECTORS` includes the pin selector `[data-alert-pin]`, and `measureStickyBottom` counts a sticky element carrying it (follow that file's existing fake-DOM style).
+- [x] **Step 2:** Run `node --test tests/test_alert_epic_navigation.js`; expect FAIL.
+- [x] **Step 3:** Add `[data-alert-pin]` to `STICKY_STACK_SELECTORS`. Implement `scrollToAlertTarget` with `scrollTargetTop` and `prefersReducedMotion`. `onPinBack` calls `setShowAlertsPanel(true)` then scrolls `.alerts-panel-shell`; the block scroll calls `setShowAlertsPanel(true)`, the category's `setExpanded(true)` (from the `alertSummaryActions` map), waits two animation frames, then scrolls to the section `sectionId`. `resolvePinClose` outcome `top` scrolls to 0 (instant under reduced motion) outside `triggerAlertCelebration`; `block-or-top` scrolls to the block if its element exists, else 0.
+- [x] **Step 4:** In `scrollToTaskItem`, after the existing centered `scrollIntoView`, adjust once if the target top is above `measureStickyBottom() + 12` (no change when the pin is absent). Do not touch `scroll-margin-top: 6rem` on alert cards.
+- [x] **Step 5:** Run `node --test tests/test_*.js`; expect PASS. `npm run build`.
+- [x] **Step 6:** Commit `Scroll back to the alert block and keep targets clear of the pin (#209)`.
 
 ### Task 6: Playwright behavior and geometry specs
 
 **Files:** Create `tests/ui/eng_alert_pin.spec.js` (reuse `installDashboardShell` and the fixture helpers from `tests/ui/eng_alerts_panel_summary.spec.js`; extract shared helpers only if copying would exceed what one reviewer can read).
 
-- [ ] **Step 1:** Extend the fixture data so all ten categories have at least two alerts (add Postponed, Backlog, Missing team, Missing labels and Stories required data; synthetic keys only), then write the specs mapped one-to-one to the spec's Definition of Done "Behavior" and "Layout" lists: per-category pin and replace; action-link pin with the link still opening; back and block scroll tolerances (block top at or below the pin bottom and within 24px of the stack bottom; shell top likewise); confetti present/absent/once and `scrollY === 0` under `emulateMedia({ reducedMotion: 'reduce' })`; resolved-by-edit through the real Story Points edit path with no dismissal recorded; two-category key; reload-pending `×`; pin lifetime including the negatives (same-Sprint cache-to-live, `selectedTeams`, the click's own filter clearing, hiding the panel); hidden-by-filters target uncovered; geometry (pin top equals filter-bar bottom, `.epic-header` top equals pin bottom when stuck, with and without Group by Initiative, no clipping, 24px hit areas, identical height at 1280 and 375 wide, long summary and 30+ alerts); no layout shift of header, filter bar and shell; `pinHeight` and `--epic-sticky-top` equal the no-pin baseline in Board, Planning, Statistics and Scenario and return in the same render on leaving Catch Up; touch emulation taps; no `dataLayer` push. Wait for CSS transitions and scrolling to settle before every geometry read and screenshot.
-- [ ] **Step 2:** Run `npx playwright test tests/ui/eng_alert_pin.spec.js --browser=chromium`; the new specs must fail only where the feature is missing, never from fixture errors. Fix fixture errors first.
-- [ ] **Step 3:** Fix implementation defects the specs expose (not the specs); rerun until all pass; take before/after screenshots of the pinned state at desktop and 375 wide into `tmp/` (ensure it is gitignored) and look at them.
-- [ ] **Step 4:** Commit `Cover the pinned alert workflow with UI specs (#209)`.
+- [x] **Step 1:** Extend the fixture data so all ten categories have at least two alerts (add Postponed, Backlog, Missing team, Missing labels and Stories required data; synthetic keys only), then write the specs mapped one-to-one to the spec's Definition of Done "Behavior" and "Layout" lists: per-category pin and replace; action-link pin with the link still opening; back and block scroll tolerances (block top at or below the pin bottom and within 24px of the stack bottom; shell top likewise); confetti present/absent/once and `scrollY === 0` under `emulateMedia({ reducedMotion: 'reduce' })`; resolved-by-edit through the real Story Points edit path with no dismissal recorded; two-category key; reload-pending `×`; pin lifetime including the negatives (same-Sprint cache-to-live, `selectedTeams`, the click's own filter clearing, hiding the panel); hidden-by-filters target uncovered; geometry (pin top equals filter-bar bottom, `.epic-header` top equals pin bottom when stuck, with and without Group by Initiative, no clipping, 24px hit areas, identical height at 1280 and 375 wide, long summary and 30+ alerts); no layout shift of header, filter bar and shell; `pinHeight` and `--epic-sticky-top` equal the no-pin baseline in Board, Planning, Statistics and Scenario and return in the same render on leaving Catch Up; touch emulation taps; no `dataLayer` push. Wait for CSS transitions and scrolling to settle before every geometry read and screenshot.
+- [x] **Step 2:** Run `npx playwright test tests/ui/eng_alert_pin.spec.js --browser=chromium`; the new specs must fail only where the feature is missing, never from fixture errors. Fix fixture errors first.
+- [x] **Step 3:** Fix implementation defects the specs expose (not the specs); rerun until all pass; take before/after screenshots of the pinned state at desktop and 375 wide into `tmp/` (ensure it is gitignored) and look at them.
+- [x] **Step 4:** Commit `Cover the pinned alert workflow with UI specs (#209)`.
 
 ### Task 7: Documentation, budgets and full verification
 
 **Files:** Modify `docs/features/alerts.md`, `docs/design-system.md`, `docs/README_ANALYTICS.md`, `docs/ontology.md`, `docs/plans/README.md`, `scripts/extraction_lint/owner_budgets.json` (if a registered file grew), `frontend/dist/` (build).
 
-- [ ] **Step 1:** Update `docs/features/alerts.md` (pin, back, `×`, confetti and scroll rules, and the line "Analytics allowlist reason: no analytics event is added; the pin controls are internal navigation and the pinned `×` is the same action as the list `×`"). Add the No-Event Allowlist row to `docs/README_ANALYTICS.md` in the table's format. Add an "alert pin" entry to `docs/ontology.md` with entry points (`alertPin.js`, `AlertPinBar.jsx`, `pinAlert` in `dashboard.jsx`), tests, relationships and today's verification date; confirm every path and symbol resolves. Update the `docs/plans/README.md` entry for this plan.
-- [ ] **Step 2:** Run `.venv/bin/python -m unittest tests.test_codebase_structure_budgets`. If it fails because a registered file grew, re-sync that file's ceiling, aggregates, `unresolved` inventory and `sourceDigest` deliberately in this commit; do not golf unrelated lines.
-- [ ] **Step 3:** `npm run build`; commit any `frontend/dist` change if `.github/workflows/verify-frontend-build.yml` requires a clean post-build diff.
-- [ ] **Step 4:** Full gates, quoting the command and summary line for each: `node --test tests/test_*.js`; `python3 -m unittest discover -s tests` (full suite, including `test_initiative_extraction` and `test_codebase_structure_budgets`); `npx playwright test tests/ui --browser=chromium --workers=4` (about 8 minutes; known flaky specs from `flaky-tests-under-load` are rerun alone and reported as such); `node --test tests/test_design_system_*.js`.
-- [ ] **Step 5:** Authenticated-localhost check (read-only, numbers only, no saved screenshots): confirm the process on the port belongs to this checkout and serves the current bundle (`curl` the bundle and compare, per the learning); sign-in is the user's. Pass criterion: clicking an alert pins it under the header, `×` returns to the block, and the sticky Epic header stays aligned beneath the pin. If sign-in is unavailable, say so rather than claiming it.
-- [ ] **Step 6:** Commit `Document the pinned alert workflow and sync budgets (#209)`; run Gate A checks.
+- [x] **Step 1:** Update `docs/features/alerts.md` (pin, back, `×`, confetti and scroll rules, and the line "Analytics allowlist reason: no analytics event is added; the pin controls are internal navigation and the pinned `×` is the same action as the list `×`"). Add the No-Event Allowlist row to `docs/README_ANALYTICS.md` in the table's format. Add an "alert pin" entry to `docs/ontology.md` with entry points (`alertPin.js`, `AlertPinBar.jsx`, `pinAlert` in `dashboard.jsx`), tests, relationships and today's verification date; confirm every path and symbol resolves. Update the `docs/plans/README.md` entry for this plan.
+- [x] **Step 2:** Run `.venv/bin/python -m unittest tests.test_codebase_structure_budgets`. If it fails because a registered file grew, re-sync that file's ceiling, aggregates, `unresolved` inventory and `sourceDigest` deliberately in this commit; do not golf unrelated lines.
+- [x] **Step 3:** `npm run build`; commit any `frontend/dist` change if `.github/workflows/verify-frontend-build.yml` requires a clean post-build diff.
+- [x] **Step 4:** Full gates, quoting the command and summary line for each: `node --test tests/test_*.js`; `python3 -m unittest discover -s tests` (full suite, including `test_initiative_extraction` and `test_codebase_structure_budgets`); `npx playwright test tests/ui --browser=chromium --workers=4` (about 8 minutes; known flaky specs from `flaky-tests-under-load` are rerun alone and reported as such); `node --test tests/test_design_system_*.js`.
+- [ ] **Step 5:** Authenticated-localhost check (read-only, numbers only, no saved screenshots): confirm the process on the port belongs to this checkout and serves the current bundle (`curl` the bundle and compare, per the learning); sign-in is the user's. Pass criterion: clicking an alert pins it under the header, `×` returns to the block, and the sticky Epic header stays aligned beneath the pin. If sign-in is unavailable, say so rather than claiming it. Not run: the operator signs in.
+- [x] **Step 6:** Commit `Document the pinned alert workflow and sync budgets (#209)`; run Gate A checks.
 
 ### Task 8: Publication (blocked on explicit user confirmation)
 

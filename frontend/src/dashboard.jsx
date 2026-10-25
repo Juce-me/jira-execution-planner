@@ -5586,11 +5586,11 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
             }, [activeGroupId, selectedSprint, isCatchUpMode]);
             const pinAlert = spec => setAlertPin(createAlertPin(spec));
             // Opens the panel and the category (absent from the DOM while hidden or collapsed), then scrolls once they render.
-            const revealAlertBlock = (sectionId, fallbackToTop) => {
+            const revealAlertBlock = (sectionId, fallbackToTop, target = () => document.getElementById(sectionId)) => {
                 setShowAlertsPanel(true); // shareViewOptions is declared later in render: safe only from click handlers (temporal dead zone otherwise)
                 shareViewOptions.alertFlags[Object.keys(shareViewOptions.alertFlags).find(key => alertCardId(key) === sectionId)]?.[1](true);
                 afterTwoFrames(() => {
-                    if (!scrollToAlertTarget(document.getElementById(sectionId)) && fallbackToTop) scrollToTop();
+                    if (!scrollToAlertTarget(target()) && fallbackToTop) scrollToTop();
                 });
             };
             // Runs outside triggerAlertCelebration, which returns early under reduced motion.
@@ -5598,12 +5598,8 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 if (outcome === 'top') scrollToTop();
                 else revealAlertBlock(sectionId, outcome === 'block-or-top');
             };
-            const scrollBackToAlerts = () => {
-                setShowAlertsPanel(true);
-                afterTwoFrames(() => {
-                    if (!scrollToAlertTarget(document.querySelector('.alerts-panel-shell') || document.querySelector('[id^="eng-alert-"]'))) scrollToTop();
-                });
-            };
+            // Back expands the pinned category too, then lands on the alert list's top.
+            const scrollBackToAlerts = () => revealAlertBlock(alertPin?.sectionId, true, () => document.querySelector('.alerts-panel-shell') || document.querySelector('[id^="eng-alert-"]'));
             const closeAlertPin = () => {
                 if (!alertPin) return;
                 const outcome = resolvePinClose(alertPin, alertIdentitiesBySection(visibleAlertCollections), { loading: !alertCohortSettled });

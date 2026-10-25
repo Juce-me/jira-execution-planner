@@ -47,17 +47,19 @@ test('the block scroll opens the alerts panel and the category before scrolling 
     const panel = body.indexOf('setShowAlertsPanel(true)');
     const category = body.search(/alertFlags\[[^\]]+\]\?\.\[1\]\(true\)/);
     const frames = body.indexOf('afterTwoFrames(');
-    const scroll = body.indexOf('scrollToAlertTarget(document.getElementById(sectionId))');
+    const scroll = body.indexOf('scrollToAlertTarget(target())');
     assert.ok(panel >= 0 && category > panel && frames > category && scroll > frames, 'panel, category, two frames, then scroll');
+    assert.match(body, /target = \(\) => document\.getElementById\(sectionId\)/);
     assert.match(source, /const afterTwoFrames = callback => window\.requestAnimationFrame\(\(\) => window\.requestAnimationFrame\(callback\)\);/);
 });
 
-test('back to alerts opens the panel, then scrolls to its shell with a fallback, and keeps the pin', () => {
-    const body = arrowBody('scrollBackToAlerts');
-    assert.ok(body.indexOf('setShowAlertsPanel(true)') < body.indexOf('afterTwoFrames('));
-    assert.match(body, /\.alerts-panel-shell/);
-    assert.match(body, /\[id\^="eng-alert-"\]/);
-    assert.doesNotMatch(body, /setAlertPin/);
+test('back to alerts reuses the block reveal (panel, pinned category, two frames) and scrolls to its shell with a fallback, keeping the pin', () => {
+    const line = source.split('\n').find(text => text.includes('const scrollBackToAlerts = '));
+    assert.ok(line, 'scrollBackToAlerts not found');
+    assert.match(line, /=> revealAlertBlock\(alertPin\?\.sectionId, true, \(\) => /);
+    assert.match(line, /\.alerts-panel-shell/);
+    assert.match(line, /\[id\^="eng-alert-"\]/);
+    assert.doesNotMatch(line, /setAlertPin/);
     assert.match(source, /onPinBack=\{scrollBackToAlerts\}/);
 });
 

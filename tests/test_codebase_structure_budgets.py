@@ -83,7 +83,8 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # re-synced to the measured size (the owner manifest held 7591) (+33 over the line above).
     # Issue #209 Task 5: the alert scroll helpers (block, back to alerts, top) and the pin clearance check in scrollToTaskItem (+32).
     # Issue #209 Task 5 fix round 1: the landing sticky-stack ref for alert target scrolls (+2).
-    "frontend/src/dashboard.jsx": 7660,
+    # Issue #209 Task 6 fix: Back to alerts reuses the block reveal, so it also expands the pinned category (-4).
+    "frontend/src/dashboard.jsx": 7656,
 }
 
 

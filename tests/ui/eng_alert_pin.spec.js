@@ -236,8 +236,9 @@ test.describe('Back to alerts', () => {
         expect(stack.target.top).toBeGreaterThanOrEqual(stack.pin.bottom - 0.5);
         await expectPinned(page, { key: 'PIN-3', note: 'Blocked' });
         await expect(alertRow(page, 'eng-alert-blocked', 'PIN-3')).toHaveCount(1);
-        // Back targets the shell, which exists while the category is collapsed; the category stays as the user left it.
-        await expect(page.locator('#eng-alert-blocked')).toHaveClass(/collapsed/);
+        // Back re-shows the panel and expands the pinned category before it scrolls.
+        await expect(page.locator('#eng-alert-blocked')).not.toHaveClass(/collapsed/);
+        await expect(page.locator('#eng-alert-blocked .alert-card-body')).not.toHaveClass(/collapsed/);
     });
 
     test('used at the page top, the shell is never covered once the compact header appears', async ({ page }) => {

@@ -40,7 +40,8 @@ export function formatReviewDisplay(value) {
 
 export function validateReviewValue(column, input) {
     if (column.type === 'number') {
-        const parsed = parseReviewNumber(input, 1);
+        // A trailing dot is a typing step ("1." on the way to "1.5"), so it reads as the whole number.
+        const parsed = parseReviewNumber(String(input ?? '').trim().replace(/^(-?\d+)\.$/, '$1'), 1);
         return { valid: parsed.valid, value: parsed.value, error: parsed.valid ? '' : 'Use a number up to 999999999.9 with at most one decimal place.' };
     }
     const value = String(input ?? '');

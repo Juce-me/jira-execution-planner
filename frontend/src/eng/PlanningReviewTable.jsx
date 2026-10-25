@@ -100,7 +100,9 @@ function CustomCell({ row, column, review, editing, setEditing, focusNew, onHold
     if (row.synthetic || !row.issueId || review.unavailableIssueIds?.includes(row.issueId)) return <span aria-label="No review value">—</span>;
     const commit = () => {
         if (cancelBlur.current) { cancelBlur.current = false; return true; }
-        const result = review.setCell(row, column, draft);
+        let result = review.setCell(row, column, draft);
+        // Committing drops a typing artifact such as the trailing dot of "1." so the cell reads "1".
+        if (result.valid && column.type === 'number' && draft !== (result.value ?? '')) { setDraft(result.value ?? ''); result = review.setCell(row, column, result.value ?? ''); }
         setError(result.error || '');
         if (result.valid) setEditing(null);
         return result.valid;

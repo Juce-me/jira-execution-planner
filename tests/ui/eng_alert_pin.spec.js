@@ -810,6 +810,55 @@ test.describe('pinned row layout', () => {
     });
 });
 
+test('the Back button is the unframed hint-dismiss control: transparent at rest, settled tint on hover, arrow visible', async ({ page }) => {
+    await openPinDashboard(page);
+    await clickPrimary(page, 'eng-alert-blocked', 'PIN-3');
+    await settle(page);
+    const back = page.getByRole('button', { name: 'Back to alerts' });
+    await page.mouse.move(1, 1);
+    await settle(page);
+    const look = () => back.evaluate((node) => {
+        const style = getComputedStyle(node);
+        const arrow = node.querySelector('svg');
+        return {
+            className: node.className,
+            background: style.backgroundColor,
+            backgroundImage: style.backgroundImage,
+            border: style.borderTopColor,
+            boxShadow: style.boxShadow,
+            color: style.color,
+            letterSpacing: style.letterSpacing,
+            transition: style.transitionProperty,
+            arrowStroke: getComputedStyle(arrow).stroke,
+            arrowWidth: arrow.getBoundingClientRect().width,
+            rowBackground: getComputedStyle(node.closest('[data-alert-pin]')).backgroundColor,
+        };
+    });
+    const rest = await look();
+    expect(rest.className).toContain('icon-button--sm');
+    expect(rest.className).toContain('planning-review-column-action');
+    expect(rest.background).toBe('rgba(0, 0, 0, 0)');
+    expect(rest.backgroundImage).toBe('none');
+    expect(rest.border).toBe('rgba(0, 0, 0, 0)');
+    expect(rest.boxShadow).toBe('none');
+    // text-transform stays the global button's uppercase, as on the Planning hint dismiss: the button holds only an SVG.
+    expect(rest.letterSpacing).toBe('normal');
+    expect(rest.transition).not.toBe('all');
+    expect(rest.arrowStroke).toBe(rest.color);
+    expect(rest.color).not.toBe(rest.rowBackground);
+    expect(rest.arrowWidth).toBeGreaterThan(10);
+    await pin(page).screenshot({ path: path.join(screenshotDir, 'back-rest-1280.png') });
+    await back.hover();
+    await settle(page);
+    const hover = await look();
+    expect(hover.backgroundImage).toBe('radial-gradient(circle closest-side, rgb(247, 245, 240) 100%, rgba(0, 0, 0, 0) 100%)');
+    expect(hover.background).toBe('rgba(0, 0, 0, 0)');
+    expect(hover.boxShadow).toBe('none');
+    expect(hover.arrowStroke).toBe(hover.color);
+    expect(hover.color).toBe(rest.color);
+    await pin(page).screenshot({ path: path.join(screenshotDir, 'back-hover-1280.png') });
+});
+
 test('touch: every pin control works by tap', async ({ browser }) => {
     const context = await browser.newContext({ hasTouch: true, isMobile: true, viewport: { width: 375, height: 800 } });
     const page = await context.newPage();

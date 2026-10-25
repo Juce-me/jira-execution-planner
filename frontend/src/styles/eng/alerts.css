@@ -500,7 +500,8 @@
         .alert-story > .alert-story-note { grid-column: 2; }
         .alert-story > .alert-pill { grid-column: 3; }
         .alert-story > .alert-action { grid-column: 4; }
-        .alert-story > .alert-remove { grid-column: 5; justify-self: end; }
+        /* The card body clips (overflow: hidden): leave the outer 3px of the --hover-ring inside the row. */
+        .alert-story > .alert-remove { grid-column: 5; justify-self: end; margin-right: 3px; }
 
         /* The Jira key is secondary to the summary: same place, smaller. */
         .alert-story .epic-key {

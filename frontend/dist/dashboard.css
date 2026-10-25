@@ -6518,6 +6518,7 @@ button.alert-team-count:focus-visible {
 .alert-story > .alert-remove {
   grid-column: 5;
   justify-self: end;
+  margin-right: 3px;
 }
 .alert-story .epic-key {
   font-size: 0.72rem;

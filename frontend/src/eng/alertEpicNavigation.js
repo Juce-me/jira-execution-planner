@@ -43,19 +43,92 @@ export function measureStickyBottom(selectors = STICKY_STACK_SELECTORS) {
     }, 0);
 }
 
-function stickyBottom() {
-    return measureStickyBottom();
+// Where the page scrolls to show a Story requirement with its Epic: the Epic's top 12px under the sticky stack when the whole Epic fits below
+// the stack, otherwise the card centred in that space (its top under the stack when the card alone is taller); always within the scroll range.
+// Rects are viewport-relative. A card outside an Epic block has no epicTop/epicHeight and keeps the centred landing.
+export function storyRequirementScrollTop({ scrollY, stackBottom, viewportHeight, maxScroll, epicTop, epicHeight, cardTop, cardHeight }) {
+    const guard = stackBottom + 12;
+    const available = Math.max(0, viewportHeight - guard);
+    const desired = epicHeight <= available
+        ? scrollY + epicTop - guard
+        : scrollY + cardTop - guard - Math.max(0, (available - cardHeight) / 2);
+    return Math.min(Math.max(0, maxScroll), Math.max(0, desired));
+}
+
+// The stack the Epic lands under: every tier but Epic headers (the target's own header pins there), plus the sticky filter bar, which the
+// default list names as `.eng-filter-bar`, a class no element carries.
+function revealStackBottom() {
+    return measureStickyBottom([...STICKY_STACK_SELECTORS.filter(selector => selector !== '.epic-header'), '.filterbar-wrap']);
+}
+
+// The Epic block is never sticky, so its rect is the Epic's natural place; its header (the first child) starts inside the top border and padding.
+function requirementScrollTop(element) {
+    const card = element.getBoundingClientRect();
+    const block = element.closest('.epic-block');
+    const blockRect = block?.getBoundingClientRect();
+    const blockStyle = block ? window.getComputedStyle(block) : null;
+    const inset = blockStyle ? (Number.parseFloat(blockStyle.borderTopWidth) || 0) + (Number.parseFloat(blockStyle.paddingTop) || 0) : 0;
+    const epic = blockRect && { top: blockRect.top + inset, height: blockRect.height - inset };
+    return storyRequirementScrollTop({
+        scrollY: window.scrollY,
+        stackBottom: revealStackBottom(),
+        viewportHeight: window.innerHeight,
+        maxScroll: document.documentElement.scrollHeight - window.innerHeight,
+        epicTop: epic?.top,
+        epicHeight: epic?.height,
+        cardTop: card.top,
+        cardHeight: card.height,
+    });
+}
+
+const REVEAL_INTERRUPTS = ['wheel', 'touchstart', 'pointerdown', 'keydown'];
+const REVEAL_SETTLE_FRAMES = 3;
+const REVEAL_MAX_FRAMES = 180;
+let cancelActiveReveal = null;
+
+// The stack grows on the way down (the filter bar and compact header pin, and the compact header's arrival shifts the page), so the reveal
+// re-aims each frame until the page rests on the landing. User input, another scroll, a newer reveal, or the frame cap ends it.
+function scrollToRequirement(element, behavior) {
+    cancelActiveReveal?.();
+    let aimed = requirementScrollTop(element);
+    window.scrollTo({ top: aimed, behavior });
+    let cancelled = false;
+    let frames = 0;
+    let still = 0;
+    let lastY = window.scrollY;
+    const stop = () => {
+        cancelled = true;
+        REVEAL_INTERRUPTS.forEach(name => window.removeEventListener(name, stop, true));
+        if (cancelActiveReveal === stop) cancelActiveReveal = null;
+    };
+    cancelActiveReveal = stop;
+    REVEAL_INTERRUPTS.forEach(name => window.addEventListener(name, stop, true));
+    const tick = () => {
+        if (cancelled) return;
+        frames += 1;
+        if (!element.isConnected || frames > REVEAL_MAX_FRAMES) return stop();
+        // The reveal's own scroll only closes on its aim; moving away from it means another scroll (the app, a script) took the page.
+        if (Math.abs(window.scrollY - aimed) > Math.abs(lastY - aimed) + 1) return stop();
+        const top = requirementScrollTop(element);
+        if (Math.abs(top - aimed) > 1) {
+            aimed = top;
+            window.scrollTo({ top, behavior });
+            still = 0;
+        } else {
+            still = Math.abs(window.scrollY - lastY) < 0.5 ? still + 1 : 0;
+        }
+        lastY = window.scrollY;
+        if (still >= REVEAL_SETTLE_FRAMES && Math.abs(window.scrollY - aimed) <= 1) return stop();
+        window.requestAnimationFrame(tick);
+    };
+    window.requestAnimationFrame(tick);
 }
 
 function revealStoryRequirement(requirementId, { reducedMotion = false } = {}) {
     const element = findStoryRequirement(requirementId);
     if (!element) return false;
 
-    const rect = element.getBoundingClientRect();
-    const topGuard = stickyBottom() + 12;
-    const availableHeight = Math.max(0, window.innerHeight - topGuard);
-    const targetTop = Math.max(0, window.scrollY + rect.top - topGuard - Math.max(0, (availableHeight - rect.height) / 2));
-    window.scrollTo({ top: targetTop, behavior: reducedMotion ? 'auto' : 'smooth' });
+    scrollToRequirement(element, reducedMotion ? 'auto' : 'smooth');
 
     const previousTimer = requirementHighlightTimers.get(element);
     if (previousTimer) window.clearTimeout(previousTimer);

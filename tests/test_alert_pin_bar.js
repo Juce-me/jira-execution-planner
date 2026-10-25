@@ -84,7 +84,12 @@ test('the pinned modifier styles each tone with the summary pill tint, a left ac
     }
     assert.match(alertsCss, /\.alert-story\.alert-story--pinned\[data-tone\]\s*\{[^}]*box-shadow:\s*inset 3px 0 0 var\(--alert-pin-tone\)/);
     assert.match(alertsCss, /\.alert-story\.alert-story--pinned\[data-tone\]\s*\{[^}]*background:\s*linear-gradient\(var\(--alert-pin-tint\), var\(--alert-pin-tint\)\), var\(--bg-primary\)/);
-    assert.match(alertsCss, /\.alert-story--pinned\[data-tone\] > \.alert-story-note\s*\{[^}]*color:\s*var\(--alert-pin-tone\)/);
+    // Follow-up 2: the label reads --alert-pin-label (darker for the orange and red tones), falling back to the tone.
+    assert.match(alertsCss, /\.alert-story--pinned\[data-tone\] > \.alert-story-note\s*\{[^}]*color:\s*var\(--alert-pin-label, var\(--alert-pin-tone\)\)/);
+    for (const [tone, label] of Object.entries({ missing: '#ad4e00', empty: '#ad4e00', blocked: '#b02a05' })) {
+        const rule = alertsCss.match(new RegExp(`\\.alert-story--pinned\\[data-tone="${tone}"\\][^{]*\\{([^}]*)\\}`));
+        assert.match(rule[1], new RegExp(`--alert-pin-label:\\s*${label}`), `${tone} label`);
+    }
     assert.doesNotMatch(alertsCss, /\.alert-story--pinned[^{]*\{[^}]*transition:\s*all/);
 });
 
@@ -132,4 +137,12 @@ test('the pinned modifier is a 10px rounded card with the app border', () => {
     assert.match(rule[1], /border:\s*1px solid var\(--border\);/);
     assert.match(rule[1], /border-radius:\s*10px;/);
     assert.match(rule[1], /box-sizing:\s*border-box;/);
+});
+
+// Follow-up 2 (review M5): an unknown category has no icon, so the note is just the label with no leading space, and nothing without one.
+test('the pin note has no leading space without an icon and stays empty without a label', () => {
+    const AlertPinBar = load('AlertPinBar.jsx');
+    const render = extra => renderToStaticMarkup(React.createElement(AlertPinBar, { pin: { ...pin, sectionId: 'eng-alert-unknown', ...extra }, onBack: () => {}, onClose: () => {} }));
+    assert.match(render({ note: 'Label' }), /<div class="alert-story-note">Label<\/div>/);
+    assert.match(render({ note: '' }), /<div class="alert-story-note"><\/div>/);
 });

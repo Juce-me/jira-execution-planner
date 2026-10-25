@@ -6742,10 +6742,12 @@ button.alert-story-local-link:focus-visible {
 .alert-story--pinned[data-tone=missing],
 .alert-story--pinned[data-tone=empty] {
   --alert-pin-tone: var(--alert-missing);
+  --alert-pin-label: #ad4e00;
   --alert-pin-tint: rgba(250, 140, 22, 0.1);
 }
 .alert-story--pinned[data-tone=blocked] {
   --alert-pin-tone: var(--alert-blocked);
+  --alert-pin-label: #b02a05;
   --alert-pin-tint: rgba(212, 56, 13, 0.1);
 }
 .alert-story--pinned[data-tone=following] {
@@ -6762,7 +6764,7 @@ button.alert-story-local-link:focus-visible {
   box-shadow: inset 3px 0 0 var(--alert-pin-tone);
 }
 .alert-story--pinned[data-tone] > .alert-story-note {
-  color: var(--alert-pin-tone);
+  color: var(--alert-pin-label, var(--alert-pin-tone));
 }
 @media (hover: hover) {
   .alert-epic-link:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {

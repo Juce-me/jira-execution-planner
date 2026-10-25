@@ -26,7 +26,7 @@ export default function AlertPinBar({ pin, style, onBack, onClose, onOpen }) {
             >
                 <span className="epic-key">{pin.key}</span>{' '}{pin.title}
             </div>
-            <div className="alert-story-note">{icon} {pin.note}</div>
+            <div className="alert-story-note">{[icon, pin.note].filter(Boolean).join(' ')}</div>
             <button className="task-remove alert-remove" title="Dismiss from alerts" type="button" onClick={onClose}>×</button>
         </div>
     );

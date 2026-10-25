@@ -731,10 +731,11 @@
         .alert-story.alert-story--pinned > .alert-remove { grid-column: 4; width: 24px; height: 24px; margin-left: 0; }
 
         /* The pin's category tone: the summary pill tint over an opaque base (Epic headers never show through), a 3px inset
-           accent that leaves the 40px box unchanged, and the tone colour on the category label only. */
+           accent that leaves the 40px box unchanged, and the tone colour on the category label only. The orange and red
+           labels use a darker shade (--alert-pin-label) so they read at 4.5:1 on the tint; the accent keeps the tone. */
         .alert-story--pinned[data-tone="missing"],
-        .alert-story--pinned[data-tone="empty"] { --alert-pin-tone: var(--alert-missing); --alert-pin-tint: rgba(250, 140, 22, 0.1); }
-        .alert-story--pinned[data-tone="blocked"] { --alert-pin-tone: var(--alert-blocked); --alert-pin-tint: rgba(212, 56, 13, 0.1); }
+        .alert-story--pinned[data-tone="empty"] { --alert-pin-tone: var(--alert-missing); --alert-pin-label: #ad4e00; --alert-pin-tint: rgba(250, 140, 22, 0.1); }
+        .alert-story--pinned[data-tone="blocked"] { --alert-pin-tone: var(--alert-blocked); --alert-pin-label: #b02a05; --alert-pin-tint: rgba(212, 56, 13, 0.1); }
         .alert-story--pinned[data-tone="following"] { --alert-pin-tone: #4338ca; --alert-pin-tint: rgba(99, 102, 241, 0.1); }
         .alert-story--pinned[data-tone="done"] { --alert-pin-tone: #237804; --alert-pin-tint: rgba(82, 196, 26, 0.1); }
         .alert-story.alert-story--pinned[data-tone] {
@@ -742,7 +743,7 @@
             background: linear-gradient(var(--alert-pin-tint), var(--alert-pin-tint)), var(--bg-primary);
             box-shadow: inset 3px 0 0 var(--alert-pin-tone);
         }
-        .alert-story--pinned[data-tone] > .alert-story-note { color: var(--alert-pin-tone); }
+        .alert-story--pinned[data-tone] > .alert-story-note { color: var(--alert-pin-label, var(--alert-pin-tone)); }
 
 
 

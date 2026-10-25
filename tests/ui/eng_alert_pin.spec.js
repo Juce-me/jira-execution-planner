@@ -1020,6 +1020,13 @@ const TONE_COLORS = {
     missing: ['rgb(250, 140, 22)', 'rgba(250, 140, 22, 0.1)'], empty: ['rgb(250, 140, 22)', 'rgba(250, 140, 22, 0.1)'],
     blocked: ['rgb(212, 56, 13)', 'rgba(212, 56, 13, 0.1)'], following: ['rgb(67, 56, 202)', 'rgba(99, 102, 241, 0.1)'], done: ['rgb(35, 120, 4)', 'rgba(82, 196, 26, 0.1)'],
 };
+// Follow-up 2: the label colour; darker than the accent for the orange and red tones so it passes 4.5:1 on the tint.
+const TONE_LABELS = { missing: 'rgb(173, 78, 0)', empty: 'rgb(173, 78, 0)', blocked: 'rgb(176, 42, 5)', following: 'rgb(67, 56, 202)', done: 'rgb(35, 120, 4)' };
+const rgba = value => { const [r, g, b, a = 1] = value.match(/[\d.]+/g).map(Number); return { r, g, b, a }; };
+const composite = (top, base) => ({ r: top.r * top.a + base.r * (1 - top.a), g: top.g * top.a + base.g * (1 - top.a), b: top.b * top.a + base.b * (1 - top.a), a: 1 });
+const luminance = ({ r, g, b }) => [r, g, b].map((channel) => { const c = channel / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; })
+    .reduce((sum, c, index) => sum + c * [0.2126, 0.7152, 0.0722][index], 0);
+const contrast = (a, b) => { const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x); return (hi + 0.05) / (lo + 0.05); };
 const SECTION_TONES = {
     'eng-alert-missing': 'missing', 'eng-alert-blocked': 'blocked', 'eng-alert-empty': 'empty', 'eng-alert-done': 'done',
     'eng-alert-followup': 'following', 'eng-alert-backlog': 'following', 'eng-alert-missing-team': 'following', 'eng-alert-missing-labels': 'following',
@@ -1057,7 +1064,6 @@ test.describe('pinned category tone and icon', () => {
             const read = await readTone(page);
             expect(read.tone).toBe(tone);
             expect(read.noteText).toBe(`${headerIcon} ${label}`);
-            expect(read.noteColor).toBe(color);
             expect(read.boxShadow).toBe(`${color} 3px 0px 0px 0px inset`);
             expect(read.backgroundImage.startsWith(`linear-gradient(${tint}, ${tint})`)).toBe(true);
             // Opaque base under the tint: the page background, so stuck Epic headers never show through.
@@ -1065,11 +1071,18 @@ test.describe('pinned category tone and icon', () => {
             expect(read.mainColor).toBe(read.textPrimary);
             expect(read.mainColor).not.toBe(color);
             expect(read.height).toBe(40);
+            // Follow-up 2: the label, key and summary read at WCAG AA (4.5:1) on the tint composited over the opaque base.
+            expect(read.backgroundColor).toBe(read.bodyBackground);
+            const background = composite(rgba(read.backgroundImage.match(/rgba?\([^)]*\)/)[0]), rgba(read.backgroundColor));
+            for (const [name, value] of [['label', read.noteColor], ['key', read.keyColor], ['summary', read.mainColor]]) {
+                expect(contrast(rgba(value), background), `${tone} ${name} ${value} on ${JSON.stringify(background)}`).toBeGreaterThanOrEqual(4.5);
+            }
+            expect(read.noteColor).toBe(TONE_LABELS[tone]);
         });
     }
 
     for (const width of [1280, 375]) {
-        test(`at ${width}px every tone keeps the 40px row with a long summary, no overflow (screenshots)`, async ({ page }) => {
+        test(`at ${width}px every tone keeps the 40px row with a long summary, no overflow (screenshots with PIN_SHOT_LABEL)`, async ({ page }) => {
             await openPinDashboard(page, { viewport: { width, height: 800 }, longSummaries: true });
             for (const [sectionId, key, tone] of [['eng-alert-blocked', 'PIN-3', 'blocked'], ['eng-alert-missing', 'PIN-1', 'missing'], ['eng-alert-waiting', 'PIN-W1', 'following'], ['eng-alert-done', 'PIN-D1', 'done']]) {
                 await page.evaluate(() => window.scrollTo(0, 0));
@@ -1079,7 +1092,7 @@ test.describe('pinned category tone and icon', () => {
                 await page.mouse.move(1, 1);
                 await settle(page);
                 await expectPinned(page, { key });
-                await page.screenshot({ path: path.join(screenshotDir, `tone-${tone}-${width}-${process.env.PIN_SHOT_LABEL || 'after'}.png`) });
+                if (process.env.PIN_SHOT_LABEL) await page.screenshot({ path: path.join(screenshotDir, `tone-${tone}-${width}-${process.env.PIN_SHOT_LABEL}.png`) });
                 const read = await readTone(page);
                 expect(read.tone).toBe(tone);
                 expect(read.height).toBe(40);

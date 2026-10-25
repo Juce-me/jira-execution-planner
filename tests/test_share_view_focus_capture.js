@@ -61,6 +61,21 @@ test('visible means the bottom is more than the landing margin plus 1 below T an
     }
 });
 
+test('a pinned alert under the filter bar counts toward the sticky stack, and capture without a pin is unchanged', () => {
+    const groups = () => [['t1', 'Team One', -30], ['t2', 'Team Two', 200]];
+    const mountGroups = (p, withPin) => p.mount(
+        ...(withPin ? [p.el('div', { className: 'alert-story alert-story--pinned', dataset: { alertPin: '' }, sticky: { top: 50 }, box: { top: 50, height: 40 } })] : []),
+        p.card('eng-alert-blocked', { groups: groups().map(([id, name, top]) => p.group(id, name, top)) }),
+    );
+    for (const [withPin, expected] of [[false, 't1'], [true, 't2']]) {
+        const p = page();
+        try {
+            mountGroups(p, withPin);
+            assert.deepEqual(capture(p.dom, { mode: 'catch-up' }), { kind: 'alertTeam', anchor: 'blocked', id: expected }, withPin ? 'with the pin' : 'without a pin');
+        } finally { p.restore(); }
+    }
+});
+
 test('V20: a group inside a collapsed card or body is never visible, even though its box is on screen', () => {
     const p = page();
     try {

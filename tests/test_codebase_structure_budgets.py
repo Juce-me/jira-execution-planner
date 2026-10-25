@@ -79,7 +79,9 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # Lead Times modes Task 4: the Assignee filter leaves the dashboard (-8).
     # Lead Times modes Task 6: mode, closed range and N thread through the per-group state, saved prefs and the stats hooks (+20).
     # Lead Times modes Task 7: the new Mode, selection and notes props reach StatsPanel (+12).
-    "frontend/src/dashboard.jsx": 7593,
+    # Issue #209 Task 2: pinned alert state, cohort settle flag, pin sticky tier, pin/close handlers and EngView pin props;
+    # re-synced to the measured size (the owner manifest held 7591) (+33 over the line above).
+    "frontend/src/dashboard.jsx": 7626,
 }
 
 

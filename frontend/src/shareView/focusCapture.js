@@ -6,6 +6,7 @@ import { measureStickyBottom } from '../eng/alertEpicNavigation.js';
 const STICKY_SELECTORS = [
     '.compact-sticky-header.is-visible',
     '.filterbar-wrap',
+    '[data-alert-pin]',
     '.planning-panel.open',
     '.planning-review-sticky-stack',
     '.planning-review-docked-header',

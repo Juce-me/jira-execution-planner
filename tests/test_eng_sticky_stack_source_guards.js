@@ -32,7 +32,7 @@ test('the outer filter bar reports its initial height and clears it on unmount',
 test('Dashboard derives shared controls C plus F plus P sticky offsets', () => {
     assert.match(dashboard, /const planningStickyHeight = showPlanning \? planningOffset : 0;/);
     assert.match(dashboard, /const filterBarStickyTop = compactStickyTop;/);
-    assert.match(dashboard, /const epicStickyTop = compactStickyTop \+ planningStickyHeight \+ filterBarHeight;/);
+    assert.match(dashboard, /const epicStickyTop = compactStickyTop \+ planningStickyHeight \+ filterBarHeight \+ pinHeight;/);
     assert.match(dashboard, /'--filterbar-sticky-top': `\$\{filterBarStickyTop\}px`/);
     assert.match(dashboard, /const handleFilterBarHeightChange = React\.useCallback/);
 });

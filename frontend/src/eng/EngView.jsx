@@ -3,6 +3,7 @@ import IssueCard from '../issues/IssueCard.jsx';
 import { subscribeEngReading, getEngReadingPresentation } from './engReadingAnchor.js';
 import EmptyState from '../ui/EmptyState.jsx';
 import LoadingState from '../ui/LoadingState.jsx';
+import AlertPinBar from './AlertPinBar.jsx';
 
 export default function EngView({
     selectedView,
@@ -14,6 +15,11 @@ export default function EngView({
     onRetry,
     alertCelebrationPieces = [],
     alertsPanel,
+    alertPin = null,
+    alertPinStyle,
+    onPinBack,
+    onPinClose,
+    onPinOpen,
     InitiativeIcon,
     visibleTasksForList = [],
     hierarchyCounts = null,
@@ -61,6 +67,8 @@ export default function EngView({
                     {techTasksLoading && <div>⏳ Loading tech tasks...</div>}
                 </div>
             )}
+
+            {alertPin && <AlertPinBar pin={alertPin} style={alertPinStyle} onBack={onPinBack} onClose={onPinClose} onOpen={onPinOpen} />}
 
             {loading ? (
                 <LoadingState

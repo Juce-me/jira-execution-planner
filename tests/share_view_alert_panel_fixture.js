@@ -16,7 +16,7 @@ const COLLAPSIBLE = {
 };
 const SETTERS = ['setShowBacklogAlert', 'setShowBlockedAlert', 'setShowDoneEpicAlert', 'setShowEmptyEpicAlert', 'setShowMissingAlert', 'setShowMissingLabelsAlert',
     'setShowMissingTeamAlert', 'setShowNeedsStoriesAlert', 'setShowPostponedAlert', 'setShowWaitingAlert', 'dismissAlertItem', 'dismissStoryRequirement',
-    'handleAlertStoryClick', 'handleStoryRequirementClick'];
+    'handleAlertStoryClick', 'handleStoryRequirementClick', 'pinAlert'];
 
 let panel;
 function loadPanel() {
@@ -30,7 +30,7 @@ function loadPanel() {
     return panel;
 }
 
-function renderAlertsPanel({ collapsed = [], ids = {}, names = {}, moreGroups = {} } = {}) {
+function alertsPanelProps({ collapsed = [], ids = {}, names = {}, moreGroups = {}, overrides = {} } = {}) {
     const id = { ...DEFAULT_IDS, ...ids };
     const epic = (key, teamId) => ({ key, summary: `Synthetic epic ${key}`, status: { name: 'To Do' }, cleanupStoryCount: 0, teamId, teamName: teamId });
     const story = key => ({ key, fields: { summary: `Synthetic story ${key}` } });
@@ -54,9 +54,25 @@ function renderAlertsPanel({ collapsed = [], ids = {}, names = {}, moreGroups = 
     };
     for (const name of SETTERS) alertProps[name] = () => {};
     for (const [category, flag] of Object.entries(COLLAPSIBLE)) alertProps[flag] = !collapsed.includes(category);
-    return renderToStaticMarkup(React.createElement(loadPanel(), {
+    Object.assign(alertProps, overrides);
+    return {
         selectedView: 'eng', alertItemCount: 11, alertCounts: {}, showAlertsPanel: true, setShowAlertsPanel: () => {}, collapsed: false, alertProps,
-    }));
+    };
 }
 
-module.exports = { renderAlertsPanel };
+function renderAlertsPanel(options = {}) {
+    return renderToStaticMarkup(React.createElement(loadPanel(), alertsPanelProps(options)));
+}
+
+// Calls the panel function directly (its hooks stubbed) and returns its element tree, so tests can invoke the rendered handlers.
+function alertsPanelTree(options = {}) {
+    const original = React.useCallback;
+    React.useCallback = callback => callback;
+    try {
+        return loadPanel()(alertsPanelProps(options));
+    } finally {
+        React.useCallback = original;
+    }
+}
+
+module.exports = { renderAlertsPanel, alertsPanelTree };

@@ -79,7 +79,14 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # Lead Times modes Task 4: the Assignee filter leaves the dashboard (-8).
     # Lead Times modes Task 6: mode, closed range and N thread through the per-group state, saved prefs and the stats hooks (+20).
     # Lead Times modes Task 7: the new Mode, selection and notes props reach StatsPanel (+12).
-    "frontend/src/dashboard.jsx": 7593,
+    # Issue #209 Task 2: pinned alert state, cohort settle flag, pin sticky tier, pin/close handlers and EngView pin props;
+    # re-synced to the measured size (the owner manifest held 7591) (+33 over the line above).
+    # Issue #209 Task 5: the alert scroll helpers (block, back to alerts, top) and the pin clearance check in scrollToTaskItem (+32).
+    # Issue #209 Task 5 fix round 1: the landing sticky-stack ref for alert target scrolls (+2).
+    # Issue #209 Task 6 fix: Back to alerts reuses the block reveal, so it also expands the pinned category (-4).
+    # Issue #209 follow-up 1: the pin's title handler, its comment and the EngView prop (+3); follow-up 2 replaced the locate handler
+    # with the Story/Epic handler in the same lines (net 0).
+    "frontend/src/dashboard.jsx": 7659,
 }
 
 

@@ -71,7 +71,9 @@ import { buildMutationScopeKey, createEngIssueEditState, overlaySnapshot, patchE
 import { usePlanningIssueEdits } from './eng/usePlanningIssueEdits.js';
 import { usePlanningListConfirmedEdit } from './eng/usePlanningRowMotion.js';
 import { navigateToAlertStory } from './eng/alertStoryNavigation.js';
-import { navigateToStoryRequirement } from './eng/alertEpicNavigation.js';
+import { STICKY_STACK_SELECTORS, measureStickyBottom, navigateToStoryRequirement } from './eng/alertEpicNavigation.js';
+import { PIN_HEIGHT, alertIdentitiesBySection, alertLandingTop, clearCenteredTarget, createAlertPin, pinScopeKey, resolvePinClose } from './eng/alertPin.js';
+import { alertCardId } from './shareView/focusCapture.js';
 import { useEngAlerts } from './eng/useEngAlerts.js';
 import { isStatusTransitionSurfaceEnabled, resolveSubtaskParentStoryKeys } from './eng/engStatusTransitionUtils.js';
 import { deriveActiveEngMode, useEngModeState } from './eng/engModeState.js';
@@ -794,6 +796,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 savedPrefsRef.current.groupByInitiativeChoice ?? null
             );
             const headerRef = useRef(null);
+            const alertStackRef = useRef({});
             const compactHeaderRef = useRef(null);
             const [compactHeaderOffset, setCompactHeaderOffset] = useState(0);
             const [compactStickyVisible, setCompactStickyVisible] = useState(false);
@@ -969,6 +972,8 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
             const [dismissedStoryRequirementIds, setDismissedStoryRequirementIds] = useState([]);
             const [storyRequirementNavigationError, setStoryRequirementNavigationError] = useState('');
             const [alertCelebrationPieces, setAlertCelebrationPieces] = useState([]);
+            const [alertPin, setAlertPin] = useState(null);
+            const [alertCohortSettled, setAlertCohortSettled] = useState(false);
             const [configRefreshNonce, setConfigRefreshNonce] = useState(0);
             const alertDismissedRef = useRef(false);
             const alertCelebrationTimeoutRef = useRef(null);
@@ -3838,6 +3843,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 const shouldApplyAlertResult = () => catchUpAlertVersionRef.current === alertCohortVersion;
                 const alertCohortToken = {};
                 alertCohortRef.current = alertCohortToken;
+                setAlertCohortSettled(false);
                 const alertEpicsLoad = loadAlertEpics({ forceRefresh: forceAlertRefresh, shouldApplyResult: shouldApplyAlertResult, signal: alertController.signal }).then((alertOutcomes) => {
                     if (!shouldApplyAlertResult()) return;
                     const outcomes = [alertOutcomes?.product, alertOutcomes?.tech];
@@ -3875,8 +3881,8 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                     backlogLoad = loadBacklog();
                 }
                 Promise.allSettled([alertEpicsLoad, missingInfoLoad, readyToCloseProductLoad, readyToCloseTechLoad, backlogLoad])
-                    .finally(() => { if (alertCohortRef.current === alertCohortToken) alertCohortRef.current = null; notifyAlertCohortSettle({ aborted: false }); });
-                return () => { cancelled = true; alertController.abort(); if (alertCohortRef.current === alertCohortToken) alertCohortRef.current = null; notifyAlertCohortSettle({ aborted: true }); if (catchUpAlertVersionRef.current === alertCohortVersion) { catchUpAlertVersionRef.current += 1; if (catchUpAlertLoadRef.current === alertLoadSignature) catchUpAlertLoadRef.current = ''; } };
+                    .finally(() => { if (alertCohortRef.current === alertCohortToken) setAlertCohortSettled(true); if (alertCohortRef.current === alertCohortToken) alertCohortRef.current = null; notifyAlertCohortSettle({ aborted: false }); });
+                return () => { cancelled = true; setAlertCohortSettled(false); alertController.abort(); if (alertCohortRef.current === alertCohortToken) alertCohortRef.current = null; notifyAlertCohortSettle({ aborted: true }); if (catchUpAlertVersionRef.current === alertCohortVersion) { catchUpAlertVersionRef.current += 1; if (catchUpAlertLoadRef.current === alertLoadSignature) catchUpAlertLoadRef.current = ''; } };
             }, [isCatchUpMode, activeGroupId, activeGroupTeamIds.join('|'), selectedSprint, selectedSprintInfo?.name, selectedSprintInfo?.state, groupsLoading, groupPreferences.onboardingRequired, tasksFetched, productTasksLoading, techTasksLoading, isFutureSprintSelected, configRefreshNonce, catchUpAlertRefreshNonce]);
 
             useEffect(() => {
@@ -4439,7 +4445,9 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
             React.useEffect(() => { if (!showPlanning && confirmedEdit) ackConfirmed(confirmedEdit.keys); }, [showPlanning, confirmedEdit, ackConfirmed]); // an edit confirmed after leaving Planning must not blink on the next visit
             const compactStickyTop = compactStickyVisible ? compactHeaderOffset : 0;
             const planningStickyHeight = showPlanning ? planningOffset : 0;
-            const filterBarStickyTop = compactStickyTop; const epicStickyTop = compactStickyTop + planningStickyHeight + filterBarHeight;
+            const pinHeight = isCatchUpMode && alertPin ? PIN_HEIGHT : 0;
+            const filterBarStickyTop = compactStickyTop; const epicStickyTop = compactStickyTop + planningStickyHeight + filterBarHeight + pinHeight;
+            alertStackRef.current = { compactHeight: compactHeaderOffset, filterBarHeight, pinHeight }; // read after two frames, so the pinned × sees the pin cleared
             useEffect(() => {
                 const computeStickyEpicFocus = () => {
                     stickyEpicFrameRef.current = null;
@@ -4581,6 +4589,15 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
             const prefersReducedMotion = () => (
                 window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches
             );
+            const afterTwoFrames = callback => window.requestAnimationFrame(() => window.requestAnimationFrame(callback));
+            const scrollToTop = () => window.scrollTo({ top: 0, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+            // Lands an alert target just below the sticky stack it will have at landing (alertLandingTop); false when there is no target.
+            const scrollToAlertTarget = (element) => {
+                if (!element) return false;
+                const top = alertLandingTop({ ...alertStackRef.current, elementDocTop: element.getBoundingClientRect().top + window.scrollY, headerBottom: (headerRef.current?.getBoundingClientRect().bottom ?? 0) + window.scrollY });
+                window.scrollTo({ top, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+                return true;
+            };
 
             const highlightTaskItem = (element) => {
                 if (!element) return;
@@ -4605,6 +4622,13 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                     behavior: prefersReducedMotion() ? 'auto' : 'smooth',
                     block: 'center'
                 });
+                // The pin mounts in the same click, so check its clearance once it has laid out.
+                afterTwoFrames(() => {
+                    if (!document.querySelector('[data-alert-pin]')) return;
+                    const rect = element.getBoundingClientRect();
+                    const top = clearCenteredTarget({ elementTop: rect.top, elementHeight: rect.height, scrollY: window.scrollY, viewportHeight: window.innerHeight, stickyBottom: measureStickyBottom([...STICKY_STACK_SELECTORS, '.filterbar-wrap']) });
+                    if (top !== null) window.scrollTo({ top, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+                });
                 highlightTaskItem(element);
                 return true;
             };
@@ -4614,7 +4638,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 onMissing: key => jiraUrl && window.open(`${jiraUrl}/browse/${key}`, '_blank', 'noopener,noreferrer')
             });
 
-            const dismissAlertItem = (taskKey) => {
+            const dismissAlertItem = (taskKey, { suppressCelebration = false } = {}) => {
                 if (!taskKey) return;
                 const resolvedTypes = [];
                 if (missingAlertKeySet.has(taskKey) && missingAlertKeySet.size === 1) resolvedTypes.push('missing');
@@ -4624,7 +4648,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 if (waitingAlertKeySet.has(taskKey) && waitingAlertKeySet.size === 1) resolvedTypes.push('waiting');
                 if (emptyAlertKeySet.has(taskKey) && emptyAlertKeySet.size === 1) resolvedTypes.push('empty');
                 if (doneAlertKeySet.has(taskKey) && doneAlertKeySet.size === 1) resolvedTypes.push('done');
-                if (resolvedTypes.length) {
+                if (resolvedTypes.length && !suppressCelebration) {
                     triggerAlertCelebration({ types: resolvedTypes });
                 }
                 alertDismissedRef.current = true;
@@ -5549,14 +5573,52 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 if (!entry?.id) return;
                 setDismissedStoryRequirementIds(previous => previous.includes(entry.id) ? previous : [...previous, entry.id]);
             }, []);
+            // The pinned alert shares this scope effect so Stories required and the pin cannot drift; Team and filter changes keep it.
             useEffect(() => {
-                const scopeKey = `${activeGroupId || ''}::${selectedSprint || ''}`;
+                const scopeKey = pinScopeKey({ groupId: activeGroupId, sprintId: selectedSprint });
                 if (storyRequirementScopeRef.current && storyRequirementScopeRef.current !== scopeKey) {
                     setDismissedStoryRequirementIds([]);
                     setStoryRequirementNavigationError('');
+                    setAlertPin(null);
                 }
                 storyRequirementScopeRef.current = scopeKey;
-            }, [activeGroupId, selectedSprint]);
+                if (!isCatchUpMode) setAlertPin(null);
+            }, [activeGroupId, selectedSprint, isCatchUpMode]);
+            const pinAlert = spec => setAlertPin(createAlertPin(spec));
+            // Opens the panel and the category (absent from the DOM while hidden or collapsed), then scrolls once they render.
+            const revealAlertBlock = (sectionId, fallbackToTop, target = () => document.getElementById(sectionId)) => {
+                setShowAlertsPanel(true); // shareViewOptions is declared later in render: safe only from click handlers (temporal dead zone otherwise)
+                shareViewOptions.alertFlags[Object.keys(shareViewOptions.alertFlags).find(key => alertCardId(key) === sectionId)]?.[1](true);
+                afterTwoFrames(() => {
+                    if (!scrollToAlertTarget(target()) && fallbackToTop) scrollToTop();
+                });
+            };
+            // Runs outside triggerAlertCelebration, which returns early under reduced motion.
+            const scrollAfterPinClose = (outcome, sectionId) => {
+                if (outcome === 'top') scrollToTop();
+                else revealAlertBlock(sectionId, outcome === 'block-or-top');
+            };
+            // Back expands the pinned category too, then lands on the alert list's top.
+            const scrollBackToAlerts = () => revealAlertBlock(alertPin?.sectionId, true, () => document.querySelector('.alerts-panel-shell') || document.querySelector('[id^="eng-alert-"]'));
+            // The pin's title goes where its alert row's title goes: the Story or Epic, or the Story requirement, in the Catch Up list.
+            const openAlertPinTarget = () => (alertPin?.kind === 'requirement' ? handleStoryRequirementClick({ id: alertPin.identity }) : alertPin && handleAlertStoryClick(alertPin.key, false));
+            const closeAlertPin = () => {
+                if (!alertPin) return;
+                const outcome = resolvePinClose(alertPin, alertIdentitiesBySection(visibleAlertCollections), { loading: !alertCohortSettled });
+                if (outcome.dismiss) {
+                    if (alertPin.kind === 'requirement') dismissStoryRequirement({ id: alertPin.identity });
+                    else dismissAlertItem(alertPin.identity, { suppressCelebration: true });
+                }
+                setAlertPin(null);
+                if (outcome.celebrate) {
+                    const paletteType = {
+                        'eng-alert-missing': 'missing', 'eng-alert-blocked': 'blocked', 'eng-alert-followup': 'followup',
+                        'eng-alert-needs-stories': 'waiting', 'eng-alert-waiting': 'waiting', 'eng-alert-empty': 'empty', 'eng-alert-done': 'done'
+                    }[alertPin.sectionId];
+                    triggerAlertCelebration(paletteType ? { types: [paletteType] } : {});
+                }
+                scrollAfterPinClose(outcome.scroll, alertPin.sectionId);
+            };
             const clearEngFilters = React.useCallback(() => resetEngFilters({ setSearchInput, setSearchQuery, setSelectedTeams, setEngStatusFilter, setEngPriorityFilter, setEngProjectTrackFilter, defaultEngStatusFilter: DEFAULT_ENG_STATUS_FILTER, setShowTech, setShowProduct, setGroupByInitiativeChoice, setBurnoutTaskFilter, setShowTeamDropdown, setShowGroupDropdown, setShowSprintDropdown, trackFilterChanged, visibleCountBucket: bucketCount(visibleTasksForList.length) }), [trackFilterChanged, visibleTasksForList.length]);
             const trackStatsAnalyticsAction = (eventName, params = {}) => trackStatsAction(eventName, statsView, params);
             const renderSearchControl = (surface, extraClassName = '') => (
@@ -7012,6 +7074,11 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                                     error={displayedEngError}
                                     onRetry={retryEngLoad}
                                     alertCelebrationPieces={alertCelebrationPieces}
+                                    alertPin={isCatchUpMode ? alertPin : null}
+                                    alertPinStyle={{ '--alert-pin-top': `${compactStickyTop + filterBarHeight}px`, '--alert-pin-height': `${PIN_HEIGHT}px` }}
+                                    onPinBack={scrollBackToAlerts}
+                                    onPinClose={closeAlertPin}
+                                    onPinOpen={openAlertPinTarget}
                                     alertsPanel={isCatchUpMode ? (
                                         <EngAlertsPanel
                                             selectedView={selectedView}
@@ -7053,6 +7120,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                                                 needsStoriesEntries: visibleAlertCollections.needsStoriesEntries,
                                                 needsStoriesEpics: visibleAlertCollections.needsStoriesEpics,
                                                 needsStoriesTeams,
+                                                pinAlert,
                                                 postponedAlertTeams,
                                                 postponedEpicTeams,
                                                 postponedTasks: visibleAlertCollections.postponedTasks,

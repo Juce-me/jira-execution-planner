@@ -23,6 +23,28 @@ The alerts toolbar (Hide/Show Alerts and the count chips) and every alert card s
 
 Analytics allowlist reason: no analytics event is added; copying an alert group link reports through the existing `share_view_action` event (`workflow_action=copy_link`).
 
+## Pinned Alert
+
+Clicking an alert in Catch Up pins it: one sticky row directly under the filter bar (`alert-story alert-story--pinned`, `data-alert-pin`), fixed at 40px and a single line at every width. It reads Back button | issue key and summary (ellipsized) | category label | `×`. The pin is a static snapshot: it shows no status pill and no action column, so it never goes stale against an edit. The Back button is the shared `IconButton` (`icon-button--sm` with `planning-review-column-action`); the `×` is `task-remove alert-remove`. Both have at least a 24 by 24 hit area and neither is hover-gated, so both work by tap.
+
+The pin is a rounded card like the filter bar card directly above it: the app's 10px radius and `1px solid var(--border)` border, inside the 40px box, on the filter bar card's left and right edges. The square behind its rounded corners is painted with the page background, so content scrolling under the stuck pin never shows there.
+
+The pin carries its category's tone, the same one as that category's summary pill: a 3px left accent (an inset shadow, so the 40px box does not change; it follows the rounded corners) and the pill's light tint over the opaque page background. The category label takes the tone colour; Missing info and Empty epic (`#ad4e00`) and Blocked (`#b02a05`) use a darker label shade (`--alert-pin-label`) so every label reads at 4.5:1 or better on its tint, while the accent keeps the tone colour. Key and summary stay in their usual text colours. Missing info and Empty epic are orange, Blocked is red, Ready to close is green and the other categories are indigo. The label is preceded by the category's own icon, the one its card header shows; both read it from `ALERT_CATEGORY_STYLE` in `eng/alertPin.js`.
+
+Clicking (or tapping, or Enter/Space on) the pin's title (`alert-story-main`) goes to the alert's target through the alert row's own handlers: the Story or Epic in the Catch Up list (`handleAlertStoryClick`), or for Stories required the Story requirement (`handleStoryRequirementClick`). One difference: a Missing info pin goes to the Story but does not open the Story Points editor that its row title opens when Story Points are missing (the pin calls `handleAlertStoryClick(key, false)`). A target hidden by the filters is revealed by clearing them, as from the row. When the alert has no target in the list (for example an Empty epic), the same fallback as the row's applies (the issue opens in Jira when a Jira URL is configured; a Story requirement shows its navigation error). The pin stays and nothing is dismissed.
+
+What pins: every alert row's primary click and every action link, including the links that open Jira in a new tab (the link still opens). Only one alert is pinned at a time and a new click replaces the pin, whether or not the first alert was resolved. The `×` buttons in the alert list do not pin. Pin state lives in `dashboard.jsx` and renders outside the alerts panel, so it survives the panel returning nothing, loading states and task refreshes.
+
+Back: opens the alerts panel if hidden, expands the pinned category and scrolls the alert list to just below the sticky stack. The pin stays and nothing is dismissed.
+
+Pinned `×`: dismisses the alert if it is still live in its category (an alert already resolved by editing records no dismissal), clears the pin and scrolls to that category's block, expanding it first. If the category has no alerts left, it instead fires exactly one confetti burst (the pinned category only) and scrolls to the top; under reduced motion the scroll to the top is instant and there is no confetti. While the alert cohort is loading it never celebrates and never skips a dismissal, so a transient empty set cannot misfire. By design, while the cohort is loading `×` records the dismissal even for an identity that no longer appears, so a later reappearance in the same session stays hidden and a transient empty list never skips a real dismissal.
+
+Pin lifetime: cleared on leaving Catch Up and on a user change of Sprint or Department group. It survives task refreshes, alert rechecks and reloads, filter clearing (including the clearing done by the alert click itself), Team changes and hiding the alerts panel. Board, Planning, Statistics and Scenario render no pin and their sticky offsets are unchanged.
+
+Scrolling: both scrolls land below the sticky stack using the dashboard's own offsets (the compact header if it is visible at the landing position, the filter bar, and the pin if it still exists), not DOM measurement. The sticky Epic header sits directly under the pin.
+
+Analytics allowlist reason: no analytics event is added; the pin controls are internal navigation and the pinned `×` is the same action as the list `×`. See `docs/README_ANALYTICS.md`.
+
 ## Current Alert Panels
 
 ### Missing Story Points
@@ -112,7 +134,7 @@ Shows one requirement per expected Team on an in-scope Epic that does not have a
 
 The same complete Story-readiness snapshot drives the Catch Up alert and the synthetic `Story required` rows in the Catch Up and Planning hierarchies. `Blocked`, `Done`, `Killed`, and `Incomplete` Stories do not satisfy readiness. A failed, partial, or stale snapshot never produces a requirement.
 
-The alert title is local navigation to the exact `(Department, sprint, Epic, Team)` requirement and reuses the established alert-row title style. Team groups display the configured Team-catalog name, never the internal Team id. Activation clears only target-hiding list state to a truly neutral reveal state, then scrolls, focuses, and highlights the exact ghost. The hierarchy ghost is the Jira-opening action. Dismissing the alert entry does not hide the hierarchy row. The panel's headline count remains a unique-Epic count even when one Epic has requirements for multiple Teams.
+The alert title is local navigation to the exact `(Department, sprint, Epic, Team)` requirement and reuses the established alert-row title style. Team groups display the configured Team-catalog name, never the internal Team id. Activation clears only target-hiding list state to a truly neutral reveal state, then scrolls, focuses, and highlights the exact ghost. The scroll lands the ghost's Epic header 12px below the sticky stack when the whole Epic fits below it, and otherwise centres the ghost below the stack; at the end of the page it stops at the document end with the Epic header still in view. Known limitation: no spacing is added after the last Epic, so when the target is the last Epic only the remaining scroll is available. Its header can then sit several hundred pixels below the stack, with the previous Epic's content and its sticky header above it; the header, the ghost and their highlight are fully visible and uncovered. The Epic reveal stops re-aiming as soon as another scroll (a script, a scrollbar drag, another handler) moves the page away from its aim, so it never fights a later scroll. The hierarchy ghost is the Jira-opening action. Dismissing the alert entry does not hide the hierarchy row. The panel's headline count remains a unique-Epic count even when one Epic has requirements for multiple Teams.
 
 ## Alert Precedence
 

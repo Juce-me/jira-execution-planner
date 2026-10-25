@@ -500,7 +500,8 @@
         .alert-story > .alert-story-note { grid-column: 2; }
         .alert-story > .alert-pill { grid-column: 3; }
         .alert-story > .alert-action { grid-column: 4; }
-        .alert-story > .alert-remove { grid-column: 5; justify-self: end; }
+        /* The card body clips (overflow: hidden): leave the outer 3px of the --hover-ring inside the row. */
+        .alert-story > .alert-remove { grid-column: 5; justify-self: end; margin-right: 3px; }
 
         /* The Jira key is secondary to the summary: same place, smaller. */
         .alert-story .epic-key {
@@ -688,6 +689,62 @@
         .alert-story .alert-remove {
             border-color: var(--border);
         }
+
+        /* Pinned alert: the row the user opened, held under the filter bar. Top and height come from the
+           dashboard's measured sticky offsets (--alert-pin-top, --alert-pin-height). The z-index and
+           background keep sticky Epic headers (z 50) from painting over or through it. It is a card like the
+           filter bar card above it (same 10px radius and border, same left and right edges); the border sits
+           inside the 40px box. */
+        .alert-story.alert-story--pinned {
+            display: grid;
+            grid-template-columns: 24px minmax(0, 1fr) minmax(0, 0.6fr) 24px;
+            column-gap: 0.55rem;
+            box-sizing: border-box;
+            height: var(--alert-pin-height);
+            position: sticky;
+            top: var(--alert-pin-top);
+            z-index: var(--sticky-filterbar-z);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: var(--bg-primary);
+            white-space: nowrap;
+        }
+
+        /* The corners outside the rounded shape: painted with the page background so content scrolling under the
+           stuck pin never shows there (the filter bar card gets the same from .filterbar-wrap::before). */
+        .alert-story.alert-story--pinned::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            z-index: -1;
+            /* The padding box: the outer 10px corner arc is centred 9px in from each corner here. Staying inside the box keeps the row from overflowing. */
+            background:
+                radial-gradient(circle at 100% 100%, transparent 10px, var(--bg-primary) 10.5px) 0 0 / 9px 9px no-repeat,
+                radial-gradient(circle at 0 100%, transparent 10px, var(--bg-primary) 10.5px) 100% 0 / 9px 9px no-repeat,
+                radial-gradient(circle at 100% 0, transparent 10px, var(--bg-primary) 10.5px) 0 100% / 9px 9px no-repeat,
+                radial-gradient(circle at 0 0, transparent 10px, var(--bg-primary) 10.5px) 100% 100% / 9px 9px no-repeat;
+        }
+
+        .alert-story--pinned > .icon-button--sm { grid-column: 1; }
+        .alert-story--pinned > .alert-story-main { grid-column: 2; overflow: hidden; text-overflow: ellipsis; }
+        .alert-story--pinned > .alert-story-note { grid-column: 3; overflow: hidden; text-overflow: ellipsis; }
+        /* Both classes: issues.css loads later and its `.alert-story .alert-remove` (1.3rem) would otherwise win. */
+        .alert-story.alert-story--pinned > .alert-remove { grid-column: 4; width: 24px; height: 24px; margin-left: 0; }
+
+        /* The pin's category tone: the summary pill tint over an opaque base (Epic headers never show through), a 3px inset
+           accent that leaves the 40px box unchanged, and the tone colour on the category label only. The orange and red
+           labels use a darker shade (--alert-pin-label) so they read at 4.5:1 on the tint; the accent keeps the tone. */
+        .alert-story--pinned[data-tone="missing"],
+        .alert-story--pinned[data-tone="empty"] { --alert-pin-tone: var(--alert-missing); --alert-pin-label: #ad4e00; --alert-pin-tint: rgba(250, 140, 22, 0.1); }
+        .alert-story--pinned[data-tone="blocked"] { --alert-pin-tone: var(--alert-blocked); --alert-pin-label: #b02a05; --alert-pin-tint: rgba(212, 56, 13, 0.1); }
+        .alert-story--pinned[data-tone="following"] { --alert-pin-tone: #4338ca; --alert-pin-tint: rgba(99, 102, 241, 0.1); }
+        .alert-story--pinned[data-tone="done"] { --alert-pin-tone: #237804; --alert-pin-tint: rgba(82, 196, 26, 0.1); }
+        .alert-story.alert-story--pinned[data-tone] {
+            padding-inline: 0.5rem;
+            background: linear-gradient(var(--alert-pin-tint), var(--alert-pin-tint)), var(--bg-primary);
+            box-shadow: inset 3px 0 0 var(--alert-pin-tone);
+        }
+        .alert-story--pinned[data-tone] > .alert-story-note { color: var(--alert-pin-label, var(--alert-pin-tone)); }
 
 
 

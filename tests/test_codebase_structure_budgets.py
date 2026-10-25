@@ -84,7 +84,8 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # Issue #209 Task 5: the alert scroll helpers (block, back to alerts, top) and the pin clearance check in scrollToTaskItem (+32).
     # Issue #209 Task 5 fix round 1: the landing sticky-stack ref for alert target scrolls (+2).
     # Issue #209 Task 6 fix: Back to alerts reuses the block reveal, so it also expands the pinned category (-4).
-    # Issue #209 follow-up 1: the pin's locate handler (findPinTarget through the block reveal), its comment and the EngView prop (+3).
+    # Issue #209 follow-up 1: the pin's title handler, its comment and the EngView prop (+3); follow-up 2 replaced the locate handler
+    # with the Story/Epic handler in the same lines (net 0).
     "frontend/src/dashboard.jsx": 7659,
 }
 

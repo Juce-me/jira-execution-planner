@@ -821,6 +821,9 @@ test.describe('pinned row layout', () => {
                 expect(card.widths, where).toEqual(['1px', '1px', '1px', '1px']);
                 expect(card.styles, where).toEqual(['solid', 'solid', 'solid', 'solid']);
                 expect(card.colors, where).toEqual([card.border, card.border, card.border, card.border]);
+                // REGRESSION GUARD only: in this mocked fixture the pin, the filter bar card and the Epic cards already shared these edges, so the
+                // edge checks also pass against the old full-bleed strip. The radius, border and corner checks are the discriminating ones; real
+                // alignment in the authenticated app is verified by the operator.
                 expect(Math.abs(card.left - card.cardLeft), `${where} left edge`).toBeLessThanOrEqual(1);
                 expect(Math.abs(card.right - card.cardRight), `${where} right edge`).toBeLessThanOrEqual(1);
                 expect(card.height, where).toBe(40);

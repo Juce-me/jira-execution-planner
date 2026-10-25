@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');
 const {
-    CATEGORIES, appBaseUrl, deferred, installPinFixture, longSummary, openPinDashboard, otherSprint, settle,
+    CATEGORIES, addReadyEpic, apiIdle, deferred, longSummary, openPinDashboard, otherSprint, settle,
 } = require('./eng_alert_pin_fixture');
 
 const screenshotDir = path.join(__dirname, '..', '..', 'tmp', 'eng-alert-pin');
@@ -86,6 +86,32 @@ async function burstCount(page) {
     return times.reduce((clusters, time, index) => (index === 0 || time - times[index - 1] > 100 ? clusters + 1 : clusters), 0);
 }
 
+// Counts every time the pinned row leaves the DOM or is replaced by a new node (a remount), from now on.
+async function watchPin(page) {
+    await page.evaluate(() => {
+        window.__pinWatch?.disconnect();
+        window.__pinChanges = { removed: 0, replaced: 0 };
+        let last = document.querySelector('[data-alert-pin]');
+        window.__pinWatch = new MutationObserver(() => {
+            const now = document.querySelector('[data-alert-pin]');
+            if (last && !now) window.__pinChanges.removed += 1;
+            else if (last && now && now !== last) window.__pinChanges.replaced += 1;
+            last = now;
+        });
+        window.__pinWatch.observe(document.body, { childList: true, subtree: true });
+    });
+}
+const pinChanges = page => page.evaluate(() => window.__pinChanges);
+
+const apiPath = (response, pathname, purpose) => {
+    const url = new URL(response.url());
+    if (url.pathname !== pathname) return false;
+    if (purpose === undefined) return true;
+    // The department cohort asks for every Epic in scope; an edit's recheck asks for that one Epic.
+    return url.searchParams.get('purpose') === purpose && url.searchParams.get('project') === 'product'
+        && (purpose !== 'ready-to-close' || String(url.searchParams.get('epicKeys') || '').includes(','));
+};
+
 async function waitForScrollTop(page) {
     await page.waitForFunction(() => window.scrollY === 0);
     await settle(page);
@@ -138,15 +164,15 @@ test.describe('primary row click pins the alert', () => {
 
 test.describe('action links pin the alert and still open', () => {
     const links = [
-        { sectionId: 'eng-alert-missing', key: 'PIN-2', name: 'Fix fields →', popup: true },
-        { sectionId: 'eng-alert-followup', key: 'PIN-5', name: 'Move to next sprint →', popup: true },
-        { sectionId: 'eng-alert-followup', key: 'PIN-FR1', name: 'Future routed epic', popup: true, selector: '.alert-story-link' },
-        { sectionId: 'eng-alert-waiting', key: 'PIN-W1', name: 'Open epic →', popup: true },
-        { sectionId: 'eng-alert-empty', key: 'PIN-E1', name: 'Create story →', popup: true },
-        { sectionId: 'eng-alert-done', key: 'PIN-D1', name: 'Close epic →', popup: true },
-        { sectionId: 'eng-alert-backlog', key: 'PIN-B1', name: 'Clean backlog stories →', popup: true, sprint: 'future' },
+        { sectionId: 'eng-alert-missing', key: 'PIN-2', name: 'Fix fields →' },
+        { sectionId: 'eng-alert-followup', key: 'PIN-5', name: 'Move to next sprint →' },
+        { sectionId: 'eng-alert-followup', key: 'PIN-FR1', name: 'Future routed epic', selector: '.alert-story-link' },
+        { sectionId: 'eng-alert-waiting', key: 'PIN-W1', name: 'Open epic →' },
+        { sectionId: 'eng-alert-empty', key: 'PIN-E1', name: 'Create story →' },
+        { sectionId: 'eng-alert-done', key: 'PIN-D1', name: 'Close epic →' },
+        { sectionId: 'eng-alert-backlog', key: 'PIN-B1', name: 'Clean backlog stories →', sprint: 'future' },
     ];
-    for (const { sectionId, key, name, popup, selector, sprint } of links) {
+    for (const { sectionId, key, name, selector, sprint } of links) {
         test(`${category(sectionId).label} ${key} "${name}" pins and opens Jira`, async ({ page }) => {
             await openPinDashboard(page, { sprintState: sprint || 'active' });
             const link = selector
@@ -159,7 +185,6 @@ test.describe('action links pin the alert and still open', () => {
             expect(opened.url()).toBe(`https://jira.example/browse/${key}`);
             await opened.close();
             await expectPinned(page, { key, note: category(sectionId).label });
-            expect(popup).toBe(true);
         });
     }
 
@@ -219,6 +244,7 @@ test.describe('Back to alerts', () => {
 
     test('works with the alerts panel hidden and the category collapsed', async ({ page }) => {
         await openPinDashboard(page);
+        const totalBefore = await page.locator('#eng-alert-panels .alert-story').count();
         await clickPrimary(page, 'eng-alert-blocked', 'PIN-3');
         await settle(page);
         await page.evaluate(() => window.scrollTo(0, 0));
@@ -236,6 +262,7 @@ test.describe('Back to alerts', () => {
         expect(stack.target.top).toBeGreaterThanOrEqual(stack.pin.bottom - 0.5);
         await expectPinned(page, { key: 'PIN-3', note: 'Blocked' });
         await expect(alertRow(page, 'eng-alert-blocked', 'PIN-3')).toHaveCount(1);
+        expect(await page.locator('#eng-alert-panels .alert-story').count()).toBe(totalBefore);
         // Back re-shows the panel and expands the pinned category before it scrolls.
         await expect(page.locator('#eng-alert-blocked')).not.toHaveClass(/collapsed/);
         await expect(page.locator('#eng-alert-blocked .alert-card-body')).not.toHaveClass(/collapsed/);
@@ -248,7 +275,7 @@ test.describe('Back to alerts', () => {
         await page.evaluate(() => window.scrollTo(0, 0));
         await settle(page);
         await page.getByRole('button', { name: 'Back to alerts' }).click();
-        await expectLanded(page, '.alerts-panel-shell', { band: true });
+        await expectLanded(page, '.alerts-panel-shell');
     });
 });
 
@@ -414,47 +441,75 @@ test.describe('a key in two categories', () => {
 });
 
 test.describe('pin lifetime', () => {
+    // Each step waits for the responses it triggers to arrive and render, then checks the pin never left the DOM meanwhile.
     test('survives Refresh (same-Sprint catalog re-read), a per-edit recheck, a background alert reload and hiding the panel', async ({ page }) => {
-        const { calls } = await openPinDashboard(page);
+        const { state } = await openPinDashboard(page);
         await clickPrimary(page, 'eng-alert-done', 'PIN-D1');
         await expectPinned(page, { key: 'PIN-D1', note: 'Ready to close' });
+        await apiIdle(page, state);
+        const expectPinHeld = async (step) => {
+            await apiIdle(page, state);
+            expect(await pinChanges(page), `${step}: the pin never left or remounted`).toEqual({ removed: 0, replaced: 0 });
+            await expectPinned(page, { key: 'PIN-D1', note: 'Ready to close' });
+            await expect(alertRow(page, 'eng-alert-done', 'PIN-D1')).toHaveCount(1);
+        };
 
-        const sprintReads = calls.filter(call => call.pathname === '/api/sprints').length;
+        await watchPin(page);
+        const refreshed = Promise.all([
+            page.waitForResponse(response => apiPath(response, '/api/sprints')),
+            page.waitForResponse(response => apiPath(response, '/api/tasks-with-team-name', null)),
+            page.waitForResponse(response => apiPath(response, '/api/tasks-with-team-name', 'ready-to-close')),
+            page.waitForResponse(response => apiPath(response, '/api/missing-info')),
+        ]);
         await page.getByRole('button', { name: 'Refresh tasks and sprints from Jira' }).click();
-        await expect.poll(() => calls.filter(call => call.pathname === '/api/sprints').length).toBeGreaterThan(sprintReads);
-        await page.waitForLoadState('networkidle');
-        await expectPinned(page, { key: 'PIN-D1', note: 'Ready to close' });
+        await refreshed;
+        await expectPinHeld('Refresh');
 
+        await watchPin(page);
+        const catalogReread = page.waitForResponse(response => apiPath(response, '/api/sprints'));
         await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
-        await expect.poll(() => calls.filter(call => call.pathname === '/api/sprints').length).toBeGreaterThan(sprintReads + 1);
-        await page.waitForLoadState('networkidle');
-        await expectPinned(page, { key: 'PIN-D1', note: 'Ready to close' });
+        await catalogReread;
+        await expectPinHeld('pageshow catalog re-read');
 
         // Per-edit recheck: a status edit re-checks only its Epic.
+        await watchPin(page);
+        const rechecked = Promise.all([
+            page.waitForResponse(response => apiPath(response, '/api/issues/transitions')),
+            page.waitForResponse((response) => {
+                const url = new URL(response.url());
+                return url.pathname === '/api/tasks-with-team-name' && url.searchParams.get('purpose') === 'ready-to-close' && url.searchParams.get('epicKeys') === 'PIN-EPIC2';
+            }),
+        ]);
         await page.locator('[data-status-transition-trigger][data-issue-kind="story"][data-issue-key="PIN-8"]').click();
         await page.locator('.status-transition-menu[data-issue-key="PIN-8"]').getByRole('menuitem', { name: 'In Progress' }).click();
-        await expect.poll(() => calls.filter(call => call.params.epicKeys && call.params.purpose === 'ready-to-close').length).toBeGreaterThan(0);
-        await page.waitForLoadState('networkidle');
-        await expectPinned(page, { key: 'PIN-D1', note: 'Ready to close' });
+        await rechecked;
+        await expectPinHeld('status recheck');
 
         // Background reload: a Story Points edit rearms the whole alert cohort.
-        const missingReads = calls.filter(call => call.pathname === '/api/missing-info').length;
+        await watchPin(page);
+        const reloaded = Promise.all([
+            page.waitForResponse(response => apiPath(response, '/api/issues/PIN-8/field')),
+            page.waitForResponse(response => apiPath(response, '/api/missing-info')),
+            page.waitForResponse(response => apiPath(response, '/api/tasks-with-team-name', 'ready-to-close')),
+        ]);
         const points = page.locator('.task-item[data-issue-key="PIN-8"]').getByRole('textbox', { name: 'Story Points' });
         await points.focus();
         await points.fill('8');
         await points.press('Enter');
-        await expect.poll(() => calls.filter(call => call.pathname === '/api/missing-info').length).toBeGreaterThan(missingReads);
-        await page.waitForLoadState('networkidle');
-        await expectPinned(page, { key: 'PIN-D1', note: 'Ready to close' });
+        await reloaded;
+        await expectPinHeld('Story Points cohort reload');
 
         await page.evaluate(() => window.scrollTo(0, 0));
+        await watchPin(page);
         await page.getByRole('button', { name: /Hide Alerts/ }).click();
         await expect(page.locator('#eng-alert-panels')).toHaveCount(0);
+        await apiIdle(page, state);
+        expect(await pinChanges(page)).toEqual({ removed: 0, replaced: 0 });
         await expectPinned(page, { key: 'PIN-D1', note: 'Ready to close' });
     });
 
     test('survives a Team selection change and the filter clearing done by the alert click', async ({ page }) => {
-        await openPinDashboard(page);
+        const { state } = await openPinDashboard(page);
         // A Done-hiding status filter hides PIN-D1's only Story; the click clears it before pinning.
         await page.getByRole('button', { name: 'Filters', exact: true }).click();
         await page.locator('.popover .pop-group[data-facet="status"] .pop-opt[data-option="Done"]').click();
@@ -462,17 +517,22 @@ test.describe('pin lifetime', () => {
         await expect(page.locator('.task-item[data-issue-key="PIN-D1-S"]')).toHaveCount(0);
         await expect(alertRow(page, 'eng-alert-done', 'PIN-D1')).toHaveCount(1);
         await clickPrimary(page, 'eng-alert-done', 'PIN-D1');
+        await expect(pin(page)).toHaveCount(1);
+        await watchPin(page);
         await expect(page.locator('.task-item[data-issue-key="PIN-D1-S"]')).toHaveCount(1);
-        await settle(page);
+        await apiIdle(page, state);
+        expect(await pinChanges(page), 'the filter clearing never removed the pin').toEqual({ removed: 0, replaced: 0 });
         await expectPinned(page, { key: 'PIN-D1', note: 'Ready to close' });
 
         await page.evaluate(() => window.scrollTo(0, 0));
         await settle(page);
+        await watchPin(page);
         await page.locator('.view-selector .team-dropdown-toggle').click();
         await page.locator('.view-selector .team-dropdown-option', { hasText: 'Alpha Team' }).click();
         await page.keyboard.press('Escape');
         await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('jira_dashboard_ui_prefs_v1') || '{}').selectedTeams)).not.toEqual(['all']);
-        await page.waitForLoadState('networkidle');
+        await apiIdle(page, state);
+        expect(await pinChanges(page), 'the Team change never removed the pin').toEqual({ removed: 0, replaced: 0 });
         await expectPinned(page, { key: 'PIN-D1', note: 'Ready to close' });
     });
 
@@ -516,21 +576,34 @@ test('reload pending: × records the dismissal and fires no confetti on the tran
     await dismissFromList(page, 'eng-alert-done', 'PIN-D2');
     await clickPrimary(page, 'eng-alert-done', 'PIN-D1');
     await expectPinned(page, { key: 'PIN-D1' });
-    await settle(page);
+    await apiIdle(page, state);
+    // Jira gains PIN-D3: its row can only appear once the released Ready to close response has rendered.
+    addReadyEpic(state, 'PIN-D3', 'Ready to close epic three');
     const gate = deferred();
     state.alertGate = gate;
     const missingReads = calls.filter(call => call.pathname === '/api/missing-info').length;
+    const readyReads = calls.filter(call => call.params.purpose === 'ready-to-close').length;
+    const released = Promise.all([
+        page.waitForResponse(response => apiPath(response, '/api/missing-info')),
+        page.waitForResponse(response => apiPath(response, '/api/tasks-with-team-name', 'ready-to-close')),
+    ]);
     await page.getByRole('button', { name: 'Refresh tasks and sprints from Jira' }).click();
     await expect.poll(() => calls.filter(call => call.pathname === '/api/missing-info').length).toBeGreaterThan(missingReads);
+    await expect.poll(() => calls.filter(call => call.params.purpose === 'ready-to-close').length).toBeGreaterThan(readyReads);
+    expect(state.inflight, 'the alert cohort is still held').toBeGreaterThan(0);
+    await expect(alertRow(page, 'eng-alert-done', 'PIN-D3')).toHaveCount(0);
     await recordBursts(page);
     await pin(page).locator('.alert-remove').click();
     await expect(pin(page)).toHaveCount(0);
     await settle(page);
+    // A burst here means the close read the held rows as live and last (loading guard ignored).
     expect(await burstCount(page)).toBe(0);
     state.alertGate = null;
     gate.resolve();
-    await page.waitForLoadState('networkidle');
-    await expect(page.locator('#eng-alert-blocked')).toBeVisible();
+    await released;
+    await apiIdle(page, state);
+    await expect(alertRow(page, 'eng-alert-done', 'PIN-D3')).toHaveCount(1);
+    // The server still returns PIN-D1: it stays hidden only because the pending × recorded its dismissal.
     await expect(alertRow(page, 'eng-alert-done', 'PIN-D1')).toHaveCount(0);
     expect(await burstCount(page)).toBe(0);
 });
@@ -541,10 +614,12 @@ test('hidden-by-filters target is revealed, pinned and not covered by the pin', 
     await page.locator('.popover .pop-group[data-facet="status"] .pop-opt[data-option="Done"]').click();
     await page.keyboard.press('Escape');
     await expect(page.locator('.task-item[data-issue-key="PIN-D1-S"]')).toHaveCount(0);
+    const target = '[data-issue-key="PIN-D1"]';
+    await expect(page.locator(target)).toHaveCount(0);
+    await expect(alertRow(page, 'eng-alert-done', 'PIN-D1')).toHaveCount(1);
     await clickPrimary(page, 'eng-alert-done', 'PIN-D1');
     await expectPinned(page, { key: 'PIN-D1', note: 'Ready to close' });
     await settle(page);
-    const target = '[data-issue-key="PIN-D1"]';
     await expect(page.locator(target).first()).toBeVisible();
     const stack = await readStack(page, { target });
     expect(stack.pinStuck).toBe(true);
@@ -746,7 +821,7 @@ test.describe('pinned row layout', () => {
     });
 
     test('pinHeight and --epic-sticky-top match the no-pin baseline in Board, Planning, Statistics and Scenario, in the leaving render', async ({ page }) => {
-        await openPinDashboard(page);
+        const { state } = await openPinDashboard(page);
         const modes = ['Board', 'Planning', 'Statistics', 'Scenario'];
         const epicTop = () => page.evaluate(() => {
             const style = getComputedStyle(document.querySelector('.container'));
@@ -755,7 +830,7 @@ test.describe('pinned row layout', () => {
         const baseline = {};
         for (const mode of modes) {
             await selectEngMode(page, mode);
-            await page.waitForLoadState('networkidle');
+            await apiIdle(page, state);
             await page.evaluate(() => window.scrollTo(0, 0));
             await settle(page);
             baseline[mode] = await epicTop();
@@ -783,7 +858,7 @@ test.describe('pinned row layout', () => {
                 window.__modeObserver.observe(container, { attributes: true, childList: true, subtree: true });
             });
             await selectEngMode(page, mode);
-            await page.waitForLoadState('networkidle');
+            await apiIdle(page, state);
             await settle(page);
             await expect(pin(page)).toHaveCount(0);
             expect(await epicTop()).toBe(baseline[mode]);
@@ -879,12 +954,11 @@ test('touch: every pin control works by tap', async ({ browser }) => {
 });
 
 test('pin controls push no dataLayer entry', async ({ page }) => {
-    await openPinDashboard(page, { analyticsEnabled: true });
+    const { state } = await openPinDashboard(page, { analyticsEnabled: true });
     await expect.poll(() => page.evaluate(() => Array.isArray(window.dataLayer) && window.dataLayer.length > 0)).toBe(true);
     await clickPrimary(page, 'eng-alert-blocked', 'PIN-3');
     await expectPinned(page, { key: 'PIN-3' });
-    await page.waitForLoadState('networkidle');
-    await settle(page);
+    await apiIdle(page, state);
     const before = await page.evaluate(() => window.dataLayer.length);
     await page.getByRole('button', { name: 'Back to alerts' }).click();
     await settle(page);

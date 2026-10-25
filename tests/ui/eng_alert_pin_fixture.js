@@ -153,6 +153,13 @@ function createServerState({ sprintState = 'active', bulkAlerts = 0, dualKey = f
     };
 }
 
+// Jira gains one more Ready to close Epic (an In Progress Epic whose only Story is Done).
+function addReadyEpic(state, key, summary) {
+    state.epics[key] = epic(key, summary);
+    state.readyEpics.push(key);
+    state.tasks.push(story(`${key}-S`, 'Done', `Finished story under ${summary}`, { epicKey: key }));
+}
+
 function currentTasks(state) {
     return state.tasks.map(task => (state.storyPoints.has(task.key)
         ? { ...task, fields: { ...task.fields, customfield_10004: state.storyPoints.get(task.key) } }
@@ -204,7 +211,9 @@ async function installPinFixture(page, {
         groupByInitiativeChoice: false,
         ...prefs,
     });
-    await page.route('**/api/**', async route => {
+    // Mocked API requests still being answered (a gated alert source counts until it is released).
+    state.inflight = 0;
+    const handle = async (route) => {
         const request = route.request();
         const url = new URL(request.url());
         const body = request.method() === 'POST' ? request.postDataJSON() : null;
@@ -299,6 +308,10 @@ async function installPinFixture(page, {
         if (url.pathname === '/api/capacity') return json({ enabled: false, capacity: [], teams: [], totalCapacity: 0 });
         if (url.pathname === '/api/dependencies') return json({ dependencies: {} });
         return json({});
+    };
+    await page.route('**/api/**', async (route) => {
+        state.inflight += 1;
+        try { await handle(route); } finally { state.inflight -= 1; }
     });
     return { state, calls };
 }
@@ -327,6 +340,14 @@ async function settle(page) {
     });
 }
 
+// Every mocked API request the page has started is answered, then the page settles (renders, animations, scrolling).
+async function apiIdle(page, state) {
+    await settle(page);
+    await expect.poll(() => state.inflight).toBe(0);
+    await settle(page);
+    await expect.poll(() => state.inflight).toBe(0);
+}
+
 async function openPinDashboard(page, options = {}) {
     const fixture = await installPinFixture(page, options);
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
@@ -337,6 +358,8 @@ async function openPinDashboard(page, options = {}) {
 
 module.exports = {
     CATEGORIES,
+    addReadyEpic,
+    apiIdle,
     appBaseUrl,
     deferred,
     installPinFixture,

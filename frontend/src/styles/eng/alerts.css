@@ -710,6 +710,20 @@
         /* Both classes: issues.css loads later and its `.alert-story .alert-remove` (1.3rem) would otherwise win. */
         .alert-story.alert-story--pinned > .alert-remove { grid-column: 4; width: 24px; height: 24px; margin-left: 0; }
 
+        /* The pin's category tone: the summary pill tint over an opaque base (Epic headers never show through), a 3px inset
+           accent that leaves the 40px box unchanged, and the tone colour on the category label only. */
+        .alert-story--pinned[data-tone="missing"],
+        .alert-story--pinned[data-tone="empty"] { --alert-pin-tone: var(--alert-missing); --alert-pin-tint: rgba(250, 140, 22, 0.1); }
+        .alert-story--pinned[data-tone="blocked"] { --alert-pin-tone: var(--alert-blocked); --alert-pin-tint: rgba(212, 56, 13, 0.1); }
+        .alert-story--pinned[data-tone="following"] { --alert-pin-tone: #4338ca; --alert-pin-tint: rgba(99, 102, 241, 0.1); }
+        .alert-story--pinned[data-tone="done"] { --alert-pin-tone: #237804; --alert-pin-tint: rgba(82, 196, 26, 0.1); }
+        .alert-story.alert-story--pinned[data-tone] {
+            padding-inline: 0.5rem;
+            background: linear-gradient(var(--alert-pin-tint), var(--alert-pin-tint)), var(--bg-primary);
+            box-shadow: inset 3px 0 0 var(--alert-pin-tone);
+        }
+        .alert-story--pinned[data-tone] > .alert-story-note { color: var(--alert-pin-tone); }
+
 
 
         @media (hover: hover) {

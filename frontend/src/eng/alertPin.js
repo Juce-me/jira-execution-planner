@@ -1,5 +1,19 @@
 export const PIN_HEIGHT = 40;
 
+// Each alert category's tone (its summary pill tone in EngAlertsPanel) and icon; the card headers and the pin read the icon from here.
+export const ALERT_CATEGORY_STYLE = {
+    'eng-alert-missing': { tone: 'missing', icon: '🧾' },
+    'eng-alert-blocked': { tone: 'blocked', icon: '⛔️' },
+    'eng-alert-followup': { tone: 'following', icon: '⏭️' },
+    'eng-alert-backlog': { tone: 'following', icon: '📥' },
+    'eng-alert-missing-team': { tone: 'following', icon: '👥' },
+    'eng-alert-missing-labels': { tone: 'following', icon: '🏷️' },
+    'eng-alert-needs-stories': { tone: 'following', icon: '📝' },
+    'eng-alert-waiting': { tone: 'following', icon: '⏳' },
+    'eng-alert-empty': { tone: 'empty', icon: '🧺' },
+    'eng-alert-done': { tone: 'done', icon: '✅' },
+};
+
 const trimmed = value => String(value ?? '').trim();
 
 export function createAlertPin({ kind, identity, sectionId, key, title, note } = {}) {

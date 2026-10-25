@@ -176,3 +176,18 @@ test('alertLandingTop picks the visible, compact-hidden landing when the compact
 test('alertLandingTop clamps to the page top', () => {
     assert.equal(alertLandingTop({ elementDocTop: 80, headerBottom: 300, compactHeight: 60, filterBarHeight: 50, pinHeight: 40 }), 0);
 });
+
+// Follow-up 1: each category's tone matches its summary pill (ALERT_SUMMARY_CONFIG) and its icon is the card header's.
+test('ALERT_CATEGORY_STYLE gives all ten categories the summary-pill tone and an icon', async () => {
+    const { ALERT_CATEGORY_STYLE } = await import('../frontend/src/eng/alertPin.js');
+    const fs = await import('node:fs');
+    const panelSource = fs.readFileSync(new URL('../frontend/src/eng/EngAlertsPanel.jsx', import.meta.url), 'utf8');
+    const summaryTones = Object.fromEntries([...panelSource.matchAll(/tone: '([a-z]+)', sectionId: '([a-z-]+)'/g)].map(match => [match[2], match[1]]));
+    assert.equal(Object.keys(summaryTones).length, 10);
+    assert.deepEqual(Object.keys(ALERT_CATEGORY_STYLE).sort(), Object.keys(summaryTones).sort());
+    for (const [sectionId, tone] of Object.entries(summaryTones)) {
+        assert.equal(ALERT_CATEGORY_STYLE[sectionId].tone, tone, sectionId);
+        assert.ok(ALERT_CATEGORY_STYLE[sectionId].icon, `${sectionId} icon`);
+    }
+    assert.deepEqual([...new Set(Object.values(ALERT_CATEGORY_STYLE).map(style => style.tone))].sort(), ['blocked', 'done', 'empty', 'following', 'missing']);
+});

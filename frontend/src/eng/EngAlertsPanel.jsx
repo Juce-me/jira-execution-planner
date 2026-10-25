@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { ALERT_CATEGORY_STYLE } from './alertPin.js';
 
 const ALERT_SUMMARY_CONFIG = [
     { key: 'missing', label: 'Missing info', tone: 'missing', sectionId: 'eng-alert-missing' },
@@ -212,7 +213,7 @@ export default function EngAlertsPanel({
 	                                                        </svg>
 	                                                    </span>
 	                                                </button>
-	                                                <div className="alert-title">🧾 Missing Info</div>
+	                                                <div className="alert-title">{ALERT_CATEGORY_STYLE['eng-alert-missing'].icon} Missing Info</div>
 	                                                <div className="alert-subtitle">These stories are missing planning essentials—fill the fields so they can be scheduled and estimated.</div>
 		                                                <a
 		                                                    className="alert-chip"
@@ -302,7 +303,7 @@ export default function EngAlertsPanel({
                                                         </svg>
                                                     </span>
                                                 </button>
-                                                <div className="alert-title">⛔️ Blocked</div>
+                                                <div className="alert-title">{ALERT_CATEGORY_STYLE['eng-alert-blocked'].icon} Blocked</div>
                                                 <div className="alert-subtitle">Let’s unblock these fast—call out what’s stuck, who’s needed, and what “done” looks like.</div>
 	                                                <a
 	                                                    className="alert-chip"
@@ -388,7 +389,7 @@ export default function EngAlertsPanel({
                                                             </svg>
                                                         </span>
                                                     </button>
-                                                    <div className="alert-title">⏭️ Postponed Work</div>
+                                                    <div className="alert-title">{ALERT_CATEGORY_STYLE['eng-alert-followup'].icon} Postponed Work</div>
                                                     <div className="alert-subtitle">Items that should be handled in a future sprint.</div>
                                                     {renderCategoryChip([...postponedTasks.map(task => task.key), ...futureRoutedEpics.map(epic => epic.key)], `${postponedTasks.length + futureRoutedEpics.length} ${(postponedTasks.length + futureRoutedEpics.length) === 1 ? 'item' : 'items'}`, 'Open these postponed items in Jira')}
                                                 </div>
@@ -517,7 +518,7 @@ export default function EngAlertsPanel({
                                                             </svg>
                                                         </span>
                                                     </button>
-                                                    <div className="alert-title">📥 Backlog</div>
+                                                    <div className="alert-title">{ALERT_CATEGORY_STYLE['eng-alert-backlog'].icon} Backlog</div>
                                                     <div className="alert-subtitle">These epics are still backlog work. Keep child stories unsprinted unless they are already closed out.</div>
                                                     {buildKeyListLink(backlogEpics.map(e => e.key)) ? (
                                                         <a
@@ -574,7 +575,7 @@ export default function EngAlertsPanel({
                                                             </svg>
                                                         </span>
                                                     </button>
-                                                    <div className="alert-title">👥 Missing Team</div>
+                                                    <div className="alert-title">{ALERT_CATEGORY_STYLE['eng-alert-missing-team'].icon} Missing Team</div>
                                                     <div className="alert-subtitle">Open epics that still need a Jira Team before planning labels can be evaluated.</div>
                                                     {renderCategoryChip(missingTeamEpics.map(epic => epic.key), `${missingTeamEpics.length} ${missingTeamEpics.length === 1 ? 'epic' : 'epics'}`, 'Open these epics in Jira')}
                                                 </div>
@@ -614,7 +615,7 @@ export default function EngAlertsPanel({
                                                             </svg>
                                                         </span>
                                                     </button>
-                                                    <div className="alert-title">🏷️ Missing Labels</div>
+                                                    <div className="alert-title">{ALERT_CATEGORY_STYLE['eng-alert-missing-labels'].icon} Missing Labels</div>
                                                     <div className="alert-subtitle">These epics need the selected sprint label or its _candidate form, plus the mapped team label.</div>
                                                     {renderCategoryChip(missingLabelEpics.map(epic => epic.key), `${missingLabelEpics.length} ${missingLabelEpics.length === 1 ? 'epic' : 'epics'}`, 'Open these epics in Jira')}
                                                 </div>
@@ -654,7 +655,7 @@ export default function EngAlertsPanel({
                                                             </svg>
                                                         </span>
                                                     </button>
-                                                    <div className="alert-title">📝 Stories Required</div>
+                                                    <div className="alert-title">{ALERT_CATEGORY_STYLE['eng-alert-needs-stories'].icon} Stories Required</div>
                                                     <div className="alert-subtitle">These labeled Epics still need an actionable Story for the selected sprint and Team.</div>
                                                     {renderCategoryChip(needsStoriesTeams.flatMap(group => group.items.map(entry => entry.epic.key)), `${needsStoriesEpics.length} ${needsStoriesEpics.length === 1 ? 'epic' : 'epics'}`, 'Open these epics in Jira')}
                                                 </div>
@@ -700,7 +701,7 @@ export default function EngAlertsPanel({
                                                             </svg>
                                                         </span>
                                                     </button>
-                                                    <div className="alert-title">⏳ Waiting for Stories</div>
+                                                    <div className="alert-title">{ALERT_CATEGORY_STYLE['eng-alert-waiting'].icon} Waiting for Stories</div>
                                                     <div className="alert-subtitle">Analysis epics are waiting for stories next quarter.</div>
                                                     {renderCategoryChip(waitingForStoriesEpics.map(epic => epic.key), `${waitingForStoriesEpics.length} ${waitingForStoriesEpics.length === 1 ? 'item' : 'items'}`, 'Open these epics in Jira')}
                                                 </div>
@@ -787,7 +788,7 @@ export default function EngAlertsPanel({
 	                                                        </svg>
 	                                                    </span>
 	                                                </button>
-	                                                <div className="alert-title">🧺 Empty Epic</div>
+	                                                <div className="alert-title">{ALERT_CATEGORY_STYLE['eng-alert-empty'].icon} Empty Epic</div>
 	                                                <div className="alert-subtitle">These epics have zero stories—please review and create at least one story to make them actionable.</div>
 	                                                <a
 	                                                    className="alert-chip"
@@ -883,7 +884,7 @@ export default function EngAlertsPanel({
 	                                                        </svg>
 	                                                    </span>
 	                                                </button>
-	                                                <div className="alert-title">✅ Epic Ready to Close</div>
+	                                                <div className="alert-title">{ALERT_CATEGORY_STYLE['eng-alert-done'].icon} Epic Ready to Close</div>
 	                                                <div className="alert-subtitle">All stories are done, killed, or incomplete, but the epic is still open—time to close the loop.</div>
 	                                                <a
 	                                                    className="alert-chip"

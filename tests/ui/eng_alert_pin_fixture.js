@@ -92,13 +92,15 @@ const CATEGORIES = [
 ];
 
 // Mutable server state: a Story Points write through the real edit route changes what later reads return.
-function createServerState({ sprintState = 'active', bulkAlerts = 0, dualKey = false, blockedKeys = null } = {}) {
+function createServerState({ sprintState = 'active', bulkAlerts = 0, dualKey = false, blockedKeys = null, longSummaries = false } = {}) {
     const future = sprintState === 'future';
+    // `longSummaries` gives one alert per pin tone (missing, following, done) the long summary PIN-3 (blocked) always has.
+    const long = (summary) => (longSummaries ? `${summary}: ${longSummary}` : summary);
     const storyPoints = new Map([['PIN-1', null]]);
     const primary = future
         ? [story('PIN-F1', 'To Do', 'Future sprint planned story', { sprintState })]
         : [
-            story('PIN-1', 'To Do', 'Story without an estimate', { storyPoints: null }),
+            story('PIN-1', 'To Do', long('Story without an estimate'), { storyPoints: null }),
             story('PIN-2', 'To Do', 'Story missing its priority'),
             story('PIN-3', 'Blocked', longSummary),
             story('PIN-4', 'Blocked', 'Second blocked story', dualKey ? { storyPoints: null } : {}),
@@ -125,9 +127,9 @@ function createServerState({ sprintState = 'active', bulkAlerts = 0, dualKey = f
         epics: {
             'PIN-EPIC': epic('PIN-EPIC', 'Primary delivery epic', { initiative: { key: 'PIN-INIT', summary: 'Synthetic initiative' } }),
             'PIN-EPIC2': epic('PIN-EPIC2', 'Second delivery epic', { initiative: { key: 'PIN-INIT', summary: 'Synthetic initiative' } }),
-            'PIN-D1': epic('PIN-D1', 'Ready to close epic one'),
+            'PIN-D1': epic('PIN-D1', long('Ready to close epic one')),
             'PIN-D2': epic('PIN-D2', 'Ready to close epic two'),
-            'PIN-W1': epic('PIN-W1', 'Waiting epic one', { status: 'Analysis' }),
+            'PIN-W1': epic('PIN-W1', long('Waiting epic one'), { status: 'Analysis' }),
             'PIN-W2': epic('PIN-W2', 'Waiting epic two', { status: 'Analysis' }),
         },
         alertEpics: future
@@ -183,10 +185,11 @@ async function installPinFixture(page, {
     bulkAlerts = 0,
     dualKey = false,
     blockedKeys = null,
+    longSummaries = false,
     analyticsEnabled = false,
     alertGate = null,
 } = {}) {
-    const state = createServerState({ sprintState, bulkAlerts, dualKey, blockedKeys });
+    const state = createServerState({ sprintState, bulkAlerts, dualKey, blockedKeys, longSummaries });
     state.alertGate = alertGate;
     const calls = [];
     await page.setViewportSize(viewport);

@@ -31,7 +31,8 @@ async function expectPinned(page, { key, title, note }) {
     await expect(pin(page)).toHaveCount(1);
     await expect(pin(page).locator('.epic-key')).toHaveText(key);
     if (title) await expect(pin(page).locator('.alert-story-main')).toContainText(title);
-    if (note) await expect(pin(page).locator('.alert-story-note')).toHaveText(note);
+    // The note is the category icon, then the label (follow-up 1).
+    if (note) await expect(pin(page).locator('.alert-story-note')).toHaveText(new RegExp(`^\\S+ ${escapeRegExp(note)}$`));
 }
 
 // Viewport geometry of the sticky stack and the measured targets, read after settling.
@@ -966,4 +967,80 @@ test('pin controls push no dataLayer entry', async ({ page }) => {
     await expect(pin(page)).toHaveCount(0);
     await settle(page);
     expect(await page.evaluate(() => window.dataLayer.length)).toBe(before);
+});
+
+// Follow-up 1: the pin carries its category's summary-pill tone and the card header's icon.
+const TONE_COLORS = {
+    missing: ['rgb(250, 140, 22)', 'rgba(250, 140, 22, 0.1)'], empty: ['rgb(250, 140, 22)', 'rgba(250, 140, 22, 0.1)'],
+    blocked: ['rgb(212, 56, 13)', 'rgba(212, 56, 13, 0.1)'], following: ['rgb(67, 56, 202)', 'rgba(99, 102, 241, 0.1)'], done: ['rgb(35, 120, 4)', 'rgba(82, 196, 26, 0.1)'],
+};
+const SECTION_TONES = {
+    'eng-alert-missing': 'missing', 'eng-alert-blocked': 'blocked', 'eng-alert-empty': 'empty', 'eng-alert-done': 'done',
+    'eng-alert-followup': 'following', 'eng-alert-backlog': 'following', 'eng-alert-missing-team': 'following', 'eng-alert-missing-labels': 'following',
+    'eng-alert-needs-stories': 'following', 'eng-alert-waiting': 'following',
+};
+
+function readTone(page) {
+    return pin(page).evaluate((row) => {
+        const style = getComputedStyle(row);
+        const note = row.querySelector('.alert-story-note');
+        const main = row.querySelector('.alert-story-main');
+        const listMain = document.querySelector('#eng-alert-panels .alert-story:not(.alert-story--pinned) .alert-story-main');
+        return {
+            tone: row.dataset.tone, height: row.getBoundingClientRect().height, overflow: row.scrollWidth - row.clientWidth,
+            noteText: note.textContent, noteColor: getComputedStyle(note).color, noteOverflow: note.scrollWidth > note.clientWidth,
+            mainColor: getComputedStyle(main).color, keyColor: getComputedStyle(row.querySelector('.epic-key')).color,
+            listMainColor: listMain ? getComputedStyle(listMain).color : null,
+            textPrimary: (() => { const probe = document.createElement('span'); probe.style.color = 'var(--text-primary)'; row.append(probe); const color = getComputedStyle(probe).color; probe.remove(); return color; })(),
+            boxShadow: style.boxShadow, backgroundImage: style.backgroundImage, backgroundColor: style.backgroundColor,
+            bodyBackground: getComputedStyle(document.body).backgroundColor,
+        };
+    });
+}
+
+test.describe('pinned category tone and icon', () => {
+    for (const { sectionId, label, sprint, keys } of CATEGORIES) {
+        test(`${label}: the pin shows the header icon and the ${SECTION_TONES[sectionId]} tone accent and tint`, async ({ page }) => {
+            await openPinDashboard(page, { sprintState: sprint });
+            const headerIcon = (await page.locator(`#${sectionId} .alert-title`).innerText()).split(' ')[0];
+            await clickPrimary(page, sectionId, keys[0]);
+            await settle(page);
+            await expectPinned(page, { key: keys[0] });
+            const tone = SECTION_TONES[sectionId];
+            const [color, tint] = TONE_COLORS[tone];
+            const read = await readTone(page);
+            expect(read.tone).toBe(tone);
+            expect(read.noteText).toBe(`${headerIcon} ${label}`);
+            expect(read.noteColor).toBe(color);
+            expect(read.boxShadow).toBe(`${color} 3px 0px 0px 0px inset`);
+            expect(read.backgroundImage.startsWith(`linear-gradient(${tint}, ${tint})`)).toBe(true);
+            // Opaque base under the tint: the page background, so stuck Epic headers never show through.
+            expect(read.backgroundColor).toMatch(/^rgb\(/);
+            expect(read.mainColor).toBe(read.textPrimary);
+            expect(read.mainColor).not.toBe(color);
+            expect(read.height).toBe(40);
+        });
+    }
+
+    for (const width of [1280, 375]) {
+        test(`at ${width}px every tone keeps the 40px row with a long summary, no overflow (screenshots)`, async ({ page }) => {
+            await openPinDashboard(page, { viewport: { width, height: 800 }, longSummaries: true });
+            for (const [sectionId, key, tone] of [['eng-alert-blocked', 'PIN-3', 'blocked'], ['eng-alert-missing', 'PIN-1', 'missing'], ['eng-alert-waiting', 'PIN-W1', 'following'], ['eng-alert-done', 'PIN-D1', 'done']]) {
+                await page.evaluate(() => window.scrollTo(0, 0));
+                await settle(page);
+                await clickPrimary(page, sectionId, key);
+                await settle(page);
+                await page.mouse.move(1, 1);
+                await settle(page);
+                await expectPinned(page, { key });
+                await page.screenshot({ path: path.join(screenshotDir, `tone-${tone}-${width}-${process.env.PIN_SHOT_LABEL || 'after'}.png`) });
+                const read = await readTone(page);
+                expect(read.tone).toBe(tone);
+                expect(read.height).toBe(40);
+                expect(read.overflow).toBeLessThanOrEqual(0);
+                const mainTruncates = await pin(page).locator('.alert-story-main').evaluate(node => node.scrollWidth > node.clientWidth && getComputedStyle(node).textOverflow === 'ellipsis');
+                expect(mainTruncates).toBe(true);
+            }
+        });
+    }
 });

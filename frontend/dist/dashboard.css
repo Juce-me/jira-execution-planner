@@ -6713,6 +6713,31 @@ button.alert-story-local-link:focus-visible {
   height: 24px;
   margin-left: 0;
 }
+.alert-story--pinned[data-tone=missing],
+.alert-story--pinned[data-tone=empty] {
+  --alert-pin-tone: var(--alert-missing);
+  --alert-pin-tint: rgba(250, 140, 22, 0.1);
+}
+.alert-story--pinned[data-tone=blocked] {
+  --alert-pin-tone: var(--alert-blocked);
+  --alert-pin-tint: rgba(212, 56, 13, 0.1);
+}
+.alert-story--pinned[data-tone=following] {
+  --alert-pin-tone: #4338ca;
+  --alert-pin-tint: rgba(99, 102, 241, 0.1);
+}
+.alert-story--pinned[data-tone=done] {
+  --alert-pin-tone: #237804;
+  --alert-pin-tint: rgba(82, 196, 26, 0.1);
+}
+.alert-story.alert-story--pinned[data-tone] {
+  padding-inline: 0.5rem;
+  background: linear-gradient(var(--alert-pin-tint), var(--alert-pin-tint)), var(--bg-primary);
+  box-shadow: inset 3px 0 0 var(--alert-pin-tone);
+}
+.alert-story--pinned[data-tone] > .alert-story-note {
+  color: var(--alert-pin-tone);
+}
 @media (hover: hover) {
   .alert-epic-link:hover:where(:not(:disabled)):where(:not([aria-disabled=true])) {
     text-decoration: underline;

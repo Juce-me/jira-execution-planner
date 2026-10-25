@@ -8,6 +8,7 @@ const { renderToStaticMarkup } = require('react-dom/server');
 
 const root = path.join(__dirname, '..');
 const engViewSource = fs.readFileSync(path.join(root, 'frontend', 'src', 'eng', 'EngView.jsx'), 'utf8');
+const { renderAlertsPanel } = require('./share_view_alert_panel_fixture');
 const alertsCss = fs.readFileSync(path.join(root, 'frontend', 'src', 'styles', 'eng', 'alerts.css'), 'utf8');
 
 function load(file) {
@@ -44,4 +45,45 @@ test('the pin modifier styles only the pin row and uses the published variables'
     assert.match(alertsCss, /\.alert-story--pinned\s*\{[^}]*top:\s*var\(--alert-pin-top\)/);
     assert.match(alertsCss, /\.alert-story--pinned\s*\{[^}]*height:\s*var\(--alert-pin-height\)/);
     assert.doesNotMatch(alertsCss, /\.alert-story--pinned[^{]*:hover[^{]*\{[^}]*transform/);
+});
+
+// Follow-up 1: the pin carries its category tone and the card header's icon.
+const HEADER_LABELS = {
+    'eng-alert-missing': 'Missing Info', 'eng-alert-blocked': 'Blocked', 'eng-alert-followup': 'Postponed Work', 'eng-alert-backlog': 'Backlog',
+    'eng-alert-missing-team': 'Missing Team', 'eng-alert-missing-labels': 'Missing Labels', 'eng-alert-needs-stories': 'Stories Required',
+    'eng-alert-waiting': 'Waiting for Stories', 'eng-alert-empty': 'Empty Epic', 'eng-alert-done': 'Epic Ready to Close',
+};
+const loadStyles = () => import('../frontend/src/eng/alertPin.js').then(module => module.ALERT_CATEGORY_STYLE);
+
+test('every card header shows the same icon the pin uses for that category', async () => {
+    const styles = await loadStyles();
+    const markup = renderAlertsPanel();
+    const titles = [...markup.matchAll(/<div class="alert-title">([^<]*)<\/div>/g)].map(match => match[1]);
+    assert.equal(titles.length, 10);
+    for (const [sectionId, label] of Object.entries(HEADER_LABELS)) {
+        assert.ok(titles.includes(`${styles[sectionId].icon} ${label}`), `${sectionId}: header "${styles[sectionId].icon} ${label}" in ${titles.join(' | ')}`);
+    }
+});
+
+test('the pin bar sets its category tone and shows the icon before the category label', async () => {
+    const styles = await loadStyles();
+    const AlertPinBar = load('AlertPinBar.jsx');
+    for (const [sectionId, { tone, icon }] of Object.entries(styles)) {
+        const markup = renderToStaticMarkup(React.createElement(AlertPinBar, { pin: { ...pin, sectionId, note: 'Label' }, onBack: () => {}, onClose: () => {} }));
+        assert.match(markup, new RegExp(`data-tone="${tone}"`), sectionId);
+        assert.match(markup, new RegExp(`<div class="alert-story-note">${icon} Label</div>`), sectionId);
+    }
+});
+
+test('the pinned modifier styles each tone with the summary pill tint, a left accent and the tone colour on the label only', () => {
+    const tints = { blocked: 'rgba(212, 56, 13, 0.1)', missing: 'rgba(250, 140, 22, 0.1)', empty: 'rgba(250, 140, 22, 0.1)', following: 'rgba(99, 102, 241, 0.1)', done: 'rgba(82, 196, 26, 0.1)' };
+    for (const [tone, tint] of Object.entries(tints)) {
+        const rule = alertsCss.match(new RegExp(`\\.alert-story--pinned\\[data-tone="${tone}"\\][^{]*\\{([^}]*)\\}`));
+        assert.ok(rule, `${tone} rule`);
+        assert.ok(rule[1].includes(tint), `${tone} tint ${tint}`);
+    }
+    assert.match(alertsCss, /\.alert-story\.alert-story--pinned\[data-tone\]\s*\{[^}]*box-shadow:\s*inset 3px 0 0 var\(--alert-pin-tone\)/);
+    assert.match(alertsCss, /\.alert-story\.alert-story--pinned\[data-tone\]\s*\{[^}]*background:\s*linear-gradient\(var\(--alert-pin-tint\), var\(--alert-pin-tint\)\), var\(--bg-primary\)/);
+    assert.match(alertsCss, /\.alert-story--pinned\[data-tone\] > \.alert-story-note\s*\{[^}]*color:\s*var\(--alert-pin-tone\)/);
+    assert.doesNotMatch(alertsCss, /\.alert-story--pinned[^{]*\{[^}]*transition:\s*all/);
 });

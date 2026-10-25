@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
     PIN_HEIGHT,
+    alertLandingTop,
     clearCenteredTarget,
     alertIdentitiesBySection,
     createAlertPin,
@@ -150,4 +151,28 @@ test('clearCenteredTarget moves a target whose centered top would sit under the 
         clearCenteredTarget({ elementTop: 900, elementHeight: 300, scrollY: 1000, viewportHeight: 500, stickyBottom: 200 }),
         1688,
     );
+});
+
+// Landing stack = compact header (only once the main header has scrolled away) + filter bar + pin when it stays; never Epic headers or Planning.
+test('alertLandingTop lands a deep target below the compact header, the filter bar and a kept pin', () => {
+    // 2000 - (60 + 50 + 40 + 12) = 1838, past the header bottom (300), so the compact header is visible there.
+    assert.equal(alertLandingTop({ elementDocTop: 2000, headerBottom: 300, compactHeight: 60, filterBarHeight: 50, pinHeight: 40 }), 1838);
+});
+
+test('alertLandingTop for a cleared pin counts only the compact header and the filter bar', () => {
+    assert.equal(alertLandingTop({ elementDocTop: 2000, headerBottom: 300, compactHeight: 60, filterBarHeight: 50, pinHeight: 0 }), 1878);
+});
+
+test('alertLandingTop leaves out the compact header when the main header is still on screen at landing', () => {
+    // 400 - (50 + 40 + 12) = 298, before the header bottom (300): the compact header stays hidden.
+    assert.equal(alertLandingTop({ elementDocTop: 400, headerBottom: 300, compactHeight: 60, filterBarHeight: 50, pinHeight: 40 }), 298);
+});
+
+test('alertLandingTop picks the visible, compact-hidden landing when the compact header would toggle between the two', () => {
+    // Without it 450 - 102 = 348 (header gone, compact would show); with it 288 (header back, compact hidden): land at 288, never under it.
+    assert.equal(alertLandingTop({ elementDocTop: 450, headerBottom: 300, compactHeight: 60, filterBarHeight: 50, pinHeight: 40 }), 288);
+});
+
+test('alertLandingTop clamps to the page top', () => {
+    assert.equal(alertLandingTop({ elementDocTop: 80, headerBottom: 300, compactHeight: 60, filterBarHeight: 50, pinHeight: 40 }), 0);
 });

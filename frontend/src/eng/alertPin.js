@@ -68,3 +68,11 @@ export function clearCenteredTarget({ elementTop, elementHeight, scrollY, viewpo
     if ((viewportHeight - elementHeight) / 2 >= stickyBottom + guard) return null;
     return scrollTargetTop({ elementTop, scrollY, stickyBottom, guard });
 }
+
+// An alert target's scroll top below the sticky stack at its landing position: the compact header only once the main header has scrolled away,
+// the filter bar, and the pin when it stays. Epic headers and Planning sit below the alerts and never cover them. When the compact header would
+// toggle between the two landings, the compact-hidden one is used, so the target is never under it (it lands up to `compactHeight` lower).
+export function alertLandingTop({ elementDocTop, headerBottom, compactHeight = 0, filterBarHeight = 0, pinHeight = 0, guard = 12 }) {
+    const landing = compact => Math.max(0, elementDocTop - (compact + filterBarHeight + pinHeight + guard));
+    return landing(0) < headerBottom ? landing(0) : landing(compactHeight);
+}

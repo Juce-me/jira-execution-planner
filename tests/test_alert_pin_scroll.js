@@ -15,11 +15,20 @@ function arrowBody(name) {
     return source.slice(start, end);
 }
 
-test('scrollToAlertTarget lands below the measured sticky stack with reduced-motion-aware behavior', () => {
+test('scrollToAlertTarget lands below the landing stack from the shared offset model, with reduced-motion-aware behavior', () => {
     const body = arrowBody('scrollToAlertTarget');
-    assert.match(body, /scrollTargetTop\(/);
-    assert.match(body, /measureStickyBottom\(\)/);
+    assert.match(body, /alertLandingTop\(\{ \.\.\.alertStackRef\.current, /);
+    assert.match(body, /headerRef\.current/);
     assert.match(body, /prefersReducedMotion\(\)/);
+    // Epic headers and the Planning panel sit below the alerts and never cover them; the DOM stack is not measured here.
+    assert.doesNotMatch(body, /measureStickyBottom|epic-header|epicStickyTop|planning/i);
+});
+
+test('the landing stack ref is refreshed every render from the compact header, the filter bar and the pin tier only', () => {
+    const decl = source.indexOf('const pinHeight = isCatchUpMode && alertPin ? PIN_HEIGHT : 0;');
+    const assign = source.indexOf('alertStackRef.current = { compactHeight: compactHeaderOffset, filterBarHeight, pinHeight };');
+    assert.ok(decl > 0 && assign > decl, 'assigned in render after pinHeight is derived');
+    assert.match(source, /const alertStackRef = useRef\(\{\}\);/);
 });
 
 test('the scroll-to-top branch runs outside triggerAlertCelebration', () => {
@@ -59,4 +68,8 @@ test('scrollToTaskItem keeps its centered reveal and adjusts only while the pin 
     const adjust = body.indexOf('clearCenteredTarget(');
     assert.ok(guard > 0 && adjust > guard, 'the pin guard precedes the adjustment');
     assert.ok(body.indexOf('afterTwoFrames(') < guard, 'the adjustment waits for the pin to lay out');
+});
+
+test('the Story clearance check counts the real sticky filter bar', () => {
+    assert.match(arrowBody('scrollToTaskItem'), /measureStickyBottom\(\[\.\.\.STICKY_STACK_SELECTORS, '\.filterbar-wrap'\]\)/);
 });

@@ -71,8 +71,8 @@ import { buildMutationScopeKey, createEngIssueEditState, overlaySnapshot, patchE
 import { usePlanningIssueEdits } from './eng/usePlanningIssueEdits.js';
 import { usePlanningListConfirmedEdit } from './eng/usePlanningRowMotion.js';
 import { navigateToAlertStory } from './eng/alertStoryNavigation.js';
-import { measureStickyBottom, navigateToStoryRequirement } from './eng/alertEpicNavigation.js';
-import { PIN_HEIGHT, alertIdentitiesBySection, clearCenteredTarget, createAlertPin, pinScopeKey, resolvePinClose, scrollTargetTop } from './eng/alertPin.js';
+import { STICKY_STACK_SELECTORS, measureStickyBottom, navigateToStoryRequirement } from './eng/alertEpicNavigation.js';
+import { PIN_HEIGHT, alertIdentitiesBySection, alertLandingTop, clearCenteredTarget, createAlertPin, pinScopeKey, resolvePinClose } from './eng/alertPin.js';
 import { alertCardId } from './shareView/focusCapture.js';
 import { useEngAlerts } from './eng/useEngAlerts.js';
 import { isStatusTransitionSurfaceEnabled, resolveSubtaskParentStoryKeys } from './eng/engStatusTransitionUtils.js';
@@ -796,6 +796,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 savedPrefsRef.current.groupByInitiativeChoice ?? null
             );
             const headerRef = useRef(null);
+            const alertStackRef = useRef({});
             const compactHeaderRef = useRef(null);
             const [compactHeaderOffset, setCompactHeaderOffset] = useState(0);
             const [compactStickyVisible, setCompactStickyVisible] = useState(false);
@@ -4446,6 +4447,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
             const planningStickyHeight = showPlanning ? planningOffset : 0;
             const pinHeight = isCatchUpMode && alertPin ? PIN_HEIGHT : 0;
             const filterBarStickyTop = compactStickyTop; const epicStickyTop = compactStickyTop + planningStickyHeight + filterBarHeight + pinHeight;
+            alertStackRef.current = { compactHeight: compactHeaderOffset, filterBarHeight, pinHeight }; // read after two frames, so the pinned × sees the pin cleared
             useEffect(() => {
                 const computeStickyEpicFocus = () => {
                     stickyEpicFrameRef.current = null;
@@ -4589,10 +4591,10 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
             );
             const afterTwoFrames = callback => window.requestAnimationFrame(() => window.requestAnimationFrame(callback));
             const scrollToTop = () => window.scrollTo({ top: 0, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
-            // Lands the target's top just below the measured sticky stack (pin included); false when there is no target.
+            // Lands an alert target just below the sticky stack it will have at landing (alertLandingTop); false when there is no target.
             const scrollToAlertTarget = (element) => {
                 if (!element) return false;
-                const top = scrollTargetTop({ elementTop: element.getBoundingClientRect().top, scrollY: window.scrollY, stickyBottom: measureStickyBottom() });
+                const top = alertLandingTop({ ...alertStackRef.current, elementDocTop: element.getBoundingClientRect().top + window.scrollY, headerBottom: (headerRef.current?.getBoundingClientRect().bottom ?? 0) + window.scrollY });
                 window.scrollTo({ top, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
                 return true;
             };
@@ -4624,7 +4626,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 afterTwoFrames(() => {
                     if (!document.querySelector('[data-alert-pin]')) return;
                     const rect = element.getBoundingClientRect();
-                    const top = clearCenteredTarget({ elementTop: rect.top, elementHeight: rect.height, scrollY: window.scrollY, viewportHeight: window.innerHeight, stickyBottom: measureStickyBottom() });
+                    const top = clearCenteredTarget({ elementTop: rect.top, elementHeight: rect.height, scrollY: window.scrollY, viewportHeight: window.innerHeight, stickyBottom: measureStickyBottom([...STICKY_STACK_SELECTORS, '.filterbar-wrap']) });
                     if (top !== null) window.scrollTo({ top, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
                 });
                 highlightTaskItem(element);
@@ -5585,7 +5587,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
             const pinAlert = spec => setAlertPin(createAlertPin(spec));
             // Opens the panel and the category (absent from the DOM while hidden or collapsed), then scrolls once they render.
             const revealAlertBlock = (sectionId, fallbackToTop) => {
-                setShowAlertsPanel(true);
+                setShowAlertsPanel(true); // shareViewOptions is declared later in render: safe only from click handlers (temporal dead zone otherwise)
                 shareViewOptions.alertFlags[Object.keys(shareViewOptions.alertFlags).find(key => alertCardId(key) === sectionId)]?.[1](true);
                 afterTwoFrames(() => {
                     if (!scrollToAlertTarget(document.getElementById(sectionId)) && fallbackToTop) scrollToTop();
